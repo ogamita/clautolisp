@@ -1,0 +1,533 @@
+#+TITLE: Clautolisp Development Plan
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+This document turns the current specification drafts into an executable development plan.
+
+It focuses on the main architectural question of the project: what belongs to AutoLISP semantics, what belongs to Common Lisp implementation, and which modules are needed to keep that boundary clean.
+
+* Primary Architectural Position
+The project should implement an AutoLISP system in Common Lisp, not compile AutoLISP away into ad hoc Common Lisp forms and not try to pretend that AutoLISP source is normal Common Lisp source.
+
+That implies three rules:
+
+1. AutoLISP source must be read by a dedicated AutoLISP reader layer.
+2. AutoLISP evaluation semantics must be implemented explicitly.
+3. Common Lisp should be used as the implementation and extension language, but not as the semantic definition of AutoLISP itself.
+
+This avoids the main long-term risk of the project: leaking Common Lisp semantics into AutoLISP behavior in subtle ways such as package handling, number syntax, symbol case, dynamic scope, error signaling, function/value cells, and reader behavior.
+
+* AutoLISP Versus Common Lisp
+** AutoLISP Should Remain a Distinct Language Layer
+The runtime should preserve:
+
+- AutoLISP symbol naming and case rules.
+- AutoLISP reader syntax and tokenization.
+- Dynamic scoping semantics.
+- AutoLISP truthiness and nil handling.
+- AutoLISP error behavior, including ~*error*~ conventions.
+- AutoLISP built-in function names and argument conventions.
+- Dialect differences between Autodesk AutoLISP, Visual LISP, and BricsCAD compatibility extensions.
+
+** Common Lisp Should Provide the Implementation Substrate
+Common Lisp should provide:
+
+- Memory management.
+- Data structure implementation.
+- Conditions and restarts for internal error handling.
+- Modularization with ASDF packages and systems.
+- Test harnesses.
+- Optional implementation-specific delivery support for SBCL and CCL.
+
+** Consequence for the Reader
+A custom readtable with reader macros may help for experimentation or REPL convenience, but it should not be the core parsing strategy.
+
+The safer architecture is:
+
+- A dedicated lexer and parser for AutoLISP source.
+- A dialect profile controlling syntax variations.
+- An explicit AST or reader-object representation.
+- A bridge that can expose parsed forms to a Common Lisp REPL if needed.
+
+Reason:
+
+- Common Lisp readtables are powerful, but they are optimized for Common Lisp reader semantics.
+- Good source locations, precise syntax diagnostics, and dialect-dependent parsing are easier with an explicit reader.
+- Future support for partial parsing, editor tooling, and source-to-source migration also benefits from a real parser.
+
+Therefore the first module should be a strong ~reader~ module, but it should be stronger than a mere set of reader macros: it should own lexing, parsing, source locations, and dialect selection.
+
+* Proposed Module Breakdown
+** Phase 1 Modules
+*** ~alisp-reader~
+Responsibility:
+
+- Decode input streams from external files.
+- Normalize line endings at the stream boundary.
+- Detect or accept declared external encodings.
+- Tokenize AutoLISP syntax.
+- Parse forms into source-aware objects.
+- Support dialect switches for AutoCAD, Visual LISP, and BricsCAD differences.
+
+Key outputs:
+
+- Tokens with source positions.
+- Parsed forms or AST nodes.
+- Syntax errors with accurate file, line, and column reporting.
+
+Why first:
+
+- Everything else depends on trustworthy reading.
+- It defines the language boundary.
+- It is the most likely place for dialect drift if postponed.
+
+*** ~alisp-runtime~
+Responsibility:
+
+- Define the core runtime object model.
+- Represent symbols, environments, function bindings, and dynamic frames.
+- Implement evaluation of literals, symbol lookup, function application, special forms, and lambda objects.
+- Define truthiness, list behavior, and basic value conversions.
+
+Notes:
+
+- This module should not depend on CAD or UI code.
+- It should depend only on ~alisp-reader~ and low-level utilities.
+
+*** ~alisp-builtins-core~
+Responsibility:
+
+- Numeric functions.
+- List functions.
+- Equality predicates.
+- String and character functions that are part of baseline AutoLISP.
+- I/O primitives that do not require CAD integration.
+
+Rationale:
+
+- Builtins need separation from the evaluator so they can be tested independently.
+- Some builtins will require dialect flags or compatibility shims.
+
+*** ~alisp-conditions~
+Responsibility:
+
+- Define internal Common Lisp conditions.
+- Map them to AutoLISP-visible error behavior.
+- Support ~*error*~ callbacks and controlled recovery paths.
+
+*** ~alisp-host-api~
+Responsibility:
+
+- Define the abstract host protocol used by the runtime.
+- Separate runtime semantics from CAD integration.
+- Provide interfaces for entities, selection sets, command execution, system variables, dialogs, and filesystem access where needed.
+
+This module should be an interface layer, not an implementation layer.
+
+*** ~alisp-testkit~
+Responsibility:
+
+- Test helpers.
+- Fixtures.
+- Golden-file support.
+- Snapshot comparison tools.
+- Dialect matrix test runners.
+
+This should appear early, not late, because the reader and runtime both need heavy conformance testing.
+
+** Phase 2 Modules
+*** ~alisp-vl~
+Responsibility:
+
+- Visual LISP compatibility functions.
+- File/path utilities.
+- String helper families.
+- COM-related APIs as stubs, abstractions, or selective implementations depending on host capabilities.
+
+*** ~alisp-dcl-reader~
+Responsibility:
+
+- Parse DCL files.
+- Preserve source locations and dialog structure.
+
+*** ~alisp-dcl-runtime~
+Responsibility:
+
+- Runtime dialog model.
+- Tile state.
+- Callback registration and dispatch.
+
+*** ~alisp-mock-host~
+Responsibility:
+
+- Deterministic host implementation for tests.
+- Mock drawing/entity model.
+- Stable snapshots for regression testing.
+
+** Phase 3 Modules
+*** ~alisp-host-autocad~
+Responsibility:
+
+- Adapter to AutoCAD-specific host facilities.
+
+*** ~alisp-host-bricscad~
+Responsibility:
+
+- Adapter to BricsCAD-specific host facilities.
+
+*** ~alisp-cli~
+Responsibility:
+
+- Standalone executable entry point.
+- Batch evaluation.
+- File loading.
+- Test execution.
+- REPL mode.
+
+*** ~alisp-ide~
+Responsibility:
+
+- SLIME integration helpers.
+- Inspector support.
+- Breakpoint and stepping hooks.
+
+* Recommended Internal Representation
+** Reader Result
+The reader should produce source-aware forms, not bare Common Lisp objects.
+
+At minimum each parsed object should be able to retain:
+
+- Source file.
+- Line and column span.
+- Original spelling where useful.
+- Dialect metadata when relevant.
+
+** Symbol Model
+Do not use raw Common Lisp package symbols as the semantic representation of AutoLISP symbols.
+
+Instead define an AutoLISP symbol abstraction, or intern symbols in a dedicated runtime symbol table that is independent from Common Lisp packages.
+
+Reason:
+
+- Common Lisp package semantics are not AutoLISP semantics.
+- This keeps case normalization and compatibility behavior under project control.
+- It avoids package pollution and reader/package edge cases.
+
+** Environments
+Represent environments explicitly as runtime data structures.
+
+That is required to support:
+
+- Dynamic scope.
+- Introspection.
+- Deterministic debugging.
+- Future stepping and snapshot support.
+
+* Dialect Strategy
+Dialect support should be explicit from the start.
+
+Use a dialect descriptor object that controls:
+
+- Reader differences.
+- Builtin availability.
+- Behavior flags.
+- Feature predicates.
+- Host capability advertisement.
+
+Recommended initial dialects:
+
+- ~:autolisp-core~
+- ~:autocad~
+- ~:visual-lisp~
+- ~:bricscad~
+
+Even if the first release implements mostly shared behavior, this structure should exist early so compatibility differences do not become scattered conditionals throughout the codebase.
+
+* Host Environment Profiles
+CAD-target behavior and operating-system behavior should not be treated as the same thing.
+
+The system should be able to run on one operating system while presenting another host-environment profile to AutoLISP / Visual LISP code.
+
+Examples:
+
+- Run on macOS while exposing a Windows-like AutoCAD host profile.
+- Run on Linux while exposing a Windows-like BricsCAD host profile.
+- Run on any supported OS while exposing a reduced pure-mock profile for tests.
+
+This is especially important for:
+
+- filesystem conventions,
+- path syntax,
+- platform capability predicates,
+- secure loading behavior,
+- host automation layers such as ActiveX / COM.
+
+Accordingly, the architecture should include an explicit host-environment profile layer.
+
+That layer should:
+
+- describe the emulated target environment exposed to Lisp code,
+- be selectable by command-line option or configuration,
+- remain separate from the actual native execution platform,
+- provide adapters or emulation for Windows-oriented facilities when a Windows-like profile is selected on non-Windows hosts.
+
+This allows the project to target language and host compatibility directly, instead of hardwiring behavior to the native operating system.
+
+* Directory and System Layout
+Suggested source tree:
+
+#+begin_example
+sources/
+  reader/
+  runtime/
+  builtins/
+  conditions/
+  host-api/
+  testkit/
+  vl/
+  dcl/
+  hosts/
+  cli/
+tests/
+  reader/
+  runtime/
+  builtins/
+  dialects/
+  integration/
+documentation/
+  development-plan.org
+  architecture-decisions.org
+#+end_example
+
+Suggested ASDF systems:
+
+- ~clautolisp-base~
+- ~clautolisp-reader~
+- ~clautolisp-runtime~
+- ~clautolisp-vl~
+- ~clautolisp-dcl~
+- ~clautolisp-host-mock~
+- ~clautolisp-cli~
+- ~clautolisp-tests~
+
+* Development Plan
+** Stage 0: Foundations
+Deliverables:
+
+- Fill in ~clautolisp.asd~ with real systems.
+- Establish package naming and file layout.
+- Add a test framework compatible with SBCL and CCL.
+- Add a CLI skeleton and build targets for both implementations.
+
+Exit criteria:
+
+- The project loads on SBCL and CCL.
+- A standalone smoke executable can be produced at least for one implementation first, then both.
+- Tests run from the command line.
+
+** Stage 1: Reader First
+Deliverables:
+
+- External-format aware input layer.
+- Line ending normalization policy.
+- Tokenizer.
+- Parser for core AutoLISP forms.
+- Source location tracking.
+- Initial dialect descriptors.
+
+Coverage goals:
+
+- Empty input, whitespace, comments, atoms, lists, quoting, strings, escaped characters, malformed input.
+- File matrix covering UTF-8, Latin-1 or CP1252 samples if needed, and mixed line endings.
+
+Exit criteria:
+
+- Reader tests pass on SBCL and CCL.
+- Reader diagnostics are stable and deterministic.
+- Parsed output is independent from Common Lisp package semantics.
+
+** Stage 2: Minimal Evaluator
+Deliverables:
+
+- Literal evaluation.
+- Symbol lookup.
+- Dynamic environment stack.
+- Core special forms.
+- Lambda representation and application.
+- Basic error propagation.
+
+Coverage goals:
+
+- Dynamic binding behavior.
+- Function invocation semantics.
+- Nil and truthiness behavior.
+- Core special forms with edge cases.
+
+Exit criteria:
+
+- Small AutoLISP programs run correctly in batch mode.
+- Runtime behavior is validated with golden tests.
+
+** Stage 3: Core Builtins
+Deliverables:
+
+- Numeric, list, equality, string, and file-related builtins needed for early scripts.
+- Compatibility notes per builtin when behavior differs by dialect.
+
+Exit criteria:
+
+- A meaningful subset of existing AutoLISP utility code can execute under the mock host.
+
+** Stage 4: Host Abstraction and Mock Host
+Deliverables:
+
+- Abstract host API.
+- Mock host implementation.
+- Snapshot model and diff engine.
+
+Exit criteria:
+
+- Regression tests can execute without real CAD software.
+- Host interactions are reproducible.
+
+** Stage 5: Visual LISP and DCL
+Deliverables:
+
+- Initial ~vl-*~ families.
+- DCL parsing.
+- Dialog runtime abstraction.
+
+Exit criteria:
+
+- Representative UI and Visual LISP code paths run under test.
+
+** Stage 6: Real Host Integrations
+Deliverables:
+
+- AutoCAD adapter.
+- BricsCAD adapter.
+- Capability probing and compatibility matrix.
+
+Exit criteria:
+
+- Same AutoLISP test corpus can run on mock host and selected real hosts with explainable diffs.
+
+** Stage 7: Tooling and Delivery
+Deliverables:
+
+- Standalone CLI.
+- REPL support.
+- Debugger hooks.
+- Packaging and release process for SBCL and CCL.
+
+* Testing Plan
+** Core Principles
+- Every module must have implementation-independent tests that run on SBCL and CCL.
+- Reader and evaluator tests are higher priority than UI or CAD integration tests.
+- Prefer deterministic fixtures and golden files.
+- Separate pure language tests from host-dependent tests.
+
+** Test Layers
+*** Reader Tests
+Test:
+
+- Tokenization.
+- Parsing.
+- Source location capture.
+- Encoding handling.
+- Line-ending handling.
+- Syntax error diagnostics.
+- Dialect-specific syntax differences.
+
+Method:
+
+- Unit tests on token streams.
+- Golden tests on parsed forms.
+- Failure tests with expected diagnostics.
+
+*** Runtime Tests
+Test:
+
+- Symbol lookup.
+- Dynamic scoping.
+- Evaluation order.
+- Lambda application.
+- Special forms.
+- Error propagation.
+
+Method:
+
+- Program-level tests that evaluate forms and compare values.
+- Trace-oriented tests for environment behavior.
+
+*** Builtin Conformance Tests
+Test:
+
+- Function-by-function behavior.
+- Arity and type errors.
+- Edge cases around strings, numbers, and lists.
+- Dialect-specific availability.
+
+Method:
+
+- Shared conformance tables.
+- Per-dialect expected result files where behavior differs.
+
+*** Mock Host Integration Tests
+Test:
+
+- Entity creation and modification.
+- Selection set behavior.
+- Snapshot production.
+- Snapshot diffs.
+
+Method:
+
+- Scenario tests using fixture drawings or synthetic entity graphs.
+
+*** Real Host Compatibility Tests
+Test:
+
+- Same scenarios as mock host where possible.
+- Host-specific behavior differences.
+
+Method:
+
+- Mark as optional integration suites.
+- Run outside normal fast CI if host software is unavailable.
+
+** Test Matrix
+Minimum CI matrix:
+
+- SBCL + unit tests.
+- CCL + unit tests.
+- SBCL + integration tests on mock host.
+- CCL + integration tests on mock host.
+
+Optional matrix later:
+
+- AutoCAD host integration.
+- BricsCAD host integration.
+
+** Test Assets Needed Early
+- Small AutoLISP source corpus.
+- Malformed reader corpus.
+- Encoded input corpus with multiple external formats.
+- Mixed line-ending corpus.
+- Dialect compatibility corpus.
+- Snapshot fixtures for mock CAD state.
+
+* Immediate Next Steps
+1. Create real ASDF systems for reader, runtime, tests, and CLI.
+2. Implement the reader as the first substantive module.
+3. Define the runtime symbol abstraction before writing the evaluator.
+4. Establish the dialect descriptor API before adding many builtins.
+5. Build a mock host early so integration tests do not depend on CAD products.
+
+* Short Decision Summary
+- Choose a dedicated AutoLISP reader/parser, not only Common Lisp reader macros.
+- Keep AutoLISP symbols and environments separate from Common Lisp packages and bindings.
+- Introduce dialect descriptors from day one.
+- Build the project around a mock host and conformance tests.
+- Treat SBCL and CCL as first-class targets throughout development.

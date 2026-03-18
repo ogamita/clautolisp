@@ -1,0 +1,348 @@
+#+TITLE: Plan To Resolve Under-Specified AutoLISP / Visual LISP Semantics
+#+AUTHOR: Codex
+#+OPTIONS: toc:3 num:t
+
+* Purpose
+This document defines a concrete plan to resolve the currently under-specified areas in [autolisp-visual-lisp-specification-draft.org](/Users/pjb/src/public/clautolisp/documentation/autolisp-visual-lisp-specification-draft.org).
+
+The goal is to promote uncertain sections from:
+
+- under-specified
+- inferred
+
+to:
+
+- documented
+- or tested and version-qualified
+
+* Core Principle
+Not all evidence sources have the same authority.
+
+For language-specification work, the evidence ranking should be:
+
+1. Official vendor documentation.
+2. Executable tests against real AutoCAD and BricsCAD releases.
+3. Official vendor examples and shipped sample code.
+4. Large corpora of real-world AutoLISP code.
+5. Third-party implementations.
+6. Community discussions and folklore.
+
+This means:
+
+- code corpus scanning is useful,
+- third-party implementations are useful,
+- but neither should override vendor docs or real-product tests.
+
+* Short Answer to the Open Questions
+** Would scanning libraries of AutoLISP code help?
+Yes, but mainly as secondary evidence.
+
+It is useful for:
+
+- discovering syntax forms actually used in the wild,
+- estimating which edge cases matter in practice,
+- finding idiomatic use of special forms,
+- locating undocumented but commonly accepted patterns,
+- building a compatibility test corpus.
+
+It is not sufficient for:
+
+- proving that a syntax form is valid,
+- determining exact reader acceptance rules,
+- resolving version-specific behavior,
+- distinguishing vendor bugs from language semantics.
+
+** Would reading sources of other implementations help?
+Yes, but also as secondary evidence.
+
+It is useful for:
+
+- finding plausible semantic interpretations,
+- discovering tricky implementation areas,
+- identifying test cases already encountered by others,
+- comparing differing design assumptions.
+
+It is not sufficient for:
+
+- establishing normative behavior,
+- deciding between Autodesk and BricsCAD divergence,
+- resolving undocumented historical behavior without tests.
+
+* Recommended Workstreams
+** Workstream 1: Vendor Documentation Closure
+Goal:
+
+- close as many gaps as possible using official Autodesk and Bricsys sources.
+
+Tasks:
+
+1. Gather the dedicated pages for every core special form.
+2. Gather the dedicated pages for every reader-relevant primitive:
+   - `read`
+   - `read-line`
+   - `read-char`
+   - `open`
+   - `quote`
+   - `type`
+3. Gather all datatype concept pages:
+   - integers
+   - reals
+   - strings
+   - symbols
+   - lists
+   - dotted pairs
+   - points
+4. Search historical Autodesk versions for missing lexical details.
+5. Search BricsCAD compatibility pages for explicit differences.
+
+Deliverable:
+
+- update the specification so every core section has direct source citations.
+
+Success criterion:
+
+- each core language section can name the exact vendor page that supports it.
+
+** Workstream 2: Executable Compatibility Testing
+Goal:
+
+- resolve questions that the documentation leaves ambiguous.
+
+This is the highest-value next step after documentation.
+
+Tasks:
+
+1. Build a syntax probe suite for real AutoCAD and BricsCAD.
+2. For each candidate form, record:
+   - accepted or rejected,
+   - result value,
+   - error message,
+   - `ERRNO` where applicable,
+   - host version,
+   - platform.
+3. Store the results as versioned fixtures.
+
+Priority test topics:
+
+- numeric syntax:
+  - `1`
+  - `+1`
+  - `-1`
+  - `1.0`
+  - `1.`
+  - `.5`
+  - `0.5`
+  - `1e3`
+  - `1.e3`
+  - `.5e1`
+  - `+.5`
+- string escapes:
+  - backslash handling
+  - quote escaping
+  - newline/tab escapes
+  - non-ASCII characters
+- symbol syntax:
+  - mixed case
+  - punctuation
+  - vertical bars if accepted
+  - package-like names with `:`
+  - names ending or beginning with dot
+- quoting:
+  - nested quote
+  - quoting dotted pairs
+- special forms:
+  - exact return values
+  - zero-argument behavior
+  - short-circuit behavior
+  - duplicate local names
+- error behavior:
+  - wrong arity
+  - wrong type
+  - unbound symbol
+  - malformed dotted pair
+
+Deliverable:
+
+- a tested compatibility matrix per release and host.
+
+Success criterion:
+
+- every currently under-specified syntax rule is backed by executable evidence.
+
+** Workstream 3: Real-World Code Corpus Mining
+Goal:
+
+- learn which ambiguous constructs are actually important in practice.
+
+Source candidates:
+
+- open-source AutoLISP libraries on GitHub,
+- sample code shipped with vendor tools,
+- BricsCAD examples,
+- community utility libraries.
+
+Tasks:
+
+1. Collect a representative corpus.
+2. Index usage of:
+   - numeric literal forms,
+   - string escapes,
+   - quote usage,
+   - lambda usage,
+   - `function`,
+   - `defun-q`,
+   - reader-adjacent syntax,
+   - error-handling idioms.
+3. Record frequency and examples.
+4. Promote common patterns into the conformance test suite.
+
+Deliverable:
+
+- a corpus report and a test corpus extracted from real programs.
+
+Success criterion:
+
+- the spec and test suite cover syntax and semantics that real code actually uses.
+
+** Workstream 4: Comparative Implementation Study
+Goal:
+
+- use other implementations as design references and as hypothesis generators.
+
+Candidate implementations:
+
+- [VeLisp](https://github.com/ten0s/velisp)
+- any additional open-source AutoLISP interpreters or parsers found later
+
+Tasks:
+
+1. Read their reader/parser code.
+2. Extract their assumptions about:
+   - numeric syntax,
+   - symbol syntax,
+   - string escapes,
+   - truthiness,
+   - special forms,
+   - error handling.
+3. Compare these assumptions against vendor docs.
+4. Turn disagreements into explicit test cases.
+
+Rules:
+
+- never adopt behavior from another implementation only because it exists,
+- use differences to identify unresolved questions.
+
+Deliverable:
+
+- a comparative note set and additional regression tests.
+
+Success criterion:
+
+- third-party implementations help find gaps but do not silently define the spec.
+
+* Open Questions and Best Resolution Method
+** Exact Reader Grammar
+Best method:
+
+1. vendor docs,
+2. executable tests,
+3. corpus scan,
+4. implementation comparison.
+
+Reason:
+
+- this is where vendor docs are weak and product tests are strongest.
+
+** Numeric Literal Syntax
+Best method:
+
+1. product tests,
+2. vendor docs,
+3. corpus scan,
+4. third-party implementations.
+
+Reason:
+
+- this is exactly the kind of topic where documentation is often too informal.
+
+** String Escape Repertoire
+Best method:
+
+1. vendor docs,
+2. product tests,
+3. corpus scan.
+
+** Special Form Semantics
+Best method:
+
+1. dedicated vendor pages,
+2. product tests,
+3. corpus scan.
+
+** Error Behavior
+Best method:
+
+1. vendor docs,
+2. product tests,
+3. real-world error-handling code,
+4. implementation comparison.
+
+** Version Drift
+Best method:
+
+1. vendor release notes,
+2. versioned product tests.
+
+* Concrete Deliverables
+** Deliverable 1: Reader Questions Ledger
+A structured org file listing each unresolved syntax question with columns:
+
+- topic
+- example
+- AutoCAD documented?
+- BricsCAD documented?
+- AutoCAD tested?
+- BricsCAD tested?
+- status
+- decision
+
+** Deliverable 2: Compatibility Probe Suite
+A suite of `.lsp` programs that can be run under:
+
+- AutoCAD
+- BricsCAD
+- future `clautolisp`
+
+The suite should print machine-readable results where possible.
+
+** Deliverable 3: Corpus Index
+An index of real-world AutoLISP source forms found in the wild.
+
+** Deliverable 4: Comparative Notes
+A document capturing what VeLisp and any other implementation assume, with explicit notes where those assumptions remain unverified.
+
+* Suggested Immediate Sequence
+1. Create a reader-questions ledger.
+2. Collect the missing dedicated Autodesk pages for all core special forms.
+3. Build a minimal syntax probe suite.
+4. Assemble a small public AutoLISP corpus.
+5. Read VeLisp's reader/evaluator code and extract hypotheses.
+6. Feed all findings back into the specification with status labels.
+
+* Final Recommendation
+Yes, both of your proposed methods should be used.
+
+But they should be used in this order:
+
+1. official documentation first,
+2. real product tests second,
+3. corpus scanning third,
+4. third-party implementation study fourth.
+
+The decisive step is not corpus mining alone and not reading VeLisp alone.
+
+The decisive step is to turn every unresolved question into:
+
+- a documented citation,
+- or a versioned executable test result,
+- or an explicitly marked implementation-defined choice.

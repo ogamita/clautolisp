@@ -1,0 +1,174 @@
+#+TITLE: AutoLISP / Visual LISP Reference Notes
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+This file inventories the official references consulted during the information-gathering phase for AutoLISP / Visual LISP specification work.
+
+It is intentionally source-oriented rather than normative.
+
+* Autodesk References
+** Current Core Documentation
+- AutoLISP and Visual LISP
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-49AAEA0E-C422-48C4-87F0-52FCA491BF2C.htm
+  - High-level language history and positioning; states AutoLISP introduction in AutoCAD Release 2.1.
+- AutoLISP Developer's Guide
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-265AADB3-FB89-4D34-AA9D-6ADF70FF7D4B.htm
+  - Table of contents for language concepts, workflows, and DCL.
+- AutoLISP Functions By Name and Feature Reference
+  - https://help.autodesk.com/cloudhelp/2015/PLK/AutoCAD-AutoLISP/files/GUID-4CEE5072-8817-4920-8A2D-7060F5E16547.htm
+  - Useful for coarse partitioning of the language into feature families.
+- Related Developer References
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-7884190F-4603-4E9F-8FB3-0D683BD7C4C9.htm
+  - Pointers to DXF, ObjectARX, ActiveX, and Managed .NET references.
+
+** Language-Concept Pages
+- About Variables
+  - https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP/files/GUID-CC89231D-E10F-47D0-A1FD-A989D24C7105.htm
+- About Symbols and Variables
+  - https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP/files/GUID-1855E7B0-2474-49E6-9EE3-8BC541FC1CC8.htm
+- About Defining a Function
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP/files/GUID-9EDF48C2-1678-4DC3-BFD6-9D1DEAC525F0.htm
+- About Point Lists
+  - https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP/files/GUID-BFED8707-AB01-49BC-B0A9-D872794311DF.htm
+- About Dotted Pairs
+  - https://help.autodesk.com/cloudhelp/2022/PLK/AutoCAD-AutoLISP/files/GUID-877B87BA-6FA2-4894-9F94-184E7DF25B7D.htm
+- About Error Handling
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP/files/GUID-027AD2E0-5AC5-48DA-B451-112B7EECE40F.htm
+- Commenting Program Code
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Tutorials/files/GUID-D28C82C0-A490-4A89-B577-1E77FBA0F02A.htm
+
+** Reference Pages Used for Semantic Details
+- Function-handling Functions Reference
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6804DF2D-E5C4-466A-9869-3CDD7A031FAA.htm
+- Query and Command Functions Reference
+  - https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-F9ABE09D-9A71-4C00-8E5D-5BA70C3797B5.htm
+- Application-handling Functions Reference
+  - https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-E2B683FE-43FB-4F5D-A9AE-809772FE8D3B.htm
+- User Input Functions Reference
+  - https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-49DBE7DD-D1D2-4B3A-9718-E3F4E2FD5E81.htm
+- V Functions Reference
+  - https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-26FF2BE2-B5BF-4DD1-A617-36727E51F516.htm
+- VLX Namespace Functions Reference
+  - https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm
+- AutoLISP Extensions Reference
+  - https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-07C3599E-EC87-4EC0-8F0B-8DE4BD150A64.htm
+- About Supported Programming Interfaces
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Customization/files/GUID-E6429154-36DF-4D84-8ABC-9FCA15B66158.htm
+
+** Individual Function / Variable Pages Used for Version and Platform Notes
+- LISPSYS
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1853092D-6E6D-4A06-8956-AD2C3DF203A3.htm
+- ascii
+  - https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-03E1B586-72CB-4AB6-A151-B581AE530318.htm
+- vl-string-search
+  - https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-4E7AE1DA-1ED5-4D96-A7D3-34241AA94AA6.htm
+- setvar
+  - https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-B1CE1BFB-2448-47F1-95EC-10E9509F01FA.htm
+- vl-vbaload
+  - https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-54FD698E-8D94-4E27-9DF1-3F7E9D451E05.htm
+- vlax-import-type-library
+  - https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-LT-AutoLISP-Reference/files/GUID-1699B6A0-C4A6-4BC4-82DF-5040CFF3394A.htm
+- cons
+  - https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP-Reference/files/GUID-33B418E7-DB3D-4CBE-954E-F070F0A7CB2B.htm
+- cdr
+  - https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP-Reference/files/GUID-F9CD8FF3-022A-4323-BAE7-390174451537.htm
+- entmake
+  - https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-D47983BA-1E5D-417D-85B8-6F3DE5F506BA.htm
+- tblnext
+  - https://help.autodesk.com/cloudhelp/2026/PTB/AutoCAD-LT-AutoLISP-Reference/files/GUID-1720D8DC-5559-4AC1-8A75-3C932834D77C.htm
+- function
+  - https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-MAC-AutoLISP-Reference/files/GUID-CF7E5870-561F-42DB-B134-CCD41EF93A25.htm
+- *push-error-using-stack*
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-C28420C9-2210-4EEC-AA73-2962999D1BC1.htm
+
+** Release and Change History
+- What's New or Changed with AutoLISP (2026 page; includes recent release history)
+  - https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm
+- New and Changed AutoLISP Functions Reference (2015 page; contains 2009-2015 changes)
+  - https://help.autodesk.com/cloudhelp/2015/ESP/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm
+- AutoLISP Improvements (AutoCAD 2021)
+  - https://help.autodesk.com/cloudhelp/2021/ENU/AutoCAD-WhatsNew/files/GUID-80F564DA-A5C4-4242-91DB-2331E231E2A6.htm
+
+** Ancillary Autodesk Items
+- AutoCAD OEM Support for AutoLISP/LISP
+  - https://blog.autodesk.io/autocad-oem-support-for-autolisplisp/
+- Opensource Announcement for AutoCAD AutoLISP Extension
+  - https://blog.autodesk.io/opensource-announcement-for-autocad-autolisp-extension/
+
+* Bricsys References
+** General and Versioned Reference Access
+- Area for Developers
+  - https://help.bricsys.com/developers
+- Current-version LISP overview
+  - https://developer.bricsys.com/bricscad/help/en_US/CurVer/DevRef/source/LISP.htm
+- Offline Help for current and previous BricsCAD versions
+  - https://help.bricsys.com/en-us/document/knowledge-base/where-can-i-find-offline-help-for-current-and-previous-bricscad-versions
+
+** Developer Reference Overview by Version
+- V9 overview
+  - https://developer.bricsys.com/bricscad/help/en_US/V9/DevRef/source/IDR_DEV551.htm
+- V10 overview
+  - https://developer.bricsys.com/bricscad/help/en_US/V10/DevRef/source/DevRef_Overview.htm
+- V14 overview
+  - https://developer.bricsys.com/bricscad/help/en_US/V14/DevRef/source/DevRef_Overview.htm
+- V19 overview
+  - https://developer.bricsys.com/bricscad/help/en_US/V19/DevRef/source/DevRef_Overview.htm
+- V24 overview
+  - https://developer.bricsys.com/bricscad/help/en_US/V24/DevRef/source/DevRef_Overview.htm
+
+** BricsCAD Compatibility and Extension Pages
+- LISP Compatibility (V9)
+  - https://developer.bricsys.com/bricscad/help/en_US/V9/DevRef/source/IDR_LISP_B100.htm
+- What's New and What's More in BricsCAD Lisp
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/WhatsNew.htm
+- BricsCAD-specific LISP Functions
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/BricsCADLISPFunctions.htm
+- VLE LISP Function Library
+  - https://developer.bricsys.com/bricscad/help/en_US/V15/DevRef/source/VLELISPFunctionLibrary.htm
+- LISP Benchmark
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/LISPBenchmark.htm
+- Lisp Optimiser: How it works
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/Howitworks.htm
+- Optimised Code Patterns
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/OptimisedCodePatterns.htm
+- read + write text files
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/readwritetextfiles.htm
+- Generic Properties Functions
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/GenericPropertiesFunctions.htm
+- VLX NameSpace Support
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/VLXNameSpaceSupport.htm
+- DEScoder LISP encryption
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/DEScoderLISPencryption.htm
+- vlisp-compile
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/vlisp-compile.htm
+
+** BricsCAD Vertical / Extended LISP APIs
+- BIM LISP API
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/BricsCADBIMLISPAPI.htm
+- GeoCoordinateSystem LISP API
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/BricsCADGeoCoordinateSystemLISPA.htm
+- Mechanical LISP API
+  - https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/BricsCADMechanicalLISPAPI.htm
+- SheetSetManager COM/LISP API
+  - https://developer.bricsys.com/bricscad/help/en_US/V23/DevRef/source/BricsCADSheetSetManagerCOMLISPAP.htm
+
+** Current Help Center Material Relevant to Practical Compatibility
+- Migrating custom files
+  - https://help.bricsys.com/en-us/document/bricscad/getting-started-with-bricscad/migrating-custom-files
+- BLADE command
+  - English result was not directly surfaced in search, but current localized command-reference pages confirm BLADE as the BricsCAD Lisp Advanced Development Environment.
+- Release notes entry point
+  - https://help.bricsys.com/en-us/document/knowledge-base/where-can-i-find-the-release-notes
+
+* Main Conclusions from the Source Corpus
+- There is no single vendor-neutral AutoLISP / Visual LISP standard document comparable to the Common Lisp HyperSpec.
+- Autodesk's documentation corpus is the closest thing to a normative reference for the core language.
+- BricsCAD explicitly targets AutoLISP compatibility, but also extends the language/runtime significantly.
+- Version changes matter, especially for:
+  - Unicode behavior,
+  - Visual LISP / ActiveX availability,
+  - AutoCAD LT support,
+  - BricsCAD VLE and optimizer features,
+  - BricsCAD packaging, namespace, and vertical APIs.
+- Any implementation that aims at compatibility needs dialect and version switches, not a single undifferentiated behavior model.
