@@ -1,0 +1,1329 @@
+#+TITLE: AutoLISP / Visual LISP Language Specification
+#+SUBTITLE: Draft Reference Specification for clautolisp
+#+AUTHOR: Codex
+#+OPTIONS: toc:4 num:t
+
+* About This Document
+** Purpose
+This document is intended to serve as a reference specification for the AutoLISP and Visual LISP language family targeted by `/Users/pjb/src/public/clautolisp`.
+
+The goal is to make this document usable as a local reference, without requiring the reader to repeatedly consult vendor documentation.
+
+Because Autodesk and Bricsys do not publish a single HyperSpec-like language standard, this document synthesizes the effective language from:
+
+- Autodesk AutoLISP reference documentation,
+- Autodesk AutoLISP developer documentation,
+- Autodesk per-release change notes,
+- BricsCAD developer reference documentation,
+- BricsCAD version-history and compatibility notes.
+
+** Status
+This is a draft reference specification, not a vendor-issued standard.
+
+It contains three kinds of statements:
+
+- *Documented*: directly stated by Autodesk or Bricsys documentation.
+- *Inferred*: derived from documented examples, API signatures, cross-page consistency, or long-stable Lisp conventions.
+- *Under-specified*: areas where the published documentation does not fully determine the behavior.
+
+** Intended Use
+This document should be used as:
+
+- the semantic target for `clautolisp`,
+- the basis for test planning,
+- the basis for dialect partitioning,
+- the place where under-specified or implementation-defined decisions are recorded.
+
+** Non-Goals
+This document does not fully specify:
+
+- every AutoCAD or BricsCAD interactive command,
+- every DXF group code and object schema,
+- every COM, ActiveX, BRX, ARX, or .NET interface,
+- every vertical-product extension API.
+
+Those are host-interface layers, not the core language itself.
+
+* Conformance Model
+** Primary Conformance Sources
+In the absence of a single official standard, source priority for this specification is:
+
+1. Autodesk AutoLISP reference pages for current and historical releases.
+2. Autodesk AutoLISP Developer's Guide pages.
+3. Autodesk release-history pages for AutoLISP function additions, changes, and removals.
+4. BricsCAD developer-reference pages for compatibility and BricsCAD-specific extensions.
+5. BricsCAD release-history and compatibility notes.
+
+** Dialect Model
+This specification distinguishes the following layers:
+
+- *Core AutoLISP*: language features expected to be common across major hosts.
+- *Visual LISP*: Autodesk-originated language extensions and tooling/runtime facilities.
+- *AutoCAD-specific behavior*: Autodesk host behavior and platform limits.
+- *BricsCAD-specific behavior*: BricsCAD compatibility extensions and divergences.
+
+** Conformance Levels for clautolisp
+`clautolisp` should eventually distinguish:
+
+- a core language profile,
+- an AutoCAD-compatible profile,
+- a BricsCAD-compatible profile,
+- optional Visual LISP / COM / namespace / reactor profiles.
+
+** Strict and Lax Acceptance Modes
+In addition to dialect profiles, `clautolisp` should support acceptance-policy profiles.
+
+The primary intended policies are:
+
+- *strict mode*: reject source constructs that are insufficiently specified, poorly portable, historically inconsistent, or known to vary across products or versions.
+- *lax mode*: accept the broadest behavior compatible with known AutoLISP / Visual LISP practice, including implementation-supported extensions and syntax tolerated by one or more target environments.
+
+Purpose:
+
+- strict mode helps users write portable source that is more likely to run unchanged across multiple AutoLISP hosts,
+- lax mode helps users run existing real-world code in `clautolisp`, even when that code depends on underspecified or vendor-specific behavior.
+
+The strict/lax setting should be controlled by explicit configuration or command-line options.
+
+Strict/lax policy is independent from:
+
+- target CAD dialect,
+- target host-environment profile,
+- native operating system.
+
+** Notes and Sources
+- Autodesk language overview: [AutoLISP and Visual LISP](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-49AAEA0E-C422-48C4-87F0-52FCA491BF2C.htm)
+- Autodesk guide overview: [AutoLISP Developer's Guide](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-265AADB3-FB89-4D34-AA9D-6ADF70FF7D4B.htm)
+- BricsCAD overview: [BricsCAD Developer Reference V24 Overview](https://developer.bricsys.com/bricscad/help/en_US/V24/DevRef/source/DevRef_Overview.htm)
+
+* Historical Overview
+** Autodesk
+Autodesk states that AutoLISP was introduced in AutoCAD Release 2.1 in the mid-1980s.
+
+Visual LISP is treated by Autodesk as an extension and tooling layer on top of AutoLISP.
+
+In current Autodesk documentation, the Visual LISP layer includes:
+
+- `vl-*` functions,
+- `vlax-*` and `vla-*` functions,
+- `vlr-*` reactor functions,
+- VLX namespace functions,
+- editor/debugger support.
+
+** BricsCAD
+BricsCAD presents its LISP environment as substantially AutoLISP-compatible, while also documenting host-specific additions.
+
+BricsCAD has historically added:
+
+- BricsCAD-specific LISP functions,
+- extended `ssget` and `osnap` modes,
+- the VLE library,
+- Lisp optimizer behavior,
+- DEScoder encryption support,
+- its own namespace and packaging compatibility facilities,
+- broader cross-platform COM-style behavior than Autodesk documents.
+
+** Notes and Sources
+- Autodesk history statement: [AutoLISP and Visual LISP](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-49AAEA0E-C422-48C4-87F0-52FCA491BF2C.htm)
+- BricsCAD early compatibility statement: [LISP Compatibility, BricsCAD V9](https://developer.bricsys.com/bricscad/help/en_US/V9/DevRef/source/IDR_LISP_B100.htm)
+- BricsCAD version-history summary: [What's New and What's More in BricsCAD Lisp](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/WhatsNew.htm)
+
+* Syntax
+** General Form of Programs
+An AutoLISP program consists of expressions.
+
+Expressions include:
+
+- atoms,
+- symbols,
+- numbers,
+- strings,
+- lists,
+- dotted pairs,
+- quoted expressions,
+- function calls,
+- special forms.
+
+The concrete surface syntax is parenthesized Lisp syntax.
+
+** Reader Model
+The Autodesk documentation documents the surface syntax through examples and through the `read` function, but does not publish a full formal grammar comparable to the Common Lisp reader specification.
+
+For the purposes of this specification, the reader accepts at least:
+
+- atoms separated by symbol delimiters,
+- list syntax with parentheses,
+- dotted-pair syntax,
+- string literals in double quotes,
+- quoted syntax using a leading apostrophe,
+- numeric literals,
+- semicolon comments.
+
+Anything beyond that baseline should be treated as under-specified until confirmed by documentation or tests.
+
+** Symbol Delimiters
+Autodesk states that the `read` function treats blanks, newlines, tabs, and parentheses as symbol delimiters.
+
+Therefore these characters terminate ordinary tokens in at least the string-reader model.
+
+** Interactive Prompt Escape
+Autodesk examples sometimes show a leading `!` in interactive examples such as `!'a`.
+
+This is command-line interaction syntax, not core source-file syntax, and should not be part of the core language grammar.
+
+** Notes and Sources
+- `read`: [read (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm)
+- `quote`: [quote (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-18F7E287-CB2F-4150-9A07-CE23C3F9E604.htm)
+- Status: partially documented, partially inferred.
+
+** Comments
+Semicolon comments are the documented source comment syntax.
+
+Anything from a semicolon to end of line is treated as a comment in ordinary source style.
+
+The documentation does not present comment syntax as a formal grammar, but does consistently teach semicolon comments for source code.
+
+** Notes and Sources
+- [Commenting Program Code (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Tutorials/files/GUID-D28C82C0-A490-4A89-B577-1E77FBA0F02A.htm)
+- Status: documented at the tutorial/documentation level, not as a formal grammar.
+
+** Symbols
+*** General
+Symbols are case-insensitive.
+
+Autodesk states that symbol names may consist of alphanumeric and notation characters, except for at least the following restricted characters:
+
+- `(`
+- `)`
+- `.`
+- `'`
+- `"`
+- `;`
+
+A symbol name cannot consist solely of numeric characters.
+
+*** Canonicalization
+Autodesk examples print symbols in uppercase.
+
+This specification therefore treats symbol-name reading as case-insensitive with an uppercase print convention, unless a future compatibility mode proves otherwise.
+
+*** Protected / Special Symbol Names
+The following symbols have predefined language roles:
+
+- `nil`
+- `T`
+- `PI`
+- `PAUSE`
+- `*error*`
+
+BricsCAD also documents certain internal and protected names that must not be redefined in application code.
+
+*** Notes and Sources
+- [About Symbols and Variables (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP/files/GUID-1855E7B0-2474-49E6-9EE3-8BC541FC1CC8.htm)
+- [atoms-family (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0B35850D-9E62-446B-BAA2-0598A4BDE3D7.htm)
+- [BricsCAD LISP Protected Names](https://developer.bricsys.com/bricscad/help/en_US/V22/DevRef/source/BricsCADLISPProtectedNames.htm)
+- Status: partially documented.
+
+** Integers
+*** General
+An integer is a whole number without a decimal point.
+
+Autodesk states that AutoLISP integers are 32-bit signed integers, with range:
+
+- minimum: -2,147,483,648
+- maximum: +2,147,483,647
+
+Some functions accept only 16-bit integers.
+
+*** Reader Syntax
+The documentation gives examples such as:
+
+- `2`
+- `-56`
+
+This specification therefore adopts the following conservative grammar:
+
+#+begin_example
+integer ::= sign? digit+
+sign    ::= "+" | "-"
+digit   ::= "0" | "1" | ... | "9"
+#+end_example
+
+This grammar is *inferred* from examples and from the statement that integers are whole numbers without a decimal point.
+
+*** Overflow
+If a literal integer greater than the maximum integer is entered, Autodesk states that AutoLISP converts it to a real.
+
+If an arithmetic operation on valid integers overflows the valid integer range, Autodesk states that the result is invalid.
+
+*** Notes and Sources
+- [About Integers (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-MAC-AutoLisp/files/GUID-EF6114FC-F1E4-4C71-91CC-07D01E6C8ABB.htm)
+- [fix (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-93B5F13B-348E-49E0-A116-0861684506D5.htm)
+- Status: documented in prose; formal lexical grammar inferred.
+
+** Reals
+*** General
+A real is a number containing a decimal point.
+
+Numbers between -1 and 1 must contain a leading zero.
+
+Reals are stored in double-precision floating-point format, with at least 14 significant digits of precision.
+
+Reals may be expressed in scientific notation using `e` or `E`.
+
+*** Reader Syntax
+The documentation provides examples such as:
+
+- `3.1`
+- `0.23`
+- `-56.123`
+- `4.1e-6`
+
+This specification therefore adopts the following conservative grammar:
+
+#+begin_example
+real ::= sign? digit+ "." digit* exponent?
+       | sign? digit+ exponent
+exponent ::= ("e" | "E") sign? digit+
+#+end_example
+
+Additional constraint:
+
+- when the absolute value is less than 1, a leading zero is required before the decimal point.
+
+*** Under-Specified Cases
+The published sources do not clearly state:
+
+- whether `.5` is accepted or rejected by the reader,
+- whether `1.` is accepted,
+- whether exponent-only forms without a decimal point are accepted in all releases,
+- whether digit-group separators shown in localized prose examples are accepted in source syntax.
+
+These items remain under-specified until confirmed by tests.
+
+*** Strict/Lax Policy
+- strict mode:
+  - accept only forms clearly supported by vendor prose and examples, such as `1.0`, `0.5`, `-56.123`, `4.1e-6`,
+  - reject ambiguous forms such as `.5`, `1.`, and any locale-sensitive notation not explicitly standardized.
+- lax mode:
+  - may accept additional numeric surface forms if they are confirmed by tests, commonly used in real code, or needed for compatibility with a target dialect.
+
+** Notes and Sources
+- [About Reals (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP/files/GUID-F2BFD097-295B-4499-BBD9-0A785C377070.htm)
+- [read (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm)
+- Status: partly documented, partly inferred, with explicit under-specified cases.
+
+** Strings
+*** General
+A string is a sequence of characters enclosed in double quotes.
+
+Within strings, backslash introduces escape/control sequences.
+
+*** Reader Syntax
+This specification adopts:
+
+#+begin_example
+string ::= "\"" string-char* "\""
+#+end_example
+
+where `string-char` includes ordinary characters and backslash escape sequences.
+
+*** Escape Semantics
+Autodesk documents that backslash allows control characters or escape codes to be included, but does not provide in the sampled materials a full formal table of all escape sequences.
+
+Therefore:
+
+- backslash escapes are documented,
+- the complete escape repertoire is currently under-specified in this document.
+
+*** Strict/Lax Policy
+- strict mode:
+  - accept only escape sequences explicitly documented or directly confirmed by tests against target hosts,
+  - reject unknown or implementation-only escape forms.
+- lax mode:
+  - may accept additional escape sequences for compatibility, provided they do not conflict with documented behavior.
+
+*** Unicode Transition
+Beginning with AutoCAD 2021, Autodesk documents Unicode-related changes controlled by `LISPSYS`.
+
+This affects string-processing functions and character I/O behavior.
+
+BricsCAD also documents explicit Unicode-aware file open modes.
+
+** Notes and Sources
+- [About Strings (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ESP/AutoCAD-AutoLISP/files/GUID-D7C33A49-9715-4E9B-9D8A-4C2E7BFC0FE5.htm)
+- [LISPSYS](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1853092D-6E6D-4A06-8956-AD2C3DF203A3.htm)
+- [read + write text files (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/readwritetextfiles.htm)
+- Status: documented in principle; exact escape repertoire under-specified.
+
+** Lists
+*** General
+A list is a sequence of values enclosed in parentheses and separated by spaces.
+
+Lists are used for:
+
+- program forms,
+- ordinary data,
+- point values,
+- association lists,
+- entity and table data.
+
+*** Syntax
+This specification adopts:
+
+#+begin_example
+list ::= "(" element* ")"
+#+end_example
+
+where elements are separated by one or more delimiters or by list syntax.
+
+*** Empty List
+The empty list is written `()`.
+
+Autodesk documentation also identifies `nil` as the empty list in semantic usage.
+
+** Notes and Sources
+- [About Lists (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-F8074AA9-F361-4960-B628-681465B74229.htm)
+- [list (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-2BA66308-DE64-4BA6-8F57-6E3EC1A93141.htm)
+- [listp (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP-Reference/files/GUID-8755F083-D3BA-45F0-BBAF-D60D3A73240C.htm)
+- Status: documented.
+
+** Dotted Pairs
+*** General
+A dotted pair is an improper list of two members, written with a period separating the car and cdr parts.
+
+Examples:
+
+- `(A . 2)`
+- `(LYR . "WALLS")`
+
+*** Role in the Language
+Dotted pairs are central to:
+
+- association lists,
+- entity definition data,
+- DXF-like property structures.
+
+They are not marginal reader syntax.
+
+*** Syntax
+This specification adopts:
+
+#+begin_example
+dotted-pair ::= "(" expression "." expression ")"
+#+end_example
+
+*** Notes and Sources
+- [About Dotted Pairs (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/PLK/AutoCAD-AutoLISP/files/GUID-877B87BA-6FA2-4894-9F94-184E7DF25B7D.htm)
+- [cons (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-33B418E7-DB3D-4CBE-954E-F070F0A7CB2B.htm)
+- [cdr (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP-Reference/files/GUID-F9CD8FF3-022A-4323-BAE7-390174451537.htm)
+- Status: documented.
+
+** Quotation
+*** General
+`quote` returns an expression without evaluating it.
+
+The leading apostrophe syntax is shorthand for `quote`.
+
+Examples:
+
+- `(quote a)`
+- `'a`
+- `'(a b)`
+
+*** Syntax
+This specification adopts:
+
+#+begin_example
+quoted-expression ::= "'" expression
+#+end_example
+
+*** Notes and Sources
+- [quote (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-18F7E287-CB2F-4150-9A07-CE23C3F9E604.htm)
+- Status: documented.
+
+** Other Reader Syntax
+The sampled Autodesk and BricsCAD sources do not provide a formal reader grammar for:
+
+- backquote,
+- comma,
+- comma-at,
+- vertical-bar symbol escaping,
+- package syntax,
+- sharpsign dispatch,
+- reader conditionals.
+
+Accordingly, this specification does not yet standardize those forms.
+
+If later tests demonstrate that some of these are accepted in practice, they should be recorded as:
+
+- documented,
+- implementation-defined,
+- or explicitly unsupported by `clautolisp`.
+
+*** Strict/Lax Policy
+- strict mode:
+  - reject all non-standardized reader syntax beyond the core constructs documented in this specification.
+- lax mode:
+  - may accept additional reader syntax if compatibility testing or target-dialect requirements justify it.
+
+** Notes and Sources
+- Absence inferred from the sampled vendor corpus, not from a formal prohibition.
+
+* Data and Types
+** General Type Universe
+The type universe explicitly exposed by Autodesk documentation includes at least:
+
+- `INT`
+- `REAL`
+- `STR`
+- `LIST`
+- `SYM`
+- `FILE`
+- `ENAME`
+- `PICKSET`
+- `SUBR`
+- `USUBR`
+- `PAGETB`
+- `EXRXSUBR`
+- `SAFEARRAY`
+- `VARIANT`
+- `VLA-object`
+
+The `type` function returns these type designators as symbols or `nil`.
+
+** Nil
+`nil` is both:
+
+- the false value,
+- the empty list.
+
+It is not treated as a symbol by `vl-symbolp`.
+
+`listp` returns `T` for `nil`.
+
+`atom` returns `T` for `nil` because anything not a non-empty list is an atom in the documented AutoLISP sense.
+
+** T
+`T` is the canonical true value and a predefined symbol value.
+
+Predicates generally return `T` or `nil`, although some evaluation contexts use "non-`nil` means true" more generally.
+
+** Symbols
+Symbols denote:
+
+- variable bindings,
+- function names,
+- command names,
+- type-designator atoms,
+- quoted data.
+
+** Lists and Cons Cells
+The language operationally distinguishes:
+
+- `nil`,
+- proper lists,
+- dotted pairs / improper lists.
+
+The precise low-level cons-cell model is not formally documented, but is strongly implied by `cons`, `car`, `cdr`, dotted-pair syntax, and association-list use.
+
+** Points
+Points are represented as ordinary lists:
+
+- 2D points: lists of two numbers,
+- 3D points: lists of three numbers.
+
+Autodesk and BricsCAD host APIs rely heavily on this convention.
+
+** Selection Sets
+Selection sets are first-class host values of type `PICKSET`.
+
+Selection-set indexing is zero-based.
+
+To access elements beyond index 32,767, Autodesk requires a real-valued index in some functions such as `ssname`.
+
+** Entity Names
+Entity names are first-class host values of type `ENAME`.
+
+They represent drawing objects and are returned by functions like `entlast`, `ssname`, and `namedobjdict`.
+
+** File Descriptors
+`open` returns file descriptors of type `FILE`.
+
+These are consumed by `read-line`, `read-char`, and output functions.
+
+** Visual LISP / ActiveX Types
+Visual LISP adds at least:
+
+- `SAFEARRAY`
+- `VARIANT`
+- `VLA-object`
+
+These are not universally available on all Autodesk platforms.
+
+** Notes and Sources
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- [listp (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP-Reference/files/GUID-8755F083-D3BA-45F0-BBAF-D60D3A73240C.htm)
+- [vl-symbolp (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-F51AFE0A-CA6C-428D-8E8D-3607BF551990.htm)
+- [About Point Lists (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP/files/GUID-BFED8707-AB01-49BC-B0A9-D872794311DF.htm)
+- [ssname (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-LT-AutoLISP-Reference/files/GUID-EFB83751-9AC5-4C52-AD3D-D971BC560C15.htm)
+- [namedobjdict (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-A1E43B30-EF8C-452E-97F5-8AC201E310EE.htm)
+
+* Evaluation Model
+** Self-Evaluating Objects
+The following objects are self-evaluating in documented examples and usage:
+
+- integers,
+- reals,
+- strings,
+- `T`,
+- `nil`.
+
+Lists are not self-evaluating unless quoted.
+
+** Symbol Evaluation
+Ordinary symbol evaluation yields the value bound to the symbol.
+
+Autodesk documentation exposes this through:
+
+- `eval`,
+- `set`,
+- `setq`,
+- `vl-symbol-value`.
+
+Unassigned symbols behave as `nil` under `type`, which documents that "items that evaluate to nil (such as unassigned symbols) return nil."
+
+This is a useful semantic clue, but the complete unbound-variable model is not fully formalized in the vendor corpus sampled here.
+
+** Function Call Evaluation
+Ordinary function calls evaluate arguments before invoking the function.
+
+Autodesk explicitly contrasts this with special forms.
+
+** Evaluation Order
+Autodesk error-handling documentation states that AutoLISP evaluates all arguments before checking argument types, and contrasts this with earlier releases where argument evaluation and checking happened sequentially.
+
+Therefore:
+
+- modern AutoCAD semantics use full argument evaluation before argument-type validation,
+- older releases differed in at least some cases.
+
+`clautolisp` should treat this as version-sensitive behavior.
+
+** Truth and Conditionals
+Conditional semantics are based on `nil` versus non-`nil`.
+
+However, some predicate-style operators, notably Autodesk's documented `or`, return `T` or `nil` rather than the first non-`nil` value as in Common Lisp.
+
+This is an important language difference and should not be silently replaced by CL semantics.
+
+** Notes and Sources
+- [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
+- [eval (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-D9B3E6CC-A982-4040-AE6E-6FD63D6C54D0.htm)
+- [vl-symbol-value (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP-Reference/files/GUID-5DAAABCF-7210-4A90-809D-6C27CCEF64F1.htm)
+- [About Error Handling (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-AutoLISP/files/GUID-027AD2E0-5AC5-48DA-B451-112B7EECE40F.htm)
+- [or (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-64ECF4D5-0714-45FD-8E27-284E9D2FC8B2.htm)
+- Status: partly documented, with important version-sensitive behavior.
+
+* Variables and Binding
+** Global Variables
+Symbols may be given values globally using `setq` or `set`.
+
+Global bindings are pervasive in normal AutoLISP style.
+
+** Local Variables in defun
+`defun` and `defun-q` support a slash-separated local-variable syntax:
+
+#+begin_example
+(defun name (arg1 arg2 / local1 local2) ...)
+#+end_example
+
+Autodesk explicitly documents:
+
+- argument names,
+- local variable names after `/`,
+- the requirement that the slash be separated by spaces.
+
+This syntax is part of the language and should be modeled by the parser, not by a generic CL lambda-list parser.
+
+** Duplicate Names
+For `defun-q`, Autodesk documents that duplicate argument or local names are tolerated, with the first occurrence used and later occurrences ignored.
+
+The sampled `defun` documentation corpus did not explicitly state whether this exact rule applies to `defun`, but compatibility suggests caution.
+
+** Strict/Lax Policy
+- strict mode:
+  - reject duplicate argument or local names in `defun` unless explicitly documented for the active dialect,
+  - optionally warn about `defun-q` compatibility quirks even when accepted.
+- lax mode:
+  - accept duplicate names where target behavior is known or where broad compatibility practice requires it.
+
+** Predefined Values
+Autodesk documents at least:
+
+- `T`
+- `PI`
+- `PAUSE`
+
+These should be treated as predefined bindings.
+
+** Notes and Sources
+- [About Variables (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP/files/GUID-CC89231D-E10F-47D0-A1FD-A989D24C7105.htm)
+- [About Defining a Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP/files/GUID-9EDF48C2-1678-4DC3-BFD6-9D1DEAC525F0.htm)
+- [defun-q (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP-Reference/files/GUID-5EE138EF-D531-441B-9F12-8D5645C540FE.htm)
+- Status: documented at the practical language level; precise formal scope model still inferred.
+
+* Functions and Special Forms
+** Overview
+Autodesk explicitly identifies the following as special forms:
+
+- `and`
+- `command`
+- `cond`
+- `defun`
+- `defun-q`
+- `foreach`
+- `function`
+- `if`
+- `lambda`
+- `or`
+- `progn`
+- `quote`
+- `repeat`
+- `setq`
+- `trace`
+- `untrace`
+- `vlax-for`
+- `while`
+
+Anything not in this set should be treated as an ordinary function unless otherwise documented.
+
+** `quote`
+Syntax:
+
+#+begin_example
+(quote expr)
+'expr
+#+end_example
+
+Semantics:
+
+- returns `expr` without evaluating it.
+
+Return value:
+
+- the unevaluated expression itself.
+
+** `if`
+Syntax:
+
+#+begin_example
+(if testexpr thenexpr [elseexpr])
+#+end_example
+
+Semantics:
+
+- evaluate `testexpr`,
+- if result is non-`nil`, evaluate and return `thenexpr`,
+- otherwise evaluate and return `elseexpr` if present,
+- otherwise return `nil`.
+
+** `cond`
+Syntax:
+
+#+begin_example
+(cond [(test result ...) ...])
+#+end_example
+
+Semantics:
+
+- evaluate test expressions in order,
+- for the first non-`nil` test:
+  - if result forms are present, evaluate them sequentially and return the last,
+  - otherwise return the value of the successful test.
+- if no clause succeeds, return `nil`.
+
+** `setq`
+Syntax:
+
+#+begin_example
+(setq sym expr [sym expr] ...)
+#+end_example
+
+Semantics:
+
+- `sym` is not evaluated,
+- each `expr` is evaluated,
+- each symbol is assigned in left-to-right order,
+- the value of the last `expr` is returned.
+
+** `set`
+Syntax:
+
+#+begin_example
+(set sym expr)
+#+end_example
+
+Semantics:
+
+- both arguments are evaluated,
+- the evaluated first argument must designate a symbol,
+- assigns the second value to that symbol.
+
+`set` differs from `setq` in evaluating the symbol-designating argument.
+
+** `while`
+Syntax:
+
+#+begin_example
+(while testexpr [expr ...])
+#+end_example
+
+Semantics:
+
+- evaluate `testexpr`,
+- while it is non-`nil`, evaluate body forms in order,
+- repeat until `testexpr` becomes `nil`.
+
+Return value:
+
+- the most recent value of the last body expression.
+
+** `repeat`
+Syntax:
+
+#+begin_example
+(repeat int [expr ...])
+#+end_example
+
+Semantics:
+
+- evaluate body forms `int` times,
+- `int` must be positive,
+- if no body form is supplied, return `nil`.
+
+Return value:
+
+- the value of the last expression evaluated in the final iteration.
+
+** `foreach`
+Syntax:
+
+#+begin_example
+(foreach name list [expr ...])
+#+end_example
+
+Semantics:
+
+- iterate through the elements of `list`,
+- bind each element in turn to `name`,
+- evaluate each body expression for each element.
+
+Return value:
+
+- the result of the last expression evaluated,
+- or `nil` if no body forms are supplied.
+
+** `and`
+Autodesk identifies `and` as a special form, but the sampled corpus here does not include the full per-page reference text.
+
+By strong consistency with vendor documentation style and Lisp convention, the intended behavior is sequential conjunction with short-circuiting.
+
+However, until the dedicated function page is cited in a later revision, this section should be treated as *inferred* rather than fully documented.
+
+** `or`
+Syntax:
+
+#+begin_example
+(or [expr ...])
+#+end_example
+
+Semantics according to Autodesk:
+
+- evaluate expressions left to right,
+- return `T` if any expression evaluates non-`nil`,
+- return `nil` otherwise.
+
+This differs from Common Lisp, where `or` returns the first non-`nil` value.
+
+** `defun`
+General syntax:
+
+#+begin_example
+(defun sym ([arguments] [/ locals ...]) expr ...)
+#+end_example
+
+Semantics:
+
+- defines a named function,
+- if the name begins with `C:`, the function is callable as a CAD command.
+
+The exact return value of the defining form is not fully standardized in the sampled source set and should be regarded as under-specified until a dedicated `defun` reference page is incorporated.
+
+** `defun-q`
+Syntax:
+
+#+begin_example
+(defun-q sym ([arguments] [/ variables ...]) expr ...)
+#+end_example
+
+Semantics:
+
+- backward-compatible list-structure function definition,
+- intended for legacy compatibility,
+- function definition remains inspectable as a list.
+
+Duplicate parameter/local names:
+
+- first occurrence is used,
+- later duplicates are ignored.
+
+** `lambda`
+Autodesk identifies `lambda` as a special form and Visual LISP usage examples show lambda expressions in function position and inside `function`.
+
+The exact standalone `lambda` reference page was not captured in this pass, so the following should be treated as *inferred*:
+
+- `lambda` creates an anonymous function object,
+- it uses AutoLISP parameter and local-variable conventions rather than Common Lisp lambda-list semantics.
+
+** `function`
+Autodesk identifies `function` as a special form and documents it separately.
+
+In Visual LISP practice it is commonly used to mark lambda expressions or function names for functional use without full evaluator mediation.
+
+The exact semantics are more compiler/tooling-sensitive than in core AutoLISP.
+
+** `progn`
+Autodesk identifies `progn` as a special form.
+
+By standard vendor usage and examples, it should be treated as sequential evaluation returning the last value.
+
+The dedicated page was not gathered in this pass, so this remains *inferred but highly likely*.
+
+** Strict/Lax Policy
+- strict mode:
+  - warn or reject constructs whose semantics remain only inferred when a safer documented alternative exists,
+  - prefer documented special-form behavior and reject extensions not tied to the selected dialect.
+- lax mode:
+  - accept inferred but strongly established behavior when needed for compatibility with existing code.
+
+** `command` and `command-s`
+`command` is a special form because of its interaction with the host command processor.
+
+`command-s` is a related command-execution function added later and recommended in some `*error*` contexts.
+
+These functions belong partly to the language core and partly to host integration.
+
+** Notes and Sources
+- [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
+- [if (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-916F1A5C-FD70-4D66-897E-6DCD666DCB39.htm)
+- [cond (AutoLISP)](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7BA45202-D95F-4F2D-8D83-965024826074.htm)
+- [setq (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-2F4B7A7B-7B6F-4E1C-B32E-677506094EAA.htm)
+- [set (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-041BE20B-CFA6-465B-A98B-1BCBDC810881.htm)
+- [repeat (AutoLISP)](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-AutoLISP-Reference/files/GUID-413F72B4-BA37-4E5E-9D51-A0091130A317.htm)
+- [while (AutoLISP)](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-AutoLISP-Reference/files/GUID-E7C900DB-8B66-4109-BEF6-B0A18E8CF6B6.htm)
+- [foreach (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-BE6A23C4-4E18-45A6-854E-2DE9574A6925.htm)
+- [or (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-64ECF4D5-0714-45FD-8E27-284E9D2FC8B2.htm)
+- [defun-q (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP-Reference/files/GUID-5EE138EF-D531-441B-9F12-8D5645C540FE.htm)
+- [command-s (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-5C9DC003-3DD2-4770-95E7-7E19A4EE19A1.htm)
+- Status: mixed documented / inferred; each subsection above marks the confidence level.
+
+* Predicates and Equality
+** General
+AutoLISP predicate-style functions typically return `T` or `nil`.
+
+This includes:
+
+- `atom`
+- `listp`
+- `numberp`
+- `vl-symbolp`
+- numeric comparison functions
+- `zerop`
+
+** Atom
+`atom` returns `nil` if the item is a list and `T` otherwise.
+
+Autodesk warns that some Lisp dialects interpret `atom` differently, so portability from non-AutoLISP Lisps should be approached cautiously.
+
+** List Predicate
+`listp` returns `T` for lists, including `nil`.
+
+** Number Predicate
+`numberp` returns `T` for integers and reals.
+
+** Symbol Predicate
+`vl-symbolp` returns `T` for symbols.
+
+Autodesk explicitly documents:
+
+- `(vl-symbolp t) => T`
+- `(vl-symbolp nil) => nil`
+
+This is a significant distinction and should be preserved.
+
+** Comparison Operators
+Numeric/string comparison operators such as `<`, `<=`, `>`, `>=`, and `=` return `T` or `nil`.
+
+With a single argument, comparison operators return `T`.
+
+These operators accept strings as well as numbers in Autodesk documentation.
+
+** Notes and Sources
+- [atom (AutoLISP)](https://help.autodesk.com/cloudhelp/2019/KOR/AutoCAD-AutoLISP-Reference/files/GUID-3B74E28D-7C3B-4409-9DFE-0305E9881560.htm)
+- [listp (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP-Reference/files/GUID-8755F083-D3BA-45F0-BBAF-D60D3A73240C.htm)
+- [numberp (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-1E5B591C-F60B-43CB-8CD8-E729D72B12FC.htm)
+- [vl-symbolp (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-F51AFE0A-CA6C-428D-8E8D-3607BF551990.htm)
+- [< (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-67C8900F-0491-4D91-AA05-9136639E7424.htm)
+- [<= (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-66B7B146-E279-4C22-9C0A-1F312166C15B.htm)
+- [> (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ITA/AutoCAD-LT-AutoLISP-Reference/files/GUID-DAB2660E-AB9D-425D-B0C5-C5774164ADCD.htm)
+
+* Files, Characters, and Text I/O
+** File Opening
+Current Autodesk syntax:
+
+#+begin_example
+(open filename mode [encoding])
+#+end_example
+
+Older Autodesk syntax lacked the `encoding` argument.
+
+Modes:
+
+- `"r"` read
+- `"w"` write
+- `"a"` append
+
+Mode letters may be uppercase or lowercase.
+
+** Character I/O
+`read-char` reads from the keyboard buffer or an open file.
+
+Autodesk documents:
+
+- earlier versions returned ASCII-oriented values,
+- from AutoCAD 2021, return values changed to support Unicode characters.
+
+End-of-line normalization:
+
+- `read-char` returns a single newline code `10` for any end-of-line marker or sequence it detects.
+
+This is an important normalization rule.
+
+** Line I/O
+`read-line` reads a line without the end-of-line marker and returns `nil` at end of file.
+
+** String Input
+`getstring` obtains user input as a string and explicitly does not allow the user to enter another AutoLISP expression as the response.
+
+This is a user-input facility, not a reader facility.
+
+** String-to-Object Reading
+`read` parses the string representation of AutoLISP data and returns the first expression found.
+
+It only reads the first expression even if more follow.
+
+** Encoding
+Autodesk added explicit encoding support to `open`.
+
+BricsCAD documents extended open modes with Unicode-aware and legacy modes.
+
+For `clautolisp`, external-format handling should therefore be considered a standardized part of the runtime boundary.
+
+** Notes and Sources
+- [open (AutoLISP), current](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-089A323F-21FF-4337-99A9-375758E23BA4.htm)
+- [open (AutoLISP), earlier form](https://help.autodesk.com/cloudhelp/2015/ENU/AutoCAD-AutoLISP/files/GUID-089A323F-21FF-4337-99A9-375758E23BA4.htm)
+- [read-char (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/KOR/AutoCAD-AutoLISP-Reference/files/GUID-7E94BD14-F018-47D0-88DA-2B08DE32DB2C.htm)
+- [read-line (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/FRA/AutoCAD-MAC-Core/files/GUID-AC74D827-0969-4888-91C0-C3149DEC3659.htm)
+- [read (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm)
+- [getstring (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-B139EFBD-74B7-4276-B422-D2186F7D8D0A.htm)
+- [read + write text files (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/readwritetextfiles.htm)
+
+* Errors and Exceptional Situations
+** General Model
+AutoLISP error handling is documented in terms of:
+
+- error messages,
+- the `*error*` function,
+- `ERRNO`,
+- `vl-catch-all-*` functions,
+- `*push-error-using-command*`,
+- `*push-error-using-stack*`,
+- `*pop-error-mode*`.
+
+This is not a condition system comparable to Common Lisp conditions and restarts.
+
+For `clautolisp`, CL conditions should therefore be translated into AutoLISP-visible error behavior.
+
+** `*error*`
+`*error*` is the classic dynamic error hook.
+
+It is passed a string describing the error.
+
+Programs use it to:
+
+- restore system variables,
+- roll back command state,
+- suppress messages for cancel/quit,
+- centralize error reporting.
+
+** Catch-All Errors
+Visual LISP adds:
+
+- `vl-catch-all-apply`
+- `vl-catch-all-error-p`
+- `vl-catch-all-error-message`
+
+These permit trapping failures and continuing program execution.
+
+** ERRNO
+Autodesk publishes an Error Codes Reference linked to `ERRNO`.
+
+It includes:
+
+- entity and selection-set errors,
+- invalid argument and range classes,
+- file and ADS-related classes,
+- selection-filter error classes.
+
+Autodesk explicitly warns that `ERRNO` values and meanings are subject to change.
+
+** Multiple Possible Errors
+Autodesk explicitly states that, when an expression contains more than one error, a program must not rely on a single specific error always being reported.
+
+This means some error reporting is intentionally nondeterministic with respect to exact message choice.
+
+** Strict/Lax Policy
+- strict mode:
+  - prefer deterministic and portable error classification,
+  - reject ambiguous constructs earlier where doing so improves portability diagnostics.
+- lax mode:
+  - preserve permissive acceptance and defer more failures to runtime when necessary to match host behavior.
+
+** Normative Guidance for clautolisp
+`clautolisp` should:
+
+- prevent raw CL errors from leaking,
+- convert implementation failures into AutoLISP-visible errors,
+- support `*error*`,
+- support `vl-catch-all-*`,
+- provide an `ERRNO`-style numeric classification layer,
+- avoid overcommitting to exact message identity unless tests confirm it for a target dialect.
+
+** Notes and Sources
+- [About Error Handling (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-AutoLISP/files/GUID-027AD2E0-5AC5-48DA-B451-112B7EECE40F.htm)
+- [About Using the *error* Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP/files/GUID-2AC47A3C-7E80-414D-9134-EABA0003193F.htm)
+- [*error* (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-CF913180-17CC-43C7-B89F-3BC82FFBEFB9.htm)
+- [About Catching Errors and Continuing Program Execution (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-9DDAD8C4-FB10-4C15-B59E-F6E05C1F9672.htm)
+- [*push-error-using-stack*](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-C28420C9-2210-4EEC-AA73-2962999D1BC1.htm)
+- [command-s (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-5C9DC003-3DD2-4770-95E7-7E19A4EE19A1.htm)
+- [Error Codes Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/HUN/AutoCAD-AutoLISP/files/GUID-97327347-2A13-4CBC-BDBF-979C7F1CABD5.htm)
+
+* Host Interaction
+** Command Invocation
+`command` and `command-s` invoke host commands.
+
+These forms are semantically tied to:
+
+- the CAD command loop,
+- prompt/input state,
+- undo and command versioning,
+- the host's localized command environment.
+
+Therefore they cannot be modeled as pure language functions.
+
+** System Variables
+`getvar` and `setvar` form part of the language/host boundary.
+
+Autodesk explicitly documents that `setvar` does not always behave exactly like the interactive `SETVAR` command.
+
+** Entity and Table Access
+AutoLISP uses association lists of dotted pairs for entity data and filter lists.
+
+This host-level representation is language-defining in practice.
+
+** Selection Sets
+Selection-set functions expose host-managed collections with language-visible operations.
+
+** Notes and Sources
+- [Query and Command Functions Reference](https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-F9ABE09D-9A71-4C00-8E5D-5BA70C3797B5.htm)
+- [setvar (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-B1CE1BFB-2448-47F1-95EC-10E9509F01FA.htm)
+- [About Selection Set Filter Lists (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-AutoLISP/files/GUID-7BE77062-C359-4D01-915B-69CF672C653B.htm)
+- [entmake (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-D47983BA-1E5D-417D-85B8-6F3DE5F506BA.htm)
+- [tblnext (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PTB/AutoCAD-LT-AutoLISP-Reference/files/GUID-1720D8DC-5559-4AC1-8A75-3C932834D77C.htm)
+
+* Visual LISP
+** General
+Visual LISP is an extension layer over AutoLISP, not a replacement for it.
+
+It includes:
+
+- `vl-*` helper functions,
+- `vlax-*` / `vla-*` COM and ActiveX-related functions,
+- `vlr-*` reactors,
+- `vl-catch-all-*` error facilities,
+- namespace and VLX support,
+- tooling support.
+
+** Platform Variation
+Autodesk's current documentation makes Visual LISP highly platform-sensitive:
+
+- Windows has the fullest support.
+- Mac and Web support only subsets.
+- AutoCAD LT supports only subsets.
+
+BricsCAD diverges by extending some COM-like and LISP capabilities across additional platforms.
+
+** Namespace and Packaging
+Autodesk documents VLX namespace functions.
+
+BricsCAD documents VLX namespace support separately and also documents DEScoder-based packaging rather than claiming binary compatibility with Autodesk VLX/FAS artifacts.
+
+** Notes and Sources
+- [AutoLISP Extensions Reference](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-07C3599E-EC87-4EC0-8F0B-8DE4BD150A64.htm)
+- [VLX Namespace Functions Reference](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
+- [vl-vbaload (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-54FD698E-8D94-4E27-9DF1-3F7E9D451E05.htm)
+- [vlax-import-type-library (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-LT-AutoLISP-Reference/files/GUID-1699B6A0-C4A6-4BC4-82DF-5040CFF3394A.htm)
+- [VLX NameSpace Support (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/VLXNameSpaceSupport.htm)
+- [DEScoder LISP encryption (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/DEScoderLISPencryption.htm)
+
+* DCL
+** General
+DCL is an associated dialog language used by AutoLISP applications for user interfaces.
+
+It is not part of the core expression language, but it is part of the practical AutoLISP application ecosystem.
+
+** Host Variation
+Autodesk documents DCL as part of AutoLISP documentation and notes that Mac support was added in AutoCAD 2021.
+
+BricsCAD documents DCL compatibility as a longstanding feature.
+
+** Notes and Sources
+- [AutoLISP Developer's Guide](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-265AADB3-FB89-4D34-AA9D-6ADF70FF7D4B.htm)
+- [AutoLISP Improvements (AutoCAD 2021)](https://help.autodesk.com/cloudhelp/2021/ENU/AutoCAD-WhatsNew/files/GUID-80F564DA-A5C4-4242-91DB-2331E231E2A6.htm)
+- [BricsCAD Developer Reference Overview V14](https://developer.bricsys.com/bricscad/help/en_US/V14/DevRef/source/DevRef_Overview.htm)
+
+* Versioned Evolution
+** AutoCAD
+The Autodesk release-history material documents the following especially important language/runtime milestones:
+
+- AutoCAD 2009: `initcommandversion`
+- AutoCAD 2011: generic property functions, Mac support for many functions
+- AutoCAD 2012: `command-s`, `*push-error-using-command*`, `*push-error-using-stack*`, `*pop-error-mode*`
+- AutoCAD 2013: `vlax-machine-product-key`
+- AutoCAD 2014: trusted-path related changes, `findtrustedfile`
+- AutoCAD 2016: `osnap` change; `getcfg` and `setcfg` obsolete
+- AutoCAD 2021: Unicode/LISPSYS transition; VS Code extension; DCL on Mac
+- AutoCAD 2024: AutoCAD LT gains AutoLISP and DCL support
+- AutoCAD 2025: `acet-load-expresstools`
+
+** BricsCAD
+The BricsCAD version-history material documents:
+
+- V9 compatibility baseline and explicit differences
+- V12.2 VLE library and optimizer
+- V14 ExpressTools support
+- V18.2 BLADE and VLX namespace work
+- V21 generic property functions
+- V22-V25 expanded COM/property/civil/BIM/mechanical APIs
+
+** Notes and Sources
+- [What's New or Changed with AutoLISP](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm)
+- [New and Changed AutoLISP Functions Reference (2015)](https://help.autodesk.com/cloudhelp/2015/ESP/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm)
+- [AutoLISP Improvements (AutoCAD 2021)](https://help.autodesk.com/cloudhelp/2021/ENU/AutoCAD-WhatsNew/files/GUID-80F564DA-A5C4-4242-91DB-2331E231E2A6.htm)
+- [What's New and What's More in BricsCAD Lisp](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/WhatsNew.htm)
+
+* Implementation Guidance for clautolisp
+** Core Principle
+Do not silently substitute Common Lisp semantics where Autodesk or BricsCAD semantics differ.
+
+Examples already identified:
+
+- `or` return-value behavior differs from Common Lisp.
+- `nil` treatment in `vl-symbolp` differs from naive CL expectations.
+- reader and numeric syntax are not guaranteed to match Common Lisp.
+- error handling is not CL condition handling.
+
+** Reader Strategy
+Because the vendor corpus does not publish a formal reader grammar, the reader should be implemented as:
+
+- an explicit AutoLISP reader/parser,
+- with source location tracking,
+- with dialect/version options,
+- and with a test corpus for disputed syntax.
+
+** Error Strategy
+Common Lisp conditions must be translated into AutoLISP-visible errors.
+
+No raw CL condition should escape across the AutoLISP boundary.
+
+** Dialect Strategy
+At minimum, `clautolisp` should distinguish:
+
+- core AutoLISP,
+- Visual LISP,
+- Unicode-era AutoCAD behavior,
+- BricsCAD-specific extensions.
+
+** Strict/Lax Strategy
+`clautolisp` should support at least one explicit strictness option, for example:
+
+- `--strict`
+- `--lax`
+
+or an equivalent configuration setting.
+
+This option should affect acceptance and diagnostics in areas where the vendor specifications are incomplete or divergent.
+
+The following currently identified areas should be modeled as strict/lax decision points:
+
+1. numeric literal syntax
+   - examples: `.5`, `1.`, exponent-only variants, locale-influenced notation
+2. string escape repertoire
+   - acceptance of undocumented escapes
+3. non-core reader syntax
+   - backquote, comma, vertical-bar escaping, sharpsign forms, package-like syntax
+4. duplicate parameter or local names
+   - especially `defun` versus `defun-q`
+5. inferred special-form behavior
+   - acceptance of forms whose semantics are only indirectly documented
+6. runtime versus early rejection
+   - whether to reject dubious forms during reading/parsing or defer to evaluation
+7. vendor-specific extensions not selected by dialect
+   - whether to reject them strictly or tolerate them in compatibility mode
+
+Recommended default policy:
+
+- use strict mode for portability-oriented development and conformance testing,
+- use lax mode for compatibility execution of existing codebases.
+
+* Under-Specified Areas
+The following remain under-specified in this document because the sampled official sources were insufficiently formal:
+
+- complete reader grammar beyond the core constructs listed above,
+- exact acceptance or rejection of `1.`, `.5`, and exponent-only numeric surface forms,
+- exact escape repertoire inside strings,
+- exact `defun` return-value rules,
+- exact standalone `lambda`, `function`, and `progn` semantics from dedicated pages,
+- exact scope/binding model as a formal semantics rather than practical documentation,
+- exact behavior of compiled artifacts such as FAS/VLX beyond the documented packaging interfaces,
+- exact reactor semantics.
+
+These should be resolved by:
+
+1. further vendor-document research,
+2. executable compatibility tests against AutoCAD and BricsCAD,
+3. explicit specification notes once confirmed.
+
+Until then, each such area should be treated as a potential strict/lax configuration point.
+
+* Summary
+There is no single HyperSpec-like official AutoLISP standard.
+
+Accordingly, this document serves as a working reference specification, combining:
+
+- documented vendor behavior,
+- careful inference,
+- explicit under-specification markers.
+
+It is designed to be tightened over time until it becomes the project's effective language reference.
