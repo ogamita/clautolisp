@@ -1,4 +1,4 @@
-#+TITLE: Common Lisp AutoLISP Runtime & IDE - Detailed Architecture and Specification Draft
+#+TITLE: clautolisp - Common Lisp AutoLISP Runtime & IDE - Detailed Architecture and Specification Draft
 #+AUTHOR: Converted from PDF
 #+OPTIONS: toc:2 num:t
 
