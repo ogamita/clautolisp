@@ -91,6 +91,7 @@ General directives for this repository.
 - Specifications converted from PDF should be maintained as Org mode files when added to the repository.
 - Planning, architecture, and decision documents should be written in Org mode under the appropriate subproject `documentation/` directory.
 - Each subproject must have a `PLAN.md` file at its root.
+- Within the `clautolisp/` implementation subproject, each ASDF system should live in its own subdirectory, with its own `PLAN.md`, documentation, sources, and related module-local files.
 - Actionable task lists, upcoming work, and backlog items belong in the subproject `PLAN.md`, not in the explanatory Org documents.
 - Keep documentation aligned with actual architectural decisions and module boundaries.
 - `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org` has the short name `AutoLISP Spec`.
