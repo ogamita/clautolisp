@@ -41,6 +41,39 @@
     (is (typep (fifth items) 'symbol-object))
     (is (typep (sixth items) 'comment-object))))
 
+(test read-block-comments
+  (let* ((result (read-forms-from-string "(a ;| block
+comment |; b)"))
+         (object (first (read-result-objects result))))
+    (is (typep object 'cons-object))
+    (is (= 2 (length (cons-object-elements object))))))
+
+(test read-concrete-block-comments
+  (let* ((result (read-concrete-from-string "(a ;| block
+comment |; b)"))
+         (object (first (read-result-objects result)))
+         (items (concrete-list-object-items object)))
+    (is (typep object 'concrete-list-object))
+    (is (= 3 (length items)))
+    (is (typep (second items) 'comment-object))
+    (is (eq :block-comment (comment-object-kind (second items))))))
+
+(test read-string-with-extended-escapes
+  (let* ((result (read-forms-from-string
+                  "\"Erreur d\\u+00E9tect\\u+00E9e \\#ok\\\".\""
+                  :extended-string-escapes-p t))
+         (object (first (read-result-objects result))))
+    (is (typep object 'string-object))
+    (is (string= "Erreur détectée #ok\"."
+                 (string-object-value object)))))
+
+(test read-string-with-default-quote-and-backslash-escapes
+  (let* ((result (read-forms-from-string "\"a\\\\b\\\"c\""))
+         (object (first (read-result-objects result))))
+    (is (typep object 'string-object))
+    (is (string= "a\\b\"c"
+                 (string-object-value object)))))
+
 (test normalized-line-endings
   (let* ((result
            (read-forms-from-string

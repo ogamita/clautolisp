@@ -32,7 +32,10 @@
   (make-comment-object
    :text (token-value token)
    :span (token-span token)
-   :kind :line-comment))
+   :kind (if (and (>= (length (token-lexeme token)) 2)
+                  (string= ";|" (subseq (token-lexeme token) 0 2)))
+             :block-comment
+             :line-comment)))
 
 (defun token-to-dot-object (token)
   (make-dot-object

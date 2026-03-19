@@ -31,8 +31,15 @@ verbose=0
 paths_file=""
 declare -a reader_options=()
 declare -a positional_paths=()
+pending_reader_option=""
 
 while (($# > 0)); do
+    if [[ -n "$pending_reader_option" ]]; then
+        reader_options+=("$1")
+        pending_reader_option=""
+        shift
+        continue
+    fi
     case "$1" in
         --help)
             usage
@@ -68,13 +75,13 @@ while (($# > 0)); do
         -*)
             reader_options+=("$1")
             shift
-            if [[ ${reader_options[-1]} == "--canonical-case" || ${reader_options[-1]} == "--external-format" ]]; then
+            if [[ ${reader_options[${#reader_options[@]}-1]} == "--canonical-case" || \
+                  ${reader_options[${#reader_options[@]}-1]} == "--external-format" ]]; then
                 if (($# == 0)); then
-                    echo "read-all-autolisp: missing argument after ${reader_options[-1]}" >&2
+                    echo "read-all-autolisp: missing argument after ${reader_options[${#reader_options[@]}-1]}" >&2
                     exit 2
                 fi
-                reader_options+=("$1")
-                shift
+                pending_reader_option=${reader_options[${#reader_options[@]}-1]}
             fi
             ;;
         *)
@@ -83,6 +90,11 @@ while (($# > 0)); do
             ;;
     esac
 done
+
+if [[ -n "$pending_reader_option" ]]; then
+    echo "read-all-autolisp: missing argument after $pending_reader_option" >&2
+    exit 2
+fi
 
 reader_program="$script_directory/read-autolisp/bin/read-autolisp-$implementation"
 if [[ ! -x "$reader_program" ]]; then

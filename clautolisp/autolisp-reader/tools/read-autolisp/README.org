@@ -44,6 +44,7 @@ Supported options:
 - ~--strict~
 - ~--lax~
 - ~--warn-on-integer-overflow~
+- ~--extended-string-escapes~
 - ~--canonical-case upcase~
 - ~--canonical-case downcase~
 - ~--canonical-case preserve~
@@ -127,5 +128,7 @@ through directly.
 * Notes
 - Use ~--external-format~ when the input file encoding is known and should be
   forced.
+- Use ~--extended-string-escapes~ for implementation-defined string escapes such
+  as ~\"~, ~\#~, and ~\u+00E9~.
 - Use ~--warn-on-integer-overflow~ to report decimal integer syntax that is
   reclassified as a real because it exceeds the signed 32-bit integer range.

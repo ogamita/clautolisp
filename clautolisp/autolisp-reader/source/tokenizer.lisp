@@ -105,6 +105,69 @@
    :end-line end-line
    :end-column end-column))
 
+(defun hex-digit-p (ch)
+  (and ch (digit-char-p ch 16)))
+
+(defun recover-after-string-error (text index line column)
+  (let ((length (length text)))
+    (loop while (< index length)
+          for ch = (char text index)
+          do (cond
+               ((char= ch #\Newline)
+                (incf index)
+                (incf line)
+                (setf column 1))
+               ((char= ch #\")
+                (return (values (1+ index) line (1+ column))))
+               (t
+                (incf index)
+                (incf column))))
+    (values index line column)))
+
+(defun scan-unicode-escape (text backslash-index line column options)
+  (let* ((length (length text))
+         (u-index (1+ backslash-index))
+         (plus-index (1+ u-index))
+         (digit-start (1+ plus-index)))
+    (unless (and (< plus-index length)
+                 (char-equal (char text u-index) #\u)
+                 (char= (char text plus-index) #\+))
+      (return-from scan-unicode-escape
+        (values nil backslash-index line column nil)))
+    (let ((digit-end (+ digit-start 4)))
+      (unless (and (<= digit-end length)
+                   (loop for index from digit-start below digit-end
+                         always (hex-digit-p (char text index))))
+        (let ((end-column (+ column (- digit-end backslash-index))))
+          (return-from scan-unicode-escape
+            (values nil
+                    digit-end
+                    line
+                    end-column
+                    (list
+                     (make-diagnostic
+                      :severity :error
+                      :code :invalid-unicode-escape
+                      :message "Unicode escape must use \\u+ followed by at least four hexadecimal digits."
+                      :span (make-span options line column line end-column)))))))
+      (let* ((digits (subseq text digit-start digit-end))
+             (code (parse-integer digits :radix 16))
+             (character (code-char code))
+             (next-column (+ column (- digit-end backslash-index))))
+        (unless character
+          (return-from scan-unicode-escape
+            (values nil
+                    digit-end
+                    line
+                    next-column
+                    (list
+                     (make-diagnostic
+                      :severity :error
+                      :code :invalid-unicode-codepoint
+                      :message "Unicode escape does not designate a valid character."
+                      :span (make-span options line column line next-column))))))
+        (values character digit-end line next-column '())))))
+
 (defun scan-string-literal (text start-index line column options)
   (let ((length (length text))
         (index (1+ start-index))
@@ -143,17 +206,64 @@
                      :lexeme lexeme
                      :value (get-output-stream-string value-out)
                      :span (make-span options line0 col0 line end-column)
-                     :acceptance-mode :strict)
+                    :acceptance-mode :strict)
                     end-index
                     line
                     end-column
                     '())))))
+          ((and (char= ch #\\)
+                (< (1+ index) length)
+                (member (char text (1+ index)) '(#\\ #\")))
+           (write-char (char text (1+ index)) value-out)
+           (incf index 2)
+           (incf column 2))
+          ((and (char= ch #\\)
+                (reader-options-extended-string-escapes-p options))
+           (when (>= (1+ index) length)
+             (return
+               (values nil
+                       (1+ index)
+                       line
+                       (1+ column)
+                       (list
+                        (make-diagnostic
+                         :severity :error
+                         :code :dangling-string-escape
+                         :message "Dangling escape at end of string literal."
+                         :span (make-span options line column line (1+ column)))))))
+           (multiple-value-bind (unicode-char next-index next-line next-column diags)
+               (scan-unicode-escape text index line column options)
+             (cond
+               (diags
+                (multiple-value-bind (recovered-index recovered-line recovered-column)
+                    (recover-after-string-error text next-index next-line next-column)
+                  (return (values nil
+                                  recovered-index
+                                  recovered-line
+                                  recovered-column
+                                  diags))))
+               (unicode-char
+                (write-char unicode-char value-out)
+                (setf index next-index
+                      line next-line
+                      column next-column))
+               (t
+                (write-char (char text (1+ index)) value-out)
+                (incf index 2)
+                (incf column 2)))))
           (t
            (write-char ch value-out)
            (incf index)
            (incf column)))))))
 
 (defun scan-comment (text start-index line column options)
+  (let ((length (length text)))
+    (if (and (< (1+ start-index) length)
+             (char= (char text (1+ start-index)) #\|))
+        (scan-block-comment text start-index line column options)
+        (scan-line-comment text start-index line column options))))
+
+(defun scan-line-comment (text start-index line column options)
   (let ((length (length text))
         (index start-index)
         (column0 column))
@@ -172,6 +282,52 @@
      line
      column
      '())))
+
+(defun scan-block-comment (text start-index line column options)
+  (let ((length (length text))
+        (index (+ start-index 2))
+        (line0 line)
+        (column0 column))
+    (incf column 2)
+    (loop
+      (when (>= index length)
+        (return
+          (values nil
+                  index
+                  line
+                  column
+                  (list
+                   (make-diagnostic
+                    :severity :error
+                    :code :unterminated-block-comment
+                    :message "Unterminated block comment."
+                    :span (make-span options line0 column0 line column))))))
+      (let ((ch (char text index)))
+        (cond
+          ((and (char= ch #\|)
+                (< (1+ index) length)
+                (char= (char text (1+ index)) #\;))
+           (let ((end-index (+ index 2))
+                 (end-column (+ column 2)))
+             (return
+               (values
+                (make-token
+                 :kind :comment
+                 :lexeme (subseq text start-index end-index)
+                 :value (subseq text start-index end-index)
+                 :span (make-span options line0 column0 line end-column)
+                 :acceptance-mode :strict)
+                end-index
+                line
+                end-column
+                '()))))
+          ((char= ch #\Newline)
+           (incf index)
+           (incf line)
+           (setf column 1))
+          (t
+           (incf index)
+           (incf column)))))))
 
 (defun classify-lexeme-token (lexeme span options)
   (let* ((strictp (eq (reader-options-token-mode options) :strict))

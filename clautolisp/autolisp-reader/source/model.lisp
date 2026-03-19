@@ -20,12 +20,14 @@
                  (retain-comments-p nil)
                  (recover-malformed-p nil)
                  (warn-on-integer-overflow-p nil)
+                 (extended-string-escapes-p nil)
                  (canonical-case :upcase)
                  source-name)))
   (token-mode :strict :type keyword)
   (retain-comments-p nil :type boolean)
   (recover-malformed-p nil :type boolean)
   (warn-on-integer-overflow-p nil :type boolean)
+  (extended-string-escapes-p nil :type boolean)
   (canonical-case :upcase :type keyword)
   (source-name nil :type (or null string)))
 
@@ -96,6 +98,8 @@
          :recover-malformed-p (reader-options-recover-malformed-p options)
          :warn-on-integer-overflow-p
          (reader-options-warn-on-integer-overflow-p options)
+         :extended-string-escapes-p
+         (reader-options-extended-string-escapes-p options)
          :canonical-case (reader-options-canonical-case options)
          :source-name (reader-options-source-name options)
          initargs))

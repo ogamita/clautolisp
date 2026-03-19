@@ -76,6 +76,9 @@
 (defun reader-options-warn-on-integer-overflow-p (options)
   (clautolisp.autolisp-reader.internal::reader-options-warn-on-integer-overflow-p options))
 
+(defun reader-options-extended-string-escapes-p (options)
+  (clautolisp.autolisp-reader.internal::reader-options-extended-string-escapes-p options))
+
 (defun reader-options-canonical-case (options)
   (clautolisp.autolisp-reader.internal::reader-options-canonical-case options))
 
@@ -224,13 +227,16 @@
   (clautolisp.autolisp-reader.internal::read-result-diagnostics result))
 
 (defun tokenize-string (text &key options (token-mode :strict) retain-comments-p
-                               warn-on-integer-overflow-p source-name)
+                               warn-on-integer-overflow-p
+                               extended-string-escapes-p
+                               source-name)
   (let* ((effective-options
            (clautolisp.autolisp-reader.internal::ensure-reader-options
             options
             :token-mode token-mode
             :retain-comments-p retain-comments-p
             :warn-on-integer-overflow-p warn-on-integer-overflow-p
+            :extended-string-escapes-p extended-string-escapes-p
             :source-name source-name))
          (normalized
            (clautolisp.autolisp-reader.internal:normalize-line-endings text)))
@@ -238,17 +244,21 @@
      normalized effective-options)))
 
 (defun tokenize-stream (stream &key options (token-mode :strict) retain-comments-p
-                                 warn-on-integer-overflow-p source-name)
+                                 warn-on-integer-overflow-p
+                                 extended-string-escapes-p
+                                 source-name)
   (tokenize-string
    (clautolisp.autolisp-reader.internal:decode-and-normalize-stream stream)
    :options options
    :token-mode token-mode
    :retain-comments-p retain-comments-p
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
+   :extended-string-escapes-p extended-string-escapes-p
    :source-name source-name))
 
 (defun tokenize-file (path &key options (token-mode :strict) retain-comments-p
                                warn-on-integer-overflow-p source-name
+                               extended-string-escapes-p
                                external-format)
   (tokenize-string
    (if external-format
@@ -259,16 +269,20 @@
    :token-mode token-mode
    :retain-comments-p retain-comments-p
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
+   :extended-string-escapes-p extended-string-escapes-p
    :source-name (or source-name (namestring path))))
 
 (defun read-forms-from-string (text &key options (token-mode :strict)
-                                    warn-on-integer-overflow-p source-name)
+                                    warn-on-integer-overflow-p
+                                    extended-string-escapes-p
+                                    source-name)
   (let ((effective-options
           (clautolisp.autolisp-reader.internal::ensure-reader-options
            options
            :token-mode token-mode
            :retain-comments-p nil
            :warn-on-integer-overflow-p warn-on-integer-overflow-p
+           :extended-string-escapes-p extended-string-escapes-p
            :source-name source-name)))
     (clautolisp.autolisp-reader.internal::parse-normalized-text
      (clautolisp.autolisp-reader.internal:normalize-line-endings text)
@@ -276,16 +290,20 @@
      #'clautolisp.autolisp-reader.internal:parse-form-tokens)))
 
 (defun read-forms-from-stream (stream &key options (token-mode :strict)
-                                      warn-on-integer-overflow-p source-name)
+                                      warn-on-integer-overflow-p
+                                      extended-string-escapes-p
+                                      source-name)
   (read-forms-from-string
    (clautolisp.autolisp-reader.internal:decode-and-normalize-stream stream)
    :options options
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
+   :extended-string-escapes-p extended-string-escapes-p
    :source-name source-name))
 
 (defun read-forms-from-file (path &key options (token-mode :strict)
                                        warn-on-integer-overflow-p source-name
+                                       extended-string-escapes-p
                                        external-format)
   (read-forms-from-string
    (if external-format
@@ -295,16 +313,20 @@
    :options options
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
+   :extended-string-escapes-p extended-string-escapes-p
    :source-name (or source-name (namestring path))))
 
 (defun read-concrete-from-string (text &key options (token-mode :strict)
-                                       warn-on-integer-overflow-p source-name)
+                                       warn-on-integer-overflow-p
+                                       extended-string-escapes-p
+                                       source-name)
   (let ((effective-options
           (clautolisp.autolisp-reader.internal::ensure-reader-options
            options
            :token-mode token-mode
            :retain-comments-p t
            :warn-on-integer-overflow-p warn-on-integer-overflow-p
+           :extended-string-escapes-p extended-string-escapes-p
            :source-name source-name)))
     (clautolisp.autolisp-reader.internal::parse-normalized-text
      (clautolisp.autolisp-reader.internal:normalize-line-endings text)
@@ -312,16 +334,20 @@
      #'clautolisp.autolisp-reader.internal:parse-concrete-tokens)))
 
 (defun read-concrete-from-stream (stream &key options (token-mode :strict)
-                                         warn-on-integer-overflow-p source-name)
+                                         warn-on-integer-overflow-p
+                                         extended-string-escapes-p
+                                         source-name)
   (read-concrete-from-string
    (clautolisp.autolisp-reader.internal:decode-and-normalize-stream stream)
    :options options
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
+   :extended-string-escapes-p extended-string-escapes-p
    :source-name source-name))
 
 (defun read-concrete-from-file (path &key options (token-mode :strict)
                                           warn-on-integer-overflow-p source-name
+                                          extended-string-escapes-p
                                           external-format)
   (read-concrete-from-string
    (if external-format
@@ -331,4 +357,5 @@
    :options options
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
+   :extended-string-escapes-p extended-string-escapes-p
    :source-name (or source-name (namestring path))))
