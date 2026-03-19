@@ -22,10 +22,10 @@ The Org documents in `documentation/` remain the place for specification text, e
 
 ## Validation Tasks
 
-- [ ] Build a minimal syntax probe suite for AutoCAD and BricsCAD.
-- [ ] Implement numeric probes for `atoi`.
-- [ ] Implement numeric probes for `atof`.
-- [ ] Implement output-format probes for `prin1`, `princ`, `print`, `terpri`, and `prompt`.
+- [x] Build a minimal syntax probe suite for AutoCAD and BricsCAD.
+- [x] Implement numeric probes for `atoi`.
+- [x] Implement numeric probes for `atof`.
+- [x] Implement output-format probes for `prin1`, `princ`, `print`, `terpri`, and `prompt`.
 - [ ] Run the probes on at least one recent AutoCAD release.
 - [ ] Run the probes on at least one recent BricsCAD release.
 - [ ] Record results with product name, version, platform, and relevant configuration.

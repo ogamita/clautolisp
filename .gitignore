@@ -125,4 +125,5 @@ xcuserdata
 xdb2/
 yarn-error.log
 yarn.lock
+autolisp-spec/results/
 ~*
