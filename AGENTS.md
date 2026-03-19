@@ -89,6 +89,9 @@ General directives for this repository.
 - Specifications converted from PDF should be maintained as Org mode files when added to the repository.
 - Planning, architecture, and decision documents should be written in Org mode under `documentation/`.
 - Keep documentation aligned with actual architectural decisions and module boundaries.
+- `documentation/autolisp-visual-lisp-specification-draft.org` has the short name `AutoLISP Spec`.
+- `documentation/autolisp-visual-lisp-specification-draft.org` must carry an explicit document version.
+- Any modification to `documentation/autolisp-visual-lisp-specification-draft.org` must increment that document version.
 
 ## External References and Candidate Dependencies
 
