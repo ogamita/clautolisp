@@ -43,6 +43,16 @@
              :name name
              :original-name original-name))))
 
+(defun set-autolisp-symbol-value (symbol value)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-symbol-value symbol) value
+        (clautolisp.autolisp-runtime.internal::autolisp-symbol-value-bound-p symbol) t)
+  value)
+
+(defun set-autolisp-symbol-function (symbol function)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-symbol-function symbol) function
+        (clautolisp.autolisp-runtime.internal::autolisp-symbol-function-bound-p symbol) t)
+  function)
+
 (defun runtime-value-p (object)
   (or (null object)
       (typep object '(signed-byte 32))
@@ -98,11 +108,23 @@
 (defun autolisp-subr-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-subr-name object))
 
+(defun make-autolisp-subr (name function)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-subr
+   :name name
+   :function function))
+
 (defun autolisp-subr-function (object)
   (clautolisp.autolisp-runtime.internal::autolisp-subr-function object))
 
 (defun autolisp-usubr-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-name object))
+
+(defun make-autolisp-usubr (name lambda-list body environment)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-usubr
+   :name name
+   :lambda-list lambda-list
+   :body body
+   :environment environment))
 
 (defun autolisp-usubr-lambda-list (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-lambda-list object))
@@ -196,6 +218,15 @@
   (unless (typep object 'autolisp-symbol)
     (error "Expected an AutoLISP symbol, got ~S." object))
   (autolisp-symbol-value object))
+
+(defun call-autolisp-function (function &rest arguments)
+  (cond
+    ((typep function 'autolisp-subr)
+     (apply (autolisp-subr-function function) arguments))
+    ((typep function 'autolisp-usubr)
+     (error "User-defined AutoLISP functions are not callable yet: ~S." function))
+    (t
+     (error "Expected an AutoLISP function object, got ~S." function))))
 
 (defun autolisp-type (object)
   (cond

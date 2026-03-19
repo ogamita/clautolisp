@@ -3,7 +3,8 @@
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader"
-               "clautolisp/autolisp-runtime")
+               "clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-builtins-core")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
   :perform (asdf:test-op (op system)
@@ -41,6 +42,21 @@
    (:file "autolisp-runtime/source/api"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-runtime/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-builtins-core"
+  :description "Initial core builtin registry for clautolisp."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-builtins-core/source/package")
+   (:file "autolisp-builtins-core/source/api"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-builtins-core/tests")))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          :success))
@@ -88,16 +104,35 @@
                          (uiop:symbol-call :clautolisp.autolisp-runtime.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-builtins-core/tests"
+  :description "Tests for the initial clautolisp core builtins."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-builtins-core" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-builtins-core/tests/package")
+   (:file "autolisp-builtins-core/tests/test-harness")
+   (:file "autolisp-builtins-core/tests/builtin-tests")
+   (:file "autolisp-builtins-core/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/tests"
   :description "Aggregate tests for the clautolisp subproject."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader/tests"
-               "clautolisp/autolisp-runtime/tests")
+               "clautolisp/autolisp-runtime/tests"
+               "clautolisp/autolisp-builtins-core/tests")
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (progn
                            (uiop:symbol-call :clautolisp.autolisp-reader.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-runtime.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
                                              :run-all-tests))))

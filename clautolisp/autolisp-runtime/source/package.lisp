@@ -38,9 +38,11 @@
    #:autolisp-pickset
    #:autolisp-pickset-value
    #:autolisp-subr
+   #:make-autolisp-subr
    #:autolisp-subr-name
    #:autolisp-subr-function
    #:autolisp-usubr
+   #:make-autolisp-usubr
    #:autolisp-usubr-name
    #:autolisp-usubr-lambda-list
    #:autolisp-usubr-body
@@ -64,6 +66,9 @@
    #:autolisp-vl-symbolp
    #:autolisp-vl-symbol-name
    #:autolisp-vl-symbol-value
+   #:set-autolisp-symbol-function
+   #:set-autolisp-symbol-value
+   #:call-autolisp-function
    #:runtime-value-p
    #:reader-object->runtime-value
    #:reader-objects->runtime-values
