@@ -10,8 +10,11 @@ Its responsibility is to accept AutoLISP source text, decode it at the input bou
 * Main Files
 - ~PLAN.md~
 - ~documentation/specification.org~
+- ~documentation/usage.org~
 
 * Status
 This module is in specification-first mode.
 
 The first implementation work should follow the syntax and data-model decisions recorded in ~documentation/specification.org~.
+
+The current user-facing API is documented in ~documentation/usage.org~.
