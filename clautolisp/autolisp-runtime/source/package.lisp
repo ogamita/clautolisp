@@ -21,6 +21,7 @@
                 #:symbol-object-canonical-name)
   (:export
    #:autolisp-string
+   #:make-autolisp-string
    #:autolisp-string-value
    #:autolisp-symbol
    #:autolisp-symbol-name

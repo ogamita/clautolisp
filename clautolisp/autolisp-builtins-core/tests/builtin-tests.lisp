@@ -254,3 +254,36 @@
     (is (typep (call-autolisp-function float-fn 7) 'double-float))
     (is (= 7.0d0 (call-autolisp-function float-fn 7)))
     (is (= 3.5d0 (call-autolisp-function float-fn 3.5d0)))))
+
+(test builtin-string-primitives
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((strcat-fn (autolisp-symbol-function (find-autolisp-symbol "STRCAT")))
+         (strlen-fn (autolisp-symbol-function (find-autolisp-symbol "STRLEN")))
+         (substr-fn (autolisp-symbol-function (find-autolisp-symbol "SUBSTR")))
+         (ascii-fn (autolisp-symbol-function (find-autolisp-symbol "ASCII")))
+         (chr-fn (autolisp-symbol-function (find-autolisp-symbol "CHR")))
+         (hello (clautolisp.autolisp-runtime:make-autolisp-string "Hello"))
+         (space (clautolisp.autolisp-runtime:make-autolisp-string " "))
+         (world (clautolisp.autolisp-runtime:make-autolisp-string "World"))
+         (empty (clautolisp.autolisp-runtime:make-autolisp-string "")))
+    (is (string= "" (autolisp-string-value (call-autolisp-function strcat-fn))))
+    (is (string= "Hello World"
+                 (autolisp-string-value
+                  (call-autolisp-function strcat-fn hello space world))))
+    (is (= 0 (call-autolisp-function strlen-fn)))
+    (is (= 0 (call-autolisp-function strlen-fn empty)))
+    (is (= 10 (call-autolisp-function strlen-fn hello world)))
+    (is (string= "Hello"
+                 (autolisp-string-value
+                  (call-autolisp-function substr-fn hello 1))))
+    (is (string= "ell"
+                 (autolisp-string-value
+                  (call-autolisp-function substr-fn hello 2 3))))
+    (is (string= ""
+                 (autolisp-string-value
+                  (call-autolisp-function substr-fn hello 10))))
+    (is (= 72 (call-autolisp-function ascii-fn hello)))
+    (is (string= "A"
+                 (autolisp-string-value
+                  (call-autolisp-function chr-fn 65))))))

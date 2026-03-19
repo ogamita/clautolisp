@@ -72,6 +72,10 @@
 (defun autolisp-string-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-string-value object))
 
+(defun make-autolisp-string (value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-string
+   :value value))
+
 (defun autolisp-symbol-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-symbol-name object))
 

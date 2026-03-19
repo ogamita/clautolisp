@@ -2,6 +2,7 @@
   (:use #:cl)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-string
+                #:make-autolisp-string
                 #:autolisp-string-value
                 #:autolisp-symbol
                 #:autolisp-symbol-name
