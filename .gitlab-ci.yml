@@ -1,9 +1,13 @@
 variables:
   CLAUTOLISP_CI_IMAGE: $CI_REGISTRY_IMAGE/clautolisp-ci
+  CLAUTOLISP_CI_LATEST: $CI_REGISTRY_IMAGE/clautolisp-ci:latest
   CLAUTOLISP_CI_PLATFORM: linux/amd64
   DOCKER_BUILDKIT: "1"
   DOCKER_HOST: tcp://docker:2375
   DOCKER_TLS_CERTDIR: ""
+
+default:
+  image: $CLAUTOLISP_CI_LATEST
 
 stages:
   - build
@@ -21,6 +25,15 @@ stages:
 build:clautolisp-ci-image:
   stage: build
   extends: .docker-job
+  rules:
+    - changes:
+        - .gitlab-ci.yml
+        - Makefile
+        - clautolisp/Makefile
+        - clautolisp/clautolisp.asd
+        - clautolisp/docker/Dockerfile
+      when: on_success
+    - when: never
   script:
     - docker buildx create --use --name clautolisp-ci-builder || docker buildx use clautolisp-ci-builder
     - docker buildx inspect --bootstrap
@@ -29,36 +42,16 @@ build:clautolisp-ci-image:
         --platform "$CLAUTOLISP_CI_PLATFORM" \
         --file clautolisp/docker/Dockerfile \
         --tag "$CLAUTOLISP_CI_IMAGE:$CI_COMMIT_SHA" \
-        $(if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then printf '%s' "--tag $CLAUTOLISP_CI_IMAGE:latest"; fi) \
+        $(if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then printf '%s' "--tag $CLAUTOLISP_CI_LATEST"; fi) \
         --push \
         .
 
 test:clautolisp:sbcl:
   stage: test
-  extends: .docker-job
-  needs:
-    - build:clautolisp-ci-image
   script:
-    - docker pull "$CLAUTOLISP_CI_IMAGE:$CI_COMMIT_SHA"
-    - |
-      docker run --rm \
-        --platform "$CLAUTOLISP_CI_PLATFORM" \
-        -v "$CI_PROJECT_DIR:/workspace" \
-        -w /workspace \
-        "$CLAUTOLISP_CI_IMAGE:$CI_COMMIT_SHA" \
-        make -C clautolisp test-sbcl
+    - make -C clautolisp test-sbcl
 
 test:clautolisp:ccl:
   stage: test
-  extends: .docker-job
-  needs:
-    - build:clautolisp-ci-image
   script:
-    - docker pull "$CLAUTOLISP_CI_IMAGE:$CI_COMMIT_SHA"
-    - |
-      docker run --rm \
-        --platform "$CLAUTOLISP_CI_PLATFORM" \
-        -v "$CI_PROJECT_DIR:/workspace" \
-        -w /workspace \
-        "$CLAUTOLISP_CI_IMAGE:$CI_COMMIT_SHA" \
-        make -C clautolisp test-ccl
+    - make -C clautolisp test-ccl
