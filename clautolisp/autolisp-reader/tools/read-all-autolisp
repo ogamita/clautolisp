@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+
+set -u
+
+usage() {
+    cat <<'EOF'
+Usage: read-all-autolisp [wrapper-options] [read-autolisp-options] [path ...]
+
+Wrapper options:
+  --sbcl                Use read-autolisp-sbcl (default).
+  --ccl                 Use read-autolisp-ccl.
+  --paths-file FILE     Read newline-delimited paths from FILE.
+  --verbose             Let read-autolisp stdout pass through.
+  --help                Show this help and exit.
+
+All other options are forwarded to the selected read-autolisp binary.
+
+Input paths may be provided:
+  - as positional arguments,
+  - from --paths-file FILE,
+  - from standard input when neither positional paths nor --paths-file are used.
+EOF
+}
+
+script_directory=$(
+    cd "$(dirname "$0")" && pwd
+)
+
+implementation="sbcl"
+verbose=0
+paths_file=""
+declare -a reader_options=()
+declare -a positional_paths=()
+
+while (($# > 0)); do
+    case "$1" in
+        --help)
+            usage
+            exit 0
+            ;;
+        --sbcl)
+            implementation="sbcl"
+            shift
+            ;;
+        --ccl)
+            implementation="ccl"
+            shift
+            ;;
+        --verbose)
+            verbose=1
+            shift
+            ;;
+        --paths-file)
+            if (($# < 2)); then
+                echo "read-all-autolisp: missing argument after --paths-file" >&2
+                exit 2
+            fi
+            paths_file=$2
+            shift 2
+            ;;
+        --)
+            shift
+            while (($# > 0)); do
+                positional_paths+=("$1")
+                shift
+            done
+            ;;
+        -*)
+            reader_options+=("$1")
+            shift
+            if [[ ${reader_options[-1]} == "--canonical-case" || ${reader_options[-1]} == "--external-format" ]]; then
+                if (($# == 0)); then
+                    echo "read-all-autolisp: missing argument after ${reader_options[-1]}" >&2
+                    exit 2
+                fi
+                reader_options+=("$1")
+                shift
+            fi
+            ;;
+        *)
+            positional_paths+=("$1")
+            shift
+            ;;
+    esac
+done
+
+reader_program="$script_directory/read-autolisp/bin/read-autolisp-$implementation"
+if [[ ! -x "$reader_program" ]]; then
+    echo "read-all-autolisp: reader program not found or not executable: $reader_program" >&2
+    exit 2
+fi
+
+tmp_output=$(mktemp "${TMPDIR:-/tmp}/read-all-autolisp.XXXXXX")
+
+run_reader() {
+    if ((${#reader_options[@]} > 0)); then
+        "$reader_program" "${reader_options[@]}" "$1"
+    else
+        "$reader_program" "$1"
+    fi
+}
+
+declare -a input_paths=()
+if ((${#positional_paths[@]} > 0)); then
+    input_paths=("${positional_paths[@]}")
+elif [[ -n "$paths_file" ]]; then
+    while IFS= read -r path || [[ -n "$path" ]]; do
+        input_paths+=("$path")
+    done <"$paths_file"
+else
+    while IFS= read -r path || [[ -n "$path" ]]; do
+        input_paths+=("$path")
+    done
+fi
+
+status=0
+for path in "${input_paths[@]}"; do
+    [[ -n "$path" ]] || continue
+    if ((verbose)); then
+        if ! run_reader "$path"; then
+            printf '%s\n' "$path" >&2
+            status=1
+        fi
+    else
+        if ! run_reader "$path" >>"$tmp_output" 2>&1; then
+            printf '%s\n' "$path" >&2
+            status=1
+        fi
+    fi
+done
+
+exit "$status"

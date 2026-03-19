@@ -50,3 +50,21 @@
                     #\Return)))
          (objects (read-result-objects result)))
     (is (= 3 (length objects)))))
+
+(test read-forms-from-file-with-default-external-format
+  (let* ((path (merge-pathnames
+                #P"autolisp-reader-default-external-format.lsp"
+                (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (stream path
+                                   :direction :output
+                                   :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (write-string "(abc 42)" stream))
+           (let* ((result (read-forms-from-file path))
+                  (objects (read-result-objects result)))
+             (is (= 1 (length objects)))
+             (is (typep (first objects) 'cons-object))))
+      (when (probe-file path)
+        (delete-file path)))))

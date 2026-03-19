@@ -251,8 +251,10 @@
                                warn-on-integer-overflow-p source-name
                                external-format)
   (tokenize-string
-   (clautolisp.autolisp-reader.internal:decode-and-normalize-file
-    path :external-format external-format)
+   (if external-format
+       (clautolisp.autolisp-reader.internal:decode-and-normalize-file
+        path :external-format external-format)
+       (clautolisp.autolisp-reader.internal:decode-and-normalize-file path))
    :options options
    :token-mode token-mode
    :retain-comments-p retain-comments-p
@@ -286,8 +288,10 @@
                                        warn-on-integer-overflow-p source-name
                                        external-format)
   (read-forms-from-string
-   (clautolisp.autolisp-reader.internal:decode-and-normalize-file
-    path :external-format external-format)
+   (if external-format
+       (clautolisp.autolisp-reader.internal:decode-and-normalize-file
+        path :external-format external-format)
+       (clautolisp.autolisp-reader.internal:decode-and-normalize-file path))
    :options options
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p
@@ -320,8 +324,10 @@
                                           warn-on-integer-overflow-p source-name
                                           external-format)
   (read-concrete-from-string
-   (clautolisp.autolisp-reader.internal:decode-and-normalize-file
-    path :external-format external-format)
+   (if external-format
+       (clautolisp.autolisp-reader.internal:decode-and-normalize-file
+        path :external-format external-format)
+       (clautolisp.autolisp-reader.internal:decode-and-normalize-file path))
    :options options
    :token-mode token-mode
    :warn-on-integer-overflow-p warn-on-integer-overflow-p

@@ -24,6 +24,7 @@
                 #:integer-object-value
                 #:quote-object
                 #:quote-object-object
+                #:read-forms-from-file
                 #:read-concrete-from-string
                 #:read-forms-from-string
                 #:read-result-diagnostics

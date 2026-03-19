@@ -11,6 +11,7 @@ Its responsibility is to accept AutoLISP source text, decode it at the input bou
 - ~PLAN.md~
 - ~documentation/specification.org~
 - ~documentation/usage.org~
+- ~tools/read-autolisp/README.org~
 
 * Status
 This module is in specification-first mode.
@@ -18,3 +19,5 @@ This module is in specification-first mode.
 The first implementation work should follow the syntax and data-model decisions recorded in ~documentation/specification.org~.
 
 The current user-facing API is documented in ~documentation/usage.org~.
+
+The batch validation tool is documented in ~tools/read-autolisp/README.org~.
