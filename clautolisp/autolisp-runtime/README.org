@@ -1,0 +1,24 @@
+#+TITLE: autolisp-runtime
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+~autolisp-runtime~ is the runtime-layer module for AutoLISP values and later
+evaluation state.
+
+Its first responsibility is to define the concrete Common Lisp
+representation of AutoLISP runtime objects and the handoff from
+~autolisp-reader~ objects to runtime values.
+
+* Main Files
+- ~PLAN.md~
+- ~documentation/design.org~
+
+* Status
+The initial runtime object model now exists.
+
+Current implementation scope:
+
+- runtime wrapper structures for non-immediate AutoLISP values,
+- symbol interning independent from Common Lisp packages,
+- reader-object to runtime-value mapping for literal data.
