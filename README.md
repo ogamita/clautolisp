@@ -41,7 +41,7 @@ The specification document has been substantially expanded into a HyperSpec-styl
 - `autolisp-spec`:
   active and currently the most mature subproject; the specification draft exists and the remaining work is mainly gap-closure and validation.
 - `clautolisp`:
-  architecture and implementation-planning stage; the subproject structure and implementation plan exist, but the runtime modules still need to be built out.
+  early implementation stage; the reader subsystem is implemented and has already read a real AutoLISP corpus of 663 `.lsp` files, 100583 lines, and 3508077 characters successfully, while the runtime modules still need to be built out.
 - `autolisp-test`:
   conformance-suite planning stage; the subproject structure and development plan exist, but the harness and first projected tests still need to be implemented.
 
