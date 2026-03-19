@@ -1,0 +1,45 @@
+#+TITLE: autolisp-test
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+~autolisp-test~ is the planned conformance-test subproject for ~clautolisp~.
+
+Its role is analogous to Common Lisp ~ansi-tests~:
+
+- define specification-oriented language tests,
+- run those tests against a selected implementation version,
+- record the selected host profile separately from the native operating system,
+- produce a report that distinguishes passed tests, failed tests, expected failures, and unsupported areas.
+
+This subproject is specifically for language-conformance testing.
+
+It should not become a grab bag of:
+
+- implementation-specific regression tests,
+- host-integration smoke tests,
+- UI tests,
+- performance benchmarks.
+
+Those belong elsewhere.
+
+* Planned Layout
+#+begin_example
+autolisp-test/
+  README.org
+  harness/
+    README.org
+  tests/
+    README.org
+#+end_example
+
+The harness will hold the reusable runner, test registry, report generation, and host/version metadata support.
+
+The tests tree will hold conformance tests grouped by language area, starting with:
+
+- special forms,
+- core functions shared in some form with Common Lisp,
+- AutoLISP-only functions after the first projection pass.
+
+* Immediate Next Step
+See ~autolisp-test/documentation/autolisp-test-development-plan.org~ for the development plan.

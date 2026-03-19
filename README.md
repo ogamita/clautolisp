@@ -90,7 +90,7 @@ The main documents currently include:
 - `documentation/autolisp-visual-lisp-specification-draft.org`
 - `documentation/specification-resolution-plan.org`
 - `documentation/development-plan.org`
-- `documentation/autolisp-test-development-plan.org`
+- `autolisp-test/documentation/autolisp-test-development-plan.org`
 
 Markdown is used only where it is the conventional or most practical format, such as this `README.md`.
 

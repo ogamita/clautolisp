@@ -35,7 +35,6 @@
 *.o
 *.pbxuser
 *.pdb
-*.pdf
 *.perspectivev3
 *.pfsl
 *.pyc
