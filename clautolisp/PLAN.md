@@ -11,6 +11,8 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - The implementation architecture is defined at a high level.
 - The concrete runtime modules are not yet implemented.
 - The reader remains the first substantive module to build.
+- The first module directory now exists at `clautolisp/autolisp-reader/`.
+- An initial reader specification has been drafted in `clautolisp/autolisp-reader/documentation/specification.org`.
 
 ## Foundation Tasks
 
@@ -21,6 +23,8 @@ The Org documents in `documentation/` remain the place for architecture and impl
 
 ## Reader Tasks
 
+- [ ] Reconcile the high-level development plan with the concrete `autolisp-reader` module naming.
+- [ ] Define the public reader entry points and result object API.
 - [ ] Implement the external-format-aware input boundary.
 - [ ] Implement line-ending normalization.
 - [ ] Implement tokenization for core AutoLISP syntax.
