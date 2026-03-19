@@ -6,7 +6,7 @@ General directives for this repository.
 
 - This file records project-wide directives and standing instructions.
 - Add new persistent project directives here when they are decided.
-- More detailed design and planning material belongs in `documentation/`.
+- More detailed design and planning material belongs in the relevant subproject `documentation/` directory.
 
 ## Project Nature
 
@@ -75,7 +75,7 @@ General directives for this repository.
 - Keep a top-level `COPYING` or `LICENSE` file containing the project license text.
 - Free software dependencies and reused code are acceptable, including permissive licenses, GPL, and AGPL.
 - When adopting external code, record the source and applicable license in documentation or source headers as appropriate.
-- The specification document `documentation/autolisp-visual-lisp-specification-draft.org` must be licensed under CC-BY-SA.
+- The specification document `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org` must be licensed under CC-BY-SA.
 - The specification may quote, summarize, and reference external source documents, but those source documents remain under their own copyright and license terms unless explicitly stated otherwise by their owners.
 
 ## Testing
@@ -89,11 +89,13 @@ General directives for this repository.
 ## Documentation
 
 - Specifications converted from PDF should be maintained as Org mode files when added to the repository.
-- Planning, architecture, and decision documents should be written in Org mode under `documentation/`.
+- Planning, architecture, and decision documents should be written in Org mode under the appropriate subproject `documentation/` directory.
+- Each subproject must have a `PLAN.md` file at its root.
+- Actionable task lists, upcoming work, and backlog items belong in the subproject `PLAN.md`, not in the explanatory Org documents.
 - Keep documentation aligned with actual architectural decisions and module boundaries.
-- `documentation/autolisp-visual-lisp-specification-draft.org` has the short name `AutoLISP Spec`.
-- `documentation/autolisp-visual-lisp-specification-draft.org` must carry an explicit document version.
-- Any modification to `documentation/autolisp-visual-lisp-specification-draft.org` must increment that document version.
+- `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org` has the short name `AutoLISP Spec`.
+- `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org` must carry an explicit document version.
+- Any modification to `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org` must increment that document version.
 
 ## External References and Candidate Dependencies
 
