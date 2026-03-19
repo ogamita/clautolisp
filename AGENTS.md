@@ -75,6 +75,8 @@ General directives for this repository.
 - Keep a top-level `COPYING` or `LICENSE` file containing the project license text.
 - Free software dependencies and reused code are acceptable, including permissive licenses, GPL, and AGPL.
 - When adopting external code, record the source and applicable license in documentation or source headers as appropriate.
+- The specification document `documentation/autolisp-visual-lisp-specification-draft.org` must be licensed under CC-BY-SA.
+- The specification may quote, summarize, and reference external source documents, but those source documents remain under their own copyright and license terms unless explicitly stated otherwise by their owners.
 
 ## Testing
 

@@ -3,6 +3,7 @@
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
 #+VERSION: 0.1.0
+#+LICENSE: CC-BY-SA
 
 * 1 Introduction
 ** Overview
@@ -13,6 +14,10 @@ The short name of this document is *AutoLISP Spec*.
 The current document version is *0.1.0*.
 
 Any modification of this document must increment its version number.
+
+This document is intended to be licensed under *CC-BY-SA*.
+
+The external source documents cited, summarized, or discussed in this specification remain under their own copyright and license terms unless explicitly stated otherwise by their respective owners.
 
 It is intended to be usable as a local reference document, not merely as a planning memo. It therefore combines:
 
