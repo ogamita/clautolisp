@@ -7,6 +7,17 @@ This document turns the current specification drafts into an executable developm
 
 It focuses on the main architectural question of the project: what belongs to AutoLISP semantics, what belongs to Common Lisp implementation, and which modules are needed to keep that boundary clean.
 
+* Current Implementation State
+The plan below remains architecturally valid, but the repository is no longer in the purely speculative state reflected by the earliest draft.
+
+Current state:
+
+- The ~autolisp-reader~ module exists and is implemented.
+- The reader owns lexing, parsing, source locations, comment handling, and strict versus lax token acceptance.
+- Reader-focused tooling exists, including standalone batch executables and a batch wrapper for corpus validation.
+- SBCL and CCL test execution, FiveAM integration, and CI/container support are in place.
+- The runtime, builtins, host abstraction, and evaluator remain future work.
+
 * Primary Architectural Position
 The project should implement an AutoLISP system in Common Lisp, not compile AutoLISP away into ad hoc Common Lisp forms and not try to pretend that AutoLISP source is normal Common Lisp source.
 
@@ -60,7 +71,7 @@ Therefore the first module should be a strong ~reader~ module, but it should be 
 
 * Proposed Module Breakdown
 ** Phase 1 Modules
-*** ~alisp-reader~
+*** ~autolisp-reader~
 Responsibility:
 
 - Decode input streams from external files.
@@ -82,7 +93,7 @@ Why first:
 - It defines the language boundary.
 - It is the most likely place for dialect drift if postponed.
 
-*** ~alisp-runtime~
+*** ~autolisp-runtime~
 Responsibility:
 
 - Define the core runtime object model.
@@ -93,9 +104,9 @@ Responsibility:
 Notes:
 
 - This module should not depend on CAD or UI code.
-- It should depend only on ~alisp-reader~ and low-level utilities.
+- It should depend only on ~autolisp-reader~ and low-level utilities.
 
-*** ~alisp-builtins-core~
+*** ~autolisp-builtins-core~
 Responsibility:
 
 - Numeric functions.
@@ -109,14 +120,14 @@ Rationale:
 - Builtins need separation from the evaluator so they can be tested independently.
 - Some builtins will require dialect flags or compatibility shims.
 
-*** ~alisp-conditions~
+*** ~autolisp-conditions~
 Responsibility:
 
 - Define internal Common Lisp conditions.
 - Map them to AutoLISP-visible error behavior.
 - Support ~*error*~ callbacks and controlled recovery paths.
 
-*** ~alisp-host-api~
+*** ~autolisp-host-api~
 Responsibility:
 
 - Define the abstract host protocol used by the runtime.
@@ -125,7 +136,7 @@ Responsibility:
 
 This module should be an interface layer, not an implementation layer.
 
-*** ~alisp-testkit~
+*** ~autolisp-testkit~
 Responsibility:
 
 - Test helpers.
@@ -137,7 +148,7 @@ Responsibility:
 This should appear early, not late, because the reader and runtime both need heavy conformance testing.
 
 ** Phase 2 Modules
-*** ~alisp-vl~
+*** ~autolisp-vl~
 Responsibility:
 
 - Visual LISP compatibility functions.
@@ -145,20 +156,20 @@ Responsibility:
 - String helper families.
 - COM-related APIs as stubs, abstractions, or selective implementations depending on host capabilities.
 
-*** ~alisp-dcl-reader~
+*** ~autolisp-dcl-reader~
 Responsibility:
 
 - Parse DCL files.
 - Preserve source locations and dialog structure.
 
-*** ~alisp-dcl-runtime~
+*** ~autolisp-dcl-runtime~
 Responsibility:
 
 - Runtime dialog model.
 - Tile state.
 - Callback registration and dispatch.
 
-*** ~alisp-mock-host~
+*** ~autolisp-mock-host~
 Responsibility:
 
 - Deterministic host implementation for tests.
@@ -166,17 +177,17 @@ Responsibility:
 - Stable snapshots for regression testing.
 
 ** Phase 3 Modules
-*** ~alisp-host-autocad~
+*** ~autolisp-host-autocad~
 Responsibility:
 
 - Adapter to AutoCAD-specific host facilities.
 
-*** ~alisp-host-bricscad~
+*** ~autolisp-host-bricscad~
 Responsibility:
 
 - Adapter to BricsCAD-specific host facilities.
 
-*** ~alisp-cli~
+*** ~autolisp-cli~
 Responsibility:
 
 - Standalone executable entry point.
@@ -185,7 +196,7 @@ Responsibility:
 - Test execution.
 - REPL mode.
 
-*** ~alisp-ide~
+*** ~autolisp-ide~
 Responsibility:
 
 - SLIME integration helpers.
@@ -275,7 +286,7 @@ That layer should:
 This allows the project to target language and host compatibility directly, instead of hardwiring behavior to the native operating system.
 
 * Directory and System Layout
-Suggested source tree:
+Target source tree shape:
 
 #+begin_example
 sources/
@@ -300,10 +311,10 @@ documentation/
   architecture-decisions.org
 #+end_example
 
-Suggested ASDF systems:
+Target ASDF systems:
 
 - ~clautolisp-base~
-- ~clautolisp-reader~
+- ~clautolisp/autolisp-reader~
 - ~clautolisp-runtime~
 - ~clautolisp-vl~
 - ~clautolisp-dcl~

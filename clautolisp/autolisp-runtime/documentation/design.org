@@ -1,0 +1,148 @@
+#+TITLE: autolisp-runtime Design
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+This document defines the initial runtime object model for ~clautolisp~.
+
+It also records the first explicit handoff from ~autolisp-reader~ objects to
+runtime values.
+
+* Design Position
+The runtime shall not collapse AutoLISP semantics onto raw Common Lisp
+objects indiscriminately.
+
+However, not every AutoLISP value needs a wrapper.
+
+The current design uses a mixed strategy:
+
+- signed 32-bit integers map directly to Common Lisp integers,
+- reals map directly to Common Lisp ~double-float~ values,
+- conses and the empty list map directly to Common Lisp conses and ~nil~,
+- all other runtime-visible AutoLISP objects use explicit Common Lisp
+  structures.
+
+This gives a simple and efficient representation for the most common literal
+data while preserving control over the types that materially differ from Common
+Lisp.
+
+* Immediate Mappings
+The following AutoLISP runtime values map directly to Common Lisp objects:
+
+** NIL
+- AutoLISP ~nil~ maps to Common Lisp ~nil~.
+- It remains both false and the empty list.
+- It is not modeled as a separate wrapper object.
+
+** INT
+- AutoLISP integers map to Common Lisp integers.
+- The intended runtime contract is signed 32-bit, even though Common Lisp may
+  physically represent them with a broader integer implementation.
+
+** REAL
+- AutoLISP reals map to Common Lisp ~double-float~.
+
+** LIST and dotted pairs
+- AutoLISP proper lists and dotted pairs map to Common Lisp cons structure.
+- Elements and tails are runtime values, not reader objects.
+
+* Wrapped Runtime Objects
+The following AutoLISP-visible values shall use explicit runtime structures:
+
+** Symbol
+AutoLISP symbols must not be represented by raw Common Lisp package symbols.
+
+Initial structure responsibilities:
+
+- canonical symbol name,
+- optional original reader spelling,
+- future value-cell and function-cell storage,
+- future property data,
+- identity independent from Common Lisp packages.
+
+Symbols are interned in a dedicated runtime symbol table.
+
+** String
+AutoLISP strings use a wrapper around a Common Lisp ~string~.
+
+Current rationale:
+
+- keep room for AutoLISP-specific behavior without overloading raw Common Lisp
+  strings,
+- keep a consistent representation policy for runtime-visible non-immediate
+  objects,
+- make the runtime type model explicit for ~type~ and related predicates.
+
+The wrapper stores at least:
+
+- a ~string-value~ slot containing the Common Lisp string.
+
+** FILE
+File descriptors are wrapper objects around Common Lisp streams.
+
+The wrapper should eventually store at least:
+
+- host stream,
+- open path,
+- open mode,
+- host profile metadata if needed.
+
+** ENAME, PICKSET, VLA-object, VARIANT, SAFEARRAY, reactor-like objects
+These are host-managed or compatibility-layer values and should all be wrapped
+explicitly around host or emulation-layer payloads.
+
+The first implementation only establishes generic wrapper shapes so the runtime
+type model can grow without redesigning the boundary.
+
+* Reader Handoff
+The reader produces source-aware reader objects.
+
+The runtime consumes runtime values.
+
+The handoff is therefore an explicit mapping step:
+
+1. ~autolisp-reader~ parses text into reader objects.
+2. ~autolisp-runtime~ maps reader objects into runtime values.
+3. later evaluator layers consume those runtime values.
+
+Initial mapping rules:
+
+- ~symbol-object~ -> interned ~autolisp-symbol~
+- ~string-object~ -> ~autolisp-string~
+- ~integer-object~ -> signed integer
+- ~real-object~ -> ~double-float~
+- ~cons-object~ -> Common Lisp cons / list of mapped elements
+- ~quote-object~ -> a list whose first element is the interned symbol ~QUOTE~
+
+Comment objects and concrete-syntax-only objects do not enter ordinary runtime
+mapping.
+
+* Initial Runtime Type Set
+This first runtime module should account for at least the spec-visible types:
+
+- ~nil~
+- ~INT~
+- ~REAL~
+- ~STR~
+- ~LIST~
+- ~SYM~
+- ~FILE~
+- ~ENAME~
+- ~PICKSET~
+- ~SUBR~
+- ~USUBR~
+- ~SAFEARRAY~
+- ~VARIANT~
+- ~VLA-object~
+
+Not all of these need complete behavior immediately, but their representation
+category should be known now.
+
+* Deferred Decisions
+The following remain open:
+
+- whether runtime string wrappers should retain source metadata from reading,
+- whether all wrapped runtime objects share a common superclass or protocol,
+- how ~T~ is bootstrapped and whether it is interned eagerly,
+- how builtin functions and user functions differ structurally,
+- how host adapters attach lifecycle and validity checks to wrapped objects.
