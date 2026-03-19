@@ -1,0 +1,15 @@
+#+TITLE: autolisp-test Test Corpus
+#+AUTHOR: Codex
+#+OPTIONS: toc:nil num:nil
+
+This directory is reserved for specification-oriented test files.
+
+The initial organization should follow language areas rather than implementation modules, for example:
+
+- ~special-forms/~
+- ~core-functions/~
+- ~reader/~
+- ~errors/~
+- ~host-profiles/~
+
+Within each area, prefer one file per operator or narrowly related family, following the structure used by Common Lisp ~ansi-tests~.

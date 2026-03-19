@@ -1,0 +1,13 @@
+#+TITLE: autolisp-test Harness
+#+AUTHOR: Codex
+#+OPTIONS: toc:nil num:nil
+
+This directory is reserved for the reusable ~autolisp-test~ harness.
+
+Expected contents in early phases:
+
+- test registration and metadata,
+- execution modes,
+- expected-failure overlays,
+- implementation and host profile descriptors,
+- report generation.
