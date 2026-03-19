@@ -10,6 +10,7 @@
                 #:results-status)
   (:import-from #:clautolisp.autolisp-reader
                 #:comment-object
+                #:comment-object-kind
                 #:comment-object-text
                 #:concrete-list-object
                 #:concrete-list-object-items
@@ -37,6 +38,7 @@
                 #:symbol-object-canonical-name
                 #:token
                 #:token-kind
+                #:token-lexeme
                 #:tokenize-string)
   (:export #:run-all-tests
            #:autolisp-reader-suite))

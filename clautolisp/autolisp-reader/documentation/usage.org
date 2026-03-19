@@ -186,6 +186,7 @@ Public accessors:
 - ~reader-options-retain-comments-p~
 - ~reader-options-recover-malformed-p~
 - ~reader-options-warn-on-integer-overflow-p~
+- ~reader-options-extended-string-escapes-p~
 - ~reader-options-canonical-case~
 - ~reader-options-source-name~
 
@@ -201,6 +202,7 @@ Example:
   (make-reader-options
    :token-mode :lax
    :warn-on-integer-overflow-p t
+   :extended-string-escapes-p t
    :canonical-case :upcase
    :source-name "example.lsp"))
 
@@ -225,6 +227,27 @@ Controls whether comments are emitted by tokenization.
 - for ~read-concrete-*~, comments are always preserved in the concrete syntax result.
 
 Therefore this option matters most for direct tokenization.
+
+** ~:extended-string-escapes-p~
+Default: ~NIL~
+
+This option controls implementation-defined backslash escape handling inside
+string literals.
+
+When false, the reader stays conservative and only guarantees the portable
+string behavior already documented for strict reading, namely doubled double
+quotes plus the default baseline escapes ~\"~ and ~\\~.
+
+When true, the reader additionally accepts:
+
+- ~\u+00E9~ style Unicode escapes using exactly four hexadecimal digits,
+- backslash before another character to quote that character literally.
+
+This option is separate from external-format decoding.
+
+- External format controls how bytes become characters before tokenization.
+- Extended string escapes control how ASCII escape syntax inside a string is
+  interpreted by the reader.
 
 Example:
 

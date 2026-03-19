@@ -7,6 +7,7 @@
    #:reader-options-retain-comments-p
    #:reader-options-recover-malformed-p
    #:reader-options-warn-on-integer-overflow-p
+   #:reader-options-extended-string-escapes-p
    #:reader-options-canonical-case
    #:reader-options-source-name
    #:source-span

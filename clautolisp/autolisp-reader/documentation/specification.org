@@ -114,9 +114,10 @@ Reader objects are not raw Common Lisp symbols or numbers used directly as the s
 - The semantic string value is an ordered sequence of characters.
 - The reader shall preserve the raw source spelling of the string literal when source retention is enabled.
 - The exact escape repertoire is under-specified by the vendor corpus and shall therefore be represented by an explicit acceptance policy.
-- In strict mode, the only guaranteed portable embedded quote syntax is a doubled double quote inside a string.
+- In the initial baseline accepted by both strict and lax modes, the reader shall accept doubled double quote, ~\"~, and ~\\~ inside strings.
+- This baseline is an implementation choice motivated by real-world corpus needs and by the plausible inference that products may defer to a C-like escape model for at least these minimal cases.
 - In strict mode, unknown backslash escapes shall not be given implicit Common Lisp meaning.
-- In lax mode, additional implementation-defined escape acceptance may be enabled, but such behavior shall be tagged as implementation-defined and kept separate from strict behavior.
+- Additional implementation-defined escape acceptance, such as ~\u+00E9~, may be enabled by separate reader options and shall be kept distinct from strict versus lax token mode.
 
 ** Symbols
 - A symbol token is any non-delimiter, non-whitespace token that is not recognized as another literal token class.

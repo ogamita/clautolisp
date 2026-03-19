@@ -6,6 +6,7 @@
   (format t "  --strict                      Use strict token mode (default).~%")
   (format t "  --lax                         Use lax token mode.~%")
   (format t "  --warn-on-integer-overflow    Warn when int32 overflow reads as real.~%")
+  (format t "  --extended-string-escapes     Enable implementation-defined backslash escapes in strings.~%")
   (format t "  --canonical-case MODE         MODE is upcase, downcase, or preserve.~%")
   (format t "  --external-format FORMAT      Use FORMAT when opening files.~%")
   (format t "  --help                        Show this help and exit.~%"))
@@ -35,6 +36,7 @@
 (defun parse-arguments (arguments)
   (let ((token-mode :strict)
         (warn-on-integer-overflow-p nil)
+        (extended-string-escapes-p nil)
         (canonical-case :upcase)
         (external-format nil)
         (files '()))
@@ -50,6 +52,8 @@
                 (setf token-mode :lax))
                ((string= argument "--warn-on-integer-overflow")
                 (setf warn-on-integer-overflow-p t))
+               ((string= argument "--extended-string-escapes")
+                (setf extended-string-escapes-p t))
                ((string= argument "--canonical-case")
                 (unless arguments
                   (error "Missing argument after --canonical-case."))
@@ -70,6 +74,7 @@
      (make-reader-options
       :token-mode token-mode
       :warn-on-integer-overflow-p warn-on-integer-overflow-p
+      :extended-string-escapes-p extended-string-escapes-p
       :canonical-case canonical-case)
      external-format
      (nreverse files))))

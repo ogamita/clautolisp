@@ -14,6 +14,25 @@
          (kinds (mapcar #'token-kind (read-result-objects result))))
     (is (equal '(:symbol :comment :symbol :eof) kinds))))
 
+(test tokenize-retained-block-comments
+  (let* ((result (tokenize-string "a ;| block
+comment |; b"
+                                  :retain-comments-p t))
+         (tokens (read-result-objects result))
+         (kinds (mapcar #'token-kind tokens)))
+    (is (equal '(:symbol :comment :symbol :eof) kinds))
+    (is (string= ";| block
+comment |;"
+                 (token-lexeme (second tokens))))))
+
+(test tokenize-string-with-invalid-unicode-escape
+  (let* ((result (tokenize-string "\"x\\u+12\""
+                                  :extended-string-escapes-p t))
+         (diagnostics (read-result-diagnostics result)))
+    (is (= 1 (length diagnostics)))
+    (is (eq :invalid-unicode-escape
+            (diagnostic-code (first diagnostics))))))
+
 (test strict-vs-lax-real-tokenization
   (let* ((strict-result (tokenize-string "1e3"))
          (lax-result (tokenize-string "1e3" :token-mode :lax))
