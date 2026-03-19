@@ -25,7 +25,9 @@
    #:autolisp-symbol
    #:autolisp-symbol-name
    #:autolisp-symbol-original-name
+   #:autolisp-symbol-value
    #:autolisp-symbol-value-bound-p
+   #:autolisp-symbol-function
    #:autolisp-symbol-function-bound-p
    #:autolisp-file
    #:autolisp-file-stream
@@ -52,9 +54,22 @@
    #:intern-autolisp-symbol
    #:find-autolisp-symbol
    #:reset-autolisp-symbol-table
+   #:autolisp-true-p
+   #:autolisp-false-p
+   #:autolisp-null
+   #:autolisp-not
+   #:autolisp-listp
+   #:autolisp-atom
+   #:autolisp-type
+   #:autolisp-vl-symbolp
+   #:autolisp-vl-symbol-name
+   #:autolisp-vl-symbol-value
    #:runtime-value-p
    #:reader-object->runtime-value
    #:reader-objects->runtime-values
+   #:autolisp-read-from-string
+   #:autolisp-read-from-stream
+   #:autolisp-read-from-file
    #:read-runtime-from-string
    #:read-runtime-from-stream
    #:read-runtime-from-file))
