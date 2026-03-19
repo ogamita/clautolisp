@@ -21,6 +21,8 @@ test: test-sbcl
 test-sbcl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
 	$(SBCL) --noinform --no-userinit --non-interactive \
+		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
+		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd "$(ASD_FILE)")' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
@@ -28,6 +30,8 @@ test-sbcl:
 test-ccl:
 	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
 	ccl --no-init --quiet \
+		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
+		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd "$(ASD_FILE)")' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)' \

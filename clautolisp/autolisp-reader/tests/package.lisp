@@ -1,5 +1,13 @@
 (defpackage #:clautolisp.autolisp-reader.tests
   (:use #:cl)
+  (:import-from #:fiveam
+                #:def-suite
+                #:in-suite
+                #:test
+                #:is
+                #:run
+                #:explain!
+                #:results-status)
   (:import-from #:clautolisp.autolisp-reader
                 #:comment-object
                 #:comment-object-text
@@ -29,4 +37,5 @@
                 #:token
                 #:token-kind
                 #:tokenize-string)
-  (:export #:run-all-tests))
+  (:export #:run-all-tests
+           #:autolisp-reader-suite))
