@@ -23,6 +23,11 @@ It should not become a grab bag of:
 
 Those belong elsewhere.
 
+* Status
+This subproject is currently in planning mode.
+
+The directory structure and development plan exist, but the reusable harness and first conformance corpus have not yet been implemented.
+
 * Planned Layout
 #+begin_example
 autolisp-test/
@@ -42,4 +47,4 @@ The tests tree will hold conformance tests grouped by language area, starting wi
 - AutoLISP-only functions after the first projection pass.
 
 * Immediate Next Step
-See ~autolisp-test/documentation/autolisp-test-development-plan.org~ for the development plan.
+See ~PLAN.md~ for the actionable task list and ~documentation/autolisp-test-development-plan.org~ for the design rationale.

@@ -1,0 +1,23 @@
+#+TITLE: clautolisp
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+~clautolisp~ is the implementation subproject of the repository.
+
+Its role is to host the Common Lisp implementation of the AutoLISP runtime, reader, evaluator, host abstraction layers, and related implementation tooling.
+
+* Status
+This subproject is currently in planning and architecture-definition mode.
+
+The implementation plan exists, but the concrete reader, runtime, and host modules still need to be developed.
+
+* Main Files
+- ~PLAN.md~
+- ~clautolisp.asd~
+- ~documentation/development-plan.org~
+
+* Planning Document
+The planning document for this subproject is:
+
+- ~PLAN.md~

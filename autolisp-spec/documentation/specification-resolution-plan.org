@@ -1,0 +1,249 @@
+#+TITLE: Plan To Resolve Under-Specified AutoLISP / Visual LISP Semantics
+#+AUTHOR: Codex
+#+OPTIONS: toc:3 num:t
+
+* Purpose
+This document defines a concrete plan to resolve the currently under-specified areas in `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org`.
+
+The goal is to promote uncertain sections from:
+
+- under-specified
+- inferred
+
+to:
+
+- documented
+- or tested and version-qualified
+
+* Core Principle
+Not all evidence sources have the same authority.
+
+For language-specification work, the evidence ranking should be:
+
+1. Official vendor documentation.
+2. Executable tests against real AutoCAD and BricsCAD releases.
+3. Official vendor examples and shipped sample code.
+4. Large corpora of real-world AutoLISP code.
+5. Third-party implementations.
+6. Community discussions and folklore.
+
+This means:
+
+- code corpus scanning is useful,
+- third-party implementations are useful,
+- but neither should override vendor docs or real-product tests.
+
+* Short Answer to the Open Questions
+** Would scanning libraries of AutoLISP code help?
+Yes, but mainly as secondary evidence.
+
+It is useful for:
+
+- discovering syntax forms actually used in the wild,
+- estimating which edge cases matter in practice,
+- finding idiomatic use of special forms,
+- locating undocumented but commonly accepted patterns,
+- building a compatibility test corpus.
+
+It is not sufficient for:
+
+- proving that a syntax form is valid,
+- determining exact reader acceptance rules,
+- resolving version-specific behavior,
+- distinguishing vendor bugs from language semantics.
+
+** Would reading sources of other implementations help?
+Yes, but also as secondary evidence.
+
+It is useful for:
+
+- finding plausible semantic interpretations,
+- discovering tricky implementation areas,
+- identifying test cases already encountered by others,
+- comparing differing design assumptions.
+
+It is not sufficient for:
+
+- establishing normative behavior,
+- deciding between Autodesk and BricsCAD divergence,
+- resolving undocumented historical behavior without tests.
+
+* Execution Tracking
+Actionable tasks for this subproject now live in `autolisp-spec/PLAN.md`.
+
+This document remains the place for evidence policy, resolution method, and specification-context notes.
+
+* Open Questions and Best Resolution Method
+** Exact Reader Grammar
+Best method:
+
+1. vendor docs,
+2. executable tests,
+3. corpus scan,
+4. implementation comparison.
+
+Reason:
+
+- this is where vendor docs are weak and product tests are strongest.
+
+** Numeric Literal Syntax
+Best method:
+
+1. product tests,
+2. vendor docs,
+3. corpus scan,
+4. third-party implementations.
+
+Reason:
+
+- this is exactly the kind of topic where documentation is often too informal.
+
+** String Escape Repertoire
+Best method:
+
+1. vendor docs,
+2. product tests,
+3. corpus scan.
+
+** Special Form Semantics
+Best method:
+
+1. dedicated vendor pages,
+2. product tests,
+3. corpus scan.
+
+** Error Behavior
+Best method:
+
+1. vendor docs,
+2. product tests,
+3. real-world error-handling code,
+4. implementation comparison.
+
+** Version Drift
+Best method:
+
+1. vendor release notes,
+2. versioned product tests.
+
+* Current Status
+The HyperSpec-style draft in `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org` is now broadly chapter-complete and no longer contains any entries marked `family-documented`.
+
+At the current stage, only two specification entries remain explicitly unresolved at the symbol level:
+
+1. `atof`
+2. `vl-member-if-not`
+
+The remaining work is therefore no longer broad coverage work. It is validation, closure of the last under-specified entries, and conversion of implementation hypotheses into tested facts.
+
+* Remaining Questions To Resolve
+** `atof`
+Open questions:
+
+- exact accepted lexical grammar
+- acceptance of leading whitespace
+- acceptance of trailing junk
+- acceptance of exponent notation
+- acceptance of `.5` and `1.`
+- acceptance of hexadecimal floating syntax such as `0x1p4`
+- locale sensitivity, especially decimal comma vs decimal point
+- whether behavior matches a C-library `atof(3)` / `strtod(3)` style implementation
+
+Required evidence:
+
+- direct Autodesk or BricsCAD documentation if found later
+- executable tests on real AutoCAD and BricsCAD
+
+Current status:
+
+- summary-documented
+- implementation-model hypothesis recorded
+- not yet product-tested
+
+** `atoi`
+This entry is documented more strongly than `atof`, but the lexical acceptance boundary is still important to validate.
+
+Open questions:
+
+- acceptance of leading whitespace
+- acceptance of trailing junk
+- acceptance of leading-zero forms such as `017`
+- acceptance or rejection of hexadecimal-looking forms such as `0xbabe`
+- whether behavior resembles `atoi(3)`, `strtol(...,10)`, or `strtol(...,0)`
+
+Required evidence:
+
+- executable tests on real AutoCAD and BricsCAD
+
+Current status:
+
+- documented for purpose and truncating decimal input
+- not yet product-tested for lexical edge behavior
+
+** `vl-member-if-not`
+Open questions:
+
+- whether Autodesk provides a dedicated symbol page in older or alternate documentation sets
+- whether the exact return and traversal behavior is fully symmetric with `vl-member-if`
+
+Required evidence:
+
+- additional Autodesk archival/documentation search
+- executable tests if needed
+
+Current status:
+
+- summary-documented by family reference and documented symmetry hypothesis
+- not yet closed with symbol-level vendor documentation
+
+** Printer / Display Surface
+The core output functions are now documented well enough for drafting, but some distinctions still deserve executable confirmation.
+
+Open questions:
+
+- exact newline/spacing distinction among `prin1`, `princ`, `print`, `terpri`, and `prompt`
+- exact return conventions in interactive host contexts
+
+Required evidence:
+
+- executable tests on AutoCAD and BricsCAD
+
+Current status:
+
+- documented from display-control family sources
+- suitable for current drafting
+- still worth testing for conformance fixtures
+
+** `exit` vs `quit`
+Open questions:
+
+- whether Autodesk maintains a semantic distinction between `exit` and `quit`
+- whether both behave identically in current releases
+
+Required evidence:
+
+- dedicated vendor pages if found
+- executable tests under controlled conditions
+
+Current status:
+
+- both documented as termination functions
+- exact distinction still not fully explained by the sampled vendor material
+
+* Final Recommendation
+Yes, both of your proposed methods should be used.
+
+But they should be used in this order:
+
+1. official documentation first,
+2. real product tests second,
+3. corpus scanning third,
+4. third-party implementation study fourth.
+
+The decisive step is not corpus mining alone and not reading VeLisp alone.
+
+The decisive step is to turn every unresolved question into:
+
+- a documented citation,
+- or a versioned executable test result,
+- or an explicitly marked implementation-defined choice.

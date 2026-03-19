@@ -405,7 +405,7 @@ The following remain under-specified and are therefore strict/lax configuration 
 - package-like syntax
 
 ** Source Notes
-- Current vendor corpus sampled in `documentation/autolisp-reference-notes.org`
+- Current vendor corpus sampled in `autolisp-spec/documentation/autolisp-reference-notes.org`
 - Status: under-specified pending further research and testing.
 
 #+LATEX: \newpage
@@ -5011,7 +5011,7 @@ The language has a de facto reader, but not a fully formal reader standard in th
 
 ** Source Notes
 - [read (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm)
-- `documentation/specification-resolution-plan.org`
+- `autolisp-spec/documentation/specification-resolution-plan.org`
 
 #+LATEX: \newpage
 
@@ -13056,7 +13056,7 @@ The host-environment model presented to Lisp code, independent of the actual ope
 #+LATEX: \newpage
 
 * Open Work
-The following areas remain incomplete and are governed by `documentation/specification-resolution-plan.org`:
+The following areas remain incomplete and are governed by `autolisp-spec/documentation/specification-resolution-plan.org`:
 
 - full dictionary coverage for all standardized names
 - exact reader grammar beyond the core subset

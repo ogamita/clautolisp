@@ -1,0 +1,33 @@
+#+TITLE: autolisp-spec
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+~autolisp-spec~ is the specification subproject of the repository.
+
+Its role is to maintain:
+
+- the main AutoLISP / Visual LISP specification draft,
+- the plan for resolving under-specified areas,
+- source notes gathered from vendor documentation,
+- converted source material used during specification work.
+
+* Status
+This is currently the most advanced subproject.
+
+The main specification draft exists, and the remaining work is primarily:
+
+- resolving under-specified semantics,
+- validating behavior against real implementations,
+- extending coverage and citations.
+
+* Main Documents
+- ~PLAN.md~
+- ~documentation/autolisp-visual-lisp-specification-draft.org~
+- ~documentation/specification-resolution-plan.org~
+- ~documentation/autolisp-reference-notes.org~
+
+* Planning Document
+The planning document for this subproject is:
+
+- ~PLAN.md~

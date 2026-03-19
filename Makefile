@@ -1,40 +1,28 @@
-LISP ?= sbcl
-CCL ?= ccl
-PANDOC ?= pandoc
+SUBPROJECTS := autolisp-spec clautolisp autolisp-test
 
-TEST_SYSTEM ?= clautolisp-tests
-EXECUTABLE ?= bin/clautolisp
+.PHONY: all documentation test clean-pdf $(SUBPROJECTS)
 
-DOCUMENTATION_ORG := $(wildcard documentation/*.org)
-SPECIFICATIONS_ORG := $(wildcard specifications/*.org)
-ORG_FILES := $(DOCUMENTATION_ORG) $(SPECIFICATIONS_ORG)
-PDF_FILES := $(ORG_FILES:.org=.pdf)
+all: documentation
 
-.PHONY: all test test-sbcl test-ccl documentation clean-pdf
+autolisp-spec:
+	$(MAKE) -C autolisp-spec all
 
-all: $(EXECUTABLE)
+clautolisp:
+	$(MAKE) -C clautolisp all
 
-$(EXECUTABLE):
-	: write the sbcl command to load and compile clautolisp.asd and generate an executable from it.
+autolisp-test:
+	$(MAKE) -C autolisp-test all
 
-test: test-sbcl
+documentation:
+	$(MAKE) -C autolisp-spec documentation
+	$(MAKE) -C clautolisp documentation
+	$(MAKE) -C autolisp-test documentation
 
-test-sbcl:
-	$(LISP) --noinform --non-interactive \
-		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "clautolisp.asd")' \
-		--eval '(asdf:test-system "$(TEST_SYSTEM)")'
-
-test-ccl:
-	$(CCL) --no-init --batch \
-		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "clautolisp.asd")' \
-		--eval '(asdf:test-system "$(TEST_SYSTEM)")'
-
-documentation: $(PDF_FILES)
-
-%.pdf: %.org
-	$(PANDOC) --from=org --to=pdf --output="$@" "$<"
+test:
+	$(MAKE) -C clautolisp test
+	$(MAKE) -C autolisp-test test
 
 clean-pdf:
-	rm -f $(PDF_FILES)
+	$(MAKE) -C autolisp-spec clean-pdf
+	$(MAKE) -C clautolisp clean-pdf
+	$(MAKE) -C autolisp-test clean-pdf
