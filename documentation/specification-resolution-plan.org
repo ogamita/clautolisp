@@ -3,7 +3,7 @@
 #+OPTIONS: toc:3 num:t
 
 * Purpose
-This document defines a concrete plan to resolve the currently under-specified areas in [autolisp-visual-lisp-specification-draft.org](/Users/pjb/src/public/clautolisp/documentation/autolisp-visual-lisp-specification-draft.org).
+This document defines a concrete plan to resolve the currently under-specified areas in `documentation/autolisp-visual-lisp-specification-draft.org`.
 
 The goal is to promote uncertain sections from:
 
@@ -315,11 +315,174 @@ A suite of `.lsp` programs that can be run under:
 
 The suite should print machine-readable results where possible.
 
+The first numeric-conversion probe batch should explicitly cover possible C-library delegation behavior for `atoi` and `atof`.
+
+Minimum `atoi` probes:
+
+- `(atoi "17")`
+- `(atoi "017")`
+- `(atoi "0xbabe")`
+- `(atoi "+17")`
+- `(atoi "-17")`
+- `(atoi "17x")`
+- `(atoi " 17")`
+
+Minimum `atof` probes:
+
+- `(atof "3.5")`
+- `(atof ".5")`
+- `(atof "1.")`
+- `(atof "1e3")`
+- `(atof "017")`
+- `(atof "0x1p4")`
+- `(atof "3,5")`
+- `(atof " 3.5")`
+
+These probes are intended to distinguish at least:
+
+- decimal-only parsing,
+- C-library `atoi(3)` / `atof(3)`-like parsing,
+- `strtol(..., 0)`-like base autodetection,
+- locale-sensitive floating parsing,
+- trailing-junk truncation behavior.
+
 ** Deliverable 3: Corpus Index
 An index of real-world AutoLISP source forms found in the wild.
 
 ** Deliverable 4: Comparative Notes
 A document capturing what VeLisp and any other implementation assume, with explicit notes where those assumptions remain unverified.
+
+* Current Status
+The HyperSpec-style draft in `documentation/autolisp-visual-lisp-specification-draft.org` is now broadly chapter-complete and no longer contains any entries marked `family-documented`.
+
+At the current stage, only two specification entries remain explicitly unresolved at the symbol level:
+
+1. `atof`
+2. `vl-member-if-not`
+
+The remaining work is therefore no longer broad coverage work. It is validation, closure of the last under-specified entries, and conversion of implementation hypotheses into tested facts.
+
+* Remaining Questions To Resolve
+** `atof`
+Open questions:
+
+- exact accepted lexical grammar
+- acceptance of leading whitespace
+- acceptance of trailing junk
+- acceptance of exponent notation
+- acceptance of `.5` and `1.`
+- acceptance of hexadecimal floating syntax such as `0x1p4`
+- locale sensitivity, especially decimal comma vs decimal point
+- whether behavior matches a C-library `atof(3)` / `strtod(3)` style implementation
+
+Required evidence:
+
+- direct Autodesk or BricsCAD documentation if found later
+- executable tests on real AutoCAD and BricsCAD
+
+Current status:
+
+- summary-documented
+- implementation-model hypothesis recorded
+- not yet product-tested
+
+** `atoi`
+This entry is documented more strongly than `atof`, but the lexical acceptance boundary is still important to validate.
+
+Open questions:
+
+- acceptance of leading whitespace
+- acceptance of trailing junk
+- acceptance of leading-zero forms such as `017`
+- acceptance or rejection of hexadecimal-looking forms such as `0xbabe`
+- whether behavior resembles `atoi(3)`, `strtol(...,10)`, or `strtol(...,0)`
+
+Required evidence:
+
+- executable tests on real AutoCAD and BricsCAD
+
+Current status:
+
+- documented for purpose and truncating decimal input
+- not yet product-tested for lexical edge behavior
+
+** `vl-member-if-not`
+Open questions:
+
+- whether Autodesk provides a dedicated symbol page in older or alternate documentation sets
+- whether the exact return and traversal behavior is fully symmetric with `vl-member-if`
+
+Required evidence:
+
+- additional Autodesk archival/documentation search
+- executable tests if needed
+
+Current status:
+
+- summary-documented by family reference and documented symmetry hypothesis
+- not yet closed with symbol-level vendor documentation
+
+** Printer / Display Surface
+The core output functions are now documented well enough for drafting, but some distinctions still deserve executable confirmation.
+
+Open questions:
+
+- exact newline/spacing distinction among `prin1`, `princ`, `print`, `terpri`, and `prompt`
+- exact return conventions in interactive host contexts
+
+Required evidence:
+
+- executable tests on AutoCAD and BricsCAD
+
+Current status:
+
+- documented from display-control family sources
+- suitable for current drafting
+- still worth testing for conformance fixtures
+
+** `exit` vs `quit`
+Open questions:
+
+- whether Autodesk maintains a semantic distinction between `exit` and `quit`
+- whether both behave identically in current releases
+
+Required evidence:
+
+- dedicated vendor pages if found
+- executable tests under controlled conditions
+
+Current status:
+
+- both documented as termination functions
+- exact distinction still not fully explained by the sampled vendor material
+
+* Remaining Tasks
+** Immediate Priority
+1. Create the reader-questions ledger in Org format.
+2. Add explicit ledger rows for `atoi`, `atof`, and `vl-member-if-not`.
+3. Implement the first numeric probe suite for `atoi` and `atof`.
+4. Define the output-format probe suite for `prin1`, `princ`, `print`, `terpri`, and `prompt`.
+5. Add a small reactor / ActiveX probe batch only where the spec still depends on host integration assumptions.
+
+** Documentation Closure
+1. Search older Autodesk documentation mirrors for a dedicated `vl-member-if-not` page.
+2. Search BricsCAD documentation for any explicit statement about `atoi` / `atof` lexical acceptance.
+3. Record any new direct citations back into the specification with updated status labels.
+
+** Test Execution
+1. Run the numeric probes on at least one recent AutoCAD release.
+2. Run the same probes on at least one recent BricsCAD release.
+3. Store results with exact product name, version, platform, and configuration.
+4. Add specific notes for `LISPSYS`, locale, and host OS where relevant.
+
+** Post-Test Spec Closure
+1. Update the `atoi` entry from hypothesis-driven notes to version-qualified tested behavior.
+2. Update the `atof` entry from summary-documented to tested-and-qualified behavior.
+3. Either close `vl-member-if-not` with a direct citation or mark it as tested symmetry.
+4. Convert all remaining “worth testing” notes into either:
+   - tested facts,
+   - version-qualified divergence,
+   - or explicit implementation-defined choices for `clautolisp`.
 
 * Suggested Immediate Sequence
 1. Create a reader-questions ledger.
