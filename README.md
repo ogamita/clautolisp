@@ -146,6 +146,38 @@ The global `Makefile` and subproject `Makefile`s provide targets for:
 - running tests,
 - building PDF output from Org documents through `pandoc`.
 
+## CI and Container Image
+
+GitLab CI is configured in:
+
+- `.gitlab-ci.yml`
+
+The CI jobs use a prebuilt container image published in the GitLab container registry:
+
+- `registry.gitlab.com/ogamita/clautolisp/clautolisp-ci:latest`
+
+That image is defined by:
+
+- `clautolisp/docker/Dockerfile`
+
+It is intended to provide a reproducible Linux test environment with:
+
+- SBCL,
+- CCL,
+- Quicklisp,
+- FiveAM.
+
+The root `Makefile` provides helper targets for building and publishing that image:
+
+- `make docker-build-clautolisp-ci`
+- `make docker-push-clautolisp-ci`
+
+The default image name can be overridden when needed:
+
+- `make docker-build-clautolisp-ci CLAUTOLISP_CI_IMAGE=registry.gitlab.com/ogamita/clautolisp/clautolisp-ci:dev`
+
+The CI image is not rebuilt on every pipeline. The image-build job is configured to run only when the relevant CI or container inputs change, while ordinary test pipelines use the published `latest` image.
+
 ## Testing
 
 Testing is a core part of the project, not a late addition.
