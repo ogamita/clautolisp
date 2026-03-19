@@ -3,7 +3,7 @@
 (defparameter *core-builtin-names*
   '("TYPE" "NULL" "NOT" "ATOM" "VL-SYMBOLP" "VL-SYMBOL-NAME" "VL-SYMBOL-VALUE"
     "+" "-" "*" "/" "1+" "1-" "MAX" "MIN" "REM" "GCD" "LCM" "~" "LOGAND"
-    "LOGIOR" "LSH"
+    "LOGIOR" "LSH" "STRCAT" "STRLEN" "SUBSTR" "ASCII" "CHR"
     "BOUNDP" "CAR" "CDR" "CONS" "LIST" "APPEND" "ASSOC" "LENGTH" "NTH"
     "REVERSE" "LAST" "MEMBER" "SUBST" "LISTP" "VL-CONSP" "VL-LIST*"
     "NUMBERP" "=" "/=" "<" "<=" ">" ">=" "ABS" "FIX" "FLOAT" "ZEROP"
@@ -140,6 +140,11 @@
       (first arguments)
       (apply #'list* arguments)))
 
+(defun require-string (object operator-name)
+  (unless (typep object 'autolisp-string)
+    (error "~A expects an AutoLISP string, got ~S." operator-name object))
+  object)
+
 (defun builtin-numberp (object)
   (if (numberp object)
       (intern-autolisp-symbol "T")
@@ -251,6 +256,49 @@
    (ash (require-int32 integer "LSH")
         (require-int32 count "LSH"))))
 
+(defun builtin-strcat (&rest strings)
+  (make-autolisp-string
+   (apply #'concatenate 'string
+          (mapcar (lambda (string)
+                    (autolisp-string-value
+                     (require-string string "STRCAT")))
+                  strings))))
+
+(defun builtin-strlen (&rest strings)
+  (let ((total 0))
+    (dolist (string strings total)
+      (incf total
+            (length (autolisp-string-value
+                     (require-string string "STRLEN")))))))
+
+(defun builtin-substr (string start &optional length)
+  (let* ((value (autolisp-string-value (require-string string "SUBSTR")))
+         (start-value (require-int32 start "SUBSTR")))
+    (when (<= start-value 0)
+      (error "SUBSTR expects a positive 1-based start index, got ~S." start))
+    (when (and length (<= (require-int32 length "SUBSTR") 0))
+      (error "SUBSTR length must be positive, got ~S." length))
+    (let ((start-index (1- start-value)))
+      (if (>= start-index (length value))
+          (make-autolisp-string "")
+          (let ((end-index (if length
+                               (min (length value)
+                                    (+ start-index length))
+                               (length value))))
+            (make-autolisp-string (subseq value start-index end-index)))))))
+
+(defun builtin-ascii (string)
+  (let ((value (autolisp-string-value (require-string string "ASCII"))))
+    (when (zerop (length value))
+      (error "ASCII expects a non-empty string."))
+    (char-code (char value 0))))
+
+(defun builtin-chr (code)
+  (let ((character (code-char (require-int32 code "CHR"))))
+    (unless character
+      (error "CHR code does not designate a valid character: ~S." code))
+    (make-autolisp-string (string character))))
+
 (defun comparison-value (object operator-name)
   (cond
     ((numberp object)
@@ -355,6 +403,11 @@
    (make-autolisp-subr "LOGAND" #'builtin-logand)
    (make-autolisp-subr "LOGIOR" #'builtin-logior)
    (make-autolisp-subr "LSH" #'builtin-lsh)
+   (make-autolisp-subr "STRCAT" #'builtin-strcat)
+   (make-autolisp-subr "STRLEN" #'builtin-strlen)
+   (make-autolisp-subr "SUBSTR" #'builtin-substr)
+   (make-autolisp-subr "ASCII" #'builtin-ascii)
+   (make-autolisp-subr "CHR" #'builtin-chr)
    (make-autolisp-subr "BOUNDP" #'builtin-boundp)
    (make-autolisp-subr "CAR" #'builtin-car)
    (make-autolisp-subr "CDR" #'builtin-cdr)

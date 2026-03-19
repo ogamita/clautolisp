@@ -27,5 +27,6 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Add the next arithmetic helpers: `1+`, `1-`, `max`, and `min`.
 - [x] Add integer arithmetic helpers `rem` and `gcd`.
 - [x] Add integer arithmetic and bitwise helpers `lcm`, `~`, `logand`, `logior`, and `lsh`.
-- [ ] Add first string and file builtins.
+- [x] Add the first string builtins: `strcat`, `strlen`, `substr`, `ascii`, and `chr`.
+- [ ] Add first file builtins.
 - [ ] Keep the builtin inventory clearly separated from special operators as evaluator work expands.
