@@ -2,7 +2,8 @@
 
 (defparameter *core-builtin-names*
   '("TYPE" "NULL" "NOT" "ATOM" "VL-SYMBOLP" "VL-SYMBOL-NAME" "VL-SYMBOL-VALUE"
-    "+" "-" "*" "/"
+    "+" "-" "*" "/" "1+" "1-" "MAX" "MIN" "REM" "GCD" "LCM" "~" "LOGAND"
+    "LOGIOR" "LSH"
     "BOUNDP" "CAR" "CDR" "CONS" "LIST" "APPEND" "ASSOC" "LENGTH" "NTH"
     "REVERSE" "LAST" "MEMBER" "SUBST" "LISTP" "VL-CONSP" "VL-LIST*"
     "NUMBERP" "=" "/=" "<" "<=" ">" ">=" "ABS" "FIX" "FLOAT" "ZEROP"
@@ -186,6 +187,70 @@
        (apply #'/ first-number more-numbers)
        (/ 1 first-number))))
 
+(defun builtin-1+ (object)
+  (arithmetic-result (1+ (require-number object "1+"))))
+
+(defun builtin-1- (object)
+  (arithmetic-result (1- (require-number object "1-"))))
+
+(defun builtin-max (first-number &rest more-numbers)
+  (require-number first-number "MAX")
+  (dolist (argument more-numbers)
+    (require-number argument "MAX"))
+  (arithmetic-result (apply #'max first-number more-numbers)))
+
+(defun builtin-min (first-number &rest more-numbers)
+  (require-number first-number "MIN")
+  (dolist (argument more-numbers)
+    (require-number argument "MIN"))
+  (arithmetic-result (apply #'min first-number more-numbers)))
+
+(defun require-int32 (object operator-name)
+  (unless (typep object '(signed-byte 32))
+    (error "~A expects a 32-bit AutoLISP integer, got ~S." operator-name object))
+  object)
+
+(defun builtin-rem (first-number second-number)
+  (arithmetic-result
+   (rem (require-int32 first-number "REM")
+        (require-int32 second-number "REM"))))
+
+(defun builtin-gcd (&rest arguments)
+  (dolist (argument arguments)
+    (require-int32 argument "GCD"))
+  (arithmetic-result
+   (if arguments
+       (apply #'gcd arguments)
+       0)))
+
+(defun builtin-lcm (&rest arguments)
+  (dolist (argument arguments)
+    (require-int32 argument "LCM"))
+  (arithmetic-result
+   (if arguments
+       (apply #'lcm arguments)
+       1)))
+
+(defun builtin-~ (object)
+  (arithmetic-result (lognot (require-int32 object "~"))))
+
+(defun builtin-logand (first-integer &rest more-integers)
+  (require-int32 first-integer "LOGAND")
+  (dolist (argument more-integers)
+    (require-int32 argument "LOGAND"))
+  (arithmetic-result (apply #'logand first-integer more-integers)))
+
+(defun builtin-logior (first-integer &rest more-integers)
+  (require-int32 first-integer "LOGIOR")
+  (dolist (argument more-integers)
+    (require-int32 argument "LOGIOR"))
+  (arithmetic-result (apply #'logior first-integer more-integers)))
+
+(defun builtin-lsh (integer count)
+  (arithmetic-result
+   (ash (require-int32 integer "LSH")
+        (require-int32 count "LSH"))))
+
 (defun comparison-value (object operator-name)
   (cond
     ((numberp object)
@@ -279,6 +344,17 @@
    (make-autolisp-subr "-" #'builtin--)
    (make-autolisp-subr "*" #'builtin-*)
    (make-autolisp-subr "/" #'builtin-/)
+   (make-autolisp-subr "1+" #'builtin-1+)
+   (make-autolisp-subr "1-" #'builtin-1-)
+   (make-autolisp-subr "MAX" #'builtin-max)
+   (make-autolisp-subr "MIN" #'builtin-min)
+   (make-autolisp-subr "REM" #'builtin-rem)
+   (make-autolisp-subr "GCD" #'builtin-gcd)
+   (make-autolisp-subr "LCM" #'builtin-lcm)
+   (make-autolisp-subr "~" #'builtin-~)
+   (make-autolisp-subr "LOGAND" #'builtin-logand)
+   (make-autolisp-subr "LOGIOR" #'builtin-logior)
+   (make-autolisp-subr "LSH" #'builtin-lsh)
    (make-autolisp-subr "BOUNDP" #'builtin-boundp)
    (make-autolisp-subr "CAR" #'builtin-car)
    (make-autolisp-subr "CDR" #'builtin-cdr)
