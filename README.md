@@ -1,20 +1,23 @@
 # clautolisp
 
-`clautolisp` is a Common Lisp project with two main goals:
+`clautolisp` is a Common Lisp project with three coordinated branches:
 
 1. formalize a standard-level AutoLISP / Visual LISP specification document;
 2. develop an AutoLISP implementation in Common Lisp, intended in particular as a development, validation, and testing tool.
+3. build `autolisp-test`, a conformance-oriented test suite for AutoLISP implementations and host profiles.
 
 ## Purpose
 
 AutoLISP and Visual LISP are important Lisp dialects in the CAD world, but they do not have a single unified language standard comparable to the Common Lisp HyperSpec.
 
-This project addresses that gap in two coordinated tracks:
+This project addresses that gap in three coordinated tracks:
 
 - specification work:
   define a structured, source-backed, version-aware reference specification for AutoLISP / Visual LISP;
 - implementation work:
   build a portable Common Lisp implementation that can execute and test AutoLISP code while making dialect, host, and compatibility choices explicit.
+- conformance-testing work:
+  build a specification-oriented test corpus and harness that can be run against `clautolisp` and real AutoLISP implementations to produce versioned test reports.
 
 The implementation is not meant only as a runtime. It is also intended to serve as:
 
@@ -68,6 +71,23 @@ The implementation track aims to provide:
 
 The implementation is written in portable Common Lisp as far as practical.
 
+### 3. autolisp-test
+
+`autolisp-test` is the third branch of the project.
+
+Its role is to provide an AutoLISP analogue of Common Lisp `ansi-tests`: a specification-oriented conformance suite that tests language behavior rather than implementation-specific extensions.
+
+This branch aims to provide:
+
+- a reusable test harness,
+- a corpus of specification-backed tests grouped by language area,
+- expected-failure overlays for specific implementation/version/host combinations,
+- comparable conformance reports across `clautolisp`, AutoCAD, BricsCAD, and future implementations.
+
+The planning document for this branch is:
+
+- `autolisp-test/documentation/autolisp-test-development-plan.org`
+
 ## Repository Layout
 
 - `AGENTS.md`
@@ -78,6 +98,8 @@ The implementation is written in portable Common Lisp as far as practical.
   project automation for tests and document conversion
 - `documentation/`
   planning documents, specification work, development notes, and test plans
+- `autolisp-test/`
+  conformance-test subproject, including its own documentation, harness, and test corpus
 - `specifications/`
   converted source material and specification-related documents
 
