@@ -32,7 +32,7 @@
   :description "Tests for the clautolisp AutoLISP reader subsystem."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-reader")
+  :depends-on ("clautolisp/autolisp-reader" "fiveam")
   :serial t
   :components
   ((:file "autolisp-reader/tests/package")
