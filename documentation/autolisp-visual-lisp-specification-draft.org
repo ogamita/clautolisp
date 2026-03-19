@@ -2,10 +2,17 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
+#+VERSION: 0.1.0
 
 * 1 Introduction
 ** Overview
 This document is a HyperSpec-style reference specification for the AutoLISP / Visual LISP language family targeted by `clautolisp`.
+
+The short name of this document is *AutoLISP Spec*.
+
+The current document version is *0.1.0*.
+
+Any modification of this document must increment its version number.
 
 It is intended to be usable as a local reference document, not merely as a planning memo. It therefore combines:
 
@@ -56,6 +63,8 @@ It does *not* follow that every Windows-only or Visual LISP extension function i
 - BricsCAD developer overview: [BricsCAD Developer Reference Overview](https://developer.bricsys.com/bricscad/help/en_US/V24/DevRef/source/DevRef_Overview.htm)
 - Status: chapter structure adapted by design; language scope documented and inferred.
 
+#+LATEX: \newpage
+
 * 2 Syntax
 ** Overview
 AutoLISP uses parenthesized Lisp syntax. Vendor documentation specifies the syntax mostly through examples, concept pages, and individual function documentation rather than through a single formal grammar.
@@ -72,6 +81,8 @@ An AutoLISP source contains expressions. Expression classes include:
 - quoted expressions,
 - calls,
 - special forms.
+
+#+LATEX: \newpage
 
 ** Reader Syntax Entry: Integer Literal
 *** Name
@@ -120,6 +131,8 @@ Some older or host-specific readers may accept additional token spellings, but t
 - [About Integers (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-MAC-AutoLisp/files/GUID-EF6114FC-F1E4-4C71-91CC-07D01E6C8ABB.htm)
 - Status: documented in prose, formal syntax inferred.
 
+#+LATEX: \newpage
+
 ** Reader Syntax Entry: Real Literal
 *** Name
 Real Literal
@@ -166,6 +179,8 @@ The published documentation leaves `.5`, `1.`, and some exponent variants under-
 - [About Reals (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP/files/GUID-F2BFD097-295B-4499-BBD9-0A785C377070.htm)
 - Status: partially documented, partially inferred.
 
+#+LATEX: \newpage
+
 ** Reader Syntax Entry: String Literal
 *** Name
 String Literal
@@ -210,6 +225,8 @@ The complete escape repertoire remains under-specified in the current source cor
 - [LISPSYS](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-1853092D-6E6D-4A06-8956-AD2C3DF203A3.htm)
 - [read + write text files (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/readwritetextfiles.htm)
 - Status: documented in principle, incomplete in detail.
+
+#+LATEX: \newpage
 
 ** Reader Syntax Entry: Symbol
 *** Name
@@ -260,6 +277,8 @@ This specification does not standardize CL-style package syntax or vertical-bar 
 - [read (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm)
 - Status: partially documented.
 
+#+LATEX: \newpage
+
 ** Reader Syntax Entry: List
 *** Name
 List
@@ -296,6 +315,8 @@ The empty list is semantically `nil`.
 - [About Lists (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-F8074AA9-F361-4960-B628-681465B74229.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Reader Syntax Entry: Dotted Pair
 *** Name
 Dotted Pair
@@ -330,6 +351,8 @@ Dotted pairs are semantically more important in AutoLISP than in many other Lisp
 *** Source Notes
 - [About Dotted Pairs (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/PLK/AutoCAD-AutoLISP/files/GUID-877B87BA-6FA2-4894-9F94-184E7DF25B7D.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Reader Syntax Entry: Quote
 *** Name
@@ -380,6 +403,8 @@ The following remain under-specified and are therefore strict/lax configuration 
 - Current vendor corpus sampled in `documentation/autolisp-reference-notes.org`
 - Status: under-specified pending further research and testing.
 
+#+LATEX: \newpage
+
 * 3 Evaluation and Execution
 ** Overview
 AutoLISP evaluation is Lisp-like but not identical to Common Lisp evaluation. This chapter defines the general evaluation model needed by the rest of the specification.
@@ -392,6 +417,8 @@ AutoLISP evaluation is Lisp-like but not identical to Common Lisp evaluation. Th
 - `nil` is false and every non-`nil` value is true in conditional contexts
 
 Evaluation order is historically version-sensitive in error-reporting contexts. Autodesk explicitly notes that modern AutoLISP evaluates all arguments before checking argument types in at least some cases, unlike older releases.
+
+#+LATEX: \newpage
 
 ** Special Form Entry: QUOTE
 *** Name
@@ -437,6 +464,8 @@ Quote shorthand is defined in chapter 2.
 *** Source Notes
 - [quote (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-18F7E287-CB2F-4150-9A07-CE23C3F9E604.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Special Form Entry: IF
 *** Name
@@ -493,6 +522,8 @@ Conditional truth is based on `nil` versus non-`nil`.
 - [if (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-916F1A5C-FD70-4D66-897E-6DCD666DCB39.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Special Form Entry: COND
 *** Name
 `cond`
@@ -545,6 +576,8 @@ Stable across vendors.
 - [cond (AutoLISP)](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7BA45202-D95F-4F2D-8D83-965024826074.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Special Form Entry: AND
 *** Name
 `and`
@@ -594,6 +627,8 @@ Because Autodesk's summary page is brief, the exact value returned in non-trivia
 - [Equality and Conditional Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C6A7FC58-7A07-4650-9D59-12CAFD194FDA.htm)
 - Status: documented as a special form and by summary; exact return convention still needs tighter confirmation.
 
+#+LATEX: \newpage
+
 ** Special Form Entry: SETQ
 *** Name
 `setq`
@@ -641,6 +676,8 @@ Stable across vendors.
 - [setq (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-2F4B7A7B-7B6F-4E1C-B32E-677506094EAA.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Special Form Entry: SET
 *** Name
 `set`
@@ -682,6 +719,8 @@ Unlike `setq`, the symbol argument is evaluated.
 - [set (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-041BE20B-CFA6-465B-A98B-1BCBDC810881.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Special Form Entry: WHILE
 *** Name
 `while`
@@ -718,6 +757,8 @@ Malformed syntax is erroneous.
 - [while (AutoLISP)](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-AutoLISP-Reference/files/GUID-E7C900DB-8B66-4109-BEF6-B0A18E8CF6B6.htm)
 - Status: documented in core behavior; concise here.
 
+#+LATEX: \newpage
+
 ** Special Form Entry: REPEAT
 *** Name
 `repeat`
@@ -752,6 +793,8 @@ Erroneous if the repetition count is not acceptable to the active host semantics
 *** Source Notes
 - [repeat (AutoLISP)](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-AutoLISP-Reference/files/GUID-413F72B4-BA37-4E5E-9D51-A0091130A317.htm)
 - Status: documented in core behavior; concise here.
+
+#+LATEX: \newpage
 
 ** Special Form Entry: FOREACH
 *** Name
@@ -790,6 +833,8 @@ Erroneous if the list argument is not acceptable to the active host semantics.
 - [foreach (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-BE6A23C4-4E18-45A6-854E-2DE9574A6925.htm)
 - Status: documented in core behavior; concise here.
 
+#+LATEX: \newpage
+
 ** Special Form Entry: OR
 *** Name
 `or`
@@ -822,6 +867,8 @@ This differs from Common Lisp `or`, which returns the first non-`nil` value.
 *** Source Notes
 - [or (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-64ECF4D5-0714-45FD-8E27-284E9D2FC8B2.htm)
 - Status: documented and significant for compatibility.
+
+#+LATEX: \newpage
 
 ** Special Form Entry: PROGN
 *** Name
@@ -863,6 +910,8 @@ Autodesk classifies `progn` as a special form.
 *** Source Notes
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
 - Status: documented as a special form; detailed entry still partly inferred from stable Lisp usage.
+
+#+LATEX: \newpage
 
 ** Special Form Entry: LAMBDA
 *** Name
@@ -909,6 +958,8 @@ The exact object model of the resulting anonymous function is not formally speci
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
 - Status: documented as a special form; detailed semantics partly inferred.
 
+#+LATEX: \newpage
+
 ** Special Form Entry: FUNCTION
 *** Name
 `function`
@@ -949,6 +1000,8 @@ This facility is especially relevant in functional contexts such as `mapcar` and
 - [function (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-MAC-AutoLISP-Reference/files/GUID-CF7E5870-561F-42DB-B134-CCD41EF93A25.htm)
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
 - Status: documented, with some remaining model-level ambiguity.
+
+#+LATEX: \newpage
 
 ** Special Form Entry: COMMAND
 *** Name
@@ -1000,6 +1053,8 @@ This is one of the clearest examples of an AutoLISP construct that cannot be red
 - [Query and Command Functions Reference](https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-F9ABE09D-9A71-4C00-8E5D-5BA70C3797B5.htm)
 - Status: documented in role and category; further host details remain chapter-level.
 
+#+LATEX: \newpage
+
 ** Special Form Entry: TRACE
 *** Name
 `trace`
@@ -1025,6 +1080,8 @@ Detailed debugger/tracer output semantics are not fully developed in this draft.
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
 - Status: category documented; detailed semantics still sparse.
 
+#+LATEX: \newpage
+
 ** Special Form Entry: UNTRACE
 *** Name
 `untrace`
@@ -1046,6 +1103,8 @@ Autodesk classifies `untrace` as a special form.
 *** Source Notes
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
 - Status: category documented; detailed semantics still sparse.
+
+#+LATEX: \newpage
 
 ** Special Form Entry: VLAX-FOR
 *** Name
@@ -1096,6 +1155,8 @@ The standardized special forms identified in Autodesk documentation are:
 - `vlax-for`
 - `while`
 
+#+LATEX: \newpage
+
 ** Special Form Entry: DEFUN
 *** Name
 `defun`
@@ -1136,6 +1197,8 @@ The slash separating arguments and locals must be surrounded by spaces in Autode
 *** Source Notes
 - [About Defining a Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP/files/GUID-9EDF48C2-1678-4DC3-BFD6-9D1DEAC525F0.htm)
 - Status: documented in practical syntax, partially under-specified semantically.
+
+#+LATEX: \newpage
 
 ** Special Form Entry: DEFUN-Q
 *** Name
@@ -1202,6 +1265,8 @@ Modern `defun` covers the first concern. `defun-q` exists only for the second, c
 - [defun-q-list-ref (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ITA/AutoCAD-MAC-AutoLISP-Reference/files/GUID-DAF4A76E-9346-4A68-A0C8-17695177033B.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: DEFUN-Q-LIST-REF
 *** Name
 `defun-q-list-ref`
@@ -1265,6 +1330,8 @@ The sampled Autodesk reference does not document additional exceptional situatio
 - [Function-Handling Functions Reference](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6804DF2D-E5C4-466A-9869-3CDD7A031FAA.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: DEFUN-Q-LIST-SET
 *** Name
 `defun-q-list-set`
@@ -1326,9 +1393,13 @@ That makes the preserved list representation semantically active, not merely des
 - [About Error Handling (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-AutoLISP/files/GUID-027AD2E0-5AC5-48DA-B451-112B7EECE40F.htm)
 - Status: mixed documented and under-specified in certain details.
 
+#+LATEX: \newpage
+
 * 4 Types and Runtime Classes
 ** Overview
 AutoLISP exposes a practical runtime type system through the `type` function and through function contracts.
+
+#+LATEX: \newpage
 
 ** Distinguished Object Entry: NIL
 *** Name
@@ -1376,6 +1447,8 @@ In particular, the Common Lisp type named `nil` is not an appropriate model for 
 - [not (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ESP/AutoCAD-MAC-AutoLISP-Reference/files/GUID-991AD6A0-61AA-45C9-8C27-CADF9F36BE71.htm)
 - Status: documented by behavior; explicitly not treated here as a separate runtime type.
 
+#+LATEX: \newpage
+
 ** Type Entry: Symbol
 *** Name
 Symbol
@@ -1408,6 +1481,8 @@ Do not model AutoLISP symbols using raw Common Lisp package semantics.
 - [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
 - Status: documented in practice.
 
+#+LATEX: \newpage
+
 ** Type Entry: ENAME
 *** Name
 `ENAME`
@@ -1435,6 +1510,8 @@ Core to host interaction in both Autodesk and BricsCAD environments.
 - [namedobjdict (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-A1E43B30-EF8C-452E-97F5-8AC201E310EE.htm)
 - Status: documented by host APIs.
 
+#+LATEX: \newpage
+
 ** Type Entry: PICKSET
 *** Name
 `PICKSET`
@@ -1460,6 +1537,8 @@ Selection-set indexing and limits are version-sensitive and must be tested.
 - [ssname (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-LT-AutoLISP-Reference/files/GUID-EFB83751-9AC5-4C52-AD3D-D971BC560C15.htm)
 - Status: documented in usage.
 
+#+LATEX: \newpage
+
 ** Type Entry: FILE
 *** Name
 `FILE`
@@ -1484,6 +1563,8 @@ A file descriptor returned by `open`.
 - [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
 - Status: document chapter still incomplete but structure is stable.
 
+#+LATEX: \newpage
+
 * 5 Data and Control Flow
 ** Overview
 AutoLISP data and control flow are built around symbols, numbers, strings, lists, dotted pairs, and control operators such as `if`, `cond`, `while`, `repeat`, and `foreach`.
@@ -1493,6 +1574,8 @@ AutoLISP data and control flow are built around symbols, numbers, strings, lists
 - points are ordinary lists of two or three numbers
 - association lists are central host data structures
 - dotted pairs are first-class data
+
+#+LATEX: \newpage
 
 ** Variable Entry: NIL
 *** Name
@@ -1547,6 +1630,8 @@ This specification avoids importing the Common Lisp distinction between the `nil
 - [About Point Lists (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP/files/GUID-BFED8707-AB01-49BC-B0A9-D872794311DF.htm)
 - [About Dotted Pairs (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/PLK/AutoCAD-AutoLISP/files/GUID-877B87BA-6FA2-4894-9F94-184E7DF25B7D.htm)
 
+#+LATEX: \newpage
+
 * 6 Iteration
 ** Overview
 The primary standardized iteration constructs explicitly documented in the sampled corpus are `while`, `repeat`, and `foreach`.
@@ -1557,9 +1642,13 @@ See chapter 3 entries for `while`, `repeat`, and `foreach`.
 ** Source Notes
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
 
+#+LATEX: \newpage
+
 * 7 Symbols and Bindings
 ** Overview
 Symbols name values and functions. AutoLISP variable management is documented pragmatically rather than through a formal environment calculus.
+
+#+LATEX: \newpage
 
 ** Variable Entry: T
 *** Name
@@ -1581,6 +1670,8 @@ Canonical non-`nil` truth value.
 - [About Variables (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP/files/GUID-CC89231D-E10F-47D0-A1FD-A989D24C7105.htm)
 - Status: documented in practical terms.
 
+#+LATEX: \newpage
+
 ** Variable Entry: PI
 *** Name
 `PI`
@@ -1600,6 +1691,8 @@ Predefined mathematical constant.
 *** Source Notes
 - [About Variables (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP/files/GUID-CC89231D-E10F-47D0-A1FD-A989D24C7105.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Variable Entry: PAUSE
 *** Name
@@ -1621,6 +1714,8 @@ Host-interaction-specific.
 ** Source Notes
 - [About Symbols and Variables (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP/files/GUID-1855E7B0-2474-49E6-9EE3-8BC541FC1CC8.htm)
 - [About Variables (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP/files/GUID-CC89231D-E10F-47D0-A1FD-A989D24C7105.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: ATOM
 *** Name
@@ -1668,6 +1763,8 @@ Because `nil` is also the empty list in other AutoLISP contexts, the `atom` resu
 - [atom (AutoLISP)](https://help.autodesk.com/cloudhelp/2019/KOR/AutoCAD-AutoLISP-Reference/files/GUID-3B74E28D-7C3B-4409-9DFE-0305E9881560.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: BOUNDP
 *** Name
 `boundp`
@@ -1710,6 +1807,8 @@ Useful for distinguishing unassigned symbols from symbols intentionally set to `
 - [boundp (AutoLISP)](https://help.autodesk.com/cloudhelp/2021/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F8491426-8505-4390-825F-CACE15EBB48F.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: NULL
 *** Name
 `null`
@@ -1749,6 +1848,8 @@ Closely related to `not`, but documented separately.
 - [null (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/DEU/AutoCAD-AutoLISP/files/GUID-2CA2E5F1-297F-4ECA-9500-5FFCD4877126.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: NOT
 *** Name
 `not`
@@ -1787,6 +1888,8 @@ Behaviorally aligned with `null` in documented AutoLISP usage.
 *** Source Notes
 - [not (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ESP/AutoCAD-MAC-AutoLISP-Reference/files/GUID-991AD6A0-61AA-45C9-8C27-CADF9F36BE71.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: TYPE
 *** Name
@@ -1843,6 +1946,8 @@ This function is one of the strongest direct sources for the practical runtime t
 - [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-SYMBOLP
 *** Name
 `vl-symbolp`
@@ -1880,6 +1985,8 @@ This entry is particularly important because its treatment of `nil` is easy to g
 - [vl-symbolp (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-F51AFE0A-CA6C-428D-8E8D-3607BF551990.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-SYMBOL-NAME
 *** Name
 `vl-symbol-name`
@@ -1913,6 +2020,8 @@ Belongs to the Visual LISP reflection/introspection layer.
 *** Source Notes
 - [Symbol-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-796EFF94-E904-4F5B-B120-C6D2DCD8646A.htm)
 - Status: documented by family summary; dedicated page still desirable.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-SYMBOL-VALUE
 *** Name
@@ -1968,6 +2077,8 @@ The Autodesk symbol-handling function family includes at least:
 Source:
 - [Symbol-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-796EFF94-E904-4F5B-B120-C6D2DCD8646A.htm)
 
+#+LATEX: \newpage
+
 * 8 Numbers
 ** Overview
 AutoLISP numbers are divided primarily into integers and reals.
@@ -1981,6 +2092,8 @@ AutoLISP numbers are divided primarily into integers and reals.
 ** Source Notes
 - [About Integers (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-MAC-AutoLisp/files/GUID-EF6114FC-F1E4-4C71-91CC-07D01E6C8ABB.htm)
 - [About Reals (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP/files/GUID-F2BFD097-295B-4499-BBD9-0A785C377070.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: +
 *** Name
@@ -2019,6 +2132,8 @@ Core arithmetic primitive across dialects.
 - [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
 - Status: documented by family summary; detailed corner cases still to be tightened.
 
+#+LATEX: \newpage
+
 ** Function Entry: -
 *** Name
 `-`
@@ -2044,6 +2159,8 @@ None.
 - [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
 - Status: documented by family summary.
 
+#+LATEX: \newpage
+
 ** Function Entry: *
 *** Name
 `*`
@@ -2068,6 +2185,8 @@ None.
 *** Source Notes
 - [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
 - Status: documented by family summary.
+
+#+LATEX: \newpage
 
 ** Function Entry: /
 *** Name
@@ -2096,6 +2215,8 @@ Division by zero and invalid numeric arguments are erroneous.
 *** Source Notes
 - [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
 - Status: documented by family summary.
+
+#+LATEX: \newpage
 
 ** Function Entry: =
 *** Name
@@ -2130,6 +2251,8 @@ Autodesk comparison functions accept strings as well as numbers in documented su
 - [Equality and Conditional Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C6A7FC58-7A07-4650-9D59-12CAFD194FDA.htm)
 - Status: documented by family summary; exact domain rules should be tightened.
 
+#+LATEX: \newpage
+
 ** Function Entry: /=
 *** Name
 `/=`
@@ -2155,6 +2278,8 @@ Side effects are those of evaluating the arguments.
 *** Source Notes
 - [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
 - Status: documented by family summary.
+
+#+LATEX: \newpage
 
 ** Function Entry: <
 *** Name
@@ -2185,6 +2310,8 @@ Side effects are those of evaluating the arguments.
 - [< (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-67C8900F-0491-4D91-AA05-9136639E7424.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: <=
 *** Name
 `<=`
@@ -2210,6 +2337,8 @@ Side effects are those of evaluating the arguments.
 *** Source Notes
 - [<= (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-66B7B146-E279-4C22-9C0A-1F312166C15B.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: >
 *** Name
@@ -2237,6 +2366,8 @@ Side effects are those of evaluating the arguments.
 - [> (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ITA/AutoCAD-LT-AutoLISP-Reference/files/GUID-DAB2660E-AB9D-425D-B0C5-C5774164ADCD.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: >=
 *** Name
 `>=`
@@ -2263,6 +2394,8 @@ Side effects are those of evaluating the arguments.
 - [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
 - Status: documented by family summary.
 
+#+LATEX: \newpage
+
 ** Function Entry: ABS
 *** Name
 `abs`
@@ -2287,6 +2420,8 @@ None.
 *** Source Notes
 - [A Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/HUN/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented by alphabetic summary.
+
+#+LATEX: \newpage
 
 ** Function Entry: FIX
 *** Name
@@ -2313,6 +2448,8 @@ The documentation on integers and reals makes `fix` especially relevant to the i
 - [fix (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-93B5F13B-348E-49E0-A116-0861684506D5.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: FLOAT
 *** Name
 `float`
@@ -2337,6 +2474,8 @@ None.
 *** Source Notes
 - [zerop (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-3D509EE1-A809-4B78-915C-28ECF483BB72.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: ZEROP
 *** Name
@@ -2363,6 +2502,8 @@ None.
 *** Source Notes
 - [Arithmetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP-Reference/files/GUID-FC14467C-63B9-4400-8C6A-266D21C846AE.htm)
 - Status: documented by Autodesk's arithmetic reference table.
+
+#+LATEX: \newpage
 
 ** Function Entry: MINUSP
 *** Name
@@ -2433,6 +2574,8 @@ The equality and conditional family contributes additional numeric predicates an
 Sources:
 - [Arithmetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-MAC-AutoLISP-Reference/files/GUID-FC14467C-63B9-4400-8C6A-266D21C846AE.htm)
 - [Equality and Conditional Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C6A7FC58-7A07-4650-9D59-12CAFD194FDA.htm)
+
+#+LATEX: \newpage
 
 * 9 Characters and Strings
 ** Overview
@@ -2559,6 +2702,8 @@ This is especially important because Common Lisp string behavior is implementati
 - [read + write text files (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/readwritetextfiles.htm)
 - Status: documented for major behavioral shift and observable effects; internal representation remains under-specified.
 
+#+LATEX: \newpage
+
 ** Function Entry: STRCAT
 *** Name
 `strcat`
@@ -2596,6 +2741,8 @@ String behavior is subject to the pre-Unicode / post-Unicode split discussed ear
 
 *** Source Notes
 - [strcat (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/HUN/AutoCAD-LT-AutoLISP-Reference/files/GUID-4430B1BF-DBB5-49D1-98F9-711B480976A1.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: STRLEN
 *** Name
@@ -2637,6 +2784,8 @@ Autodesk documents that AutoCAD 2021 changed the function so Unicode characters 
 *** Source Notes
 - [strlen (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F16AAC5F-5C87-4DC5-A7B9-BDCD25DC507A.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: SUBSTR
 *** Name
 `substr`
@@ -2673,6 +2822,8 @@ String indexing and character-unit semantics are version-sensitive in Unicode-er
 - Autodesk documents 1-based indexing: the first character of the string is position `1`.
 - If `length` is omitted, Autodesk documents that the substring extends to the end of the string.
 
+#+LATEX: \newpage
+
 ** Function Entry: STRCASE
 *** Name
 `strcase`
@@ -2708,6 +2859,8 @@ Case-conversion rules for non-ASCII characters are potentially version-sensitive
 - Autodesk documents that `which` equal to `T` requests lowercase conversion; otherwise uppercase conversion is used.
 - Autodesk documents that case mapping follows the currently configured character set.
 
+#+LATEX: \newpage
+
 ** Function Entry: ASCII
 *** Name
 `ascii`
@@ -2741,6 +2894,8 @@ This function is one of the clearest probes into the observable character model 
 *** Source Notes
 - [ascii (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-03E1B586-72CB-4AB6-A151-B581AE530318.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: CHR
 *** Name
@@ -2776,6 +2931,8 @@ Like `ascii`, `chr` is affected by the pre-Unicode / post-Unicode split.
 
 *** Notes
 - Autodesk documents that AutoCAD 2021 changed `chr` from legacy ASCII-oriented behavior to Unicode-code-point-oriented behavior when `LISPSYS` is `1` or `2`.
+
+#+LATEX: \newpage
 
 ** Function Entry: ATOI
 *** Name
@@ -2827,6 +2984,8 @@ Exact accepted syntax should be aligned with the eventual numeric-lexical specif
 *** Source Notes
 - [atoi (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-20EF237C-7079-4E29-860C-B8531D6C7F36.htm)
 - [atof(3)](https://man7.org/linux/man-pages/man3/atof.3.html)
+
+#+LATEX: \newpage
 
 ** Function Entry: ATOF
 *** Name
@@ -2884,6 +3043,8 @@ Exact accepted input syntax should be tied to the eventual numeric and Unicode t
 - [atof(3)](https://man7.org/linux/man-pages/man3/atof.3.html)
 - Status: summary-documented; exact lexical acceptance remains under-specified.
 
+#+LATEX: \newpage
+
 ** Function Entry: ITOA
 *** Name
 `itoa`
@@ -2910,6 +3071,8 @@ None.
 
 *** Source Notes
 - [itoa (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-7E247CA3-95D3-4497-BDE2-6EB0E727DD4D.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: RTOS
 *** Name
@@ -2958,6 +3121,8 @@ This function is part of the language/host formatting boundary, not purely a gen
 - [rtos (AutoLISP)](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-AutoLISP-Reference/files/GUID-D03ABBC2-939A-44DB-8C93-FC63B64DE4A2.htm)
 - [About String Conversions (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-AutoLISP/files/GUID-A38E30D4-684E-44FA-A910-E08522876414.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: ANGTOF
 *** Name
 `angtof`
@@ -2996,6 +3161,8 @@ Part of host-oriented numeric formatting and parsing semantics.
 *** Source Notes
 - [angtof (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9DE9200B-F27E-4BB6-8AE6-BC5C8A64A527.htm)
 - [About Angular Conversion (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP/files/GUID-725BC3DE-3D4C-4365-A7F9-FAD5B8AC2DD1.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: ANGTOS
 *** Name
@@ -3039,6 +3206,8 @@ A string if successful; otherwise `nil`.
 *** Source Notes
 - [angtos (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-C2D277B4-2F59-423F-9C56-E5A1DEFE0CCE.htm)
 - [About Angular Conversion (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP/files/GUID-725BC3DE-3D4C-4365-A7F9-FAD5B8AC2DD1.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: DISTOF
 *** Name
@@ -3113,6 +3282,8 @@ Sources:
 - [String-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-8543549B-F0D7-43CD-87A3-F6B827FF0B88.htm)
 - [Conversion Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/KOR/AutoCAD-AutoLISP-Reference/files/GUID-5BDBD4BC-289E-4A49-9BB9-DF6A6147E0FC.htm)
 
+#+LATEX: \newpage
+
 * 10 Lists, Dotted Pairs, and Association Lists
 ** Overview
 Lists are both code and data. Dotted pairs and association lists are especially important because they carry host entity and table data.
@@ -3125,6 +3296,8 @@ Lists are both code and data. Dotted pairs and association lists are especially 
 ** Source Notes
 - [About Lists (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-F8074AA9-F361-4960-B628-681465B74229.htm)
 - [About Dotted Pairs (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/PLK/AutoCAD-AutoLISP/files/GUID-877B87BA-6FA2-4894-9F94-184E7DF25B7D.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: CAR
 *** Name
@@ -3169,6 +3342,8 @@ That page does not explicitly state dotted-pair behavior. Implementations may su
 - [car (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-2DD1AF33-415C-4C1A-9631-DA958134C53A.htm)
 - Status: documented for lists and empty-list behavior; dotted-pair behavior remains inferred.
 
+#+LATEX: \newpage
+
 ** Function Entry: CDR
 *** Name
 `cdr`
@@ -3211,6 +3386,8 @@ Unlike `car`, Autodesk explicitly documents dotted-pair behavior for `cdr`.
 - [cdr (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP-Reference/files/GUID-F9CD8FF3-022A-4323-BAE7-390174451537.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: CONS
 *** Name
 `cons`
@@ -3248,6 +3425,8 @@ This entry is central for understanding the list-versus-dotted-pair model of Aut
 *** Source Notes
 - [cons (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP-Reference/files/GUID-33B418E7-DB3D-4CBE-954E-F070F0A7CB2B.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: LIST
 *** Name
@@ -3290,6 +3469,8 @@ The dedicated page also notes that a quoted list literal may be used instead of 
 - [list (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-2BA66308-DE64-4BA6-8F57-6E3EC1A93141.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: APPEND
 *** Name
 `append`
@@ -3326,6 +3507,8 @@ Erroneous if arguments are not acceptable list values.
 *** Source Notes
 - [append (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP-Reference/files/GUID-952B175A-D565-43A4-9208-0E6A27A5E742.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: ASSOC
 *** Name
@@ -3365,6 +3548,8 @@ The dedicated Autodesk page describes `item` as an integer, real, or string, but
 - [assoc (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP-Reference/files/GUID-46309786-DAF6-4C28-8448-599FBC8A4F6A.htm)
 - Status: documented, with noted item-type inconsistency between prose and examples.
 
+#+LATEX: \newpage
+
 ** Function Entry: LAST
 *** Name
 `last`
@@ -3395,6 +3580,8 @@ None.
 *** Source Notes
 - [last (AutoLISP)](https://help.autodesk.com/cloudhelp/2025/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-463C97F2-B72F-44C6-B19B-659D231AA836.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: LENGTH
 *** Name
@@ -3431,6 +3618,8 @@ The dedicated Autodesk page specifies `length` for lists. Acceptance of strings 
 *** Source Notes
 - [length (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ITA/AutoCAD-AutoLISP-Reference/files/GUID-DD227383-1895-46B6-A83B-43000FCC1018.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: MAPCAR
 *** Name
@@ -3471,6 +3660,8 @@ Closely tied to the semantics of `function`, `lambda`, and function-valued desig
 - [mapcar (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-8802AE73-1A05-457E-8A51-09677C23E26E.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: MEMBER
 *** Name
 `member`
@@ -3506,6 +3697,8 @@ Detailed matching predicate semantics still need tighter source coverage.
 *** Source Notes
 - [member (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-A2B08751-D966-44F5-9B02-1AAC4DA6AF59.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: NTH
 *** Name
@@ -3544,6 +3737,8 @@ Autodesk explicitly documents zero-based indexing for `nth`.
 - [nth (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-0330FE17-6E15-4E34-BB50-E9040EABDADB.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: REVERSE
 *** Name
 `reverse`
@@ -3571,6 +3766,8 @@ None.
 *** Source Notes
 - [reverse (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-MAC-AutoLISP-Reference/files/GUID-7669E8F1-2A4F-42C7-AAA8-74D1300F9744.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: SUBST
 *** Name
@@ -3611,6 +3808,8 @@ Exact structural sharing versus reconstruction behavior remains to be tightened 
 - [subst (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-25214E69-090A-45C3-8210-6D9801255E44.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: LISTP
 *** Name
 `listp`
@@ -3650,6 +3849,8 @@ This entry is one of the clearest vendor statements that `nil` denotes the empty
 - [listp (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP-Reference/files/GUID-8755F083-D3BA-45F0-BBAF-D60D3A73240C.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-CONSP
 *** Name
 `vl-consp`
@@ -3678,6 +3879,8 @@ None.
 *** Source Notes
 - [vl-consp (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-36CFF983-0020-4300-845B-BA9768F1B4E8.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-EVERY
 *** Name
@@ -3716,6 +3919,8 @@ Side effects are those of calling `predicate`.
 - [vl-every (AutoLISP)](https://help.autodesk.com/cloudhelp/2018/DEU/AutoCAD-AutoLISP-Reference/files/GUID-8BF61C9E-1382-4168-A778-FEA394A361CC.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-MEMBER-IF
 *** Name
 `vl-member-if`
@@ -3752,6 +3957,8 @@ Side effects are those of calling `predicate`.
 - [vl-member-if (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP-Reference/files/GUID-CFEA98F0-F6DE-4FF4-839A-0F6C8FBE1319.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-MEMBER-IF-NOT
 *** Name
 `vl-member-if-not`
@@ -3782,6 +3989,8 @@ Side effects are those of calling `predicate`.
 - [V Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2025/FRA/AutoCAD-MAC-AutoLISP-Reference/files/GUID-26FF2BE2-B5BF-4DD1-A617-36727E51F516.htm)
 - Status: summary-documented; detailed control behavior inferred by documented symmetry with `vl-member-if`.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-REMOVE
 *** Name
 `vl-remove`
@@ -3810,6 +4019,8 @@ None.
 *** Source Notes
 - [vl-remove (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/DEU/AutoCAD-AutoLISP/files/GUID-1BF33827-5C9C-49B2-A21B-656E0F429B21.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-REMOVE-IF
 *** Name
@@ -3847,6 +4058,8 @@ Side effects are those of calling `predicate`.
 - [vl-remove-if (AutoLISP)](https://help.autodesk.com/cloudhelp/2019/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9934F630-4697-47BA-84E6-A0430A3346EE.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-REMOVE-IF-NOT
 *** Name
 `vl-remove-if-not`
@@ -3882,6 +4095,8 @@ Side effects are those of calling `predicate`.
 *** Source Notes
 - [vl-remove-if-not (AutoLISP)](https://help.autodesk.com/cloudhelp/2015/DEU/AutoCAD-AutoLISP/files/GUID-53D12042-8DE3-4DAA-83BD-8ABB376ACA97.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-SOME
 *** Name
@@ -3920,6 +4135,8 @@ Side effects are those of calling `predicate`.
 - [vl-some (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-2840F793-DA88-4140-8A9D-EBAC47B62F9D.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-LIST*
 *** Name
 `vl-list*`
@@ -3952,6 +4169,8 @@ None beyond evaluating the arguments.
 *** Source Notes
 - [vl-list* (AutoLISP)](https://help.autodesk.com/cloudhelp/2021/ENU/AutoCAD-AutoLISP-Reference/files/GUID-959DE11B-95E8-4AC3-BFBD-02406977D343.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-LIST->STRING
 *** Name
@@ -4021,9 +4240,13 @@ The Autodesk list manipulation family includes at least:
 Source:
 - [List Manipulation Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-00A75AFB-5708-4D0C-B18C-F74DDC4D65FA.htm)
 
+#+LATEX: \newpage
+
 * 11 Filenames, Paths, and Files
 ** Overview
 File handling is part of the core AutoLISP runtime surface and is version-sensitive because of encoding support and trusted-path/security behavior.
+
+#+LATEX: \newpage
 
 ** Function Entry: OPEN
 *** Name
@@ -4075,6 +4298,8 @@ Errors are reported for invalid paths, modes, or inaccessible files.
 - [read + write text files (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/readwritetextfiles.htm)
 - Status: documented with version drift.
 
+#+LATEX: \newpage
+
 ** Function Entry: CLOSE
 *** Name
 `close`
@@ -4104,6 +4329,8 @@ Erroneous if `file-desc` is not an open file descriptor.
 
 *** Source Notes
 - [close (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-5308ADB6-7C46-43BE-8B6C-B32FBA8982DB.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: FINDFILE
 *** Name
@@ -4142,6 +4369,8 @@ None.
 - Autodesk documents that the support-file search path is searched.
 - Autodesk documents that URL strings may also be returned when appropriate.
 
+#+LATEX: \newpage
+
 ** Function Entry: FINDTRUSTEDFILE
 *** Name
 `findtrustedfile`
@@ -4176,6 +4405,8 @@ None.
 *** Notes
 - Autodesk documents that trusted paths are searched instead of the ordinary support-file search path.
 - Autodesk documents that URL strings may also be returned when appropriate.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-DIRECTORY-FILES
 *** Name
@@ -4217,6 +4448,8 @@ Part of the Visual LISP extension layer, but documented as broadly available acr
 *** Notes
 - Autodesk documents a Unicode/LISPSYS behavior change in AutoCAD 2021.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-FILE-COPY
 *** Name
 `vl-file-copy`
@@ -4253,6 +4486,8 @@ Errors are reported for missing source files, inaccessible destinations, or inva
 - Autodesk documents that the function does not overwrite an existing destination file unless `append` is non-`nil`.
 - Autodesk documents several `nil` cases including missing source, directory source, existing destination, invalid output name, or write-protected destination.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-FILE-DELETE
 *** Name
 `vl-file-delete`
@@ -4283,6 +4518,8 @@ Errors are reported for missing files, permissions failures, or invalid pathname
 *** Source Notes
 - [vl-file-delete (AutoLISP)](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CEDC718-EEBB-48A8-A9D3-387F216C12B8.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-FILE-DIRECTORY-P
 *** Name
 `vl-file-directory-p`
@@ -4310,6 +4547,8 @@ None.
 
 *** Source Notes
 - [vl-file-directory-p (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7EEA5563-33A7-453C-9E96-860F7565808B.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-FILE-RENAME
 *** Name
@@ -4346,6 +4585,8 @@ Errors are reported for missing files, conflicting destinations, or invalid path
 - Autodesk documents that the function fails if the target file already exists.
 - Autodesk documents a Unicode/LISPSYS behavior change in AutoCAD 2021.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-FILE-SIZE
 *** Name
 `vl-file-size`
@@ -4379,6 +4620,8 @@ None.
 
 *** Notes
 - Autodesk documents a Unicode/LISPSYS behavior change in AutoCAD 2021.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-FILE-SYSTIME
 *** Name
@@ -4422,6 +4665,8 @@ Autodesk documents this on Windows and macOS, not Web.
 *** Notes
 - Autodesk documents a Unicode/LISPSYS behavior change in AutoCAD 2021.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-FILENAME-BASE
 *** Name
 `vl-filename-base`
@@ -4453,6 +4698,8 @@ None.
 
 *** Notes
 - Autodesk documents that the function does not check whether the specified file exists.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-FILENAME-DIRECTORY
 *** Name
@@ -4487,6 +4734,8 @@ None.
 - Autodesk documents that slashes and backslashes are both accepted as directory delimiters.
 - Autodesk documents that the function does not check whether the specified file exists.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-FILENAME-EXTENSION
 *** Name
 `vl-filename-extension`
@@ -4517,6 +4766,8 @@ None.
 *** Notes
 - Autodesk documents that the returned extension begins with a period.
 - Autodesk documents that the function does not check whether the specified file exists.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-FILENAME-MKTEMP
 *** Name
@@ -4579,9 +4830,13 @@ Source:
 ** Source Notes
 - current and historical `open` references above
 
+#+LATEX: \newpage
+
 * 12 Streams and Text Input
 ** Overview
 AutoLISP stream behavior is exposed mainly through file descriptors and text/character operations rather than through a large first-class stream protocol.
+
+#+LATEX: \newpage
 
 ** Function Entry: READ-CHAR
 *** Name
@@ -4609,6 +4864,8 @@ Returns a character code according to the host's character model.
 - [read-char (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/KOR/AutoCAD-AutoLISP-Reference/files/GUID-7E94BD14-F018-47D0-88DA-2B08DE32DB2C.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: READ-LINE
 *** Name
 `read-line`
@@ -4630,6 +4887,8 @@ Returns the line without the end-of-line marker, or `nil` at end of file.
 *** Source Notes
 - [read-line (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/FRA/AutoCAD-MAC-Core/files/GUID-AC74D827-0969-4888-91C0-C3149DEC3659.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: WRITE-CHAR
 *** Name
@@ -4664,6 +4923,8 @@ Character interpretation is version-sensitive in Unicode-capable environments.
 - [What's New or Changed with AutoLISP (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLisp/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: WRITE-LINE
 *** Name
 `write-line`
@@ -4697,6 +4958,8 @@ End-of-line representation is an external-file concern and may differ from the i
 - [About File Descriptors (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/CHT/AutoCAD-AutoLISP/files/GUID-EDADF856-4D64-4E19-A7BD-5017C4135A01.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: READ
 *** Name
 `read`
@@ -4722,6 +4985,8 @@ Returns the first object read from the string.
 - [read (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 * 13 Reader
 ** Overview
 The language has a de facto reader, but not a fully formal reader standard in the published vendor corpus.
@@ -4743,6 +5008,8 @@ The language has a de facto reader, but not a fully formal reader standard in th
 - [read (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5B50BB3E-C244-46E8-85D8-6A2D48B1FE51.htm)
 - `documentation/specification-resolution-plan.org`
 
+#+LATEX: \newpage
+
 * 14 Printer and External Representations
 ** Overview
 Vendor documentation sampled so far is much richer on reading than on a formal printer specification.
@@ -4751,6 +5018,8 @@ Vendor documentation sampled so far is much richer on reading than on a formal p
 - examples print symbols in uppercase
 - dotted pairs and lists print in conventional Lisp notation
 - exact printer controls remain under-specified in this draft
+
+#+LATEX: \newpage
 
 ** Function Entry: PRIN1
 *** Name
@@ -4785,6 +5054,8 @@ Closely related to `vl-prin1-to-string`. Exact quoting and escaping details rema
 - [Display Control Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-9C2C56A3-0BEF-45AB-A7FE-5825339DCB41.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: PRINC
 *** Name
 `princ`
@@ -4817,6 +5088,8 @@ Closely related to `vl-princ-to-string`. Exact distinction from `prin1` must be 
 - [About Displaying Messages (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ESP/AutoCAD-AutoLISP/files/GUID-58AD9863-BB35-4982-9382-581FE8A5022C.htm)
 - [Display Control Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-9C2C56A3-0BEF-45AB-A7FE-5825339DCB41.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: PRINT
 *** Name
@@ -4851,6 +5124,8 @@ The exact spacing/newline conventions relative to `prin1` and `princ` remain to 
 - [Display Control Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-9C2C56A3-0BEF-45AB-A7FE-5825339DCB41.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: TERPRI
 *** Name
 `terpri`
@@ -4876,6 +5151,8 @@ Produces newline output.
 - [About Displaying Messages (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ESP/AutoCAD-AutoLISP/files/GUID-58AD9863-BB35-4982-9382-581FE8A5022C.htm)
 - [Display Control Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-9C2C56A3-0BEF-45AB-A7FE-5825339DCB41.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: PROMPT
 *** Name
@@ -4925,9 +5202,13 @@ Source:
 - inferred from vendor examples across the reference corpus
 - Status: mostly inferred and under-specified.
 
+#+LATEX: \newpage
+
 * 15 Errors and Recovery
 ** Overview
 AutoLISP error handling is specified through `*error*`, `ERRNO`, and Visual LISP catch-all functions, not through a CL-style condition system.
+
+#+LATEX: \newpage
 
 ** Variable Entry: *ERROR*
 *** Name
@@ -4957,6 +5238,8 @@ Central across AutoCAD-compatible behavior; also documented by BricsCAD.
 - [BricsCAD *error*](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/error.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Condition Entry: Catch-All Error Object
 *** Name
 Catch-All Error Object
@@ -4979,6 +5262,8 @@ Part of the Visual LISP extension layer.
 *** Source Notes
 - [About Catching Errors and Continuing Program Execution (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-9DDAD8C4-FB10-4C15-B59E-F6E05C1F9672.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: ALERT
 *** Name
@@ -5009,6 +5294,8 @@ Displays a user-interface alert; on some platforms Autodesk documents degraded b
 - [About Using the *error* Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP/files/GUID-2AC47A3C-7E80-414D-9134-EABA0003193F.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: EXIT
 *** Name
 `exit`
@@ -5034,6 +5321,8 @@ Terminates application execution.
 - [Error-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/KOR/AutoCAD-MAC-AutoLISP-Reference/files/GUID-D114F1C4-DE8E-422D-8F3F-C43707B8212B.htm)
 - [About Using the *error* Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP/files/GUID-2AC47A3C-7E80-414D-9134-EABA0003193F.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: QUIT
 *** Name
@@ -5064,6 +5353,8 @@ The exact distinction, if any, between `quit` and `exit` should be tightened fro
 - [About Using the *error* Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP/files/GUID-2AC47A3C-7E80-414D-9134-EABA0003193F.htm)
 - Status: documented; exact distinction from `exit` remains not fully explained by Autodesk.
 
+#+LATEX: \newpage
+
 ** Function Entry: *PUSH-ERROR-USING-COMMAND*
 *** Name
 `*push-error-using-command*`
@@ -5090,6 +5381,8 @@ Changes the host error-handling mode.
 - [*push-error-using-command* (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-620E034A-9151-427F-B6F5-B360D14DA925.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: *PUSH-ERROR-USING-STACK*
 *** Name
 `*push-error-using-stack*`
@@ -5115,6 +5408,8 @@ Changes the host error-handling mode.
 - [Error-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/HUN/AutoCAD-AutoLISP-Reference/files/GUID-D114F1C4-DE8E-422D-8F3F-C43707B8212B.htm)
 - [*push-error-using-stack* (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-C28420C9-2210-4EEC-AA73-2962999D1BC1.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: *POP-ERROR-MODE*
 *** Name
@@ -5168,6 +5463,8 @@ The Autodesk error-handling family includes at least:
 Source:
 - [Error-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/HUN/AutoCAD-AutoLISP-Reference/files/GUID-D114F1C4-DE8E-422D-8F3F-C43707B8212B.htm)
 
+#+LATEX: \newpage
+
 * 16 Host Interaction
 ** Overview
 AutoLISP is a host-coupled language. Command execution, system variables, entity access, and selection sets are part of ordinary language practice.
@@ -5180,6 +5477,8 @@ AutoLISP is a host-coupled language. Command execution, system variables, entity
 ** Source Notes
 - [Query and Command Functions Reference](https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-F9ABE09D-9A71-4C00-8E5D-5BA70C3797B5.htm)
 - project rule from `AGENTS.md`
+
+#+LATEX: \newpage
 
 ** Function Entry: LOAD
 *** Name
@@ -5238,6 +5537,8 @@ Autodesk also documents that VLX support is Windows-only.
 - [load (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-MAC-AutoLISP-Reference/files/GUID-F3639BAA-FD70-487C-AEB5-9E6096EC0255.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: AUTLOAD
 *** Name
 `autoload`
@@ -5273,6 +5574,8 @@ Part of the standard application-handling family.
 - Autodesk documents that `filename` may omit both the path and the extension.
 - Autodesk documents the extension search set as `.lsp`, `.fas`, or `.vlx` on Windows, and `.lsp` or `.fas` on macOS.
 - Autodesk documents secure-mode restrictions beginning with AutoCAD 2014-based products through `SECURELOAD` and `TRUSTEDPATHS`.
+
+#+LATEX: \newpage
 
 ** Function Entry: GETVAR
 *** Name
@@ -5312,6 +5615,8 @@ None.
 
 *** Compatibility
 Supported on Windows, macOS, and Web in current Autodesk documentation.
+
+#+LATEX: \newpage
 
 ** Function Entry: SETVAR
 *** Name
@@ -5357,6 +5662,8 @@ Errors if the variable is read-only, absent, or rejects the supplied value.
 *** Compatibility
 Supported on Windows, macOS, and Web in current Autodesk documentation.
 
+#+LATEX: \newpage
+
 ** Function Entry: COMMAND-S
 *** Name
 `command-s`
@@ -5399,6 +5706,8 @@ Closely related to `command`, but documented separately by Autodesk. Precise seq
 *** Compatibility
 Supported on Windows and macOS in current Autodesk documentation.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-CMDF
 *** Name
 `vl-cmdf`
@@ -5437,6 +5746,8 @@ Part of the Visual LISP command layer and related to `command` and `command-s`.
 *** Compatibility
 Supported on Windows, macOS, and Web in current Autodesk documentation.
 
+#+LATEX: \newpage
+
 ** Function Entry: INITDIA
 *** Name
 `initdia`
@@ -5474,6 +5785,8 @@ Changes host command-invocation behavior for the next applicable command.
 
 *** Compatibility
 Supported on Windows and macOS, not Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: STARTAPP
 *** Name
@@ -5515,6 +5828,8 @@ Highly host-environment-sensitive. `clautolisp` should model this through the se
 *** Compatibility
 Supported on Windows and macOS, not Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-LOAD-ALL
 *** Name
 `vl-load-all`
@@ -5553,6 +5868,8 @@ Part of the Visual LISP application-loading layer and more document-model-sensit
 
 *** Compatibility
 Supported on Windows, macOS, and Web in current Autodesk documentation.
+
+#+LATEX: \newpage
 
 ** Function Entry: ARXLOAD
 *** Name
@@ -5605,6 +5922,8 @@ Strongly host-specific and outside portable core AutoLISP semantics.
 *** Compatibility
 Supported on Windows and macOS, not Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: ARXUNLOAD
 *** Name
 `arxunload`
@@ -5651,6 +5970,8 @@ Removes host extension code from the running CAD session.
 *** Compatibility
 Supported on Windows and macOS only.
 
+#+LATEX: \newpage
+
 ** Function Entry: AUTOARXLOAD
 *** Name
 `autoarxload`
@@ -5686,6 +6007,8 @@ Installs deferred-loading stubs for host extension commands.
 
 *** Compatibility
 Supported on Windows and macOS, not Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: SHOWHTMLMODALWINDOW
 *** Name
@@ -5723,6 +6046,8 @@ Highly host-UI-specific and potentially version-sensitive.
 
 *** Compatibility
 Available on Windows only.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-VBALOAD
 *** Name
@@ -5762,6 +6087,8 @@ Host- and platform-dependent legacy integration facility.
 *** Compatibility
 Available on AutoCAD for Windows only; not available in AutoCAD LT for Windows, or on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-VBARUN
 *** Name
 `vl-vbarun`
@@ -5798,6 +6125,8 @@ Host- and platform-dependent legacy integration facility.
 
 *** Compatibility
 Available on AutoCAD for Windows only; not available in AutoCAD LT for Windows, or on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-ADD-CMD
 *** Name
@@ -5866,6 +6195,8 @@ The Autodesk application-handling family includes at least:
 Source:
 - [Application-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-AutoLISP-Reference/files/GUID-E2B683FE-43FB-4F5D-A9AE-809772FE8D3B.htm)
 
+#+LATEX: \newpage
+
 * 17 Selection Sets and Entity Access
 ** Overview
 Selection sets and entity access are core host-facing language facilities.
@@ -5878,6 +6209,8 @@ Selection sets and entity access are core host-facing language facilities.
 ** Source Notes
 - [ssname (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-LT-AutoLISP-Reference/files/GUID-EFB83751-9AC5-4C52-AD3D-D971BC560C15.htm)
 - [entmake (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-D47983BA-1E5D-417D-85B8-6F3DE5F506BA.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: GETSTRING
 *** Name
@@ -5914,6 +6247,8 @@ Autodesk explicitly notes that the user cannot enter another AutoLISP expression
 *** Source Notes
 - [getstring (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-B139EFBD-74B7-4276-B422-D2186F7D8D0A.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: GETPOINT
 *** Name
@@ -5954,6 +6289,8 @@ Host-interaction-specific; point representation remains ordinary list data.
 - Autodesk documents that if `pt` is present as a point, the host draws a rubber-band line from that point to the current crosshair position.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
 
+#+LATEX: \newpage
+
 ** Function Entry: DISTANCE
 *** Name
 `distance`
@@ -5986,6 +6323,8 @@ Erroneous for invalid point arguments.
 
 *** Notes
 - Autodesk documents that if either argument is a 2D point, the function ignores any Z coordinates and returns the 2D distance projected into the current construction plane.
+
+#+LATEX: \newpage
 
 ** Function Entry: ANGLE
 *** Name
@@ -6020,6 +6359,8 @@ None.
 - Autodesk documents that the angle is measured from the X axis of the current construction plane, increasing counterclockwise.
 - Autodesk documents that if 3D points are supplied, they are projected onto the current construction plane.
 
+#+LATEX: \newpage
+
 ** Function Entry: NAMEDOBJDICT
 *** Name
 `namedobjdict`
@@ -6047,6 +6388,8 @@ This is a key dictionary-entry point into the drawing database.
 *** Source Notes
 - [namedobjdict (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-A1E43B30-EF8C-452E-97F5-8AC201E310EE.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: TBLNEXT
 *** Name
@@ -6079,6 +6422,8 @@ Central to symbol-table iteration over host database structures.
 *** Source Notes
 - [tblnext (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PTB/AutoCAD-LT-AutoLISP-Reference/files/GUID-1720D8DC-5559-4AC1-8A75-3C932834D77C.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: ENTGET
 *** Name
@@ -6129,6 +6474,8 @@ Autodesk explicitly notes that AutoLISP DXF group codes differ slightly from tho
 - [entget (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-12540DAE-C84B-4BDB-AEEC-DDFE5BE3C42A.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: ENTMOD
 *** Name
 `entmod`
@@ -6174,6 +6521,8 @@ Semantically paired with `entget`.
 - Autodesk documents that changing entities inside a block definition affects all inserts of that block.
 - Autodesk documents special color behavior in AutoCAD 2004 and later: if true-color group `420` conflicts with ACI group `62`, the true-color value takes precedence.
 
+#+LATEX: \newpage
+
 ** Function Entry: ENTMAKE
 *** Name
 `entmake`
@@ -6212,6 +6561,8 @@ One of the most characteristic AutoLISP functions because it exposes CAD entitie
 - [entmake (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-D47983BA-1E5D-417D-85B8-6F3DE5F506BA.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: ENTLAST
 *** Name
 `entlast`
@@ -6242,6 +6593,8 @@ Frequently used in create-and-query workflows together with `entmake` and `entge
 *** Notes
 - Autodesk documents that the entity need not be visible on screen or on a thawed layer.
 - Autodesk documents that `entlast` returns the last nondeleted main entity only; if the last created object has trailing subentities, a loop using `entnext` is needed to find the last nondeleted subentity.
+
+#+LATEX: \newpage
 
 ** Function Entry: SSGET
 *** Name
@@ -6309,6 +6662,8 @@ The selection-method sublanguage should later be given its own dedicated specifi
 - [Error Codes Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/HUN/AutoCAD-AutoLISP/files/GUID-97327347-2A13-4CBC-BDBF-979C7F1CABD5.htm)
 - Status: documented in role and partially in detail; exhaustive selection-mode semantics still to be expanded.
 
+#+LATEX: \newpage
+
 ** Function Entry: SSNAME
 *** Name
 `ssname`
@@ -6344,6 +6699,8 @@ Autodesk documents zero-based indexing and special handling for indices above 32
 - [ssname (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-LT-AutoLISP-Reference/files/GUID-EFB83751-9AC5-4C52-AD3D-D971BC560C15.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: SSLENGTH
 *** Name
 `sslength`
@@ -6373,6 +6730,8 @@ None.
 
 *** Compatibility
 Supported on Windows, macOS, and Web in current Autodesk documentation.
+
+#+LATEX: \newpage
 
 ** Function Entry: ENTSEL
 *** Name
@@ -6414,6 +6773,8 @@ This is a standard bridge between interactive selection and Lisp data.
 *** Source Notes
 - [entsel (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9D4CF74D-8B8B-4D66-A952-564AFBA254E7.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: DICTSEARCH
 *** Name
 `dictsearch`
@@ -6451,6 +6812,8 @@ Part of the drawing-database dictionary API.
 *** Notes
 - If `setnext` is supplied and non-`nil`, Autodesk documents that the next `dictnext` call returns the entry following the one found by `dictsearch`.
 
+#+LATEX: \newpage
+
 ** Function Entry: TBLSEARCH
 *** Name
 `tblsearch`
@@ -6487,6 +6850,8 @@ Part of the core CAD database querying model.
 
 *** Notes
 - If `setnext` is supplied and non-`nil`, Autodesk documents that the next `tblnext` call returns the entry following the one found by `tblsearch`.
+
+#+LATEX: \newpage
 
 ** Function Entry: DICTADD
 *** Name
@@ -6528,6 +6893,8 @@ Part of the named-object and extension-dictionary manipulation model.
 *** Notes
 - Autodesk documents a general uniqueness rule for objects within a dictionary.
 
+#+LATEX: \newpage
+
 ** Function Entry: DICTNEXT
 *** Name
 `dictnext`
@@ -6564,6 +6931,8 @@ Closely parallel to `tblnext`.
 *** Notes
 - If `rewind` is non-`nil`, Autodesk documents that iteration restarts at the beginning.
 - Autodesk documents that switching dictionaries during an iteration sequence makes the previous current position indeterminate.
+
+#+LATEX: \newpage
 
 ** Function Entry: DICTREMOVE
 *** Name
@@ -6605,6 +6974,8 @@ Part of the dictionary mutation API.
 - Autodesk documents exceptions for groups and multiline styles, where the implementing code may automatically delete the removed entity.
 - Autodesk documents that an actively referenced multiline style cannot be removed from the multiline style dictionary.
 
+#+LATEX: \newpage
+
 ** Function Entry: DICTRENAME
 *** Name
 `dictrename`
@@ -6644,6 +7015,8 @@ Part of the dictionary mutation API.
 *** Notes
 - Autodesk documents that `nil` is returned if the old name is not present, if the dictionary is invalid, if the new name is invalid, or if the new name already exists.
 
+#+LATEX: \newpage
+
 ** Function Entry: TBLOBJNAME
 *** Name
 `tblobjname`
@@ -6679,6 +7052,8 @@ Companion to `tblsearch` and `tblnext`.
 
 *** Notes
 - Autodesk documents that the returned entity name can be passed to `entget` and `entmod`.
+
+#+LATEX: \newpage
 
 ** Function Entry: ENTDEL
 *** Name
@@ -6716,6 +7091,8 @@ Part of the core object-handling family.
 - Autodesk documents that the function operates only on main entities, not attributes or polyline vertices independently.
 - Autodesk documents that entities within a block definition cannot be deleted with `entdel`.
 
+#+LATEX: \newpage
+
 ** Function Entry: ENTNEXT
 *** Name
 `entnext`
@@ -6749,6 +7126,8 @@ Important for object traversal and subentity walking.
 *** Notes
 - Autodesk documents that `entnext` returns both main entities and subentities.
 - Autodesk documents that `ssget` returns only main entities; `entnext` is used to walk subentity structure.
+
+#+LATEX: \newpage
 
 ** Function Entry: HANDENT
 *** Name
@@ -6784,6 +7163,8 @@ Provides a bridge between persistent handle identity and transient entity-name i
 - Autodesk documents that `handent` can return entities deleted during the current editing session, allowing them to be restored with `entdel`.
 - Autodesk documents that an entity name may change between editing sessions even though the handle remains constant.
 - Autodesk documents that both graphical and nongraphical entities are supported.
+
+#+LATEX: \newpage
 
 ** Function Entry: SSADD
 *** Name
@@ -6822,6 +7203,8 @@ Part of the programmatic selection-set manipulation API.
 - If the entity is already in the set, Autodesk documents that the operation is ignored and no error is reported.
 - If a selection set is shared through multiple variables, Autodesk documents that mutation is visible through all of them because the same set object is returned.
 
+#+LATEX: \newpage
+
 ** Function Entry: SSDEL
 *** Name
 `ssdel`
@@ -6854,6 +7237,8 @@ Mutates the selection set object.
 
 *** Notes
 - Autodesk explicitly states that `ssdel` mutates the existing selection set rather than returning a fresh set.
+
+#+LATEX: \newpage
 
 ** Function Entry: GETANGLE
 *** Name
@@ -6904,6 +7289,8 @@ Part of the standard user-input family and closely related to angle conversion f
 - Autodesk documents that zero direction is ANGBASE, with positive angles increasing counterclockwise.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
 
+#+LATEX: \newpage
+
 ** Function Entry: GETDIST
 *** Name
 `getdist`
@@ -6947,6 +7334,8 @@ Part of the standard user-input family.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
 - Autodesk documents that the result is always a real, even when the user enters values in architectural units.
 
+#+LATEX: \newpage
+
 ** Function Entry: GETINT
 *** Name
 `getint`
@@ -6983,6 +7372,8 @@ Invalid input, cancel, or interactive state errors are host-dependent.
 - Autodesk documents that invalid non-integer input causes a retry prompt with a diagnostic message.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
 
+#+LATEX: \newpage
+
 ** Function Entry: GETREAL
 *** Name
 `getreal`
@@ -7016,6 +7407,8 @@ This function is an important bridge between textual/numeric input and the host'
 
 *** Notes
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
+
+#+LATEX: \newpage
 
 ** Function Entry: GETKWORD
 *** Name
@@ -7056,6 +7449,8 @@ Closely tied to `initget`.
 - Autodesk documents that `getkword` also returns `nil` if it is called without a preceding `initget` that establishes keywords.
 - Autodesk documents that invalid keyword input causes a warning and a re-prompt.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
+
+#+LATEX: \newpage
 
 ** Function Entry: INITGET
 *** Name
@@ -7098,6 +7493,8 @@ This function is foundational for structured user-input workflows.
 - Autodesk documents that keywords are honored by `getint`, `getreal`, `getdist`, `getangle`, `getorient`, `getpoint`, `getcorner`, `getkword`, `entsel`, `nentsel`, and `nentselp`, but not by `getstring`.
 - Autodesk documents that bits irrelevant to the next input function are ignored.
 
+#+LATEX: \newpage
+
 ** Function Entry: GETCORNER
 *** Name
 `getcorner`
@@ -7133,6 +7530,8 @@ Point list or `nil`.
 *** Notes
 - Autodesk documents that `getcorner` obtains the opposite corner of a box.
 - Autodesk documents that it honors keywords established by `initget`.
+
+#+LATEX: \newpage
 
 ** Function Entry: GETFILED
 *** Name
@@ -7175,6 +7574,8 @@ This function is highly host-UI-specific and therefore environment-profile-sensi
 - Autodesk documents specific `flags` bits including new-file mode, path-only mode, overwrite suppression, and URL restrictions.
 - Autodesk documents that on Web the function is supported but does not display the standard dialog and always returns `1`.
 
+#+LATEX: \newpage
+
 ** Function Entry: GETORIENT
 *** Name
 `getorient`
@@ -7213,6 +7614,8 @@ Closely related to `getangle`, but documented separately.
 - Autodesk documents that `getorient` returns radians measured counterclockwise from the right (east), ignoring `ANGBASE` and `ANGDIR` in the returned value.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
 - Autodesk explicitly distinguishes `getorient` from `getangle`: `getorient` is for an absolute orientation, `getangle` for a rotation amount.
+
+#+LATEX: \newpage
 
 ** Function Entry: NENTSEL
 *** Name
@@ -7256,6 +7659,8 @@ Nested-selection semantics are host-specific and more complex than `entsel`.
 - Autodesk documents that `nentsel` honors keywords established by `initget`.
 - Autodesk documents that for 3D polylines, the returned subentity is the starting vertex of the picked segment, never the `SEQEND` subentity.
 
+#+LATEX: \newpage
+
 ** Function Entry: NENTSELP
 *** Name
 `nentselp`
@@ -7295,6 +7700,8 @@ Nested-selection and subentity semantics vary across host capabilities.
 - Autodesk documents that `nentselp` can operate without user input when `pt` is supplied.
 - Autodesk documents that `nentselp` and `nentsel` return subentity names rather than complex-entity headers when a complex object is selected.
 - Current Autodesk documentation marks `nentselp` as supported on Windows and macOS.
+
+#+LATEX: \newpage
 
 ** Function Entry: GRREAD
 *** Name
@@ -7339,6 +7746,8 @@ One of the most host- and UI-specific user-input functions.
 - Autodesk explicitly warns that applications using `grread` are unlikely to be upward compatible across hardware and platform configurations.
 - Current Autodesk reference marks `grread` as supported on Windows and macOS, not Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: INTERS
 *** Name
 `inters`
@@ -7374,6 +7783,8 @@ This function is useful as a test vehicle for argument evaluation and error-repo
 - [Geometric Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-8C29D7A3-9CBB-47A8-A936-87118782303B.htm)
 - [About Error Handling (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-AutoLISP/files/GUID-027AD2E0-5AC5-48DA-B451-112B7EECE40F.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: OSNAP
 *** Name
@@ -7411,6 +7822,8 @@ None specified.
 - [LISP Compatibility, BricsCAD V9](https://developer.bricsys.com/bricscad/help/en_US/V9/DevRef/source/IDR_LISP_B100.htm)
 - Status: documented with version/vendor differences.
 
+#+LATEX: \newpage
+
 ** Function Entry: POLAR
 *** Name
 `polar`
@@ -7445,6 +7858,8 @@ None.
 
 *** Notes
 - Autodesk documents that the angle is expressed in radians relative to the world X axis and independent of the current construction plane.
+
+#+LATEX: \newpage
 
 ** Function Entry: TEXTBOX
 *** Name
@@ -7527,6 +7942,8 @@ Sources:
 - [Geometric Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-8C29D7A3-9CBB-47A8-A936-87118782303B.htm)
 - [Symbol Table and Dictionary-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/CSY/AutoCAD-AutoLISP-Reference/files/GUID-7AACB386-1AA1-4BDF-B5D7-A1E23A51CA15.htm)
 
+#+LATEX: \newpage
+
 * 18 DCL
 ** Overview
 DCL is the standard dialog-description companion technology used by AutoLISP applications.
@@ -7535,6 +7952,8 @@ DCL is the standard dialog-description companion technology used by AutoLISP app
 - DCL is not part of the core expression language
 - DCL is nevertheless part of the practical standard application model
 - platform and product support vary by version
+
+#+LATEX: \newpage
 
 ** Function Entry: LOAD_DIALOG
 *** Name
@@ -7564,6 +7983,8 @@ Loads external dialog definitions into the host dialog subsystem.
 - [Function Sequence to Display and Work with a Dialog](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-FD32ADB3-F16E-42AA-BD37-53259B824AAB.htm)
 - Status: documented in the DCL workflow documentation.
 
+#+LATEX: \newpage
+
 ** Function Entry: NEW_DIALOG
 *** Name
 `new_dialog`
@@ -7590,6 +8011,8 @@ Initializes the active dialog state and dialog tiles.
 - [Displaying Nested Dialog Boxes](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-DA0D5D75-C954-408A-AC43-FFD09E6D2517.htm)
 - Status: documented in the DCL workflow documentation.
 
+#+LATEX: \newpage
+
 ** Function Entry: START_DIALOG
 *** Name
 `start_dialog`
@@ -7614,6 +8037,8 @@ Transfers control to the dialog event loop.
 *** Source Notes
 - [Function Sequence to Display and Work with a Dialog](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-FD32ADB3-F16E-42AA-BD37-53259B824AAB.htm)
 - Status: documented in the DCL workflow documentation.
+
+#+LATEX: \newpage
 
 ** Function Entry: DONE_DIALOG
 *** Name
@@ -7640,6 +8065,8 @@ Ends the active dialog session.
 - [Function Sequence to Display and Work with a Dialog](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-FD32ADB3-F16E-42AA-BD37-53259B824AAB.htm)
 - Status: documented in the DCL workflow documentation.
 
+#+LATEX: \newpage
+
 ** Function Entry: UNLOAD_DIALOG
 *** Name
 `unload_dialog`
@@ -7664,6 +8091,8 @@ Releases dialog-resource state.
 *** Source Notes
 - [Function Sequence to Display and Work with a Dialog](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-FD32ADB3-F16E-42AA-BD37-53259B824AAB.htm)
 - Status: documented in the DCL workflow documentation.
+
+#+LATEX: \newpage
 
 ** Function Entry: ACTION_TILE
 *** Name
@@ -7690,6 +8119,8 @@ Changes dialog callback behavior.
 - [Action Expressions and Callbacks](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-78FDD902-C159-4654-8E3B-228E344A78E8.htm)
 - Status: documented in the DCL workflow documentation.
 
+#+LATEX: \newpage
+
 ** Function Entry: GET_TILE
 *** Name
 `get_tile`
@@ -7715,6 +8146,8 @@ None.
 - [Initializing Modes and Values](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-EBCB6710-0290-44CB-94B3-6C1064E82BB4.htm)
 - Status: documented in the DCL workflow documentation.
 
+#+LATEX: \newpage
+
 ** Function Entry: SET_TILE
 *** Name
 `set_tile`
@@ -7739,6 +8172,8 @@ Mutates dialog tile state.
 *** Source Notes
 - [Initializing Modes and Values](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-EBCB6710-0290-44CB-94B3-6C1064E82BB4.htm)
 - Status: documented in the DCL workflow documentation.
+
+#+LATEX: \newpage
 
 ** Function Entry: MODE_TILE
 *** Name
@@ -7787,6 +8222,8 @@ Sources:
 - [AutoLISP Developer's Guide](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-265AADB3-FB89-4D34-AA9D-6ADF70FF7D4B.htm)
 - [AutoLISP Improvements (AutoCAD 2021)](https://help.autodesk.com/cloudhelp/2021/ENU/AutoCAD-WhatsNew/files/GUID-80F564DA-A5C4-4242-91DB-2331E231E2A6.htm)
 
+#+LATEX: \newpage
+
 * 19 Visual LISP Core Extensions
 ** Overview
 Visual LISP extends AutoLISP with helper families, runtime services, IDE-related features, and error-handling facilities.
@@ -7799,6 +8236,8 @@ Visual LISP extends AutoLISP with helper families, runtime services, IDE-related
 ** Source Notes
 - [AutoLISP Extensions Reference](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-07C3599E-EC87-4EC0-8F0B-8DE4BD150A64.htm)
 - [What's New and What's More in BricsCAD Lisp](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/WhatsNew.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-LOAD-COM
 *** Name
@@ -7828,6 +8267,8 @@ Enables the ActiveX/COM extension layer in environments that support it.
 *** Source Notes
 - [AutoLISP Extensions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-07C3599E-EC87-4EC0-8F0B-8DE4BD150A64.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-CATCH-ALL-APPLY
 *** Name
@@ -7863,6 +8304,8 @@ Part of the Visual LISP error-handling layer.
 - [Error-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/HUN/AutoCAD-AutoLISP-Reference/files/GUID-D114F1C4-DE8E-422D-8F3F-C43707B8212B.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-CATCH-ALL-ERROR-P
 *** Name
 `vl-catch-all-error-p`
@@ -7890,6 +8333,8 @@ None.
 - [About Catching Errors and Continuing Program Execution (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP/files/GUID-9DDAD8C4-FB10-4C15-B59E-F6E05C1F9672.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-CATCH-ALL-ERROR-MESSAGE
 *** Name
 `vl-catch-all-error-message`
@@ -7914,6 +8359,8 @@ None.
 *** Source Notes
 - [vl-catch-all-error-message (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C703867D-7B64-480D-BE34-45A63BA02AB7.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-PRIN1-TO-STRING
 *** Name
@@ -7947,6 +8394,8 @@ None.
 - [vl-prin1-to-string (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-4AA25012-28D5-4723-8AD3-B8BF9AE62425.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-PRINC-TO-STRING
 *** Name
 `vl-princ-to-string`
@@ -7978,6 +8427,8 @@ None.
 *** Source Notes
 - [vl-princ-to-string (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-33B0CA43-84F2-46DE-88BE-8FFF22C83FAD.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-STRING-SEARCH
 *** Name
@@ -8014,6 +8465,8 @@ This function is a useful probe for the host's character-indexing semantics in U
 *** Source Notes
 - [vl-string-search (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-4E7AE1DA-1ED5-4D96-A7D3-34241AA94AA6.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-STRING-POSITION
 *** Name
@@ -8054,6 +8507,8 @@ Character/index semantics are potentially version-sensitive in Unicode-aware hos
 - Autodesk documents that when `from-end` is `T`, the search proceeds backward from the end of the string toward `start-pos`.
 - Autodesk documents an AutoCAD 2021 change from ASCII character codes to Unicode character codes when `LISPSYS` selects the Unicode engine.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-STRING-MISMATCH
 *** Name
 `vl-string-mismatch`
@@ -8093,6 +8548,8 @@ Case and character-unit behavior should be treated as Unicode-sensitive.
 - Autodesk documents zero-based positions for `start1` and `start2`.
 - Autodesk documents that AutoCAD 2021 changed the accepted text model from ASCII-oriented to Unicode-aware behavior.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-STRING-TRIM
 *** Name
 `vl-string-trim`
@@ -8121,6 +8578,8 @@ None.
 *** Source Notes
 - [vl-string-trim (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PTB/AutoCAD-AutoLISP-Reference/files/GUID-FF1DA441-C9D8-4C99-BC6E-B2A72B562389.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-STRING-LEFT-TRIM
 *** Name
@@ -8151,6 +8610,8 @@ None.
 - [vl-string-left-trim (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-24CB6E8B-9F4F-46DD-AB28-6481B86BA82A.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-STRING-RIGHT-TRIM
 *** Name
 `vl-string-right-trim`
@@ -8179,6 +8640,8 @@ None.
 *** Source Notes
 - [vl-string-right-trim (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/KOR/AutoCAD-MAC-AutoLISP-Reference/files/GUID-532CDF83-7A7F-4B54-8362-F5B7FB35C220.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-STRING-TRANSLATE
 *** Name
@@ -8217,6 +8680,8 @@ Character mapping semantics should be treated as Unicode-sensitive in modern hos
 - Autodesk documents that characters in `string` matching characters in `from-set` are replaced by corresponding characters from `to-set`.
 - Autodesk documents an AutoCAD 2021 change from ASCII-oriented to Unicode-aware behavior under `LISPSYS`.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-STRING-SUBST
 *** Name
 `vl-string-subst`
@@ -8253,6 +8718,8 @@ None.
 - Autodesk documents that only the first matching occurrence is replaced.
 - Autodesk documents zero-based indexing for `start-pos`.
 - Autodesk documents an AutoCAD 2021 change from ASCII-oriented to Unicode-aware behavior under `LISPSYS`.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-STRING-ELT
 *** Name
@@ -8291,6 +8758,8 @@ This function is especially sensitive to the underlying character-indexing model
 - Autodesk documents that an error occurs if `index` is outside the bounds of `string`.
 - Autodesk documents an AutoCAD 2021 change from legacy ASCII-range behavior to Unicode character codes under `LISPSYS`.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-STRING->LIST
 *** Name
 `vl-string->list`
@@ -8327,6 +8796,8 @@ Like `ascii`, `chr`, and `vl-string-elt`, this function exposes the host's obser
 - Autodesk documents that `(vl-string->list "")` returns `nil`.
 - Autodesk documents an AutoCAD 2021 change from ASCII-oriented to Unicode-aware behavior under `LISPSYS`.
 
+#+LATEX: \newpage
+
 ** Function Entry: VER
 *** Name
 `ver`
@@ -8361,6 +8832,8 @@ None.
 *** Source Notes
 - [ver (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6E5DF4E1-5386-47A2-AEF3-488AA068FA15.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-ACAD-DEFUN
 *** Name
 `vl-acad-defun`
@@ -8392,6 +8865,8 @@ Exposes the designated function to external ObjectARX callers.
 *** Source Notes
 - [vl-acad-defun (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-D15CB87F-5B69-4BC3-B8BB-E45D57602B27.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-ACAD-UNDEFUN
 *** Name
 `vl-acad-undefun`
@@ -8421,6 +8896,8 @@ Removes external visibility of the designated function.
 
 *** Source Notes
 - [vl-acad-undefun (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-MAC-AutoLISP-Reference/files/GUID-81CEB01F-8A57-4465-A4F9-CE2E357D692B.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-GET-RESOURCE
 *** Name
@@ -8454,6 +8931,8 @@ Signals an AutoLISP-visible error if the named resource cannot be retrieved.
 - [vl-get-resource (AutoLISP/Visual LISP IDE)](https://help.autodesk.com/cloudhelp/2025/JPN/AutoCAD-LT-AutoLISP-Reference/files/GUID-947B44CE-EAC4-4B17-83E1-8521AD5F5341.htm)
 - [vl-get-resource (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/FRA/AutoCAD-MAC-Core/files/GUID-947B44CE-EAC4-4B17-83E1-8521AD5F5341.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-LIST-EXPORTED-FUNCTIONS
 *** Name
 `vl-list-exported-functions`
@@ -8483,6 +8962,8 @@ Returns a list of strings naming exported functions, or `nil` if none are export
 - [vl-list-exported-functions (AutoLISP/Visual LISP IDE)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP-Reference/files/GUID-3D87AA2E-DB4B-4B28-B5A8-04A8183BF8AD.htm)
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-LIST-LOADED-VLX
 *** Name
 `vl-list-loaded-vlx`
@@ -8509,6 +8990,8 @@ Returns a list of symbols naming separate-namespace VLX applications, or `nil` i
 - [vl-list-loaded-vlx (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-0F0C7A45-41AA-410F-AEF0-EECAE812FCF3.htm)
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-MAC-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-LOAD-REACTORS
 *** Name
 `vl-load-reactors`
@@ -8533,6 +9016,8 @@ Always returns `nil`.
 
 *** Source Notes
 - [vl-load-reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/JPN/AutoCAD-LT-AutoLISP-Reference/files/GUID-05F7E56E-51C7-43E2-B1F5-6CD55C74EE8E.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-MKDIR
 *** Name
@@ -8564,6 +9049,8 @@ Creates a directory in the host file system.
 *** Source Notes
 - [vl-mkdir (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-02D5CC9E-9394-4630-AE14-133F5F03D7B1.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-POSITION
 *** Name
 `vl-position`
@@ -8593,6 +9080,8 @@ Returns a zero-based integer index if `item` occurs in `list`; otherwise returns
 *** Source Notes
 - [vl-position (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ESP/AutoCAD-AutoLISP-Reference/files/GUID-E2C60C39-B46E-4779-82CE-CFFCCCE93AF0.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-PROPAGATE
 *** Name
 `vl-propagate`
@@ -8620,6 +9109,8 @@ Propagates variable state across multiple document namespaces.
 *** Source Notes
 - [vl-propagate (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ESP/AutoCAD-AutoLISP-Reference/files/GUID-9B30560A-5037-4C2D-8175-429E110277F5.htm)
 - [Namespace Communication Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2025/ITA/AutoCAD-MAC-AutoLISP-Reference/files/GUID-F5DD5472-1695-4CA3-9110-E6008E87BB89.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-SORT
 *** Name
@@ -8653,6 +9144,8 @@ None specified by Autodesk at the language level.
 *** Source Notes
 - [vl-sort (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F3B27BD2-27FA-4185-B22C-85509175C171.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-SORT-I
 *** Name
 `vl-sort-i`
@@ -8684,6 +9177,8 @@ None.
 
 *** Source Notes
 - [vl-sort-i (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP-Reference/files/GUID-B21C91DD-D359-4370-84ED-317F8BBAF414.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VECTOR_IMAGE
 *** Name
@@ -8750,6 +9245,8 @@ Sources:
 - [String-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-8543549B-F0D7-43CD-87A3-F6B827FF0B88.htm)
 - [Symbol-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-796EFF94-E904-4F5B-B120-C6D2DCD8646A.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-ENAME->VLA-OBJECT
 *** Name
 `vlax-ename->vla-object`
@@ -8790,6 +9287,8 @@ Erroneous if the entity name is invalid or the automation layer is unavailable.
 - [vlax-ename->vla-object (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-BD451263-76D5-4A93-B50A-3C27E89A0AD4.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-VLA-OBJECT->ENAME
 *** Name
 `vlax-vla-object->ename`
@@ -8820,6 +9319,8 @@ Inverse companion of `vlax-ename->vla-object` within the automation bridge.
 *** Source Notes
 - [vlax-vla-object->ename (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP-Reference/files/GUID-9127B839-D275-473F-A166-59BE94AEFACB.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-GET-PROPERTY
 *** Name
@@ -8859,6 +9360,8 @@ Core part of the ActiveX/VLA property access model.
 *** Source Notes
 - [vlax-get-property (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-B3F22E35-4666-452F-89C8-5BC15B9E9463.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-PUT-PROPERTY
 *** Name
@@ -8900,6 +9403,8 @@ Core part of the ActiveX/VLA property-setting model.
 - [About Obtaining and Setting an Object's Property (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP/files/GUID-3221619A-85E4-470E-AF2E-34048BB3DED5.htm)
 - Status: documented by official overview; dedicated per-function page still desirable.
 
+#+LATEX: \newpage
+
 ** Function Entry: GETPROPERTYVALUE
 *** Name
 `getpropertyvalue`
@@ -8934,6 +9439,8 @@ None.
 - [What's New or Changed with AutoLISP](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm)
 - [Generic Properties Functions (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/GenericPropertiesFunctions.htm)
 - Status: documented by release history and family documentation.
+
+#+LATEX: \newpage
 
 ** Function Entry: SETPROPERTYVALUE
 *** Name
@@ -8970,6 +9477,8 @@ Mutates the target object's property state.
 - [Generic Properties Functions (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/GenericPropertiesFunctions.htm)
 - Status: documented by release history and family documentation.
 
+#+LATEX: \newpage
+
 ** Function Entry: ISPROPERTYREADONLY
 *** Name
 `ispropertyreadonly`
@@ -9004,6 +9513,8 @@ Part of the Autodesk generic property-function additions from AutoCAD 2011.
 - [Generic Properties Functions (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/GenericPropertiesFunctions.htm)
 - Status: documented by release history and family documentation.
 
+#+LATEX: \newpage
+
 ** Function Entry: DUMPALLPROPERTIES
 *** Name
 `dumpallproperties`
@@ -9036,6 +9547,8 @@ Added by Autodesk in AutoCAD 2011 as part of the generic property family.
 - [What's New or Changed with AutoLISP](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm)
 - [Generic Properties Functions (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/GenericPropertiesFunctions.htm)
 - Status: documented by release history and family documentation.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-INVOKE-METHOD
 *** Name
@@ -9073,6 +9586,8 @@ Core part of the `vlax-*` automation bridge.
 - [vlax-invoke-method (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-MAC-AutoLISP-Reference/files/GUID-A8B097A2-CE86-4B38-B2A9-D6F53EACA8ED.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-METHOD-APPLICABLE-P
 *** Name
 `vlax-method-applicable-p`
@@ -9102,6 +9617,8 @@ Part of the introspection layer for automation objects.
 - [vlax-method-applicable-p (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-63B81424-11BA-4CB3-A783-514031A2271D.htm)
 - [About Determining If an ActiveX Method or Property Applies to an Object (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2022/PTB/AutoCAD-AutoLISP/files/GUID-F6607E76-FD9B-4B8B-B714-99CB34C988A5.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-3D-POINT
 *** Name
@@ -9150,6 +9667,8 @@ Part of the Windows-oriented automation bridge.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-DUMP-OBJECT
 *** Name
 `vlax-dump-object`
@@ -9185,6 +9704,8 @@ Produces diagnostic output about the object.
 *** Compatibility
 Available on AutoCAD and AutoCAD LT for Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-GET-ACAD-OBJECT
 *** Name
 `vlax-get-acad-object`
@@ -9216,6 +9737,8 @@ None beyond automation-layer access.
 
 *** Compatibility
 Available on AutoCAD and AutoCAD LT for Windows; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-GET-OR-CREATE-OBJECT
 *** Name
@@ -9253,6 +9776,8 @@ Available only on Windows; not available on macOS or Web.
 *** Source Notes
 - [vlax-get-or-create-object (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/PTB/AutoCAD-LT-AutoLISP-Reference/files/GUID-7AFF597F-D630-4489-8349-94EF67CCE1F0.htm)
 - [About Establishing a Connection to an External Application with ActiveX (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/CHT/AutoCAD-AutoLISP/files/GUID-4A45548C-2556-4C92-9801-2996A56448DC.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-IMPORT-TYPE-LIBRARY
 *** Name
@@ -9299,6 +9824,8 @@ Creates or registers bindings based on external type-library metadata.
 *** Compatibility
 Available on AutoCAD for Windows only; not available in AutoCAD LT for Windows, or on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-MAKE-SAFEARRAY
 *** Name
 `vlax-make-safearray`
@@ -9344,6 +9871,8 @@ Allocates automation-array storage.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-MAKE-VARIANT
 *** Name
 `vlax-make-variant`
@@ -9379,6 +9908,8 @@ None.
 
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-OBJECT-RELEASED-P
 *** Name
@@ -9416,6 +9947,8 @@ None.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-PROPERTY-AVAILABLE-P
 *** Name
 `vlax-property-available-p`
@@ -9452,6 +9985,8 @@ None.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-READ-ENABLED-P
 *** Name
 `vlax-read-enabled-p`
@@ -9482,6 +10017,8 @@ None.
 
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-RELEASE-OBJECT
 *** Name
@@ -9521,6 +10058,8 @@ Signals an AutoLISP-visible error if the object has already been released.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-SAFEARRAY->LIST
 *** Name
 `vlax-safearray->list`
@@ -9552,6 +10091,8 @@ None.
 
 *** Compatibility
 Available only on Windows.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-SAFEARRAY-FILL
 *** Name
@@ -9588,6 +10129,8 @@ Mutates safearray contents.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-SAFEARRAY-GET-DIM
 *** Name
 `vlax-safearray-get-dim`
@@ -9620,6 +10163,8 @@ Signals an AutoLISP-visible error if `array` is not a safearray.
 
 *** Compatibility
 Available only on Windows.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-SAFEARRAY-GET-ELEMENT
 *** Name
@@ -9655,6 +10200,8 @@ Signals an AutoLISP-visible error if the argument is not a safearray or if the s
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-SAFEARRAY-GET-L-BOUND
 *** Name
 `vlax-safearray-get-l-bound`
@@ -9689,6 +10236,8 @@ Signals an AutoLISP-visible error if `array` is not a safearray or if `dimension
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-SAFEARRAY-GET-U-BOUND
 *** Name
 `vlax-safearray-get-u-bound`
@@ -9722,6 +10271,8 @@ Signals an AutoLISP-visible error if `array` is not a safearray or if `dimension
 
 *** Compatibility
 Available only on Windows.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-SAFEARRAY-PUT-ELEMENT
 *** Name
@@ -9759,6 +10310,8 @@ Signals an AutoLISP-visible error if `array` is not a safearray or the indices a
 *** Compatibility
 Available only on Windows.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-SAFEARRAY-TYPE
 *** Name
 `vlax-safearray-type`
@@ -9795,6 +10348,8 @@ Signals an AutoLISP-visible error if `array` is not a safearray.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-VARIANT-CHANGE-TYPE
 *** Name
 `vlax-variant-change-type`
@@ -9827,6 +10382,8 @@ None.
 
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-VARIANT-TYPE
 *** Name
@@ -9864,6 +10421,8 @@ Signals an AutoLISP-visible error if the argument is not a variant.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-VARIANT-VALUE
 *** Name
 `vlax-variant-value`
@@ -9897,6 +10456,8 @@ Signals an AutoLISP-visible error if the argument is not a variant.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-WRITE-ENABLED-P
 *** Name
 `vlax-write-enabled-p`
@@ -9928,6 +10489,8 @@ None.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-GETAREA
 *** Name
 `vlax-curve-getArea`
@@ -9957,6 +10520,8 @@ None.
 
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-CURVE-GETCLOSESTPOINTTO
 *** Name
@@ -9989,6 +10554,8 @@ None.
 
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-CURVE-GETCLOSESTPOINTTOPROJECTION
 *** Name
@@ -10026,6 +10593,8 @@ None.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-GETDISTATPARAM
 *** Name
 `vlax-curve-getDistAtParam`
@@ -10058,6 +10627,8 @@ None.
 *** Compatibility
 ActiveX curve measurement is Windows-only in Autodesk's platform model.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-GETDISTATPOINT
 *** Name
 `vlax-curve-getDistAtPoint`
@@ -10089,6 +10660,8 @@ None.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-GETENDPARAM
 *** Name
 `vlax-curve-getEndParam`
@@ -10119,6 +10692,8 @@ None.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-GETENDPOINT
 *** Name
 `vlax-curve-getEndPoint`
@@ -10147,6 +10722,8 @@ None.
 - [vlax-curve-getEndPoint (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-AutoLISP-Reference/files/GUID-11309952-C617-4467-85E8-7EBE949F2730.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-GETFIRSTDERIV
 *** Name
 `vlax-curve-getFirstDeriv`
@@ -10174,6 +10751,8 @@ None.
 
 *** Source Notes
 - [vlax-curve-getFirstDeriv (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/FRA/AutoCAD-MAC-Core/files/GUID-37282EB1-D47C-4039-B1AF-744EB5B53F25.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-CURVE-GETPARAMATDIST
 *** Name
@@ -10206,6 +10785,8 @@ None.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-GETPARAMATPOINT
 *** Name
 `vlax-curve-getParamAtPoint`
@@ -10236,6 +10817,8 @@ None.
 
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-CURVE-GETPOINTATDIST
 *** Name
@@ -10268,6 +10851,8 @@ None.
 *** Compatibility
 Available only on Windows.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-GETPOINTATPARAM
 *** Name
 `vlax-curve-getPointAtParam`
@@ -10299,6 +10884,8 @@ None.
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-GETSECONDDERIV
 *** Name
 `vlax-curve-getSecondDeriv`
@@ -10326,6 +10913,8 @@ None.
 
 *** Source Notes
 - [vlax-curve-getSecondDeriv (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/FRA/AutoCAD-MAC-Core/files/GUID-E1C78CD1-2347-4A2B-B054-62149738F9A6.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-CURVE-GETSTARTPARAM
 *** Name
@@ -10357,6 +10946,8 @@ None.
 *** Compatibility
 Available only on Windows.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-GETSTARTPOINT
 *** Name
 `vlax-curve-getStartPoint`
@@ -10383,6 +10974,8 @@ None.
 
 *** Source Notes
 - [vlax-curve-getStartPoint (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/FRA/AutoCAD-MAC-Core/files/GUID-AA1C450F-AA6E-4B05-AFB3-989AD91ADBFC.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-CURVE-ISCLOSED
 *** Name
@@ -10418,6 +11011,8 @@ None.
 *** Compatibility
 Available only on Windows.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CURVE-ISPERIODIC
 *** Name
 `vlax-curve-isPeriodic`
@@ -10451,6 +11046,8 @@ None.
 
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-CURVE-ISPLANAR
 *** Name
@@ -10508,6 +11105,8 @@ The Autodesk `vlax-curve-*` family includes at least:
 Source:
 - [V Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-26FF2BE2-B5BF-4DD1-A617-36727E51F516.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-CREATE-OBJECT
 *** Name
 `vlax-create-object`
@@ -10548,6 +11147,8 @@ Signals an AutoLISP-visible error if automation support is unavailable or object
 *** Source Notes
 - [vlax-create-object (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-D5A6811A-F110-49DD-AF83-1F64773D7DC1.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-GET-OBJECT
 *** Name
 `vlax-get-object`
@@ -10585,6 +11186,8 @@ Signals an AutoLISP-visible error if the underlying automation layer fails.
 *** Source Notes
 - [vlax-get-object (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/HUN/AutoCAD-AutoLISP-Reference/files/GUID-A408BF2E-6C7D-453A-A71A-773FEBACC742.htm)
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-ERASED-P
 *** Name
 `vlax-erased-p`
@@ -10614,6 +11217,8 @@ Signals an AutoLISP-visible error if `obj` is not a suitable automation object.
 
 *** Compatibility
 Available on AutoCAD for Windows only; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-MAP-COLLECTION
 *** Name
@@ -10651,6 +11256,8 @@ Signals an AutoLISP-visible error if `collection` is not an automation collectio
 
 *** Compatibility
 Available only on Windows; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-LDATA-GET
 *** Name
@@ -10695,6 +11302,8 @@ Signals an AutoLISP-visible error if the target does not support ldata access.
 *** Compatibility
 Available on Windows only; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-LDATA-DELETE
 *** Name
 `vlax-ldata-delete`
@@ -10726,6 +11335,8 @@ Returns `T` if deletion succeeds; otherwise returns `nil`, for example when the 
 
 *** Compatibility
 Available on Windows only; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-LDATA-LIST
 *** Name
@@ -10761,6 +11372,8 @@ Signals an AutoLISP-visible error if ldata enumeration is not supported for the 
 
 *** Compatibility
 Available on Windows only; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-LDATA-PUT
 *** Name
@@ -10800,6 +11413,8 @@ Signals an AutoLISP-visible error if the target does not support the requested s
 *** Compatibility
 Available on Windows only; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-LDATA-TEST
 *** Name
 `vlax-ldata-test`
@@ -10832,6 +11447,8 @@ Signals an AutoLISP-visible error if the implementation cannot determine whether
 *** Compatibility
 Available on Windows only; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-MACHINE-PRODUCT-KEY
 *** Name
 `vlax-machine-product-key`
@@ -10862,6 +11479,8 @@ Returns a string.
 *** Compatibility
 Available on AutoCAD for Windows only; not available in AutoCAD LT for Windows.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-PRODUCT-KEY
 *** Name
 `vlax-product-key`
@@ -10891,6 +11510,8 @@ Returns a string.
 *** Compatibility
 Available on Windows only; not available on macOS or Web.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLAX-USER-PRODUCT-KEY
 *** Name
 `vlax-user-product-key`
@@ -10919,6 +11540,8 @@ Returns a string.
 
 *** Compatibility
 Available on Windows only; not available on macOS or Web.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-REMOVE-CMD
 *** Name
@@ -10972,6 +11595,8 @@ Source:
 - [V Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-26FF2BE2-B5BF-4DD1-A617-36727E51F516.htm)
 - [Drawing Object Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/FRA/AutoCAD-MAC-Core/files/GUID-DF1CB039-265D-4D17-A86E-EF966DC4C14B.htm)
 
+#+LATEX: \newpage
+
 * 20 ActiveX, COM, and Automation
 ** Overview
 This chapter covers `vlax-*`, `vla-*`, and related automation facilities.
@@ -10988,6 +11613,8 @@ This chapter covers `vlax-*`, `vla-*`, and related automation facilities.
 - [vlax-import-type-library (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHS/AutoCAD-LT-AutoLISP-Reference/files/GUID-1699B6A0-C4A6-4BC4-82DF-5040CFF3394A.htm)
 - [BricsCAD What's New](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/WhatsNew.htm)
 
+#+LATEX: \newpage
+
 * 21 Reactors and Event Integration
 ** Overview
 Reactors are part of the Visual LISP event model.
@@ -10998,6 +11625,8 @@ Reactors are part of the Visual LISP event model.
 - Autodesk documents reactor support as available only on Windows.
 - Reactor constructors accept application data and callback bindings; object reactors additionally accept an owner list.
 - Reactors are host-event-driven objects; callback execution order is therefore determined by host events rather than ordinary expression sequencing.
+
+#+LATEX: \newpage
 
 ** Type Entry: Reactor Object
 *** Name
@@ -11027,6 +11656,8 @@ Part of the Visual LISP extension layer and available only on Windows in Autodes
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - [About Transient and Persistent Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/ESP/AutoCAD-AutoLISP/files/GUID-0A632CD0-99B8-4E7E-A958-A0723E50ABB5.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-OBJECT-REACTOR
 *** Name
@@ -11064,6 +11695,8 @@ Registers reactor state with the host event system.
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-COMMAND-REACTOR
 *** Name
 `vlr-command-reactor`
@@ -11098,6 +11731,8 @@ Registers command-event callbacks with the host event system.
 - [About Reactor Types and Events (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP/files/GUID-EC61BEC2-39B9-4CD1-BE3B-7781DF1E3530.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-ADD
 *** Name
 `vlr-add`
@@ -11126,6 +11761,8 @@ Enables event delivery for the reactor.
 - [About Removing Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2018/CHS/AutoCAD-AutoLISP/files/GUID-DC1713AC-D79F-456B-87E8-1656130CB23B.htm)
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-REMOVE
 *** Name
@@ -11156,6 +11793,8 @@ Disables event delivery for the reactor.
 - [vlr-remove (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2025/ENU/AutoCAD-AutoLISP-Reference/files/GUID-2580A278-39B4-4BBA-99B4-20DA9565DCCD.htm)
 - [About Removing Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2018/CHS/AutoCAD-AutoLISP/files/GUID-DC1713AC-D79F-456B-87E8-1656130CB23B.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-REMOVE-ALL
 *** Name
@@ -11191,6 +11830,8 @@ Bulk reactor deactivation.
 - [About Removing Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2018/CHS/AutoCAD-AutoLISP/files/GUID-DC1713AC-D79F-456B-87E8-1656130CB23B.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-ACDB-REACTOR
 *** Name
 `vlr-acdb-reactor`
@@ -11216,6 +11857,8 @@ Registers database-event callbacks with the host event system.
 - [About Reactor Types and Events (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP/files/GUID-EC61BEC2-39B9-4CD1-BE3B-7781DF1E3530.htm)
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-DOCMANAGER-REACTOR
 *** Name
@@ -11243,6 +11886,8 @@ Registers document-management callbacks with the host event system.
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-DEEPCLONE-REACTOR
 *** Name
 `vlr-deepclone-reactor`
@@ -11268,6 +11913,8 @@ Registers deep-clone callbacks with the host event system.
 - [About Reactor Types and Events (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP/files/GUID-EC61BEC2-39B9-4CD1-BE3B-7781DF1E3530.htm)
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-DWG-REACTOR
 *** Name
@@ -11295,6 +11942,8 @@ Registers drawing-event callbacks with the host event system.
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-DXF-REACTOR
 *** Name
 `vlr-dxf-reactor`
@@ -11320,6 +11969,8 @@ Registers DXF I/O callbacks with the host event system.
 - [About Reactor Types and Events (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP/files/GUID-EC61BEC2-39B9-4CD1-BE3B-7781DF1E3530.htm)
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-EDITOR-REACTOR
 *** Name
@@ -11347,6 +11998,8 @@ Registers editor callbacks with the host event system.
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-INSERT-REACTOR
 *** Name
 `vlr-insert-reactor`
@@ -11372,6 +12025,8 @@ Registers insert-event callbacks with the host event system.
 - [About Querying and Modifying Reactor Data (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP/files/GUID-8A2E5A06-9479-4E9D-B99A-9D4DC79BD77E.htm)
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-LINKER-REACTOR
 *** Name
@@ -11399,6 +12054,8 @@ Registers linker/application-load callbacks with the host event system.
 - [vlr-data-set (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-84D67D6D-4F95-48CF-AF59-795C386CD65D.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-LISP-REACTOR
 *** Name
 `vlr-lisp-reactor`
@@ -11424,6 +12081,8 @@ Registers Lisp-event callbacks with the host event system.
 - [About Reactor Types and Events (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP/files/GUID-EC61BEC2-39B9-4CD1-BE3B-7781DF1E3530.htm)
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-MISCELLANEOUS-REACTOR
 *** Name
@@ -11451,6 +12110,8 @@ Registers miscellaneous editor callbacks with the host event system.
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-MOUSE-REACTOR
 *** Name
 `vlr-mouse-reactor`
@@ -11476,6 +12137,8 @@ Registers mouse-event callbacks with the host event system.
 - [About Reactor Types and Events (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP/files/GUID-EC61BEC2-39B9-4CD1-BE3B-7781DF1E3530.htm)
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-SYSVAR-REACTOR
 *** Name
@@ -11503,6 +12166,8 @@ Registers system-variable change callbacks with the host event system.
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-UNDO-REACTOR
 *** Name
 `vlr-undo-reactor`
@@ -11528,6 +12193,8 @@ Registers undo callbacks with the host event system.
 - [About Reactor Types and Events (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP/files/GUID-EC61BEC2-39B9-4CD1-BE3B-7781DF1E3530.htm)
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-WBLOCK-REACTOR
 *** Name
@@ -11555,6 +12222,8 @@ Registers block-write callbacks with the host event system.
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-WINDOW-REACTOR
 *** Name
 `vlr-window-reactor`
@@ -11581,6 +12250,8 @@ Registers window-event callbacks with the host event system.
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-XREF-REACTOR
 *** Name
 `vlr-xref-reactor`
@@ -11606,6 +12277,8 @@ Registers XREF-related callbacks with the host event system.
 - [About Querying and Modifying Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP/files/GUID-8A2E5A06-9479-4E9D-B99A-9D4DC79BD77E.htm)
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-ADDED-P
 *** Name
@@ -11634,6 +12307,8 @@ None.
 - [About Querying and Modifying Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP/files/GUID-8A2E5A06-9479-4E9D-B99A-9D4DC79BD77E.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-CURRENT-REACTION-NAME
 *** Name
 `vlr-current-reaction-name`
@@ -11659,6 +12334,8 @@ None.
 - [vlr-data (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-3DEDE2D3-7A27-4C51-A47D-C2A6661C1125.htm)
 - [About Querying and Modifying Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP/files/GUID-8A2E5A06-9479-4E9D-B99A-9D4DC79BD77E.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-DATA
 *** Name
@@ -11686,6 +12363,8 @@ None.
 - [About Reactor Types and Events (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/CHS/AutoCAD-AutoLISP/files/GUID-EC61BEC2-39B9-4CD1-BE3B-7781DF1E3530.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-DATA-SET
 *** Name
 `vlr-data-set`
@@ -11711,6 +12390,8 @@ Mutates reactor-associated application data.
 - [About Querying and Modifying Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP/files/GUID-8A2E5A06-9479-4E9D-B99A-9D4DC79BD77E.htm)
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-REACTION-NAME
 *** Name
@@ -11738,6 +12419,8 @@ None.
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-REACTION-SET
 *** Name
 `vlr-reaction-set`
@@ -11763,6 +12446,8 @@ Mutates the callback set associated with the reactor.
 - [vlr-reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-10C29F2A-8DF9-4511-8A5C-7DA92A4DA431.htm)
 - [About Querying and Modifying Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP/files/GUID-8A2E5A06-9479-4E9D-B99A-9D4DC79BD77E.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-REACTIONS
 *** Name
@@ -11790,6 +12475,8 @@ None.
 - [About Querying and Modifying Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP/files/GUID-8A2E5A06-9479-4E9D-B99A-9D4DC79BD77E.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-REACTORS
 *** Name
 `vlr-reactors`
@@ -11816,6 +12503,8 @@ None.
 - [Reactor Functions Reference (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-B83B512E-CEF6-43C5-9099-398999E254AF.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VLR-TYPE
 *** Name
 `vlr-type`
@@ -11841,6 +12530,8 @@ None.
 - [vlr-type (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6CFDF8C3-0C66-41F1-9254-6D112AFEB4DD.htm)
 - [About Querying and Modifying Reactors (AutoLISP/ActiveX)](https://help.autodesk.com/cloudhelp/2024/FRA/AutoCAD-AutoLISP/files/GUID-8A2E5A06-9479-4E9D-B99A-9D4DC79BD77E.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VLR-TYPES
 *** Name
@@ -11900,6 +12591,8 @@ Source:
 - Visual LISP function-family documentation and product overviews
 - Status: acknowledged, not yet fully specified.
 
+#+LATEX: \newpage
+
 * 22 Packaging, Compilation, and Namespaces
 ** Overview
 This chapter covers `.fas`, `.vlx`, namespace isolation, and related packaging/compilation interfaces.
@@ -11907,6 +12600,8 @@ This chapter covers `.fas`, `.vlx`, namespace isolation, and related packaging/c
 ** Normative Rules
 - these features affect more than delivery; they influence name visibility and execution environment
 - BricsCAD supports related but different packaging mechanisms such as DEScoder
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-DOC-EXPORT
 *** Name
@@ -11936,6 +12631,8 @@ Applies to separate-namespace VLX applications. Autodesk documents behavior diff
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
 - Status: documented by family page.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-DOC-IMPORT
 *** Name
 `vl-doc-import`
@@ -11960,6 +12657,8 @@ Imports bindings across namespace boundaries.
 *** Source Notes
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
 - Status: documented by family page.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-DOC-REF
 *** Name
@@ -11986,6 +12685,8 @@ None.
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
 - Status: documented by family page.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-DOC-SET
 *** Name
 `vl-doc-set`
@@ -12010,6 +12711,8 @@ Mutates document-namespace state.
 *** Source Notes
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
 - Status: documented by family page.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-BB-REF
 *** Name
@@ -12043,6 +12746,8 @@ None.
 - [Namespace Communication Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2025/ITA/AutoCAD-MAC-AutoLISP-Reference/files/GUID-F5DD5472-1695-4CA3-9110-E6008E87BB89.htm)
 - [vl-bb-set (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/CSY/AutoCAD-AutoLISP-Reference/files/GUID-2B1484FC-BBD1-408B-A8A0-DB931363630F.htm)
 - Status: documented.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-BB-SET
 *** Name
@@ -12078,6 +12783,8 @@ Mutates blackboard-namespace state.
 - [Namespace Communication Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2025/ITA/AutoCAD-MAC-AutoLISP-Reference/files/GUID-F5DD5472-1695-4CA3-9110-E6008E87BB89.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-EXIT-WITH-ERROR
 *** Name
 `vl-exit-with-error`
@@ -12102,6 +12809,8 @@ Transfers control across namespace/error boundaries.
 *** Source Notes
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
 - Status: documented by family page.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-EXIT-WITH-VALUE
 *** Name
@@ -12137,6 +12846,8 @@ Transfers control across namespace boundaries.
 - [About Handling Errors in a VLX Application Running in Its Own Namespace (Visual LISP IDE)](https://help.autodesk.com/cloudhelp/2026/ESP/AutoCAD-AutoLISP/files/GUID-B682DF97-DFD5-48B4-9FFF-8A0DF7CAC05F.htm)
 - Status: documented.
 
+#+LATEX: \newpage
+
 ** Function Entry: VL-ARX-IMPORT
 *** Name
 `vl-arx-import`
@@ -12164,6 +12875,8 @@ Applies to separate-namespace VLX applications and has documented behavior diffe
 *** Source Notes
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
 - Status: documented by family page.
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-VLX-LOADED-P
 *** Name
@@ -12193,6 +12906,8 @@ Returns `T` if the specified separate-namespace VLX application is loaded; other
 *** Source Notes
 - [vl-vlx-loaded-p (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/HUN/AutoCAD-AutoLISP-Reference/files/GUID-2322688B-F1FA-416E-AEF0-E14256717588.htm)
 - [VLX Namespace Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/CHT/AutoCAD-AutoLISP-Reference/files/GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1.htm)
+
+#+LATEX: \newpage
 
 ** Function Entry: VL-UNLOAD-VLX
 *** Name
@@ -12252,6 +12967,8 @@ Sources:
 - [VLX NameSpace Support (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/VLXNameSpaceSupport.htm)
 - [DEScoder LISP encryption (BricsCAD)](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/DEScoderLISPencryption.htm)
 
+#+LATEX: \newpage
+
 * 23 Environment Profiles and Dialects
 ** Overview
 This chapter defines the environment-profile mechanism for `clautolisp`.
@@ -12266,6 +12983,8 @@ This chapter defines the environment-profile mechanism for `clautolisp`.
 - project architectural policy recorded in `AGENTS.md`
 - Status: implementation-defined for `clautolisp`, consistent with project goals.
 
+#+LATEX: \newpage
+
 * 24 System Construction and Delivery
 ** Overview
 The implementation must support SBCL and CCL and must be able to produce a standalone executable.
@@ -12277,6 +12996,8 @@ The implementation must support SBCL and CCL and must be able to produce a stand
 
 ** Source Notes
 - project policy from `AGENTS.md`
+
+#+LATEX: \newpage
 
 * 25 Version Compatibility and Portability
 ** Overview
@@ -12306,6 +13027,8 @@ Every major behavior difference should eventually be tagged by:
 - [New and Changed AutoLISP Functions Reference (2015)](https://help.autodesk.com/cloudhelp/2015/ESP/AutoCAD-AutoLISP/files/GUID-037BF4D4-755E-4A5C-8136-80E85CCEDF3E.htm)
 - [What's New and What's More in BricsCAD Lisp](https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/WhatsNew.htm)
 
+#+LATEX: \newpage
+
 * 26 Glossary
 ** AutoLISP
 The Lisp dialect embedded in AutoCAD and emulated or extended by compatible systems such as BricsCAD.
@@ -12324,6 +13047,8 @@ The host-environment model presented to Lisp code, independent of the actual ope
 
 ** Source Notes
 - terms defined by this specification draft and project policy
+
+#+LATEX: \newpage
 
 * Open Work
 The following areas remain incomplete and are governed by `documentation/specification-resolution-plan.org`:
