@@ -23,7 +23,11 @@
            do (write-char ch out)))))
 
 (defun decode-and-normalize-file (path &key external-format)
-  (with-open-file (stream path
-                          :direction :input
-                          :external-format external-format)
-    (decode-and-normalize-stream stream)))
+  (if external-format
+      (with-open-file (stream path
+                              :direction :input
+                              :external-format external-format)
+        (decode-and-normalize-stream stream))
+      (with-open-file (stream path
+                              :direction :input)
+        (decode-and-normalize-stream stream))))

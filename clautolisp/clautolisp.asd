@@ -28,6 +28,16 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/read-autolisp"
+  :description "Command-line reader validation tool for AutoLISP source."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-reader" "uiop")
+  :serial t
+  :components
+  ((:file "autolisp-reader/tools/read-autolisp/source/package")
+   (:file "autolisp-reader/tools/read-autolisp/source/main")))
+
 (asdf:defsystem "clautolisp/autolisp-reader/tests"
   :description "Tests for the clautolisp AutoLISP reader subsystem."
   :author "Codex"

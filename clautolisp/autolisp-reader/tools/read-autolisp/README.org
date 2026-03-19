@@ -1,0 +1,131 @@
+#+TITLE: read-autolisp
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+~read-autolisp~ is a command-line validation tool for the ~autolisp-reader~
+system.
+
+It reads one or more ~.lsp~ files through the parser-oriented reader API,
+converts the resulting AutoLISP reader objects into simple Common Lisp objects,
+and pretty-prints them.
+
+It is intended for:
+
+- validating the reader against real AutoLISP source files,
+- inspecting how the current reader classifies and structures input,
+- surfacing reader warnings and errors in batch runs.
+
+* Build
+From ~$SRC/clautolisp~:
+
+#+begin_src sh
+make -C clautolisp build-read-autolisp-sbcl
+make -C clautolisp build-read-autolisp-ccl
+#+end_src
+
+Expected binaries:
+
+- ~clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-sbcl~
+- ~clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-ccl~
+
+Batch wrapper:
+
+- ~clautolisp/autolisp-reader/tools/read-all-autolisp~
+
+* Usage
+#+begin_src sh
+clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-sbcl \
+  [options] file.lsp ...
+#+end_src
+
+Supported options:
+
+- ~--strict~
+- ~--lax~
+- ~--warn-on-integer-overflow~
+- ~--canonical-case upcase~
+- ~--canonical-case downcase~
+- ~--canonical-case preserve~
+- ~--external-format FORMAT~
+- ~--help~
+
+This tool uses form-reading mode, not token-stream mode.
+
+Therefore:
+
+- comments are not retained,
+- formatter-oriented concrete syntax output is not produced,
+- strict versus lax only affects token acceptance.
+
+* Exit Status
+- Exit status ~0~ means all input files were read without reader errors.
+- Exit status ~1~ means command-line usage failed, file reading failed, or the
+  reader reported at least one error diagnostic.
+
+Warnings are printed on ~*error-output*~ and do not change a successful exit
+status by themselves.
+
+* Output Shape
+Each input file is introduced by a marker line:
+
+#+begin_example
+;;; FILE path/to/file.lsp
+#+end_example
+
+Each parsed top-level form is then pretty-printed as a Common Lisp object.
+
+Current mapping:
+
+- AutoLISP symbols become Common Lisp symbols interned in ~COMMON-LISP-USER~.
+- AutoLISP strings become Common Lisp strings.
+- AutoLISP integers become Common Lisp integers.
+- AutoLISP reals become Common Lisp floats.
+- AutoLISP quote forms become ~(quote ...)~ objects.
+- AutoLISP cons forms become Common Lisp proper lists or dotted pairs.
+
+This mapping is intentionally simple and direct.  It is for validation and
+inspection, not for preserving every source-level distinction needed by later
+runtime stages.
+
+* Example
+#+begin_src sh
+clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-sbcl \
+  --strict \
+  autolisp-spec/sources/probe-core.lsp
+#+end_src
+
+* Batch Usage
+Use ~read-all-autolisp~ to process many ~.lsp~ files one at a time.
+
+It accepts paths:
+
+- as positional arguments,
+- from a file with ~--paths-file~,
+- or from standard input.
+
+Examples:
+
+#+begin_src sh
+find . -name '*.lsp' | clautolisp/autolisp-reader/tools/read-all-autolisp
+#+end_src
+
+#+begin_src sh
+clautolisp/autolisp-reader/tools/read-all-autolisp \
+  --ccl \
+  --lax \
+  --paths-file lsp-paths.txt
+#+end_src
+
+Without ~--verbose~, the wrapper captures all ~read-autolisp~ output in a
+temporary file and only reports failing file paths on standard error, one per
+line.
+
+With ~--verbose~, stdout from the selected reader program is allowed to pass
+through directly.
+
+* Notes
+- Use ~--external-format~ when the input file encoding is known and should be
+  forced.
+- Use ~--warn-on-integer-overflow~ to report decimal integer syntax that is
+  reclassified as a real because it exceeds the signed 32-bit integer range.
