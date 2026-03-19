@@ -1,6 +1,6 @@
 # AGENTS.md
 
-General directives for `/Users/pjb/src/public/clautolisp`.
+General directives for this repository.
 
 ## Scope
 

@@ -1,0 +1,391 @@
+#+TITLE: autolisp-test Development Plan
+#+AUTHOR: Codex
+#+OPTIONS: toc:3 num:t
+
+* Purpose
+This document defines the initial plan for ~autolisp-test~, a conformance-oriented AutoLISP test suite intended to play the same role for AutoLISP that ~ansi-tests~ plays for Common Lisp implementations.
+
+The target outcome is a reusable test corpus that can be run against:
+
+- ~clautolisp~,
+- real AutoCAD releases,
+- real BricsCAD releases,
+- future third-party implementations,
+
+while keeping the reported behavior tied to:
+
+- implementation name,
+- implementation version,
+- selected host profile,
+- execution mode.
+
+* Primary Goal
+~autolisp-test~ should test the language specification, not one implementation's private behavior.
+
+That means the suite should prefer:
+
+- vendor-documented behavior,
+- behavior confirmed by executable probes against real implementations,
+- version-qualified results where the language is historically unstable or under-specified.
+
+It should avoid treating accidental ~clautolisp~ behavior as normative.
+
+* Reference Study: Common Lisp ansi-tests
+The upstream ~ansi-tests~ repository was fetched and inspected locally on 2026-03-18 from:
+
+- ~https://gitlab.common-lisp.net/ansi-test/ansi-test.git~
+
+Key implementation observations:
+
+1. The suite uses a small shared regression-test harness centered on ~rt.lsp~.
+2. Tests are registered declaratively with ~deftest~ and then run from a central database.
+3. The tree is organized primarily by language area, with one or more files per operator or closely related family.
+4. Tests carry metadata properties and note tags so some classes of tests can be disabled selectively.
+5. Implementation-specific instability is handled through expected-failure overlays rather than by weakening the base corpus.
+6. There is a sharp distinction between reusable harness code and test corpus files.
+
+Representative upstream files inspected:
+
+- ~/tmp/ansi-test-upstream/rt.lsp~
+- ~/tmp/ansi-test-upstream/rt-package.lsp~
+- ~/tmp/ansi-test-upstream/init.lsp~
+- ~/tmp/ansi-test-upstream/doit.lsp~
+- ~/tmp/ansi-test-upstream/auxiliary/ansi-aux.lsp~
+- ~/tmp/ansi-test-upstream/data-and-control-flow/if.lsp~
+- ~/tmp/ansi-test-upstream/cons/cons.lsp~
+
+* What Should Be Reused From ansi-tests
+The following structural ideas are good fits for ~autolisp-test~:
+
+- a small registry-driven test harness,
+- declarative ~deftest~-style test definitions,
+- per-operator test files,
+- metadata on tests,
+- expected-failure overlays,
+- machine-readable and human-readable reports.
+
+These ideas are worth preserving because they support incremental growth, selective execution, and multi-implementation comparison.
+
+* What Must Change For AutoLISP
+~autolisp-test~ cannot be a direct textual port of ~ansi-tests~.
+
+AutoLISP differs from Common Lisp in at least these ways:
+
+- it does not expose Common Lisp multiple-value semantics,
+- `or` returns ~T~ or ~nil~, not the first truthy value,
+- errors are observed through AutoLISP-visible mechanisms such as ~*error*~, ~ERRNO~, and ~vl-catch-all-*~ rather than through raw Common Lisp condition classes,
+- dynamic scope and symbol/value behavior differ,
+- function-definition semantics differ, notably around ~defun~ and ~defun-q~,
+- host-coupled behavior must be parameterized by explicit host profile rather than inferred from the real operating system.
+
+Therefore every projected test from ~ansi-tests~ needs classification before reuse.
+
+* Projection Strategy
+Each candidate test or test family imported conceptually from ~ansi-tests~ should be classified into one of four buckets.
+
+** Bucket 1: Direct Structural Reuse
+Keep the overall intent and mostly preserve the test shape.
+
+Examples:
+
+- evaluation order,
+- short-circuit behavior,
+- basic list construction,
+- quote behavior,
+- sequencing behavior.
+
+** Bucket 2: Semantic Rewrite
+Keep the operator under test, but rewrite the expected behavior in AutoLISP terms.
+
+Examples:
+
+- `or`
+- `nil`
+- function-definition tests
+- error tests
+
+** Bucket 3: New AutoLISP Tests
+There is no useful ~ansi-tests~ source family, so new tests must be written from the AutoLISP draft specification and executable probes.
+
+Examples:
+
+- `defun-q`
+- `defun-q-list-ref`
+- `defun-q-list-set`
+- `foreach`
+- `repeat`
+- `command`
+- host-profile-sensitive behavior
+
+** Bucket 4: Reject
+The Common Lisp feature has no AutoLISP analogue and should not be projected.
+
+Examples:
+
+- package tests,
+- CLOS tests,
+- multiple values,
+- compiler-macro tests,
+- pretty printer specifics,
+- pathname/type-system machinery that exists only as Common Lisp substrate.
+
+* First-Version Scope
+The first version of ~autolisp-test~ should be deliberately narrow and defensible.
+
+It should start with:
+
+1. core special forms that are already identified in the local specification draft,
+2. core list, symbol, equality, numeric, and control functions that exist in both the AutoLISP draft and in some related form in Common Lisp,
+3. AutoLISP-specific rewrites where Common Lisp behavior is not the same.
+
+It should defer:
+
+- DCL,
+- ActiveX and COM semantics,
+- UI behavior,
+- command-loop integration details that require a real CAD host,
+- large host-object models.
+
+* Initial Coverage Candidates
+The current draft specification already identifies these standardized special forms:
+
+- `and`
+- `command`
+- `cond`
+- `defun`
+- `defun-q`
+- `foreach`
+- `function`
+- `if`
+- `lambda`
+- `or`
+- `progn`
+- `quote`
+- `repeat`
+- `setq`
+- `trace`
+- `untrace`
+- `vlax-for`
+- `while`
+
+For the first projected version, prioritize the subset that is both core and portable:
+
+- `and`
+- `cond`
+- `defun`
+- `defun-q`
+- `foreach`
+- `function`
+- `if`
+- `lambda`
+- `or`
+- `progn`
+- `quote`
+- `repeat`
+- `setq`
+- `while`
+
+Defer these to later phases because they are host-specific or less central:
+
+- `command`
+- `trace`
+- `untrace`
+- `vlax-for`
+
+The first non-special-form function families should likely include:
+
+- `atom`
+- `null`
+- `not`
+- `list`
+- `car`
+- `cdr`
+- `cons`
+- equality predicates present in the AutoLISP draft
+- basic arithmetic and comparison operators
+- assignment and symbol-handling functions related to the special forms above
+
+This candidate list still needs to be normalized against the draft-standard inventory before implementation begins.
+
+* Test Model
+Each ~autolisp-test~ entry should eventually record:
+
+- stable test name,
+- language area,
+- operator/function under test,
+- authority level:
+  - documented
+  - executable-evidence
+  - inferred
+- applicable dialect or host constraints,
+- expected result or expected error class,
+- version qualifiers when behavior differs across hosts or releases.
+
+Expected errors should be described in AutoLISP-visible terms, not in host Common Lisp condition classes.
+
+* Report Model
+Each run should produce a report that answers:
+
+- what implementation was tested,
+- which version was tested,
+- which host profile was selected,
+- which execution mode was used,
+- how many tests passed,
+- how many failed,
+- how many were expected failures,
+- which language areas remain unimplemented or intentionally skipped.
+
+The report format should be easy to compare across runs and suitable for archival in version control when testing real vendor releases.
+
+* Proposed Directory Structure
+#+begin_example
+autolisp-test/
+  harness/
+  tests/
+    special-forms/
+    core-functions/
+    reader/
+    errors/
+    host-profiles/
+#+end_example
+
+Recommended role of each directory:
+
+- ~harness/~: runner, registration, metadata, reporting
+- ~tests/special-forms/~: one file per special form where practical
+- ~tests/core-functions/~: one file per function or narrowly related family
+- ~tests/reader/~: reader and literal-syntax conformance probes
+- ~tests/errors/~: AutoLISP-visible error and recovery behavior
+- ~tests/host-profiles/~: version- and host-qualified behavior that cannot be purely core
+
+* Development Phases
+** Phase 0: Inventory and Mapping
+Build the source inventory needed before writing many tests.
+
+Tasks:
+
+1. Extract the operator/function inventory from the AutoLISP draft specification.
+2. Mark each item as:
+   - shared with Common Lisp in some form,
+   - AutoLISP-specific,
+   - host-specific.
+3. Build a projection table against ~ansi-tests~ families.
+4. Record unresolved semantic mismatches.
+
+Deliverable:
+
+- an operator mapping table from AutoLISP draft items to:
+  - reusable ~ansi-tests~ structure,
+  - rewrite required,
+  - new tests required.
+
+** Phase 1: Minimal Harness
+Implement the smallest useful harness.
+
+Tasks:
+
+1. Define a package and ASDF system for ~autolisp-test~.
+2. Implement a ~deftest~-style registration macro.
+3. Add support for:
+   - metadata properties,
+   - selective execution by area or operator,
+   - expected failures,
+   - textual report output.
+4. Define an implementation descriptor object with:
+   - implementation identifier,
+   - implementation version,
+   - host profile,
+   - dialect flags.
+
+Deliverable:
+
+- a runnable but small conformance harness independent from the main runtime internals.
+
+** Phase 2: First Projection Corpus
+Write the first projected tests from the current draft standard.
+
+Tasks:
+
+1. Port the structural shape of ~ansi-tests~ files for:
+   - `if`
+   - `cond`
+   - `and`
+   - `or`
+   - `quote`
+   - `progn`
+   - `setq`
+   - `cons`
+   - `car`
+   - `cdr`
+   - `list`
+2. Rewrite semantics where AutoLISP differs.
+3. Add explicit evaluation-order tests.
+4. Add AutoLISP-specific expected-error tests.
+
+Deliverable:
+
+- the first meaningful specification-oriented corpus for pure language semantics.
+
+** Phase 3: AutoLISP-Specific Extensions
+Add features that have no direct Common Lisp counterpart.
+
+Priority areas:
+
+- `defun-q`
+- `defun-q-list-ref`
+- `defun-q-list-set`
+- `repeat`
+- `foreach`
+- `while`
+- `function` and AutoLISP lambda usage
+- `*error*`
+- `vl-catch-all-*`
+
+Deliverable:
+
+- a suite that is no longer merely a projection of Common Lisp tests.
+
+** Phase 4: Host and Version Matrix
+Support testing against real product releases.
+
+Tasks:
+
+1. Define a normalized report schema.
+2. Add host-profile fixtures.
+3. Add expected-failure overlays per implementation/version/profile.
+4. Archive probe results from real AutoCAD and BricsCAD versions.
+
+Deliverable:
+
+- comparable conformance reports across implementations and releases.
+
+* Recommended Immediate Work Items
+The next concrete tasks should be:
+
+1. create the operator mapping table for the current draft specification,
+2. define the minimal harness API,
+3. implement the first ~if~, `cond`, `and`, `or`, `quote`, and `setq` test files,
+4. decide the report format before the corpus grows.
+
+* Open Questions
+The following points still need explicit project decisions:
+
+1. Should ~autolisp-test~ run inside ~clautolisp~ only, or also through an external-driver mode for real AutoCAD and BricsCAD sessions?
+2. Which report format should be canonical:
+   - Org,
+   - s-expression,
+   - JSON,
+   - or more than one?
+3. Should version-specific behavior live in the base test metadata or in separate expected-failure files?
+4. How should host-sensitive tests be marked so core-language conformance remains easy to read?
+
+* Standing Recommendation
+Do not begin by bulk-porting large amounts of ~ansi-tests~ text.
+
+Begin instead with:
+
+- the harness shape,
+- the operator mapping table,
+- a small corpus for the most central special forms,
+
+and treat every projected test as a specification exercise rather than a transliteration exercise.
