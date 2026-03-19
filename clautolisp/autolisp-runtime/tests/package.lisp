@@ -12,7 +12,18 @@
                 #:autolisp-string
                 #:autolisp-string-value
                 #:autolisp-symbol
+                #:autolisp-symbol-function-bound-p
                 #:autolisp-symbol-name
+                #:autolisp-symbol-value-bound-p
+                #:autolisp-type
+                #:autolisp-vl-symbol-name
+                #:autolisp-vl-symbolp
+                #:autolisp-vl-symbol-value
+                #:autolisp-listp
+                #:autolisp-atom
+                #:autolisp-null
+                #:autolisp-not
+                #:autolisp-read-from-string
                 #:intern-autolisp-symbol
                 #:read-runtime-from-string
                 #:reader-object->runtime-value

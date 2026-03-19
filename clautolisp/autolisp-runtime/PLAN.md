@@ -29,10 +29,11 @@ Architecture and design rationale belong in `documentation/design.org`.
 
 ## Runtime Semantics Tasks
 
-- [ ] Implement `read` and `read-from-string` on top of reader-to-runtime mapping.
-- [ ] Define runtime type designator behavior for `type`.
-- [ ] Define truthiness helpers and nil-handling utilities.
+- [x] Implement `read` and `read-from-string` style entry points on top of reader-to-runtime mapping.
+- [x] Define initial runtime type designator behavior for `type`.
+- [x] Define truthiness helpers and nil-handling utilities.
 - [ ] Introduce user-function and builtin-function runtime objects.
+- [ ] Clarify `boundp` semantics, especially the documented distinction between unbound symbols and symbols bound to `nil`.
 
 ## Integration Tasks
 

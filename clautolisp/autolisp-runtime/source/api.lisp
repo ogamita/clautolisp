@@ -68,8 +68,14 @@
 (defun autolisp-symbol-original-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-symbol-original-name object))
 
+(defun autolisp-symbol-value (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-symbol-value object))
+
 (defun autolisp-symbol-value-bound-p (object)
   (clautolisp.autolisp-runtime.internal::autolisp-symbol-value-bound-p object))
+
+(defun autolisp-symbol-function (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-symbol-function object))
 
 (defun autolisp-symbol-function-bound-p (object)
   (clautolisp.autolisp-runtime.internal::autolisp-symbol-function-bound-p object))
@@ -151,6 +157,78 @@
 (defun reader-objects->runtime-values (objects)
   (mapcar #'reader-object->runtime-value objects))
 
+(defun autolisp-false-p (object)
+  (null object))
+
+(defun autolisp-true-p (object)
+  (not (autolisp-false-p object)))
+
+(defun autolisp-null (object)
+  (if (null object)
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun autolisp-not (object)
+  (autolisp-null object))
+
+(defun autolisp-listp (object)
+  (if (listp object)
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun autolisp-atom (object)
+  (if (atom object)
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun autolisp-vl-symbolp (object)
+  (if (typep object 'autolisp-symbol)
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun autolisp-vl-symbol-name (object)
+  (unless (typep object 'autolisp-symbol)
+    (error "Expected an AutoLISP symbol, got ~S." object))
+  (clautolisp.autolisp-runtime.internal::make-autolisp-string
+   :value (autolisp-symbol-name object)))
+
+(defun autolisp-vl-symbol-value (object)
+  (unless (typep object 'autolisp-symbol)
+    (error "Expected an AutoLISP symbol, got ~S." object))
+  (autolisp-symbol-value object))
+
+(defun autolisp-type (object)
+  (cond
+    ((null object) nil)
+    ((typep object '(signed-byte 32))
+     (intern-autolisp-symbol "INT"))
+    ((typep object 'double-float)
+     (intern-autolisp-symbol "REAL"))
+    ((typep object 'autolisp-string)
+     (intern-autolisp-symbol "STR"))
+    ((typep object 'autolisp-symbol)
+     (intern-autolisp-symbol "SYM"))
+    ((consp object)
+     (intern-autolisp-symbol "LIST"))
+    ((typep object 'autolisp-file)
+     (intern-autolisp-symbol "FILE"))
+    ((typep object 'autolisp-ename)
+     (intern-autolisp-symbol "ENAME"))
+    ((typep object 'autolisp-pickset)
+     (intern-autolisp-symbol "PICKSET"))
+    ((typep object 'autolisp-subr)
+     (intern-autolisp-symbol "SUBR"))
+    ((typep object 'autolisp-usubr)
+     (intern-autolisp-symbol "USUBR"))
+    ((typep object 'autolisp-safearray)
+     (intern-autolisp-symbol "SAFEARRAY"))
+    ((typep object 'autolisp-variant)
+     (intern-autolisp-symbol "VARIANT"))
+    ((typep object 'autolisp-vla-object)
+     (intern-autolisp-symbol "VLA-OBJECT"))
+    (t
+     (error "No AutoLISP runtime type designator is defined for ~S." object))))
+
 (defun read-runtime-from-string (text &rest options &key &allow-other-keys)
   (reader-objects->runtime-values
    (read-result-objects
@@ -165,3 +243,12 @@
   (reader-objects->runtime-values
    (read-result-objects
     (apply #'read-forms-from-file path options))))
+
+(defun autolisp-read-from-string (text &rest options &key &allow-other-keys)
+  (first (apply #'read-runtime-from-string text options)))
+
+(defun autolisp-read-from-stream (stream &rest options &key &allow-other-keys)
+  (first (apply #'read-runtime-from-stream stream options)))
+
+(defun autolisp-read-from-file (path &rest options &key &allow-other-keys)
+  (first (apply #'read-runtime-from-file path options)))
