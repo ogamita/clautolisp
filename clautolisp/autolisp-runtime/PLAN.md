@@ -32,11 +32,13 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [x] Implement `read` and `read-from-string` style entry points on top of reader-to-runtime mapping.
 - [x] Define initial runtime type designator behavior for `type`.
 - [x] Define truthiness helpers and nil-handling utilities.
-- [ ] Introduce user-function and builtin-function runtime objects.
+- [x] Introduce builtin-function and user-function runtime object shapes (`SUBR` and `USUBR`).
 - [ ] Clarify `boundp` semantics, especially the documented distinction between unbound symbols and symbols bound to `nil`.
+- [ ] Design the evaluator phase explicitly, including the boundary between ordinary builtin calls and special-operator evaluation.
+- [ ] Define the initial special-operator set and decide which forms can be modeled as macro-like expansions versus fundamental evaluator cases.
 
 ## Integration Tasks
 
 - [ ] Integrate the runtime object model with `autolisp-builtins-core`.
 - [ ] Add runtime tests for additional spec-defined host-visible types.
-- [ ] Add evaluator-facing normalization helpers once special forms begin.
+- [ ] Add evaluator-facing normalization helpers once special-operator work begins.

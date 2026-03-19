@@ -11,6 +11,7 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - The implementation architecture is defined at a high level.
 - The `autolisp-reader` module is implemented and documented.
 - The `autolisp-runtime` module now exists with an initial runtime object model and reader-to-runtime literal mapping.
+- The `autolisp-builtins-core` module now exists with the first installable builtin-function registry.
 - The reader currently supports source spans, strict and lax token modes, line and block comments, concrete comment-preserving reading, external-format-aware file input, and explicit reader options.
 - Reader tooling exists:
   - standalone `read-autolisp` executables for SBCL and CCL,
@@ -48,13 +49,17 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [x] Define the first AutoLISP symbol abstraction and interning layer.
 - [ ] Define explicit environment objects for dynamic scope.
 - [ ] Implement literal evaluation and symbol lookup on top of the runtime object model.
-- [ ] Implement the first core special forms.
+- [ ] Design the evaluator phase, including explicit treatment of AutoLISP special operators.
+- [ ] Classify the initial special-operator set into macro-expandable cases versus evaluator-primitive cases.
+- [ ] Implement the first core special operators in the evaluator rather than in `autolisp-builtins-core`.
 - [ ] Implement lambda representation and application.
 - [ ] Implement AutoLISP-visible error mapping.
 
 ## Builtins and Host Tasks
 
-- [ ] Implement the first numeric, list, equality, string, and file-related builtins.
+- [x] Implement the first core builtin registry for `type`, `null`, `not`, `atom`, `vl-symbolp`, `vl-symbol-name`, and `vl-symbol-value`.
+- [ ] Implement the first numeric, list, equality, string, and file-related builtins beyond the current predicate/introspection set.
+- [ ] Keep ordinary builtins and evaluator-owned special operators separated as the callable surface expands.
 - [ ] Define the abstract host API.
 - [ ] Build a deterministic mock host.
 - [ ] Add snapshot and diff support for host-facing regression tests.

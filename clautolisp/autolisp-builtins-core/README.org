@@ -1,0 +1,13 @@
+#+TITLE: autolisp-builtins-core
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+~autolisp-builtins-core~ defines the first installable builtin-function
+objects for the runtime.
+
+The initial scope is intentionally narrow:
+
+- runtime type and predicate helpers,
+- first Visual LISP symbol helpers,
+- builtin registration into the AutoLISP symbol table.

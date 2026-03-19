@@ -16,7 +16,9 @@ Current state:
 - The reader owns lexing, parsing, source locations, comment handling, and strict versus lax token acceptance.
 - Reader-focused tooling exists, including standalone batch executables and a batch wrapper for corpus validation.
 - SBCL and CCL test execution, FiveAM integration, and CI/container support are in place.
-- The runtime, builtins, host abstraction, and evaluator remain future work.
+- The ~autolisp-runtime~ and ~autolisp-builtins-core~ modules now exist in initial form.
+- Special operators are still future evaluator work and are intentionally kept out of the builtin-function layer.
+- The host abstraction and full evaluator remain future work.
 
 * Primary Architectural Position
 The project should implement an AutoLISP system in Common Lisp, not compile AutoLISP away into ad hoc Common Lisp forms and not try to pretend that AutoLISP source is normal Common Lisp source.
@@ -105,6 +107,7 @@ Notes:
 
 - This module should not depend on CAD or UI code.
 - It should depend only on ~autolisp-reader~ and low-level utilities.
+- Special operators should be designed and implemented as part of the evaluator in this module layer, not as ordinary builtins.
 
 *** ~autolisp-builtins-core~
 Responsibility:
@@ -119,6 +122,7 @@ Rationale:
 
 - Builtins need separation from the evaluator so they can be tested independently.
 - Some builtins will require dialect flags or compatibility shims.
+- Special operators such as ~foreach~ do not belong here; they require evaluator-controlled argument and body handling.
 
 *** ~autolisp-conditions~
 Responsibility:
