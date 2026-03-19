@@ -1,0 +1,17 @@
+#+TITLE: autolisp-reader
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+~autolisp-reader~ is the reader subsystem for the ~clautolisp~ implementation.
+
+Its responsibility is to accept AutoLISP source text, decode it at the input boundary, tokenize and parse it according to an explicit dialect configuration, and return source-aware reader results without leaking Common Lisp reader semantics into the language.
+
+* Main Files
+- ~PLAN.md~
+- ~documentation/specification.org~
+
+* Status
+This module is in specification-first mode.
+
+The first implementation work should follow the syntax and data-model decisions recorded in ~documentation/specification.org~.
