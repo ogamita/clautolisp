@@ -24,5 +24,8 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Add an initial numeric/equality predicate batch: `numberp`, `=`, `/=`, `zerop`, and `minusp`.
 - [x] Add the next numeric batch: `<`, `<=`, `>`, `>=`, `abs`, `fix`, and `float`.
 - [x] Add the basic arithmetic operators `+`, `-`, `*`, and `/`.
+- [x] Add the next arithmetic helpers: `1+`, `1-`, `max`, and `min`.
+- [x] Add integer arithmetic helpers `rem` and `gcd`.
+- [x] Add integer arithmetic and bitwise helpers `lcm`, `~`, `logand`, `logior`, and `lsh`.
 - [ ] Add first string and file builtins.
 - [ ] Keep the builtin inventory clearly separated from special operators as evaluator work expands.
