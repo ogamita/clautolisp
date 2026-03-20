@@ -247,6 +247,89 @@
                   5))))
     (is (= 100 (autolisp-symbol-value arg)))))
 
+(test autolisp-eval-and-or
+  (reset-autolisp-symbol-table)
+  (let* ((and-symbol (intern-autolisp-symbol "AND"))
+         (or-symbol (intern-autolisp-symbol "OR"))
+         (setq-symbol (intern-autolisp-symbol "SETQ"))
+         (foo (intern-autolisp-symbol "FOO")))
+    (set-variable foo 0)
+    (is (eq (intern-autolisp-symbol "T")
+            (autolisp-eval (list and-symbol))))
+    (is (null (autolisp-eval (list or-symbol))))
+    (is (= 3 (autolisp-eval (list and-symbol 1 2 3))))
+    (is (= 7 (autolisp-eval (list or-symbol nil nil 7 9))))
+    (is (null
+         (autolisp-eval
+          (list and-symbol
+                nil
+                (list setq-symbol foo 99)))))
+    (is (= 0 (autolisp-symbol-value foo)))
+    (is (= 12
+           (autolisp-eval
+            (list or-symbol
+                  nil
+                  (list setq-symbol foo 12)
+                  99))))
+    (is (= 12 (autolisp-symbol-value foo)))))
+
+(test autolisp-eval-while-and-repeat
+  (reset-autolisp-symbol-table)
+  (let* ((while-symbol (intern-autolisp-symbol "WHILE"))
+         (repeat-symbol (intern-autolisp-symbol "REPEAT"))
+         (setq-symbol (intern-autolisp-symbol "SETQ"))
+         (plus-symbol (intern-autolisp-symbol "+"))
+         (less-symbol (intern-autolisp-symbol "<"))
+         (count (intern-autolisp-symbol "COUNT")))
+    (set-function plus-symbol
+                  (make-autolisp-subr "+" (lambda (left right) (+ left right))))
+    (set-function less-symbol
+                  (make-autolisp-subr "<" (lambda (left right)
+                                            (if (< left right)
+                                                (intern-autolisp-symbol "T")
+                                                nil))))
+    (set-variable count 0)
+    (is (null
+         (autolisp-eval
+          (list while-symbol
+                (list less-symbol count 3)
+                (list setq-symbol count (list plus-symbol count 1))))))
+    (is (= 3 (autolisp-symbol-value count)))
+    (set-variable count 0)
+    (is (null
+         (autolisp-eval
+          (list repeat-symbol
+                4
+                (list setq-symbol count (list plus-symbol count 2))))))
+    (is (= 8 (autolisp-symbol-value count)))))
+
+(test autolisp-eval-lambda
+  (reset-autolisp-symbol-table)
+  (let* ((lambda-symbol (intern-autolisp-symbol "LAMBDA"))
+         (setq-symbol (intern-autolisp-symbol "SETQ"))
+         (plus-symbol (intern-autolisp-symbol "+"))
+         (arg (intern-autolisp-symbol "X"))
+         (local (intern-autolisp-symbol "TMP"))
+         (outer (intern-autolisp-symbol "X-OUTER"))
+         (slash (intern-autolisp-symbol "/")))
+    (set-function plus-symbol
+                  (make-autolisp-subr "+" (lambda (left right) (+ left right))))
+    (set-variable outer 100)
+    (let ((fn (autolisp-eval
+               (list lambda-symbol
+                     (list arg slash local)
+                     (list setq-symbol local arg)
+                     (list plus-symbol local 1)))))
+      (is (typep fn 'clautolisp.autolisp-runtime:autolisp-usubr))
+      (is (= 8
+             (autolisp-eval
+              (list (list lambda-symbol
+                          (list arg slash local)
+                          (list setq-symbol local arg)
+                          (list plus-symbol local 1))
+                    7))))
+      (is (= 100 (autolisp-symbol-value outer))))))
+
 (test autolisp-read-from-string-returns-first-form
   (reset-autolisp-symbol-table)
   (let ((value (autolisp-read-from-string "(a) (b)")))

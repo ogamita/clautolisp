@@ -21,4 +21,8 @@ Current implementation scope:
 
 - runtime wrapper structures for non-immediate AutoLISP values,
 - symbol interning independent from Common Lisp packages,
-- reader-object to runtime-value mapping for literal data.
+- reader-object to runtime-value mapping for literal data,
+- explicit namespaces, value/function cells, and dynamic frames,
+- a first evaluator slice covering literals, symbol lookup, `quote`, `setq`,
+  `progn`, `if`, `cond`, `and`, `or`, `while`, `repeat`, `defun`, and user
+  function calls.
