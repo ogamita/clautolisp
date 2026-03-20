@@ -15,6 +15,9 @@ Architecture and rationale belong in `documentation/design.org`.
   and SBCL/CCL runner modes now exist.
 - The scenario corpus now supports recursive directory collection, tag-based
   filtering, and aggregate summary reporting.
+- The harness now supports executable builtin scenarios with temporary
+  workspaces, setup fixtures, path-state controls, and runtime-value
+  expectations.
 
 ## Foundation Tasks
 
@@ -34,9 +37,11 @@ Architecture and rationale belong in `documentation/design.org`.
 ## Scenario Tasks
 
 - [x] Add newline and encoding matrix scenarios.
-- [ ] Add pathname-resolution and search-path scenarios.
-- [ ] Add file-mutation scenarios for copy, rename, delete, size, and temp-file behavior.
-- [ ] Add printer/read-back scenarios for `prin1`, `princ`, `print`, and `read`.
+- [x] Add pathname-resolution and search-path scenarios.
+- [x] Add file-mutation scenarios for copy, rename, and delete behavior.
+- [x] Add printer/read-back scenarios for string-printing and `read`.
+- [ ] Extend file-mutation coverage to size, rename edge cases, and temp-file behavior.
+- [ ] Extend printer/read-back coverage to file-targeted `prin1`, `princ`, `print`, and `terpri`.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 
 ## Integration Tasks

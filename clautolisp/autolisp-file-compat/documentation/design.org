@@ -50,6 +50,16 @@ Each scenario should eventually include:
 The first implementation keeps the executable surface small and uses simple
 round-trip scenarios with explicit expected text or bytes.
 
+The current implementation also supports a second scenario kind for builtin
+execution. Those scenarios:
+
+- create a temporary workspace,
+- install setup files and directories,
+- configure current, support, and trusted path state,
+- call a selected builtin through the runtime function-object layer,
+- compare the resulting runtime value,
+- optionally capture a post-operation artifact.
+
 The current scenario corpus is now organized as a directory tree rather than a
 single flat list of files. This makes it easier to grow focused scenario
 families such as:
@@ -72,6 +82,9 @@ Each executed scenario may produce artifacts such as:
 Artifacts are part of the compatibility evidence and should be preserved in the
 report structure even when the scenario succeeds.
 
+Builtin scenarios may legitimately have no captured artifact when the function
+under test returns a value but does not leave a file result behind.
+
 * Comparison Model
 
 Comparisons are intentionally separated by layer:
@@ -79,6 +92,7 @@ Comparisons are intentionally separated by layer:
 - byte comparison,
 - text comparison,
 - line comparison.
+- runtime-value comparison for builtin results.
 
 This matters because some scenarios are expected to be text-equivalent while not
 being byte-equivalent, and others must match exactly at the byte level.
@@ -119,3 +133,9 @@ Planned runner kinds include:
 
 Those runners should share the same scenario and report model as much as
 possible.
+
+The current local runner already provides two execution styles over that shared
+model:
+
+- round-trip file scenarios,
+- builtin-execution scenarios.

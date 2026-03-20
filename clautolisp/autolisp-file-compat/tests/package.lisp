@@ -18,6 +18,7 @@
                 #:file-compat-artifact-lines
                 #:file-compat-artifact-text
                 #:file-compat-check-passed-p
+                #:file-compat-report-artifact
                 #:file-compat-report-checks
                 #:file-compat-report-runner
                 #:file-compat-summary-failed-checks
@@ -33,7 +34,9 @@
                 #:normalize-newlines
                 #:read-file-bytes
                 #:report->plist
+                #:run-builtin-scenario
                 #:run-scenario
+                #:scenario-value->runtime-value
                 #:scenario-matches-tags-p
                 #:summarize-reports
                 #:summary->plist

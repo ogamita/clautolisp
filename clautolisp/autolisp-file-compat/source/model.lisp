@@ -3,12 +3,22 @@
 (defstruct file-compat-scenario
   (name "" :type string)
   (description "" :type string)
+  (kind :roundtrip :type keyword)
   root
   (relative-path "" :type string)
   (classification :portable :type keyword)
   (tags '() :type list)
   (external-format :default)
   (newline-mode :lf)
+  (setup-files '() :type list)
+  current-directory
+  (support-paths '() :type list)
+  (trusted-paths '() :type list)
+  builtin-name
+  (arguments '() :type list)
+  expected-value
+  artifact-relative-path
+  expected-artifact-exists-p
   input-text
   input-bytes
   expected-text

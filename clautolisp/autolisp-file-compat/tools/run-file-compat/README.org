@@ -31,6 +31,13 @@ Additional filters and output controls:
 The tool accepts either individual scenario files or scenario directories. When
 given a directory, it collects =.sexp= files recursively.
 
+Current scenario families include:
+
+- newline and encoding round-trips,
+- pathname and search-path builtin checks,
+- file-mutation builtin checks,
+- printer and read-back builtin checks.
+
 The emitted result is now a top-level report object with:
 
 - =:summary= aggregate scenario and check counts,
