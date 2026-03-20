@@ -59,6 +59,9 @@
   (cond
     ((and (null left) (null right))
      t)
+    ((and (consp left) (consp right))
+     (and (autolisp-value= (car left) (car right))
+          (autolisp-value= (cdr left) (cdr right))))
     ((and (integerp left) (integerp right))
      (= left right))
     ((and (numberp left) (numberp right))
@@ -293,6 +296,21 @@
     (t
      (error "OPEN mode must be one of \"r\", \"w\", or \"a\", got ~S." mode))))
 
+(defun parse-open-external-format (string)
+  (labels ((keywordize (name)
+             (intern (string-upcase name) "KEYWORD")))
+    (cond
+      ((zerop (length string))
+       (error "Invalid empty external format."))
+      ((or (char= (char string 0) #\:)
+           (char= (char string 0) #\())
+       (let ((value (read-from-string string)))
+         (unless (typep value '(or keyword cons))
+           (error "Invalid external format ~S." string))
+         value))
+      (t
+       (keywordize string)))))
+
 (defun builtin-numberp (object)
   (if (numberp object)
       (intern-autolisp-symbol "T")
@@ -448,10 +466,13 @@
     (make-autolisp-string (string character))))
 
 (defun builtin-open (filename mode &optional encoding)
-  (declare (ignore encoding))
   (let* ((path-string (autolisp-string-value (require-string filename "OPEN")))
          (mode-string (autolisp-string-value (require-string mode "OPEN")))
-         (path (resolve-open-pathname path-string)))
+         (path (resolve-open-pathname path-string))
+         (external-format (when encoding
+                            (parse-open-external-format
+                             (autolisp-string-value
+                              (require-string encoding "OPEN"))))))
     (multiple-value-bind (direction if-exists if-does-not-exist)
         (open-direction-and-options mode-string)
       (handler-case
@@ -459,11 +480,11 @@
                               :direction direction
                               :if-exists if-exists
                               :if-does-not-exist if-does-not-exist
-                              :external-format :default)))
+                              :external-format (or external-format :default))))
             (if stream
                 (make-autolisp-file stream path-string mode-string)
                 nil))
-        (file-error ()
+        (error ()
           nil)))))
 
 (defun builtin-findfile (filename)
@@ -587,6 +608,11 @@
          (file-error ()
            nil))))))
 
+(defun autolisp-day-of-week (common-lisp-day-of-week)
+  ;; CL uses Monday=0..Sunday=6. AutoLISP compatibility is modeled here as
+  ;; Sunday=0..Saturday=6, matching common host file-time conventions.
+  (mod (1+ common-lisp-day-of-week) 7))
+
 (defun builtin-vl-file-systime (filename)
   (let* ((value (autolisp-string-value
                  (require-string filename "VL-FILE-SYSTIME")))
@@ -595,7 +621,7 @@
     (if write-date
         (multiple-value-bind (second minute hour day month year day-of-week)
             (decode-universal-time write-date)
-          (list year month day-of-week day hour minute second))
+          (list year month (autolisp-day-of-week day-of-week) day hour minute second))
         nil)))
 
 (defun copy-stream-contents (input output)
@@ -618,6 +644,8 @@
     (cond
       ((or (uiop:directory-exists-p source-path)
            (not (probe-file source-path)))
+       nil)
+      ((uiop:directory-exists-p destination-path)
        nil)
       ((and (null append) (probe-file destination-path))
        nil)
@@ -655,6 +683,9 @@
     unless (probe-file candidate)
       do (return candidate)))
 
+(defun default-mktemp-directory ()
+  (namestring (uiop:temporary-directory)))
+
 (defun builtin-vl-filename-mktemp (&optional pattern directory extension)
   (let* ((pattern-value (if pattern
                             (autolisp-string-value
@@ -663,7 +694,7 @@
          (directory-value (if directory
                               (autolisp-string-value
                                (require-string directory "VL-FILENAME-MKTEMP"))
-                              (namestring (uiop:temporary-directory))))
+                              (default-mktemp-directory)))
          (extension-value (if extension
                               (autolisp-string-value
                                (require-string extension "VL-FILENAME-MKTEMP"))

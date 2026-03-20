@@ -43,5 +43,6 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [ ] Integrate the runtime object model with `autolisp-builtins-core`.
 - [ ] Add runtime tests for additional spec-defined host-visible types.
 - [ ] Add evaluator-facing normalization helpers once special-operator work begins.
-- [ ] Derive the pathname-resolution algorithm from the AutoLISP specification and compatibility corpus.
-- [ ] Define the explicit path-resolution state and boundary rules needed to run that algorithm before implementing file builtins.
+- [x] Define the explicit path-resolution state and boundary rules needed for the first file builtins.
+- [x] Derive and support the first pathname-resolution layer justified by the current AutoLISP spec draft and compatibility corpus.
+- [ ] Tighten pathname and host-file compatibility as the fuller evaluator/host model and product-level tests arrive.

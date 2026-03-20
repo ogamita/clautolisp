@@ -29,6 +29,7 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Add integer arithmetic and bitwise helpers `lcm`, `~`, `logand`, `logior`, and `lsh`.
 - [x] Add the first string builtins: `strcat`, `strlen`, `substr`, `ascii`, and `chr`.
 - [x] Add the first file builtins: `open`, `close`, `read-line`, `read-char`, `write-line`, and `write-char`.
+- [x] Make `open` honor an explicit encoding argument in the conservative portable cases already accepted by the implementation.
 - [x] Replace the current conservative absolute-path-only file boundary with a first spec-derived pathname layer and explicit runtime path state for `open`, `findfile`, and `findtrustedfile`.
 - [x] Add the next pathname/file helpers: `vl-directory-files`, `vl-file-directory-p`, `vl-filename-base`, `vl-filename-directory`, and `vl-filename-extension`.
 - [x] Add the next file-system mutation/introspection helpers: `vl-file-delete`, `vl-file-rename`, `vl-file-size`, and `vl-mkdir`.
@@ -36,5 +37,7 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Add the printer/output helpers that can target command output or file descriptors: `prin1`, `princ`, `print`, `terpri`, `prompt`, `vl-prin1-to-string`, and `vl-princ-to-string`.
 - [x] Fill the remaining basic stream gap for `read-char` without a file descriptor by reading from standard input conservatively.
 - [x] Implement the documented `read` entry point on top of the runtime reader mapping.
-- [ ] Tighten host-sensitive file semantics where the current spec draft is thin, notably day-of-week numbering in `vl-file-systime`, default-directory behavior in `vl-filename-mktemp`, and detailed `vl-file-copy` append/error compatibility.
+- [x] Tighten the current file layer for the documented compatibility-sensitive areas we can justify from the local spec draft, including `open` encodings, `vl-file-systime`, `vl-filename-mktemp`, and `vl-file-copy`.
+- [ ] Audit the completed file builtin family against real Autodesk/BricsCAD behavior for the remaining under-specified host-sensitive corners.
+- [ ] Keep `load` and `autoload` out of `autolisp-builtins-core`; they belong to evaluator/runtime execution work even though they are file-adjacent.
 - [ ] Keep the builtin inventory clearly separated from special operators as evaluator work expands.

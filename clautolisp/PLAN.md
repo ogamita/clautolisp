@@ -37,7 +37,7 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [x] Implement tokenization for core AutoLISP syntax.
 - [x] Implement parsing for core forms.
 - [x] Add source-location tracking.
-- [ ] Define the handoff format from reader objects to later runtime objects.
+- [x] Define the first reader-to-runtime handoff through the runtime literal mapping layer.
 - [ ] Add syntax error diagnostics regression tests.
 - [ ] Add file-based external-format and encoding corpus tests.
 - [ ] Add executable conformance tests for strict versus lax behavior against real products.
@@ -58,11 +58,13 @@ The Org documents in `documentation/` remain the place for architecture and impl
 ## Builtins and Host Tasks
 
 - [x] Implement the first core builtin registry for `type`, `null`, `not`, `atom`, `vl-symbolp`, `vl-symbol-name`, and `vl-symbol-value`.
-- [ ] Implement the first numeric, list, equality, string, and file-related builtins beyond the current predicate/introspection set.
+- [x] Implement the first numeric, list, equality, string, and file-related builtin families, including the current file/stream/printer layer.
+- [ ] Audit the implemented builtin families against real product behavior, especially the host-sensitive file and printer corners.
 - [ ] Keep ordinary builtins and evaluator-owned special operators separated as the callable surface expands.
 - [ ] Define the abstract host API.
-- [ ] Derive the AutoLISP pathname-resolution algorithm from the spec and compatibility corpus.
-- [ ] Define explicit path-resolution state for relative AutoLISP pathnames instead of inheriting Common Lisp pathname merging.
+- [x] Define explicit path-resolution state for relative AutoLISP pathnames instead of inheriting Common Lisp pathname merging.
+- [x] Derive and implement the first pathname-resolution layer supported by the current local spec draft for `open`, `findfile`, and related helpers.
+- [ ] Tighten pathname and file compatibility against the fuller spec corpus and real products.
 - [ ] Build a deterministic mock host.
 - [ ] Add snapshot and diff support for host-facing regression tests.
 - [ ] Add initial dialect and host-profile selection plumbing shared by reader and runtime.
