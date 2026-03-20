@@ -37,6 +37,9 @@ Architecture and rationale belong in `documentation/design.org`.
 - The stream corpus now also covers current-directory-relative subpaths written
   with backslash separators, and the printer corpus covers `PRIN1` compound
   form roundtrips under explicit current-directory state.
+- The file-mutation corpus now also covers `VL-FILE-SIZE` and
+  `VL-FILE-DELETE` on relative paths resolved through explicit current-directory
+  state, including backslash-delimited subpaths.
 
 ## Foundation Tasks
 
@@ -71,6 +74,7 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add current-directory-relative printer/read-back scenarios.
 - [x] Add current-directory-relative backslash subpath stream scenarios.
 - [x] Add current-directory-relative `PRIN1` roundtrip scenarios.
+- [x] Add current-directory-relative file-mutation scenarios.
 - [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 
