@@ -571,6 +571,45 @@
               (autolisp-eval-progn (rest clause) context)
               test-value))))))
 
+(defun eval-and-form (arguments context)
+  (let ((result (intern-autolisp-symbol "T")))
+    (dolist (argument arguments result)
+      (setf result (autolisp-eval argument context))
+      (when (autolisp-false-p result)
+        (return nil)))))
+
+(defun eval-or-form (arguments context)
+  (dolist (argument arguments nil)
+    (let ((result (autolisp-eval argument context)))
+      (when (autolisp-true-p result)
+        (return result)))))
+
+(defun eval-while-form (arguments context)
+  (unless (>= (length arguments) 1)
+    (error "WHILE expects at least one argument."))
+  (loop while (autolisp-true-p (autolisp-eval (first arguments) context))
+        do (autolisp-eval-progn (rest arguments) context))
+  nil)
+
+(defun eval-repeat-form (arguments context)
+  (unless (>= (length arguments) 1)
+    (error "REPEAT expects at least one argument."))
+  (let ((count (autolisp-eval (first arguments) context)))
+    (unless (typep count '(signed-byte 32))
+      (error "REPEAT count must evaluate to an integer, got ~S." count))
+    (loop repeat (max 0 count)
+          do (autolisp-eval-progn (rest arguments) context))
+    nil))
+
+(defun eval-lambda-form (arguments context)
+  (unless (>= (length arguments) 2)
+    (error "LAMBDA expects a lambda list and at least one body form, got ~D arguments."
+           (length arguments)))
+  (make-autolisp-usubr "LAMBDA"
+                       (first arguments)
+                       (rest arguments)
+                       context))
+
 (defun eval-defun-form (arguments context)
   (unless (>= (length arguments) 2)
     (error "DEFUN expects at least a name and lambda list, got ~D arguments."
@@ -600,10 +639,25 @@
        (eval-if-form arguments context))
       ((string= name "COND")
        (eval-cond-form arguments context))
+      ((string= name "AND")
+       (eval-and-form arguments context))
+      ((string= name "OR")
+       (eval-or-form arguments context))
+      ((string= name "WHILE")
+       (eval-while-form arguments context))
+      ((string= name "REPEAT")
+       (eval-repeat-form arguments context))
+      ((string= name "LAMBDA")
+       (eval-lambda-form arguments context))
       ((string= name "DEFUN")
        (eval-defun-form arguments context))
       (t
        (error "Unsupported special operator ~A." name)))))
+
+(defun lambda-form-p (form)
+  (and (consp form)
+       (typep (first form) 'autolisp-symbol)
+       (string= "LAMBDA" (autolisp-symbol-name (first form)))))
 
 (defun autolisp-eval (form &optional (context (default-evaluation-context)))
   (cond
@@ -618,20 +672,26 @@
     ((consp form)
      (let ((operator (first form))
            (arguments (rest form)))
-       (if (member (special-operator-name operator)
-                   '("QUOTE" "SETQ" "PROGN" "IF" "COND" "DEFUN")
-                   :test #'string=)
-           (eval-special-operator operator arguments context)
-           (multiple-value-bind (function boundp origin) (lookup-function operator context)
-             (declare (ignore origin))
-             (unless boundp
-               (error "Undefined AutoLISP function ~A." (autolisp-symbol-name operator)))
-             (apply #'call-autolisp-function-in-context
-                    function
-                    context
-                    (mapcar (lambda (argument)
-                              (autolisp-eval argument context))
-                            arguments))))))
+       (cond
+         ((member (special-operator-name operator)
+                  '("QUOTE" "SETQ" "PROGN" "IF" "COND" "AND" "OR" "WHILE" "REPEAT" "LAMBDA" "DEFUN")
+                  :test #'string=)
+          (eval-special-operator operator arguments context))
+         (t
+          (let ((function
+                  (if (lambda-form-p operator)
+                      (autolisp-eval operator context)
+                      (multiple-value-bind (binding boundp origin) (lookup-function operator context)
+                        (declare (ignore origin))
+                        (unless boundp
+                          (error "Undefined AutoLISP function ~A." (autolisp-symbol-name operator)))
+                        binding))))
+            (apply #'call-autolisp-function-in-context
+                   function
+                   context
+                   (mapcar (lambda (argument)
+                             (autolisp-eval argument context))
+                           arguments)))))))
     (t
      (error "Cannot evaluate AutoLISP form ~S." form))))
 

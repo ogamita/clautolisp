@@ -10,7 +10,10 @@ Architecture and design rationale belong in `documentation/design.org`.
 
 - The initial runtime object model is being established.
 - Literal reader objects can now be mapped to first runtime values.
-- Symbol, environment, evaluator, and builtin execution semantics remain future work.
+- Symbol, namespace, and dynamic-frame structures now exist.
+- A first evaluator slice now covers literal evaluation, symbol lookup, `quote`,
+  `setq`, `progn`, `if`, `cond`, `and`, `or`, `while`, `repeat`, `defun`, and
+  user-function calls.
 
 ## Core Type Tasks
 

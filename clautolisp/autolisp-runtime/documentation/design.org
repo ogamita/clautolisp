@@ -344,6 +344,30 @@ This first runtime module should account for at least the spec-visible types:
 - ~VARIANT~
 - ~VLA-object~
 
+** SUBR and USUBR
+The runtime distinguishes builtin/native callable objects from AutoLISP-defined
+callable objects.
+
+- ~SUBR~
+  builtin or primitive function implemented directly in Common Lisp
+- ~USUBR~
+  AutoLISP-defined function evaluated by the ~clautolisp~ evaluator
+
+Current design rule:
+
+- a ~SUBR~ stores a name plus a Common Lisp function object,
+- a ~USUBR~ stores a name, an AutoLISP lambda list, an AutoLISP body, and the
+  runtime environment information needed by the evaluator,
+- ~defun~ produces a ~USUBR~ bound in the current namespace,
+- later anonymous ~lambda~ forms also produce ~USUBR~-like function objects.
+
+In practice this means:
+
+- ~SUBR~ is used for builtin families such as arithmetic, list, string, file,
+  and printer functions,
+- ~USUBR~ is used for user-defined AutoLISP functions whose bodies must be
+  evaluated form by form under AutoLISP dynamic binding rules.
+
 Not all of these need complete behavior immediately, but their representation
 category should be known now.
 
