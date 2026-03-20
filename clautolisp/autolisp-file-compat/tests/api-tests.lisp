@@ -175,3 +175,67 @@ World
                        #'string<)
                  (sort (copy-list paths) #'string<))))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))))
+
+(test builtin-findfile-scenario
+  (let* ((scenario (make-file-compat-scenario
+                    :name "findfile"
+                    :kind :builtin
+                    :setup-files '((:type :directory :relative-path "support/")
+                                   (:relative-path "support/example.txt"
+                                    :input-text "hello"))
+                    :current-directory "cwd/"
+                    :support-paths '("support/")
+                    :builtin-name "FINDFILE"
+                    :arguments '("example.txt")
+                    :expected-value '(:workspace-relative "support/example.txt"))))
+    (let ((report (run-builtin-scenario scenario)))
+      (is (every #'file-compat-check-passed-p
+                 (file-compat-report-checks report))))))
+
+(test builtin-file-copy-scenario
+  (let* ((scenario (make-file-compat-scenario
+                    :name "file-copy"
+                    :kind :builtin
+                    :setup-files '((:relative-path "source.txt"
+                                    :input-text "copy me"))
+                    :current-directory "./"
+                    :builtin-name "VL-FILE-COPY"
+                    :arguments '("source.txt" "target.txt")
+                    :expected-value 7
+                    :artifact-relative-path "target.txt"
+                    :expected-artifact-exists-p t
+                    :expected-text "copy me"))
+         (report (run-builtin-scenario scenario)))
+    (is (every #'file-compat-check-passed-p
+               (file-compat-report-checks report)))
+    (is (string= "copy me"
+                 (file-compat-artifact-text
+                  (file-compat-report-artifact report))))))
+
+(test builtin-prin1-and-read-scenarios
+  (let* ((prin1-scenario (make-file-compat-scenario
+                          :name "prin1"
+                          :kind :builtin
+                          :builtin-name "VL-PRIN1-TO-STRING"
+                          :arguments '((:list 1 (:symbol "FOO") "bar"))
+                          :expected-value '(:string "(1 FOO \"bar\")")))
+         (read-scenario (make-file-compat-scenario
+                         :name "read"
+                         :kind :builtin
+                         :builtin-name "READ"
+                         :arguments '("(1 FOO \"bar\")")
+                         :expected-value '(:list 1 (:symbol "FOO") "bar"))))
+    (is (every #'file-compat-check-passed-p
+               (file-compat-report-checks
+                (run-builtin-scenario prin1-scenario))))
+    (is (every #'file-compat-check-passed-p
+               (file-compat-report-checks
+                (run-builtin-scenario read-scenario))))))
+
+(test declarative-builtin-scenario-files
+  (dolist (path '("autolisp-file-compat/scenarios/paths/findfile-basic.sexp"
+                  "autolisp-file-compat/scenarios/printers/vl-prin1-to-string-basic.sexp"))
+    (dolist (scenario (load-scenario-file path))
+      (is (every #'file-compat-check-passed-p
+                 (file-compat-report-checks
+                  (run-scenario scenario :runner :local)))))))

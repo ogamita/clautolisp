@@ -67,7 +67,7 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [x] Derive and implement the first pathname-resolution layer supported by the current local spec draft for `open`, `findfile`, and related helpers.
 - [ ] Tighten pathname and file compatibility against the fuller spec corpus and real products.
 - [x] Introduce a dedicated compatibility-audit subproject for file, stream, and printer behavior.
-- [x] Add declarative scenario corpora, reporting, recursive scenario collection, tag filtering, and SBCL/CCL driver modes in `autolisp-file-compat`.
+- [x] Add declarative scenario corpora, executable builtin scenarios, reporting, recursive scenario collection, tag filtering, and SBCL/CCL driver modes in `autolisp-file-compat`.
 - [ ] Build a deterministic mock host.
 - [ ] Add snapshot and diff support for host-facing regression tests.
 - [ ] Add initial dialect and host-profile selection plumbing shared by reader and runtime.

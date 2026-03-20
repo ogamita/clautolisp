@@ -5,12 +5,22 @@
    #:make-file-compat-scenario
    #:file-compat-scenario-name
    #:file-compat-scenario-description
+   #:file-compat-scenario-kind
    #:file-compat-scenario-root
    #:file-compat-scenario-relative-path
    #:file-compat-scenario-classification
    #:file-compat-scenario-tags
    #:file-compat-scenario-external-format
    #:file-compat-scenario-newline-mode
+   #:file-compat-scenario-setup-files
+   #:file-compat-scenario-current-directory
+   #:file-compat-scenario-support-paths
+   #:file-compat-scenario-trusted-paths
+   #:file-compat-scenario-builtin-name
+   #:file-compat-scenario-arguments
+   #:file-compat-scenario-expected-value
+   #:file-compat-scenario-artifact-relative-path
+   #:file-compat-scenario-expected-artifact-exists-p
    #:file-compat-scenario-input-text
    #:file-compat-scenario-input-bytes
    #:file-compat-scenario-expected-text
@@ -45,6 +55,7 @@
    #:scenario->plist
    #:report->plist
    #:summary->plist
+   #:scenario-value->runtime-value
    #:normalize-newlines
    #:read-file-bytes
    #:write-file-bytes
@@ -61,4 +72,5 @@
    #:emit-json-value
    #:emit-report
    #:run-local-roundtrip-scenario
+   #:run-builtin-scenario
    #:run-scenario))

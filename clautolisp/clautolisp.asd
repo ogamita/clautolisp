@@ -66,7 +66,9 @@
   :description "Compatibility-audit harness for AutoLISP file and stream behavior."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("uiop")
+  :depends-on ("clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-builtins-core"
+               "uiop")
   :serial t
   :components
   ((:file "autolisp-file-compat/source/package")
