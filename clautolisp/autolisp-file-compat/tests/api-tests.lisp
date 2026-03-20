@@ -288,20 +288,24 @@ World
                   "autolisp-file-compat/scenarios/paths/directory-files-directories-only.sexp"
                   "autolisp-file-compat/scenarios/paths/directory-files-files-only.sexp"
                   "autolisp-file-compat/scenarios/paths/directory-files-no-match.sexp"
+                  "autolisp-file-compat/scenarios/paths/file-directory-p-backslash.sexp"
                   "autolisp-file-compat/scenarios/printers/vl-prin1-to-string-basic.sexp"
                   "autolisp-file-compat/scenarios/printers/vl-princ-to-string-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/mkdir-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-append.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-directory-destination.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-delete-backslash.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-delete-missing.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-rename-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-rename-existing-destination.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-rename-missing-source.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-size-basic.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-size-backslash.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-size-directory.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-systime-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/filename-mktemp-basic.sexp"
-                  "autolisp-file-compat/scenarios/paths/filename-components-basic.sexp"))
+                  "autolisp-file-compat/scenarios/paths/filename-components-basic.sexp"
+                  "autolisp-file-compat/scenarios/paths/filename-components-backslash.sexp"))
     (dolist (scenario (load-scenario-file path))
       (is (every #'file-compat-check-passed-p
                  (file-compat-report-checks
