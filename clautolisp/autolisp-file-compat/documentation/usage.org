@@ -53,6 +53,8 @@ The current stream/printer corpus specifically includes:
 - append workflows with explicit encodings such as UTF-8,
 - relative ~OPEN~ and append workflows resolved through ~:current-directory~,
 - file-targeted ~PRINC~ roundtrips through ~READ~ under ~:current-directory~,
+- backslash-delimited relative subpaths resolved through ~:current-directory~,
+- file-targeted ~PRIN1~ compound-form roundtrips under ~:current-directory~,
 - the leading blank line introduced by file-targeted ~PRINT~.
 
 * Scenario Kinds
