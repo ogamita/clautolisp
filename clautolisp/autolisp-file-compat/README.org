@@ -23,6 +23,8 @@ The initial implementation provides:
   and printer-to-`READ` roundtrips through temporary files,
 - executable coverage for unsupported encoding failures and line-by-line
   read-back of file-targeted printer output,
+- executable coverage for explicit-encoding append workflows and `PRINT`-style
+  blank-line output,
 - byte, text, and line-oriented comparison helpers,
 - artifact capture suitable for later report emission,
 - declarative scenario files under =scenarios/=, including nested newline and

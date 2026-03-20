@@ -50,6 +50,8 @@ The current stream/printer corpus specifically includes:
 - negative open-for-read cases on missing files,
 - file-targeted printer output and printer-to-~READ~ roundtrips.
 - line-by-line read-back validation of printer-produced files.
+- append workflows with explicit encodings such as UTF-8.
+- the leading blank line introduced by file-targeted ~PRINT~.
 
 * Scenario Kinds
 There are currently two scenario kinds.
