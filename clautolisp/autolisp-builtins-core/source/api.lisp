@@ -7,7 +7,10 @@
     "OPEN" "CLOSE" "READ-LINE" "READ-CHAR" "WRITE-LINE" "WRITE-CHAR"
     "FINDFILE" "FINDTRUSTEDFILE" "VL-DIRECTORY-FILES" "VL-FILE-DIRECTORY-P"
     "VL-FILENAME-BASE" "VL-FILENAME-DIRECTORY" "VL-FILENAME-EXTENSION"
-    "VL-FILE-DELETE" "VL-FILE-RENAME" "VL-FILE-SIZE" "VL-MKDIR"
+    "VL-FILE-DELETE" "VL-FILE-RENAME" "VL-FILE-SIZE" "VL-FILE-SYSTIME"
+    "VL-FILE-COPY" "VL-FILENAME-MKTEMP" "VL-MKDIR"
+    "PRIN1" "PRINC" "PRINT" "TERPRI" "PROMPT"
+    "VL-PRIN1-TO-STRING" "VL-PRINC-TO-STRING"
     "BOUNDP" "CAR" "CDR" "CONS" "LIST" "APPEND" "ASSOC" "LENGTH" "NTH"
     "REVERSE" "LAST" "MEMBER" "SUBST" "LISTP" "VL-CONSP" "VL-LIST*"
     "NUMBERP" "=" "/=" "<" "<=" ">" ">=" "ABS" "FIX" "FLOAT" "ZEROP"
@@ -584,6 +587,95 @@
          (file-error ()
            nil))))))
 
+(defun builtin-vl-file-systime (filename)
+  (let* ((value (autolisp-string-value
+                 (require-string filename "VL-FILE-SYSTIME")))
+         (resolved (resolve-open-pathname value))
+         (write-date (ignore-errors (file-write-date resolved))))
+    (if write-date
+        (multiple-value-bind (second minute hour day month year day-of-week)
+            (decode-universal-time write-date)
+          (list year month day-of-week day hour minute second))
+        nil)))
+
+(defun copy-stream-contents (input output)
+  (let ((buffer (make-array 4096 :element-type '(unsigned-byte 8)))
+        (total 0))
+    (loop
+      for count = (read-sequence buffer input)
+      until (zerop count)
+      do (write-sequence buffer output :end count)
+         (incf total count))
+    total))
+
+(defun builtin-vl-file-copy (source-filename destination-filename &optional append)
+  (let* ((source-value (autolisp-string-value
+                        (require-string source-filename "VL-FILE-COPY")))
+         (destination-value (autolisp-string-value
+                             (require-string destination-filename "VL-FILE-COPY")))
+         (source-path (resolve-open-pathname source-value))
+         (destination-path (resolve-open-pathname destination-value)))
+    (cond
+      ((or (uiop:directory-exists-p source-path)
+           (not (probe-file source-path)))
+       nil)
+      ((and (null append) (probe-file destination-path))
+       nil)
+      (t
+       (handler-case
+           (with-open-file (input source-path
+                                  :direction :input
+                                  :element-type '(unsigned-byte 8))
+             (with-open-file (output destination-path
+                                     :direction :output
+                                     :element-type '(unsigned-byte 8)
+                                     :if-exists (if append :append :error)
+                                     :if-does-not-exist :create)
+               (copy-stream-contents input output)))
+         (file-error ()
+           nil))))))
+
+(defun normalize-mktemp-extension (extension)
+  (cond
+    ((null extension)
+     "")
+    ((zerop (length extension))
+     "")
+    ((char= #\. (char extension 0))
+     extension)
+    (t
+     (concatenate 'string "." extension))))
+
+(defun unique-temp-pathname (directory pattern extension)
+  (loop
+    for attempt from 0
+    for suffix = (format nil "~36R-~36R" (get-universal-time) attempt)
+    for leaf = (format nil "~A~A~A" pattern suffix extension)
+    for candidate = (merge-pathnames leaf directory)
+    unless (probe-file candidate)
+      do (return candidate)))
+
+(defun builtin-vl-filename-mktemp (&optional pattern directory extension)
+  (let* ((pattern-value (if pattern
+                            (autolisp-string-value
+                             (require-string pattern "VL-FILENAME-MKTEMP"))
+                            "tmp"))
+         (directory-value (if directory
+                              (autolisp-string-value
+                               (require-string directory "VL-FILENAME-MKTEMP"))
+                              (namestring (uiop:temporary-directory))))
+         (extension-value (if extension
+                              (autolisp-string-value
+                               (require-string extension "VL-FILENAME-MKTEMP"))
+                              ""))
+         (resolved-directory (resolve-directory-pathname directory-value
+                                                        "VL-FILENAME-MKTEMP"))
+         (candidate (unique-temp-pathname resolved-directory
+                                          pattern-value
+                                          (normalize-mktemp-extension
+                                           extension-value))))
+    (make-autolisp-string (namestring candidate))))
+
 (defun builtin-vl-mkdir (directoryname)
   (let* ((value (autolisp-string-value
                  (require-string directoryname "VL-MKDIR")))
@@ -620,7 +712,10 @@
           (if character
               (char-code character)
               nil)))
-      (error "READ-CHAR without a file descriptor is not implemented yet.")))
+      (let ((character (read-char *standard-input* nil nil)))
+        (if character
+            (char-code character)
+            nil))))
 
 (defun builtin-write-line (string &optional file)
   (let ((value (autolisp-string-value (require-string string "WRITE-LINE"))))
@@ -647,6 +742,95 @@
         (progn
           (write-char character *standard-output*)
           char-code))))
+
+(defun escape-prin1-string (string)
+  (with-output-to-string (out)
+    (write-char #\" out)
+    (loop for character across string
+          do (case character
+               (#\\
+                (write-string "\\\\" out))
+               (#\"
+                (write-string "\\\"" out))
+               (t
+                (write-char character out))))
+    (write-char #\" out)))
+
+(defun autolisp-value->string (object princp)
+  (cond
+    ((null object)
+     "nil")
+    ((integerp object)
+     (format nil "~D" object))
+    ((floatp object)
+     (princ-to-string object))
+    ((typep object 'autolisp-string)
+     (if princp
+         (autolisp-string-value object)
+         (escape-prin1-string (autolisp-string-value object))))
+    ((typep object 'autolisp-symbol)
+     (autolisp-symbol-name object))
+    ((consp object)
+     (with-output-to-string (out)
+       (labels ((emit-tail (tail)
+                  (cond
+                    ((null tail)
+                     nil)
+                    ((consp tail)
+                     (write-char #\Space out)
+                     (write-string (autolisp-value->string (car tail) princp) out)
+                     (emit-tail (cdr tail)))
+                    (t
+                     (write-string " . " out)
+                     (write-string (autolisp-value->string tail princp) out)))))
+         (write-char #\( out)
+         (write-string (autolisp-value->string (car object) princp) out)
+         (emit-tail (cdr object))
+         (write-char #\) out))))
+    (t
+     (with-output-to-string (out)
+       (write object :stream out :escape (not princp))))))
+
+(defun output-stream-for-file (file operator-name)
+  (if file
+      (let ((stream (autolisp-file-stream (require-file file operator-name))))
+        (unless stream
+          (error "~A expects an open file descriptor." operator-name))
+        stream)
+      *standard-output*))
+
+(defun builtin-vl-prin1-to-string (object)
+  (make-autolisp-string (autolisp-value->string object nil)))
+
+(defun builtin-vl-princ-to-string (object)
+  (make-autolisp-string (autolisp-value->string object t)))
+
+(defun builtin-prin1 (object &optional file)
+  (write-string (autolisp-value->string object nil)
+                (output-stream-for-file file "PRIN1"))
+  object)
+
+(defun builtin-princ (&optional object file)
+  (when object
+    (write-string (autolisp-value->string object t)
+                  (output-stream-for-file file "PRINC")))
+  object)
+
+(defun builtin-print (object &optional file)
+  (let ((stream (output-stream-for-file file "PRINT")))
+    (terpri stream)
+    (write-string (autolisp-value->string object nil) stream)
+    (terpri stream))
+  object)
+
+(defun builtin-terpri (&optional file)
+  (terpri (output-stream-for-file file "TERPRI"))
+  nil)
+
+(defun builtin-prompt (string)
+  (let ((value (autolisp-string-value (require-string string "PROMPT"))))
+    (write-string value *standard-output*)
+    nil))
 
 (defun comparison-value (object operator-name)
   (cond
@@ -773,7 +957,17 @@
    (make-autolisp-subr "VL-FILE-DELETE" #'builtin-vl-file-delete)
    (make-autolisp-subr "VL-FILE-RENAME" #'builtin-vl-file-rename)
    (make-autolisp-subr "VL-FILE-SIZE" #'builtin-vl-file-size)
+   (make-autolisp-subr "VL-FILE-SYSTIME" #'builtin-vl-file-systime)
+   (make-autolisp-subr "VL-FILE-COPY" #'builtin-vl-file-copy)
+   (make-autolisp-subr "VL-FILENAME-MKTEMP" #'builtin-vl-filename-mktemp)
    (make-autolisp-subr "VL-MKDIR" #'builtin-vl-mkdir)
+   (make-autolisp-subr "PRIN1" #'builtin-prin1)
+   (make-autolisp-subr "PRINC" #'builtin-princ)
+   (make-autolisp-subr "PRINT" #'builtin-print)
+   (make-autolisp-subr "TERPRI" #'builtin-terpri)
+   (make-autolisp-subr "PROMPT" #'builtin-prompt)
+   (make-autolisp-subr "VL-PRIN1-TO-STRING" #'builtin-vl-prin1-to-string)
+   (make-autolisp-subr "VL-PRINC-TO-STRING" #'builtin-vl-princ-to-string)
    (make-autolisp-subr "BOUNDP" #'builtin-boundp)
    (make-autolisp-subr "CAR" #'builtin-car)
    (make-autolisp-subr "CDR" #'builtin-cdr)

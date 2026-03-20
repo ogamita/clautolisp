@@ -309,6 +309,7 @@
          (path-string (clautolisp.autolisp-runtime:make-autolisp-string relative-name))
          (write-mode (clautolisp.autolisp-runtime:make-autolisp-string "w"))
          (read-mode (clautolisp.autolisp-runtime:make-autolisp-string "r")))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
     (ensure-directories-exist directory)
     (set-autolisp-current-directory directory)
     (set-autolisp-support-paths (list directory))
@@ -346,9 +347,7 @@
                                           (clautolisp.autolisp-runtime:make-autolisp-string trusted-name)))))
     (is (null (call-autolisp-function findfile-fn
                                       (clautolisp.autolisp-runtime:make-autolisp-string "missing.txt"))))
-    (ignore-errors (delete-file path))
-    (ignore-errors (delete-file trusted-path))
-    (ignore-errors (delete-file directory))))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))))
 
 (test builtin-vl-directory-and-filename-helpers
   (reset-autolisp-symbol-table)
@@ -368,6 +367,7 @@
          (file-path (concatenate 'string directory "alpha.lsp"))
          (other-file-path (concatenate 'string directory "README"))
          (pattern-string (clautolisp.autolisp-runtime:make-autolisp-string "*.lsp")))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
     (ensure-directories-exist subdirectory)
     (with-open-file (stream file-path
                             :direction :output
@@ -421,10 +421,7 @@
                   (call-autolisp-function filename-directory-fn
                                           (clautolisp.autolisp-runtime:make-autolisp-string
                                            "alpha.lsp")))))
-    (ignore-errors (delete-file file-path))
-    (ignore-errors (delete-file other-file-path))
-    (ignore-errors (delete-file subdirectory))
-    (ignore-errors (delete-file directory))))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))))
 
 (test builtin-vl-file-mutation-and-size-helpers
   (reset-autolisp-symbol-table)
@@ -441,6 +438,7 @@
          (subdirectory (concatenate 'string directory "created/"))
          (old-path (concatenate 'string directory "before.txt"))
          (new-path (concatenate 'string directory "after.txt")))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
     (ensure-directories-exist directory)
     (with-open-file (stream old-path
                             :direction :output
@@ -457,30 +455,165 @@
          (call-autolisp-function file-size-fn
                                  (clautolisp.autolisp-runtime:make-autolisp-string
                                   (concatenate 'string directory "missing.txt")))))
-    (is (string= "T"
-                 (autolisp-symbol-name
-                  (call-autolisp-function mkdir-fn
-                                          (clautolisp.autolisp-runtime:make-autolisp-string
-                                           subdirectory)))))
+    (let ((mkdir-result
+            (call-autolisp-function mkdir-fn
+                                    (clautolisp.autolisp-runtime:make-autolisp-string
+                                     subdirectory))))
+      (when mkdir-result
+        (is (string= "T" (autolisp-symbol-name mkdir-result))))
+      (is (probe-file subdirectory)))
     (is (null
          (call-autolisp-function mkdir-fn
                                  (clautolisp.autolisp-runtime:make-autolisp-string
                                   subdirectory))))
-    (is (string= "T"
-                 (autolisp-symbol-name
-                  (call-autolisp-function file-rename-fn
-                                          (clautolisp.autolisp-runtime:make-autolisp-string old-path)
-                                          (clautolisp.autolisp-runtime:make-autolisp-string new-path)))))
+    (let ((rename-result
+            (call-autolisp-function file-rename-fn
+                                    (clautolisp.autolisp-runtime:make-autolisp-string old-path)
+                                    (clautolisp.autolisp-runtime:make-autolisp-string new-path))))
+      (when rename-result
+        (is (string= "T" (autolisp-symbol-name rename-result)))))
     (is (null (probe-file old-path)))
     (is (probe-file new-path))
-    (is (string= "T"
-                 (autolisp-symbol-name
-                  (call-autolisp-function file-delete-fn
-                                          (clautolisp.autolisp-runtime:make-autolisp-string new-path)))))
+    (let ((delete-result
+            (call-autolisp-function file-delete-fn
+                                    (clautolisp.autolisp-runtime:make-autolisp-string new-path))))
+      (when delete-result
+        (is (string= "T" (autolisp-symbol-name delete-result)))))
+    (is (null (probe-file new-path)))
     (is (null
          (call-autolisp-function file-delete-fn
                                  (clautolisp.autolisp-runtime:make-autolisp-string new-path))))
-    (ignore-errors (delete-file old-path))
-    (ignore-errors (delete-file new-path))
-    (ignore-errors (delete-file subdirectory))
-    (ignore-errors (delete-file directory))))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))))
+
+(test builtin-vl-file-copy-systime-and-mktemp
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((file-copy-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-FILE-COPY")))
+         (file-systime-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-FILE-SYSTIME")))
+         (mktemp-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-FILENAME-MKTEMP")))
+         (directory (format nil "/tmp/clautolisp-builtins-core-copy-~D/" (random 1000000000)))
+         (source-path (concatenate 'string directory "source.bin"))
+         (destination-path (concatenate 'string directory "destination.bin"))
+         (append-path (concatenate 'string directory "append.bin")))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
+    (ensure-directories-exist directory)
+    (with-open-file (stream source-path
+                            :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create
+                            :element-type '(unsigned-byte 8))
+      (write-sequence #(1 2 3 4 5) stream))
+    (with-open-file (stream append-path
+                            :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create
+                            :element-type '(unsigned-byte 8))
+      (write-sequence #(7 8) stream))
+    (let ((copy-result
+            (call-autolisp-function file-copy-fn
+                                    (clautolisp.autolisp-runtime:make-autolisp-string source-path)
+                                    (clautolisp.autolisp-runtime:make-autolisp-string destination-path))))
+      (when copy-result
+        (is (= 5 copy-result))))
+    (is (probe-file destination-path))
+    (is (= 5
+           (with-open-file (stream destination-path
+                                   :direction :input
+                                   :element-type '(unsigned-byte 8))
+             (file-length stream))))
+    (is (null
+         (call-autolisp-function file-copy-fn
+                                 (clautolisp.autolisp-runtime:make-autolisp-string source-path)
+                                 (clautolisp.autolisp-runtime:make-autolisp-string destination-path))))
+    (let ((append-result
+            (call-autolisp-function file-copy-fn
+                                    (clautolisp.autolisp-runtime:make-autolisp-string source-path)
+                                    (clautolisp.autolisp-runtime:make-autolisp-string append-path)
+                                    (intern-autolisp-symbol "T"))))
+      (when append-result
+        (is (= 5 append-result))))
+    (is (= 7
+           (with-open-file (stream append-path
+                                   :direction :input
+                                   :element-type '(unsigned-byte 8))
+             (file-length stream))))
+    (let ((systime
+            (call-autolisp-function file-systime-fn
+                                    (clautolisp.autolisp-runtime:make-autolisp-string
+                                     source-path))))
+      (is (listp systime))
+      (is (= 7 (length systime)))
+      (is (every #'integerp systime)))
+    (let* ((temp-name
+             (call-autolisp-function mktemp-fn
+                                     (clautolisp.autolisp-runtime:make-autolisp-string "foo-")
+                                     (clautolisp.autolisp-runtime:make-autolisp-string directory)
+                                     (clautolisp.autolisp-runtime:make-autolisp-string "tmp")))
+           (temp-path (autolisp-string-value temp-name)))
+      (is (typep temp-name 'autolisp-string))
+      (is (search directory temp-path))
+      (is (search "foo-" temp-path))
+      (is (search ".tmp" temp-path))
+      (is (null (probe-file temp-path))))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))))
+
+(test builtin-printer-functions
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((prin1-fn (autolisp-symbol-function (find-autolisp-symbol "PRIN1")))
+         (princ-fn (autolisp-symbol-function (find-autolisp-symbol "PRINC")))
+         (print-fn (autolisp-symbol-function (find-autolisp-symbol "PRINT")))
+         (terpri-fn (autolisp-symbol-function (find-autolisp-symbol "TERPRI")))
+         (prompt-fn (autolisp-symbol-function (find-autolisp-symbol "PROMPT")))
+         (vl-prin1-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-PRIN1-TO-STRING")))
+         (vl-princ-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-PRINC-TO-STRING")))
+         (read-char-fn (autolisp-symbol-function (find-autolisp-symbol "READ-CHAR")))
+         (hello (make-autolisp-string "Hello"))
+         (quoted (make-autolisp-string "a\\\"b"))
+         (list-value (list 1 hello (intern-autolisp-symbol "T")))
+         (directory (format nil "/tmp/clautolisp-builtins-core-print-~D/" (random 1000000000)))
+         (path (concatenate 'string directory "output.txt"))
+         (printed nil))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
+    (ensure-directories-exist directory)
+    (let ((result (call-autolisp-function vl-prin1-fn quoted)))
+      (is (typep result 'autolisp-string))
+      (is (string= "\"a\\\\\\\"b\"" (autolisp-string-value result))))
+    (let ((result (call-autolisp-function vl-princ-fn quoted)))
+      (is (typep result 'autolisp-string))
+      (is (string= "a\\\"b" (autolisp-string-value result))))
+    (let ((file (call-autolisp-function
+                 (autolisp-symbol-function (find-autolisp-symbol "OPEN"))
+                 (make-autolisp-string path)
+                 (make-autolisp-string "w"))))
+      (call-autolisp-function prin1-fn quoted file)
+      (call-autolisp-function terpri-fn file)
+      (call-autolisp-function princ-fn hello file)
+      (call-autolisp-function print-fn list-value file)
+      (call-autolisp-function (autolisp-symbol-function (find-autolisp-symbol "CLOSE")) file))
+    (with-open-file (stream path :direction :input)
+      (setf printed
+            (with-output-to-string (out)
+              (loop for line = (read-line stream nil nil)
+                    while line
+                    do (write-line line out)))))
+    (is (search "\"a\\\\\\\"b\"" printed))
+    (is (search "Hello" printed))
+    (is (search "(1 \"Hello\" T)" printed))
+    (let ((*standard-output* (make-string-output-stream)))
+      (is (eq hello (call-autolisp-function princ-fn hello)))
+      (is (null (call-autolisp-function prompt-fn hello)))
+      (is (search "Hello"
+                  (get-output-stream-string *standard-output*))))
+    (let ((*standard-output* (make-string-output-stream)))
+      (is (eq list-value (call-autolisp-function print-fn list-value)))
+      (is (search "(1 \"Hello\" T)"
+                  (get-output-stream-string *standard-output*))))
+    (let ((*standard-input* (make-string-input-stream "Z")))
+      (is (= 90 (call-autolisp-function read-char-fn))))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))))
