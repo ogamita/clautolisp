@@ -198,7 +198,6 @@ World
                     :kind :builtin
                     :setup-files '((:relative-path "source.txt"
                                     :input-text "copy me"))
-                    :current-directory "./"
                     :builtin-name "VL-FILE-COPY"
                     :arguments '("source.txt" "target.txt")
                     :expected-value 7
@@ -232,9 +231,67 @@ World
                (file-compat-report-checks
                 (run-builtin-scenario read-scenario))))))
 
+(test builtin-rename-size-and-predicate-scenarios
+  (let* ((rename-scenario (make-file-compat-scenario
+                           :name "rename"
+                           :kind :builtin
+                           :setup-files '((:relative-path "old.txt"
+                                           :input-text "rename me"))
+                           :builtin-name "VL-FILE-RENAME"
+                           :arguments '("old.txt" "new.txt")
+                           :expected-value '(:symbol "T")
+                           :artifact-relative-path "new.txt"
+                           :expected-text "rename me"))
+         (size-scenario (make-file-compat-scenario
+                         :name "size"
+                         :kind :builtin
+                         :setup-files '((:relative-path "sized.txt"
+                                         :input-text "12345"))
+                         :builtin-name "VL-FILE-SIZE"
+                         :arguments '("sized.txt")
+                         :expected-value 5))
+         (mktemp-scenario (make-file-compat-scenario
+                           :name "mktemp"
+                           :kind :builtin
+                           :setup-files '((:type :directory :relative-path "tmp/"))
+                           :builtin-name "VL-FILENAME-MKTEMP"
+                           :arguments '("case-" "tmp/" ".dat")
+                           :expected-value '(:predicate :path-under-workspace "tmp/"
+                                                       :suffix ".dat"
+                                                       :exists-p nil)))
+         (systime-scenario (make-file-compat-scenario
+                            :name "systime"
+                            :kind :builtin
+                            :setup-files '((:relative-path "stamp.txt"
+                                            :input-text "stamp"))
+                            :builtin-name "VL-FILE-SYSTIME"
+                            :arguments '("stamp.txt")
+                            :expected-value '(:predicate :list-length 7))))
+    (is (every #'file-compat-check-passed-p
+               (file-compat-report-checks
+                (run-builtin-scenario rename-scenario))))
+    (is (every #'file-compat-check-passed-p
+               (file-compat-report-checks
+                (run-builtin-scenario size-scenario))))
+    (is (every #'file-compat-check-passed-p
+               (file-compat-report-checks
+                (run-builtin-scenario mktemp-scenario))))
+    (is (every #'file-compat-check-passed-p
+               (file-compat-report-checks
+                (run-builtin-scenario systime-scenario))))))
+
 (test declarative-builtin-scenario-files
   (dolist (path '("autolisp-file-compat/scenarios/paths/findfile-basic.sexp"
-                  "autolisp-file-compat/scenarios/printers/vl-prin1-to-string-basic.sexp"))
+                  "autolisp-file-compat/scenarios/paths/findfile-missing.sexp"
+                  "autolisp-file-compat/scenarios/paths/directory-files-basic.sexp"
+                  "autolisp-file-compat/scenarios/printers/vl-prin1-to-string-basic.sexp"
+                  "autolisp-file-compat/scenarios/printers/vl-princ-to-string-basic.sexp"
+                  "autolisp-file-compat/scenarios/mutations/mkdir-basic.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-rename-basic.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-size-basic.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-systime-basic.sexp"
+                  "autolisp-file-compat/scenarios/mutations/filename-mktemp-basic.sexp"
+                  "autolisp-file-compat/scenarios/paths/filename-components-basic.sexp"))
     (dolist (scenario (load-scenario-file path))
       (is (every #'file-compat-check-passed-p
                  (file-compat-report-checks

@@ -351,11 +351,76 @@
     (t
      (eql left right))))
 
-(defun compare-runtime-value (expected actual)
+(defun sort-string-list (strings)
+  (sort (copy-list strings) #'string<))
+
+(defun autolisp-string-list (object)
+  (and (listp object)
+       (every (lambda (item)
+                (typep item 'clautolisp.autolisp-runtime:autolisp-string))
+              object)
+       (mapcar #'clautolisp.autolisp-runtime:autolisp-string-value object)))
+
+(defun canonicalize-path-for-comparison (path &key directoryp)
+  (let* ((pathname (pathname path))
+         (directory-path (uiop:ensure-directory-pathname
+                          (if directoryp
+                              pathname
+                              (uiop:pathname-directory-pathname pathname))))
+         (resolved-directory (or (probe-file directory-path)
+                                 directory-path)))
+    (if directoryp
+        (namestring (uiop:ensure-directory-pathname resolved-directory))
+        (namestring (merge-pathnames (file-namestring pathname)
+                                     (uiop:ensure-directory-pathname
+                                      resolved-directory))))))
+
+(defun runtime-value-matches-predicate-p (predicate actual workspace-root)
+  (let ((name (second predicate))
+        (arguments (cddr predicate)))
+    (case name
+      (:string-non-empty
+       (and (typep actual 'clautolisp.autolisp-runtime:autolisp-string)
+            (> (length (clautolisp.autolisp-runtime:autolisp-string-value actual)) 0)))
+      (:path-under-workspace
+       (let* ((relative-path (first arguments))
+              (options (rest arguments))
+              (prefix-path (workspace-relative-pathname workspace-root relative-path))
+              (prefix (canonicalize-path-for-comparison prefix-path :directoryp t))
+              (suffix (getf options :suffix))
+              (exists-p (getf options :exists-p :unspecified)))
+         (and (typep actual 'clautolisp.autolisp-runtime:autolisp-string)
+              (let ((value (clautolisp.autolisp-runtime:autolisp-string-value actual)))
+                 (and (uiop:string-prefix-p
+                       prefix
+                       (canonicalize-path-for-comparison value))
+                      (or (null suffix)
+                          (uiop:string-suffix-p value suffix))
+                      (or (eq exists-p :unspecified)
+                          (eql (not (null (probe-file value)))
+                              exists-p)))))))
+      (:list-length
+       (and (listp actual)
+            (= (length actual) (first arguments))))
+      (:unordered-strings
+       (let ((actual-strings (autolisp-string-list actual)))
+         (and actual-strings
+              (equal (sort-string-list actual-strings)
+                     (sort-string-list (copy-list (first arguments)))))))
+      (otherwise
+       (error "Unknown runtime expectation predicate ~S." name)))))
+
+(defun runtime-expectation-matches-p (expected actual workspace-root)
+  (if (and (consp expected)
+           (eq (first expected) :predicate))
+      (runtime-value-matches-predicate-p expected actual workspace-root)
+      (runtime-values-equal-p expected actual)))
+
+(defun compare-runtime-value (expected actual &optional workspace-root)
   (make-file-compat-check
    :name "result"
-   :passed-p (runtime-values-equal-p expected actual)
-   :message (if (runtime-values-equal-p expected actual)
+   :passed-p (runtime-expectation-matches-p expected actual workspace-root)
+   :message (if (runtime-expectation-matches-p expected actual workspace-root)
                 "Runtime value matches."
                 "Runtime value differs.")))
 
@@ -369,16 +434,21 @@
 
 (defun scenario-temp-workspace (scenario)
   (let ((base (uiop:ensure-directory-pathname (uiop:temporary-directory))))
-    (uiop:ensure-directory-pathname
-     (merge-pathnames
-      (format nil "clautolisp-file-compat-~A-~36R/"
-              (or (and (> (length (file-compat-scenario-name scenario)) 0)
-                       (substitute #\- #\Space
-                                   (string-downcase
-                                    (file-compat-scenario-name scenario))))
-                  "scenario")
-              (random 2176782336))
-      base))))
+    (loop
+      for attempt from 0
+      for suffix = (format nil "~36R-~36R" (get-universal-time) attempt)
+      for candidate = (uiop:ensure-directory-pathname
+                       (merge-pathnames
+                        (format nil "clautolisp-file-compat-~A-~A/"
+                                (or (and (> (length (file-compat-scenario-name scenario)) 0)
+                                         (substitute #\- #\Space
+                                                     (string-downcase
+                                                      (file-compat-scenario-name scenario))))
+                                    "scenario")
+                                suffix)
+                        base))
+      unless (probe-file candidate)
+        do (return candidate))))
 
 (defun workspace-relative-pathname (workspace-root relative-path)
   (merge-pathnames relative-path
@@ -638,12 +708,15 @@
                                                      (file-compat-scenario-external-format scenario))))
                   (checks '()))
              (when (file-compat-scenario-expected-value scenario)
-               (push (compare-runtime-value
-                      (scenario-value->runtime-value
-                       (file-compat-scenario-expected-value scenario)
-                       workspace-root)
-                      result)
-                     checks))
+               (let ((expected (file-compat-scenario-expected-value scenario)))
+                 (push (compare-runtime-value
+                        (if (and (consp expected)
+                                 (eq (first expected) :predicate))
+                            expected
+                            (scenario-value->runtime-value expected workspace-root))
+                        result
+                        workspace-root)
+                       checks)))
              (when (file-compat-scenario-artifact-relative-path scenario)
                (push (compare-artifact-exists
                       (not (null artifact-expected-p))

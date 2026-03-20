@@ -4,7 +4,6 @@
  :classification :portable
  :tags (:builtin :file :delete)
  :setup-files ((:relative-path "obsolete.txt" :input-text "remove me"))
- :current-directory "./"
  :builtin-name "VL-FILE-DELETE"
  :arguments ("obsolete.txt")
  :expected-value (:symbol "T")

@@ -4,7 +4,6 @@
  :classification :portable
  :tags (:builtin :file :copy)
  :setup-files ((:relative-path "source.txt" :input-text "copy me"))
- :current-directory "./"
  :builtin-name "VL-FILE-COPY"
  :arguments ("source.txt" "target.txt")
  :expected-value 7
