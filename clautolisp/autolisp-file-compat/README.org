@@ -29,6 +29,8 @@ The initial implementation provides:
   workflows resolved through explicit AutoLISP current-directory state,
 - executable coverage for backslash-delimited relative subpaths and `PRIN1`
   compound-form roundtrips under explicit current-directory state,
+- executable coverage for `VL-FILE-SIZE` and `VL-FILE-DELETE` on relative paths
+  under explicit current-directory state,
 - byte, text, and line-oriented comparison helpers,
 - artifact capture suitable for later report emission,
 - declarative scenario files under =scenarios/=, including nested newline and
