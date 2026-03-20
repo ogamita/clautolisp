@@ -29,5 +29,8 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Add integer arithmetic and bitwise helpers `lcm`, `~`, `logand`, `logior`, and `lsh`.
 - [x] Add the first string builtins: `strcat`, `strlen`, `substr`, `ascii`, and `chr`.
 - [x] Add the first file builtins: `open`, `close`, `read-line`, `read-char`, `write-line`, and `write-char`.
-- [ ] Replace the current conservative absolute-path-only file boundary with a spec-derived AutoLISP pathname-resolution algorithm and explicit runtime/host path state.
+- [x] Replace the current conservative absolute-path-only file boundary with a first spec-derived pathname layer and explicit runtime path state for `open`, `findfile`, and `findtrustedfile`.
+- [x] Add the next pathname/file helpers: `vl-directory-files`, `vl-file-directory-p`, `vl-filename-base`, `vl-filename-directory`, and `vl-filename-extension`.
+- [x] Add the next file-system mutation/introspection helpers: `vl-file-delete`, `vl-file-rename`, `vl-file-size`, and `vl-mkdir`.
+- [ ] Extend the file layer with the remaining compatibility-sensitive helpers such as `vl-file-copy`, `vl-file-systime`, and `vl-filename-mktemp`.
 - [ ] Keep the builtin inventory clearly separated from special operators as evaluator work expands.
