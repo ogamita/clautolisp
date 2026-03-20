@@ -306,6 +306,7 @@ World
                   "autolisp-file-compat/scenarios/streams/open-append-read-lines.sexp"
                   "autolisp-file-compat/scenarios/streams/open-write-char-read-char.sexp"
                   "autolisp-file-compat/scenarios/streams/open-write-read-line-utf8.sexp"
+                  "autolisp-file-compat/scenarios/printers/file-printer-read-lines.sexp"
                   "autolisp-file-compat/scenarios/printers/file-printer-sequence.sexp"
                   "autolisp-file-compat/scenarios/printers/file-prin1-read-roundtrip.sexp"))
     (dolist (scenario (load-scenario-file path))
@@ -376,9 +377,11 @@ World
                   "autolisp-file-compat/scenarios/paths/findtrustedfile-directory-prefix.sexp"
                   "autolisp-file-compat/scenarios/printers/vl-prin1-to-string-basic.sexp"
                   "autolisp-file-compat/scenarios/printers/vl-princ-to-string-basic.sexp"
+                  "autolisp-file-compat/scenarios/printers/file-printer-read-lines.sexp"
                   "autolisp-file-compat/scenarios/printers/file-printer-sequence.sexp"
                   "autolisp-file-compat/scenarios/printers/file-prin1-read-roundtrip.sexp"
                   "autolisp-file-compat/scenarios/streams/open-missing-for-read.sexp"
+                  "autolisp-file-compat/scenarios/streams/open-unsupported-encoding.sexp"
                   "autolisp-file-compat/scenarios/streams/open-write-read-line-basic.sexp"
                   "autolisp-file-compat/scenarios/streams/open-read-char-sequence.sexp"
                   "autolisp-file-compat/scenarios/streams/open-append-read-lines.sexp"

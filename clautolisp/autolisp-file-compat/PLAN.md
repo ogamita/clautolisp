@@ -26,6 +26,8 @@ Architecture and rationale belong in `documentation/design.org`.
   behavior, and printer/read-back behavior on both SBCL and CCL.
 - The stream corpus now also covers negative open-for-read behavior, explicit
   `OPEN` encoding arguments, and printer-to-`READ` file roundtrips.
+- The stream and printer corpus now also covers unsupported encoding failures
+  and line-by-line validation of file-targeted printer output.
 
 ## Foundation Tasks
 
@@ -52,6 +54,8 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add file-targeted printer scenarios using multi-step execution.
 - [x] Add stream scenarios for explicit encodings and open failure cases.
 - [x] Add printer-to-reader roundtrip scenarios through temporary files.
+- [x] Add stream scenarios for unsupported encoding designators.
+- [x] Add line-by-line read-back validation for file-targeted printer output.
 - [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 
