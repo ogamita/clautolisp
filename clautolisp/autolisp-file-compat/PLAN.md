@@ -34,6 +34,9 @@ Architecture and rationale belong in `documentation/design.org`.
 - The stream corpus now also covers append behavior through explicit AutoLISP
   current-directory resolution, and the printer corpus covers `PRINC` to a
   current-directory-relative file with `READ` roundtrip validation.
+- The stream corpus now also covers current-directory-relative subpaths written
+  with backslash separators, and the printer corpus covers `PRIN1` compound
+  form roundtrips under explicit current-directory state.
 
 ## Foundation Tasks
 
@@ -66,6 +69,8 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add read-back validation for `PRINT` line structure.
 - [x] Add current-directory-relative append scenarios.
 - [x] Add current-directory-relative printer/read-back scenarios.
+- [x] Add current-directory-relative backslash subpath stream scenarios.
+- [x] Add current-directory-relative `PRIN1` roundtrip scenarios.
 - [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 
