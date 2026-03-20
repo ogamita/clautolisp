@@ -288,6 +288,33 @@
                  (autolisp-string-value
                   (call-autolisp-function chr-fn 65))))))
 
+(test builtin-read
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((read-fn (autolisp-symbol-function (find-autolisp-symbol "READ"))))
+    (is (= 42
+           (call-autolisp-function read-fn
+                                   (make-autolisp-string "42"))))
+    (let ((result (call-autolisp-function read-fn
+                                          (make-autolisp-string "\"hello\""))))
+      (is (typep result 'autolisp-string))
+      (is (string= "hello" (autolisp-string-value result))))
+    (let ((result (call-autolisp-function read-fn
+                                          (make-autolisp-string "(a 1 \"x\")"))))
+      (is (consp result))
+      (is (typep (first result) 'autolisp-symbol))
+      (is (string= "A" (autolisp-symbol-name (first result))))
+      (is (= 1 (second result)))
+      (is (typep (third result) 'autolisp-string))
+      (is (string= "x" (autolisp-string-value (third result)))))
+    (let ((result (call-autolisp-function read-fn
+                                          (make-autolisp-string "'foo"))))
+      (is (equal 2 (length result)))
+      (is (typep (first result) 'autolisp-symbol))
+      (is (string= "QUOTE" (autolisp-symbol-name (first result))))
+      (is (typep (second result) 'autolisp-symbol))
+      (is (string= "FOO" (autolisp-symbol-name (second result)))))))
+
 (test builtin-file-primitives
   (reset-autolisp-symbol-table)
   (install-core-builtins)

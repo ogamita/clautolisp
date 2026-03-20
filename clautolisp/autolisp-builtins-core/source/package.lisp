@@ -18,6 +18,7 @@
                 #:autolisp-listp
                 #:autolisp-not
                 #:autolisp-null
+                #:autolisp-read-from-string
                 #:autolisp-subr
                 #:autolisp-subr-name
                 #:autolisp-type
