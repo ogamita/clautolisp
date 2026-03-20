@@ -45,13 +45,29 @@ The initial implementation provides:
 - a command-line driver under =tools/run-file-compat/=,
 - machine-readable report emission in s-expression or JSON form, with aggregate
   summary counts,
-- SBCL and CCL runner modes through the wrapper script.
+- SBCL and CCL runner modes through the wrapper script,
+- product-runner adapter modes for AutoCAD and BricsCAD through external runner
+  templates.
+- GitLab CI integration for the local SBCL and CCL modes, with machine-readable
+  JSON artifacts stored under =clautolisp/.artifacts/= during CI runs.
+
+The current builtin corpus contains 69 declarative scenarios and 140 checks,
+all passing on both SBCL and CCL.
 
 The current driver can also:
 
 - collect scenario files recursively from scenario directories,
 - filter runs by classification,
 - filter runs by one or more scenario tags.
+
+The =clautolisp= subproject =Makefile= provides convenience targets for:
+
+- =make -C clautolisp run-file-compat-sbcl=
+- =make -C clautolisp run-file-compat-ccl=
+- =make -C clautolisp run-file-compat-autocad=
+- =make -C clautolisp run-file-compat-bricscad=
+- =make -C clautolisp audit-file-compat-autocad=
+- =make -C clautolisp audit-file-compat-bricscad=
 
 See:
 

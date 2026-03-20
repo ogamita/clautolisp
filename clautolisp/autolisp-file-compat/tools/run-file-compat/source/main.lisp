@@ -3,7 +3,7 @@
 (defun usage ()
   (format t "~&Usage: run-file-compat [options] scenario.sexp ...~%")
   (format t "Options:~%")
-  (format t "  --runner-label MODE          MODE is local, sbcl, or ccl.~%")
+  (format t "  --runner-label MODE          MODE is local, sbcl, ccl, autocad, or bricscad.~%")
   (format t "  --classification CLASS       Filter by portable, implementation-sensitive,~%")
   (format t "                               host-sensitive, product-sensitive, or unknown.~%")
   (format t "  --tag TAG                    Require TAG to be present in scenario metadata.~%")
@@ -13,8 +13,8 @@
 
 (defun parse-runner-label (string)
   (let ((keyword (intern (string-upcase string) "KEYWORD")))
-    (unless (member keyword '(:LOCAL :SBCL :CCL))
-      (error "Invalid runner label ~S. Expected local, sbcl, or ccl." string))
+    (unless (member keyword '(:LOCAL :SBCL :CCL :AUTOCAD :BRICSCAD))
+      (error "Invalid runner label ~S. Expected local, sbcl, ccl, autocad, or bricscad." string))
     keyword))
 
 (defun parse-report-format (string)
@@ -114,11 +114,13 @@
                         classification
                         required-tags)))
           (if output-path
-              (with-open-file (stream output-path
+              (progn
+                (ensure-directories-exist output-path)
+                (with-open-file (stream output-path
                                       :direction :output
                                       :if-exists :supersede
                                       :if-does-not-exist :create)
-                (emit-report-list reports stream report-format))
+                  (emit-report-list reports stream report-format)))
               (emit-report-list reports *standard-output* report-format))
           (finish-output))
         0)

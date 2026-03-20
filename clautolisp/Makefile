@@ -15,11 +15,13 @@ READ_AUTOLISP_CCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-ccl
 RUN_FILE_COMPAT := autolisp-file-compat/tools/run-file-compat/run-file-compat
 FILE_COMPAT_SCENARIOS ?= autolisp-file-compat/scenarios
 FILE_COMPAT_ARGS ?=
+FILE_COMPAT_OUTPUT ?=
+FILE_COMPAT_PRODUCT_SCENARIOS ?= autolisp-file-compat/scenarios/mutations autolisp-file-compat/scenarios/streams autolisp-file-compat/scenarios/printers
 
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 
-.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl documentation clean-pdf
+.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl run-file-compat-autocad run-file-compat-bricscad audit-file-compat-autocad audit-file-compat-bricscad documentation clean-pdf
 
 all: documentation
 
@@ -67,6 +69,18 @@ run-file-compat-sbcl:
 
 run-file-compat-ccl:
 	$(RUN_FILE_COMPAT) --ccl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+
+run-file-compat-autocad:
+	$(RUN_FILE_COMPAT) --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+
+run-file-compat-bricscad:
+	$(RUN_FILE_COMPAT) --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+
+audit-file-compat-autocad:
+	$(RUN_FILE_COMPAT) --autocad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
+
+audit-file-compat-bricscad:
+	$(RUN_FILE_COMPAT) --bricscad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
 
 
 documentation: $(PDF_FILES)

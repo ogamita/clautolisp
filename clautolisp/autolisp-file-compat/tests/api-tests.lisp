@@ -15,6 +15,13 @@
     unless (probe-file candidate)
       do (return (namestring candidate))))
 
+(defmacro with-product-runner-template ((runner template) &body body)
+  `(let ((clautolisp.autolisp-file-compat::*product-runner-template-overrides*
+           (acons ,runner
+                  ,template
+                  clautolisp.autolisp-file-compat::*product-runner-template-overrides*)))
+     ,@body))
+
 (test newline-normalization
   (let ((text (format nil "a~%b~%")))
     (is (string= text (normalize-newlines text :lf)))
@@ -223,6 +230,35 @@ World
     (is (string= "copy me"
                  (file-compat-artifact-text
                   (file-compat-report-artifact report))))))
+
+(test product-runner-adapter
+  (let* ((script (namestring (truename "autolisp-file-compat/tests/fake-product-runner.sh")))
+         (template (format nil "sh ~A __RESULT_FILE__" script))
+         (scenario (make-file-compat-scenario
+                    :name "product-copy"
+                    :kind :builtin
+                    :builtin-name "VL-FILE-COPY"
+                    :arguments '("source.txt" "target.txt")
+                    :expected-value 7)))
+    (with-product-runner-template (:bricscad template)
+      (let ((report (run-scenario scenario :runner :bricscad)))
+        (is (eq :bricscad (file-compat-report-runner report)))
+        (is (every #'file-compat-check-passed-p
+                   (file-compat-report-checks report)))))))
+
+(test product-runner-unsupported-scenario
+  (let* ((script (namestring (truename "autolisp-file-compat/tests/fake-product-runner.sh")))
+         (template (format nil "sh ~A __RESULT_FILE__" script))
+         (scenario (make-file-compat-scenario
+                    :name "product-findfile"
+                    :kind :builtin
+                    :builtin-name "FINDFILE"
+                    :arguments '("example.txt")
+                    :expected-value '(:nil))))
+    (with-product-runner-template (:bricscad template)
+      (let ((report (run-scenario scenario :runner :bricscad)))
+        (is (not (every #'file-compat-check-passed-p
+                        (file-compat-report-checks report))))))))
 
 (test builtin-prin1-and-read-scenarios
   (let* ((prin1-scenario (make-file-compat-scenario

@@ -41,7 +41,7 @@ The specification document has been substantially expanded into a HyperSpec-styl
 - `autolisp-spec`:
   active and currently the most mature subproject; the specification draft exists and the remaining work is mainly gap-closure and validation.
 - `clautolisp`:
-  early implementation stage; the reader subsystem is implemented and has already read a real AutoLISP corpus of 663 `.lsp` files, 100583 lines, and 3508077 characters successfully, the first runtime and builtin layers exist, and the file-compatibility harness now executes declarative file, pathname, and printer scenarios on both SBCL and CCL.
+  early implementation stage; the reader subsystem is implemented and has already read a real AutoLISP corpus of 663 `.lsp` files, 100583 lines, and 3508077 characters successfully, the first runtime and builtin layers exist, and the file-compatibility harness now executes 69 declarative file, pathname, stream, mutation, and printer scenarios with 140 checks on both SBCL and CCL, with product-runner adapters in place for later AutoCAD and BricsCAD audits.
 - `autolisp-test`:
   conformance-suite planning stage; the subproject structure and development plan exist, but the harness and first projected tests still need to be implemented.
 
@@ -215,7 +215,16 @@ That harness supports:
 - builtin-driven pathname/search-path scenarios,
 - builtin-driven file-mutation scenarios,
 - builtin-driven printer/read-back scenarios,
+- multi-step stream and file-descriptor scenarios,
 - machine-readable JSON or s-expression reports with aggregate summaries.
+
+The current local file-compat corpus passes on both SBCL and CCL with:
+
+- 69 scenarios
+- 140 checks
+
+GitLab CI also runs the local SBCL and CCL file-compat jobs and retains the
+JSON reports as artifacts under `clautolisp/.artifacts/`.
 
 Because some parts of AutoLISP / Visual LISP are under-documented, executable testing against real products is a primary source of truth.
 

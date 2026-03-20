@@ -23,6 +23,16 @@ while [ "$#" -gt 0 ]; do
       runner_label="ccl"
       shift
       ;;
+    --autocad)
+      runner="autocad"
+      runner_label="autocad"
+      shift
+      ;;
+    --bricscad)
+      runner="bricscad"
+      runner_label="bricscad"
+      shift
+      ;;
     *)
       printf '%s\n' "$1" >>"$args_file"
       shift
@@ -40,11 +50,18 @@ if [ "$runner" = "sbcl" ]; then
       sbcl --noinform --no-userinit --non-interactive \
            --load "$SCRIPT_DIR/launch.lisp" \
            --eval '(sb-ext:quit)'
-else
+elif [ "$runner" = "ccl" ]; then
   env XDG_CACHE_HOME="$XDG_CACHE_HOME" \
       CLAUTOLISP_ROOT="$SUBPROJECT_DIR/" \
       CLAUTOLISP_FILE_COMPAT_ARGS_FILE="$args_file" \
       ccl --no-init --quiet \
           --load "$SCRIPT_DIR/launch.lisp" \
           --eval '(ccl:quit)'
+else
+  env XDG_CACHE_HOME="$XDG_CACHE_HOME" \
+      CLAUTOLISP_ROOT="$SUBPROJECT_DIR/" \
+      CLAUTOLISP_FILE_COMPAT_ARGS_FILE="$args_file" \
+      sbcl --noinform --no-userinit --non-interactive \
+           --load "$SCRIPT_DIR/launch.lisp" \
+           --eval '(sb-ext:quit)'
 fi
