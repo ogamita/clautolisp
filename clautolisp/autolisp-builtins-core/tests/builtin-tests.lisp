@@ -328,14 +328,17 @@
          (findtrustedfile-fn (autolisp-symbol-function (find-autolisp-symbol "FINDTRUSTEDFILE")))
          (directory (format nil "/tmp/clautolisp-builtins-core-~D/" (random 1000000000)))
          (relative-name "sample.txt")
+         (encoded-name "encoded.txt")
          (trusted-name "trusted.txt")
          (path (concatenate 'string directory relative-name))
          (trusted-path (concatenate 'string directory trusted-name))
          (resolved-path nil)
          (resolved-trusted-path nil)
          (path-string (clautolisp.autolisp-runtime:make-autolisp-string relative-name))
+         (encoded-path-string (clautolisp.autolisp-runtime:make-autolisp-string encoded-name))
          (write-mode (clautolisp.autolisp-runtime:make-autolisp-string "w"))
-         (read-mode (clautolisp.autolisp-runtime:make-autolisp-string "r")))
+         (read-mode (clautolisp.autolisp-runtime:make-autolisp-string "r"))
+         (utf-8-format (clautolisp.autolisp-runtime:make-autolisp-string "utf-8")))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))
     (ensure-directories-exist directory)
     (set-autolisp-current-directory directory)
@@ -356,6 +359,20 @@
                     (call-autolisp-function read-line-fn file))))
       (is (= 66 (call-autolisp-function read-char-fn file)))
       (is (null (call-autolisp-function read-line-fn file)))
+      (is (null (call-autolisp-function close-fn file))))
+    (let* ((encoded-text
+             (clautolisp.autolisp-runtime:make-autolisp-string
+              (coerce (list #\H (code-char 233) #\!) 'string)))
+           (file (call-autolisp-function open-fn encoded-path-string write-mode utf-8-format)))
+      (is (typep file 'autolisp-file))
+      (call-autolisp-function write-line-fn encoded-text file)
+      (is (null (call-autolisp-function close-fn file))))
+    (let ((file (call-autolisp-function open-fn encoded-path-string read-mode utf-8-format)))
+      (is (typep file 'autolisp-file))
+      (let ((line (call-autolisp-function read-line-fn file)))
+        (is (typep line 'autolisp-string))
+        (is (string= (coerce (list #\H (code-char 233) #\!) 'string)
+                     (autolisp-string-value line))))
       (is (null (call-autolisp-function close-fn file))))
     (with-open-file (stream trusted-path
                             :direction :output
@@ -555,6 +572,10 @@
          (call-autolisp-function file-copy-fn
                                  (clautolisp.autolisp-runtime:make-autolisp-string source-path)
                                  (clautolisp.autolisp-runtime:make-autolisp-string destination-path))))
+    (is (null
+         (call-autolisp-function file-copy-fn
+                                 (clautolisp.autolisp-runtime:make-autolisp-string source-path)
+                                 (clautolisp.autolisp-runtime:make-autolisp-string directory))))
     (let ((append-result
             (call-autolisp-function file-copy-fn
                                     (clautolisp.autolisp-runtime:make-autolisp-string source-path)
@@ -573,7 +594,13 @@
                                      source-path))))
       (is (listp systime))
       (is (= 7 (length systime)))
-      (is (every #'integerp systime)))
+      (is (every #'integerp systime))
+      (let ((write-date (file-write-date source-path)))
+        (multiple-value-bind (second minute hour day month year common-lisp-day-of-week)
+            (decode-universal-time write-date)
+          (declare (ignore second minute hour day month year))
+          (is (= (mod (1+ common-lisp-day-of-week) 7)
+                 (third systime))))))
     (let* ((temp-name
              (call-autolisp-function mktemp-fn
                                      (clautolisp.autolisp-runtime:make-autolisp-string "foo-")
@@ -585,6 +612,11 @@
       (is (search "foo-" temp-path))
       (is (search ".tmp" temp-path))
       (is (null (probe-file temp-path))))
+    (let* ((default-temp-name (call-autolisp-function mktemp-fn))
+           (default-temp-path (autolisp-string-value default-temp-name)))
+      (is (typep default-temp-name 'autolisp-string))
+      (is (uiop:absolute-pathname-p (pathname default-temp-path)))
+      (is (null (probe-file default-temp-path))))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))))
 
 (test builtin-printer-functions
