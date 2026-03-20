@@ -56,6 +56,8 @@ The current stream/printer corpus specifically includes:
 - backslash-delimited relative subpaths resolved through ~:current-directory~,
 - file-targeted ~PRIN1~ compound-form roundtrips under ~:current-directory~,
 - current-directory-relative ~VL-FILE-SIZE~ and ~VL-FILE-DELETE~ cases,
+- current-directory-relative ~VL-FILE-RENAME~ cases, including backslash
+  subpaths,
 - the leading blank line introduced by file-targeted ~PRINT~.
 
 * Scenario Kinds

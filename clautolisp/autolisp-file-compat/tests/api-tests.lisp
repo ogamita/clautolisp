@@ -412,6 +412,8 @@ World
                   "autolisp-file-compat/scenarios/mutations/file-delete-current-directory-relative.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-delete-missing.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-rename-basic.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-rename-current-directory-backslash.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-rename-current-directory-relative.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-rename-existing-destination.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-rename-missing-source.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-size-basic.sexp"
