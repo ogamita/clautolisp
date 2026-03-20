@@ -1,0 +1,50 @@
+#!/bin/bash
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SUBPROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)
+XDG_CACHE_HOME="${XDG_CACHE_HOME:-$SUBPROJECT_DIR/.cache}"
+
+runner="sbcl"
+runner_label="sbcl"
+args_file=$(mktemp)
+trap 'rm -f "$args_file"' EXIT
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --sbcl)
+      runner="sbcl"
+      runner_label="sbcl"
+      shift
+      ;;
+    --ccl)
+      runner="ccl"
+      runner_label="ccl"
+      shift
+      ;;
+    *)
+      printf '%s\n' "$1" >>"$args_file"
+      shift
+      ;;
+  esac
+done
+
+printf '%s\n' --runner-label >>"$args_file"
+printf '%s\n' "$runner_label" >>"$args_file"
+
+if [ "$runner" = "sbcl" ]; then
+  env XDG_CACHE_HOME="$XDG_CACHE_HOME" \
+      CLAUTOLISP_ROOT="$SUBPROJECT_DIR/" \
+      CLAUTOLISP_FILE_COMPAT_ARGS_FILE="$args_file" \
+      sbcl --noinform --no-userinit --non-interactive \
+           --load "$SCRIPT_DIR/launch.lisp" \
+           --eval '(sb-ext:quit)'
+else
+  env XDG_CACHE_HOME="$XDG_CACHE_HOME" \
+      CLAUTOLISP_ROOT="$SUBPROJECT_DIR/" \
+      CLAUTOLISP_FILE_COMPAT_ARGS_FILE="$args_file" \
+      ccl --no-init --quiet \
+          --load "$SCRIPT_DIR/launch.lisp" \
+          --eval '(ccl:quit)'
+fi

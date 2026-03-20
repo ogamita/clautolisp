@@ -4,7 +4,8 @@
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-runtime"
-               "clautolisp/autolisp-builtins-core")
+               "clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-file-compat")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
   :perform (asdf:test-op (op system)
@@ -61,6 +62,22 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/autolisp-file-compat"
+  :description "Compatibility-audit harness for AutoLISP file and stream behavior."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("uiop")
+  :serial t
+  :components
+  ((:file "autolisp-file-compat/source/package")
+   (:file "autolisp-file-compat/source/model")
+   (:file "autolisp-file-compat/source/api"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-file-compat/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
 (asdf:defsystem "clautolisp/read-autolisp"
   :description "Command-line reader validation tool for AutoLISP source."
   :author "Codex"
@@ -70,6 +87,16 @@
   :components
   ((:file "autolisp-reader/tools/read-autolisp/source/package")
    (:file "autolisp-reader/tools/read-autolisp/source/main")))
+
+(asdf:defsystem "clautolisp/run-file-compat"
+  :description "Command-line compatibility runner for file scenarios."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-file-compat" "uiop")
+  :serial t
+  :components
+  ((:file "autolisp-file-compat/tools/run-file-compat/source/package")
+   (:file "autolisp-file-compat/tools/run-file-compat/source/main")))
 
 (asdf:defsystem "clautolisp/autolisp-reader/tests"
   :description "Tests for the clautolisp AutoLISP reader subsystem."
@@ -120,13 +147,30 @@
                          (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-file-compat/tests"
+  :description "Tests for the clautolisp file compatibility harness."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-file-compat" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-file-compat/tests/package")
+   (:file "autolisp-file-compat/tests/test-harness")
+   (:file "autolisp-file-compat/tests/api-tests")
+   (:file "autolisp-file-compat/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-file-compat.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/tests"
   :description "Aggregate tests for the clautolisp subproject."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader/tests"
                "clautolisp/autolisp-runtime/tests"
-               "clautolisp/autolisp-builtins-core/tests")
+               "clautolisp/autolisp-builtins-core/tests"
+               "clautolisp/autolisp-file-compat/tests")
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (progn
@@ -135,4 +179,6 @@
                            (uiop:symbol-call :clautolisp.autolisp-runtime.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-file-compat.tests
                                              :run-all-tests))))

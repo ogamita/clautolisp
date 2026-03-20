@@ -12,6 +12,7 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - The `autolisp-reader` module is implemented and documented.
 - The `autolisp-runtime` module now exists with an initial runtime object model and reader-to-runtime literal mapping.
 - The `autolisp-builtins-core` module now exists with the first installable builtin-function registry.
+- The `autolisp-file-compat` module now exists as the first dedicated compatibility-audit harness for file, stream, and printer behavior.
 - The reader currently supports source spans, strict and lax token modes, line and block comments, concrete comment-preserving reading, external-format-aware file input, and explicit reader options.
 - Reader tooling exists:
   - standalone `read-autolisp` executables for SBCL and CCL,
@@ -65,6 +66,8 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [x] Define explicit path-resolution state for relative AutoLISP pathnames instead of inheriting Common Lisp pathname merging.
 - [x] Derive and implement the first pathname-resolution layer supported by the current local spec draft for `open`, `findfile`, and related helpers.
 - [ ] Tighten pathname and file compatibility against the fuller spec corpus and real products.
+- [x] Introduce a dedicated compatibility-audit subproject for file, stream, and printer behavior.
+- [x] Add declarative scenario corpora, reporting, and SBCL/CCL driver modes in `autolisp-file-compat`.
 - [ ] Build a deterministic mock host.
 - [ ] Add snapshot and diff support for host-facing regression tests.
 - [ ] Add initial dialect and host-profile selection plumbing shared by reader and runtime.

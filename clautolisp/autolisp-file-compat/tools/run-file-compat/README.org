@@ -1,0 +1,26 @@
+#+TITLE: run-file-compat
+
+This tool runs declarative file-compatibility scenarios and emits a machine-readable
+report.
+
+Example:
+
+#+begin_src sh
+clautolisp/autolisp-file-compat/tools/run-file-compat \
+  --sbcl \
+  --report-format json \
+  clautolisp/autolisp-file-compat/scenarios/basic-text-roundtrip.sexp
+#+end_src
+
+Supported wrapper modes:
+
+- =--sbcl=
+- =--ccl=
+
+Supported report formats:
+
+- =sexp=
+- =json=
+
+The current runner modes share the same local scenario execution logic and differ
+mainly in the Lisp implementation used to execute the harness.
