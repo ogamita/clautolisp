@@ -24,9 +24,12 @@ Architecture and design rationale belong in `documentation/design.org`.
 ## Symbol and Environment Tasks
 
 - [x] Introduce an AutoLISP symbol structure and interning layer.
+- [x] Record the design rule that symbols are name identities and that value/function cells belong to namespaces and frames, not to symbols.
 - [ ] Define value-cell and function-cell semantics precisely.
-- [ ] Define explicit environment objects for dynamic scope.
+- [ ] Define explicit namespace objects for document, blackboard, and separate-VLX contexts.
+- [ ] Define explicit environment objects for dynamic variable scope.
 - [ ] Define unbound markers and lookup/update operations.
+- [ ] Specify current-document and current-namespace entry semantics at the host boundary.
 
 ## Runtime Semantics Tasks
 
@@ -37,6 +40,7 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [ ] Clarify `boundp` semantics, especially the documented distinction between unbound symbols and symbols bound to `nil`.
 - [ ] Design the evaluator phase explicitly, including the boundary between ordinary builtin calls and special-operator evaluation.
 - [ ] Define the initial special-operator set and decide which forms can be modeled as macro-like expansions versus fundamental evaluator cases.
+- [ ] Define symbol lookup and update semantics for `setq`, `defun`, and `set-symbol-function` relative to dynamic frames and namespaces.
 
 ## Integration Tasks
 

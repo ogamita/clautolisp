@@ -68,6 +68,85 @@
     (is (not (autolisp-symbol-value-bound-p symbol)))
     (is (not (autolisp-symbol-function-bound-p symbol)))))
 
+(test symbol-bindings-live-in-namespaces-not-symbols
+  (reset-autolisp-symbol-table)
+  (let* ((symbol (intern-autolisp-symbol "FOO"))
+         (first-namespace (make-document-namespace :name "DOC-1"))
+         (second-namespace (make-document-namespace :name "DOC-2"))
+         (first-context (make-evaluation-context
+                         :session (make-runtime-session :current-document first-namespace)
+                         :current-document first-namespace
+                         :current-namespace first-namespace))
+         (second-context (make-evaluation-context
+                          :session (make-runtime-session :current-document second-namespace)
+                          :current-document second-namespace
+                          :current-namespace second-namespace)))
+    (set-variable symbol 11 first-context)
+    (set-variable symbol 22 second-context)
+    (multiple-value-bind (value boundp origin) (lookup-variable symbol first-context)
+      (declare (ignore origin))
+      (is (not (null boundp)))
+      (is (= 11 value)))
+    (multiple-value-bind (value boundp origin) (lookup-variable symbol second-context)
+      (declare (ignore origin))
+      (is (not (null boundp)))
+      (is (= 22 value)))
+    (is (= 11 (value-cell-value (namespace-value-cell first-namespace symbol :createp nil))))
+    (is (= 22 (value-cell-value (namespace-value-cell second-namespace symbol :createp nil))))))
+
+(test dynamic-bindings-shadow-namespace-values
+  (reset-autolisp-symbol-table)
+  (let* ((symbol (intern-autolisp-symbol "FOO"))
+         (context (default-evaluation-context)))
+    (set-variable symbol 10 context)
+    (is (= 10 (autolisp-symbol-value symbol)))
+    (push-dynamic-frame context)
+    (bind-dynamic-variable symbol 99 context)
+    (multiple-value-bind (value boundp origin) (lookup-variable symbol context)
+      (is (not (null boundp)))
+      (is (= 99 value))
+      (is (eq :dynamic origin)))
+    (set-variable symbol 100 context)
+    (is (= 100 (autolisp-symbol-value symbol)))
+    (pop-dynamic-frame context)
+    (multiple-value-bind (value boundp origin) (lookup-variable symbol context)
+      (is (not (null boundp)))
+      (is (= 10 value))
+      (is (eq :namespace origin)))))
+
+(test function-bindings-live-in-current-namespace
+  (reset-autolisp-symbol-table)
+  (let* ((symbol (intern-autolisp-symbol "FN"))
+         (document (make-document-namespace :name "FUNCTION-DOC"))
+         (context (make-evaluation-context
+                   :session (make-runtime-session :current-document document)
+                   :current-document document
+                   :current-namespace document))
+         (function (lambda (x) x)))
+    (set-function symbol function context)
+    (multiple-value-bind (binding boundp origin) (lookup-function symbol context)
+      (is (not (null boundp)))
+      (is (eq function binding))
+      (is (eq :namespace origin)))
+    (is (eq function
+            (function-cell-function
+             (namespace-function-cell document symbol :createp nil))))))
+
+(test evaluation-context-carries-current-document-and-namespace
+  (let* ((document (make-document-namespace :name "DRAWING-A"))
+         (context (make-evaluation-context
+                   :session (make-runtime-session :current-document document)
+                   :current-document document
+                   :current-namespace document)))
+    (is (string= "DRAWING-A"
+                 (document-namespace-name
+                  (evaluation-context-current-document context))))
+    (is (eq (evaluation-context-current-document context)
+            (evaluation-context-current-namespace context)))
+    (is (eq document
+            (runtime-session-current-document
+             (evaluation-context-session context))))))
+
 (test autolisp-read-from-string-returns-first-form
   (reset-autolisp-symbol-table)
   (let ((value (autolisp-read-from-string "(a) (b)")))

@@ -30,6 +30,32 @@
    #:autolisp-symbol-value-bound-p
    #:autolisp-symbol-function
    #:autolisp-symbol-function-bound-p
+   #:value-cell
+   #:value-cell-value
+   #:value-cell-bound-p
+   #:function-cell
+   #:function-cell-function
+   #:function-cell-bound-p
+   #:document-namespace
+   #:make-document-namespace
+   #:document-namespace-name
+   #:blackboard-namespace
+   #:make-blackboard-namespace
+   #:blackboard-namespace-name
+   #:separate-vlx-namespace
+   #:make-separate-vlx-namespace
+   #:separate-vlx-namespace-name
+   #:dynamic-frame
+   #:make-dynamic-frame
+   #:evaluation-context
+   #:make-evaluation-context
+   #:evaluation-context-session
+   #:evaluation-context-current-document
+   #:evaluation-context-current-namespace
+   #:evaluation-context-dynamic-frame
+   #:runtime-session
+   #:make-runtime-session
+   #:runtime-session-current-document
    #:autolisp-file
    #:make-autolisp-file
    #:autolisp-file-stream
@@ -58,6 +84,18 @@
    #:intern-autolisp-symbol
    #:find-autolisp-symbol
    #:reset-autolisp-symbol-table
+   #:default-evaluation-context
+   #:set-default-evaluation-context
+   #:reset-default-evaluation-context
+   #:namespace-value-cell
+   #:namespace-function-cell
+   #:lookup-variable
+   #:set-variable
+   #:lookup-function
+   #:set-function
+   #:push-dynamic-frame
+   #:pop-dynamic-frame
+   #:bind-dynamic-variable
    #:autolisp-current-directory
    #:set-autolisp-current-directory
    #:autolisp-support-paths
@@ -109,6 +147,15 @@
    #:make-autolisp-string
    #:make-autolisp-subr
    #:make-autolisp-symbol
+   #:make-blackboard-namespace
+   #:make-document-namespace
+   #:make-dynamic-binding
+   #:make-dynamic-frame
+   #:make-evaluation-context
+   #:make-function-cell
+   #:make-runtime-session
+   #:make-separate-vlx-namespace
+   #:make-value-cell
    #:make-autolisp-usubr
    #:make-autolisp-variant
    #:make-autolisp-vla-object))

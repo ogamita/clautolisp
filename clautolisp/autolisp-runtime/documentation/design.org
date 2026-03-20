@@ -56,11 +56,19 @@ Initial structure responsibilities:
 
 - canonical symbol name,
 - optional original reader spelling,
-- future value-cell and function-cell storage,
 - future property data,
 - identity independent from Common Lisp packages.
 
 Symbols are interned in a dedicated runtime symbol table.
+
+Formal design rule:
+
+- an AutoLISP symbol is an identity of name, not a container for namespace-local
+  value or function cells,
+- value and function bindings are attached to namespaces and dynamic frames,
+  not to the symbol object itself,
+- the same symbol object may therefore appear in multiple namespaces and in
+  dynamic variable bindings without carrying those bindings internally.
 
 ** String
 AutoLISP strings use a wrapper around a Common Lisp ~string~.
@@ -159,6 +167,165 @@ Initial mapping rules:
 Comment objects and concrete-syntax-only objects do not enter ordinary runtime
 mapping.
 
+* Formal Environment Model
+This section records the first formal environment model for ~clautolisp~.
+
+It is intentionally conservative and tracks only what is justified by the
+current AutoLISP / Visual LISP specification corpus.
+
+** Core Entities
+The runtime environment model is built from the following distinct entity
+classes:
+
+- ~autolisp-symbol~
+  name identity only
+- ~value-cell~
+  a storage location for a variable value plus bound/unbound state
+- ~function-cell~
+  a storage location for a callable binding plus defined/undefined state
+- ~namespace~
+  a mapping from symbols to value cells and/or function cells
+- ~dynamic-frame~
+  a temporary mapping from symbols to variable bindings active during
+  evaluation
+- ~evaluation-context~
+  the current session, current document, current namespace, and active dynamic
+  frames used to evaluate a form
+
+** Symbol Rule
+An ~autolisp-symbol~ denotes only a name identity.
+
+It does *not* contain:
+
+- a current variable value,
+- a current function definition,
+- any namespace-local binding state.
+
+Consequently:
+
+- the same symbol object may be referenced by multiple document namespaces,
+- the same symbol object may be temporarily rebound in a dynamic frame,
+- modifying a binding updates a cell in a namespace or frame, not the symbol
+  object itself.
+
+** Namespaces
+At least the following namespace classes are required by the current
+specification corpus:
+
+- *document namespace*
+  namespace associated with a drawing/document
+- *blackboard namespace*
+  shared namespace used for inter-document communication
+- *separate VLX namespace*
+  namespace used by a separate-namespace VLX application
+
+Each document namespace contains at least:
+
+- a mapping from symbols to value cells,
+- a mapping from symbols to function cells.
+
+The blackboard namespace contains at least:
+
+- a mapping from symbols to value cells.
+
+The separate VLX namespace contains at least:
+
+- a mapping from symbols to function cells,
+- and possibly a mapping from symbols to value cells where required by the
+  namespace functions.
+
+The exact completeness rules for VLX namespaces remain under-specified and must
+be refined against Autodesk and BricsCAD behavior.
+
+** Dynamic Frames
+Dynamic frames are used for temporary *variable* bindings created during
+evaluation.
+
+Current design rule:
+
+- dynamic frames affect variable lookup only,
+- dynamic frames do *not* currently provide an independent dynamic function
+  binding layer,
+- no separate function-binding stack shall be assumed unless required by later
+  specification evidence.
+
+Therefore, the current model does *not* postulate an AutoLISP analogue of a
+dynamic ~flet~ environment by default.
+
+** Current Namespace and Current Document
+The evaluation context contains at least:
+
+- the current session,
+- the current document,
+- the current namespace of evaluation,
+- the active dynamic-frame stack.
+
+The *current document* is modeled as dynamic execution context supplied by the
+host entry point, not as a lexical binding.
+
+Provisional rule:
+
+- when the host invokes AutoLISP evaluation for a given drawing, it establishes
+  the current document in the evaluation context,
+- ordinary function calls inherit that current document,
+- only host-driven document switches or explicit namespace-transfer mechanisms
+  may change it.
+
+The exact host rules that determine the current document at callback and
+cross-namespace boundaries remain under-specified and must be documented
+separately as the host layer is designed.
+
+The *current namespace* is the namespace whose ordinary variable and function
+cells are used by default for evaluation.
+
+Provisional rule:
+
+- in ordinary document-scoped evaluation, the current namespace is the current
+  document namespace,
+- in separate-namespace VLX evaluation, the current namespace may be a VLX
+  namespace distinct from the current document namespace,
+- explicit namespace functions such as ~vl-doc-ref~, ~vl-doc-set~, ~vl-bb-ref~,
+  ~vl-bb-set~, ~vl-doc-export~, and ~vl-doc-import~ cross these default
+  boundaries explicitly.
+
+** Lookup Semantics
+For variable lookup of a symbol ~s~:
+
+1. search the active dynamic frames from innermost to outermost,
+2. otherwise use the value cell of ~s~ in the current namespace,
+3. otherwise, for explicit namespace functions only, use the designated target
+   namespace,
+4. otherwise treat the variable as unbound.
+
+For function lookup of a symbol ~s~:
+
+1. use the function cell of ~s~ in the current namespace,
+2. otherwise consult any explicit namespace import/export mechanism that the
+   current namespace model provides,
+3. otherwise treat the function as undefined.
+
+This document does not yet define implicit fallback from one namespace class to
+another during ordinary function lookup.
+
+** Update Semantics
+The following are the current design rules:
+
+- ~setq~ updates a dynamic variable binding if one exists for the symbol in the
+  active frame stack; otherwise it updates the value cell in the current
+  namespace,
+- ~defun~ updates the function cell of the symbol in the current namespace,
+- ~set-symbol-function~ updates the function cell of the symbol in the current
+  namespace,
+- ~vl-doc-set~ updates a value cell in a document namespace designated by the
+  namespace operation,
+- ~vl-bb-set~ updates a value cell in the blackboard namespace,
+- ~vl-propagate~ copies a variable value across document namespaces according to
+  the documented session-wide propagation semantics.
+
+The interaction between ~defun~, separate-namespace VLX code, and
+~vl-doc-export~ / ~vl-doc-import~ remains a namespace-design task rather than a
+core symbol-design task.
+
 * Initial Runtime Type Set
 This first runtime module should account for at least the spec-visible types:
 
@@ -188,6 +355,10 @@ The following remain open:
 - how ~T~ is bootstrapped and whether it is interned eagerly,
 - how builtin functions and user functions differ structurally,
 - how host adapters attach lifecycle and validity checks to wrapped objects.
+- the exact operational rules by which host callbacks determine the current
+  document and current namespace at entry,
+- the exact semantics of separate-namespace VLX imports, exports, and calling
+  contexts relative to document namespaces.
 - the exact runtime object that holds current-directory and path-resolution
   state before the host API module is introduced.
 - the exact pathname-resolution algorithm to implement once the specification
