@@ -5,7 +5,9 @@
     "+" "-" "*" "/" "1+" "1-" "MAX" "MIN" "REM" "GCD" "LCM" "~" "LOGAND"
     "LOGIOR" "LSH" "STRCAT" "STRLEN" "SUBSTR" "ASCII" "CHR"
     "OPEN" "CLOSE" "READ-LINE" "READ-CHAR" "WRITE-LINE" "WRITE-CHAR"
-    "FINDFILE" "FINDTRUSTEDFILE"
+    "FINDFILE" "FINDTRUSTEDFILE" "VL-DIRECTORY-FILES" "VL-FILE-DIRECTORY-P"
+    "VL-FILENAME-BASE" "VL-FILENAME-DIRECTORY" "VL-FILENAME-EXTENSION"
+    "VL-FILE-DELETE" "VL-FILE-RENAME" "VL-FILE-SIZE" "VL-MKDIR"
     "BOUNDP" "CAR" "CDR" "CONS" "LIST" "APPEND" "ASSOC" "LENGTH" "NTH"
     "REVERSE" "LAST" "MEMBER" "SUBST" "LISTP" "VL-CONSP" "VL-LIST*"
     "NUMBERP" "=" "/=" "<" "<=" ">" ">=" "ABS" "FIX" "FLOAT" "ZEROP"
@@ -186,6 +188,96 @@
                (located (probe-file candidate)))
           (when located
             (return (namestring located))))))))
+
+(defun resolve-directory-pathname (directory-string operator-name)
+  (let ((normalized (normalize-path-string directory-string)))
+    (handler-case
+        (uiop:ensure-directory-pathname
+         (if (absolute-path-string-p normalized)
+             (pathname normalized)
+             (merge-pathnames normalized
+                              (pathname (autolisp-current-directory)))))
+      (error ()
+        (error "~A expects a valid directory pathname, got ~S."
+               operator-name directory-string)))))
+
+(defun pathname-entry-name (pathname directoryp)
+  (if directoryp
+      (let* ((components (pathname-directory (uiop:ensure-directory-pathname pathname)))
+             (last-component (car (last components))))
+        (etypecase last-component
+          (string last-component)
+          (symbol (string last-component))))
+      (file-namestring pathname)))
+
+(defun wildcard-char= (pattern-char candidate-char)
+  (char-equal pattern-char candidate-char))
+
+(defun wildcard-match-p (pattern string)
+  (labels ((match (pattern-index string-index)
+             (cond
+               ((= pattern-index (length pattern))
+                (= string-index (length string)))
+               ((char= #\* (char pattern pattern-index))
+                (or (match (1+ pattern-index) string-index)
+                    (and (< string-index (length string))
+                         (match pattern-index (1+ string-index)))))
+               ((char= #\? (char pattern pattern-index))
+                (and (< string-index (length string))
+                     (match (1+ pattern-index) (1+ string-index))))
+               ((< string-index (length string))
+                (and (wildcard-char= (char pattern pattern-index)
+                                     (char string string-index))
+                     (match (1+ pattern-index) (1+ string-index))))
+               (t
+                nil))))
+    (match 0 0)))
+
+(defun normalized-directory-pattern (pattern)
+  (let ((value (normalize-path-string pattern)))
+    (if (string= value "*.*")
+        "*"
+        value)))
+
+(defun directory-selector-kind (directories)
+  (let ((selector (if (null directories)
+                      1
+                      (require-int32 directories "VL-DIRECTORY-FILES"))))
+    (cond
+      ((= selector -1) :directories)
+      ((= selector 0) :both)
+      ((= selector 1) :files)
+      (t
+       (error "VL-DIRECTORY-FILES selector must be -1, 0, or 1, got ~S."
+              directories)))))
+
+(defun collect-directory-entries (directory selector pattern)
+  (let ((results '()))
+    (flet ((maybe-add (pathname directoryp)
+             (let ((name (pathname-entry-name pathname directoryp)))
+               (when (wildcard-match-p pattern name)
+                 (push (make-autolisp-string name) results)))))
+      (when (member selector '(:files :both))
+        (dolist (pathname (uiop:directory-files directory))
+          (maybe-add pathname nil)))
+      (when (member selector '(:directories :both))
+        (dolist (pathname (uiop:subdirectories directory))
+          (maybe-add pathname t))))
+    (nreverse results)))
+
+(defun split-filename-components (filename)
+  (let* ((normalized (normalize-path-string filename))
+         (last-separator (position #\/ normalized :from-end t))
+         (directory (if last-separator
+                        (subseq normalized 0 last-separator)
+                        ""))
+         (leaf (if last-separator
+                   (subseq normalized (1+ last-separator))
+                   normalized))
+         (dot-position (position #\. leaf :from-end t)))
+    (values directory
+            leaf
+            (and dot-position (> dot-position 0) dot-position))))
 
 (defun open-direction-and-options (mode)
   (cond
@@ -385,6 +477,128 @@
         (make-autolisp-string located)
         nil)))
 
+(defun builtin-vl-directory-files (&optional directory pattern directories)
+  (let* ((directory-value (if directory
+                              (autolisp-string-value
+                               (require-string directory "VL-DIRECTORY-FILES"))
+                              (autolisp-current-directory)))
+         (pattern-value (if pattern
+                            (autolisp-string-value
+                             (require-string pattern "VL-DIRECTORY-FILES"))
+                            "*.*"))
+         (resolved-directory (resolve-directory-pathname directory-value
+                                                        "VL-DIRECTORY-FILES"))
+         (selector (directory-selector-kind directories)))
+    (handler-case
+        (if (uiop:directory-exists-p resolved-directory)
+            (let ((results (collect-directory-entries
+                            resolved-directory
+                            selector
+                            (normalized-directory-pattern pattern-value))))
+              (if results
+                  results
+                  nil))
+            nil)
+      (file-error ()
+        nil))))
+
+(defun builtin-vl-file-directory-p (filename)
+  (let* ((value (autolisp-string-value
+                 (require-string filename "VL-FILE-DIRECTORY-P")))
+         (resolved (resolve-open-pathname value)))
+    (if (uiop:directory-exists-p resolved)
+        (intern-autolisp-symbol "T")
+        nil)))
+
+(defun builtin-vl-filename-base (filename)
+  (multiple-value-bind (directory leaf dot-position)
+      (split-filename-components
+       (autolisp-string-value
+        (require-string filename "VL-FILENAME-BASE")))
+    (declare (ignore directory))
+    (make-autolisp-string
+     (if dot-position
+         (subseq leaf 0 dot-position)
+         leaf))))
+
+(defun builtin-vl-filename-directory (filename)
+  (multiple-value-bind (directory leaf dot-position)
+      (split-filename-components
+       (autolisp-string-value
+        (require-string filename "VL-FILENAME-DIRECTORY")))
+    (declare (ignore leaf dot-position))
+    (make-autolisp-string directory)))
+
+(defun builtin-vl-filename-extension (filename)
+  (multiple-value-bind (directory leaf dot-position)
+      (split-filename-components
+       (autolisp-string-value
+        (require-string filename "VL-FILENAME-EXTENSION")))
+    (declare (ignore directory))
+    (if dot-position
+        (make-autolisp-string (subseq leaf dot-position))
+        nil)))
+
+(defun builtin-vl-file-delete (filename)
+  (let* ((value (autolisp-string-value
+                 (require-string filename "VL-FILE-DELETE")))
+         (resolved (resolve-open-pathname value)))
+    (handler-case
+        (progn
+          (delete-file resolved)
+          (intern-autolisp-symbol "T"))
+      (file-error ()
+        nil))))
+
+(defun builtin-vl-file-rename (old-filename new-filename)
+  (let* ((old-value (autolisp-string-value
+                     (require-string old-filename "VL-FILE-RENAME")))
+         (new-value (autolisp-string-value
+                     (require-string new-filename "VL-FILE-RENAME")))
+         (old-path (resolve-open-pathname old-value))
+         (new-path (resolve-open-pathname new-value)))
+    (handler-case
+        (if (probe-file new-path)
+            nil
+            (progn
+              (rename-file old-path new-path)
+              (intern-autolisp-symbol "T")))
+      (file-error ()
+        nil))))
+
+(defun builtin-vl-file-size (filename)
+  (let* ((value (autolisp-string-value
+                 (require-string filename "VL-FILE-SIZE")))
+         (resolved (resolve-open-pathname value)))
+    (cond
+      ((uiop:directory-exists-p resolved)
+       0)
+      ((not (probe-file resolved))
+       nil)
+      (t
+       (handler-case
+           (with-open-file (stream resolved
+                                   :direction :input
+                                   :element-type '(unsigned-byte 8))
+             (file-length stream))
+         (file-error ()
+           nil))))))
+
+(defun builtin-vl-mkdir (directoryname)
+  (let* ((value (autolisp-string-value
+                 (require-string directoryname "VL-MKDIR")))
+         (resolved (resolve-directory-pathname value "VL-MKDIR")))
+    (if (uiop:directory-exists-p resolved)
+        nil
+        (handler-case
+            (progn
+              (ensure-directories-exist resolved)
+              (if (uiop:directory-exists-p resolved)
+                  (intern-autolisp-symbol "T")
+                  nil))
+          (file-error ()
+            nil)))))
+
 (defun builtin-close (file)
   (close-autolisp-file (require-file file "CLOSE")))
 
@@ -551,6 +765,15 @@
    (make-autolisp-subr "WRITE-CHAR" #'builtin-write-char)
    (make-autolisp-subr "FINDFILE" #'builtin-findfile)
    (make-autolisp-subr "FINDTRUSTEDFILE" #'builtin-findtrustedfile)
+   (make-autolisp-subr "VL-DIRECTORY-FILES" #'builtin-vl-directory-files)
+   (make-autolisp-subr "VL-FILE-DIRECTORY-P" #'builtin-vl-file-directory-p)
+   (make-autolisp-subr "VL-FILENAME-BASE" #'builtin-vl-filename-base)
+   (make-autolisp-subr "VL-FILENAME-DIRECTORY" #'builtin-vl-filename-directory)
+   (make-autolisp-subr "VL-FILENAME-EXTENSION" #'builtin-vl-filename-extension)
+   (make-autolisp-subr "VL-FILE-DELETE" #'builtin-vl-file-delete)
+   (make-autolisp-subr "VL-FILE-RENAME" #'builtin-vl-file-rename)
+   (make-autolisp-subr "VL-FILE-SIZE" #'builtin-vl-file-size)
+   (make-autolisp-subr "VL-MKDIR" #'builtin-vl-mkdir)
    (make-autolisp-subr "BOUNDP" #'builtin-boundp)
    (make-autolisp-subr "CAR" #'builtin-car)
    (make-autolisp-subr "CDR" #'builtin-cdr)

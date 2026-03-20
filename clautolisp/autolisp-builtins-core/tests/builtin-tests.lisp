@@ -349,3 +349,138 @@
     (ignore-errors (delete-file path))
     (ignore-errors (delete-file trusted-path))
     (ignore-errors (delete-file directory))))
+
+(test builtin-vl-directory-and-filename-helpers
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((directory-files-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-DIRECTORY-FILES")))
+         (file-directory-p-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-FILE-DIRECTORY-P")))
+         (filename-base-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-FILENAME-BASE")))
+         (filename-directory-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-FILENAME-DIRECTORY")))
+         (filename-extension-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-FILENAME-EXTENSION")))
+         (directory (format nil "/tmp/clautolisp-builtins-core-dir-~D/" (random 1000000000)))
+         (subdirectory (concatenate 'string directory "subdir/"))
+         (file-path (concatenate 'string directory "alpha.lsp"))
+         (other-file-path (concatenate 'string directory "README"))
+         (pattern-string (clautolisp.autolisp-runtime:make-autolisp-string "*.lsp")))
+    (ensure-directories-exist subdirectory)
+    (with-open-file (stream file-path
+                            :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create)
+      (write-line "alpha" stream))
+    (with-open-file (stream other-file-path
+                            :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create)
+      (write-line "readme" stream))
+    (set-autolisp-current-directory directory)
+    (let ((all-results (call-autolisp-function directory-files-fn))
+          (file-results (call-autolisp-function directory-files-fn nil pattern-string 1))
+          (directory-results (call-autolisp-function directory-files-fn nil nil -1)))
+      (is (equal '("README" "alpha.lsp")
+                 (sort (mapcar #'autolisp-string-value all-results) #'string<)))
+      (is (equal '("alpha.lsp")
+                 (mapcar #'autolisp-string-value file-results)))
+      (is (equal '("subdir")
+                 (mapcar #'autolisp-string-value directory-results))))
+    (is (string= "T"
+                 (autolisp-symbol-name
+                  (call-autolisp-function file-directory-p-fn
+                                          (clautolisp.autolisp-runtime:make-autolisp-string subdirectory)))))
+    (is (null
+         (call-autolisp-function file-directory-p-fn
+                                 (clautolisp.autolisp-runtime:make-autolisp-string file-path))))
+    (is (string= "alpha"
+                 (autolisp-string-value
+                  (call-autolisp-function filename-base-fn
+                                          (clautolisp.autolisp-runtime:make-autolisp-string
+                                           "dir\\alpha.lsp")))))
+    (is (string= "dir"
+                 (autolisp-string-value
+                  (call-autolisp-function filename-directory-fn
+                                          (clautolisp.autolisp-runtime:make-autolisp-string
+                                           "dir\\alpha.lsp")))))
+    (let ((extension
+            (call-autolisp-function filename-extension-fn
+                                    (clautolisp.autolisp-runtime:make-autolisp-string
+                                     "dir/alpha.lsp"))))
+      (is (typep extension 'autolisp-string))
+      (is (string= ".lsp" (autolisp-string-value extension))))
+    (is (null
+         (call-autolisp-function filename-extension-fn
+                                 (clautolisp.autolisp-runtime:make-autolisp-string
+                                  "dir/README"))))
+    (is (string= ""
+                 (autolisp-string-value
+                  (call-autolisp-function filename-directory-fn
+                                          (clautolisp.autolisp-runtime:make-autolisp-string
+                                           "alpha.lsp")))))
+    (ignore-errors (delete-file file-path))
+    (ignore-errors (delete-file other-file-path))
+    (ignore-errors (delete-file subdirectory))
+    (ignore-errors (delete-file directory))))
+
+(test builtin-vl-file-mutation-and-size-helpers
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((file-delete-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-FILE-DELETE")))
+         (file-rename-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-FILE-RENAME")))
+         (file-size-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-FILE-SIZE")))
+         (mkdir-fn
+           (autolisp-symbol-function (find-autolisp-symbol "VL-MKDIR")))
+         (directory (format nil "/tmp/clautolisp-builtins-core-file-~D/" (random 1000000000)))
+         (subdirectory (concatenate 'string directory "created/"))
+         (old-path (concatenate 'string directory "before.txt"))
+         (new-path (concatenate 'string directory "after.txt")))
+    (ensure-directories-exist directory)
+    (with-open-file (stream old-path
+                            :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create)
+      (write-string "ABCD" stream))
+    (is (= 4
+           (call-autolisp-function file-size-fn
+                                   (clautolisp.autolisp-runtime:make-autolisp-string old-path))))
+    (is (= 0
+           (call-autolisp-function file-size-fn
+                                   (clautolisp.autolisp-runtime:make-autolisp-string directory))))
+    (is (null
+         (call-autolisp-function file-size-fn
+                                 (clautolisp.autolisp-runtime:make-autolisp-string
+                                  (concatenate 'string directory "missing.txt")))))
+    (is (string= "T"
+                 (autolisp-symbol-name
+                  (call-autolisp-function mkdir-fn
+                                          (clautolisp.autolisp-runtime:make-autolisp-string
+                                           subdirectory)))))
+    (is (null
+         (call-autolisp-function mkdir-fn
+                                 (clautolisp.autolisp-runtime:make-autolisp-string
+                                  subdirectory))))
+    (is (string= "T"
+                 (autolisp-symbol-name
+                  (call-autolisp-function file-rename-fn
+                                          (clautolisp.autolisp-runtime:make-autolisp-string old-path)
+                                          (clautolisp.autolisp-runtime:make-autolisp-string new-path)))))
+    (is (null (probe-file old-path)))
+    (is (probe-file new-path))
+    (is (string= "T"
+                 (autolisp-symbol-name
+                  (call-autolisp-function file-delete-fn
+                                          (clautolisp.autolisp-runtime:make-autolisp-string new-path)))))
+    (is (null
+         (call-autolisp-function file-delete-fn
+                                 (clautolisp.autolisp-runtime:make-autolisp-string new-path))))
+    (ignore-errors (delete-file old-path))
+    (ignore-errors (delete-file new-path))
+    (ignore-errors (delete-file subdirectory))
+    (ignore-errors (delete-file directory))))
