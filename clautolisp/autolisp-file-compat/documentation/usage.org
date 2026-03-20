@@ -40,6 +40,15 @@ The current corpus includes families such as:
 - ~printers/~
 - ~streams/~
 
+The current stream/printer corpus specifically includes:
+
+- write/read-line roundtrips,
+- append and successive EOF checks,
+- write-char/read-char sequences,
+- explicit ~OPEN~ encoding arguments such as ~"utf-8"~,
+- negative open-for-read cases on missing files,
+- file-targeted printer output and printer-to-~READ~ roundtrips.
+
 * Scenario Kinds
 There are currently two scenario kinds.
 
