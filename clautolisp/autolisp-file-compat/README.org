@@ -17,10 +17,18 @@ The initial implementation provides:
 - a portable local runner for byte/text file round-trips,
 - byte, text, and line-oriented comparison helpers,
 - artifact capture suitable for later report emission,
-- declarative scenario files under =scenarios/=,
+- declarative scenario files under =scenarios/=, including nested newline and
+  encoding scenario directories,
 - a command-line driver under =tools/run-file-compat/=,
-- machine-readable report emission in s-expression or JSON form,
+- machine-readable report emission in s-expression or JSON form, with aggregate
+  summary counts,
 - SBCL and CCL runner modes through the wrapper script.
+
+The current driver can also:
+
+- collect scenario files recursively from scenario directories,
+- filter runs by classification,
+- filter runs by one or more scenario tags.
 
 See:
 

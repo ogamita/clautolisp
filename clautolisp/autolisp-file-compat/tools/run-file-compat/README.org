@@ -22,5 +22,19 @@ Supported report formats:
 - =sexp=
 - =json=
 
+Additional filters and output controls:
+
+- =--classification=
+- =--tag=
+- =--output=
+
+The tool accepts either individual scenario files or scenario directories. When
+given a directory, it collects =.sexp= files recursively.
+
+The emitted result is now a top-level report object with:
+
+- =:summary= aggregate scenario and check counts,
+- =:reports= the individual scenario reports.
+
 The current runner modes share the same local scenario execution logic and differ
 mainly in the Lisp implementation used to execute the harness.

@@ -65,8 +65,9 @@
   path)
 
 (defun split-lines (text)
-  (let ((lines '()))
-    (with-input-from-string (stream text)
+  (let ((lines '())
+        (normalized (normalize-newlines text :lf)))
+    (with-input-from-string (stream normalized)
       (loop for line = (read-line stream nil nil)
             while line
             do (push line lines)))
@@ -87,17 +88,48 @@
     (t
      (error "Invalid scenario byte payload ~S." value))))
 
+(defun normalize-classification (value)
+  (let ((classification (or value :portable)))
+    (unless (member classification '(:portable
+                                     :implementation-sensitive
+                                     :host-sensitive
+                                     :product-sensitive
+                                     :unknown))
+      (error "Invalid scenario classification ~S." classification))
+    classification))
+
+(defun normalize-tags (value)
+  (cond
+    ((null value)
+     '())
+    ((listp value)
+     value)
+    (t
+     (error "Invalid scenario tags ~S." value))))
+
+(defun normalize-lines (value)
+  (cond
+    ((null value)
+     '())
+    ((listp value)
+     value)
+    (t
+     (error "Invalid expected line list ~S." value))))
+
 (defun plist->scenario (plist &key root)
   (make-file-compat-scenario
    :name (or (getf plist :name) "")
    :description (or (getf plist :description) "")
    :root (or root (getf plist :root) "./")
    :relative-path (or (getf plist :relative-path) "")
+   :classification (normalize-classification (getf plist :classification))
+   :tags (normalize-tags (getf plist :tags))
    :external-format (or (getf plist :external-format) :default)
    :newline-mode (or (getf plist :newline-mode) :lf)
    :input-text (getf plist :input-text)
    :input-bytes (normalize-scenario-bytes (getf plist :input-bytes))
    :expected-text (getf plist :expected-text)
+   :expected-lines (normalize-lines (getf plist :expected-lines))
    :expected-bytes (normalize-scenario-bytes (getf plist :expected-bytes))))
 
 (defun load-scenario-file (path)
@@ -122,14 +154,27 @@
         :description (file-compat-scenario-description scenario)
         :root (file-compat-scenario-root scenario)
         :relative-path (file-compat-scenario-relative-path scenario)
+        :classification (file-compat-scenario-classification scenario)
+        :tags (mapcar (lambda (tag)
+                        (string-downcase (symbol-name tag)))
+                      (file-compat-scenario-tags scenario))
         :external-format (file-compat-scenario-external-format scenario)
         :newline-mode (file-compat-scenario-newline-mode scenario)
         :input-text (file-compat-scenario-input-text scenario)
         :input-bytes (when (file-compat-scenario-input-bytes scenario)
                        (coerce (file-compat-scenario-input-bytes scenario) 'list))
         :expected-text (file-compat-scenario-expected-text scenario)
+        :expected-lines (file-compat-scenario-expected-lines scenario)
         :expected-bytes (when (file-compat-scenario-expected-bytes scenario)
                           (coerce (file-compat-scenario-expected-bytes scenario) 'list))))
+
+(defun summary->plist (summary)
+  (list :total-scenarios (file-compat-summary-total-scenarios summary)
+        :passed-scenarios (file-compat-summary-passed-scenarios summary)
+        :failed-scenarios (file-compat-summary-failed-scenarios summary)
+        :total-checks (file-compat-summary-total-checks summary)
+        :passed-checks (file-compat-summary-passed-checks summary)
+        :failed-checks (file-compat-summary-failed-checks summary)))
 
 (defun check->plist (check)
   (list :name (file-compat-check-name check)
@@ -147,6 +192,53 @@
         :scenario (scenario->plist (file-compat-report-scenario report))
         :checks (mapcar #'check->plist (file-compat-report-checks report))
         :artifact (artifact->plist (file-compat-report-artifact report))))
+
+(defun report-passed-p (report)
+  (every #'file-compat-check-passed-p
+         (file-compat-report-checks report)))
+
+(defun summarize-reports (reports)
+  (let ((total-scenarios (length reports))
+        (passed-scenarios 0)
+        (failed-scenarios 0)
+        (total-checks 0)
+        (passed-checks 0)
+        (failed-checks 0))
+    (dolist (report reports)
+      (if (report-passed-p report)
+          (incf passed-scenarios)
+          (incf failed-scenarios))
+      (incf total-checks (length (file-compat-report-checks report)))
+      (dolist (check (file-compat-report-checks report))
+        (if (file-compat-check-passed-p check)
+            (incf passed-checks)
+            (incf failed-checks))))
+    (make-file-compat-summary
+     :total-scenarios total-scenarios
+     :passed-scenarios passed-scenarios
+     :failed-scenarios failed-scenarios
+     :total-checks total-checks
+     :passed-checks passed-checks
+     :failed-checks failed-checks)))
+
+(defun scenario-matches-tags-p (scenario required-tags)
+  (or (null required-tags)
+      (let ((available-tags (file-compat-scenario-tags scenario)))
+        (every (lambda (tag)
+                 (member tag available-tags))
+               required-tags))))
+
+(defun %collect-scenario-file-paths (directory)
+  (append (sort (mapcar #'namestring
+                        (directory (merge-pathnames "*.sexp" directory)))
+                #'string<)
+          (loop for child in (uiop:subdirectories directory)
+                append (%collect-scenario-file-paths child))))
+
+(defun collect-scenario-file-paths (path)
+  (if (uiop:directory-exists-p path)
+      (%collect-scenario-file-paths (uiop:ensure-directory-pathname path))
+      (list path)))
 
 (defun json-escape-string (string)
   (with-output-to-string (out)
@@ -220,12 +312,17 @@
        report))))
 
 (defun capture-file-artifact (path &key (external-format :default))
-  (let ((text (read-file-text path :external-format external-format)))
+  (let ((text (handler-case
+                  (read-file-text path :external-format external-format)
+                (error ()
+                  nil))))
     (make-file-compat-artifact
      :path path
      :bytes (read-file-bytes path)
      :text text
-     :lines (split-lines text))))
+     :lines (if text
+                (split-lines text)
+                '()))))
 
 (defun compare-bytes (expected actual)
   (make-file-compat-check
@@ -279,7 +376,13 @@
       (when (file-compat-scenario-expected-text scenario)
         (push (compare-text (file-compat-scenario-expected-text scenario)
                             (file-compat-artifact-text artifact))
-              checks)
+              checks))
+      (when (file-compat-scenario-expected-lines scenario)
+        (push (compare-lines (file-compat-scenario-expected-lines scenario)
+                             (file-compat-artifact-lines artifact))
+              checks))
+      (when (and (null (file-compat-scenario-expected-lines scenario))
+                 (file-compat-scenario-expected-text scenario))
         (push (compare-lines (split-lines (file-compat-scenario-expected-text scenario))
                              (file-compat-artifact-lines artifact))
               checks))

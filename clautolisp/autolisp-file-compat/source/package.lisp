@@ -7,11 +7,14 @@
    #:file-compat-scenario-description
    #:file-compat-scenario-root
    #:file-compat-scenario-relative-path
+   #:file-compat-scenario-classification
+   #:file-compat-scenario-tags
    #:file-compat-scenario-external-format
    #:file-compat-scenario-newline-mode
    #:file-compat-scenario-input-text
    #:file-compat-scenario-input-bytes
    #:file-compat-scenario-expected-text
+   #:file-compat-scenario-expected-lines
    #:file-compat-scenario-expected-bytes
    #:file-compat-artifact
    #:make-file-compat-artifact
@@ -30,9 +33,18 @@
    #:file-compat-report-runner
    #:file-compat-report-checks
    #:file-compat-report-artifact
+   #:file-compat-summary
+   #:make-file-compat-summary
+   #:file-compat-summary-total-scenarios
+   #:file-compat-summary-passed-scenarios
+   #:file-compat-summary-failed-scenarios
+   #:file-compat-summary-total-checks
+   #:file-compat-summary-passed-checks
+   #:file-compat-summary-failed-checks
    #:load-scenario-file
    #:scenario->plist
    #:report->plist
+   #:summary->plist
    #:normalize-newlines
    #:read-file-bytes
    #:write-file-bytes
@@ -42,6 +54,11 @@
    #:compare-bytes
    #:compare-text
    #:compare-lines
+   #:report-passed-p
+   #:summarize-reports
+   #:scenario-matches-tags-p
+   #:collect-scenario-file-paths
+   #:emit-json-value
    #:emit-report
    #:run-local-roundtrip-scenario
    #:run-scenario))
