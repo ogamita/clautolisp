@@ -61,6 +61,8 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [ ] Implement the first numeric, list, equality, string, and file-related builtins beyond the current predicate/introspection set.
 - [ ] Keep ordinary builtins and evaluator-owned special operators separated as the callable surface expands.
 - [ ] Define the abstract host API.
+- [ ] Derive the AutoLISP pathname-resolution algorithm from the spec and compatibility corpus.
+- [ ] Define explicit path-resolution state for relative AutoLISP pathnames instead of inheriting Common Lisp pathname merging.
 - [ ] Build a deterministic mock host.
 - [ ] Add snapshot and diff support for host-facing regression tests.
 - [ ] Add initial dialect and host-profile selection plumbing shared by reader and runtime.

@@ -1,6 +1,10 @@
 (in-package #:clautolisp.autolisp-runtime.internal)
 
 (defparameter *autolisp-symbol-table* (make-hash-table :test #'equal))
+(defparameter *autolisp-current-directory*
+  (namestring (uiop:ensure-directory-pathname (truename "."))))
+(defparameter *autolisp-support-paths* (list *autolisp-current-directory*))
+(defparameter *autolisp-trusted-paths* '())
 
 (defstruct autolisp-symbol
   (name "" :type string)

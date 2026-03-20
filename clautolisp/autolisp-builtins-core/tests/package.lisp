@@ -12,7 +12,9 @@
                 #:find-core-builtin
                 #:install-core-builtins)
   (:import-from #:clautolisp.autolisp-runtime
+                #:autolisp-file
                 #:autolisp-string
+                #:make-autolisp-string
                 #:autolisp-string-value
                 #:autolisp-subr
                 #:autolisp-subr-name
@@ -21,6 +23,9 @@
                 #:autolisp-symbol-name
                 #:set-autolisp-symbol-value
                 #:call-autolisp-function
+                #:set-autolisp-current-directory
+                #:set-autolisp-support-paths
+                #:set-autolisp-trusted-paths
                 #:find-autolisp-symbol
                 #:intern-autolisp-symbol
                 #:reset-autolisp-symbol-table)

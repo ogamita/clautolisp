@@ -18,6 +18,7 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [x] Keep AutoLISP symbols distinct from Common Lisp symbols.
 - [x] Define wrapper structures for strings and host-managed runtime objects.
 - [x] Define reader-to-runtime mapping for literals and quoted forms.
+- [x] Record the design rule that AutoLISP pathnames remain strings while path resolution stays in explicit runtime / host state.
 - [ ] Decide which source metadata, if any, survives into runtime objects.
 
 ## Symbol and Environment Tasks
@@ -42,3 +43,5 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [ ] Integrate the runtime object model with `autolisp-builtins-core`.
 - [ ] Add runtime tests for additional spec-defined host-visible types.
 - [ ] Add evaluator-facing normalization helpers once special-operator work begins.
+- [ ] Derive the pathname-resolution algorithm from the AutoLISP specification and compatibility corpus.
+- [ ] Define the explicit path-resolution state and boundary rules needed to run that algorithm before implementing file builtins.

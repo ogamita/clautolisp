@@ -4,6 +4,8 @@
   '("TYPE" "NULL" "NOT" "ATOM" "VL-SYMBOLP" "VL-SYMBOL-NAME" "VL-SYMBOL-VALUE"
     "+" "-" "*" "/" "1+" "1-" "MAX" "MIN" "REM" "GCD" "LCM" "~" "LOGAND"
     "LOGIOR" "LSH" "STRCAT" "STRLEN" "SUBSTR" "ASCII" "CHR"
+    "OPEN" "CLOSE" "READ-LINE" "READ-CHAR" "WRITE-LINE" "WRITE-CHAR"
+    "FINDFILE" "FINDTRUSTEDFILE"
     "BOUNDP" "CAR" "CDR" "CONS" "LIST" "APPEND" "ASSOC" "LENGTH" "NTH"
     "REVERSE" "LAST" "MEMBER" "SUBST" "LISTP" "VL-CONSP" "VL-LIST*"
     "NUMBERP" "=" "/=" "<" "<=" ">" ">=" "ABS" "FIX" "FLOAT" "ZEROP"
@@ -144,6 +146,57 @@
   (unless (typep object 'autolisp-string)
     (error "~A expects an AutoLISP string, got ~S." operator-name object))
   object)
+
+(defun require-file (object operator-name)
+  (unless (typep object 'autolisp-file)
+    (error "~A expects an AutoLISP file descriptor, got ~S." operator-name object))
+  object)
+
+(defun absolute-path-string-p (string)
+  (or (uiop:absolute-pathname-p (pathname string))
+      (and (>= (length string) 2)
+           (alpha-char-p (char string 0))
+           (char= #\: (char string 1)))
+      (and (>= (length string) 2)
+           (char= #\\ (char string 0))
+           (char= #\\ (char string 1)))))
+
+(defun normalize-path-string (string)
+  ;; AutoLISP accepts both slash and backslash delimiters in pathname-oriented APIs.
+  (substitute #\/ #\\ string))
+
+(defun directory-prefix-p (string)
+  (let ((normalized (normalize-path-string string)))
+    (or (absolute-path-string-p normalized)
+        (position #\/ normalized))))
+
+(defun resolve-open-pathname (string)
+  (let ((normalized (normalize-path-string string)))
+    (if (absolute-path-string-p normalized)
+        (pathname normalized)
+        (merge-pathnames normalized
+                         (pathname (autolisp-current-directory))))))
+
+(defun search-path-list-for-file (filename directories)
+  (let ((normalized (normalize-path-string filename)))
+    (unless (directory-prefix-p normalized)
+      (dolist (directory directories nil)
+        (let* ((base (pathname directory))
+               (candidate (merge-pathnames normalized base))
+               (located (probe-file candidate)))
+          (when located
+            (return (namestring located))))))))
+
+(defun open-direction-and-options (mode)
+  (cond
+    ((string= mode "r")
+     (values :input nil nil))
+    ((string= mode "w")
+     (values :output :supersede :create))
+    ((string= mode "a")
+     (values :output :append :create))
+    (t
+     (error "OPEN mode must be one of \"r\", \"w\", or \"a\", got ~S." mode))))
 
 (defun builtin-numberp (object)
   (if (numberp object)
@@ -299,6 +352,88 @@
       (error "CHR code does not designate a valid character: ~S." code))
     (make-autolisp-string (string character))))
 
+(defun builtin-open (filename mode &optional encoding)
+  (declare (ignore encoding))
+  (let* ((path-string (autolisp-string-value (require-string filename "OPEN")))
+         (mode-string (autolisp-string-value (require-string mode "OPEN")))
+         (path (resolve-open-pathname path-string)))
+    (multiple-value-bind (direction if-exists if-does-not-exist)
+        (open-direction-and-options mode-string)
+      (handler-case
+          (let ((stream (open path
+                              :direction direction
+                              :if-exists if-exists
+                              :if-does-not-exist if-does-not-exist
+                              :external-format :default)))
+            (if stream
+                (make-autolisp-file stream path-string mode-string)
+                nil))
+        (file-error ()
+          nil)))))
+
+(defun builtin-findfile (filename)
+  (let* ((value (autolisp-string-value (require-string filename "FINDFILE")))
+         (located (search-path-list-for-file value (autolisp-support-paths))))
+    (if located
+        (make-autolisp-string located)
+        nil)))
+
+(defun builtin-findtrustedfile (filename)
+  (let* ((value (autolisp-string-value (require-string filename "FINDTRUSTEDFILE")))
+         (located (search-path-list-for-file value (autolisp-trusted-paths))))
+    (if located
+        (make-autolisp-string located)
+        nil)))
+
+(defun builtin-close (file)
+  (close-autolisp-file (require-file file "CLOSE")))
+
+(defun builtin-read-line (file)
+  (let ((stream (autolisp-file-stream (require-file file "READ-LINE"))))
+    (unless stream
+      (error "READ-LINE expects an open file descriptor."))
+    (let ((line (read-line stream nil nil)))
+      (if line
+          (make-autolisp-string line)
+          nil))))
+
+(defun builtin-read-char (&optional file)
+  (if file
+      (let ((stream (autolisp-file-stream (require-file file "READ-CHAR"))))
+        (unless stream
+          (error "READ-CHAR expects an open file descriptor."))
+        (let ((character (read-char stream nil nil)))
+          (if character
+              (char-code character)
+              nil)))
+      (error "READ-CHAR without a file descriptor is not implemented yet.")))
+
+(defun builtin-write-line (string &optional file)
+  (let ((value (autolisp-string-value (require-string string "WRITE-LINE"))))
+    (if file
+        (let ((stream (autolisp-file-stream (require-file file "WRITE-LINE"))))
+          (unless stream
+            (error "WRITE-LINE expects an open file descriptor."))
+          (write-line value stream)
+          string)
+        (progn
+          (write-line value *standard-output*)
+          string))))
+
+(defun builtin-write-char (char-code &optional file)
+  (let ((character (code-char (require-int32 char-code "WRITE-CHAR"))))
+    (unless character
+      (error "WRITE-CHAR code does not designate a valid character: ~S." char-code))
+    (if file
+        (let ((stream (autolisp-file-stream (require-file file "WRITE-CHAR"))))
+          (unless stream
+            (error "WRITE-CHAR expects an open file descriptor."))
+          (write-char character stream)
+          char-code)
+        (progn
+          (write-char character *standard-output*)
+          char-code))))
+
 (defun comparison-value (object operator-name)
   (cond
     ((numberp object)
@@ -408,6 +543,14 @@
    (make-autolisp-subr "SUBSTR" #'builtin-substr)
    (make-autolisp-subr "ASCII" #'builtin-ascii)
    (make-autolisp-subr "CHR" #'builtin-chr)
+   (make-autolisp-subr "OPEN" #'builtin-open)
+   (make-autolisp-subr "CLOSE" #'builtin-close)
+   (make-autolisp-subr "READ-LINE" #'builtin-read-line)
+   (make-autolisp-subr "READ-CHAR" #'builtin-read-char)
+   (make-autolisp-subr "WRITE-LINE" #'builtin-write-line)
+   (make-autolisp-subr "WRITE-CHAR" #'builtin-write-char)
+   (make-autolisp-subr "FINDFILE" #'builtin-findfile)
+   (make-autolisp-subr "FINDTRUSTEDFILE" #'builtin-findtrustedfile)
    (make-autolisp-subr "BOUNDP" #'builtin-boundp)
    (make-autolisp-subr "CAR" #'builtin-car)
    (make-autolisp-subr "CDR" #'builtin-cdr)

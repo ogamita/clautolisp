@@ -33,6 +33,30 @@
 (defun reset-autolisp-symbol-table ()
   (clrhash clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*))
 
+(defun normalize-directory-path (path)
+  (namestring (uiop:ensure-directory-pathname (pathname path))))
+
+(defun autolisp-current-directory ()
+  clautolisp.autolisp-runtime.internal::*autolisp-current-directory*)
+
+(defun set-autolisp-current-directory (path)
+  (setf clautolisp.autolisp-runtime.internal::*autolisp-current-directory*
+        (normalize-directory-path path)))
+
+(defun autolisp-support-paths ()
+  (copy-list clautolisp.autolisp-runtime.internal::*autolisp-support-paths*))
+
+(defun set-autolisp-support-paths (paths)
+  (setf clautolisp.autolisp-runtime.internal::*autolisp-support-paths*
+        (mapcar #'normalize-directory-path paths)))
+
+(defun autolisp-trusted-paths ()
+  (copy-list clautolisp.autolisp-runtime.internal::*autolisp-trusted-paths*))
+
+(defun set-autolisp-trusted-paths (paths)
+  (setf clautolisp.autolisp-runtime.internal::*autolisp-trusted-paths*
+        (mapcar #'normalize-directory-path paths)))
+
 (defun find-autolisp-symbol (name)
   (gethash name clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*))
 
@@ -97,11 +121,24 @@
 (defun autolisp-file-stream (object)
   (clautolisp.autolisp-runtime.internal::autolisp-file-stream object))
 
+(defun make-autolisp-file (stream path mode)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-file
+   :stream stream
+   :path path
+   :mode mode))
+
 (defun autolisp-file-path (object)
   (clautolisp.autolisp-runtime.internal::autolisp-file-path object))
 
 (defun autolisp-file-mode (object)
   (clautolisp.autolisp-runtime.internal::autolisp-file-mode object))
+
+(defun close-autolisp-file (object)
+  (let ((stream (autolisp-file-stream object)))
+    (when stream
+      (close stream))
+    (setf (clautolisp.autolisp-runtime.internal::autolisp-file-stream object) nil)
+    nil))
 
 (defun autolisp-ename-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-ename-value object))

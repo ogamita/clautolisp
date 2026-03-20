@@ -1,8 +1,14 @@
 (defpackage #:clautolisp.autolisp-builtins-core
   (:use #:cl)
   (:import-from #:clautolisp.autolisp-runtime
+                #:autolisp-file
                 #:autolisp-string
+                #:autolisp-file-stream
+                #:autolisp-current-directory
+                #:autolisp-support-paths
+                #:autolisp-trusted-paths
                 #:make-autolisp-string
+                #:make-autolisp-file
                 #:autolisp-string-value
                 #:autolisp-symbol
                 #:autolisp-symbol-name
@@ -18,6 +24,7 @@
                 #:autolisp-vl-symbol-name
                 #:autolisp-vl-symbolp
                 #:autolisp-vl-symbol-value
+                #:close-autolisp-file
                 #:intern-autolisp-symbol
                 #:make-autolisp-subr
                 #:set-autolisp-symbol-function)
