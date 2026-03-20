@@ -2,6 +2,19 @@
 
 (in-suite autolisp-file-compat-suite)
 
+(defun fresh-test-directory ()
+  (loop
+    with base = (uiop:ensure-directory-pathname (uiop:temporary-directory))
+    for attempt from 0
+    for candidate = (uiop:ensure-directory-pathname
+                     (merge-pathnames
+                      (format nil "clautolisp-file-compat-test-~36R-~36R/"
+                              (get-universal-time)
+                              attempt)
+                      base))
+    unless (probe-file candidate)
+      do (return (namestring candidate))))
+
 (test newline-normalization
   (let ((text (format nil "a~%b~%")))
     (is (string= text (normalize-newlines text :lf)))
@@ -11,7 +24,7 @@
                  (normalize-newlines text :cr)))))
 
 (test load-single-scenario-file
-  (let* ((directory (format nil "/tmp/clautolisp-file-compat-~D/" (random 1000000000)))
+  (let* ((directory (fresh-test-directory))
          (path (concatenate 'string directory "scenario.sexp")))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))
     (ensure-directories-exist path)
@@ -52,7 +65,7 @@
     (is (equal '(:bytes :binary) (file-compat-scenario-tags (second scenarios))))))
 
 (test local-roundtrip-scenario-and-report
-  (let* ((directory (format nil "/tmp/clautolisp-file-compat-~D/" (random 1000000000)))
+  (let* ((directory (fresh-test-directory))
          (scenario (make-file-compat-scenario
                     :name "roundtrip"
                     :root directory
@@ -78,7 +91,7 @@ World
     (ignore-errors (uiop:delete-directory-tree directory :validate t))))
 
 (test report-emission
-  (let* ((directory (format nil "/tmp/clautolisp-file-compat-~D/" (random 1000000000)))
+  (let* ((directory (fresh-test-directory))
          (scenario (make-file-compat-scenario
                     :name "emit"
                     :root directory
@@ -110,7 +123,7 @@ World
                  (clautolisp.autolisp-file-compat:file-compat-artifact-path artifact))))))
 
 (test report-summary
-  (let* ((directory (format nil "/tmp/clautolisp-file-compat-~D/" (random 1000000000)))
+  (let* ((directory (fresh-test-directory))
          (passing-scenario (make-file-compat-scenario
                             :name "passing"
                             :root directory
@@ -151,7 +164,7 @@ World
     (is (not (scenario-matches-tags-p scenario '(:crlf))))))
 
 (test collect-scenario-file-paths-recursively
-  (let* ((directory (format nil "/tmp/clautolisp-file-compat-~D/" (random 1000000000)))
+  (let* ((directory (fresh-test-directory))
          (nested (concatenate 'string directory "nested/"))
          (first-path (concatenate 'string directory "root.sexp"))
          (second-path (concatenate 'string nested "child.sexp")))
@@ -288,12 +301,17 @@ World
                   "autolisp-file-compat/scenarios/paths/directory-files-directories-only.sexp"
                   "autolisp-file-compat/scenarios/paths/directory-files-files-only.sexp"
                   "autolisp-file-compat/scenarios/paths/directory-files-no-match.sexp"
+                  "autolisp-file-compat/scenarios/paths/directory-files-subdir-backslash.sexp"
                   "autolisp-file-compat/scenarios/paths/file-directory-p-backslash.sexp"
+                  "autolisp-file-compat/scenarios/paths/findfile-directory-prefix.sexp"
+                  "autolisp-file-compat/scenarios/paths/findtrustedfile-directory-prefix.sexp"
                   "autolisp-file-compat/scenarios/printers/vl-prin1-to-string-basic.sexp"
                   "autolisp-file-compat/scenarios/printers/vl-princ-to-string-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/mkdir-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-append.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-directory-destination.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-copy-existing-target.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-copy-missing-source.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-delete-backslash.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-delete-missing.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-rename-basic.sexp"
