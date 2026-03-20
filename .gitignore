@@ -128,3 +128,4 @@ yarn.lock
 autolisp-spec/results/
 ~*
 bin/
+.artifacts/
