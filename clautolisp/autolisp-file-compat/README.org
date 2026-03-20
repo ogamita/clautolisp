@@ -19,6 +19,8 @@ The initial implementation provides:
   printer functions inside temporary workspaces,
 - multi-step builtin execution with step bindings for stream and file-descriptor
   workflows,
+- executable coverage for explicit `OPEN` encodings, missing-file open failures,
+  and printer-to-`READ` roundtrips through temporary files,
 - byte, text, and line-oriented comparison helpers,
 - artifact capture suitable for later report emission,
 - declarative scenario files under =scenarios/=, including nested newline and
