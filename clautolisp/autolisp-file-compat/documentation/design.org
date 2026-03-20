@@ -1,0 +1,100 @@
+#+TITLE: autolisp-file-compat Design
+
+* Purpose
+
+This module provides a dedicated compatibility-audit harness for file, stream,
+pathname, and printer behavior relevant to AutoLISP and Visual LISP.
+
+The goal is not just to run smoke tests, but to preserve enough structured
+evidence to compare:
+
+- local =clautolisp= behavior,
+- host Common Lisp behavior where it matters,
+- later real-product behavior under AutoCAD, BricsCAD, or other targets.
+
+* Design Goals
+
+- Keep file compatibility auditing separate from ordinary unit tests.
+- Capture exact bytes as well as decoded text.
+- Make newline and encoding handling explicit instead of accidental.
+- Preserve scenario metadata and result classification.
+- Support multiple runners over the same scenario corpus.
+
+* Initial Scope
+
+The first implementation supports a local runner only.
+
+That runner is responsible for:
+
+- creating a scenario workspace,
+- writing text or byte fixtures,
+- reading them back,
+- capturing byte, text, and line artifacts,
+- comparing actual and expected results,
+- producing a structured report.
+
+* Scenario Model
+
+Each scenario should eventually include:
+
+- stable name,
+- description,
+- runner identifier,
+- workspace root,
+- relative file paths,
+- encoding and newline controls,
+- steps or operations,
+- comparison expectations,
+- result classification.
+
+The first implementation keeps the executable surface small and uses simple
+round-trip scenarios with explicit expected text or bytes.
+
+* Artifact Model
+
+Each executed scenario may produce artifacts such as:
+
+- absolute path of the file under test,
+- raw bytes,
+- decoded text,
+- decoded lines,
+- metadata such as encoding and newline mode.
+
+Artifacts are part of the compatibility evidence and should be preserved in the
+report structure even when the scenario succeeds.
+
+* Comparison Model
+
+Comparisons are intentionally separated by layer:
+
+- byte comparison,
+- text comparison,
+- line comparison.
+
+This matters because some scenarios are expected to be text-equivalent while not
+being byte-equivalent, and others must match exactly at the byte level.
+
+* Classification
+
+Scenarios and checks should eventually be classifiable as:
+
+- portable,
+- implementation-sensitive,
+- host-sensitive,
+- product-sensitive,
+- unknown.
+
+The initial implementation records pass/fail status and message fields, leaving
+full policy classification to later scenario metadata.
+
+* Future Runners
+
+Planned runner kinds include:
+
+- local =clautolisp= runner,
+- SBCL helper runner,
+- CCL helper runner,
+- product runners for CAD environments.
+
+Those runners should share the same scenario and report model as much as
+possible.

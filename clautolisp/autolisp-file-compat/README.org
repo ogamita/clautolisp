@@ -1,0 +1,28 @@
+#+TITLE: autolisp-file-compat
+
+This module hosts compatibility-audit tooling for AutoLISP file, stream, and
+printer behavior.
+
+Its purpose is to support:
+
+- local compatibility scenarios against the current =clautolisp= implementation,
+- cross-implementation comparisons between SBCL and CCL host behavior where that
+  is relevant,
+- later product-level comparisons against AutoCAD, BricsCAD, or other target
+  environments.
+
+The initial implementation provides:
+
+- scenario and report data structures,
+- a portable local runner for byte/text file round-trips,
+- byte, text, and line-oriented comparison helpers,
+- artifact capture suitable for later report emission,
+- declarative scenario files under =scenarios/=,
+- a command-line driver under =tools/run-file-compat/=,
+- machine-readable report emission in s-expression or JSON form,
+- SBCL and CCL runner modes through the wrapper script.
+
+See:
+
+- [[file:documentation/design.org][documentation/design.org]]
+- [[file:PLAN.md][PLAN.md]]

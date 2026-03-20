@@ -85,6 +85,7 @@ General directives for this repository.
 - Keep pure language tests separate from host-dependent integration tests.
 - Ensure the core test suite runs on both SBCL and CCL.
 - Add regression tests when fixing behavior or compatibility issues.
+- Use test-driven development when fixing bugs or correcting issues: first identify an existing failing test or add a new failing test, then make the fix.
 
 ## Documentation
 
