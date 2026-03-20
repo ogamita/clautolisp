@@ -28,6 +28,9 @@ Architecture and rationale belong in `documentation/design.org`.
   `OPEN` encoding arguments, and printer-to-`READ` file roundtrips.
 - The stream and printer corpus now also covers unsupported encoding failures
   and line-by-line validation of file-targeted printer output.
+- The stream corpus now also covers explicit-encoding append workflows,
+  including UTF-8 roundtrips, and the printer corpus now validates the blank
+  leading line produced by `PRINT`.
 
 ## Foundation Tasks
 
@@ -56,6 +59,8 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add printer-to-reader roundtrip scenarios through temporary files.
 - [x] Add stream scenarios for unsupported encoding designators.
 - [x] Add line-by-line read-back validation for file-targeted printer output.
+- [x] Add append scenarios with explicit encodings.
+- [x] Add read-back validation for `PRINT` line structure.
 - [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 
