@@ -60,6 +60,7 @@ The current stream/printer corpus specifically includes:
   subpaths,
 - negative current-directory ~VL-FILE-RENAME~ cases,
 - current-directory-relative ~VL-FILE-COPY~ cases,
+- negative current-directory ~VL-FILE-COPY~ cases,
 - the leading blank line introduced by file-targeted ~PRINT~.
 
 * Scenario Kinds

@@ -406,6 +406,8 @@ World
                   "autolisp-file-compat/scenarios/mutations/mkdir-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-append.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-current-directory-backslash.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-copy-current-directory-existing-target.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-copy-current-directory-missing-source.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-current-directory-relative.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-directory-destination.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-existing-target.sexp"

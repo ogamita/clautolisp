@@ -35,6 +35,7 @@ The initial implementation provides:
   including backslash-delimited subpaths,
 - executable coverage for negative current-directory rename behavior,
 - executable coverage for `VL-FILE-COPY` on current-directory-relative paths,
+- executable coverage for negative current-directory copy behavior,
 - byte, text, and line-oriented comparison helpers,
 - artifact capture suitable for later report emission,
 - declarative scenario files under =scenarios/=, including nested newline and
