@@ -463,11 +463,51 @@
   (autolisp-symbol-value object))
 
 (defun call-autolisp-function (function &rest arguments)
+  (apply #'call-autolisp-function-in-context
+         function
+         (default-evaluation-context)
+         arguments))
+
+(defun autolisp-slash-symbol-p (symbol)
+  (and (typep symbol 'autolisp-symbol)
+       (string= "/" (autolisp-symbol-name symbol))))
+
+(defun split-usubr-lambda-list (lambda-list)
+  (unless (listp lambda-list)
+    (error "AutoLISP function lambda list must be a proper list, got ~S." lambda-list))
+  (let ((position (position-if #'autolisp-slash-symbol-p lambda-list)))
+    (values (if position
+                (subseq lambda-list 0 position)
+                lambda-list)
+            (if position
+                (subseq lambda-list (1+ position))
+                '()))))
+
+(defun bind-usubr-frame (function arguments context)
+  (multiple-value-bind (required locals)
+      (split-usubr-lambda-list (autolisp-usubr-lambda-list function))
+    (unless (= (length required) (length arguments))
+      (error "AutoLISP function ~A expects ~D arguments, got ~D."
+             (autolisp-usubr-name function)
+             (length required)
+             (length arguments)))
+    (push-dynamic-frame context)
+    (loop for symbol in required
+          for value in arguments
+          do (bind-dynamic-variable symbol value context))
+    (dolist (symbol locals)
+      (bind-dynamic-variable symbol nil context))))
+
+(defun call-autolisp-function-in-context (function context &rest arguments)
   (cond
     ((typep function 'autolisp-subr)
      (apply (autolisp-subr-function function) arguments))
     ((typep function 'autolisp-usubr)
-     (error "User-defined AutoLISP functions are not callable yet: ~S." function))
+     (unwind-protect
+          (progn
+            (bind-usubr-frame function arguments context)
+            (autolisp-eval-progn (autolisp-usubr-body function) context))
+       (pop-dynamic-frame context)))
     (t
      (error "Expected an AutoLISP function object, got ~S." function))))
 
@@ -511,6 +551,42 @@
 (defun eval-progn-form (arguments context)
   (autolisp-eval-progn arguments context))
 
+(defun eval-if-form (arguments context)
+  (unless (<= 2 (length arguments) 3)
+    (error "IF expects two or three arguments, got ~D." (length arguments)))
+  (if (autolisp-true-p (autolisp-eval (first arguments) context))
+      (autolisp-eval (second arguments) context)
+      (if (third arguments)
+          (autolisp-eval (third arguments) context)
+          nil)))
+
+(defun eval-cond-form (arguments context)
+  (dolist (clause arguments nil)
+    (unless (consp clause)
+      (error "COND clause must be a non-empty list, got ~S." clause))
+    (let ((test-value (autolisp-eval (first clause) context)))
+      (when (autolisp-true-p test-value)
+        (return
+          (if (rest clause)
+              (autolisp-eval-progn (rest clause) context)
+              test-value))))))
+
+(defun eval-defun-form (arguments context)
+  (unless (>= (length arguments) 2)
+    (error "DEFUN expects at least a name and lambda list, got ~D arguments."
+           (length arguments)))
+  (let ((name (first arguments))
+        (lambda-list (second arguments))
+        (body (cddr arguments)))
+    (unless (typep name 'autolisp-symbol)
+      (error "DEFUN name must be an AutoLISP symbol, got ~S." name))
+    (let ((function (make-autolisp-usubr (autolisp-symbol-name name)
+                                         lambda-list
+                                         body
+                                         context)))
+      (set-function name function context)
+      name)))
+
 (defun eval-special-operator (operator arguments context)
   (let ((name (special-operator-name operator)))
     (cond
@@ -520,6 +596,12 @@
        (eval-setq-form arguments context))
       ((string= name "PROGN")
        (eval-progn-form arguments context))
+      ((string= name "IF")
+       (eval-if-form arguments context))
+      ((string= name "COND")
+       (eval-cond-form arguments context))
+      ((string= name "DEFUN")
+       (eval-defun-form arguments context))
       (t
        (error "Unsupported special operator ~A." name)))))
 
@@ -536,15 +618,17 @@
     ((consp form)
      (let ((operator (first form))
            (arguments (rest form)))
-       (if (member (special-operator-name operator) '("QUOTE" "SETQ" "PROGN")
+       (if (member (special-operator-name operator)
+                   '("QUOTE" "SETQ" "PROGN" "IF" "COND" "DEFUN")
                    :test #'string=)
            (eval-special-operator operator arguments context)
            (multiple-value-bind (function boundp origin) (lookup-function operator context)
              (declare (ignore origin))
              (unless boundp
                (error "Undefined AutoLISP function ~A." (autolisp-symbol-name operator)))
-             (apply #'call-autolisp-function
+             (apply #'call-autolisp-function-in-context
                     function
+                    context
                     (mapcar (lambda (argument)
                               (autolisp-eval argument context))
                             arguments))))))

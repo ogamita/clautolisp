@@ -192,6 +192,61 @@
             (list (list (intern-autolisp-symbol "SETQ") foo 9)
                   foo))))))
 
+(test autolisp-eval-if-and-cond
+  (reset-autolisp-symbol-table)
+  (let ((foo (intern-autolisp-symbol "FOO"))
+        (if-symbol (intern-autolisp-symbol "IF"))
+        (cond-symbol (intern-autolisp-symbol "COND"))
+        (setq-symbol (intern-autolisp-symbol "SETQ"))
+        (t-symbol (intern-autolisp-symbol "T")))
+    (set-variable foo 0)
+    (set-variable t-symbol t-symbol)
+    (is (= 1 (autolisp-eval (list if-symbol t-symbol 1 2))))
+    (is (= 2 (autolisp-eval (list if-symbol nil 1 2))))
+    (is (= 7
+           (autolisp-eval
+            (list cond-symbol
+                  (list nil 1)
+                  (list t-symbol 7)))))
+    (is (= 11
+           (autolisp-eval
+            (list cond-symbol
+                  (list nil 1)
+                  (list t-symbol
+                        (list setq-symbol foo 11)
+                        foo)))))
+    (is (= 11 (autolisp-symbol-value foo)))))
+
+(test autolisp-eval-defun-and-usubr-call
+  (reset-autolisp-symbol-table)
+  (let* ((defun-symbol (intern-autolisp-symbol "DEFUN"))
+         (progn-symbol (intern-autolisp-symbol "PROGN"))
+         (setq-symbol (intern-autolisp-symbol "SETQ"))
+         (plus-symbol (intern-autolisp-symbol "+"))
+         (name (intern-autolisp-symbol "ADD2"))
+         (arg (intern-autolisp-symbol "X"))
+         (local (intern-autolisp-symbol "TMP"))
+         (slash (intern-autolisp-symbol "/")))
+    (set-function plus-symbol
+                  (make-autolisp-subr "+" (lambda (left right) (+ left right))))
+    (is (eq name
+            (autolisp-eval
+             (list defun-symbol
+                   name
+                   (list arg slash local)
+                   (list setq-symbol local arg)
+                   (list plus-symbol local 2)))))
+    (is (autolisp-symbol-function-bound-p name))
+    (is (= 9
+           (autolisp-eval (list name 7))))
+    (is (= 5
+           (autolisp-eval
+            (list progn-symbol
+                  (list setq-symbol arg 100)
+                  (list name 3)
+                  5))))
+    (is (= 100 (autolisp-symbol-value arg)))))
+
 (test autolisp-read-from-string-returns-first-form
   (reset-autolisp-symbol-table)
   (let ((value (autolisp-read-from-string "(a) (b)")))
