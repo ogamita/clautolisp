@@ -471,6 +471,86 @@
     (t
      (error "Expected an AutoLISP function object, got ~S." function))))
 
+(defun self-evaluating-runtime-value-p (object)
+  (or (null object)
+      (typep object '(signed-byte 32))
+      (typep object 'double-float)
+      (typep object 'autolisp-string)
+      (typep object 'autolisp-file)
+      (typep object 'autolisp-ename)
+      (typep object 'autolisp-pickset)
+      (typep object 'autolisp-variant)
+      (typep object 'autolisp-safearray)
+      (typep object 'autolisp-vla-object)))
+
+(defun special-operator-name (operator)
+  (and (typep operator 'autolisp-symbol)
+       (string-upcase (autolisp-symbol-name operator))))
+
+(defun autolisp-eval-progn (forms &optional (context (default-evaluation-context)))
+  (let ((result nil))
+    (dolist (form forms result)
+      (setf result (autolisp-eval form context)))))
+
+(defun eval-quote-form (arguments)
+  (unless (= (length arguments) 1)
+    (error "QUOTE expects exactly one argument, got ~D." (length arguments)))
+  (first arguments))
+
+(defun eval-setq-form (arguments context)
+  (unless (evenp (length arguments))
+    (error "SETQ expects an even number of arguments, got ~D." (length arguments)))
+  (let ((result nil))
+    (loop for (symbol-form value-form) on arguments by #'cddr
+          do (unless (typep symbol-form 'autolisp-symbol)
+               (error "SETQ place must be an AutoLISP symbol, got ~S." symbol-form))
+             (setf result (autolisp-eval value-form context))
+             (set-variable symbol-form result context))
+    result))
+
+(defun eval-progn-form (arguments context)
+  (autolisp-eval-progn arguments context))
+
+(defun eval-special-operator (operator arguments context)
+  (let ((name (special-operator-name operator)))
+    (cond
+      ((string= name "QUOTE")
+       (eval-quote-form arguments))
+      ((string= name "SETQ")
+       (eval-setq-form arguments context))
+      ((string= name "PROGN")
+       (eval-progn-form arguments context))
+      (t
+       (error "Unsupported special operator ~A." name)))))
+
+(defun autolisp-eval (form &optional (context (default-evaluation-context)))
+  (cond
+    ((self-evaluating-runtime-value-p form)
+     form)
+    ((typep form 'autolisp-symbol)
+     (multiple-value-bind (value boundp origin) (lookup-variable form context)
+       (declare (ignore origin))
+       (if boundp
+           value
+           (error "Unbound AutoLISP variable ~A." (autolisp-symbol-name form)))))
+    ((consp form)
+     (let ((operator (first form))
+           (arguments (rest form)))
+       (if (member (special-operator-name operator) '("QUOTE" "SETQ" "PROGN")
+                   :test #'string=)
+           (eval-special-operator operator arguments context)
+           (multiple-value-bind (function boundp origin) (lookup-function operator context)
+             (declare (ignore origin))
+             (unless boundp
+               (error "Undefined AutoLISP function ~A." (autolisp-symbol-name operator)))
+             (apply #'call-autolisp-function
+                    function
+                    (mapcar (lambda (argument)
+                              (autolisp-eval argument context))
+                            arguments))))))
+    (t
+     (error "Cannot evaluate AutoLISP form ~S." form))))
+
 (defun autolisp-type (object)
   (cond
     ((null object) nil)

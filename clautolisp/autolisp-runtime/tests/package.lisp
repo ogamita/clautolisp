@@ -23,6 +23,8 @@
                 #:autolisp-vl-symbol-value
                 #:autolisp-listp
                 #:autolisp-atom
+                #:autolisp-eval
+                #:autolisp-eval-progn
                 #:autolisp-null
                 #:autolisp-not
                 #:autolisp-read-from-string
@@ -38,6 +40,8 @@
                 #:lookup-variable
                 #:make-document-namespace
                 #:make-evaluation-context
+                #:make-autolisp-string
+                #:make-autolisp-subr
                 #:make-runtime-session
                 #:namespace-function-cell
                 #:namespace-value-cell

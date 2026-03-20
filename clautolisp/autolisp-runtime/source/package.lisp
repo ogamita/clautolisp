@@ -96,6 +96,8 @@
    #:push-dynamic-frame
    #:pop-dynamic-frame
    #:bind-dynamic-variable
+   #:autolisp-eval
+   #:autolisp-eval-progn
    #:autolisp-current-directory
    #:set-autolisp-current-directory
    #:autolisp-support-paths
