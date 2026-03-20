@@ -32,5 +32,9 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Replace the current conservative absolute-path-only file boundary with a first spec-derived pathname layer and explicit runtime path state for `open`, `findfile`, and `findtrustedfile`.
 - [x] Add the next pathname/file helpers: `vl-directory-files`, `vl-file-directory-p`, `vl-filename-base`, `vl-filename-directory`, and `vl-filename-extension`.
 - [x] Add the next file-system mutation/introspection helpers: `vl-file-delete`, `vl-file-rename`, `vl-file-size`, and `vl-mkdir`.
-- [ ] Extend the file layer with the remaining compatibility-sensitive helpers such as `vl-file-copy`, `vl-file-systime`, and `vl-filename-mktemp`.
+- [x] Add the next compatibility-sensitive file helpers: `vl-file-copy`, `vl-file-systime`, and `vl-filename-mktemp`.
+- [x] Add the printer/output helpers that can target command output or file descriptors: `prin1`, `princ`, `print`, `terpri`, `prompt`, `vl-prin1-to-string`, and `vl-princ-to-string`.
+- [x] Fill the remaining basic stream gap for `read-char` without a file descriptor by reading from standard input conservatively.
+- [ ] Tighten host-sensitive file semantics where the current spec draft is thin, notably day-of-week numbering in `vl-file-systime`, default-directory behavior in `vl-filename-mktemp`, and detailed `vl-file-copy` append/error compatibility.
+- [ ] Implement the documented `read` entry point on top of the runtime reader mapping.
 - [ ] Keep the builtin inventory clearly separated from special operators as evaluator work expands.
