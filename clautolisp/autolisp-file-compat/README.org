@@ -33,6 +33,7 @@ The initial implementation provides:
   under explicit current-directory state,
 - executable coverage for `VL-FILE-RENAME` on current-directory-relative paths,
   including backslash-delimited subpaths,
+- executable coverage for negative current-directory rename behavior,
 - byte, text, and line-oriented comparison helpers,
 - artifact capture suitable for later report emission,
 - declarative scenario files under =scenarios/=, including nested newline and
