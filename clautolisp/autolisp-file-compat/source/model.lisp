@@ -16,6 +16,8 @@
   (trusted-paths '() :type list)
   builtin-name
   (arguments '() :type list)
+  (steps '() :type list)
+  result-ref
   expected-value
   artifact-relative-path
   expected-artifact-exists-p

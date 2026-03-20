@@ -18,9 +18,12 @@ Architecture and rationale belong in `documentation/design.org`.
 - The harness now supports executable builtin scenarios with temporary
   workspaces, setup fixtures, path-state controls, and runtime-value
   expectations.
+- Builtin scenarios now also support multi-step execution with step-local
+  bindings and result references, so the corpus can exercise file-descriptor
+  workflows such as `open`/`write-line`/`read-line`/`close`.
 - The builtin corpus now covers pathname lookup, directory listing, file
-  mutation, temp-file generation, size queries, and string printer/read-back
-  behavior on both SBCL and CCL.
+  mutation, temp-file generation, size queries, stream/file-descriptor
+  behavior, and printer/read-back behavior on both SBCL and CCL.
 
 ## Foundation Tasks
 
@@ -43,8 +46,9 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add pathname-resolution and search-path scenarios.
 - [x] Add file-mutation scenarios for copy, rename, and delete behavior.
 - [x] Add printer/read-back scenarios for string-printing and `read`.
+- [x] Add multi-step stream scenarios for file-descriptor operations.
+- [x] Add file-targeted printer scenarios using multi-step execution.
 - [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
-- [ ] Extend printer/read-back coverage to file-targeted `prin1`, `princ`, `print`, and `terpri`.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 
 ## Integration Tasks
