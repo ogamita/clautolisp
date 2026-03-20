@@ -31,6 +31,9 @@ Architecture and rationale belong in `documentation/design.org`.
 - The stream corpus now also covers explicit-encoding append workflows,
   including UTF-8 roundtrips, and the printer corpus now validates the blank
   leading line produced by `PRINT`.
+- The stream corpus now also covers append behavior through explicit AutoLISP
+  current-directory resolution, and the printer corpus covers `PRINC` to a
+  current-directory-relative file with `READ` roundtrip validation.
 
 ## Foundation Tasks
 
@@ -61,6 +64,8 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add line-by-line read-back validation for file-targeted printer output.
 - [x] Add append scenarios with explicit encodings.
 - [x] Add read-back validation for `PRINT` line structure.
+- [x] Add current-directory-relative append scenarios.
+- [x] Add current-directory-relative printer/read-back scenarios.
 - [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 

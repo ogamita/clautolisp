@@ -25,6 +25,8 @@ The initial implementation provides:
   read-back of file-targeted printer output,
 - executable coverage for explicit-encoding append workflows and `PRINT`-style
   blank-line output,
+- executable coverage for relative stream append and printer/read-back
+  workflows resolved through explicit AutoLISP current-directory state,
 - byte, text, and line-oriented comparison helpers,
 - artifact capture suitable for later report emission,
 - declarative scenario files under =scenarios/=, including nested newline and

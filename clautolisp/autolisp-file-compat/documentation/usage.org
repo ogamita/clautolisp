@@ -48,9 +48,11 @@ The current stream/printer corpus specifically includes:
 - explicit ~OPEN~ encoding arguments such as ~"utf-8"~,
 - unsupported ~OPEN~ encoding arguments,
 - negative open-for-read cases on missing files,
-- file-targeted printer output and printer-to-~READ~ roundtrips.
-- line-by-line read-back validation of printer-produced files.
-- append workflows with explicit encodings such as UTF-8.
+- file-targeted printer output and printer-to-~READ~ roundtrips,
+- line-by-line read-back validation of printer-produced files,
+- append workflows with explicit encodings such as UTF-8,
+- relative ~OPEN~ and append workflows resolved through ~:current-directory~,
+- file-targeted ~PRINC~ roundtrips through ~READ~ under ~:current-directory~,
 - the leading blank line introduced by file-targeted ~PRINT~.
 
 * Scenario Kinds
