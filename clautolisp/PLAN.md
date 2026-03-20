@@ -48,6 +48,8 @@ The Org documents in `documentation/` remain the place for architecture and impl
 
 - [ ] Define the AutoLISP symbol abstraction.
 - [x] Define the first AutoLISP symbol abstraction and interning layer.
+- [x] Record the rule that symbols are name identities and that value/function cells belong to namespaces and frames instead of symbol objects.
+- [ ] Define explicit namespace objects for document, blackboard, and separate-VLX contexts.
 - [ ] Define explicit environment objects for dynamic scope.
 - [ ] Implement literal evaluation and symbol lookup on top of the runtime object model.
 - [ ] Design the evaluator phase, including explicit treatment of AutoLISP special operators.
@@ -55,6 +57,7 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [ ] Implement the first core special operators in the evaluator rather than in `autolisp-builtins-core`.
 - [ ] Implement lambda representation and application.
 - [ ] Implement AutoLISP-visible error mapping.
+- [ ] Specify how the host determines the current document and current namespace at evaluation entry.
 
 ## Builtins and Host Tasks
 

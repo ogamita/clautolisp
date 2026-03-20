@@ -3,6 +3,30 @@
 (deftype autolisp-symbol ()
   'clautolisp.autolisp-runtime.internal::autolisp-symbol)
 
+(deftype value-cell ()
+  'clautolisp.autolisp-runtime.internal::value-cell)
+
+(deftype function-cell ()
+  'clautolisp.autolisp-runtime.internal::function-cell)
+
+(deftype document-namespace ()
+  'clautolisp.autolisp-runtime.internal::document-namespace)
+
+(deftype blackboard-namespace ()
+  'clautolisp.autolisp-runtime.internal::blackboard-namespace)
+
+(deftype separate-vlx-namespace ()
+  'clautolisp.autolisp-runtime.internal::separate-vlx-namespace)
+
+(deftype dynamic-frame ()
+  'clautolisp.autolisp-runtime.internal::dynamic-frame)
+
+(deftype evaluation-context ()
+  'clautolisp.autolisp-runtime.internal::evaluation-context)
+
+(deftype runtime-session ()
+  'clautolisp.autolisp-runtime.internal::runtime-session)
+
 (deftype autolisp-string ()
   'clautolisp.autolisp-runtime.internal::autolisp-string)
 
@@ -31,7 +55,29 @@
   'clautolisp.autolisp-runtime.internal::autolisp-vla-object)
 
 (defun reset-autolisp-symbol-table ()
-  (clrhash clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*))
+  (clrhash clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*)
+  (reset-default-evaluation-context))
+
+(defun default-evaluation-context ()
+  clautolisp.autolisp-runtime.internal::*default-evaluation-context*)
+
+(defun set-default-evaluation-context (context)
+  (setf clautolisp.autolisp-runtime.internal::*default-evaluation-context* context))
+
+(defun reset-default-evaluation-context ()
+  (let* ((document (clautolisp.autolisp-runtime.internal::make-document-namespace
+                    :name "DEFAULT"))
+         (session (clautolisp.autolisp-runtime.internal::make-runtime-session
+                   :current-document document))
+         (context (clautolisp.autolisp-runtime.internal::make-evaluation-context
+                   :session session
+                   :current-document document
+                   :current-namespace document
+                   :dynamic-frame nil)))
+    (setf clautolisp.autolisp-runtime.internal::*default-document-namespace* document
+          clautolisp.autolisp-runtime.internal::*default-runtime-session* session
+          clautolisp.autolisp-runtime.internal::*default-evaluation-context* context)
+    context))
 
 (defun normalize-directory-path (path)
   (namestring (uiop:ensure-directory-pathname (pathname path))))
@@ -67,15 +113,171 @@
              :name name
              :original-name original-name))))
 
+(defun make-document-namespace (&key (name "DOCUMENT"))
+  (clautolisp.autolisp-runtime.internal::make-document-namespace :name name))
+
+(defun document-namespace-name (namespace)
+  (clautolisp.autolisp-runtime.internal::document-namespace-name namespace))
+
+(defun make-blackboard-namespace (&key (name "BLACKBOARD"))
+  (clautolisp.autolisp-runtime.internal::make-blackboard-namespace :name name))
+
+(defun blackboard-namespace-name (namespace)
+  (clautolisp.autolisp-runtime.internal::blackboard-namespace-name namespace))
+
+(defun make-separate-vlx-namespace (&key (name "VLX"))
+  (clautolisp.autolisp-runtime.internal::make-separate-vlx-namespace :name name))
+
+(defun separate-vlx-namespace-name (namespace)
+  (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-name namespace))
+
+(defun make-runtime-session (&key current-document)
+  (clautolisp.autolisp-runtime.internal::make-runtime-session
+   :current-document current-document))
+
+(defun runtime-session-current-document (session)
+  (clautolisp.autolisp-runtime.internal::runtime-session-current-document session))
+
+(defun make-evaluation-context (&key session current-document current-namespace dynamic-frame)
+  (clautolisp.autolisp-runtime.internal::make-evaluation-context
+   :session session
+   :current-document current-document
+   :current-namespace current-namespace
+   :dynamic-frame dynamic-frame))
+
+(defun evaluation-context-session (context)
+  (clautolisp.autolisp-runtime.internal::evaluation-context-session context))
+
+(defun evaluation-context-current-document (context)
+  (clautolisp.autolisp-runtime.internal::evaluation-context-current-document context))
+
+(defun evaluation-context-current-namespace (context)
+  (clautolisp.autolisp-runtime.internal::evaluation-context-current-namespace context))
+
+(defun evaluation-context-dynamic-frame (context)
+  (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context))
+
+(defun value-cell-value (cell)
+  (clautolisp.autolisp-runtime.internal::value-cell-value cell))
+
+(defun value-cell-bound-p (cell)
+  (clautolisp.autolisp-runtime.internal::value-cell-bound-p cell))
+
+(defun function-cell-function (cell)
+  (clautolisp.autolisp-runtime.internal::function-cell-function cell))
+
+(defun function-cell-bound-p (cell)
+  (clautolisp.autolisp-runtime.internal::function-cell-bound-p cell))
+
+(defun namespace-value-table (namespace)
+  (typecase namespace
+    (document-namespace
+     (clautolisp.autolisp-runtime.internal::document-namespace-value-cells namespace))
+    (blackboard-namespace
+     (clautolisp.autolisp-runtime.internal::blackboard-namespace-value-cells namespace))
+    (separate-vlx-namespace
+     (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-value-cells namespace))
+    (t
+     (error "Namespace ~S does not support value cells." namespace))))
+
+(defun namespace-function-table (namespace)
+  (typecase namespace
+    (document-namespace
+     (clautolisp.autolisp-runtime.internal::document-namespace-function-cells namespace))
+    (separate-vlx-namespace
+     (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-function-cells namespace))
+    (t
+     (error "Namespace ~S does not support function cells." namespace))))
+
+(defun namespace-value-cell (namespace symbol &key (createp t))
+  (or (gethash symbol (namespace-value-table namespace))
+      (when createp
+        (setf (gethash symbol (namespace-value-table namespace))
+              (clautolisp.autolisp-runtime.internal::make-value-cell)))))
+
+(defun namespace-function-cell (namespace symbol &key (createp t))
+  (or (gethash symbol (namespace-function-table namespace))
+      (when createp
+        (setf (gethash symbol (namespace-function-table namespace))
+              (clautolisp.autolisp-runtime.internal::make-function-cell)))))
+
+(defun make-dynamic-frame (&key parent)
+  (clautolisp.autolisp-runtime.internal::make-dynamic-frame :parent parent))
+
+(defun push-dynamic-frame (&optional (context (default-evaluation-context)))
+  (let ((frame (make-dynamic-frame :parent (evaluation-context-dynamic-frame context))))
+    (setf (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context)
+          frame)
+    frame))
+
+(defun pop-dynamic-frame (&optional (context (default-evaluation-context)))
+  (let ((frame (evaluation-context-dynamic-frame context)))
+    (when frame
+      (setf (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context)
+            (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)))
+    frame))
+
+(defun bind-dynamic-variable (symbol value &optional (context (default-evaluation-context)))
+  (let ((frame (or (evaluation-context-dynamic-frame context)
+                   (push-dynamic-frame context))))
+    (setf (gethash symbol (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))
+          (clautolisp.autolisp-runtime.internal::make-dynamic-binding
+           :symbol symbol
+           :value value
+           :bound-p t))
+    value))
+
+(defun find-dynamic-binding (symbol frame)
+  (loop for current = frame then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent current)
+        while current
+        for binding = (gethash symbol (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings current))
+        when binding
+          do (return binding)))
+
+(defun lookup-variable (symbol &optional (context (default-evaluation-context)))
+  (let ((binding (find-dynamic-binding symbol (evaluation-context-dynamic-frame context))))
+    (cond
+      (binding
+       (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding) t :dynamic))
+      (t
+       (let* ((cell (namespace-value-cell (evaluation-context-current-namespace context)
+                                          symbol
+                                          :createp nil))
+              (boundp (and cell (value-cell-bound-p cell))))
+         (values (and boundp (value-cell-value cell))
+                 boundp
+                 :namespace))))))
+
+(defun set-variable (symbol value &optional (context (default-evaluation-context)))
+  (let ((binding (find-dynamic-binding symbol (evaluation-context-dynamic-frame context))))
+    (if binding
+        (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding) value
+              (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding) t)
+        (let ((cell (namespace-value-cell (evaluation-context-current-namespace context) symbol)))
+          (setf (clautolisp.autolisp-runtime.internal::value-cell-value cell) value
+                (clautolisp.autolisp-runtime.internal::value-cell-bound-p cell) t)))
+    value))
+
+(defun lookup-function (symbol &optional (context (default-evaluation-context)))
+  (let* ((cell (namespace-function-cell (evaluation-context-current-namespace context)
+                                        symbol
+                                        :createp nil))
+         (boundp (and cell (function-cell-bound-p cell))))
+    (values (and boundp (function-cell-function cell))
+            boundp
+            :namespace)))
+
+(defun set-function (symbol function &optional (context (default-evaluation-context)))
+  (let ((cell (namespace-function-cell (evaluation-context-current-namespace context) symbol)))
+    (setf (clautolisp.autolisp-runtime.internal::function-cell-function cell) function
+          (clautolisp.autolisp-runtime.internal::function-cell-bound-p cell) t)
+    function))
+
 (defun set-autolisp-symbol-value (symbol value)
-  (setf (clautolisp.autolisp-runtime.internal::autolisp-symbol-value symbol) value
-        (clautolisp.autolisp-runtime.internal::autolisp-symbol-value-bound-p symbol) t)
-  value)
+  (set-variable symbol value))
 
 (defun set-autolisp-symbol-function (symbol function)
-  (setf (clautolisp.autolisp-runtime.internal::autolisp-symbol-function symbol) function
-        (clautolisp.autolisp-runtime.internal::autolisp-symbol-function-bound-p symbol) t)
-  function)
+  (set-function symbol function))
 
 (defun runtime-value-p (object)
   (or (null object)
@@ -107,16 +309,16 @@
   (clautolisp.autolisp-runtime.internal::autolisp-symbol-original-name object))
 
 (defun autolisp-symbol-value (object)
-  (clautolisp.autolisp-runtime.internal::autolisp-symbol-value object))
+  (nth-value 0 (lookup-variable object)))
 
 (defun autolisp-symbol-value-bound-p (object)
-  (clautolisp.autolisp-runtime.internal::autolisp-symbol-value-bound-p object))
+  (nth-value 1 (lookup-variable object)))
 
 (defun autolisp-symbol-function (object)
-  (clautolisp.autolisp-runtime.internal::autolisp-symbol-function object))
+  (nth-value 0 (lookup-function object)))
 
 (defun autolisp-symbol-function-bound-p (object)
-  (clautolisp.autolisp-runtime.internal::autolisp-symbol-function-bound-p object))
+  (nth-value 1 (lookup-function object)))
 
 (defun autolisp-file-stream (object)
   (clautolisp.autolisp-runtime.internal::autolisp-file-stream object))
