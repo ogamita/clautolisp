@@ -59,6 +59,7 @@ The current stream/printer corpus specifically includes:
 - current-directory-relative ~VL-FILE-RENAME~ cases, including backslash
   subpaths,
 - negative current-directory ~VL-FILE-RENAME~ cases,
+- current-directory-relative ~VL-FILE-COPY~ cases,
 - the leading blank line introduced by file-targeted ~PRINT~.
 
 * Scenario Kinds
