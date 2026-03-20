@@ -46,6 +46,8 @@ Architecture and rationale belong in `documentation/design.org`.
   behavior for missing sources and existing destinations.
 - The file-mutation corpus now also covers `VL-FILE-COPY` on
   current-directory-relative paths, including backslash-delimited subpaths.
+- The file-mutation corpus now also covers negative current-directory copy
+  behavior for missing sources and existing destinations.
 
 ## Foundation Tasks
 
@@ -84,6 +86,7 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add current-directory-relative rename scenarios.
 - [x] Add negative current-directory rename scenarios.
 - [x] Add current-directory-relative copy scenarios.
+- [x] Add negative current-directory copy scenarios.
 - [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 
