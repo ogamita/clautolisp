@@ -4,7 +4,7 @@
   '("TYPE" "NULL" "NOT" "ATOM" "VL-SYMBOLP" "VL-SYMBOL-NAME" "VL-SYMBOL-VALUE"
     "+" "-" "*" "/" "1+" "1-" "MAX" "MIN" "REM" "GCD" "LCM" "~" "LOGAND"
     "LOGIOR" "LSH" "STRCAT" "STRLEN" "SUBSTR" "ASCII" "CHR"
-    "OPEN" "CLOSE" "READ-LINE" "READ-CHAR" "WRITE-LINE" "WRITE-CHAR"
+    "READ" "OPEN" "CLOSE" "READ-LINE" "READ-CHAR" "WRITE-LINE" "WRITE-CHAR"
     "FINDFILE" "FINDTRUSTEDFILE" "VL-DIRECTORY-FILES" "VL-FILE-DIRECTORY-P"
     "VL-FILENAME-BASE" "VL-FILENAME-DIRECTORY" "VL-FILENAME-EXTENSION"
     "VL-FILE-DELETE" "VL-FILE-RENAME" "VL-FILE-SIZE" "VL-FILE-SYSTIME"
@@ -694,6 +694,10 @@
 (defun builtin-close (file)
   (close-autolisp-file (require-file file "CLOSE")))
 
+(defun builtin-read (string)
+  (autolisp-read-from-string
+   (autolisp-string-value (require-string string "READ"))))
+
 (defun builtin-read-line (file)
   (let ((stream (autolisp-file-stream (require-file file "READ-LINE"))))
     (unless stream
@@ -941,6 +945,7 @@
    (make-autolisp-subr "SUBSTR" #'builtin-substr)
    (make-autolisp-subr "ASCII" #'builtin-ascii)
    (make-autolisp-subr "CHR" #'builtin-chr)
+   (make-autolisp-subr "READ" #'builtin-read)
    (make-autolisp-subr "OPEN" #'builtin-open)
    (make-autolisp-subr "CLOSE" #'builtin-close)
    (make-autolisp-subr "READ-LINE" #'builtin-read-line)
