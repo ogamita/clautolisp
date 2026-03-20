@@ -18,6 +18,8 @@
    #:file-compat-scenario-trusted-paths
    #:file-compat-scenario-builtin-name
    #:file-compat-scenario-arguments
+   #:file-compat-scenario-steps
+   #:file-compat-scenario-result-ref
    #:file-compat-scenario-expected-value
    #:file-compat-scenario-artifact-relative-path
    #:file-compat-scenario-expected-artifact-exists-p

@@ -38,6 +38,7 @@ The current corpus includes families such as:
 - ~paths/~
 - ~mutations/~
 - ~printers/~
+- ~streams/~
 
 * Scenario Kinds
 There are currently two scenario kinds.
@@ -94,6 +95,16 @@ Typical fields:
 - ~:expected-value~
 - optional ~:artifact-relative-path~ and artifact expectations
 
+Builtin scenarios may also use a multi-step form instead of a single builtin
+call.
+
+Additional fields for that form are:
+
+- ~:steps~
+- optional per-step ~:bind~
+- optional per-step ~:expected-value~
+- optional scenario-level ~:result-ref~
+
 Example:
 
 #+begin_src lisp
@@ -108,6 +119,33 @@ Example:
  :builtin-name "FINDFILE"
  :arguments ("example.txt")
  :expected-value (:workspace-relative "support/example.txt"))
+#+end_src
+
+Multi-step example:
+
+#+begin_src lisp
+(:name "open-write-read-line-basic"
+ :kind :builtin
+ :classification :portable
+ :tags (:builtin :stream :file-descriptor)
+ :steps ((:builtin-name "OPEN"
+          :arguments ("sample.txt" "w")
+          :bind "out")
+         (:builtin-name "WRITE-LINE"
+          :arguments ("alpha" (:ref "out")))
+         (:builtin-name "CLOSE"
+          :arguments ((:ref "out")))
+         (:builtin-name "OPEN"
+          :arguments ("sample.txt" "r")
+          :bind "in")
+         (:builtin-name "READ-LINE"
+          :arguments ((:ref "in"))
+          :bind "line"))
+ :result-ref "line"
+ :expected-value (:string "alpha")
+ :artifact-relative-path "sample.txt"
+ :expected-text "alpha
+")
 #+end_src
 
 * Scenario Metadata
@@ -142,6 +180,7 @@ Supported forms include:
 - ~(:list 1 (:symbol "FOO") "bar")~
 - ~(:cons 1 2)~
 - ~(:workspace-relative "support/example.txt")~
+- ~(:ref "bound-step-name")~ inside multi-step builtin arguments
 
 These are mapped to the current AutoLISP runtime model before comparison.
 

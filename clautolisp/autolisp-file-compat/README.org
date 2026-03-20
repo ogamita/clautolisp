@@ -17,10 +17,12 @@ The initial implementation provides:
 - a portable local runner for byte/text file round-trips,
 - a builtin-oriented runner that executes selected AutoLISP file, pathname, and
   printer functions inside temporary workspaces,
+- multi-step builtin execution with step bindings for stream and file-descriptor
+  workflows,
 - byte, text, and line-oriented comparison helpers,
 - artifact capture suitable for later report emission,
 - declarative scenario files under =scenarios/=, including nested newline and
-  encoding, path, mutation, and printer scenario directories,
+  encoding, path, mutation, printer, and stream scenario directories,
 - a command-line driver under =tools/run-file-compat/=,
 - machine-readable report emission in s-expression or JSON form, with aggregate
   summary counts,

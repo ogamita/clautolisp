@@ -244,6 +244,73 @@ World
                (file-compat-report-checks
                 (run-builtin-scenario read-scenario))))))
 
+(test builtin-multi-step-stream-scenarios
+  (let* ((write-read-scenario
+           (make-file-compat-scenario
+            :name "write-read-line"
+            :kind :builtin
+            :steps '((:builtin-name "OPEN"
+                      :arguments ("sample.txt" "w")
+                      :bind "out")
+                     (:builtin-name "WRITE-LINE"
+                      :arguments ("alpha" (:ref "out")))
+                     (:builtin-name "CLOSE"
+                      :arguments ((:ref "out")))
+                     (:builtin-name "OPEN"
+                      :arguments ("sample.txt" "r")
+                      :bind "in")
+                     (:builtin-name "READ-LINE"
+                      :arguments ((:ref "in"))
+                      :bind "line")
+                     (:builtin-name "CLOSE"
+                      :arguments ((:ref "in"))))
+            :result-ref "line"
+            :expected-value '(:string "alpha")
+            :artifact-relative-path "sample.txt"
+            :expected-text "alpha
+"))
+         (read-char-scenario
+           (make-file-compat-scenario
+            :name "read-char-sequence"
+            :kind :builtin
+            :setup-files '((:relative-path "chars.txt" :input-text "AZ"))
+            :steps '((:builtin-name "OPEN"
+                      :arguments ("chars.txt" "r")
+                      :bind "in")
+                     (:builtin-name "READ-CHAR"
+                      :arguments ((:ref "in"))
+                      :bind "first"
+                      :expected-value 65)
+                     (:builtin-name "READ-CHAR"
+                      :arguments ((:ref "in"))
+                      :bind "second"
+                      :expected-value 90)
+                     (:builtin-name "READ-CHAR"
+                      :arguments ((:ref "in"))
+                      :bind "eof"
+                      :expected-value (:nil))
+                     (:builtin-name "CLOSE"
+                      :arguments ((:ref "in"))))
+            :result-ref "second"
+            :expected-value 90)))
+    (is (every #'file-compat-check-passed-p
+               (file-compat-report-checks
+                (run-builtin-scenario write-read-scenario))))
+    (is (every #'file-compat-check-passed-p
+               (file-compat-report-checks
+                (run-builtin-scenario read-char-scenario))))))
+
+(test declarative-multi-step-stream-and-printer-scenarios
+  (dolist (path '("autolisp-file-compat/scenarios/streams/open-write-read-line-basic.sexp"
+                  "autolisp-file-compat/scenarios/streams/open-read-char-sequence.sexp"
+                  "autolisp-file-compat/scenarios/streams/open-append-read-lines.sexp"
+                  "autolisp-file-compat/scenarios/streams/open-write-char-read-char.sexp"
+                  "autolisp-file-compat/scenarios/printers/file-printer-sequence.sexp"))
+    (dolist (scenario (load-scenario-file path))
+      (is (every #'file-compat-check-passed-p
+                 (file-compat-report-checks
+                  (run-scenario scenario :runner :local)))))))
+
 (test builtin-rename-size-and-predicate-scenarios
   (let* ((rename-scenario (make-file-compat-scenario
                            :name "rename"
@@ -307,6 +374,11 @@ World
                   "autolisp-file-compat/scenarios/paths/findtrustedfile-directory-prefix.sexp"
                   "autolisp-file-compat/scenarios/printers/vl-prin1-to-string-basic.sexp"
                   "autolisp-file-compat/scenarios/printers/vl-princ-to-string-basic.sexp"
+                  "autolisp-file-compat/scenarios/printers/file-printer-sequence.sexp"
+                  "autolisp-file-compat/scenarios/streams/open-write-read-line-basic.sexp"
+                  "autolisp-file-compat/scenarios/streams/open-read-char-sequence.sexp"
+                  "autolisp-file-compat/scenarios/streams/open-append-read-lines.sexp"
+                  "autolisp-file-compat/scenarios/streams/open-write-char-read-char.sexp"
                   "autolisp-file-compat/scenarios/mutations/mkdir-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-append.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-copy-directory-destination.sexp"

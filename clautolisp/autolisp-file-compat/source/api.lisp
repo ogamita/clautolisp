@@ -131,6 +131,15 @@
     (t
      (error "Invalid setup file list ~S." value))))
 
+(defun normalize-steps (value)
+  (cond
+    ((null value)
+     '())
+    ((listp value)
+     value)
+    (t
+     (error "Invalid step list ~S." value))))
+
 (defun normalize-path-list (value)
   (cond
     ((null value)
@@ -157,6 +166,8 @@
    :trusted-paths (normalize-path-list (getf plist :trusted-paths))
    :builtin-name (getf plist :builtin-name)
    :arguments (or (getf plist :arguments) '())
+   :steps (normalize-steps (getf plist :steps))
+   :result-ref (getf plist :result-ref)
    :expected-value (getf plist :expected-value)
    :artifact-relative-path (getf plist :artifact-relative-path)
    :expected-artifact-exists-p (getf plist :expected-artifact-exists-p)
@@ -201,6 +212,8 @@
         :trusted-paths (file-compat-scenario-trusted-paths scenario)
         :builtin-name (file-compat-scenario-builtin-name scenario)
         :arguments (file-compat-scenario-arguments scenario)
+        :steps (file-compat-scenario-steps scenario)
+        :result-ref (file-compat-scenario-result-ref scenario)
         :expected-value (file-compat-scenario-expected-value scenario)
         :artifact-relative-path (file-compat-scenario-artifact-relative-path scenario)
         :expected-artifact-exists-p (file-compat-scenario-expected-artifact-exists-p scenario)
@@ -506,19 +519,104 @@
               (workspace-relative-pathname workspace-root path))))
           paths))
 
-(defun call-builtin-for-scenario (scenario workspace-root)
+(defun find-scenario-builtin (builtin-name scenario)
   (let ((builtin (clautolisp.autolisp-builtins-core:find-core-builtin
-                  (or (file-compat-scenario-builtin-name scenario)
+                  (or builtin-name
                       (error "Builtin scenario ~S has no builtin name."
                              (file-compat-scenario-name scenario))))))
     (unless builtin
       (error "Unknown builtin ~S."
-             (file-compat-scenario-builtin-name scenario)))
-    (apply #'clautolisp.autolisp-runtime:call-autolisp-function
-           builtin
-           (mapcar (lambda (argument)
-                     (scenario-value->runtime-value argument workspace-root))
-                   (file-compat-scenario-arguments scenario)))))
+             builtin-name))
+    builtin))
+
+(defun step-reference-p (value)
+  (and (consp value)
+       (eq (first value) :ref)
+       (stringp (second value))
+       (null (cddr value))))
+
+(defun resolve-scenario-argument (argument workspace-root bindings)
+  (cond
+    ((step-reference-p argument)
+     (multiple-value-bind (value present-p)
+         (gethash (second argument) bindings)
+       (unless present-p
+         (error "Unknown step binding ~S." (second argument)))
+       value))
+    ((and (listp argument)
+          (not (null argument)))
+     (scenario-value->runtime-value argument workspace-root))
+    (t
+     (scenario-value->runtime-value argument workspace-root))))
+
+(defun call-builtin-by-name (builtin-name arguments workspace-root scenario bindings)
+  (apply #'clautolisp.autolisp-runtime:call-autolisp-function
+         (find-scenario-builtin builtin-name scenario)
+         (mapcar (lambda (argument)
+                   (resolve-scenario-argument argument workspace-root bindings))
+                 arguments)))
+
+(defun call-builtin-for-scenario (scenario workspace-root &optional bindings)
+  (call-builtin-by-name (file-compat-scenario-builtin-name scenario)
+                        (file-compat-scenario-arguments scenario)
+                        workspace-root
+                        scenario
+                        (or bindings (make-hash-table :test #'equal))))
+
+(defun step-check-name (step index)
+  (let ((bind (getf step :bind)))
+    (format nil "step-~D~@[~C~A~]"
+            index
+            (and bind #\-)
+            bind)))
+
+(defun run-builtin-scenario-steps (scenario workspace-root)
+  (let ((bindings (make-hash-table :test #'equal))
+        (last-result nil)
+        (checks '()))
+    (loop
+      for step in (file-compat-scenario-steps scenario)
+      for step-index from 1
+      do
+         (let* ((builtin-name (or (getf step :builtin-name)
+                                  (error "Scenario step missing :BUILTIN-NAME in ~S."
+                                         (file-compat-scenario-name scenario))))
+                (arguments (or (getf step :arguments) '()))
+                (result (call-builtin-by-name builtin-name
+                                              arguments
+                                              workspace-root
+                                              scenario
+                                              bindings)))
+           (setf last-result result)
+           (when (getf step :bind)
+             (setf (gethash (getf step :bind) bindings) result))
+           (when (getf step :expected-value)
+             (let* ((expected (getf step :expected-value))
+                    (expected-value (if (and (consp expected)
+                                             (eq (first expected) :predicate))
+                                        expected
+                                        (scenario-value->runtime-value expected
+                                                                       workspace-root)))
+                    (passed-p (runtime-expectation-matches-p expected-value
+                                                             result
+                                                             workspace-root)))
+               (push (make-file-compat-check
+                      :name (step-check-name step step-index)
+                      :passed-p passed-p
+                      :message (if passed-p
+                                   "Step result matches."
+                                   "Step result differs."))
+                     checks)))))
+    (values
+     (if (file-compat-scenario-result-ref scenario)
+         (multiple-value-bind (value present-p)
+             (gethash (file-compat-scenario-result-ref scenario) bindings)
+           (unless present-p
+             (error "Unknown scenario result binding ~S."
+                    (file-compat-scenario-result-ref scenario)))
+           value)
+         last-result)
+     checks)))
 
 (defun json-escape-string (string)
   (with-output-to-string (out)
@@ -691,57 +789,60 @@
            (clautolisp.autolisp-runtime:set-autolisp-trusted-paths
             (scenario-path-list (file-compat-scenario-trusted-paths scenario)
                                 workspace-root))
-           (let* ((result (call-builtin-for-scenario scenario workspace-root))
-                  (artifact-path (and (file-compat-scenario-artifact-relative-path scenario)
-                                      (workspace-relative-pathname
-                                       workspace-root
-                                       (file-compat-scenario-artifact-relative-path
-                                        scenario))))
-                  (artifact-present-p (and artifact-path (probe-file artifact-path)))
-                  (artifact-expected-p (or (file-compat-scenario-expected-artifact-exists-p scenario)
-                                          (file-compat-scenario-expected-bytes scenario)
-                                          (file-compat-scenario-expected-text scenario)
-                                          (file-compat-scenario-expected-lines scenario)))
-                  (artifact (when artifact-present-p
-                              (capture-file-artifact artifact-path
-                                                     :external-format
-                                                     (file-compat-scenario-external-format scenario))))
-                  (checks '()))
-             (when (file-compat-scenario-expected-value scenario)
-               (let ((expected (file-compat-scenario-expected-value scenario)))
-                 (push (compare-runtime-value
-                        (if (and (consp expected)
-                                 (eq (first expected) :predicate))
-                            expected
-                            (scenario-value->runtime-value expected workspace-root))
-                        result
-                        workspace-root)
-                       checks)))
-             (when (file-compat-scenario-artifact-relative-path scenario)
-               (push (compare-artifact-exists
-                      (not (null artifact-expected-p))
-                      (not (null artifact-present-p)))
-                     checks))
-             (when (and artifact
-                        (file-compat-scenario-expected-bytes scenario))
-               (push (compare-bytes (file-compat-scenario-expected-bytes scenario)
-                                    (file-compat-artifact-bytes artifact))
-                     checks))
-             (when (and artifact
-                        (file-compat-scenario-expected-text scenario))
-               (push (compare-text (file-compat-scenario-expected-text scenario)
-                                   (file-compat-artifact-text artifact))
-                     checks))
-             (when (and artifact
-                        (file-compat-scenario-expected-lines scenario))
-               (push (compare-lines (file-compat-scenario-expected-lines scenario)
-                                    (file-compat-artifact-lines artifact))
-                     checks))
-             (make-file-compat-report
-              :scenario scenario
-              :runner :local
-              :checks (nreverse checks)
-              :artifact artifact)))
+           (multiple-value-bind (result checks)
+               (if (file-compat-scenario-steps scenario)
+                   (run-builtin-scenario-steps scenario workspace-root)
+                   (values (call-builtin-for-scenario scenario workspace-root)
+                           '()))
+             (let* ((artifact-path (and (file-compat-scenario-artifact-relative-path scenario)
+                                        (workspace-relative-pathname
+                                         workspace-root
+                                         (file-compat-scenario-artifact-relative-path
+                                          scenario))))
+                    (artifact-present-p (and artifact-path (probe-file artifact-path)))
+                    (artifact-expected-p (or (file-compat-scenario-expected-artifact-exists-p scenario)
+                                            (file-compat-scenario-expected-bytes scenario)
+                                            (file-compat-scenario-expected-text scenario)
+                                            (file-compat-scenario-expected-lines scenario)))
+                    (artifact (when artifact-present-p
+                                (capture-file-artifact artifact-path
+                                                       :external-format
+                                                       (file-compat-scenario-external-format scenario)))))
+               (when (file-compat-scenario-expected-value scenario)
+                 (let ((expected (file-compat-scenario-expected-value scenario)))
+                   (push (compare-runtime-value
+                          (if (and (consp expected)
+                                   (eq (first expected) :predicate))
+                              expected
+                              (scenario-value->runtime-value expected workspace-root))
+                          result
+                          workspace-root)
+                         checks)))
+               (when (file-compat-scenario-artifact-relative-path scenario)
+                 (push (compare-artifact-exists
+                        (not (null artifact-expected-p))
+                        (not (null artifact-present-p)))
+                       checks))
+               (when (and artifact
+                          (file-compat-scenario-expected-bytes scenario))
+                 (push (compare-bytes (file-compat-scenario-expected-bytes scenario)
+                                      (file-compat-artifact-bytes artifact))
+                       checks))
+               (when (and artifact
+                          (file-compat-scenario-expected-text scenario))
+                 (push (compare-text (file-compat-scenario-expected-text scenario)
+                                     (file-compat-artifact-text artifact))
+                       checks))
+               (when (and artifact
+                          (file-compat-scenario-expected-lines scenario))
+                 (push (compare-lines (file-compat-scenario-expected-lines scenario)
+                                      (file-compat-artifact-lines artifact))
+                       checks))
+               (make-file-compat-report
+                :scenario scenario
+                :runner :local
+                :checks (nreverse checks)
+                :artifact artifact))))
       (clautolisp.autolisp-runtime:set-autolisp-current-directory
        saved-current-directory)
       (clautolisp.autolisp-runtime:set-autolisp-support-paths
