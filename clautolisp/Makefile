@@ -12,11 +12,14 @@ READ_AUTOLISP_TOOL_DIR := autolisp-reader/tools/read-autolisp
 READ_AUTOLISP_BIN_DIR := $(READ_AUTOLISP_TOOL_DIR)/bin
 READ_AUTOLISP_SBCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-sbcl
 READ_AUTOLISP_CCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-ccl
+RUN_FILE_COMPAT := autolisp-file-compat/tools/run-file-compat/run-file-compat
+FILE_COMPAT_SCENARIOS ?= autolisp-file-compat/scenarios
+FILE_COMPAT_ARGS ?=
 
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 
-.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl documentation clean-pdf
+.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl documentation clean-pdf
 
 all: documentation
 
@@ -56,6 +59,14 @@ build-read-autolisp-ccl:
 		--eval '(require :asdf)' \
 		--load "$(READ_AUTOLISP_TOOL_DIR)/generate-read-autolisp.lisp" \
 		--eval '(ccl:quit)'
+
+run-file-compat: run-file-compat-sbcl
+
+run-file-compat-sbcl:
+	$(RUN_FILE_COMPAT) --sbcl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+
+run-file-compat-ccl:
+	$(RUN_FILE_COMPAT) --ccl $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 
 documentation: $(PDF_FILES)

@@ -41,7 +41,7 @@ The specification document has been substantially expanded into a HyperSpec-styl
 - `autolisp-spec`:
   active and currently the most mature subproject; the specification draft exists and the remaining work is mainly gap-closure and validation.
 - `clautolisp`:
-  early implementation stage; the reader subsystem is implemented and has already read a real AutoLISP corpus of 663 `.lsp` files, 100583 lines, and 3508077 characters successfully, while the runtime modules still need to be built out.
+  early implementation stage; the reader subsystem is implemented and has already read a real AutoLISP corpus of 663 `.lsp` files, 100583 lines, and 3508077 characters successfully, the first runtime and builtin layers exist, and the file-compatibility harness now executes declarative file, pathname, and printer scenarios on both SBCL and CCL.
 - `autolisp-test`:
   conformance-suite planning stage; the subproject structure and development plan exist, but the harness and first projected tests still need to be implemented.
 
@@ -77,6 +77,17 @@ The implementation track aims to provide:
 - strict and lax compatibility modes,
 - test tooling for compatibility probes,
 - a standalone executable built with SBCL or CCL.
+
+Current implementation highlights include:
+
+- `autolisp-reader`
+  source-aware reader with strict/lax token modes, comment-preserving concrete reading, and standalone reader-validation tools;
+- `autolisp-runtime`
+  initial runtime object model and reader-to-runtime literal mapping;
+- `autolisp-builtins-core`
+  first numeric, list, string, file, and printer builtin families;
+- `autolisp-file-compat`
+  declarative compatibility harness for roundtrip and builtin-driven file/path/printer scenarios with machine-readable reports.
 
 The implementation is written in portable Common Lisp as far as practical.
 
@@ -146,6 +157,11 @@ The global `Makefile` and subproject `Makefile`s provide targets for:
 - running tests,
 - building PDF output from Org documents through `pandoc`.
 
+The `clautolisp` subproject also includes dedicated tools for:
+
+- batch-reading `.lsp` corpora through `autolisp-reader`,
+- running declarative file/path/printer compatibility scenarios through `autolisp-file-compat`.
+
 ## CI and Container Image
 
 GitLab CI is configured in:
@@ -188,6 +204,18 @@ The testing strategy includes:
 - compatibility probes against real AutoCAD and BricsCAD behavior,
 - regression tests for reader, evaluator, and host-interface behavior,
 - portability testing on both SBCL and CCL.
+
+The current implementation already includes an executable compatibility harness for file-oriented behavior in:
+
+- `clautolisp/autolisp-file-compat/`
+
+That harness supports:
+
+- roundtrip byte/text/newline scenarios,
+- builtin-driven pathname/search-path scenarios,
+- builtin-driven file-mutation scenarios,
+- builtin-driven printer/read-back scenarios,
+- machine-readable JSON or s-expression reports with aggregate summaries.
 
 Because some parts of AutoLISP / Visual LISP are under-documented, executable testing against real products is a primary source of truth.
 

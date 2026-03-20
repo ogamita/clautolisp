@@ -1,0 +1,280 @@
+#+TITLE: autolisp-file-compat Usage Guide
+#+AUTHOR: Codex
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+This document explains how to use the current ~autolisp-file-compat~
+implementation.
+
+It is practical user documentation for the scenario harness and command-line
+driver.  Design rationale remains in:
+
+- ~documentation/design.org~
+
+* What The Module Does
+~autolisp-file-compat~ is a compatibility-audit harness for:
+
+- file I/O behavior,
+- pathname and search-path behavior,
+- printer and read-back behavior.
+
+It is intended to support:
+
+- local regression testing,
+- SBCL versus CCL portability checks,
+- later comparison against real AutoLISP products.
+
+* Scenario Files
+The harness is driven by declarative ~=.sexp=~ scenario files under:
+
+#+begin_src text
+clautolisp/autolisp-file-compat/scenarios/
+#+end_src
+
+The current corpus includes families such as:
+
+- ~newlines/~
+- ~encodings/~
+- ~paths/~
+- ~mutations/~
+- ~printers/~
+
+* Scenario Kinds
+There are currently two scenario kinds.
+
+** Roundtrip Scenarios
+These write text or bytes, read them back, and compare:
+
+- bytes,
+- decoded text,
+- decoded lines.
+
+Typical fields:
+
+- ~:kind :roundtrip~
+- ~:relative-path~
+- ~:input-text~ or ~:input-bytes~
+- ~:expected-text~
+- ~:expected-lines~
+- ~:expected-bytes~
+
+Example:
+
+#+begin_src lisp
+(:name "lf-text"
+ :kind :roundtrip
+ :classification :portable
+ :tags (:text :newline :lf)
+ :relative-path "artifacts/lf-text.txt"
+ :external-format :utf-8
+ :newline-mode :lf
+ :input-text "one
+two
+"
+ :expected-text "one
+two
+"
+ :expected-lines ("one" "two"))
+#+end_src
+
+** Builtin Scenarios
+These create a temporary workspace, install setup fixtures, configure path
+state, call an AutoLISP builtin through the runtime function-object layer, and
+compare the resulting runtime value.
+
+Typical fields:
+
+- ~:kind :builtin~
+- ~:setup-files~
+- ~:current-directory~
+- ~:support-paths~
+- ~:trusted-paths~
+- ~:builtin-name~
+- ~:arguments~
+- ~:expected-value~
+- optional ~:artifact-relative-path~ and artifact expectations
+
+Example:
+
+#+begin_src lisp
+(:name "findfile-basic"
+ :kind :builtin
+ :classification :portable
+ :tags (:builtin :paths :findfile)
+ :setup-files ((:type :directory :relative-path "support/")
+               (:relative-path "support/example.txt" :input-text "hello"))
+ :current-directory "cwd/"
+ :support-paths ("support/")
+ :builtin-name "FINDFILE"
+ :arguments ("example.txt")
+ :expected-value (:workspace-relative "support/example.txt"))
+#+end_src
+
+* Scenario Metadata
+Each scenario may also carry:
+
+- ~:name~
+- ~:description~
+- ~:classification~
+- ~:tags~
+
+Current classifications are:
+
+- ~:portable~
+- ~:implementation-sensitive~
+- ~:host-sensitive~
+- ~:product-sensitive~
+- ~:unknown~
+
+Tags are free-form keywords used for filtering.
+
+* Value Forms For Builtin Scenarios
+Builtin scenario arguments and expected values may use plain Lisp literals, or
+the harness-specific value forms below.
+
+Supported forms include:
+
+- ~(:string "abc")~
+- ~(:integer 17)~
+- ~(:real 3.5)~
+- ~(:symbol "FOO")~
+- ~(:nil)~
+- ~(:list 1 (:symbol "FOO") "bar")~
+- ~(:cons 1 2)~
+- ~(:workspace-relative "support/example.txt")~
+
+These are mapped to the current AutoLISP runtime model before comparison.
+
+* Command-Line Tool
+The user-facing command-line wrapper is:
+
+#+begin_src text
+clautolisp/autolisp-file-compat/tools/run-file-compat/run-file-compat
+#+end_src
+
+The =clautolisp= subproject =Makefile= also provides convenience targets:
+
+- ~make -C clautolisp run-file-compat~
+- ~make -C clautolisp run-file-compat-sbcl~
+- ~make -C clautolisp run-file-compat-ccl~
+
+Useful variables:
+
+- ~FILE_COMPAT_SCENARIOS~
+- ~FILE_COMPAT_ARGS~
+
+Supported wrapper modes:
+
+- ~--sbcl~
+- ~--ccl~
+
+Supported driver options:
+
+- ~--runner-label MODE~
+- ~--classification CLASS~
+- ~--tag TAG~
+- ~--report-format FORMAT~
+- ~--output PATH~
+- ~--help~
+
+~MODE~ is one of:
+
+- ~local~
+- ~sbcl~
+- ~ccl~
+
+~FORMAT~ is one of:
+
+- ~sexp~
+- ~json~
+
+* Typical Invocations
+Run a single scenario file:
+
+#+begin_src sh
+clautolisp/autolisp-file-compat/tools/run-file-compat/run-file-compat \
+  --sbcl \
+  --report-format json \
+  clautolisp/autolisp-file-compat/scenarios/basic-text-roundtrip.sexp
+#+end_src
+
+Run a whole scenario directory recursively:
+
+#+begin_src sh
+clautolisp/autolisp-file-compat/tools/run-file-compat/run-file-compat \
+  --sbcl \
+  --report-format json \
+  clautolisp/autolisp-file-compat/scenarios
+#+end_src
+
+Run only builtin scenarios:
+
+#+begin_src sh
+clautolisp/autolisp-file-compat/tools/run-file-compat/run-file-compat \
+  --sbcl \
+  --tag builtin \
+  --report-format json \
+  clautolisp/autolisp-file-compat/scenarios
+#+end_src
+
+Equivalent =Makefile= invocation:
+
+#+begin_src sh
+make -C clautolisp run-file-compat \
+  FILE_COMPAT_ARGS="--tag builtin --report-format json"
+#+end_src
+
+Run only portable path scenarios:
+
+#+begin_src sh
+clautolisp/autolisp-file-compat/tools/run-file-compat/run-file-compat \
+  --sbcl \
+  --classification portable \
+  --tag paths \
+  --report-format json \
+  clautolisp/autolisp-file-compat/scenarios
+#+end_src
+
+Write the combined report to a file:
+
+#+begin_src sh
+clautolisp/autolisp-file-compat/tools/run-file-compat/run-file-compat \
+  --ccl \
+  --tag builtin \
+  --report-format json \
+  --output /tmp/file-compat-report.json \
+  clautolisp/autolisp-file-compat/scenarios
+#+end_src
+
+* Report Shape
+The emitted result is a top-level report object with two fields:
+
+- ~:summary~
+- ~:reports~
+
+The summary contains aggregate counts for:
+
+- total scenarios,
+- passed scenarios,
+- failed scenarios,
+- total checks,
+- passed checks,
+- failed checks.
+
+Each individual report contains:
+
+- the runner label,
+- the scenario metadata,
+- the check list,
+- an optional artifact record.
+
+* Current Limits
+The current implementation does not yet provide:
+
+- product adapters for AutoCAD or BricsCAD,
+- a generic multi-step action language,
+- full evaluator-driven scenario execution,
+- full coverage of every file and printer builtin.
+
+The current builtin corpus is intentionally narrow and focused on deterministic
+file/path/printer checks that already exist in the implementation.
