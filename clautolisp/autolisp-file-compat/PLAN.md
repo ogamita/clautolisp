@@ -48,6 +48,8 @@ Architecture and rationale belong in `documentation/design.org`.
   current-directory-relative paths, including backslash-delimited subpaths.
 - The file-mutation corpus now also covers negative current-directory copy
   behavior for missing sources and existing destinations.
+- The file-mutation corpus now also covers `VL-FILENAME-MKTEMP` under explicit
+  current-directory state, including backslash-delimited relative directories.
 
 ## Foundation Tasks
 
@@ -87,6 +89,7 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add negative current-directory rename scenarios.
 - [x] Add current-directory-relative copy scenarios.
 - [x] Add negative current-directory copy scenarios.
+- [x] Add current-directory-relative mktemp scenarios.
 - [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 

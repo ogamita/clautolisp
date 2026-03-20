@@ -428,6 +428,8 @@ World
                   "autolisp-file-compat/scenarios/mutations/file-size-directory.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-systime-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/filename-mktemp-basic.sexp"
+                  "autolisp-file-compat/scenarios/mutations/filename-mktemp-current-directory-backslash.sexp"
+                  "autolisp-file-compat/scenarios/mutations/filename-mktemp-current-directory-relative.sexp"
                   "autolisp-file-compat/scenarios/paths/filename-components-basic.sexp"
                   "autolisp-file-compat/scenarios/paths/filename-components-backslash.sexp"))
     (dolist (scenario (load-scenario-file path))
