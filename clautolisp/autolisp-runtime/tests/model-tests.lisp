@@ -147,6 +147,51 @@
             (runtime-session-current-document
              (evaluation-context-session context))))))
 
+(test autolisp-eval-self-evaluating-and-symbol-lookup
+  (reset-autolisp-symbol-table)
+  (let ((symbol (intern-autolisp-symbol "FOO")))
+    (set-variable symbol 42)
+    (is (= 7 (autolisp-eval 7)))
+    (is (string= "x" (autolisp-string-value
+                      (autolisp-eval (make-autolisp-string "x")))))
+    (is (= 42 (autolisp-eval symbol)))))
+
+(test autolisp-eval-quote-progn-and-setq
+  (reset-autolisp-symbol-table)
+  (let* ((foo (intern-autolisp-symbol "FOO"))
+         (bar (intern-autolisp-symbol "BAR"))
+         (quoted (autolisp-eval (list (intern-autolisp-symbol "QUOTE") foo))))
+    (is (eq foo quoted))
+    (is (= 17
+           (autolisp-eval
+            (list (intern-autolisp-symbol "SETQ") foo 17))))
+    (is (= 17 (autolisp-symbol-value foo)))
+    (is (= 33
+           (autolisp-eval
+            (list (intern-autolisp-symbol "PROGN")
+                  (list (intern-autolisp-symbol "SETQ") foo 10)
+                  (list (intern-autolisp-symbol "SETQ") bar 33)
+                  bar))))
+    (is (= 10 (autolisp-symbol-value foo)))
+    (is (= 33 (autolisp-symbol-value bar)))))
+
+(test autolisp-eval-calls-subr-bindings
+  (reset-autolisp-symbol-table)
+  (let* ((plus2 (intern-autolisp-symbol "PLUS2"))
+         (arg (intern-autolisp-symbol "ARG"))
+         (function (make-autolisp-subr "PLUS2" (lambda (value) (+ value 2)))))
+    (set-function plus2 function)
+    (set-variable arg 5)
+    (is (= 7 (autolisp-eval (list plus2 arg))))))
+
+(test autolisp-eval-progn-helper
+  (reset-autolisp-symbol-table)
+  (let ((foo (intern-autolisp-symbol "FOO")))
+    (is (= 9
+           (autolisp-eval-progn
+            (list (list (intern-autolisp-symbol "SETQ") foo 9)
+                  foo))))))
+
 (test autolisp-read-from-string-returns-first-form
   (reset-autolisp-symbol-table)
   (let ((value (autolisp-read-from-string "(a) (b)")))
