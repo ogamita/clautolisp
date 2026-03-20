@@ -40,6 +40,8 @@ Architecture and rationale belong in `documentation/design.org`.
 - The file-mutation corpus now also covers `VL-FILE-SIZE` and
   `VL-FILE-DELETE` on relative paths resolved through explicit current-directory
   state, including backslash-delimited subpaths.
+- The file-mutation corpus now also covers `VL-FILE-RENAME` on
+  current-directory-relative paths, including backslash-delimited subpaths.
 
 ## Foundation Tasks
 
@@ -75,6 +77,7 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add current-directory-relative backslash subpath stream scenarios.
 - [x] Add current-directory-relative `PRIN1` roundtrip scenarios.
 - [x] Add current-directory-relative file-mutation scenarios.
+- [x] Add current-directory-relative rename scenarios.
 - [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 
