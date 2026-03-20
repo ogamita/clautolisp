@@ -220,16 +220,34 @@ The =clautolisp= subproject =Makefile= also provides convenience targets:
 - ~make -C clautolisp run-file-compat~
 - ~make -C clautolisp run-file-compat-sbcl~
 - ~make -C clautolisp run-file-compat-ccl~
+- ~make -C clautolisp run-file-compat-autocad~
+- ~make -C clautolisp run-file-compat-bricscad~
+- ~make -C clautolisp audit-file-compat-autocad~
+- ~make -C clautolisp audit-file-compat-bricscad~
 
 Useful variables:
 
 - ~FILE_COMPAT_SCENARIOS~
 - ~FILE_COMPAT_ARGS~
 
+Product-backed runs use runner-template environment variables:
+
+- ~AUTOCAD_RUNNER~
+- ~BRICSCAD_RUNNER~
+
+Each template is a shell command string that may reference:
+
+- ~__PROBE_FILE__~
+- ~__WRAPPER_FILE__~
+- ~__RESULT_FILE__~
+- ~__RESULT_DIR__~
+
 Supported wrapper modes:
 
 - ~--sbcl~
 - ~--ccl~
+- ~--autocad~
+- ~--bricscad~
 
 Supported driver options:
 
@@ -245,6 +263,8 @@ Supported driver options:
 - ~local~
 - ~sbcl~
 - ~ccl~
+- ~autocad~
+- ~bricscad~
 
 ~FORMAT~ is one of:
 
@@ -287,6 +307,13 @@ make -C clautolisp run-file-compat \
   FILE_COMPAT_ARGS="--tag builtin --report-format json"
 #+end_src
 
+Write JSON output into the repository artifact directory:
+
+#+begin_src sh
+make -C clautolisp run-file-compat-sbcl \
+  FILE_COMPAT_ARGS="--tag builtin --report-format json --output .artifacts/file-compat-sbcl.json"
+#+end_src
+
 Run only portable path scenarios:
 
 #+begin_src sh
@@ -307,6 +334,14 @@ clautolisp/autolisp-file-compat/tools/run-file-compat/run-file-compat \
   --report-format json \
   --output /tmp/file-compat-report.json \
   clautolisp/autolisp-file-compat/scenarios
+#+end_src
+
+Run a product-backed audit through BricsCAD:
+
+#+begin_src sh
+BRICSCAD_RUNNER='"/Applications/BricsCAD V26.app/Contents/MacOS/bricscad" "__PROBE_FILE__"' \
+make -C clautolisp audit-file-compat-bricscad \
+  FILE_COMPAT_ARGS="--output /tmp/file-compat-bricscad.json"
 #+end_src
 
 * Report Shape
@@ -334,10 +369,14 @@ Each individual report contains:
 * Current Limits
 The current implementation does not yet provide:
 
-- product adapters for AutoCAD or BricsCAD,
 - a generic multi-step action language,
 - full evaluator-driven scenario execution,
-- full coverage of every file and printer builtin.
+- full product support for every host-state-sensitive scenario.
 
 The current builtin corpus is intentionally narrow and focused on deterministic
 file/path/printer checks that already exist in the implementation.
+
+At present, real-product audits still require an external runner command for
+AutoCAD or BricsCAD.  The adapter layer and its regression tests exist, but the
+actual product audit remains dependent on a configured local product
+installation or runner bridge.

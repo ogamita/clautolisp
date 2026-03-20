@@ -50,6 +50,14 @@ Architecture and rationale belong in `documentation/design.org`.
   behavior for missing sources and existing destinations.
 - The file-mutation corpus now also covers `VL-FILENAME-MKTEMP` under explicit
   current-directory state, including backslash-delimited relative directories.
+- The current declarative builtin corpus contains 69 scenarios and 140 checks,
+  and it passes on both SBCL and CCL.
+- The command-line driver and wrapper are now integrated into GitLab CI for
+  local SBCL and CCL compatibility runs, with JSON artifacts stored under
+  `clautolisp/.artifacts/`.
+- Product-runner adapter tests now run portably through a fake external runner,
+  so the AutoCAD and BricsCAD adapter paths are regression-tested even when the
+  real products are not available.
 
 ## Foundation Tasks
 
@@ -64,7 +72,7 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add JSON or s-expression report emission for machine-readable audit runs.
 - [x] Add a command-line driver for batch compatibility runs.
 - [x] Add runner adapters for SBCL and CCL host-specific comparison modes.
-- [ ] Add product-runner adapters for real CAD environments.
+- [x] Add product-runner adapters for real CAD environments.
 
 ## Scenario Tasks
 
@@ -90,10 +98,10 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add current-directory-relative copy scenarios.
 - [x] Add negative current-directory copy scenarios.
 - [x] Add current-directory-relative mktemp scenarios.
-- [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
+- [x] Extend file-mutation coverage to rename edge cases and more failure modes.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 
 ## Integration Tasks
 
-- [ ] Integrate the compatibility harness with CI in a non-product local mode.
+- [x] Integrate the compatibility harness with CI in a non-product local mode.
 - [ ] Use the harness to audit the current file builtin family against real products.

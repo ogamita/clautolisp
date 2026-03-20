@@ -122,14 +122,28 @@ The current implementation therefore emits:
 This keeps machine-readable runs suitable for CI and later diff-oriented audit
 workflows.
 
-* Future Runners
+* Runner Kinds
 
-Planned runner kinds include:
+The harness now supports:
 
 - local =clautolisp= runner,
 - SBCL helper runner,
 - CCL helper runner,
-- product runners for CAD environments.
+- product-adapter runners for AutoCAD and BricsCAD through external runner
+  templates.
+
+The product-adapter runners currently execute generated AutoLISP wrapper files
+and read back a result s-expression for the scenario final value. This is
+intentionally narrower than the local runner: it is aimed at executable product
+audits of builtin/file behavior rather than full introspective debugging.
+
+* Future Runners
+
+Planned refinements include:
+
+- richer product-side step reporting,
+- better support for host-state-sensitive scenarios such as search paths,
+- additional CAD environments beyond AutoCAD and BricsCAD.
 
 Those runners should share the same scenario and report model as much as
 possible.

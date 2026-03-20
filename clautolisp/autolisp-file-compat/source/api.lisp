@@ -1,5 +1,7 @@
 (in-package #:clautolisp.autolisp-file-compat)
 
+(defparameter *product-runner-template-overrides* '())
+
 (defun normalize-newlines (text newline-mode)
   (let ((lf-normalized
           (with-output-to-string (out)
@@ -848,7 +850,401 @@
       (clautolisp.autolisp-runtime:set-autolisp-support-paths
        saved-support-paths)
       (clautolisp.autolisp-runtime:set-autolisp-trusted-paths
-       saved-trusted-paths))))
+      saved-trusted-paths))))
+
+(defun product-runner-environment-variable (runner)
+  (ecase runner
+    (:autocad
+     "AUTOCAD_RUNNER")
+    (:bricscad
+     "BRICSCAD_RUNNER")))
+
+(defun product-runner-template (runner)
+  (or (cdr (assoc runner *product-runner-template-overrides*))
+      (uiop:getenv (product-runner-environment-variable runner))
+      (error "~A is not set." (product-runner-environment-variable runner))))
+
+(defun product-scenario-supported-p (scenario)
+  (and (eq (file-compat-scenario-kind scenario) :builtin)
+       (not (member (string-upcase (or (file-compat-scenario-builtin-name scenario) ""))
+                    '("FINDFILE" "FINDTRUSTEDFILE")
+                    :test #'string=))
+       (null (file-compat-scenario-support-paths scenario))
+       (null (file-compat-scenario-trusted-paths scenario))))
+
+(defun ensure-directory-namestring (path)
+  (namestring (uiop:ensure-directory-pathname path)))
+
+(defun scenario-absolute-current-directory (scenario workspace-root)
+  (uiop:ensure-directory-pathname
+   (if (file-compat-scenario-current-directory scenario)
+       (workspace-relative-pathname workspace-root
+                                    (file-compat-scenario-current-directory scenario))
+       workspace-root)))
+
+(defun path-string-has-backslash-p (string)
+  (not (null (position #\\ string))))
+
+(defun path-string-ends-with-separator-p (string)
+  (and (> (length string) 0)
+       (member (char string (1- (length string))) '(#\/ #\\))))
+
+(defun normalized-path-string (string)
+  (substitute #\/ #\\ string))
+
+(defun restore-path-style (original path)
+  (if (path-string-has-backslash-p original)
+      (substitute #\\ #\/ path)
+      path))
+
+(defun replace-substring (string old new)
+  (with-output-to-string (out)
+    (loop with old-length = (length old)
+          with position = 0
+          for next = (search old string :start2 position)
+          do (if next
+                 (progn
+                   (write-string string out :start position :end next)
+                   (write-string new out)
+                   (setf position (+ next old-length)))
+                 (progn
+                   (write-string string out :start position)
+                   (return))))))
+
+(defun path-argument-kind (builtin-name index)
+  (let ((name (string-upcase builtin-name)))
+    (cond
+      ((and (string= name "OPEN")
+            (= index 0))
+       :path)
+      ((and (string= name "VL-DIRECTORY-FILES")
+            (= index 0))
+       :directory)
+      ((and (string= name "VL-FILE-DIRECTORY-P")
+            (= index 0))
+       :path)
+      ((and (member name '("VL-FILENAME-BASE"
+                           "VL-FILENAME-DIRECTORY"
+                           "VL-FILENAME-EXTENSION")
+                    :test #'string=)
+            (= index 0))
+       :path)
+      ((and (member name '("VL-FILE-DELETE"
+                           "VL-FILE-SIZE"
+                           "VL-FILE-SYSTIME"
+                           "VL-MKDIR")
+                    :test #'string=)
+            (= index 0))
+       :path)
+      ((and (string= name "VL-FILE-RENAME")
+            (member index '(0 1)))
+       :path)
+      ((and (string= name "VL-FILE-COPY")
+            (member index '(0 1)))
+       :path)
+      ((and (string= name "VL-FILENAME-MKTEMP")
+            (= index 1))
+       :directory)
+      (t
+       nil))))
+
+(defun absolutize-product-path-string (path kind scenario workspace-root)
+  (let* ((base (scenario-absolute-current-directory scenario workspace-root))
+         (normalized (normalized-path-string path))
+         (pathname (pathname normalized))
+         (merged (if (uiop:absolute-pathname-p pathname)
+                     pathname
+                     (merge-pathnames normalized base)))
+         (final (if (or (eq kind :directory)
+                        (path-string-ends-with-separator-p path))
+                    (ensure-directory-namestring merged)
+                    (namestring merged))))
+    (restore-path-style path final)))
+
+(defun autolisp-string-literal (string)
+  (with-output-to-string (out)
+    (write-char #\" out)
+    (loop for character across string
+          do (case character
+               (#\\
+                (write-string "\\\\" out))
+               (#\"
+                (write-string "\\\"" out))
+               (t
+                (write-char character out))))
+    (write-char #\" out)))
+
+(defun autolisp-data-source (value)
+  (cond
+    ((null value)
+     "nil")
+    ((stringp value)
+     (autolisp-string-literal value))
+    ((integerp value)
+     (princ-to-string value))
+    ((floatp value)
+     (princ-to-string (coerce value 'double-float)))
+    ((symbolp value)
+     (string-upcase (symbol-name value)))
+    ((consp value)
+     (format nil "(~{~A~^ ~})"
+             (mapcar #'autolisp-data-source value)))
+    (t
+     (error "Cannot emit AutoLISP data source for ~S." value))))
+
+(defun scenario-argument->autolisp-source (argument builtin-name index scenario workspace-root bindings)
+  (cond
+    ((step-reference-p argument)
+     (or (gethash (second argument) bindings)
+         (error "Unknown step binding ~S." (second argument))))
+    ((and (stringp argument)
+          (path-argument-kind builtin-name index))
+     (autolisp-string-literal
+      (absolutize-product-path-string argument
+                                      (path-argument-kind builtin-name index)
+                                      scenario
+                                      workspace-root)))
+    ((stringp argument)
+     (autolisp-string-literal argument))
+    ((integerp argument)
+     (princ-to-string argument))
+    ((floatp argument)
+     (princ-to-string (coerce argument 'double-float)))
+    ((and (consp argument) (keywordp (first argument)))
+     (case (first argument)
+       (:nil
+        "nil")
+       (:string
+        (autolisp-string-literal (second argument)))
+       (:integer
+        (princ-to-string (second argument)))
+       (:real
+        (princ-to-string (coerce (second argument) 'double-float)))
+       (:symbol
+        (format nil "'~A" (string-upcase (second argument))))
+       (:workspace-relative
+        (autolisp-string-literal
+         (namestring (workspace-relative-pathname workspace-root
+                                                  (second argument)))))
+       (:list
+        (format nil "'~A" (autolisp-data-source
+                           (mapcar (lambda (item)
+                                     (scenario-value->runtime-value item workspace-root))
+                                   (rest argument)))))
+       (:cons
+        (format nil "'(~A . ~A)"
+                (autolisp-data-source
+                 (scenario-value->runtime-value (second argument) workspace-root))
+                (autolisp-data-source
+                 (scenario-value->runtime-value (third argument) workspace-root))))
+       (otherwise
+        (error "Unsupported argument form ~S for product runner." argument))))
+    ((listp argument)
+     (format nil "'~A"
+             (autolisp-data-source
+              (mapcar (lambda (item)
+                        (scenario-value->runtime-value item workspace-root))
+                      argument))))
+    (t
+     (error "Unsupported product-runner argument ~S." argument))))
+
+(defun product-step-variable-name (name)
+  (format nil "ffc_~A" (string-downcase name)))
+
+(defun product-step-forms (scenario workspace-root)
+  (let ((bindings (make-hash-table :test #'equal))
+        (forms '())
+        (last-result "nil"))
+    (labels ((record-form (form)
+               (push form forms))
+             (bind-name (step)
+               (and (getf step :bind)
+                    (let ((variable (product-step-variable-name (getf step :bind))))
+                      (setf (gethash (getf step :bind) bindings) variable)
+                      variable)))
+             (emit-call (builtin-name arguments &optional bind)
+               (let ((call (format nil "(~A~@[ ~{~A~^ ~}~])"
+                                   (string-upcase builtin-name)
+                                   (and arguments
+                                        (loop for argument in arguments
+                                              for index from 0
+                                              collect (scenario-argument->autolisp-source
+                                                       argument
+                                                       builtin-name
+                                                       index
+                                                       scenario
+                                                       workspace-root
+                                                       bindings))))))
+                 (setf last-result (or bind "ffc_last_result"))
+                 (record-form
+                  (format nil "(setq ~A ~A)" last-result call)))))
+      (if (file-compat-scenario-steps scenario)
+          (dolist (step (file-compat-scenario-steps scenario))
+            (emit-call (getf step :builtin-name)
+                       (or (getf step :arguments) '())
+                       (bind-name step)))
+          (emit-call (file-compat-scenario-builtin-name scenario)
+                     (file-compat-scenario-arguments scenario)))
+      (values (nreverse forms)
+              (if (file-compat-scenario-result-ref scenario)
+                  (or (gethash (file-compat-scenario-result-ref scenario) bindings)
+                      (error "Unknown product-runner result binding ~S."
+                             (file-compat-scenario-result-ref scenario)))
+                  last-result)))))
+
+(defun product-wrapper-source (scenario workspace-root result-file)
+  (multiple-value-bind (forms result-variable)
+      (product-step-forms scenario workspace-root)
+    (with-output-to-string (out)
+      (format out "(setq *ffc-result-file* ~A)~%"
+              (autolisp-string-literal (namestring result-file)))
+      (write-string "(defun ffc-write-result (data / stream) (setq stream (open *ffc-result-file* \"w\")) (if stream (progn (prin1 data stream) (close stream))) data)~%" out)
+      (write-string "(setq ffc-error (vl-catch-all-apply '(lambda ()~%" out)
+      (dolist (form forms)
+        (format out "  ~A~%" form))
+      (format out "  ~A~%" result-variable)
+      (write-string ")))~%" out)
+      (write-string "(if (vl-catch-all-error-p ffc-error)~%" out)
+      (write-string "    (ffc-write-result (list 'error (vl-catch-all-error-message ffc-error)))~%" out)
+      (write-string "    (ffc-write-result (list 'ok ffc-error)))~%" out)
+      (write-string "(princ)~%" out))))
+
+(defun product-run-command (template wrapper-file result-file run-directory)
+  (let ((command template))
+    (setf command (replace-substring command "__PROBE_FILE__"
+                                     (namestring wrapper-file)))
+    (setf command (replace-substring command "__WRAPPER_FILE__"
+                                     (namestring wrapper-file)))
+    (setf command (replace-substring command "__RESULT_FILE__"
+                                     (namestring result-file)))
+    (replace-substring command "__RESULT_DIR__"
+                       (namestring run-directory))))
+
+(defun product-report-checks (scenario result workspace-root)
+  (let ((checks '()))
+    (cond
+      ((and (consp result)
+            (string= "ERROR" (string-upcase (symbol-name (first result)))))
+       (push (make-file-compat-check
+              :name "product-run"
+              :passed-p nil
+              :message (format nil "Product runner error: ~A" (second result)))
+             checks))
+      ((and (consp result)
+            (string= "OK" (string-upcase (symbol-name (first result)))))
+       (when (file-compat-scenario-expected-value scenario)
+         (push (compare-runtime-value
+                (let ((expected (file-compat-scenario-expected-value scenario)))
+                  (if (and (consp expected)
+                           (eq (first expected) :predicate))
+                      expected
+                      (scenario-value->runtime-value expected workspace-root)))
+                (product-value->runtime-value (second result))
+                workspace-root)
+               checks)))
+      (t
+       (push (make-file-compat-check
+              :name "product-run"
+              :passed-p nil
+              :message "Product runner produced an unreadable result.")
+             checks)))
+    (nreverse checks)))
+
+(defun product-value->runtime-value (value)
+  (cond
+    ((null value)
+     nil)
+    ((stringp value)
+     (clautolisp.autolisp-runtime:make-autolisp-string value))
+    ((integerp value)
+     value)
+    ((floatp value)
+     (coerce value 'double-float))
+    ((consp value)
+     (cons (product-value->runtime-value (car value))
+           (product-value->runtime-value (cdr value))))
+    ((symbolp value)
+     (cond
+       ((string= "NIL" (string-upcase (symbol-name value)))
+        nil)
+       (t
+        (clautolisp.autolisp-runtime:intern-autolisp-symbol
+         (string-upcase (symbol-name value))))))
+    (t
+     value)))
+
+(defun run-product-builtin-scenario (scenario runner)
+  (let* ((workspace-root (scenario-temp-workspace scenario))
+         (run-directory (scenario-temp-workspace scenario))
+         (wrapper-file (merge-pathnames "run-file-compat.lsp" run-directory))
+         (result-file (merge-pathnames "result.sexp" run-directory))
+         (template (product-runner-template runner)))
+    (ensure-directories-exist (merge-pathnames "sentinel" workspace-root))
+    (ensure-directories-exist wrapper-file)
+    (setup-scenario-workspace scenario workspace-root)
+    (write-file-text wrapper-file
+                     (product-wrapper-source scenario workspace-root result-file))
+    (let* ((process (uiop:launch-program
+                     (list "bash" "-lc"
+                           (product-run-command template wrapper-file result-file run-directory))
+                     :output *standard-output*
+                     :error-output *error-output*))
+           (exit-code (uiop:wait-process process))
+           (artifact-path (and (file-compat-scenario-artifact-relative-path scenario)
+                               (workspace-relative-pathname
+                                workspace-root
+                                (file-compat-scenario-artifact-relative-path scenario))))
+           (artifact-present-p (and artifact-path (probe-file artifact-path)))
+           (artifact-expected-p (or (file-compat-scenario-expected-artifact-exists-p scenario)
+                                    (file-compat-scenario-expected-bytes scenario)
+                                    (file-compat-scenario-expected-text scenario)
+                                    (file-compat-scenario-expected-lines scenario)))
+           (artifact (when artifact-present-p
+                       (capture-file-artifact artifact-path
+                                              :external-format
+                                              (file-compat-scenario-external-format scenario))))
+           (result (and (zerop exit-code)
+                        (probe-file result-file)
+                        (with-open-file (stream result-file :direction :input)
+                          (read stream nil nil))))
+           (checks (if (product-scenario-supported-p scenario)
+                       (product-report-checks scenario result workspace-root)
+                       (list (make-file-compat-check
+                              :name "product-support"
+                              :passed-p nil
+                              :message "Scenario is not supported by the product runner.")))))
+      (when (and (product-scenario-supported-p scenario)
+                 (not (zerop exit-code)))
+        (push (make-file-compat-check
+               :name "product-exit"
+               :passed-p nil
+               :message (format nil "Product runner exited with code ~D." exit-code))
+              checks))
+      (when (file-compat-scenario-artifact-relative-path scenario)
+        (push (compare-artifact-exists
+               (not (null artifact-expected-p))
+               (not (null artifact-present-p)))
+              checks))
+      (when (and artifact
+                 (file-compat-scenario-expected-bytes scenario))
+        (push (compare-bytes (file-compat-scenario-expected-bytes scenario)
+                             (file-compat-artifact-bytes artifact))
+              checks))
+      (when (and artifact
+                 (file-compat-scenario-expected-text scenario))
+        (push (compare-text (file-compat-scenario-expected-text scenario)
+                            (file-compat-artifact-text artifact))
+              checks))
+      (when (and artifact
+                 (file-compat-scenario-expected-lines scenario))
+        (push (compare-lines (file-compat-scenario-expected-lines scenario)
+                             (file-compat-artifact-lines artifact))
+              checks))
+      (make-file-compat-report
+       :scenario scenario
+       :runner runner
+       :checks (nreverse checks)
+       :artifact artifact))))
 
 (defun run-scenario (scenario &key (runner :local))
   (ecase runner
@@ -865,4 +1261,8 @@
     (:ccl
      (let ((report (run-scenario scenario :runner :local)))
        (setf (file-compat-report-runner report) :ccl)
-       report))))
+       report))
+    (:autocad
+     (run-product-builtin-scenario scenario :autocad))
+    (:bricscad
+     (run-product-builtin-scenario scenario :bricscad))))

@@ -55,3 +55,25 @@ test:clautolisp:ccl:
   stage: test
   script:
     - make -C clautolisp test-ccl
+
+test:clautolisp:file-compat:sbcl:
+  stage: test
+  script:
+    - mkdir -p clautolisp/.artifacts
+    - make -C clautolisp run-file-compat-sbcl FILE_COMPAT_ARGS="--tag builtin --report-format json --output .artifacts/file-compat-sbcl.json"
+    - cat clautolisp/.artifacts/file-compat-sbcl.json
+  artifacts:
+    when: always
+    paths:
+      - clautolisp/.artifacts/file-compat-sbcl.json
+
+test:clautolisp:file-compat:ccl:
+  stage: test
+  script:
+    - mkdir -p clautolisp/.artifacts
+    - make -C clautolisp run-file-compat-ccl FILE_COMPAT_ARGS="--tag builtin --report-format json --output .artifacts/file-compat-ccl.json"
+    - cat clautolisp/.artifacts/file-compat-ccl.json
+  artifacts:
+    when: always
+    paths:
+      - clautolisp/.artifacts/file-compat-ccl.json
