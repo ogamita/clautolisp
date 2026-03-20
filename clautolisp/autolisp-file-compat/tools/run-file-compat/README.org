@@ -38,6 +38,17 @@ Current scenario families include:
 - file-mutation builtin checks,
 - printer and read-back builtin checks.
 
+The =clautolisp/Makefile= provides convenient wrappers:
+
+- =make -C clautolisp run-file-compat=
+- =make -C clautolisp run-file-compat-sbcl=
+- =make -C clautolisp run-file-compat-ccl=
+
+Useful variables:
+
+- =FILE_COMPAT_SCENARIOS=
+- =FILE_COMPAT_ARGS=
+
 The emitted result is now a top-level report object with:
 
 - =:summary= aggregate scenario and check counts,

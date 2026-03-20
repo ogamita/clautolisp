@@ -35,4 +35,5 @@ The current driver can also:
 See:
 
 - [[file:documentation/design.org][documentation/design.org]]
+- [[file:documentation/usage.org][documentation/usage.org]]
 - [[file:PLAN.md][PLAN.md]]
