@@ -13,6 +13,8 @@ Architecture and rationale belong in `documentation/design.org`.
   line structure under controlled encoding and newline settings.
 - Declarative scenario files, a command-line driver, machine-readable reports,
   and SBCL/CCL runner modes now exist.
+- The scenario corpus now supports recursive directory collection, tag-based
+  filtering, and aggregate summary reporting.
 
 ## Foundation Tasks
 
@@ -31,11 +33,11 @@ Architecture and rationale belong in `documentation/design.org`.
 
 ## Scenario Tasks
 
-- [ ] Add newline and encoding matrix scenarios.
+- [x] Add newline and encoding matrix scenarios.
 - [ ] Add pathname-resolution and search-path scenarios.
 - [ ] Add file-mutation scenarios for copy, rename, delete, size, and temp-file behavior.
 - [ ] Add printer/read-back scenarios for `prin1`, `princ`, `print`, and `read`.
-- [ ] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
+- [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 
 ## Integration Tasks
 

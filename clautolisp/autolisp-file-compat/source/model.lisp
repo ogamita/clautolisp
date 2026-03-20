@@ -5,11 +5,14 @@
   (description "" :type string)
   root
   (relative-path "" :type string)
+  (classification :portable :type keyword)
+  (tags '() :type list)
   (external-format :default)
   (newline-mode :lf)
   input-text
   input-bytes
   expected-text
+  (expected-lines '() :type list)
   expected-bytes)
 
 (defstruct file-compat-artifact
@@ -28,3 +31,11 @@
   (runner :local :type keyword)
   (checks '() :type list)
   artifact)
+
+(defstruct file-compat-summary
+  (total-scenarios 0 :type integer)
+  (passed-scenarios 0 :type integer)
+  (failed-scenarios 0 :type integer)
+  (total-checks 0 :type integer)
+  (passed-checks 0 :type integer)
+  (failed-checks 0 :type integer))

@@ -4,7 +4,13 @@
                 #:command-line-arguments
                 #:quit)
   (:import-from #:clautolisp.autolisp-file-compat
+                #:collect-scenario-file-paths
                 #:emit-report
+                #:emit-json-value
                 #:load-scenario-file
-                #:run-scenario)
+                #:report->plist
+                #:run-scenario
+                #:scenario-matches-tags-p
+                #:summarize-reports
+                #:summary->plist)
   (:export #:main))

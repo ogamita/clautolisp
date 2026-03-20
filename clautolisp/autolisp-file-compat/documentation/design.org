@@ -50,6 +50,15 @@ Each scenario should eventually include:
 The first implementation keeps the executable surface small and uses simple
 round-trip scenarios with explicit expected text or bytes.
 
+The current scenario corpus is now organized as a directory tree rather than a
+single flat list of files. This makes it easier to grow focused scenario
+families such as:
+
+- newline handling,
+- encoding handling,
+- later pathname and search-path behavior,
+- later printer and file-mutation behavior.
+
 * Artifact Model
 
 Each executed scenario may produce artifacts such as:
@@ -84,8 +93,20 @@ Scenarios and checks should eventually be classifiable as:
 - product-sensitive,
 - unknown.
 
-The initial implementation records pass/fail status and message fields, leaving
-full policy classification to later scenario metadata.
+The implementation now records scenario-level classification metadata directly
+in the scenario files and preserves it through report emission and filtering.
+
+* Report Model
+
+Reports should be useful both per-scenario and in aggregate.
+
+The current implementation therefore emits:
+
+- individual scenario reports,
+- aggregate summary counts for scenarios and checks.
+
+This keeps machine-readable runs suitable for CI and later diff-oriented audit
+workflows.
 
 * Future Runners
 
