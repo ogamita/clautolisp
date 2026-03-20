@@ -77,6 +77,48 @@ The wrapper stores at least:
 
 - a ~string-value~ slot containing the Common Lisp string.
 
+** Pathnames
+AutoLISP pathnames are represented as strings at the language level.
+
+Current design position:
+
+- pathname arguments and results remain ordinary AutoLISP string objects,
+- there is no separate runtime pathname value type at this stage,
+- pathname resolution is *not* delegated implicitly to Common Lisp pathname
+  merging semantics,
+- the pathname resolution algorithm itself must come from the AutoLISP
+  specification and compatibility evidence, not from ad hoc implementation
+  choice.
+
+Instead, path resolution belongs to explicit runtime / host state interpreted
+through an AutoLISP-defined resolution algorithm.
+
+That state will need to define at least:
+
+- a current working directory or equivalent current path prefix,
+- host-profile-specific separator, drive, and volume conventions,
+- any AutoLISP-visible search-path or document-directory behavior that affects
+  relative path resolution.
+
+Implementation rule for future file builtins:
+
+- do not pass unresolved relative AutoLISP pathname strings directly to Common
+  Lisp file operators,
+- either resolve them first to an absolute host path under AutoLISP rules, or
+  otherwise bind Common Lisp pathname defaults to a benign value at the
+  boundary,
+- avoid letting ~*default-pathname-defaults*~ silently define AutoLISP-visible
+  path behavior.
+
+This keeps pathname merging and current-directory semantics under explicit
+project control instead of inheriting accidental host Lisp behavior.
+
+The remaining open work is therefore twofold:
+
+- determine the actual AutoLISP pathname-resolution algorithm from the spec and
+  product-compatibility corpus,
+- then implement that algorithm over explicit runtime / host path state.
+
 ** FILE
 File descriptors are wrapper objects around Common Lisp streams.
 
@@ -146,3 +188,7 @@ The following remain open:
 - how ~T~ is bootstrapped and whether it is interned eagerly,
 - how builtin functions and user functions differ structurally,
 - how host adapters attach lifecycle and validity checks to wrapped objects.
+- the exact runtime object that holds current-directory and path-resolution
+  state before the host API module is introduced.
+- the exact pathname-resolution algorithm to implement once the specification
+  corpus for file/path behavior is gathered and reconciled.

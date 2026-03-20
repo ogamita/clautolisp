@@ -287,3 +287,65 @@
     (is (string= "A"
                  (autolisp-string-value
                   (call-autolisp-function chr-fn 65))))))
+
+(test builtin-file-primitives
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((open-fn (autolisp-symbol-function (find-autolisp-symbol "OPEN")))
+         (close-fn (autolisp-symbol-function (find-autolisp-symbol "CLOSE")))
+         (read-line-fn (autolisp-symbol-function (find-autolisp-symbol "READ-LINE")))
+         (read-char-fn (autolisp-symbol-function (find-autolisp-symbol "READ-CHAR")))
+         (write-line-fn (autolisp-symbol-function (find-autolisp-symbol "WRITE-LINE")))
+         (write-char-fn (autolisp-symbol-function (find-autolisp-symbol "WRITE-CHAR")))
+         (findfile-fn (autolisp-symbol-function (find-autolisp-symbol "FINDFILE")))
+         (findtrustedfile-fn (autolisp-symbol-function (find-autolisp-symbol "FINDTRUSTEDFILE")))
+         (directory (format nil "/tmp/clautolisp-builtins-core-~D/" (random 1000000000)))
+         (relative-name "sample.txt")
+         (trusted-name "trusted.txt")
+         (path (concatenate 'string directory relative-name))
+         (trusted-path (concatenate 'string directory trusted-name))
+         (resolved-path nil)
+         (resolved-trusted-path nil)
+         (path-string (clautolisp.autolisp-runtime:make-autolisp-string relative-name))
+         (write-mode (clautolisp.autolisp-runtime:make-autolisp-string "w"))
+         (read-mode (clautolisp.autolisp-runtime:make-autolisp-string "r")))
+    (ensure-directories-exist directory)
+    (set-autolisp-current-directory directory)
+    (set-autolisp-support-paths (list directory))
+    (set-autolisp-trusted-paths (list directory))
+    (let ((file (call-autolisp-function open-fn path-string write-mode)))
+      (is (typep file 'autolisp-file))
+      (is (typep (call-autolisp-function write-line-fn
+                                         (clautolisp.autolisp-runtime:make-autolisp-string "alpha")
+                                         file)
+                 'autolisp-string))
+      (is (= 66 (call-autolisp-function write-char-fn 66 file)))
+      (is (null (call-autolisp-function close-fn file))))
+    (let ((file (call-autolisp-function open-fn path-string read-mode)))
+      (is (typep file 'autolisp-file))
+      (is (string= "alpha"
+                   (autolisp-string-value
+                    (call-autolisp-function read-line-fn file))))
+      (is (= 66 (call-autolisp-function read-char-fn file)))
+      (is (null (call-autolisp-function read-line-fn file)))
+      (is (null (call-autolisp-function close-fn file))))
+    (with-open-file (stream trusted-path
+                            :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create)
+      (write-line "trusted" stream))
+    (setf resolved-path (namestring (probe-file path))
+          resolved-trusted-path (namestring (probe-file trusted-path)))
+    (is (string= resolved-path
+                 (autolisp-string-value
+                  (call-autolisp-function findfile-fn
+                                          (clautolisp.autolisp-runtime:make-autolisp-string relative-name)))))
+    (is (string= resolved-trusted-path
+                 (autolisp-string-value
+                  (call-autolisp-function findtrustedfile-fn
+                                          (clautolisp.autolisp-runtime:make-autolisp-string trusted-name)))))
+    (is (null (call-autolisp-function findfile-fn
+                                      (clautolisp.autolisp-runtime:make-autolisp-string "missing.txt"))))
+    (ignore-errors (delete-file path))
+    (ignore-errors (delete-file trusted-path))
+    (ignore-errors (delete-file directory))))

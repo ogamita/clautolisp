@@ -34,7 +34,7 @@
   :description "Core AutoLISP runtime object model for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-reader")
+  :depends-on ("clautolisp/autolisp-reader" "uiop")
   :serial t
   :components
   ((:file "autolisp-runtime/source/package")
@@ -50,7 +50,7 @@
   :description "Initial core builtin registry for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime")
+  :depends-on ("clautolisp/autolisp-runtime" "uiop")
   :serial t
   :components
   ((:file "autolisp-builtins-core/source/package")

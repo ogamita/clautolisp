@@ -31,6 +31,7 @@
    #:autolisp-symbol-function
    #:autolisp-symbol-function-bound-p
    #:autolisp-file
+   #:make-autolisp-file
    #:autolisp-file-stream
    #:autolisp-file-path
    #:autolisp-file-mode
@@ -57,6 +58,12 @@
    #:intern-autolisp-symbol
    #:find-autolisp-symbol
    #:reset-autolisp-symbol-table
+   #:autolisp-current-directory
+   #:set-autolisp-current-directory
+   #:autolisp-support-paths
+   #:set-autolisp-support-paths
+   #:autolisp-trusted-paths
+   #:set-autolisp-trusted-paths
    #:autolisp-true-p
    #:autolisp-false-p
    #:autolisp-null
@@ -69,6 +76,7 @@
    #:autolisp-vl-symbol-value
    #:set-autolisp-symbol-function
    #:set-autolisp-symbol-value
+   #:close-autolisp-file
    #:call-autolisp-function
    #:runtime-value-p
    #:reader-object->runtime-value
