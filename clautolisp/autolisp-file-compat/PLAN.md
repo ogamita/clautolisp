@@ -18,6 +18,9 @@ Architecture and rationale belong in `documentation/design.org`.
 - The harness now supports executable builtin scenarios with temporary
   workspaces, setup fixtures, path-state controls, and runtime-value
   expectations.
+- The builtin corpus now covers pathname lookup, directory listing, file
+  mutation, temp-file generation, size queries, and string printer/read-back
+  behavior on both SBCL and CCL.
 
 ## Foundation Tasks
 
@@ -40,7 +43,7 @@ Architecture and rationale belong in `documentation/design.org`.
 - [x] Add pathname-resolution and search-path scenarios.
 - [x] Add file-mutation scenarios for copy, rename, and delete behavior.
 - [x] Add printer/read-back scenarios for string-printing and `read`.
-- [ ] Extend file-mutation coverage to size, rename edge cases, and temp-file behavior.
+- [ ] Extend file-mutation coverage to rename edge cases and more failure modes.
 - [ ] Extend printer/read-back coverage to file-targeted `prin1`, `princ`, `print`, and `terpri`.
 - [x] Classify scenarios by expected status: portable, implementation-sensitive, host-sensitive, or unknown.
 

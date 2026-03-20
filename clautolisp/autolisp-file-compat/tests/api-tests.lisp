@@ -283,12 +283,17 @@ World
 (test declarative-builtin-scenario-files
   (dolist (path '("autolisp-file-compat/scenarios/paths/findfile-basic.sexp"
                   "autolisp-file-compat/scenarios/paths/findfile-missing.sexp"
+                  "autolisp-file-compat/scenarios/paths/findtrustedfile-missing.sexp"
                   "autolisp-file-compat/scenarios/paths/directory-files-basic.sexp"
+                  "autolisp-file-compat/scenarios/paths/directory-files-files-only.sexp"
                   "autolisp-file-compat/scenarios/printers/vl-prin1-to-string-basic.sexp"
                   "autolisp-file-compat/scenarios/printers/vl-princ-to-string-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/mkdir-basic.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-copy-append.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-copy-directory-destination.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-rename-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-size-basic.sexp"
+                  "autolisp-file-compat/scenarios/mutations/file-size-directory.sexp"
                   "autolisp-file-compat/scenarios/mutations/file-systime-basic.sexp"
                   "autolisp-file-compat/scenarios/mutations/filename-mktemp-basic.sexp"
                   "autolisp-file-compat/scenarios/paths/filename-components-basic.sexp"))
