@@ -71,7 +71,7 @@
   (:report (lambda (condition stream)
              (format stream "~A" (autolisp-runtime-error-message condition)))))
 
-(define-condition autolisp-termination (condition)
+(define-condition autolisp-termination (serious-condition)
   ((kind
     :initarg :kind
     :reader autolisp-termination-kind))
@@ -79,7 +79,7 @@
              (format stream "AutoLISP termination requested: ~A"
                      (autolisp-termination-kind condition)))))
 
-(define-condition autolisp-namespace-exit (condition)
+(define-condition autolisp-namespace-exit (serious-condition)
   ((kind
     :initarg :kind
     :reader autolisp-namespace-exit-kind)
@@ -181,14 +181,57 @@
 (defun make-runtime-session (&key current-document)
   (let ((document (or current-document
                       (make-document-namespace :name "DOCUMENT"))))
-    (clautolisp.autolisp-runtime.internal::make-runtime-session
-     :current-document document)))
+    (let ((session (clautolisp.autolisp-runtime.internal::make-runtime-session
+                    :current-document document)))
+      (setf (gethash (document-namespace-name document)
+                     (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
+                      session))
+            document)
+      session)))
 
 (defun runtime-session-current-document (session)
   (clautolisp.autolisp-runtime.internal::runtime-session-current-document session))
 
+(defun runtime-session-blackboard-namespace (session)
+  (clautolisp.autolisp-runtime.internal::runtime-session-blackboard-namespace session))
+
 (defun runtime-session-errno (session)
   (clautolisp.autolisp-runtime.internal::runtime-session-errno session))
+
+(defun find-runtime-session-document (session name)
+  (gethash name
+           (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
+            session)))
+
+(defun copy-value-cell-between-namespaces (source target symbol)
+  (let ((source-cell (namespace-value-cell source symbol :createp nil)))
+    (when (and source-cell (value-cell-bound-p source-cell))
+      (let ((target-cell (namespace-value-cell target symbol)))
+        (setf (clautolisp.autolisp-runtime.internal::value-cell-value target-cell)
+              (value-cell-value source-cell)
+              (clautolisp.autolisp-runtime.internal::value-cell-bound-p target-cell)
+              t)))))
+
+(defun register-runtime-session-document (session document &key (copy-propagated-p t))
+  (unless (typep document 'document-namespace)
+    (signal-autolisp-runtime-error
+     :invalid-document
+     "Expected a document namespace, got ~S."
+     document))
+  (setf (gethash (document-namespace-name document)
+                 (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
+                  session))
+        document)
+  (when copy-propagated-p
+    (maphash (lambda (symbol marker)
+               (declare (ignore marker))
+               (copy-value-cell-between-namespaces
+                (runtime-session-current-document session)
+                document
+                symbol))
+             (clautolisp.autolisp-runtime.internal::runtime-session-propagated-symbols
+              session)))
+  document)
 
 (defun set-runtime-session-current-document (session document)
   (unless (typep document 'document-namespace)
@@ -196,6 +239,7 @@
      :invalid-document
      "Expected a document namespace, got ~S."
      document))
+  (register-runtime-session-document session document :copy-propagated-p t)
   (setf (clautolisp.autolisp-runtime.internal::runtime-session-current-document session)
         document))
 
@@ -206,6 +250,53 @@
   (setf (clautolisp.autolisp-runtime.internal::runtime-session-errno
          (evaluation-context-session context))
         value))
+
+(defun autolisp-runtime-error-errno (condition)
+  (let ((code (autolisp-runtime-error-code condition)))
+    (cond
+      ((eq code :unbound-variable)
+       2)
+      ((eq code :undefined-function)
+       3)
+      ((or (eq code :builtin-file-error)
+           (eq code :load-file-not-found)
+           (eq code :unsupported-load-file-type)
+           (eq code :autoload-definition-missing)
+           (eq code :invalid-open-mode)
+           (eq code :invalid-external-format)
+           (eq code :invalid-file-argument)
+           (eq code :invalid-directory-argument)
+           (eq code :invalid-directory-selector)
+           (eq code :closed-file-descriptor))
+       5)
+      ((or (eq code :host-error)
+           (eq code :subr-call-host-error)
+           (eq code :builtin-error))
+       6)
+      ((or (eq code :wrong-number-of-arguments)
+           (eq code :unsupported-special-operator)
+           (eq code :invalid-form)
+           (eq code :invalid-call-operator)
+           (eq code :invalid-function-designator)
+           (eq code :invalid-function-object)
+           (eq code :invalid-setq-arguments)
+           (eq code :invalid-setq-place)
+           (eq code :invalid-cond-clause)
+           (eq code :invalid-repeat-count)
+           (eq code :invalid-foreach-binding)
+           (eq code :invalid-foreach-sequence)
+           (eq code :invalid-lambda-list)
+           (eq code :invalid-defun-name)
+           (eq code :invalid-defun-q-definition)
+           (eq code :invalid-document)
+           (eq code :invalid-namespace)
+           (eq code :type-error)
+           (let ((name (string code)))
+             (and (<= 8 (length name))
+                  (string= "INVALID-" name :end2 8))))
+       4)
+      (t
+       1))))
 
 (defun make-evaluation-context (&key session current-document current-namespace dynamic-frame)
   (let* ((session (or session
@@ -303,6 +394,121 @@
       (when createp
         (setf (gethash symbol (namespace-function-table namespace))
               (clautolisp.autolisp-runtime.internal::make-function-cell)))))
+
+(defun document-namespace-ref (namespace symbol)
+  (unless (typep namespace 'document-namespace)
+    (signal-autolisp-runtime-error
+     :invalid-document
+     "Expected a document namespace, got ~S."
+     namespace))
+  (let ((cell (namespace-value-cell namespace symbol :createp nil)))
+    (values (and cell (value-cell-bound-p cell) (value-cell-value cell))
+            (and cell (value-cell-bound-p cell)))))
+
+(defun document-namespace-set (namespace symbol value)
+  (unless (typep namespace 'document-namespace)
+    (signal-autolisp-runtime-error
+     :invalid-document
+     "Expected a document namespace, got ~S."
+     namespace))
+  (let ((cell (namespace-value-cell namespace symbol)))
+    (setf (clautolisp.autolisp-runtime.internal::value-cell-value cell) value
+          (clautolisp.autolisp-runtime.internal::value-cell-bound-p cell) t)
+    value))
+
+(defun document-namespace-function-ref (namespace symbol)
+  (unless (typep namespace 'document-namespace)
+    (signal-autolisp-runtime-error
+     :invalid-document
+     "Expected a document namespace, got ~S."
+     namespace))
+  (let ((cell (namespace-function-cell namespace symbol :createp nil)))
+    (values (and cell (function-cell-bound-p cell) (function-cell-function cell))
+            (and cell (function-cell-bound-p cell))
+            :document)))
+
+(defun document-namespace-function-set (namespace symbol function)
+  (unless (typep namespace 'document-namespace)
+    (signal-autolisp-runtime-error
+     :invalid-document
+     "Expected a document namespace, got ~S."
+     namespace))
+  (let ((cell (namespace-function-cell namespace symbol)))
+    (setf (clautolisp.autolisp-runtime.internal::function-cell-function cell) function
+          (clautolisp.autolisp-runtime.internal::function-cell-bound-p cell) t
+          (clautolisp.autolisp-runtime.internal::function-cell-compatibility-definition
+           cell)
+          nil)
+    function))
+
+(defun current-document-namespace-ref (symbol
+                                       &optional (context (current-evaluation-context)))
+  (document-namespace-ref (evaluation-context-current-document context) symbol))
+
+(defun current-document-namespace-set (symbol value
+                                       &optional (context (current-evaluation-context)))
+  (document-namespace-set (evaluation-context-current-document context) symbol value))
+
+(defun export-function-to-current-document (symbol
+                                           &optional (context (current-evaluation-context)))
+  (multiple-value-bind (function boundp)
+      (lookup-function symbol context)
+    (unless boundp
+      (signal-autolisp-runtime-error
+       :undefined-function
+       "No function named ~A is defined in the current namespace."
+       (autolisp-symbol-name symbol)))
+    (document-namespace-function-set
+     (evaluation-context-current-document context)
+     symbol
+     function)
+    symbol))
+
+(defun import-function-from-current-document (symbol
+                                             &optional (context (current-evaluation-context)))
+  (multiple-value-bind (function boundp)
+      (document-namespace-function-ref (evaluation-context-current-document context)
+                                       symbol)
+    (unless boundp
+      (signal-autolisp-runtime-error
+       :undefined-function
+       "No exported document function named ~A is available."
+       (autolisp-symbol-name symbol)))
+    (set-function symbol function context)
+    symbol))
+
+(defun blackboard-ref (symbol &optional (context (current-evaluation-context)))
+  (let* ((namespace (runtime-session-blackboard-namespace
+                     (evaluation-context-session context)))
+         (cell (namespace-value-cell namespace symbol :createp nil)))
+    (values (and cell (value-cell-bound-p cell) (value-cell-value cell))
+            (and cell (value-cell-bound-p cell)))))
+
+(defun blackboard-set (symbol value &optional (context (current-evaluation-context)))
+  (let* ((namespace (runtime-session-blackboard-namespace
+                     (evaluation-context-session context)))
+         (cell (namespace-value-cell namespace symbol)))
+    (setf (clautolisp.autolisp-runtime.internal::value-cell-value cell) value
+          (clautolisp.autolisp-runtime.internal::value-cell-bound-p cell) t)
+    value))
+
+(defun propagate-variable (symbol &optional (context (current-evaluation-context)))
+  (multiple-value-bind (value boundp)
+      (document-namespace-ref (evaluation-context-current-document context) symbol)
+    (when boundp
+      (let ((session (evaluation-context-session context))
+            (source (evaluation-context-current-document context)))
+        (setf (gethash symbol
+                       (clautolisp.autolisp-runtime.internal::runtime-session-propagated-symbols
+                        session))
+              t)
+        (maphash (lambda (name document)
+                   (declare (ignore name))
+                   (unless (eq document source)
+                     (document-namespace-set document symbol value)))
+                 (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
+                  session))))
+    value))
 
 (defun make-dynamic-frame (&key parent)
   (clautolisp.autolisp-runtime.internal::make-dynamic-frame :parent parent))
@@ -643,6 +849,17 @@
           "Undefined AutoLISP function ~A."
           (autolisp-symbol-name designator)))
        binding))
+    ((and (consp designator)
+          (= (length designator) 2)
+          (typep (first designator) 'autolisp-symbol)
+          (string= "QUOTE" (autolisp-symbol-name (first designator)))
+          (lambda-form-p (second designator)))
+     (resolve-autolisp-function-designator (second designator) context))
+    ((and (consp designator)
+          (= (length designator) 2)
+          (typep (first designator) 'autolisp-symbol)
+          (string= "FUNCTION" (autolisp-symbol-name (first designator))))
+     (resolve-autolisp-function-designator (second designator) context))
     ((lambda-form-p designator)
      (eval-lambda-form (rest designator) context))
     (t
@@ -666,7 +883,7 @@
         (set-autolisp-errno 0 context)
         result)
     (autolisp-runtime-error (condition)
-      (set-autolisp-errno 1 context)
+      (set-autolisp-errno (autolisp-runtime-error-errno condition) context)
       (let ((handler (resolve-autolisp-error-handler context)))
         (if handler
             (call-autolisp-function-in-context
@@ -720,7 +937,7 @@
            (error condition))
          (error (condition)
            (error 'autolisp-runtime-error
-                  :code :host-error
+                  :code :subr-call-host-error
                   :message (format nil
                                    "Common Lisp error while calling AutoLISP subr ~A: ~A"
                                    (autolisp-subr-name function)
@@ -735,7 +952,7 @@
          (pop-dynamic-frame context)))
       (t
        (signal-autolisp-runtime-error
-        :type-error
+        :invalid-function-object
         "Expected an AutoLISP function object, got ~S."
         function)))))
 
@@ -1028,6 +1245,12 @@
          ((special-operator-function operator)
           (eval-special-operator operator arguments context))
          (t
+          (unless (or (lambda-form-p operator)
+                      (typep operator 'autolisp-symbol))
+            (signal-autolisp-runtime-error
+             :invalid-call-operator
+             "AutoLISP call operator must be a function name or lambda form, got ~S."
+             operator))
           (let ((function
                   (if (lambda-form-p operator)
                       (autolisp-eval operator context)

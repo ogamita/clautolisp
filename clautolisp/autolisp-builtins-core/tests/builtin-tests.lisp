@@ -180,6 +180,91 @@
     (is (null (call-autolisp-function fn baz)))
     (is (autolisp-symbol-value-bound-p baz))))
 
+(test builtin-blackboard-and-propagation
+  (reset-autolisp-symbol-table)
+  (let* ((document-a (make-document-namespace :name "DRAWING-A"))
+         (document-b (make-document-namespace :name "DRAWING-B"))
+         (session (make-runtime-session :current-document document-a))
+         (context-a (make-evaluation-context
+                     :session session
+                     :current-document document-a
+                     :current-namespace document-a))
+         (context-b (make-evaluation-context
+                     :session session
+                     :current-document document-b
+                     :current-namespace document-b)))
+    (clautolisp.autolisp-runtime:register-runtime-session-document session document-b)
+    (set-default-evaluation-context context-a)
+    (install-core-builtins)
+    (let* ((symbol (intern-autolisp-symbol "SHARED-VAR"))
+           (bb-set-fn (find-core-builtin "VL-BB-SET"))
+           (bb-ref-fn (find-core-builtin "VL-BB-REF"))
+           (propagate-fn (find-core-builtin "VL-PROPAGATE")))
+      (is (= 17 (call-autolisp-function bb-set-fn symbol 17)))
+      (set-default-evaluation-context context-b)
+      (is (= 17 (call-autolisp-function bb-ref-fn symbol)))
+      (set-default-evaluation-context context-a)
+      (set-autolisp-symbol-value symbol 42)
+      (is (= 42 (call-autolisp-function propagate-fn symbol)))
+      (set-default-evaluation-context context-b)
+      (is (= 42 (autolisp-symbol-value symbol))))))
+
+(test builtin-document-namespace-access
+  (reset-autolisp-symbol-table)
+  (let* ((document (make-document-namespace :name "DRAWING-DOC"))
+         (vlx (clautolisp.autolisp-runtime:make-separate-vlx-namespace :name "APP"))
+         (session (make-runtime-session :current-document document))
+         (context (make-evaluation-context
+                   :session session
+                   :current-document document
+                   :current-namespace vlx)))
+    (set-default-evaluation-context context)
+    (install-core-builtins)
+    (let* ((symbol (intern-autolisp-symbol "DOC-VAR"))
+           (doc-set-fn (find-core-builtin "VL-DOC-SET"))
+           (doc-ref-fn (find-core-builtin "VL-DOC-REF")))
+      (is (= 23 (call-autolisp-function doc-set-fn symbol 23)))
+      (is (= 23 (call-autolisp-function doc-ref-fn symbol)))
+      (is (= 23
+             (nth-value 0
+                        (clautolisp.autolisp-runtime:document-namespace-ref
+                         document
+                         symbol))))
+      (is (null (autolisp-symbol-value symbol))))))
+
+(test builtin-document-export-and-import
+  (reset-autolisp-symbol-table)
+  (let* ((document (make-document-namespace :name "DRAWING-DOC"))
+         (producer (clautolisp.autolisp-runtime:make-separate-vlx-namespace
+                    :name "PRODUCER"))
+         (consumer (clautolisp.autolisp-runtime:make-separate-vlx-namespace
+                    :name "CONSUMER"))
+         (session (make-runtime-session :current-document document))
+         (producer-context (make-evaluation-context
+                            :session session
+                            :current-document document
+                            :current-namespace producer))
+         (consumer-context (make-evaluation-context
+                            :session session
+                            :current-document document
+                            :current-namespace consumer)))
+    (set-default-evaluation-context producer-context)
+    (install-core-builtins)
+    (let* ((symbol (intern-autolisp-symbol "EXPORTED-FN"))
+           (export-fn (find-core-builtin "VL-DOC-EXPORT"))
+           (import-fn (find-core-builtin "VL-DOC-IMPORT"))
+           (function (make-autolisp-subr "EXPORTED-FN" (lambda (x) (+ x 9)))))
+      (set-autolisp-symbol-function symbol function)
+      (is (eq symbol
+              (call-autolisp-function export-fn symbol)))
+      (set-default-evaluation-context consumer-context)
+      (is (eq symbol
+              (call-autolisp-function import-fn symbol)))
+      (is (= 12
+             (call-autolisp-function
+              (autolisp-symbol-function symbol)
+              3))))))
+
 (test builtin-defun-q-list-ref-and-set
   (reset-autolisp-symbol-table)
   (install-core-builtins)
@@ -514,19 +599,59 @@
          (message-fn (autolisp-symbol-function
                       (find-autolisp-symbol "VL-CATCH-ALL-ERROR-MESSAGE")))
          (car-symbol (intern-autolisp-symbol "CAR"))
-         (list-symbol (intern-autolisp-symbol "LIST")))
+         (list-symbol (intern-autolisp-symbol "LIST"))
+         (open-symbol (intern-autolisp-symbol "OPEN")))
     (let ((success (call-autolisp-function apply-fn list-symbol '(1 2 3))))
       (is (equal '(1 2 3) success))
       (is (= 0 (autolisp-errno)))
       (is (null (call-autolisp-function error-p-fn success))))
     (let ((failure (call-autolisp-function apply-fn car-symbol '(42))))
-      (is (= 1 (autolisp-errno)))
+      (is (= 4 (autolisp-errno)))
       (is (string= "T"
                    (autolisp-symbol-name
                     (call-autolisp-function error-p-fn failure))))
       (let ((message (call-autolisp-function message-fn failure)))
         (is (typep message 'autolisp-string))
-        (is (> (length (autolisp-string-value message)) 0))))))
+        (is (> (length (autolisp-string-value message)) 0))))
+    (let ((failure (call-autolisp-function
+                    apply-fn
+                    open-symbol
+                    (list (make-autolisp-string "/tmp/unused")
+                          (make-autolisp-string "bad-mode")))))
+      (is (= 5 (autolisp-errno)))
+      (is (string= "T"
+                   (autolisp-symbol-name
+                    (call-autolisp-function error-p-fn failure)))))
+    (let ((failure (call-autolisp-function
+                    apply-fn
+                    (make-autolisp-subr "BROKEN"
+                                        (lambda ()
+                                          (error "Broken host subr.")))
+                    nil)))
+      (is (= 6 (autolisp-errno)))
+      (is (string= "T"
+                   (autolisp-symbol-name
+                    (call-autolisp-function error-p-fn failure)))))
+    (set-autolisp-errno 7)
+    (handler-case
+        (progn
+          (call-autolisp-function apply-fn
+                                  (intern-autolisp-symbol "EXIT")
+                                  nil)
+          (is nil))
+      (autolisp-termination (condition)
+        (is (eq :exit (autolisp-termination-kind condition)))
+        (is (= 7 (autolisp-errno)))))
+    (handler-case
+        (progn
+          (call-autolisp-function apply-fn
+                                  (intern-autolisp-symbol "VL-EXIT-WITH-VALUE")
+                                  (list 42))
+          (is nil))
+      (autolisp-namespace-exit (condition)
+        (is (eq :value (autolisp-namespace-exit-kind condition)))
+        (is (= 42 (autolisp-namespace-exit-value condition)))
+        (is (= 7 (autolisp-errno)))))))
 
 (test builtin-mapcar
   (reset-autolisp-symbol-table)
@@ -551,6 +676,68 @@
                 plus
                 '(1 2)
                 '(10 20 30))))))
+
+(test builtin-visual-lisp-functional-list-operators
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((vl-every-fn (autolisp-symbol-function (find-autolisp-symbol "VL-EVERY")))
+         (vl-some-fn (autolisp-symbol-function (find-autolisp-symbol "VL-SOME")))
+         (vl-member-if-fn (autolisp-symbol-function (find-autolisp-symbol "VL-MEMBER-IF")))
+         (vl-member-if-not-fn (autolisp-symbol-function (find-autolisp-symbol "VL-MEMBER-IF-NOT")))
+         (vl-remove-if-fn (autolisp-symbol-function (find-autolisp-symbol "VL-REMOVE-IF")))
+         (vl-remove-if-not-fn (autolisp-symbol-function (find-autolisp-symbol "VL-REMOVE-IF-NOT")))
+         (zerop-symbol (intern-autolisp-symbol "ZEROP"))
+         (minusp-symbol (intern-autolisp-symbol "MINUSP"))
+         (lambda-symbol (intern-autolisp-symbol "LAMBDA"))
+         (function-symbol (intern-autolisp-symbol "FUNCTION"))
+         (plus-symbol (intern-autolisp-symbol "+"))
+         (greater-than-symbol (intern-autolisp-symbol ">"))
+         (x (intern-autolisp-symbol "X"))
+         (y (intern-autolisp-symbol "Y"))
+         (quoted-lambda (list (intern-autolisp-symbol "QUOTE")
+                              (list lambda-symbol
+                                    (list x)
+                                    (list greater-than-symbol x 0))))
+         (if-symbol (intern-autolisp-symbol "IF"))
+         (function-lambda (list function-symbol
+                                (list lambda-symbol
+                                      (list x y)
+                                      (list if-symbol
+                                            (list greater-than-symbol x 2)
+                                            (list plus-symbol x y)
+                                            nil)))))
+    (is (string= "T"
+                 (autolisp-symbol-name
+                  (call-autolisp-function vl-every-fn
+                                          quoted-lambda
+                                          '(1 2 3)))))
+    (is (null (call-autolisp-function vl-every-fn
+                                      minusp-symbol
+                                      '(1 -2 -3))))
+    (is (= 33
+           (call-autolisp-function vl-some-fn
+                                   function-lambda
+                                   '(0 0 3)
+                                   '(10 20 30))))
+    (is (null (call-autolisp-function vl-some-fn
+                                      zerop-symbol
+                                      '(1 2 3))))
+    (is (equal '(0 1 2)
+               (call-autolisp-function vl-member-if-fn
+                                       zerop-symbol
+                                       '(3 2 0 1 2))))
+    (is (equal '(1 2 3)
+               (call-autolisp-function vl-member-if-not-fn
+                                       minusp-symbol
+                                       '(1 2 3))))
+    (is (equal '(1 2 3)
+               (call-autolisp-function vl-remove-if-fn
+                                       zerop-symbol
+                                       '(0 1 0 2 3 0))))
+    (is (equal '(0 0 0)
+               (call-autolisp-function vl-remove-if-not-fn
+                                       zerop-symbol
+                                       '(0 1 0 2 3 0))))))
 
 (test builtin-mapcar-uses-active-evaluation-context
   (reset-autolisp-symbol-table)
@@ -615,6 +802,29 @@
       (autolisp-namespace-exit (condition)
         (is (eq :value (autolisp-namespace-exit-kind condition)))
         (is (= 42 (autolisp-namespace-exit-value condition)))))))
+
+(test builtin-load-error-hook-can-transfer-control
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((load-fn (autolisp-symbol-function (find-autolisp-symbol "LOAD")))
+         (error-symbol (intern-autolisp-symbol "*ERROR*"))
+         (missing (make-autolisp-string
+                   (namestring
+                    (merge-pathnames "missing-load-file.lsp"
+                                     (uiop:temporary-directory))))))
+    (set-autolisp-symbol-function
+     error-symbol
+     (make-autolisp-subr
+      "*ERROR*"
+      (lambda (message)
+        (declare (ignore message))
+        (error 'autolisp-termination :kind :quit))))
+    (handler-case
+        (progn
+          (call-autolisp-function load-fn missing)
+          (is nil))
+      (autolisp-termination (condition)
+        (is (eq :quit (autolisp-termination-kind condition)))))))
 
 (test builtin-file-primitives
   (reset-autolisp-symbol-table)

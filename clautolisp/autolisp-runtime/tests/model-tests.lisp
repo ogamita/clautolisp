@@ -195,8 +195,95 @@
     (is (eq namespace (evaluation-context-current-namespace context)))
     (is (string= "APP-C"
                  (separate-vlx-namespace-name
-                  (evaluation-context-current-namespace context))))
+                 (evaluation-context-current-namespace context))))
     (is (null (evaluation-context-dynamic-frame context)))))
+
+(test runtime-session-registers-and-finds-documents
+  (let* ((document-a (make-document-namespace :name "DRAWING-A"))
+         (document-b (make-document-namespace :name "DRAWING-B"))
+         (session (make-runtime-session :current-document document-a)))
+    (is (eq document-a
+            (find-runtime-session-document session "DRAWING-A")))
+    (is (null (find-runtime-session-document session "MISSING")))
+    (is (eq document-b
+            (register-runtime-session-document session document-b)))
+    (is (eq document-b
+            (find-runtime-session-document session "DRAWING-B")))))
+
+(test blackboard-namespace-is-session-shared
+  (reset-autolisp-symbol-table)
+  (let* ((document-a (make-document-namespace :name "DRAWING-A"))
+         (document-b (make-document-namespace :name "DRAWING-B"))
+         (session (make-runtime-session :current-document document-a))
+         (context-a (make-evaluation-context
+                     :session session
+                     :current-document document-a
+                     :current-namespace document-a))
+         (context-b (make-evaluation-context
+                     :session session
+                     :current-document document-b
+                     :current-namespace document-b))
+         (symbol (intern-autolisp-symbol "SHARED")))
+    (register-runtime-session-document session document-b)
+    (is (runtime-session-blackboard-namespace session))
+    (blackboard-set symbol 17 context-a)
+    (multiple-value-bind (value boundp) (blackboard-ref symbol context-b)
+      (is (not (null boundp)))
+      (is (= 17 value)))))
+
+(test propagated-variable-copies-to-existing-and-future-documents
+  (reset-autolisp-symbol-table)
+  (let* ((document-a (make-document-namespace :name "DRAWING-A"))
+         (document-b (make-document-namespace :name "DRAWING-B"))
+         (session (make-runtime-session :current-document document-a))
+         (context-a (make-evaluation-context
+                     :session session
+                     :current-document document-a
+                     :current-namespace document-a))
+         (symbol (intern-autolisp-symbol "GLOBAL-VAR")))
+    (register-runtime-session-document session document-b)
+    (document-namespace-set document-a symbol 42)
+    (propagate-variable symbol context-a)
+    (multiple-value-bind (value boundp) (document-namespace-ref document-b symbol)
+      (is (not (null boundp)))
+      (is (= 42 value)))
+    (let ((document-c (make-document-namespace :name "DRAWING-C")))
+      (register-runtime-session-document session document-c)
+      (multiple-value-bind (value boundp) (document-namespace-ref document-c symbol)
+        (is (not (null boundp)))
+        (is (= 42 value)))))) 
+
+(test separate-vlx-function-export-and-import-via-document
+  (reset-autolisp-symbol-table)
+  (let* ((document (make-document-namespace :name "DRAWING-DOC"))
+         (producer (make-separate-vlx-namespace :name "PRODUCER"))
+         (consumer (make-separate-vlx-namespace :name "CONSUMER"))
+         (session (make-runtime-session :current-document document))
+         (producer-context (make-evaluation-context
+                            :session session
+                            :current-document document
+                            :current-namespace producer))
+         (consumer-context (make-evaluation-context
+                            :session session
+                            :current-document document
+                            :current-namespace consumer))
+         (symbol (intern-autolisp-symbol "EXPORTED-FN"))
+         (function (make-autolisp-subr "EXPORTED-FN" (lambda (x) (+ x 5)))))
+    (set-function symbol function producer-context)
+    (is (eq symbol
+            (export-function-to-current-document symbol producer-context)))
+    (multiple-value-bind (binding boundp origin)
+        (document-namespace-function-ref document symbol)
+      (is (not (null boundp)))
+      (is (eq function binding))
+      (is (eq :document origin)))
+    (is (eq symbol
+            (import-function-from-current-document symbol consumer-context)))
+    (multiple-value-bind (binding boundp origin)
+        (lookup-function symbol consumer-context)
+      (is (not (null boundp)))
+      (is (eq function binding))
+      (is (eq :namespace origin)))))
 
 (test autolisp-eval-self-evaluating-and-symbol-lookup
   (reset-autolisp-symbol-table)
@@ -463,6 +550,9 @@
       (expect-runtime-error (lambda ()
                               (autolisp-eval (list missing-function 1 2)))
                             :undefined-function)
+      (expect-runtime-error (lambda ()
+                              (autolisp-eval (list 42 1 2)))
+                            :invalid-call-operator)
     (set-function plus-symbol
                   (make-autolisp-subr "PLUS"
                                       (lambda (left right)
@@ -477,9 +567,16 @@
       (let ((condition
               (expect-runtime-error (lambda ()
                                       (autolisp-eval (list plus-symbol 1 2)))
-                                    :host-error)))
+                                    :subr-call-host-error)))
         (is (typep (getf (autolisp-runtime-error-details condition) :condition)
                    'error)))
+      (let ((condition
+              (expect-runtime-error (lambda ()
+                                      (clautolisp.autolisp-runtime::call-autolisp-function-in-context
+                                       42
+                                       (default-evaluation-context)))
+                                    :invalid-function-object)))
+        (is (typep condition 'autolisp-runtime-error)))
       (expect-runtime-error (lambda ()
                               (autolisp-eval
                                (list (intern-autolisp-symbol "FUNCTION") 42)))
@@ -540,6 +637,33 @@
       (is (string= "Synthetic runtime failure."
                    (autolisp-string-value result)))
       (is (= 1 (autolisp-errno))))
+    (let ((result (call-with-autolisp-error-handler
+                   (lambda ()
+                     (clautolisp.autolisp-runtime::signal-autolisp-runtime-error
+                      :undefined-function
+                      "Missing function.")))))
+      (is (typep result 'autolisp-string))
+      (is (string= "Missing function."
+                   (autolisp-string-value result)))
+      (is (= 3 (autolisp-errno))))
+    (let ((result (call-with-autolisp-error-handler
+                   (lambda ()
+                     (clautolisp.autolisp-runtime::signal-autolisp-runtime-error
+                      :invalid-open-mode
+                      "Bad file mode.")))))
+      (is (typep result 'autolisp-string))
+      (is (string= "Bad file mode."
+                   (autolisp-string-value result)))
+      (is (= 5 (autolisp-errno))))
+    (let ((result (call-with-autolisp-error-handler
+                   (lambda ()
+                     (clautolisp.autolisp-runtime::signal-autolisp-runtime-error
+                      :subr-call-host-error
+                      "Wrapped host failure.")))))
+      (is (typep result 'autolisp-string))
+      (is (string= "Wrapped host failure."
+                   (autolisp-string-value result)))
+      (is (= 6 (autolisp-errno))))
     (is (= 3
            (call-with-autolisp-error-handler
             (lambda ()

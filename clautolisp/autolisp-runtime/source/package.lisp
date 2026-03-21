@@ -57,7 +57,10 @@
    #:runtime-session
    #:make-runtime-session
    #:runtime-session-current-document
+   #:runtime-session-blackboard-namespace
    #:runtime-session-errno
+   #:find-runtime-session-document
+   #:register-runtime-session-document
    #:set-runtime-session-current-document
    #:autolisp-file
    #:make-autolisp-file
@@ -107,9 +110,21 @@
    #:enter-document-context
    #:call-with-autolisp-error-handler
    #:autolisp-errno
+   #:autolisp-runtime-error-errno
    #:set-autolisp-errno
    #:namespace-value-cell
    #:namespace-function-cell
+   #:document-namespace-ref
+   #:document-namespace-set
+   #:document-namespace-function-ref
+   #:document-namespace-function-set
+   #:current-document-namespace-ref
+   #:current-document-namespace-set
+   #:export-function-to-current-document
+   #:import-function-from-current-document
+   #:blackboard-ref
+   #:blackboard-set
+   #:propagate-variable
    #:lookup-variable
    #:set-variable
    #:lookup-function

@@ -24,6 +24,8 @@ Current implementation scope:
 - reader-object to runtime-value mapping for literal data,
 - explicit namespaces, value/function cells, and dynamic frames,
 - explicit host-entry semantics for current document and current namespace,
+- a session-level document registry and shared blackboard namespace,
+- conservative runtime-side propagation of values across document namespaces,
 - dynamic propagation of the active evaluation context into `SUBR` execution,
 - clarified `boundp` semantics, including the documented "undefined becomes
   nil-bound" behavior,
@@ -35,9 +37,14 @@ Current implementation scope:
   chosen evaluation context,
 - a first `*error*` hook path for top-level runtime failures together with a
   runtime catch-all error object used by the Visual LISP catch-all layer,
-- conservative session-level `ERRNO` tracking,
+- conservative session-level `ERRNO` tracking with a provisional classified
+  table that now distinguishes generic, lookup, invalid-form, file/stream, and
+  wrapped host-runtime failure classes instead of the earlier binary `0/1`
+  result,
 - distinct runtime conditions for `exit` and `quit`,
 - a first namespace-exit bridge for `vl-exit-with-error` and
   `vl-exit-with-value`,
+- explicit separation between trapped errors and non-local control transfer for
+  `vl-catch-all-*` versus `exit` / `quit` / `vl-exit-*`,
 - an initial `autolisp-runtime-error` condition used to report evaluator and
   wrapped host-Lisp failures without leaking raw Common Lisp errors directly.

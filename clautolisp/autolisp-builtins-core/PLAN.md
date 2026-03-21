@@ -17,6 +17,9 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 
 - [x] Define an installable registry for the first builtin functions.
 - [x] Implement `type`, `null`, `not`, `atom`, `vl-symbolp`, `vl-symbol-name`, and `vl-symbol-value`.
+- [x] Add the first namespace-state helpers exposed through builtins: `vl-bb-ref`, `vl-bb-set`, and `vl-propagate`.
+- [x] Add the first conservative document-namespace access helpers exposed through builtins: `vl-doc-ref` and `vl-doc-set`.
+- [x] Add the first conservative document-namespace function bridge helpers exposed through builtins: `vl-doc-export` and `vl-doc-import`.
 - [ ] Audit test coverage function-by-function for all currently implemented AutoLISP-facing functions.
 - [x] Add the documented `boundp` semantics, including the visible `nil` result for both unbound and `nil`-bound symbols and the compatibility side effect that materializes an undefined symbol as `nil`.
 - [x] Add first list builtins such as `car`, `cdr`, `cons`, and `list`.
@@ -24,6 +27,7 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Extend the list/alist layer with `last`, `member`, and `subst`.
 - [x] Add the next ordinary list predicates and constructors: `listp`, `vl-consp`, and `vl-list*`.
 - [x] Add `mapcar` on top of runtime function-designator resolution and active evaluation-context propagation.
+- [x] Add the next Visual LISP function-designator list family: `vl-every`, `vl-member-if`, `vl-member-if-not`, `vl-remove-if`, `vl-remove-if-not`, and `vl-some`.
 - [x] Add an initial numeric/equality predicate batch: `numberp`, `=`, `/=`, `zerop`, and `minusp`.
 - [x] Add the next numeric batch: `<`, `<=`, `>`, `>=`, `abs`, `fix`, and `float`.
 - [x] Add the basic arithmetic operators `+`, `-`, `*`, and `/`.
@@ -45,6 +49,7 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Add the `defun-q` compatibility accessors `defun-q-list-ref` and `defun-q-list-set` on top of the runtime compatibility-definition layer.
 - [x] Add the first Visual LISP catch-all family: `vl-catch-all-apply`, `vl-catch-all-error-p`, and `vl-catch-all-error-message`.
 - [x] Add the first execution-control family exposed through the builtin layer: `exit`, `quit`, `vl-exit-with-error`, and `vl-exit-with-value`.
+- [x] Keep the Visual LISP catch-all family separate from non-local control transfer so it traps errors but does not swallow `exit`, `quit`, or `vl-exit-*`.
 - [x] Tighten the current file layer for the documented compatibility-sensitive areas we can justify from the local spec draft, including `open` encodings, `vl-file-systime`, `vl-filename-mktemp`, and `vl-file-copy`.
 - [x] Route builtin failures through structured AutoLISP-visible runtime errors with builtin-level metadata.
 - [ ] Audit the completed file builtin family against real Autodesk/BricsCAD behavior for the remaining under-specified host-sensitive corners.

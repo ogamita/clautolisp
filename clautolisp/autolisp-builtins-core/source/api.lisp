@@ -2,7 +2,10 @@
 
 (defparameter *core-builtin-names*
   '("TYPE" "NULL" "NOT" "ATOM" "VL-SYMBOLP" "VL-SYMBOL-NAME" "VL-SYMBOL-VALUE"
-    "MAPCAR"
+    "VL-BB-REF" "VL-BB-SET" "VL-PROPAGATE" "VL-DOC-REF" "VL-DOC-SET"
+    "VL-DOC-EXPORT" "VL-DOC-IMPORT"
+    "MAPCAR" "VL-EVERY" "VL-MEMBER-IF" "VL-MEMBER-IF-NOT" "VL-REMOVE-IF"
+    "VL-REMOVE-IF-NOT" "VL-SOME"
     "+" "-" "*" "/" "1+" "1-" "MAX" "MIN" "REM" "GCD" "LCM" "~" "LOGAND"
     "LOGIOR" "LSH" "STRCAT" "STRLEN" "SUBSTR" "ASCII" "CHR"
     "READ" "LOAD" "AUTOLOAD" "OPEN" "CLOSE" "READ-LINE" "READ-CHAR" "WRITE-LINE" "WRITE-CHAR"
@@ -64,6 +67,69 @@
      "Expected an AutoLISP symbol, got ~S."
      object))
   (clautolisp.autolisp-runtime:autolisp-boundp object))
+
+(defun builtin-vl-bb-ref (object)
+  (unless (typep object 'autolisp-symbol)
+    (signal-builtin-argument-error
+     :invalid-symbol-argument
+     "VL-BB-REF"
+     "VL-BB-REF expects an AutoLISP symbol, got ~S."
+     object))
+  (nth-value 0 (blackboard-ref object)))
+
+(defun builtin-vl-bb-set (symbol value)
+  (unless (typep symbol 'autolisp-symbol)
+    (signal-builtin-argument-error
+     :invalid-symbol-argument
+     "VL-BB-SET"
+     "VL-BB-SET expects an AutoLISP symbol, got ~S."
+     symbol))
+  (blackboard-set symbol value))
+
+(defun builtin-vl-propagate (symbol)
+  (unless (typep symbol 'autolisp-symbol)
+    (signal-builtin-argument-error
+     :invalid-symbol-argument
+     "VL-PROPAGATE"
+     "VL-PROPAGATE expects an AutoLISP symbol, got ~S."
+     symbol))
+  (propagate-variable symbol))
+
+(defun builtin-vl-doc-ref (object)
+  (unless (typep object 'autolisp-symbol)
+    (signal-builtin-argument-error
+     :invalid-symbol-argument
+     "VL-DOC-REF"
+     "VL-DOC-REF expects an AutoLISP symbol, got ~S."
+     object))
+  (nth-value 0 (current-document-namespace-ref object)))
+
+(defun builtin-vl-doc-set (symbol value)
+  (unless (typep symbol 'autolisp-symbol)
+    (signal-builtin-argument-error
+     :invalid-symbol-argument
+     "VL-DOC-SET"
+     "VL-DOC-SET expects an AutoLISP symbol, got ~S."
+     symbol))
+  (current-document-namespace-set symbol value))
+
+(defun builtin-vl-doc-export (object)
+  (unless (typep object 'autolisp-symbol)
+    (signal-builtin-argument-error
+     :invalid-symbol-argument
+     "VL-DOC-EXPORT"
+     "VL-DOC-EXPORT currently expects an AutoLISP symbol, got ~S."
+     object))
+  (export-function-to-current-document object))
+
+(defun builtin-vl-doc-import (object)
+  (unless (typep object 'autolisp-symbol)
+    (signal-builtin-argument-error
+     :invalid-symbol-argument
+     "VL-DOC-IMPORT"
+     "VL-DOC-IMPORT currently expects an AutoLISP symbol designator, got ~S."
+     object))
+  (import-function-from-current-document object))
 
 (defun require-function-definition-list (object operator-name)
   (unless (and (consp object) (listp object))
@@ -207,6 +273,16 @@
                            arg-list)))
         (set-autolisp-errno 0)
         result)
+    (autolisp-termination (condition)
+      (error condition))
+    (autolisp-namespace-exit (condition)
+      (error condition))
+    (autolisp-runtime-error (condition)
+      (set-autolisp-errno
+       (autolisp-runtime-error-errno condition))
+      (make-autolisp-catch-all-error
+       (princ-to-string condition)
+       condition))
     (error (condition)
       (set-autolisp-errno 1)
       (make-autolisp-catch-all-error
@@ -228,17 +304,17 @@
   (make-autolisp-string (autolisp-catch-all-error-message object)))
 
 (defun builtin-exit ()
-  (signal 'autolisp-termination :kind :exit))
+  (error 'autolisp-termination :kind :exit))
 
 (defun builtin-quit ()
-  (signal 'autolisp-termination :kind :quit))
+  (error 'autolisp-termination :kind :quit))
 
 (defun builtin-vl-exit-with-error (message)
   (let ((text (autolisp-string-value (require-string message "VL-EXIT-WITH-ERROR"))))
-    (signal 'autolisp-namespace-exit :kind :error :value text)))
+    (error 'autolisp-namespace-exit :kind :error :value text)))
 
 (defun builtin-vl-exit-with-value (value)
-  (signal 'autolisp-namespace-exit :kind :value :value value))
+  (error 'autolisp-namespace-exit :kind :value :value value))
 
 (defun builtin-mapcar (function-designator first-list &rest more-lists)
   (let* ((function (resolve-autolisp-function-designator function-designator))
@@ -253,6 +329,64 @@
                    results)
              (setf lists (mapcar #'cdr lists)))
     (nreverse results)))
+
+(defun builtin-vl-every (function-designator first-list &rest more-lists)
+  (let* ((function (resolve-autolisp-function-designator function-designator))
+         (lists (mapcar (lambda (object)
+                          (require-proper-list object "VL-EVERY"))
+                        (cons first-list more-lists))))
+    (loop while (every #'consp lists)
+          do (unless (autolisp-true-p
+                      (apply #'call-autolisp-function
+                             function
+                             (mapcar #'car lists)))
+               (return nil))
+             (setf lists (mapcar #'cdr lists))
+          finally (return (intern-autolisp-symbol "T")))))
+
+(defun builtin-vl-some (function-designator first-list &rest more-lists)
+  (let* ((function (resolve-autolisp-function-designator function-designator))
+         (lists (mapcar (lambda (object)
+                          (require-proper-list object "VL-SOME"))
+                        (cons first-list more-lists))))
+    (loop while (every #'consp lists)
+          for result = (apply #'call-autolisp-function
+                              function
+                              (mapcar #'car lists))
+          do (when (autolisp-true-p result)
+               (return result))
+             (setf lists (mapcar #'cdr lists))
+          finally (return nil))))
+
+(defun builtin-vl-member-if (function-designator object)
+  (let ((function (resolve-autolisp-function-designator function-designator)))
+    (require-proper-list object "VL-MEMBER-IF")
+    (do ((tail object (cdr tail)))
+        ((null tail) nil)
+      (when (autolisp-true-p (call-autolisp-function function (car tail)))
+        (return tail)))))
+
+(defun builtin-vl-member-if-not (function-designator object)
+  (let ((function (resolve-autolisp-function-designator function-designator)))
+    (require-proper-list object "VL-MEMBER-IF-NOT")
+    (do ((tail object (cdr tail)))
+        ((null tail) nil)
+      (when (autolisp-false-p (call-autolisp-function function (car tail)))
+        (return tail)))))
+
+(defun builtin-vl-remove-if (function-designator object)
+  (let ((function (resolve-autolisp-function-designator function-designator)))
+    (require-proper-list object "VL-REMOVE-IF")
+    (loop for element in object
+          unless (autolisp-true-p (call-autolisp-function function element))
+            collect element)))
+
+(defun builtin-vl-remove-if-not (function-designator object)
+  (let ((function (resolve-autolisp-function-designator function-designator)))
+    (require-proper-list object "VL-REMOVE-IF-NOT")
+    (loop for element in object
+          when (autolisp-true-p (call-autolisp-function function element))
+            collect element)))
 
 (defun builtin-car (object)
   (cond
@@ -1323,7 +1457,20 @@
    (make-core-builtin-subr "VL-SYMBOLP" #'autolisp-vl-symbolp)
    (make-core-builtin-subr "VL-SYMBOL-NAME" #'autolisp-vl-symbol-name)
    (make-core-builtin-subr "VL-SYMBOL-VALUE" #'autolisp-vl-symbol-value)
+   (make-core-builtin-subr "VL-BB-REF" #'builtin-vl-bb-ref)
+   (make-core-builtin-subr "VL-BB-SET" #'builtin-vl-bb-set)
+   (make-core-builtin-subr "VL-PROPAGATE" #'builtin-vl-propagate)
+   (make-core-builtin-subr "VL-DOC-REF" #'builtin-vl-doc-ref)
+   (make-core-builtin-subr "VL-DOC-SET" #'builtin-vl-doc-set)
+   (make-core-builtin-subr "VL-DOC-EXPORT" #'builtin-vl-doc-export)
+   (make-core-builtin-subr "VL-DOC-IMPORT" #'builtin-vl-doc-import)
    (make-core-builtin-subr "MAPCAR" #'builtin-mapcar)
+   (make-core-builtin-subr "VL-EVERY" #'builtin-vl-every)
+   (make-core-builtin-subr "VL-MEMBER-IF" #'builtin-vl-member-if)
+   (make-core-builtin-subr "VL-MEMBER-IF-NOT" #'builtin-vl-member-if-not)
+   (make-core-builtin-subr "VL-REMOVE-IF" #'builtin-vl-remove-if)
+   (make-core-builtin-subr "VL-REMOVE-IF-NOT" #'builtin-vl-remove-if-not)
+   (make-core-builtin-subr "VL-SOME" #'builtin-vl-some)
    (make-core-builtin-subr "+" #'builtin-+)
    (make-core-builtin-subr "-" #'builtin--)
    (make-core-builtin-subr "*" #'builtin-*)
