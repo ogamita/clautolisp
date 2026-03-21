@@ -16,9 +16,49 @@
     "NUMBERP" "=" "/=" "<" "<=" ">" ">=" "ABS" "FIX" "FLOAT" "ZEROP"
     "MINUSP"))
 
+(defun make-builtin-runtime-error (code builtin-name condition)
+  (error 'autolisp-runtime-error
+         :code code
+         :message (format nil
+                          "AutoLISP builtin ~A signaled an error: ~A"
+                          builtin-name
+                          condition)
+         :details (list :builtin builtin-name
+                        :condition condition)))
+
+(defun signal-builtin-argument-error (code builtin-name control-string &rest arguments)
+  (error 'autolisp-runtime-error
+         :code code
+         :message (apply #'format nil control-string arguments)
+         :details (list* :builtin builtin-name arguments)))
+
+(defun signal-builtin-host-error (code builtin-name control-string &rest arguments)
+  (error 'autolisp-runtime-error
+         :code code
+         :message (apply #'format nil control-string arguments)
+         :details (list* :builtin builtin-name arguments)))
+
+(defun wrap-builtin-function (builtin-name function)
+  (lambda (&rest arguments)
+    (handler-case
+        (apply function arguments)
+      (autolisp-runtime-error (condition)
+        (error condition))
+      (file-error (condition)
+        (make-builtin-runtime-error :builtin-file-error builtin-name condition))
+      (error (condition)
+        (make-builtin-runtime-error :builtin-error builtin-name condition)))))
+
+(defun make-core-builtin-subr (name function)
+  (make-autolisp-subr name (wrap-builtin-function name function)))
+
 (defun builtin-boundp (object)
   (unless (typep object 'autolisp-symbol)
-    (error "Expected an AutoLISP symbol, got ~S." object))
+    (signal-builtin-argument-error
+     :invalid-symbol-argument
+     "BOUNDP"
+     "Expected an AutoLISP symbol, got ~S."
+     object))
   (if (and (autolisp-symbol-value-bound-p object)
            (autolisp-symbol-value object))
       (intern-autolisp-symbol "T")
@@ -29,14 +69,22 @@
     ((null object) nil)
     ((consp object) (car object))
     (t
-     (error "CAR expects a list, got ~S." object))))
+     (signal-builtin-argument-error
+      :invalid-list-argument
+      "CAR"
+      "CAR expects a list, got ~S."
+      object))))
 
 (defun builtin-cdr (object)
   (cond
     ((null object) nil)
     ((consp object) (cdr object))
     (t
-     (error "CDR expects a list or dotted pair, got ~S." object))))
+     (signal-builtin-argument-error
+      :invalid-list-argument
+      "CDR"
+      "CDR expects a list or dotted pair, got ~S."
+      object))))
 
 (defun builtin-cons (first second)
   (cons first second))
@@ -52,7 +100,12 @@
 
 (defun require-proper-list (object operator-name)
   (unless (proper-list-p object)
-    (error "~A expects a proper list, got ~S." operator-name object))
+    (signal-builtin-argument-error
+     :invalid-proper-list-argument
+     operator-name
+     "~A expects a proper list, got ~S."
+     operator-name
+     object))
   object)
 
 (defun autolisp-value= (left right)
@@ -89,7 +142,11 @@
   (require-proper-list alist "ASSOC")
   (dolist (entry alist nil)
     (unless (consp entry)
-      (error "ASSOC expects an alist, got entry ~S." entry))
+      (signal-builtin-argument-error
+       :invalid-alist-argument
+       "ASSOC"
+       "ASSOC expects an alist, got entry ~S."
+       entry))
     (when (autolisp-value= key (car entry))
       (return entry))))
 
@@ -99,7 +156,11 @@
 
 (defun builtin-nth (index object)
   (unless (typep index '(integer 0 2147483647))
-    (error "NTH expects a non-negative AutoLISP integer index, got ~S." index))
+    (signal-builtin-argument-error
+     :invalid-index-argument
+     "NTH"
+     "NTH expects a non-negative AutoLISP integer index, got ~S."
+     index))
   (require-proper-list object "NTH")
   (nth index object))
 
@@ -145,20 +206,43 @@
 
 (defun builtin-vl-list* (&rest arguments)
   (unless arguments
-    (error "VL-LIST* expects at least one argument."))
+    (signal-builtin-argument-error
+     :wrong-number-of-arguments
+     "VL-LIST*"
+     "VL-LIST* expects at least one argument."))
   (if (null (rest arguments))
       (first arguments)
       (apply #'list* arguments)))
 
 (defun require-string (object operator-name)
   (unless (typep object 'autolisp-string)
-    (error "~A expects an AutoLISP string, got ~S." operator-name object))
+    (signal-builtin-argument-error
+     :invalid-string-argument
+     operator-name
+     "~A expects an AutoLISP string, got ~S."
+     operator-name
+     object))
   object)
 
 (defun require-file (object operator-name)
   (unless (typep object 'autolisp-file)
-    (error "~A expects an AutoLISP file descriptor, got ~S." operator-name object))
+    (signal-builtin-argument-error
+     :invalid-file-argument
+     operator-name
+     "~A expects an AutoLISP file descriptor, got ~S."
+     operator-name
+     object))
   object)
+
+(defun require-open-file-stream (file operator-name)
+  (let ((stream (autolisp-file-stream (require-file file operator-name))))
+    (unless stream
+      (signal-builtin-argument-error
+       :closed-file-descriptor
+       operator-name
+       "~A expects an open file descriptor."
+       operator-name))
+    stream))
 
 (defun absolute-path-string-p (string)
   (or (uiop:absolute-pathname-p (pathname string))
@@ -204,8 +288,12 @@
              (merge-pathnames normalized
                               (pathname (autolisp-current-directory)))))
       (error ()
-        (error "~A expects a valid directory pathname, got ~S."
-               operator-name directory-string)))))
+        (signal-builtin-argument-error
+         :invalid-directory-argument
+         operator-name
+         "~A expects a valid directory pathname, got ~S."
+         operator-name
+         directory-string)))))
 
 (defun pathname-entry-name (pathname directoryp)
   (if directoryp
@@ -254,8 +342,11 @@
       ((= selector 0) :both)
       ((= selector 1) :files)
       (t
-       (error "VL-DIRECTORY-FILES selector must be -1, 0, or 1, got ~S."
-              directories)))))
+       (signal-builtin-argument-error
+        :invalid-directory-selector
+        "VL-DIRECTORY-FILES"
+        "VL-DIRECTORY-FILES selector must be -1, 0, or 1, got ~S."
+        directories)))))
 
 (defun collect-directory-entries (directory selector pattern)
   (let ((results '()))
@@ -294,20 +385,38 @@
     ((string= mode "a")
      (values :output :append :create))
     (t
-     (error "OPEN mode must be one of \"r\", \"w\", or \"a\", got ~S." mode))))
+     (signal-builtin-argument-error
+      :invalid-open-mode
+      "OPEN"
+      "OPEN mode must be one of \"r\", \"w\", or \"a\", got ~S."
+      mode))))
 
 (defun parse-open-external-format (string)
   (labels ((keywordize (name)
              (intern (string-upcase name) "KEYWORD")))
     (cond
       ((zerop (length string))
-       (error "Invalid empty external format."))
+       (signal-builtin-argument-error
+        :invalid-external-format
+        "OPEN"
+        "Invalid empty external format."))
       ((or (char= (char string 0) #\:)
            (char= (char string 0) #\())
-       (let ((value (read-from-string string)))
-         (unless (typep value '(or keyword cons))
-           (error "Invalid external format ~S." string))
-         value))
+       (handler-case
+           (let ((value (read-from-string string)))
+             (unless (typep value '(or keyword cons))
+               (signal-builtin-argument-error
+                :invalid-external-format
+                "OPEN"
+                "Invalid external format ~S."
+                string))
+             value)
+         (error ()
+           (signal-builtin-argument-error
+            :invalid-external-format
+            "OPEN"
+            "Invalid external format ~S."
+            string))))
       (t
        (keywordize string)))))
 
@@ -321,8 +430,11 @@
     ((typep value '(signed-byte 32))
      value)
     ((integerp value)
-     (error "Arithmetic result is outside the AutoLISP 32-bit integer range: ~S."
-            value))
+     (signal-builtin-argument-error
+      :integer-overflow
+      "ARITHMETIC"
+      "Arithmetic result is outside the AutoLISP 32-bit integer range: ~S."
+      value))
     ((rationalp value)
      (coerce value 'double-float))
     ((floatp value)
@@ -353,10 +465,16 @@
   (require-number first-number "/")
   (dolist (argument more-numbers)
     (require-number argument "/"))
-  (arithmetic-result
-   (if more-numbers
-       (apply #'/ first-number more-numbers)
-       (/ 1 first-number))))
+  (handler-case
+      (arithmetic-result
+       (if more-numbers
+           (apply #'/ first-number more-numbers)
+           (/ 1 first-number)))
+    (division-by-zero ()
+      (signal-builtin-host-error
+       :division-by-zero
+       "/"
+       "Division by zero in /."))))
 
 (defun builtin-1+ (object)
   (arithmetic-result (1+ (require-number object "1+"))))
@@ -378,13 +496,24 @@
 
 (defun require-int32 (object operator-name)
   (unless (typep object '(signed-byte 32))
-    (error "~A expects a 32-bit AutoLISP integer, got ~S." operator-name object))
+    (signal-builtin-argument-error
+     :invalid-integer-argument
+     operator-name
+     "~A expects a 32-bit AutoLISP integer, got ~S."
+     operator-name
+     object))
   object)
 
 (defun builtin-rem (first-number second-number)
-  (arithmetic-result
-   (rem (require-int32 first-number "REM")
-        (require-int32 second-number "REM"))))
+  (handler-case
+      (arithmetic-result
+       (rem (require-int32 first-number "REM")
+            (require-int32 second-number "REM")))
+    (division-by-zero ()
+      (signal-builtin-host-error
+       :division-by-zero
+       "REM"
+       "Division by zero in REM."))))
 
 (defun builtin-gcd (&rest arguments)
   (dolist (argument arguments)
@@ -441,9 +570,17 @@
   (let* ((value (autolisp-string-value (require-string string "SUBSTR")))
          (start-value (require-int32 start "SUBSTR")))
     (when (<= start-value 0)
-      (error "SUBSTR expects a positive 1-based start index, got ~S." start))
+      (signal-builtin-argument-error
+       :invalid-substr-start
+       "SUBSTR"
+       "SUBSTR expects a positive 1-based start index, got ~S."
+       start))
     (when (and length (<= (require-int32 length "SUBSTR") 0))
-      (error "SUBSTR length must be positive, got ~S." length))
+      (signal-builtin-argument-error
+       :invalid-substr-length
+       "SUBSTR"
+       "SUBSTR length must be positive, got ~S."
+       length))
     (let ((start-index (1- start-value)))
       (if (>= start-index (length value))
           (make-autolisp-string "")
@@ -456,14 +593,34 @@
 (defun builtin-ascii (string)
   (let ((value (autolisp-string-value (require-string string "ASCII"))))
     (when (zerop (length value))
-      (error "ASCII expects a non-empty string."))
+      (signal-builtin-argument-error
+       :invalid-empty-string
+       "ASCII"
+       "ASCII expects a non-empty string."))
     (char-code (char value 0))))
 
+(defun int32->character (code operator-name)
+  (let ((int32 (require-int32 code operator-name)))
+    (when (minusp int32)
+      (signal-builtin-argument-error
+       :invalid-character-code
+       operator-name
+       "~A code does not designate a valid character: ~S."
+       operator-name
+       code))
+    (let ((character (code-char int32)))
+      (unless character
+        (signal-builtin-argument-error
+         :invalid-character-code
+         operator-name
+         "~A code does not designate a valid character: ~S."
+         operator-name
+         code))
+      character)))
+
 (defun builtin-chr (code)
-  (let ((character (code-char (require-int32 code "CHR"))))
-    (unless character
-      (error "CHR code does not designate a valid character: ~S." code))
-    (make-autolisp-string (string character))))
+  (make-autolisp-string
+   (string (int32->character code "CHR"))))
 
 (defun builtin-open (filename mode &optional encoding)
   (let* ((path-string (autolisp-string-value (require-string filename "OPEN")))
@@ -726,13 +883,24 @@
   (close-autolisp-file (require-file file "CLOSE")))
 
 (defun builtin-read (string)
-  (autolisp-read-from-string
-   (autolisp-string-value (require-string string "READ"))))
+  (handler-case
+      (autolisp-read-from-string
+       (autolisp-string-value (require-string string "READ")))
+    (autolisp-runtime-error (condition)
+      (error 'autolisp-runtime-error
+             :code :invalid-read-syntax
+             :message (format nil "READ failed to parse input: ~A" condition)
+             :details (list :builtin "READ"
+                            :condition condition)))
+    (error (condition)
+      (error 'autolisp-runtime-error
+             :code :invalid-read-syntax
+             :message (format nil "READ failed to parse input: ~A" condition)
+             :details (list :builtin "READ"
+                            :condition condition)))))
 
 (defun builtin-read-line (file)
-  (let ((stream (autolisp-file-stream (require-file file "READ-LINE"))))
-    (unless stream
-      (error "READ-LINE expects an open file descriptor."))
+  (let ((stream (require-open-file-stream file "READ-LINE")))
     (let ((line (read-line stream nil nil)))
       (if line
           (make-autolisp-string line)
@@ -740,9 +908,7 @@
 
 (defun builtin-read-char (&optional file)
   (if file
-      (let ((stream (autolisp-file-stream (require-file file "READ-CHAR"))))
-        (unless stream
-          (error "READ-CHAR expects an open file descriptor."))
+      (let ((stream (require-open-file-stream file "READ-CHAR")))
         (let ((character (read-char stream nil nil)))
           (if character
               (char-code character)
@@ -755,9 +921,7 @@
 (defun builtin-write-line (string &optional file)
   (let ((value (autolisp-string-value (require-string string "WRITE-LINE"))))
     (if file
-        (let ((stream (autolisp-file-stream (require-file file "WRITE-LINE"))))
-          (unless stream
-            (error "WRITE-LINE expects an open file descriptor."))
+        (let ((stream (require-open-file-stream file "WRITE-LINE")))
           (write-line value stream)
           string)
         (progn
@@ -765,13 +929,9 @@
           string))))
 
 (defun builtin-write-char (char-code &optional file)
-  (let ((character (code-char (require-int32 char-code "WRITE-CHAR"))))
-    (unless character
-      (error "WRITE-CHAR code does not designate a valid character: ~S." char-code))
+  (let ((character (int32->character char-code "WRITE-CHAR")))
     (if file
-        (let ((stream (autolisp-file-stream (require-file file "WRITE-CHAR"))))
-          (unless stream
-            (error "WRITE-CHAR expects an open file descriptor."))
+        (let ((stream (require-open-file-stream file "WRITE-CHAR")))
           (write-char character stream)
           char-code)
         (progn
@@ -828,10 +988,7 @@
 
 (defun output-stream-for-file (file operator-name)
   (if file
-      (let ((stream (autolisp-file-stream (require-file file operator-name))))
-        (unless stream
-          (error "~A expects an open file descriptor." operator-name))
-        stream)
+      (require-open-file-stream file operator-name)
       *standard-output*))
 
 (defun builtin-vl-prin1-to-string (object)
@@ -874,11 +1031,19 @@
     ((typep object 'autolisp-string)
      (autolisp-string-value object))
     (t
-     (error "~A expects numbers or strings, got ~S." operator-name object))))
+     (signal-builtin-argument-error
+      :invalid-comparison-argument
+      operator-name
+      "~A expects numbers or strings, got ~S."
+      operator-name
+      object))))
 
 (defun builtin-= (&rest arguments)
   (unless arguments
-    (error "= expects at least one argument."))
+    (signal-builtin-argument-error
+     :wrong-number-of-arguments
+     "="
+     "= expects at least one argument."))
   (let ((first-value (comparison-value (first arguments) "=")))
     (if (every (lambda (argument)
                  (equal first-value (comparison-value argument "=")))
@@ -888,7 +1053,10 @@
 
 (defun builtin-/= (&rest arguments)
   (unless arguments
-    (error "/= expects at least one argument."))
+    (signal-builtin-argument-error
+     :wrong-number-of-arguments
+     "/="
+     "/= expects at least one argument."))
   (let ((values (mapcar (lambda (argument)
                           (comparison-value argument "/="))
                         arguments)))
@@ -899,7 +1067,12 @@
 
 (defun require-number (object operator-name)
   (unless (numberp object)
-    (error "~A expects a number, got ~S." operator-name object))
+    (signal-builtin-argument-error
+     :invalid-number-argument
+     operator-name
+     "~A expects a number, got ~S."
+     operator-name
+     object))
   object)
 
 (defun numeric-order-p (arguments predicate operator-name)
@@ -931,7 +1104,11 @@
 (defun builtin-fix (object)
   (let ((value (truncate (require-number object "FIX"))))
     (unless (typep value '(signed-byte 32))
-      (error "FIX result is outside the AutoLISP 32-bit integer range: ~S." value))
+      (signal-builtin-argument-error
+       :integer-overflow
+       "FIX"
+       "FIX result is outside the AutoLISP 32-bit integer range: ~S."
+       value))
     value))
 
 (defun builtin-float (object)
@@ -949,89 +1126,89 @@
 
 (defun core-builtins ()
   (list
-   (make-autolisp-subr "TYPE" #'autolisp-type)
-   (make-autolisp-subr "NULL" #'autolisp-null)
-   (make-autolisp-subr "NOT" #'autolisp-not)
-   (make-autolisp-subr "ATOM" #'autolisp-atom)
-   (make-autolisp-subr "VL-SYMBOLP" #'autolisp-vl-symbolp)
-   (make-autolisp-subr "VL-SYMBOL-NAME" #'autolisp-vl-symbol-name)
-   (make-autolisp-subr "VL-SYMBOL-VALUE" #'autolisp-vl-symbol-value)
-   (make-autolisp-subr "+" #'builtin-+)
-   (make-autolisp-subr "-" #'builtin--)
-   (make-autolisp-subr "*" #'builtin-*)
-   (make-autolisp-subr "/" #'builtin-/)
-   (make-autolisp-subr "1+" #'builtin-1+)
-   (make-autolisp-subr "1-" #'builtin-1-)
-   (make-autolisp-subr "MAX" #'builtin-max)
-   (make-autolisp-subr "MIN" #'builtin-min)
-   (make-autolisp-subr "REM" #'builtin-rem)
-   (make-autolisp-subr "GCD" #'builtin-gcd)
-   (make-autolisp-subr "LCM" #'builtin-lcm)
-   (make-autolisp-subr "~" #'builtin-~)
-   (make-autolisp-subr "LOGAND" #'builtin-logand)
-   (make-autolisp-subr "LOGIOR" #'builtin-logior)
-   (make-autolisp-subr "LSH" #'builtin-lsh)
-   (make-autolisp-subr "STRCAT" #'builtin-strcat)
-   (make-autolisp-subr "STRLEN" #'builtin-strlen)
-   (make-autolisp-subr "SUBSTR" #'builtin-substr)
-   (make-autolisp-subr "ASCII" #'builtin-ascii)
-   (make-autolisp-subr "CHR" #'builtin-chr)
-   (make-autolisp-subr "READ" #'builtin-read)
-   (make-autolisp-subr "OPEN" #'builtin-open)
-   (make-autolisp-subr "CLOSE" #'builtin-close)
-   (make-autolisp-subr "READ-LINE" #'builtin-read-line)
-   (make-autolisp-subr "READ-CHAR" #'builtin-read-char)
-   (make-autolisp-subr "WRITE-LINE" #'builtin-write-line)
-   (make-autolisp-subr "WRITE-CHAR" #'builtin-write-char)
-   (make-autolisp-subr "FINDFILE" #'builtin-findfile)
-   (make-autolisp-subr "FINDTRUSTEDFILE" #'builtin-findtrustedfile)
-   (make-autolisp-subr "VL-DIRECTORY-FILES" #'builtin-vl-directory-files)
-   (make-autolisp-subr "VL-FILE-DIRECTORY-P" #'builtin-vl-file-directory-p)
-   (make-autolisp-subr "VL-FILENAME-BASE" #'builtin-vl-filename-base)
-   (make-autolisp-subr "VL-FILENAME-DIRECTORY" #'builtin-vl-filename-directory)
-   (make-autolisp-subr "VL-FILENAME-EXTENSION" #'builtin-vl-filename-extension)
-   (make-autolisp-subr "VL-FILE-DELETE" #'builtin-vl-file-delete)
-   (make-autolisp-subr "VL-FILE-RENAME" #'builtin-vl-file-rename)
-   (make-autolisp-subr "VL-FILE-SIZE" #'builtin-vl-file-size)
-   (make-autolisp-subr "VL-FILE-SYSTIME" #'builtin-vl-file-systime)
-   (make-autolisp-subr "VL-FILE-COPY" #'builtin-vl-file-copy)
-   (make-autolisp-subr "VL-FILENAME-MKTEMP" #'builtin-vl-filename-mktemp)
-   (make-autolisp-subr "VL-MKDIR" #'builtin-vl-mkdir)
-   (make-autolisp-subr "PRIN1" #'builtin-prin1)
-   (make-autolisp-subr "PRINC" #'builtin-princ)
-   (make-autolisp-subr "PRINT" #'builtin-print)
-   (make-autolisp-subr "TERPRI" #'builtin-terpri)
-   (make-autolisp-subr "PROMPT" #'builtin-prompt)
-   (make-autolisp-subr "VL-PRIN1-TO-STRING" #'builtin-vl-prin1-to-string)
-   (make-autolisp-subr "VL-PRINC-TO-STRING" #'builtin-vl-princ-to-string)
-   (make-autolisp-subr "BOUNDP" #'builtin-boundp)
-   (make-autolisp-subr "CAR" #'builtin-car)
-   (make-autolisp-subr "CDR" #'builtin-cdr)
-   (make-autolisp-subr "CONS" #'builtin-cons)
-   (make-autolisp-subr "LIST" #'builtin-list)
-   (make-autolisp-subr "APPEND" #'builtin-append)
-   (make-autolisp-subr "ASSOC" #'builtin-assoc)
-   (make-autolisp-subr "LENGTH" #'builtin-length)
-   (make-autolisp-subr "NTH" #'builtin-nth)
-   (make-autolisp-subr "REVERSE" #'builtin-reverse)
-   (make-autolisp-subr "LAST" #'builtin-last)
-   (make-autolisp-subr "MEMBER" #'builtin-member)
-   (make-autolisp-subr "SUBST" #'builtin-subst)
-   (make-autolisp-subr "LISTP" #'autolisp-listp)
-   (make-autolisp-subr "VL-CONSP" #'builtin-vl-consp)
-   (make-autolisp-subr "VL-LIST*" #'builtin-vl-list*)
-   (make-autolisp-subr "NUMBERP" #'builtin-numberp)
-   (make-autolisp-subr "=" #'builtin-=)
-   (make-autolisp-subr "/=" #'builtin-/=)
-   (make-autolisp-subr "<" #'builtin-<)
-   (make-autolisp-subr "<=" #'builtin-<=)
-   (make-autolisp-subr ">" #'builtin->)
-   (make-autolisp-subr ">=" #'builtin->=)
-   (make-autolisp-subr "ABS" #'builtin-abs)
-   (make-autolisp-subr "FIX" #'builtin-fix)
-   (make-autolisp-subr "FLOAT" #'builtin-float)
-   (make-autolisp-subr "ZEROP" #'builtin-zerop)
-   (make-autolisp-subr "MINUSP" #'builtin-minusp)))
+   (make-core-builtin-subr "TYPE" #'autolisp-type)
+   (make-core-builtin-subr "NULL" #'autolisp-null)
+   (make-core-builtin-subr "NOT" #'autolisp-not)
+   (make-core-builtin-subr "ATOM" #'autolisp-atom)
+   (make-core-builtin-subr "VL-SYMBOLP" #'autolisp-vl-symbolp)
+   (make-core-builtin-subr "VL-SYMBOL-NAME" #'autolisp-vl-symbol-name)
+   (make-core-builtin-subr "VL-SYMBOL-VALUE" #'autolisp-vl-symbol-value)
+   (make-core-builtin-subr "+" #'builtin-+)
+   (make-core-builtin-subr "-" #'builtin--)
+   (make-core-builtin-subr "*" #'builtin-*)
+   (make-core-builtin-subr "/" #'builtin-/)
+   (make-core-builtin-subr "1+" #'builtin-1+)
+   (make-core-builtin-subr "1-" #'builtin-1-)
+   (make-core-builtin-subr "MAX" #'builtin-max)
+   (make-core-builtin-subr "MIN" #'builtin-min)
+   (make-core-builtin-subr "REM" #'builtin-rem)
+   (make-core-builtin-subr "GCD" #'builtin-gcd)
+   (make-core-builtin-subr "LCM" #'builtin-lcm)
+   (make-core-builtin-subr "~" #'builtin-~)
+   (make-core-builtin-subr "LOGAND" #'builtin-logand)
+   (make-core-builtin-subr "LOGIOR" #'builtin-logior)
+   (make-core-builtin-subr "LSH" #'builtin-lsh)
+   (make-core-builtin-subr "STRCAT" #'builtin-strcat)
+   (make-core-builtin-subr "STRLEN" #'builtin-strlen)
+   (make-core-builtin-subr "SUBSTR" #'builtin-substr)
+   (make-core-builtin-subr "ASCII" #'builtin-ascii)
+   (make-core-builtin-subr "CHR" #'builtin-chr)
+   (make-core-builtin-subr "READ" #'builtin-read)
+   (make-core-builtin-subr "OPEN" #'builtin-open)
+   (make-core-builtin-subr "CLOSE" #'builtin-close)
+   (make-core-builtin-subr "READ-LINE" #'builtin-read-line)
+   (make-core-builtin-subr "READ-CHAR" #'builtin-read-char)
+   (make-core-builtin-subr "WRITE-LINE" #'builtin-write-line)
+   (make-core-builtin-subr "WRITE-CHAR" #'builtin-write-char)
+   (make-core-builtin-subr "FINDFILE" #'builtin-findfile)
+   (make-core-builtin-subr "FINDTRUSTEDFILE" #'builtin-findtrustedfile)
+   (make-core-builtin-subr "VL-DIRECTORY-FILES" #'builtin-vl-directory-files)
+   (make-core-builtin-subr "VL-FILE-DIRECTORY-P" #'builtin-vl-file-directory-p)
+   (make-core-builtin-subr "VL-FILENAME-BASE" #'builtin-vl-filename-base)
+   (make-core-builtin-subr "VL-FILENAME-DIRECTORY" #'builtin-vl-filename-directory)
+   (make-core-builtin-subr "VL-FILENAME-EXTENSION" #'builtin-vl-filename-extension)
+   (make-core-builtin-subr "VL-FILE-DELETE" #'builtin-vl-file-delete)
+   (make-core-builtin-subr "VL-FILE-RENAME" #'builtin-vl-file-rename)
+   (make-core-builtin-subr "VL-FILE-SIZE" #'builtin-vl-file-size)
+   (make-core-builtin-subr "VL-FILE-SYSTIME" #'builtin-vl-file-systime)
+   (make-core-builtin-subr "VL-FILE-COPY" #'builtin-vl-file-copy)
+   (make-core-builtin-subr "VL-FILENAME-MKTEMP" #'builtin-vl-filename-mktemp)
+   (make-core-builtin-subr "VL-MKDIR" #'builtin-vl-mkdir)
+   (make-core-builtin-subr "PRIN1" #'builtin-prin1)
+   (make-core-builtin-subr "PRINC" #'builtin-princ)
+   (make-core-builtin-subr "PRINT" #'builtin-print)
+   (make-core-builtin-subr "TERPRI" #'builtin-terpri)
+   (make-core-builtin-subr "PROMPT" #'builtin-prompt)
+   (make-core-builtin-subr "VL-PRIN1-TO-STRING" #'builtin-vl-prin1-to-string)
+   (make-core-builtin-subr "VL-PRINC-TO-STRING" #'builtin-vl-princ-to-string)
+   (make-core-builtin-subr "BOUNDP" #'builtin-boundp)
+   (make-core-builtin-subr "CAR" #'builtin-car)
+   (make-core-builtin-subr "CDR" #'builtin-cdr)
+   (make-core-builtin-subr "CONS" #'builtin-cons)
+   (make-core-builtin-subr "LIST" #'builtin-list)
+   (make-core-builtin-subr "APPEND" #'builtin-append)
+   (make-core-builtin-subr "ASSOC" #'builtin-assoc)
+   (make-core-builtin-subr "LENGTH" #'builtin-length)
+   (make-core-builtin-subr "NTH" #'builtin-nth)
+   (make-core-builtin-subr "REVERSE" #'builtin-reverse)
+   (make-core-builtin-subr "LAST" #'builtin-last)
+   (make-core-builtin-subr "MEMBER" #'builtin-member)
+   (make-core-builtin-subr "SUBST" #'builtin-subst)
+   (make-core-builtin-subr "LISTP" #'autolisp-listp)
+   (make-core-builtin-subr "VL-CONSP" #'builtin-vl-consp)
+   (make-core-builtin-subr "VL-LIST*" #'builtin-vl-list*)
+   (make-core-builtin-subr "NUMBERP" #'builtin-numberp)
+   (make-core-builtin-subr "=" #'builtin-=)
+   (make-core-builtin-subr "/=" #'builtin-/=)
+   (make-core-builtin-subr "<" #'builtin-<)
+   (make-core-builtin-subr "<=" #'builtin-<=)
+   (make-core-builtin-subr ">" #'builtin->)
+   (make-core-builtin-subr ">=" #'builtin->=)
+   (make-core-builtin-subr "ABS" #'builtin-abs)
+   (make-core-builtin-subr "FIX" #'builtin-fix)
+   (make-core-builtin-subr "FLOAT" #'builtin-float)
+   (make-core-builtin-subr "ZEROP" #'builtin-zerop)
+   (make-core-builtin-subr "MINUSP" #'builtin-minusp)))
 
 (defun find-core-builtin (name)
   (find name (core-builtins)
