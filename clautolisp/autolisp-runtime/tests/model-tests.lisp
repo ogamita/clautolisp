@@ -147,6 +147,21 @@
             (function-cell-function
              (namespace-function-cell document symbol :createp nil))))))
 
+(test current-evaluation-context-follows-active-call-context
+  (reset-autolisp-symbol-table)
+  (let* ((document (make-document-namespace :name "CTX-DOC"))
+         (context (make-evaluation-context
+                   :session (make-runtime-session :current-document document)
+                   :current-document document
+                   :current-namespace document))
+         (function (make-autolisp-subr
+                    "WHOAMI"
+                    (lambda ()
+                      (current-evaluation-context))))
+         (symbol (intern-autolisp-symbol "WHOAMI")))
+    (set-function symbol function context)
+    (is (eq context (autolisp-eval (list symbol) context)))))
+
 (test evaluation-context-carries-current-document-and-namespace
   (let* ((document (make-document-namespace :name "DRAWING-A"))
          (context (make-evaluation-context
@@ -506,3 +521,27 @@
            (is (= 3 (autolisp-symbol-value foo))))
       (when (probe-file path)
         (delete-file path)))))
+
+(test call-with-autolisp-error-handler-updates-errno
+  (reset-autolisp-symbol-table)
+  (let ((error-symbol (intern-autolisp-symbol "*ERROR*")))
+    (set-autolisp-errno 7)
+    (set-function error-symbol
+                  (make-autolisp-subr
+                   "*ERROR*"
+                   (lambda (message)
+                     message)))
+    (let ((result (call-with-autolisp-error-handler
+                   (lambda ()
+                     (clautolisp.autolisp-runtime::signal-autolisp-runtime-error
+                      :test-error
+                      "Synthetic runtime failure.")))))
+      (is (typep result 'autolisp-string))
+      (is (string= "Synthetic runtime failure."
+                   (autolisp-string-value result)))
+      (is (= 1 (autolisp-errno))))
+    (is (= 3
+           (call-with-autolisp-error-handler
+            (lambda ()
+              3))))
+    (is (= 0 (autolisp-errno)))))

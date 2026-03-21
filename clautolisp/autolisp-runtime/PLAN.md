@@ -52,6 +52,10 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [x] Extend error mapping so builtin and host layers also preserve structured AutoLISP-visible error codes consistently.
 - [x] Add a first runtime `load` entry point that reads and evaluates a file in an explicit evaluation context.
 - [x] Add a first `*error*` hook path and runtime catch-all error object for the Visual LISP catch-all family.
+- [x] Add the first session-level `ERRNO` tracking and the initial distinction between `exit`, `quit`, and namespace-exit bridges.
+- [x] Make the active evaluation context dynamically visible during `SUBR` execution so namespace-sensitive builtins resolve against the current call context.
+- [ ] Refine the implementation-defined `ERRNO` mapping into a documented compatibility table as product evidence is gathered.
+- [ ] Refine `exit`, `quit`, and namespace-exit control transfer against real product command-loop behavior.
 
 ## Integration Tasks
 

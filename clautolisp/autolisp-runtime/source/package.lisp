@@ -57,6 +57,7 @@
    #:runtime-session
    #:make-runtime-session
    #:runtime-session-current-document
+   #:runtime-session-errno
    #:set-runtime-session-current-document
    #:autolisp-file
    #:make-autolisp-file
@@ -85,6 +86,11 @@
    #:autolisp-runtime-error-code
    #:autolisp-runtime-error-message
    #:autolisp-runtime-error-details
+   #:autolisp-termination
+   #:autolisp-termination-kind
+   #:autolisp-namespace-exit
+   #:autolisp-namespace-exit-kind
+   #:autolisp-namespace-exit-value
    #:autolisp-variant
    #:autolisp-variant-value
    #:autolisp-safearray
@@ -95,10 +101,13 @@
    #:find-autolisp-symbol
    #:reset-autolisp-symbol-table
    #:default-evaluation-context
+   #:current-evaluation-context
    #:set-default-evaluation-context
    #:reset-default-evaluation-context
    #:enter-document-context
    #:call-with-autolisp-error-handler
+   #:autolisp-errno
+   #:set-autolisp-errno
    #:namespace-value-cell
    #:namespace-function-cell
    #:lookup-variable
@@ -180,4 +189,5 @@
    #:make-autolisp-usubr
    #:make-autolisp-catch-all-error
    #:make-autolisp-variant
-   #:make-autolisp-vla-object))
+   #:make-autolisp-vla-object
+   #:*active-evaluation-context*))

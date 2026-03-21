@@ -2,6 +2,7 @@
 
 (defparameter *core-builtin-names*
   '("TYPE" "NULL" "NOT" "ATOM" "VL-SYMBOLP" "VL-SYMBOL-NAME" "VL-SYMBOL-VALUE"
+    "MAPCAR"
     "+" "-" "*" "/" "1+" "1-" "MAX" "MIN" "REM" "GCD" "LCM" "~" "LOGAND"
     "LOGIOR" "LSH" "STRCAT" "STRLEN" "SUBSTR" "ASCII" "CHR"
     "READ" "LOAD" "AUTOLOAD" "OPEN" "CLOSE" "READ-LINE" "READ-CHAR" "WRITE-LINE" "WRITE-CHAR"
@@ -9,9 +10,10 @@
     "VL-FILENAME-BASE" "VL-FILENAME-DIRECTORY" "VL-FILENAME-EXTENSION"
     "VL-FILE-DELETE" "VL-FILE-RENAME" "VL-FILE-SIZE" "VL-FILE-SYSTIME"
     "VL-FILE-COPY" "VL-FILENAME-MKTEMP" "VL-MKDIR"
-    "PRIN1" "PRINC" "PRINT" "TERPRI" "PROMPT"
+    "PRIN1" "PRINC" "PRINT" "TERPRI" "PROMPT" "EXIT" "QUIT"
     "VL-PRIN1-TO-STRING" "VL-PRINC-TO-STRING"
     "VL-CATCH-ALL-APPLY" "VL-CATCH-ALL-ERROR-P" "VL-CATCH-ALL-ERROR-MESSAGE"
+    "VL-EXIT-WITH-ERROR" "VL-EXIT-WITH-VALUE"
     "DEFUN-Q-LIST-REF" "DEFUN-Q-LIST-SET"
     "BOUNDP" "CAR" "CDR" "CONS" "LIST" "APPEND" "ASSOC" "LENGTH" "NTH"
     "REVERSE" "LAST" "MEMBER" "SUBST" "LISTP" "VL-CONSP" "VL-LIST*"
@@ -200,10 +202,13 @@
 (defun builtin-vl-catch-all-apply (function-designator arg-list)
   (require-proper-list arg-list "VL-CATCH-ALL-APPLY")
   (handler-case
-      (apply #'call-autolisp-function
-             (resolve-autolisp-function-designator function-designator)
-             arg-list)
+      (let ((result (apply #'call-autolisp-function
+                           (resolve-autolisp-function-designator function-designator)
+                           arg-list)))
+        (set-autolisp-errno 0)
+        result)
     (error (condition)
+      (set-autolisp-errno 1)
       (make-autolisp-catch-all-error
        (princ-to-string condition)
        condition))))
@@ -221,6 +226,33 @@
      "VL-CATCH-ALL-ERROR-MESSAGE expects a catch-all error object, got ~S."
      object))
   (make-autolisp-string (autolisp-catch-all-error-message object)))
+
+(defun builtin-exit ()
+  (signal 'autolisp-termination :kind :exit))
+
+(defun builtin-quit ()
+  (signal 'autolisp-termination :kind :quit))
+
+(defun builtin-vl-exit-with-error (message)
+  (let ((text (autolisp-string-value (require-string message "VL-EXIT-WITH-ERROR"))))
+    (signal 'autolisp-namespace-exit :kind :error :value text)))
+
+(defun builtin-vl-exit-with-value (value)
+  (signal 'autolisp-namespace-exit :kind :value :value value))
+
+(defun builtin-mapcar (function-designator first-list &rest more-lists)
+  (let* ((function (resolve-autolisp-function-designator function-designator))
+         (lists (mapcar (lambda (object)
+                          (require-proper-list object "MAPCAR"))
+                        (cons first-list more-lists)))
+         (results '()))
+    (loop while (every #'consp lists)
+          do (push (apply #'call-autolisp-function
+                          function
+                          (mapcar #'car lists))
+                   results)
+             (setf lists (mapcar #'cdr lists)))
+    (nreverse results)))
 
 (defun builtin-car (object)
   (cond
@@ -1291,6 +1323,7 @@
    (make-core-builtin-subr "VL-SYMBOLP" #'autolisp-vl-symbolp)
    (make-core-builtin-subr "VL-SYMBOL-NAME" #'autolisp-vl-symbol-name)
    (make-core-builtin-subr "VL-SYMBOL-VALUE" #'autolisp-vl-symbol-value)
+   (make-core-builtin-subr "MAPCAR" #'builtin-mapcar)
    (make-core-builtin-subr "+" #'builtin-+)
    (make-core-builtin-subr "-" #'builtin--)
    (make-core-builtin-subr "*" #'builtin-*)
@@ -1339,12 +1372,16 @@
    (make-core-builtin-subr "PRINT" #'builtin-print)
    (make-core-builtin-subr "TERPRI" #'builtin-terpri)
    (make-core-builtin-subr "PROMPT" #'builtin-prompt)
+   (make-core-builtin-subr "EXIT" #'builtin-exit)
+   (make-core-builtin-subr "QUIT" #'builtin-quit)
    (make-core-builtin-subr "VL-PRIN1-TO-STRING" #'builtin-vl-prin1-to-string)
    (make-core-builtin-subr "VL-PRINC-TO-STRING" #'builtin-vl-princ-to-string)
    (make-core-builtin-subr "VL-CATCH-ALL-APPLY" #'builtin-vl-catch-all-apply)
    (make-core-builtin-subr "VL-CATCH-ALL-ERROR-P" #'builtin-vl-catch-all-error-p)
    (make-core-builtin-subr "VL-CATCH-ALL-ERROR-MESSAGE"
                            #'builtin-vl-catch-all-error-message)
+   (make-core-builtin-subr "VL-EXIT-WITH-ERROR" #'builtin-vl-exit-with-error)
+   (make-core-builtin-subr "VL-EXIT-WITH-VALUE" #'builtin-vl-exit-with-value)
    (make-core-builtin-subr "DEFUN-Q-LIST-REF" #'builtin-defun-q-list-ref)
    (make-core-builtin-subr "DEFUN-Q-LIST-SET" #'builtin-defun-q-list-set)
    (make-core-builtin-subr "BOUNDP" #'builtin-boundp)

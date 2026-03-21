@@ -29,12 +29,15 @@
                 #:autolisp-eval
                 #:autolisp-eval-progn
                 #:autolisp-boundp
+                #:autolisp-errno
                 #:autolisp-function-list-definition
                 #:autolisp-load-file-in-context
                 #:autolisp-null
                 #:autolisp-not
                 #:autolisp-read-from-string
                 #:bind-dynamic-variable
+                #:call-with-autolisp-error-handler
+                #:current-evaluation-context
                 #:default-evaluation-context
                 #:document-namespace-name
                 #:evaluation-context-current-document
@@ -63,6 +66,7 @@
                 #:set-runtime-session-current-document
                 #:separate-vlx-namespace-name
                 #:set-default-evaluation-context
+                #:set-autolisp-errno
                 #:set-function
                 #:set-variable
                 #:value-cell-value

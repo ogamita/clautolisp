@@ -517,14 +517,104 @@
          (list-symbol (intern-autolisp-symbol "LIST")))
     (let ((success (call-autolisp-function apply-fn list-symbol '(1 2 3))))
       (is (equal '(1 2 3) success))
+      (is (= 0 (autolisp-errno)))
       (is (null (call-autolisp-function error-p-fn success))))
     (let ((failure (call-autolisp-function apply-fn car-symbol '(42))))
+      (is (= 1 (autolisp-errno)))
       (is (string= "T"
                    (autolisp-symbol-name
                     (call-autolisp-function error-p-fn failure))))
       (let ((message (call-autolisp-function message-fn failure)))
         (is (typep message 'autolisp-string))
         (is (> (length (autolisp-string-value message)) 0))))))
+
+(test builtin-mapcar
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((mapcar-fn (autolisp-symbol-function (find-autolisp-symbol "MAPCAR")))
+         (one-plus (intern-autolisp-symbol "1+"))
+         (plus (intern-autolisp-symbol "+"))
+         (lambda-symbol (intern-autolisp-symbol "LAMBDA"))
+         (arg (intern-autolisp-symbol "X")))
+    (is (equal '(11 21 31)
+               (call-autolisp-function mapcar-fn one-plus '(10 20 30))))
+    (is (equal '(13 23 33)
+               (call-autolisp-function
+                mapcar-fn
+                (list lambda-symbol
+                      (list arg)
+                      (list plus arg 3))
+                '(10 20 30))))
+    (is (equal '(11 22)
+               (call-autolisp-function
+                mapcar-fn
+                plus
+                '(1 2)
+                '(10 20 30))))))
+
+(test builtin-mapcar-uses-active-evaluation-context
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((default-document (make-document-namespace :name "DEFAULT-DOC"))
+         (default-context (make-evaluation-context
+                           :session (make-runtime-session :current-document default-document)
+                           :current-document default-document
+                           :current-namespace default-document))
+         (runtime-document (make-document-namespace :name "RUNTIME-DOC"))
+         (runtime-context (make-evaluation-context
+                           :session (make-runtime-session :current-document runtime-document)
+                           :current-document runtime-document
+                           :current-namespace runtime-document))
+         (mapcar-symbol (intern-autolisp-symbol "MAPCAR"))
+         (inc-symbol (intern-autolisp-symbol "INC")))
+    (set-default-evaluation-context default-context)
+    (dolist (builtin (core-builtins))
+      (set-function (intern-autolisp-symbol (autolisp-subr-name builtin))
+                    builtin
+                    runtime-context))
+    (set-function inc-symbol
+                  (make-autolisp-subr "INC" (lambda (value) (+ value 1)))
+                  runtime-context)
+    (is (equal '(2 3 4)
+               (autolisp-eval
+                (list mapcar-symbol
+                      (list (intern-autolisp-symbol "QUOTE") inc-symbol)
+                      (list (intern-autolisp-symbol "QUOTE") '(1 2 3)))
+                runtime-context)))))
+
+(test builtin-exit-quit-and-namespace-bridge
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((exit-fn (autolisp-symbol-function (find-autolisp-symbol "EXIT")))
+        (quit-fn (autolisp-symbol-function (find-autolisp-symbol "QUIT")))
+        (exit-error-fn (autolisp-symbol-function (find-autolisp-symbol "VL-EXIT-WITH-ERROR")))
+        (exit-value-fn (autolisp-symbol-function (find-autolisp-symbol "VL-EXIT-WITH-VALUE"))))
+    (handler-case
+        (progn
+          (call-autolisp-function exit-fn)
+          (is nil))
+      (autolisp-termination (condition)
+        (is (eq :exit (autolisp-termination-kind condition)))))
+    (handler-case
+        (progn
+          (call-autolisp-function quit-fn)
+          (is nil))
+      (autolisp-termination (condition)
+        (is (eq :quit (autolisp-termination-kind condition)))))
+    (handler-case
+        (progn
+          (call-autolisp-function exit-error-fn (make-autolisp-string "bridge-error"))
+          (is nil))
+      (autolisp-namespace-exit (condition)
+        (is (eq :error (autolisp-namespace-exit-kind condition)))
+        (is (string= "bridge-error" (autolisp-namespace-exit-value condition)))))
+    (handler-case
+        (progn
+          (call-autolisp-function exit-value-fn 42)
+          (is nil))
+      (autolisp-namespace-exit (condition)
+        (is (eq :value (autolisp-namespace-exit-kind condition)))
+        (is (= 42 (autolisp-namespace-exit-value condition)))))))
 
 (test builtin-file-primitives
   (reset-autolisp-symbol-table)

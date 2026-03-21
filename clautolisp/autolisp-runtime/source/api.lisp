@@ -71,6 +71,26 @@
   (:report (lambda (condition stream)
              (format stream "~A" (autolisp-runtime-error-message condition)))))
 
+(define-condition autolisp-termination (condition)
+  ((kind
+    :initarg :kind
+    :reader autolisp-termination-kind))
+  (:report (lambda (condition stream)
+             (format stream "AutoLISP termination requested: ~A"
+                     (autolisp-termination-kind condition)))))
+
+(define-condition autolisp-namespace-exit (condition)
+  ((kind
+    :initarg :kind
+    :reader autolisp-namespace-exit-kind)
+   (value
+    :initarg :value
+    :reader autolisp-namespace-exit-value))
+  (:report (lambda (condition stream)
+             (format stream "AutoLISP namespace exit ~A: ~S"
+                     (autolisp-namespace-exit-kind condition)
+                     (autolisp-namespace-exit-value condition)))))
+
 (defun signal-autolisp-runtime-error (code control-string &rest arguments)
   (error 'autolisp-runtime-error
          :code code
@@ -83,6 +103,10 @@
 
 (defun default-evaluation-context ()
   clautolisp.autolisp-runtime.internal::*default-evaluation-context*)
+
+(defun current-evaluation-context ()
+  (or clautolisp.autolisp-runtime.internal::*active-evaluation-context*
+      (default-evaluation-context)))
 
 (defun set-default-evaluation-context (context)
   (setf clautolisp.autolisp-runtime.internal::*default-evaluation-context* context))
@@ -163,6 +187,9 @@
 (defun runtime-session-current-document (session)
   (clautolisp.autolisp-runtime.internal::runtime-session-current-document session))
 
+(defun runtime-session-errno (session)
+  (clautolisp.autolisp-runtime.internal::runtime-session-errno session))
+
 (defun set-runtime-session-current-document (session document)
   (unless (typep document 'document-namespace)
     (signal-autolisp-runtime-error
@@ -171,6 +198,14 @@
      document))
   (setf (clautolisp.autolisp-runtime.internal::runtime-session-current-document session)
         document))
+
+(defun autolisp-errno (&optional (context (current-evaluation-context)))
+  (runtime-session-errno (evaluation-context-session context)))
+
+(defun set-autolisp-errno (value &optional (context (current-evaluation-context)))
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-errno
+         (evaluation-context-session context))
+        value))
 
 (defun make-evaluation-context (&key session current-document current-namespace dynamic-frame)
   (let* ((session (or session
@@ -272,20 +307,20 @@
 (defun make-dynamic-frame (&key parent)
   (clautolisp.autolisp-runtime.internal::make-dynamic-frame :parent parent))
 
-(defun push-dynamic-frame (&optional (context (default-evaluation-context)))
+(defun push-dynamic-frame (&optional (context (current-evaluation-context)))
   (let ((frame (make-dynamic-frame :parent (evaluation-context-dynamic-frame context))))
     (setf (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context)
           frame)
     frame))
 
-(defun pop-dynamic-frame (&optional (context (default-evaluation-context)))
+(defun pop-dynamic-frame (&optional (context (current-evaluation-context)))
   (let ((frame (evaluation-context-dynamic-frame context)))
     (when frame
       (setf (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context)
             (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)))
     frame))
 
-(defun bind-dynamic-variable (symbol value &optional (context (default-evaluation-context)))
+(defun bind-dynamic-variable (symbol value &optional (context (current-evaluation-context)))
   (let ((frame (or (evaluation-context-dynamic-frame context)
                    (push-dynamic-frame context))))
     (setf (gethash symbol (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))
@@ -302,7 +337,7 @@
         when binding
           do (return binding)))
 
-(defun lookup-variable (symbol &optional (context (default-evaluation-context)))
+(defun lookup-variable (symbol &optional (context (current-evaluation-context)))
   (let ((binding (find-dynamic-binding symbol (evaluation-context-dynamic-frame context))))
     (cond
       (binding
@@ -316,7 +351,7 @@
                  boundp
                  :namespace))))))
 
-(defun set-variable (symbol value &optional (context (default-evaluation-context)))
+(defun set-variable (symbol value &optional (context (current-evaluation-context)))
   (let ((binding (find-dynamic-binding symbol (evaluation-context-dynamic-frame context))))
     (if binding
         (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding) value
@@ -326,7 +361,7 @@
                 (clautolisp.autolisp-runtime.internal::value-cell-bound-p cell) t)))
     value))
 
-(defun lookup-function (symbol &optional (context (default-evaluation-context)))
+(defun lookup-function (symbol &optional (context (current-evaluation-context)))
   (let* ((cell (namespace-function-cell (evaluation-context-current-namespace context)
                                         symbol
                                         :createp nil))
@@ -335,7 +370,7 @@
             boundp
             :namespace)))
 
-(defun set-function (symbol function &optional (context (default-evaluation-context)))
+(defun set-function (symbol function &optional (context (current-evaluation-context)))
   (let ((cell (namespace-function-cell (evaluation-context-current-namespace context) symbol)))
     (setf (clautolisp.autolisp-runtime.internal::function-cell-function cell) function
           (clautolisp.autolisp-runtime.internal::function-cell-bound-p cell) t
@@ -390,7 +425,7 @@
 (defun autolisp-symbol-function-bound-p (object)
   (nth-value 1 (lookup-function object)))
 
-(defun autolisp-function-list-definition (object &optional (context (default-evaluation-context)))
+(defun autolisp-function-list-definition (object &optional (context (current-evaluation-context)))
   (let ((cell (namespace-function-cell (evaluation-context-current-namespace context)
                                        object
                                        :createp nil)))
@@ -398,7 +433,7 @@
          (function-cell-compatibility-definition cell))))
 
 (defun set-autolisp-function-list-definition (symbol definition
-                                              &optional (context (default-evaluation-context)))
+                                              &optional (context (current-evaluation-context)))
   (let ((cell (namespace-function-cell (evaluation-context-current-namespace context) symbol)))
     (setf (clautolisp.autolisp-runtime.internal::function-cell-compatibility-definition cell)
           definition)
@@ -526,7 +561,7 @@
 (defun autolisp-true-p (object)
   (not (autolisp-false-p object)))
 
-(defun autolisp-boundp (object &optional (context (default-evaluation-context)))
+(defun autolisp-boundp (object &optional (context (current-evaluation-context)))
   (unless (typep object 'autolisp-symbol)
     (signal-autolisp-runtime-error
      :type-error
@@ -588,12 +623,12 @@
 (defun call-autolisp-function (function &rest arguments)
   (apply #'call-autolisp-function-in-context
          function
-         (default-evaluation-context)
+         (current-evaluation-context)
          arguments))
 
 (defun resolve-autolisp-function-designator (designator
                                             &optional
-                                              (context (default-evaluation-context)))
+                                              (context (current-evaluation-context)))
   (cond
     ((or (typep designator 'autolisp-subr)
          (typep designator 'autolisp-usubr))
@@ -625,10 +660,13 @@
             nil
             (error condition))))))
 
-(defun call-with-autolisp-error-handler (thunk &optional (context (default-evaluation-context)))
+(defun call-with-autolisp-error-handler (thunk &optional (context (current-evaluation-context)))
   (handler-case
-      (funcall thunk)
+      (let ((result (funcall thunk)))
+        (set-autolisp-errno 0 context)
+        result)
     (autolisp-runtime-error (condition)
+      (set-autolisp-errno 1 context)
       (let ((handler (resolve-autolisp-error-handler context)))
         (if handler
             (call-autolisp-function-in-context
@@ -673,32 +711,33 @@
       (bind-dynamic-variable symbol nil context))))
 
 (defun call-autolisp-function-in-context (function context &rest arguments)
-  (cond
-    ((typep function 'autolisp-subr)
-     (handler-case
-         (apply (autolisp-subr-function function) arguments)
-       (autolisp-runtime-error (condition)
-         (error condition))
-       (error (condition)
-         (error 'autolisp-runtime-error
-                :code :host-error
-                :message (format nil
-                                 "Common Lisp error while calling AutoLISP subr ~A: ~A"
-                                 (autolisp-subr-name function)
-                                 condition)
-                :details (list :subr (autolisp-subr-name function)
-                               :condition condition)))))
-    ((typep function 'autolisp-usubr)
-     (unwind-protect
-          (progn
-            (bind-usubr-frame function arguments context)
-            (autolisp-eval-progn (autolisp-usubr-body function) context))
-       (pop-dynamic-frame context)))
-    (t
-     (signal-autolisp-runtime-error
-      :type-error
-      "Expected an AutoLISP function object, got ~S."
-      function))))
+  (let ((clautolisp.autolisp-runtime.internal::*active-evaluation-context* context))
+    (cond
+      ((typep function 'autolisp-subr)
+       (handler-case
+           (apply (autolisp-subr-function function) arguments)
+         (autolisp-runtime-error (condition)
+           (error condition))
+         (error (condition)
+           (error 'autolisp-runtime-error
+                  :code :host-error
+                  :message (format nil
+                                   "Common Lisp error while calling AutoLISP subr ~A: ~A"
+                                   (autolisp-subr-name function)
+                                   condition)
+                  :details (list :subr (autolisp-subr-name function)
+                                 :condition condition)))))
+      ((typep function 'autolisp-usubr)
+       (unwind-protect
+            (progn
+              (bind-usubr-frame function arguments context)
+              (autolisp-eval-progn (autolisp-usubr-body function) context))
+         (pop-dynamic-frame context)))
+      (t
+       (signal-autolisp-runtime-error
+        :type-error
+        "Expected an AutoLISP function object, got ~S."
+        function)))))
 
 (defun self-evaluating-runtime-value-p (object)
   (or (null object)
@@ -719,7 +758,7 @@
   (and (typep operator 'autolisp-symbol)
        (string-upcase (autolisp-symbol-name operator))))
 
-(defun autolisp-eval-progn (forms &optional (context (default-evaluation-context)))
+(defun autolisp-eval-progn (forms &optional (context (current-evaluation-context)))
   (let ((result nil))
     (dolist (form forms result)
       (setf result (autolisp-eval form context)))))
@@ -969,7 +1008,7 @@
        (typep (first form) 'autolisp-symbol)
        (string= "LAMBDA" (autolisp-symbol-name (first form)))))
 
-(defun autolisp-eval (form &optional (context (default-evaluation-context)))
+(defun autolisp-eval (form &optional (context (current-evaluation-context)))
   (cond
     ((self-evaluating-runtime-value-p form)
      form)

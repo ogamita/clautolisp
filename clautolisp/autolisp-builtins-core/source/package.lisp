@@ -4,12 +4,15 @@
                 #:autolisp-catch-all-error
                 #:autolisp-catch-all-error-message
                 #:autolisp-file
+                #:autolisp-termination
+                #:autolisp-namespace-exit
                 #:autolisp-runtime-error
                 #:autolisp-string
                 #:autolisp-file-stream
                 #:autolisp-function-list-definition
                 #:autolisp-current-directory
                 #:autolisp-load-file
+                #:set-autolisp-errno
                 #:autolisp-support-paths
                 #:autolisp-trusted-paths
                 #:call-with-autolisp-error-handler
@@ -26,6 +29,7 @@
                 #:autolisp-symbol-value
                 #:autolisp-symbol-value-bound-p
                 #:autolisp-atom
+                #:autolisp-eval
                 #:autolisp-listp
                 #:autolisp-not
                 #:autolisp-null
