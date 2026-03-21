@@ -4,13 +4,14 @@
   '("TYPE" "NULL" "NOT" "ATOM" "VL-SYMBOLP" "VL-SYMBOL-NAME" "VL-SYMBOL-VALUE"
     "+" "-" "*" "/" "1+" "1-" "MAX" "MIN" "REM" "GCD" "LCM" "~" "LOGAND"
     "LOGIOR" "LSH" "STRCAT" "STRLEN" "SUBSTR" "ASCII" "CHR"
-    "READ" "OPEN" "CLOSE" "READ-LINE" "READ-CHAR" "WRITE-LINE" "WRITE-CHAR"
+    "READ" "LOAD" "AUTOLOAD" "OPEN" "CLOSE" "READ-LINE" "READ-CHAR" "WRITE-LINE" "WRITE-CHAR"
     "FINDFILE" "FINDTRUSTEDFILE" "VL-DIRECTORY-FILES" "VL-FILE-DIRECTORY-P"
     "VL-FILENAME-BASE" "VL-FILENAME-DIRECTORY" "VL-FILENAME-EXTENSION"
     "VL-FILE-DELETE" "VL-FILE-RENAME" "VL-FILE-SIZE" "VL-FILE-SYSTIME"
     "VL-FILE-COPY" "VL-FILENAME-MKTEMP" "VL-MKDIR"
     "PRIN1" "PRINC" "PRINT" "TERPRI" "PROMPT"
     "VL-PRIN1-TO-STRING" "VL-PRINC-TO-STRING"
+    "VL-CATCH-ALL-APPLY" "VL-CATCH-ALL-ERROR-P" "VL-CATCH-ALL-ERROR-MESSAGE"
     "DEFUN-Q-LIST-REF" "DEFUN-Q-LIST-SET"
     "BOUNDP" "CAR" "CDR" "CONS" "LIST" "APPEND" "ASSOC" "LENGTH" "NTH"
     "REVERSE" "LAST" "MEMBER" "SUBST" "LISTP" "VL-CONSP" "VL-LIST*"
@@ -98,6 +99,128 @@
     (set-autolisp-symbol-function symbol function)
     (set-autolisp-function-list-definition symbol list-definition)
     symbol))
+
+(defun filename-extension-present-p (string)
+  (let* ((normalized (normalize-path-string string))
+         (separator (position #\/ normalized :from-end t))
+         (leaf (if separator
+                   (subseq normalized (1+ separator))
+                   normalized)))
+    (not (null (position #\. leaf :from-end t)))))
+
+(defun load-candidate-paths (filename)
+  (let ((normalized (normalize-path-string filename)))
+    (if (filename-extension-present-p normalized)
+        (list normalized)
+        (mapcar (lambda (extension)
+                  (concatenate 'string normalized extension))
+                '(".vlx" ".fas" ".lsp")))))
+
+(defun resolve-load-pathname (filename)
+  (let ((normalized (normalize-path-string filename)))
+    (cond
+      ((directory-prefix-p normalized)
+       (dolist (candidate (load-candidate-paths normalized) nil)
+         (let ((resolved (resolve-open-pathname candidate)))
+           (when (probe-file resolved)
+             (return resolved)))))
+      (t
+       (dolist (candidate (load-candidate-paths normalized) nil)
+         (let ((direct (probe-file (resolve-open-pathname candidate))))
+           (when direct
+             (return direct)))
+         (let ((located (search-path-list-for-file candidate
+                                                   (autolisp-support-paths))))
+           (when located
+             (return (pathname located)))))))))
+
+(defun evaluate-load-onfailure (object)
+  (cond
+    ((null object) nil)
+    ((or (typep object 'autolisp-subr)
+         (typep object 'clautolisp.autolisp-runtime:autolisp-usubr))
+     (call-autolisp-function object))
+    ((typep object 'autolisp-symbol)
+     (call-autolisp-function
+      (resolve-autolisp-function-designator object)))
+    (t
+     object)))
+
+(defun builtin-load (filename &optional (onfailure nil onfailure-supplied-p))
+  (let* ((value (autolisp-string-value (require-string filename "LOAD")))
+         (resolved (resolve-load-pathname value)))
+    (cond
+      ((null resolved)
+       (if onfailure-supplied-p
+           (evaluate-load-onfailure onfailure)
+           (call-with-autolisp-error-handler
+            (lambda ()
+              (signal-builtin-host-error
+               :load-file-not-found
+               "LOAD"
+               "LOAD could not locate ~A."
+               value)))))
+      ((member (string-downcase (or (pathname-type resolved) "")) '("vlx" "fas")
+               :test #'string=)
+       (if onfailure-supplied-p
+           (evaluate-load-onfailure onfailure)
+           (call-with-autolisp-error-handler
+            (lambda ()
+              (signal-builtin-host-error
+               :unsupported-load-file-type
+               "LOAD"
+               "LOAD currently supports only source files, got ~A."
+               (namestring resolved))))))
+      (t
+       (autolisp-load-file (namestring resolved))))))
+
+(defun builtin-autoload (filename function-list)
+  (let ((path (autolisp-string-value (require-string filename "AUTOLOAD"))))
+    (require-proper-list function-list "AUTOLOAD")
+    (dolist (name function-list nil)
+      (let* ((command-name (autolisp-string-value (require-string name "AUTOLOAD")))
+             (symbol (intern-autolisp-symbol command-name))
+             (stub nil))
+        (setf stub
+              (make-autolisp-subr
+               command-name
+               (lambda (&rest arguments)
+                 (builtin-load (make-autolisp-string path))
+                 (let ((function (resolve-autolisp-function-designator symbol)))
+                   (when (eq function stub)
+                     (signal-builtin-host-error
+                      :autoload-definition-missing
+                      "AUTOLOAD"
+                      "AUTOLOAD loaded ~A but did not define ~A."
+                      path
+                      command-name))
+                   (apply #'call-autolisp-function function arguments)))))
+        (set-autolisp-symbol-function symbol stub)))))
+
+(defun builtin-vl-catch-all-apply (function-designator arg-list)
+  (require-proper-list arg-list "VL-CATCH-ALL-APPLY")
+  (handler-case
+      (apply #'call-autolisp-function
+             (resolve-autolisp-function-designator function-designator)
+             arg-list)
+    (error (condition)
+      (make-autolisp-catch-all-error
+       (princ-to-string condition)
+       condition))))
+
+(defun builtin-vl-catch-all-error-p (object)
+  (if (typep object 'autolisp-catch-all-error)
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun builtin-vl-catch-all-error-message (object)
+  (unless (typep object 'autolisp-catch-all-error)
+    (signal-builtin-argument-error
+     :invalid-catch-all-object
+     "VL-CATCH-ALL-ERROR-MESSAGE"
+     "VL-CATCH-ALL-ERROR-MESSAGE expects a catch-all error object, got ~S."
+     object))
+  (make-autolisp-string (autolisp-catch-all-error-message object)))
 
 (defun builtin-car (object)
   (cond
@@ -1189,6 +1312,8 @@
    (make-core-builtin-subr "ASCII" #'builtin-ascii)
    (make-core-builtin-subr "CHR" #'builtin-chr)
    (make-core-builtin-subr "READ" #'builtin-read)
+   (make-core-builtin-subr "LOAD" #'builtin-load)
+   (make-core-builtin-subr "AUTOLOAD" #'builtin-autoload)
    (make-core-builtin-subr "OPEN" #'builtin-open)
    (make-core-builtin-subr "CLOSE" #'builtin-close)
    (make-core-builtin-subr "READ-LINE" #'builtin-read-line)
@@ -1216,6 +1341,10 @@
    (make-core-builtin-subr "PROMPT" #'builtin-prompt)
    (make-core-builtin-subr "VL-PRIN1-TO-STRING" #'builtin-vl-prin1-to-string)
    (make-core-builtin-subr "VL-PRINC-TO-STRING" #'builtin-vl-princ-to-string)
+   (make-core-builtin-subr "VL-CATCH-ALL-APPLY" #'builtin-vl-catch-all-apply)
+   (make-core-builtin-subr "VL-CATCH-ALL-ERROR-P" #'builtin-vl-catch-all-error-p)
+   (make-core-builtin-subr "VL-CATCH-ALL-ERROR-MESSAGE"
+                           #'builtin-vl-catch-all-error-message)
    (make-core-builtin-subr "DEFUN-Q-LIST-REF" #'builtin-defun-q-list-ref)
    (make-core-builtin-subr "DEFUN-Q-LIST-SET" #'builtin-defun-q-list-set)
    (make-core-builtin-subr "BOUNDP" #'builtin-boundp)

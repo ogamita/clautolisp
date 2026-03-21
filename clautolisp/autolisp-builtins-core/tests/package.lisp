@@ -19,12 +19,14 @@
                 #:autolisp-file
                 #:autolisp-string
                 #:make-autolisp-string
+                #:make-autolisp-subr
                 #:autolisp-string-value
                 #:autolisp-subr
                 #:autolisp-subr-name
                 #:autolisp-symbol
                 #:autolisp-symbol-function
                 #:autolisp-symbol-name
+                #:autolisp-symbol-value
                 #:autolisp-symbol-value-bound-p
                 #:set-autolisp-symbol-function
                 #:set-autolisp-symbol-value

@@ -428,6 +428,104 @@
       (is (typep (second result) 'autolisp-symbol))
       (is (string= "FOO" (autolisp-symbol-name (second result)))))))
 
+(test builtin-load-and-error-hooks
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((load-fn (autolisp-symbol-function (find-autolisp-symbol "LOAD")))
+         (loaded (intern-autolisp-symbol "LOADED"))
+         (fallback-symbol (intern-autolisp-symbol "LOAD-FALLBACK"))
+         (error-symbol (intern-autolisp-symbol "*ERROR*"))
+         (path (merge-pathnames
+                (format nil "autoload-~36R.lsp" (random (expt 36 6)))
+                (uiop:temporary-directory)))
+         (missing (make-autolisp-string
+                   (namestring
+                    (merge-pathnames "missing-load-file.lsp"
+                                     (uiop:temporary-directory))))))
+    (unwind-protect
+         (progn
+           (with-open-file (stream path
+                                   :direction :output
+                                   :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (write-line "(setq loaded 5)" stream)
+             (write-line "loaded" stream))
+           (is (= 5
+                  (call-autolisp-function load-fn
+                                          (make-autolisp-string (namestring path)))))
+           (is (= 5 (autolisp-symbol-value loaded)))
+           (is (= 42
+                  (call-autolisp-function load-fn
+                                          missing
+                                          42)))
+           (set-autolisp-symbol-function
+            fallback-symbol
+            (make-autolisp-subr
+             "LOAD-FALLBACK"
+             (lambda ()
+               99)))
+           (is (= 99
+                  (call-autolisp-function load-fn
+                                          missing
+                                          fallback-symbol)))
+           (set-autolisp-symbol-function
+            error-symbol
+            (make-autolisp-subr
+             "*ERROR*"
+             (lambda (message)
+               message)))
+           (let ((result (call-autolisp-function load-fn missing)))
+             (is (typep result 'autolisp-string))
+             (is (search "LOAD could not locate"
+                         (autolisp-string-value result)))))
+      (when (probe-file path)
+        (delete-file path)))))
+
+(test builtin-autoload
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((autoload-fn (autolisp-symbol-function (find-autolisp-symbol "AUTOLOAD")))
+         (target (intern-autolisp-symbol "AUTOLOAD-TARGET"))
+         (path (merge-pathnames
+                (format nil "autoload-target-~36R.lsp" (random (expt 36 6)))
+                (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (stream path
+                                   :direction :output
+                                   :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (write-line "(defun autoload-target (x) (+ x 1))" stream))
+           (is (null
+                (call-autolisp-function autoload-fn
+                                        (make-autolisp-string (namestring path))
+                                        (list (make-autolisp-string "AUTOLOAD-TARGET")))))
+           (is (= 5 (autolisp-eval (list target 4)))))
+      (when (probe-file path)
+        (delete-file path)))))
+
+(test builtin-vl-catch-all-family
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((apply-fn (autolisp-symbol-function
+                    (find-autolisp-symbol "VL-CATCH-ALL-APPLY")))
+         (error-p-fn (autolisp-symbol-function
+                      (find-autolisp-symbol "VL-CATCH-ALL-ERROR-P")))
+         (message-fn (autolisp-symbol-function
+                      (find-autolisp-symbol "VL-CATCH-ALL-ERROR-MESSAGE")))
+         (car-symbol (intern-autolisp-symbol "CAR"))
+         (list-symbol (intern-autolisp-symbol "LIST")))
+    (let ((success (call-autolisp-function apply-fn list-symbol '(1 2 3))))
+      (is (equal '(1 2 3) success))
+      (is (null (call-autolisp-function error-p-fn success))))
+    (let ((failure (call-autolisp-function apply-fn car-symbol '(42))))
+      (is (string= "T"
+                   (autolisp-symbol-name
+                    (call-autolisp-function error-p-fn failure))))
+      (let ((message (call-autolisp-function message-fn failure)))
+        (is (typep message 'autolisp-string))
+        (is (> (length (autolisp-string-value message)) 0))))))
+
 (test builtin-file-primitives
   (reset-autolisp-symbol-table)
   (install-core-builtins)

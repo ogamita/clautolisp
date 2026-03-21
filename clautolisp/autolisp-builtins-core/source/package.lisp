@@ -1,18 +1,25 @@
 (defpackage #:clautolisp.autolisp-builtins-core
   (:use #:cl)
   (:import-from #:clautolisp.autolisp-runtime
+                #:autolisp-catch-all-error
+                #:autolisp-catch-all-error-message
                 #:autolisp-file
                 #:autolisp-runtime-error
                 #:autolisp-string
                 #:autolisp-file-stream
                 #:autolisp-function-list-definition
                 #:autolisp-current-directory
+                #:autolisp-load-file
                 #:autolisp-support-paths
                 #:autolisp-trusted-paths
+                #:call-with-autolisp-error-handler
+                #:call-autolisp-function
                 #:default-evaluation-context
                 #:make-autolisp-string
+                #:make-autolisp-catch-all-error
                 #:make-autolisp-file
                 #:make-autolisp-usubr
+                #:resolve-autolisp-function-designator
                 #:autolisp-string-value
                 #:autolisp-symbol
                 #:autolisp-symbol-name

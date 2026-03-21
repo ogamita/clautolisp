@@ -51,6 +51,7 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [x] Introduce an initial AutoLISP-visible runtime error condition for evaluator failures and wrapped host-Lisp errors.
 - [x] Extend error mapping so builtin and host layers also preserve structured AutoLISP-visible error codes consistently.
 - [x] Add a first runtime `load` entry point that reads and evaluates a file in an explicit evaluation context.
+- [x] Add a first `*error*` hook path and runtime catch-all error object for the Visual LISP catch-all family.
 
 ## Integration Tasks
 
