@@ -54,6 +54,26 @@
 (deftype autolisp-vla-object ()
   'clautolisp.autolisp-runtime.internal::autolisp-vla-object)
 
+(define-condition autolisp-runtime-error (error)
+  ((code
+    :initarg :code
+    :reader autolisp-runtime-error-code)
+   (message
+    :initarg :message
+    :reader autolisp-runtime-error-message)
+   (details
+    :initarg :details
+    :initform nil
+    :reader autolisp-runtime-error-details))
+  (:report (lambda (condition stream)
+             (format stream "~A" (autolisp-runtime-error-message condition)))))
+
+(defun signal-autolisp-runtime-error (code control-string &rest arguments)
+  (error 'autolisp-runtime-error
+         :code code
+         :message (apply #'format nil control-string arguments)
+         :details arguments))
+
 (defun reset-autolisp-symbol-table ()
   (clrhash clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*)
   (reset-default-evaluation-context))
@@ -178,7 +198,10 @@
     (separate-vlx-namespace
      (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-value-cells namespace))
     (t
-     (error "Namespace ~S does not support value cells." namespace))))
+     (signal-autolisp-runtime-error
+      :invalid-namespace
+      "Namespace ~S does not support value cells."
+      namespace))))
 
 (defun namespace-function-table (namespace)
   (typecase namespace
@@ -187,7 +210,10 @@
     (separate-vlx-namespace
      (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-function-cells namespace))
     (t
-     (error "Namespace ~S does not support function cells." namespace))))
+     (signal-autolisp-runtime-error
+      :invalid-namespace
+      "Namespace ~S does not support function cells."
+      namespace))))
 
 (defun namespace-value-cell (namespace symbol &key (createp t))
   (or (gethash symbol (namespace-value-table namespace))
@@ -417,7 +443,10 @@
      (list (intern-autolisp-symbol "QUOTE")
            (reader-object->runtime-value (quote-object-object object))))
     (t
-     (error "Cannot map reader object ~S to a runtime value." object))))
+     (signal-autolisp-runtime-error
+      :reader-handoff-error
+      "Cannot map reader object ~S to a runtime value."
+      object))))
 
 (defun reader-objects->runtime-values (objects)
   (mapcar #'reader-object->runtime-value objects))
@@ -453,13 +482,19 @@
 
 (defun autolisp-vl-symbol-name (object)
   (unless (typep object 'autolisp-symbol)
-    (error "Expected an AutoLISP symbol, got ~S." object))
+    (signal-autolisp-runtime-error
+     :type-error
+     "Expected an AutoLISP symbol, got ~S."
+     object))
   (clautolisp.autolisp-runtime.internal::make-autolisp-string
    :value (autolisp-symbol-name object)))
 
 (defun autolisp-vl-symbol-value (object)
   (unless (typep object 'autolisp-symbol)
-    (error "Expected an AutoLISP symbol, got ~S." object))
+    (signal-autolisp-runtime-error
+     :type-error
+     "Expected an AutoLISP symbol, got ~S."
+     object))
   (autolisp-symbol-value object))
 
 (defun call-autolisp-function (function &rest arguments)
@@ -474,7 +509,10 @@
 
 (defun split-usubr-lambda-list (lambda-list)
   (unless (listp lambda-list)
-    (error "AutoLISP function lambda list must be a proper list, got ~S." lambda-list))
+    (signal-autolisp-runtime-error
+     :invalid-lambda-list
+     "AutoLISP function lambda list must be a proper list, got ~S."
+     lambda-list))
   (let ((position (position-if #'autolisp-slash-symbol-p lambda-list)))
     (values (if position
                 (subseq lambda-list 0 position)
@@ -487,10 +525,12 @@
   (multiple-value-bind (required locals)
       (split-usubr-lambda-list (autolisp-usubr-lambda-list function))
     (unless (= (length required) (length arguments))
-      (error "AutoLISP function ~A expects ~D arguments, got ~D."
-             (autolisp-usubr-name function)
-             (length required)
-             (length arguments)))
+      (signal-autolisp-runtime-error
+       :wrong-number-of-arguments
+       "AutoLISP function ~A expects ~D arguments, got ~D."
+       (autolisp-usubr-name function)
+       (length required)
+       (length arguments)))
     (push-dynamic-frame context)
     (loop for symbol in required
           for value in arguments
@@ -501,7 +541,19 @@
 (defun call-autolisp-function-in-context (function context &rest arguments)
   (cond
     ((typep function 'autolisp-subr)
-     (apply (autolisp-subr-function function) arguments))
+     (handler-case
+         (apply (autolisp-subr-function function) arguments)
+       (autolisp-runtime-error (condition)
+         (error condition))
+       (error (condition)
+         (error 'autolisp-runtime-error
+                :code :host-error
+                :message (format nil
+                                 "Common Lisp error while calling AutoLISP subr ~A: ~A"
+                                 (autolisp-subr-name function)
+                                 condition)
+                :details (list :subr (autolisp-subr-name function)
+                               :condition condition)))))
     ((typep function 'autolisp-usubr)
      (unwind-protect
           (progn
@@ -509,7 +561,10 @@
             (autolisp-eval-progn (autolisp-usubr-body function) context))
        (pop-dynamic-frame context)))
     (t
-     (error "Expected an AutoLISP function object, got ~S." function))))
+     (signal-autolisp-runtime-error
+      :type-error
+      "Expected an AutoLISP function object, got ~S."
+      function))))
 
 (defun self-evaluating-runtime-value-p (object)
   (or (null object)
@@ -532,18 +587,28 @@
     (dolist (form forms result)
       (setf result (autolisp-eval form context)))))
 
-(defun eval-quote-form (arguments)
+(defun eval-quote-form (arguments context)
+  (declare (ignore context))
   (unless (= (length arguments) 1)
-    (error "QUOTE expects exactly one argument, got ~D." (length arguments)))
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "QUOTE expects exactly one argument, got ~D."
+     (length arguments)))
   (first arguments))
 
 (defun eval-setq-form (arguments context)
   (unless (evenp (length arguments))
-    (error "SETQ expects an even number of arguments, got ~D." (length arguments)))
+    (signal-autolisp-runtime-error
+     :invalid-setq-arguments
+     "SETQ expects an even number of arguments, got ~D."
+     (length arguments)))
   (let ((result nil))
     (loop for (symbol-form value-form) on arguments by #'cddr
           do (unless (typep symbol-form 'autolisp-symbol)
-               (error "SETQ place must be an AutoLISP symbol, got ~S." symbol-form))
+               (signal-autolisp-runtime-error
+                :invalid-setq-place
+                "SETQ place must be an AutoLISP symbol, got ~S."
+                symbol-form))
              (setf result (autolisp-eval value-form context))
              (set-variable symbol-form result context))
     result))
@@ -553,7 +618,10 @@
 
 (defun eval-if-form (arguments context)
   (unless (<= 2 (length arguments) 3)
-    (error "IF expects two or three arguments, got ~D." (length arguments)))
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "IF expects two or three arguments, got ~D."
+     (length arguments)))
   (if (autolisp-true-p (autolisp-eval (first arguments) context))
       (autolisp-eval (second arguments) context)
       (if (third arguments)
@@ -563,7 +631,10 @@
 (defun eval-cond-form (arguments context)
   (dolist (clause arguments nil)
     (unless (consp clause)
-      (error "COND clause must be a non-empty list, got ~S." clause))
+      (signal-autolisp-runtime-error
+       :invalid-cond-clause
+       "COND clause must be a non-empty list, got ~S."
+       clause))
     (let ((test-value (autolisp-eval (first clause) context)))
       (when (autolisp-true-p test-value)
         (return
@@ -586,25 +657,66 @@
 
 (defun eval-while-form (arguments context)
   (unless (>= (length arguments) 1)
-    (error "WHILE expects at least one argument."))
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "WHILE expects at least one argument."))
   (loop while (autolisp-true-p (autolisp-eval (first arguments) context))
         do (autolisp-eval-progn (rest arguments) context))
   nil)
 
 (defun eval-repeat-form (arguments context)
   (unless (>= (length arguments) 1)
-    (error "REPEAT expects at least one argument."))
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "REPEAT expects at least one argument."))
   (let ((count (autolisp-eval (first arguments) context)))
     (unless (typep count '(signed-byte 32))
-      (error "REPEAT count must evaluate to an integer, got ~S." count))
+      (signal-autolisp-runtime-error
+       :invalid-repeat-count
+       "REPEAT count must evaluate to an integer, got ~S."
+       count))
     (loop repeat (max 0 count)
           do (autolisp-eval-progn (rest arguments) context))
     nil))
 
+(defun eval-foreach-form (arguments context)
+  (unless (>= (length arguments) 2)
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "FOREACH expects at least a binding name and a list argument, got ~D arguments."
+     (length arguments)))
+  (let ((name (first arguments))
+        (body (cddr arguments))
+        (result nil))
+    (unless (typep name 'autolisp-symbol)
+      (signal-autolisp-runtime-error
+       :invalid-foreach-binding
+       "FOREACH binding name must be an AutoLISP symbol, got ~S."
+       name))
+    (let ((sequence (autolisp-eval (second arguments) context)))
+      (unless (listp sequence)
+        (signal-autolisp-runtime-error
+         :invalid-foreach-sequence
+         "FOREACH list argument must evaluate to a proper list, got ~S."
+         sequence))
+      (unwind-protect
+           (progn
+             (push-dynamic-frame context)
+             (dolist (element sequence result)
+               (if (find-dynamic-binding name (evaluation-context-dynamic-frame context))
+                   (set-variable name element context)
+                   (bind-dynamic-variable name element context))
+               (setf result (if body
+                                (autolisp-eval-progn body context)
+                                nil))))
+        (pop-dynamic-frame context)))))
+
 (defun eval-lambda-form (arguments context)
   (unless (>= (length arguments) 2)
-    (error "LAMBDA expects a lambda list and at least one body form, got ~D arguments."
-           (length arguments)))
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "LAMBDA expects a lambda list and at least one body form, got ~D arguments."
+     (length arguments)))
   (make-autolisp-usubr "LAMBDA"
                        (first arguments)
                        (rest arguments)
@@ -612,13 +724,18 @@
 
 (defun eval-defun-form (arguments context)
   (unless (>= (length arguments) 2)
-    (error "DEFUN expects at least a name and lambda list, got ~D arguments."
-           (length arguments)))
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "DEFUN expects at least a name and lambda list, got ~D arguments."
+     (length arguments)))
   (let ((name (first arguments))
         (lambda-list (second arguments))
         (body (cddr arguments)))
     (unless (typep name 'autolisp-symbol)
-      (error "DEFUN name must be an AutoLISP symbol, got ~S." name))
+      (signal-autolisp-runtime-error
+       :invalid-defun-name
+       "DEFUN name must be an AutoLISP symbol, got ~S."
+       name))
     (let ((function (make-autolisp-usubr (autolisp-symbol-name name)
                                          lambda-list
                                          body
@@ -626,33 +743,33 @@
       (set-function name function context)
       name)))
 
+(defparameter *special-operator-dispatch*
+  (list (cons "QUOTE" #'eval-quote-form)
+        (cons "SETQ" #'eval-setq-form)
+        (cons "PROGN" #'eval-progn-form)
+        (cons "IF" #'eval-if-form)
+        (cons "COND" #'eval-cond-form)
+        (cons "AND" #'eval-and-form)
+        (cons "OR" #'eval-or-form)
+        (cons "WHILE" #'eval-while-form)
+        (cons "REPEAT" #'eval-repeat-form)
+        (cons "FOREACH" #'eval-foreach-form)
+        (cons "LAMBDA" #'eval-lambda-form)
+        (cons "DEFUN" #'eval-defun-form)))
+
+(defun special-operator-function (operator)
+  (cdr (assoc (special-operator-name operator)
+              *special-operator-dispatch*
+              :test #'string=)))
+
 (defun eval-special-operator (operator arguments context)
-  (let ((name (special-operator-name operator)))
-    (cond
-      ((string= name "QUOTE")
-       (eval-quote-form arguments))
-      ((string= name "SETQ")
-       (eval-setq-form arguments context))
-      ((string= name "PROGN")
-       (eval-progn-form arguments context))
-      ((string= name "IF")
-       (eval-if-form arguments context))
-      ((string= name "COND")
-       (eval-cond-form arguments context))
-      ((string= name "AND")
-       (eval-and-form arguments context))
-      ((string= name "OR")
-       (eval-or-form arguments context))
-      ((string= name "WHILE")
-       (eval-while-form arguments context))
-      ((string= name "REPEAT")
-       (eval-repeat-form arguments context))
-      ((string= name "LAMBDA")
-       (eval-lambda-form arguments context))
-      ((string= name "DEFUN")
-       (eval-defun-form arguments context))
-      (t
-       (error "Unsupported special operator ~A." name)))))
+  (let ((function (special-operator-function operator)))
+    (unless function
+      (signal-autolisp-runtime-error
+       :unsupported-special-operator
+       "Unsupported special operator ~A."
+       (special-operator-name operator)))
+    (funcall function arguments context)))
 
 (defun lambda-form-p (form)
   (and (consp form)
@@ -668,14 +785,15 @@
        (declare (ignore origin))
        (if boundp
            value
-           (error "Unbound AutoLISP variable ~A." (autolisp-symbol-name form)))))
+           (signal-autolisp-runtime-error
+            :unbound-variable
+            "Unbound AutoLISP variable ~A."
+            (autolisp-symbol-name form)))))
     ((consp form)
      (let ((operator (first form))
            (arguments (rest form)))
        (cond
-         ((member (special-operator-name operator)
-                  '("QUOTE" "SETQ" "PROGN" "IF" "COND" "AND" "OR" "WHILE" "REPEAT" "LAMBDA" "DEFUN")
-                  :test #'string=)
+         ((special-operator-function operator)
           (eval-special-operator operator arguments context))
          (t
           (let ((function
@@ -684,7 +802,10 @@
                       (multiple-value-bind (binding boundp origin) (lookup-function operator context)
                         (declare (ignore origin))
                         (unless boundp
-                          (error "Undefined AutoLISP function ~A." (autolisp-symbol-name operator)))
+                          (signal-autolisp-runtime-error
+                           :undefined-function
+                           "Undefined AutoLISP function ~A."
+                           (autolisp-symbol-name operator)))
                         binding))))
             (apply #'call-autolisp-function-in-context
                    function
@@ -693,7 +814,10 @@
                              (autolisp-eval argument context))
                            arguments)))))))
     (t
-     (error "Cannot evaluate AutoLISP form ~S." form))))
+     (signal-autolisp-runtime-error
+      :invalid-form
+      "Cannot evaluate AutoLISP form ~S."
+      form))))
 
 (defun autolisp-type (object)
   (cond
@@ -725,7 +849,10 @@
     ((typep object 'autolisp-vla-object)
      (intern-autolisp-symbol "VLA-OBJECT"))
     (t
-     (error "No AutoLISP runtime type designator is defined for ~S." object))))
+     (signal-autolisp-runtime-error
+      :unknown-runtime-type
+      "No AutoLISP runtime type designator is defined for ~S."
+      object))))
 
 (defun read-runtime-from-string (text &rest options &key &allow-other-keys)
   (reader-objects->runtime-values

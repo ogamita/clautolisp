@@ -252,6 +252,22 @@ Current design rule:
 Therefore, the current model does *not* postulate an AutoLISP analogue of a
 dynamic ~flet~ environment by default.
 
+** Callable Objects and Special Operators
+The runtime currently distinguishes two callable object classes:
+
+- ~SUBR~
+  builtin or primitive function implemented directly in Common Lisp
+- ~USUBR~
+  user-defined AutoLISP function evaluated by the AutoLISP evaluator
+
+Current design rule:
+
+- ~SUBR~ wraps a Common Lisp function together with an AutoLISP-visible name,
+- ~USUBR~ stores an AutoLISP lambda list, body forms, and definition metadata
+  used by the evaluator,
+- special operators are *not* represented as ~SUBR~ objects; they are handled
+  by an explicit evaluator dispatch table over raw forms.
+
 ** Current Namespace and Current Document
 The evaluation context contains at least:
 
@@ -326,6 +342,77 @@ The interaction between ~defun~, separate-namespace VLX code, and
 ~vl-doc-export~ / ~vl-doc-import~ remains a namespace-design task rather than a
 core symbol-design task.
 
+* Evaluator Model
+The current evaluator is a direct tree-walking evaluator over runtime values.
+
+** Self-Evaluating Values
+The following values currently evaluate to themselves:
+
+- ~nil~
+- integers
+- reals
+- wrapped strings
+- wrapped file and host-managed runtime objects
+
+Symbols are not self-evaluating and are resolved through variable lookup.
+
+** Ordinary Calls vs Special Operators
+Evaluation of a cons form currently proceeds as follows:
+
+1. if the operator names a special operator, dispatch to the special-operator
+   evaluator on the raw argument forms;
+2. otherwise resolve the operator as a function binding in the current
+   namespace, unless the operator is itself a ~lambda~ form;
+3. evaluate ordinary call arguments from left to right;
+4. apply the resulting callable object.
+
+Current special operators implemented as evaluator primitives:
+
+- ~quote~
+- ~setq~
+- ~progn~
+- ~if~
+- ~cond~
+- ~and~
+- ~or~
+- ~while~
+- ~repeat~
+- ~foreach~
+- ~lambda~
+- ~defun~
+
+At this stage these are treated as fundamental evaluator cases, not as
+macro-like rewrites.
+
+** Function Application
+For ~SUBR~ calls:
+
+- the wrapped Common Lisp function is invoked on already evaluated AutoLISP
+  runtime arguments,
+- any unexpected Common Lisp error is wrapped into an AutoLISP-visible runtime
+  error rather than leaking directly.
+
+For ~USUBR~ calls:
+
+- the lambda list is split at ~/~ into required parameters and local variables,
+- a new dynamic frame is pushed for the call,
+- required parameters are bound to evaluated argument values,
+- locals are initialized to ~nil~,
+- the body is evaluated with that frame active.
+
+** FOREACH
+~foreach~ is modeled as a special operator because it controls evaluation and
+introduces a temporary dynamic binding.
+
+Current evaluation rule:
+
+1. evaluate the list argument once,
+2. push a dynamic frame,
+3. iterate over the resulting proper list,
+4. bind or update the iteration variable for each element in that frame,
+5. evaluate the body forms for each element,
+6. return the last body result, or ~nil~ if no body form is supplied.
+
 * Initial Runtime Type Set
 This first runtime module should account for at least the spec-visible types:
 
@@ -370,6 +457,26 @@ In practice this means:
 
 Not all of these need complete behavior immediately, but their representation
 category should be known now.
+
+* Initial Error Model
+The runtime now defines an initial AutoLISP-visible condition:
+
+- ~autolisp-runtime-error~
+
+It currently carries:
+
+- an error code,
+- a human-readable message,
+- optional structured details.
+
+Current design rule:
+
+- evaluator-detected errors should signal ~autolisp-runtime-error~,
+- unexpected Common Lisp errors caught while invoking a ~SUBR~ should be
+  wrapped into ~autolisp-runtime-error~ with a host-error code,
+- broader builtin-layer and host-layer error normalization still remains to be
+  completed so the whole runtime presents a uniform AutoLISP-visible error
+  surface.
 
 * Deferred Decisions
 The following remain open:

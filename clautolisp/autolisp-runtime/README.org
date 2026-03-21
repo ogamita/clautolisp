@@ -24,5 +24,7 @@ Current implementation scope:
 - reader-object to runtime-value mapping for literal data,
 - explicit namespaces, value/function cells, and dynamic frames,
 - a first evaluator slice covering literals, symbol lookup, `quote`, `setq`,
-  `progn`, `if`, `cond`, `and`, `or`, `while`, `repeat`, `defun`, and user
-  function calls.
+  `progn`, `if`, `cond`, `and`, `or`, `while`, `repeat`, `foreach`, `lambda`,
+  `defun`, and user function calls,
+- an initial `autolisp-runtime-error` condition used to report evaluator and
+  wrapped host-Lisp failures without leaking raw Common Lisp errors directly.

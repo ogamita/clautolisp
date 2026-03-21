@@ -75,6 +75,10 @@
    #:autolisp-usubr-lambda-list
    #:autolisp-usubr-body
    #:autolisp-usubr-environment
+   #:autolisp-runtime-error
+   #:autolisp-runtime-error-code
+   #:autolisp-runtime-error-message
+   #:autolisp-runtime-error-details
    #:autolisp-variant
    #:autolisp-variant-value
    #:autolisp-safearray
