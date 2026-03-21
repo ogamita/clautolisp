@@ -47,6 +47,7 @@
   (document-namespaces (make-hash-table :test #'equal))
   (blackboard-namespace (make-blackboard-namespace))
   (propagated-symbols (make-hash-table :test #'eq))
+  (errno 0 :type integer)
   current-document)
 
 (defstruct evaluation-context
@@ -65,6 +66,7 @@
    :current-document *default-document-namespace*
    :current-namespace *default-document-namespace*
    :dynamic-frame nil))
+(defparameter *active-evaluation-context* nil)
 
 (defstruct autolisp-string
   (value "" :type string))

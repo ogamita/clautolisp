@@ -68,6 +68,8 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [x] Add a first runtime file-loading entry point that reads and evaluates forms in an explicit context.
 - [x] Add the first `load` builtin wrapper, `*error*` hook path, and Visual LISP catch-all layer.
 - [x] Add the first `autoload` builtin with deferred source-loading stubs.
+- [x] Add the first session-level `ERRNO` tracking together with the initial `exit` / `quit` and namespace-exit control-transfer layer.
+- [ ] Refine the implementation-defined error-code and control-transfer behavior against real product command-loop semantics.
 
 ## Builtins and Host Tasks
 

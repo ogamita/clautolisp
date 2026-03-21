@@ -23,6 +23,7 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Extend the core data/list layer with `append`, `assoc`, `length`, `nth`, and `reverse`.
 - [x] Extend the list/alist layer with `last`, `member`, and `subst`.
 - [x] Add the next ordinary list predicates and constructors: `listp`, `vl-consp`, and `vl-list*`.
+- [x] Add `mapcar` on top of runtime function-designator resolution and active evaluation-context propagation.
 - [x] Add an initial numeric/equality predicate batch: `numberp`, `=`, `/=`, `zerop`, and `minusp`.
 - [x] Add the next numeric batch: `<`, `<=`, `>`, `>=`, `abs`, `fix`, and `float`.
 - [x] Add the basic arithmetic operators `+`, `-`, `*`, and `/`.
@@ -43,6 +44,7 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Implement the first `autoload` builtin with deferred source loading through installable stubs.
 - [x] Add the `defun-q` compatibility accessors `defun-q-list-ref` and `defun-q-list-set` on top of the runtime compatibility-definition layer.
 - [x] Add the first Visual LISP catch-all family: `vl-catch-all-apply`, `vl-catch-all-error-p`, and `vl-catch-all-error-message`.
+- [x] Add the first execution-control family exposed through the builtin layer: `exit`, `quit`, `vl-exit-with-error`, and `vl-exit-with-value`.
 - [x] Tighten the current file layer for the documented compatibility-sensitive areas we can justify from the local spec draft, including `open` encodings, `vl-file-systime`, `vl-filename-mktemp`, and `vl-file-copy`.
 - [x] Route builtin failures through structured AutoLISP-visible runtime errors with builtin-level metadata.
 - [ ] Audit the completed file builtin family against real Autodesk/BricsCAD behavior for the remaining under-specified host-sensitive corners.

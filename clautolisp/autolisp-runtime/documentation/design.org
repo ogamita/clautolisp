@@ -394,6 +394,9 @@ For ~SUBR~ calls:
 
 - the wrapped Common Lisp function is invoked on already evaluated AutoLISP
   runtime arguments,
+- the active evaluation context is dynamically available while the ~SUBR~ runs,
+  so namespace-sensitive builtins can resolve names against the current call
+  context instead of against the process default context,
 - any unexpected Common Lisp error is wrapped into an AutoLISP-visible runtime
   error rather than leaking directly.
 
@@ -460,8 +463,24 @@ Current rule:
 - ~vl-catch-all-error-p~ and ~vl-catch-all-error-message~ operate on that
   dedicated object.
 
-This is intentionally only the first layer. Full ~ERRNO~, command-loop, and
-cross-namespace error-bridge semantics remain future work.
+This is intentionally only the first layer, but the runtime now also exposes:
+
+- a session-level ~ERRNO~ slot with conservative implementation-defined values,
+- distinct termination conditions for ~exit~ and ~quit~,
+- a first namespace-exit bridge used by ~vl-exit-with-error~ and
+  ~vl-exit-with-value~.
+
+Current additional rule:
+
+- successful top-level execution resets ~ERRNO~ to ~0~,
+- handled runtime failures set ~ERRNO~ to ~1~,
+- ~exit~ and ~quit~ signal distinct runtime conditions so the eventual command
+  loop can distinguish them,
+- ~vl-exit-with-error~ and ~vl-exit-with-value~ signal dedicated namespace-exit
+  conditions instead of leaking raw host conditions across namespace boundaries.
+
+The exact Autodesk-compatible ~ERRNO~ code table, command-loop behavior, and
+full cross-namespace bridge semantics remain future work.
 
 ** FOREACH
 ~foreach~ is modeled as a special operator because it controls evaluation and

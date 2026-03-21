@@ -9,6 +9,7 @@
                 #:results-status
                 #:test)
   (:import-from #:clautolisp.autolisp-builtins-core
+                #:core-builtins
                 #:find-core-builtin
                 #:install-core-builtins)
   (:import-from #:clautolisp.autolisp-runtime
@@ -16,10 +17,19 @@
                 #:autolisp-runtime-error-code
                 #:autolisp-runtime-error-details
                 #:autolisp-eval
+                #:autolisp-errno
                 #:autolisp-file
+                #:autolisp-namespace-exit
+                #:autolisp-namespace-exit-kind
+                #:autolisp-namespace-exit-value
+                #:autolisp-termination
+                #:autolisp-termination-kind
                 #:autolisp-string
                 #:make-autolisp-string
                 #:make-autolisp-subr
+                #:make-document-namespace
+                #:make-evaluation-context
+                #:make-runtime-session
                 #:autolisp-string-value
                 #:autolisp-subr
                 #:autolisp-subr-name
@@ -31,11 +41,13 @@
                 #:set-autolisp-symbol-function
                 #:set-autolisp-symbol-value
                 #:call-autolisp-function
+                #:set-default-evaluation-context
                 #:set-autolisp-current-directory
                 #:set-autolisp-support-paths
                 #:set-autolisp-trusted-paths
                 #:find-autolisp-symbol
                 #:intern-autolisp-symbol
-                #:reset-autolisp-symbol-table)
+                #:reset-autolisp-symbol-table
+                #:set-function)
   (:export #:autolisp-builtins-core-suite
            #:run-all-tests))
