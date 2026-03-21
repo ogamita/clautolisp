@@ -28,8 +28,10 @@
                 #:make-autolisp-string
                 #:make-autolisp-subr
                 #:make-document-namespace
+                #:document-namespace-ref
                 #:make-evaluation-context
                 #:make-runtime-session
+                #:register-runtime-session-document
                 #:autolisp-string-value
                 #:autolisp-subr
                 #:autolisp-subr-name
@@ -41,6 +43,7 @@
                 #:set-autolisp-symbol-function
                 #:set-autolisp-symbol-value
                 #:call-autolisp-function
+                #:set-autolisp-errno
                 #:set-default-evaluation-context
                 #:set-autolisp-current-directory
                 #:set-autolisp-support-paths

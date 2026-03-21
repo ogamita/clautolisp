@@ -36,14 +36,21 @@
                 #:autolisp-not
                 #:autolisp-read-from-string
                 #:bind-dynamic-variable
+                #:blackboard-ref
+                #:blackboard-set
                 #:call-with-autolisp-error-handler
                 #:current-evaluation-context
                 #:default-evaluation-context
                 #:document-namespace-name
+                #:document-namespace-ref
+                #:document-namespace-set
+                #:document-namespace-function-ref
+                #:document-namespace-function-set
                 #:evaluation-context-current-document
                 #:evaluation-context-current-namespace
                 #:evaluation-context-dynamic-frame
                 #:evaluation-context-session
+                #:find-runtime-session-document
                 #:function-cell-function
                 #:intern-autolisp-symbol
                 #:lookup-function
@@ -57,11 +64,16 @@
                 #:namespace-function-cell
                 #:namespace-value-cell
                 #:pop-dynamic-frame
+                #:propagate-variable
                 #:push-dynamic-frame
                 #:read-runtime-from-string
+                #:register-runtime-session-document
                 #:reader-object->runtime-value
                 #:reset-autolisp-symbol-table
+                #:export-function-to-current-document
                 #:enter-document-context
+                #:import-function-from-current-document
+                #:runtime-session-blackboard-namespace
                 #:runtime-session-current-document
                 #:set-runtime-session-current-document
                 #:separate-vlx-namespace-name

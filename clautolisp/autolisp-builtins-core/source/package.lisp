@@ -3,10 +3,17 @@
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-catch-all-error
                 #:autolisp-catch-all-error-message
+                #:blackboard-ref
+                #:blackboard-set
+                #:current-document-namespace-ref
+                #:current-document-namespace-set
+                #:export-function-to-current-document
+                #:import-function-from-current-document
                 #:autolisp-file
                 #:autolisp-termination
                 #:autolisp-namespace-exit
                 #:autolisp-runtime-error
+                #:autolisp-runtime-error-errno
                 #:autolisp-string
                 #:autolisp-file-stream
                 #:autolisp-function-list-definition
@@ -30,12 +37,14 @@
                 #:autolisp-symbol-value-bound-p
                 #:autolisp-atom
                 #:autolisp-eval
+                #:autolisp-false-p
                 #:autolisp-listp
                 #:autolisp-not
                 #:autolisp-null
                 #:autolisp-read-from-string
                 #:autolisp-subr
                 #:autolisp-subr-name
+                #:autolisp-true-p
                 #:autolisp-type
                 #:autolisp-vl-symbol-name
                 #:autolisp-vl-symbolp
@@ -43,6 +52,7 @@
                 #:close-autolisp-file
                 #:intern-autolisp-symbol
                 #:make-autolisp-subr
+                #:propagate-variable
                 #:set-autolisp-function-list-definition
                 #:set-autolisp-symbol-function)
   (:export

@@ -36,6 +36,8 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [x] Define explicit environment objects for dynamic variable scope.
 - [x] Define unbound markers and lookup/update operations.
 - [x] Specify current-document and current-namespace entry semantics at the host boundary.
+- [x] Add explicit runtime-session document registration plus conservative blackboard and propagation primitives for cross-document value state.
+- [x] Add the first conservative function bridge between separate VLX namespaces and associated document namespaces.
 
 ## Runtime Semantics Tasks
 
@@ -54,8 +56,13 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [x] Add a first `*error*` hook path and runtime catch-all error object for the Visual LISP catch-all family.
 - [x] Add the first session-level `ERRNO` tracking and the initial distinction between `exit`, `quit`, and namespace-exit bridges.
 - [x] Make the active evaluation context dynamically visible during `SUBR` execution so namespace-sensitive builtins resolve against the current call context.
-- [ ] Refine the implementation-defined `ERRNO` mapping into a documented compatibility table as product evidence is gathered.
+- [x] Refine the first evaluator call-error codes so invalid operators, invalid function objects, and wrapped `SUBR` host failures no longer collapse into generic runtime errors.
+- [x] Separate non-local control transfer from trapped errors so `vl-catch-all-*` does not swallow `exit`, `quit`, or `vl-exit-*`.
+- [x] Refine the first implementation-defined `ERRNO` mapping from a binary `0/1` result into a documented provisional compatibility table.
+- [x] Separate provisional `ERRNO` classes for invalid-form failures, file/stream/path failures, and wrapped host-runtime failures.
+- [ ] Refine that provisional `ERRNO` table against real Autodesk/BricsCAD evidence.
 - [ ] Refine `exit`, `quit`, and namespace-exit control transfer against real product command-loop behavior.
+- [ ] Refine runtime session/document/blackboard propagation semantics against real Autodesk/BricsCAD namespace behavior.
 
 ## Integration Tasks
 
