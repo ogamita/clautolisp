@@ -2,6 +2,7 @@
   (:use #:cl)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-file
+                #:autolisp-runtime-error
                 #:autolisp-string
                 #:autolisp-file-stream
                 #:autolisp-current-directory

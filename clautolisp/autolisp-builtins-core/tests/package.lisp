@@ -12,6 +12,9 @@
                 #:find-core-builtin
                 #:install-core-builtins)
   (:import-from #:clautolisp.autolisp-runtime
+                #:autolisp-runtime-error
+                #:autolisp-runtime-error-code
+                #:autolisp-runtime-error-details
                 #:autolisp-file
                 #:autolisp-string
                 #:make-autolisp-string

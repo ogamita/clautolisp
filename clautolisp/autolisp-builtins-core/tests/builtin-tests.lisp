@@ -87,6 +87,85 @@
     (is (typep result 'autolisp-string))
     (is (string= "FOO" (autolisp-string-value result)))))
 
+(test builtin-errors-are-normalized
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((car-fn (autolisp-symbol-function (find-autolisp-symbol "CAR")))
+        (open-fn (autolisp-symbol-function (find-autolisp-symbol "OPEN")))
+        (strlen-fn (autolisp-symbol-function (find-autolisp-symbol "STRLEN")))
+        (abs-fn (autolisp-symbol-function (find-autolisp-symbol "ABS")))
+        (=-fn (autolisp-symbol-function (find-autolisp-symbol "=")))
+        (/=-fn (autolisp-symbol-function (find-autolisp-symbol "/=")))
+        (/-fn (autolisp-symbol-function (find-autolisp-symbol "/")))
+        (rem-fn (autolisp-symbol-function (find-autolisp-symbol "REM")))
+        (read-fn (autolisp-symbol-function (find-autolisp-symbol "READ"))))
+    (flet ((expect-builtin-error (thunk expected-code expected-builtin)
+             (handler-case
+                 (progn
+                   (funcall thunk)
+                   (is nil))
+               (autolisp-runtime-error (condition)
+                 (is (eq expected-code
+                         (autolisp-runtime-error-code condition)))
+                 (is (string= expected-builtin
+                              (getf (autolisp-runtime-error-details condition)
+                                    :builtin)))))))
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function car-fn 42))
+                            :invalid-list-argument
+                            "CAR")
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function strlen-fn 42))
+                            :invalid-string-argument
+                            "STRLEN")
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function abs-fn
+                                                      (make-autolisp-string "x")))
+                            :invalid-number-argument
+                            "ABS")
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function =-fn
+                                                      (intern-autolisp-symbol "FOO")))
+                            :invalid-comparison-argument
+                            "=")
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function /=-fn))
+                            :wrong-number-of-arguments
+                            "/=")
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function open-fn
+                                                      (make-autolisp-string "/tmp/unused")
+                                                      (make-autolisp-string "bad-mode")))
+                            :invalid-open-mode
+                            "OPEN")
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function open-fn
+                                                      (make-autolisp-string "/tmp/unused")
+                                                      (make-autolisp-string "r")
+                                                      (make-autolisp-string "")))
+                            :invalid-external-format
+                            "OPEN")
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function open-fn
+                                                      (make-autolisp-string "/tmp/unused")
+                                                      (make-autolisp-string "r")
+                                                      (make-autolisp-string "(")))
+                            :invalid-external-format
+                            "OPEN")
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function /-fn 1 0))
+                            :division-by-zero
+                            "/")
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function rem-fn 1 0))
+                            :division-by-zero
+                            "REM")
+      (expect-builtin-error (lambda ()
+                              (call-autolisp-function read-fn
+                                                      (make-autolisp-string "(")))
+                            :invalid-read-syntax
+                            "READ"))))
+
 (test builtin-boundp
   (reset-autolisp-symbol-table)
   (install-core-builtins)
@@ -339,6 +418,17 @@
          (write-mode (clautolisp.autolisp-runtime:make-autolisp-string "w"))
          (read-mode (clautolisp.autolisp-runtime:make-autolisp-string "r"))
          (utf-8-format (clautolisp.autolisp-runtime:make-autolisp-string "utf-8")))
+    (flet ((expect-file-error (thunk expected-code expected-builtin)
+             (handler-case
+                 (progn
+                   (funcall thunk)
+                   (is nil))
+               (autolisp-runtime-error (condition)
+                 (is (eq expected-code
+                         (autolisp-runtime-error-code condition)))
+                 (is (string= expected-builtin
+                              (getf (autolisp-runtime-error-details condition)
+                                    :builtin)))))))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))
     (ensure-directories-exist directory)
     (set-autolisp-current-directory directory)
@@ -360,6 +450,34 @@
       (is (= 66 (call-autolisp-function read-char-fn file)))
       (is (null (call-autolisp-function read-line-fn file)))
       (is (null (call-autolisp-function close-fn file))))
+    (let ((file (call-autolisp-function open-fn path-string read-mode)))
+      (is (typep file 'autolisp-file))
+      (is (null (call-autolisp-function close-fn file)))
+      (expect-file-error (lambda ()
+                           (call-autolisp-function read-line-fn file))
+                         :closed-file-descriptor
+                         "READ-LINE")
+      (expect-file-error (lambda ()
+                           (call-autolisp-function read-char-fn file))
+                         :closed-file-descriptor
+                         "READ-CHAR"))
+    (let ((file (call-autolisp-function open-fn path-string write-mode)))
+      (is (typep file 'autolisp-file))
+      (is (null (call-autolisp-function close-fn file)))
+      (expect-file-error (lambda ()
+                           (call-autolisp-function write-line-fn
+                                                   (clautolisp.autolisp-runtime:make-autolisp-string "beta")
+                                                   file))
+                         :closed-file-descriptor
+                         "WRITE-LINE")
+      (expect-file-error (lambda ()
+                           (call-autolisp-function write-char-fn 67 file))
+                         :closed-file-descriptor
+                         "WRITE-CHAR"))
+    (expect-file-error (lambda ()
+                         (call-autolisp-function write-char-fn -1))
+                       :invalid-character-code
+                       "WRITE-CHAR")
     (let* ((encoded-text
              (clautolisp.autolisp-runtime:make-autolisp-string
               (coerce (list #\H (code-char 233) #\!) 'string)))
@@ -391,7 +509,7 @@
                                           (clautolisp.autolisp-runtime:make-autolisp-string trusted-name)))))
     (is (null (call-autolisp-function findfile-fn
                                       (clautolisp.autolisp-runtime:make-autolisp-string "missing.txt"))))
-    (ignore-errors (uiop:delete-directory-tree directory :validate t))))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t)))))
 
 (test builtin-vl-directory-and-filename-helpers
   (reset-autolisp-symbol-table)
@@ -465,6 +583,16 @@
                   (call-autolisp-function filename-directory-fn
                                           (clautolisp.autolisp-runtime:make-autolisp-string
                                            "alpha.lsp")))))
+    (handler-case
+        (progn
+          (call-autolisp-function directory-files-fn nil nil 2)
+          (is nil))
+      (autolisp-runtime-error (condition)
+        (is (eq :invalid-directory-selector
+                (autolisp-runtime-error-code condition)))
+        (is (string= "VL-DIRECTORY-FILES"
+                     (getf (autolisp-runtime-error-details condition)
+                           :builtin)))))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))))
 
 (test builtin-vl-file-mutation-and-size-helpers
@@ -675,4 +803,20 @@
                   (get-output-stream-string *standard-output*))))
     (let ((*standard-input* (make-string-input-stream "Z")))
       (is (= 90 (call-autolisp-function read-char-fn))))
+    (let ((file (call-autolisp-function
+                 (autolisp-symbol-function (find-autolisp-symbol "OPEN"))
+                 (make-autolisp-string path)
+                 (make-autolisp-string "w"))))
+      (call-autolisp-function
+       (autolisp-symbol-function (find-autolisp-symbol "CLOSE")) file)
+      (handler-case
+          (progn
+            (call-autolisp-function prin1-fn quoted file)
+            (is nil))
+        (autolisp-runtime-error (condition)
+          (is (eq :closed-file-descriptor
+                  (autolisp-runtime-error-code condition)))
+          (is (string= "PRIN1"
+                       (getf (autolisp-runtime-error-details condition)
+                             :builtin))))))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))))

@@ -9,6 +9,8 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - The first builtin registry exists.
 - Initial builtins cover type and predicate behavior plus first Visual LISP symbol helpers.
 - These builtins are installable as runtime `SUBR` objects.
+- Builtin `SUBR` installation now wraps builtin failures into structured
+  `autolisp-runtime-error` conditions instead of leaking raw Common Lisp errors.
 - Special operators are explicitly out of scope for this system and belong to the evaluator phase.
 
 ## Builtin Tasks
@@ -38,6 +40,7 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Fill the remaining basic stream gap for `read-char` without a file descriptor by reading from standard input conservatively.
 - [x] Implement the documented `read` entry point on top of the runtime reader mapping.
 - [x] Tighten the current file layer for the documented compatibility-sensitive areas we can justify from the local spec draft, including `open` encodings, `vl-file-systime`, `vl-filename-mktemp`, and `vl-file-copy`.
+- [x] Route builtin failures through structured AutoLISP-visible runtime errors with builtin-level metadata.
 - [ ] Audit the completed file builtin family against real Autodesk/BricsCAD behavior for the remaining under-specified host-sensitive corners.
 - [ ] Keep `load` and `autoload` out of `autolisp-builtins-core`; they belong to evaluator/runtime execution work even though they are file-adjacent.
 - [ ] Keep the builtin inventory clearly separated from special operators as evaluator work expands.
