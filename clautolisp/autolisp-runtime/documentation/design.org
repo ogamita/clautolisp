@@ -279,7 +279,7 @@ The evaluation context contains at least:
 The *current document* is modeled as dynamic execution context supplied by the
 host entry point, not as a lexical binding.
 
-Provisional rule:
+Current rule:
 
 - when the host invokes AutoLISP evaluation for a given drawing, it establishes
   the current document in the evaluation context,
@@ -287,14 +287,18 @@ Provisional rule:
 - only host-driven document switches or explicit namespace-transfer mechanisms
   may change it.
 
-The exact host rules that determine the current document at callback and
-cross-namespace boundaries remain under-specified and must be documented
-separately as the host layer is designed.
+The runtime now exposes this boundary explicitly through host-entry helpers:
+
+- a runtime session has a current document,
+- constructing an evaluation context without overrides defaults to that session
+  document and uses it as the current namespace,
+- entering a document context can explicitly select a distinct VLX namespace
+  while still naming the current document.
 
 The *current namespace* is the namespace whose ordinary variable and function
 cells are used by default for evaluation.
 
-Provisional rule:
+Current rule:
 
 - in ordinary document-scoped evaluation, the current namespace is the current
   document namespace,
@@ -379,6 +383,7 @@ Current special operators implemented as evaluator primitives:
 - ~repeat~
 - ~foreach~
 - ~lambda~
+- ~function~
 - ~defun~
 
 At this stage these are treated as fundamental evaluator cases, not as
@@ -399,6 +404,41 @@ For ~USUBR~ calls:
 - required parameters are bound to evaluated argument values,
 - locals are initialized to ~nil~,
 - the body is evaluated with that frame active.
+
+Function objects returned by ~function~ are treated as ordinary runtime values.
+At the current stage, ~function~ accepts:
+
+- a symbol naming a function in the current namespace,
+- a literal ~lambda~ form, which is converted to an anonymous ~USUBR~.
+
+** BOUNDP
+The runtime now models the documented ~boundp~ distinction as follows:
+
+- an unbound symbol and a symbol explicitly bound to ~nil~ both yield ~nil~ as
+  the visible ~boundp~ result,
+- testing an unbound symbol with ~boundp~ materializes a namespace binding of
+  that symbol to ~nil~,
+- therefore internal "has a value cell" state and visible ~boundp~ truth are
+  intentionally distinct.
+
+This preserves the Autodesk-documented behavior that an undefined symbol is
+created and assigned ~nil~ while ~boundp~ still returns ~nil~.
+
+** DEFUN-Q Compatibility Definitions
+The runtime now preserves a compatibility definition alongside ordinary
+function bindings for the ~defun-q~ family.
+
+Current design rule:
+
+- an ordinary ~defun~ stores only the callable ~USUBR~ in the function cell,
+- ~defun-q~ stores both the callable ~USUBR~ and a list definition of the form
+  ~(lambda-list . body-forms)~,
+- ~defun-q-list-ref~ returns that preserved list definition,
+- ~defun-q-list-set~ replaces both the callable function binding and the
+  preserved list definition.
+
+This compatibility definition is attached to the namespace-local function cell,
+not to the symbol object itself.
 
 ** FOREACH
 ~foreach~ is modeled as a special operator because it controls evaluation and

@@ -23,7 +23,8 @@ The Org documents in `documentation/` remain the place for architecture and impl
   - FiveAM-based tests on SBCL and CCL,
   - GitLab CI and a dedicated CI container image.
 - The reader has successfully read a real AutoLISP corpus of 663 `.lsp` files, 100583 lines, and 3508077 characters.
-- The runtime, builtin libraries, host layer, and standalone evaluator are still to be built.
+- The runtime and builtin layers now exist with a first evaluator, structured
+  runtime errors, and a substantial portable test corpus.
 
 ## Foundation Tasks
 
@@ -59,8 +60,12 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [x] Classify the initial special-operator set into macro-expandable cases versus evaluator-primitive cases.
 - [x] Implement the first core special operators in the evaluator rather than in `autolisp-builtins-core`.
 - [x] Implement lambda representation and application.
+- [x] Implement the `function` special form for named and anonymous function designators.
+- [x] Clarify and implement the documented `boundp` semantics.
+- [x] Implement the `defun-q` compatibility path, including preserved list definitions and the first reflective accessors.
 - [x] Implement a first AutoLISP-visible error mapping layer in the evaluator and builtin registry.
-- [ ] Specify how the host determines the current document and current namespace at evaluation entry.
+- [x] Specify and implement the first explicit host-entry semantics for current document and current namespace at evaluation entry.
+- [x] Add a first runtime file-loading entry point that reads and evaluates forms in an explicit context.
 
 ## Builtins and Host Tasks
 

@@ -68,6 +68,21 @@
     (is (not (autolisp-symbol-value-bound-p symbol)))
     (is (not (autolisp-symbol-function-bound-p symbol)))))
 
+(test autolisp-boundp-semantics
+  (reset-autolisp-symbol-table)
+  (let ((fresh (intern-autolisp-symbol "FRESH"))
+        (nil-bound (intern-autolisp-symbol "NIL-BOUND"))
+        (value-bound (intern-autolisp-symbol "VALUE-BOUND")))
+    (set-variable nil-bound nil)
+    (set-variable value-bound 99)
+    (is (null (autolisp-boundp fresh)))
+    (is (autolisp-symbol-value-bound-p fresh))
+    (is (null (autolisp-symbol-value fresh)))
+    (is (null (autolisp-boundp nil-bound)))
+    (is (autolisp-symbol-value-bound-p nil-bound))
+    (is (null (autolisp-symbol-value nil-bound)))
+    (is (string= "T" (autolisp-symbol-name (autolisp-boundp value-bound))))))
+
 (test symbol-bindings-live-in-namespaces-not-symbols
   (reset-autolisp-symbol-table)
   (let* ((symbol (intern-autolisp-symbol "FOO"))
@@ -146,6 +161,27 @@
     (is (eq document
             (runtime-session-current-document
              (evaluation-context-session context))))))
+
+(test evaluation-context-defaults-follow-host-entry-semantics
+  (let* ((document (make-document-namespace :name "DRAWING-B"))
+         (session (make-runtime-session :current-document document))
+         (context (make-evaluation-context :session session)))
+    (is (eq document (evaluation-context-current-document context)))
+    (is (eq document (evaluation-context-current-namespace context)))
+    (is (eq document (runtime-session-current-document session)))))
+
+(test enter-document-context-can-select-document-and-namespace
+  (let* ((document (make-document-namespace :name "DRAWING-C"))
+         (namespace (make-separate-vlx-namespace :name "APP-C"))
+         (session (make-runtime-session))
+         (context (enter-document-context session document :namespace namespace)))
+    (is (eq document (runtime-session-current-document session)))
+    (is (eq document (evaluation-context-current-document context)))
+    (is (eq namespace (evaluation-context-current-namespace context)))
+    (is (string= "APP-C"
+                 (separate-vlx-namespace-name
+                  (evaluation-context-current-namespace context))))
+    (is (null (evaluation-context-dynamic-frame context)))))
 
 (test autolisp-eval-self-evaluating-and-symbol-lookup
   (reset-autolisp-symbol-table)
@@ -247,6 +283,26 @@
                   5))))
     (is (= 100 (autolisp-symbol-value arg)))))
 
+(test autolisp-eval-defun-q
+  (reset-autolisp-symbol-table)
+  (let* ((defun-q-symbol (intern-autolisp-symbol "DEFUN-Q"))
+         (plus-symbol (intern-autolisp-symbol "+"))
+         (name (intern-autolisp-symbol "ADDQ"))
+         (arg (intern-autolisp-symbol "X")))
+    (set-function plus-symbol
+                  (make-autolisp-subr "+" (lambda (left right) (+ left right))))
+    (is (eq name
+            (autolisp-eval
+             (list defun-q-symbol
+                   name
+                   (list arg)
+                   (list plus-symbol arg 2)))))
+    (is (equal (list (list arg)
+                     (list plus-symbol arg 2))
+               (autolisp-function-list-definition name)))
+    (is (= 9
+           (autolisp-eval (list name 7))))))
+
 (test autolisp-eval-and-or
   (reset-autolisp-symbol-table)
   (let* ((and-symbol (intern-autolisp-symbol "AND"))
@@ -330,6 +386,27 @@
                     7))))
       (is (= 100 (autolisp-symbol-value outer))))))
 
+(test autolisp-eval-function
+  (reset-autolisp-symbol-table)
+  (let* ((function-symbol (intern-autolisp-symbol "FUNCTION"))
+         (lambda-symbol (intern-autolisp-symbol "LAMBDA"))
+         (plus-symbol (intern-autolisp-symbol "+"))
+         (arg (intern-autolisp-symbol "X")))
+    (set-function plus-symbol
+                  (make-autolisp-subr "+" (lambda (left right) (+ left right))))
+    (let ((named (autolisp-eval (list function-symbol plus-symbol)))
+          (anonymous (autolisp-eval
+                      (list function-symbol
+                            (list lambda-symbol
+                                  (list arg)
+                                  (list plus-symbol arg 1))))))
+      (is (typep named 'clautolisp.autolisp-runtime:autolisp-subr))
+      (is (typep anonymous 'clautolisp.autolisp-runtime:autolisp-usubr))
+      (is (= 8
+             (clautolisp.autolisp-runtime:call-autolisp-function
+              anonymous
+              7))))))
+
 (test autolisp-eval-foreach
   (reset-autolisp-symbol-table)
   (let* ((foreach-symbol (intern-autolisp-symbol "FOREACH"))
@@ -387,7 +464,16 @@
                                       (autolisp-eval (list plus-symbol 1 2)))
                                     :host-error)))
         (is (typep (getf (autolisp-runtime-error-details condition) :condition)
-                   'error))))))
+                   'error)))
+      (expect-runtime-error (lambda ()
+                              (autolisp-eval
+                               (list (intern-autolisp-symbol "FUNCTION") 42)))
+                            :invalid-function-designator)
+      (expect-runtime-error (lambda ()
+                              (autolisp-eval
+                               (list (intern-autolisp-symbol "FUNCTION")
+                                     (intern-autolisp-symbol "MISSING-FUNCTION"))))
+                            :undefined-function))))
 
 (test autolisp-read-from-string-returns-first-form
   (reset-autolisp-symbol-table)
@@ -395,3 +481,28 @@
     (is (consp value))
     (is (string= "A"
                  (autolisp-symbol-name (first value))))))
+
+(test autolisp-load-file-in-context-evaluates-forms-sequentially
+  (reset-autolisp-symbol-table)
+  (let* ((plus-symbol (intern-autolisp-symbol "+"))
+         (foo (intern-autolisp-symbol "FOO"))
+         (path (merge-pathnames
+                (format nil "autolisp-load-~36R.lsp" (random (expt 36 6)))
+                (uiop:temporary-directory))))
+    (set-function plus-symbol
+                  (make-autolisp-subr "+" (lambda (left right) (+ left right))))
+    (unwind-protect
+         (progn
+           (with-open-file (stream path
+                                   :direction :output
+                                   :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (write-line "(setq foo 1)" stream)
+             (write-line "(setq foo (+ foo 2))" stream)
+             (write-line "foo" stream))
+           (is (= 3
+                  (autolisp-load-file-in-context path
+                                                 (default-evaluation-context))))
+           (is (= 3 (autolisp-symbol-value foo))))
+      (when (probe-file path)
+        (delete-file path)))))
