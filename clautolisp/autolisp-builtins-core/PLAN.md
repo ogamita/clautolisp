@@ -39,9 +39,12 @@ This file tracks actionable work for the `autolisp-builtins-core` system.
 - [x] Add the printer/output helpers that can target command output or file descriptors: `prin1`, `princ`, `print`, `terpri`, `prompt`, `vl-prin1-to-string`, and `vl-princ-to-string`.
 - [x] Fill the remaining basic stream gap for `read-char` without a file descriptor by reading from standard input conservatively.
 - [x] Implement the documented `read` entry point on top of the runtime reader mapping.
+- [x] Implement the first `load` builtin as a thin wrapper over the runtime file-loading path, including `onfailure` handling for the currently supported source-file cases.
+- [x] Implement the first `autoload` builtin with deferred source loading through installable stubs.
 - [x] Add the `defun-q` compatibility accessors `defun-q-list-ref` and `defun-q-list-set` on top of the runtime compatibility-definition layer.
+- [x] Add the first Visual LISP catch-all family: `vl-catch-all-apply`, `vl-catch-all-error-p`, and `vl-catch-all-error-message`.
 - [x] Tighten the current file layer for the documented compatibility-sensitive areas we can justify from the local spec draft, including `open` encodings, `vl-file-systime`, `vl-filename-mktemp`, and `vl-file-copy`.
 - [x] Route builtin failures through structured AutoLISP-visible runtime errors with builtin-level metadata.
 - [ ] Audit the completed file builtin family against real Autodesk/BricsCAD behavior for the remaining under-specified host-sensitive corners.
-- [ ] Keep `load` and `autoload` out of `autolisp-builtins-core`; they belong to evaluator/runtime execution work even though they are file-adjacent.
+- [ ] Keep `autoload` and the fuller execution-control surface rooted in runtime execution semantics even when exposed through builtin entry points.
 - [ ] Keep the builtin inventory clearly separated from special operators as evaluator work expands.

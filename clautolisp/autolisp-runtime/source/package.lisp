@@ -77,6 +77,10 @@
    #:autolisp-usubr-lambda-list
    #:autolisp-usubr-body
    #:autolisp-usubr-environment
+   #:autolisp-catch-all-error
+   #:make-autolisp-catch-all-error
+   #:autolisp-catch-all-error-message
+   #:autolisp-catch-all-error-condition
    #:autolisp-runtime-error
    #:autolisp-runtime-error-code
    #:autolisp-runtime-error-message
@@ -94,6 +98,7 @@
    #:set-default-evaluation-context
    #:reset-default-evaluation-context
    #:enter-document-context
+   #:call-with-autolisp-error-handler
    #:namespace-value-cell
    #:namespace-function-cell
    #:lookup-variable
@@ -128,6 +133,7 @@
    #:set-autolisp-symbol-value
    #:close-autolisp-file
    #:call-autolisp-function
+   #:resolve-autolisp-function-designator
    #:runtime-value-p
    #:reader-object->runtime-value
    #:reader-objects->runtime-values
@@ -152,6 +158,7 @@
    #:autolisp-subr
    #:autolisp-symbol
    #:autolisp-usubr
+   #:autolisp-catch-all-error
    #:autolisp-variant
    #:autolisp-vla-object
    #:make-autolisp-ename
@@ -171,5 +178,6 @@
    #:make-separate-vlx-namespace
    #:make-value-cell
    #:make-autolisp-usubr
+   #:make-autolisp-catch-all-error
    #:make-autolisp-variant
    #:make-autolisp-vla-object))

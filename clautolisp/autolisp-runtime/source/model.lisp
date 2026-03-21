@@ -90,6 +90,10 @@
   (body '() :type list)
   environment)
 
+(defstruct autolisp-catch-all-error
+  (message "" :type string)
+  condition)
+
 (defstruct autolisp-variant
   value)
 

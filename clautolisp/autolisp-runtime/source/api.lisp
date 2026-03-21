@@ -45,6 +45,9 @@
 (deftype autolisp-usubr ()
   'clautolisp.autolisp-runtime.internal::autolisp-usubr)
 
+(deftype autolisp-catch-all-error ()
+  'clautolisp.autolisp-runtime.internal::autolisp-catch-all-error)
+
 (deftype autolisp-variant ()
   'clautolisp.autolisp-runtime.internal::autolisp-variant)
 
@@ -357,6 +360,7 @@
       (typep object 'clautolisp.autolisp-runtime.internal::autolisp-pickset)
       (typep object 'clautolisp.autolisp-runtime.internal::autolisp-subr)
       (typep object 'clautolisp.autolisp-runtime.internal::autolisp-usubr)
+      (typep object 'clautolisp.autolisp-runtime.internal::autolisp-catch-all-error)
       (typep object 'clautolisp.autolisp-runtime.internal::autolisp-variant)
       (typep object 'clautolisp.autolisp-runtime.internal::autolisp-safearray)
       (typep object 'clautolisp.autolisp-runtime.internal::autolisp-vla-object)))
@@ -457,6 +461,17 @@
 
 (defun autolisp-usubr-environment (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-environment object))
+
+(defun make-autolisp-catch-all-error (message condition)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-catch-all-error
+   :message message
+   :condition condition))
+
+(defun autolisp-catch-all-error-message (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-catch-all-error-message object))
+
+(defun autolisp-catch-all-error-condition (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-catch-all-error-condition object))
 
 (defun autolisp-variant-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-variant-value object))
@@ -576,6 +591,52 @@
          (default-evaluation-context)
          arguments))
 
+(defun resolve-autolisp-function-designator (designator
+                                            &optional
+                                              (context (default-evaluation-context)))
+  (cond
+    ((or (typep designator 'autolisp-subr)
+         (typep designator 'autolisp-usubr))
+     designator)
+    ((typep designator 'autolisp-symbol)
+     (multiple-value-bind (binding boundp origin)
+         (lookup-function designator context)
+       (declare (ignore origin))
+       (unless boundp
+         (signal-autolisp-runtime-error
+          :undefined-function
+          "Undefined AutoLISP function ~A."
+          (autolisp-symbol-name designator)))
+       binding))
+    ((lambda-form-p designator)
+     (eval-lambda-form (rest designator) context))
+    (t
+     (signal-autolisp-runtime-error
+      :invalid-function-designator
+      "Expected an AutoLISP function designator, got ~S."
+      designator))))
+
+(defun resolve-autolisp-error-handler (context)
+  (let ((symbol (intern-autolisp-symbol "*ERROR*")))
+    (handler-case
+        (resolve-autolisp-function-designator symbol context)
+      (autolisp-runtime-error (condition)
+        (if (eq :undefined-function (autolisp-runtime-error-code condition))
+            nil
+            (error condition))))))
+
+(defun call-with-autolisp-error-handler (thunk &optional (context (default-evaluation-context)))
+  (handler-case
+      (funcall thunk)
+    (autolisp-runtime-error (condition)
+      (let ((handler (resolve-autolisp-error-handler context)))
+        (if handler
+            (call-autolisp-function-in-context
+             handler
+             context
+             (make-autolisp-string (autolisp-runtime-error-message condition)))
+            (error condition))))))
+
 (defun autolisp-slash-symbol-p (symbol)
   (and (typep symbol 'autolisp-symbol)
        (string= "/" (autolisp-symbol-name symbol))))
@@ -649,6 +710,7 @@
       (typep object 'autolisp-pickset)
       (typep object 'autolisp-subr)
       (typep object 'autolisp-usubr)
+      (typep object 'autolisp-catch-all-error)
       (typep object 'autolisp-variant)
       (typep object 'autolisp-safearray)
       (typep object 'autolisp-vla-object)))
@@ -819,17 +881,9 @@
   (let ((designator (first arguments)))
     (cond
       ((typep designator 'autolisp-symbol)
-       (multiple-value-bind (binding boundp origin)
-           (lookup-function designator context)
-         (declare (ignore origin))
-         (unless boundp
-           (signal-autolisp-runtime-error
-            :undefined-function
-            "Undefined AutoLISP function ~A."
-            (autolisp-symbol-name designator)))
-         binding))
+       (resolve-autolisp-function-designator designator context))
       ((lambda-form-p designator)
-       (eval-lambda-form (rest designator) context))
+       (resolve-autolisp-function-designator designator context))
       (t
        (signal-autolisp-runtime-error
         :invalid-function-designator
@@ -1018,8 +1072,11 @@
   (first (apply #'read-runtime-from-file path options)))
 
 (defun autolisp-load-file-in-context (path context &rest read-options)
-  (autolisp-eval-progn
-   (apply #'read-runtime-from-file path read-options)
+  (call-with-autolisp-error-handler
+   (lambda ()
+     (autolisp-eval-progn
+      (apply #'read-runtime-from-file path read-options)
+      context))
    context))
 
 (defun autolisp-load-file (path &rest read-options)

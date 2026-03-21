@@ -440,6 +440,29 @@ Current design rule:
 This compatibility definition is attached to the namespace-local function cell,
 not to the symbol object itself.
 
+** Initial Error Hook and Catch-All Layer
+The runtime now distinguishes two user-visible error bridges above raw
+~autolisp-runtime-error~ conditions:
+
+- a top-level ~*error*~ hook path,
+- a Visual LISP catch-all object path.
+
+Current rule:
+
+- top-level runtime entry points such as file loading may trap an
+  ~autolisp-runtime-error~ and, if a function named ~*ERROR*~ is defined in the
+  current namespace, invoke it with one AutoLISP string argument carrying the
+  message;
+- if no ~*ERROR*~ handler is defined, the underlying runtime error is
+  re-signaled;
+- ~vl-catch-all-apply~ traps errors and returns a dedicated catch-all runtime
+  object instead of unwinding;
+- ~vl-catch-all-error-p~ and ~vl-catch-all-error-message~ operate on that
+  dedicated object.
+
+This is intentionally only the first layer. Full ~ERRNO~, command-loop, and
+cross-namespace error-bridge semantics remain future work.
+
 ** FOREACH
 ~foreach~ is modeled as a special operator because it controls evaluation and
 introduces a temporary dynamic binding.

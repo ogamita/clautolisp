@@ -32,5 +32,7 @@ Current implementation scope:
 - compatibility-preserved function list definitions for the `defun-q` family,
 - a first runtime `load` entry point that reads and evaluates a file in a
   chosen evaluation context,
+- a first `*error*` hook path for top-level runtime failures together with a
+  runtime catch-all error object used by the Visual LISP catch-all layer,
 - an initial `autolisp-runtime-error` condition used to report evaluator and
   wrapped host-Lisp failures without leaking raw Common Lisp errors directly.

@@ -66,6 +66,8 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [x] Implement a first AutoLISP-visible error mapping layer in the evaluator and builtin registry.
 - [x] Specify and implement the first explicit host-entry semantics for current document and current namespace at evaluation entry.
 - [x] Add a first runtime file-loading entry point that reads and evaluates forms in an explicit context.
+- [x] Add the first `load` builtin wrapper, `*error*` hook path, and Visual LISP catch-all layer.
+- [x] Add the first `autoload` builtin with deferred source-loading stubs.
 
 ## Builtins and Host Tasks
 
