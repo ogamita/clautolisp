@@ -319,7 +319,7 @@
                (list lambda-symbol
                      (list arg slash local)
                      (list setq-symbol local arg)
-                     (list plus-symbol local 1)))))
+                    (list plus-symbol local 1)))))
       (is (typep fn 'clautolisp.autolisp-runtime:autolisp-usubr))
       (is (= 8
              (autolisp-eval
@@ -329,6 +329,65 @@
                           (list plus-symbol local 1))
                     7))))
       (is (= 100 (autolisp-symbol-value outer))))))
+
+(test autolisp-eval-foreach
+  (reset-autolisp-symbol-table)
+  (let* ((foreach-symbol (intern-autolisp-symbol "FOREACH"))
+         (setq-symbol (intern-autolisp-symbol "SETQ"))
+         (plus-symbol (intern-autolisp-symbol "+"))
+         (item (intern-autolisp-symbol "ITEM"))
+         (sum (intern-autolisp-symbol "SUM")))
+    (set-function plus-symbol
+                  (make-autolisp-subr "+" (lambda (left right) (+ left right))))
+    (set-variable sum 0)
+    (is (= 6
+           (autolisp-eval
+            (list foreach-symbol
+                  item
+                  (list (intern-autolisp-symbol "QUOTE") '(1 2 3))
+                  (list setq-symbol sum (list plus-symbol sum item))
+                  sum))))
+    (is (= 6 (autolisp-symbol-value sum)))
+    (is (not (autolisp-symbol-value-bound-p item)))))
+
+(test autolisp-eval-signals-runtime-errors
+  (reset-autolisp-symbol-table)
+  (let ((missing-variable (intern-autolisp-symbol "MISSING-VARIABLE"))
+        (missing-function (intern-autolisp-symbol "MISSING-FUNCTION"))
+        (foreach-symbol (intern-autolisp-symbol "FOREACH"))
+        (plus-symbol (intern-autolisp-symbol "PLUS")))
+    (flet ((expect-runtime-error (thunk expected-code)
+             (handler-case
+                 (progn
+                   (funcall thunk)
+                   (is nil))
+               (autolisp-runtime-error (condition)
+                 (is (eq expected-code
+                         (autolisp-runtime-error-code condition)))
+                 condition))))
+      (expect-runtime-error (lambda ()
+                              (autolisp-eval missing-variable))
+                            :unbound-variable)
+      (expect-runtime-error (lambda ()
+                              (autolisp-eval (list missing-function 1 2)))
+                            :undefined-function)
+    (set-function plus-symbol
+                  (make-autolisp-subr "PLUS"
+                                      (lambda (left right)
+                                        (+ left right))))
+      (expect-runtime-error (lambda ()
+                              (autolisp-eval (list foreach-symbol 42 '(1 2 3) 1)))
+                            :invalid-foreach-binding)
+    (set-function plus-symbol
+                  (make-autolisp-subr "PLUS"
+                                      (lambda (left)
+                                        left)))
+      (let ((condition
+              (expect-runtime-error (lambda ()
+                                      (autolisp-eval (list plus-symbol 1 2)))
+                                    :host-error)))
+        (is (typep (getf (autolisp-runtime-error-details condition) :condition)
+                   'error))))))
 
 (test autolisp-read-from-string-returns-first-form
   (reset-autolisp-symbol-table)

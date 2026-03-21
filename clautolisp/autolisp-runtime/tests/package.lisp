@@ -9,6 +9,9 @@
                 #:results-status
                 #:test)
   (:import-from #:clautolisp.autolisp-runtime
+                #:autolisp-runtime-error
+                #:autolisp-runtime-error-code
+                #:autolisp-runtime-error-details
                 #:autolisp-string
                 #:autolisp-string-value
                 #:autolisp-symbol
