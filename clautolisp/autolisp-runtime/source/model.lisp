@@ -17,7 +17,8 @@
 
 (defstruct function-cell
   (function nil)
-  (bound-p nil :type boolean))
+  (bound-p nil :type boolean)
+  (compatibility-definition nil :type list))
 
 (defstruct document-namespace
   (name "DOCUMENT" :type string)

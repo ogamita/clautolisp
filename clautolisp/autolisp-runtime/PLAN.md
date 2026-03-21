@@ -13,7 +13,7 @@ Architecture and design rationale belong in `documentation/design.org`.
 - Symbol, namespace, and dynamic-frame structures now exist.
 - A first evaluator slice now covers literal evaluation, symbol lookup, `quote`,
   `setq`, `progn`, `if`, `cond`, `and`, `or`, `while`, `repeat`, `foreach`,
-  `lambda`, `defun`, and user-function calls.
+  `lambda`, `function`, `defun`, and user-function calls.
 - The evaluator now routes its own failures through an initial
   `autolisp-runtime-error` condition instead of exposing raw Common Lisp errors
   directly.
@@ -35,7 +35,7 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [x] Define explicit namespace objects for document, blackboard, and separate-VLX contexts.
 - [x] Define explicit environment objects for dynamic variable scope.
 - [x] Define unbound markers and lookup/update operations.
-- [ ] Specify current-document and current-namespace entry semantics at the host boundary.
+- [x] Specify current-document and current-namespace entry semantics at the host boundary.
 
 ## Runtime Semantics Tasks
 
@@ -43,13 +43,14 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [x] Define initial runtime type designator behavior for `type`.
 - [x] Define truthiness helpers and nil-handling utilities.
 - [x] Introduce builtin-function and user-function runtime object shapes (`SUBR` and `USUBR`).
-- [ ] Clarify `boundp` semantics, especially the documented distinction between unbound symbols and symbols bound to `nil`.
+- [x] Clarify `boundp` semantics, especially the documented distinction between unbound symbols and symbols bound to `nil`.
 - [x] Design the evaluator phase explicitly, including the boundary between ordinary builtin calls and special-operator evaluation.
 - [x] Define the initial special-operator set and decide which forms can be modeled as macro-like expansions versus fundamental evaluator cases.
 - [x] Define symbol lookup and update semantics for `setq`, `defun`, and `set-symbol-function` relative to dynamic frames and namespaces.
-- [x] Implement the first evaluator special operators: `quote`, `setq`, `progn`, `if`, `cond`, `and`, `or`, `while`, `repeat`, `foreach`, `lambda`, and `defun`.
+- [x] Implement the first evaluator special operators: `quote`, `setq`, `progn`, `if`, `cond`, `and`, `or`, `while`, `repeat`, `foreach`, `lambda`, `function`, `defun`, and `defun-q`.
 - [x] Introduce an initial AutoLISP-visible runtime error condition for evaluator failures and wrapped host-Lisp errors.
-- [ ] Extend error mapping so builtin and host layers also preserve structured AutoLISP-visible error codes consistently.
+- [x] Extend error mapping so builtin and host layers also preserve structured AutoLISP-visible error codes consistently.
+- [x] Add a first runtime `load` entry point that reads and evaluates a file in an explicit evaluation context.
 
 ## Integration Tasks
 

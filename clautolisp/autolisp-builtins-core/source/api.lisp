@@ -11,6 +11,7 @@
     "VL-FILE-COPY" "VL-FILENAME-MKTEMP" "VL-MKDIR"
     "PRIN1" "PRINC" "PRINT" "TERPRI" "PROMPT"
     "VL-PRIN1-TO-STRING" "VL-PRINC-TO-STRING"
+    "DEFUN-Q-LIST-REF" "DEFUN-Q-LIST-SET"
     "BOUNDP" "CAR" "CDR" "CONS" "LIST" "APPEND" "ASSOC" "LENGTH" "NTH"
     "REVERSE" "LAST" "MEMBER" "SUBST" "LISTP" "VL-CONSP" "VL-LIST*"
     "NUMBERP" "=" "/=" "<" "<=" ">" ">=" "ABS" "FIX" "FLOAT" "ZEROP"
@@ -59,10 +60,44 @@
      "BOUNDP"
      "Expected an AutoLISP symbol, got ~S."
      object))
-  (if (and (autolisp-symbol-value-bound-p object)
-           (autolisp-symbol-value object))
-      (intern-autolisp-symbol "T")
-      nil))
+  (clautolisp.autolisp-runtime:autolisp-boundp object))
+
+(defun require-function-definition-list (object operator-name)
+  (unless (and (consp object) (listp object))
+    (signal-builtin-argument-error
+     :invalid-defun-q-definition
+     operator-name
+     "~A expects a proper list function definition, got ~S."
+     operator-name
+     object))
+  object)
+
+(defun builtin-defun-q-list-ref (object)
+  (unless (typep object 'autolisp-symbol)
+    (signal-builtin-argument-error
+     :invalid-symbol-argument
+     "DEFUN-Q-LIST-REF"
+     "DEFUN-Q-LIST-REF expects an AutoLISP symbol, got ~S."
+     object))
+  (autolisp-function-list-definition object))
+
+(defun builtin-defun-q-list-set (symbol definition)
+  (unless (typep symbol 'autolisp-symbol)
+    (signal-builtin-argument-error
+     :invalid-symbol-argument
+     "DEFUN-Q-LIST-SET"
+     "DEFUN-Q-LIST-SET expects an AutoLISP symbol, got ~S."
+     symbol))
+  (let* ((list-definition (require-function-definition-list definition "DEFUN-Q-LIST-SET"))
+         (lambda-list (first list-definition))
+         (body (rest list-definition))
+         (function (make-autolisp-usubr (autolisp-symbol-name symbol)
+                                        lambda-list
+                                        body
+                                        (default-evaluation-context))))
+    (set-autolisp-symbol-function symbol function)
+    (set-autolisp-function-list-definition symbol list-definition)
+    symbol))
 
 (defun builtin-car (object)
   (cond
@@ -1181,6 +1216,8 @@
    (make-core-builtin-subr "PROMPT" #'builtin-prompt)
    (make-core-builtin-subr "VL-PRIN1-TO-STRING" #'builtin-vl-prin1-to-string)
    (make-core-builtin-subr "VL-PRINC-TO-STRING" #'builtin-vl-princ-to-string)
+   (make-core-builtin-subr "DEFUN-Q-LIST-REF" #'builtin-defun-q-list-ref)
+   (make-core-builtin-subr "DEFUN-Q-LIST-SET" #'builtin-defun-q-list-set)
    (make-core-builtin-subr "BOUNDP" #'builtin-boundp)
    (make-core-builtin-subr "CAR" #'builtin-car)
    (make-core-builtin-subr "CDR" #'builtin-cdr)

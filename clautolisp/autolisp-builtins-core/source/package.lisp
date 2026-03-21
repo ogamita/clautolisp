@@ -5,11 +5,14 @@
                 #:autolisp-runtime-error
                 #:autolisp-string
                 #:autolisp-file-stream
+                #:autolisp-function-list-definition
                 #:autolisp-current-directory
                 #:autolisp-support-paths
                 #:autolisp-trusted-paths
+                #:default-evaluation-context
                 #:make-autolisp-string
                 #:make-autolisp-file
+                #:make-autolisp-usubr
                 #:autolisp-string-value
                 #:autolisp-symbol
                 #:autolisp-symbol-name
@@ -29,6 +32,7 @@
                 #:close-autolisp-file
                 #:intern-autolisp-symbol
                 #:make-autolisp-subr
+                #:set-autolisp-function-list-definition
                 #:set-autolisp-symbol-function)
   (:export
    #:*core-builtin-names*

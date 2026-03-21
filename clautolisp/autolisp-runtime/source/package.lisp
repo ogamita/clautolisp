@@ -36,6 +36,7 @@
    #:function-cell
    #:function-cell-function
    #:function-cell-bound-p
+   #:function-cell-compatibility-definition
    #:document-namespace
    #:make-document-namespace
    #:document-namespace-name
@@ -56,6 +57,7 @@
    #:runtime-session
    #:make-runtime-session
    #:runtime-session-current-document
+   #:set-runtime-session-current-document
    #:autolisp-file
    #:make-autolisp-file
    #:autolisp-file-stream
@@ -91,6 +93,7 @@
    #:default-evaluation-context
    #:set-default-evaluation-context
    #:reset-default-evaluation-context
+   #:enter-document-context
    #:namespace-value-cell
    #:namespace-function-cell
    #:lookup-variable
@@ -110,6 +113,7 @@
    #:set-autolisp-trusted-paths
    #:autolisp-true-p
    #:autolisp-false-p
+   #:autolisp-boundp
    #:autolisp-null
    #:autolisp-not
    #:autolisp-listp
@@ -118,6 +122,8 @@
    #:autolisp-vl-symbolp
    #:autolisp-vl-symbol-name
    #:autolisp-vl-symbol-value
+   #:autolisp-function-list-definition
+   #:set-autolisp-function-list-definition
    #:set-autolisp-symbol-function
    #:set-autolisp-symbol-value
    #:close-autolisp-file
@@ -128,6 +134,8 @@
    #:autolisp-read-from-string
    #:autolisp-read-from-stream
    #:autolisp-read-from-file
+   #:autolisp-load-file
+   #:autolisp-load-file-in-context
    #:read-runtime-from-string
    #:read-runtime-from-stream
    #:read-runtime-from-file))

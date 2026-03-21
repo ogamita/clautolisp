@@ -171,11 +171,45 @@
   (install-core-builtins)
   (let* ((foo (intern-autolisp-symbol "FOO"))
          (bar (intern-autolisp-symbol "BAR"))
+         (baz (intern-autolisp-symbol "BAZ"))
          (fn (autolisp-symbol-function (find-autolisp-symbol "BOUNDP"))))
     (set-autolisp-symbol-value foo 17)
     (set-autolisp-symbol-value bar nil)
     (is (string= "T" (autolisp-symbol-name (call-autolisp-function fn foo))))
-    (is (null (call-autolisp-function fn bar)))))
+    (is (null (call-autolisp-function fn bar)))
+    (is (null (call-autolisp-function fn baz)))
+    (is (autolisp-symbol-value-bound-p baz))))
+
+(test builtin-defun-q-list-ref-and-set
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((defun-q-symbol (intern-autolisp-symbol "DEFUN-Q"))
+         (plus-symbol (intern-autolisp-symbol "+"))
+         (name (intern-autolisp-symbol "ADDQ"))
+         (arg (intern-autolisp-symbol "X"))
+         (list-ref-fn (autolisp-symbol-function
+                       (find-autolisp-symbol "DEFUN-Q-LIST-REF")))
+         (list-set-fn (autolisp-symbol-function
+                       (find-autolisp-symbol "DEFUN-Q-LIST-SET"))))
+    (set-autolisp-symbol-function plus-symbol
+                                  (find-core-builtin "+"))
+    (autolisp-eval
+     (list defun-q-symbol
+           name
+           (list arg)
+           (list plus-symbol arg 2)))
+    (is (equal (list (list arg)
+                     (list plus-symbol arg 2))
+               (call-autolisp-function list-ref-fn name)))
+    (is (eq name
+            (call-autolisp-function list-set-fn
+                                    name
+                                    (list (list arg)
+                                          (list plus-symbol arg 5)))))
+    (is (= 12 (autolisp-eval (list name 7))))
+    (is (equal (list (list arg)
+                     (list plus-symbol arg 5))
+               (call-autolisp-function list-ref-fn name)))))
 
 (test builtin-car-cdr-cons-list
   (reset-autolisp-symbol-table)

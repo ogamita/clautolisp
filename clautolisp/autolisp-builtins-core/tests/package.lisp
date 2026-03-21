@@ -15,6 +15,7 @@
                 #:autolisp-runtime-error
                 #:autolisp-runtime-error-code
                 #:autolisp-runtime-error-details
+                #:autolisp-eval
                 #:autolisp-file
                 #:autolisp-string
                 #:make-autolisp-string
@@ -24,6 +25,8 @@
                 #:autolisp-symbol
                 #:autolisp-symbol-function
                 #:autolisp-symbol-name
+                #:autolisp-symbol-value-bound-p
+                #:set-autolisp-symbol-function
                 #:set-autolisp-symbol-value
                 #:call-autolisp-function
                 #:set-autolisp-current-directory

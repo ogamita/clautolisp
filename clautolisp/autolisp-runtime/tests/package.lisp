@@ -28,6 +28,9 @@
                 #:autolisp-atom
                 #:autolisp-eval
                 #:autolisp-eval-progn
+                #:autolisp-boundp
+                #:autolisp-function-list-definition
+                #:autolisp-load-file-in-context
                 #:autolisp-null
                 #:autolisp-not
                 #:autolisp-read-from-string
@@ -36,6 +39,7 @@
                 #:document-namespace-name
                 #:evaluation-context-current-document
                 #:evaluation-context-current-namespace
+                #:evaluation-context-dynamic-frame
                 #:evaluation-context-session
                 #:function-cell-function
                 #:intern-autolisp-symbol
@@ -46,6 +50,7 @@
                 #:make-autolisp-string
                 #:make-autolisp-subr
                 #:make-runtime-session
+                #:make-separate-vlx-namespace
                 #:namespace-function-cell
                 #:namespace-value-cell
                 #:pop-dynamic-frame
@@ -53,7 +58,10 @@
                 #:read-runtime-from-string
                 #:reader-object->runtime-value
                 #:reset-autolisp-symbol-table
+                #:enter-document-context
                 #:runtime-session-current-document
+                #:set-runtime-session-current-document
+                #:separate-vlx-namespace-name
                 #:set-default-evaluation-context
                 #:set-function
                 #:set-variable

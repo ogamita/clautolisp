@@ -152,18 +152,46 @@
   (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-name namespace))
 
 (defun make-runtime-session (&key current-document)
-  (clautolisp.autolisp-runtime.internal::make-runtime-session
-   :current-document current-document))
+  (let ((document (or current-document
+                      (make-document-namespace :name "DOCUMENT"))))
+    (clautolisp.autolisp-runtime.internal::make-runtime-session
+     :current-document document)))
 
 (defun runtime-session-current-document (session)
   (clautolisp.autolisp-runtime.internal::runtime-session-current-document session))
 
+(defun set-runtime-session-current-document (session document)
+  (unless (typep document 'document-namespace)
+    (signal-autolisp-runtime-error
+     :invalid-document
+     "Expected a document namespace, got ~S."
+     document))
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-current-document session)
+        document))
+
 (defun make-evaluation-context (&key session current-document current-namespace dynamic-frame)
-  (clautolisp.autolisp-runtime.internal::make-evaluation-context
-   :session session
-   :current-document current-document
-   :current-namespace current-namespace
-   :dynamic-frame dynamic-frame))
+  (let* ((session (or session
+                      (make-runtime-session :current-document current-document)))
+         (current-document (or current-document
+                               (runtime-session-current-document session)))
+         (current-namespace (or current-namespace current-document))
+         (dynamic-frame (or dynamic-frame nil)))
+    (unless (typep current-document 'document-namespace)
+      (signal-autolisp-runtime-error
+       :invalid-document
+       "Evaluation context current document must be a document namespace, got ~S."
+       current-document))
+    (unless (or (typep current-namespace 'document-namespace)
+                (typep current-namespace 'separate-vlx-namespace))
+      (signal-autolisp-runtime-error
+       :invalid-namespace
+       "Evaluation context current namespace must be a document or separate VLX namespace, got ~S."
+       current-namespace))
+    (clautolisp.autolisp-runtime.internal::make-evaluation-context
+     :session session
+     :current-document current-document
+     :current-namespace current-namespace
+     :dynamic-frame dynamic-frame)))
 
 (defun evaluation-context-session (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-session context))
@@ -177,6 +205,14 @@
 (defun evaluation-context-dynamic-frame (context)
   (clautolisp.autolisp-runtime.internal::evaluation-context-dynamic-frame context))
 
+(defun enter-document-context (session document &key namespace)
+  (set-runtime-session-current-document session document)
+  (make-evaluation-context
+   :session session
+   :current-document document
+   :current-namespace (or namespace document)
+   :dynamic-frame nil))
+
 (defun value-cell-value (cell)
   (clautolisp.autolisp-runtime.internal::value-cell-value cell))
 
@@ -188,6 +224,9 @@
 
 (defun function-cell-bound-p (cell)
   (clautolisp.autolisp-runtime.internal::function-cell-bound-p cell))
+
+(defun function-cell-compatibility-definition (cell)
+  (clautolisp.autolisp-runtime.internal::function-cell-compatibility-definition cell))
 
 (defun namespace-value-table (namespace)
   (typecase namespace
@@ -296,7 +335,8 @@
 (defun set-function (symbol function &optional (context (default-evaluation-context)))
   (let ((cell (namespace-function-cell (evaluation-context-current-namespace context) symbol)))
     (setf (clautolisp.autolisp-runtime.internal::function-cell-function cell) function
-          (clautolisp.autolisp-runtime.internal::function-cell-bound-p cell) t)
+          (clautolisp.autolisp-runtime.internal::function-cell-bound-p cell) t
+          (clautolisp.autolisp-runtime.internal::function-cell-compatibility-definition cell) nil)
     function))
 
 (defun set-autolisp-symbol-value (symbol value)
@@ -345,6 +385,20 @@
 
 (defun autolisp-symbol-function-bound-p (object)
   (nth-value 1 (lookup-function object)))
+
+(defun autolisp-function-list-definition (object &optional (context (default-evaluation-context)))
+  (let ((cell (namespace-function-cell (evaluation-context-current-namespace context)
+                                       object
+                                       :createp nil)))
+    (and cell
+         (function-cell-compatibility-definition cell))))
+
+(defun set-autolisp-function-list-definition (symbol definition
+                                              &optional (context (default-evaluation-context)))
+  (let ((cell (namespace-function-cell (evaluation-context-current-namespace context) symbol)))
+    (setf (clautolisp.autolisp-runtime.internal::function-cell-compatibility-definition cell)
+          definition)
+    definition))
 
 (defun autolisp-file-stream (object)
   (clautolisp.autolisp-runtime.internal::autolisp-file-stream object))
@@ -456,6 +510,25 @@
 
 (defun autolisp-true-p (object)
   (not (autolisp-false-p object)))
+
+(defun autolisp-boundp (object &optional (context (default-evaluation-context)))
+  (unless (typep object 'autolisp-symbol)
+    (signal-autolisp-runtime-error
+     :type-error
+     "Expected an AutoLISP symbol, got ~S."
+     object))
+  (multiple-value-bind (value boundp origin)
+      (lookup-variable object context)
+    (declare (ignore origin))
+    (unless boundp
+      ;; Autodesk documents that testing an undefined symbol with BOUNDP
+      ;; creates the symbol and assigns it NIL, while still returning NIL.
+      (set-variable object nil context)
+      (setf value nil
+            boundp t))
+    (if value
+        (intern-autolisp-symbol "T")
+        nil)))
 
 (defun autolisp-null (object)
   (if (null object)
@@ -574,6 +647,8 @@
       (typep object 'autolisp-file)
       (typep object 'autolisp-ename)
       (typep object 'autolisp-pickset)
+      (typep object 'autolisp-subr)
+      (typep object 'autolisp-usubr)
       (typep object 'autolisp-variant)
       (typep object 'autolisp-safearray)
       (typep object 'autolisp-vla-object)))
@@ -722,6 +797,68 @@
                        (rest arguments)
                        context))
 
+(defun compatibility-definition-from-parts (lambda-list body)
+  (cons lambda-list body))
+
+(defun compatibility-definition->parts (definition)
+  (unless (and (consp definition)
+               (listp definition))
+    (signal-autolisp-runtime-error
+     :invalid-defun-q-definition
+     "DEFUN-Q compatibility definition must be a proper list, got ~S."
+     definition))
+  (values (first definition)
+          (rest definition)))
+
+(defun eval-function-form (arguments context)
+  (unless (= (length arguments) 1)
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "FUNCTION expects exactly one argument, got ~D."
+     (length arguments)))
+  (let ((designator (first arguments)))
+    (cond
+      ((typep designator 'autolisp-symbol)
+       (multiple-value-bind (binding boundp origin)
+           (lookup-function designator context)
+         (declare (ignore origin))
+         (unless boundp
+           (signal-autolisp-runtime-error
+            :undefined-function
+            "Undefined AutoLISP function ~A."
+            (autolisp-symbol-name designator)))
+         binding))
+      ((lambda-form-p designator)
+       (eval-lambda-form (rest designator) context))
+      (t
+       (signal-autolisp-runtime-error
+        :invalid-function-designator
+        "FUNCTION expects a function name or lambda form, got ~S."
+        designator)))))
+
+(defun eval-defun-q-form (arguments context)
+  (unless (>= (length arguments) 2)
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "DEFUN-Q expects at least a name and lambda list, got ~D arguments."
+     (length arguments)))
+  (let ((name (first arguments))
+        (lambda-list (second arguments))
+        (body (cddr arguments)))
+    (unless (typep name 'autolisp-symbol)
+      (signal-autolisp-runtime-error
+       :invalid-defun-name
+       "DEFUN-Q name must be an AutoLISP symbol, got ~S."
+       name))
+    (let ((function (make-autolisp-usubr (autolisp-symbol-name name)
+                                         lambda-list
+                                         body
+                                         context))
+          (definition (compatibility-definition-from-parts lambda-list body)))
+      (set-function name function context)
+      (set-autolisp-function-list-definition name definition context)
+      name)))
+
 (defun eval-defun-form (arguments context)
   (unless (>= (length arguments) 2)
     (signal-autolisp-runtime-error
@@ -755,6 +892,8 @@
         (cons "REPEAT" #'eval-repeat-form)
         (cons "FOREACH" #'eval-foreach-form)
         (cons "LAMBDA" #'eval-lambda-form)
+        (cons "FUNCTION" #'eval-function-form)
+        (cons "DEFUN-Q" #'eval-defun-q-form)
         (cons "DEFUN" #'eval-defun-form)))
 
 (defun special-operator-function (operator)
@@ -877,3 +1016,14 @@
 
 (defun autolisp-read-from-file (path &rest options &key &allow-other-keys)
   (first (apply #'read-runtime-from-file path options)))
+
+(defun autolisp-load-file-in-context (path context &rest read-options)
+  (autolisp-eval-progn
+   (apply #'read-runtime-from-file path read-options)
+   context))
+
+(defun autolisp-load-file (path &rest read-options)
+  (apply #'autolisp-load-file-in-context
+         path
+         (default-evaluation-context)
+         read-options))
