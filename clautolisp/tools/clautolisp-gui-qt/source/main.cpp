@@ -19,9 +19,11 @@
 #include <QThread>
 
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unistd.h>
 
 #ifdef __APPLE__
 #include <ApplicationServices/ApplicationServices.h>
@@ -272,5 +274,14 @@ int main(int argc, char** argv) {
     }
 
     Driver driver;
-    return app.exec();
+    int code = app.exec();
+
+    // The reader thread is parked in std::cin.get(); QThread's
+    // destructor will qFatal if the thread is still running when
+    // ~StdinReader fires. Close stdin to wake it up, give it a beat
+    // to wind down, then _exit() — we're tearing down the process
+    // anyway and don't need Qt's static destructors.
+    ::close(STDIN_FILENO);
+    QThread::msleep(50);
+    std::_Exit(code);
 }
