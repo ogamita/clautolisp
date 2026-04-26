@@ -22,13 +22,19 @@
                 #:source-span-start-column
                 #:source-span-start-line)
   (:import-from #:clautolisp.autolisp-runtime
+                #:autolisp-eval-progn
                 #:autolisp-runtime-error
                 #:autolisp-runtime-error-code
                 #:autolisp-runtime-error-message
                 #:autolisp-termination
                 #:autolisp-termination-kind
+                #:call-with-autolisp-error-handler
+                #:derive-reader-options-for-dialect
+                #:make-default-runtime-context
+                #:read-runtime-from-string
                 #:run-autolisp-file
                 #:run-autolisp-string)
   (:import-from #:clautolisp.autolisp-builtins-core
+                #:autolisp-value->string
                 #:install-core-builtins)
   (:export #:main))

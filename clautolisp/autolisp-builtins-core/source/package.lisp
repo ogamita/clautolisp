@@ -60,4 +60,5 @@
    #:*core-builtin-names*
    #:core-builtins
    #:find-core-builtin
-   #:install-core-builtins))
+   #:install-core-builtins
+   #:autolisp-value->string))

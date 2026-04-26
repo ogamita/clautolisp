@@ -176,6 +176,7 @@
    #:set-runtime-session-dialect
    #:current-evaluation-dialect
    #:derive-reader-options-for-dialect
+   #:make-default-runtime-context
    #:run-autolisp-file
    #:run-autolisp-string))
 
