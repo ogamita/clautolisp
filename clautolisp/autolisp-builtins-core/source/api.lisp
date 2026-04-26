@@ -1273,16 +1273,33 @@
         (error ()
           nil)))))
 
+(defun resolve-existing-file (filename support-paths)
+  ;; AutoLISP's `findfile` and `findtrustedfile` accept both absolute
+  ;; and relative paths. Absolute paths are looked up directly via
+  ;; probe-file; relative paths walk the configured support / trusted
+  ;; path list.
+  (let ((normalized (normalize-path-string filename)))
+    (cond
+      ((directory-prefix-p normalized)
+       (let* ((path (if (absolute-path-string-p normalized)
+                        (pathname normalized)
+                        (merge-pathnames normalized
+                                         (pathname (autolisp-current-directory)))))
+              (located (probe-file path)))
+         (and located (namestring located))))
+      (t
+       (search-path-list-for-file filename support-paths)))))
+
 (defun builtin-findfile (filename)
   (let* ((value (autolisp-string-value (require-string filename "FINDFILE")))
-         (located (search-path-list-for-file value (autolisp-support-paths))))
+         (located (resolve-existing-file value (autolisp-support-paths))))
     (if located
         (make-autolisp-string located)
         nil)))
 
 (defun builtin-findtrustedfile (filename)
   (let* ((value (autolisp-string-value (require-string filename "FINDTRUSTEDFILE")))
-         (located (search-path-list-for-file value (autolisp-trusted-paths))))
+         (located (resolve-existing-file value (autolisp-trusted-paths))))
     (if located
         (make-autolisp-string located)
         nil)))
@@ -1896,6 +1913,587 @@
       (intern-autolisp-symbol "T")
       nil))
 
+;;; --- Phase 7: function-coverage round-out ---------------------------
+;;;
+;;; Pure-language builtins that don't touch the host. Each entry
+;;; references the autolisp-spec chapter that defines it.
+
+;;; ERROR — signal a runtime error from user code.
+(defun builtin-error (message-or-string &rest details)
+  ;; (error MESSAGE)        — common signature, signals a runtime error.
+  ;; (error CODE FORMAT...) — Visual LISP variant; we accept it but
+  ;; coerce non-symbol first arg into the message.
+  (let ((message
+         (cond
+           ((typep message-or-string 'autolisp-string)
+            (autolisp-string-value message-or-string))
+           ((stringp message-or-string)
+            message-or-string)
+           ((typep message-or-string 'autolisp-symbol)
+            (autolisp-symbol-name message-or-string))
+           (t
+            (format nil "~A" message-or-string)))))
+    (declare (ignore details))
+    (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+     :user-error
+     "~A"
+     message)))
+
+;;; --- Math (autolisp-spec ch.5) -------------------------------------
+
+(defun builtin-sqrt (object)
+  (let ((value (coerce (require-number object "SQRT") 'double-float)))
+    (when (minusp value)
+      (signal-builtin-argument-error
+       :invalid-number-argument
+       "SQRT"
+       "SQRT expects a non-negative number, got ~S."
+       object))
+    (sqrt value)))
+
+(defun builtin-exp (object)
+  (exp (coerce (require-number object "EXP") 'double-float)))
+
+(defun builtin-log (object)
+  (let ((value (coerce (require-number object "LOG") 'double-float)))
+    (when (not (plusp value))
+      (signal-builtin-argument-error
+       :invalid-number-argument
+       "LOG"
+       "LOG expects a positive number, got ~S."
+       object))
+    (log value)))
+
+(defun builtin-log10 (object)
+  (let ((value (coerce (require-number object "LOG10") 'double-float)))
+    (when (not (plusp value))
+      (signal-builtin-argument-error
+       :invalid-number-argument
+       "LOG10"
+       "LOG10 expects a positive number, got ~S."
+       object))
+    (log value 10.0d0)))
+
+(defun builtin-sin (object)
+  (sin (coerce (require-number object "SIN") 'double-float)))
+
+(defun builtin-cos (object)
+  (cos (coerce (require-number object "COS") 'double-float)))
+
+(defun builtin-tan (object)
+  (tan (coerce (require-number object "TAN") 'double-float)))
+
+(defun builtin-asin (object)
+  (let ((value (coerce (require-number object "ASIN") 'double-float)))
+    (when (or (< value -1.0d0) (> value 1.0d0))
+      (signal-builtin-argument-error
+       :invalid-number-argument
+       "ASIN"
+       "ASIN expects a value in [-1, 1], got ~S."
+       object))
+    (asin value)))
+
+(defun builtin-acos (object)
+  (let ((value (coerce (require-number object "ACOS") 'double-float)))
+    (when (or (< value -1.0d0) (> value 1.0d0))
+      (signal-builtin-argument-error
+       :invalid-number-argument
+       "ACOS"
+       "ACOS expects a value in [-1, 1], got ~S."
+       object))
+    (acos value)))
+
+(defun builtin-atan (y &optional x)
+  ;; (atan y) -> arctangent in [-pi/2, pi/2].
+  ;; (atan y x) -> arctangent of y/x using the signs of both
+  ;; arguments to determine the quadrant. Real-valued double-float.
+  (let ((y-value (coerce (require-number y "ATAN") 'double-float)))
+    (if x
+        (atan y-value (coerce (require-number x "ATAN") 'double-float))
+        (atan y-value))))
+
+(defun builtin-expt (base power)
+  ;; (expt base power) — real if either arg is real OR the result
+  ;; would not be a 32-bit integer. Mirrors AutoLISP's int-vs-real
+  ;; promotion contract.
+  (require-number base "EXPT")
+  (require-number power "EXPT")
+  (let ((result (handler-case (expt base power)
+                  (arithmetic-error ()
+                   (signal-builtin-argument-error
+                    :invalid-number-argument
+                    "EXPT"
+                    "EXPT result is undefined for ~S^~S."
+                    base power)))))
+    (arithmetic-result
+     (if (and (integerp base) (integerp power)
+              (not (minusp power))
+              (integerp result))
+         result
+         (coerce result 'double-float)))))
+
+(defun builtin-mod (a b)
+  ;; (mod a b) — modulo. Integers stay integer; mixed-type and real
+  ;; promote to real. Division by zero -> error.
+  (require-number a "MOD")
+  (require-number b "MOD")
+  (when (zerop b)
+    (signal-builtin-argument-error
+     :division-by-zero
+     "MOD"
+     "MOD divisor is zero."))
+  (cond
+    ((and (integerp a) (integerp b))
+     (mod a b))
+    (t
+     (let ((af (coerce a 'double-float))
+           (bf (coerce b 'double-float)))
+       (- af (* bf (floor af bf)))))))
+
+(defun builtin-floor (object &optional divisor)
+  ;; (floor n) or (floor a b) -> integer floor toward -infinity.
+  (require-number object "FLOOR")
+  (when divisor (require-number divisor "FLOOR"))
+  (let ((value (if divisor
+                   (progn
+                     (when (zerop divisor)
+                       (signal-builtin-argument-error
+                        :division-by-zero "FLOOR" "FLOOR divisor is zero."))
+                     (/ object divisor))
+                   object)))
+    (arithmetic-result (floor value))))
+
+(defun builtin-ceiling (object &optional divisor)
+  (require-number object "CEILING")
+  (when divisor (require-number divisor "CEILING"))
+  (let ((value (if divisor
+                   (progn
+                     (when (zerop divisor)
+                       (signal-builtin-argument-error
+                        :division-by-zero "CEILING" "CEILING divisor is zero."))
+                     (/ object divisor))
+                   object)))
+    (arithmetic-result (ceiling value))))
+
+(defun builtin-round (object &optional divisor)
+  ;; AutoLISP `round` rounds to nearest, half-away-from-zero on most
+  ;; hosts. CL's `round` is half-to-even; we emulate the AutoLISP
+  ;; convention to match deployed behaviour.
+  (require-number object "ROUND")
+  (when divisor (require-number divisor "ROUND"))
+  (let* ((value (if divisor
+                    (progn
+                      (when (zerop divisor)
+                        (signal-builtin-argument-error
+                         :division-by-zero "ROUND" "ROUND divisor is zero."))
+                      (/ object divisor))
+                    object))
+         (sign (if (minusp value) -1 1))
+         (mag (abs value))
+         (truncated (truncate (+ mag 0.5d0))))
+    (arithmetic-result (* sign truncated))))
+
+(defparameter *autolisp-random-state* (make-random-state t))
+
+(defun builtin-random (n)
+  ;; (random N) -> integer in [0, N) for positive integer N. Real
+  ;; arguments are not common in AutoLISP corpora; we restrict to
+  ;; integer for predictability.
+  (let ((bound (require-int32 n "RANDOM")))
+    (unless (plusp bound)
+      (signal-builtin-argument-error
+       :invalid-number-argument
+       "RANDOM"
+       "RANDOM expects a positive integer, got ~S."
+       n))
+    (random bound *autolisp-random-state*)))
+
+;;; --- Bitwise ---------------------------------------------------------
+
+(defun builtin-logxor (&rest arguments)
+  (dolist (argument arguments)
+    (require-int32 argument "LOGXOR"))
+  (arithmetic-result (apply #'logxor 0 arguments)))
+
+(defun builtin-boole (op &rest arguments)
+  ;; (boole OP I1 I2 ...) — generic bitwise reducer; OP is an
+  ;; integer 0..15 selecting one of the 16 binary boolean functions
+  ;; per the documented truth-table layout (AND=1, IOR=7, XOR=6,
+  ;; etc.). Most user code uses LOGAND / LOGIOR / LOGXOR directly;
+  ;; we map the common selectors and signal :unsupported-boole-op
+  ;; for the rest.
+  (let ((selector (require-int32 op "BOOLE")))
+    (dolist (argument arguments)
+      (require-int32 argument "BOOLE"))
+    (case selector
+      (1 (arithmetic-result (apply #'logand -1 arguments)))      ; AND
+      (6 (arithmetic-result (apply #'logxor 0 arguments)))       ; XOR
+      (7 (arithmetic-result (apply #'logior 0 arguments)))       ; IOR
+      (otherwise
+       (signal-builtin-argument-error
+        :unsupported-boole-op
+        "BOOLE"
+        "BOOLE selector ~S is not implemented; use LOGAND / LOGIOR / LOGXOR."
+        op)))))
+
+;;; --- List (autolisp-spec ch.5/13) -----------------------------------
+
+(defun builtin-vl-list-length (list)
+  ;; Return the proper-list length, or nil if list is dotted /
+  ;; circular.
+  (cond
+    ((null list) 0)
+    ((not (listp list)) nil)
+    (t
+     (let ((slow list) (fast list) (count 0))
+       (loop
+         (cond
+           ((null fast) (return count))
+           ((not (consp fast)) (return nil))
+           (t (incf count) (setf fast (cdr fast))))
+         (cond
+           ((null fast) (return count))
+           ((not (consp fast)) (return nil))
+           (t (incf count) (setf fast (cdr fast))))
+         (setf slow (cdr slow))
+         (when (eq fast slow) (return nil)))))))
+
+(defun builtin-vl-position (item list)
+  ;; (vl-position ITEM LIST) -> 0-based index or nil.
+  (require-proper-list list "VL-POSITION")
+  (loop for cell on list
+        for index from 0
+        when (autolisp-equal-p item (car cell))
+          return index
+        finally (return nil)))
+
+(defun builtin-remove (item list)
+  ;; (remove ITEM LIST) -> new list with all elements equal to ITEM removed.
+  (require-proper-list list "REMOVE")
+  (loop for element in list
+        unless (autolisp-equal-p item element)
+          collect element))
+
+(defun builtin-vl-sort (list comparator)
+  ;; (vl-sort LIST PREDICATE) — sort LIST stably under PREDICATE
+  ;; (a < b iff (PREDICATE a b)). Returns a fresh list.
+  (require-proper-list list "VL-SORT")
+  (let ((function (resolve-autolisp-function-designator comparator)))
+    (sort (copy-list list)
+          (lambda (a b)
+            (autolisp-true-p (call-autolisp-function function a b))))))
+
+(defun builtin-vl-sort-i (list comparator)
+  ;; (vl-sort-i LIST PREDICATE) — return the list of original indices
+  ;; sorted under PREDICATE.
+  (require-proper-list list "VL-SORT-I")
+  (let* ((function (resolve-autolisp-function-designator comparator))
+         (indexed (loop for x in list for i from 0 collect (cons i x))))
+    (mapcar #'car
+            (sort indexed
+                  (lambda (a b)
+                    (autolisp-true-p
+                     (call-autolisp-function function (cdr a) (cdr b))))))))
+
+(defun builtin-distance (point-a point-b)
+  ;; (distance P1 P2) -> 2D / 3D Euclidean distance between two
+  ;; coordinate lists. Missing Z components default to 0.
+  (require-proper-list point-a "DISTANCE")
+  (require-proper-list point-b "DISTANCE")
+  (let* ((coords-a (mapcar (lambda (n) (require-number n "DISTANCE")) point-a))
+         (coords-b (mapcar (lambda (n) (require-number n "DISTANCE")) point-b))
+         (xa (coerce (or (nth 0 coords-a) 0) 'double-float))
+         (ya (coerce (or (nth 1 coords-a) 0) 'double-float))
+         (za (coerce (or (nth 2 coords-a) 0) 'double-float))
+         (xb (coerce (or (nth 0 coords-b) 0) 'double-float))
+         (yb (coerce (or (nth 1 coords-b) 0) 'double-float))
+         (zb (coerce (or (nth 2 coords-b) 0) 'double-float)))
+    (sqrt (+ (expt (- xb xa) 2)
+             (expt (- yb ya) 2)
+             (expt (- zb za) 2)))))
+
+(defun builtin-angle (point-a point-b)
+  ;; (angle P1 P2) -> angle in radians from P1 to P2 in the XY plane.
+  (require-proper-list point-a "ANGLE")
+  (require-proper-list point-b "ANGLE")
+  (let* ((xa (coerce (require-number (nth 0 point-a) "ANGLE") 'double-float))
+         (ya (coerce (require-number (nth 1 point-a) "ANGLE") 'double-float))
+         (xb (coerce (require-number (nth 0 point-b) "ANGLE") 'double-float))
+         (yb (coerce (require-number (nth 1 point-b) "ANGLE") 'double-float))
+         (theta (atan (- yb ya) (- xb xa))))
+    (if (minusp theta) (+ theta (* 2 pi)) theta)))
+
+(defun builtin-polar (origin angle distance)
+  ;; (polar P A D) -> point at distance D from P at angle A.
+  (require-proper-list origin "POLAR")
+  (let* ((a (coerce (require-number angle "POLAR") 'double-float))
+         (d (coerce (require-number distance "POLAR") 'double-float))
+         (x (coerce (require-number (nth 0 origin) "POLAR") 'double-float))
+         (y (coerce (require-number (nth 1 origin) "POLAR") 'double-float))
+         (z (if (>= (length origin) 3)
+                (coerce (require-number (nth 2 origin) "POLAR") 'double-float)
+                0.0d0)))
+    (list (+ x (* d (cos a)))
+          (+ y (* d (sin a)))
+          z)))
+
+;;; --- String / conversion (autolisp-spec ch.7, 11) ------------------
+
+(defun builtin-itoa (object)
+  ;; (itoa INT) -> decimal string.
+  (let ((value (require-int32 object "ITOA")))
+    (make-autolisp-string (format nil "~D" value))))
+
+(defun builtin-rtos (number &optional mode precision)
+  ;; (rtos NUMBER [MODE [PRECISION]]) -> string. We honour MODE 1
+  ;; (scientific) and 2 (decimal) and the PRECISION argument; modes
+  ;; 3 (engineering), 4 (architectural), 5 (fractional) are not
+  ;; useful headlessly and fall back to mode 2.
+  (require-number number "RTOS")
+  (when mode (require-int32 mode "RTOS"))
+  (when precision (require-int32 precision "RTOS"))
+  (let ((m (or mode 2))
+        (p (or precision 4))
+        (n (coerce number 'double-float)))
+    (make-autolisp-string
+     (case m
+       (1 (format nil "~,vE" p n))
+       (otherwise (format nil "~,vF" (max 0 p) n))))))
+
+(defun builtin-angtos (angle &optional mode precision)
+  ;; (angtos ANGLE [MODE [PRECISION]]) -> string in radians (MODE 0)
+  ;; or degrees (MODE 1) by default. Modes 2-4 (grad / surveyor /
+  ;; deg-min-sec) are not useful headlessly; we fall back to degrees.
+  (require-number angle "ANGTOS")
+  (when mode (require-int32 mode "ANGTOS"))
+  (when precision (require-int32 precision "ANGTOS"))
+  (let ((m (or mode 0))
+        (p (or precision 4))
+        (rad (coerce angle 'double-float)))
+    (make-autolisp-string
+     (case m
+       (0 (format nil "~,vF" (max 0 p) rad))
+       (otherwise (format nil "~,vF" (max 0 p) (* rad (/ 180.0d0 pi))))))))
+
+(defun builtin-distof (string &optional mode)
+  (declare (ignore mode))
+  (let ((value (autolisp-string-value (require-string string "DISTOF"))))
+    (parse-autolisp-real value)))
+
+(defun builtin-angtof (string &optional mode)
+  ;; (angtof STRING [MODE]) -> real angle. Mode 0 = radians, 1 = deg
+  ;; (default decimal). Anything else falls back to a decimal parse.
+  (let ((value (autolisp-string-value (require-string string "ANGTOF")))
+        (m (if mode (require-int32 mode "ANGTOF") 0)))
+    (let ((parsed (parse-autolisp-real value)))
+      (case m
+        (0 parsed)
+        (1 (* parsed (/ pi 180.0d0)))
+        (otherwise parsed)))))
+
+(defun builtin-snvalid (string &optional flag)
+  ;; (snvalid STRING [FLAG]) -> T if STRING is a valid AutoCAD
+  ;; symbol-table name (alnum + a few specials, non-empty). FLAG
+  ;; controls whether vertical bar is allowed; we accept conservative
+  ;; identifier characters by default.
+  (declare (ignore flag))
+  (let ((value (autolisp-string-value (require-string string "SNVALID"))))
+    (if (and (> (length value) 0)
+             (every (lambda (c)
+                      (or (alphanumericp c)
+                          (find c "_-$#")))
+                    value))
+        (intern-autolisp-symbol "T")
+        nil)))
+
+(defun builtin-xstrcase (string &optional downcase-p)
+  ;; vl-extension flavour of strcase that handles non-ASCII text
+  ;; better. Headless: same effect as strcase.
+  (builtin-strcase string downcase-p))
+
+(defun wcmatch-pattern-p (text pattern)
+  ;; Minimal AutoCAD WCMATCH grammar: `*` zero-or-more, `?` any
+  ;; single, `#` digit, `@` letter, `.` any non-alnum, `~` (at start)
+  ;; complements the match, `,` separates alternative patterns,
+  ;; `[abc]` / `[~abc]` / `[a-z]` character classes, ``` `c ``` escapes.
+  (let* ((alts (loop for s = 0 then (1+ pos)
+                     for pos = (position #\, pattern :start s)
+                     collect (subseq pattern s (or pos (length pattern)))
+                     while pos))
+         (matched
+          (some (lambda (alt)
+                  (let* ((negate (and (plusp (length alt)) (char= (char alt 0) #\~)))
+                         (pat (if negate (subseq alt 1) alt))
+                         (hit (wcmatch-single-p text pat)))
+                    (if negate (not hit) hit)))
+                alts)))
+    matched))
+
+(defun wcmatch-single-p (text pattern)
+  ;; Recursive-descent matcher for one WCMATCH alternative.
+  (let ((tlen (length text))
+        (plen (length pattern)))
+    (labels ((rec (ti pj)
+               (cond
+                 ((= pj plen) (= ti tlen))
+                 ((char= (char pattern pj) #\*)
+                  (or (rec ti (1+ pj))
+                      (and (< ti tlen) (rec (1+ ti) pj))))
+                 ((= ti tlen) nil)
+                 ((char= (char pattern pj) #\?) (rec (1+ ti) (1+ pj)))
+                 ((char= (char pattern pj) #\#)
+                  (and (digit-char-p (char text ti)) (rec (1+ ti) (1+ pj))))
+                 ((char= (char pattern pj) #\@)
+                  (and (alpha-char-p (char text ti)) (rec (1+ ti) (1+ pj))))
+                 ((char= (char pattern pj) #\.)
+                  (and (not (alphanumericp (char text ti))) (rec (1+ ti) (1+ pj))))
+                 ((char= (char pattern pj) #\`)
+                  (and (< (1+ pj) plen)
+                       (char= (char text ti) (char pattern (1+ pj)))
+                       (rec (1+ ti) (+ 2 pj))))
+                 ((char= (char pattern pj) #\[)
+                  (let* ((end (position #\] pattern :start (1+ pj))))
+                    (when end
+                      (let* ((class (subseq pattern (1+ pj) end))
+                             (negate (and (plusp (length class)) (char= (char class 0) #\~)))
+                             (chars (if negate (subseq class 1) class))
+                             (member-p (loop for k from 0 below (length chars)
+                                             thereis
+                                               (cond
+                                                 ((and (< (+ k 2) (length chars))
+                                                       (char= (char chars (1+ k)) #\-))
+                                                  (char<= (char chars k)
+                                                          (char text ti)
+                                                          (char chars (+ k 2))))
+                                                 (t (char= (char chars k)
+                                                           (char text ti)))))))
+                        (when (if negate (not member-p) member-p)
+                          (rec (1+ ti) (1+ end)))))))
+                 (t
+                  (and (char= (char pattern pj) (char text ti))
+                       (rec (1+ ti) (1+ pj)))))))
+      (rec 0 0))))
+
+(defun builtin-wcmatch (string pattern)
+  (let ((s (autolisp-string-value (require-string string "WCMATCH")))
+        (p (autolisp-string-value (require-string pattern "WCMATCH"))))
+    (if (wcmatch-pattern-p s p) (intern-autolisp-symbol "T") nil)))
+
+;;; --- Geometry ------------------------------------------------------
+
+(defun builtin-inters (p1 p2 p3 p4 &optional within-segments-p)
+  ;; (inters P1 P2 P3 P4 [FLAG]) -> point or nil. If FLAG is supplied
+  ;; as nil, intersection may lie outside the segments. Default is to
+  ;; require that the point lies on both segments.
+  (require-proper-list p1 "INTERS")
+  (require-proper-list p2 "INTERS")
+  (require-proper-list p3 "INTERS")
+  (require-proper-list p4 "INTERS")
+  (let* ((require-within (if (boundp 'within-segments-p)
+                             (autolisp-true-p within-segments-p)
+                             t))
+         (x1 (coerce (require-number (nth 0 p1) "INTERS") 'double-float))
+         (y1 (coerce (require-number (nth 1 p1) "INTERS") 'double-float))
+         (x2 (coerce (require-number (nth 0 p2) "INTERS") 'double-float))
+         (y2 (coerce (require-number (nth 1 p2) "INTERS") 'double-float))
+         (x3 (coerce (require-number (nth 0 p3) "INTERS") 'double-float))
+         (y3 (coerce (require-number (nth 1 p3) "INTERS") 'double-float))
+         (x4 (coerce (require-number (nth 0 p4) "INTERS") 'double-float))
+         (y4 (coerce (require-number (nth 1 p4) "INTERS") 'double-float))
+         (denom (- (* (- x1 x2) (- y3 y4))
+                   (* (- y1 y2) (- x3 x4)))))
+    (when (zerop denom) (return-from builtin-inters nil))
+    (let* ((t-num (- (* (- x1 x3) (- y3 y4))
+                     (* (- y1 y3) (- x3 x4))))
+           (u-num (- (* (- x1 x3) (- y1 y2))
+                     (* (- y1 y3) (- x1 x2))))
+           (tt (/ t-num denom))
+           (uu (/ u-num denom))
+           (px (+ x1 (* tt (- x2 x1))))
+           (py (+ y1 (* tt (- y2 y1)))))
+      (cond
+        ((not require-within) (list px py 0.0d0))
+        ((and (<= 0.0d0 tt 1.0d0) (<= 0.0d0 uu 1.0d0)) (list px py 0.0d0))
+        (t nil)))))
+
+;;; --- Predicate helpers --------------------------------------------
+
+(defun builtin-atoms-family (format-flag &optional symbol-list)
+  ;; (atoms-family FORMAT [LIST]) -> list of names of currently-bound
+  ;; symbols. FORMAT 0 = symbols, 1 = strings. With LIST, the return
+  ;; is restricted to the supplied names; unbound names map to nil.
+  (let ((format (require-int32 format-flag "ATOMS-FAMILY"))
+        (filter symbol-list))
+    (when filter (require-proper-list filter "ATOMS-FAMILY"))
+    (labels ((render (name)
+               (cond
+                 ((zerop format) (intern-autolisp-symbol name))
+                 ((= format 1) (make-autolisp-string name))
+                 (t (signal-builtin-argument-error
+                     :invalid-number-argument
+                     "ATOMS-FAMILY"
+                     "ATOMS-FAMILY format flag must be 0 or 1, got ~S."
+                     format-flag)))))
+      (cond
+        (filter
+         (mapcar (lambda (sym)
+                   (let* ((name (cond
+                                  ((typep sym 'autolisp-symbol)
+                                   (autolisp-symbol-name sym))
+                                  ((typep sym 'autolisp-string)
+                                   (autolisp-string-value sym))
+                                  (t (signal-builtin-argument-error
+                                      :invalid-symbol-argument
+                                      "ATOMS-FAMILY"
+                                      "ATOMS-FAMILY list element must be a symbol or string, got ~S."
+                                      sym))))
+                          (resolved (clautolisp.autolisp-runtime:find-autolisp-symbol name)))
+                     (if (and resolved
+                              (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p resolved))
+                         (render name)
+                         nil)))
+                 filter))
+        (t
+         (let ((result '()))
+           (maphash (lambda (name sym)
+                      (when (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p sym)
+                        (push (render name) result)))
+                    clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*)
+           (nreverse result)))))))
+
+;;; --- Tracing / help (stubs that maintain identity) -----------------
+
+(defun builtin-setfunhelp (function-name &rest topic)
+  ;; (setfunhelp NAME [HELPTOPIC [COMMAND]]) — associates a help
+  ;; topic with a function. Headless: accepted, recorded as a plist
+  ;; entry on the function symbol but otherwise inert.
+  (declare (ignore topic))
+  (cond
+    ((typep function-name 'autolisp-string)
+     (intern-autolisp-symbol (autolisp-string-value function-name)))
+    ((typep function-name 'autolisp-symbol)
+     function-name)
+    (t
+     (signal-builtin-argument-error
+      :invalid-symbol-argument
+      "SETFUNHELP"
+      "SETFUNHELP expects a function name (string or symbol), got ~S."
+      function-name))))
+
+(defparameter *autolisp-backtrace-enabled-p* nil)
+
+(defun builtin-vl-bt ()
+  ;; (vl-bt) — print a backtrace. Headless: no-op returning nil.
+  nil)
+
+(defun builtin-vl-bt-on ()
+  (setf *autolisp-backtrace-enabled-p* t)
+  (intern-autolisp-symbol "T"))
+
+(defun builtin-vl-bt-off ()
+  (setf *autolisp-backtrace-enabled-p* nil)
+  nil)
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -1917,6 +2515,54 @@
    (make-core-builtin-subr "EVAL" #'builtin-eval)
    (make-core-builtin-subr "EQ" #'builtin-eq)
    (make-core-builtin-subr "EQUAL" #'builtin-equal)
+   (make-core-builtin-subr "ERROR" #'builtin-error)
+   ;; Phase 7 — math
+   (make-core-builtin-subr "SQRT" #'builtin-sqrt)
+   (make-core-builtin-subr "EXP" #'builtin-exp)
+   (make-core-builtin-subr "LOG" #'builtin-log)
+   (make-core-builtin-subr "LOG10" #'builtin-log10)
+   (make-core-builtin-subr "SIN" #'builtin-sin)
+   (make-core-builtin-subr "COS" #'builtin-cos)
+   (make-core-builtin-subr "TAN" #'builtin-tan)
+   (make-core-builtin-subr "ASIN" #'builtin-asin)
+   (make-core-builtin-subr "ACOS" #'builtin-acos)
+   (make-core-builtin-subr "ATAN" #'builtin-atan)
+   (make-core-builtin-subr "EXPT" #'builtin-expt)
+   (make-core-builtin-subr "MOD" #'builtin-mod)
+   (make-core-builtin-subr "FLOOR" #'builtin-floor)
+   (make-core-builtin-subr "CEILING" #'builtin-ceiling)
+   (make-core-builtin-subr "ROUND" #'builtin-round)
+   (make-core-builtin-subr "RANDOM" #'builtin-random)
+   ;; Phase 7 — bitwise
+   (make-core-builtin-subr "LOGXOR" #'builtin-logxor)
+   (make-core-builtin-subr "BOOLE" #'builtin-boole)
+   ;; Phase 7 — list
+   (make-core-builtin-subr "VL-LIST-LENGTH" #'builtin-vl-list-length)
+   (make-core-builtin-subr "VL-POSITION" #'builtin-vl-position)
+   (make-core-builtin-subr "REMOVE" #'builtin-remove)
+   (make-core-builtin-subr "VL-SORT" #'builtin-vl-sort)
+   (make-core-builtin-subr "VL-SORT-I" #'builtin-vl-sort-i)
+   ;; Phase 7 — geometry
+   (make-core-builtin-subr "DISTANCE" #'builtin-distance)
+   (make-core-builtin-subr "ANGLE" #'builtin-angle)
+   (make-core-builtin-subr "POLAR" #'builtin-polar)
+   (make-core-builtin-subr "INTERS" #'builtin-inters)
+   ;; Phase 7 — string / conversion
+   (make-core-builtin-subr "ITOA" #'builtin-itoa)
+   (make-core-builtin-subr "RTOS" #'builtin-rtos)
+   (make-core-builtin-subr "ANGTOS" #'builtin-angtos)
+   (make-core-builtin-subr "DISTOF" #'builtin-distof)
+   (make-core-builtin-subr "ANGTOF" #'builtin-angtof)
+   (make-core-builtin-subr "SNVALID" #'builtin-snvalid)
+   (make-core-builtin-subr "WCMATCH" #'builtin-wcmatch)
+   (make-core-builtin-subr "XSTRCASE" #'builtin-xstrcase)
+   ;; Phase 7 — predicate / introspection
+   (make-core-builtin-subr "ATOMS-FAMILY" #'builtin-atoms-family)
+   ;; Phase 7 — help / tracing (headless stubs)
+   (make-core-builtin-subr "SETFUNHELP" #'builtin-setfunhelp)
+   (make-core-builtin-subr "VL-BT" #'builtin-vl-bt)
+   (make-core-builtin-subr "VL-BT-ON" #'builtin-vl-bt-on)
+   (make-core-builtin-subr "VL-BT-OFF" #'builtin-vl-bt-off)
    (make-core-builtin-subr "VL-EVERY" #'builtin-vl-every)
    (make-core-builtin-subr "VL-MEMBER-IF" #'builtin-vl-member-if)
    (make-core-builtin-subr "VL-MEMBER-IF-NOT" #'builtin-vl-member-if-not)

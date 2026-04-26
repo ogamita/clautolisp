@@ -15,6 +15,7 @@
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-runtime-error
                 #:autolisp-runtime-error-code
+                #:autolisp-runtime-error-message
                 #:autolisp-runtime-error-details
                 #:autolisp-eval
                 #:autolisp-errno

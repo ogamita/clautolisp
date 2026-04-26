@@ -1508,6 +1508,135 @@
                                           (make-autolisp-string "ABC")
                                           (intern-autolisp-symbol "T")))))))
 
+(test builtin-error-signals-user-error
+  ;; (error MSG) signals an autolisp-runtime-error with code
+  ;; :user-error so user *error* hooks can match on it.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((error-fn (autolisp-symbol-function (find-autolisp-symbol "ERROR")))
+        (signalled-code nil)
+        (signalled-message nil))
+    (handler-case
+        (call-autolisp-function error-fn (make-autolisp-string "boom"))
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition)
+              signalled-message (autolisp-runtime-error-message condition))))
+    (is (eq :user-error signalled-code))
+    (is (string= "boom" signalled-message))))
+
+(test phase7-math-builtins
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((sqrt-fn (autolisp-symbol-function (find-autolisp-symbol "SQRT")))
+        (exp-fn (autolisp-symbol-function (find-autolisp-symbol "EXP")))
+        (log-fn (autolisp-symbol-function (find-autolisp-symbol "LOG")))
+        (sin-fn (autolisp-symbol-function (find-autolisp-symbol "SIN")))
+        (cos-fn (autolisp-symbol-function (find-autolisp-symbol "COS")))
+        (atan-fn (autolisp-symbol-function (find-autolisp-symbol "ATAN")))
+        (expt-fn (autolisp-symbol-function (find-autolisp-symbol "EXPT")))
+        (mod-fn (autolisp-symbol-function (find-autolisp-symbol "MOD")))
+        (floor-fn (autolisp-symbol-function (find-autolisp-symbol "FLOOR")))
+        (ceiling-fn (autolisp-symbol-function (find-autolisp-symbol "CEILING")))
+        (round-fn (autolisp-symbol-function (find-autolisp-symbol "ROUND")))
+        (random-fn (autolisp-symbol-function (find-autolisp-symbol "RANDOM"))))
+    (is (= 2.0d0 (call-autolisp-function sqrt-fn 4)))
+    (is (= 1.0d0 (call-autolisp-function exp-fn 0)))
+    (is (= 0.0d0 (call-autolisp-function log-fn 1)))
+    (is (= 0.0d0 (call-autolisp-function sin-fn 0)))
+    (is (= 1.0d0 (call-autolisp-function cos-fn 0)))
+    (is (= (atan 1.0d0) (call-autolisp-function atan-fn 1)))
+    (is (eql 8 (call-autolisp-function expt-fn 2 3)))
+    (is (eql 2 (call-autolisp-function mod-fn 17 5)))
+    (is (eql 3 (call-autolisp-function floor-fn 7 2)))
+    (is (eql 4 (call-autolisp-function ceiling-fn 7 2)))
+    (is (eql 4 (call-autolisp-function round-fn 3.6d0)))
+    (is (eql -4 (call-autolisp-function round-fn -3.6d0)))
+    (let ((r (call-autolisp-function random-fn 100)))
+      (is (and (integerp r) (<= 0 r) (< r 100))))))
+
+(test phase7-list-and-conversion
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((vl-list-length-fn (autolisp-symbol-function (find-autolisp-symbol "VL-LIST-LENGTH")))
+        (vl-position-fn (autolisp-symbol-function (find-autolisp-symbol "VL-POSITION")))
+        (remove-fn (autolisp-symbol-function (find-autolisp-symbol "REMOVE")))
+        (vl-sort-fn (autolisp-symbol-function (find-autolisp-symbol "VL-SORT")))
+        (itoa-fn (autolisp-symbol-function (find-autolisp-symbol "ITOA")))
+        (rtos-fn (autolisp-symbol-function (find-autolisp-symbol "RTOS"))))
+    (is (eql 4 (call-autolisp-function vl-list-length-fn '(1 2 3 4))))
+    (is (null (call-autolisp-function vl-list-length-fn '(1 2 . 3))))
+    (is (eql 2 (call-autolisp-function vl-position-fn 30 '(10 20 30 40))))
+    (is (null (call-autolisp-function vl-position-fn 99 '(10 20 30 40))))
+    (is (equal '(1 3) (call-autolisp-function remove-fn 2 '(1 2 3 2))))
+    (let ((sorted (call-autolisp-function
+                   vl-sort-fn '(3 1 4 1 5 9 2 6)
+                   (clautolisp.autolisp-runtime:make-autolisp-subr
+                    "<" (lambda (a b) (if (< a b) (intern-autolisp-symbol "T") nil))))))
+      (is (equal '(1 1 2 3 4 5 6 9) sorted)))
+    (is (string= "42" (autolisp-string-value (call-autolisp-function itoa-fn 42))))
+    (is (string= "3.14"
+                 (autolisp-string-value (call-autolisp-function rtos-fn 3.14159d0 2 2))))))
+
+(test phase7-geometry
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((distance-fn (autolisp-symbol-function (find-autolisp-symbol "DISTANCE")))
+        (angle-fn (autolisp-symbol-function (find-autolisp-symbol "ANGLE")))
+        (polar-fn (autolisp-symbol-function (find-autolisp-symbol "POLAR")))
+        (inters-fn (autolisp-symbol-function (find-autolisp-symbol "INTERS"))))
+    (is (= 5.0d0 (call-autolisp-function distance-fn '(0 0) '(3 4))))
+    (is (= 0.0d0 (call-autolisp-function angle-fn '(0 0) '(1 0))))
+    (let ((p (call-autolisp-function polar-fn '(0 0) 0 5)))
+      (is (= 5.0d0 (first p)))
+      (is (< (abs (second p)) 1d-9)))
+    ;; Crossing at (1,1) within both segments.
+    (let ((hit (call-autolisp-function inters-fn '(0 0) '(2 2) '(0 2) '(2 0))))
+      (is (and hit (= 1.0d0 (first hit)) (= 1.0d0 (second hit)))))
+    ;; Non-intersecting segments.
+    (is (null (call-autolisp-function inters-fn '(0 0) '(1 0) '(2 1) '(3 2))))))
+
+(test phase7-string-helpers-wcmatch-snvalid
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((wcmatch-fn (autolisp-symbol-function (find-autolisp-symbol "WCMATCH")))
+        (snvalid-fn (autolisp-symbol-function (find-autolisp-symbol "SNVALID")))
+        (xstrcase-fn (autolisp-symbol-function (find-autolisp-symbol "XSTRCASE")))
+        (t-symbol (intern-autolisp-symbol "T")))
+    (is (eq t-symbol
+            (call-autolisp-function wcmatch-fn
+                                    (make-autolisp-string "Layer-1")
+                                    (make-autolisp-string "Layer*"))))
+    (is (null (call-autolisp-function wcmatch-fn
+                                      (make-autolisp-string "Other")
+                                      (make-autolisp-string "Layer*"))))
+    (is (eq t-symbol
+            (call-autolisp-function wcmatch-fn
+                                    (make-autolisp-string "abc")
+                                    (make-autolisp-string "[abc]bc"))))
+    (is (eq t-symbol (call-autolisp-function snvalid-fn (make-autolisp-string "Layer_01"))))
+    (is (null (call-autolisp-function snvalid-fn (make-autolisp-string "with space"))))
+    (is (string= "ABC"
+                 (autolisp-string-value
+                  (call-autolisp-function xstrcase-fn (make-autolisp-string "abc")))))))
+
+(test phase7-findfile-handles-absolute-paths
+  ;; findfile must return the absolute namestring when given an
+  ;; existing absolute path, not nil. Real-world AutoLISP uses
+  ;; (findfile path) right after writing a file to confirm it
+  ;; landed where expected.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((findfile-fn (autolisp-symbol-function (find-autolisp-symbol "FINDFILE")))
+         (path (uiop:with-temporary-file (:pathname p :stream s :type "txt"
+                                          :keep t)
+                  (write-string "hello" s)
+                  (namestring p))))
+    (let ((result (call-autolisp-function findfile-fn (make-autolisp-string path))))
+      (is (typep result 'autolisp-string))
+      (is (probe-file (autolisp-string-value result))))
+    (is (null (call-autolisp-function findfile-fn
+                                      (make-autolisp-string "/no/such/file.lsp"))))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs
