@@ -1793,6 +1793,8 @@ when no dialect is in scope."
      (format nil "#<SUBR ~A>" (autolisp-subr-name object)))
     ((typep object 'autolisp-usubr)
      (format nil "#<USUBR ~A>" (autolisp-usubr-name object)))
+    ((typep object 'autolisp-ename)
+     (format nil "<Entity name: ~A>" (autolisp-ename-value object)))
     ((consp object)
      (with-output-to-string (out)
        (labels ((emit-tail (tail)
@@ -2560,6 +2562,56 @@ when no dialect is in scope."
   (setf *autolisp-backtrace-enabled-p* nil)
   nil)
 
+;;; --- Phase 10: entity-level builtins -------------------------------
+;;;
+;;; Each builtin is a thin wrapper around the corresponding HAL
+;;; generic function on the active session's host backend
+;;; (autolisp-spec ch.16). The current-evaluation-host helper
+;;; resolves the backend through the active context; under NullHost
+;;; every call signals :host-not-supported, under MockHost it
+;;; reaches the methods in autolisp-mock-host/source/entity-api.lisp.
+
+(defun require-ename (object operator-name)
+  (unless (typep object 'autolisp-ename)
+    (signal-builtin-argument-error
+     :invalid-ename
+     operator-name
+     "~A expects an ENAME, got ~S."
+     operator-name object))
+  object)
+
+(defun builtin-entget (ename)
+  (host-entget (current-evaluation-host) (require-ename ename "ENTGET")))
+
+(defun builtin-entmod (data)
+  (require-proper-list data "ENTMOD")
+  (host-entmod (current-evaluation-host) data))
+
+(defun builtin-entmake (data)
+  (require-proper-list data "ENTMAKE")
+  (host-entmake (current-evaluation-host) data))
+
+(defun builtin-entmakex (data)
+  (require-proper-list data "ENTMAKEX")
+  (host-entmakex (current-evaluation-host) data))
+
+(defun builtin-entdel (ename)
+  (host-entdel (current-evaluation-host) (require-ename ename "ENTDEL")))
+
+(defun builtin-entupd (ename)
+  (host-entupd (current-evaluation-host) (require-ename ename "ENTUPD")))
+
+(defun builtin-entlast ()
+  (host-entlast (current-evaluation-host)))
+
+(defun builtin-entnext (&optional ename)
+  (host-entnext (current-evaluation-host)
+                (and ename (require-ename ename "ENTNEXT"))))
+
+(defun builtin-handent (handle-string)
+  (host-handent (current-evaluation-host)
+                (autolisp-string-value (require-string handle-string "HANDENT"))))
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -2629,6 +2681,16 @@ when no dialect is in scope."
    (make-core-builtin-subr "VL-BT" #'builtin-vl-bt)
    (make-core-builtin-subr "VL-BT-ON" #'builtin-vl-bt-on)
    (make-core-builtin-subr "VL-BT-OFF" #'builtin-vl-bt-off)
+   ;; Phase 10 — entity API (thin wrappers over the HAL)
+   (make-core-builtin-subr "ENTGET"   #'builtin-entget)
+   (make-core-builtin-subr "ENTMOD"   #'builtin-entmod)
+   (make-core-builtin-subr "ENTMAKE"  #'builtin-entmake)
+   (make-core-builtin-subr "ENTMAKEX" #'builtin-entmakex)
+   (make-core-builtin-subr "ENTDEL"   #'builtin-entdel)
+   (make-core-builtin-subr "ENTUPD"   #'builtin-entupd)
+   (make-core-builtin-subr "ENTLAST"  #'builtin-entlast)
+   (make-core-builtin-subr "ENTNEXT"  #'builtin-entnext)
+   (make-core-builtin-subr "HANDENT"  #'builtin-handent)
    (make-core-builtin-subr "VL-EVERY" #'builtin-vl-every)
    (make-core-builtin-subr "VL-MEMBER-IF" #'builtin-vl-member-if)
    (make-core-builtin-subr "VL-MEMBER-IF-NOT" #'builtin-vl-member-if-not)

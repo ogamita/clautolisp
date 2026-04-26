@@ -10,11 +10,22 @@
                 #:results-status)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-runtime-error
-                #:autolisp-runtime-error-code)
+                #:autolisp-runtime-error-code
+                #:autolisp-ename
+                #:autolisp-ename-value
+                #:make-autolisp-ename)
   (:import-from #:clautolisp.autolisp-host
                 #:host
                 #:host-name
                 #:host-entget
+                #:host-entmod
+                #:host-entmake
+                #:host-entmakex
+                #:host-entdel
+                #:host-entupd
+                #:host-entlast
+                #:host-entnext
+                #:host-handent
                 #:host-getvar
                 #:host-grdraw
                 #:host-prompt)

@@ -1690,6 +1690,54 @@
     ;; Common-Lisp keyword literal still works.
     (is (eq :utf-8     (funcall parse ":utf-8")))))
 
+(test phase10-entity-builtins-on-mock-host
+  ;; The Phase-10 builtins (ENTGET/ENTMAKE/ENTLAST/ENTNEXT/HANDENT)
+  ;; route through the active session's HAL backend. Under the
+  ;; default NullHost they signal :host-not-supported; under a
+  ;; freshly-allocated MockHost they round-trip a DXF group-code
+  ;; list. We exercise both halves here.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  ;; Default NullHost: the builtins surface :host-not-supported.
+  (let ((entlast-fn (autolisp-symbol-function (find-autolisp-symbol "ENTLAST"))))
+    (handler-case (call-autolisp-function entlast-fn)
+      (autolisp-runtime-error (condition)
+        (is (eq :host-not-supported (autolisp-runtime-error-code condition))))))
+  ;; Swap the default context onto a MockHost-bearing session.
+  (let* ((mock (clautolisp.autolisp-mock-host:make-mock-host))
+         (session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:default-evaluation-context))))
+    (clautolisp.autolisp-runtime:set-runtime-session-host session mock)
+    (let* ((entmake-fn (autolisp-symbol-function (find-autolisp-symbol "ENTMAKE")))
+           (entget-fn  (autolisp-symbol-function (find-autolisp-symbol "ENTGET")))
+           (entlast-fn (autolisp-symbol-function (find-autolisp-symbol "ENTLAST")))
+           (handent-fn (autolisp-symbol-function (find-autolisp-symbol "HANDENT")))
+           (data (call-autolisp-function entmake-fn
+                                         (list (cons 0 "LINE")
+                                               (cons 8 "0")
+                                               (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                               (cons 11 '(1.0d0 1.0d0 0.0d0))))))
+      (is (consp data))
+      ;; (-1 . ENAME) head injected by entmake.
+      (is (eql -1 (car (first data))))
+      (is (typep (cdr (first data))
+                 'clautolisp.autolisp-runtime:autolisp-ename))
+      ;; entlast returns the same ename's hex handle.
+      (let ((last-ename (call-autolisp-function entlast-fn)))
+        (is (string=
+             (clautolisp.autolisp-runtime:autolisp-ename-value (cdr (first data)))
+             (clautolisp.autolisp-runtime:autolisp-ename-value last-ename)))
+        ;; entget against that ename round-trips the data list.
+        (is (consp (call-autolisp-function entget-fn last-ename))))
+      ;; handent on the recorded handle string returns an ename.
+      (let* ((handle-cell (second data))
+             (handle (cdr handle-cell)))
+        (is (typep (call-autolisp-function handent-fn
+                                            (make-autolisp-string handle))
+                   'clautolisp.autolisp-runtime:autolisp-ename))
+        (is (null (call-autolisp-function handent-fn
+                                          (make-autolisp-string "DEADBEEF"))))))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs

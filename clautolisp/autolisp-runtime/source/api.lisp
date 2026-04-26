@@ -816,6 +816,9 @@ profiles between subordinate evaluations within a single session."
 (defun autolisp-ename-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-ename-value object))
 
+(defun make-autolisp-ename (&key value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-ename :value value))
+
 (defun autolisp-pickset-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-pickset-value object))
 

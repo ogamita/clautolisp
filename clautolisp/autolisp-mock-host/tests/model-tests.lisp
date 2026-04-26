@@ -146,11 +146,12 @@
 ;;; on `host` and signal :host-not-supported. Phase 10 fills these
 ;;; in.
 
-(test mock-host-operations-error-with-host-not-supported-until-phase-10
+(test mock-host-operations-error-with-host-not-supported-when-not-yet-implemented
+  ;; Phase 10 implemented entity operations on MockHost; the rest
+  ;; (sysvars, prompts, graphics) are still inherited from the
+  ;; base-class :host-not-supported fallback until later phases
+  ;; fill them in.
   (let ((mock (make-mock-host)))
-    (handler-case (host-entget mock :nope)
-      (autolisp-runtime-error (condition)
-        (is (eq :host-not-supported (autolisp-runtime-error-code condition)))))
     (handler-case (host-getvar mock "CLAYER")
       (autolisp-runtime-error (condition)
         (is (eq :host-not-supported (autolisp-runtime-error-code condition)))))
