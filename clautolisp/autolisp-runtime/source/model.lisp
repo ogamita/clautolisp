@@ -50,7 +50,12 @@
   (blackboard-namespace (make-blackboard-namespace))
   (propagated-symbols (make-hash-table :test #'eq))
   (errno 0 :type integer)
-  current-document)
+  current-document
+  ;; Phase 6: every runtime session carries the dialect descriptor
+  ;; that drove its instantiation. Builtins that have product-divergent
+  ;; lex / mode behaviour (currently `atof` hex-float, `open` `ccs=`)
+  ;; consult the active session's dialect.
+  (dialect nil))
 
 (defstruct evaluation-context
   session

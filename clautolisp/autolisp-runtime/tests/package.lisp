@@ -68,6 +68,10 @@
                 #:push-dynamic-frame
                 #:read-runtime-from-string
                 #:register-runtime-session-document
+                #:run-autolisp-file
+                #:run-autolisp-string
+                #:runtime-session-dialect
+                #:current-evaluation-dialect
                 #:reader-object->runtime-value
                 #:reset-autolisp-symbol-table
                 #:export-function-to-current-document

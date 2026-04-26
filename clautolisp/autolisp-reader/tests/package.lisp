@@ -18,8 +18,11 @@
                 #:cons-object-dotted-p
                 #:cons-object-elements
                 #:cons-object-tail
+                #:diagnostic
                 #:diagnostic-code
                 #:diagnostic-severity
+                #:diagnostic-span
+                #:source-span-source-name
                 #:dot-object
                 #:integer-object
                 #:integer-object-value
@@ -39,6 +42,23 @@
                 #:token
                 #:token-kind
                 #:token-lexeme
-                #:tokenize-string)
+                #:tokenize-string
+                #:autolisp-dialect
+                #:autolisp-dialect-name
+                #:autolisp-dialect-token-mode
+                #:autolisp-dialect-extended-string-escapes-p
+                #:autolisp-dialect-warn-on-integer-overflow-p
+                #:autolisp-dialect-canonical-case
+                #:autolisp-dialect-hex-float-atof-p
+                #:autolisp-dialect-open-ccs-mode-p
+                #:autolisp-dialect-strict
+                #:autolisp-dialect-autocad-2026
+                #:autolisp-dialect-bricscad-v26
+                #:find-autolisp-dialect
+                #:reader-options-from-dialect
+                #:reader-options-token-mode
+                #:reader-options-extended-string-escapes-p
+                #:reader-options-warn-on-integer-overflow-p
+                #:reader-options-canonical-case)
   (:export #:run-all-tests
            #:autolisp-reader-suite))
