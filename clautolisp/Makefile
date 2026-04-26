@@ -27,7 +27,7 @@ PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 
 .PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl build-clautolisp-sbcl build-clautolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl run-file-compat-autocad run-file-compat-bricscad audit-file-compat-autocad audit-file-compat-bricscad documentation user-manual clean-pdf
 
-all: documentation
+all: documentation build-clautolisp-sbcl clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt
 
 test: test-sbcl
 
@@ -112,3 +112,7 @@ user-manual: documentation/user-manual.pdf
 
 clean-pdf:
 	rm -f $(PDF_FILES)
+
+clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
+	cd clautolisp/tools/clautolisp-gui-qt/ ; cmake --build build
+
