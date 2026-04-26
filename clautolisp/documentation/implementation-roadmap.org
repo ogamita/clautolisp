@@ -304,10 +304,37 @@ source runs unchanged when the backend is swapped.
 Numbering continues from Phase 6 (the Lisp-1, dynamic-scope, and
 general-semantics work that closed in 2026-04-26).
 
-** Phase 7 — Function-Coverage Round-Out
+** Phase 7 — Function-Coverage Round-Out [DONE 2026-04-27]
 *Goal:* implement every host-independent builtin so that pure-data
 AutoLISP source loads cleanly. No HAL changes; the existing
 NullHost remains the default.
+
+*Status:* core bucket at 100% (230/230 spec-listed
+host-independent function entries are registered in
+~core-builtins~). Phase 7 was implicitly in-progress through
+phases 8–14 — Phase 7's formal close is a coverage audit plus the
+straggler-fill described below.
+
+Closing additions (commit timestamp 2026-04-27):
+- Hyperbolic math: ~sinh~, ~cosh~, ~tanh~, ~atanh~.
+- ~power~ as a documented synonym for ~expt~.
+- Floating-point predicates: ~vl-nanp~ (portable: NaN /= self),
+  ~vl-infp~ (portable: x = 2x for nonzero x).
+- List utilities: ~position~ (BricsCAD V26 alias for
+  ~vl-position~), ~vl-remove~ (synonym for ~remove~).
+- String split: ~vl-string-split~ + ~string-split~ alias.
+- Coverage tooling: ~tools/builtins-coverage/coverage.sh~ +
+  ~make builtins-coverage~ target. Output:
+  ~documentation/builtins-coverage.md~ — per-bucket roll-up
+  (core / host-* / ext-*) plus per-function gap list. The
+  classifier puts host-bound surfaces (com, dict, layerstate,
+  errstack, graphics, ui, modules) into their own buckets
+  rather than counting them against the host-independent core.
+- 6 new FiveAM tests in
+  ~autolisp-builtins-core/tests/builtin-tests.lisp~ exercising
+  the additions (hyperbolics, ~power~, ~position~ / ~vl-position~
+  agreement, ~remove~ / ~vl-remove~ agreement, ~vl-string-split~
+  on a multi-empty-piece input, NaN/Inf predicates).
 
 Scope (drives by ~autolisp-spec~ chapters 4-7, 9-13):
 
