@@ -822,6 +822,9 @@ profiles between subordinate evaluations within a single session."
 (defun autolisp-pickset-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-pickset-value object))
 
+(defun make-autolisp-pickset (&key value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-pickset :value value))
+
 (defun autolisp-subr-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-subr-name object))
 

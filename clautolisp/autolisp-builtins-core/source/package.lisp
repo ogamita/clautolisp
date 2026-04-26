@@ -62,7 +62,10 @@
                 #:current-evaluation-host
                 #:autolisp-ename
                 #:autolisp-ename-value
-                #:make-autolisp-ename)
+                #:make-autolisp-ename
+                #:autolisp-pickset
+                #:autolisp-pickset-value
+                #:make-autolisp-pickset)
   (:import-from #:clautolisp.autolisp-host
                 #:host-entget
                 #:host-entmod
@@ -72,7 +75,20 @@
                 #:host-entupd
                 #:host-entlast
                 #:host-entnext
-                #:host-handent)
+                #:host-handent
+                #:host-ssget
+                #:host-ssadd
+                #:host-ssdel
+                #:host-ssname
+                #:host-sslength
+                #:host-ssmemb
+                #:host-ssgetfirst
+                #:host-sssetfirst
+                #:host-tblsearch
+                #:host-tblnext
+                #:host-tblobjname
+                #:host-getvar
+                #:host-setvar)
   (:export
    #:*core-builtin-names*
    #:core-builtins

@@ -78,6 +78,7 @@
    #:make-autolisp-ename
    #:autolisp-pickset
    #:autolisp-pickset-value
+   #:make-autolisp-pickset
    #:autolisp-subr
    #:make-autolisp-subr
    #:autolisp-subr-name

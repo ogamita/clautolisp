@@ -117,7 +117,13 @@ grclear / redraw). Tests inspect this; production code does not.")
    (pickfirst                :initform nil
                              :accessor mock-host-pickfirst
                              :documentation "The session's
-pickfirst selection set, as set by ssgetfirst / sssetfirst."))
+pickfirst selection set, as set by ssgetfirst / sssetfirst.")
+   (tblnext-iterators        :initform (make-hash-table :test #'eq)
+                             :accessor mock-host-tblnext-iterators
+                             :documentation "Per-kind iterator
+state for tblnext. Maps a table-kind keyword to the remaining
+list of records that subsequent (tblnext KIND) calls will
+return. Cleared / reset when (tblnext KIND :rewind t)."))
   (:default-initargs :name "mock-host")
   (:documentation "In-memory deterministic CAD-database substitute
 backend for clautolisp. Phase 9 — data structures only; Phase 10
