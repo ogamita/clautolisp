@@ -92,13 +92,28 @@
                 #:all-document-reactors
                 #:all-application-reactors
                 #:all-session-reactors
-                #:document-namespace-persistent-reactor-index
+                #:document-namespace-persistent-reactor-index)
+  (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-safearray
                 #:autolisp-safearray-value
                 #:make-autolisp-safearray
                 #:autolisp-variant
                 #:autolisp-variant-value
                 #:make-autolisp-variant)
+  (:import-from #:clautolisp.autolisp-dcl
+                #:dcl-runtime-load-dialog
+                #:dcl-runtime-unload-dialog
+                #:dcl-runtime-new-dialog
+                #:dcl-runtime-start-dialog
+                #:dcl-runtime-done-dialog
+                #:dcl-runtime-action-tile
+                #:dcl-runtime-set-tile
+                #:dcl-runtime-get-tile
+                #:dcl-runtime-mode-tile
+                #:dcl-runtime-client-data
+                #:dcl-runtime-set-client-data
+                #:install-default-renderer
+                #:make-terminal-renderer)
   (:import-from #:clautolisp.autolisp-host
                 #:host-entget
                 #:host-entmod
