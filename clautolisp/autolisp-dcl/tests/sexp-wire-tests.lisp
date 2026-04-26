@@ -64,3 +64,25 @@
     (is (equal "ok" (third form)))
     (is (eq :attr (first (fourth form))))
     (is (eq :children (first (fifth form))))))
+
+(test sexp-wire-tile-encoding-falls-back-to-attribute-key
+  "Anonymous DCL tiles like `: edit_box { key = \"name\"; }` have
+nil dcl-tile-key but their identifying key lives in the
+attributes alist. tile->sexp must surface that as the third
+slot so the GUI driver can address the widget by name."
+  (let* ((tile (clautolisp.autolisp-dcl:make-dcl-tile
+                :type :edit-box
+                :key nil
+                :attributes '(("key" . "name") ("label" . "Name"))))
+         (form (clautolisp.autolisp-dcl:tile->sexp tile)))
+    (is (equal "name" (third form)))))
+
+(test sexp-wire-tile-encoding-falls-back-to-nokey
+  "When neither slot nor attribute provides a key, the encoder
+must emit :nokey so the receiver can decode reliably."
+  (let* ((tile (clautolisp.autolisp-dcl:make-dcl-tile
+                :type :spacer
+                :key nil
+                :attributes nil))
+         (form (clautolisp.autolisp-dcl:tile->sexp tile)))
+    (is (eq :nokey (third form)))))
