@@ -20,6 +20,8 @@
   (format t "                     Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
   (format t "  --gui CMD          DCL renderer: subprocess CMD speaking the sexp wire protocol.~%")
   (format t "                     Defaults to the built-in terminal renderer (or $CLAUTOLISP_GUI).~%")
+  (format t "  --trace            Print every AutoLISP function call (entry args + exit value),~%")
+  (format t "                     indented by call depth. Output goes to *trace-output* (stderr).~%")
   (format t "  -x EXPRESSION      Evaluate EXPRESSION instead of reading a file.~%")
   (format t "  --quiet            Suppress the REPL banner; only the prompt is shown.~%")
   (format t "  --version          Print the version string and exit.~%")
@@ -52,20 +54,15 @@
     dialect))
 
 (defun parse-arguments (arguments)
-  "Returns (values dialect mode payload quiet-p host mock-input gui).
-MODE is :file, :expression or :repl. PAYLOAD is the FILE path or
-EXPRESSION string (nil for :repl). QUIET-P suppresses the REPL
-banner. HOST is the resolved HAL backend instance, defaulting to
-a fresh MockHost. MOCK-INPUT, if non-nil, is a pathname to attach
-as the MockHost's prompt-stream. GUI, if non-nil, is the
-subprocess command line for the DCL renderer."
+  "Returns (values dialect mode payload quiet-p host mock-input gui trace-p)."
   (let ((dialect (autolisp-dialect-strict))
         (mode :repl)
         (payload nil)
         (quiet-p nil)
         (host (make-mock-host))
         (mock-input nil)
-        (gui nil))
+        (gui nil)
+        (trace-p nil))
     (loop while arguments
           for argument = (pop arguments)
           do (cond
@@ -103,6 +100,8 @@ subprocess command line for the DCL renderer."
                 ;; shell, which is what users want for pipelines
                 ;; and quoted arguments.
                 (setf gui (pop arguments)))
+               ((string= argument "--trace")
+                (setf trace-p t))
                ((string= argument "-x")
                 (unless arguments
                   (error "Missing expression after -x."))
@@ -114,7 +113,7 @@ subprocess command line for the DCL renderer."
                (t
                 (setf mode :file)
                 (setf payload argument))))
-    (values dialect mode payload quiet-p host mock-input gui)))
+    (values dialect mode payload quiet-p host mock-input gui trace-p)))
 
 (defun span->string (span)
   (if (null span)
@@ -306,9 +305,11 @@ autolisp-dcl load time) stays in effect."
 
 (defun main (&rest argv)
   (handler-case
-      (multiple-value-bind (dialect mode payload quiet-p host mock-input gui)
+      (multiple-value-bind (dialect mode payload quiet-p host mock-input gui trace-p)
           (parse-arguments (rest argv))
         (install-gui-renderer gui)
+        (when trace-p
+          (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
         (run-with-input dialect mode payload
                         :quiet-p quiet-p
                         :host host

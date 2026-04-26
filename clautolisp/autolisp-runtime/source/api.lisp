@@ -1092,34 +1092,108 @@ profiles between subordinate evaluations within a single session."
     (dolist (symbol locals)
       (bind-dynamic-variable symbol nil context))))
 
+(defparameter *autolisp-trace-p* nil
+  "When non-nil, every call into call-autolisp-function-in-context
+emits an indented trace line on entry and exit. Toggle via the
+clautolisp CLI's --trace flag, or set directly from user code.")
+
+(defparameter *autolisp-trace-depth* 0
+  "Indentation level for the trace printer. Incremented on entry,
+decremented on exit; visible as leading spaces in trace output.")
+
+(defparameter *autolisp-trace-stream* nil
+  "Stream the tracer writes to. nil means *trace-output*.")
+
+(defun autolisp-trace-stream ()
+  (or *autolisp-trace-stream* *trace-output*))
+
+(defun autolisp-function-name-for-trace (function)
+  (cond
+    ((typep function 'autolisp-subr)  (autolisp-subr-name function))
+    ((typep function 'autolisp-usubr) (or (autolisp-usubr-name function) "<lambda>"))
+    (t (format nil "~S" function))))
+
+(defun autolisp-format-trace-value (value)
+  ;; Compact one-line printer for trace-value display. Strings keep
+  ;; their quotes; other values get princ'd via existing helpers
+  ;; where available, falling back to ~S so even unfamiliar carriers
+  ;; render readably.
+  (cond
+    ((null value) "nil")
+    ((eq value t) "T")
+    ((typep value 'autolisp-string)
+     (format nil "~S" (autolisp-string-value value)))
+    ((typep value 'autolisp-symbol)
+     (autolisp-symbol-name value))
+    ((numberp value) (format nil "~A" value))
+    ((consp value)
+     (let ((items (loop for cell on value
+                        collect (autolisp-format-trace-value (car cell))
+                        until (atom (cdr cell)))))
+       (format nil "(~{~A~^ ~})" items)))
+    (t (format nil "~S" value))))
+
+(defun autolisp-trace-prefix ()
+  (make-string (* 2 *autolisp-trace-depth*) :initial-element #\Space))
+
+(defun autolisp-trace-enter (function arguments)
+  (let ((stream (autolisp-trace-stream)))
+    (format stream "~&~A-> (~A~{ ~A~})~%"
+            (autolisp-trace-prefix)
+            (autolisp-function-name-for-trace function)
+            (mapcar #'autolisp-format-trace-value arguments))
+    (force-output stream)))
+
+(defun autolisp-trace-exit (function result)
+  (let ((stream (autolisp-trace-stream)))
+    (format stream "~&~A<- ~A => ~A~%"
+            (autolisp-trace-prefix)
+            (autolisp-function-name-for-trace function)
+            (autolisp-format-trace-value result))
+    (force-output stream)))
+
 (defun call-autolisp-function-in-context (function context &rest arguments)
   (let ((clautolisp.autolisp-runtime.internal::*active-evaluation-context* context))
-    (cond
-      ((typep function 'autolisp-subr)
-       (handler-case
-           (apply (autolisp-subr-function function) arguments)
-         (autolisp-runtime-error (condition)
-           (error condition))
-         (error (condition)
-           (error 'autolisp-runtime-error
-                  :code :subr-call-host-error
-                  :message (format nil
-                                   "Common Lisp error while calling AutoLISP subr ~A: ~A"
-                                   (autolisp-subr-name function)
-                                   condition)
-                  :details (list :subr (autolisp-subr-name function)
-                                 :condition condition)))))
-      ((typep function 'autolisp-usubr)
-       (unwind-protect
-            (progn
-              (bind-usubr-frame function arguments context)
-              (autolisp-eval-progn (autolisp-usubr-body function) context))
-         (pop-dynamic-frame context)))
-      (t
-       (signal-autolisp-runtime-error
-        :invalid-function-object
-        "Expected an AutoLISP function object, got ~S."
-        function)))))
+    (when *autolisp-trace-p*
+      (autolisp-trace-enter function arguments)
+      (incf *autolisp-trace-depth*))
+    (let ((result
+            (cond
+              ((typep function 'autolisp-subr)
+               (handler-case
+                   (apply (autolisp-subr-function function) arguments)
+                 (autolisp-runtime-error (condition)
+                   (when *autolisp-trace-p*
+                     (decf *autolisp-trace-depth*)
+                     (autolisp-trace-exit function (format nil "<error: ~A>" condition)))
+                   (error condition))
+                 (error (condition)
+                   (when *autolisp-trace-p*
+                     (decf *autolisp-trace-depth*)
+                     (autolisp-trace-exit function (format nil "<host-error: ~A>" condition)))
+                   (error 'autolisp-runtime-error
+                          :code :subr-call-host-error
+                          :message (format nil
+                                           "Common Lisp error while calling AutoLISP subr ~A: ~A"
+                                           (autolisp-subr-name function)
+                                           condition)
+                          :details (list :subr (autolisp-subr-name function)
+                                         :condition condition)))))
+              ((typep function 'autolisp-usubr)
+               (unwind-protect
+                    (progn
+                      (bind-usubr-frame function arguments context)
+                      (autolisp-eval-progn (autolisp-usubr-body function) context))
+                 (pop-dynamic-frame context)))
+              (t
+               (signal-autolisp-runtime-error
+                :invalid-function-object
+                "Expected an AutoLISP function object, got ~S."
+                function)))))
+      (when *autolisp-trace-p*
+        (decf *autolisp-trace-depth*)
+        (autolisp-trace-exit function result))
+      result)))
 
 (defun self-evaluating-runtime-value-p (object)
   (or (null object)

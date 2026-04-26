@@ -114,5 +114,5 @@ clean-pdf:
 	rm -f $(PDF_FILES)
 
 clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
-	cd clautolisp/tools/clautolisp-gui-qt/ ; cmake --build build
+	cd tools/clautolisp-gui-qt/ ; cmake --build build
 
