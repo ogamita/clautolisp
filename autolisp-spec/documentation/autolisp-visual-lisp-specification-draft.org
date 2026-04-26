@@ -533,20 +533,23 @@ Dynamic scoping is *strict* across all supported dialects. No host product is kn
 *** Statement
 Evaluating a symbol with no active dynamic binding and no namespace binding yields ~nil~ rather than signalling an error. Referencing a never-set name is therefore not directly observable; the typical surface symptom is a downstream type error when ~nil~ is passed to an arithmetic or other type-checking primitive.
 
-This contrasts with both Common Lisp (~unbound-variable~ is a condition) and R7RS Scheme (the result is an error). Implementations may add a strict mode that diverges, but in baseline AutoLISP / Visual LISP the silent-NIL semantics are observable.
+This contrasts with both Common Lisp (~unbound-variable~ is a condition) and R7RS Scheme (the result is an error). The silent-NIL behaviour is *strict* across every supported AutoLISP host: there is no language-level way for portable AutoLISP source to distinguish "bound to nil" from "never bound" at reference time, and ~boundp~ — the only predicate exposed for that question — additionally *creates* the symbol and binds it to ~nil~ as a side effect of being asked (chapter 7, BOUNDP entry). Programmer-visible state therefore collapses every never-set name into a ~nil~-bound name on first observation.
+
+The consequence: there is no compliant AutoLISP dialect in which a bare reference to an unset symbol can signal an error without breaking deployed code. Strict mode in this specification means *common to every conforming AutoLISP runtime*, not *the most pedantic*; silent-NIL is therefore the strict rule.
 
 *** Concrete Consequences
 - ~(setq y (+ never-set-symbol 1))~ does not signal *unbound variable*; it signals *bad argument type <NIL>; expected <NUMBER> at [+]*.
-- ~(boundp 'never-set)~ returns ~nil~ but additionally creates the symbol and binds it to ~nil~ (per the chapter-7 BOUNDP entry). The post-condition is that ~never-set~ now evaluates to ~nil~ explicitly.
+- ~(boundp 'never-set)~ returns ~nil~ but additionally creates the symbol and binds it to ~nil~ (chapter 7, BOUNDP). After this call ~never-set~ is observably ~nil~-bound.
+- A program cannot reliably detect "never assigned" once any code path has either referenced or ~boundp~-tested the name.
 
 *** Vendor Evidence
 BricsCAD V26 / macOS direct probe section C — every closure test that referenced an out-of-extent local surfaced its error *at the consuming primitive* (`+`), not at the variable reference. The error message wrapped the value `<NIL>`, which is the expected payload after the silent-NIL evaluation.
 
 *** Strict / Lax Policy
-clautolisp's ~strict~ dialect intentionally signals ~:unbound-variable~ at the reference instead of silently returning ~nil~ — the silent-NIL behaviour masks bugs and is widely considered a wart. The ~autocad-2026~ and ~bricscad-v26~ dialects must reproduce the silent-NIL behaviour for compatibility with deployed source code.
+Silent-NIL on unbound reference is *strict* across the ~strict~, ~autocad-2026~, and ~bricscad-v26~ dialects. clautolisp exposes a non-conforming diagnostic knob, ~unbound-variable-mode :strict-error~, that programs can opt into through a custom-built dialect descriptor; doing so produces source code that does not run on any real AutoLISP host and is intended only for static-analysis tooling and unit tests.
 
 *** Cross-references
-- Function Entry: BOUNDP (chapter 7) — the post-creation effect on the symbol's binding.
+- Function Entry: BOUNDP (chapter 7) — the only language-level distinction between bound-to-nil and unbound, with its documented binding side effect.
 
 *** Source Notes
 - Phase-6 BricsCAD V26 / macOS semantics probe section C (indirect evidence; explicit probe pending due to launch-flake on this run).

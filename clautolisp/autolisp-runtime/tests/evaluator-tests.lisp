@@ -83,24 +83,25 @@ foo returns the function object, not 42."
         (setf signalled-code (autolisp-runtime-error-code condition))))
     (is (eq :undefined-function signalled-code))))
 
-;;; --- Unbound-variable dialect knob --------------------------------
+;;; --- Unbound-variable dialect contract ----------------------------
 ;;;
-;;; The strict dialect signals :unbound-variable on bare reference to
-;;; a never-set name. The autocad-2026 and bricscad-v26 dialects
-;;; silently return nil, matching product behaviour.
+;;; Silent-NIL on bare reference to an unset symbol is strict across
+;;; every named dialect (autolisp-spec ch. 3, "Unbound-Variable
+;;; Reference"). The host language has no portable way to distinguish
+;;; bound-to-nil from never-bound — `boundp` itself binds the tested
+;;; symbol to nil — so any compliant dialect must silently NIL.
+;;; clautolisp's :strict-error mode is a non-conforming diagnostic
+;;; extension intended for static-analysis / unit-test harnesses; we
+;;; pin both behaviours below.
 
-(test unbound-variable-strict-signals
-  "Strict dialect: bare reference to unset symbol -> :unbound-variable."
+(test unbound-variable-strict-dialect-returns-nil
+  "Strict dialect: bare reference to an unset symbol returns nil."
   (reset-autolisp-symbol-table)
-  (let ((signalled-code nil))
-    (handler-case
-        (run-autolisp-string "totally-unset-symbol-strict")
-      (autolisp-runtime-error (condition)
-        (setf signalled-code (autolisp-runtime-error-code condition))))
-    (is (eq :unbound-variable signalled-code))))
+  (let ((result (run-autolisp-string "totally-unset-symbol-strict")))
+    (is (null result))))
 
 (test unbound-variable-bricscad-returns-nil
-  "BricsCAD V26 dialect: bare reference to unset symbol returns nil."
+  "BricsCAD V26 dialect: bare reference to an unset symbol returns nil."
   (reset-autolisp-symbol-table)
   (let ((result
          (run-autolisp-string
@@ -109,13 +110,30 @@ foo returns the function object, not 42."
     (is (null result))))
 
 (test unbound-variable-autocad-returns-nil
-  "AutoCAD 2026 dialect: bare reference to unset symbol returns nil."
+  "AutoCAD 2026 dialect: bare reference to an unset symbol returns nil."
   (reset-autolisp-symbol-table)
   (let ((result
          (run-autolisp-string
           "totally-unset-symbol-acad"
           :dialect (clautolisp.autolisp-reader:autolisp-dialect-autocad-2026))))
     (is (null result))))
+
+(test unbound-variable-diagnostic-mode-signals
+  "Custom dialect with :unbound-variable-mode :strict-error signals
+:unbound-variable. Diagnostic-only mode; non-conforming."
+  (reset-autolisp-symbol-table)
+  (let* ((diagnostic-dialect
+          (clautolisp.autolisp-reader:make-autolisp-dialect
+           :name :strict
+           :unbound-variable-mode :strict-error))
+         (signalled-code nil))
+    (handler-case
+        (run-autolisp-string
+         "totally-unset-symbol-diag"
+         :dialect diagnostic-dialect)
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :unbound-variable signalled-code))))
 
 (test lisp1-variable-holding-subr-is-callable
   "(setq myfunc <some-subr>) followed by (myfunc ...) calls the stored
