@@ -23,7 +23,7 @@ The Org documents in `documentation/` remain the place for specification text, e
 - Side findings from the probe run, now reflected in the spec:
   - BricsCAD V26 `or` returns *T or nil*, not the first non-nil value (probe-core was patched to use an `if`-guarded init pattern; the spec entry for `or` records the divergence with a portable-idiom note).
   - The user's `autolisp-script` wrapper (`~/works/sncf-reseau/src/outils-autolisp/autolisp-script/autolisp`) redefines `prin1`/`princ`/`print`/`prompt` to single-argument helpers; for printer-surface tests the spec adds the new `scripts/run-probes-direct.sh` direct-launch runner.
-- Remaining work: when a local AutoCAD installation becomes available, run `scripts/run-probes.sh autocad` to upgrade the entries from *BricsCAD-tested* to *both-vendor tested*.
+- Remaining work: when an AutoCAD license seat becomes available, run `scripts/run-probes.sh autocad` (the direct-AutoCAD runner is committed at `scripts/run-probes-direct-autocad.sh`). Attempted 2026-04-26 but the local AutoCAD 2026 install had no seat available; tooling and PLAN entry are in place for a future re-run.
 
 ## Phasing
 
@@ -92,7 +92,7 @@ The Org documents in `documentation/` remain the place for specification text, e
 - [x] Close `exit` vs `quit`: BricsCAD V26 confirms identical signature, abort-channel message, and effect; spec records the historical distinction as not-supported.
 - [x] Close printer surface (`prin1` / `princ` / `print` / `terpri` / `prompt`): BricsCAD V26 per-symbol citations added; control-character escape rules, leading-newline / trailing-space framing of `print`, zero-arity command-line-only behaviour of `terpri`, and Bricsys's preferred-channel guidance for `prompt` all recorded.
 - [x] Run `scripts/run-probes.sh` against BricsCAD V26 on macOS, capture `results/bricscad/macos/20260426T122808Z/results.sexp`, and promote `atoi` / `atof` lex edges and the printer-surface arities from *implementation-defined* to *tested*. Probe-core patched: `(or x default)` idiom replaced with `(if (not x) ...)` because BricsCAD V26 `or` returns `T`/`nil`. New runner `scripts/run-probes-direct.sh` added for vanilla-BricsCAD launches that bypass the autolisp-script wrapper's `prin1`/`princ`/`print` redefinitions.
-- [ ] Run `scripts/run-probes.sh` against a real AutoCAD installation when one becomes available, to upgrade the entries from *BricsCAD-tested* to *both-vendor tested*.
+- [ ] Run `scripts/run-probes.sh` against a real AutoCAD installation when one becomes available, to upgrade the entries from *BricsCAD-tested* to *both-vendor tested*. Tooling is in place: `scripts/run-probes-direct-autocad.sh` was authored and committed to mirror the BricsCAD direct runner, and AutoCAD 2026 is installed locally at `/Applications/Autodesk/AutoCAD 2026/AutoCAD 2026.app`. **Deferred 2026-04-26:** the local install does not currently have a license seat available, so the probe run was attempted and aborted. Re-run the suite when a seat is freed (or against a different AutoCAD machine).
 
 ## Open structural questions for Phase 2
 
