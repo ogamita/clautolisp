@@ -23,6 +23,10 @@
 #include <sstream>
 #include <string>
 
+#ifdef __APPLE__
+#include <ApplicationServices/ApplicationServices.h>
+#endif
+
 namespace {
 
 class StdinReader : public QThread {
@@ -228,6 +232,18 @@ int main(int argc, char** argv) {
     std::cin.tie(nullptr);
     std::cout.setf(std::ios::unitbuf);
     std::setvbuf(stdout, nullptr, _IONBF, 0);
+
+#ifdef __APPLE__
+    // When launched from a parent process that inherits only pipes
+    // (no controlling TTY, no .app bundle), macOS marks us as a
+    // background process and the WindowServer refuses to create
+    // visible windows. Promote ourselves to a foreground app so
+    // dialogs from clautolisp's subprocess actually appear.
+    {
+        ProcessSerialNumber psn = { 0, kCurrentProcess };
+        TransformProcessType(&psn, kProcessTransformToForegroundApplication);
+    }
+#endif
 
     QApplication app(argc, argv);
 

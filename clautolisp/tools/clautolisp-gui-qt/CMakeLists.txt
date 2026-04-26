@@ -24,4 +24,9 @@ target_link_libraries(clautolisp-gui-qt PRIVATE
   Qt6::Widgets
 )
 
+if(APPLE)
+  find_library(APPLICATIONSERVICES_FRAMEWORK ApplicationServices)
+  target_link_libraries(clautolisp-gui-qt PRIVATE ${APPLICATIONSERVICES_FRAMEWORK})
+endif()
+
 install(TARGETS clautolisp-gui-qt RUNTIME DESTINATION bin)
