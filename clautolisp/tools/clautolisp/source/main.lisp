@@ -290,11 +290,19 @@ autolisp-dcl load time) stays in effect."
   (let ((effective
           (or gui-command
               (let ((env (uiop:getenv "CLAUTOLISP_GUI")))
-                (and env (plusp (length env)) env)))))
+                (and env (plusp (length env)) env))))
+        (debug-p (let ((env (uiop:getenv "CLAUTOLISP_DCL_DEBUG")))
+                   (and env (plusp (length env))))))
+    (when debug-p
+      (format *error-output*
+              "~&[dcl-debug] install-gui-renderer effective=~S~%" effective))
     (when effective
       (clautolisp.autolisp-dcl:install-default-renderer
        (clautolisp.autolisp-dcl:make-subprocess-renderer
-        :command effective)))))
+        :command effective))
+      (when debug-p
+        (format *error-output*
+                "~&[dcl-debug] subprocess renderer installed.~%")))))
 
 (defun main (&rest argv)
   (handler-case

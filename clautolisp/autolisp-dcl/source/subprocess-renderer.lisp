@@ -34,6 +34,17 @@ make-subprocess-renderer.")
   "Tracks which dialog ids have been announced to the subprocess
 so that we know when to shut it down.")
 
+(defun dcl-debug-p ()
+  (let ((env (uiop:getenv "CLAUTOLISP_DCL_DEBUG")))
+    (and env (plusp (length env)))))
+
+(defun dcl-debug (fmt &rest args)
+  (when (dcl-debug-p)
+    (apply #'format *error-output*
+           (concatenate 'string "~&[dcl-debug] " fmt "~%")
+           args)
+    (force-output *error-output*)))
+
 (defun subprocess-input-stream ()
   (uiop:process-info-input *subprocess-renderer-process*))
 
@@ -41,19 +52,33 @@ so that we know when to shut it down.")
   (uiop:process-info-output *subprocess-renderer-process*))
 
 (defun ensure-subprocess-running ()
+  (dcl-debug "ensure-subprocess-running: alive=~A command=~S"
+             (and *subprocess-renderer-process*
+                  (uiop:process-alive-p *subprocess-renderer-process*))
+             *subprocess-renderer-command*)
   (unless (and *subprocess-renderer-process*
                (uiop:process-alive-p *subprocess-renderer-process*))
     (unless *subprocess-renderer-command*
       (signal-sexp-wire-error
        "no GUI driver command configured; set CLAUTOLISP_GUI."))
-    (setf *subprocess-renderer-process*
-          (uiop:launch-program *subprocess-renderer-command*
-                               :input :stream
-                               :output :stream
-                               :error-output :inherit))
+    (let ((effective (if (stringp *subprocess-renderer-command*)
+                         (list "/bin/sh" "-c" *subprocess-renderer-command*)
+                         *subprocess-renderer-command*)))
+      (dcl-debug "launching subprocess: ~S" effective)
+      (handler-case
+          (setf *subprocess-renderer-process*
+                (uiop:launch-program effective
+                                     :input :stream
+                                     :output :stream
+                                     :error-output :interactive))
+        (error (e)
+          (dcl-debug "launch-program FAILED: ~A" e)
+          (error e))))
+    (dcl-debug "subprocess launched; sending :hello")
     (write-sexp-message
      (list :hello *sexp-protocol-version*)
-     (subprocess-input-stream))))
+     (subprocess-input-stream))
+    (dcl-debug ":hello sent")))
 
 (defun subprocess-shutdown ()
   (when (and *subprocess-renderer-process*
@@ -68,16 +93,19 @@ so that we know when to shut it down.")
   (clrhash *subprocess-renderer-active-dialogs*))
 
 (defun subprocess-open-dialog (dialog)
+  (dcl-debug "subprocess-open-dialog id=~A" (dcl-dialog-id dialog))
   (ensure-subprocess-running)
   (setf (gethash (dcl-dialog-id dialog)
                  *subprocess-renderer-active-dialogs*)
         t)
+  (dcl-debug "sending :open-dialog id=~A" (dcl-dialog-id dialog))
   (write-sexp-message
    (list :open-dialog
          (dcl-dialog-id dialog)
          (or (tile-attribute (dcl-dialog-tile dialog) "label") "(dialog)")
          (tile->sexp (dcl-dialog-tile dialog)))
-   (subprocess-input-stream)))
+   (subprocess-input-stream))
+  (dcl-debug ":open-dialog sent"))
 
 (defun subprocess-close-dialog (dialog)
   (when (and *subprocess-renderer-process*
