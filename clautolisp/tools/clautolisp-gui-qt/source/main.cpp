@@ -3,24 +3,24 @@
 //
 // stdin is read on a dedicated worker thread because Qt's
 // QSocketNotifier is unreliable on macOS for non-socket file
-// descriptors (pipes). The worker emits a Qt signal with each
-// parsed Sexp; the main thread (which owns Qt widgets) handles
-// the message in its slot.
+// descriptors (pipes). The worker reads one complete s-expression
+// per message (counting parens / handling escaped strings) and
+// emits the raw bytes via a queued Qt signal. The main thread
+// parses and dispatches.
 
 #include "dialog_window.hpp"
 #include "sexp.hpp"
 #include "wire.hpp"
 
 #include <QApplication>
+#include <QByteArray>
 #include <QHash>
-#include <QMetaType>
 #include <QPointer>
 #include <QThread>
 
 #include <iostream>
-#include <memory>
-
-Q_DECLARE_METATYPE(std::shared_ptr<clautolisp::Sexp>)
+#include <sstream>
+#include <string>
 
 namespace {
 
@@ -28,25 +28,57 @@ class StdinReader : public QThread {
     Q_OBJECT
 public:
     void run() override {
-        clautolisp::SexpReader reader(std::cin);
+        std::string buffer;
+        int paren_depth = 0;
+        bool in_string = false;
+        bool escape_next = false;
+        bool seen_form = false;
         while (true) {
-            auto msg = std::make_shared<clautolisp::Sexp>();
-            try {
-                if (!reader.readMessage(*msg)) {
-                    emit eof();
-                    return;
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "[gui-qt] sexp read error: " << e.what() << '\n';
+            int c = std::cin.get();
+            if (c == EOF) {
                 emit eof();
                 return;
             }
-            emit messageReady(msg);
+            buffer.push_back(static_cast<char>(c));
+            if (in_string) {
+                if (escape_next) {
+                    escape_next = false;
+                } else if (c == '\\') {
+                    escape_next = true;
+                } else if (c == '"') {
+                    in_string = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                in_string = true;
+                seen_form = true;
+                continue;
+            }
+            if (c == '(') {
+                paren_depth++;
+                seen_form = true;
+                continue;
+            }
+            if (c == ')') {
+                paren_depth--;
+                if (paren_depth == 0) {
+                    emit messageReady(QByteArray::fromStdString(buffer));
+                    buffer.clear();
+                    seen_form = false;
+                }
+                continue;
+            }
+            // Whitespace at depth 0 with no form started: discard.
+            if (paren_depth == 0 && !seen_form &&
+                (c == ' ' || c == '\t' || c == '\n' || c == '\r')) {
+                buffer.clear();
+            }
         }
     }
 
 signals:
-    void messageReady(std::shared_ptr<clautolisp::Sexp> msg);
+    void messageReady(QByteArray bytes);
     void eof();
 };
 
@@ -54,7 +86,6 @@ class Driver : public QObject {
     Q_OBJECT
 public:
     Driver() {
-        qRegisterMetaType<std::shared_ptr<clautolisp::Sexp>>("std::shared_ptr<clautolisp::Sexp>");
         connect(&reader_, &StdinReader::messageReady,
                 this, &Driver::onMessage,
                 Qt::QueuedConnection);
@@ -66,7 +97,6 @@ public:
 
     ~Driver() override {
         if (reader_.isRunning()) {
-            reader_.requestInterruption();
             reader_.terminate();
             reader_.wait(200);
         }
@@ -94,8 +124,16 @@ public:
     }
 
 private slots:
-    void onMessage(std::shared_ptr<clautolisp::Sexp> msgPtr) {
-        const clautolisp::Sexp& msg = *msgPtr;
+    void onMessage(QByteArray bytes) {
+        std::istringstream in(bytes.toStdString());
+        clautolisp::SexpReader reader(in);
+        clautolisp::Sexp msg;
+        try {
+            if (!reader.readMessage(msg)) return;
+        } catch (const std::exception& e) {
+            std::cerr << "[gui-qt] sexp read error: " << e.what() << '\n';
+            return;
+        }
         if (msg.type() != clautolisp::Sexp::Type::List || msg.asList().empty()) {
             return;
         }
