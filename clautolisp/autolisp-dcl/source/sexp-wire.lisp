@@ -25,9 +25,12 @@
 ;;;;   (:set-tile DID KEY VALUE)
 ;;;;   (:focus DID KEY)
 ;;;;   (:mode-tile DID KEY MODE)
-;;;;   (:start-list DID KEY OPERATION INDEX)
-;;;;   (:add-list DID TEXT)
-;;;;   (:end-list DID)
+;;;;   (:populate-list DID KEY OPERATION INDEX (ITEM1 ITEM2 ...))
+;;;;   (:image-paint DID KEY (PRIM1 PRIM2 ...))
+;;;;       where PRIM is one of:
+;;;;         (:fill X Y W H COLOUR)
+;;;;         (:vector X1 Y1 X2 Y2 COLOUR)
+;;;;         (:slide X Y W H "/path/to/sld")
 ;;;;   (:bye)
 ;;;;
 ;;;; Message grammar (upstream — GUI to runtime):

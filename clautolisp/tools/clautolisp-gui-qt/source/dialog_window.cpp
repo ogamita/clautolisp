@@ -13,6 +13,9 @@
 #include <QRadioButton>
 #include <QVBoxLayout>
 
+#include <QPainter>
+#include <QPixmap>
+
 #include <cstdlib>
 #include <iostream>
 
@@ -125,6 +128,32 @@ QWidget* DialogWindow::buildTile(const Tile& tile) {
                 });
         return combo;
     }
+    if (type == "IMAGE" || type == "IMAGE-BUTTON" || type == "IMAGE_BUTTON") {
+        // Render the image as a QLabel holding a pixmap. The
+        // image is sized from the tile's width / height attrs (or
+        // a default 100x60 placeholder); paintImage() draws the
+        // primitives onto it later.
+        int width = 100, height = 60;
+        bool ok = false;
+        if (tile.attributes.contains("width")) {
+            int w = tile.attributes.value("width").toInt(&ok);
+            if (ok && w > 0) width = w * 6;  // DCL units -> pixels
+        }
+        if (tile.attributes.contains("height")) {
+            int h = tile.attributes.value("height").toInt(&ok);
+            if (ok && h > 0) height = h * 12;
+        }
+        auto* label = new QLabel;
+        label->setObjectName(tile.key);
+        QPixmap pm(width, height);
+        pm.fill(Qt::black);
+        label->setPixmap(pm);
+        label->setFixedSize(width, height);
+        // image_button clicks are not yet wired upstream — a
+        // follow-up could install an event filter and emit
+        // (:action key "0" :reason-selected) on mousePressEvent.
+        return label;
+    }
     if (type == "ROW" || type == "BOXED-ROW" || type == "BOXED_ROW") {
         auto* container = (type == "ROW")
             ? static_cast<QWidget*>(new QWidget)
@@ -223,6 +252,111 @@ void DialogWindow::setTileValue(const QString& key, const QString& value) {
         else if (auto* box = qobject_cast<QCheckBox*>(widget)) box->setChecked(value == "1");
         else if (auto* label = qobject_cast<QLabel*>(widget)) label->setText(value);
     }
+}
+
+void DialogWindow::populateList(const QString& key, int operation, int index,
+                                 const QStringList& items) {
+    auto* widget = findChild<QWidget*>(key);
+    if (!widget) return;
+    if (auto* list = qobject_cast<QListWidget*>(widget)) {
+        switch (operation) {
+            case 1:
+                if (index >= 0 && index < list->count() && !items.isEmpty()) {
+                    list->item(index)->setText(items.first());
+                }
+                break;
+            case 2:
+                list->addItems(items);
+                break;
+            default:
+                list->clear();
+                list->addItems(items);
+                break;
+        }
+        return;
+    }
+    if (auto* combo = qobject_cast<QComboBox*>(widget)) {
+        switch (operation) {
+            case 1:
+                if (index >= 0 && index < combo->count() && !items.isEmpty()) {
+                    combo->setItemText(index, items.first());
+                }
+                break;
+            case 2:
+                combo->addItems(items);
+                break;
+            default:
+                combo->clear();
+                combo->addItems(items);
+                break;
+        }
+        return;
+    }
+}
+
+namespace {
+QColor aciToRgb(int aci) {
+    // Minimal 8-colour AutoCAD ACI mapping. Anything else falls
+    // back to a neutral grey so unknown indices still render.
+    switch (aci) {
+        case 0: return Qt::black;
+        case 1: return Qt::red;
+        case 2: return Qt::yellow;
+        case 3: return Qt::green;
+        case 4: return Qt::cyan;
+        case 5: return Qt::blue;
+        case 6: return Qt::magenta;
+        case 7: return Qt::white;
+        case 8: return QColor(128, 128, 128);
+        case 9: return QColor(192, 192, 192);
+        default: return QColor(128, 128, 128);
+    }
+}
+} // namespace
+
+void DialogWindow::paintImage(const QString& key,
+                               const SexpList& primitives) {
+    auto* widget = findChild<QWidget*>(key);
+    auto* label = qobject_cast<QLabel*>(widget);
+    if (!label) return;
+    QPixmap pm = label->pixmap();
+    if (pm.isNull()) {
+        pm = QPixmap(label->size());
+        pm.fill(Qt::black);
+    }
+    QPainter p(&pm);
+    for (const auto& prim : primitives) {
+        if (prim.type() != Sexp::Type::List) continue;
+        const auto& items = prim.asList();
+        if (items.empty()) continue;
+        if (items[0].type() != Sexp::Type::Keyword) continue;
+        const std::string& tag = items[0].asKeyword();
+        if (tag == "FILL" && items.size() >= 6) {
+            int x = items[1].asInt(), y = items[2].asInt();
+            int w = items[3].asInt(), h = items[4].asInt();
+            int c = items[5].asInt();
+            p.fillRect(x, y, w, h, aciToRgb(c));
+        } else if (tag == "VECTOR" && items.size() >= 6) {
+            int x1 = items[1].asInt(), y1 = items[2].asInt();
+            int x2 = items[3].asInt(), y2 = items[4].asInt();
+            int c = items[5].asInt();
+            p.setPen(aciToRgb(c));
+            p.drawLine(x1, y1, x2, y2);
+        } else if (tag == "SLIDE") {
+            // Slides are .sld files — full support is a follow-up
+            // pass. For now we render a placeholder rectangle so
+            // the user knows a slide was requested.
+            if (items.size() >= 5) {
+                int x = items[1].asInt(), y = items[2].asInt();
+                int w = items[3].asInt(), h = items[4].asInt();
+                p.setPen(Qt::white);
+                p.drawRect(x, y, w - 1, h - 1);
+                p.drawText(x + 2, y + 12, "[slide]");
+            }
+        }
+    }
+    p.end();
+    label->setPixmap(pm);
 }
 
 void DialogWindow::setTileMode(const QString& key, int mode) {

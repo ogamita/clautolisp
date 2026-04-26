@@ -159,6 +159,10 @@ private slots:
             handleSet(msg);
         } else if (tag == "MODE-TILE") {
             handleMode(msg);
+        } else if (tag == "POPULATE-LIST") {
+            handlePopulateList(msg);
+        } else if (tag == "IMAGE-PAINT") {
+            handleImagePaint(msg);
         } else if (tag == "FOCUS") {
             // Optional: focus a key.
         } else if (tag == "BYE") {
@@ -217,6 +221,40 @@ private:
         if (auto window = windows_.value(id)) {
             window->setTileMode(clautolisp::sexpToQString(items[2]),
                                  static_cast<int>(items[3].asInt()));
+        }
+    }
+
+    void handleImagePaint(const clautolisp::Sexp& msg) {
+        // (:image-paint DID KEY (PRIM1 PRIM2 ...))
+        const auto& items = msg.asList();
+        if (items.size() < 4) return;
+        long long id = items[1].asInt();
+        QString key = clautolisp::sexpToQString(items[2]);
+        clautolisp::SexpList prims;
+        if (items[3].type() == clautolisp::Sexp::Type::List) {
+            prims = items[3].asList();
+        }
+        if (auto window = windows_.value(id)) {
+            window->paintImage(key, prims);
+        }
+    }
+
+    void handlePopulateList(const clautolisp::Sexp& msg) {
+        // (:populate-list DID KEY OPERATION INDEX (ITEM1 ITEM2 ...))
+        const auto& items = msg.asList();
+        if (items.size() < 6) return;
+        long long id = items[1].asInt();
+        QString key = clautolisp::sexpToQString(items[2]);
+        int operation = static_cast<int>(items[3].asInt());
+        int index = static_cast<int>(items[4].asInt());
+        QStringList strings;
+        if (items[5].type() == clautolisp::Sexp::Type::List) {
+            for (const auto& item : items[5].asList()) {
+                strings << clautolisp::sexpToQString(item);
+            }
+        }
+        if (auto window = windows_.value(id)) {
+            window->populateList(key, operation, index, strings);
         }
     }
 };
