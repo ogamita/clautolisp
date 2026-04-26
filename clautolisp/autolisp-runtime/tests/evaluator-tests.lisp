@@ -151,3 +151,13 @@ subroutine — single-cell rule (BricsCAD defect SR44723)."
               (clautolisp.autolisp-runtime:set-autolisp-symbol-function
                (intern-autolisp-symbol "ADD2") adder))))))
     (is (eql 7 result))))
+
+(test t-symbol-self-evaluates
+  "Bare T at the top level self-evaluates to T regardless of dialect.
+Without this, (cond (... ) (T fallback)) would silently fall
+through in any dialect whose unbound-variable mode is :silent-nil.
+Discovered via greet.lsp's GUI flow on 2026-04-26."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "T")))
+    (is (typep result 'clautolisp.autolisp-runtime:autolisp-symbol))
+    (is (string= "T" (clautolisp.autolisp-runtime:autolisp-symbol-name result)))))
