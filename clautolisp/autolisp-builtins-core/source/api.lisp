@@ -2612,6 +2612,120 @@ when no dialect is in scope."
   (host-handent (current-evaluation-host)
                 (autolisp-string-value (require-string handle-string "HANDENT"))))
 
+(defun require-pickset (object operator-name)
+  (unless (typep object 'autolisp-pickset)
+    (signal-builtin-argument-error
+     :invalid-pickset
+     operator-name
+     "~A expects a PICKSET, got ~S."
+     operator-name object))
+  object)
+
+;;; --- Phase 11: selection-set builtins -----------------------------
+
+(defun builtin-ssget (&rest arguments)
+  ;; (ssget)                   -> interactive (host-not-supported)
+  ;; (ssget MODE)              -> mode without filter
+  ;; (ssget MODE FILTER)       -> mode + filter
+  ;; (ssget FILTER)            -> "X" + filter (rare; treated as
+  ;;                              "X" / FILTER for convenience)
+  ;; Modes are AutoLISP-strings; FILTER is a list of dotted pairs.
+  (let* ((host (current-evaluation-host))
+         mode filter)
+    (cond
+      ((null arguments) nil)
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string) (setf mode only))
+           ((listp only) (setf mode (make-autolisp-string "X")
+                              filter only))
+           (t (signal-builtin-argument-error
+               :invalid-ssget-arguments
+               "SSGET"
+               "SSGET expects (MODE [FILTER]) or (MODE) or (FILTER), got ~S."
+               only)))))
+      (t
+       (setf mode (first arguments)
+             filter (second arguments))))
+    (host-ssget host filter :mode mode)))
+
+(defun builtin-ssadd (&rest arguments)
+  ;; (ssadd)              -> empty pickset
+  ;; (ssadd ENAME)        -> singleton pickset
+  ;; (ssadd ENAME PICKSET) -> updated pickset
+  (let ((host (current-evaluation-host)))
+    (case (length arguments)
+      (0 (host-ssadd host nil nil))
+      (1 (host-ssadd host nil (require-ename (first arguments) "SSADD")))
+      (2 (host-ssadd host
+                     (require-pickset (second arguments) "SSADD")
+                     (require-ename (first arguments) "SSADD")))
+      (otherwise
+       (signal-builtin-argument-error
+        :wrong-number-of-arguments
+        "SSADD"
+        "SSADD expects 0, 1, or 2 arguments, got ~D."
+        (length arguments))))))
+
+(defun builtin-ssdel (ename pickset)
+  (host-ssdel (current-evaluation-host)
+              (require-pickset pickset "SSDEL")
+              (require-ename ename "SSDEL")))
+
+(defun builtin-ssname (pickset index)
+  (host-ssname (current-evaluation-host)
+               (require-pickset pickset "SSNAME")
+               (require-int32 index "SSNAME")))
+
+(defun builtin-sslength (pickset)
+  (host-sslength (current-evaluation-host)
+                 (require-pickset pickset "SSLENGTH")))
+
+(defun builtin-ssmemb (ename pickset)
+  (host-ssmemb (current-evaluation-host)
+               (require-pickset pickset "SSMEMB")
+               (require-ename ename "SSMEMB")))
+
+(defun builtin-ssgetfirst ()
+  (host-ssgetfirst (current-evaluation-host)))
+
+(defun builtin-sssetfirst (grip-list &optional pickset)
+  ;; AutoLISP signature: (sssetfirst GRIP-SET PICKSET). MockHost
+  ;; ignores the grip set; we route the pickset to the host.
+  (declare (ignore grip-list))
+  (host-sssetfirst (current-evaluation-host)
+                   (and pickset (require-pickset pickset "SSSETFIRST"))))
+
+;;; --- Phase 11: table walkers --------------------------------------
+
+(defun builtin-tblsearch (kind name &optional next-after)
+  (declare (ignore next-after))
+  (host-tblsearch (current-evaluation-host)
+                  (autolisp-string-value (require-string kind "TBLSEARCH"))
+                  (autolisp-string-value (require-string name "TBLSEARCH"))))
+
+(defun builtin-tblnext (kind &optional rewind)
+  (host-tblnext (current-evaluation-host)
+                (autolisp-string-value (require-string kind "TBLNEXT"))
+                :rewind (autolisp-true-p rewind)))
+
+(defun builtin-tblobjname (kind name)
+  (host-tblobjname (current-evaluation-host)
+                   (autolisp-string-value (require-string kind "TBLOBJNAME"))
+                   (autolisp-string-value (require-string name "TBLOBJNAME"))))
+
+;;; --- Phase 11: sysvar access --------------------------------------
+
+(defun builtin-getvar (name)
+  (host-getvar (current-evaluation-host)
+               (autolisp-string-value (require-string name "GETVAR"))))
+
+(defun builtin-setvar (name value)
+  (host-setvar (current-evaluation-host)
+               (autolisp-string-value (require-string name "SETVAR"))
+               value))
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -2691,6 +2805,20 @@ when no dialect is in scope."
    (make-core-builtin-subr "ENTLAST"  #'builtin-entlast)
    (make-core-builtin-subr "ENTNEXT"  #'builtin-entnext)
    (make-core-builtin-subr "HANDENT"  #'builtin-handent)
+   ;; Phase 11 — selection sets, table walkers, sysvars
+   (make-core-builtin-subr "SSGET"      #'builtin-ssget)
+   (make-core-builtin-subr "SSADD"      #'builtin-ssadd)
+   (make-core-builtin-subr "SSDEL"      #'builtin-ssdel)
+   (make-core-builtin-subr "SSNAME"     #'builtin-ssname)
+   (make-core-builtin-subr "SSLENGTH"   #'builtin-sslength)
+   (make-core-builtin-subr "SSMEMB"     #'builtin-ssmemb)
+   (make-core-builtin-subr "SSGETFIRST" #'builtin-ssgetfirst)
+   (make-core-builtin-subr "SSSETFIRST" #'builtin-sssetfirst)
+   (make-core-builtin-subr "TBLSEARCH"  #'builtin-tblsearch)
+   (make-core-builtin-subr "TBLNEXT"    #'builtin-tblnext)
+   (make-core-builtin-subr "TBLOBJNAME" #'builtin-tblobjname)
+   (make-core-builtin-subr "GETVAR"     #'builtin-getvar)
+   (make-core-builtin-subr "SETVAR"     #'builtin-setvar)
    (make-core-builtin-subr "VL-EVERY" #'builtin-vl-every)
    (make-core-builtin-subr "VL-MEMBER-IF" #'builtin-vl-member-if)
    (make-core-builtin-subr "VL-MEMBER-IF-NOT" #'builtin-vl-member-if-not)

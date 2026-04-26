@@ -500,17 +500,64 @@ Smoke: ~clautolisp --host mock -x "(setq e (entmake ...)) (entget
 (cdr (assoc -1 e)))"~ runs the entmake -> entget round trip
 end-to-end and prints the layer name from the stored data list.
 
-** Phase 11 — MockHost Selection / Tables / Sysvars
-*Goal:* selection sets and table walkers.
+** Phase 11 — MockHost Selection / Tables / Sysvars [DONE 2026-04-26]
+*Goal:* selection sets, table walkers, and system variable
+access on MockHost.
 
-Scope:
-- ~ssget~ (with the AutoCAD filter-list grammar — ~"X"~ for boxed,
-  ~"_X"~ for one-time, the dotted-pair filter list, the
-  ~ssget "X" '((0 . "LINE"))~ shape)
-- ~ssadd~, ~ssdel~, ~ssname~, ~sslength~, ~ssmemb~
-- ~ssgetfirst~ / ~sssetfirst~
-- ~tblsearch~, ~tblnext~, ~tblobjname~
-- ~getvar~, ~setvar~ — with correct type coercion per sysvar kind
+*Status:* closed. Suite 959 / 0; the AutoLISP-side `(ssget "X"
+filter)` / `(tblsearch ...)` / `(getvar ...)` / `(setvar ...)`
+flow runs end-to-end against ~--host mock~.
+
+Scope delivered:
+- New file ~autolisp-mock-host/source/selection-api.lisp~
+  implements ~host-ssget~ (modes "X" / "_X" with optional
+  filter-list; other modes signal :unsupported-ssget-mode),
+  ~host-ssadd~ (zero / one / two arg shapes), ~host-ssdel~,
+  ~host-ssname~ (zero-based), ~host-sslength~, ~host-ssmemb~,
+  ~host-ssgetfirst~, ~host-sssetfirst~. Filter-list matching
+  honours comma-separated alternation and the `*` / `?`
+  wildcards on string values. Group-code -4 logical operators
+  (<AND, <OR, <NOT) are deferred.
+- New file ~autolisp-mock-host/source/table-api.lisp~ implements
+  ~host-tblsearch~, ~host-tblnext~ (with per-kind iterator state
+  on ~mock-host-tblnext-iterators~; rewind restarts), and
+  ~host-tblobjname~ returning an ENAME wrapping the table-record's
+  internal id.
+- New file ~autolisp-mock-host/source/sysvar-api.lisp~ implements
+  ~host-getvar~ (wraps strings in autolisp-string for AutoLISP
+  consumption) and ~host-setvar~ (per-kind coercion: integers
+  truncate reals; reals coerce numbers; strings reject non-strings;
+  points validate 2D/3D coordinate lists). Read-only cells signal
+  :sysvar-read-only; unknown names signal :unknown-sysvar.
+- ~autolisp-builtins-core~ gained 13 new AutoLISP builtins routing
+  through the HAL: ~SSGET~, ~SSADD~, ~SSDEL~, ~SSNAME~,
+  ~SSLENGTH~, ~SSMEMB~, ~SSGETFIRST~, ~SSSETFIRST~, ~TBLSEARCH~,
+  ~TBLNEXT~, ~TBLOBJNAME~, ~GETVAR~, ~SETVAR~.
+- Runtime exports new constructor ~make-autolisp-pickset~.
+
+Tests:
+- 21 new tests in
+  ~autolisp-mock-host/tests/selection-tests.lisp~ pin: ssget X /
+  X+filter / type / layer / comma-alternation / wildcard / empty
+  result / no-mode / unsupported-mode; ssadd / ssdel / ssname
+  positional / ssmemb membership / ssgetfirst+sssetfirst
+  round-trip; tblsearch hit + miss; tblnext walk and rewind;
+  tblobjname returns ename; getvar with string wrapping; getvar
+  on unknown name returns nil; setvar coerces integer / real /
+  string; setvar rejects read-only / unknown / type-mismatch.
+- Aggregate suite 76 + 184 + 29 + 122 + 418 + 130 = 959 / 0.
+
+Smoke (from the CLI under ~--host mock~):
+#+begin_example
+clautolisp --host mock -x \
+  "(princ (getvar \"CLAYER\"))            ; -> 0
+   (setvar \"CLAYER\" \"Drafting\")
+   (princ (getvar \"CLAYER\"))            ; -> Drafting
+   (princ (cdr (assoc 2 (tblsearch \"LAYER\" \"0\"))))  ; -> 0
+   (entmake (list (cons 0 \"LINE\") (cons 8 \"0\")))
+   (entmake (list (cons 0 \"CIRCLE\") (cons 8 \"0\")))
+   (princ (sslength (ssget \"X\" (list (cons 0 \"LINE\")))))"  ; -> 1
+#+end_example
 
 ** Phase 12 — Headless Interaction Channel
 *Goal:* let real AutoLISP scripts that read user input run in

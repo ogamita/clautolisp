@@ -26,7 +26,19 @@
                 #:host-entlast
                 #:host-entnext
                 #:host-handent
+                #:host-ssget
+                #:host-ssadd
+                #:host-ssdel
+                #:host-ssname
+                #:host-sslength
+                #:host-ssmemb
+                #:host-ssgetfirst
+                #:host-sssetfirst
+                #:host-tblsearch
+                #:host-tblnext
+                #:host-tblobjname
                 #:host-getvar
+                #:host-setvar
                 #:host-grdraw
                 #:host-prompt)
   (:import-from #:clautolisp.autolisp-mock-host
