@@ -79,6 +79,21 @@ state machine.")
 (defparameter *loaded-sources* (make-hash-table :test #'eql))
 (defparameter *active-dialogs* (make-hash-table :test #'eql))
 
+(defparameter *current-dialog-id* nil
+  "ID of the most recently started dialog instance — the implicit
+target of (set_tile), (get_tile), (action_tile), etc. Real
+AutoLISP's tile-manipulation functions all act on whichever
+dialog is currently active.")
+
+(defun current-dialog-id ()
+  *current-dialog-id*)
+
+(defun require-current-dialog-id (operator)
+  (or *current-dialog-id*
+      (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+       :no-active-dialog
+       "~A: no DCL dialog is currently active." operator)))
+
 (defun fresh-dcl-id ()
   (let ((n *next-dcl-id*))
     (incf *next-dcl-id*)
@@ -128,6 +143,7 @@ does not implement nested dialogs)."
                                    :focus nil)))
       (initialise-dialog-state dialog)
       (setf (gethash id *active-dialogs*) dialog)
+      (setf *current-dialog-id* id)
       (funcall (dcl-renderer-open-fn (current-dcl-renderer)) dialog)
       id)))
 
@@ -170,6 +186,8 @@ exit). Returns the dialog's terminal status integer."
       (setf (dcl-dialog-status dialog) status))
     (funcall (dcl-renderer-close-fn renderer) dialog)
     (remhash dialog-id *active-dialogs*)
+    (when (eql *current-dialog-id* dialog-id)
+      (setf *current-dialog-id* nil))
     (dcl-dialog-status dialog)))
 
 (defun dcl-runtime-done-dialog (dialog-id &optional (status 1))

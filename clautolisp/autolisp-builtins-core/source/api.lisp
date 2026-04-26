@@ -3565,6 +3565,10 @@ through mock-host-snapshot. Callbacks must be autolisp-symbols
   nil)
 
 (defun builtin-new-dialog (name id &optional action default-point)
+  ;; (new_dialog DIALOG-NAME DCL-ID [DEFAULT-ACTION [DEFAULT-POINT]])
+  ;; -> t on success, nil otherwise. The dialog created by this
+  ;; call becomes the *active* dialog; subsequent set_tile /
+  ;; action_tile / etc. target it implicitly.
   (declare (ignore default-point))
   (let* ((handle (require-int32 id "NEW_DIALOG"))
          (dialog-id (dcl-runtime-new-dialog
@@ -3572,104 +3576,103 @@ through mock-host-snapshot. Callbacks must be autolisp-symbols
                              (require-string name "NEW_DIALOG")))))
     (when (and action (not (null action)))
       (dcl-runtime-action-tile dialog-id "" action))
-    dialog-id))
+    (intern-autolisp-symbol "T")))
 
-(defun builtin-start-dialog (&optional id)
+(defun builtin-start-dialog ()
+  ;; (start_dialog) — no arguments. Drives the renderer's run-fn
+  ;; against the currently-active dialog and returns its terminal
+  ;; status integer.
   (cond
-    ((null id) 1)
-    (t (dcl-runtime-start-dialog (require-int32 id "START_DIALOG")))))
+    ((null (current-dialog-id)) 1)
+    (t (dcl-runtime-start-dialog (current-dialog-id)))))
 
-(defun builtin-done-dialog (&optional status dialog-id)
-  ;; Real AutoLISP's done_dialog takes an optional status only;
-  ;; the dialog is identified implicitly via the active dialog
-  ;; stack. Phase 15a accepts either form.
-  (let* ((s (cond
-              ((null status) 1)
-              ((integerp status) status)
-              (t 1)))
-         (id (and dialog-id (require-int32 dialog-id "DONE_DIALOG"))))
+(defun builtin-done-dialog (&optional status)
+  ;; (done_dialog [STATUS]) — close the active dialog.
+  (let ((s (cond
+             ((null status) 1)
+             ((integerp status) status)
+             (t 1)))
+        (id (current-dialog-id)))
     (cond
       (id (dcl-runtime-done-dialog id s))
       (t s))))
 
-(defun builtin-action-tile (dialog-id key callback)
-  (let ((id (cond
-              ((integerp dialog-id) dialog-id)
-              (t 0))))
-    (dcl-runtime-action-tile id
-                              (autolisp-string-value
-                               (require-string key "ACTION_TILE"))
-                              callback)
-    nil))
+(defun builtin-action-tile (key callback)
+  ;; (action_tile KEY CALLBACK-STRING) -> t on success
+  (dcl-runtime-action-tile
+   (require-current-dialog-id "ACTION_TILE")
+   (autolisp-string-value (require-string key "ACTION_TILE"))
+   callback)
+  (intern-autolisp-symbol "T"))
 
-(defun builtin-set-tile (dialog-id key value)
-  (let ((id (cond
-              ((integerp dialog-id) dialog-id)
-              (t 0))))
-    (dcl-runtime-set-tile
-     id
-     (autolisp-string-value (require-string key "SET_TILE"))
-     (cond
-       ((typep value 'autolisp-string) (autolisp-string-value value))
-       (t (princ-to-string value))))))
+(defun builtin-set-tile (key value)
+  ;; (set_tile KEY VALUE) -> VALUE
+  (dcl-runtime-set-tile
+   (require-current-dialog-id "SET_TILE")
+   (autolisp-string-value (require-string key "SET_TILE"))
+   (cond
+     ((typep value 'autolisp-string) (autolisp-string-value value))
+     (t (princ-to-string value))))
+  value)
 
-(defun builtin-get-tile (dialog-id key)
-  (let ((id (cond ((integerp dialog-id) dialog-id) (t 0))))
-    (make-autolisp-string
-     (or (dcl-runtime-get-tile
-          id (autolisp-string-value (require-string key "GET_TILE")))
-         ""))))
+(defun builtin-get-tile (key)
+  ;; (get_tile KEY) -> string
+  (make-autolisp-string
+   (or (dcl-runtime-get-tile
+        (require-current-dialog-id "GET_TILE")
+        (autolisp-string-value (require-string key "GET_TILE")))
+       "")))
 
-(defun builtin-mode-tile (dialog-id key mode)
-  (let ((id (cond ((integerp dialog-id) dialog-id) (t 0))))
-    (dcl-runtime-mode-tile
-     id
-     (autolisp-string-value (require-string key "MODE_TILE"))
-     (require-int32 mode "MODE_TILE"))
-    nil))
+(defun builtin-mode-tile (key mode)
+  ;; (mode_tile KEY MODE) -> nil
+  (dcl-runtime-mode-tile
+   (require-current-dialog-id "MODE_TILE")
+   (autolisp-string-value (require-string key "MODE_TILE"))
+   (require-int32 mode "MODE_TILE"))
+  nil)
 
-(defun builtin-client-data-tile (dialog-id key &optional value)
-  (let ((id (cond ((integerp dialog-id) dialog-id) (t 0)))
+(defun builtin-client-data-tile (key &optional value)
+  ;; (client_data_tile KEY [VALUE])
+  (let ((id (require-current-dialog-id "CLIENT_DATA_TILE"))
         (k (autolisp-string-value (require-string key "CLIENT_DATA_TILE"))))
     (cond
       (value (dcl-runtime-set-client-data id k value))
       (t (dcl-runtime-client-data id k)))))
 
-(defun builtin-dimx-tile (dialog-id key)
-  ;; Headless: report a fixed pixel-equivalent. Real AutoCAD
-  ;; returns the tile's rendered width.
-  (declare (ignore dialog-id key))
+(defun builtin-dimx-tile (key)
+  ;; (dimx_tile KEY) -> integer width. Headless: fixed value.
+  (declare (ignore key))
   100)
 
-(defun builtin-dimy-tile (dialog-id key)
-  (declare (ignore dialog-id key))
+(defun builtin-dimy-tile (key)
+  (declare (ignore key))
   20)
 
-(defun builtin-start-image (dialog-id key)
-  (declare (ignore dialog-id key))
+(defun builtin-start-image (key)
+  (declare (ignore key))
   nil)
 
 (defun builtin-end-image () nil)
 
 (defun builtin-fill-image (x y width height colour)
   (declare (ignore x y width height colour))
-  nil)
+  colour)
 
 (defun builtin-vector-image (x1 y1 x2 y2 colour)
   (declare (ignore x1 y1 x2 y2 colour))
-  nil)
+  colour)
 
 (defun builtin-slide-image (x1 y1 width height path)
   (declare (ignore x1 y1 width height path))
   nil)
 
-(defun builtin-start-list (dialog-id key &optional operation index)
-  (declare (ignore dialog-id key operation index))
+(defun builtin-start-list (key &optional operation index)
+  (declare (ignore key operation index))
   nil)
 
 (defun builtin-add-list (text)
   (declare (ignore text))
-  nil)
+  text)
 
 (defun builtin-end-list () nil)
 
