@@ -3546,6 +3546,147 @@ through mock-host-snapshot. Callbacks must be autolisp-symbols
   ;; persistent reactors. clautolisp uses the same name.
   (make-autolisp-string "ACAD_REACTORS"))
 
+;;; --- Phase 15a: DCL (Dialog Control Language) builtins -----------
+;;;
+;;; Thin wrappers around the autolisp-dcl runtime. The renderer is
+;;; pluggable: by default the Phase-15a terminal renderer is
+;;; installed at startup; future GUI backends (Phase 15b+) install
+;;; their own via dcl-runtime install-default-renderer.
+
+(defun builtin-load-dialog (path)
+  (let* ((value (autolisp-string-value (require-string path "LOAD_DIALOG")))
+         (resolved (resolve-load-pathname value)))
+    (cond
+      ((null resolved) -1)
+      (t (or (dcl-runtime-load-dialog (namestring resolved)) -1)))))
+
+(defun builtin-unload-dialog (id)
+  (dcl-runtime-unload-dialog (require-int32 id "UNLOAD_DIALOG"))
+  nil)
+
+(defun builtin-new-dialog (name id &optional action default-point)
+  (declare (ignore default-point))
+  (let* ((handle (require-int32 id "NEW_DIALOG"))
+         (dialog-id (dcl-runtime-new-dialog
+                     handle (autolisp-string-value
+                             (require-string name "NEW_DIALOG")))))
+    (when (and action (not (null action)))
+      (dcl-runtime-action-tile dialog-id "" action))
+    dialog-id))
+
+(defun builtin-start-dialog (&optional id)
+  (cond
+    ((null id) 1)
+    (t (dcl-runtime-start-dialog (require-int32 id "START_DIALOG")))))
+
+(defun builtin-done-dialog (&optional status dialog-id)
+  ;; Real AutoLISP's done_dialog takes an optional status only;
+  ;; the dialog is identified implicitly via the active dialog
+  ;; stack. Phase 15a accepts either form.
+  (let* ((s (cond
+              ((null status) 1)
+              ((integerp status) status)
+              (t 1)))
+         (id (and dialog-id (require-int32 dialog-id "DONE_DIALOG"))))
+    (cond
+      (id (dcl-runtime-done-dialog id s))
+      (t s))))
+
+(defun builtin-action-tile (dialog-id key callback)
+  (let ((id (cond
+              ((integerp dialog-id) dialog-id)
+              (t 0))))
+    (dcl-runtime-action-tile id
+                              (autolisp-string-value
+                               (require-string key "ACTION_TILE"))
+                              callback)
+    nil))
+
+(defun builtin-set-tile (dialog-id key value)
+  (let ((id (cond
+              ((integerp dialog-id) dialog-id)
+              (t 0))))
+    (dcl-runtime-set-tile
+     id
+     (autolisp-string-value (require-string key "SET_TILE"))
+     (cond
+       ((typep value 'autolisp-string) (autolisp-string-value value))
+       (t (princ-to-string value))))))
+
+(defun builtin-get-tile (dialog-id key)
+  (let ((id (cond ((integerp dialog-id) dialog-id) (t 0))))
+    (make-autolisp-string
+     (or (dcl-runtime-get-tile
+          id (autolisp-string-value (require-string key "GET_TILE")))
+         ""))))
+
+(defun builtin-mode-tile (dialog-id key mode)
+  (let ((id (cond ((integerp dialog-id) dialog-id) (t 0))))
+    (dcl-runtime-mode-tile
+     id
+     (autolisp-string-value (require-string key "MODE_TILE"))
+     (require-int32 mode "MODE_TILE"))
+    nil))
+
+(defun builtin-client-data-tile (dialog-id key &optional value)
+  (let ((id (cond ((integerp dialog-id) dialog-id) (t 0)))
+        (k (autolisp-string-value (require-string key "CLIENT_DATA_TILE"))))
+    (cond
+      (value (dcl-runtime-set-client-data id k value))
+      (t (dcl-runtime-client-data id k)))))
+
+(defun builtin-dimx-tile (dialog-id key)
+  ;; Headless: report a fixed pixel-equivalent. Real AutoCAD
+  ;; returns the tile's rendered width.
+  (declare (ignore dialog-id key))
+  100)
+
+(defun builtin-dimy-tile (dialog-id key)
+  (declare (ignore dialog-id key))
+  20)
+
+(defun builtin-start-image (dialog-id key)
+  (declare (ignore dialog-id key))
+  nil)
+
+(defun builtin-end-image () nil)
+
+(defun builtin-fill-image (x y width height colour)
+  (declare (ignore x y width height colour))
+  nil)
+
+(defun builtin-vector-image (x1 y1 x2 y2 colour)
+  (declare (ignore x1 y1 x2 y2 colour))
+  nil)
+
+(defun builtin-slide-image (x1 y1 width height path)
+  (declare (ignore x1 y1 width height path))
+  nil)
+
+(defun builtin-start-list (dialog-id key &optional operation index)
+  (declare (ignore dialog-id key operation index))
+  nil)
+
+(defun builtin-add-list (text)
+  (declare (ignore text))
+  nil)
+
+(defun builtin-end-list () nil)
+
+(defun builtin-term-dialog ()
+  ;; Real AutoLISP's term_dialog tears down all active dialogs and
+  ;; never errors when there are none. We mark every active dialog
+  ;; finished with status 0 (cancel) and let the renderer's run-fn
+  ;; close them out.
+  (let ((active (symbol-value
+                 (find-symbol "*ACTIVE-DIALOGS*"
+                              :clautolisp.autolisp-dcl))))
+    (when active
+      (loop for id being the hash-keys of active
+            do (handler-case (dcl-runtime-done-dialog id 0)
+                 (error () nil)))))
+  nil)
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -3718,6 +3859,28 @@ through mock-host-snapshot. Callbacks must be autolisp-symbols
    (make-core-builtin-subr "VLR-PERS-LIST"             #'builtin-vlr-pers-list)
    (make-core-builtin-subr "VLR-PERS-P"                #'builtin-vlr-pers-p)
    (make-core-builtin-subr "VLR-PERS-DICTNAME"         #'builtin-vlr-pers-dictname)
+   ;; Phase 15a — DCL (Dialog Control Language) builtins
+   (make-core-builtin-subr "LOAD_DIALOG"        #'builtin-load-dialog)
+   (make-core-builtin-subr "UNLOAD_DIALOG"      #'builtin-unload-dialog)
+   (make-core-builtin-subr "NEW_DIALOG"         #'builtin-new-dialog)
+   (make-core-builtin-subr "START_DIALOG"       #'builtin-start-dialog)
+   (make-core-builtin-subr "DONE_DIALOG"        #'builtin-done-dialog)
+   (make-core-builtin-subr "ACTION_TILE"        #'builtin-action-tile)
+   (make-core-builtin-subr "SET_TILE"           #'builtin-set-tile)
+   (make-core-builtin-subr "GET_TILE"           #'builtin-get-tile)
+   (make-core-builtin-subr "MODE_TILE"          #'builtin-mode-tile)
+   (make-core-builtin-subr "CLIENT_DATA_TILE"   #'builtin-client-data-tile)
+   (make-core-builtin-subr "DIMX_TILE"          #'builtin-dimx-tile)
+   (make-core-builtin-subr "DIMY_TILE"          #'builtin-dimy-tile)
+   (make-core-builtin-subr "START_IMAGE"        #'builtin-start-image)
+   (make-core-builtin-subr "END_IMAGE"          #'builtin-end-image)
+   (make-core-builtin-subr "FILL_IMAGE"         #'builtin-fill-image)
+   (make-core-builtin-subr "VECTOR_IMAGE"       #'builtin-vector-image)
+   (make-core-builtin-subr "SLIDE_IMAGE"        #'builtin-slide-image)
+   (make-core-builtin-subr "START_LIST"         #'builtin-start-list)
+   (make-core-builtin-subr "ADD_LIST"           #'builtin-add-list)
+   (make-core-builtin-subr "END_LIST"           #'builtin-end-list)
+   (make-core-builtin-subr "TERM_DIALOG"        #'builtin-term-dialog)
    (make-core-builtin-subr "VL-EVERY" #'builtin-vl-every)
    (make-core-builtin-subr "VL-MEMBER-IF" #'builtin-vl-member-if)
    (make-core-builtin-subr "VL-MEMBER-IF-NOT" #'builtin-vl-member-if-not)

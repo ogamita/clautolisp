@@ -7,6 +7,7 @@
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-mock-host"
                "clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-file-compat")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
@@ -91,12 +92,31 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/autolisp-dcl"
+  :description "Dialog Control Language (DCL) implementation for clautolisp."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-dcl/source/package")
+   (:file "autolisp-dcl/source/model")
+   (:file "autolisp-dcl/source/parser")
+   (:file "autolisp-dcl/source/runtime")
+   (:file "autolisp-dcl/source/terminal"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-dcl/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
 (asdf:defsystem "clautolisp/autolisp-builtins-core"
   :description "Initial core builtin registry for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
+               "clautolisp/autolisp-dcl"
                "uiop")
   :serial t
   :components
@@ -217,6 +237,23 @@
                          (uiop:symbol-call :clautolisp.autolisp-mock-host.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-dcl/tests"
+  :description "Tests for the clautolisp DCL subsystem."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-dcl" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-dcl/tests/package")
+   (:file "autolisp-dcl/tests/test-harness")
+   (:file "autolisp-dcl/tests/parser-tests")
+   (:file "autolisp-dcl/tests/runtime-tests")
+   (:file "autolisp-dcl/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-dcl.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/autolisp-runtime/tests"
   :description "Tests for the clautolisp AutoLISP runtime object model."
   :author "Codex"
@@ -277,6 +314,7 @@
                "clautolisp/autolisp-runtime/tests"
                "clautolisp/autolisp-host/tests"
                "clautolisp/autolisp-mock-host/tests"
+               "clautolisp/autolisp-dcl/tests"
                "clautolisp/autolisp-builtins-core/tests"
                "clautolisp/autolisp-file-compat/tests")
   :perform (asdf:test-op (op system)
@@ -289,6 +327,8 @@
                            (uiop:symbol-call :clautolisp.autolisp-host.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-mock-host.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-dcl.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
                                              :run-all-tests)

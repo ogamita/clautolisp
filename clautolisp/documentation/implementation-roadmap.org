@@ -806,16 +806,79 @@ $ clautolisp -x "(princ (vlr-types))"
  LISP MISCELLANEOUS)
 #+end_example
 
-** Phase 15 — DCL and Optional GUI
-*Goal:* dialog support, optional GUI backend.
+** Phase 15a — DCL Parser, Runtime, and Terminal UI [DONE 2026-04-26]
+*Goal:* dialog-control-language support with a usable
+fallback renderer that does not require a GUI toolkit.
+
+Realised scope:
+- New ~clautolisp/autolisp-dcl~ system with ~package.lisp~,
+  ~model.lisp~, ~parser.lisp~, ~runtime.lisp~, ~terminal.lisp~.
+- DCL syntax parser: line / block comments, attribute
+  declarations, named children, anonymous children, predefined
+  tile instantiation, string and numeric literals, identifier
+  case-folding via ~dcl-keyword~.
+- ~dcl-tile~ / ~dcl-source~ / ~dcl-dialog~ records — keyed
+  state map, action map, mode map, client-data map, focus
+  pointer, status, finished-p flag.
+- Predefined tile registry seeded with ~ok_button~,
+  ~cancel_button~, ~help_button~, ~ok_only~, ~ok_cancel~,
+  ~ok_cancel_help~ (extensible at load-time via
+  ~register-predefined-tile~).
+- Runtime API: ~dcl-runtime-load-dialog~,
+  ~dcl-runtime-unload-dialog~, ~dcl-runtime-new-dialog~,
+  ~dcl-runtime-start-dialog~, ~dcl-runtime-done-dialog~,
+  ~dcl-runtime-action-tile~, ~dcl-runtime-set-tile~,
+  ~dcl-runtime-get-tile~, ~dcl-runtime-mode-tile~,
+  ~dcl-runtime-client-data~ / ~-set-client-data~,
+  ~dcl-runtime-find-tile~, ~dcl-runtime-fire-action~.
+- Pluggable renderer protocol via ~*dcl-renderer*~ /
+  ~install-default-renderer~. Renderer struct exposes
+  ~open-fn~, ~close-fn~, ~set-tile-fn~, ~focus-fn~,
+  ~mode-fn~, ~run-fn~ slots.
+- Pure-Common-Lisp terminal renderer (no ncurses, no FFI):
+  ASCII tile-tree rendering, line-oriented prompt loop,
+  ~key=value~ commands fire actions, ~accept~/~cancel~/~quit~
+  exit with conventional status (1/0/0). Auto-installed at
+  load time.
+- Action callback contract: ~action_tile~ accepts either an
+  AutoLISP source string (parsed and evaluated via
+  ~read-runtime-from-string~ + ~autolisp-eval-progn~) or a
+  callable. Before invoking it, ~$KEY$~, ~$VALUE$~, ~$REASON$~,
+  ~$DATA$~ are bound in the active evaluation context.
+- AutoLISP-visible builtins (21): ~load_dialog~, ~unload_dialog~,
+  ~new_dialog~, ~start_dialog~, ~done_dialog~, ~action_tile~,
+  ~set_tile~, ~get_tile~, ~mode_tile~, ~client_data_tile~,
+  ~dimx_tile~, ~dimy_tile~, ~start_image~, ~end_image~,
+  ~fill_image~, ~vector_image~, ~slide_image~, ~start_list~,
+  ~add_list~, ~end_list~, ~term_dialog~.
+- Tests: 14 FiveAM tests (parser corpus + runtime lifecycle +
+  action callback symbol bindings + set/get round-trip +
+  default-renderer presence). Total 25 checks, all passing.
+
+Out of scope (Phase 15b):
+- ~start_list~ / ~add_list~ / ~end_list~ are placeholders that
+  do not yet feed the list-box renderer.
+- Image tiles render as a stub.
+- No GUI subprocess driver yet.
+
+** Phase 15b — Pluggable GUI Protocol + Qt6 C++ Driver
+*Goal:* a wire protocol that lets a separate process (Qt6 or
+web) act as the DCL renderer, while keeping the existing
+terminal renderer as the documented fallback.
 
 Scope:
-- DCL parser + tile model (~load_dialog~, ~new_dialog~,
-  ~start_dialog~, ~done_dialog~, ~unload_dialog~).
-- ~action_tile~, ~set_tile~, ~get_tile~, ~mode_tile~,
-  ~start_image~, ~vector_image~ etc.
-- Headless backend (records tile actions, no rendering).
-- Optional GUI backend (Qt or web) — separate worktree, opt-in.
+- Wire-protocol design (JSON-line over stdio, or a Unix
+  socket): ~open-dialog~, ~set-tile~, ~mode-tile~, ~focus~,
+  ~close-dialog~ messages downstream; ~action~, ~done~
+  messages upstream.
+- ~clautolisp-gui-driver~ ASDF system that wraps the wire
+  protocol behind a ~dcl-renderer~ instance.
+- Reference Qt6 C++ subprocess (~tools/clautolisp-gui-qt~)
+  that consumes the protocol.
+- Selection mechanism: ~CLAUTOLISP_GUI~ env var or
+  ~--gui qt~ CLI flag.
+- ~start_list~ / ~add_list~ / ~end_list~ wired through to a
+  list-box widget on the GUI side.
 
 ** Phase 16 — LiveHost Adapter
 *Goal:* run AutoLISP scripts through clautolisp against an actual
