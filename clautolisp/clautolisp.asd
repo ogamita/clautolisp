@@ -102,6 +102,7 @@
   :serial t
   :components
   ((:file "tools/clautolisp/source/package")
+   (:file "tools/clautolisp/source/version")
    (:file "tools/clautolisp/source/main")))
 
 (asdf:defsystem "clautolisp/run-file-compat"

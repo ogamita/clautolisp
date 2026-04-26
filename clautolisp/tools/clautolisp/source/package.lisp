@@ -37,4 +37,5 @@
   (:import-from #:clautolisp.autolisp-builtins-core
                 #:autolisp-value->string
                 #:install-core-builtins)
-  (:export #:main))
+  (:export #:main
+           #:*version*))
