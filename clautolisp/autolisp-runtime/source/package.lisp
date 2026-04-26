@@ -180,6 +180,10 @@
    #:read-runtime-from-file
    #:runtime-session-dialect
    #:set-runtime-session-dialect
+   #:runtime-session-host
+   #:set-runtime-session-host
+   #:current-evaluation-host
+   #:*default-runtime-host*
    #:current-evaluation-dialect
    #:derive-reader-options-for-dialect
    #:make-default-runtime-context
