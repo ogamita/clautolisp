@@ -1442,29 +1442,46 @@ through. Used by the standalone evaluator's load path."
   (clautolisp.autolisp-reader:reader-options-from-dialect
    dialect :source-name source-name))
 
-(defun run-autolisp-file (path &key dialect source-name)
-  "Read PATH under DIALECT, evaluate its forms in a fresh session, and
-return the value of the last form. DIALECT defaults to the strict
-profile. SOURCE-NAME, if supplied, is used in diagnostic spans;
-otherwise the file's namestring is used."
+(defun make-default-runtime-context (&key dialect)
+  "Create a fresh runtime session under DIALECT, install it as the
+default evaluation context, and return the context. Use this when a
+caller (e.g. the standalone evaluator or the REPL) needs to set up
+host-level state — such as installing builtin function bindings —
+before evaluation begins."
   (let* ((selected-dialect
           (or dialect (clautolisp.autolisp-reader:autolisp-dialect-strict)))
          (session (make-runtime-session :dialect selected-dialect))
          (context (make-evaluation-context :session session)))
     (set-default-evaluation-context context)
+    context))
+
+(defun run-autolisp-file (path &key dialect source-name setup-fn)
+  "Read PATH under DIALECT, evaluate its forms in a fresh session, and
+return the value of the last form. DIALECT defaults to the strict
+profile. SOURCE-NAME, if supplied, is used in diagnostic spans;
+otherwise the file's namestring is used. SETUP-FN, if supplied, is
+called once with the new context after the session is installed but
+before any source forms are read — typically used to install builtin
+function bindings into the new session's namespace."
+  (let* ((selected-dialect
+          (or dialect (clautolisp.autolisp-reader:autolisp-dialect-strict)))
+         (context (make-default-runtime-context :dialect selected-dialect)))
+    (when setup-fn
+      (funcall setup-fn context))
     (let* ((effective-source-name (or source-name (namestring path)))
            (options (derive-reader-options-for-dialect
                      selected-dialect :source-name effective-source-name)))
       (autolisp-load-file-in-context path context :options options))))
 
-(defun run-autolisp-string (text &key dialect source-name)
+(defun run-autolisp-string (text &key dialect source-name setup-fn)
   "Read TEXT under DIALECT and evaluate every form sequentially in a
-fresh session. Useful for `-x EXPR`-style command-line invocations."
+fresh session. Useful for `-x EXPR`-style command-line invocations.
+SETUP-FN behaves as for `run-autolisp-file`."
   (let* ((selected-dialect
           (or dialect (clautolisp.autolisp-reader:autolisp-dialect-strict)))
-         (session (make-runtime-session :dialect selected-dialect))
-         (context (make-evaluation-context :session session)))
-    (set-default-evaluation-context context)
+         (context (make-default-runtime-context :dialect selected-dialect)))
+    (when setup-fn
+      (funcall setup-fn context))
     (let* ((options (derive-reader-options-for-dialect
                      selected-dialect :source-name (or source-name "<string>")))
            (forms (apply #'read-runtime-from-string text :options options

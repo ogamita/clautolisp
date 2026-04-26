@@ -1,16 +1,15 @@
 (in-package #:clautolisp.tools.clautolisp)
 
-;;;; clautolisp — standalone AutoLISP evaluator.
+;;;; clautolisp — standalone AutoLISP evaluator and interactive REPL.
 ;;;;
-;;;; Reads an AutoLISP source file (or `-x EXPR` snippet), evaluates
-;;;; every form in a fresh runtime session under a chosen dialect,
-;;;; and exits with a meaningful status code.
-;;;;
-;;;; Authored as part of Phase 6 of the implementation plan.
+;;;; Reads an AutoLISP source file (or `-x EXPR` snippet, or stdin via
+;;;; the REPL), evaluates every form in a fresh runtime session under
+;;;; a chosen dialect, and exits with a meaningful status code.
 
 (defun usage ()
   (format t "~&Usage: clautolisp [options] FILE.lsp~%")
   (format t "       clautolisp [options] -x EXPRESSION~%")
+  (format t "       clautolisp [options]              (interactive REPL)~%")
   (format t "Options:~%")
   (format t "  --dialect NAME     One of: strict (default), autocad-2026, bricscad-v26.~%")
   (format t "  --strict           Shorthand for --dialect strict.~%")
@@ -28,9 +27,9 @@
 
 (defun parse-arguments (arguments)
   "Returns (values dialect mode payload). MODE is :file, :expression
-or :missing-input. PAYLOAD is the FILE path or EXPRESSION string."
+or :repl. PAYLOAD is the FILE path or EXPRESSION string (nil for :repl)."
   (let ((dialect (autolisp-dialect-strict))
-        (mode :missing-input)
+        (mode :repl)
         (payload nil))
     (loop while arguments
           for argument = (pop arguments)
@@ -57,9 +56,8 @@ or :missing-input. PAYLOAD is the FILE path or EXPRESSION string."
                      (char= (char argument 0) #\-))
                 (error "Unknown option ~S." argument))
                (t
-                (when (eq mode :missing-input)
-                  (setf mode :file)
-                  (setf payload argument)))))
+                (setf mode :file)
+                (setf payload argument))))
     (values dialect mode payload)))
 
 (defun span->string (span)
@@ -84,16 +82,119 @@ or :missing-input. PAYLOAD is the FILE path or EXPRESSION string."
 (defun report-error (condition)
   (format *error-output* "~&clautolisp: ~A~%" condition))
 
+(defun setup-builtins (context)
+  "Install the core builtins into the freshly installed evaluation
+context's namespace."
+  (declare (ignore context))
+  (install-core-builtins))
+
+;;; --- Interactive REPL -----------------------------------------------
+
+(defun simple-error-diagnostic (condition)
+  "Return the reader's structured diagnostic carried by CONDITION (the
+parser raises a `simple-error` whose first format argument is a
+`diagnostic`), or nil if the condition is not shaped that way."
+  (let ((arguments (simple-condition-format-arguments condition)))
+    (and arguments
+         (typep (first arguments) 'diagnostic)
+         (first arguments))))
+
+(defun reader-error-incomplete-p (condition)
+  "True iff CONDITION reports an unexpected end of input — i.e. the
+parser ran out of tokens partway through a list, dotted pair, or
+other structured form. Used by the REPL to know whether to prompt
+for another continuation line."
+  (let ((diagnostic (simple-error-diagnostic condition)))
+    (and diagnostic
+         (eq :unexpected-eof (diagnostic-code diagnostic)))))
+
+(defun read-balanced-source-from-stream (stream prompt continuation-prompt
+                                                  dialect)
+  "Read whole, parser-balanced AutoLISP source from STREAM, prompting
+between continuation lines. Returns (values text eofp) where TEXT is
+the accumulated source string (with embedded newlines) or nil when
+STREAM signalled end-of-file before any input was given."
+  (let ((accumulated nil))
+    (loop
+      (write-string (if accumulated continuation-prompt prompt))
+      (finish-output)
+      (let ((line (read-line stream nil :eof)))
+        (cond
+          ((and (eq line :eof) (null accumulated))
+           (return (values nil t)))
+          ((eq line :eof)
+           ;; Treat a stranded continuation as end-of-input: surface
+           ;; what we have (parser will surface a diagnostic).
+           (return (values accumulated nil)))
+          (t
+           (setf accumulated
+                 (if accumulated
+                     (concatenate 'string accumulated (string #\Newline) line)
+                     line))
+           (handler-case
+               (progn
+                 (read-runtime-from-string
+                  accumulated
+                  :options (derive-reader-options-for-dialect
+                            dialect :source-name "<repl>"))
+                 (return (values accumulated nil)))
+             (simple-error (condition)
+               (unless (reader-error-incomplete-p condition)
+                 (return (values accumulated nil)))))))))))
+
+(defun repl-loop (dialect context)
+  (format t "~&clautolisp REPL (~A dialect) — Ctrl-D to exit.~%"
+          (autolisp-dialect-name dialect))
+  (loop
+    (multiple-value-bind (source eofp)
+        (read-balanced-source-from-stream
+         *standard-input* "_$ " "   " dialect)
+      (when eofp
+        (terpri)
+        (return))
+      (handler-case
+          (let* ((options (derive-reader-options-for-dialect
+                           dialect :source-name "<repl>"))
+                 (forms (read-runtime-from-string source :options options))
+                 (result (call-with-autolisp-error-handler
+                          (lambda () (autolisp-eval-progn forms context))
+                          context)))
+            (format t "~A~%" (autolisp-value->string result nil)))
+        (simple-error (condition)
+          (let ((diagnostic (simple-error-diagnostic condition)))
+            (if diagnostic
+                (format *error-output* "~&; reader error: ~A: ~A~%"
+                        (diagnostic-code diagnostic)
+                        condition)
+                (format *error-output* "~&; reader error: ~A~%" condition))))
+        (autolisp-runtime-error (condition)
+          (report-runtime-error condition))
+        (autolisp-termination (condition)
+          (report-termination condition)
+          (return))))))
+
+(defun run-repl (dialect)
+  (let ((context (make-default-runtime-context :dialect dialect)))
+    (setup-builtins context)
+    (handler-case
+        (repl-loop dialect context)
+      (autolisp-termination (condition)
+        (report-termination condition)
+        (quit 0)))))
+
+;;; --- Batch entry points ---------------------------------------------
+
 (defun run-with-input (dialect mode payload)
-  ;; Builtins must be installed once before any evaluation; they
-  ;; share the global symbol table that fresh sessions also use.
-  (install-core-builtins)
   (handler-case
       (ecase mode
         (:file
-         (run-autolisp-file payload :dialect dialect))
+         (run-autolisp-file payload :dialect dialect :setup-fn #'setup-builtins))
         (:expression
-         (run-autolisp-string payload :dialect dialect)))
+         (run-autolisp-string payload :dialect dialect
+                              :source-name "<-x>"
+                              :setup-fn #'setup-builtins))
+        (:repl
+         (run-repl dialect)))
     (autolisp-runtime-error (condition)
       (report-runtime-error condition)
       (quit 1))
@@ -108,14 +209,9 @@ or :missing-input. PAYLOAD is the FILE path or EXPRESSION string."
   (handler-case
       (multiple-value-bind (dialect mode payload)
           (parse-arguments (rest argv))
-        (cond
-          ((eq mode :missing-input)
-           (usage)
-           (quit 2))
-          (t
-           (run-with-input dialect mode payload)
-           (finish-output)
-           (quit 0))))
+        (run-with-input dialect mode payload)
+        (finish-output)
+        (quit 0))
     (error (error)
       (report-error error)
       (finish-output *error-output*)
