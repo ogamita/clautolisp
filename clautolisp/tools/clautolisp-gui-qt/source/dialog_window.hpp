@@ -33,6 +33,11 @@ private:
     ActionEmitter actionFn_;
     DoneEmitter doneFn_;
     QWidget* buildTile(const Tile& tile);
+    // Walk every interactive child widget and emit its current
+    // value as an :action upstream. Called immediately before any
+    // exiting button fires so the runtime's get_tile observes the
+    // latest user input without depending on focus-change timing.
+    void flushInputs();
 };
 
 } // namespace clautolisp

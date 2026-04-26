@@ -62,6 +62,10 @@ QWidget* DialogWindow::buildTile(const Tile& tile) {
         btn->setObjectName(tile.key);
         QString key = tile.key;
         connect(btn, &QPushButton::clicked, this, [this, key, tile]() {
+            // Flush all interactive tiles' current values upstream
+            // before firing the button so (get_tile) inside the
+            // button's action callback observes the latest input.
+            flushInputs();
             actionFn_(key, "1", "selected");
             if (attrAsBool(tile, "is_default")) doneFn_(1);
             else if (attrAsBool(tile, "is_cancel")) doneFn_(0);
@@ -74,9 +78,12 @@ QWidget* DialogWindow::buildTile(const Tile& tile) {
         auto* edit = new QLineEdit(attrAsString(tile, "value"));
         edit->setObjectName(tile.key);
         QString key = tile.key;
-        connect(edit, &QLineEdit::editingFinished, this, [this, edit, key]() {
-            actionFn_(key, edit->text(), "selected");
-        });
+        // Fire on every keystroke so callbacks see the live value
+        // even if the user clicks a button without tab-ing out.
+        connect(edit, &QLineEdit::textChanged, this,
+                [this, key](const QString& text) {
+                    actionFn_(key, text, "selected");
+                });
         layout->addRow(attrAsString(tile, "label", tile.key), edit);
         return container;
     }
@@ -134,6 +141,7 @@ QWidget* DialogWindow::buildTile(const Tile& tile) {
         auto* box = new QDialogButtonBox;
         auto* ok = box->addButton(QDialogButtonBox::Ok);
         connect(ok, &QPushButton::clicked, this, [this]() {
+            flushInputs();
             actionFn_("accept", "1", "selected");
             doneFn_(1);
         });
@@ -154,6 +162,31 @@ QWidget* DialogWindow::buildTile(const Tile& tile) {
     }
     // Fallback: render as a placeholder label.
     return new QLabel(QStringLiteral("[%1 %2]").arg(type, tile.key));
+}
+
+void DialogWindow::flushInputs() {
+    for (auto* edit : findChildren<QLineEdit*>()) {
+        if (!edit->objectName().isEmpty()) {
+            actionFn_(edit->objectName(), edit->text(), "selected");
+        }
+    }
+    for (auto* box : findChildren<QCheckBox*>()) {
+        if (!box->objectName().isEmpty()) {
+            actionFn_(box->objectName(), box->isChecked() ? "1" : "0", "selected");
+        }
+    }
+    for (auto* combo : findChildren<QComboBox*>()) {
+        if (!combo->objectName().isEmpty()) {
+            actionFn_(combo->objectName(),
+                      QString::number(combo->currentIndex()), "selected");
+        }
+    }
+    for (auto* list : findChildren<QListWidget*>()) {
+        if (!list->objectName().isEmpty()) {
+            actionFn_(list->objectName(),
+                      QString::number(list->currentRow()), "selected");
+        }
+    }
 }
 
 void DialogWindow::setTileValue(const QString& key, const QString& value) {
