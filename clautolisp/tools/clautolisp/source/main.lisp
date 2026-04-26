@@ -98,8 +98,11 @@ subprocess command line for the DCL renderer."
                ((string= argument "--gui")
                 (unless arguments
                   (error "Missing argument after --gui."))
-                (setf gui (uiop:split-string (pop arguments)
-                                              :separator '(#\Space))))
+                ;; Pass the command string straight through —
+                ;; uiop:launch-program routes a string through the
+                ;; shell, which is what users want for pipelines
+                ;; and quoted arguments.
+                (setf gui (pop arguments)))
                ((string= argument "-x")
                 (unless arguments
                   (error "Missing expression after -x."))
@@ -287,8 +290,7 @@ autolisp-dcl load time) stays in effect."
   (let ((effective
           (or gui-command
               (let ((env (uiop:getenv "CLAUTOLISP_GUI")))
-                (and env (plusp (length env))
-                     (uiop:split-string env :separator '(#\Space)))))))
+                (and env (plusp (length env)) env)))))
     (when effective
       (clautolisp.autolisp-dcl:install-default-renderer
        (clautolisp.autolisp-dcl:make-subprocess-renderer

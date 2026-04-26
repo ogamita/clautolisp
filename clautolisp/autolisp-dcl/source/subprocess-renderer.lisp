@@ -150,11 +150,12 @@ Returns the dialog's terminal status."
            (otherwise nil)))))))
 
 (defun resolve-gui-command (command)
+  ;; Accept either a string (run via the shell) or a list (exec
+  ;; directly). uiop:launch-program treats both natively.
   (cond
     (command command)
     (t (let ((env (uiop:getenv "CLAUTOLISP_GUI")))
-         (when (and env (plusp (length env)))
-           (uiop:split-string env :separator '(#\Space)))))))
+         (when (and env (plusp (length env))) env)))))
 
 (defun make-subprocess-renderer (&key command)
   "Build a dcl-renderer that funnels every event through the sexp
