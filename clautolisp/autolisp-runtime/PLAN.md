@@ -61,7 +61,7 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [x] Refine the first implementation-defined `ERRNO` mapping from a binary `0/1` result into a documented provisional compatibility table.
 - [x] Separate provisional `ERRNO` classes for invalid-form failures, file/stream/path failures, and wrapped host-runtime failures.
 - [ ] Refine that provisional `ERRNO` table against real Autodesk/BricsCAD evidence.
-- [ ] Refine `exit`, `quit`, and namespace-exit control transfer against real product command-loop behavior.
+- [x] Refine `exit`, `quit`, and namespace-exit control transfer against real product command-loop behavior. (2026-04-26: BricsCAD V26 vendor pages confirm `exit` and `quit` are documented identically — same zero-arity signature, same effect, same abort-channel message `; error : quit / exit abort`. Phase-5 closure recorded; the historical hypothesis of a vendor-recognised semantic distinction is not supported by current evidence. The runtime treats them as alternative spellings of the same primitive.)
 - [ ] Refine runtime session/document/blackboard propagation semantics against real Autodesk/BricsCAD namespace behavior.
 
 ## Integration Tasks

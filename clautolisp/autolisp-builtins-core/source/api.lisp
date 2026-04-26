@@ -7,7 +7,7 @@
     "MAPCAR" "VL-EVERY" "VL-MEMBER-IF" "VL-MEMBER-IF-NOT" "VL-REMOVE-IF"
     "VL-REMOVE-IF-NOT" "VL-SOME"
     "+" "-" "*" "/" "1+" "1-" "MAX" "MIN" "REM" "GCD" "LCM" "~" "LOGAND"
-    "LOGIOR" "LSH" "STRCAT" "STRLEN" "SUBSTR" "ASCII" "CHR"
+    "LOGIOR" "LSH" "STRCAT" "STRLEN" "SUBSTR" "ASCII" "CHR" "ATOI" "ATOF"
     "READ" "LOAD" "AUTOLOAD" "OPEN" "CLOSE" "READ-LINE" "READ-CHAR" "WRITE-LINE" "WRITE-CHAR"
     "FINDFILE" "FINDTRUSTEDFILE" "VL-DIRECTORY-FILES" "VL-FILE-DIRECTORY-P"
     "VL-FILENAME-BASE" "VL-FILENAME-DIRECTORY" "VL-FILENAME-EXTENSION"
@@ -1266,6 +1266,118 @@
           (write-char character *standard-output*)
           char-code))))
 
+;; --- atoi / atof (Phase-5 product-tested model) ----------------------
+;;
+;; Lex model derived from the BricsCAD V26 product test on 2026-04-26
+;; (results captured in autolisp-spec/results/bricscad/macos/
+;; 20260426T122808Z/results.sexp):
+;;
+;; * skip leading whitespace
+;; * accept optional `+` or `-`
+;; * parse the longest run of decimal digits (atoi) or
+;;   `digits ('.' digits?)? (('e'|'E') [+-]? digits)?` (atof)
+;; * a trailing non-numeric tail terminates parsing; the value of the
+;;   prefix (or 0 / 0.0 if no digits matched) is returned.
+;;
+;; For atof we deliberately *omit* the C99 hex-float syntax accepted
+;; by BricsCAD V26 (e.g. `(atof "0x1p4") -> 16.0`). This is the
+;; conservative `clautolisp` choice spelled out in the autolisp-spec
+;; entry for ATOF: portable AutoLISP code should not rely on hex-float
+;; input. Locale sensitivity is also intentionally absent: the decimal
+;; separator is `.` only.
+
+(defun atoi-skip-whitespace (string start)
+  (loop while (and (< start (length string))
+                   (member (char string start)
+                           '(#\Space #\Tab #\Newline #\Return #\Page)
+                           :test #'char=))
+        do (incf start))
+  start)
+
+(defun atoi-scan-sign (string start)
+  (cond
+    ((>= start (length string)) (values 1 start))
+    ((char= (char string start) #\+) (values 1 (1+ start)))
+    ((char= (char string start) #\-) (values -1 (1+ start)))
+    (t (values 1 start))))
+
+(defun atoi-scan-digits (string start)
+  "Returns (values numeric-value end-index) or (values nil start) on no digits."
+  (let ((value 0)
+        (i start))
+    (loop while (and (< i (length string))
+                     (digit-char-p (char string i)))
+          do (setf value (+ (* value 10) (digit-char-p (char string i))))
+             (incf i))
+    (if (= i start) (values nil start) (values value i))))
+
+(defun parse-autolisp-integer (string)
+  "Parse STRING per the AutoLISP `atoi` lex model. Returns an int32."
+  (let* ((start (atoi-skip-whitespace string 0)))
+    (multiple-value-bind (sign signed-start) (atoi-scan-sign string start)
+      (multiple-value-bind (value end) (atoi-scan-digits string signed-start)
+        (declare (ignore end))
+        (if (null value)
+            0
+            (* sign value))))))
+
+(defun parse-autolisp-real (string)
+  "Parse STRING per the AutoLISP `atof` lex model. Returns a double-float."
+  (let* ((start (atoi-skip-whitespace string 0)))
+    (multiple-value-bind (sign signed-start) (atoi-scan-sign string start)
+      (multiple-value-bind (int-value int-end)
+          (atoi-scan-digits string signed-start)
+        ;; Optional fractional part: `.` followed by zero-or-more digits.
+        (let* ((have-int int-value)
+               (cursor (or int-end signed-start))
+               (frac-numerator 0)
+               (frac-denom 1)
+               (have-frac nil))
+          (when (and (< cursor (length string))
+                     (char= (char string cursor) #\.))
+            (incf cursor)
+            (multiple-value-bind (fv fe) (atoi-scan-digits string cursor)
+              (when fv
+                (setf frac-numerator fv
+                      frac-denom (expt 10 (- fe cursor))
+                      have-frac t
+                      cursor fe))))
+          ;; Optional exponent: (e|E) optional sign, digits.
+          (let ((exponent 0))
+            (when (and (< cursor (length string))
+                       (or (char= (char string cursor) #\e)
+                           (char= (char string cursor) #\E)))
+              (let ((ec (1+ cursor)))
+                (multiple-value-bind (esign esigned-start)
+                    (atoi-scan-sign string ec)
+                  (multiple-value-bind (ev ee)
+                      (atoi-scan-digits string esigned-start)
+                    (when ev
+                      (setf exponent (* esign ev)
+                            cursor ee))))))
+            (let* ((int-part (or have-int 0)))
+              (cond
+                ((and (null have-int) (null have-frac))
+                 0.0d0)
+                (t
+                 (let* ((mantissa
+                          (+ (coerce int-part 'double-float)
+                             (/ (coerce frac-numerator 'double-float)
+                                (coerce frac-denom 'double-float))))
+                        (signed-mantissa (* sign mantissa))
+                        (scaled (if (zerop exponent)
+                                    signed-mantissa
+                                    (* signed-mantissa
+                                       (expt 10.0d0 exponent)))))
+                   scaled))))))))))
+
+(defun builtin-atoi (string)
+  (parse-autolisp-integer (autolisp-string-value (require-string string "ATOI"))))
+
+(defun builtin-atof (string)
+  (parse-autolisp-real (autolisp-string-value (require-string string "ATOF"))))
+;; --- end atoi / atof -------------------------------------------------
+
 (defun escape-prin1-string (string)
   (with-output-to-string (out)
     (write-char #\" out)
@@ -1337,14 +1449,27 @@
   object)
 
 (defun builtin-print (object &optional file)
+  ;; AutoLISP `print` is `prin1` with a leading newline AND a trailing
+  ;; SPACE (not a trailing newline) — confirmed by the Phase-5 BricsCAD
+  ;; V26 product test on 2026-04-26 (autolisp-spec/results/bricscad/
+  ;; macos/20260426T122808Z/print-string.txt contains the literal nine
+  ;; characters `\n"hello" `). Bricsys's per-symbol page documents the
+  ;; framing as "adds a newline \n before expression and adds an extra
+  ;; space afterwards".
   (let ((stream (output-stream-for-file file "PRINT")))
     (terpri stream)
     (write-string (autolisp-value->string object nil) stream)
-    (terpri stream))
+    (write-char #\Space stream))
   object)
 
-(defun builtin-terpri (&optional file)
-  (terpri (output-stream-for-file file "TERPRI"))
+(defun builtin-terpri ()
+  ;; AutoLISP `terpri` is *zero-arity*: it does not accept a file
+  ;; handle. The 2-argument form raises "too few / too many arguments
+  ;; at [TERPRI]" in BricsCAD V26 — confirmed in the Phase-5 product
+  ;; test on 2026-04-26. Portable file-handle newline output uses
+  ;; `(princ "\n" stream)` instead. Bricsys recommends `(princ)` over
+  ;; `(terpri)` to terminate a defun without a trailing blank line.
+  (terpri *standard-output*)
   nil)
 
 (defun builtin-prompt (string)
@@ -1495,6 +1620,8 @@
    (make-core-builtin-subr "SUBSTR" #'builtin-substr)
    (make-core-builtin-subr "ASCII" #'builtin-ascii)
    (make-core-builtin-subr "CHR" #'builtin-chr)
+   (make-core-builtin-subr "ATOI" #'builtin-atoi)
+   (make-core-builtin-subr "ATOF" #'builtin-atof)
    (make-core-builtin-subr "READ" #'builtin-read)
    (make-core-builtin-subr "LOAD" #'builtin-load)
    (make-core-builtin-subr "AUTOLOAD" #'builtin-autoload)

@@ -75,7 +75,7 @@ The Org documents in `documentation/` remain the place for architecture and impl
 
 - [x] Implement the first core builtin registry for `type`, `null`, `not`, `atom`, `vl-symbolp`, `vl-symbol-name`, and `vl-symbol-value`.
 - [x] Implement the first numeric, list, equality, string, and file-related builtin families, including the current file/stream/printer layer.
-- [ ] Audit the implemented builtin families against real product behavior, especially the host-sensitive file and printer corners.
+- [x] Audit the implemented builtin families against real product behavior, especially the host-sensitive file and printer corners. (2026-04-26: cross-checked against the BricsCAD V26 / macOS Phase-5 probe run at `autolisp-spec/results/bricscad/macos/20260426T122808Z/`. Implementation now reflects the tested findings — `or` / `and` return T or nil only (not the first non-nil value); `terpri` is zero-arity; `print` writes leading-newline + prin1-form + trailing-space (not a trailing newline); `atoi` and `atof` use strtol/strtod-style lex models with skip-leading-whitespace, optional sign, longest-decimal-digit prefix, trailing-junk truncation, and leading-zero-as-decimal. `atoi` rejects `0x`-prefix forms, returning 0. `atof` deliberately omits C99 hex-float syntax under the conservative clautolisp choice. The autolisp-file-compat scenarios for printer/stream sequences were updated for the corrected `terpri` arity and `print` framing.)
 - [ ] Keep ordinary builtins and evaluator-owned special operators separated as the callable surface expands.
 - [ ] Define the abstract host API.
 - [x] Define explicit path-resolution state for relative AutoLISP pathnames instead of inheriting Common Lisp pathname merging.

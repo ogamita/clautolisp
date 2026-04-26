@@ -1,5 +1,5 @@
 (:name "file-printer-read-lines"
- :description "Write multiple printer forms to a file and read them back line by line."
+ :description "Write multiple printer forms to a file and read them back line by line. AutoLISP `terpri` is zero-arity (BricsCAD V26 Phase-5 product test, 2026-04-26), so file-handle newlines are emitted via `(princ \"\\n\" stream)`."
  :kind :builtin
  :classification :portable
  :tags (:builtin :printer :stream :file-descriptor)
@@ -8,12 +8,14 @@
           :bind "out")
          (:builtin-name "PRINC"
           :arguments ("alpha" (:ref "out")))
-         (:builtin-name "TERPRI"
-          :arguments ((:ref "out")))
+         (:builtin-name "PRINC"
+          :arguments ("
+" (:ref "out")))
          (:builtin-name "PRIN1"
           :arguments ("beta" (:ref "out")))
-         (:builtin-name "TERPRI"
-          :arguments ((:ref "out")))
+         (:builtin-name "PRINC"
+          :arguments ("
+" (:ref "out")))
          (:builtin-name "CLOSE"
           :arguments ((:ref "out")))
          (:builtin-name "OPEN"
