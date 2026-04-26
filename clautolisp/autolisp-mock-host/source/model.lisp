@@ -123,7 +123,13 @@ pickfirst selection set, as set by ssgetfirst / sssetfirst.")
                              :documentation "Per-kind iterator
 state for tblnext. Maps a table-kind keyword to the remaining
 list of records that subsequent (tblnext KIND) calls will
-return. Cleared / reset when (tblnext KIND :rewind t)."))
+return. Cleared / reset when (tblnext KIND :rewind t).")
+   (pending-initget          :initform nil
+                             :accessor mock-host-pending-initget
+                             :documentation "Per-host scratch slot
+for the most recent INITGET call. Bound to an `initget-state`
+object; consumed and cleared by the next get* invocation, matching
+AutoLISP's documented one-shot semantics."))
   (:default-initargs :name "mock-host")
   (:documentation "In-memory deterministic CAD-database substitute
 backend for clautolisp. Phase 9 — data structures only; Phase 10

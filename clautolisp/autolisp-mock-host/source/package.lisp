@@ -115,4 +115,10 @@
    #:mock-host-creation-order
    #:mock-host-next-handle-counter
    #:mock-host-allocate-handle
-   #:mock-host-find-entity-by-handle))
+   #:mock-host-find-entity-by-handle
+   ;; Prompt / interaction helpers (Phase 12)
+   #:mock-host-pending-initget
+   #:mock-host-tblnext-iterators
+   #:initget-state
+   #:initget-bits
+   #:initget-keywords))

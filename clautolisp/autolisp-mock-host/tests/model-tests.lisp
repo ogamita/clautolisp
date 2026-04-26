@@ -147,17 +147,12 @@
 ;;; in.
 
 (test mock-host-operations-error-with-host-not-supported-when-not-yet-implemented
-  ;; Phase 10 implemented entity operations on MockHost; the rest
-  ;; (sysvars, prompts, graphics) are still inherited from the
-  ;; base-class :host-not-supported fallback until later phases
-  ;; fill them in.
+  ;; Phase 10/11/12 implemented the entity, sysvar, and prompt
+  ;; surfaces. Graphics (grdraw / grtext / grvecs / grclear /
+  ;; grread / redraw) and the command dispatcher remain inherited
+  ;; from the base-class :host-not-supported fallback until later
+  ;; phases fill them in.
   (let ((mock (make-mock-host)))
-    (handler-case (host-getvar mock "CLAYER")
-      (autolisp-runtime-error (condition)
-        (is (eq :host-not-supported (autolisp-runtime-error-code condition)))))
-    (handler-case (host-prompt mock "go")
-      (autolisp-runtime-error (condition)
-        (is (eq :host-not-supported (autolisp-runtime-error-code condition)))))
     (handler-case (host-grdraw mock '(0 0) '(1 1) 7 nil)
       (autolisp-runtime-error (condition)
         (is (eq :host-not-supported (autolisp-runtime-error-code condition)))))))

@@ -2726,6 +2726,143 @@ when no dialect is in scope."
                (autolisp-string-value (require-string name "SETVAR"))
                value))
 
+;;; --- Phase 12: headless interaction channel -----------------------
+
+(defun optional-prompt-string (prompt operator-name)
+  (cond
+    ((null prompt) nil)
+    (t (require-string prompt operator-name))))
+
+(defun builtin-initget (&rest arguments)
+  ;; (initget [BITS] [KWORD-STRING])
+  ;; BITS is an integer; KWORD-STRING is a space-separated list.
+  ;; Accepted argument shapes:
+  ;;   (initget)
+  ;;   (initget BITS)
+  ;;   (initget KWORDS)
+  ;;   (initget BITS KWORDS)
+  (let ((bits 0)
+        (keywords '()))
+    (cond
+      ((null arguments))
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string)
+            (setf keywords (split-keyword-string only)))
+           ((integerp only) (setf bits only)))))
+      (t
+       (when (integerp (first arguments)) (setf bits (first arguments)))
+       (let ((kw (or (second arguments)
+                     (and (typep (first arguments) 'autolisp-string)
+                          (first arguments)))))
+         (when (typep kw 'autolisp-string)
+           (setf keywords (split-keyword-string kw))))))
+    (host-initget (current-evaluation-host) bits keywords)))
+
+(defun split-keyword-string (autolisp-string-value)
+  (let ((value (autolisp-string-value autolisp-string-value)))
+    (let ((result '())
+          (start 0))
+      (loop for i from 0 below (length value)
+            for c = (char value i)
+            when (or (char= c #\Space) (char= c #\Tab))
+              do (when (< start i)
+                   (push (subseq value start i) result))
+                 (setf start (1+ i)))
+      (when (< start (length value))
+        (push (subseq value start) result))
+      (nreverse result))))
+
+(defun builtin-getstring (&optional read-spaces-or-prompt prompt)
+  ;; (getstring [PROMPT])              ; one-shot, no spaces
+  ;; (getstring CRSPACES [PROMPT])     ; CRSPACES non-nil to allow spaces
+  ;; The MockHost always reads a whole line, so the CRSPACES flag is
+  ;; permissive for now.
+  (let ((effective-prompt
+         (cond
+           ((null read-spaces-or-prompt) prompt)
+           ((typep read-spaces-or-prompt 'autolisp-string) read-spaces-or-prompt)
+           (t prompt))))
+    (host-getstring (current-evaluation-host)
+                    (and effective-prompt
+                         (optional-prompt-string effective-prompt "GETSTRING")))))
+
+(defun builtin-getint (&optional prompt)
+  (host-getint (current-evaluation-host)
+               (and prompt (optional-prompt-string prompt "GETINT"))))
+
+(defun builtin-getreal (&optional prompt)
+  (host-getreal (current-evaluation-host)
+                (and prompt (optional-prompt-string prompt "GETREAL"))))
+
+(defun builtin-getpoint (&rest arguments)
+  ;; (getpoint [BASE] [PROMPT])
+  (let (base prompt)
+    (cond
+      ((null arguments))
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string) (setf prompt only))
+           ((listp only) (setf base only)))))
+      (t (setf base (first arguments) prompt (second arguments))))
+    (host-getpoint (current-evaluation-host)
+                   (and prompt (optional-prompt-string prompt "GETPOINT"))
+                   :base base)))
+
+(defun builtin-getcorner (base &optional prompt)
+  (host-getcorner (current-evaluation-host)
+                  (and prompt (optional-prompt-string prompt "GETCORNER"))
+                  :base base))
+
+(defun builtin-getdist (&rest arguments)
+  ;; (getdist [BASE] [PROMPT])
+  (let (base prompt)
+    (cond
+      ((null arguments))
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string) (setf prompt only))
+           ((listp only) (setf base only)))))
+      (t (setf base (first arguments) prompt (second arguments))))
+    (host-getdist (current-evaluation-host)
+                  (and prompt (optional-prompt-string prompt "GETDIST"))
+                  :base base)))
+
+(defun builtin-getangle (&rest arguments)
+  (let (base prompt)
+    (cond
+      ((null arguments))
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string) (setf prompt only))
+           ((listp only) (setf base only)))))
+      (t (setf base (first arguments) prompt (second arguments))))
+    (host-getangle (current-evaluation-host)
+                   (and prompt (optional-prompt-string prompt "GETANGLE"))
+                   :base base)))
+
+(defun builtin-getorient (&rest arguments)
+  (let (base prompt)
+    (cond
+      ((null arguments))
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string) (setf prompt only))
+           ((listp only) (setf base only)))))
+      (t (setf base (first arguments) prompt (second arguments))))
+    (host-getorient (current-evaluation-host)
+                    (and prompt (optional-prompt-string prompt "GETORIENT"))
+                    :base base)))
+
+(defun builtin-getkword (&optional prompt)
+  (host-getkword (current-evaluation-host)
+                 (and prompt (optional-prompt-string prompt "GETKWORD"))))
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -2819,6 +2956,18 @@ when no dialect is in scope."
    (make-core-builtin-subr "TBLOBJNAME" #'builtin-tblobjname)
    (make-core-builtin-subr "GETVAR"     #'builtin-getvar)
    (make-core-builtin-subr "SETVAR"     #'builtin-setvar)
+   ;; Phase 12 — headless interaction channel (PROMPT is registered
+   ;; once already as a *standard-output* writer; we keep that)
+   (make-core-builtin-subr "INITGET"    #'builtin-initget)
+   (make-core-builtin-subr "GETSTRING"  #'builtin-getstring)
+   (make-core-builtin-subr "GETINT"     #'builtin-getint)
+   (make-core-builtin-subr "GETREAL"    #'builtin-getreal)
+   (make-core-builtin-subr "GETPOINT"   #'builtin-getpoint)
+   (make-core-builtin-subr "GETCORNER"  #'builtin-getcorner)
+   (make-core-builtin-subr "GETDIST"    #'builtin-getdist)
+   (make-core-builtin-subr "GETANGLE"   #'builtin-getangle)
+   (make-core-builtin-subr "GETORIENT"  #'builtin-getorient)
+   (make-core-builtin-subr "GETKWORD"   #'builtin-getkword)
    (make-core-builtin-subr "VL-EVERY" #'builtin-vl-every)
    (make-core-builtin-subr "VL-MEMBER-IF" #'builtin-vl-member-if)
    (make-core-builtin-subr "VL-MEMBER-IF-NOT" #'builtin-vl-member-if-not)

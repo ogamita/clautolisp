@@ -80,7 +80,8 @@
    (:file "autolisp-mock-host/source/entity-api")
    (:file "autolisp-mock-host/source/selection-api")
    (:file "autolisp-mock-host/source/table-api")
-   (:file "autolisp-mock-host/source/sysvar-api"))
+   (:file "autolisp-mock-host/source/sysvar-api")
+   (:file "autolisp-mock-host/source/prompt-api"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-mock-host/tests")))
   :perform (asdf:test-op (op system)
@@ -204,6 +205,7 @@
    (:file "autolisp-mock-host/tests/model-tests")
    (:file "autolisp-mock-host/tests/entity-api-tests")
    (:file "autolisp-mock-host/tests/selection-tests")
+   (:file "autolisp-mock-host/tests/prompt-tests")
    (:file "autolisp-mock-host/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
