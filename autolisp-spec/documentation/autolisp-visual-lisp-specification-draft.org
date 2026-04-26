@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.4.0
+#+VERSION: 0.5.0
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.4.0*.
+The current document version is *0.5.0*.
 
 Any modification of this document must increment its version number.
 
@@ -1840,8 +1840,7 @@ Side effects are those of the called function.
 - [apply (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0574ADA0-0950-456A-9330-A2518421536E.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: EVAL
 *** Name
@@ -1883,8 +1882,7 @@ Given `(setq a 123)` and `(setq b 'a)`:
 - [eval (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-D9B3E6CC-A982-4040-AE6E-6FD63D6C54D0.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: EQ
 *** Name
@@ -1924,8 +1922,7 @@ Given `(setq f1 '(a b c))`, `(setq f2 '(a b c))`, `(setq f3 f2)`:
 - [eq (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-BC81B391-48BF-401E-80D0-05A1B578A0FF.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: EQUAL
 *** Name
@@ -1965,8 +1962,7 @@ None.
 - [equal (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7E85CB8F-B4DA-42F3-ABD3-89342A11EF9B.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 6 Iteration
@@ -2509,8 +2505,7 @@ None.
 - [atoms-family (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0B35850D-9E62-446B-BAA2-0598A4BDE3D7.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 8 Numbers
@@ -3128,8 +3123,7 @@ None.
 - [atan (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-1A40A16E-8ABE-437D-9888-2F43CEA0B5CE.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: COS
 *** Name
@@ -3168,8 +3162,7 @@ None.
 - [cos (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-5F39D690-A986-498D-929A-56BC891E08CD.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SIN
 *** Name
@@ -3208,8 +3201,7 @@ None.
 - [sin (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-83677851-6FA5-496E-A93C-AEA55ABCB527.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: EXP
 *** Name
@@ -3249,8 +3241,7 @@ None.
 - [exp (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-FD0C918B-A162-4939-9F4E-FFE8863C3FC8.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: EXPT
 *** Name
@@ -3286,12 +3277,14 @@ None.
 - BricsCAD V26: documented under the BricsCAD-only name `power` *and* presumed to support `expt`. The BricsCAD analogue is recorded separately in chapter 24 — see Phase 4 cross-reference.
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
 
+*** See Also
+- BricsCAD analogue: ~power~ (chapter 24). AutoCAD users portably write `(expt base exp)`; BricsCAD users may use either.
+
 *** Source Notes
 - [expt (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-FCAC3150-7491-43DB-8042-37EDE3791A96.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LOG
 *** Name
@@ -3330,8 +3323,7 @@ None.
 - [log (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4B1B6364-B1CB-4CE7-8C8F-706EA829780F.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SQRT
 *** Name
@@ -3370,8 +3362,7 @@ None.
 - [sqrt (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-B8D3BA69-95FE-4036-83BA-6AFEA45BADE5.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: MAX
 *** Name
@@ -3411,8 +3402,7 @@ None.
 - [max (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-057C56D3-8A15-406B-95CA-68DD859E64FB.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: MIN
 *** Name
@@ -3453,8 +3443,7 @@ None.
 - [min (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F401AD55-57B2-4B1A-9704-D7D8D45AE465.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GCD
 *** Name
@@ -3494,8 +3483,7 @@ None.
 - [gcd (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-3F748964-B6D7-4136-92D5-81A7DD02ED4A.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: REM
 *** Name
@@ -3535,8 +3523,7 @@ None.
 - [rem (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CC43BEB-3215-41AE-839B-2DCE6354241A.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: NUMBERP
 *** Name
@@ -3577,8 +3564,7 @@ None.
 - [numberp (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-1E5B591C-F60B-43CB-8CD8-E729D72B12FC.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: 1+
 *** Name
@@ -3617,8 +3603,7 @@ None.
 - [1+ (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-EF06615A-5BE5-4A86-96CF-643B0712E43A.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: 1-
 *** Name
@@ -3657,8 +3642,7 @@ None.
 - [1- (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4E3A882A-959D-4B46-BA5E-5A3C1BDB3079.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ~
 *** Name
@@ -3698,8 +3682,7 @@ None.
 - [~ (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-98811E38-FCA8-4ADB-858C-60C3828D7DB4.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: BOOLE
 *** Name
@@ -3744,8 +3727,7 @@ None.
 - [boole (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C8412B41-BED9-4182-94E6-9EDB3C176D13.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LOGAND
 *** Name
@@ -3785,8 +3767,7 @@ None.
 - [logand (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4E042C63-8BD7-4FED-B9E1-B5CE12D18273.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LOGIOR
 *** Name
@@ -3825,8 +3806,7 @@ None.
 - [logior (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-A4BF3B68-4988-42F0-AFE6-BFD06D0DB159.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LSH
 *** Name
@@ -3867,8 +3847,7 @@ None.
 - [lsh (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-3BC67533-3F4F-4C01-9053-CD82AA235AE8.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 9 Characters and Strings
@@ -4697,8 +4676,7 @@ None.
 - [wcmatch (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-EC257AF7-72D4-4B38-99B6-9B09952A53AD.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 10 Lists, Dotted Pairs, and Association Lists
@@ -5528,6 +5506,10 @@ None.
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
 
+*** See Also
+- BricsCAD analogue: ~remove~ (chapter 24). Same role; different name.
+- Pair documented in `vendor-inventory-2026.org` §10 item 7.
+
 *** Source Notes
 - [vl-remove (AutoLISP)](https://help.autodesk.com/cloudhelp/2016/DEU/AutoCAD-AutoLISP/files/GUID-1BF33827-5C9C-49B2-A21B-656E0F429B21.htm)
 - Status: documented.
@@ -5817,8 +5799,7 @@ None.
 - [cadr (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F8E9E4F0-218D-4587-9D7E-922BE57C9F9B.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: CADDR
 *** Name
@@ -5857,8 +5838,7 @@ None.
 - [caddr (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0E81B9F0-7AAD-4BB4-98EB-378AEBE5C4CF.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LIST-LENGTH
 *** Name
@@ -5898,8 +5878,7 @@ None.
 - [vl-list-length (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-5BAF3505-B1E9-49BF-9202-AAD36043B6D3.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 11 Filenames, Paths, and Files
@@ -5956,6 +5935,10 @@ Errors are reported for invalid paths, modes, or inaccessible files.
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+
+*** See Also
+- BricsCAD V26 extends `open` with encoding selectors of the form `"r,ccs=UNICODE"`, `"r,ccs=UTF-8"`, `"r,ccs=UTF-16LE"`, `"w,ccs=UTF-8"`, `"w,ccs=UTF-16LE"`. AutoCAD does not accept these; AutoCAD's Unicode story is governed by the `LISPSYS` system variable instead.
+- Divergence documented in `vendor-inventory-2026.org` §10 item 2.
 
 *** Source Notes
 - [open (AutoLISP), current](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-089A323F-21FF-4337-99A9-375758E23BA4.htm)
@@ -7922,6 +7905,9 @@ Highly host-UI-specific and potentially version-sensitive.
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
 
+*** See Also
+- AutoCAD-Windows-only. BricsCAD has no documented equivalent. Divergence documented in `vendor-inventory-2026.org` §10 item 10.
+
 *** Source Notes
 - [showhtmlmodalwindow (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/JPN/AutoCAD-LT-AutoLISP-Reference/files/GUID-1330BB1E-866E-419A-8AE3-22B0C16E1F06.htm)
 
@@ -7965,6 +7951,9 @@ Host- and platform-dependent legacy integration facility.
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+
+*** See Also
+- AutoCAD-Windows-only. No BricsCAD analogue: BricsCAD does not embed a VBA module callable from LISP under this name. Divergence documented in `vendor-inventory-2026.org` §10 item 9.
 
 *** Source Notes
 - [vl-vbaload (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-54FD698E-8D94-4E27-9DF1-3F7E9D451E05.htm)
@@ -8010,6 +7999,9 @@ Host- and platform-dependent legacy integration facility.
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+
+*** See Also
+- AutoCAD-Windows-only. No BricsCAD analogue. Divergence documented in `vendor-inventory-2026.org` §10 item 9.
 
 *** Source Notes
 - [vl-vbarun (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-LT-AutoLISP-Reference/files/GUID-75387617-9144-49CB-97E4-03B4CD29973B.htm)
@@ -8144,8 +8136,7 @@ None.
 - [trans (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-1A316343-0B68-4DBE-8F49-B4D601CB8FCC.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GETENV
 *** Name
@@ -8185,8 +8176,7 @@ None.
 - [getenv (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0796D4FE-C07B-4DB6-9C01-9D772CAFA2C0.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SETENV
 *** Name
@@ -8225,8 +8215,7 @@ Updates the environment-variable store.
 - [setenv (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0C2E8222-62A8-4529-8A8A-58AAB2A5F23B.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GETCFG
 *** Name
@@ -8264,8 +8253,7 @@ None.
 - [getcfg (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-D8D46A8C-82DF-4193-A1B7-3DC3CAC70650.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SETCFG
 *** Name
@@ -8304,8 +8292,7 @@ Writes to the AutoCAD configuration file.
 - [setcfg (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-8BABF3B0-C8E1-49C9-A367-9823211C1F6B.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GETCNAME
 *** Name
@@ -8345,8 +8332,7 @@ In French AutoCAD:
 - [getcname (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-1DCDFFA6-0372-479D-B00F-D165EC5B8A2C.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYOUTLIST
 *** Name
@@ -8384,8 +8370,7 @@ None.
 - [layoutlist (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-AE3F338F-0B11-45B0-AB12-2C119203A977.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: INITCOMMANDVERSION
 *** Name
@@ -8424,8 +8409,7 @@ Latches the version selector for the next command issued via `command` or `comma
 - [initcommandversion (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6176FC98-DC5D-433E-8D76-F481BE68D46A.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SETFUNHELP
 *** Name
@@ -8467,8 +8451,7 @@ TEST: ") (princ))`, `(setfunhelp "c:test" "acad_acr.chm" "line")` associates the
 - [setfunhelp (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-61B2326A-8DE4-46C4-B9F9-22B8D163A761.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: HELP
 *** Name
@@ -8508,8 +8491,7 @@ Opens a help window or browser tab.
 - [help (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CB4A951-1507-4F3D-9F7B-93FF3A2C9850.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: MENUCMD
 *** Name
@@ -8554,12 +8536,15 @@ Updates the menu state, evaluates DIESEL, or displays an image-tile menu.
 - BricsCAD V26: documented with reduced surface (only `P0`/`P1`–`P16`).
 - Status: cross-vendor divergence — see Phase 4 reconciliation in `vendor-inventory-2026.org` §10.
 
+*** See Also
+- BricsCAD documents only the `P0` cursor menu and `P1`–`P16` pulldown forms. AutoCAD additionally documents `B1`–`B4` (BUTTONS), `A1`–`A4` (AUX), `T1`–`T4` (TABLET), `I` (image-tile), `M` (DIESEL), and `Gmenugroup.nametag` forms — none are accepted by BricsCAD.
+- Divergence documented in `vendor-inventory-2026.org` §10 item 4.
+
 *** Source Notes
 - [menucmd (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-20357966-71D4-4D55-881B-06AFDECD24DB.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: MENUGROUP
 *** Name
@@ -8597,8 +8582,7 @@ Not documented on the vendor page.
 - [menugroup (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-52FBC08B-F53F-4FC0-A5C5-ED3FA2BB8F4B.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SNVALID
 *** Name
@@ -8649,8 +8633,7 @@ With `EXTNAMES = 0`:
 - [snvalid (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-2EFBE198-9860-456B-A090-206C743ACB90.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACDIMENABLEUPDATE
 *** Name
@@ -8689,8 +8672,7 @@ Updates the document-level associative-dimension auto-update flag.
 - [acdimenableupdate (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7E10D18A-6FD6-4B20-A981-27FF77C2F042.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ALLOC
 *** Name
@@ -8728,8 +8710,7 @@ Updates the AutoLISP allocator's segment-size parameter.
 - [alloc (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-DBC72668-153D-48F4-9C19-87053975A97C.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: EXPAND
 *** Name
@@ -8768,8 +8749,7 @@ After `(alloc 100)` returns `1000`:
 - [expand (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-48C99C97-176D-4D9C-91E2-31B3C67D6EC9.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GC
 *** Name
@@ -8807,8 +8787,7 @@ Not documented on the vendor page.
 - [gc (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6CABB3AF-9BED-4237-8A44-D36123246BF4.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: MEM
 *** Name
@@ -8855,8 +8834,7 @@ Writes a multi-line memory report to the AutoCAD command line.
 - [mem (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F4AEB953-2117-4BF2-8056-EA1384AC3FFF.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: TABLET
 *** Name
@@ -8898,8 +8876,7 @@ Updates the AutoCAD digitiser calibration state.
 - [tablet (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-5AD61389-1F8E-497B-8B0B-259488A50772.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VPORTS
 *** Name
@@ -8944,8 +8921,7 @@ None.
 - [vports (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-929FC8B2-1235-4B2A-B330-FF2E219E072C.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SETVIEW
 *** Name
@@ -8984,8 +8960,7 @@ Not documented on the vendor page.
 - [setview (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-EEABEF66-423A-4D2B-BE16-AA6A56B08FBD.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ARX
 *** Name
@@ -9024,8 +8999,7 @@ None.
 - [arx (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-D74F3A2B-F506-415F-8F5A-258764C2E26D.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: CVUNIT
 *** Name
@@ -9068,8 +9042,7 @@ None.
 - [cvunit (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-253E72F1-09B8-473E-A51B-B97BE2E29019.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: REDRAW
 *** Name
@@ -9113,8 +9086,7 @@ Not documented on the vendor page.
 - [redraw (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4A4DCECD-E85A-4860-A58F-56B48227857F.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GRAPHSCR
 *** Name
@@ -9152,8 +9124,7 @@ Not documented on the vendor page.
 - [graphscr (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-FB9ABA5D-6DDA-4085-9E9F-18038EC31107.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: TEXTPAGE
 *** Name
@@ -9191,8 +9162,7 @@ Not documented on the vendor page.
 - [textpage (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C5F1E0AF-CAE8-4338-8C27-5A4235D37145.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: TEXTSCR
 *** Name
@@ -9230,8 +9200,7 @@ Not documented on the vendor page.
 - [textscr (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-5F0A5635-0DCB-4A88-BD8E-60EC665342CF.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GRCLEAR
 *** Name
@@ -9269,8 +9238,7 @@ Not documented on the vendor page.
 - [G Functions Reference (AutoLISP 2026) — `grclear` summary](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-88320FBD-B49E-445A-A5C1-C2ABA98341BC.htm)
 - Status: legacy; per-symbol page not separately published.
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GRDRAW
 *** Name
@@ -9311,8 +9279,7 @@ Not documented on the vendor page.
 - [grdraw (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C00544A7-AF63-403E-98EB-205248EB4F54.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GRTEXT
 *** Name
@@ -9352,8 +9319,7 @@ Not documented on the vendor page.
 - [grtext (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-5B0B01CA-BDBA-4A77-B840-6EE64591AC47.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GRVECS
 *** Name
@@ -9406,8 +9372,7 @@ Draws transient graphics; nothing is committed to the drawing database.
 - [grvecs (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-44B8C277-4140-4F4C-ACF2-3332CC463021.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 17 Selection Sets and Entity Access
@@ -9922,6 +9887,9 @@ The selection-method sublanguage should later be given its own dedicated specifi
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+
+*** See Also
+- BricsCAD V9 documented `ssget` as compatible-with-enhancements. The current BricsCAD V26 surface is presumed compatible with AutoCAD; specific BricsCAD enhancements should be verified in Phase 5 against a live product.
 
 *** Source Notes
 - [About Selection Set Filter Lists (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/PLK/AutoCAD-AutoLISP/files/GUID-7BE77062-C359-4D01-915B-69CF672C653B.htm)
@@ -10531,6 +10499,9 @@ Part of the programmatic selection-set manipulation API.
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+
+*** See Also
+- BricsCAD V9 documented `ssadd` as compatible-with-enhancements. The current BricsCAD V26 surface is presumed compatible; verify in Phase 5.
 
 *** Source Notes
 - [ssadd (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/HUN/AutoCAD-AutoLISP-Reference/files/GUID-22337977-82F2-4394-B209-39DE2B4B9E86.htm)
@@ -11403,8 +11374,7 @@ Not documented on the vendor page.
 - [ssgetfirst (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F18CB64C-1B18-46F3-BAD4-24D83214CE0D.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SSSETFIRST
 *** Name
@@ -11445,8 +11415,7 @@ Given `pickset1` and `pickset2` from prior `entmake` / `ssadd` calls:
 - [sssetfirst (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4076CD9D-1C66-4C73-ACC0-3A6CD0B0D2D8.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SSMEMB
 *** Name
@@ -11486,8 +11455,7 @@ None.
 - [ssmemb (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-8F291146-6A1A-4A31-9380-C800590BF27D.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SSNAMEX
 *** Name
@@ -11535,8 +11503,7 @@ None.
 - [ssnamex (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0A0E41A1-8F97-4B2E-A6A6-FF6223C6E999.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ENTMAKEX
 *** Name
@@ -11574,8 +11541,7 @@ Allocates a new entity in the current drawing.
 - [entmakex (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-3F9A2EB2-082D-49DD-8EFD-DAD8F6E9AA6A.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ENTUPD
 *** Name
@@ -11620,8 +11586,7 @@ Forces a screen-display refresh for the affected entity.
 - [entupd (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-78313F48-676D-49D7-842A-288DD347A783.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: REGAPP
 *** Name
@@ -11660,8 +11625,7 @@ Adds an entry to the drawing's `APPID` symbol table.
 - [regapp (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-D331A88A-9B6E-49C9-B745-D0A063F38FD2.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: XDROOM
 *** Name
@@ -11699,8 +11663,7 @@ None.
 - [xdroom (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-B7AD1D4B-FAFD-40F2-8A7C-7E35EC23F1FB.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: XDSIZE
 *** Name
@@ -11752,8 +11715,7 @@ Both of these forms are accepted:
 - [xdsize (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F183738E-43BC-4820-AC51-5D0C1A3DA38C.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-ADDLAYERS
 *** Name
@@ -11800,12 +11762,15 @@ Updates the named layer state in the current drawing.
 - BricsCAD V26: not under this name. The BricsCAD parallel family is `vl-layerstates-*`; see chapter 24 cross-reference.
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- No direct BricsCAD analogue. BricsCAD's parallel ~vl-layerstates-*~ family does not currently document this operation; consider implementing in user code or treating as AutoCAD-only.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-addlayers (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F392F4F2-B2C1-4C8E-AEBB-1D3FE31610C9.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-COMPARE
 *** Name
@@ -11839,12 +11804,15 @@ Not documented on the vendor page.
 - BricsCAD V26: not under this name (parallel BricsCAD family `vl-layerstates-*` does not currently document a comparator). See Phase 4 cross-reference.
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- No direct BricsCAD analogue. BricsCAD's parallel ~vl-layerstates-*~ family does not currently document this operation; consider implementing in user code or treating as AutoCAD-only.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-compare (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C2555813-0DD3-46AA-B22F-3F0D479922C3.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-DELETE
 *** Name
@@ -11878,12 +11846,15 @@ Not documented on the vendor page.
 - BricsCAD V26: parallel function is `vl-layerstates-delete` (chapter 24).
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- BricsCAD analogue: ~vl-layerstates-delete~ (chapter 24).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-delete (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-828C4B51-7C59-4FF0-AA69-907C53F31703.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-EXPORT
 *** Name
@@ -11918,12 +11889,15 @@ Not documented on the vendor page.
 - BricsCAD V26: not under this name. See Phase 4 cross-reference.
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- No direct BricsCAD analogue. BricsCAD's parallel ~vl-layerstates-*~ family does not currently document this operation; consider implementing in user code or treating as AutoCAD-only.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-export (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-E14DB236-6DD9-48A8-91F3-8A44A6E8BAA4.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-GETLASTRESTORED
 *** Name
@@ -11957,12 +11931,15 @@ Not documented on the vendor page.
 - BricsCAD V26: not under this name. See Phase 4 cross-reference.
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- No direct BricsCAD analogue. BricsCAD's parallel ~vl-layerstates-*~ family does not currently document this operation; consider implementing in user code or treating as AutoCAD-only.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-getlastrestored (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-404D79AB-B213-4EF4-A0A6-19F2E4F0A9A9.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-GETLAYERS
 *** Name
@@ -11996,12 +11973,15 @@ Not documented on the vendor page.
 - BricsCAD V26: not under this name. See Phase 4 cross-reference.
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- No direct BricsCAD analogue. BricsCAD's parallel ~vl-layerstates-*~ family does not currently document this operation; consider implementing in user code or treating as AutoCAD-only.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-getlayers (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-B0B12E74-D5EF-47E2-9B1C-ED595AA663A8.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-GETNAMES
 *** Name
@@ -12036,12 +12016,15 @@ None.
 - BricsCAD V26: parallel function is `vl-layerstates-list` (chapter 24).
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- BricsCAD analogue: ~vl-layerstates-list~ (chapter 24).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-getnames (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-B0EF0543-F792-4391-B54F-606F5685065C.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-HAS
 *** Name
@@ -12075,12 +12058,15 @@ Not documented on the vendor page.
 - BricsCAD V26: parallel function is `vl-layerstates-has` (chapter 24).
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- BricsCAD analogue: ~vl-layerstates-has~ (chapter 24).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-has (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0936B91C-7DE0-49DD-9BCD-FD097417E348.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-IMPORT
 *** Name
@@ -12114,12 +12100,15 @@ Not documented on the vendor page.
 - BricsCAD V26: not under this name. See Phase 4 cross-reference.
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- No direct BricsCAD analogue. BricsCAD's parallel ~vl-layerstates-*~ family does not currently document this operation; consider implementing in user code or treating as AutoCAD-only.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-import (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-E8B76E26-4E16-4AC6-B5E1-2CEA0C21EA1B.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-IMPORTFROMDB
 *** Name
@@ -12154,12 +12143,15 @@ Not documented on the vendor page.
 - BricsCAD V26: not under this name. See Phase 4 cross-reference.
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- No direct BricsCAD analogue. BricsCAD's parallel ~vl-layerstates-*~ family does not currently document this operation; consider implementing in user code or treating as AutoCAD-only.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-importfromdb (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-A41D1A72-5DD2-469B-B0AD-97233A98D5BB.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-REMOVELAYERS
 *** Name
@@ -12194,12 +12186,15 @@ Not documented on the vendor page.
 - BricsCAD V26: not under this name. See Phase 4 cross-reference.
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- No direct BricsCAD analogue. BricsCAD's parallel ~vl-layerstates-*~ family does not currently document this operation; consider implementing in user code or treating as AutoCAD-only.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-removelayers (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-5F9FFCEB-D7D6-4233-AC74-526B51C4FD42.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-RENAME
 *** Name
@@ -12234,12 +12229,15 @@ Not documented on the vendor page.
 - BricsCAD V26: parallel function is `vl-layerstates-rename` (chapter 24).
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- BricsCAD analogue: ~vl-layerstates-rename~ (chapter 24).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-rename (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-843B8FC9-A1F5-48CE-B83D-98D747E85C83.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-RESTORE
 *** Name
@@ -12278,12 +12276,15 @@ Mutates the per-layer visibility / property settings, or applies viewport overri
 - BricsCAD V26: parallel function is `vl-layerstates-restore` (chapter 24).
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- BricsCAD analogue: ~vl-layerstates-restore~ (chapter 24).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-restore (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-84C7195D-12C1-4282-B5EE-8B9D6DDB705A.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LAYERSTATE-SAVE
 *** Name
@@ -12328,12 +12329,15 @@ Creates or updates the named layer-state record in the drawing.
 - BricsCAD V26: parallel function is `vl-layerstates-save` (chapter 24).
 - Status: AutoCAD-named family with BricsCAD divergence — see Phase 4 reconciliation.
 
+*** See Also
+- BricsCAD analogue: ~vl-layerstates-save~ (chapter 24).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [layerstate-save (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-05B5EA5C-2E7F-47A5-9C6F-27902DB60F30.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 18 DCL
@@ -12697,8 +12701,7 @@ Not documented on the vendor page.
 - [term_dialog (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7276E779-2FBA-47A5-AF3D-36927B738671.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ADD_LIST
 *** Name
@@ -12748,8 +12751,7 @@ Updates the contents of the active list-box or pop-up-list tile.
 - [add_list (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9BF538FC-BB15-4843-9796-DDCDB6D38C8E.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: START_LIST
 *** Name
@@ -12792,8 +12794,7 @@ Not documented on the vendor page.
 - [start_list (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-84FAC8F6-59B1-4FBD-9446-0CB323B3D66D.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: END_LIST
 *** Name
@@ -12831,8 +12832,7 @@ See `start_list` and `add_list`.
 - [end_list (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-389C46C7-3E8A-41CA-96B6-8BD63577B763.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: START_IMAGE
 *** Name
@@ -12870,8 +12870,7 @@ See `fill_image` and `slide_image`.
 - [start_image (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CB5C93A-6357-4853-B918-0F3EE375201C.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: END_IMAGE
 *** Name
@@ -12909,8 +12908,7 @@ See `fill_image` and `slide_image`.
 - [end_image (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C5DDD271-AA70-4546-9346-09C540979AC2.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: FILL_IMAGE
 *** Name
@@ -12956,8 +12954,7 @@ Updates the active image tile.
 - [fill_image (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-1C95F5E1-C063-4334-A296-40E7E123F66C.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SLIDE_IMAGE
 *** Name
@@ -13002,8 +12999,7 @@ Draws the slide into the active image tile.
 - [slide_image (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-D5B5A0AF-82BE-4A00-832D-04D496D809D0.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DIMX_TILE
 *** Name
@@ -13041,8 +13037,7 @@ None.
 - [dimx_tile (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-AE8CC93E-1F87-4023-BC87-80584229B226.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DIMY_TILE
 *** Name
@@ -13080,8 +13075,7 @@ None.
 - [dimy_tile (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-FAA2950E-5374-48BF-8BCF-8B1A7C1013D8.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GET_ATTR
 *** Name
@@ -13120,8 +13114,7 @@ Not documented on the vendor page.
 - [get_attr (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-AB9100B0-F19E-4C29-B82A-28E8A607BF4E.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: CLIENT_DATA_TILE
 *** Name
@@ -13160,8 +13153,7 @@ Not documented on the vendor page.
 - [client_data_tile (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9790A095-68BA-40FB-B89E-036F276CCF56.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 19 Visual LISP Core Extensions
@@ -14141,6 +14133,10 @@ Returns a zero-based integer index if `item` occurs in `list`; otherwise returns
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+
+*** See Also
+- BricsCAD analogue: ~position~ (chapter 24). Same role; different name.
+- Pair documented in `vendor-inventory-2026.org` §10 item 7.
 
 *** Source Notes
 - [vl-position (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ESP/AutoCAD-AutoLISP-Reference/files/GUID-E2C60C39-B46E-4779-82CE-CFFCCCE93AF0.htm)
@@ -17063,8 +17059,7 @@ None.
 - [vlax-tmatrix (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7B1BBCDD-69DD-40E6-81CB-370A05725431.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-TYPEINFO-AVAILABLE-P
 *** Name
@@ -17095,15 +17090,17 @@ Not documented on the vendor page.
 
 *** Availability
 - AutoCAD 2026: documented (Windows only).
-- BricsCAD V26: presumed compatible (Windows ActiveX surface).
-- Status: AutoCAD-Windows documented; BricsCAD parity TBD.
+- BricsCAD V26: documented (confirmed via the live TOC walk on 2026-04-26; entry `vlax-typeinfo-available-p` appears in the BricsCAD V26 Standard Functions section).
+- Status: documented in both vendors.
+
+*** See Also
+- BricsCAD V26 confirmation came from the live-DOM TOC walk recorded in `vendor-inventory-2026.org` §3.2.
 
 *** Source Notes
 - [vlax-typeinfo-available-p (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-1DAB4433-A0FA-43EA-9022-68C8E468B1EA.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 21 Reactors and Event Integration
@@ -18280,8 +18277,7 @@ Produces a system beep.
 - [vlr-beep-reaction (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-47765811-714A-455C-87FF-806B21483CD8.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-TRACE-REACTION
 *** Name
@@ -18319,8 +18315,7 @@ Not documented on the vendor page.
 - [vlr-trace-reaction (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-489E0189-FCB3-4B6C-95F7-BEFCA4761BDF.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-NOTIFICATION
 *** Name
@@ -18358,8 +18353,7 @@ Not documented on the vendor page.
 - [vlr-notification (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0A10A687-C72A-407C-AD71-C9DD76084A45.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-SET-NOTIFICATION
 *** Name
@@ -18398,8 +18392,7 @@ Mutates the reactor object.
 - [vlr-set-notification (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-1EBB6848-E863-4067-8A61-69ED78C96F40.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-TOOLBAR-REACTOR
 *** Name
@@ -18441,8 +18434,7 @@ Not documented on the vendor page.
 - [vlr-toolbar-reactor (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-ABCA865A-DFBE-4057-BE9E-EF465161ABCB.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-PERS
 *** Name
@@ -18484,8 +18476,7 @@ Flags the reactor as persistent in the drawing database.
 - [vlr-pers (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0F0F7B01-2CE7-4F3C-B686-B255866C9CED.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-PERS-LIST
 *** Name
@@ -18523,8 +18514,7 @@ Not documented on the vendor page.
 - [vlr-pers-list (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0C7564C7-1C8B-4F17-A5F8-374C2860E117.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-PERS-P
 *** Name
@@ -18562,8 +18552,7 @@ Not documented on the vendor page.
 - [vlr-pers-p (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4C03EA1B-E274-49B2-8DEE-EBCCCEE2E19E.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-PERS-RELEASE
 *** Name
@@ -18601,8 +18590,7 @@ Not documented on the vendor page.
 - [vlr-pers-release (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-79BE8AC1-4C54-49AD-B13D-CC12E06EF512.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-OWNERS
 *** Name
@@ -18640,8 +18628,7 @@ Not documented on the vendor page.
 - [vlr-owners (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-AD8525AF-411C-4002-A025-CD36CD59D760.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-OWNER-ADD
 *** Name
@@ -18680,8 +18667,7 @@ Not documented on the vendor page.
 - [vlr-owner-add (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-8DF13914-E66F-410D-BFDF-8A9A1860AFBE.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-OWNER-REMOVE
 *** Name
@@ -18720,8 +18706,7 @@ Not documented on the vendor page.
 - [vlr-owner-remove (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-EE5ABE92-4589-482A-95B3-EC52497C3C5F.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 22 Packaging, Compilation, and Namespaces
@@ -19202,13 +19187,15 @@ Writes the compiled output file to disk.
 - BricsCAD V26: documented; produces `.des`; the `mode` argument is parsed but ignored.
 - Status: cross-vendor divergence — see Phase 4 reconciliation in `vendor-inventory-2026.org` §10.
 
+*** See Also
+- Cross-vendor divergence: AutoCAD produces `.fas` (and `.vlx` archives via auxiliary tooling); BricsCAD produces `.des` and ignores the `mode` argument. See body Description above and `vendor-inventory-2026.org` §10 item 1.
+
 *** Source Notes
 - [vlisp-compile (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-8184531C-EDE5-4949-9EAE-25CE98BFF89C.htm)
 - [vlisp-compile (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlisp-compile.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-REGISTRY-DELETE
 *** Name
@@ -19247,8 +19234,7 @@ Not documented on the vendor page.
 - [vl-registry-delete (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-BF5FB9C5-A015-464C-A475-B320C5B5E96C.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-REGISTRY-DESCENDENTS
 *** Name
@@ -19287,8 +19273,7 @@ Not documented on the vendor page.
 - [vl-registry-descendents (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-3A2A4AA0-8799-4B0A-AD26-443A8B4DD9BE.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-REGISTRY-READ
 *** Name
@@ -19327,8 +19312,7 @@ None.
 - [vl-registry-read (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0B9E26CF-2410-482E-B568-7FE05B9F013C.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-REGISTRY-WRITE
 *** Name
@@ -19368,8 +19352,7 @@ Mutates the user-level persistent settings store.
 - [vl-registry-write (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9DDE1962-43C5-40D2-85E3-B7A729CAB157.htm)
 - Status: documented (Phase 3 body fill).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 23 Express Tools
@@ -19424,8 +19407,7 @@ Not documented in the current category page.
 - [acad_colordlg (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACAD_HELPDLG
 *** Name
@@ -19460,8 +19442,7 @@ Not documented in the current category page.
 - [acad_helpdlg (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACAD_STRLSORT
 *** Name
@@ -19496,8 +19477,7 @@ Not documented in the current category page.
 - [acad_strlsort (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACAD_TRUECOLORCLI
 *** Name
@@ -19532,8 +19512,7 @@ Not documented in the current category page.
 - [acad_truecolorcli (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACAD_TRUECOLORDLG
 *** Name
@@ -19568,8 +19547,7 @@ Not documented in the current category page.
 - [acad_truecolordlg (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACAD-POP-DBMOD
 *** Name
@@ -19604,8 +19582,7 @@ Not documented in the current category page.
 - [acad-pop-dbmod (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACAD-PUSH-DBMOD
 *** Name
@@ -19640,8 +19617,7 @@ Not documented in the current category page.
 - [acad-push-dbmod (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ENT-GEOMEXTENTS
 *** Name
@@ -19676,8 +19652,7 @@ Not documented in the current category page.
 - [acet-ent-geomextents (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-676F8B1B-7C23-4480-9DD4-19D0836EAE08.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-ATTR
 *** Name
@@ -19712,8 +19687,7 @@ Not documented in the current category page.
 - [acet-file-attr (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-05EB15E4-F0ED-4AC7-885D-94B4F6DE9F94.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-CHDIR
 *** Name
@@ -19748,8 +19722,7 @@ Not documented in the current category page.
 - [acet-file-chdir (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-05EB15E4-F0ED-4AC7-885D-94B4F6DE9F94.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-COPY
 *** Name
@@ -19784,8 +19757,7 @@ Not documented in the current category page.
 - [acet-file-copy (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-05EB15E4-F0ED-4AC7-885D-94B4F6DE9F94.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-CWD
 *** Name
@@ -19820,8 +19792,7 @@ Not documented in the current category page.
 - [acet-file-cwd (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-05EB15E4-F0ED-4AC7-885D-94B4F6DE9F94.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-DIR
 *** Name
@@ -19856,8 +19827,7 @@ Not documented in the current category page.
 - [acet-file-dir (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-05EB15E4-F0ED-4AC7-885D-94B4F6DE9F94.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-MKDIR
 *** Name
@@ -19892,8 +19862,7 @@ Not documented in the current category page.
 - [acet-file-mkdir (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-05EB15E4-F0ED-4AC7-885D-94B4F6DE9F94.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-MOVE
 *** Name
@@ -19928,8 +19897,7 @@ Not documented in the current category page.
 - [acet-file-move (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-05EB15E4-F0ED-4AC7-885D-94B4F6DE9F94.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-REMOVE
 *** Name
@@ -19964,8 +19932,7 @@ Not documented in the current category page.
 - [acet-file-remove (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-05EB15E4-F0ED-4AC7-885D-94B4F6DE9F94.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-RMDIR
 *** Name
@@ -20000,8 +19967,7 @@ Not documented in the current category page.
 - [acet-file-rmdir (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-05EB15E4-F0ED-4AC7-885D-94B4F6DE9F94.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-HELP
 *** Name
@@ -20036,8 +20002,7 @@ Not documented in the current category page.
 - [acet-help (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F2967662-438E-425A-BFCC-BD7526074C13.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-HELP-TRAP
 *** Name
@@ -20072,8 +20037,7 @@ Not documented in the current category page.
 - [acet-help-trap (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F2967662-438E-425A-BFCC-BD7526074C13.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-INI-GET
 *** Name
@@ -20108,8 +20072,7 @@ Not documented in the current category page.
 - [acet-ini-get (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9F789A1F-D7E1-4655-87C3-906B908AF5B8.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-INI-SET
 *** Name
@@ -20144,8 +20107,7 @@ Not documented in the current category page.
 - [acet-ini-set (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9F789A1F-D7E1-4655-87C3-906B908AF5B8.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LAYERP-MARK
 *** Name
@@ -20180,8 +20142,7 @@ Not documented in the current category page.
 - [acet-layerp-mark (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LAYERP-MODE
 *** Name
@@ -20216,8 +20177,7 @@ Not documented in the current category page.
 - [acet-layerp-mode (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LAYTRANS
 *** Name
@@ -20252,8 +20212,7 @@ Not documented in the current category page.
 - [acet-laytrans (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LOAD-EXPRESSTOOLS
 *** Name
@@ -20288,8 +20247,7 @@ Not documented in the current category page.
 - [acet-load-expresstools (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-MS-TO-PS
 *** Name
@@ -20324,8 +20282,7 @@ Not documented in the current category page.
 - [acet-ms-to-ps (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-PS-TO-MS
 *** Name
@@ -20360,8 +20317,7 @@ Not documented in the current category page.
 - [acet-ps-to-ms (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-REG-DEL
 *** Name
@@ -20396,8 +20352,7 @@ Not documented in the current category page.
 - [acet-reg-del (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9F789A1F-D7E1-4655-87C3-906B908AF5B8.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-REG-GET
 *** Name
@@ -20432,8 +20387,7 @@ Not documented in the current category page.
 - [acet-reg-get (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9F789A1F-D7E1-4655-87C3-906B908AF5B8.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-REG-MACHINE-PRODKEY
 *** Name
@@ -20468,8 +20422,7 @@ Not documented in the current category page.
 - [acet-reg-machine-prodkey (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9F789A1F-D7E1-4655-87C3-906B908AF5B8.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-REG-PRODKEY
 *** Name
@@ -20504,8 +20457,7 @@ Not documented in the current category page.
 - [acet-reg-prodkey (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9F789A1F-D7E1-4655-87C3-906B908AF5B8.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-REG-PUT
 *** Name
@@ -20540,8 +20492,7 @@ Not documented in the current category page.
 - [acet-reg-put (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9F789A1F-D7E1-4655-87C3-906B908AF5B8.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-REG-USER-PRODKEY
 *** Name
@@ -20576,8 +20527,7 @@ Not documented in the current category page.
 - [acet-reg-user-prodkey (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-9F789A1F-D7E1-4655-87C3-906B908AF5B8.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-DRAG-MOVE
 *** Name
@@ -20612,8 +20562,7 @@ Not documented in the current category page.
 - [acet-ss-drag-move (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-676F8B1B-7C23-4480-9DD4-19D0836EAE08.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-DRAG-ROTATE
 *** Name
@@ -20648,8 +20597,7 @@ Not documented in the current category page.
 - [acet-ss-drag-rotate (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-676F8B1B-7C23-4480-9DD4-19D0836EAE08.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-DRAG-SCALE
 *** Name
@@ -20684,8 +20632,7 @@ Not documented in the current category page.
 - [acet-ss-drag-scale (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-676F8B1B-7C23-4480-9DD4-19D0836EAE08.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-COLLATE
 *** Name
@@ -20720,8 +20667,7 @@ Not documented in the current category page.
 - [acet-str-collate (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CE7D81F-BFE6-4221-B9FE-EC7D7680546E.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-EQUAL
 *** Name
@@ -20756,8 +20702,7 @@ Not documented in the current category page.
 - [acet-str-equal (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CE7D81F-BFE6-4221-B9FE-EC7D7680546E.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-FIND
 *** Name
@@ -20792,8 +20737,7 @@ Not documented in the current category page.
 - [acet-str-find (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CE7D81F-BFE6-4221-B9FE-EC7D7680546E.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-FORMAT
 *** Name
@@ -20828,8 +20772,7 @@ Not documented in the current category page.
 - [acet-str-format (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CE7D81F-BFE6-4221-B9FE-EC7D7680546E.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-REPLACE
 *** Name
@@ -20864,8 +20807,7 @@ Not documented in the current category page.
 - [acet-str-replace (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CE7D81F-BFE6-4221-B9FE-EC7D7680546E.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-WCMATCH
 *** Name
@@ -20900,8 +20842,7 @@ Not documented in the current category page.
 - [acet-str-wcmatch (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CE7D81F-BFE6-4221-B9FE-EC7D7680546E.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-BEEP
 *** Name
@@ -20936,8 +20877,7 @@ Not documented in the current category page.
 - [acet-sys-beep (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-COMMAND
 *** Name
@@ -20972,8 +20912,7 @@ Not documented in the current category page.
 - [acet-sys-command (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-FOREGROUND
 *** Name
@@ -21008,8 +20947,7 @@ Not documented in the current category page.
 - [acet-sys-foreground (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-KEYSTATE
 *** Name
@@ -21044,8 +20982,7 @@ Not documented in the current category page.
 - [acet-sys-keystate (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-LASTERR
 *** Name
@@ -21080,8 +21017,7 @@ Not documented in the current category page.
 - [acet-sys-lasterr (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-PROCID
 *** Name
@@ -21116,8 +21052,7 @@ Not documented in the current category page.
 - [acet-sys-procid (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-SLEEP
 *** Name
@@ -21152,8 +21087,7 @@ Not documented in the current category page.
 - [acet-sys-sleep (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-SPAWN
 *** Name
@@ -21188,8 +21122,7 @@ Not documented in the current category page.
 - [acet-sys-spawn (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-TERM
 *** Name
@@ -21224,8 +21157,7 @@ Not documented in the current category page.
 - [acet-sys-term (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-WAIT
 *** Name
@@ -21260,8 +21192,7 @@ Not documented in the current category page.
 - [acet-sys-wait (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-MESSAGE
 *** Name
@@ -21296,8 +21227,7 @@ Not documented in the current category page.
 - [acet-ui-message (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F2967662-438E-425A-BFCC-BD7526074C13.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-PICKDIR
 *** Name
@@ -21332,8 +21262,7 @@ Not documented in the current category page.
 - [acet-ui-pickdir (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F2967662-438E-425A-BFCC-BD7526074C13.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-PROGRESS
 *** Name
@@ -21368,8 +21297,7 @@ Not documented in the current category page.
 - [acet-ui-progress (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F2967662-438E-425A-BFCC-BD7526074C13.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-STATUS
 *** Name
@@ -21404,8 +21332,7 @@ Not documented in the current category page.
 - [acet-ui-status (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F2967662-438E-425A-BFCC-BD7526074C13.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-TXTED
 *** Name
@@ -21440,8 +21367,7 @@ Not documented in the current category page.
 - [acet-ui-txted (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-F2967662-438E-425A-BFCC-BD7526074C13.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 * 24 BricsCAD Extensions
@@ -21500,8 +21426,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [bcad$licenselevels (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: INSPECTOR
 *** Name
@@ -21536,8 +21461,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [inspector (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACOS
 *** Name
@@ -21568,12 +21492,14 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD has no `acos`. Portable code uses `(atan (sqrt (- 1.0 (* x x))) x)`.
+
 *** Source Notes
 - [acos (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ASIN
 *** Name
@@ -21604,12 +21530,14 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD has no `asin`. Portable code uses `(atan x (sqrt (- 1.0 (* x x))))`.
+
 *** Source Notes
 - [asin (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ATANH
 *** Name
@@ -21644,8 +21572,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [atanh (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: CEILING
 *** Name
@@ -21676,12 +21603,14 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD has no `ceiling`. AutoCAD's `fix` truncates toward zero rather than rounding upward; portable code emulates `ceiling` as `(if (= n (fix n)) (fix n) (1+ (fix n)))` for non-negative `n`.
+
 *** Source Notes
 - [ceiling (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: COSH
 *** Name
@@ -21716,8 +21645,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [cosh (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: FLOOR
 *** Name
@@ -21748,12 +21676,14 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD has no `floor`. For non-negative numbers, `fix` is equivalent; for negative numbers portable code uses `(if (= n (fix n)) (fix n) (1- (fix n)))`.
+
 *** Source Notes
 - [floor (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GET_DISKSERIALID
 *** Name
@@ -21788,8 +21718,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [get_diskserialid (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GETPID
 *** Name
@@ -21824,8 +21753,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [getpid (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GRARC
 *** Name
@@ -21860,8 +21788,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [grarc (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: GRFILL
 *** Name
@@ -21896,8 +21823,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [grfill (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: INIT_DIALOG
 *** Name
@@ -21932,8 +21858,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [init_dialog (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LISP$INSTALL
 *** Name
@@ -21968,8 +21893,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [lisp$install (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LISP$ENABLEFASTCOM
 *** Name
@@ -22004,8 +21928,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [lisp$enablefastcom (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LISP$VERSION
 *** Name
@@ -22040,8 +21963,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [lisp$version (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LOG10
 *** Name
@@ -22072,12 +21994,14 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD has no direct base-10 logarithm; portable AutoLISP code uses `(/ (log x) (log 10))`.
+
 *** Source Notes
 - [log10 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: MOD
 *** Name
@@ -22108,12 +22032,14 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD analogue: ~rem~ (chapter 8). BricsCAD ships both `mod` and `rem`; AutoCAD ships only `rem`.
+
 *** Source Notes
 - [mod (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: POSITION
 *** Name
@@ -22144,12 +22070,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD analogue: ~vl-position~ (chapter 19).
+- Pair documented in `vendor-inventory-2026.org` §10 item 7.
+
 *** Source Notes
 - [position (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: POWER
 *** Name
@@ -22180,12 +22109,14 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD analogue: ~expt~ (chapter 8).
+
 *** Source Notes
 - [power (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: RANDOM
 *** Name
@@ -22220,8 +22151,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [random (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: REDRAW_DIALOG
 *** Name
@@ -22256,8 +22186,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [redraw_dialog (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: REMOVE
 *** Name
@@ -22288,12 +22217,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD analogue: ~vl-remove~ (chapter 19).
+- Pair documented in `vendor-inventory-2026.org` §10 item 7.
+
 *** Source Notes
 - [remove (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ROUND
 *** Name
@@ -22324,12 +22256,14 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD has no `round`. Portable code uses `(fix (+ n 0.5))` for non-negative numbers (asymmetric rounding).
+
 *** Source Notes
 - [round (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SINH
 *** Name
@@ -22364,8 +22298,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [sinh (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: SLEEP
 *** Name
@@ -22400,8 +22333,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [sleep (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: STRING-SPLIT
 *** Name
@@ -22436,8 +22368,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [string-split (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: TAN
 *** Name
@@ -22468,12 +22399,14 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD has no `tan`. Portable AutoLISP code uses `(/ (sin x) (cos x))`.
+
 *** Source Notes
 - [tan (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: TANH
 *** Name
@@ -22508,8 +22441,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [tanh (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: UNTIL
 *** Name
@@ -22544,8 +22476,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [until (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ENABLE-USER-CANCEL
 *** Name
@@ -22580,8 +22511,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-enable-user-cancel (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-GETCURRENTDIR
 *** Name
@@ -22616,8 +22546,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-getcurrentdir (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-GETGEOMEXTENTS
 *** Name
@@ -22652,8 +22581,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-getgeomextents (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-GETSTARTUPDIR
 *** Name
@@ -22688,8 +22616,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-getstartupdir (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-HIDEPROMPTMENU
 *** Name
@@ -22724,8 +22651,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-hidepromptmenu (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LAYERSTATES-DELETE
 *** Name
@@ -22756,12 +22682,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD analogue: ~layerstate-delete~ (chapter 17).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [vl-layerstates-delete (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LAYERSTATES-LIST
 *** Name
@@ -22792,12 +22721,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD analogue: ~layerstate-getnames~ (chapter 17).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [vl-layerstates-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LAYERSTATES-SETPROPERTYMASK
 *** Name
@@ -22828,12 +22760,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- No direct AutoCAD analogue. AutoCAD's parallel ~layerstate-*~ family does not document property-mask or description accessors as separate functions; in AutoCAD they are folded into the `mask` / state arguments of ~layerstate-save~ and ~layerstate-getlayers~.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [vl-layerstates-setpropertymask (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LAYERSTATES-SETDESCRIPTION
 *** Name
@@ -22864,12 +22799,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- No direct AutoCAD analogue. AutoCAD's parallel ~layerstate-*~ family does not document property-mask or description accessors as separate functions; in AutoCAD they are folded into the `mask` / state arguments of ~layerstate-save~ and ~layerstate-getlayers~.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [vl-layerstates-setdescription (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LAYERSTATES-RESTORE
 *** Name
@@ -22900,12 +22838,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD analogue: ~layerstate-restore~ (chapter 17).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [vl-layerstates-restore (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LAYERSTATES-HAS
 *** Name
@@ -22936,12 +22877,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD analogue: ~layerstate-has~ (chapter 17).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [vl-layerstates-has (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LAYERSTATES-GETPROPERTYMASK
 *** Name
@@ -22972,12 +22916,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- No direct AutoCAD analogue. AutoCAD's parallel ~layerstate-*~ family does not document property-mask or description accessors as separate functions; in AutoCAD they are folded into the `mask` / state arguments of ~layerstate-save~ and ~layerstate-getlayers~.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [vl-layerstates-getpropertymask (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LAYERSTATES-GETDESCRIPTION
 *** Name
@@ -23008,12 +22955,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- No direct AutoCAD analogue. AutoCAD's parallel ~layerstate-*~ family does not document property-mask or description accessors as separate functions; in AutoCAD they are folded into the `mask` / state arguments of ~layerstate-save~ and ~layerstate-getlayers~.
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [vl-layerstates-getdescription (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LAYERSTATES-RENAME
 *** Name
@@ -23044,12 +22994,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD analogue: ~layerstate-rename~ (chapter 17).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [vl-layerstates-rename (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LAYERSTATES-SAVE
 *** Name
@@ -23080,12 +23033,15 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - BricsCAD V26: documented.
 - Status: BricsCAD-only.
 
+*** See Also
+- AutoCAD analogue: ~layerstate-save~ (chapter 17).
+- Family pair documented in `vendor-inventory-2026.org` §10 item 6.
+
 *** Source Notes
 - [vl-layerstates-save (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LIST-LOADED-LISP
 *** Name
@@ -23120,8 +23076,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-list-loaded-lisp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-SETCURRENTDIR
 *** Name
@@ -23156,8 +23111,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-setcurrentdir (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-SHOWPROMPTMENU
 *** Name
@@ -23192,8 +23146,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-showpromptmenu (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-RMDIR
 *** Name
@@ -23228,8 +23181,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-rmdir (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-STRING-SPLIT
 *** Name
@@ -23264,8 +23216,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-string-split (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLA-COLLECTION->LIST
 *** Name
@@ -23300,8 +23251,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vla-collection->list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLA-POSTCOMMAND
 *** Name
@@ -23336,8 +23286,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vla-postcommand (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DLG-SYSVARS
 *** Name
@@ -23372,8 +23321,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [dlg-sysvars (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-VECTOR-PROJECT-POINTTOENTITY
 *** Name
@@ -23408,8 +23356,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-vector-project-pointtoentity (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: _VLAX-SAFEARRAY-MODE
 *** Name
@@ -23444,8 +23391,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [_vlax-safearray-mode (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLISP-OPTIMIZER
 *** Name
@@ -23480,8 +23426,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vlisp-optimizer (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DICTOBJNAME
 *** Name
@@ -23516,8 +23461,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [dictobjname (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ANNOTATIVE-GET
 *** Name
@@ -23552,8 +23496,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-annotative-get (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ANNOTATIVE-GETSCALES
 *** Name
@@ -23588,8 +23531,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-annotative-getscales (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ANNOTATIVE-SET
 *** Name
@@ -23624,8 +23566,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-annotative-set (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ANNOTATIVE-SETSCALES
 *** Name
@@ -23660,8 +23601,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-annotative-setscales (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ANNOTATIVE-SCALELIST
 *** Name
@@ -23696,8 +23636,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-annotative-scalelist (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ANNOTATIVE-SUPPORTED
 *** Name
@@ -23732,8 +23671,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-annotative-supported (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ANNOTATIVE-REMOVE
 *** Name
@@ -23768,8 +23706,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-annotative-remove (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ANNOTATIVE-RESET
 *** Name
@@ -23804,8 +23741,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-annotative-reset (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ANNOTATIVE-ADDSCALE
 *** Name
@@ -23840,8 +23776,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-annotative-addscale (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-ANNOTATIVE-REMOVESCALE
 *** Name
@@ -23876,8 +23811,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-annotative-removescale (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-SUBENT-ATPOINT
 *** Name
@@ -23912,8 +23846,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-subent-atpoint (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-SUBENT-SELECT
 *** Name
@@ -23948,8 +23881,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-subent-select (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-SUBENT-SSADD
 *** Name
@@ -23984,8 +23916,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-subent-ssadd (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-SUBENT-SSDEL
 *** Name
@@ -24020,8 +23951,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-subent-ssdel (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-SUBENT-SSMEMB
 *** Name
@@ -24056,8 +23986,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-subent-ssmemb (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LOCAL-UNDO-PUSH
 *** Name
@@ -24092,8 +24021,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-local-undo-push (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LOCAL-UNDO-POP
 *** Name
@@ -24128,8 +24056,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-local-undo-pop (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LOCAL-UNDO-STEPS
 *** Name
@@ -24164,8 +24091,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-local-undo-steps (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LOCAL-UNDO-RESET
 *** Name
@@ -24200,8 +24126,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-local-undo-reset (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-LOCAL-UNDO-CLEAR
 *** Name
@@ -24236,8 +24161,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vl-local-undo-clear (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/BricsCADLISPFunctions.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-OPTIMISER
 *** Name
@@ -24272,8 +24196,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-optimiser (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/Howitworks.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH0
 *** Name
@@ -24308,8 +24231,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-nth0 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH1
 *** Name
@@ -24344,8 +24266,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-nth1 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH2
 *** Name
@@ -24380,8 +24301,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-nth2 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH3
 *** Name
@@ -24416,8 +24336,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-nth3 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH4
 *** Name
@@ -24452,8 +24371,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-nth4 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH5
 *** Name
@@ -24488,8 +24406,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-nth5 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH6
 *** Name
@@ -24524,8 +24441,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-nth6 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH7
 *** Name
@@ -24560,8 +24476,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-nth7 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH8
 *** Name
@@ -24596,8 +24511,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-nth8 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH9
 *** Name
@@ -24632,8 +24546,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-nth9 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-CDRASSOC
 *** Name
@@ -24668,8 +24581,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-cdrassoc (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-REMOVE-LAST
 *** Name
@@ -24704,8 +24616,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-remove-last (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ENTGET
 *** Name
@@ -24740,8 +24651,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-entget (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-TBLSEARCH
 *** Name
@@ -24776,8 +24686,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-tblsearch (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-DICTSEARCH
 *** Name
@@ -24812,8 +24721,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-dictsearch (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-DICTOBJNAME
 *** Name
@@ -24848,8 +24756,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-dictobjname (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ENAME-VALID
 *** Name
@@ -24884,8 +24791,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-ename-valid (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/OptimisedCodePatterns.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-FILE-ENCODING
 *** Name
@@ -24920,8 +24826,7 @@ Not documented in the BricsCAD-Specific LISP Functions catalogue page.
 - [vle-file-encoding (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/readwritetextfiles.htm)
 - Status: documented (Phase 3 body fill from the BricsCAD V26 DevRef catalogue page).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 
 ** Phase-2 Follow-up Catalogue (2026-04-26)
