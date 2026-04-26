@@ -711,14 +711,100 @@ $ clautolisp -x \
    (princ (vlax-object-released-p app))"               ; -> T
 #+end_example
 
-** Phase 14 — Reactors
-*Goal:* the Visual LISP reactor surface.
+** Phase 14 — Reactors [DONE 2026-04-26]
+*Goal:* the Visual LISP reactor surface, on top of an explicit
+host-object ontology and lifecycle vocabulary.
 
-Scope (~autolisp-spec~ chapter 22):
-- All ~vlr-*~ functions: registration, callback dispatch, owner
-  bookkeeping, persistence on the named-object dictionary.
-- A MockHost-side event injection helper for tests
-  (~mock-host-fire-event :command-will-start ...~).
+*Status:* closed. Suite 1037 / 0. Reactors are dispatched by the
+runtime against per-document and per-application registries;
+MockHost mutations emit canonical events into the channel; the
+full ~vlr-*~ AutoLISP-visible family is implemented; a complete
+end-to-end test wires entmake / entmod / setvar through to
+registered reactors.
+
+Scope delivered, split across two sub-phases:
+
+*Phase 14a — Ontology + event channel*
+
+- ~clautolisp/documentation/design.org~ — design document defining
+  the host-object graph, per-class lifecycle states, and the
+  event-naming convention. Cross-referenced from this roadmap and
+  from the spec.
+- ~autolisp-spec~ chapter 21 gains the *Host Object Ontology and
+  Lifecycles* normative section: object-class table, lifecycle
+  state machines per class, event-scope rule (per-document vs
+  per-application), veto and persistence policies, vendor
+  evidence.
+- New runtime module
+  ~clautolisp/autolisp-runtime/source/ontology.lisp~. Defines the
+  ~reactor~ struct, per-type metadata (~*reactor-type-table*~),
+  registry helpers (~add-reactor-to-document~, ~all-document-reactors~,
+  …), and the public emission API:
+    + ~signal-document-event~
+    + ~signal-application-event~
+    + ~set-document-state~ — convenience helper that fires the
+      documented activate/deactivate/close event pairs.
+    + ~set-application-state~ — fires beginQuit / endLogFile.
+    + ~call-with-event-trace~ — test-only helper that captures
+      every emission into a list.
+- ~runtime-session~ gains slots:
+    + ~application-state~ (default ~:running~)
+    + ~application-reactors~ (per-application registry)
+    + ~event-trace~ (mutable cell installed by call-with-event-trace)
+- ~document-namespace~ gains slots:
+    + ~state~ (default ~:loaded~)
+    + ~reactors~ (per-document registry)
+    + ~persistent-reactor-index~
+    + ~session~ (back-pointer the event channel uses to resolve
+      a document to its session)
+- MockHost mutation paths now emit canonical events:
+    + entmake → ~:vlr-objectAppended~ + ~:vlr-objectReappended~
+    + entmod  → ~:vlr-objectModified~ + ~:vlr-modified~
+    + entdel  → ~:vlr-objectErased~ / ~:vlr-objectUnErased~
+    + setvar  → ~:vlr-sysVarWillChange~ + ~:vlr-sysVarChanged~
+
+*Phase 14b — Reactor surface (vlr-* family)*
+
+- ~clautolisp/autolisp-builtins-core~ gains 41 new builtins:
+    + 20 type-specific constructors —
+      ~vlr-{acdb,command,deepclone,document,dwg,dxf,insert,
+            mouse,object,sysvar,toolbar,undo,wblock,window,xref,
+            docmanager,editor,linker,lisp,miscellaneous}-reactor~
+    + Mutation: ~vlr-add~, ~vlr-remove~, ~vlr-remove-all~,
+      ~vlr-data~, ~vlr-data-set~, ~vlr-owners~, ~vlr-owner-add~,
+      ~vlr-owner-remove~, ~vlr-set-notification~,
+      ~vlr-notification~, ~vlr-current-reaction-name~,
+      ~vlr-reactions~, ~vlr-reaction-set~, ~vlr-trace-reaction~.
+    + Introspection: ~vlr-added-p~, ~vlr-type~, ~vlr-types~,
+      ~vlr-reactors~.
+    + Persistence: ~vlr-pers~, ~vlr-pers-release~,
+      ~vlr-pers-list~, ~vlr-pers-p~, ~vlr-pers-dictname~.
+- Persistent reactors require their callbacks to be
+  ~autolisp-symbol~ designators (closures cannot survive
+  serialisation); the persistence helper records the failure in
+  the persistent-reactor index keyed on reactor-id.
+- Re-entry depth cap (~*reactor-recursion-cap*~ = 16) prevents
+  runaway callback chains from saturating the stack.
+- Tests:
+    + 10 new tests in ~autolisp-runtime/tests/ontology-tests.lisp~
+      pin the reactor struct, registry helpers, dispatch by KIND
+      and by reaction-name, the inactive-reactor guard, the
+      lifecycle-state event pairs, the trace-only-when-bound
+      semantics, and the application-state quit events.
+    + 4 new tests in ~autolisp-mock-host/tests/reactor-tests.lisp~
+      pin end-to-end reactor dispatch through MockHost mutations
+      (entmake/entmod/setvar fires the right canonical events; a
+      registered reactor receives the matching reaction in its
+      callback).
+    + Aggregate suite 76 + 206 + 29 + 168 + 428 + 130 = 1037 / 0.
+
+Smoke (under the default ~--host mock~):
+#+begin_example
+$ clautolisp -x "(princ (vlr-types))"
+(ACDB COMMAND DEEPCLONE DOCUMENT DWG DXF INSERT MOUSE OBJECT
+ SYSVAR TOOLBAR UNDO WBLOCK WINDOW XREF DOCMANAGER EDITOR LINKER
+ LISP MISCELLANEOUS)
+#+end_example
 
 ** Phase 15 — DCL and Optional GUI
 *Goal:* dialog support, optional GUI backend.

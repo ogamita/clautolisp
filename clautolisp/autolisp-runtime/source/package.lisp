@@ -193,7 +193,43 @@
    #:derive-reader-options-for-dialect
    #:make-default-runtime-context
    #:run-autolisp-file
-   #:run-autolisp-string))
+   #:run-autolisp-string
+   ;; Phase 14a — host-object ontology + event channel
+   #:reactor
+   #:make-reactor
+   #:reactor-id
+   #:reactor-kind
+   #:reactor-scope
+   #:reactor-callbacks
+   #:reactor-owners
+   #:reactor-data
+   #:reactor-active-p
+   #:reactor-persistent-p
+   #:reactor-notification
+   #:reactor-document
+   #:*reactor-type-table*
+   #:reactor-type-scope
+   #:reactor-type-name
+   #:reactor-type-keywords
+   #:document-reactor-registry
+   #:session-reactor-registry
+   #:add-reactor-to-document
+   #:add-reactor-to-session
+   #:remove-reactor-from-document
+   #:remove-reactor-from-session
+   #:all-document-reactors
+   #:all-application-reactors
+   #:all-session-reactors
+   #:signal-document-event
+   #:signal-application-event
+   #:set-document-state
+   #:set-application-state
+   #:document-namespace-state
+   #:runtime-session-application-state
+   #:document-namespace-persistent-reactor-index
+   #:runtime-session-event-trace
+   #:set-runtime-session-event-trace
+   #:call-with-event-trace))
 
 (defpackage #:clautolisp.autolisp-runtime.internal
   (:use #:cl)

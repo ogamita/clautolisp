@@ -121,6 +121,13 @@ in DATA, signalling :invalid-entity-data if missing."
              (normalize-entity-data data
                                     :handle handle
                                     :ename (handle->ename handle)))
+       (let ((document
+              (clautolisp.autolisp-runtime:evaluation-context-current-document
+               (clautolisp.autolisp-runtime:current-evaluation-context))))
+         (clautolisp.autolisp-runtime:signal-document-event
+          document :acdb :vlr-objectmodified (list (handle->ename handle)))
+         (clautolisp.autolisp-runtime:signal-document-event
+          document :object :vlr-modified (list (handle->ename handle))))
        data))))
 
 (defmethod host-entmake ((host mock-host) data)
@@ -135,6 +142,13 @@ in DATA, signalling :invalid-entity-data if missing."
                   :data data*)))
     (setf (gethash handle (mock-host-entities host)) entity)
     (push handle (mock-host-creation-order host))
+    (let ((document
+           (clautolisp.autolisp-runtime:evaluation-context-current-document
+            (clautolisp.autolisp-runtime:current-evaluation-context))))
+      (clautolisp.autolisp-runtime:signal-document-event
+       document :acdb :vlr-objectappended (list (handle->ename handle)))
+      (clautolisp.autolisp-runtime:signal-document-event
+       document :acdb :vlr-objectreappended (list (handle->ename handle))))
     data*))
 
 (defmethod host-entmakex ((host mock-host) data)
@@ -155,6 +169,16 @@ in DATA, signalling :invalid-entity-data if missing."
        ;; current command's extent). MockHost honours the toggle.
        (setf (entity-handle-deleted-p entity)
              (not (entity-handle-deleted-p entity)))
+       (let* ((document
+               (clautolisp.autolisp-runtime:evaluation-context-current-document
+                (clautolisp.autolisp-runtime:current-evaluation-context)))
+              (event (if (entity-handle-deleted-p entity)
+                         :vlr-objecterased
+                         :vlr-objectunerased)))
+         (clautolisp.autolisp-runtime:signal-document-event
+          document :acdb event (list ename))
+         (clautolisp.autolisp-runtime:signal-document-event
+          document :object event (list ename)))
        ename))))
 
 (defmethod host-entupd ((host mock-host) ename)

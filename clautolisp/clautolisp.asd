@@ -43,7 +43,8 @@
   :components
   ((:file "autolisp-runtime/source/package")
    (:file "autolisp-runtime/source/model")
-   (:file "autolisp-runtime/source/api"))
+   (:file "autolisp-runtime/source/api")
+   (:file "autolisp-runtime/source/ontology"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-runtime/tests")))
   :perform (asdf:test-op (op system)
@@ -209,6 +210,7 @@
    (:file "autolisp-mock-host/tests/selection-tests")
    (:file "autolisp-mock-host/tests/prompt-tests")
    (:file "autolisp-mock-host/tests/vlax-tests")
+   (:file "autolisp-mock-host/tests/reactor-tests")
    (:file "autolisp-mock-host/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -226,6 +228,7 @@
    (:file "autolisp-runtime/tests/test-harness")
    (:file "autolisp-runtime/tests/model-tests")
    (:file "autolisp-runtime/tests/evaluator-tests")
+   (:file "autolisp-runtime/tests/ontology-tests")
    (:file "autolisp-runtime/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
