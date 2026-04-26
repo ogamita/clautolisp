@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.5.0
+#+VERSION: 0.6.0
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.5.0*.
+The current document version is *0.6.0*.
 
 Any modification of this document must increment its version number.
 
@@ -4250,48 +4250,45 @@ Conversion Function
 #+end_example
 
 *** Arguments and Values
-- `string`: string
+- `string`: a string representing any number.
 
 *** Description
-Converts a string to an integer.
+Converts `string` into an integer. Trailing non-numeric characters terminate parsing; the integer prefix is returned as the value. Decimal-fraction input is truncated toward zero.
 
 *** Return Values
-Integer value according to AutoLISP string-to-integer parsing semantics.
+An integer; `0` if the string is not a valid number.
 
 *** Side Effects
 None.
 
-*** Compatibility
-Exact accepted syntax should be aligned with the eventual numeric-lexical specification and tested where documentation is informal.
+*** Examples
+- `(atoi "12")` returns `12`.
+- `(atoi "12.34")` returns `12` (truncating decimal input).
+- `(atoi "xyz")` returns `0`.
 
-*** Notes
-- Autodesk documents truncating behavior on decimal input such as `(atoi "3.9") => 3`.
-- A plausible implementation model is delegation to a C-library integer conversion routine such as `atoi(3)` or `strtol(3)`.
-- That implementation hypothesis is *not* currently treated as normative for AutoLISP.
-- If a host implementation delegates through a C conversion routine with base autodetection, forms such as `017` or `0xbabe` could become accepted; this must be tested explicitly rather than assumed.
-- The critical compatibility questions are:
-  - whether leading whitespace is accepted,
-  - whether signs are accepted,
-  - whether parsing stops at trailing junk,
-  - whether leading-zero forms are treated as decimal or octal-like,
-  - whether `0x`-prefixed forms are accepted.
-- Minimum probe cases to record for AutoCAD, BricsCAD, and `clautolisp`:
-  - `(atoi "17")`
-  - `(atoi "017")`
-  - `(atoi "0xbabe")`
-  - `(atoi "+17")`
-  - `(atoi "-17")`
-  - `(atoi "17x")`
-  - `(atoi " 17")`
+*** Implementation-defined Behaviour
+The Phase-5 vendor citations below define the documented surface. Several lexical edges are not nailed down by either vendor's prose and remain implementation-defined unless and until product tests exist:
+- Leading whitespace handling (`(atoi " 17")`).
+- Sign acceptance (`(atoi "+17")`, `(atoi "-17")`).
+- Behaviour of leading-zero forms (`(atoi "017")` — decimal vs. octal-like).
+- Behaviour of `0x`-prefixed forms (`(atoi "0xbabe")`).
+- Trailing-junk strictness (`(atoi "17x")`).
+
+For ~clautolisp~ the chosen lex model is: skip leading whitespace, accept optional sign, parse the longest run of decimal digits, truncate the fractional part if a `.` follows the digit run, treat all leading-zero forms as base 10, treat `0x`-prefixed forms as `0` (no autodetection). The probe suite in [[file:../sources/probe-atoi.lsp][~probe-atoi.lsp~]] records the AutoCAD / BricsCAD product behaviour when run via [[file:../scripts/run-probes.sh][~scripts/run-probes.sh~]].
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (Autodesk reference page).
+- BricsCAD V26: documented (BricsCAD V26 Standard Functions page; identical wrapper signature).
+- Status: documented in both vendors. Lexical-edge behaviour is implementation-defined and recorded via the probe suite.
+
+*** See Also
+- [[file:../sources/probe-atoi.lsp][probe-atoi.lsp]] — executable Phase-5 probe suite.
+- ~itoa~ — integer-to-string companion.
 
 *** Source Notes
-- [atoi (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-20EF237C-7079-4E29-860C-B8531D6C7F36.htm)
-- [atof(3)](https://man7.org/linux/man-pages/man3/atof.3.html)
+- [atoi (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-20EF237C-7079-4E29-860C-B8531D6C7F36.htm)
+- [atoi (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/atoi.htm)
+- Status: documented (Phase 5 closure via vendor citation; product-test coverage deferred until a CAD product is available locally).
 
 #+LATEX: \newpage
 
@@ -4308,53 +4305,46 @@ Conversion Function
 #+end_example
 
 *** Arguments and Values
-- `string`: string
+- `string`: a string representing any number.
 
 *** Description
-Converts a string to a real.
+Converts `string` into a double-precision real. A trailing non-numeric tail terminates parsing; the numeric prefix is returned.
 
 *** Return Values
-Real value according to AutoLISP string-to-real parsing semantics.
-
-Autodesk documents the function only at summary level in the currently available reference pages sampled for this specification.
+A double-precision real; `0.0` if the string is not a valid number.
 
 *** Side Effects
 None.
 
-*** Compatibility
-Exact accepted input syntax should be tied to the eventual numeric and Unicode test matrix.
+*** Examples
+- `(atof "12")` returns `12.0`.
+- `(atof "12.34")` returns `12.34`.
+- `(atof "xyz")` returns `0.0`.
 
-*** Notes
-- The currently sampled Autodesk sources document the existence and purpose of `atof`, but do not provide a dedicated symbol page with a complete acceptance grammar.
-- This specification therefore treats the exact accepted lexical forms as under-specified pending direct vendor evidence or probe testing.
-- A plausible implementation model is delegation to a C-library floating-point conversion routine such as `atof(3)` or `strtod(3)`.
-- That implementation hypothesis is *not* currently treated as normative for AutoLISP.
-- A direct delegation model would raise additional compatibility questions:
-  - locale sensitivity, especially decimal comma vs decimal point,
-  - exponent-marker acceptance,
-  - acceptance of leading whitespace,
-  - acceptance of trailing junk,
-  - acceptance of hexadecimal floating syntax where available in the host C library.
-- Minimum probe cases to record for AutoCAD, BricsCAD, and `clautolisp`:
-  - `(atof "3.5")`
-  - `(atof ".5")`
-  - `(atof "1.")`
-  - `(atof "1e3")`
-  - `(atof "017")`
-  - `(atof "0x1p4")`
-  - `(atof "3,5")`
-  - `(atof " 3.5")`
+*** Implementation-defined Behaviour
+The Phase-5 vendor citations below define the documented surface. Several lexical edges are not nailed down by either vendor's prose and remain implementation-defined unless and until product tests exist:
+- `.5`, `1.` — leading/trailing decimal-point variants.
+- Exponent notation (`1e3`, `1E+03`).
+- Leading whitespace handling.
+- Locale sensitivity, in particular decimal-comma vs decimal-point.
+- Acceptance of hexadecimal floating syntax (`0x1p4`).
+- Trailing-junk strictness.
+
+For ~clautolisp~ the chosen lex model is: skip leading whitespace, accept optional sign, accept the longest prefix matching `digits ('.' digits?)? (('e'|'E') [+-]? digits)?`, no locale sensitivity (decimal-point only), no hexadecimal floating syntax. The probe suite in [[file:../sources/probe-atof.lsp][~probe-atof.lsp~]] records the AutoCAD / BricsCAD product behaviour when run via [[file:../scripts/run-probes.sh][~scripts/run-probes.sh~]].
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (Autodesk reference page).
+- BricsCAD V26: documented (BricsCAD V26 Standard Functions page; identical wrapper signature).
+- Status: documented in both vendors. Lexical-edge behaviour is implementation-defined and recorded via the probe suite.
+
+*** See Also
+- [[file:../sources/probe-atof.lsp][probe-atof.lsp]] — executable Phase-5 probe suite.
+- ~rtos~ — real-to-string companion.
 
 *** Source Notes
-- [Conversion Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP-Reference/files/GUID-5BDBD4BC-289E-4A49-9BB9-DF6A6147E0FC.htm)
-- [A Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
-- [atof(3)](https://man7.org/linux/man-pages/man3/atof.3.html)
-- Status: summary-documented; exact lexical acceptance remains under-specified.
+- [atof (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-8618A388-E4CF-40E1-813B-057367DD1840.htm)
+- [atof (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/atof.htm)
+- Status: documented (Phase 5 closure via vendor citation; product-test coverage deferred until a CAD product is available locally).
 
 #+LATEX: \newpage
 
@@ -5448,31 +5438,37 @@ Visual LISP List Function
 
 *** Syntax
 #+begin_example
-(vl-member-if-not predicate list)
+(vl-member-if-not comparator lst)
 #+end_example
 
+*** Arguments and Values
+- `comparator`: a symbol, function, or lambda expression; must return `nil` or non-`nil`.
+- `lst`: any list of items.
+
 *** Description
-Determines whether the predicate is `nil` for one of the list members and returns the corresponding tail of the list under member-style semantics.
+Returns the tail of `lst` starting with the first item for which `comparator` returns `nil`. Validation of each list item stops at the first element whose `comparator` evaluation is `nil`, and the remainder of the list from that element onward is returned. If `comparator` is non-`nil` for every element, returns `nil`.
 
 *** Return Values
-Returns a list tail beginning at the first element for which the predicate is false, or `nil`.
+The list tail beginning at the first element where `comparator` returned `nil`, or `nil` if every element matches the comparator.
 
 *** Side Effects
-Side effects are those of calling `predicate`.
+Side effects are those of calling `comparator`.
 
-*** Notes
-- Autodesk currently documents this function at family/table level in the sampled sources, not with a dedicated symbol page.
-- By the family description and symmetry with `vl-member-if`, elements are tested in sequence and the first tail whose element causes `predicate` to return `nil` is returned.
+*** Examples
+- `(vl-member-if-not '(lambda (x) (< x 5)) '(1 2 3 4 5 6 7 8 9 10))` returns `(5 6 7 8 9 10)` — the first element for which `(< x 5)` is false is `5`, and the tail from `5` onward is returned.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (Autodesk V Functions Reference; included in the family table).
+- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
+- Status: documented in both vendors. Phase-5 closure achieved via direct citation of the BricsCAD V26 per-symbol page, which provides the per-element semantics that Autodesk's family-level prose only summarises.
+
+*** See Also
+- ~vl-member-if~ — companion that returns the tail from the first element where the comparator is non-`nil`.
 
 *** Source Notes
-- [List Manipulation Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2015/ENU/AutoCAD-AutoLISP/files/GUID-00A75AFB-5708-4D0C-B18C-F74DDC4D65FA.htm)
-- [V Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2025/FRA/AutoCAD-MAC-AutoLISP-Reference/files/GUID-26FF2BE2-B5BF-4DD1-A617-36727E51F516.htm)
-- Status: summary-documented; detailed control behavior inferred by documented symmetry with `vl-member-if`.
+- [V Functions Reference (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-26FF2BE2-B5BF-4DD1-A617-36727E51F516.htm)
+- [vl-member-if-not (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vl-member-if-not.htm)
+- Status: documented (Phase 5 closure; BricsCAD per-symbol page is the authoritative narrative source for the predicate-stop semantics).
 
 #+LATEX: \newpage
 
@@ -6773,34 +6769,41 @@ Function
 
 *** Syntax
 #+begin_example
-(prin1 expr [file-desc])
+(prin1 [expression [fileHandle]])
 #+end_example
 
 *** Arguments and Values
-- `expr`: any AutoLISP value
-- `file-desc`: optional output file descriptor
+- `expression` (optional): any AutoLISP expression or value. If omitted, `nil` is used.
+- `fileHandle` (optional): handle of a file as obtained from `(open ...)`. If omitted or `nil`, output goes to the command line.
 
 *** Description
-Prints an expression to the command line or writes it to an open file in a representation-oriented style.
+Prints `expression` to the command line, or writes it to the open file `fileHandle`. The representation is *machine-readable*: control characters in a string expression (`\t`, `\n`, `\r`, `\"`, octal `\nnn`) are written as their backslash escape sequences so that the output round-trips through the reader.
 
 *** Return Values
-Returns `expr`.
+Returns the evaluated value of `expression`. With no argument, `(prin1)` returns the *void* symbol value, useful as the last form in a `defun` to emit "nothing" to the command line.
 
 *** Side Effects
-Produces textual output.
+Writes the printed representation to the command line or to `fileHandle`.
 
-*** Compatibility
-Closely related to `vl-prin1-to-string`. Exact quoting and escaping details remain only partially documented.
+*** Examples
+With `(setq x 123)`:
+- `(prin1 x)` prints `123` to the command line and returns `123`.
+- `(prin1 x fh)` writes `123` to file handle `fh` and returns `123`.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (Autodesk reference page).
+- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
+- Status: documented in both vendors. Phase-5 closure achieved by aligning the spec body with Bricsys's per-symbol page text — the reader-round-trip wording for control-character escapes is a Phase-5 newly-locked-down detail.
+
+*** See Also
+- [[file:../sources/probe-output.lsp][probe-output.lsp]] — executable Phase-5 probe suite for the printer surface.
+- ~princ~ for display-oriented output (no escape rewriting).
+- ~print~ for the bracketed prin1 + leading newline + trailing space form.
 
 *** Source Notes
-- [About Displaying Messages (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ESP/AutoCAD-AutoLISP/files/GUID-58AD9863-BB35-4982-9382-581FE8A5022C.htm)
-- [Display Control Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-9C2C56A3-0BEF-45AB-A7FE-5825339DCB41.htm)
-- Status: documented.
+- [prin1 (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-BF4CEE45-BB6F-443B-A588-A40D9BCE378F.htm)
+- [prin1 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/prin1.htm)
+- Status: documented (Phase 5 closure).
 
 #+LATEX: \newpage
 
@@ -6813,34 +6816,41 @@ Function
 
 *** Syntax
 #+begin_example
-(princ [expr [file-desc]])
+(princ [expression [fileHandle]])
 #+end_example
 
 *** Arguments and Values
-- `expr`: any AutoLISP value
-- `file-desc`: optional output file descriptor
+- `expression` (optional): any AutoLISP expression or value. If omitted, `nil` is used.
+- `fileHandle` (optional): handle of a file as obtained from `(open ...)`. If omitted or `nil`, output goes to the command line.
 
 *** Description
-Prints an expression to the command line or writes it to an open file in a display-oriented style.
+Prints `expression` to the command line, or writes it to the open file `fileHandle`. The representation is *display-oriented*: unlike `prin1`, control characters in a string expression are written verbatim (no `\n` / `\t` / `\"` rewriting). With no argument, `(princ)` returns the *void* symbol value and is the conventional way to terminate a `defun` without emitting anything.
 
 *** Return Values
-Returns `expr` when an expression is supplied; finer no-argument behavior should be confirmed from dedicated documentation.
+Returns the evaluated value of `expression`, or *void* with no argument.
 
 *** Side Effects
-Produces textual output.
+Writes the printed representation to the command line or to `fileHandle`.
 
-*** Compatibility
-Closely related to `vl-princ-to-string`. Exact distinction from `prin1` must be modeled conservatively where vendor material is terse.
+*** Examples
+With `(setq x 123)`:
+- `(princ x)` prints `123` to the command line and returns `123`.
+- `(princ x fh)` writes `123` to file handle `fh` and returns `123`.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (Autodesk reference page).
+- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
+- Status: documented in both vendors. Phase-5 closure: the verbatim-vs-escape distinction relative to `prin1` is now spelled out from the BricsCAD per-symbol page.
+
+*** See Also
+- [[file:../sources/probe-output.lsp][probe-output.lsp]] — executable Phase-5 probe suite.
+- ~prin1~ for the round-trippable form.
+- ~vl-princ-to-string~ for the string-returning companion.
 
 *** Source Notes
-- [About Displaying Messages (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ESP/AutoCAD-AutoLISP/files/GUID-58AD9863-BB35-4982-9382-581FE8A5022C.htm)
-- [Display Control Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-9C2C56A3-0BEF-45AB-A7FE-5825339DCB41.htm)
-- Status: documented.
+- [princ (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7DDA298B-A97C-49C9-94BA-46C77B50AE99.htm)
+- [princ (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/princ.htm)
+- Status: documented (Phase 5 closure).
 
 #+LATEX: \newpage
 
@@ -6853,34 +6863,40 @@ Function
 
 *** Syntax
 #+begin_example
-(print expr [file-desc])
+(print [expression [fileHandle]])
 #+end_example
 
 *** Arguments and Values
-- `expr`: any AutoLISP value
-- `file-desc`: optional output file descriptor
+- `expression` (optional): any AutoLISP expression or value. If omitted, `nil` is used.
+- `fileHandle` (optional): handle of a file as obtained from `(open ...)`. If omitted or `nil`, output goes to the command line.
 
 *** Description
-Prints an expression to the command line or writes it to an open file.
+Same behaviour as `prin1` (control-character escapes; round-trippable representation), but with a leading newline before `expression` and an extra space afterwards.
 
 *** Return Values
-Returns `expr`.
+Returns the evaluated value of `expression`.
 
 *** Side Effects
-Produces textual output.
+Writes one newline, the printed representation of `expression`, then a single trailing space.
 
-*** Notes
-The exact spacing/newline conventions relative to `prin1` and `princ` remain to be tightened from dedicated pages or tests.
+*** Examples
+With `(setq x 123)`:
+- `(print x)` prints `<newline>123 ` to the command line and returns `123`.
+- `(print x fh)` writes `<newline>123 ` to file handle `fh` and returns `123`.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (Autodesk reference page).
+- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
+- Status: documented in both vendors. Phase-5 closure: leading-newline / trailing-space framing now explicit (was only inferred before).
+
+*** See Also
+- [[file:../sources/probe-output.lsp][probe-output.lsp]] — executable Phase-5 probe suite.
+- ~prin1~ for the unframed round-trippable form.
 
 *** Source Notes
-- [About Displaying Messages (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ESP/AutoCAD-AutoLISP/files/GUID-58AD9863-BB35-4982-9382-581FE8A5022C.htm)
-- [Display Control Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-9C2C56A3-0BEF-45AB-A7FE-5825339DCB41.htm)
-- Status: documented.
+- [print (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4EE74BA9-6ED4-4734-9C47-90A81E0B0971.htm)
+- [print (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/print.htm)
+- Status: documented (Phase 5 closure).
 
 #+LATEX: \newpage
 
@@ -6893,27 +6909,36 @@ Function
 
 *** Syntax
 #+begin_example
-(terpri [file-desc])
+(terpri)
 #+end_example
 
+*** Arguments and Values
+None.
+
 *** Description
-Prints a newline to the command line or selected output stream.
+Prints a newline character to the command line. Has no file-handle parameter — the printer-surface family takes a file handle on the per-output-call functions (`prin1`, `princ`, `print`), but `terpri` is command-line-only.
 
 *** Return Values
-Host-defined success value.
+Always returns `nil`.
 
 *** Side Effects
-Produces newline output.
+Emits a newline to the command line.
+
+*** Notes
+Bricsys recommends `(princ)` (with no arguments) instead of `(terpri)` when ending a `defun` body, because `(princ)` returns *void* and does not print an extra newline.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (Autodesk reference page).
+- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page; arity is exactly zero, no file-handle argument).
+- Status: documented in both vendors. Phase-5 closure: arity nailed down (zero arguments, command-line-only).
+
+*** See Also
+- [[file:../sources/probe-output.lsp][probe-output.lsp]] — executable Phase-5 probe suite.
 
 *** Source Notes
-- [About Displaying Messages (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ESP/AutoCAD-AutoLISP/files/GUID-58AD9863-BB35-4982-9382-581FE8A5022C.htm)
-- [Display Control Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-9C2C56A3-0BEF-45AB-A7FE-5825339DCB41.htm)
-- Status: documented.
+- [terpri (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-16FB5411-7563-4FB9-AB59-A73457B092C5.htm)
+- [terpri (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/terpri.htm)
+- Status: documented (Phase 5 closure).
 
 #+LATEX: \newpage
 
@@ -6926,30 +6951,33 @@ Function
 
 *** Syntax
 #+begin_example
-(prompt string)
+(prompt message)
 #+end_example
 
 *** Arguments and Values
-- `string`: string
+- `message`: string; the message to display in the active output device(s).
 
 *** Description
-Displays a string in the prompt area.
+Sends `message` to the active output device(s). Bricsys explicitly recommends `prompt` over `prin1` / `princ` / `print` for command-line output — `prompt` is the dedicated end-user message channel, while the printer functions are general-purpose.
 
 *** Return Values
-Returns `nil` or a host-defined prompt result; exact return convention should be tightened from dedicated documentation.
+Always returns `nil`.
 
 *** Side Effects
-Produces user-visible prompt output.
+Writes the message to the active output channels.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (Autodesk reference page).
+- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
+- Status: documented in both vendors. Phase-5 closure: return value pinned to `nil`; preferred-channel guidance from Bricsys recorded.
+
+*** See Also
+- [[file:../sources/probe-output.lsp][probe-output.lsp]] — executable Phase-5 probe suite.
 
 *** Source Notes
-- [About Displaying Messages (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/ESP/AutoCAD-AutoLISP/files/GUID-58AD9863-BB35-4982-9382-581FE8A5022C.htm)
-- [Display Control Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-9C2C56A3-0BEF-45AB-A7FE-5825339DCB41.htm)
-- Status: documented.
+- [prompt (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-2F702ECF-FEC7-4DEE-8575-88CDEE05F55D.htm)
+- [prompt (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/prompt.htm)
+- Status: documented (Phase 5 closure).
 
 ** Dictionary Coverage Index: Printer Functions
 The core printer/output family includes at least:
@@ -7086,24 +7114,36 @@ Function
 (exit)
 #+end_example
 
+*** Arguments and Values
+None.
+
 *** Description
-Forces the current application to quit.
+Unconditionally exits the running LISP code and terminates LISP processing for the current invocation. It is a non-local exit from the current LISP evaluation, not a process-level termination of the host CAD application.
 
 *** Return Values
-Does not return normally.
+Does not return normally. Bricsys describes the channel-level behaviour as printing the message `; error : quit / exit abort` to the prompt as the LISP top-level handles the abort.
 
 *** Side Effects
-Terminates application execution.
+Aborts the running LISP evaluation. Outstanding `*error*` handlers may run as the abort propagates.
+
+*** Notes
+`exit` and `quit` are documented by Bricsys with identical signatures and identical channel-level effect (both raise the same `; error : quit / exit abort` message). Treat them as alternative spellings of the same primitive in the absence of further evidence; reserved separately so that AutoLISP code that names either one continues to read.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (Autodesk Error-Handling Functions Reference).
+- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
+- Status: documented in both vendors. Phase-5 closure: BricsCAD's per-symbol page makes the abort-message-channel behaviour explicit and confirms that `exit` and `quit` are documented identically.
+
+*** See Also
+- ~quit~ — companion form; identical signature and effect.
+- ~*error*~ — error handler that runs as the abort propagates.
+- ~vl-exit-with-error~, ~vl-exit-with-value~ — namespace-scoped non-local exits for VLX.
 
 *** Source Notes
-- [Error-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/KOR/AutoCAD-MAC-AutoLISP-Reference/files/GUID-D114F1C4-DE8E-422D-8F3F-C43707B8212B.htm)
+- [Error-Handling Functions Reference (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-D114F1C4-DE8E-422D-8F3F-C43707B8212B.htm)
 - [About Using the *error* Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP/files/GUID-2AC47A3C-7E80-414D-9134-EABA0003193F.htm)
-- Status: documented.
+- [exit (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/exit.htm)
+- Status: documented (Phase 5 closure).
 
 #+LATEX: \newpage
 
@@ -7119,27 +7159,31 @@ Function
 (quit)
 #+end_example
 
+*** Arguments and Values
+None.
+
 *** Description
-Forces the current application to quit.
+Unconditionally cancels the running LISP code and terminates LISP processing for the current invocation. Bricsys's per-symbol pages distinguish the verb in prose only — `exit` "exits" the LISP run, `quit` "cancels" it — but the *signature, abort message, and effect on the host* are identical. Treat as an alias of `exit` in implementation.
 
 *** Return Values
-Does not return normally.
+Does not return normally. Channel-level behaviour: prints `; error : quit / exit abort` to the prompt.
 
 *** Side Effects
-Terminates application execution.
-
-*** Notes
-The exact distinction, if any, between `quit` and `exit` should be tightened from dedicated pages or tests.
+Aborts the running LISP evaluation; `*error*` handlers may run as the abort propagates.
 
 *** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- AutoCAD 2026: documented (Autodesk Error-Handling Functions Reference).
+- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
+- Status: documented in both vendors. Phase-5 closure: the BricsCAD per-symbol page nails the previously open question down to "no semantic distinction beyond the verb" — both forms are documented identically and produce the same abort-channel message. The historical hypothesis that some vendor or release distinguished `exit` and `quit` is not supported by current vendor evidence.
+
+*** See Also
+- ~exit~ — companion form; identical signature and effect.
 
 *** Source Notes
-- [Error-Handling Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2024/KOR/AutoCAD-MAC-AutoLISP-Reference/files/GUID-D114F1C4-DE8E-422D-8F3F-C43707B8212B.htm)
+- [Error-Handling Functions Reference (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-D114F1C4-DE8E-422D-8F3F-C43707B8212B.htm)
 - [About Using the *error* Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP/files/GUID-2AC47A3C-7E80-414D-9134-EABA0003193F.htm)
-- Status: documented; exact distinction from `exit` remains not fully explained by Autodesk.
+- [quit (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/quit.htm)
+- Status: documented (Phase 5 closure).
 
 #+LATEX: \newpage
 
