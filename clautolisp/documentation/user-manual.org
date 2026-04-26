@@ -16,6 +16,11 @@ This document must be kept in sync with the implementation. Whenever
 parsing, banner, exit codes, or supported modes, this file must be
 updated in the same commit.
 
+The rendered PDF (~user-manual.pdf~, sibling of this file) is also
+checked in. Whenever this Org file changes, run ~make user-manual~
+(or ~make documentation~) to regenerate the PDF and stage both files
+in the same commit.
+
 * Synopsis
 #+BEGIN_EXAMPLE
 clautolisp [options] FILE.lsp
