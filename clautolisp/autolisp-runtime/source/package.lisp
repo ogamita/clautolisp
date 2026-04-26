@@ -104,10 +104,13 @@
    #:autolisp-namespace-exit-value
    #:autolisp-variant
    #:autolisp-variant-value
+   #:make-autolisp-variant
    #:autolisp-safearray
    #:autolisp-safearray-value
+   #:make-autolisp-safearray
    #:autolisp-vla-object
    #:autolisp-vla-object-value
+   #:make-autolisp-vla-object
    #:intern-autolisp-symbol
    #:find-autolisp-symbol
    #:reset-autolisp-symbol-table

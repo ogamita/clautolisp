@@ -14,6 +14,7 @@
                 #:autolisp-termination
                 #:autolisp-namespace-exit
                 #:autolisp-runtime-error
+                #:autolisp-runtime-error-code
                 #:autolisp-runtime-error-errno
                 #:autolisp-string
                 #:autolisp-file-stream
@@ -65,7 +66,16 @@
                 #:make-autolisp-ename
                 #:autolisp-pickset
                 #:autolisp-pickset-value
-                #:make-autolisp-pickset)
+                #:make-autolisp-pickset
+                #:autolisp-vla-object
+                #:autolisp-vla-object-value
+                #:make-autolisp-vla-object
+                #:autolisp-safearray
+                #:autolisp-safearray-value
+                #:make-autolisp-safearray
+                #:autolisp-variant
+                #:autolisp-variant-value
+                #:make-autolisp-variant)
   (:import-from #:clautolisp.autolisp-host
                 #:host-entget
                 #:host-entmod
@@ -99,7 +109,15 @@
                 #:host-getdist
                 #:host-getangle
                 #:host-getorient
-                #:host-getkword)
+                #:host-getkword
+                #:host-vlax-create-object
+                #:host-vlax-get-object
+                #:host-vlax-release-object
+                #:host-vlax-get-property
+                #:host-vlax-put-property
+                #:host-vlax-invoke-method
+                #:host-vlax-property-available-p
+                #:host-vlax-method-applicable-p)
   (:export
    #:*core-builtin-names*
    #:core-builtins

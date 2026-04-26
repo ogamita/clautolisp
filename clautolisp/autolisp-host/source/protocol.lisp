@@ -125,6 +125,16 @@ not implement OPERATION."
 (defgeneric host-grread  (host track key-press cursor)   (:documentation "Read a graphics-input event."))
 (defgeneric host-redraw  (host ename mode)               (:documentation "Force a redraw of ENAME under the host's display mode."))
 
+;; COM / Visual LISP COM bridge (autolisp-spec ch.19)
+(defgeneric host-vlax-create-object       (host progid)            (:documentation "Create a new COM object by ProgID."))
+(defgeneric host-vlax-get-object          (host progid)            (:documentation "Look up an existing running-instance COM object."))
+(defgeneric host-vlax-release-object      (host vla-object)        (:documentation "Release a COM-object reference."))
+(defgeneric host-vlax-get-property        (host vla-object name)   (:documentation "Read a property value from a COM object."))
+(defgeneric host-vlax-put-property        (host vla-object name value) (:documentation "Write a property value to a COM object."))
+(defgeneric host-vlax-invoke-method       (host vla-object name args)  (:documentation "Invoke a method on a COM object."))
+(defgeneric host-vlax-property-available-p(host vla-object name)   (:documentation "True if NAME is an available property on the COM object."))
+(defgeneric host-vlax-method-applicable-p (host vla-object name)   (:documentation "True if NAME is an applicable method on the COM object."))
+
 ;;; --- Base-class fallback methods --------------------------------
 ;;;
 ;;; Every operation has a default method on the base `host` class
@@ -181,3 +191,11 @@ not implement OPERATION."
 (defmethod host-grclear ((host host)) (signal-host-not-supported host 'grclear))
 (defmethod host-grread  ((host host) track key-press cursor) (declare (ignore track key-press cursor)) (signal-host-not-supported host 'grread))
 (defmethod host-redraw  ((host host) ename mode) (declare (ignore ename mode)) (signal-host-not-supported host 'redraw))
+(defmethod host-vlax-create-object        ((host host) progid)            (declare (ignore progid)) (signal-host-not-supported host 'vlax-create-object))
+(defmethod host-vlax-get-object           ((host host) progid)            (declare (ignore progid)) (signal-host-not-supported host 'vlax-get-object))
+(defmethod host-vlax-release-object       ((host host) vla-object)        (declare (ignore vla-object)) (signal-host-not-supported host 'vlax-release-object))
+(defmethod host-vlax-get-property         ((host host) vla-object name)   (declare (ignore vla-object name)) (signal-host-not-supported host 'vlax-get-property))
+(defmethod host-vlax-put-property         ((host host) vla-object name value) (declare (ignore vla-object name value)) (signal-host-not-supported host 'vlax-put-property))
+(defmethod host-vlax-invoke-method        ((host host) vla-object name args) (declare (ignore vla-object name args)) (signal-host-not-supported host 'vlax-invoke-method))
+(defmethod host-vlax-property-available-p ((host host) vla-object name)   (declare (ignore vla-object name)) (signal-host-not-supported host 'vlax-property-available-p))
+(defmethod host-vlax-method-applicable-p  ((host host) vla-object name)   (declare (ignore vla-object name)) (signal-host-not-supported host 'vlax-method-applicable-p))

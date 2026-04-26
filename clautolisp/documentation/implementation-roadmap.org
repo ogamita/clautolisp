@@ -617,23 +617,99 @@ $ clautolisp --mock-input /tmp/in.txt \
              -x "(princ (getstring))"                  ; -> Yes 42 1.5 2.5
 #+end_example
 
-** Phase 13 — VLA / VLAX Foundations
+** Phase 13 — VLA / VLAX Foundations [DONE 2026-04-26]
 *Goal:* the COM compatibility surface, headless-first.
 
-Scope (drives by ~autolisp-spec~ chapter 19):
-- ~vlax-create-object~, ~vlax-get-object~, ~vlax-release-object~
-  (against a MockHost-managed COM-object table).
-- ~vlax-get-property~, ~vlax-put-property~, ~vlax-invoke-method~
-  with documented method-name mapping.
-- ~vlax-make-safearray~, ~vlax-safearray-fill~,
-  ~vlax-safearray-get-element~, ~vlax-safearray-put-element~,
-  ~vlax-safearray->list~.
-- ~vlax-make-variant~, ~vlax-variant-type~, ~vlax-variant-value~,
-  ~vlax-variant-change-type~.
-- ~vlax-import-type-library~ — implementation-defined; declarative
-  description of mock-COM type libraries.
-- ~vla-*~ wrappers — generated from a small declarative table of
-  COM dispatch.
+*Status:* closed. Suite 1008 / 0; the AutoLISP-side
+~vlax-create-object~ / ~vlax-get-property~ / ~vlax-put-property~ /
+~vlax-invoke-method~ / ~vlax-release-object~ flow round-trips
+against ~--host mock~. SAFEARRAY and VARIANT round trip through
+their own builtins entirely in pure CL.
+
+*Why headless-only:* a real Windows-COM bridge is not possible on
+macOS / Linux without Wine. .NET being installed does not unlock
+COM on non-Windows hosts; the Microsoft COM marshaller raises
+~PlatformNotSupportedException~ outside Windows. No mainstream
+library implements the Windows COM API for native macOS / Linux
+processes (Samba's MS-RPC stack, Mono's interop shims, XPCOM,
+GObject, D-Bus, CORBA — none speak AutoCAD's COM type-library
+ABI). Real-COM bridging is therefore deferred to Phase 16
+(LiveHost), where it is gated behind the user actually being on
+Windows with AutoCAD installed (or driving BricsCAD on macOS via
+the existing autolisp-script stdio bridge).
+
+Scope delivered:
+- ~clautolisp/autolisp-host~ gains 8 new HAL generic functions:
+  ~host-vlax-create-object~, ~host-vlax-get-object~,
+  ~host-vlax-release-object~, ~host-vlax-get-property~,
+  ~host-vlax-put-property~, ~host-vlax-invoke-method~,
+  ~host-vlax-property-available-p~, ~host-vlax-method-applicable-p~.
+  Each has a base-class fallback signalling :host-not-supported.
+- New file ~autolisp-mock-host/source/com-progids.lisp~
+  registers a small declarative ProgID table seeded with
+  ~"AutoCAD.Application"~, ~"AutoCAD.Document"~, and
+  ~"AutoCAD.Layers"~. Each template lists default property values
+  and method handlers. ~register-com-progid~ extends the
+  registry from user code or tests.
+- New file ~autolisp-mock-host/source/vlax-api.lisp~ implements
+  every host-vlax-* method on MockHost. AutoLISP-visible
+  VLA-objects wrap a host-allocated COM-object id; the host
+  stores the mock-com-object in a hash-table keyed on that id.
+  Released objects raise :released-vla-object on subsequent
+  property/method access; unknown ProgIDs raise :unknown-progid;
+  unknown property/method names raise :unknown-com-property /
+  :unknown-com-method.
+- 22 new AutoLISP builtins in ~clautolisp/autolisp-builtins-core~:
+  - COM-object: ~VLAX-CREATE-OBJECT~, ~VLAX-GET-OBJECT~,
+    ~VLAX-GET-OR-CREATE-OBJECT~, ~VLAX-RELEASE-OBJECT~,
+    ~VLAX-OBJECT-RELEASED-P~, ~VLAX-GET-PROPERTY~,
+    ~VLAX-PUT-PROPERTY~, ~VLAX-INVOKE-METHOD~,
+    ~VLAX-PROPERTY-AVAILABLE-P~, ~VLAX-METHOD-APPLICABLE-P~.
+  - SAFEARRAY: ~VLAX-MAKE-SAFEARRAY~, ~VLAX-SAFEARRAY-FILL~,
+    ~VLAX-SAFEARRAY-PUT-ELEMENT~, ~VLAX-SAFEARRAY-GET-ELEMENT~,
+    ~VLAX-SAFEARRAY->LIST~, ~VLAX-SAFEARRAY-TYPE~,
+    ~VLAX-SAFEARRAY-GET-L-BOUND~, ~VLAX-SAFEARRAY-GET-U-BOUND~.
+  - VARIANT: ~VLAX-MAKE-VARIANT~, ~VLAX-VARIANT-TYPE~,
+    ~VLAX-VARIANT-VALUE~, ~VLAX-VARIANT-CHANGE-TYPE~.
+  SAFEARRAY storage is an internal ~safearray-data~ struct
+  (type-tag + bound pairs + 1-D CL backing array; flat indexing
+  handles arbitrary dimensions). VARIANT storage is a tagged
+  cons (type-keyword . value).
+- Runtime exports ~make-autolisp-vla-object~,
+  ~make-autolisp-safearray~, ~make-autolisp-variant~ from the
+  public API.
+- Printer: VLA-objects render as ~#<VLA-OBJECT id>~; SAFEARRAY
+  shows its type-tag and bounds; VARIANT shows its type-tag and
+  inner value.
+
+Out of scope (deferred):
+- ~vlax-import-type-library~ — left to a later sub-phase; needs
+  a parsed type-library ingestion pipeline.
+- ~vla-*~ wrapper generation — large surface; defer until a
+  declarative ProgID-method table emerges from real workloads.
+- Real Windows COM bridge — Phase 16 (LiveHost), Windows-only.
+
+Tests:
+- 11 new tests in ~autolisp-mock-host/tests/vlax-tests.lisp~ pin
+  every VLAX HAL method's contract, including the released-object
+  guard, unknown-ProgID, unknown-property, unknown-method, and
+  the dynamic registry extension via register-com-progid.
+- 1 new builtin-level test pins the AutoLISP-side wiring for
+  vlax-create-object / get-property / put-property / invoke /
+  release / object-released-p plus SAFEARRAY and VARIANT
+  round-trips.
+- Aggregate suite 76 + 184 + 29 + 161 + 428 + 130 = 1008 / 0.
+
+Smoke (under the default ~--host mock~):
+#+begin_example
+$ clautolisp -x \
+  "(setq app (vlax-create-object \"AutoCAD.Application\"))
+   (princ (vlax-get-property app \"Name\"))            ; -> Mock AutoCAD
+   (princ (vlax-property-available-p app \"Visible\")) ; -> T
+   (princ (vlax-method-applicable-p app \"Quit\"))     ; -> T
+   (vlax-release-object app)
+   (princ (vlax-object-released-p app))"               ; -> T
+#+end_example
 
 ** Phase 14 — Reactors
 *Goal:* the Visual LISP reactor surface.

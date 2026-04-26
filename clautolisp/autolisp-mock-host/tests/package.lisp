@@ -40,7 +40,15 @@
                 #:host-getvar
                 #:host-setvar
                 #:host-grdraw
-                #:host-prompt)
+                #:host-prompt
+                #:host-vlax-create-object
+                #:host-vlax-get-object
+                #:host-vlax-release-object
+                #:host-vlax-get-property
+                #:host-vlax-put-property
+                #:host-vlax-invoke-method
+                #:host-vlax-property-available-p
+                #:host-vlax-method-applicable-p)
   (:import-from #:clautolisp.autolisp-mock-host
                 #:mock-host
                 #:make-mock-host
@@ -69,6 +77,14 @@
                 #:mock-host-prompt-output
                 #:mock-host-prompt-stream
                 #:mock-host-pending-initget
+                #:mock-host-com-objects
+                #:mock-host-find-com-object
+                #:mock-com-object
+                #:mock-com-object-id
+                #:mock-com-object-progid
+                #:mock-com-object-properties
+                #:mock-com-object-released-p
+                #:register-com-progid
                 #:mock-host-display-log
                 #:mock-host-pickfirst
                 #:populate-default-tables

@@ -1795,6 +1795,20 @@ when no dialect is in scope."
      (format nil "#<USUBR ~A>" (autolisp-usubr-name object)))
     ((typep object 'autolisp-ename)
      (format nil "<Entity name: ~A>" (autolisp-ename-value object)))
+    ((typep object 'autolisp-vla-object)
+     (format nil "#<VLA-OBJECT ~A>" (autolisp-vla-object-value object)))
+    ((typep object 'autolisp-safearray)
+     (let ((data (autolisp-safearray-value object)))
+       (if (typep data 'safearray-data)
+           (format nil "#<SAFEARRAY ~S ~S>"
+                   (safearray-data-type-tag data)
+                   (safearray-data-bounds data))
+           (format nil "#<SAFEARRAY>"))))
+    ((typep object 'autolisp-variant)
+     (let ((pair (autolisp-variant-value object)))
+       (if (consp pair)
+           (format nil "#<VARIANT ~S ~S>" (car pair) (cdr pair))
+           (format nil "#<VARIANT>"))))
     ((consp object)
      (with-output-to-string (out)
        (labels ((emit-tail (tail)
@@ -2863,6 +2877,303 @@ when no dialect is in scope."
   (host-getkword (current-evaluation-host)
                  (and prompt (optional-prompt-string prompt "GETKWORD"))))
 
+;;; --- Phase 13: COM bridge (vlax-* + safearray + variant) ----------
+
+(defun ensure-vlax-string (object operator-name)
+  (etypecase object
+    (autolisp-string (autolisp-string-value object))
+    (string object)))
+
+(defun builtin-vlax-create-object (progid)
+  (host-vlax-create-object (current-evaluation-host)
+                           (ensure-vlax-string
+                            (require-string progid "VLAX-CREATE-OBJECT")
+                            "VLAX-CREATE-OBJECT")))
+
+(defun builtin-vlax-get-object (progid)
+  (host-vlax-get-object (current-evaluation-host)
+                        (ensure-vlax-string
+                         (require-string progid "VLAX-GET-OBJECT")
+                         "VLAX-GET-OBJECT")))
+
+(defun builtin-vlax-get-or-create-object (progid)
+  (or (builtin-vlax-get-object progid)
+      (builtin-vlax-create-object progid)))
+
+(defun builtin-vlax-release-object (vla)
+  (host-vlax-release-object (current-evaluation-host) vla))
+
+(defun builtin-vlax-object-released-p (vla)
+  (cond
+    ((typep vla 'autolisp-vla-object)
+     (handler-case
+         (progn (host-vlax-property-available-p (current-evaluation-host) vla "Name")
+                nil)
+       (autolisp-runtime-error (condition)
+         (case (autolisp-runtime-error-code condition)
+           ((:released-vla-object :unknown-vla-object)
+            (intern-autolisp-symbol "T"))
+           (t (error condition))))))
+    (t nil)))
+
+(defun builtin-vlax-get-property (vla name)
+  (host-vlax-get-property (current-evaluation-host) vla
+                          (cond
+                            ((typep name 'autolisp-string) (autolisp-string-value name))
+                            ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+                            (t name))))
+
+(defun builtin-vlax-put-property (vla name value)
+  (host-vlax-put-property (current-evaluation-host) vla
+                          (cond
+                            ((typep name 'autolisp-string) (autolisp-string-value name))
+                            ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+                            (t name))
+                          value))
+
+(defun builtin-vlax-invoke-method (vla name &rest args)
+  (host-vlax-invoke-method (current-evaluation-host) vla
+                           (cond
+                             ((typep name 'autolisp-string) (autolisp-string-value name))
+                             ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+                             (t name))
+                           args))
+
+(defun builtin-vlax-property-available-p (vla name)
+  (if (host-vlax-property-available-p
+       (current-evaluation-host) vla
+       (cond
+         ((typep name 'autolisp-string) (autolisp-string-value name))
+         ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+         (t name)))
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun builtin-vlax-method-applicable-p (vla name)
+  (if (host-vlax-method-applicable-p
+       (current-evaluation-host) vla
+       (cond
+         ((typep name 'autolisp-string) (autolisp-string-value name))
+         ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+         (t name)))
+      (intern-autolisp-symbol "T")
+      nil))
+
+;;; --- SAFEARRAY -----------------------------------------------------
+;;
+;; SAFEARRAY is a tagged multi-dimensional array with an element-
+;; type marker and per-dimension lower/upper bounds. AutoLISP
+;; programs use `vlax-make-safearray TYPE BOUNDS...` to allocate,
+;; then `vlax-safearray-fill` / `vlax-safearray-put-element` to
+;; populate. clautolisp keeps the storage as an internal struct
+;; (`safearray-data`) inside the runtime's `autolisp-safearray`
+;; wrapper's `value` slot.
+
+(defstruct safearray-data
+  (type-tag :variant :type keyword)
+  (bounds   '() :type list)
+  (storage  nil))
+
+(defun safearray-of (object operator-name)
+  (unless (typep object 'autolisp-safearray)
+    (signal-builtin-argument-error
+     :invalid-safearray
+     operator-name
+     "~A expects a SAFEARRAY, got ~S."
+     operator-name object))
+  (let ((data (autolisp-safearray-value object)))
+    (unless (typep data 'safearray-data)
+      (signal-builtin-argument-error
+       :invalid-safearray
+       operator-name
+       "~A: SAFEARRAY storage is not a clautolisp safearray-data, got ~S."
+       operator-name data))
+    data))
+
+(defun coerce-bounds-spec (raw operator-name)
+  "Each dimension is given as (cons LOW HIGH); flatten into a list of
+(LOW HIGH) pairs, validating integers and LOW <= HIGH."
+  (unless (and raw (listp raw))
+    (signal-builtin-argument-error
+     :invalid-safearray-bounds
+     operator-name
+     "~A expects a list of (LOW . HIGH) bound pairs, got ~S."
+     operator-name raw))
+  (mapcar (lambda (pair)
+            (unless (and (consp pair)
+                         (integerp (car pair))
+                         (integerp (cdr pair))
+                         (<= (car pair) (cdr pair)))
+              (signal-builtin-argument-error
+               :invalid-safearray-bounds
+               operator-name
+               "~A: each bound must be (LOW . HIGH) integer pair with LOW <= HIGH, got ~S."
+               operator-name pair))
+            (list (car pair) (cdr pair)))
+          raw))
+
+(defun bounds-shape (bounds)
+  (mapcar (lambda (pair) (1+ (- (second pair) (first pair)))) bounds))
+
+(defun safearray-flat-index (bounds subscripts operator-name)
+  (unless (= (length bounds) (length subscripts))
+    (signal-builtin-argument-error
+     :invalid-safearray-index
+     operator-name
+     "~A: ~D subscripts required, got ~D."
+     operator-name (length bounds) (length subscripts)))
+  (let ((flat 0)
+        (stride 1))
+    (loop for pair in (reverse bounds)
+          for sub in (reverse subscripts)
+          for low = (first pair)
+          for high = (second pair)
+          do (unless (and (integerp sub) (<= low sub high))
+               (signal-builtin-argument-error
+                :invalid-safearray-index
+                operator-name
+                "~A: subscript ~S out of bounds [~D..~D]."
+                operator-name sub low high))
+             (incf flat (* (- sub low) stride))
+             (setf stride (* stride (1+ (- high low)))))
+    flat))
+
+(defun builtin-vlax-make-safearray (type &rest bounds)
+  (let* ((tag (cond
+                ((integerp type) type)
+                ((typep type 'autolisp-symbol)
+                 (intern (autolisp-symbol-name type) "KEYWORD"))
+                (t :variant)))
+         (parsed (coerce-bounds-spec bounds "VLAX-MAKE-SAFEARRAY"))
+         (size (reduce #'* (bounds-shape parsed) :initial-value 1))
+         (storage (make-array size :initial-element nil)))
+    (make-autolisp-safearray
+     :value (make-safearray-data :type-tag (if (keywordp tag) tag :variant)
+                                  :bounds parsed
+                                  :storage storage))))
+
+(defun builtin-vlax-safearray-fill (safe values)
+  (require-proper-list values "VLAX-SAFEARRAY-FILL")
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY-FILL"))
+         (storage (safearray-data-storage data)))
+    (loop for value in values
+          for i from 0
+          while (< i (length storage))
+          do (setf (aref storage i) value))
+    safe))
+
+(defun builtin-vlax-safearray-put-element (safe &rest indices-and-value)
+  (when (< (length indices-and-value) 2)
+    (signal-builtin-argument-error
+     :wrong-number-of-arguments
+     "VLAX-SAFEARRAY-PUT-ELEMENT"
+     "VLAX-SAFEARRAY-PUT-ELEMENT expects subscripts followed by a value."))
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY-PUT-ELEMENT"))
+         (subscripts (butlast indices-and-value))
+         (value (car (last indices-and-value)))
+         (flat (safearray-flat-index (safearray-data-bounds data)
+                                     subscripts
+                                     "VLAX-SAFEARRAY-PUT-ELEMENT")))
+    (setf (aref (safearray-data-storage data) flat) value)
+    value))
+
+(defun builtin-vlax-safearray-get-element (safe &rest indices)
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY-GET-ELEMENT"))
+         (flat (safearray-flat-index (safearray-data-bounds data)
+                                     indices
+                                     "VLAX-SAFEARRAY-GET-ELEMENT")))
+    (aref (safearray-data-storage data) flat)))
+
+(defun builtin-vlax-safearray->list (safe)
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY->LIST"))
+         (storage (safearray-data-storage data)))
+    (coerce storage 'list)))
+
+(defun builtin-vlax-safearray-type (safe)
+  (let ((data (safearray-of safe "VLAX-SAFEARRAY-TYPE")))
+    (intern-autolisp-symbol (symbol-name (safearray-data-type-tag data)))))
+
+(defun builtin-vlax-safearray-get-l-bound (safe dim)
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY-GET-L-BOUND"))
+         (i (require-int32 dim "VLAX-SAFEARRAY-GET-L-BOUND"))
+         (pair (nth (1- i) (safearray-data-bounds data))))
+    (cond
+      ((null pair)
+       (signal-builtin-argument-error
+        :invalid-safearray-dimension
+        "VLAX-SAFEARRAY-GET-L-BOUND"
+        "Dimension ~D is out of range." dim))
+      (t (first pair)))))
+
+(defun builtin-vlax-safearray-get-u-bound (safe dim)
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY-GET-U-BOUND"))
+         (i (require-int32 dim "VLAX-SAFEARRAY-GET-U-BOUND"))
+         (pair (nth (1- i) (safearray-data-bounds data))))
+    (cond
+      ((null pair)
+       (signal-builtin-argument-error
+        :invalid-safearray-dimension
+        "VLAX-SAFEARRAY-GET-U-BOUND"
+        "Dimension ~D is out of range." dim))
+      (t (second pair)))))
+
+;;; --- VARIANT -------------------------------------------------------
+;;
+;; Internal storage: a (cons type-keyword inner-value) pair.
+;; Inner-value is whatever the AutoLISP code supplied; type-keyword
+;; is one of :integer / :real / :string / :array / :variant /
+;; :short / :boolean — descriptive only, not type-checked beyond
+;; the identity round-trip.
+
+(defun variant-pair (object operator-name)
+  (unless (typep object 'autolisp-variant)
+    (signal-builtin-argument-error
+     :invalid-variant
+     operator-name
+     "~A expects a VARIANT, got ~S."
+     operator-name object))
+  (let ((pair (autolisp-variant-value object)))
+    (unless (consp pair)
+      (signal-builtin-argument-error
+       :invalid-variant
+       operator-name
+       "~A: VARIANT storage is not a (TYPE . VALUE) pair, got ~S."
+       operator-name pair))
+    pair))
+
+(defun builtin-vlax-make-variant (&optional value type)
+  (let* ((tag (cond
+                ((null type)
+                 (cond
+                   ((integerp value) :integer)
+                   ((numberp value) :real)
+                   ((typep value 'autolisp-string) :string)
+                   ((typep value 'autolisp-safearray) :array)
+                   ((null value) :empty)
+                   (t :variant)))
+                ((typep type 'autolisp-symbol)
+                 (intern (autolisp-symbol-name type) "KEYWORD"))
+                ((keywordp type) type)
+                ((integerp type) type)
+                (t :variant))))
+    (make-autolisp-variant :value (cons (if (keywordp tag) tag :variant) value))))
+
+(defun builtin-vlax-variant-type (variant)
+  (let ((tag (car (variant-pair variant "VLAX-VARIANT-TYPE"))))
+    (intern-autolisp-symbol (symbol-name tag))))
+
+(defun builtin-vlax-variant-value (variant)
+  (cdr (variant-pair variant "VLAX-VARIANT-VALUE")))
+
+(defun builtin-vlax-variant-change-type (variant new-type)
+  (let* ((pair (variant-pair variant "VLAX-VARIANT-CHANGE-TYPE"))
+         (target (cond
+                   ((typep new-type 'autolisp-symbol)
+                    (intern (autolisp-symbol-name new-type) "KEYWORD"))
+                   ((keywordp new-type) new-type)
+                   (t :variant))))
+    (make-autolisp-variant :value (cons target (cdr pair)))))
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -2968,6 +3279,29 @@ when no dialect is in scope."
    (make-core-builtin-subr "GETANGLE"   #'builtin-getangle)
    (make-core-builtin-subr "GETORIENT"  #'builtin-getorient)
    (make-core-builtin-subr "GETKWORD"   #'builtin-getkword)
+   ;; Phase 13 — COM bridge (vlax-* + safearray + variant)
+   (make-core-builtin-subr "VLAX-CREATE-OBJECT"           #'builtin-vlax-create-object)
+   (make-core-builtin-subr "VLAX-GET-OBJECT"              #'builtin-vlax-get-object)
+   (make-core-builtin-subr "VLAX-GET-OR-CREATE-OBJECT"    #'builtin-vlax-get-or-create-object)
+   (make-core-builtin-subr "VLAX-RELEASE-OBJECT"          #'builtin-vlax-release-object)
+   (make-core-builtin-subr "VLAX-OBJECT-RELEASED-P"       #'builtin-vlax-object-released-p)
+   (make-core-builtin-subr "VLAX-GET-PROPERTY"            #'builtin-vlax-get-property)
+   (make-core-builtin-subr "VLAX-PUT-PROPERTY"            #'builtin-vlax-put-property)
+   (make-core-builtin-subr "VLAX-INVOKE-METHOD"           #'builtin-vlax-invoke-method)
+   (make-core-builtin-subr "VLAX-PROPERTY-AVAILABLE-P"    #'builtin-vlax-property-available-p)
+   (make-core-builtin-subr "VLAX-METHOD-APPLICABLE-P"     #'builtin-vlax-method-applicable-p)
+   (make-core-builtin-subr "VLAX-MAKE-SAFEARRAY"          #'builtin-vlax-make-safearray)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-FILL"          #'builtin-vlax-safearray-fill)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-PUT-ELEMENT"   #'builtin-vlax-safearray-put-element)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-GET-ELEMENT"   #'builtin-vlax-safearray-get-element)
+   (make-core-builtin-subr "VLAX-SAFEARRAY->LIST"         #'builtin-vlax-safearray->list)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-TYPE"          #'builtin-vlax-safearray-type)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-GET-L-BOUND"   #'builtin-vlax-safearray-get-l-bound)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-GET-U-BOUND"   #'builtin-vlax-safearray-get-u-bound)
+   (make-core-builtin-subr "VLAX-MAKE-VARIANT"            #'builtin-vlax-make-variant)
+   (make-core-builtin-subr "VLAX-VARIANT-TYPE"            #'builtin-vlax-variant-type)
+   (make-core-builtin-subr "VLAX-VARIANT-VALUE"           #'builtin-vlax-variant-value)
+   (make-core-builtin-subr "VLAX-VARIANT-CHANGE-TYPE"     #'builtin-vlax-variant-change-type)
    (make-core-builtin-subr "VL-EVERY" #'builtin-vl-every)
    (make-core-builtin-subr "VL-MEMBER-IF" #'builtin-vl-member-if)
    (make-core-builtin-subr "VL-MEMBER-IF-NOT" #'builtin-vl-member-if-not)

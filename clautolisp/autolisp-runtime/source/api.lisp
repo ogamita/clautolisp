@@ -875,6 +875,15 @@ profiles between subordinate evaluations within a single session."
 (defun autolisp-vla-object-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-vla-object-value object))
 
+(defun make-autolisp-vla-object (&key value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-vla-object :value value))
+
+(defun make-autolisp-safearray (&key value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-safearray :value value))
+
+(defun make-autolisp-variant (&key value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-variant :value value))
+
 (defun append-proper-and-tail (elements tail)
   (if (null elements)
       tail
