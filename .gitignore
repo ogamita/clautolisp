@@ -129,3 +129,4 @@ autolisp-spec/results/
 ~*
 bin/
 .artifacts/
+.claude/
