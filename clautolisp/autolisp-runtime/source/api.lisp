@@ -204,6 +204,10 @@ keyword argument is not supplied inherit this value.")
                      (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
                       session))
             document)
+      ;; Phase 14a back-pointer for event-channel resolution.
+      (setf (clautolisp.autolisp-runtime.internal::document-namespace-session
+             document)
+            session)
       session)))
 
 (defun runtime-session-host (session)

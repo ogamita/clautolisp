@@ -109,6 +109,14 @@ autolisp-string wrapper, others are returned as-is."
         "Sysvar ~A is read-only."
         string))
       (t
-       (let ((coerced (coerce-sysvar-value (sysvar-cell-kind cell) value string)))
+       (let* ((coerced (coerce-sysvar-value (sysvar-cell-kind cell) value string))
+              (document
+               (clautolisp.autolisp-runtime:evaluation-context-current-document
+                (clautolisp.autolisp-runtime:current-evaluation-context)))
+              (rendered-name (clautolisp.autolisp-runtime:make-autolisp-string string)))
+         (clautolisp.autolisp-runtime:signal-document-event
+          document :sysvar :vlr-sysvarwillchange (list rendered-name))
          (setf (sysvar-cell-value cell) coerced)
+         (clautolisp.autolisp-runtime:signal-document-event
+          document :sysvar :vlr-sysvarchanged (list rendered-name))
          (present-sysvar-value (sysvar-cell-kind cell) coerced))))))

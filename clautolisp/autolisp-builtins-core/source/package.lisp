@@ -70,6 +70,29 @@
                 #:autolisp-vla-object
                 #:autolisp-vla-object-value
                 #:make-autolisp-vla-object
+                ;; Phase 14a/b — host-object ontology + reactors
+                #:reactor
+                #:make-reactor
+                #:reactor-id
+                #:reactor-kind
+                #:reactor-scope
+                #:reactor-callbacks
+                #:reactor-owners
+                #:reactor-data
+                #:reactor-active-p
+                #:reactor-persistent-p
+                #:reactor-notification
+                #:reactor-document
+                #:reactor-type-scope
+                #:reactor-type-keywords
+                #:add-reactor-to-document
+                #:add-reactor-to-session
+                #:remove-reactor-from-document
+                #:remove-reactor-from-session
+                #:all-document-reactors
+                #:all-application-reactors
+                #:all-session-reactors
+                #:document-namespace-persistent-reactor-index
                 #:autolisp-safearray
                 #:autolisp-safearray-value
                 #:make-autolisp-safearray

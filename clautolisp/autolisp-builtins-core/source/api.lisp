@@ -3174,6 +3174,378 @@ when no dialect is in scope."
                    (t :variant))))
     (make-autolisp-variant :value (cons target (cdr pair)))))
 
+;;; --- Phase 14b: reactor (vlr-*) builtin family ---------------------
+;;;
+;;; A reactor is a host-side event-callback subscription object.
+;;; clautolisp's reactor surface dispatches against the runtime's
+;;; per-document and per-application registries; the actual events
+;;; are emitted by MockHost (and, in Phase 16, LiveHost) via the
+;;; runtime's signal-document-event / signal-application-event
+;;; helpers. Reactors are the AutoLISP-visible piece of the
+;;; observer pattern; the host-object ontology + lifecycle is
+;;; documented in clautolisp/documentation/design.org and pinned
+;;; normatively in autolisp-spec ch.21 ("Host Object Ontology and
+;;; Lifecycles").
+
+(defun current-document-or-error (operator-name)
+  (let* ((context (clautolisp.autolisp-runtime:current-evaluation-context))
+         (document (and context
+                        (clautolisp.autolisp-runtime:evaluation-context-current-document
+                         context))))
+    (unless document
+      (signal-builtin-argument-error
+       :no-current-document
+       operator-name
+       "~A: no current document is bound to the evaluation context."
+       operator-name))
+    document))
+
+(defun current-session-or-error (operator-name)
+  (let* ((context (clautolisp.autolisp-runtime:current-evaluation-context))
+         (session (and context
+                       (clautolisp.autolisp-runtime:evaluation-context-session
+                        context))))
+    (unless session
+      (signal-builtin-argument-error
+       :no-current-session
+       operator-name
+       "~A: no current session is bound to the evaluation context."
+       operator-name))
+    session))
+
+(defun callbacks-list->table (alist operator-name)
+  "Validate and convert an AutoLISP callback alist of the form
+((reaction-name . callback-fn) ...) to a hash-table from
+keyword reaction-name to AutoLISP callable. Reaction names may
+be supplied as keywords, AutoLISP-strings, or AutoLISP-symbols
+prefixed with `:vlr-`; we normalise to keywords."
+  (require-proper-list alist operator-name)
+  (let ((table (make-hash-table :test #'eq)))
+    (dolist (pair alist table)
+      (unless (consp pair)
+        (signal-builtin-argument-error
+         :invalid-reactor-callbacks
+         operator-name
+         "~A: each callback entry must be (REACTION-NAME . FUNCTION), got ~S."
+         operator-name pair))
+      (let ((name (normalise-reaction-name (car pair) operator-name)))
+        (setf (gethash name table) (cdr pair))))))
+
+(defun normalise-reaction-name (object operator-name)
+  (cond
+    ((keywordp object) object)
+    ((typep object 'autolisp-symbol)
+     (intern (string-upcase (autolisp-symbol-name object)) "KEYWORD"))
+    ((typep object 'autolisp-string)
+     (intern (string-upcase (autolisp-string-value object)) "KEYWORD"))
+    ((stringp object) (intern (string-upcase object) "KEYWORD"))
+    (t
+     (signal-builtin-argument-error
+      :invalid-reaction-name
+      operator-name
+      "~A: reaction name must be a keyword, symbol, or string, got ~S."
+      operator-name object))))
+
+(defun coerce-data-list (data operator-name)
+  (cond
+    ((null data) nil)
+    ((listp data) data)
+    (t
+     (signal-builtin-argument-error
+      :invalid-reactor-data
+      operator-name
+      "~A: data argument must be nil or a list, got ~S."
+      operator-name data))))
+
+(defun coerce-owners-list (owners operator-name)
+  (cond
+    ((null owners) nil)
+    ((listp owners) owners)
+    (t
+     (signal-builtin-argument-error
+      :invalid-reactor-owners
+      operator-name
+      "~A: owners argument must be nil or a list, got ~S."
+      operator-name owners))))
+
+(defun ensure-reactor (object operator-name)
+  (unless (typep object 'reactor)
+    (signal-builtin-argument-error
+     :invalid-reactor
+     operator-name
+     "~A expects a reactor object, got ~S."
+     operator-name object))
+  object)
+
+(defun build-reactor (kind &key owners data callbacks)
+  (let* ((scope (reactor-type-scope kind))
+         (callback-table
+          (etypecase callbacks
+            (hash-table callbacks)
+            (list (callbacks-list->table callbacks "VLR-CONSTRUCTOR")))))
+    (make-reactor :kind kind
+                  :scope scope
+                  :owners (coerce-owners-list owners "VLR-CONSTRUCTOR")
+                  :data (coerce-data-list data "VLR-CONSTRUCTOR")
+                  :callbacks callback-table)))
+
+(defun install-new-reactor (kind owners data callbacks operator-name)
+  (declare (ignore operator-name))
+  (let* ((reactor (build-reactor kind
+                                  :owners owners
+                                  :data data
+                                  :callbacks callbacks))
+         (scope (reactor-scope reactor)))
+    (case scope
+      (:document
+       (let ((document (current-document-or-error
+                        (reactor-type-name kind))))
+         (add-reactor-to-document document reactor)))
+      (:application
+       (let ((session (current-session-or-error
+                       (reactor-type-name kind))))
+         (add-reactor-to-session session reactor))))
+    reactor))
+
+(defmacro define-vlr-constructor (name kind requires-owners-p)
+  "Generate a vlr-FOO-reactor builtin for KIND.
+
+REQUIRES-OWNERS-P is non-nil for the constructors whose first
+argument is the owners list (vlr-object-reactor and
+vlr-acdb-reactor) and nil for the ones whose first argument is
+the data list."
+  `(defun ,name (,@(if requires-owners-p '(owners) '())
+                 data callbacks)
+     ,(if requires-owners-p
+          `(install-new-reactor ,kind owners data callbacks ',name)
+          `(install-new-reactor ,kind nil data callbacks ',name))))
+
+(define-vlr-constructor builtin-vlr-acdb-reactor          :acdb           t)
+(define-vlr-constructor builtin-vlr-command-reactor       :command        nil)
+(define-vlr-constructor builtin-vlr-deepclone-reactor     :deepclone      nil)
+(define-vlr-constructor builtin-vlr-document-reactor      :document       nil)
+(define-vlr-constructor builtin-vlr-dwg-reactor           :dwg            nil)
+(define-vlr-constructor builtin-vlr-dxf-reactor           :dxf            nil)
+(define-vlr-constructor builtin-vlr-insert-reactor        :insert         nil)
+(define-vlr-constructor builtin-vlr-mouse-reactor         :mouse          nil)
+(define-vlr-constructor builtin-vlr-object-reactor        :object         t)
+(define-vlr-constructor builtin-vlr-sysvar-reactor        :sysvar         nil)
+(define-vlr-constructor builtin-vlr-toolbar-reactor       :toolbar        nil)
+(define-vlr-constructor builtin-vlr-undo-reactor          :undo           nil)
+(define-vlr-constructor builtin-vlr-wblock-reactor        :wblock         nil)
+(define-vlr-constructor builtin-vlr-window-reactor        :window         nil)
+(define-vlr-constructor builtin-vlr-xref-reactor          :xref           nil)
+(define-vlr-constructor builtin-vlr-docmanager-reactor    :docmanager     nil)
+(define-vlr-constructor builtin-vlr-editor-reactor        :editor         nil)
+(define-vlr-constructor builtin-vlr-linker-reactor        :linker         nil)
+(define-vlr-constructor builtin-vlr-lisp-reactor          :lisp           nil)
+(define-vlr-constructor builtin-vlr-miscellaneous-reactor :miscellaneous  nil)
+
+;;; Introspection / mutation -------------------------------------
+
+(defun builtin-vlr-add (reactor)
+  (ensure-reactor reactor "VLR-ADD")
+  (setf (reactor-active-p reactor) t)
+  (let ((scope (reactor-scope reactor)))
+    (case scope
+      (:document
+       (add-reactor-to-document (or (reactor-document reactor)
+                                    (current-document-or-error "VLR-ADD"))
+                                reactor))
+      (:application
+       (add-reactor-to-session (current-session-or-error "VLR-ADD")
+                               reactor))))
+  reactor)
+
+(defun builtin-vlr-remove (reactor)
+  (ensure-reactor reactor "VLR-REMOVE")
+  (let ((scope (reactor-scope reactor)))
+    (case scope
+      (:document
+       (when (reactor-document reactor)
+         (remove-reactor-from-document (reactor-document reactor) reactor)))
+      (:application
+       (let ((session (current-session-or-error "VLR-REMOVE")))
+         (remove-reactor-from-session session reactor)))))
+  (setf (reactor-active-p reactor) nil)
+  reactor)
+
+(defun builtin-vlr-remove-all (&optional kind)
+  ;; (vlr-remove-all)         -> remove every reactor in scope
+  ;; (vlr-remove-all KIND)    -> remove all reactors of KIND
+  (let ((kw (and kind (normalise-reaction-name kind "VLR-REMOVE-ALL")))
+        (session (current-session-or-error "VLR-REMOVE-ALL")))
+    (dolist (reactor (all-session-reactors session))
+      (when (or (null kw) (eq (reactor-kind reactor) kw))
+        (builtin-vlr-remove reactor)))
+    nil))
+
+(defun builtin-vlr-data (reactor)
+  (reactor-data (ensure-reactor reactor "VLR-DATA")))
+
+(defun builtin-vlr-data-set (reactor new-data)
+  (ensure-reactor reactor "VLR-DATA-SET")
+  (setf (reactor-data reactor) (coerce-data-list new-data "VLR-DATA-SET"))
+  new-data)
+
+(defun builtin-vlr-owners (reactor)
+  (reactor-owners (ensure-reactor reactor "VLR-OWNERS")))
+
+(defun builtin-vlr-owner-add (reactor owner)
+  (ensure-reactor reactor "VLR-OWNER-ADD")
+  (unless (member owner (reactor-owners reactor) :test #'equal)
+    (setf (reactor-owners reactor) (append (reactor-owners reactor) (list owner))))
+  reactor)
+
+(defun builtin-vlr-owner-remove (reactor owner)
+  (ensure-reactor reactor "VLR-OWNER-REMOVE")
+  (setf (reactor-owners reactor)
+        (remove owner (reactor-owners reactor) :test #'equal))
+  reactor)
+
+(defun builtin-vlr-set-notification (reactor mode)
+  (ensure-reactor reactor "VLR-SET-NOTIFICATION")
+  (let ((kw (cond
+              ((keywordp mode) mode)
+              ((typep mode 'autolisp-symbol)
+               (intern (string-upcase (autolisp-symbol-name mode)) "KEYWORD"))
+              (t (signal-builtin-argument-error
+                  :invalid-notification-mode
+                  "VLR-SET-NOTIFICATION"
+                  "VLR-SET-NOTIFICATION expects a notification mode keyword, got ~S."
+                  mode)))))
+    (setf (reactor-notification reactor)
+          (case kw
+            ((:active-document-only :current-document-only) :current-document-only)
+            ((:disabled) :disabled)
+            (otherwise :all-documents)))
+    reactor))
+
+(defun builtin-vlr-notification (reactor)
+  (intern-autolisp-symbol
+   (string-upcase (symbol-name
+                   (reactor-notification (ensure-reactor reactor "VLR-NOTIFICATION"))))))
+
+(defun builtin-vlr-current-reaction-name ()
+  ;; In Phase 14b we don't expose the dispatch-stack to the
+  ;; callback; this returns nil headlessly. Real AutoCAD would
+  ;; return the symbol-name of the reaction currently being
+  ;; dispatched.
+  nil)
+
+(defun builtin-vlr-reactions (reactor)
+  (let ((acc '()))
+    (maphash (lambda (name fn) (push (cons name fn) acc))
+             (reactor-callbacks (ensure-reactor reactor "VLR-REACTIONS")))
+    acc))
+
+(defun builtin-vlr-reaction-set (reactor reaction-name new-callback)
+  (ensure-reactor reactor "VLR-REACTION-SET")
+  (let ((kw (normalise-reaction-name reaction-name "VLR-REACTION-SET")))
+    (cond
+      ((null new-callback)
+       (remhash kw (reactor-callbacks reactor)))
+      (t
+       (setf (gethash kw (reactor-callbacks reactor)) new-callback)))
+    reactor))
+
+(defun builtin-vlr-added-p (reactor)
+  (ensure-reactor reactor "VLR-ADDED-P")
+  (if (reactor-active-p reactor)
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun builtin-vlr-type (reactor)
+  (intern-autolisp-symbol
+   (string-upcase (symbol-name
+                   (reactor-kind (ensure-reactor reactor "VLR-TYPE"))))))
+
+(defun builtin-vlr-types ()
+  (mapcar (lambda (kw)
+            (intern-autolisp-symbol (string-upcase (symbol-name kw))))
+          (reactor-type-keywords)))
+
+(defun builtin-vlr-reactors (&optional kind-filter)
+  (let* ((session (current-session-or-error "VLR-REACTORS"))
+         (kw (and kind-filter (normalise-reaction-name kind-filter "VLR-REACTORS")))
+         (all (all-session-reactors session)))
+    (when kw
+      (setf all (remove-if-not (lambda (r) (eq (reactor-kind r) kw)) all)))
+    all))
+
+(defun builtin-vlr-trace-reaction (reactor reaction-name)
+  ;; Headless: no actual trace — return reaction-name to acknowledge.
+  (ensure-reactor reactor "VLR-TRACE-REACTION")
+  (normalise-reaction-name reaction-name "VLR-TRACE-REACTION")
+  reaction-name)
+
+;;; Persistence --------------------------------------------------
+
+(defun reactor-as-persistent-record (reactor)
+  "Encode a reactor as a property list suitable for serialisation
+through mock-host-snapshot. Callbacks must be autolisp-symbols
+(closures cannot survive)."
+  (let ((callbacks '()))
+    (maphash (lambda (name fn)
+               (cond
+                 ((typep fn 'autolisp-symbol)
+                  (push (cons name (autolisp-symbol-name fn)) callbacks))
+                 (t
+                  (signal-builtin-argument-error
+                   :non-serializable-callback
+                   "VLR-PERS"
+                   "VLR-PERS: callback for reaction ~A must be a symbol so it can survive a save/reload cycle."
+                   name))))
+             (reactor-callbacks reactor))
+    (list :id (princ-to-string (reactor-id reactor))
+          :kind (reactor-kind reactor)
+          :owners (reactor-owners reactor)
+          :data (reactor-data reactor)
+          :callbacks callbacks
+          :notification (reactor-notification reactor))))
+
+(defun builtin-vlr-pers (reactor)
+  (ensure-reactor reactor "VLR-PERS")
+  (let ((document (or (reactor-document reactor)
+                      (current-document-or-error "VLR-PERS")))
+        (record (reactor-as-persistent-record reactor)))
+    (setf (reactor-persistent-p reactor) t)
+    (setf (gethash (reactor-id reactor)
+                   (document-namespace-persistent-reactor-index document))
+          record)
+    reactor))
+
+(defun builtin-vlr-pers-release (reactor)
+  (ensure-reactor reactor "VLR-PERS-RELEASE")
+  (let ((document (reactor-document reactor)))
+    (when document
+      (remhash (reactor-id reactor)
+               (document-namespace-persistent-reactor-index document))))
+  (setf (reactor-persistent-p reactor) nil)
+  reactor)
+
+(defun builtin-vlr-pers-list (&optional document-or-name)
+  (declare (ignore document-or-name))
+  (let* ((document (current-document-or-error "VLR-PERS-LIST"))
+         (acc '()))
+    (maphash (lambda (id record)
+               (declare (ignore record))
+               (let ((reactor (gethash id (document-reactor-registry document))))
+                 (when reactor (push reactor acc))))
+             (document-namespace-persistent-reactor-index document))
+    acc))
+
+(defun builtin-vlr-pers-p (reactor)
+  (ensure-reactor reactor "VLR-PERS-P")
+  (if (reactor-persistent-p reactor)
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun builtin-vlr-pers-dictname ()
+  ;; AutoCAD returns "ACAD_REACTORS" — the NOD entry that stores
+  ;; persistent reactors. clautolisp uses the same name.
+  (make-autolisp-string "ACAD_REACTORS"))
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -3302,6 +3674,50 @@ when no dialect is in scope."
    (make-core-builtin-subr "VLAX-VARIANT-TYPE"            #'builtin-vlax-variant-type)
    (make-core-builtin-subr "VLAX-VARIANT-VALUE"           #'builtin-vlax-variant-value)
    (make-core-builtin-subr "VLAX-VARIANT-CHANGE-TYPE"     #'builtin-vlax-variant-change-type)
+   ;; Phase 14b — reactor (vlr-*) family
+   (make-core-builtin-subr "VLR-ACDB-REACTOR"          #'builtin-vlr-acdb-reactor)
+   (make-core-builtin-subr "VLR-COMMAND-REACTOR"       #'builtin-vlr-command-reactor)
+   (make-core-builtin-subr "VLR-DEEPCLONE-REACTOR"     #'builtin-vlr-deepclone-reactor)
+   (make-core-builtin-subr "VLR-DOCUMENT-REACTOR"      #'builtin-vlr-document-reactor)
+   (make-core-builtin-subr "VLR-DWG-REACTOR"           #'builtin-vlr-dwg-reactor)
+   (make-core-builtin-subr "VLR-DXF-REACTOR"           #'builtin-vlr-dxf-reactor)
+   (make-core-builtin-subr "VLR-INSERT-REACTOR"        #'builtin-vlr-insert-reactor)
+   (make-core-builtin-subr "VLR-MOUSE-REACTOR"         #'builtin-vlr-mouse-reactor)
+   (make-core-builtin-subr "VLR-OBJECT-REACTOR"        #'builtin-vlr-object-reactor)
+   (make-core-builtin-subr "VLR-SYSVAR-REACTOR"        #'builtin-vlr-sysvar-reactor)
+   (make-core-builtin-subr "VLR-TOOLBAR-REACTOR"       #'builtin-vlr-toolbar-reactor)
+   (make-core-builtin-subr "VLR-UNDO-REACTOR"          #'builtin-vlr-undo-reactor)
+   (make-core-builtin-subr "VLR-WBLOCK-REACTOR"        #'builtin-vlr-wblock-reactor)
+   (make-core-builtin-subr "VLR-WINDOW-REACTOR"        #'builtin-vlr-window-reactor)
+   (make-core-builtin-subr "VLR-XREF-REACTOR"          #'builtin-vlr-xref-reactor)
+   (make-core-builtin-subr "VLR-DOCMANAGER-REACTOR"    #'builtin-vlr-docmanager-reactor)
+   (make-core-builtin-subr "VLR-EDITOR-REACTOR"        #'builtin-vlr-editor-reactor)
+   (make-core-builtin-subr "VLR-LINKER-REACTOR"        #'builtin-vlr-linker-reactor)
+   (make-core-builtin-subr "VLR-LISP-REACTOR"          #'builtin-vlr-lisp-reactor)
+   (make-core-builtin-subr "VLR-MISCELLANEOUS-REACTOR" #'builtin-vlr-miscellaneous-reactor)
+   (make-core-builtin-subr "VLR-ADD"                   #'builtin-vlr-add)
+   (make-core-builtin-subr "VLR-REMOVE"                #'builtin-vlr-remove)
+   (make-core-builtin-subr "VLR-REMOVE-ALL"            #'builtin-vlr-remove-all)
+   (make-core-builtin-subr "VLR-DATA"                  #'builtin-vlr-data)
+   (make-core-builtin-subr "VLR-DATA-SET"              #'builtin-vlr-data-set)
+   (make-core-builtin-subr "VLR-OWNERS"                #'builtin-vlr-owners)
+   (make-core-builtin-subr "VLR-OWNER-ADD"             #'builtin-vlr-owner-add)
+   (make-core-builtin-subr "VLR-OWNER-REMOVE"          #'builtin-vlr-owner-remove)
+   (make-core-builtin-subr "VLR-SET-NOTIFICATION"      #'builtin-vlr-set-notification)
+   (make-core-builtin-subr "VLR-NOTIFICATION"          #'builtin-vlr-notification)
+   (make-core-builtin-subr "VLR-CURRENT-REACTION-NAME" #'builtin-vlr-current-reaction-name)
+   (make-core-builtin-subr "VLR-REACTIONS"             #'builtin-vlr-reactions)
+   (make-core-builtin-subr "VLR-REACTION-SET"          #'builtin-vlr-reaction-set)
+   (make-core-builtin-subr "VLR-ADDED-P"               #'builtin-vlr-added-p)
+   (make-core-builtin-subr "VLR-TYPE"                  #'builtin-vlr-type)
+   (make-core-builtin-subr "VLR-TYPES"                 #'builtin-vlr-types)
+   (make-core-builtin-subr "VLR-REACTORS"              #'builtin-vlr-reactors)
+   (make-core-builtin-subr "VLR-TRACE-REACTION"        #'builtin-vlr-trace-reaction)
+   (make-core-builtin-subr "VLR-PERS"                  #'builtin-vlr-pers)
+   (make-core-builtin-subr "VLR-PERS-RELEASE"          #'builtin-vlr-pers-release)
+   (make-core-builtin-subr "VLR-PERS-LIST"             #'builtin-vlr-pers-list)
+   (make-core-builtin-subr "VLR-PERS-P"                #'builtin-vlr-pers-p)
+   (make-core-builtin-subr "VLR-PERS-DICTNAME"         #'builtin-vlr-pers-dictname)
    (make-core-builtin-subr "VL-EVERY" #'builtin-vl-every)
    (make-core-builtin-subr "VL-MEMBER-IF" #'builtin-vl-member-if)
    (make-core-builtin-subr "VL-MEMBER-IF-NOT" #'builtin-vl-member-if-not)
