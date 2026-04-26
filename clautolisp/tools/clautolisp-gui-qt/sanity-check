@@ -1,0 +1,9 @@
+#!/bin/bash
+export CLAUTOLISP_GUI=$(dirname "$0")/build/clautolisp-gui-qt
+export CLAUTOLISP_GUI_DEBUG=1
+{
+  printf '(:hello 1)\n'
+  printf '(:open-dialog 0 "First" (:tile :dialog :nokey (:attr ("label" "First")) (:children (:tile :ok-only :nokey (:attr) (:children)))))\n'
+  printf '(:open-dialog 1 "Second" (:tile :dialog :nokey (:attr ("label" "Second")) (:children (:tile :ok-only :nokey (:attr) (:children)))))\n'
+  sleep 60
+} | tee -a /dev/tty | "$CLAUTOLISP_GUI" # --demo
