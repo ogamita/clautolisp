@@ -103,6 +103,8 @@
    (:file "autolisp-dcl/source/model")
    (:file "autolisp-dcl/source/parser")
    (:file "autolisp-dcl/source/runtime")
+   (:file "autolisp-dcl/source/sexp-wire")
+   (:file "autolisp-dcl/source/subprocess-renderer")
    (:file "autolisp-dcl/source/terminal"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-dcl/tests")))
@@ -165,6 +167,7 @@
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-mock-host"
                "clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-dcl"
                "uiop")
   :serial t
   :components
@@ -248,6 +251,8 @@
    (:file "autolisp-dcl/tests/test-harness")
    (:file "autolisp-dcl/tests/parser-tests")
    (:file "autolisp-dcl/tests/runtime-tests")
+   (:file "autolisp-dcl/tests/sexp-wire-tests")
+   (:file "autolisp-dcl/tests/subprocess-renderer-tests")
    (:file "autolisp-dcl/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
