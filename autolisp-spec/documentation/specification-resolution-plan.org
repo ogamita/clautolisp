@@ -127,123 +127,86 @@ Best method:
 2. versioned product tests.
 
 * Current Status
-The HyperSpec-style draft in `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org` is now broadly chapter-complete and no longer contains any entries marked `family-documented`.
+Phase 5 closure landed on 2026-04-26: the five long-running open items from this document — `atoi`, `atof`, `vl-member-if-not`, `exit` vs `quit`, and the printer surface (`prin1` / `princ` / `print` / `terpri` / `prompt`) — were all closed to *documented* using the BricsCAD V26 per-symbol pages reached via Claude-in-Chrome MCP.
 
-At the current stage, only two specification entries remain explicitly unresolved at the symbol level:
+Each entry now carries:
 
-1. `atof`
-2. `vl-member-if-not`
+- Authoritative AutoCAD + BricsCAD per-symbol citations.
+- Tested-when-product-available probe pointers (probe sources are already in `autolisp-spec/sources/`; `scripts/run-probes.sh` will execute them under any AutoCAD / BricsCAD reachable through `RUNNER_TEMPLATE`).
+- An *Implementation-defined Behaviour* section on `atoi` / `atof` documenting the lex edges that are still vendor-prose-silent.
 
-The remaining work is therefore no longer broad coverage work. It is validation, closure of the last under-specified entries, and conversion of implementation hypotheses into tested facts.
+No entries remain at `summary-documented` or `family-documented` status. The Phase-2 follow-up stubs (377 BricsCAD-only entries added 2026-04-26 after the live-TOC walk) are out of scope for *this* document — they are tracked separately in `vendor-inventory-2026.org` §8.13 and `PLAN.md`.
 
-* Remaining Questions To Resolve
-** `atof`
-Open questions:
-
-- exact accepted lexical grammar
-- acceptance of leading whitespace
-- acceptance of trailing junk
-- acceptance of exponent notation
-- acceptance of `.5` and `1.`
-- acceptance of hexadecimal floating syntax such as `0x1p4`
-- locale sensitivity, especially decimal comma vs decimal point
-- whether behavior matches a C-library `atof(3)` / `strtod(3)` style implementation
-
-Required evidence:
-
-- direct Autodesk or BricsCAD documentation if found later
-- executable tests on real AutoCAD and BricsCAD
-
-Current status:
-
-- summary-documented
-- implementation-model hypothesis recorded
-- not yet product-tested
-
+* Resolved Questions (2026-04-26)
 ** `atoi`
-This entry is documented more strongly than `atof`, but the lexical acceptance boundary is still important to validate.
+Closed via direct citation of the BricsCAD V26 `atoi` page, which is more explicit than Autodesk's reference. Documented behaviour:
 
-Open questions:
+- Trailing-junk strictness: parsing stops at the first non-numeric character; `(atoi "12.34")` returns `12`, `(atoi "xyz")` returns `0`.
+- Decimal-fraction input is truncated toward zero.
+- The lexical edges below remain *implementation-defined* and are recorded as such in the spec entry (no vendor prose pins them down):
+  - leading whitespace handling,
+  - sign acceptance (`+17`, `-17`),
+  - leading-zero forms (`017` — decimal vs octal-like),
+  - `0x`-prefixed forms,
+  - trailing-junk strictness for partial numbers.
+- ~clautolisp~ implementation-defined choices are recorded in the spec entry.
+- The probe suite in `sources/probe-atoi.lsp` will record AutoCAD vs BricsCAD product behaviour when run via `scripts/run-probes.sh` against a live product.
 
-- acceptance of leading whitespace
-- acceptance of trailing junk
-- acceptance of leading-zero forms such as `017`
-- acceptance or rejection of hexadecimal-looking forms such as `0xbabe`
-- whether behavior resembles `atoi(3)`, `strtol(...,10)`, or `strtol(...,0)`
+** `atof`
+Closed via direct citation of the BricsCAD V26 `atof` page. Documented behaviour: same trailing-junk-stops-parsing model as `atoi`; `(atof "12.34")` returns `12.34`; `(atof "xyz")` returns `0.0`.
 
-Required evidence:
+The lexical edges below remain *implementation-defined* (recorded as such in the spec entry):
 
-- executable tests on real AutoCAD and BricsCAD
+- `.5`, `1.` decimal-point variants,
+- exponent notation,
+- leading whitespace,
+- locale (decimal comma vs decimal point),
+- hexadecimal floating syntax,
+- trailing-junk strictness.
 
-Current status:
-
-- documented for purpose and truncating decimal input
-- not yet product-tested for lexical edge behavior
+`clautolisp` implementation-defined choices are recorded in the spec entry. Probe suite in `sources/probe-atof.lsp`.
 
 ** `vl-member-if-not`
-Open questions:
+Closed via direct citation of the BricsCAD V26 dedicated per-symbol page. The page provides the per-element control wording that Autodesk's family-table entry only summarises:
 
-- whether Autodesk provides a dedicated symbol page in older or alternate documentation sets
-- whether the exact return and traversal behavior is fully symmetric with `vl-member-if`
+- Validation of each list item stops at the first item where the comparator returns `nil`.
+- The remainder of the list, from that element onward, is returned.
+- Returns `nil` when no element matches the (negated) condition.
 
-Required evidence:
-
-- additional Autodesk archival/documentation search
-- executable tests if needed
-
-Current status:
-
-- summary-documented by family reference and documented symmetry hypothesis
-- not yet closed with symbol-level vendor documentation
+The Phase-3 inferred-symmetry-with-`vl-member-if` hypothesis is now confirmed by direct citation.
 
 ** Printer / Display Surface
-The core output functions are now documented well enough for drafting, but some distinctions still deserve executable confirmation.
+Closed via direct citation of the BricsCAD V26 `prin1`, `princ`, `print`, `terpri`, and `prompt` per-symbol pages. The previously open distinctions are now explicit:
 
-Open questions:
-
-- exact newline/spacing distinction among `prin1`, `princ`, `print`, `terpri`, and `prompt`
-- exact return conventions in interactive host contexts
-
-Required evidence:
-
-- executable tests on AutoCAD and BricsCAD
-
-Current status:
-
-- documented from display-control family sources
-- suitable for current drafting
-- still worth testing for conformance fixtures
+- `prin1` rewrites control characters (`\t \n \r \" \nnn`) so output round-trips through the reader.
+- `princ` writes control characters verbatim.
+- `print` is `prin1` with a leading newline and a trailing space.
+- `terpri` is zero-arity, command-line-only, returns `nil`.
+- `prompt` returns `nil` and is the recommended channel for end-user command-line output (Bricsys explicitly recommends `prompt` over the printer functions for messages).
+- `(prin1)` and `(princ)` with no arguments return the *void* symbol value, conventionally used to terminate a `defun` without echoing a result.
 
 ** `exit` vs `quit`
-Open questions:
+Closed via direct citation of the BricsCAD V26 `exit` and `quit` per-symbol pages. Both functions:
 
-- whether Autodesk maintains a semantic distinction between `exit` and `quit`
-- whether both behave identically in current releases
+- Are zero-arity.
+- Unconditionally abort the running LISP code.
+- Print `; error : quit / exit abort` to the prompt as the abort propagates.
 
-Required evidence:
+Bricsys distinguishes the verbs only in prose ("exits" vs "cancels"); the *signature, message, and effect* are documented identically. The historical hypothesis that some vendor or release distinguished `exit` and `quit` is not supported by current vendor evidence. Treat as alternative spellings of the same primitive.
 
-- dedicated vendor pages if found
-- executable tests under controlled conditions
+* Future Validation Work
+Phase 5 closed all five long-running open items at the *documented* level using direct vendor citations. The remaining work, deferred until a CAD product is available locally, is:
 
-Current status:
-
-- both documented as termination functions
-- exact distinction still not fully explained by the sampled vendor material
+- Run `scripts/run-probes.sh` against a real AutoCAD and BricsCAD installation, with `RUNNER_TEMPLATE` pointing at the host's batch invocation.
+- File the resulting `results.sexp` under `results/<product>/<platform>/<timestamp>/`.
+- Promote any *implementation-defined* edge that turns out to be vendor-stable in practice into a normative entry in the spec.
 
 * Final Recommendation
-Yes, both of your proposed methods should be used.
+Phase 5 followed the resolution-order recommendation:
 
-But they should be used in this order:
+1. Official vendor documentation (BricsCAD V26 per-symbol pages reached via Claude-in-Chrome MCP).
+2. Real product tests — pending a local CAD installation.
+3. Corpus scanning — out of scope for Phase 5.
+4. Third-party implementation study — out of scope.
 
-1. official documentation first,
-2. real product tests second,
-3. corpus scanning third,
-4. third-party implementation study fourth.
-
-The decisive step is not corpus mining alone and not reading VeLisp alone.
-
-The decisive step is to turn every unresolved question into:
-
-- a documented citation,
-- or a versioned executable test result,
-- or an explicitly marked implementation-defined choice.
+The closure model the spec now uses for every entry that came through Phase 5 is exactly the one this document recommended: each unresolved question has been turned into either a documented citation, a deferred-but-scripted product test, or an explicitly marked implementation-defined choice.
