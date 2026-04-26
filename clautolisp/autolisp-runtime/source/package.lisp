@@ -75,6 +75,7 @@
    #:autolisp-file-mode
    #:autolisp-ename
    #:autolisp-ename-value
+   #:make-autolisp-ename
    #:autolisp-pickset
    #:autolisp-pickset-value
    #:autolisp-subr

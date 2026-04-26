@@ -58,7 +58,21 @@
                 #:propagate-variable
                 #:set-autolisp-function-list-definition
                 #:set-autolisp-symbol-function
-                #:current-evaluation-dialect)
+                #:current-evaluation-dialect
+                #:current-evaluation-host
+                #:autolisp-ename
+                #:autolisp-ename-value
+                #:make-autolisp-ename)
+  (:import-from #:clautolisp.autolisp-host
+                #:host-entget
+                #:host-entmod
+                #:host-entmake
+                #:host-entmakex
+                #:host-entdel
+                #:host-entupd
+                #:host-entlast
+                #:host-entnext
+                #:host-handent)
   (:export
    #:*core-builtin-names*
    #:core-builtins

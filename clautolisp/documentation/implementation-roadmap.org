@@ -443,21 +443,62 @@ Scope delivered:
   and the inherited ~:host-not-supported~ behaviour. Aggregate
   suite 76 + 184 + 29 + 52 + 412 + 130 = 883 / 0.
 
-** Phase 10 — MockHost Entity API
+** Phase 10 — MockHost Entity API [DONE 2026-04-26]
 *Goal:* implement the entity-level HAL methods against MockHost.
 
-Scope (drives by ~autolisp-spec~ chapter 16):
-- ~entget~ / ~entmod~ / ~entdel~ / ~entupd~
-- ~entmake~ / ~entmakex~ (with type-validating dispatch on the
-  group-0 marker)
-- ~entlast~ / ~entnext~
-- ~handent~
-- ~snvalid~ at the host level (checking against current
-  table-record names)
+*Status:* closed. Suite 919 / 0; the AutoLISP-visible entity round
+trip (entmake -> entget / entlast / entnext / handent / entmod /
+entdel) runs end-to-end against ~--host mock~.
 
-Pre-populate MockHost with the standard tables (BLOCK_RECORD with
-~"*Model_Space"~ and ~"*Paper_Space"~, LAYER with ~"0"~, LTYPE
-with ~"BYBLOCK" / "BYLAYER" / "Continuous"~, etc.).
+Scope delivered:
+- New file ~clautolisp/autolisp-mock-host/source/entity-api.lisp~
+  defines methods on ~mock-host~ for ~host-entget~, ~host-entmod~,
+  ~host-entmake~, ~host-entmakex~, ~host-entdel~ (with the
+  documented within-command toggle), ~host-entupd~, ~host-entlast~,
+  ~host-entnext~ (both zero-arg and one-arg forms), ~host-handent~.
+- ~mock-host~ class extended with a hex-string handle allocator
+  (~mock-host-allocate-handle~), a ~creation-order~ list (walked
+  by entlast / entnext), and an ~entities~ hash-table re-keyed on
+  the handle string.
+- ~entmake~ / ~entmakex~ accept a DXF group-code list with a
+  ~(0 . "TYPE")~ marker; the host injects ~(-1 . ENAME)~ at the
+  head and ~(5 . HANDLE)~ as the second entry, mirroring AutoCAD's
+  on-disk shape, and stores the resulting list. Missing marker
+  signals ~:invalid-entity-data~.
+- ~entget~ on a deleted entity returns nil; ~entdel~ toggles the
+  ~deleted-p~ flag (re-entering "live" on a second call within the
+  same scope, as documented).
+- ~handent~ accepts both CL strings and AutoLISP-strings, returns
+  an ENAME for known handles and nil otherwise.
+- ~clautolisp/autolisp-builtins-core~ now depends on
+  ~clautolisp/autolisp-host~. New AutoLISP builtins ~ENTGET~,
+  ~ENTMOD~, ~ENTMAKE~, ~ENTMAKEX~, ~ENTDEL~, ~ENTUPD~, ~ENTLAST~,
+  ~ENTNEXT~, ~HANDENT~ are thin wrappers over the HAL generic
+  functions, dispatched on the active session's host backend.
+- ~autolisp-runtime~ now exports ~make-autolisp-ename~ (the public
+  ENAME constructor used by the HAL).
+- The ~autolisp-value->string~ printer renders ENAMEs as
+  "<Entity name: HANDLE>" so the REPL banner displays them
+  cleanly under ~--host mock~.
+- snvalid at the host level (cross-checking against current
+  table-record names) is parked for Phase 11 alongside tblsearch
+  / tblnext, since it relies on table walkers.
+
+Tests:
+- 11 new entity-api tests in
+  ~autolisp-mock-host/tests/entity-api-tests.lisp~ pin every
+  method's contract: handle allocation, bookkeeping injection,
+  round-trip via entget, delete-toggle, entmod-replace,
+  creation-order walk under entlast / entnext, deleted-skip,
+  handent lookup, invalid-data error path, invalid-ename error
+  path.
+- 1 new builtin-level test in autolisp-builtins-core/tests pins
+  the AutoLISP-side wiring under both NullHost and MockHost.
+- Aggregate suite 76 + 184 + 29 + 82 + 418 + 130 = 919 / 0.
+
+Smoke: ~clautolisp --host mock -x "(setq e (entmake ...)) (entget
+(cdr (assoc -1 e)))"~ runs the entmake -> entget round trip
+end-to-end and prints the layer name from the stored data list.
 
 ** Phase 11 — MockHost Selection / Tables / Sysvars
 *Goal:* selection sets and table walkers.

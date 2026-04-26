@@ -76,7 +76,8 @@
   ((:file "autolisp-mock-host/source/package")
    (:file "autolisp-mock-host/source/model")
    (:file "autolisp-mock-host/source/sysvars")
-   (:file "autolisp-mock-host/source/api"))
+   (:file "autolisp-mock-host/source/api")
+   (:file "autolisp-mock-host/source/entity-api"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-mock-host/tests")))
   :perform (asdf:test-op (op system)
@@ -87,7 +88,9 @@
   :description "Initial core builtin registry for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime" "uiop")
+  :depends-on ("clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-host"
+               "uiop")
   :serial t
   :components
   ((:file "autolisp-builtins-core/source/package")
@@ -196,6 +199,7 @@
   ((:file "autolisp-mock-host/tests/package")
    (:file "autolisp-mock-host/tests/test-harness")
    (:file "autolisp-mock-host/tests/model-tests")
+   (:file "autolisp-mock-host/tests/entity-api-tests")
    (:file "autolisp-mock-host/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -223,7 +227,9 @@
   :description "Tests for the initial clautolisp core builtins."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-builtins-core" "fiveam")
+  :depends-on ("clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-mock-host"
+               "fiveam")
   :serial t
   :components
   ((:file "autolisp-builtins-core/tests/package")

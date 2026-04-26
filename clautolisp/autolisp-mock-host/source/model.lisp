@@ -69,8 +69,22 @@ implementation of getvar / setvar to validate type coercions."
 ;;; --- MockHost ---------------------------------------------------
 
 (defclass mock-host (host)
-  ((entities                 :initform (make-hash-table :test #'eq)
-                             :reader   mock-host-entities)
+  ((entities                 :initform (make-hash-table :test #'equal)
+                             :reader   mock-host-entities
+                             :documentation "Hash-table mapping the
+entity's hex handle string (e.g. \"10\") to its ENTITY-HANDLE.
+The handle string is what AutoLISP user code sees through the
+group-code 5 entry and through HANDENT.")
+   (creation-order           :initform '()
+                             :accessor mock-host-creation-order
+                             :documentation "Reverse-order list of
+handle strings, in the order they were allocated by entmake /
+entmakex. Walked by entlast / entnext.")
+   (next-handle-counter      :initform 16
+                             :accessor mock-host-next-handle-counter
+                             :documentation "Allocator state for
+hex-string handles. The first allocated handle is \"10\" (= 16),
+matching AutoCAD's customary minimum visible handle.")
    (picksets                 :initform (make-hash-table :test #'eq)
                              :reader   mock-host-picksets)
    (vla-objects              :initform (make-hash-table :test #'eq)

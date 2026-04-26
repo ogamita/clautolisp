@@ -3,7 +3,57 @@
   (:import-from #:clautolisp.autolisp-host
                 #:host
                 #:host-name
-                #:signal-host-not-supported)
+                #:signal-host-not-supported
+                ;; HAL generic-function names — needed by entity-api.lisp
+                ;; (and the upcoming Phase-11 selection / sysvar files)
+                ;; so that defmethod attaches a method to the *host*
+                ;; package's generic, not a new same-named symbol.
+                #:host-entget
+                #:host-entmod
+                #:host-entmake
+                #:host-entmakex
+                #:host-entdel
+                #:host-entupd
+                #:host-entlast
+                #:host-entnext
+                #:host-handent
+                #:host-ssget
+                #:host-ssadd
+                #:host-ssdel
+                #:host-ssname
+                #:host-sslength
+                #:host-ssmemb
+                #:host-ssgetfirst
+                #:host-sssetfirst
+                #:host-tblsearch
+                #:host-tblnext
+                #:host-tblobjname
+                #:host-namedobjdict
+                #:host-dictsearch
+                #:host-dictnext
+                #:host-dictadd
+                #:host-dictremove
+                #:host-dictrename
+                #:host-getvar
+                #:host-setvar
+                #:host-command
+                #:host-prompt
+                #:host-initget
+                #:host-getstring
+                #:host-getint
+                #:host-getreal
+                #:host-getpoint
+                #:host-getcorner
+                #:host-getdist
+                #:host-getangle
+                #:host-getorient
+                #:host-getkword
+                #:host-grdraw
+                #:host-grtext
+                #:host-grvecs
+                #:host-grclear
+                #:host-grread
+                #:host-redraw)
   (:export
    ;; Class hierarchy
    #:mock-host
@@ -60,4 +110,9 @@
    #:mock-host-add-table-record
    ;; Sysvar API
    #:mock-host-sysvar
-   #:mock-host-set-sysvar))
+   #:mock-host-set-sysvar
+   ;; Entity-allocation helpers (Phase 10)
+   #:mock-host-creation-order
+   #:mock-host-next-handle-counter
+   #:mock-host-allocate-handle
+   #:mock-host-find-entity-by-handle))
