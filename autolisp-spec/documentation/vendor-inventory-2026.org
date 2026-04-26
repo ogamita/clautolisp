@@ -1,0 +1,724 @@
+#+TITLE: Vendor Inventory and Spec Delta — AutoCAD 2026 / BricsCAD V26
+#+SUBTITLE: Phase 1 of the autolisp-spec exhaustiveness pass
+#+AUTHOR: Codex
+#+OPTIONS: toc:3 num:t
+#+LICENSE: CC-BY-SA
+
+* 1 Purpose
+
+This document is the Phase-1 deliverable of the ongoing
+work to bring [[file:autolisp-visual-lisp-specification-draft.org][AutoLISP Spec]]
+to exhaustive coverage of the AutoLISP / Visual LISP language as
+shipped by Autodesk AutoCAD 2026 and Bricsys BricsCAD V26.
+
+It records:
+
+- the canonical vendor symbol inventories that were extracted from
+  AutoCAD 2026 and BricsCAD V26 vendor documentation,
+- the per-symbol availability tags (AutoCAD-only / BricsCAD-only /
+  both) at the level the vendor docs make explicit,
+- the delta between those vendor inventories and the existing
+  specification draft,
+- a categorised list of missing entries that subsequent phases will
+  fill in.
+
+This document is *not* a normative part of the specification.
+
+It is a working artefact tracking what the spec covers and what it
+still needs to cover.
+
+* 2 Scope and Method
+
+** 2.1 Scope
+
+In scope for the inventory:
+
+- core AutoLISP and Visual LISP functions, special forms, and
+  reader-syntax classes,
+- DCL (Dialog Control Language) functions used from AutoLISP,
+- ActiveX / COM bindings (~vlax-*~), reactors (~vlr-*~), and the
+  Visual LISP family (~vl-*~),
+- Express Tools functions (~acet-*~) and ~acad-*~ / ~acad_*~ helpers
+  documented in the AutoLISP Reference,
+- BricsCAD-specific extensions enumerated on the BricsCAD-Specific
+  LISP Functions page,
+- per-version flags where the vendor explicitly provides them.
+
+Out of scope for this inventory (per project decision dated
+2026-04-26):
+
+- BricsCAD BIM, Mechanical, GeoCoordinateSystem, and SheetSetManager
+  LISP APIs.
+- Vertical / discipline-specific extensions are listed only as
+  reference URLs.
+
+** 2.2 Method
+
+1. Fetched the AutoCAD 2026 "AutoLISP Functions By Name and Feature"
+   index page.
+2. Fetched all 24 alphabetical sub-indexes (Non-alphabetic, A-Z
+   except J/K/Y) and enumerated every named entry.
+3. Fetched the AutoCAD 2026 feature-category index links to confirm
+   coverage of Express Tools, ActiveX, DCL, Reactors, and
+   Selection/Symbol-Table groups.
+4. Fetched the BricsCAD V26 BricsCAD-Specific LISP Functions page,
+   the V26 Generic Properties Functions page, the V26 VLX Namespace
+   Support page, the V26 read+write text files page, the V26
+   ~vlisp-compile~ page, the V26 Optimised Code Patterns page, and
+   the V26 LISP Optimiser pages.
+5. Cross-checked against the V25 "What's New in BricsCAD Lisp" page
+   and the V14/V9 LISP Compatibility pages where current pages
+   returned 404.
+6. Normalised every symbol name to lowercase for diffing.
+7. Computed the diff against the 328 dictionary entries already
+   present in the specification draft.
+
+** 2.3 Caveats
+
+- The Bricsys developer-reference index page is JavaScript-driven, so
+  raw HTTP fetching of the framed TOC returns only the top-level
+  category names. The full TOC tree is built at runtime from a
+  ~chmtop.c2wtopf.TITEMS~ JavaScript array. Phase 1 was therefore
+  re-run inside a real Chromium instance (via the Claude-in-Chrome
+  MCP) on 2026-04-26: the live TITEMS tree was walked recursively
+  and dumped to ~bricscad-lisp-toc.txt~ (1934 entries, 95.6 KB).
+  This is the authoritative BricsCAD V26 LISP catalogue.
+- The historical compatibility-table pages
+  (~IDR_LISP_B100.htm~, ~CompatibilityWithAutoCAD.htm~,
+  ~LISPCompatibility.htm~) returned 404 in V25 and V26; only the V9
+  page is currently reachable. Per-symbol BricsCAD support for
+  AutoCAD-documented AutoLISP names is now established by direct
+  presence in the BricsCAD V26 TOC, not inferred — see §6 and §9.
+- AutoCAD's localised reference URLs (FRA, KOR, CHT, ENU, ...) all
+  resolve to the same content keyed by GUID. This inventory records
+  ENU URLs only.
+
+* 3 Authoritative Source URLs
+
+** 3.1 AutoCAD 2026
+
+- AutoLISP Functions By Name and Feature index:
+  https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-4CEE5072-8817-4920-8A2D-7060F5E16547.htm
+- Per-letter alphabetical indexes (Non-alphabetic, A, B, C, D, E, F,
+  G, H, I, L, M, N, O, P, Q, R, S, T, U, V, W, X, Z) — see
+  GUID table in [[#62-feature-categories][§6.2]] of this document.
+
+** 3.2 BricsCAD V26
+
+The BricsCAD V26 LISP TOC (recovered live from the JS-built tree on
+2026-04-26) has 30 top-level sections under the LISP root.
+Section headings, in TOC order, with their entry pages:
+
+| Section                                  | Page                                    |
+|------------------------------------------+-----------------------------------------|
+| LISP overview                            | source/LISP.htm                         |
+| Introduction                             | source/Introduction.htm                 |
+| Compatibility Changes                    | source/CompatibilityChanges.htm         |
+| Application Security                     | source/ApplicationSecurity.htm          |
+| AutoLISP Standard Functions              | source/AutoLISPCStandardFunctions.htm   |
+| Automatic LISP + VBA Loading             | source/AutomaticLISPVBALoading.htm      |
+| Generic Properties Functions             | source/GenericPropertiesFunctions.htm   |
+| BricsCAD DCL Support                     | source/BricsCADDCLSupport.htm           |
+| BricsCAD LISP Memory Configuration       | source/BricsCADLISPMemoryConfiguration.htm |
+| BricsCAD LISP Error Control              | source/BricsCADLISPErrorControl.htm     |
+| BricsCAD LISP Functions                  | source/BricsCADLISPFunctions.htm        |
+| BricsCAD LISP Protected Names            | source/BricsCADLISPProtectedNames.htm   |
+| BricsCAD BIM LISP API                    | source/BricsCADBIMLISPAPI.htm           |
+| BricsCAD Civil3D LISP API                | source/BricsCADCivil3DLISPAPI.htm       |
+| BricsCAD Civil GIS LISP API              | source/BricsCADCivilGISLISPAPI1.htm     |
+| BricsCAD Civil Tin Surface LISP API      | source/BricsCADCivilTinSurfaceLISPAPI.htm |
+| BricsCAD GeoCoordinateSystem LISP API    | source/BricsCADGeoCoordinateSystemLISPA.htm |
+| BricsCAD Mechanical LISP API             | source/BricsCADMechanicalLISPAPI.htm    |
+| BricsCAD SheetSetManager COM / LISP API  | source/BricsCADSheetSetManagerCOMLISPAP.htm |
+| BricsCAD SheetMetal LISP API             | source/BricsCADSheetMetalLISPAPI.htm    |
+| Extended AutoLISP Functions              | source/ExtendedAutoLISPFunctions.htm    |
+| VLE LISP Function Library                | source/VLELISPFunctionLibrary.htm       |
+| VLX NameSpace Support                    | source/VLXNameSpaceSupport.htm          |
+| ExpressTools API Support                 | source/ExpressToolsAPISupport.htm       |
+| DOSLib for Linux + Mac                   | source/DOSLibforLinuxMac.htm            |
+| LISP "Fast-COM"                          | source/LISPFastCOM.htm                  |
+| LISP Optimiser                           | source/LISPOptimiser.htm                |
+| LISP Benchmark                           | source/LISPBenchmark.htm                |
+| General Performance Hints                | source/GeneralPerformanceHints.htm      |
+| DEScoder LISP encryption                 | source/DEScoderLISPencryption.htm       |
+| Support for UltraEdit Editor             | source/SupportforUltraEditEditor.htm    |
+
+The vertical-API sections (BIM, Civil3D, Civil GIS, Civil Tin
+Surface, GeoCoordinateSystem, Mechanical, SheetSetManager,
+SheetMetal) are out of scope for ~clautolisp~ per project decision
+dated 2026-04-26 and are listed only as reference URLs.
+
+Construct individual page URLs as
+~https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/{page}~.
+
+* 4 Inventory Summary
+
+The 2026-04-26 Phase-1-revisited counts (after walking the BricsCAD
+V26 TOC inside Chrome) are:
+
+| Set                                                                              | Count |
+|----------------------------------------------------------------------------------+-------|
+| AutoCAD 2026 documented symbols                                                  |   485 |
+| BricsCAD V26 in-scope LISP entries (TOC leaves with .htm pages, verticals removed) |   941 |
+|     - Standard AutoLISP Functions section                                        |   460 |
+|     - BricsCAD-Specific LISP Functions section                                   |    86 |
+|     - Generic Properties Functions section                                       |     6 |
+|     - BricsCAD LISP Error Control section                                        |     4 |
+|     - Extended AutoLISP Functions section                                        |     3 |
+|     - VLE LISP Function Library section                                          |   117 |
+|     - VLX NameSpace Support section                                              |    13 |
+|     - ExpressTools API Support section                                           |   261 |
+|     - DOSLib for Linux + Mac section                                             |    23 |
+| Existing specification dictionary entries (post Phase 3)                         |   594 |
+| Spec ∩ BricsCAD V26 (already present)                                            |   564 |
+| In BricsCAD V26 TOC but missing from the spec (Phase-2 follow-up)                |   377 |
+| In spec only (not on either vendor index — concept entries)                      |    14 |
+
+The "In spec only" set is mostly concept-level entries that have no
+single vendor function page (reader-syntax classes, type entries,
+the constants ~nil~, ~t~, ~pi~, ~pause~). One entry, ~autload~, was a
+typo of ~autoload~ and was renamed in Phase 2.
+
+The "377 missing" set is the Phase-2 follow-up: it expands chapter
+24 (BricsCAD Extensions) to cover the BricsCAD-only sections that
+the JS-driven TOC was hiding from the original Phase-1 fetch. The
+breakdown is in §8.13.
+
+* 5 Per-Symbol Availability Model
+
+For Phase 2 onward, every dictionary entry in the spec must carry an
+explicit availability cell. The agreed-upon vocabulary is:
+
+- ~AutoCAD~: documented on Autodesk's per-symbol page; not documented
+  by Bricsys.
+- ~BricsCAD~: documented by Bricsys; not documented by Autodesk.
+- ~Both~: documented (or strongly implied as compatible) by both
+  vendors.
+- ~Both (presumed)~: in the AutoCAD AutoLISP reference and not
+  contradicted by Bricsys, with no direct Bricsys page; default for
+  AutoLISP core symbols pending a per-symbol confirmation.
+- ~AutoCAD-Windows~: documented as Windows-only by Autodesk
+  (ActiveX, ~acet-*~ Express Tools, several DCL helpers); BricsCAD
+  status TBD.
+- ~Both with divergence~: documented by both vendors, but with
+  different signature, return shape, or platform footprint.
+
+In the dictionary entries this becomes:
+
+#+begin_example
+*** Availability
+- AutoCAD 2026: yes (Windows + macOS, except where noted).
+- BricsCAD V26: yes (Windows + macOS + Linux).
+- Status: documented in both.
+#+end_example
+
+* 6 AutoCAD 2026 Inventory
+
+** 6.1 By family
+
+- Arithmetic, comparison, bitwise: ~+~, ~-~, ~*~, ~/~, ~=~, ~/=~,
+  ~<~, ~<=~, ~>~, ~>=~, ~~~, ~1+~, ~1-~, ~abs~, ~atan~, ~boole~,
+  ~cos~, ~exp~, ~expt~, ~fix~, ~float~, ~gcd~, ~log~, ~logand~,
+  ~logior~, ~lsh~, ~max~, ~min~, ~minusp~, ~numberp~, ~rem~, ~sin~,
+  ~sqrt~, ~zerop~.
+- Equality, predicates, type: ~eq~, ~equal~, ~atom~, ~boundp~,
+  ~listp~, ~null~, ~not~, ~type~.
+- Conditionals and binding: ~if~, ~cond~, ~and~, ~or~, ~progn~,
+  ~repeat~, ~while~, ~foreach~, ~setq~, ~set~, ~lambda~, ~defun~,
+  ~defun-q~, ~defun-q-list-ref~, ~defun-q-list-set~, ~function~,
+  ~quote~, ~apply~, ~eval~.
+- List manipulation: ~car~, ~cdr~, ~cadr~, ~caddr~, ~cons~, ~list~,
+  ~append~, ~length~, ~last~, ~mapcar~, ~member~, ~nth~, ~reverse~,
+  ~subst~, ~assoc~.
+- Symbol handling: ~atoms-family~, ~snvalid~, ~vl-symbol-name~,
+  ~vl-symbol-value~, ~vl-symbolp~.
+- String handling: ~ascii~, ~chr~, ~strcase~, ~strcat~, ~strlen~,
+  ~substr~, ~wcmatch~, plus ~vl-string-*~ family
+  (~vl-string-elt~, ~vl-string-left-trim~, ~vl-string-mismatch~,
+  ~vl-string-position~, ~vl-string-right-trim~, ~vl-string-search~,
+  ~vl-string-subst~, ~vl-string-translate~, ~vl-string-trim~,
+  ~vl-string->list~, ~vl-list->string~).
+- Numeric / string conversion: ~atof~, ~atoi~, ~itoa~, ~rtos~,
+  ~angtof~, ~angtos~, ~distof~, ~cvunit~.
+- Geometric: ~angle~, ~distance~, ~inters~, ~osnap~, ~polar~,
+  ~textbox~, ~trans~.
+- Selection sets: ~ssadd~, ~ssdel~, ~ssget~, ~ssgetfirst~,
+  ~sslength~, ~ssmemb~, ~ssname~, ~ssnamex~, ~sssetfirst~.
+- Entity / drawing: ~entdel~, ~entget~, ~entlast~, ~entmake~,
+  ~entmakex~, ~entmod~, ~entnext~, ~entsel~, ~entupd~, ~handent~,
+  ~nentsel~, ~nentselp~, ~namedobjdict~, ~regapp~, ~tblnext~,
+  ~tblobjname~, ~tblsearch~, ~xdroom~, ~xdsize~,
+  ~dictadd~, ~dictnext~, ~dictremove~, ~dictrename~, ~dictsearch~,
+  ~getpropertyvalue~, ~setpropertyvalue~, ~ispropertyreadonly~,
+  ~dumpallproperties~.
+- File and path: ~close~, ~findfile~, ~findtrustedfile~, ~load~,
+  ~open~, ~read-char~, ~read-line~, ~write-char~, ~write-line~,
+  ~vl-directory-files~, ~vl-file-copy~, ~vl-file-delete~,
+  ~vl-file-directory-p~, ~vl-file-rename~, ~vl-file-size~,
+  ~vl-file-systime~, ~vl-filename-base~, ~vl-filename-directory~,
+  ~vl-filename-extension~, ~vl-filename-mktemp~, ~vl-mkdir~,
+  ~vl-get-resource~.
+- Display / printer: ~prin1~, ~princ~, ~print~, ~prompt~, ~terpri~,
+  ~textpage~, ~textscr~, ~graphscr~, ~grclear~, ~grdraw~, ~grread~,
+  ~grtext~, ~grvecs~, ~redraw~, ~showhtmlmodalwindow~, ~tablet~,
+  ~vector_image~, ~vports~, ~setview~.
+- User input / Command: ~command~, ~command-s~, ~initcommandversion~,
+  ~initdia~, ~initget~, ~getangle~, ~getcorner~, ~getdist~,
+  ~getfiled~, ~getint~, ~getkword~, ~getorient~, ~getpoint~,
+  ~getreal~, ~getstring~, ~menucmd~, ~menugroup~, ~startapp~,
+  ~vl-cmdf~.
+- DCL: ~load_dialog~, ~unload_dialog~, ~new_dialog~,
+  ~start_dialog~, ~done_dialog~, ~term_dialog~,
+  ~action_tile~, ~client_data_tile~, ~mode_tile~, ~set_tile~,
+  ~get_tile~, ~get_attr~, ~dimx_tile~, ~dimy_tile~,
+  ~start_image~, ~end_image~, ~fill_image~, ~slide_image~,
+  ~vector_image~,
+  ~start_list~, ~end_list~, ~add_list~.
+- Application / system: ~alert~, ~exit~, ~quit~, ~help~,
+  ~setfunhelp~, ~ver~, ~setvar~, ~getvar~, ~getenv~, ~setenv~,
+  ~getcfg~, ~setcfg~, ~getcname~, ~layoutlist~, ~acdimenableupdate~,
+  ~arx~, ~arxload~, ~arxunload~, ~autoarxload~, ~autoload~,
+  ~vl-load-all~, ~vl-load-com~, ~vl-load-reactors~,
+  ~vl-doc-export~, ~vl-doc-import~, ~vl-doc-ref~, ~vl-doc-set~,
+  ~vl-bb-ref~, ~vl-bb-set~, ~vl-propagate~,
+  ~vl-acad-defun~, ~vl-acad-undefun~, ~vl-arx-import~,
+  ~vl-list-exported-functions~, ~vl-list-loaded-vlx~,
+  ~vl-vlx-loaded-p~, ~vl-unload-vlx~,
+  ~vl-vbaload~, ~vl-vbarun~, ~vlisp-compile~,
+  ~vl-list-length~, ~vl-list*~,
+  ~vl-prin1-to-string~, ~vl-princ-to-string~,
+  ~vl-registry-delete~, ~vl-registry-descendents~,
+  ~vl-registry-read~, ~vl-registry-write~.
+- Memory and debugging: ~alloc~, ~expand~, ~gc~, ~mem~, ~trace~,
+  ~untrace~.
+- Error handling: ~*error*~, ~*pop-error-mode*~,
+  ~*push-error-using-command*~, ~*push-error-using-stack*~,
+  ~vl-catch-all-apply~, ~vl-catch-all-error-message~,
+  ~vl-catch-all-error-p~, ~vl-exit-with-error~, ~vl-exit-with-value~.
+- Layer states: ~layerstate-addlayers~, ~layerstate-compare~,
+  ~layerstate-delete~, ~layerstate-export~,
+  ~layerstate-getlastrestored~, ~layerstate-getlayers~,
+  ~layerstate-getnames~, ~layerstate-has~, ~layerstate-import~,
+  ~layerstate-importfromdb~, ~layerstate-removelayers~,
+  ~layerstate-rename~, ~layerstate-restore~, ~layerstate-save~.
+- Higher-order list: ~vl-every~, ~vl-some~, ~vl-position~,
+  ~vl-remove~, ~vl-remove-if~, ~vl-remove-if-not~, ~vl-member-if~,
+  ~vl-member-if-not~, ~vl-consp~, ~vl-sort~, ~vl-sort-i~.
+- ActiveX / COM (Windows): ~vlax-*~ family — see [[#62-feature-categories][§6.2]] for the full
+  list extracted from the V Functions page.
+- Reactors: ~vlr-*~ family — see [[#62-feature-categories][§6.2]] for the full list.
+- Express Tools (Windows-only): ~acet-*~ family of 50 entries, plus
+  ~acad_colordlg~, ~acad_helpdlg~, ~acad_strlsort~,
+  ~acad_truecolorcli~, ~acad_truecolordlg~, ~acad-pop-dbmod~,
+  ~acad-push-dbmod~.
+
+** 6.2 Feature categories (canonical Autodesk grouping) <<#62-feature-categories>>
+
+This is the Autodesk-published partition. Phase 2 should align spec
+chapter ordering with these categories where possible, since this is
+how vendor users locate functions.
+
+| Group                                         | GUID (page)                                           |
+|-----------------------------------------------+-------------------------------------------------------|
+| Application-Handling                          | GUID-E2B683FE-43FB-4F5D-A9AE-809772FE8D3B             |
+| Arithmetic                                    | GUID-FC14467C-63B9-4400-8C6A-266D21C846AE             |
+| Equality and Conditionals                     | GUID-C6A7FC58-7A07-4650-9D59-12CAFD194FDA             |
+| Error-Handling                                | GUID-D114F1C4-DE8E-422D-8F3F-C43707B8212B             |
+| Function-Handling                             | GUID-6804DF2D-E5C4-466A-9869-3CDD7A031FAA             |
+| List Manipulation                             | GUID-00A75AFB-5708-4D0C-B18C-F74DDC4D65FA             |
+| String-Handling                               | GUID-8543549B-F0D7-43CD-87A3-F6B827FF0B88             |
+| Symbol-Handling                               | GUID-796EFF94-E904-4F5B-B120-C6D2DCD8646A             |
+| Data Conversion                               | GUID-5BDBD4BC-289E-4A49-9BB9-DF6A6147E0FC             |
+| Device Access                                 | GUID-018821E0-23F6-43F0-9548-6ABC70A180A0             |
+| Display Control                               | GUID-9C2C56A3-0BEF-45AB-A7FE-5825339DCB41             |
+| File-Handling                                 | GUID-F70DECFC-DBE1-4F04-A64C-B3F869A636A2             |
+| Geometric                                     | GUID-8C29D7A3-9CBB-47A8-A936-87118782303B             |
+| Query and Command                             | GUID-F9ABE09D-9A71-4C00-8E5D-5BA70C3797B5             |
+| User Input                                    | GUID-49DBE7DD-D1D2-4B3A-9718-E3F4E2FD5E81             |
+| Memory Management                             | GUID-0EA35DD5-0C92-4AF8-B3AE-EFA35A5FDF55             |
+| Windows Registry / Property List Files        | GUID-E3D3DA29-AF63-41D3-865C-39E50FF31596             |
+| Extended Data-Handling                        | GUID-0949AEA9-3942-42C5-8DF4-BC58758319BD             |
+| Object-Handling                               | GUID-1197B695-C73C-4B4D-AD5D-8F8EB64FB253             |
+| Selection Set Manipulation                    | GUID-43715289-5715-4F96-8D48-3169FA26777A             |
+| Symbol Table and Dictionary-Handling          | GUID-7AACB386-1AA1-4BDF-B5D7-A1E23A51CA15             |
+| DCL Dialog Box Opening and Closing            | GUID-A96C28B5-4B9A-4EE8-8C46-808F14217777             |
+| DCL Tile- and Attribute-Handling              | GUID-B254FD2A-669A-4A16-9816-AAC79E983571             |
+| DCL List Box and Pop-Up List-Handling         | GUID-67E20E58-77B0-434C-B312-055203408B56             |
+| DCL Image Tile-Handling                       | GUID-F9D9DC98-27AB-4BB4-BACC-C5B732110CB5             |
+| DCL Application-Specific Data-Handling        | GUID-3C0BB4C6-D548-45FE-BF16-2D0E2039EC40             |
+| DCL Tile Attributes Reference                 | GUID-5B0C8B10-F968-4A56-B4A5-6A26935B341A             |
+| DCL Tiles Reference                           | GUID-F8F5A79B-9A05-4E25-A6FC-9720216BA3E7             |
+| ActiveX Collection Manipulation               | GUID-B62C742B-FF80-4D67-A827-EC8E41E31DF8             |
+| ActiveX Data Conversion                       | GUID-042A3895-D875-4FD2-A1E1-A3B565B27DE5             |
+| ActiveX Method Invocation                     | GUID-BE140F3B-7FA8-47A5-B90E-A97CBFDF7502             |
+| ActiveX Object-Handling                       | GUID-6FB61071-0F0D-40EF-A873-7C3561F03C29             |
+| ActiveX Property-Handling                     | GUID-656BFB33-0F62-42BF-A211-20C481C946A9             |
+| Curve Measurement                             | GUID-4684C76F-02F7-4989-AA53-C886E528350A             |
+| Dictionary (ActiveX)                          | GUID-F5F376FF-9BC2-476A-9EA9-1455D28DE264             |
+| Drawing Objects                               | GUID-DF1CB039-265D-4D17-A86E-EF966DC4C14B             |
+| Reactors                                      | GUID-B83B512E-CEF6-43C5-9099-398999E254AF             |
+| VLX Namespace                                 | GUID-5784FC6F-82DD-4459-879B-6EC3BD5E88D1             |
+| Namespace Communication                       | GUID-F5DD5472-1695-4CA3-9110-E6008E87BB89             |
+| Express Tools — Entity and Selection          | GUID-676F8B1B-7C23-4480-9DD4-19D0836EAE08             |
+| Express Tools — File                          | GUID-05EB15E4-F0ED-4AC7-885D-94B4F6DE9F94             |
+| Express Tools — Initialization File / Registry | GUID-9F789A1F-D7E1-4655-87C3-906B908AF5B8            |
+| Express Tools — String                        | GUID-4CE7D81F-BFE6-4221-B9FE-EC7D7680546E             |
+| Express Tools — System                        | GUID-6BCE925F-D717-4BCF-88F8-9F6FBBE7427A             |
+| Express Tools — User Interface and Help       | GUID-F2967662-438E-425A-BFCC-BD7526074C13             |
+
+Construct individual page URLs as
+~https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/{GUID}.htm~.
+
+** 6.3 Per-letter index GUIDs
+
+| Letter         | GUID                                            |
+|----------------+-------------------------------------------------|
+| Non-alphabetic | GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1       |
+| A              | GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49       |
+| B              | GUID-72F902B6-5665-48C3-9F49-6ADC643FFCB0       |
+| C              | GUID-24064CFF-9E44-4A3A-905F-CF6B7B56BCDB       |
+| D              | GUID-76EE3904-E89B-441A-84FD-C0AB3289742C       |
+| E              | GUID-512FDA63-ABA7-4C3C-A2DF-F700C440A7AA       |
+| F              | GUID-4A2DC31F-E543-48A8-BC0A-0AF5E29A3034       |
+| G              | GUID-88320FBD-B49E-445A-A5C1-C2ABA98341BC       |
+| H              | GUID-B3916684-1429-4213-875B-E52A5FE5102A       |
+| I              | GUID-D7758C19-D29B-4362-BBC8-1273294B1756       |
+| L              | GUID-923D3AAC-6A65-4266-B270-8E90C3F423ED       |
+| M              | GUID-00EF1664-BBAD-476D-A31C-2F6DD90C1BB4       |
+| N              | GUID-FFE879C9-9C1B-49E7-8182-313FFD7CAC6B       |
+| O              | GUID-4C431C76-F9F6-482C-B7C6-B63EB0614DDE       |
+| P              | GUID-088AD4D0-7088-4465-8CA5-57E8453480E7       |
+| Q              | GUID-D576D1AC-4A40-442F-AFC7-05638821EAAA       |
+| R              | GUID-F141C324-736E-4A9F-9DD3-B445C93984FA       |
+| S              | GUID-FAD2CDD5-50CD-4328-B391-C898AAD4E401       |
+| T              | GUID-424BAAF1-69C6-4DBF-9948-8B09DF0A40A9       |
+| U              | GUID-BF6E5B5D-781C-4DF1-85ED-3109430C76CE       |
+| V              | GUID-26FF2BE2-B5BF-4DD1-A617-36727E51F516       |
+| W              | GUID-4A800AF5-42E5-486F-9AD5-47CE0CAFCED0       |
+| X              | GUID-AC778C63-ADF7-4D92-88FE-034FB4C131DD       |
+| Z              | GUID-1628C9F6-677D-4C2A-A7C7-51C543B994E7       |
+
+(There are no public J, K, or Y letter pages because no AutoLISP
+function name starts with those letters.)
+
+* 7 Spec-only Entries and Issues <<#7-spec-only-entries-and-issues>>
+
+The following 14 spec dictionary entries do not appear on the
+Autodesk per-letter pages. All but one are concept-level entries
+that are correct as spec material:
+
+- Reader-syntax classes: ~Integer Literal~, ~Real Literal~,
+  ~String Literal~, ~Symbol~, ~List~, ~Dotted Pair~, ~Quote~ —
+  these have no individual vendor function page.
+- Type entries: ~ENAME~, ~FILE~, ~PICKSET~, ~REACTOR OBJECT~ —
+  documented in vendor prose, not as a function entry.
+- Constants: ~NIL~, ~T~, ~PI~ — referenced throughout vendor prose.
+- ~PAUSE~ — documented as a special token in user-input prose, not a
+  function.
+
+One issue:
+
+- ~AUTLOAD~ in the spec is a typo of Autodesk's ~autoload~. Phase 2
+  must rename the entry.
+
+* 8 Delta — Missing from the Spec
+
+171 symbols documented by Autodesk 2026 are absent from the spec
+draft. This section partitions them so Phase 2 can attack them in
+priority order.
+
+** 8.1 P0 — Core language essentials (must add first)
+
+These are language fundamentals that any HyperSpec-style reference
+must contain. Their absence is a structural gap.
+
+- Higher-order: ~apply~, ~eval~.
+- Equality: ~eq~, ~equal~.
+- Arithmetic / numeric predicates: ~atan~, ~cos~, ~sin~, ~exp~,
+  ~expt~, ~log~, ~sqrt~, ~max~, ~min~, ~gcd~, ~rem~, ~numberp~,
+  ~1+~, ~1-~, ~~~ (bitwise NOT), ~boole~, ~logand~, ~logior~,
+  ~lsh~.
+- List access: ~cadr~, ~caddr~.
+- Symbol introspection: ~atoms-family~.
+- String matching: ~wcmatch~.
+- List length variant: ~vl-list-length~.
+- Geometry: ~trans~.
+- Naming: ~autoload~ (also fixes the ~autload~ typo).
+
+** 8.2 P1 — Selection-set / drawing surface
+
+- ~ssgetfirst~, ~sssetfirst~, ~ssmemb~, ~ssnamex~,
+  ~entmakex~, ~entupd~, ~regapp~, ~xdroom~, ~xdsize~.
+
+** 8.3 P1 — Display, redraw, and screen control
+
+- ~redraw~, ~graphscr~, ~textpage~, ~textscr~, ~grclear~, ~grdraw~,
+  ~grtext~, ~grvecs~, ~tablet~, ~vports~, ~setview~.
+
+** 8.4 P1 — Application / configuration / environment
+
+- ~arx~, ~getenv~, ~setenv~, ~getcfg~, ~setcfg~, ~getcname~,
+  ~layoutlist~, ~initcommandversion~, ~setfunhelp~, ~help~,
+  ~menucmd~, ~menugroup~, ~snvalid~, ~acdimenableupdate~.
+
+** 8.5 P1 — Memory / debugging
+
+- ~alloc~, ~expand~, ~gc~, ~mem~.
+
+** 8.6 P1 — Layer state family (14 entries)
+
+- ~layerstate-addlayers~, ~layerstate-compare~,
+  ~layerstate-delete~, ~layerstate-export~,
+  ~layerstate-getlastrestored~, ~layerstate-getlayers~,
+  ~layerstate-getnames~, ~layerstate-has~, ~layerstate-import~,
+  ~layerstate-importfromdb~, ~layerstate-removelayers~,
+  ~layerstate-rename~, ~layerstate-restore~, ~layerstate-save~.
+
+  In BricsCAD V26 these are documented under the parallel
+  ~vl-layerstates-*~ family (10 entries). The spec must record this
+  divergence with cross-references in both directions.
+
+** 8.7 P1 — DCL completion
+
+- ~term_dialog~, ~add_list~, ~start_list~, ~end_list~,
+  ~start_image~, ~end_image~, ~fill_image~, ~slide_image~,
+  ~vector_image~, ~dimx_tile~, ~dimy_tile~, ~get_attr~,
+  ~client_data_tile~.
+
+** 8.8 P2 — Reactor completion
+
+- ~vlr-beep-reaction~, ~vlr-trace-reaction~, ~vlr-notification~,
+  ~vlr-set-notification~, ~vlr-toolbar-reactor~,
+  ~vlr-pers~, ~vlr-pers-list~, ~vlr-pers-p~, ~vlr-pers-release~,
+  ~vlr-owners~, ~vlr-owner-add~, ~vlr-owner-remove~.
+
+** 8.9 P2 — ActiveX completion
+
+- ~vlax-tmatrix~, ~vlax-typeinfo-available-p~.
+
+** 8.10 P2 — Visual LISP registry (Windows / Mac plist)
+
+- ~vl-registry-delete~, ~vl-registry-descendents~,
+  ~vl-registry-read~, ~vl-registry-write~.
+
+** 8.11 P2 — Visual LISP compile
+
+- ~vlisp-compile~ — body must record both AutoCAD and BricsCAD
+  signatures, including the BricsCAD ~'st / 'lsm / 'lsa~ mode symbol
+  (ignored in BricsCAD V26) and the ~.des~ default output extension.
+
+** 8.12 P3 — Express Tools (AutoCAD-Windows only, 57 entries)
+
+These should live in their own chapter — Phase 4 work — so the core
+chapters do not balloon with Windows-only material.
+
+- ~acad_colordlg~, ~acad_helpdlg~, ~acad_strlsort~,
+  ~acad_truecolorcli~, ~acad_truecolordlg~,
+  ~acad-pop-dbmod~, ~acad-push-dbmod~,
+  ~acet-ent-geomextents~,
+  ~acet-file-attr~, ~acet-file-chdir~, ~acet-file-copy~,
+  ~acet-file-cwd~, ~acet-file-dir~, ~acet-file-mkdir~,
+  ~acet-file-move~, ~acet-file-remove~, ~acet-file-rmdir~,
+  ~acet-help~, ~acet-help-trap~,
+  ~acet-ini-get~, ~acet-ini-set~,
+  ~acet-layerp-mark~, ~acet-layerp-mode~, ~acet-laytrans~,
+  ~acet-load-expresstools~,
+  ~acet-ms-to-ps~, ~acet-ps-to-ms~,
+  ~acet-reg-del~, ~acet-reg-get~, ~acet-reg-machine-prodkey~,
+  ~acet-reg-prodkey~, ~acet-reg-put~, ~acet-reg-user-prodkey~,
+  ~acet-ss-drag-move~, ~acet-ss-drag-rotate~, ~acet-ss-drag-scale~,
+  ~acet-str-collate~, ~acet-str-equal~, ~acet-str-find~,
+  ~acet-str-format~, ~acet-str-replace~, ~acet-str-wcmatch~,
+  ~acet-sys-beep~, ~acet-sys-command~, ~acet-sys-foreground~,
+  ~acet-sys-keystate~, ~acet-sys-lasterr~, ~acet-sys-procid~,
+  ~acet-sys-sleep~, ~acet-sys-spawn~, ~acet-sys-term~,
+  ~acet-sys-wait~,
+  ~acet-ui-message~, ~acet-ui-pickdir~, ~acet-ui-progress~,
+  ~acet-ui-status~, ~acet-ui-txted~.
+
+** 8.13 Phase-2 follow-up — BricsCAD V26 entries newly discovered after the live-TOC walk
+
+The Phase-1 revisit on 2026-04-26 (live-DOM walk inside Chrome,
+extracted to ~bricscad-lisp-toc.txt~) revealed 377 BricsCAD V26 LISP
+TOC leaves that are documented by Bricsys but were absent from the
+spec. These are addressed by an expanded chapter 24 (BricsCAD
+Extensions). The breakdown:
+
+| Family                                       | Count | Notes                                                                |
+|----------------------------------------------+-------+----------------------------------------------------------------------|
+| ExpressTools API Support (~acet-*~)          |   208 | BricsCAD's port of AutoCAD Express Tools, with extra functions.      |
+| ExpressTools API (~acet::*~ namespace)       |     8 | BricsCAD-only ~acet::~ namespace under ExpressTools API.             |
+| VLE LISP Function Library (~vle-*~ / ~vle_*~)|   105 | BricsCAD-only optimiser / utility intrinsics.                        |
+| DOSLib for Linux + Mac (~dos_*~ / ~doc_*~)   |    23 | BricsCAD-only port of DOSLib.                                        |
+| Viewport-Layer (~vl-vplayer-*~)              |     9 | BricsCAD-only viewport-layer property accessors.                     |
+| Standard / Misc (~ads~, ~bpoly~, ~vmon~, etc.) |   5 | AutoLISP-named functions Bricsys documents that Autodesk 2026 does not. |
+| ActiveX Extension (~vlax-*~)                 |     4 | BricsCAD-only ActiveX additions.                                     |
+| Reactor Extension (~vlr-*~)                  |     3 | BricsCAD-only reactor additions.                                     |
+| VLX Namespace (~vlisp-*~ obsolete shims)     |     3 | Obsolete VLX namespace symbols.                                      |
+| Visual LISP Extension (~vl-infp~ etc.)       |     3 | BricsCAD-only floating-point predicates / init.                      |
+| Error Control (~vl-bt~, ~vl-bt-on/off~)      |     3 | BricsCAD-only backtrace toggles.                                     |
+| Generic Properties (~ispropertyvalid~ etc.)  |     2 | BricsCAD-only generic-property helpers.                              |
+| BricsCAD System (~bcad$disable-extended-error~) | 1 | BricsCAD-only error-mode toggle.                                     |
+| *Total*                                      |   377 |                                                                      |
+
+The full name → BricsCAD V26 page-URL list lives in
+~bricscad-stubs-data.tsv~ (Phase-2 generator input).
+
+* 9 BricsCAD V26 BricsCAD-Specific Extensions
+
+Bricsys explicitly documents the following 96 LISP symbols as
+BricsCAD-only extensions. They must each appear in the spec as
+dictionary entries with availability ~BricsCAD~. ~since~ tags reflect
+the version field given on the BricsCAD-Specific LISP Functions page
+when present.
+
+** 9.1 Numeric / math (no documented Autodesk equivalent)
+
+- ~acos~, ~asin~, ~atanh~, ~ceiling~, ~cosh~, ~floor~, ~log10~,
+  ~mod~, ~power~, ~random~, ~round~, ~sinh~, ~tan~, ~tanh~.
+
+  Notes:
+
+  - ~mod~ is a BricsCAD modulus function; in Autodesk 2026 ~rem~ is
+    the analogous primitive.
+  - ~ceiling~ / ~floor~ / ~round~ have no direct AutoCAD analogue
+    other than ~fix~ (which truncates).
+
+** 9.2 List, string, and control flow extensions
+
+- ~position~, ~remove~, ~string-split~, ~until~.
+
+  Notes:
+
+  - ~position~ overlaps semantically with Autodesk's
+    ~vl-position~ but uses a different name.
+  - ~remove~ overlaps semantically with ~vl-remove~.
+  - ~string-split~ has no direct AutoCAD analogue and is a frequent
+    portability stumbling block.
+  - ~until~ is a control structure with no Autodesk equivalent.
+
+** 9.3 System and process
+
+- ~bcad$licenselevels~, ~get_diskserialid~, ~getpid~,
+  ~lisp$enablefastcom~, ~lisp$install~, ~lisp$version~, ~sleep~,
+  ~inspector~ (since V18.2), ~vlisp-optimizer~.
+
+** 9.4 DCL extensions and graphical primitives
+
+- ~dlg-sysvars~ (since V20), ~grarc~, ~grfill~, ~init_dialog~,
+  ~redraw_dialog~.
+
+** 9.5 vl-* extensions specific to BricsCAD
+
+- Layer-state group (parallel to Autodesk ~layerstate-*~ family):
+  ~vl-layerstates-delete~, ~vl-layerstates-getdescription~,
+  ~vl-layerstates-getpropertymask~, ~vl-layerstates-has~,
+  ~vl-layerstates-list~, ~vl-layerstates-rename~,
+  ~vl-layerstates-restore~, ~vl-layerstates-save~,
+  ~vl-layerstates-setdescription~, ~vl-layerstates-setpropertymask~.
+- Annotative-objects group:
+  ~vl-annotative-addscale~, ~vl-annotative-get~,
+  ~vl-annotative-getscales~, ~vl-annotative-remove~,
+  ~vl-annotative-removescale~, ~vl-annotative-reset~,
+  ~vl-annotative-scalelist~, ~vl-annotative-set~,
+  ~vl-annotative-setscales~, ~vl-annotative-supported~.
+- Sub-entity group (since V23.1):
+  ~vl-subent-atpoint~, ~vl-subent-select~, ~vl-subent-ssadd~,
+  ~vl-subent-ssdel~, ~vl-subent-ssmemb~.
+- Local-undo group (since V24.1):
+  ~vl-local-undo-clear~, ~vl-local-undo-pop~, ~vl-local-undo-push~,
+  ~vl-local-undo-reset~, ~vl-local-undo-steps~.
+- Filesystem and shell:
+  ~vl-getcurrentdir~, ~vl-setcurrentdir~,
+  ~vl-getstartupdir~, ~vl-rmdir~, ~vl-list-loaded-lisp~.
+- Cancel and prompt:
+  ~vl-enable-user-cancel~, ~vl-hidepromptmenu~, ~vl-showpromptmenu~.
+- Misc:
+  ~vl-getgeomextents~, ~vl-string-split~,
+  ~vl-vector-project-pointtoentity~ (since V20).
+
+** 9.6 vla-* and ActiveX extensions
+
+- ~vla-collection->list~, ~vla-postcommand~ (since V22),
+  ~_vlax-safearray-mode~, ~dictobjname~.
+
+** 9.7 VLE (Visual LISP Extensions) optimised intrinsics
+
+- ~vle-optimiser~ — optimizer toggle.
+- ~vle-nth0~ ... ~vle-nth9~ — optimised positional accessors.
+- ~vle-cdrassoc~ — optimised ~(cdr (assoc ...))~ idiom.
+- ~vle-remove-last~ — optimised "drop the last element".
+- ~vle-entget~, ~vle-tblsearch~, ~vle-dictsearch~,
+  ~vle-dictobjname~ — optimised drawing-database accessors.
+- ~vle-ename-valid~ — optimised entity-name validity check.
+- ~vle-file-encoding~ — encoding declarator for text-file I/O.
+
+* 10 Cross-Vendor Divergence Items Identified in Phase 1
+
+The following points were noticed during inventory and must be
+reflected in dictionary entries during Phase 3 / 4:
+
+1. ~vlisp-compile~ has different mode arguments and different output
+   formats:
+   - Autodesk: produces ~.fas~, ~.vlx~ artefacts (per Autodesk
+     reference page).
+   - BricsCAD V26: produces ~.des~ encrypted output; the mode symbol
+     ~'st / 'lsm / 'lsa~ is documented as accepted but ignored.
+2. ~open~ accepts BricsCAD-extended ~ccs=~ encoding clauses
+   (~"r,ccs=UNICODE"~, ~"r,ccs=UTF-8"~, ~"r,ccs=UTF-16LE"~,
+   ~"w,ccs=UTF-8"~, ~"w,ccs=UTF-16LE"~) that are not part of the
+   Autodesk ~open~ surface. Autodesk's Unicode story is governed by
+   ~LISPSYS~ instead; BricsCAD's is per-call.
+3. ~ssget~ and ~ssadd~ are documented as having BricsCAD-specific
+   enhancements (V9-era compatibility page).
+4. ~menucmd~ is documented in BricsCAD as supporting only the P0 and
+   P1-P16 cursor / pulldown forms, not auxiliary, button, icon,
+   diesel, screen, or tablet menus (V9-era compatibility page).
+5. ~tan~ is BricsCAD-only. AutoCAD users compute it as
+   ~(/ (sin x) (cos x))~.
+6. AutoCAD's ~layerstate-*~ family and BricsCAD's ~vl-layerstates-*~
+   family overlap in purpose but disagree on names; spec entries
+   must cross-link.
+7. AutoCAD's ~vl-position~ / ~vl-remove~ vs BricsCAD's ~position~ /
+   ~remove~ overlap on functionality; cross-reference required.
+8. The Autodesk ~vlax-typeinfo-available-p~ function is Windows-only;
+   BricsCAD parity status is unknown (404 on the Bricsys
+   compatibility table).
+9. The Autodesk ~vl-vbaload~ / ~vl-vbarun~ pair is Windows-only and
+   tied to AutoCAD's VBA module; BricsCAD does not document a
+   parallel VBA surface.
+10. ~showhtmlmodalwindow~ is Windows-only on Autodesk; BricsCAD has
+    no documented equivalent.
+
+* 11 Workflow into Phase 2
+
+This document is consumed by the next phase as follows:
+
+1. Phase 2 (index closure) walks the lists in [[#8-delta--missing-from-the-spec][§8]] and
+   [[#9-bricscad-v26-bricscad-specific-extensions][§9]] in priority order, adding stub dictionary entries with
+   the canonical vendor URL and an explicit ~Availability~ block.
+2. Phase 3 (body fill) fetches each per-symbol vendor page and
+   replaces the stub with a full HyperSpec-style entry. Phase 3 will
+   touch the spec body and bump the document version in
+   [[file:autolisp-visual-lisp-specification-draft.org][AutoLISP Spec]] in line with the AGENTS.md rule.
+3. Phase 4 (divergence reconciliation) addresses [[#10-cross-vendor-divergence-items-identified-in-phase-1][§10]] explicitly.
+4. Phase 5 (closure) finishes the items in
+   [[file:specification-resolution-plan.org][specification-resolution-plan.org]] (~atof~, ~atoi~ lex edges,
+   ~vl-member-if-not~, ~exit~ vs ~quit~, printer surface).
+
+* 12 Status
+
+- Document type: working artefact, not part of the normative spec.
+- License: CC-BY-SA, matching the spec.
+- Phase: 3 of 5 complete.
+- Date: 2026-04-26.
+
+** Phase progress
+
+- Phase 1 (vendor inventory, delta, divergence list): done.
+  - 2026-04-26 follow-up: re-walked the BricsCAD V26 LISP TOC inside Chrome via Claude-in-Chrome MCP, recovering 941 in-scope BricsCAD V26 LISP entries (vs. the 96 that were visible to the original raw-HTTP fetch). Inventory tables in §3.2, §4 and §8.13 updated.
+- Phase 2 (index closure): done; document version bumped to 0.2.0.
+  - 2026-04-26 follow-up: 377 newly-discovered BricsCAD-only stubs added to chapter 24 under a new "Phase-2 Follow-up Catalogue" section, grouped by family (ExpressTools API, VLE Library, DOSLib, vlax-, vlr-, vlisp-, etc.). Document version bumped to 0.4.0.
+- Phase 3 (body fill): done for the original 266 Phase-2 stubs; document version was bumped to 0.3.0 at that point. 265 of 266 Phase-2 stubs upgraded to full HyperSpec-style bodies; the one carry-over (`grclear`) is documented as legacy with the inventory citation that confirms its obsolete status. The 377 new Phase-2-follow-up stubs are body-pending and remain in scope for a future Phase-3 iteration.
+- Phase 4 (divergence reconciliation): pending; the divergence items in §10 of this document drive that work.
+- Phase 5 (long-running closure: `atof`, `atoi`, `vl-member-if-not`, `exit` vs `quit`, printer surface): pending; tracked in `specification-resolution-plan.org` and `PLAN.md`.
