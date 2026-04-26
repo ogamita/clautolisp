@@ -29,7 +29,11 @@
          (string-equal name "none"))
      *null-host*)
     ((string-equal name "mock")
-     (error "The 'mock' host backend is a Phase 9 deliverable and is not yet available; pass --host null or omit the flag."))
+     ;; Phase 9 deliverable: data structures only. Phase 10 fills in
+     ;; the entget / ssget / getvar / command surfaces; until then
+     ;; every host operation falls through to the base-class
+     ;; :host-not-supported diagnostic.
+     (make-mock-host))
     (t
      (error "Unknown host backend ~S. Expected one of: null, mock." name))))
 

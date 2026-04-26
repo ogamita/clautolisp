@@ -5,6 +5,7 @@
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
+               "clautolisp/autolisp-mock-host"
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-file-compat")
   :in-order-to ((asdf:test-op
@@ -65,6 +66,23 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/autolisp-mock-host"
+  :description "In-memory deterministic CAD-database backend (MockHost) for clautolisp."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-host" "clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-mock-host/source/package")
+   (:file "autolisp-mock-host/source/model")
+   (:file "autolisp-mock-host/source/sysvars")
+   (:file "autolisp-mock-host/source/api"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-mock-host/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
 (asdf:defsystem "clautolisp/autolisp-builtins-core"
   :description "Initial core builtin registry for clautolisp."
   :author "Codex"
@@ -115,6 +133,7 @@
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
+               "clautolisp/autolisp-mock-host"
                "clautolisp/autolisp-builtins-core"
                "uiop")
   :serial t
@@ -165,6 +184,22 @@
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (uiop:symbol-call :clautolisp.autolisp-host.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/autolisp-mock-host/tests"
+  :description "Tests for the clautolisp MockHost data carriers."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-mock-host" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-mock-host/tests/package")
+   (:file "autolisp-mock-host/tests/test-harness")
+   (:file "autolisp-mock-host/tests/model-tests")
+   (:file "autolisp-mock-host/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-mock-host.tests
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-runtime/tests"
@@ -223,6 +258,7 @@
   :depends-on ("clautolisp/autolisp-reader/tests"
                "clautolisp/autolisp-runtime/tests"
                "clautolisp/autolisp-host/tests"
+               "clautolisp/autolisp-mock-host/tests"
                "clautolisp/autolisp-builtins-core/tests"
                "clautolisp/autolisp-file-compat/tests")
   :perform (asdf:test-op (op system)
@@ -233,6 +269,8 @@
                            (uiop:symbol-call :clautolisp.autolisp-runtime.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-host.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-mock-host.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
                                              :run-all-tests)

@@ -124,3 +124,60 @@ not implement OPERATION."
 (defgeneric host-grclear (host)                          (:documentation "Clear the transient graphics layer."))
 (defgeneric host-grread  (host track key-press cursor)   (:documentation "Read a graphics-input event."))
 (defgeneric host-redraw  (host ename mode)               (:documentation "Force a redraw of ENAME under the host's display mode."))
+
+;;; --- Base-class fallback methods --------------------------------
+;;;
+;;; Every operation has a default method on the base `host` class
+;;; that signals :host-not-supported. This lets newly-introduced
+;;; backends (e.g. MockHost in Phase 9) inherit a sensible "not
+;;; yet implemented" failure shape, and lets future hosts override
+;;; only the operations they support without writing an explicit
+;;; not-supported method for the rest. NullHost overrides every
+;;; method explicitly to pin its behaviour.
+
+(defmethod host-entget    ((host host) ename)             (declare (ignore ename)) (signal-host-not-supported host 'entget))
+(defmethod host-entmod    ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmod))
+(defmethod host-entmake   ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmake))
+(defmethod host-entmakex  ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmakex))
+(defmethod host-entdel    ((host host) ename)             (declare (ignore ename)) (signal-host-not-supported host 'entdel))
+(defmethod host-entupd    ((host host) ename)             (declare (ignore ename)) (signal-host-not-supported host 'entupd))
+(defmethod host-entlast   ((host host))                   (signal-host-not-supported host 'entlast))
+(defmethod host-entnext   ((host host) ename)             (declare (ignore ename)) (signal-host-not-supported host 'entnext))
+(defmethod host-handent   ((host host) handle-string)     (declare (ignore handle-string)) (signal-host-not-supported host 'handent))
+(defmethod host-ssget       ((host host) filter &key mode) (declare (ignore filter mode)) (signal-host-not-supported host 'ssget))
+(defmethod host-ssadd       ((host host) pickset ename)   (declare (ignore pickset ename)) (signal-host-not-supported host 'ssadd))
+(defmethod host-ssdel       ((host host) pickset ename)   (declare (ignore pickset ename)) (signal-host-not-supported host 'ssdel))
+(defmethod host-ssname      ((host host) pickset index)   (declare (ignore pickset index)) (signal-host-not-supported host 'ssname))
+(defmethod host-sslength    ((host host) pickset)         (declare (ignore pickset)) (signal-host-not-supported host 'sslength))
+(defmethod host-ssmemb      ((host host) pickset ename)   (declare (ignore pickset ename)) (signal-host-not-supported host 'ssmemb))
+(defmethod host-ssgetfirst  ((host host))                 (signal-host-not-supported host 'ssgetfirst))
+(defmethod host-sssetfirst  ((host host) pickset)         (declare (ignore pickset)) (signal-host-not-supported host 'sssetfirst))
+(defmethod host-tblsearch  ((host host) kind name)        (declare (ignore kind name)) (signal-host-not-supported host 'tblsearch))
+(defmethod host-tblnext    ((host host) kind &key rewind) (declare (ignore kind rewind)) (signal-host-not-supported host 'tblnext))
+(defmethod host-tblobjname ((host host) kind name)        (declare (ignore kind name)) (signal-host-not-supported host 'tblobjname))
+(defmethod host-namedobjdict ((host host))                (signal-host-not-supported host 'namedobjdict))
+(defmethod host-dictsearch   ((host host) dict name &key next-after) (declare (ignore dict name next-after)) (signal-host-not-supported host 'dictsearch))
+(defmethod host-dictnext     ((host host) dict &key rewind) (declare (ignore dict rewind)) (signal-host-not-supported host 'dictnext))
+(defmethod host-dictadd      ((host host) dict name object-ename) (declare (ignore dict name object-ename)) (signal-host-not-supported host 'dictadd))
+(defmethod host-dictremove   ((host host) dict name)      (declare (ignore dict name)) (signal-host-not-supported host 'dictremove))
+(defmethod host-dictrename   ((host host) dict old new)   (declare (ignore dict old new)) (signal-host-not-supported host 'dictrename))
+(defmethod host-getvar ((host host) name)                 (declare (ignore name)) (signal-host-not-supported host 'getvar))
+(defmethod host-setvar ((host host) name value)           (declare (ignore name value)) (signal-host-not-supported host 'setvar))
+(defmethod host-command ((host host) arguments)           (declare (ignore arguments)) (signal-host-not-supported host 'command))
+(defmethod host-prompt    ((host host) string)            (declare (ignore string)) (signal-host-not-supported host 'prompt))
+(defmethod host-initget   ((host host) bits keywords)     (declare (ignore bits keywords)) (signal-host-not-supported host 'initget))
+(defmethod host-getstring ((host host) prompt &key controls) (declare (ignore prompt controls)) (signal-host-not-supported host 'getstring))
+(defmethod host-getint    ((host host) prompt &key controls) (declare (ignore prompt controls)) (signal-host-not-supported host 'getint))
+(defmethod host-getreal   ((host host) prompt &key controls) (declare (ignore prompt controls)) (signal-host-not-supported host 'getreal))
+(defmethod host-getpoint  ((host host) prompt &key base controls) (declare (ignore prompt base controls)) (signal-host-not-supported host 'getpoint))
+(defmethod host-getcorner ((host host) prompt &key base controls) (declare (ignore prompt base controls)) (signal-host-not-supported host 'getcorner))
+(defmethod host-getdist   ((host host) prompt &key base controls) (declare (ignore prompt base controls)) (signal-host-not-supported host 'getdist))
+(defmethod host-getangle  ((host host) prompt &key base controls) (declare (ignore prompt base controls)) (signal-host-not-supported host 'getangle))
+(defmethod host-getorient ((host host) prompt &key base controls) (declare (ignore prompt base controls)) (signal-host-not-supported host 'getorient))
+(defmethod host-getkword  ((host host) prompt &key controls) (declare (ignore prompt controls)) (signal-host-not-supported host 'getkword))
+(defmethod host-grdraw  ((host host) from to colour highlight) (declare (ignore from to colour highlight)) (signal-host-not-supported host 'grdraw))
+(defmethod host-grtext  ((host host) kind text colour highlight) (declare (ignore kind text colour highlight)) (signal-host-not-supported host 'grtext))
+(defmethod host-grvecs  ((host host) vectors transform) (declare (ignore vectors transform)) (signal-host-not-supported host 'grvecs))
+(defmethod host-grclear ((host host)) (signal-host-not-supported host 'grclear))
+(defmethod host-grread  ((host host) track key-press cursor) (declare (ignore track key-press cursor)) (signal-host-not-supported host 'grread))
+(defmethod host-redraw  ((host host) ename mode) (declare (ignore ename mode)) (signal-host-not-supported host 'redraw))

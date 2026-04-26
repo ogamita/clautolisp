@@ -1,0 +1,59 @@
+(defpackage #:clautolisp.autolisp-mock-host.tests
+  (:use #:cl)
+  (:import-from #:fiveam
+                #:def-suite
+                #:in-suite
+                #:test
+                #:is
+                #:run
+                #:explain!
+                #:results-status)
+  (:import-from #:clautolisp.autolisp-runtime
+                #:autolisp-runtime-error
+                #:autolisp-runtime-error-code)
+  (:import-from #:clautolisp.autolisp-host
+                #:host
+                #:host-name
+                #:host-entget
+                #:host-getvar
+                #:host-grdraw
+                #:host-prompt)
+  (:import-from #:clautolisp.autolisp-mock-host
+                #:mock-host
+                #:make-mock-host
+                #:entity-handle
+                #:make-entity-handle
+                #:pickset
+                #:make-pickset
+                #:symbol-table-record
+                #:make-symbol-table-record
+                #:symbol-table-record-name
+                #:symbol-table-record-kind
+                #:symbol-table-record-data
+                #:dictionary
+                #:make-dictionary
+                #:dictionary-entries
+                #:sysvar-cell
+                #:sysvar-cell-name
+                #:sysvar-cell-kind
+                #:sysvar-cell-value
+                #:sysvar-cell-read-only-p
+                #:mock-host-entities
+                #:mock-host-picksets
+                #:mock-host-tables
+                #:mock-host-named-object-dictionary
+                #:mock-host-sysvars
+                #:mock-host-prompt-output
+                #:mock-host-display-log
+                #:mock-host-pickfirst
+                #:populate-default-tables
+                #:populate-default-sysvars
+                #:mock-host-snapshot
+                #:mock-host-restore
+                #:mock-host-table
+                #:mock-host-find-table-record
+                #:mock-host-add-table-record
+                #:mock-host-sysvar
+                #:mock-host-set-sysvar)
+  (:export #:autolisp-mock-host-suite
+           #:run-all-tests))

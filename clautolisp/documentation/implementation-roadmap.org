@@ -388,20 +388,60 @@ layer, so the "re-route" step listed in the original Phase 8
 scope was a no-op. Phase 9 will introduce the first builtins
 that actually use the HAL.
 
-** Phase 9 — MockHost Data Structures
+** Phase 9 — MockHost Data Structures [DONE 2026-04-26]
 *Goal:* the in-memory substrate for the entity / pickset / table /
 sysvar layers. No host operations yet; only the data carriers.
 
-Scope:
-- New module ~clautolisp/autolisp-mock-host/~ depending on
-  ~autolisp-runtime~ and ~autolisp-host~.
-- Structs as sketched in section "Data Model".
-- One pre-populated ~sysvar-table~ with the conservative subset
-  (CMDECHO, CECOLOR, CLAYER, ANGBASE, ANGDIR, AUNITS, OSMODE,
-  USERR1..R5, USERI1..I5, USERS1..S5).
-- Snapshot / restore helpers for tests.
-- Test fixtures: empty MockHost, single-line MockHost, layer-set
-  MockHost.
+*Status:* closed. Suite 883 / 0; ~clautolisp --host mock~ now
+constructs a usable MockHost (host operations still error with
+~:host-not-supported~ until Phase 10 fills in the methods).
+
+Scope delivered:
+- New ASDF system ~clautolisp/autolisp-mock-host~ depending on
+  ~clautolisp/autolisp-host~ and ~clautolisp/autolisp-runtime~.
+  Four source files: ~package.lisp~, ~model.lisp~ (struct defs +
+  the ~mock-host~ class), ~sysvars.lisp~ (default tables and
+  sysvars), ~api.lisp~ (constructor + snapshot/restore).
+- Structs delivered as sketched in the data-model section:
+  ~entity-handle~, ~pickset~, ~symbol-table-record~,
+  ~dictionary~, ~sysvar-cell~, plus the ~mock-host~ class itself
+  with slots for entities, picksets, vla-objects, per-kind table
+  hash, named-object dictionary, sysvars, prompt-stream,
+  prompt-output, display-log, pickfirst.
+- Pre-populated symbol tables: ~:block-record~ holds
+  ~"*Model_Space"~ / ~"*Paper_Space"~; ~:layer~ holds ~"0"~;
+  ~:ltype~ holds ~"BYBLOCK"~ / ~"BYLAYER"~ / ~"Continuous"~;
+  ~:style~ and ~:dimstyle~ each hold ~"Standard"~; ~:vport~ holds
+  ~"*Active"~; ~:appid~ holds ~"ACAD"~. ~:ucs~ and ~:view~ start
+  empty.
+- Pre-populated sysvars (CMDECHO, CECOLOR, CLAYER, ANGBASE,
+  ANGDIR, AUNITS, OSMODE; USERR1..R5, USERI1..I5, USERS1..S5; plus
+  read-only DWGNAME / DWGPREFIX / PLATFORM and writable LISPSYS).
+  Lookup is case-insensitive; writes to read-only cells signal
+  ~:host-not-supported~.
+- ~mock-host-snapshot~ / ~mock-host-restore~ pair: the snapshot
+  is a property list of entities, picksets, tables, sysvars, and
+  pickfirst pointer; round-trip restore preserves the host's
+  AutoLISP-visible state. Tests pin determinism.
+- Convenience accessors: ~mock-host-table~,
+  ~mock-host-find-table-record~, ~mock-host-add-table-record~,
+  ~mock-host-sysvar~, ~mock-host-set-sysvar~.
+- Base-class fallback methods on ~host~ for every HAL operation
+  signalling ~:host-not-supported~. This lets MockHost (with no
+  method overrides yet) inherit a sensible "not yet implemented"
+  failure shape; Phase 10 will override the methods that MockHost
+  actually serves.
+- CLI: ~--host mock~ now constructs a fresh MockHost (instead of
+  erroring as a Phase-9-todo). The REPL banner reads
+  "...REPL (DIALECT dialect, mock-host host)~~~". Host
+  operations still error until Phase 10.
+- Tests: 14 new tests in ~clautolisp/autolisp-mock-host/tests~
+  cover class hierarchy, empty fixture, default tables, default
+  sysvars, sysvar mutation including read-only refusal,
+  case-insensitive lookup, snapshot/restore round-trip, slot
+  shapes for prompt-output / display-log / pickset / dictionary,
+  and the inherited ~:host-not-supported~ behaviour. Aggregate
+  suite 76 + 184 + 29 + 52 + 412 + 130 = 883 / 0.
 
 ** Phase 10 — MockHost Entity API
 *Goal:* implement the entity-level HAL methods against MockHost.

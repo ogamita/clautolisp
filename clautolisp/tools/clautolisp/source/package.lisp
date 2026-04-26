@@ -43,6 +43,8 @@
                 #:null-host
                 #:make-null-host
                 #:*null-host*)
+  (:import-from #:clautolisp.autolisp-mock-host
+                #:make-mock-host)
   (:import-from #:clautolisp.autolisp-builtins-core
                 #:autolisp-value->string
                 #:install-core-builtins)
