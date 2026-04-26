@@ -1473,6 +1473,14 @@ decremented on exit; visible as leading spaces in trace output.")
   (cond
     ((self-evaluating-runtime-value-p form)
      form)
+    ((and (typep form 'autolisp-symbol)
+          (string= "T" (autolisp-symbol-name form)))
+     ;; T is the canonical truth constant in AutoLISP and must be
+     ;; self-evaluating regardless of dialect or any (setq T ...)
+     ;; the user might attempt. Without this, (cond (... ) (T ...))
+     ;; would fall through silently in dialects whose unbound-
+     ;; variable mode is :silent-nil.
+     form)
     ((typep form 'autolisp-symbol)
      (multiple-value-bind (value boundp origin) (lookup-variable form context)
        (declare (ignore origin))

@@ -1811,3 +1811,72 @@
     (let ((s (autolisp-string-value (first forms))))
       (is (string= s (format nil "a~Cb~Cc~Cd"
                              #\Newline #\Tab #\Return))))))
+
+;;; --- COND clause-selection regressions --------------------------
+;;;
+;;; Real AutoLISP treats T as a self-evaluating constant, so the
+;;; idiom (cond ((test) ...) (T fallback)) must reach the fallback
+;;; whenever no earlier clause matches. The strict / autocad-2026 /
+;;; bricscad-v26 dialects all return :silent-nil for unbound
+;;; variables, which previously made the T clause silently skip —
+;;; found via greet.lsp's GUI flow on 2026-04-26.
+
+(defun install-core-into (context)
+  (declare (ignore context))
+  (install-core-builtins))
+
+(test cond-t-fallback-is-selected
+  "(cond ((false) ...) (T x)) returns x. T self-evaluates."
+  (reset-autolisp-symbol-table)
+  (is (eql 99 (run-autolisp-string "(cond ((= 1 2) 11) (T 99))"
+                                   :setup-fn #'install-core-into))))
+
+(test cond-first-true-clause-wins
+  "When two branches would match, COND picks the first."
+  (reset-autolisp-symbol-table)
+  (is (eql 1 (run-autolisp-string
+              "(cond ((= 1 1) 1) ((= 2 2) 2) (T 99))"
+              :setup-fn #'install-core-into))))
+
+(test cond-middle-branch-selected-when-others-fail
+  "A middle clause runs only when earlier ones are nil."
+  (reset-autolisp-symbol-table)
+  (is (eql 22 (run-autolisp-string
+               "(cond ((= 1 0) 11) ((= 2 2) 22) ((= 3 3) 33) (T 99))"
+               :setup-fn #'install-core-into))))
+
+(test cond-no-match-returns-nil-without-t
+  "If no clause matches and there is no T fallback, COND yields nil."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string
+             "(cond ((= 0 1) 11) ((= 0 2) 22))"
+             :setup-fn #'install-core-into))))
+
+(test cond-clause-body-is-progn
+  "All forms of a selected clause are evaluated in order; the last
+value is returned."
+  (reset-autolisp-symbol-table)
+  (is (eql 7 (run-autolisp-string
+              "(cond ((= 1 1) (setq z 3) (setq z (+ z 4)) z))"
+              :setup-fn #'install-core-into))))
+
+(test cond-test-only-clause-returns-test-value
+  "(cond ((expr))) returns expr's value when no consequent forms."
+  (reset-autolisp-symbol-table)
+  (is (eql 42 (run-autolisp-string "(cond ((* 6 7)))"
+                                   :setup-fn #'install-core-into))))
+
+(test cond-each-branch-independently-selectable
+  "For x in 0..3, each branch fires the matching clause's body."
+  (reset-autolisp-symbol-table)
+  (let ((labels (loop for x from 0 to 3
+                      collect (autolisp-string-value
+                               (run-autolisp-string
+                                (format nil
+                                        "(setq x ~D)
+                                         (cond ((= x 0) \"a\")
+                                               ((= x 1) \"b\")
+                                               ((= x 2) \"c\")
+                                               (T       \"d\"))" x)
+                                :setup-fn #'install-core-into)))))
+    (is (equal '("a" "b" "c" "d") labels))))
