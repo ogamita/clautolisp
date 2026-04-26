@@ -197,6 +197,19 @@ AutoCAD's documented predefined-button behaviour."
    :mode-fn (lambda (dialog key mode)
               (declare (ignore dialog))
               (format *standard-output* "~&[mode ~A = ~A]~%" key mode))
+   :populate-list-fn
+   (lambda (dialog key operation index items)
+     (declare (ignore dialog operation index))
+     (format *standard-output* "~&[~A:items]~%" key)
+     (dolist (item items)
+       (format *standard-output* "  ~A~%" item)))
+   :image-paint-fn
+   (lambda (dialog key primitives)
+     (declare (ignore dialog))
+     (format *standard-output* "~&[image ~A: ~D primitive~:P]~%"
+             key (length primitives))
+     (dolist (p primitives)
+       (format *standard-output* "  ~A~%" p)))
    :run-fn  #'terminal-run-dialog))
 
 (eval-when (:load-toplevel :execute)

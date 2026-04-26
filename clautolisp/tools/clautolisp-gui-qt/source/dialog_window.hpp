@@ -4,6 +4,7 @@
 // each interactive widget to emit (:action DID KEY VALUE :reason-selected)
 // upstream.
 
+#include "sexp.hpp"
 #include "wire.hpp"
 
 #include <QDialog>
@@ -27,6 +28,17 @@ public:
     long long dialogId() const { return id_; }
     void setTileValue(const QString& key, const QString& value);
     void setTileMode(const QString& key, int mode);
+    // Populate a list_box / popup_list. OPERATION matches the
+    // AutoLISP start_list contract: 1 = replace one item at INDEX,
+    // 2 = append, 3 = clear and replace.
+    void populateList(const QString& key, int operation, int index,
+                      const QStringList& items);
+    // Paint a list of image primitives onto the pixmap of an
+    // image / image_button tile. PRIMITIVES is the parsed sexp
+    // list — each entry starts with a keyword (:fill / :vector /
+    // :slide) followed by integer / string arguments per the
+    // wire-protocol grammar.
+    void paintImage(const QString& key, const SexpList& primitives);
 
 private:
     long long id_;

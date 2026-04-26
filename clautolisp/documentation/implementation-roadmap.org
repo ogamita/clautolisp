@@ -931,16 +931,72 @@ Realised scope:
   formatting + tile-encoding shape + write/read symmetry).
   Total 57 DCL checks, all passing.
 
-Out of scope (next phases):
-- ~start_image~ / ~vector_image~ / ~slide_image~ widgets are
-  not yet rendered by the Qt6 driver; messages are reserved
-  but not produced.
-- ~start_list~ / ~add_list~ / ~end_list~ on the runtime side
-  remain placeholder no-ops; the wire-protocol reservation is
-  ready for when a real DCL application exercises them.
-- No autobuild of the Qt6 driver in the project Makefile —
-  CMake usage is documented in
-  ~tools/clautolisp-gui-qt/README.org~.
+Closed in 15c — see below.
+
+** Phase 15c — DCL List Boxes and Image Tiles [DONE 2026-04-27]
+*Goal:* close the placeholder gaps in 15a/15b: working
+~start_list~ / ~add_list~ / ~end_list~ batches and a real image
+tile renderer that paints ~vector_image~ / ~fill_image~ /
+~slide_image~ primitives.
+
+Realised scope:
+
+- Runtime list-batch state machine
+  (~*current-list-operation*~) plus
+  ~dcl-runtime-start-list~ / ~-add-list~ / ~-end-list~. The
+  batch is delivered to the renderer's new ~populate-list-fn~
+  slot in source order; the items are also persisted under
+  ~KEY:items~ in the dialog state map so headless code can read
+  them back.
+- Runtime image-batch state machine
+  (~*current-image-operation*~) plus
+  ~dcl-runtime-start-image~ / ~-image-vector~ / ~-image-fill~ /
+  ~-image-slide~ / ~-end-image~. Primitives ship as
+  ~(:fill X Y W H COLOUR)~ / ~(:vector X1 Y1 X2 Y2 COLOUR)~ /
+  ~(:slide X Y W H PATH)~ entries to the renderer's new
+  ~image-paint-fn~ slot.
+- Sexp wire protocol additions (autolisp-dcl/source/sexp-wire.lisp):
+  ~(:populate-list DID KEY OPERATION INDEX (ITEM ...))~ and
+  ~(:image-paint DID KEY ((PRIM ...) ...))~. Both are
+  end-of-batch deliveries — the runtime accumulates and the GUI
+  receives one message per batch, so the wire stays readable.
+- Subprocess renderer ships both messages via
+  ~subprocess-populate-list~ / ~subprocess-image-paint~.
+- Terminal renderer prints both batches as readable summaries
+  (one item per indented line for lists; one primitive per
+  indented line for images).
+- Qt6 driver:
+  * Builds an ~IMAGE~ tile as a fixed-size ~QLabel~ holding a
+    ~QPixmap~ (DCL units approximated as 6 px per unit-width,
+    12 px per unit-height per autolisp-spec ch.18).
+  * ~populateList~ method dispatches on ~QListWidget~ /
+    ~QComboBox~ for the OPERATION values 1 / 2 / 3.
+  * ~paintImage~ method walks the primitives and uses
+    ~QPainter~ to draw fills, lines, and a placeholder rect for
+    slides; an 8-colour ACI palette covers the canonical AutoCAD
+    indices, with a neutral grey fallback for higher numbers.
+- Builtins ~start_list~ / ~add_list~ / ~end_list~ /
+  ~start_image~ / ~end_image~ / ~vector_image~ / ~fill_image~ /
+  ~slide_image~ rewritten to call the runtime functions. The
+  signatures match real AutoLISP exactly (no implicit dialog id
+  parameter — the runtime tracks the active dialog).
+- 2 new FiveAM tests in ~autolisp-dcl/tests/runtime-tests.lisp~:
+  list-batch flushing in source order, image-batch flushing in
+  source order. Total project test count: 1129 (up from 1119),
+  all passing.
+- New example ~examples/listpick/listpick.dcl~ +
+  ~examples/listpick/listpick.lsp~: a one-list_box dialog whose
+  items are populated dynamically, selected, and reported back
+  via the OK callback.
+
+Remaining out of scope (intentional):
+- ~slide_image~ renders a placeholder rectangle, not the actual
+  ~.sld~ file content. Slide-file decoding is a Phase 16 concern.
+- ~image_button~ widgets are built but click events aren't yet
+  wired upstream — a follow-up event filter on the QLabel can
+  emit ~(:action KEY "0" :reason-selected)~ on ~mousePressEvent~.
+- The Qt6 driver still requires a one-off ~cmake --build~; no
+  ~make~ target builds it for you.
 
 ** Phase 16 — LiveHost Adapter
 *Goal:* run AutoLISP scripts through clautolisp against an actual

@@ -52,6 +52,14 @@
    #:dcl-runtime-mode-tile
    #:dcl-runtime-client-data
    #:dcl-runtime-set-client-data
+   #:dcl-runtime-start-list
+   #:dcl-runtime-add-list
+   #:dcl-runtime-end-list
+   #:dcl-runtime-start-image
+   #:dcl-runtime-image-vector
+   #:dcl-runtime-image-fill
+   #:dcl-runtime-image-slide
+   #:dcl-runtime-end-image
    #:dcl-runtime-find-tile
    #:dcl-runtime-fire-action
    #:current-dialog-id

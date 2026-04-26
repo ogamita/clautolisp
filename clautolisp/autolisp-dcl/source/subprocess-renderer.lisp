@@ -142,6 +142,21 @@ so that we know when to shut it down.")
      (list :mode-tile (dcl-dialog-id dialog) key mode)
      (subprocess-input-stream))))
 
+(defun subprocess-populate-list (dialog key operation index items)
+  (when (and *subprocess-renderer-process*
+             (uiop:process-alive-p *subprocess-renderer-process*))
+    (write-sexp-message
+     (list :populate-list (dcl-dialog-id dialog)
+           key operation index items)
+     (subprocess-input-stream))))
+
+(defun subprocess-image-paint (dialog key primitives)
+  (when (and *subprocess-renderer-process*
+             (uiop:process-alive-p *subprocess-renderer-process*))
+    (write-sexp-message
+     (list :image-paint (dcl-dialog-id dialog) key primitives)
+     (subprocess-input-stream))))
+
 (defun subprocess-run-dialog (dialog)
   "Drain upstream messages from the subprocess until done or EOF.
 Returns the dialog's terminal status."
@@ -191,9 +206,11 @@ wire protocol to a subprocess. COMMAND is a list (PROGRAM ARGS...);
 when omitted, CLAUTOLISP_GUI is consulted."
   (setf *subprocess-renderer-command* (resolve-gui-command command))
   (make-dcl-renderer
-   :open-fn      #'subprocess-open-dialog
-   :close-fn     #'subprocess-close-dialog
-   :set-tile-fn  #'subprocess-set-tile
-   :focus-fn     #'subprocess-focus-tile
-   :mode-fn      #'subprocess-mode-tile
-   :run-fn       #'subprocess-run-dialog))
+   :open-fn          #'subprocess-open-dialog
+   :close-fn         #'subprocess-close-dialog
+   :set-tile-fn      #'subprocess-set-tile
+   :focus-fn         #'subprocess-focus-tile
+   :mode-fn          #'subprocess-mode-tile
+   :populate-list-fn #'subprocess-populate-list
+   :image-paint-fn   #'subprocess-image-paint
+   :run-fn           #'subprocess-run-dialog))

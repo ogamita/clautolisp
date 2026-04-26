@@ -58,6 +58,21 @@ state machine.")
   (set-tile-fn   (lambda (d k v) (declare (ignore d k v)) nil))
   (focus-fn      (lambda (d k) (declare (ignore d k)) nil))
   (mode-fn       (lambda (d k m) (declare (ignore d k m)) nil))
+  ;; Populate-list-fn delivers a complete list_box / popup_list
+  ;; payload to the renderer. ITEMS is a Common Lisp list of
+  ;; strings, OPERATION is 1 (replace single at INDEX), 2 (append),
+  ;; or 3 (clear-and-replace, the default).
+  (populate-list-fn (lambda (d k op idx items)
+                      (declare (ignore d k op idx items))
+                      nil))
+  ;; Image-paint-fn delivers a batch of image primitives to the
+  ;; renderer. PRIMITIVES is a list of (:fill X Y W H COLOUR),
+  ;; (:vector X1 Y1 X2 Y2 COLOUR), (:slide X Y W H PATH) entries
+  ;; in the order they were drawn between start_image and
+  ;; end_image.
+  (image-paint-fn  (lambda (d k primitives)
+                     (declare (ignore d k primitives))
+                     nil))
   ;; Run-fn returns the dialog's terminal status integer (1 = OK,
   ;; 0 = Cancel, anything else = user-supplied done_dialog status).
   ;; The runtime calls run-fn from inside dcl-runtime-start-dialog
@@ -84,6 +99,19 @@ state machine.")
 target of (set_tile), (get_tile), (action_tile), etc. Real
 AutoLISP's tile-manipulation functions all act on whichever
 dialog is currently active.")
+
+(defparameter *current-list-operation* nil
+  "Active (start_list ... add_list* ... end_list) batch state, or
+nil. While non-nil it's a property list:
+  (:dialog-id INT :key STRING :operation INT :index INT :items LIST)
+Items accumulate in reverse order; end_list flushes and reverses.")
+
+(defparameter *current-image-operation* nil
+  "Active (start_image ... vector_image|fill_image|slide_image* ...
+end_image) batch state, or nil. Property list:
+  (:dialog-id INT :key STRING :primitives LIST)
+Primitives accumulate in reverse order; end_image reverses and
+flushes them via the renderer's image-paint-fn.")
 
 (defun current-dialog-id ()
   *current-dialog-id*)
@@ -235,6 +263,98 @@ exit). Returns the dialog's terminal status integer."
   (setf (gethash key
                  (dcl-dialog-client (find-active-dialog dialog-id)))
         value))
+
+(defun dcl-runtime-start-list (key &optional (operation 3) (index 0))
+  "Open a list-update batch on KEY. OPERATION is 1 (replace one
+item at INDEX), 2 (append), or 3 (clear-and-replace, default).
+Subsequent (add_list ...) calls accumulate items; (end_list)
+flushes them to the renderer and the dialog state. Returns KEY."
+  (let ((dialog-id (require-current-dialog-id "START_LIST")))
+    (setf *current-list-operation*
+          (list :dialog-id dialog-id
+                :key key
+                :operation operation
+                :index index
+                :items '())))
+  key)
+
+(defun dcl-runtime-add-list (text)
+  "Append TEXT to the active list-update batch. Returns TEXT.
+Silently no-ops outside of a start_list/end_list pair, matching
+real AutoLISP's permissive contract."
+  (when *current-list-operation*
+    (setf (getf *current-list-operation* :items)
+          (cons text (getf *current-list-operation* :items))))
+  text)
+
+(defun dcl-runtime-start-image (key)
+  "Open an image-paint batch on KEY. Subsequent (vector_image ...),
+(fill_image ...), (slide_image ...) calls accumulate primitives;
+(end_image) flushes them. Returns KEY."
+  (let ((dialog-id (require-current-dialog-id "START_IMAGE")))
+    (setf *current-image-operation*
+          (list :dialog-id dialog-id
+                :key key
+                :primitives '())))
+  key)
+
+(defun dcl-runtime-image-vector (x1 y1 x2 y2 colour)
+  (when *current-image-operation*
+    (setf (getf *current-image-operation* :primitives)
+          (cons (list :vector x1 y1 x2 y2 colour)
+                (getf *current-image-operation* :primitives))))
+  colour)
+
+(defun dcl-runtime-image-fill (x y width height colour)
+  (when *current-image-operation*
+    (setf (getf *current-image-operation* :primitives)
+          (cons (list :fill x y width height colour)
+                (getf *current-image-operation* :primitives))))
+  colour)
+
+(defun dcl-runtime-image-slide (x y width height path)
+  (when *current-image-operation*
+    (setf (getf *current-image-operation* :primitives)
+          (cons (list :slide x y width height path)
+                (getf *current-image-operation* :primitives))))
+  nil)
+
+(defun dcl-runtime-end-image ()
+  "Close the active image batch and deliver the primitives to the
+renderer. Returns nil."
+  (let ((batch *current-image-operation*))
+    (when batch
+      (let* ((dialog-id (getf batch :dialog-id))
+             (key (getf batch :key))
+             (primitives (nreverse (getf batch :primitives)))
+             (dialog (find-active-dialog dialog-id)))
+        (funcall (dcl-renderer-image-paint-fn (current-dcl-renderer))
+                 dialog key primitives))
+      (setf *current-image-operation* nil)))
+  nil)
+
+(defun dcl-runtime-end-list ()
+  "Close the active batch: deliver the accumulated items to the
+renderer, store them in the dialog state under KEY:items, and
+clear the batch state. Returns nil."
+  (let ((batch *current-list-operation*))
+    (when batch
+      (let* ((dialog-id (getf batch :dialog-id))
+             (key (getf batch :key))
+             (operation (getf batch :operation))
+             (index (getf batch :index))
+             (items (nreverse (getf batch :items)))
+             (dialog (find-active-dialog dialog-id)))
+        ;; Persist in the dialog's state map under "KEY:items"
+        ;; so list_box / popup_list reads via get_tile-style
+        ;; helpers can query the populated list.
+        (setf (gethash (concatenate 'string key ":items")
+                       (dcl-dialog-state dialog))
+              items)
+        (funcall (dcl-renderer-populate-list-fn (current-dcl-renderer))
+                 dialog key operation index items))
+      (setf *current-list-operation* nil)))
+  nil)
 
 (defun dcl-runtime-fire-action (dialog key value reason)
   "Invoked by the renderer when a tile fires its action. Looks up
