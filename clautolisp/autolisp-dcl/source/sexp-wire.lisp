@@ -213,10 +213,16 @@
 ;;; --- Tile-form encoding ----------------------------------------
 
 (defun tile->sexp (tile)
-  "Convert a dcl-tile to its on-the-wire sexp shape."
+  "Convert a dcl-tile to its on-the-wire sexp shape. The key slot
+prefers the top-level dcl-tile-key (set by `name : class { ... }`
+syntax) but falls back to the `key` attribute (set by anonymous
+`: class { key = ... }` syntax). Real AutoLISP treats both as
+the tile identifier addressed by set_tile / get_tile / action_tile."
   (list :tile
         (dcl-tile-type tile)
-        (or (dcl-tile-key tile) :nokey)
+        (or (dcl-tile-key tile)
+            (tile-attribute tile "key")
+            :nokey)
         (cons :attr
               (mapcar (lambda (a) (list (car a) (attribute-value->sexp (cdr a))))
                       (dcl-tile-attributes tile)))
