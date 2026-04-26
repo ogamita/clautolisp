@@ -60,7 +60,15 @@
   ;; that drove its instantiation. Builtins that have product-divergent
   ;; lex / mode behaviour (currently `atof` hex-float, `open` `ccs=`)
   ;; consult the active session's dialect.
-  (dialect nil))
+  (dialect nil)
+  ;; Phase 8: every runtime session also carries a HAL backend
+  ;; (`host`) that decides where CAD-host effects land. Defaults to
+  ;; nil when the session is created from the runtime alone; the
+  ;; autolisp-host module installs a NullHost singleton via the
+  ;; *default-runtime-host* parameter once its package is loaded.
+  ;; Higher-level callers (the CLI, the file-compat harness, etc.)
+  ;; can pass any object satisfying the HAL contract.
+  (host nil))
 
 (defstruct evaluation-context
   session

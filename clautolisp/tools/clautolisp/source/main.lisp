@@ -15,10 +15,23 @@
   (format t "  --strict           Shorthand for --dialect strict.~%")
   (format t "  --autocad          Shorthand for --dialect autocad-2026.~%")
   (format t "  --bricscad         Shorthand for --dialect bricscad-v26.~%")
+  (format t "  --host NAME        HAL backend: null (default). 'mock' is reserved for Phase 9.~%")
   (format t "  -x EXPRESSION      Evaluate EXPRESSION instead of reading a file.~%")
   (format t "  --quiet            Suppress the REPL banner; only the prompt is shown.~%")
   (format t "  --version          Print the version string and exit.~%")
   (format t "  --help             Show this help and exit.~%"))
+
+(defun resolve-host-backend (name)
+  "Return a HAL backend instance for the given --host argument."
+  (cond
+    ((or (null name)
+         (string-equal name "null")
+         (string-equal name "none"))
+     *null-host*)
+    ((string-equal name "mock")
+     (error "The 'mock' host backend is a Phase 9 deliverable and is not yet available; pass --host null or omit the flag."))
+    (t
+     (error "Unknown host backend ~S. Expected one of: null, mock." name))))
 
 (defun print-version ()
   (format t "~&clautolisp ~A~%" *version*))
@@ -31,13 +44,15 @@
     dialect))
 
 (defun parse-arguments (arguments)
-  "Returns (values dialect mode payload quiet-p). MODE is :file,
+  "Returns (values dialect mode payload quiet-p host). MODE is :file,
 :expression or :repl. PAYLOAD is the FILE path or EXPRESSION string
-(nil for :repl). QUIET-P suppresses the REPL banner."
+(nil for :repl). QUIET-P suppresses the REPL banner. HOST is the
+resolved HAL backend instance, defaulting to the NullHost singleton."
   (let ((dialect (autolisp-dialect-strict))
         (mode :repl)
         (payload nil)
-        (quiet-p nil))
+        (quiet-p nil)
+        (host *null-host*))
     (loop while arguments
           for argument = (pop arguments)
           do (cond
@@ -59,6 +74,10 @@
                 (setf dialect (autolisp-dialect-autocad-2026)))
                ((string= argument "--bricscad")
                 (setf dialect (autolisp-dialect-bricscad-v26)))
+               ((string= argument "--host")
+                (unless arguments
+                  (error "Missing argument after --host."))
+                (setf host (resolve-host-backend (pop arguments))))
                ((string= argument "-x")
                 (unless arguments
                   (error "Missing expression after -x."))
@@ -70,7 +89,7 @@
                (t
                 (setf mode :file)
                 (setf payload argument))))
-    (values dialect mode payload quiet-p)))
+    (values dialect mode payload quiet-p host)))
 
 (defun span->string (span)
   (if (null span)
@@ -94,11 +113,18 @@
 (defun report-error (condition)
   (format *error-output* "~&clautolisp: ~A~%" condition))
 
-(defun setup-builtins (context)
-  "Install the core builtins into the freshly installed evaluation
-context's namespace."
-  (declare (ignore context))
+(defun setup-context (context host)
+  "Install the core builtins into the freshly created evaluation
+context's namespace and attach the chosen HAL backend to its
+session."
+  (when host
+    (set-runtime-session-host (evaluation-context-session context) host))
   (install-core-builtins))
+
+(defun setup-builtins (context)
+  "Backwards-compatible setup that uses the default HAL backend
+inherited from *default-runtime-host*."
+  (setup-context context nil))
 
 ;;; --- Interactive REPL -----------------------------------------------
 
@@ -156,9 +182,12 @@ STREAM signalled end-of-file before any input was given."
 
 (defun repl-loop (dialect context &key quiet-p)
   (unless quiet-p
-    (format t "~&clautolisp ~A — REPL (~A dialect) — Ctrl-D to exit.~%"
-            *version*
-            (autolisp-dialect-name dialect)))
+    (let* ((session (evaluation-context-session context))
+           (host (clautolisp.autolisp-runtime:runtime-session-host session)))
+      (format t "~&clautolisp ~A — REPL (~A dialect, ~A host) — Ctrl-D to exit.~%"
+              *version*
+              (autolisp-dialect-name dialect)
+              (host-name host))))
   (loop
     (multiple-value-bind (source eofp)
         (read-balanced-source-from-stream
@@ -187,9 +216,9 @@ STREAM signalled end-of-file before any input was given."
           (report-termination condition)
           (return))))))
 
-(defun run-repl (dialect &key quiet-p)
+(defun run-repl (dialect host &key quiet-p)
   (let ((context (make-default-runtime-context :dialect dialect)))
-    (setup-builtins context)
+    (setup-context context host)
     (handler-case
         (repl-loop dialect context :quiet-p quiet-p)
       (autolisp-termination (condition)
@@ -198,32 +227,33 @@ STREAM signalled end-of-file before any input was given."
 
 ;;; --- Batch entry points ---------------------------------------------
 
-(defun run-with-input (dialect mode payload &key quiet-p)
-  (handler-case
-      (ecase mode
-        (:file
-         (run-autolisp-file payload :dialect dialect :setup-fn #'setup-builtins))
-        (:expression
-         (run-autolisp-string payload :dialect dialect
-                              :source-name "<-x>"
-                              :setup-fn #'setup-builtins))
-        (:repl
-         (run-repl dialect :quiet-p quiet-p)))
-    (autolisp-runtime-error (condition)
-      (report-runtime-error condition)
-      (quit 1))
-    (autolisp-termination (condition)
-      (report-termination condition)
-      (quit 0))
-    (file-error (condition)
-      (report-error condition)
-      (quit 2))))
+(defun run-with-input (dialect mode payload &key quiet-p host)
+  (let ((setup (lambda (context) (setup-context context host))))
+    (handler-case
+        (ecase mode
+          (:file
+           (run-autolisp-file payload :dialect dialect :setup-fn setup))
+          (:expression
+           (run-autolisp-string payload :dialect dialect
+                                :source-name "<-x>"
+                                :setup-fn setup))
+          (:repl
+           (run-repl dialect host :quiet-p quiet-p)))
+      (autolisp-runtime-error (condition)
+        (report-runtime-error condition)
+        (quit 1))
+      (autolisp-termination (condition)
+        (report-termination condition)
+        (quit 0))
+      (file-error (condition)
+        (report-error condition)
+        (quit 2)))))
 
 (defun main (&rest argv)
   (handler-case
-      (multiple-value-bind (dialect mode payload quiet-p)
+      (multiple-value-bind (dialect mode payload quiet-p host)
           (parse-arguments (rest argv))
-        (run-with-input dialect mode payload :quiet-p quiet-p)
+        (run-with-input dialect mode payload :quiet-p quiet-p :host host)
         (finish-output)
         (quit 0))
     (error (error)

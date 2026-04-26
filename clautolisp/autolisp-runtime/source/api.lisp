@@ -182,20 +182,51 @@
 (defun separate-vlx-namespace-name (namespace)
   (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-name namespace))
 
-(defun make-runtime-session (&key current-document dialect)
+(defparameter *default-runtime-host* nil
+  "Process-wide fallback host backend for fresh runtime sessions.
+The autolisp-host module installs the NullHost singleton here when
+loaded; downstream callers (the CLI, MockHost-aware tests, etc.)
+may rebind it to switch the default backend. Sessions whose `:host`
+keyword argument is not supplied inherit this value.")
+
+(defun make-runtime-session (&key current-document dialect host)
   (let* ((document (or current-document
                        (make-document-namespace :name "DOCUMENT")))
          (chosen-dialect
           (or dialect
-              (clautolisp.autolisp-reader:autolisp-dialect-strict))))
+              (clautolisp.autolisp-reader:autolisp-dialect-strict)))
+         (chosen-host (or host *default-runtime-host*)))
     (let ((session (clautolisp.autolisp-runtime.internal::make-runtime-session
                     :current-document document
-                    :dialect chosen-dialect)))
+                    :dialect chosen-dialect
+                    :host chosen-host)))
       (setf (gethash (document-namespace-name document)
                      (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
                       session))
             document)
       session)))
+
+(defun runtime-session-host (session)
+  "Return the HAL backend SESSION was instantiated with, or
+*default-runtime-host* if the session's slot is nil."
+  (or (clautolisp.autolisp-runtime.internal::runtime-session-host session)
+      *default-runtime-host*))
+
+(defun set-runtime-session-host (session host)
+  "Replace SESSION's HAL backend. Used by tools that swap the
+backend mid-session (e.g. switching from MockHost to LiveHost
+within a single run)."
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
+        host))
+
+(defun current-evaluation-host (&optional (context (current-evaluation-context)))
+  "Return the active HAL backend for CONTEXT, falling back to
+*default-runtime-host* when no session is in scope."
+  (or (and context
+           (clautolisp.autolisp-runtime.internal::evaluation-context-session context)
+           (runtime-session-host
+            (clautolisp.autolisp-runtime.internal::evaluation-context-session context)))
+      *default-runtime-host*))
 
 (defun runtime-session-dialect (session)
   "Return the dialect descriptor SESSION was instantiated with."

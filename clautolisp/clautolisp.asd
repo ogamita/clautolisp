@@ -4,6 +4,7 @@
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-host"
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-file-compat")
   :in-order-to ((asdf:test-op
@@ -44,6 +45,22 @@
    (:file "autolisp-runtime/source/api"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-runtime/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-host"
+  :description "Host Abstraction Layer (HAL) and NullHost backend for clautolisp."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-host/source/package")
+   (:file "autolisp-host/source/protocol")
+   (:file "autolisp-host/source/null-host"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-host/tests")))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          :success))
@@ -97,6 +114,7 @@
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-host"
                "clautolisp/autolisp-builtins-core"
                "uiop")
   :serial t
@@ -131,6 +149,22 @@
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (uiop:symbol-call :clautolisp.autolisp-reader.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/autolisp-host/tests"
+  :description "Tests for the clautolisp Host Abstraction Layer."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-host" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-host/tests/package")
+   (:file "autolisp-host/tests/test-harness")
+   (:file "autolisp-host/tests/null-host-tests")
+   (:file "autolisp-host/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-host.tests
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-runtime/tests"
@@ -188,6 +222,7 @@
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader/tests"
                "clautolisp/autolisp-runtime/tests"
+               "clautolisp/autolisp-host/tests"
                "clautolisp/autolisp-builtins-core/tests"
                "clautolisp/autolisp-file-compat/tests")
   :perform (asdf:test-op (op system)
@@ -196,6 +231,8 @@
                            (uiop:symbol-call :clautolisp.autolisp-reader.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-runtime.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-host.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
                                              :run-all-tests)
