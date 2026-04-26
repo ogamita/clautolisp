@@ -16,7 +16,12 @@
   (format t "  --autocad          Shorthand for --dialect autocad-2026.~%")
   (format t "  --bricscad         Shorthand for --dialect bricscad-v26.~%")
   (format t "  -x EXPRESSION      Evaluate EXPRESSION instead of reading a file.~%")
+  (format t "  --quiet            Suppress the REPL banner; only the prompt is shown.~%")
+  (format t "  --version          Print the version string and exit.~%")
   (format t "  --help             Show this help and exit.~%"))
+
+(defun print-version ()
+  (format t "~&clautolisp ~A~%" *version*))
 
 (defun resolve-dialect (name-or-keyword)
   (let ((dialect (find-autolisp-dialect name-or-keyword)))
@@ -26,17 +31,24 @@
     dialect))
 
 (defun parse-arguments (arguments)
-  "Returns (values dialect mode payload). MODE is :file, :expression
-or :repl. PAYLOAD is the FILE path or EXPRESSION string (nil for :repl)."
+  "Returns (values dialect mode payload quiet-p). MODE is :file,
+:expression or :repl. PAYLOAD is the FILE path or EXPRESSION string
+(nil for :repl). QUIET-P suppresses the REPL banner."
   (let ((dialect (autolisp-dialect-strict))
         (mode :repl)
-        (payload nil))
+        (payload nil)
+        (quiet-p nil))
     (loop while arguments
           for argument = (pop arguments)
           do (cond
                ((string= argument "--help")
                 (usage)
                 (quit 0))
+               ((string= argument "--version")
+                (print-version)
+                (quit 0))
+               ((string= argument "--quiet")
+                (setf quiet-p t))
                ((string= argument "--dialect")
                 (unless arguments
                   (error "Missing argument after --dialect."))
@@ -58,7 +70,7 @@ or :repl. PAYLOAD is the FILE path or EXPRESSION string (nil for :repl)."
                (t
                 (setf mode :file)
                 (setf payload argument))))
-    (values dialect mode payload)))
+    (values dialect mode payload quiet-p)))
 
 (defun span->string (span)
   (if (null span)
@@ -142,9 +154,11 @@ STREAM signalled end-of-file before any input was given."
                (unless (reader-error-incomplete-p condition)
                  (return (values accumulated nil)))))))))))
 
-(defun repl-loop (dialect context)
-  (format t "~&clautolisp REPL (~A dialect) — Ctrl-D to exit.~%"
-          (autolisp-dialect-name dialect))
+(defun repl-loop (dialect context &key quiet-p)
+  (unless quiet-p
+    (format t "~&clautolisp ~A — REPL (~A dialect) — Ctrl-D to exit.~%"
+            *version*
+            (autolisp-dialect-name dialect)))
   (loop
     (multiple-value-bind (source eofp)
         (read-balanced-source-from-stream
@@ -173,18 +187,18 @@ STREAM signalled end-of-file before any input was given."
           (report-termination condition)
           (return))))))
 
-(defun run-repl (dialect)
+(defun run-repl (dialect &key quiet-p)
   (let ((context (make-default-runtime-context :dialect dialect)))
     (setup-builtins context)
     (handler-case
-        (repl-loop dialect context)
+        (repl-loop dialect context :quiet-p quiet-p)
       (autolisp-termination (condition)
         (report-termination condition)
         (quit 0)))))
 
 ;;; --- Batch entry points ---------------------------------------------
 
-(defun run-with-input (dialect mode payload)
+(defun run-with-input (dialect mode payload &key quiet-p)
   (handler-case
       (ecase mode
         (:file
@@ -194,7 +208,7 @@ STREAM signalled end-of-file before any input was given."
                               :source-name "<-x>"
                               :setup-fn #'setup-builtins))
         (:repl
-         (run-repl dialect)))
+         (run-repl dialect :quiet-p quiet-p)))
     (autolisp-runtime-error (condition)
       (report-runtime-error condition)
       (quit 1))
@@ -207,9 +221,9 @@ STREAM signalled end-of-file before any input was given."
 
 (defun main (&rest argv)
   (handler-case
-      (multiple-value-bind (dialect mode payload)
+      (multiple-value-bind (dialect mode payload quiet-p)
           (parse-arguments (rest argv))
-        (run-with-input dialect mode payload)
+        (run-with-input dialect mode payload :quiet-p quiet-p)
         (finish-output)
         (quit 0))
     (error (error)
