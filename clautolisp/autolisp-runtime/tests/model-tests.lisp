@@ -599,9 +599,12 @@
                  (is (eq expected-code
                          (autolisp-runtime-error-code condition)))
                  condition))))
-      (expect-runtime-error (lambda ()
-                              (autolisp-eval missing-variable))
-                            :unbound-variable)
+      ;; Bare reference to an unset symbol must NOT signal in any
+;; conforming dialect — silent-NIL is the strict rule across all
+;; AutoLISP hosts (autolisp-spec ch. 3, "Unbound-Variable
+;; Reference"). The diagnostic-only :strict-error mode is exercised
+;; by `unbound-variable-diagnostic-mode-signals` in evaluator-tests.
+      (is (null (autolisp-eval missing-variable)))
       (expect-runtime-error (lambda ()
                               (autolisp-eval (list missing-function 1 2)))
                             :undefined-function)
