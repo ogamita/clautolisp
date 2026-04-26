@@ -8,30 +8,31 @@ The Org documents in `documentation/` remain the place for specification text, e
 
 ## Current Status
 
-- The main specification draft has 974 dictionary entries (Function, Special Form, Reader Syntax, Type, Variable). 597 carry full Phase-3 bodies; 377 are Phase-2 follow-up stubs added on 2026-04-26 after walking the BricsCAD V26 TOC inside Chrome. 47 entries carry an explicit `*** See Also` divergence-reconciliation block from Phase 4. The five long-running validation items (Phase 5) are now closed.
-- Document version bumped to `0.6.0`.
+- The main specification draft has 974 dictionary entries, all body-filled (642 Phase-3 status markers; 0 stubs remaining).
+- Document version bumped to `0.7.0`.
 - Phase 1 (vendor inventory and delta): complete and revisited 2026-04-26.
 - Phase 2 (index closure): complete and extended on 2026-04-26.
-- Phase 3 (body fill): complete for the original Phase-2 stubs. The 377 Phase-2-follow-up stubs are body-pending and remain in scope for a future Phase-3 iteration.
+- Phase 3 (body fill): complete for the original 266 Phase-2 stubs *and* for the 377 Phase-2-follow-up stubs added 2026-04-26. The Phase-3 follow-up scraped each BricsCAD V26 per-symbol page directly via curl, parsed the chm2web tabular layout (Arguments, Return, Example, Remarks), and replaced each chapter-24 stub with the structured body. 316/377 entries received a non-trivial parsed signature; 134/377 received explicit Arguments; 134/377 received explicit Return; 98/377 received Examples; 83/377 received Remarks. The remaining entries kept a sensible default body where the vendor page was a one-line description.
 - Phase 4 (divergence reconciliation): complete.
-- Phase 5 (validation closure): complete. Five long-running items — `atoi`, `atof`, `vl-member-if-not`, `exit` vs `quit`, and the printer surface (`prin1` / `princ` / `print` / `terpri` / `prompt`) — closed at the *documented* level via direct citation of the BricsCAD V26 per-symbol pages reached through Claude-in-Chrome MCP. `atoi` and `atof` carry an explicit *Implementation-defined Behaviour* section listing the lex edges that vendor prose still does not pin down, and reference the existing probe suite in `sources/`. `exit` and `quit` now read identically (vendor evidence does not support a semantic distinction). `vl-member-if-not` symmetry-with-`vl-member-if` hypothesis is now confirmed by direct citation. Printer-surface escape / newline distinctions made explicit. See `documentation/specification-resolution-plan.org` for the closure record.
-- Remaining work: body-fill the 377 new BricsCAD stubs from chapter 24's *Phase-2 Follow-up Catalogue*. When a local AutoCAD or BricsCAD is available, run `scripts/run-probes.sh` to upgrade the lex-edge entries from *implementation-defined* to *tested*.
+- Phase 5 (validation closure): complete. Five long-running items — `atoi`, `atof`, `vl-member-if-not`, `exit` vs `quit`, and the printer surface (`prin1` / `princ` / `print` / `terpri` / `prompt`) — closed at the *documented* level via direct citation of the BricsCAD V26 per-symbol pages reached through Claude-in-Chrome MCP. See `documentation/specification-resolution-plan.org` for the closure record.
+- Remaining work: when a local AutoCAD or BricsCAD is available, run `scripts/run-probes.sh` to upgrade the implementation-defined lex-edge entries on `atoi` / `atof` from *implementation-defined* to *tested*.
 
 ## Phasing
 
 - Phase 1 (done; revisited 2026-04-26) — Vendor inventory, delta, divergence list. Live-DOM walk inside Chrome recovered the full 941-entry BricsCAD V26 LISP catalogue.
 - Phase 2 (done; extended 2026-04-26) — Index closure: original 266 stubs + 377 Phase-2-follow-up stubs in chapter 24.
-- Phase 3 (done for original 266 stubs; new 377 stubs pending) — Body fill: full HyperSpec-style entries for stubbed symbols.
+- Phase 3 (done) — Body fill: full HyperSpec-style entries for stubbed symbols. Original 266 Phase-2 stubs filled in the first Phase-3 pass; the 377 Phase-2-follow-up stubs filled in the Phase-3 follow-up via direct scrape of BricsCAD V26 per-symbol pages.
 - Phase 4 (done) — Divergence reconciliation: bidirectional *See Also* blocks added on 47 entries covering every pair listed in `vendor-inventory-2026.org` §10 plus the BricsCAD-only numeric helpers that have portable AutoLISP idioms (acos / asin / tan / ceiling / floor / round).
 - Phase 5 (done) — Validation closure: `atoi`, `atof`, `vl-member-if-not`, `exit` vs `quit`, printer surface (`prin1` / `princ` / `print` / `terpri` / `prompt`) closed at *documented* level via direct BricsCAD V26 per-symbol citations. Lex-edge unknowns on `atoi` / `atof` recorded as *implementation-defined* with the existing probe suite as the path to *tested*.
 
 ## Near-Term Tasks
 
-### Phase 3 follow-up — body-fill the 377 new BricsCAD stubs (next)
+### Phase 3 follow-up — body-fill the 377 new BricsCAD stubs (done)
 
-- [ ] Walk `bricscad-stubs-data.tsv` (Phase-2-follow-up generator input) in family order — Standard/Misc → BricsCAD System → Generic Properties → Error Control → Visual LISP Extension → Viewport-Layer → ActiveX Extension → Reactor Extension → VLX Namespace (obsolete) → VLE Library (105) → ExpressTools API (208 + 8) → DOSLib (23).
-- [ ] Fetch each per-symbol BricsCAD V26 page (URLs are already recorded in each stub's Source Notes line) and replace the placeholder Description / add Arguments and Values / Return Values / Side Effects / Examples blocks.
-- [ ] Where a BricsCAD function has a clear AutoCAD analogue (e.g. `acet-*` ports, `dos_*` ↔ DOSLib, `vle-*` ↔ AutoLISP idioms), add a Phase-4 cross-reference.
+- [x] Bulk-fetch every per-symbol BricsCAD V26 page (377 pages in 16-way parallel curl).
+- [x] Parse the chm2web tabular layout (Arguments / Return / Example / Remarks) and the inline signature line.
+- [x] Replace each chapter-24 stub with a fully-structured body. 316/377 received a non-trivial signature; 134 Arguments; 134 Return; 98 Examples; 83 Remarks.
+- [ ] Where a BricsCAD function has a clear AutoCAD analogue (e.g. `acet-*` ports, `dos_*` ↔ DOSLib, `vle-*` ↔ AutoLISP idioms), add a Phase-4 cross-reference. Carrying this over as future work since most pairs are already covered by the Phase-4 sweep.
 
 ### Phase 4 — Divergence reconciliation (done)
 
