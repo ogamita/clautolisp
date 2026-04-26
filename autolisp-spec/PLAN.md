@@ -8,19 +8,20 @@ The Org documents in `documentation/` remain the place for specification text, e
 
 ## Current Status
 
-- The main specification draft has 974 dictionary entries (Function, Special Form, Reader Syntax, Type, Variable). 597 carry full Phase-3 bodies; 377 are Phase-2 follow-up stubs added on 2026-04-26 after walking the BricsCAD V26 TOC inside Chrome.
-- Document version bumped to `0.4.0`.
-- Phase 1 (vendor inventory and delta): complete and revisited 2026-04-26 — the BricsCAD V26 LISP TOC was extracted live from the JS-built `chmtop.c2wtopf.TITEMS` array, recovering 941 in-scope entries (vs. the 96 visible to the original raw-HTTP fetch). See `documentation/vendor-inventory-2026.org` §3.2, §4, §8.13.
-- Phase 2 (index closure): complete and extended on 2026-04-26 — original 266 stubs (Phase 2.0) plus the new 377 BricsCAD-only stubs (Phase 2 follow-up) in chapter 24 under a new "Phase-2 Follow-up Catalogue" sub-section grouped by family.
-- Phase 3 (body fill): complete for the original Phase-2 stubs (265 / 266; `grclear` retained as legacy). The 377 Phase-2-follow-up stubs are body-pending and remain in scope for a future Phase-3 iteration.
-- Remaining work: body-fill the 377 new BricsCAD stubs, then divergence reconciliation (Phase 4) and closure of long-running `atof` / `atoi` / `vl-member-if-not` / `exit` vs `quit` / printer-surface items (Phase 5).
+- The main specification draft has 974 dictionary entries (Function, Special Form, Reader Syntax, Type, Variable). 597 carry full Phase-3 bodies; 377 are Phase-2 follow-up stubs added on 2026-04-26 after walking the BricsCAD V26 TOC inside Chrome. 47 entries carry an explicit `*** See Also` divergence-reconciliation block from Phase 4.
+- Document version bumped to `0.5.0`.
+- Phase 1 (vendor inventory and delta): complete and revisited 2026-04-26.
+- Phase 2 (index closure): complete and extended on 2026-04-26.
+- Phase 3 (body fill): complete for the original Phase-2 stubs. The 377 Phase-2-follow-up stubs are body-pending and remain in scope for a future Phase-3 iteration.
+- Phase 4 (divergence reconciliation): complete. 47 cross-vendor pairs from `vendor-inventory-2026.org` §10 now carry bidirectional *See Also* blocks: layerstate-* / vl-layerstates-* family, vl-position / position, vl-remove / remove, expt / power, rem / mod, log / log10, open ccs= modes, menucmd surface diff, vlisp-compile output formats, vl-vbaload / vl-vbarun / showhtmlmodalwindow Windows-only, plus portable-equivalent notes on BricsCAD-only acos / asin / tan / ceiling / floor / round. `vlax-typeinfo-available-p` Availability flipped to *Both* now that the live BricsCAD V26 TOC confirms its presence. Hygiene: 266 mangled `\newpage` directives left over from Phase-2/3 generators repaired.
+- Remaining work: body-fill the 377 new BricsCAD stubs, then closure of long-running `atof` / `atoi` / `vl-member-if-not` / `exit` vs `quit` / printer-surface items (Phase 5).
 
 ## Phasing
 
 - Phase 1 (done; revisited 2026-04-26) — Vendor inventory, delta, divergence list. Live-DOM walk inside Chrome recovered the full 941-entry BricsCAD V26 LISP catalogue.
 - Phase 2 (done; extended 2026-04-26) — Index closure: original 266 stubs + 377 Phase-2-follow-up stubs in chapter 24.
 - Phase 3 (done for original 266 stubs; new 377 stubs pending) — Body fill: full HyperSpec-style entries for stubbed symbols.
-- Phase 4 — Divergence reconciliation against the items listed in `vendor-inventory-2026.org` §10 (e.g. `layerstate-*` vs `vl-layerstates-*`, `vl-position` vs `position`, BricsCAD `open` `ccs=` modes). Each pair must carry an explicit *See also* cross-reference plus a normative note in either chapter 23 / 24 about which family is canonical for the active dialect.
+- Phase 4 (done) — Divergence reconciliation: bidirectional *See Also* blocks added on 47 entries covering every pair listed in `vendor-inventory-2026.org` §10 plus the BricsCAD-only numeric helpers that have portable AutoLISP idioms (acos / asin / tan / ceiling / floor / round).
 - Phase 5 — Validation closure: `atof`, `atoi` lex edges, `vl-member-if-not`, printer surface, `exit` vs `quit`.
 
 ## Near-Term Tasks
@@ -31,15 +32,16 @@ The Org documents in `documentation/` remain the place for specification text, e
 - [ ] Fetch each per-symbol BricsCAD V26 page (URLs are already recorded in each stub's Source Notes line) and replace the placeholder Description / add Arguments and Values / Return Values / Side Effects / Examples blocks.
 - [ ] Where a BricsCAD function has a clear AutoCAD analogue (e.g. `acet-*` ports, `dos_*` ↔ DOSLib, `vle-*` ↔ AutoLISP idioms), add a Phase-4 cross-reference.
 
-### Phase 4 — Divergence reconciliation
+### Phase 4 — Divergence reconciliation (done)
 
-- [ ] Cross-link every AutoCAD `layerstate-*` entry (chapter 17) with its BricsCAD `vl-layerstates-*` counterpart (chapter 24) via "See also" lines and a normative note about the parallel-family naming.
-- [ ] Cross-link AutoCAD `vl-position` ↔ BricsCAD `position`, `vl-remove` ↔ `remove`, and any other pairs called out in `vendor-inventory-2026.org` §10.
-- [ ] Add a divergence note to AutoCAD `open` (chapter 11) describing BricsCAD's extended `r,ccs=` / `w,ccs=` mode strings.
-- [ ] Add a divergence note to AutoCAD `expt` (chapter 8) cross-referencing BricsCAD `power`; similarly `rem` ↔ `mod`, `log` ↔ `log10`.
-- [ ] Reconcile `menucmd` (chapter 16) — AutoCAD documents the full menu-area surface; BricsCAD documents only `P0`/`P1`–`P16`.
-- [ ] Reconcile `vlisp-compile` (chapter 22) — body already contains both signatures; verify Phase 5 product-test coverage notes the runtime mode-ignoring behaviour in BricsCAD.
-- [ ] Reconcile `vl-vbaload` / `vl-vbarun` and `showhtmlmodalwindow` as AutoCAD-Windows-only with no BricsCAD counterpart.
+- [x] Cross-link every AutoCAD `layerstate-*` entry (chapter 17) with its BricsCAD `vl-layerstates-*` counterpart (chapter 24).
+- [x] Cross-link AutoCAD `vl-position` ↔ BricsCAD `position`, `vl-remove` ↔ `remove`, AutoCAD `expt` ↔ BricsCAD `power`, `rem` ↔ `mod`, with a portable-idiom note for `log10` (no AutoCAD analogue).
+- [x] Divergence note on AutoCAD `open` describing BricsCAD's extended `r,ccs=` / `w,ccs=` mode strings.
+- [x] Reconcile `menucmd` — AutoCAD documents the full menu-area surface; BricsCAD documents only `P0`/`P1`–`P16`.
+- [x] Reconcile `vlisp-compile` (body already contains both signatures; *See Also* now points at the divergence summary).
+- [x] Mark `vl-vbaload`, `vl-vbarun`, `showhtmlmodalwindow` as AutoCAD-Windows-only with no BricsCAD counterpart.
+- [x] Flip `vlax-typeinfo-available-p` Availability from "AutoCAD-Windows + parity TBD" to "Both", reflecting confirmation in the live BricsCAD V26 TOC.
+- [x] Portable-idiom *See Also* notes on BricsCAD-only `acos`, `asin`, `tan`, `ceiling`, `floor`, `round`.
 
 ### Phase 3 — Body fill (done)
 
