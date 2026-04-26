@@ -265,6 +265,51 @@
               (autolisp-symbol-function symbol)
               3))))))
 
+(test builtin-document-import-by-application
+  (reset-autolisp-symbol-table)
+  (let* ((document (make-document-namespace :name "DRAWING-DOC"))
+         (producer (clautolisp.autolisp-runtime:make-separate-vlx-namespace
+                    :name "PRODUCER"))
+         (consumer (clautolisp.autolisp-runtime:make-separate-vlx-namespace
+                    :name "CONSUMER"))
+         (session (make-runtime-session :current-document document))
+         (producer-context (make-evaluation-context
+                            :session session
+                            :current-document document
+                            :current-namespace producer))
+         (consumer-context (make-evaluation-context
+                            :session session
+                            :current-document document
+                            :current-namespace consumer)))
+    (register-runtime-session-vlx-namespace session producer)
+    (register-runtime-session-vlx-namespace session consumer)
+    (set-default-evaluation-context producer-context)
+    (install-core-builtins)
+    (let* ((symbol-a (intern-autolisp-symbol "APP-FN-A"))
+           (symbol-b (intern-autolisp-symbol "APP-FN-B"))
+           (export-fn (find-core-builtin "VL-DOC-EXPORT"))
+           (import-fn (find-core-builtin "VL-DOC-IMPORT"))
+           (function-a (make-autolisp-subr "APP-FN-A" (lambda (x) (+ x 1))))
+           (function-b (make-autolisp-subr "APP-FN-B" (lambda (x) (+ x 2)))))
+      (set-autolisp-symbol-function symbol-a function-a)
+      (set-autolisp-symbol-function symbol-b function-b)
+      (call-autolisp-function export-fn symbol-a)
+      (call-autolisp-function export-fn symbol-b)
+      (set-default-evaluation-context consumer-context)
+      (is (equal '("APP-FN-A" "APP-FN-B")
+                 (sort (mapcar #'autolisp-symbol-name
+                               (call-autolisp-function import-fn
+                                                       (make-autolisp-string "PRODUCER")))
+                       #'string<)))
+      (is (= 8
+             (call-autolisp-function
+              (autolisp-symbol-function symbol-a)
+              7)))
+      (is (= 9
+             (call-autolisp-function
+              (autolisp-symbol-function symbol-b)
+              7))))))
+
 (test builtin-defun-q-list-ref-and-set
   (reset-autolisp-symbol-table)
   (install-core-builtins)

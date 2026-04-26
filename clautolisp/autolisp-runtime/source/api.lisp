@@ -203,6 +203,11 @@
            (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
             session)))
 
+(defun find-runtime-session-vlx-namespace (session name)
+  (gethash name
+           (clautolisp.autolisp-runtime.internal::runtime-session-separate-vlx-namespaces
+            session)))
+
 (defun copy-value-cell-between-namespaces (source target symbol)
   (let ((source-cell (namespace-value-cell source symbol :createp nil)))
     (when (and source-cell (value-cell-bound-p source-cell))
@@ -232,6 +237,18 @@
              (clautolisp.autolisp-runtime.internal::runtime-session-propagated-symbols
               session)))
   document)
+
+(defun register-runtime-session-vlx-namespace (session namespace)
+  (unless (typep namespace 'separate-vlx-namespace)
+    (signal-autolisp-runtime-error
+     :invalid-namespace
+     "Expected a separate VLX namespace, got ~S."
+     namespace))
+  (setf (gethash (separate-vlx-namespace-name namespace)
+                 (clautolisp.autolisp-runtime.internal::runtime-session-separate-vlx-namespaces
+                  session))
+        namespace)
+  namespace)
 
 (defun set-runtime-session-current-document (session document)
   (unless (typep document 'document-namespace)
@@ -458,6 +475,20 @@
        :undefined-function
        "No function named ~A is defined in the current namespace."
        (autolisp-symbol-name symbol)))
+    (let ((namespace (evaluation-context-current-namespace context))
+          (session (evaluation-context-session context)))
+      (when (typep namespace 'separate-vlx-namespace)
+        (register-runtime-session-vlx-namespace session namespace)
+        (let* ((application-name (separate-vlx-namespace-name namespace))
+               (application-table
+                 (or (gethash application-name
+                              (clautolisp.autolisp-runtime.internal::runtime-session-exported-functions
+                               session))
+                     (setf (gethash application-name
+                                    (clautolisp.autolisp-runtime.internal::runtime-session-exported-functions
+                                     session))
+                           (make-hash-table :test #'eq)))))
+          (setf (gethash symbol application-table) function))))
     (document-namespace-function-set
      (evaluation-context-current-document context)
      symbol
@@ -476,6 +507,30 @@
        (autolisp-symbol-name symbol)))
     (set-function symbol function context)
     symbol))
+
+(defun import-functions-from-application (application
+                                         &optional (context (current-evaluation-context)))
+  (let* ((session (evaluation-context-session context))
+         (application-name
+           (etypecase application
+             (string application)
+             (autolisp-string (autolisp-string-value application))
+             (autolisp-symbol (autolisp-symbol-name application))))
+         (application-table
+           (gethash application-name
+                    (clautolisp.autolisp-runtime.internal::runtime-session-exported-functions
+                     session))))
+    (unless application-table
+      (signal-autolisp-runtime-error
+       :undefined-application
+       "No exported VLX application named ~A is available in the current session."
+       application-name))
+    (let ((imported '()))
+      (maphash (lambda (symbol function)
+                 (set-function symbol function context)
+                 (push symbol imported))
+               application-table)
+      (nreverse imported))))
 
 (defun blackboard-ref (symbol &optional (context (current-evaluation-context)))
   (let* ((namespace (runtime-session-blackboard-namespace

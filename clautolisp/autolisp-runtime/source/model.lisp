@@ -45,6 +45,8 @@
 
 (defstruct runtime-session
   (document-namespaces (make-hash-table :test #'equal))
+  (separate-vlx-namespaces (make-hash-table :test #'equal))
+  (exported-functions (make-hash-table :test #'equal))
   (blackboard-namespace (make-blackboard-namespace))
   (propagated-symbols (make-hash-table :test #'eq))
   (errno 0 :type integer)

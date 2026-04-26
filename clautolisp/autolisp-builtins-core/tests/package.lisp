@@ -31,6 +31,7 @@
                 #:document-namespace-ref
                 #:make-evaluation-context
                 #:make-runtime-session
+                #:register-runtime-session-vlx-namespace
                 #:register-runtime-session-document
                 #:autolisp-string-value
                 #:autolisp-subr
