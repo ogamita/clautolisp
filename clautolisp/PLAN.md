@@ -6,6 +6,8 @@ This file is the canonical task tracker for the `clautolisp` implementation subp
 
 The Org documents in `documentation/` remain the place for architecture and implementation rationale. Actionable work items should be tracked here.
 
+The forward-looking architectural plan — phases 7 onward, including the Host Abstraction Layer, MockHost / GuiHost / LiveHost backend strategy, and the per-phase data-model decomposition — lives in [`documentation/implementation-roadmap.org`](documentation/implementation-roadmap.org).
+
 ## Current Status
 
 - The implementation architecture is defined at a high level.
