@@ -89,6 +89,8 @@
    #:autolisp-dialect-hex-float-atof-p
    #:autolisp-dialect-open-ccs-mode-p
    #:autolisp-dialect-unbound-variable-mode
+   #:autolisp-dialect-default-source-encoding
+   #:autolisp-dialect-default-file-encoding
    #:find-autolisp-dialect
    #:reader-options-from-dialect
    #:autolisp-dialect-strict
@@ -136,6 +138,8 @@
    #:autolisp-dialect-hex-float-atof-p
    #:autolisp-dialect-open-ccs-mode-p
    #:autolisp-dialect-unbound-variable-mode
+   #:autolisp-dialect-default-source-encoding
+   #:autolisp-dialect-default-file-encoding
    #:find-autolisp-dialect
    #:reader-options-from-dialect
    #:*autolisp-dialect-strict*

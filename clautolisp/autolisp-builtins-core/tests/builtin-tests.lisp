@@ -1637,6 +1637,59 @@
     (is (null (call-autolisp-function findfile-fn
                                       (make-autolisp-string "/no/such/file.lsp"))))))
 
+(test phase-encoding-strict-loads-iso-8859-1-source
+  ;; Strict dialect default external-format is :iso-8859-1, so a
+  ;; file whose bytes are valid Latin-1 but invalid UTF-8 (e.g. byte
+  ;; 233 = e-acute) loads cleanly.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (uiop:with-temporary-file (:pathname p :stream s :type "lsp"
+                             :keep nil :direction :output
+                             :element-type '(unsigned-byte 8))
+    (write-sequence #(40 ;; "(setq foo \"<é>\")"
+                      83 69 84 81 32 70 79 79 32 34 60 233 62 34 41
+                      10)
+                    s)
+    :close-stream
+    (let ((load-fn (autolisp-symbol-function (find-autolisp-symbol "LOAD"))))
+      ;; Should not signal — strict default encoding is iso-8859-1.
+      (call-autolisp-function load-fn (make-autolisp-string (namestring p))))))
+
+(test phase-encoding-autocad-default-is-utf-8
+  ;; Under autocad-2026, the default source encoding is :utf-8 — a
+  ;; UTF-8 file with non-ASCII bytes loads, and an iso-8859-1-only
+  ;; file does NOT (the user opted into Unicode).
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:default-evaluation-context)))
+         (autocad (clautolisp.autolisp-reader:autolisp-dialect-autocad-2026)))
+    (clautolisp.autolisp-runtime:set-runtime-session-dialect session autocad)
+    (is (eq :utf-8
+            (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
+             autocad)))
+    (is (eq :utf-8
+            (clautolisp.autolisp-reader:autolisp-dialect-default-file-encoding
+             autocad)))))
+
+(test phase-encoding-parse-open-external-format-aliases
+  ;; Autodesk short names + ANSI / latin1 / cp1252 + BricsCAD ccs=
+  ;; mode-string fragment.
+  (let ((parse 'clautolisp.autolisp-builtins-core::parse-open-external-format))
+    (is (eq :utf-8     (funcall parse "utf8")))
+    (is (eq :utf-8     (funcall parse "utf8-bom")))
+    (is (eq :utf-8     (funcall parse "UTF-8")))
+    (is (eq :iso-8859-1 (funcall parse "ANSI")))
+    (is (eq :iso-8859-1 (funcall parse "latin1")))
+    (is (eq :iso-8859-1 (funcall parse "iso-8859-1")))
+    (is (eq :cp1252    (funcall parse "cp1252")))
+    (is (eq :cp1252    (funcall parse "windows-1252")))
+    ;; Bricscad-style "MODE,ccs=NAME" — the parser sees the trailing
+    ;; "ccs=NAME" fragment.
+    (is (eq :utf-8     (funcall parse "ccs=UTF-8")))
+    (is (eq :iso-8859-1 (funcall parse "r,ccs=ANSI")))
+    ;; Common-Lisp keyword literal still works.
+    (is (eq :utf-8     (funcall parse ":utf-8")))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs

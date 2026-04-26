@@ -57,7 +57,8 @@
                 #:make-autolisp-subr
                 #:propagate-variable
                 #:set-autolisp-function-list-definition
-                #:set-autolisp-symbol-function)
+                #:set-autolisp-symbol-function
+                #:current-evaluation-dialect)
   (:export
    #:*core-builtin-names*
    #:core-builtins

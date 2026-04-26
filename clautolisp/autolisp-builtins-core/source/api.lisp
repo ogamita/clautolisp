@@ -853,34 +853,89 @@
       "OPEN mode must be one of \"r\", \"w\", or \"a\", got ~S."
       mode))))
 
-(defun parse-open-external-format (string)
-  (labels ((keywordize (name)
-             (intern (string-upcase name) "KEYWORD")))
+(defun normalize-encoding-name (name)
+  "Map an AutoLISP / Autodesk / BricsCAD encoding name (case-folded
+ASCII, with optional dashes / underscores) to a SBCL- and CCL-
+compatible :external-format keyword."
+  (let ((canonical (with-output-to-string (out)
+                     (loop for c across name
+                           unless (or (char= c #\-) (char= c #\_) (char= c #\Space))
+                             do (write-char (char-upcase c) out)))))
     (cond
-      ((zerop (length string))
-       (signal-builtin-argument-error
-        :invalid-external-format
-        "OPEN"
-        "Invalid empty external format."))
-      ((or (char= (char string 0) #\:)
-           (char= (char string 0) #\())
-       (handler-case
-           (let ((value (read-from-string string)))
-             (unless (typep value '(or keyword cons))
-               (signal-builtin-argument-error
-                :invalid-external-format
-                "OPEN"
-                "Invalid external format ~S."
-                string))
-             value)
-         (error ()
-           (signal-builtin-argument-error
-            :invalid-external-format
-            "OPEN"
-            "Invalid external format ~S."
-            string))))
-      (t
-       (keywordize string)))))
+      ;; Autodesk's documented short names.
+      ((string= canonical "UTF8")     :utf-8)
+      ((string= canonical "UTF8BOM")  :utf-8)
+      ((string= canonical "UTF16")    :utf-16)
+      ((string= canonical "UTF16LE")  :utf-16le)
+      ((string= canonical "UTF16BE")  :utf-16be)
+      ((string= canonical "UTF32")    :utf-32)
+      ;; The "ANSI" short name historically meant the legacy host
+      ;; code page. Map it to ISO-8859-1 — a strict 1-1 byte coding
+      ;; that never fails on Western text. Hosts that need
+      ;; Windows-1252 specifically can pass "cp1252" / "WINDOWS-1252"
+      ;; explicitly.
+      ((string= canonical "ANSI")     :iso-8859-1)
+      ((string= canonical "ASCII")    :ascii)
+      ((string= canonical "LATIN1")   :iso-8859-1)
+      ((or (string= canonical "ISO88591")
+           (string= canonical "8859.1"))
+       :iso-8859-1)
+      ((string= canonical "WINDOWS1252") :cp1252)
+      ((string= canonical "CP1252")   :cp1252)
+      ;; Anything else: keywordise. SBCL / CCL accept many aliases.
+      (t (intern canonical "KEYWORD")))))
+
+(defun parse-open-external-format (string)
+  "Decode the third argument of (open path mode ENCODING). Accepted
+forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
+
+  - empty / nil      -> dialect default (resolved by the caller).
+  - keyword literal  -> e.g. \":utf-8\" / \":iso-8859-1\".
+  - sexp literal     -> a Common-Lisp external-format designator,
+                         e.g. \"(:utf-8 :replacement #\\?)\".
+  - Autodesk short   -> \"utf8\", \"utf8-bom\", \"ANSI\", \"ASCII\".
+  - BricsCAD CCS form -> \"r,ccs=UTF-8\", \"w,ccs=ISO-8859-1\". The
+                         leading mode-letter is stripped by the
+                         caller; this parser only sees the trailing
+                         encoding fragment, so a leading
+                         \"ccs=NAME\" (with or without the comma)
+                         is also accepted directly.
+"
+  (cond
+    ((or (null string) (zerop (length string)))
+     (signal-builtin-argument-error
+      :invalid-external-format
+      "OPEN"
+      "Invalid empty external format."))
+    ((or (char= (char string 0) #\:)
+         (char= (char string 0) #\())
+     (handler-case
+         (let ((value (read-from-string string)))
+           (unless (typep value '(or keyword cons))
+             (signal-builtin-argument-error
+              :invalid-external-format
+              "OPEN"
+              "Invalid external format ~S."
+              string))
+           value)
+       (error ()
+         (signal-builtin-argument-error
+          :invalid-external-format
+          "OPEN"
+          "Invalid external format ~S."
+          string))))
+    ;; BricsCAD-style "MODE,ccs=NAME" or bare "ccs=NAME".
+    ((let ((eq (position #\= string)))
+       (and eq
+            (let ((tag (subseq string 0 eq)))
+              (or (string-equal tag "ccs")
+                  (and (>= (length tag) 4)
+                       (string-equal (subseq tag (- (length tag) 4)) ",ccs"))))))
+     (let* ((eq (position #\= string))
+            (name (subseq string (1+ eq))))
+       (normalize-encoding-name name)))
+    (t
+     (normalize-encoding-name string))))
 
 (defun builtin-numberp (object)
   (if (numberp object)
@@ -1251,14 +1306,25 @@
   (make-autolisp-string
    (string (int32->character code "CHR"))))
 
+(defun open-default-external-format ()
+  "Resolve the active dialect's default file encoding for `open`,
+falling back to :iso-8859-1 (the historic ANSI/MBCS legacy default)
+when no dialect is in scope."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (or (and dialect
+             (clautolisp.autolisp-reader:autolisp-dialect-default-file-encoding
+              dialect))
+        :iso-8859-1)))
+
 (defun builtin-open (filename mode &optional encoding)
   (let* ((path-string (autolisp-string-value (require-string filename "OPEN")))
          (mode-string (autolisp-string-value (require-string mode "OPEN")))
          (path (resolve-open-pathname path-string))
-         (external-format (when encoding
-                            (parse-open-external-format
-                             (autolisp-string-value
-                              (require-string encoding "OPEN"))))))
+         (external-format (cond
+                            ((null encoding) (open-default-external-format))
+                            (t (parse-open-external-format
+                                (autolisp-string-value
+                                 (require-string encoding "OPEN")))))))
     (multiple-value-bind (direction if-exists if-does-not-exist)
         (open-direction-and-options mode-string)
       (handler-case
@@ -1266,7 +1332,7 @@
                               :direction direction
                               :if-exists if-exists
                               :if-does-not-exist if-does-not-exist
-                              :external-format (or external-format :default))))
+                              :external-format external-format)))
             (if stream
                 (make-autolisp-file stream path-string mode-string)
                 nil))
