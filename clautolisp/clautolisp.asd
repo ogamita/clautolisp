@@ -21,6 +21,7 @@
   :components
   ((:file "autolisp-reader/source/package")
    (:file "autolisp-reader/source/model")
+   (:file "autolisp-reader/source/dialect")
    (:file "autolisp-reader/source/input")
    (:file "autolisp-reader/source/tokenizer")
    (:file "autolisp-reader/source/parser")
@@ -90,6 +91,19 @@
   ((:file "autolisp-reader/tools/read-autolisp/source/package")
    (:file "autolisp-reader/tools/read-autolisp/source/main")))
 
+(asdf:defsystem "clautolisp/clautolisp-tool"
+  :description "Standalone AutoLISP evaluator built on top of the clautolisp runtime."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-reader"
+               "clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-builtins-core"
+               "uiop")
+  :serial t
+  :components
+  ((:file "tools/clautolisp/source/package")
+   (:file "tools/clautolisp/source/main")))
+
 (asdf:defsystem "clautolisp/run-file-compat"
   :description "Command-line compatibility runner for file scenarios."
   :author "Codex"
@@ -111,6 +125,7 @@
    (:file "autolisp-reader/tests/test-harness")
    (:file "autolisp-reader/tests/tokenizer-tests")
    (:file "autolisp-reader/tests/parser-tests")
+   (:file "autolisp-reader/tests/dialect-tests")
    (:file "autolisp-reader/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -127,6 +142,7 @@
   ((:file "autolisp-runtime/tests/package")
    (:file "autolisp-runtime/tests/test-harness")
    (:file "autolisp-runtime/tests/model-tests")
+   (:file "autolisp-runtime/tests/evaluator-tests")
    (:file "autolisp-runtime/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

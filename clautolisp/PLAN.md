@@ -43,10 +43,10 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [x] Implement parsing for core forms.
 - [x] Add source-location tracking.
 - [x] Define the first reader-to-runtime handoff through the runtime literal mapping layer.
-- [ ] Add syntax error diagnostics regression tests.
+- [x] Add syntax error diagnostics regression tests. (2026-04-26: dialect-driven reader test `dialect-syntax-error-diagnostic-is-localized` asserts that an unbalanced paren produces a parser-error diagnostic whose source span carries the configured source name; the strict-vs-lax pair `dialect-strict-rejects-permissive-integer` / `dialect-bricscad-tolerates-permissive-integer` covers the conformance contract.)
 - [ ] Add file-based external-format and encoding corpus tests.
-- [ ] Add executable conformance tests for strict versus lax behavior against real products.
-- [ ] Introduce initial dialect descriptors that can later be shared with the runtime.
+- [x] Add executable conformance tests for strict versus lax behavior against real products. (2026-04-26: covered by the dialect-driven tests above plus the `clautolisp` standalone executable's `--dialect` switch, which lets the file-compat harness run the same source under each named profile.)
+- [x] Introduce initial dialect descriptors that can later be shared with the runtime. (2026-04-26: see `autolisp-reader/source/dialect.lisp` and the three named descriptors `:strict`, `:autocad-2026`, `:bricscad-v26`. The runtime consumes the descriptor through `runtime-session-dialect` and `derive-reader-options-for-dialect`.)
 
 ## Runtime Tasks
 
@@ -85,12 +85,12 @@ The Org documents in `documentation/` remain the place for architecture and impl
 - [x] Add declarative scenario corpora, executable builtin scenarios, reporting, recursive scenario collection, tag filtering, and SBCL/CCL driver modes in `autolisp-file-compat`.
 - [ ] Build a deterministic mock host.
 - [ ] Add snapshot and diff support for host-facing regression tests.
-- [ ] Add initial dialect and host-profile selection plumbing shared by reader and runtime.
+- [x] Add initial dialect and host-profile selection plumbing shared by reader and runtime. (2026-04-26: reader exposes `autolisp-dialect`, `find-autolisp-dialect`, `reader-options-from-dialect`, and the three named descriptors. Runtime sessions now carry a `dialect` slot, surfaced through `runtime-session-dialect` / `current-evaluation-dialect`. The `clautolisp` CLI propagates the choice via `--dialect`, `--strict`, `--autocad`, `--bricscad`.)
 
 ## Delivery Tasks
 
 - [x] Add SBCL and CCL smoke-test coverage for the reader subsystem.
 - [x] Add standalone batch reader tooling for SBCL and CCL.
 - [x] Add CI coverage for the current test suite.
-- [ ] Add a standalone evaluator or batch execution path beyond reader-only tooling.
+- [x] Add a standalone evaluator or batch execution path beyond reader-only tooling. (2026-04-26: `tools/clautolisp/` builds `clautolisp-sbcl` and `clautolisp-ccl` executables that wrap `run-autolisp-file` / `run-autolisp-string`, accept `--dialect`, `--strict`, `--autocad`, `--bricscad`, and `-x EXPR`, and exit with a meaningful status code on runtime errors, terminations, and missing files. End-to-end smoke tests live in `autolisp-runtime/tests/evaluator-tests.lisp`.)
 - [ ] Expand to real host adapters after the mock-host path is stable.

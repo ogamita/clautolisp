@@ -178,16 +178,38 @@
 (defun separate-vlx-namespace-name (namespace)
   (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-name namespace))
 
-(defun make-runtime-session (&key current-document)
-  (let ((document (or current-document
-                      (make-document-namespace :name "DOCUMENT"))))
+(defun make-runtime-session (&key current-document dialect)
+  (let* ((document (or current-document
+                       (make-document-namespace :name "DOCUMENT")))
+         (chosen-dialect
+          (or dialect
+              (clautolisp.autolisp-reader:autolisp-dialect-strict))))
     (let ((session (clautolisp.autolisp-runtime.internal::make-runtime-session
-                    :current-document document)))
+                    :current-document document
+                    :dialect chosen-dialect)))
       (setf (gethash (document-namespace-name document)
                      (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
                       session))
             document)
       session)))
+
+(defun runtime-session-dialect (session)
+  "Return the dialect descriptor SESSION was instantiated with."
+  (clautolisp.autolisp-runtime.internal::runtime-session-dialect session))
+
+(defun set-runtime-session-dialect (session dialect)
+  "Replace SESSION's dialect descriptor. Useful for tools that switch
+profiles between subordinate evaluations within a single session."
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-dialect session)
+        dialect))
+
+(defun current-evaluation-dialect (&optional (context (current-evaluation-context)))
+  "Return the dialect of CONTEXT's session, or the strict default."
+  (or (and context
+           (clautolisp.autolisp-runtime.internal::evaluation-context-session context)
+           (clautolisp.autolisp-runtime.internal::runtime-session-dialect
+            (clautolisp.autolisp-runtime.internal::evaluation-context-session context)))
+      (clautolisp.autolisp-reader:autolisp-dialect-strict)))
 
 (defun runtime-session-current-document (session)
   (clautolisp.autolisp-runtime.internal::runtime-session-current-document session))
@@ -1406,3 +1428,47 @@
          path
          (default-evaluation-context)
          read-options))
+
+;;; --- Standalone-evaluator entry points (Phase 6) -------------------
+;;
+;; Phase 6 adds a higher-level `run-autolisp-file` and
+;; `run-autolisp-string` that wrap session creation, default-context
+;; installation, and load+evaluate into a single call. The standalone
+;; `clautolisp` executable consumes these entries.
+
+(defun derive-reader-options-for-dialect (dialect &key source-name)
+  "Build a reader-options struct from DIALECT, with SOURCE-NAME wired
+through. Used by the standalone evaluator's load path."
+  (clautolisp.autolisp-reader:reader-options-from-dialect
+   dialect :source-name source-name))
+
+(defun run-autolisp-file (path &key dialect source-name)
+  "Read PATH under DIALECT, evaluate its forms in a fresh session, and
+return the value of the last form. DIALECT defaults to the strict
+profile. SOURCE-NAME, if supplied, is used in diagnostic spans;
+otherwise the file's namestring is used."
+  (let* ((selected-dialect
+          (or dialect (clautolisp.autolisp-reader:autolisp-dialect-strict)))
+         (session (make-runtime-session :dialect selected-dialect))
+         (context (make-evaluation-context :session session)))
+    (set-default-evaluation-context context)
+    (let* ((effective-source-name (or source-name (namestring path)))
+           (options (derive-reader-options-for-dialect
+                     selected-dialect :source-name effective-source-name)))
+      (autolisp-load-file-in-context path context :options options))))
+
+(defun run-autolisp-string (text &key dialect source-name)
+  "Read TEXT under DIALECT and evaluate every form sequentially in a
+fresh session. Useful for `-x EXPR`-style command-line invocations."
+  (let* ((selected-dialect
+          (or dialect (clautolisp.autolisp-reader:autolisp-dialect-strict)))
+         (session (make-runtime-session :dialect selected-dialect))
+         (context (make-evaluation-context :session session)))
+    (set-default-evaluation-context context)
+    (let* ((options (derive-reader-options-for-dialect
+                     selected-dialect :source-name (or source-name "<string>")))
+           (forms (apply #'read-runtime-from-string text :options options
+                         (when source-name (list :source-name source-name)))))
+      (call-with-autolisp-error-handler
+       (lambda () (autolisp-eval-progn forms context))
+       context))))

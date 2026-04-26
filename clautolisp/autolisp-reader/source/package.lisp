@@ -78,7 +78,21 @@
    #:read-forms-from-file
    #:read-concrete-from-string
    #:read-concrete-from-stream
-   #:read-concrete-from-file))
+   #:read-concrete-from-file
+   #:autolisp-dialect
+   #:make-autolisp-dialect
+   #:autolisp-dialect-name
+   #:autolisp-dialect-token-mode
+   #:autolisp-dialect-extended-string-escapes-p
+   #:autolisp-dialect-warn-on-integer-overflow-p
+   #:autolisp-dialect-canonical-case
+   #:autolisp-dialect-hex-float-atof-p
+   #:autolisp-dialect-open-ccs-mode-p
+   #:find-autolisp-dialect
+   #:reader-options-from-dialect
+   #:autolisp-dialect-strict
+   #:autolisp-dialect-autocad-2026
+   #:autolisp-dialect-bricscad-v26))
 
 (defpackage #:clautolisp.autolisp-reader.internal
   (:use #:cl)
@@ -110,4 +124,18 @@
    #:reader-options
    #:scan-tokens
    #:source-span
-   #:token))
+   #:token
+   #:autolisp-dialect
+   #:make-autolisp-dialect
+   #:autolisp-dialect-name
+   #:autolisp-dialect-token-mode
+   #:autolisp-dialect-extended-string-escapes-p
+   #:autolisp-dialect-warn-on-integer-overflow-p
+   #:autolisp-dialect-canonical-case
+   #:autolisp-dialect-hex-float-atof-p
+   #:autolisp-dialect-open-ccs-mode-p
+   #:find-autolisp-dialect
+   #:reader-options-from-dialect
+   #:*autolisp-dialect-strict*
+   #:*autolisp-dialect-autocad-2026*
+   #:*autolisp-dialect-bricscad-v26*))

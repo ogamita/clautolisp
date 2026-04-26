@@ -171,7 +171,13 @@
    #:autolisp-load-file-in-context
    #:read-runtime-from-string
    #:read-runtime-from-stream
-   #:read-runtime-from-file))
+   #:read-runtime-from-file
+   #:runtime-session-dialect
+   #:set-runtime-session-dialect
+   #:current-evaluation-dialect
+   #:derive-reader-options-for-dialect
+   #:run-autolisp-file
+   #:run-autolisp-string))
 
 (defpackage #:clautolisp.autolisp-runtime.internal
   (:use #:cl)

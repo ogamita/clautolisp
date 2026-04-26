@@ -12,6 +12,10 @@ READ_AUTOLISP_TOOL_DIR := autolisp-reader/tools/read-autolisp
 READ_AUTOLISP_BIN_DIR := $(READ_AUTOLISP_TOOL_DIR)/bin
 READ_AUTOLISP_SBCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-sbcl
 READ_AUTOLISP_CCL := $(READ_AUTOLISP_BIN_DIR)/read-autolisp-ccl
+CLAUTOLISP_TOOL_DIR := tools/clautolisp
+CLAUTOLISP_BIN_DIR := $(CLAUTOLISP_TOOL_DIR)/bin
+CLAUTOLISP_SBCL := $(CLAUTOLISP_BIN_DIR)/clautolisp-sbcl
+CLAUTOLISP_CCL := $(CLAUTOLISP_BIN_DIR)/clautolisp-ccl
 RUN_FILE_COMPAT := autolisp-file-compat/tools/run-file-compat/run-file-compat
 FILE_COMPAT_SCENARIOS ?= autolisp-file-compat/scenarios
 FILE_COMPAT_ARGS ?=
@@ -21,7 +25,7 @@ FILE_COMPAT_PRODUCT_SCENARIOS ?= autolisp-file-compat/scenarios/mutations autoli
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 
-.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl run-file-compat-autocad run-file-compat-bricscad audit-file-compat-autocad audit-file-compat-bricscad documentation clean-pdf
+.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl build-clautolisp-sbcl build-clautolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl run-file-compat-autocad run-file-compat-bricscad audit-file-compat-autocad audit-file-compat-bricscad documentation clean-pdf
 
 all: documentation
 
@@ -60,6 +64,22 @@ build-read-autolisp-ccl:
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(require :asdf)' \
 		--load "$(READ_AUTOLISP_TOOL_DIR)/generate-read-autolisp.lisp" \
+		--eval '(ccl:quit)'
+
+build-clautolisp-sbcl:
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	$(SBCL) --noinform --no-userinit --non-interactive \
+		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
+		--eval '(require :asdf)' \
+		--load "$(CLAUTOLISP_TOOL_DIR)/generate-clautolisp.lisp" \
+		--eval '(sb-ext:quit)'
+
+build-clautolisp-ccl:
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	ccl --no-init --quiet \
+		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
+		--eval '(require :asdf)' \
+		--load "$(CLAUTOLISP_TOOL_DIR)/generate-clautolisp.lisp" \
 		--eval '(ccl:quit)'
 
 run-file-compat: run-file-compat-sbcl

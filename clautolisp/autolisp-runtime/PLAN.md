@@ -72,3 +72,4 @@ Architecture and design rationale belong in `documentation/design.org`.
 - [x] Define the explicit path-resolution state and boundary rules needed for the first file builtins.
 - [x] Derive and support the first pathname-resolution layer justified by the current AutoLISP spec draft and compatibility corpus.
 - [ ] Tighten pathname and host-file compatibility as the fuller evaluator/host model and product-level tests arrive.
+- [x] Plumb the shared dialect descriptor through runtime sessions and add `run-autolisp-file` / `run-autolisp-string` entry points for the standalone evaluator. (2026-04-26: `runtime-session` carries a `dialect` slot, `current-evaluation-dialect` returns it from the active context, `derive-reader-options-for-dialect` builds reader options from the descriptor, and the new entry points install a fresh session under the chosen dialect before evaluating. Smoke-tested via `autolisp-runtime/tests/evaluator-tests.lisp`.)

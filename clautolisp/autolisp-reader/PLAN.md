@@ -40,7 +40,7 @@ Architecture and normative design notes belong in `documentation/specification.o
 ## Test Tasks
 
 - [x] Add deterministic tokenization tests.
-- [ ] Add syntax error diagnostics tests.
+- [x] Add syntax error diagnostics tests. (2026-04-26: see `autolisp-reader/tests/dialect-tests.lisp` — `dialect-syntax-error-diagnostic-is-localized` covers the unbalanced-paren path and asserts the diagnostic carries the configured source name; the strict-vs-lax dialect pair `dialect-strict-rejects-permissive-integer` / `dialect-bricscad-tolerates-permissive-integer` covers the conformance contract.)
 - [ ] Add file-based external-format and encoding corpus tests.
 - [x] Add line-ending normalization tests.
 - [x] Add strict versus lax acceptance tests.

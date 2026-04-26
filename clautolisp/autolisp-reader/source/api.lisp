@@ -61,8 +61,52 @@
 (deftype read-result ()
   'clautolisp.autolisp-reader.internal::read-result)
 
+(deftype autolisp-dialect ()
+  'clautolisp.autolisp-reader.internal::autolisp-dialect)
+
 (defun make-reader-options (&rest args)
   (apply #'clautolisp.autolisp-reader.internal:make-reader-options args))
+
+;;; --- Dialect descriptor (Phase 6) -----------------------------------
+(defun make-autolisp-dialect (&rest args)
+  (apply #'clautolisp.autolisp-reader.internal:make-autolisp-dialect args))
+
+(defun autolisp-dialect-name (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-name dialect))
+
+(defun autolisp-dialect-token-mode (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-token-mode dialect))
+
+(defun autolisp-dialect-extended-string-escapes-p (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-extended-string-escapes-p dialect))
+
+(defun autolisp-dialect-warn-on-integer-overflow-p (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-warn-on-integer-overflow-p dialect))
+
+(defun autolisp-dialect-canonical-case (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-canonical-case dialect))
+
+(defun autolisp-dialect-hex-float-atof-p (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-hex-float-atof-p dialect))
+
+(defun autolisp-dialect-open-ccs-mode-p (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-open-ccs-mode-p dialect))
+
+(defun find-autolisp-dialect (name)
+  (clautolisp.autolisp-reader.internal::find-autolisp-dialect name))
+
+(defun reader-options-from-dialect (dialect &rest args)
+  (apply #'clautolisp.autolisp-reader.internal::reader-options-from-dialect
+         dialect args))
+
+(defun autolisp-dialect-strict ()
+  (symbol-value 'clautolisp.autolisp-reader.internal::*autolisp-dialect-strict*))
+
+(defun autolisp-dialect-autocad-2026 ()
+  (symbol-value 'clautolisp.autolisp-reader.internal::*autolisp-dialect-autocad-2026*))
+
+(defun autolisp-dialect-bricscad-v26 ()
+  (symbol-value 'clautolisp.autolisp-reader.internal::*autolisp-dialect-bricscad-v26*))
 
 (defun reader-options-token-mode (options)
   (clautolisp.autolisp-reader.internal::reader-options-token-mode options))
