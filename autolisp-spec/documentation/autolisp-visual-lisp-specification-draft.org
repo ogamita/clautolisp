@@ -717,7 +717,7 @@ Assigns values to variables.
 Returns the value of the last `expr`.
 
 *** Side Effects
-Establishes or changes variable bindings.
+Establishes or changes variable bindings. Writes the supplied value into the symbol's *single binding cell* (see chapter 7, "Single-Cell Symbol Binding"); a previous ~defun~ on the same symbol is therefore overwritten.
 
 *** Exceptional Situations
 Malformed syntax or invalid assignment targets are erroneous.
@@ -725,12 +725,13 @@ Malformed syntax or invalid assignment targets are erroneous.
 *** Examples
 - `(setq A 10) => 10`
 - `(setq A 1 B 2) => 2`
+- `(defun foo (x) x) (setq foo 42)` — `foo` evaluates to `42`; `(foo 5)` then signals *no function definition*.
 
 *** Compatibility
 Stable across vendors.
 
 *** Notes
-`set` differs by evaluating the symbol designator.
+`set` differs by evaluating the symbol designator. AutoLISP is *Lisp-1*: ~setq~ and ~defun~ share the same per-symbol binding cell; the most recent write wins (chapter 7).
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -1314,14 +1315,14 @@ The parameter/local syntax is AutoLISP-specific and must not be replaced with Co
 Under-specified in the current vendor corpus sampled here; implementations commonly return the function name, but this should be version-tested before being treated as normative.
 
 *** Side Effects
-Installs or redefines a global function binding.
+Writes the resulting function value into the symbol's *single binding cell* (see chapter 7, "Single-Cell Symbol Binding"). Any previous binding on `sym` — variable value, prior function, or built-in — is overwritten and is no longer reachable through the symbol.
 
 *** Compatibility
 - local variable syntax is vendor-documented
-- duplicate-name behavior is not fully documented for `defun`
+- duplicate-name behavior is uniform across vendors at the per-symbol level: the most recent ~setq~ or ~defun~ on a symbol wins. This was confirmed for BricsCAD V26 by direct probe (~results/bricscad/macos/20260426T155521Z-namespace/~) and is consistent with the BricsCAD release-note defect SR44723 fix.
 
 *** Notes
-The slash separating arguments and locals must be surrounded by spaces in Autodesk documentation.
+The slash separating arguments and locals must be surrounded by spaces in Autodesk documentation. AutoLISP is *Lisp-1*: ~defun~ and ~setq~ share the same per-symbol binding cell.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -1984,6 +1985,51 @@ See chapter 3 entries for `while`, `repeat`, and `foreach`.
 * 7 Symbols and Bindings
 ** Overview
 Symbols name values and functions. AutoLISP variable management is documented pragmatically rather than through a formal environment calculus.
+
+#+LATEX: \newpage
+
+** Normative Rule: Single-Cell Symbol Binding (Lisp-1)
+*** Statement
+Each AutoLISP symbol carries exactly *one* binding cell. ~setq~ and ~defun~ both write to that single cell; either operation overwrites whatever the other wrote previously. There is no separate function cell distinct from the variable cell. In every position — value position or function-call position — the evaluator dispatches on the same stored value.
+
+This places AutoLISP / Visual LISP in the *Lisp-1* family (a single namespace shared by variables and functions, like Scheme), not the *Lisp-2* family (separate cells per role, like Common Lisp).
+
+*** Concrete Consequences
+- After ~(setq foo 42)~ followed by ~(defun foo (x) (+ 1 x))~, evaluating the bare symbol ~foo~ returns the function object — not ~42~. The ~setq~-supplied integer is gone.
+- After ~(defun bar (x) ...)~ followed by ~(setq bar 42)~, calling ~(bar 5)~ raises *no function definition* — the function is gone.
+- ~(setq myfunc eq)~ followed by ~(myfunc "1" "1")~ must succeed: the variable's stored value (the ~eq~ subroutine) is dispatched as the call's function. Bricsys logged this as defect *SR44723* and shipped the fix accordingly.
+- ~defun-q~ obeys the same single-cell rule, with the additional property that the function value remains list-accessible through ~defun-q-list-ref~ / ~defun-q-list-set~.
+- A ~(defun ... (/ x ...) ...)~ local — i.e. a name appearing after the slash in a lambda list — establishes a *dynamic shadowing* of the same single cell during the call's extent, then restores the prior binding on exit. Local declarations therefore work uniformly for symbols whose outer binding is a value, a function, or both successively.
+
+*** Vendor Evidence
+- BricsCAD V26 release-note defect *SR44723* explicitly documents the
+  expected behaviour: =(setq myfunc eq)= followed by =(myfunc "1" "1")=
+  must run the ~eq~ implementation. The fix landed in mainline V25 and
+  is preserved through V26.
+- BricsCAD V26 / macOS direct probe (this repository,
+  ~results/bricscad/macos/20260426T155521Z-namespace/~):
+  - ~TEST1~: ~(setq probe-foo 42)~ then ~(defun probe-foo (x) (+ 1 x))~ — evaluating the bare symbol ~probe-foo~ returns ~#<<FUNCTION> ...>~, *not* ~42~. ~(probe-foo 5)~ returns ~6~.
+  - ~TEST2~: after ~(setq probe-bar 42)~ on a previously ~defun~'d symbol, calling ~(probe-bar 5)~ raises *no function definition <PROBE-BAR>; expected FUNCTION at [eval]*. The function value was overwritten by the integer.
+- Autodesk reference, *About Using Defun to Define a Function*: "Never use the name of a built-in function or symbol for the sym argument to defun, as this overwrites the original definition and makes the built-in function or symbol inaccessible." The wording does not distinguish a function role from a value role; it speaks of a single overridable definition.
+- Autodesk reference, *About Local and Global Variables*: "If a variable name is added to the local variables list of a function, the global variable with the same name is ignored." This describes single-cell dynamic shadowing.
+
+*** Strict / Lax Policy
+The single-cell rule is *strict* in every supported dialect (~strict~, ~autocad-2026~, ~bricscad-v26~). No host product is known to expose Lisp-2 semantics; the conformance contract treats any Lisp-2-style behaviour as a regression.
+
+*** Cross-references
+- Special Form Entry: SETQ (chapter 3) — assigns a value to the single binding cell.
+- Special Form Entry: DEFUN (chapter 3) — assigns a function value to the single binding cell.
+- Special Form Entry: DEFUN-Q (chapter 3) — single-cell write plus list-accessible compatibility metadata.
+- Special Form Entry: LAMBDA, FUNCTION (chapter 3) — produce function values that participate in the same cell.
+- Function Entry: VL-SYMBOL-VALUE (this chapter) — returns the single cell's value.
+- Function Entry: BOUNDP (this chapter) — predicates the single cell's bound state.
+
+*** Source Notes
+- [About Symbols and Variables (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-AutoLISP/files/GUID-1855E7B0-2474-49E6-9EE3-8BC541FC1CC8.htm)
+- [About Local and Global Variables (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP/files/GUID-A8045F62-1CE3-4022-ACC1-CC0E2C1E158D.htm)
+- [About Using Defun to Define a Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP/files/GUID-9EDF48C2-1678-4DC3-BFD6-9D1DEAC525F0.htm)
+- BricsCAD V26 release-note defect SR44723 (~(setq myfunc eq)~ callable as function).
+- Phase-6 BricsCAD V26 / macOS namespace probe — ~results/bricscad/macos/20260426T155521Z-namespace/~.
 
 #+LATEX: \newpage
 

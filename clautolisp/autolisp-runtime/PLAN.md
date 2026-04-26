@@ -31,7 +31,8 @@ Architecture and design rationale belong in `documentation/design.org`.
 
 - [x] Introduce an AutoLISP symbol structure and interning layer.
 - [x] Record the design rule that symbols are name identities and that value/function cells belong to namespaces and frames, not to symbols.
-- [x] Define value-cell and function-cell semantics precisely.
+- [x] Define value-cell and function-cell semantics precisely. (2026-04-26: superseded by the single-cell rule below — AutoLISP is Lisp-1 and the runtime now models it that way.)
+- [x] Collapse value-cell and function-cell into a single per-symbol binding cell so SETQ and DEFUN obey the AutoLISP Lisp-1 semantics confirmed by direct BricsCAD V26 probe and Bricsys defect SR44723. (2026-04-26: see autolisp-spec chapter 7, "Single-Cell Symbol Binding", and `results/bricscad/macos/20260426T155521Z-namespace/`. The runtime now uses one `binding-cell` struct per symbol per namespace; lookup-variable / lookup-function walk the same scope chain; lookup-function additionally requires the value to be a callable subr/usubr, otherwise the eval call dispatch surfaces :undefined-function.)
 - [x] Define explicit namespace objects for document, blackboard, and separate-VLX contexts.
 - [x] Define explicit environment objects for dynamic variable scope.
 - [x] Define unbound markers and lookup/update operations.

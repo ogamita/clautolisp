@@ -137,7 +137,10 @@
                    :session (make-runtime-session :current-document document)
                    :current-document document
                    :current-namespace document))
-         (function (lambda (x) x)))
+         ;; Lisp-1: lookup-function only surfaces the binding when its
+         ;; value is a callable (subr / usubr). Wrap the raw CL lambda
+         ;; in a SUBR so the test exercises the call-position path.
+         (function (make-autolisp-subr "FN" (lambda (x) x))))
     (set-function symbol function context)
     (multiple-value-bind (binding boundp origin) (lookup-function symbol context)
       (is (not (null boundp)))

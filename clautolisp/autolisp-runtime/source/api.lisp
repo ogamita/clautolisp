@@ -3,11 +3,15 @@
 (deftype autolisp-symbol ()
   'clautolisp.autolisp-runtime.internal::autolisp-symbol)
 
-(deftype value-cell ()
-  'clautolisp.autolisp-runtime.internal::value-cell)
+(deftype binding-cell ()
+  'clautolisp.autolisp-runtime.internal::binding-cell)
 
-(deftype function-cell ()
-  'clautolisp.autolisp-runtime.internal::function-cell)
+;; Backwards-compatible alias types — AutoLISP is Lisp-1 (chapter 7
+;; of autolisp-spec), so a "value cell" and a "function cell" are the
+;; same single per-symbol cell. Old call sites that still distinguish
+;; the roles continue to compile.
+(deftype value-cell () 'binding-cell)
+(deftype function-cell () 'binding-cell)
 
 (deftype document-namespace ()
   'clautolisp.autolisp-runtime.internal::document-namespace)
@@ -231,12 +235,12 @@ profiles between subordinate evaluations within a single session."
             session)))
 
 (defun copy-value-cell-between-namespaces (source target symbol)
-  (let ((source-cell (namespace-value-cell source symbol :createp nil)))
-    (when (and source-cell (value-cell-bound-p source-cell))
-      (let ((target-cell (namespace-value-cell target symbol)))
-        (setf (clautolisp.autolisp-runtime.internal::value-cell-value target-cell)
-              (value-cell-value source-cell)
-              (clautolisp.autolisp-runtime.internal::value-cell-bound-p target-cell)
+  (let ((source-cell (namespace-binding-cell source symbol :createp nil)))
+    (when (and source-cell (binding-cell-bound-p source-cell))
+      (let ((target-cell (namespace-binding-cell target symbol)))
+        (setf (clautolisp.autolisp-runtime.internal::binding-cell-value target-cell)
+              (binding-cell-value source-cell)
+              (clautolisp.autolisp-runtime.internal::binding-cell-bound-p target-cell)
               t)))))
 
 (defun register-runtime-session-document (session document &key (copy-propagated-p t))
@@ -381,58 +385,57 @@ profiles between subordinate evaluations within a single session."
    :current-namespace (or namespace document)
    :dynamic-frame nil))
 
-(defun value-cell-value (cell)
-  (clautolisp.autolisp-runtime.internal::value-cell-value cell))
+(defun binding-cell-value (cell)
+  (clautolisp.autolisp-runtime.internal::binding-cell-value cell))
 
-(defun value-cell-bound-p (cell)
-  (clautolisp.autolisp-runtime.internal::value-cell-bound-p cell))
+(defun binding-cell-bound-p (cell)
+  (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell))
 
-(defun function-cell-function (cell)
-  (clautolisp.autolisp-runtime.internal::function-cell-function cell))
+(defun binding-cell-compatibility-definition (cell)
+  (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition cell))
 
-(defun function-cell-bound-p (cell)
-  (clautolisp.autolisp-runtime.internal::function-cell-bound-p cell))
-
+;; Lisp-1 single-cell rule (autolisp-spec, chapter 7): the legacy
+;; "value cell" and "function cell" accessors are facades over the
+;; same per-symbol binding cell. Existing callers compile unchanged;
+;; new code should prefer `binding-cell-*`.
+(defun value-cell-value (cell) (binding-cell-value cell))
+(defun value-cell-bound-p (cell) (binding-cell-bound-p cell))
+(defun function-cell-function (cell) (binding-cell-value cell))
+(defun function-cell-bound-p (cell) (binding-cell-bound-p cell))
 (defun function-cell-compatibility-definition (cell)
-  (clautolisp.autolisp-runtime.internal::function-cell-compatibility-definition cell))
+  (binding-cell-compatibility-definition cell))
 
-(defun namespace-value-table (namespace)
+(defun namespace-bindings-table (namespace)
   (typecase namespace
     (document-namespace
-     (clautolisp.autolisp-runtime.internal::document-namespace-value-cells namespace))
+     (clautolisp.autolisp-runtime.internal::document-namespace-bindings namespace))
     (blackboard-namespace
-     (clautolisp.autolisp-runtime.internal::blackboard-namespace-value-cells namespace))
+     (clautolisp.autolisp-runtime.internal::blackboard-namespace-bindings namespace))
     (separate-vlx-namespace
-     (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-value-cells namespace))
+     (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-bindings namespace))
     (t
      (signal-autolisp-runtime-error
       :invalid-namespace
-      "Namespace ~S does not support value cells."
+      "Namespace ~S does not support symbol bindings."
       namespace))))
 
-(defun namespace-function-table (namespace)
-  (typecase namespace
-    (document-namespace
-     (clautolisp.autolisp-runtime.internal::document-namespace-function-cells namespace))
-    (separate-vlx-namespace
-     (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-function-cells namespace))
-    (t
-     (signal-autolisp-runtime-error
-      :invalid-namespace
-      "Namespace ~S does not support function cells."
-      namespace))))
+;; Backwards-compat aliases — both used to point at separate tables
+;; under the Lisp-2 model; under the unified Lisp-1 model they all
+;; route to the single binding table.
+(defun namespace-value-table (namespace) (namespace-bindings-table namespace))
+(defun namespace-function-table (namespace) (namespace-bindings-table namespace))
+
+(defun namespace-binding-cell (namespace symbol &key (createp t))
+  (or (gethash symbol (namespace-bindings-table namespace))
+      (when createp
+        (setf (gethash symbol (namespace-bindings-table namespace))
+              (clautolisp.autolisp-runtime.internal::make-binding-cell)))))
 
 (defun namespace-value-cell (namespace symbol &key (createp t))
-  (or (gethash symbol (namespace-value-table namespace))
-      (when createp
-        (setf (gethash symbol (namespace-value-table namespace))
-              (clautolisp.autolisp-runtime.internal::make-value-cell)))))
+  (namespace-binding-cell namespace symbol :createp createp))
 
 (defun namespace-function-cell (namespace symbol &key (createp t))
-  (or (gethash symbol (namespace-function-table namespace))
-      (when createp
-        (setf (gethash symbol (namespace-function-table namespace))
-              (clautolisp.autolisp-runtime.internal::make-function-cell)))))
+  (namespace-binding-cell namespace symbol :createp createp))
 
 (defun document-namespace-ref (namespace symbol)
   (unless (typep namespace 'document-namespace)
@@ -440,9 +443,9 @@ profiles between subordinate evaluations within a single session."
      :invalid-document
      "Expected a document namespace, got ~S."
      namespace))
-  (let ((cell (namespace-value-cell namespace symbol :createp nil)))
-    (values (and cell (value-cell-bound-p cell) (value-cell-value cell))
-            (and cell (value-cell-bound-p cell)))))
+  (let ((cell (namespace-binding-cell namespace symbol :createp nil)))
+    (values (and cell (binding-cell-bound-p cell) (binding-cell-value cell))
+            (and cell (binding-cell-bound-p cell)))))
 
 (defun document-namespace-set (namespace symbol value)
   (unless (typep namespace 'document-namespace)
@@ -450,9 +453,12 @@ profiles between subordinate evaluations within a single session."
      :invalid-document
      "Expected a document namespace, got ~S."
      namespace))
-  (let ((cell (namespace-value-cell namespace symbol)))
-    (setf (clautolisp.autolisp-runtime.internal::value-cell-value cell) value
-          (clautolisp.autolisp-runtime.internal::value-cell-bound-p cell) t)
+  (let ((cell (namespace-binding-cell namespace symbol)))
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) value
+          (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell) t
+          (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition
+           cell)
+          nil)
     value))
 
 (defun document-namespace-function-ref (namespace symbol)
@@ -461,9 +467,16 @@ profiles between subordinate evaluations within a single session."
      :invalid-document
      "Expected a document namespace, got ~S."
      namespace))
-  (let ((cell (namespace-function-cell namespace symbol :createp nil)))
-    (values (and cell (function-cell-bound-p cell) (function-cell-function cell))
-            (and cell (function-cell-bound-p cell))
+  ;; Single-cell rule: same lookup as document-namespace-ref, but the
+  ;; caller is asking specifically for a callable. We surface the
+  ;; binding only when its value is a callable subr / usubr.
+  (let* ((cell (namespace-binding-cell namespace symbol :createp nil))
+         (boundp (and cell (binding-cell-bound-p cell)))
+         (value (and boundp (binding-cell-value cell)))
+         (callablep (and boundp (or (typep value 'autolisp-subr)
+                                    (typep value 'autolisp-usubr)))))
+    (values (and callablep value)
+            callablep
             :document)))
 
 (defun document-namespace-function-set (namespace symbol function)
@@ -472,10 +485,10 @@ profiles between subordinate evaluations within a single session."
      :invalid-document
      "Expected a document namespace, got ~S."
      namespace))
-  (let ((cell (namespace-function-cell namespace symbol)))
-    (setf (clautolisp.autolisp-runtime.internal::function-cell-function cell) function
-          (clautolisp.autolisp-runtime.internal::function-cell-bound-p cell) t
-          (clautolisp.autolisp-runtime.internal::function-cell-compatibility-definition
+  (let ((cell (namespace-binding-cell namespace symbol)))
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) function
+          (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell) t
+          (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition
            cell)
           nil)
     function))
@@ -557,16 +570,19 @@ profiles between subordinate evaluations within a single session."
 (defun blackboard-ref (symbol &optional (context (current-evaluation-context)))
   (let* ((namespace (runtime-session-blackboard-namespace
                      (evaluation-context-session context)))
-         (cell (namespace-value-cell namespace symbol :createp nil)))
-    (values (and cell (value-cell-bound-p cell) (value-cell-value cell))
-            (and cell (value-cell-bound-p cell)))))
+         (cell (namespace-binding-cell namespace symbol :createp nil)))
+    (values (and cell (binding-cell-bound-p cell) (binding-cell-value cell))
+            (and cell (binding-cell-bound-p cell)))))
 
 (defun blackboard-set (symbol value &optional (context (current-evaluation-context)))
   (let* ((namespace (runtime-session-blackboard-namespace
                      (evaluation-context-session context)))
-         (cell (namespace-value-cell namespace symbol)))
-    (setf (clautolisp.autolisp-runtime.internal::value-cell-value cell) value
-          (clautolisp.autolisp-runtime.internal::value-cell-bound-p cell) t)
+         (cell (namespace-binding-cell namespace symbol)))
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) value
+          (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell) t
+          (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition
+           cell)
+          nil)
     value))
 
 (defun propagate-variable (symbol &optional (context (current-evaluation-context)))
@@ -620,17 +636,28 @@ profiles between subordinate evaluations within a single session."
         when binding
           do (return binding)))
 
+;;; --- Lisp-1 binding lookup and update ------------------------------
+;;
+;; AutoLISP is Lisp-1 (autolisp-spec, chapter 7): the same per-symbol
+;; binding cell is consulted in both value position and call position.
+;; `lookup-variable` and `lookup-function` therefore walk the *same*
+;; scope chain — first the dynamic-frame stack, then the current
+;; namespace's bindings table. The function-position variant
+;; additionally requires the value to be callable; an integer or
+;; string in the binding produces an :undefined-function diagnostic
+;; in the call dispatch path, matching BricsCAD's runtime.
+
 (defun lookup-variable (symbol &optional (context (current-evaluation-context)))
   (let ((binding (find-dynamic-binding symbol (evaluation-context-dynamic-frame context))))
     (cond
       (binding
        (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding) t :dynamic))
       (t
-       (let* ((cell (namespace-value-cell (evaluation-context-current-namespace context)
-                                          symbol
-                                          :createp nil))
-              (boundp (and cell (value-cell-bound-p cell))))
-         (values (and boundp (value-cell-value cell))
+       (let* ((cell (namespace-binding-cell (evaluation-context-current-namespace context)
+                                            symbol
+                                            :createp nil))
+              (boundp (and cell (binding-cell-bound-p cell))))
+         (values (and boundp (binding-cell-value cell))
                  boundp
                  :namespace))))))
 
@@ -639,25 +666,36 @@ profiles between subordinate evaluations within a single session."
     (if binding
         (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding) value
               (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding) t)
-        (let ((cell (namespace-value-cell (evaluation-context-current-namespace context) symbol)))
-          (setf (clautolisp.autolisp-runtime.internal::value-cell-value cell) value
-                (clautolisp.autolisp-runtime.internal::value-cell-bound-p cell) t)))
+        (let ((cell (namespace-binding-cell (evaluation-context-current-namespace context)
+                                            symbol)))
+          (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) value
+                (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell) t
+                (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition
+                 cell)
+                nil)))
     value))
 
 (defun lookup-function (symbol &optional (context (current-evaluation-context)))
-  (let* ((cell (namespace-function-cell (evaluation-context-current-namespace context)
-                                        symbol
-                                        :createp nil))
-         (boundp (and cell (function-cell-bound-p cell))))
-    (values (and boundp (function-cell-function cell))
-            boundp
-            :namespace)))
+  ;; Same scope chain as lookup-variable; surface the binding only
+  ;; when the bound value is a callable subr / usubr. A non-callable
+  ;; value (e.g. an integer left over from a SETQ) means "no function
+  ;; definition" in BricsCAD's dispatch — we model that by reporting
+  ;; the binding as unbound from the call's point of view, so the
+  ;; eval call-dispatch surfaces :undefined-function naturally.
+  (multiple-value-bind (value boundp origin)
+      (lookup-variable symbol context)
+    (if (and boundp
+             (or (typep value 'autolisp-subr)
+                 (typep value 'autolisp-usubr)))
+        (values value t origin)
+        (values nil nil origin))))
 
 (defun set-function (symbol function &optional (context (current-evaluation-context)))
-  (let ((cell (namespace-function-cell (evaluation-context-current-namespace context) symbol)))
-    (setf (clautolisp.autolisp-runtime.internal::function-cell-function cell) function
-          (clautolisp.autolisp-runtime.internal::function-cell-bound-p cell) t
-          (clautolisp.autolisp-runtime.internal::function-cell-compatibility-definition cell) nil)
+  (let ((cell (namespace-binding-cell (evaluation-context-current-namespace context) symbol)))
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) function
+          (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell) t
+          (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition cell)
+          nil)
     function))
 
 (defun set-autolisp-symbol-value (symbol value)
@@ -709,16 +747,16 @@ profiles between subordinate evaluations within a single session."
   (nth-value 1 (lookup-function object)))
 
 (defun autolisp-function-list-definition (object &optional (context (current-evaluation-context)))
-  (let ((cell (namespace-function-cell (evaluation-context-current-namespace context)
-                                       object
-                                       :createp nil)))
+  (let ((cell (namespace-binding-cell (evaluation-context-current-namespace context)
+                                      object
+                                      :createp nil)))
     (and cell
-         (function-cell-compatibility-definition cell))))
+         (binding-cell-compatibility-definition cell))))
 
 (defun set-autolisp-function-list-definition (symbol definition
                                               &optional (context (current-evaluation-context)))
-  (let ((cell (namespace-function-cell (evaluation-context-current-namespace context) symbol)))
-    (setf (clautolisp.autolisp-runtime.internal::function-cell-compatibility-definition cell)
+  (let ((cell (namespace-binding-cell (evaluation-context-current-namespace context) symbol)))
+    (setf (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition cell)
           definition)
     definition))
 
