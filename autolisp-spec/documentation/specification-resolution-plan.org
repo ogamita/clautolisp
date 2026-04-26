@@ -199,7 +199,7 @@ Phase 5 closed all five long-running open items at the *documented* level using 
 
 The remaining work is:
 
-- Run `scripts/run-probes.sh` against a real AutoCAD installation when one becomes available, with `RUNNER_TEMPLATE` pointing at the host's batch invocation. AutoCAD product-test parity is the only open Phase-5 follow-up.
+- Run `scripts/run-probes.sh autocad` against a real AutoCAD installation when a license seat becomes available, using the dedicated direct-AutoCAD runner committed at `scripts/run-probes-direct-autocad.sh`. The runner was authored and tested up to AutoCAD splash on 2026-04-26 against AutoCAD 2026 / macOS, but the local install had no licensed seat available and the probe was aborted. AutoCAD product-test parity is the only open Phase-5 follow-up.
 - Re-run the probes against future BricsCAD releases when they ship, to maintain the version-qualified evidence trail.
 
 * Probe-Suite Findings (BricsCAD V26 / macOS, 2026-04-26)
