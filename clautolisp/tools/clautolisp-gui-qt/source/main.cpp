@@ -143,6 +143,29 @@ private:
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+
+    // --demo: pop a built-in dialog and exit. Useful for verifying
+    // that Qt itself is healthy before debugging the wire protocol.
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--demo") {
+            clautolisp::Tile root;
+            root.type = "DIALOG";
+            root.attributes["label"] = "clautolisp-gui-qt smoke test";
+            clautolisp::Tile text;
+            text.type = "TEXT";
+            text.attributes["label"] = "If you can see this, Qt is wired up.";
+            root.children.append(text);
+            clautolisp::Tile ok;
+            ok.type = "OK-ONLY";
+            root.children.append(ok);
+            clautolisp::DialogWindow window(0, root,
+                [](const QString&, const QString&, const QString&) {},
+                [](int) { QApplication::quit(); });
+            window.show();
+            return app.exec();
+        }
+    }
+
     Driver driver;
     return app.exec();
 }
