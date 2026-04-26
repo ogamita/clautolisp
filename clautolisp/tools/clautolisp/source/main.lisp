@@ -15,7 +15,9 @@
   (format t "  --strict           Shorthand for --dialect strict.~%")
   (format t "  --autocad          Shorthand for --dialect autocad-2026.~%")
   (format t "  --bricscad         Shorthand for --dialect bricscad-v26.~%")
-  (format t "  --host NAME        HAL backend: null (default). 'mock' is reserved for Phase 9.~%")
+  (format t "  --host NAME        HAL backend: mock (default), null.~%")
+  (format t "  --mock-input PATH  Attach the file at PATH as the MockHost prompt-stream.~%")
+  (format t "                     Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
   (format t "  -x EXPRESSION      Evaluate EXPRESSION instead of reading a file.~%")
   (format t "  --quiet            Suppress the REPL banner; only the prompt is shown.~%")
   (format t "  --version          Print the version string and exit.~%")
@@ -48,15 +50,18 @@
     dialect))
 
 (defun parse-arguments (arguments)
-  "Returns (values dialect mode payload quiet-p host). MODE is :file,
-:expression or :repl. PAYLOAD is the FILE path or EXPRESSION string
-(nil for :repl). QUIET-P suppresses the REPL banner. HOST is the
-resolved HAL backend instance, defaulting to the NullHost singleton."
+  "Returns (values dialect mode payload quiet-p host mock-input).
+MODE is :file, :expression or :repl. PAYLOAD is the FILE path or
+EXPRESSION string (nil for :repl). QUIET-P suppresses the REPL
+banner. HOST is the resolved HAL backend instance, defaulting to
+a fresh MockHost. MOCK-INPUT, if non-nil, is a pathname to attach
+as the MockHost's prompt-stream."
   (let ((dialect (autolisp-dialect-strict))
         (mode :repl)
         (payload nil)
         (quiet-p nil)
-        (host *null-host*))
+        (host (make-mock-host))
+        (mock-input nil))
     (loop while arguments
           for argument = (pop arguments)
           do (cond
@@ -82,6 +87,10 @@ resolved HAL backend instance, defaulting to the NullHost singleton."
                 (unless arguments
                   (error "Missing argument after --host."))
                 (setf host (resolve-host-backend (pop arguments))))
+               ((string= argument "--mock-input")
+                (unless arguments
+                  (error "Missing argument after --mock-input."))
+                (setf mock-input (pop arguments)))
                ((string= argument "-x")
                 (unless arguments
                   (error "Missing expression after -x."))
@@ -93,7 +102,7 @@ resolved HAL backend instance, defaulting to the NullHost singleton."
                (t
                 (setf mode :file)
                 (setf payload argument))))
-    (values dialect mode payload quiet-p host)))
+    (values dialect mode payload quiet-p host mock-input)))
 
 (defun span->string (span)
   (if (null span)
@@ -117,12 +126,20 @@ resolved HAL backend instance, defaulting to the NullHost singleton."
 (defun report-error (condition)
   (format *error-output* "~&clautolisp: ~A~%" condition))
 
-(defun setup-context (context host)
+(defun setup-context (context host &optional mock-input)
   "Install the core builtins into the freshly created evaluation
 context's namespace and attach the chosen HAL backend to its
-session."
+session. When MOCK-INPUT is supplied and HOST is a MockHost,
+attach the file at MOCK-INPUT as the host's prompt-stream so
+that subsequent get* calls read deterministic answers from it."
   (when host
     (set-runtime-session-host (evaluation-context-session context) host))
+  (when (and mock-input
+             (typep host 'clautolisp.autolisp-mock-host:mock-host))
+    (let ((stream (open mock-input :direction :input
+                                   :external-format :utf-8
+                                   :if-does-not-exist :error)))
+      (setf (clautolisp.autolisp-mock-host:mock-host-prompt-stream host) stream)))
   (install-core-builtins))
 
 (defun setup-builtins (context)
@@ -220,9 +237,9 @@ STREAM signalled end-of-file before any input was given."
           (report-termination condition)
           (return))))))
 
-(defun run-repl (dialect host &key quiet-p)
+(defun run-repl (dialect host &key quiet-p mock-input)
   (let ((context (make-default-runtime-context :dialect dialect)))
-    (setup-context context host)
+    (setup-context context host mock-input)
     (handler-case
         (repl-loop dialect context :quiet-p quiet-p)
       (autolisp-termination (condition)
@@ -231,8 +248,8 @@ STREAM signalled end-of-file before any input was given."
 
 ;;; --- Batch entry points ---------------------------------------------
 
-(defun run-with-input (dialect mode payload &key quiet-p host)
-  (let ((setup (lambda (context) (setup-context context host))))
+(defun run-with-input (dialect mode payload &key quiet-p host mock-input)
+  (let ((setup (lambda (context) (setup-context context host mock-input))))
     (handler-case
         (ecase mode
           (:file
@@ -242,7 +259,7 @@ STREAM signalled end-of-file before any input was given."
                                 :source-name "<-x>"
                                 :setup-fn setup))
           (:repl
-           (run-repl dialect host :quiet-p quiet-p)))
+           (run-repl dialect host :quiet-p quiet-p :mock-input mock-input)))
       (autolisp-runtime-error (condition)
         (report-runtime-error condition)
         (quit 1))
@@ -255,9 +272,12 @@ STREAM signalled end-of-file before any input was given."
 
 (defun main (&rest argv)
   (handler-case
-      (multiple-value-bind (dialect mode payload quiet-p host)
+      (multiple-value-bind (dialect mode payload quiet-p host mock-input)
           (parse-arguments (rest argv))
-        (run-with-input dialect mode payload :quiet-p quiet-p :host host)
+        (run-with-input dialect mode payload
+                        :quiet-p quiet-p
+                        :host host
+                        :mock-input mock-input)
         (finish-output)
         (quit 0))
     (error (error)

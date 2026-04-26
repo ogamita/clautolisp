@@ -67,6 +67,8 @@
                 #:mock-host-named-object-dictionary
                 #:mock-host-sysvars
                 #:mock-host-prompt-output
+                #:mock-host-prompt-stream
+                #:mock-host-pending-initget
                 #:mock-host-display-log
                 #:mock-host-pickfirst
                 #:populate-default-tables

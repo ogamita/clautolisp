@@ -88,7 +88,18 @@
                 #:host-tblnext
                 #:host-tblobjname
                 #:host-getvar
-                #:host-setvar)
+                #:host-setvar
+                #:host-prompt
+                #:host-initget
+                #:host-getstring
+                #:host-getint
+                #:host-getreal
+                #:host-getpoint
+                #:host-getcorner
+                #:host-getdist
+                #:host-getangle
+                #:host-getorient
+                #:host-getkword)
   (:export
    #:*core-builtin-names*
    #:core-builtins

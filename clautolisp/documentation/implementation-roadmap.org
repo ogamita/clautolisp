@@ -559,23 +559,63 @@ clautolisp --host mock -x \
    (princ (sslength (ssget \"X\" (list (cons 0 \"LINE\")))))"  ; -> 1
 #+end_example
 
-** Phase 12 — Headless Interaction Channel
+** Phase 12 — Headless Interaction Channel [DONE 2026-04-26]
 *Goal:* let real AutoLISP scripts that read user input run in
 batch.
 
-Scope:
-- ~getstring~, ~getreal~, ~getint~, ~getpoint~, ~getcorner~,
-  ~getdist~, ~getangle~, ~getorient~, ~getkword~ — all read from a
-  user-supplied stream attached to MockHost.
-- ~initget~ — input-control flags applied to subsequent ~get~
-  calls.
-- ~prompt~, ~princ~ — write to MockHost's prompt stream.
-- ~grread~ — minimal headless model (immediate eof / configurable
-  scripted events).
+*Status:* closed. Suite 979 / 0; the AutoLISP-side ~(getstring)~
+/ ~(getreal)~ / ~(getpoint)~ / ~(initget BITS KW) (getkword)~
+flow runs end-to-end against ~--host mock~, with deterministic
+answers fed via ~--mock-input PATH~. The CLI's default ~--host~
+is now ~mock~ (was ~null~), so the common ~(load FILE.lsp)~
+workflow no longer fails with ~:host-not-supported~ on a bare
+~(getvar ...)~ call.
 
-The CLI gains a flag ~--mock-input PATH~ pointing at a
-script-driven response file, so a test rig can feed deterministic
-answers.
+Scope delivered:
+- New file ~autolisp-mock-host/source/prompt-api.lisp~ implements
+  ~host-prompt~ (writes to ~mock-host-prompt-output~),
+  ~host-initget~ (records bits + keyword list on
+  ~mock-host-pending-initget~ as a one-shot value consumed by
+  the next get*), ~host-getstring~, ~host-getint~,
+  ~host-getreal~, ~host-getpoint~ (parses 2-D / 3-D coordinate
+  lists; pads Z=0 for 2-D), ~host-getcorner~, ~host-getdist~,
+  ~host-getangle~, ~host-getorient~, ~host-getkword~ (matches
+  against the initget keyword list when present, otherwise
+  returns the trimmed line). Each get* reads one line from
+  ~mock-host-prompt-stream~; EOF / unset stream returns nil.
+- ~mock-host~ class extended with a ~pending-initget~ slot and
+  the ~initget-state~ helper class.
+- 11 new AutoLISP builtins: ~INITGET~, ~GETSTRING~, ~GETINT~,
+  ~GETREAL~, ~GETPOINT~, ~GETCORNER~, ~GETDIST~, ~GETANGLE~,
+  ~GETORIENT~, ~GETKWORD~. PROMPT was already a builtin (writes
+  to standard output) and is left untouched in this phase.
+- CLI: ~--mock-input PATH~ flag attaches the file's lines as the
+  MockHost's prompt-stream so headless test rigs can feed
+  deterministic answers. The ~--host~ default flips from
+  ~null~ to ~mock~; specifying ~--host null~ explicitly preserves
+  the strict no-host error path for tests / static analysis.
+- ~grread~ remains unimplemented; it is parked alongside the
+  graphics layer for Phase 13+.
+
+Tests:
+- 14 new tests in
+  ~autolisp-mock-host/tests/prompt-tests.lisp~ pin: prompt
+  output writes; getstring reads one line; EOF returns nil;
+  getint parses integer / rejects non-integer; getreal parses
+  double-float; getpoint parses 2D (pads Z) and 3D; getdist /
+  getangle parse reals; getkword matches the initget list /
+  rejects non-matches / returns line when no initget; initget
+  is one-shot (consumed by next get*); prompt text precedes
+  the input.
+- Aggregate suite 76 + 184 + 29 + 142 + 418 + 130 = 979 / 0.
+
+Smoke (under the new default ~--host mock~):
+#+begin_example
+$ clautolisp -x "(princ (getvar \"CLAYER\"))"           ; -> 0
+$ echo "Yes 42 1.5 2.5" > /tmp/in.txt
+$ clautolisp --mock-input /tmp/in.txt \
+             -x "(princ (getstring))"                  ; -> Yes 42 1.5 2.5
+#+end_example
 
 ** Phase 13 — VLA / VLAX Foundations
 *Goal:* the COM compatibility surface, headless-first.

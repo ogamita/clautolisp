@@ -121,13 +121,21 @@ controls the *language*; the host backend controls the *target*.
 Both axes are independent.
 
 - ~--host NAME~          :: Select the backend. Currently accepted:
-                            ~null~ (default) — every CAD-host
-                            operation signals a structured
-                            ~:host-not-supported~ error.  Reserved
-                            for future phases: ~mock~ (Phase 9, an
-                            in-memory deterministic CAD substitute),
-                            ~live~ (Phase 16, BricsCAD / AutoCAD
-                            adapter).
+                            ~mock~ (default since 0.0.14): an
+                            in-memory deterministic CAD-database
+                            substitute capable of entget / ssget /
+                            getvar / getstring etc. ~null~: every
+                            CAD-host operation signals
+                            ~:host-not-supported~ — useful for
+                            programs that should not touch a host
+                            at all. ~live~ is reserved for Phase 16.
+- ~--mock-input PATH~    :: Attach the file at PATH as the
+                            MockHost's prompt-stream. Lines are
+                            consumed in order by ~getstring~,
+                            ~getreal~, ~getint~, ~getpoint~, etc.
+                            so headless test rigs can feed
+                            deterministic answers to interactive
+                            scripts.
 
 ** Informational
 - ~--version~            :: Print =clautolisp <version>= on standard
