@@ -281,12 +281,18 @@ STREAM signalled end-of-file before any input was given."
 
 (defun install-gui-renderer (gui-command)
   "Switch the active DCL renderer to a subprocess driver if
-GUI-COMMAND is non-nil. Otherwise the terminal renderer
-(installed at autolisp-dcl load time) stays in effect."
-  (when gui-command
-    (clautolisp.autolisp-dcl:install-default-renderer
-     (clautolisp.autolisp-dcl:make-subprocess-renderer
-      :command gui-command))))
+GUI-COMMAND is non-nil, or if CLAUTOLISP_GUI is set in the
+environment. Otherwise the terminal renderer (installed at
+autolisp-dcl load time) stays in effect."
+  (let ((effective
+          (or gui-command
+              (let ((env (uiop:getenv "CLAUTOLISP_GUI")))
+                (and env (plusp (length env))
+                     (uiop:split-string env :separator '(#\Space)))))))
+    (when effective
+      (clautolisp.autolisp-dcl:install-default-renderer
+       (clautolisp.autolisp-dcl:make-subprocess-renderer
+        :command effective)))))
 
 (defun main (&rest argv)
   (handler-case
