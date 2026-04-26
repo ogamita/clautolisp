@@ -334,6 +334,79 @@
              (setf lists (mapcar #'cdr lists)))
     (nreverse results)))
 
+(defun builtin-apply (function-designator argument-list)
+  ;; (apply 'function list) — call function with the elements of list
+  ;; spread as positional arguments. function-designator is whatever
+  ;; resolve-autolisp-function-designator accepts: a subr/usubr, a
+  ;; symbol naming a function, or a (lambda ...) / (quote (lambda ...))
+  ;; / (function ...) form. nil is permitted in place of an empty
+  ;; arg-list.
+  (let ((function (resolve-autolisp-function-designator function-designator))
+        (arguments (cond
+                     ((null argument-list) '())
+                     ((listp argument-list) argument-list)
+                     (t
+                      (signal-builtin-argument-error
+                       :invalid-list-argument
+                       "APPLY"
+                       "APPLY expects a list of arguments, got ~S."
+                       argument-list)))))
+    (apply #'call-autolisp-function function arguments)))
+
+(defun builtin-eval (form)
+  ;; (eval expr) — evaluate the AutoLISP runtime form in the current
+  ;; evaluation context. Lets programs evaluate values built at
+  ;; runtime (e.g. constructed via list/cons).
+  (autolisp-eval form))
+
+(defun autolisp-equal-p (a b)
+  ;; AutoLISP `equal` (autolisp-spec ch. 5, "Equality Predicates"):
+  ;; structural over cons cells, content for strings, numeric across
+  ;; int and real (so (equal 1 1.0) -> T), eq for everything else.
+  (cond
+    ((eql a b) t)
+    ((and (numberp a) (numberp b)) (= a b))
+    ((and (typep a 'autolisp-string) (typep b 'autolisp-string))
+     (string= (autolisp-string-value a) (autolisp-string-value b)))
+    ((and (consp a) (consp b))
+     (and (autolisp-equal-p (car a) (car b))
+          (autolisp-equal-p (cdr a) (cdr b))))
+    (t nil)))
+
+(defun builtin-eq (a b)
+  ;; (eq a b) — pointer-level identity, with the standard exception
+  ;; that two strings whose content is equal compare eq because the
+  ;; host interns string literals (autolisp-spec ch. 5).
+  (cond
+    ((eql a b) (intern-autolisp-symbol "T"))
+    ((and (typep a 'autolisp-string) (typep b 'autolisp-string)
+          (string= (autolisp-string-value a) (autolisp-string-value b)))
+     (intern-autolisp-symbol "T"))
+    (t nil)))
+
+(defun builtin-equal (a b &optional fuzz)
+  ;; AutoLISP allows a third numeric `fuzz` argument that loosens
+  ;; numeric comparisons by ±fuzz. When fuzz is nil or 0 the call
+  ;; reduces to ordinary equal.
+  (let ((tolerance (if (or (null fuzz) (and (numberp fuzz) (zerop fuzz)))
+                       nil
+                       fuzz)))
+    (cond
+      ((null tolerance)
+       (if (autolisp-equal-p a b) (intern-autolisp-symbol "T") nil))
+      ((not (numberp tolerance))
+       (signal-builtin-argument-error
+        :invalid-number-argument
+        "EQUAL"
+        "EQUAL fuzz must be a number, got ~S."
+        fuzz))
+      ((and (numberp a) (numberp b))
+       (if (<= (abs (- a b)) tolerance)
+           (intern-autolisp-symbol "T")
+           nil))
+      (t
+       (if (autolisp-equal-p a b) (intern-autolisp-symbol "T") nil)))))
+
 (defun builtin-vl-every (function-designator first-list &rest more-lists)
   (let* ((function (resolve-autolisp-function-designator function-designator))
          (lists (mapcar (lambda (object)
@@ -413,6 +486,67 @@
       "CDR"
       "CDR expects a list or dotted pair, got ~S."
       object))))
+
+;; The CAxR / CDxR / CAxxR / CDxxR family. Each one is a composition
+;; of CAR and CDR walked right-to-left over the letters between `c'
+;; and the trailing `r'. Each step delegates to builtin-car /
+;; builtin-cdr so a non-list argument anywhere along the chain
+;; produces the standard "X expects a list" diagnostic with the
+;; proper builtin name.
+
+(defmacro define-cxxr (name letters)
+  `(defun ,(intern (format nil "BUILTIN-~A" name)) (object)
+     (let ((value object))
+       ,@(loop for c across (reverse letters)
+               collect (case c
+                         (#\A `(setf value
+                                     (cond
+                                       ((null value) nil)
+                                       ((consp value) (car value))
+                                       (t (signal-builtin-argument-error
+                                           :invalid-list-argument
+                                           ,name
+                                           ,(format nil "~A expects a list, got ~~S." name)
+                                           value)))))
+                         (#\D `(setf value
+                                     (cond
+                                       ((null value) nil)
+                                       ((consp value) (cdr value))
+                                       (t (signal-builtin-argument-error
+                                           :invalid-list-argument
+                                           ,name
+                                           ,(format nil "~A expects a list, got ~~S." name)
+                                           value)))))))
+       value)))
+
+(define-cxxr "CAAR"  "AA")
+(define-cxxr "CADR"  "AD")
+(define-cxxr "CDAR"  "DA")
+(define-cxxr "CDDR"  "DD")
+(define-cxxr "CAAAR" "AAA")
+(define-cxxr "CAADR" "AAD")
+(define-cxxr "CADAR" "ADA")
+(define-cxxr "CADDR" "ADD")
+(define-cxxr "CDAAR" "DAA")
+(define-cxxr "CDADR" "DAD")
+(define-cxxr "CDDAR" "DDA")
+(define-cxxr "CDDDR" "DDD")
+(define-cxxr "CAAAAR" "AAAA")
+(define-cxxr "CAAADR" "AAAD")
+(define-cxxr "CAADAR" "AADA")
+(define-cxxr "CAADDR" "AADD")
+(define-cxxr "CADAAR" "ADAA")
+(define-cxxr "CADADR" "ADAD")
+(define-cxxr "CADDAR" "ADDA")
+(define-cxxr "CADDDR" "ADDD")
+(define-cxxr "CDAAAR" "DAAA")
+(define-cxxr "CDAADR" "DAAD")
+(define-cxxr "CDADAR" "DADA")
+(define-cxxr "CDADDR" "DADD")
+(define-cxxr "CDDAAR" "DDAA")
+(define-cxxr "CDDADR" "DDAD")
+(define-cxxr "CDDDAR" "DDDA")
+(define-cxxr "CDDDDR" "DDDD")
 
 (defun builtin-cons (first second)
   (cons first second))
@@ -931,6 +1065,159 @@
                                     (+ start-index length))
                                (length value))))
             (make-autolisp-string (subseq value start-index end-index)))))))
+
+(defun builtin-strcase (string &optional lowercase-p)
+  ;; (strcase STR [downcase-flag])
+  ;; Default upcases; non-nil flag downcases.
+  (let ((value (autolisp-string-value (require-string string "STRCASE"))))
+    (make-autolisp-string
+     (if lowercase-p
+         (string-downcase value)
+         (string-upcase value)))))
+
+(defun string-trim-set (string-arg operator-name)
+  ;; AutoLISP's vl-string-trim et al. take a string of characters,
+  ;; each of which is trimmed. Coerce the AutoLISP string into a
+  ;; CL list of host characters.
+  (let ((value (autolisp-string-value (require-string string-arg operator-name))))
+    (coerce value 'list)))
+
+(defun builtin-vl-string-trim (chars-string source-string)
+  (let ((chars (string-trim-set chars-string "VL-STRING-TRIM"))
+        (value (autolisp-string-value
+                (require-string source-string "VL-STRING-TRIM"))))
+    (make-autolisp-string (string-trim chars value))))
+
+(defun builtin-vl-string-left-trim (chars-string source-string)
+  (let ((chars (string-trim-set chars-string "VL-STRING-LEFT-TRIM"))
+        (value (autolisp-string-value
+                (require-string source-string "VL-STRING-LEFT-TRIM"))))
+    (make-autolisp-string (string-left-trim chars value))))
+
+(defun builtin-vl-string-right-trim (chars-string source-string)
+  (let ((chars (string-trim-set chars-string "VL-STRING-RIGHT-TRIM"))
+        (value (autolisp-string-value
+                (require-string source-string "VL-STRING-RIGHT-TRIM"))))
+    (make-autolisp-string (string-right-trim chars value))))
+
+(defun builtin-vl-string-search (pattern source &optional start)
+  ;; (vl-string-search PATTERN STRING [START])
+  ;; Returns the 0-based index of the first occurrence of PATTERN in
+  ;; STRING at or after START (default 0), or nil if not found.
+  (let ((p (autolisp-string-value (require-string pattern "VL-STRING-SEARCH")))
+        (s (autolisp-string-value (require-string source "VL-STRING-SEARCH")))
+        (s0 (if start (require-int32 start "VL-STRING-SEARCH") 0)))
+    (when (minusp s0)
+      (signal-builtin-argument-error
+       :invalid-string-position
+       "VL-STRING-SEARCH"
+       "VL-STRING-SEARCH start must be non-negative, got ~S."
+       start))
+    (search p s :start2 (min s0 (length s)))))
+
+(defun builtin-vl-string-position (char-code source &optional start from-right)
+  ;; (vl-string-position CODE STRING [START [FROM-END]])
+  ;; CODE is an integer character code; returns the 0-based position
+  ;; of the first matching character, or nil.
+  (let* ((code (require-int32 char-code "VL-STRING-POSITION"))
+         (target (code-char code))
+         (s (autolisp-string-value (require-string source "VL-STRING-POSITION"))))
+    (unless target
+      (signal-builtin-argument-error
+       :invalid-character-code
+       "VL-STRING-POSITION"
+       "VL-STRING-POSITION code does not designate a character: ~S."
+       char-code))
+    (let ((s0 (if start (require-int32 start "VL-STRING-POSITION") 0)))
+      (when (minusp s0)
+        (signal-builtin-argument-error
+         :invalid-string-position
+         "VL-STRING-POSITION"
+         "VL-STRING-POSITION start must be non-negative, got ~S."
+         start))
+      (if from-right
+          (position target s :from-end t :start (min s0 (length s)))
+          (position target s :start (min s0 (length s)))))))
+
+(defun builtin-vl-string-translate (from-string to-string source)
+  ;; (vl-string-translate FROM TO STRING)
+  ;; Replace each character of STRING that occurs in FROM with the
+  ;; character at the same position in TO. If TO is shorter than
+  ;; FROM, the extra FROM characters are deleted.
+  (let ((from (autolisp-string-value (require-string from-string "VL-STRING-TRANSLATE")))
+        (to (autolisp-string-value (require-string to-string "VL-STRING-TRANSLATE")))
+        (s (autolisp-string-value (require-string source "VL-STRING-TRANSLATE"))))
+    (make-autolisp-string
+     (with-output-to-string (out)
+       (loop for c across s
+             for at = (position c from)
+             do (cond
+                  ((null at) (write-char c out))
+                  ((< at (length to)) (write-char (char to at) out))
+                  ;; FROM character with no counterpart in TO is dropped.
+                  (t nil)))))))
+
+(defun builtin-vl-string-subst (new-string old-string source &optional start)
+  ;; (vl-string-subst NEW OLD STRING [START])
+  ;; Replace the FIRST occurrence of OLD with NEW. If OLD does not
+  ;; occur, return STRING unchanged.
+  (let ((new (autolisp-string-value (require-string new-string "VL-STRING-SUBST")))
+        (old (autolisp-string-value (require-string old-string "VL-STRING-SUBST")))
+        (s (autolisp-string-value (require-string source "VL-STRING-SUBST"))))
+    (let* ((s0 (if start (require-int32 start "VL-STRING-SUBST") 0))
+           (clamped-start (max 0 (min s0 (length s))))
+           (hit (search old s :start2 clamped-start)))
+      (if hit
+          (make-autolisp-string
+           (concatenate 'string
+                        (subseq s 0 hit)
+                        new
+                        (subseq s (+ hit (length old)))))
+          (make-autolisp-string s)))))
+
+(defun builtin-vl-string-mismatch (a b)
+  ;; (vl-string-mismatch S1 S2) -> integer count of leading matching characters.
+  (let ((sa (autolisp-string-value (require-string a "VL-STRING-MISMATCH")))
+        (sb (autolisp-string-value (require-string b "VL-STRING-MISMATCH"))))
+    (loop for i below (min (length sa) (length sb))
+          while (char= (char sa i) (char sb i))
+          count 1)))
+
+(defun builtin-vl-string-elt (string index)
+  ;; (vl-string-elt STR I) -> character code at 0-based index.
+  (let ((s (autolisp-string-value (require-string string "VL-STRING-ELT")))
+        (i (require-int32 index "VL-STRING-ELT")))
+    (when (or (minusp i) (>= i (length s)))
+      (signal-builtin-argument-error
+       :invalid-string-index
+       "VL-STRING-ELT"
+       "VL-STRING-ELT index ~S is out of range for a string of length ~A."
+       index (length s)))
+    (char-code (char s i))))
+
+(defun builtin-vl-string->list (string)
+  (let ((s (autolisp-string-value (require-string string "VL-STRING->LIST"))))
+    (loop for c across s collect (char-code c))))
+
+(defun builtin-vl-list->string (codes)
+  ;; (vl-list->string LIST-OF-INTS) -> string built from those codes.
+  (unless (listp codes)
+    (signal-builtin-argument-error
+     :invalid-list-argument
+     "VL-LIST->STRING"
+     "VL-LIST->STRING expects a list of integers, got ~S."
+     codes))
+  (make-autolisp-string
+   (with-output-to-string (out)
+     (dolist (code codes)
+       (let ((int (require-int32 code "VL-LIST->STRING")))
+         (unless (and (<= 0 int) (code-char int))
+           (signal-builtin-argument-error
+            :invalid-character-code
+            "VL-LIST->STRING"
+            "VL-LIST->STRING element ~S is not a valid character code."
+            code))
+         (write-char (code-char int) out))))))
 
 (defun builtin-ascii (string)
   (let ((value (autolisp-string-value (require-string string "ASCII"))))
@@ -1509,15 +1796,30 @@
       operator-name
       object))))
 
+(defun comparison-equal-p (a b)
+  ;; AutoLISP `=` accepts arguments of any type, not just the
+  ;; numeric/string pair documented in early references — production
+  ;; code routinely uses it to compare symbols and lists. Numeric
+  ;; pairs compare across int/real (autolisp-spec ch. 5, "Equality
+  ;; Predicates"); strings compare by content; everything else falls
+  ;; back to host-level identity (eql), which matches `eq` semantics
+  ;; for symbols and other interned objects.
+  (cond
+    ((eql a b) t)
+    ((and (numberp a) (numberp b)) (= a b))
+    ((and (typep a 'autolisp-string) (typep b 'autolisp-string))
+     (string= (autolisp-string-value a) (autolisp-string-value b)))
+    (t nil)))
+
 (defun builtin-= (&rest arguments)
   (unless arguments
     (signal-builtin-argument-error
      :wrong-number-of-arguments
      "="
      "= expects at least one argument."))
-  (let ((first-value (comparison-value (first arguments) "=")))
+  (let ((first-arg (first arguments)))
     (if (every (lambda (argument)
-                 (equal first-value (comparison-value argument "=")))
+                 (comparison-equal-p first-arg argument))
                (rest arguments))
         (intern-autolisp-symbol "T")
         nil)))
@@ -1528,13 +1830,12 @@
      :wrong-number-of-arguments
      "/="
      "/= expects at least one argument."))
-  (let ((values (mapcar (lambda (argument)
-                          (comparison-value argument "/="))
-                        arguments)))
-    (if (= (length values)
-           (length (remove-duplicates values :test #'equal)))
-        (intern-autolisp-symbol "T")
-        nil)))
+  ;; `/=` is true when no two arguments compare equal — pairwise.
+  (loop for tail on arguments
+        do (loop for other in (rest tail)
+                 when (comparison-equal-p (first tail) other)
+                   do (return-from builtin-/= nil))
+        finally (return (intern-autolisp-symbol "T"))))
 
 (defun require-number (object operator-name)
   (unless (numberp object)
@@ -1612,6 +1913,10 @@
    (make-core-builtin-subr "VL-DOC-EXPORT" #'builtin-vl-doc-export)
    (make-core-builtin-subr "VL-DOC-IMPORT" #'builtin-vl-doc-import)
    (make-core-builtin-subr "MAPCAR" #'builtin-mapcar)
+   (make-core-builtin-subr "APPLY" #'builtin-apply)
+   (make-core-builtin-subr "EVAL" #'builtin-eval)
+   (make-core-builtin-subr "EQ" #'builtin-eq)
+   (make-core-builtin-subr "EQUAL" #'builtin-equal)
    (make-core-builtin-subr "VL-EVERY" #'builtin-vl-every)
    (make-core-builtin-subr "VL-MEMBER-IF" #'builtin-vl-member-if)
    (make-core-builtin-subr "VL-MEMBER-IF-NOT" #'builtin-vl-member-if-not)
@@ -1636,6 +1941,18 @@
    (make-core-builtin-subr "STRCAT" #'builtin-strcat)
    (make-core-builtin-subr "STRLEN" #'builtin-strlen)
    (make-core-builtin-subr "SUBSTR" #'builtin-substr)
+   (make-core-builtin-subr "STRCASE" #'builtin-strcase)
+   (make-core-builtin-subr "VL-STRING-TRIM" #'builtin-vl-string-trim)
+   (make-core-builtin-subr "VL-STRING-LEFT-TRIM" #'builtin-vl-string-left-trim)
+   (make-core-builtin-subr "VL-STRING-RIGHT-TRIM" #'builtin-vl-string-right-trim)
+   (make-core-builtin-subr "VL-STRING-SEARCH" #'builtin-vl-string-search)
+   (make-core-builtin-subr "VL-STRING-POSITION" #'builtin-vl-string-position)
+   (make-core-builtin-subr "VL-STRING-TRANSLATE" #'builtin-vl-string-translate)
+   (make-core-builtin-subr "VL-STRING-SUBST" #'builtin-vl-string-subst)
+   (make-core-builtin-subr "VL-STRING-MISMATCH" #'builtin-vl-string-mismatch)
+   (make-core-builtin-subr "VL-STRING-ELT" #'builtin-vl-string-elt)
+   (make-core-builtin-subr "VL-STRING->LIST" #'builtin-vl-string->list)
+   (make-core-builtin-subr "VL-LIST->STRING" #'builtin-vl-list->string)
    (make-core-builtin-subr "ASCII" #'builtin-ascii)
    (make-core-builtin-subr "CHR" #'builtin-chr)
    (make-core-builtin-subr "ATOI" #'builtin-atoi)
@@ -1683,6 +2000,34 @@
    (make-core-builtin-subr "BOUNDP" #'builtin-boundp)
    (make-core-builtin-subr "CAR" #'builtin-car)
    (make-core-builtin-subr "CDR" #'builtin-cdr)
+   (make-core-builtin-subr "CAAR"  #'builtin-caar)
+   (make-core-builtin-subr "CADR"  #'builtin-cadr)
+   (make-core-builtin-subr "CDAR"  #'builtin-cdar)
+   (make-core-builtin-subr "CDDR"  #'builtin-cddr)
+   (make-core-builtin-subr "CAAAR" #'builtin-caaar)
+   (make-core-builtin-subr "CAADR" #'builtin-caadr)
+   (make-core-builtin-subr "CADAR" #'builtin-cadar)
+   (make-core-builtin-subr "CADDR" #'builtin-caddr)
+   (make-core-builtin-subr "CDAAR" #'builtin-cdaar)
+   (make-core-builtin-subr "CDADR" #'builtin-cdadr)
+   (make-core-builtin-subr "CDDAR" #'builtin-cddar)
+   (make-core-builtin-subr "CDDDR" #'builtin-cdddr)
+   (make-core-builtin-subr "CAAAAR" #'builtin-caaaar)
+   (make-core-builtin-subr "CAAADR" #'builtin-caaadr)
+   (make-core-builtin-subr "CAADAR" #'builtin-caadar)
+   (make-core-builtin-subr "CAADDR" #'builtin-caaddr)
+   (make-core-builtin-subr "CADAAR" #'builtin-cadaar)
+   (make-core-builtin-subr "CADADR" #'builtin-cadadr)
+   (make-core-builtin-subr "CADDAR" #'builtin-caddar)
+   (make-core-builtin-subr "CADDDR" #'builtin-cadddr)
+   (make-core-builtin-subr "CDAAAR" #'builtin-cdaaar)
+   (make-core-builtin-subr "CDAADR" #'builtin-cdaadr)
+   (make-core-builtin-subr "CDADAR" #'builtin-cdadar)
+   (make-core-builtin-subr "CDADDR" #'builtin-cdaddr)
+   (make-core-builtin-subr "CDDAAR" #'builtin-cddaar)
+   (make-core-builtin-subr "CDDADR" #'builtin-cddadr)
+   (make-core-builtin-subr "CDDDAR" #'builtin-cdddar)
+   (make-core-builtin-subr "CDDDDR" #'builtin-cddddr)
    (make-core-builtin-subr "CONS" #'builtin-cons)
    (make-core-builtin-subr "LIST" #'builtin-list)
    (make-core-builtin-subr "APPEND" #'builtin-append)

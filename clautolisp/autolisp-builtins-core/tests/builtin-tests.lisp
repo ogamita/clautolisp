@@ -140,11 +140,14 @@
                                                       (make-autolisp-string "x")))
                             :invalid-number-argument
                             "ABS")
-      (expect-builtin-error (lambda ()
-                              (call-autolisp-function =-fn
-                                                      (intern-autolisp-symbol "FOO")))
-                            :invalid-comparison-argument
-                            "=")
+      ;; `=` is permissive: it accepts arguments of any type and falls
+      ;; back to host-identity comparison for non-numeric / non-string
+      ;; values (autolisp-spec ch. 5). The old strict-error behaviour
+      ;; was wrong; production AutoLISP code uses (= sym1 sym2) freely.
+      (is (string= "T"
+                   (autolisp-symbol-name
+                    (call-autolisp-function =-fn
+                                            (intern-autolisp-symbol "FOO")))))
       (expect-builtin-error (lambda ()
                               (call-autolisp-function /=-fn))
                             :wrong-number-of-arguments
@@ -1413,3 +1416,107 @@
     (is (= 0.0d0    (call-autolisp-function atof-fn (make-autolisp-string "xyz"))))
     ;; Conservative-clautolisp choice: hex-float is NOT accepted.
     (is (= 0.0d0    (call-autolisp-function atof-fn (make-autolisp-string "0x1p4"))))))
+
+(test builtin-apply-eval-eq-equal
+  ;; Core ch.5 functions: APPLY spreads a list, EVAL re-enters the
+  ;; evaluator, EQ matches eql plus interned-string identity, and
+  ;; EQUAL is structural with cross-type numeric equality.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((apply-fn (autolisp-symbol-function (find-autolisp-symbol "APPLY")))
+        (eval-fn (autolisp-symbol-function (find-autolisp-symbol "EVAL")))
+        (eq-fn (autolisp-symbol-function (find-autolisp-symbol "EQ")))
+        (equal-fn (autolisp-symbol-function (find-autolisp-symbol "EQUAL")))
+        (plus (intern-autolisp-symbol "+"))
+        (foo-1 (intern-autolisp-symbol "FOO"))
+        (foo-2 (intern-autolisp-symbol "FOO"))
+        (t-symbol (intern-autolisp-symbol "T")))
+    (is (eql 6 (call-autolisp-function apply-fn plus '(1 2 3))))
+    (is (eql 0 (call-autolisp-function apply-fn plus nil)))
+    (is (eql 6 (call-autolisp-function eval-fn (list plus 1 2 3))))
+    (is (eq t-symbol (call-autolisp-function eq-fn foo-1 foo-2)))
+    (is (eq t-symbol
+            (call-autolisp-function eq-fn
+                                    (make-autolisp-string "abc")
+                                    (make-autolisp-string "abc"))))
+    (is (eq t-symbol (call-autolisp-function equal-fn 1 1.0d0)))
+    (is (eq t-symbol
+            (call-autolisp-function equal-fn '(1 2) (list 1 2))))
+    ;; equal with fuzz tolerance.
+    (is (eq t-symbol
+            (call-autolisp-function equal-fn 1.0d0 1.0001d0 0.01d0)))
+    (is (null (call-autolisp-function equal-fn 1.0d0 1.05d0 0.01d0)))))
+
+(test builtin-caxr-family
+  ;; All depth-2 and depth-3 CAxR / CDxR walkers and a representative
+  ;; depth-4 sample. Argument layout: ((a (b c)) (d (e f))).
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((cadr-fn (autolisp-symbol-function (find-autolisp-symbol "CADR")))
+         (caar-fn (autolisp-symbol-function (find-autolisp-symbol "CAAR")))
+         (cddr-fn (autolisp-symbol-function (find-autolisp-symbol "CDDR")))
+         (caddr-fn (autolisp-symbol-function (find-autolisp-symbol "CADDR")))
+         (cadddr-fn (autolisp-symbol-function (find-autolisp-symbol "CADDDR")))
+         (lst '(1 2 3 4 5)))
+    (is (eql 2 (call-autolisp-function cadr-fn lst)))
+    (is (eql 3 (call-autolisp-function caddr-fn lst)))
+    (is (eql 4 (call-autolisp-function cadddr-fn lst)))
+    (is (equal '(3 4 5) (call-autolisp-function cddr-fn lst)))
+    (is (eql 1 (call-autolisp-function caar-fn '((1 2) 3))))))
+
+(test builtin-string-trim-search-translate
+  ;; vl-string-* family used by real-world AutoLISP (e.g. project-file
+  ;; loaders and path normalisers).
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((trim-fn (autolisp-symbol-function (find-autolisp-symbol "VL-STRING-TRIM")))
+        (search-fn (autolisp-symbol-function (find-autolisp-symbol "VL-STRING-SEARCH")))
+        (translate-fn (autolisp-symbol-function (find-autolisp-symbol "VL-STRING-TRANSLATE")))
+        (subst-fn (autolisp-symbol-function (find-autolisp-symbol "VL-STRING-SUBST")))
+        (strcase-fn (autolisp-symbol-function (find-autolisp-symbol "STRCASE"))))
+    (is (string= "abc"
+                 (autolisp-string-value
+                  (call-autolisp-function trim-fn
+                                          (make-autolisp-string " \t\r\n")
+                                          (make-autolisp-string "  abc \r\n")))))
+    (is (eql 3
+             (call-autolisp-function search-fn
+                                     (make-autolisp-string "qux")
+                                     (make-autolisp-string "fooqux"))))
+    (is (null
+         (call-autolisp-function search-fn
+                                 (make-autolisp-string "zz")
+                                 (make-autolisp-string "fooqux"))))
+    (is (string= "C/path/to/file"
+                 (autolisp-string-value
+                  (call-autolisp-function translate-fn
+                                          (make-autolisp-string "\\")
+                                          (make-autolisp-string "/")
+                                          (make-autolisp-string "C\\path\\to\\file")))))
+    (is (string= "fooBARbaz"
+                 (autolisp-string-value
+                  (call-autolisp-function subst-fn
+                                          (make-autolisp-string "BAR")
+                                          (make-autolisp-string "qux")
+                                          (make-autolisp-string "fooquxbaz")))))
+    (is (string= "ABC"
+                 (autolisp-string-value
+                  (call-autolisp-function strcase-fn (make-autolisp-string "abc")))))
+    (is (string= "abc"
+                 (autolisp-string-value
+                  (call-autolisp-function strcase-fn
+                                          (make-autolisp-string "ABC")
+                                          (intern-autolisp-symbol "T")))))))
+
+(test reader-handles-newline-and-tab-string-escapes
+  ;; "\n" / "\t" / "\r" in source code must produce real control
+  ;; characters in every dialect, not literal backslash-letter pairs
+  ;; (real-world AutoLISP relies on this).
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((forms (clautolisp.autolisp-runtime:read-runtime-from-string
+                "\"a\\nb\\tc\\rd\"")))
+    (is (= 1 (length forms)))
+    (let ((s (autolisp-string-value (first forms))))
+      (is (string= s (format nil "a~Cb~Cc~Cd"
+                             #\Newline #\Tab #\Return))))))
