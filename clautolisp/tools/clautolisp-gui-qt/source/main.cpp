@@ -1,5 +1,11 @@
 // clautolisp-gui-qt — Qt6 subprocess driver for the clautolisp DCL
 // renderer. Speaks the sexp wire protocol over stdio.
+//
+// stdin is read on a dedicated worker thread because Qt's
+// QSocketNotifier is unreliable on macOS for non-socket file
+// descriptors (pipes). The worker emits a Qt signal with each
+// parsed Sexp; the main thread (which owns Qt widgets) handles
+// the message in its slot.
 
 #include "dialog_window.hpp"
 #include "sexp.hpp"
@@ -7,23 +13,63 @@
 
 #include <QApplication>
 #include <QHash>
+#include <QMetaType>
 #include <QPointer>
-#include <QSocketNotifier>
-#include <QTimer>
+#include <QThread>
 
 #include <iostream>
-#include <unistd.h>
+#include <memory>
+
+Q_DECLARE_METATYPE(std::shared_ptr<clautolisp::Sexp>)
 
 namespace {
+
+class StdinReader : public QThread {
+    Q_OBJECT
+public:
+    void run() override {
+        clautolisp::SexpReader reader(std::cin);
+        while (true) {
+            auto msg = std::make_shared<clautolisp::Sexp>();
+            try {
+                if (!reader.readMessage(*msg)) {
+                    emit eof();
+                    return;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[gui-qt] sexp read error: " << e.what() << '\n';
+                emit eof();
+                return;
+            }
+            emit messageReady(msg);
+        }
+    }
+
+signals:
+    void messageReady(std::shared_ptr<clautolisp::Sexp> msg);
+    void eof();
+};
 
 class Driver : public QObject {
     Q_OBJECT
 public:
-    Driver()
-        : reader_(std::cin),
-          stdinNotifier_(STDIN_FILENO, QSocketNotifier::Read) {
-        connect(&stdinNotifier_, &QSocketNotifier::activated,
-                this, &Driver::onStdinReady);
+    Driver() {
+        qRegisterMetaType<std::shared_ptr<clautolisp::Sexp>>("std::shared_ptr<clautolisp::Sexp>");
+        connect(&reader_, &StdinReader::messageReady,
+                this, &Driver::onMessage,
+                Qt::QueuedConnection);
+        connect(&reader_, &StdinReader::eof,
+                qApp, &QApplication::quit,
+                Qt::QueuedConnection);
+        reader_.start();
+    }
+
+    ~Driver() override {
+        if (reader_.isRunning()) {
+            reader_.requestInterruption();
+            reader_.terminate();
+            reader_.wait(200);
+        }
     }
 
     void emitAction(long long id, const QString& key, const QString& value, const QString& reason) {
@@ -48,18 +94,8 @@ public:
     }
 
 private slots:
-    void onStdinReady() {
-        clautolisp::Sexp msg;
-        try {
-            if (!reader_.readMessage(msg)) {
-                QApplication::quit();
-                return;
-            }
-        } catch (const std::exception& e) {
-            std::cerr << "[gui-qt] sexp read error: " << e.what() << '\n';
-            QApplication::quit();
-            return;
-        }
+    void onMessage(std::shared_ptr<clautolisp::Sexp> msgPtr) {
+        const clautolisp::Sexp& msg = *msgPtr;
         if (msg.type() != clautolisp::Sexp::Type::List || msg.asList().empty()) {
             return;
         }
@@ -83,15 +119,13 @@ private slots:
     }
 
 private:
-    clautolisp::SexpReader reader_;
-    QSocketNotifier stdinNotifier_;
+    StdinReader reader_;
     QHash<long long, QPointer<clautolisp::DialogWindow>> windows_;
 
     void handleOpen(const clautolisp::Sexp& msg) {
         const auto& items = msg.asList();
         if (items.size() < 4) return;
         long long id = items[1].asInt();
-        // items[2] = name (string), items[3] = tile-form
         try {
             clautolisp::Tile tile = clautolisp::decodeTile(items[3]);
             auto* window = new clautolisp::DialogWindow(
@@ -104,6 +138,8 @@ private:
                 });
             windows_.insert(id, window);
             window->show();
+            window->raise();
+            window->activateWindow();
         } catch (const std::exception& e) {
             std::cerr << "[gui-qt] decode error: " << e.what() << '\n';
         }
@@ -162,6 +198,8 @@ int main(int argc, char** argv) {
                 [](const QString&, const QString&, const QString&) {},
                 [](int) { QApplication::quit(); });
             window.show();
+            window.raise();
+            window.activateWindow();
             return app.exec();
         }
     }
