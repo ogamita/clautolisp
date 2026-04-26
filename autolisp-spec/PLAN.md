@@ -14,8 +14,16 @@ The Org documents in `documentation/` remain the place for specification text, e
 - Phase 2 (index closure): complete and extended on 2026-04-26.
 - Phase 3 (body fill): complete for the original 266 Phase-2 stubs *and* for the 377 Phase-2-follow-up stubs added 2026-04-26. The Phase-3 follow-up scraped each BricsCAD V26 per-symbol page directly via curl, parsed the chm2web tabular layout (Arguments, Return, Example, Remarks), and replaced each chapter-24 stub with the structured body. 316/377 entries received a non-trivial parsed signature; 134/377 received explicit Arguments; 134/377 received explicit Return; 98/377 received Examples; 83/377 received Remarks. The remaining entries kept a sensible default body where the vendor page was a one-line description.
 - Phase 4 (divergence reconciliation): complete.
-- Phase 5 (validation closure): complete. Five long-running items — `atoi`, `atof`, `vl-member-if-not`, `exit` vs `quit`, and the printer surface (`prin1` / `princ` / `print` / `terpri` / `prompt`) — closed at the *documented* level via direct citation of the BricsCAD V26 per-symbol pages reached through Claude-in-Chrome MCP. See `documentation/specification-resolution-plan.org` for the closure record.
-- Remaining work: when a local AutoCAD or BricsCAD is available, run `scripts/run-probes.sh` to upgrade the implementation-defined lex-edge entries on `atoi` / `atof` from *implementation-defined* to *tested*.
+- Phase 5 (validation closure): complete and *now product-tested* against BricsCAD V26 / macOS (2026-04-26). Five long-running items closed via the BricsCAD V26 per-symbol pages plus running `scripts/run-probes.sh` against a live BricsCAD V26 instance via the new `scripts/run-probes-direct.sh` runner. Each affected entry now carries a "Tested Behaviour (BricsCAD V26 / macOS, 2026-04-26)" sub-section. The probe run is committed at `results/bricscad/macos/20260426T122808Z/`.
+  - *atoi*: strtol-style with no octal-on-`0`-prefix and no hex auto-detection.
+  - *atof*: strtod-style; *accepts C99 hex-float* (`0x1p4 → 16.0`); *no locale sensitivity* (decimal-comma rejected).
+  - *terpri*: zero-arity confirmed; 2-arg form raises an error.
+  - *prin1* / *princ* / *print*: 2-arg form (`expr stream`) accepted; representations confirmed empirically (round-trippable / verbatim / `\n…` framing respectively).
+  - *prompt*: returns `nil` and writes only to the command-line channel.
+- Side findings from the probe run, now reflected in the spec:
+  - BricsCAD V26 `or` returns *T or nil*, not the first non-nil value (probe-core was patched to use an `if`-guarded init pattern; the spec entry for `or` records the divergence with a portable-idiom note).
+  - The user's `autolisp-script` wrapper (`~/works/sncf-reseau/src/outils-autolisp/autolisp-script/autolisp`) redefines `prin1`/`princ`/`print`/`prompt` to single-argument helpers; for printer-surface tests the spec adds the new `scripts/run-probes-direct.sh` direct-launch runner.
+- Remaining work: when a local AutoCAD installation becomes available, run `scripts/run-probes.sh autocad` to upgrade the entries from *BricsCAD-tested* to *both-vendor tested*.
 
 ## Phasing
 
@@ -83,7 +91,8 @@ The Org documents in `documentation/` remain the place for specification text, e
 - [x] Close `vl-member-if-not` with the BricsCAD V26 dedicated per-symbol page (more explicit than Autodesk's family-table prose).
 - [x] Close `exit` vs `quit`: BricsCAD V26 confirms identical signature, abort-channel message, and effect; spec records the historical distinction as not-supported.
 - [x] Close printer surface (`prin1` / `princ` / `print` / `terpri` / `prompt`): BricsCAD V26 per-symbol citations added; control-character escape rules, leading-newline / trailing-space framing of `print`, zero-arity command-line-only behaviour of `terpri`, and Bricsys's preferred-channel guidance for `prompt` all recorded.
-- [ ] Promote any *implementation-defined* lex edge to *tested* by running `scripts/run-probes.sh` against a real AutoCAD or BricsCAD installation when one becomes available.
+- [x] Run `scripts/run-probes.sh` against BricsCAD V26 on macOS, capture `results/bricscad/macos/20260426T122808Z/results.sexp`, and promote `atoi` / `atof` lex edges and the printer-surface arities from *implementation-defined* to *tested*. Probe-core patched: `(or x default)` idiom replaced with `(if (not x) ...)` because BricsCAD V26 `or` returns `T`/`nil`. New runner `scripts/run-probes-direct.sh` added for vanilla-BricsCAD launches that bypass the autolisp-script wrapper's `prin1`/`princ`/`print` redefinitions.
+- [ ] Run `scripts/run-probes.sh` against a real AutoCAD installation when one becomes available, to upgrade the entries from *BricsCAD-tested* to *both-vendor tested*.
 
 ## Open structural questions for Phase 2
 

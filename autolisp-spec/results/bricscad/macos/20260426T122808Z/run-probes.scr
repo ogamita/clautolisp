@@ -1,0 +1,6 @@
+;; BricsCAD probe runner — direct invocation, no autolisp-script wrapper.
+;; Uses an unmodified prin1 / open / close.
+(load "/Users/pjb/src/public/clautolisp/autolisp-spec/results/bricscad/macos/20260426T122808Z/run-probes.lsp")
+(setq __done (open "/Users/pjb/src/public/clautolisp/autolisp-spec/results/bricscad/macos/20260426T122808Z/done.txt" "w"))
+(if __done (progn (princ "DONE\n" __done) (close __done)))
+QUIT Y

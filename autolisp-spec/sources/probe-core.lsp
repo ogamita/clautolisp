@@ -1,18 +1,32 @@
-(setq *autolisp-spec-result-file*
-      (or *autolisp-spec-result-file* "autolisp-spec-results.sexp"))
-(setq *autolisp-spec-platform*
-      (or *autolisp-spec-platform* "unknown"))
-(setq *autolisp-spec-product*
-      (or *autolisp-spec-product* "unknown"))
-(setq *autolisp-spec-run-directory*
-      (or *autolisp-spec-run-directory* "."))
+;; Cross-vendor note: BricsCAD V26 `or` returns T / nil, not the first
+;; non-nil expression value (see vendor-inventory-2026.org §10). The
+;; idiom `(setq x (or x default))` therefore *clobbers* x with T in
+;; BricsCAD when x is already non-nil. We use an `if`-based guard instead.
+(if (not *autolisp-spec-result-file*)
+  (setq *autolisp-spec-result-file* "autolisp-spec-results.sexp"))
+(if (not *autolisp-spec-platform*)
+  (setq *autolisp-spec-platform* "unknown"))
+(if (not *autolisp-spec-product*)
+  (setq *autolisp-spec-product* "unknown"))
+(if (not *autolisp-spec-run-directory*)
+  (setq *autolisp-spec-run-directory* "."))
 
-(defun autolisp-spec--record (fields / stream)
+;; Cross-vendor / wrapper-aware record writer.
+;; Several environments either redefine `prin1` / `princ` / `print`
+;; to a 1-argument helper (the autolisp-script wrapper does so to
+;; mirror command-line output) or provide a 2-argument form whose
+;; stream argument is silently ignored. To work everywhere, we
+;; serialise the record via vl-prin1-to-string (1-argument; always
+;; vendor-defined as round-trippable) and emit via write-line —
+;; `write-line` is left untouched by every wrapper we have seen and
+;; is documented as 2-argument with a stream sink in both AutoCAD
+;; and BricsCAD V26.
+(defun autolisp-spec--record (fields / stream serialised)
+  (setq serialised (vl-prin1-to-string fields))
   (setq stream (open *autolisp-spec-result-file* "a"))
   (if stream
     (progn
-      (prin1 fields stream)
-      (terpri stream)
+      (write-line serialised stream)
       (close stream)
       fields)
     nil))
@@ -82,6 +96,11 @@
   (setq stream (open path "w"))
   (if stream
     (progn
+      ;; The probe writer thunk receives a stream argument and uses
+      ;; whatever output function it wishes (prin1/princ/print/terpri).
+      ;; The 2-argument forms of those functions may be no-ops in some
+      ;; wrappers, in which case the per-file probe will record an
+      ;; empty `file-output` value — that's still useful evidence.
       (setq value (vl-catch-all-apply writer (list stream)))
       (close stream)
       value)
