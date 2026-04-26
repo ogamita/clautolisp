@@ -83,6 +83,40 @@ foo returns the function object, not 42."
         (setf signalled-code (autolisp-runtime-error-code condition))))
     (is (eq :undefined-function signalled-code))))
 
+;;; --- Unbound-variable dialect knob --------------------------------
+;;;
+;;; The strict dialect signals :unbound-variable on bare reference to
+;;; a never-set name. The autocad-2026 and bricscad-v26 dialects
+;;; silently return nil, matching product behaviour.
+
+(test unbound-variable-strict-signals
+  "Strict dialect: bare reference to unset symbol -> :unbound-variable."
+  (reset-autolisp-symbol-table)
+  (let ((signalled-code nil))
+    (handler-case
+        (run-autolisp-string "totally-unset-symbol-strict")
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :unbound-variable signalled-code))))
+
+(test unbound-variable-bricscad-returns-nil
+  "BricsCAD V26 dialect: bare reference to unset symbol returns nil."
+  (reset-autolisp-symbol-table)
+  (let ((result
+         (run-autolisp-string
+          "totally-unset-symbol-lax"
+          :dialect (clautolisp.autolisp-reader:autolisp-dialect-bricscad-v26))))
+    (is (null result))))
+
+(test unbound-variable-autocad-returns-nil
+  "AutoCAD 2026 dialect: bare reference to unset symbol returns nil."
+  (reset-autolisp-symbol-table)
+  (let ((result
+         (run-autolisp-string
+          "totally-unset-symbol-acad"
+          :dialect (clautolisp.autolisp-reader:autolisp-dialect-autocad-2026))))
+    (is (null result))))
+
 (test lisp1-variable-holding-subr-is-callable
   "(setq myfunc <some-subr>) followed by (myfunc ...) calls the stored
 subroutine — single-cell rule (BricsCAD defect SR44723)."

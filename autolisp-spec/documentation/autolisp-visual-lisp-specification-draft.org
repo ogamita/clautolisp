@@ -70,6 +70,27 @@ It does *not* follow that every Windows-only or Visual LISP extension function i
 
 #+LATEX: \newpage
 
+** Brief History
+The historical genealogy of AutoLISP / Visual LISP shapes several otherwise-arbitrary corners of the language. The chapter-level normative rules — Lisp-1 semantics, dynamic scope, silent-NIL on unbound reference, no tail-call optimization, no multiple values, upper-case folding — are downstream consequences of the choices made by the implementations enumerated below.
+
+- *XLISP (David Betz, 1980s).* AutoLISP was derived from a slimmed XLISP. XLISP itself targeted personal computers as a compact, embeddable Lisp dialect with a single-cell symbol model and dynamic scope. AutoLISP inherited that core.
+- *AutoLISP shipped in AutoCAD 2.18, January 1986.* Released as Autodesk's API for customising AutoCAD. Successive AutoCAD releases extended it through to Release 13 (February 1995).
+- *Vital LISP (Basis Software).* A third-party superset of AutoLISP adding an IDE, debugger, compiler, ActiveX (COM) bindings, reactors, and additional general-purpose Lisp functions.
+- *Visual LISP (Autodesk, 1997).* Autodesk acquired Vital LISP and rebranded it. Initially shipped as an add-on to AutoCAD R14.
+- *Merger into AutoCAD 2000 (March 1999).* Visual LISP replaced the standalone AutoLISP runtime and IDE inside AutoCAD. From this point onward, "AutoLISP" and "Visual LISP" name the same runtime; the documentation distinguishes "core" AutoLISP from the Visual LISP extensions (~vl-*~, ~vla-*~, ~vlax-*~, ~vlr-*~, etc.).
+- *BricsCAD AutoLISP.* Bricsys's BricsCAD product implements AutoLISP and large parts of Visual LISP from scratch as a vendor-independent compatibility layer. BricsCAD V25 introduced lax-mode tokenizer and ~atof~ extensions; V26 (this work's reference target) preserves them. Bricsys maintains its own bug tracker and release notes; defects such as ~SR44723~ are normative-grade evidence for behaviours that Autodesk's reference is silent on.
+- *clautolisp (this project).* A Common-Lisp-based reimplementation of the AutoLISP runtime designed to match the Lisp-1, dynamically-scoped, host-product-conformant semantics documented in this specification.
+
+The genealogy explains, among other things, why ~lambda~ produces a function value but does not lexically capture (XLISP roots), why integer division truncates (C-influenced numerics from PC-era XLISP), and why ~values~ does not exist (the XLISP core never had it).
+
+*** Source Notes
+- [AutoLISP — Wikipedia](https://en.wikipedia.org/wiki/AutoLISP)
+- [History of AutoLISP — Ron Leigh](http://ronleigh.com/autolisp/ahistory.htm)
+- [AutoLISP and Visual LISP (Autodesk)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP/files/GUID-49AAEA0E-C422-48C4-87F0-52FCA491BF2C.htm)
+- BricsCAD release notes (per-version, Bricsys help center).
+
+#+LATEX: \newpage
+
 * 2 Syntax
 ** Overview
 AutoLISP uses parenthesized Lisp syntax. Vendor documentation specifies the syntax mostly through examples, concept pages, and individual function documentation rather than through a single formal grammar.
@@ -457,6 +478,207 @@ AutoLISP evaluation is Lisp-like but not identical to Common Lisp evaluation. Th
 - `nil` is false and every non-`nil` value is true in conditional contexts
 
 Evaluation order is historically version-sensitive in error-reporting contexts. Autodesk explicitly notes that modern AutoLISP evaluates all arguments before checking argument types in at least some cases, unlike older releases.
+
+#+LATEX: \newpage
+
+** Normative Rules: Argument Evaluation Order
+*** Statement
+For every ordinary call ~(operator e1 e2 e3 ...)~ — i.e. every call whose operator is *not* a special form — the argument expressions ~e1, e2, e3, ...~ are evaluated *strictly left-to-right*, with each argument's side effects visible to the next.
+
+Special forms (~setq~, ~if~, ~cond~, ~and~, ~or~, ~while~, ~repeat~, ~foreach~, ~lambda~, ~function~, ~defun~, ~defun-q~, ~progn~, ~quote~, ~command~, ~trace~, ~untrace~, ~vlax-for~) decide their own evaluation order; their per-entry rules override this default.
+
+*** Vendor Evidence
+BricsCAD V26 / macOS direct probe: a side-effecting ~note~ function records each argument's invocation order. ~(+ (note 1) (note 2) (note 3))~, ~(list (note 1) (note 2) (note 3))~, and an immediately-applied lambda ~((lambda (a b c) ...) (note 1) (note 2) (note 3))~ all yield the recorded sequence ~(1 2 3)~. The order is identical for builtin operators, ordinary user functions, and lambda calls.
+
+*** Cross-references
+- Compare *CLHS 3.1.2.1.2.3* — Common Lisp specifies left-to-right argument evaluation.
+- Compare *R7RS 4.1.3* — Scheme specifies that argument evaluation order is unspecified, only that each is fully evaluated before any procedure is applied. AutoLISP picks the stricter contract.
+
+*** Source Notes
+Phase-6 BricsCAD V26 / macOS general-semantics probe — ~results/bricscad/macos/20260426T*-semantics/~ section A.
+
+#+LATEX: \newpage
+
+** Normative Rules: Variable Scope (Dynamic, Not Lexical)
+*** Statement
+AutoLISP variables are *dynamically scoped*. A binding established at function call entry — through a positional parameter, through a ~(/ locals)~ declaration, or through any subsequent ~setq~ on those names — is visible to every function called transitively from the body. The binding is restored to its prior value when the function returns. There is no lexical capture: a ~lambda~ does *not* close over the names referenced by its body. When the lambda is later called, every free reference is resolved against the *active* dynamic-frame chain, then the active namespace.
+
+*** Concrete Consequences
+- ~(defun make-adder (/ x) (setq x 10) (lambda (y) (+ x y)))~ — calling ~(make-adder)~ then later applying the returned lambda outside ~make-adder~'s extent fails: ~x~ has no binding any more, so the body's reference to ~x~ resolves to ~nil~ (see "Unbound-Variable Reference" below) and the ~(+ ... y)~ call surfaces *bad argument type <NIL>; expected <NUMBER> at [+]*.
+- A counter built with ~(defun with-counter (/ k) (setq k 0) (lambda () (setq k (+ k 1)) k))~ does *not* accumulate state across calls; each call from outside ~with-counter~ sees ~k~ unbound (and thus ~nil~).
+- A lambda referencing a *global* (top-level) symbol picks up that global's *current* value at every call, not the value at lambda creation. Mutating the global between two calls of the same lambda changes what subsequent calls return.
+
+*** Vendor Evidence
+BricsCAD V26 / macOS direct probe (section C):
+- Captured-local closure call: error *bad argument type <NIL>; expected <NUMBER> at [+]* — the local was popped on return; the lambda saw ~nil~.
+- Top-level closure: ~(c2)~ first returns ~7~ (set inside maker2), then ~42~ after a top-level ~(setq x 42)~.
+- Local counter: every call from outside the maker fails with the same NIL-at-[+] error — no accumulation.
+
+*** Strict / Lax Policy
+Dynamic scoping is *strict* across all supported dialects. No host product is known to expose lexical-capture semantics in its AutoLISP layer; any such extension would require a separate dialect knob.
+
+*** Cross-references
+- Compare *CLHS 3.1.1* — Common Lisp is lexical by default; dynamic scope requires `defvar` / `(declare (special ...))`.
+- Compare *R7RS 5.2* — Scheme is unconditionally lexical.
+- Special Form Entry: LAMBDA, FUNCTION (this chapter) — produce function values; do not capture.
+- Single-Cell Symbol Binding (chapter 7) — the dynamic frame chain consults the same per-symbol binding cell.
+
+*** Source Notes
+- [About Local and Global Variables (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP/files/GUID-A8045F62-1CE3-4022-ACC1-CC0E2C1E158D.htm) — describes shadowing pragmatically.
+- Phase-6 BricsCAD V26 / macOS semantics probe section C.
+
+#+LATEX: \newpage
+
+** Normative Rules: Unbound-Variable Reference
+*** Statement
+Evaluating a symbol with no active dynamic binding and no namespace binding yields ~nil~ rather than signalling an error. Referencing a never-set name is therefore not directly observable; the typical surface symptom is a downstream type error when ~nil~ is passed to an arithmetic or other type-checking primitive.
+
+This contrasts with both Common Lisp (~unbound-variable~ is a condition) and R7RS Scheme (the result is an error). Implementations may add a strict mode that diverges, but in baseline AutoLISP / Visual LISP the silent-NIL semantics are observable.
+
+*** Concrete Consequences
+- ~(setq y (+ never-set-symbol 1))~ does not signal *unbound variable*; it signals *bad argument type <NIL>; expected <NUMBER> at [+]*.
+- ~(boundp 'never-set)~ returns ~nil~ but additionally creates the symbol and binds it to ~nil~ (per the chapter-7 BOUNDP entry). The post-condition is that ~never-set~ now evaluates to ~nil~ explicitly.
+
+*** Vendor Evidence
+BricsCAD V26 / macOS direct probe section C — every closure test that referenced an out-of-extent local surfaced its error *at the consuming primitive* (`+`), not at the variable reference. The error message wrapped the value `<NIL>`, which is the expected payload after the silent-NIL evaluation.
+
+*** Strict / Lax Policy
+clautolisp's ~strict~ dialect intentionally signals ~:unbound-variable~ at the reference instead of silently returning ~nil~ — the silent-NIL behaviour masks bugs and is widely considered a wart. The ~autocad-2026~ and ~bricscad-v26~ dialects must reproduce the silent-NIL behaviour for compatibility with deployed source code.
+
+*** Cross-references
+- Function Entry: BOUNDP (chapter 7) — the post-creation effect on the symbol's binding.
+
+*** Source Notes
+- Phase-6 BricsCAD V26 / macOS semantics probe section C (indirect evidence; explicit probe pending due to launch-flake on this run).
+
+#+LATEX: \newpage
+
+** Normative Rules: Tail-Call Optimization (None Required)
+*** Statement
+AutoLISP does *not* guarantee tail-call optimization. Recursion is stack-bound on every observed host. Programs that rely on bounded space for tail-recursive loops must be rewritten to use the iterative special forms ~while~, ~repeat~, or ~foreach~.
+
+*** Vendor Evidence
+BricsCAD V26 / macOS direct probe section B: a deliberately-written tail-recursive ~(count-down n)~ succeeds at ~n=1000~, then fails at ~n=10000, 100000, 1000000~ with *LISP - system call stack limit exceeded*. The boundary is well below typical Scheme implementations and is consistent with ordinary stack-frame consumption per call.
+
+*** Cross-references
+- Compare *R7RS 5.11.4* — Scheme requires *proper tail recursion* (constant space).
+- Compare *CLHS 3.5.1.1* — Common Lisp does *not* require it; behaviour matches AutoLISP.
+- Special Form Entry: WHILE, REPEAT, FOREACH (this chapter) — bounded-space iteration alternatives.
+
+*** Source Notes
+Phase-6 BricsCAD V26 / macOS semantics probe section B.
+
+#+LATEX: \newpage
+
+** Normative Rules: Multiple Values (None)
+*** Statement
+AutoLISP has no concept of multiple return values. Every form returns exactly one value. There is no ~values~ primitive, no ~multiple-value-bind~, no ~call-with-values~. Functions that conceptually return more than one piece of data return a list, a dotted pair, or a host-defined structure (e.g. an entity-data dotted-pair list).
+
+*** Vendor Evidence
+BricsCAD V26 / macOS direct probe: ~(values 1 2 3)~ raises *no function definition <VALUES>; expected FUNCTION at [eval]*.
+
+*** Cross-references
+- Compare *CLHS 3.1.7* and *R7RS 6.10* — both Common Lisp and Scheme have first-class multiple-value mechanisms.
+
+*** Source Notes
+Phase-6 BricsCAD V26 / macOS semantics probe section D.
+
+#+LATEX: \newpage
+
+** Normative Rules: Symbol Case Folding
+*** Statement
+The reader case-folds every unquoted symbol to *upper case* at read time. The case-folding applies uniformly to source text, the result of ~(read string)~, and the canonical name returned by ~vl-symbol-name~. There is no escape syntax (such as Common Lisp's ~|...|~ or ~\~ ) for preserving mixed case in symbol names.
+
+*** Vendor Evidence
+BricsCAD V26 / macOS direct probe section G:
+- ~'foo~ prints ~FOO~.
+- ~'FoO~ prints ~FOO~.
+- ~(eq 'foo 'FOO)~ returns ~T~.
+- ~(vl-symbol-name 'mixed-Symbol)~ returns the string ~"MIXED-SYMBOL"~.
+- ~(read "mixedFromRead")~ returns the symbol ~MIXEDFROMREAD~.
+
+*** Strict / Lax Policy
+Strict in every supported dialect. The ~bricscad-v26~ dialect's lax token mode does not relax case folding; it relaxes only token classification (e.g. lone trailing identifier characters on integers). String literals are unaffected.
+
+*** Cross-references
+- Compare *CLHS 23.1* — CL also case-folds by default, but provides ~readtable-case~ and the ~|...|~ escape.
+- Compare *R7RS 7.1.1* — Scheme is case-sensitive by default since R7RS.
+
+*** Source Notes
+Phase-6 BricsCAD V26 / macOS semantics probe section G.
+
+#+LATEX: \newpage
+
+** Normative Rules: Number Tower and Division
+*** Statement
+AutoLISP recognises two numeric types: *integer* and *real* (IEEE-754 double-precision binary floating-point). Mixed-type arithmetic is permitted; the result is *real* whenever any argument is real, otherwise *integer*. Division follows these rules:
+
+- ~(/ INT INT)~ — integer division, *truncating toward zero*. ~(/ 7 2) = 3~; ~(/ -7 2)~ truncates toward zero to ~-3~ (subject to per-vendor confirmation; toward-zero is the consistent reading on modern hosts).
+- ~(/ REAL ANY)~ or ~(/ ANY REAL)~ — real-valued division. ~(/ 7.0 2) = 3.5~; ~(/ 7 2.0) = 3.5~.
+- ~(/ INT 0)~ — signals *divide by zero*.
+- ~(/ REAL 0.0)~ — undefined-behaviour territory on some hosts (BricsCAD V26 / macOS aborts the application); programs must avoid it.
+
+Integer width on modern AutoLISP is at least 64 bits in BricsCAD V26: ~(+ 2147483640 100) = 2147483740~ exceeds the historical 31-bit range without promotion or overflow. AutoCAD's per-version width remains 32-bit signed int historically; verification against AutoCAD 2026 is deferred (no licensed seat available).
+
+Floating-point underflow goes to ~0.0~ rather than to a denormal indicator: ~(* 1.0e-300 1.0e-300) = 0.0~.
+
+*** Vendor Evidence
+BricsCAD V26 / macOS direct probe section F.
+
+*** Strict / Lax Policy
+- Truncating integer division and the integer/real promotion rule are *strict* across all dialects.
+- Real division by zero is *strict-error* in clautolisp; the ~bricscad-v26~ dialect's behaviour mirrors the host's documented "divide by zero" error rather than the application abort observed in this build.
+- Integer width — clautolisp persists 32-bit signed integers as the strict baseline (BricsCAD release-history compatibility). Wider-integer support is a future dialect knob if AutoCAD evidence demands it.
+
+*** Cross-references
+- Compare *CLHS 12* — CL has a numeric tower with rationals, separates ~/~ (exact) from ~truncate~/~floor~/~round~. AutoLISP does not.
+- Compare *R7RS 6.2* — Scheme distinguishes exact and inexact numbers.
+
+*** Source Notes
+Phase-6 BricsCAD V26 / macOS semantics probe section F.
+
+#+LATEX: \newpage
+
+** Normative Rules: Equality Predicates
+*** Statement
+AutoLISP defines the following equality predicates with the semantics observed in BricsCAD V26 / macOS:
+
+- ~(eq a b)~ — pointer-level identity for cons cells, distinguishes freshly-allocated objects, but returns ~T~ for two textually-identical string literals (the host *interns* string literals), and ~T~ for two textually-identical symbol literals (canonical case-folded name).
+- ~(equal a b)~ — structural equality over cons cells; numerically compares an integer to a real (~(equal 1 1.0)~ returns ~T~); compares strings by content.
+- Truthiness: a value is *true* iff it is not ~nil~. ~0~, ~0.0~, ~""~ are *true*. ~nil~ is the unique false value.
+
+*** Vendor Evidence
+BricsCAD V26 / macOS direct probe section H–J:
+- ~(equal "abc" "abc") = T~ ; ~(eq "abc" "abc") = T~ — string literals are interned.
+- ~(equal 1 1.0) = T~ — cross-type numeric equality.
+- ~(equal '(1 2) (list 1 2)) = T~ ; ~(eq '(1 2) (list 1 2)) = nil~ — structural vs identity.
+- ~(if 0 'yes 'no) = YES~ ; ~(if 0.0 'yes 'no) = YES~ ; ~(if "" 'yes 'no) = YES~ ; ~(if '() 'yes 'no) = NO~.
+- ~(eq nil '()) = T~ ; ~(null nil) = T~ ; ~(null '()) = T~ — ~nil~ and the empty list are the same object.
+
+*** Cross-references
+- Compare *CLHS 14.5.1* — CL's ~eq~ is finer-grained (does not intern strings).
+- Compare *R7RS 6.1* — Scheme distinguishes ~eqv?~, ~eq?~, and ~equal?~.
+
+*** Source Notes
+Phase-6 BricsCAD V26 / macOS semantics probe sections H, I, J.
+
+#+LATEX: \newpage
+
+** Normative Rules: NIL and the Empty List
+*** Statement
+The symbol ~nil~, the literal ~()~, and the literal ~'()~ all denote the *same* object — the empty list and the false value. ~(car nil)~ and ~(cdr nil)~ both return ~nil~, *not* an error.
+
+*** Vendor Evidence
+BricsCAD V26 / macOS direct probe section I:
+- ~(eq nil '()) = T~
+- ~(car nil) = nil~ ; ~(cdr nil) = nil~
+
+*** Cross-references
+- Compare *CLHS 26.1.97* — CL also identifies ~nil~ with the empty list and accepts ~(car nil) = nil~.
+- Compare *R7RS 6.4* — in Scheme ~nil~ is a separate symbol; ~()~ is the empty list; ~(car '())~ is an error.
+
+*** Source Notes
+Phase-6 BricsCAD V26 / macOS semantics probe section I.
 
 #+LATEX: \newpage
 
