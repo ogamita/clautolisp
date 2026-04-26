@@ -1494,12 +1494,32 @@ profiles between subordinate evaluations within a single session."
   (first (apply #'read-runtime-from-file path options)))
 
 (defun autolisp-load-file-in-context (path context &rest read-options)
-  (call-with-autolisp-error-handler
-   (lambda ()
-     (autolisp-eval-progn
-      (apply #'read-runtime-from-file path read-options)
-      context))
-   context))
+  ;; Inject the dialect's default source encoding when the caller did
+  ;; not pass an explicit :external-format. This makes
+  ;;   * the strict dialect read files as ISO-8859-1 (a 1-1 byte
+  ;;     coding, never fails on Latin-1 / Windows-1252 source);
+  ;;   * the autocad-2026 / bricscad-v26 dialects read files as
+  ;;     UTF-8, matching AutoCAD 2025+ and BricsCAD V26 defaults
+  ;;     (autolisp-spec ch. 11, "Source-File and File-Stream
+  ;;     Encoding").
+  (let* ((options-have-external-format
+          (loop for tail = read-options then (cddr tail)
+                while tail
+                thereis (eq (first tail) :external-format)))
+         (dialect (current-evaluation-dialect context))
+         (effective-options
+          (if options-have-external-format
+              read-options
+              (append read-options
+                      (list :external-format
+                            (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
+                             dialect))))))
+    (call-with-autolisp-error-handler
+     (lambda ()
+       (autolisp-eval-progn
+        (apply #'read-runtime-from-file path effective-options)
+        context))
+     context)))
 
 (defun autolisp-load-file (path &rest read-options)
   (apply #'autolisp-load-file-in-context

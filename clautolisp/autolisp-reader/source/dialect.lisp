@@ -55,6 +55,24 @@
 ;;;;                                   harnesses; programs that rely
 ;;;;                                   on it do not run on real
 ;;;;                                   AutoLISP hosts.
+;;;;   :default-source-encoding        external-format used by `load`
+;;;;                                   (and any reader-driven file
+;;;;                                   read) when no explicit
+;;;;                                   encoding is supplied. The
+;;;;                                   strict dialect uses
+;;;;                                   :iso-8859-1 — a 1-1 byte
+;;;;                                   coding that never fails — to
+;;;;                                   match the Autodesk pre-2025
+;;;;                                   ANSI / MBCS legacy default.
+;;;;                                   AutoCAD 2026 and BricsCAD V26
+;;;;                                   default to :utf-8, matching
+;;;;                                   the LISPSYS=1/2 contract and
+;;;;                                   the AutoCAD 2025+ change of
+;;;;                                   default file encoding.
+;;;;   :default-file-encoding          external-format used by
+;;;;                                   `open` when its third argument
+;;;;                                   is omitted. Defaults match the
+;;;;                                   source-encoding rule above.
 
 (defstruct (autolisp-dialect
             (:constructor make-autolisp-dialect
@@ -66,7 +84,9 @@
                  (canonical-case :upcase)
                  (hex-float-atof-p nil)
                  (open-ccs-mode-p nil)
-                 (unbound-variable-mode :silent-nil))))
+                 (unbound-variable-mode :silent-nil)
+                 (default-source-encoding :iso-8859-1)
+                 (default-file-encoding   :iso-8859-1))))
   (name :strict :type keyword)
   (token-mode :strict :type keyword)
   (extended-string-escapes-p nil :type boolean)
@@ -74,7 +94,9 @@
   (canonical-case :upcase :type keyword)
   (hex-float-atof-p nil :type boolean)
   (open-ccs-mode-p nil :type boolean)
-  (unbound-variable-mode :silent-nil :type keyword))
+  (unbound-variable-mode :silent-nil :type keyword)
+  (default-source-encoding :iso-8859-1 :type keyword)
+  (default-file-encoding   :iso-8859-1 :type keyword))
 
 (defparameter *autolisp-dialect-strict*
   (make-autolisp-dialect :name :strict))
@@ -88,7 +110,12 @@
    :canonical-case :upcase
    :hex-float-atof-p nil
    :open-ccs-mode-p nil
-   :unbound-variable-mode :silent-nil))
+   :unbound-variable-mode :silent-nil
+   ;; AutoCAD 2025+ ships UTF-8 as the default file encoding (per
+   ;; release-note quoted in autolisp-spec ch.7); the same rule
+   ;; applies to LOAD when LISPSYS = 1 or 2.
+   :default-source-encoding :utf-8
+   :default-file-encoding   :utf-8))
 
 (defparameter *autolisp-dialect-bricscad-v26*
   (make-autolisp-dialect
@@ -99,7 +126,9 @@
    :canonical-case :upcase
    :hex-float-atof-p t
    :open-ccs-mode-p t
-   :unbound-variable-mode :silent-nil))
+   :unbound-variable-mode :silent-nil
+   :default-source-encoding :utf-8
+   :default-file-encoding   :utf-8))
 
 (defparameter *autolisp-named-dialects*
   (list (cons :strict *autolisp-dialect-strict*)
