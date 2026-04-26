@@ -18,6 +18,7 @@
 #include <QPointer>
 #include <QThread>
 
+#include <cstdio>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -33,6 +34,8 @@ public:
         bool in_string = false;
         bool escape_next = false;
         bool seen_form = false;
+        const bool debug = std::getenv("CLAUTOLISP_GUI_DEBUG") != nullptr;
+        if (debug) std::cerr << "[gui-qt] reader thread up\n";
         while (true) {
             int c = std::cin.get();
             if (c == EOF) {
@@ -63,6 +66,7 @@ public:
             if (c == ')') {
                 paren_depth--;
                 if (paren_depth == 0) {
+                    if (debug) std::cerr << "[gui-qt] form: " << buffer << "\n";
                     emit messageReady(QByteArray::fromStdString(buffer));
                     buffer.clear();
                     seen_form = false;
@@ -216,6 +220,15 @@ private:
 #include "main.moc"
 
 int main(int argc, char** argv) {
+    // Decouple C++ streams from C stdio so the reader thread's
+    // std::cin.get() does not contend with the buffer state of any
+    // other reader. Unbuffer cout so the runtime sees our action /
+    // done messages immediately, not after the next newline batch.
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(nullptr);
+    std::cout.setf(std::ios::unitbuf);
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+
     QApplication app(argc, argv);
 
     // --demo: pop a built-in dialog and exit. Useful for verifying
