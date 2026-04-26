@@ -1,5 +1,5 @@
 (defun c:greet (/ id status name shout)
-  (setq id (load_dialog "~/src/public/clautolisp/clautolisp/examples/greet/greet.dcl"))
+  (setq id (load_dialog "/Users/pjb/src/public/clautolisp/clautolisp/examples/greet/greet.dcl"))
   (cond
     ((< id 0)
      (princ "\nCould not load greet.dcl"))
