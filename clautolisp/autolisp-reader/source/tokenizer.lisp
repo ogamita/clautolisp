@@ -211,10 +211,24 @@
                     line
                     end-column
                     '())))))
+          ;; Universal AutoLISP / Visual LISP single-character string
+          ;; escapes. These are recognised in every dialect, not only
+          ;; under extended-string-escapes-p; vendor reference pages
+          ;; for PRINC, PRIN1, and string syntax document them as the
+          ;; baseline.
           ((and (char= ch #\\)
                 (< (1+ index) length)
-                (member (char text (1+ index)) '(#\\ #\")))
-           (write-char (char text (1+ index)) value-out)
+                (member (char text (1+ index))
+                        '(#\\ #\" #\n #\t #\r #\e #\0)))
+           (let ((escape (char text (1+ index))))
+             (write-char (case escape
+                           (#\n #\Newline)
+                           (#\t #\Tab)
+                           (#\r #\Return)
+                           (#\e (code-char 27))
+                           (#\0 (code-char 0))
+                           (otherwise escape))
+                         value-out))
            (incf index 2)
            (incf column 2))
           ((and (char= ch #\\)
