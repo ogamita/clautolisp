@@ -88,6 +88,7 @@
    #:autolisp-dialect-canonical-case
    #:autolisp-dialect-hex-float-atof-p
    #:autolisp-dialect-open-ccs-mode-p
+   #:autolisp-dialect-unbound-variable-mode
    #:find-autolisp-dialect
    #:reader-options-from-dialect
    #:autolisp-dialect-strict
@@ -134,6 +135,7 @@
    #:autolisp-dialect-canonical-case
    #:autolisp-dialect-hex-float-atof-p
    #:autolisp-dialect-open-ccs-mode-p
+   #:autolisp-dialect-unbound-variable-mode
    #:find-autolisp-dialect
    #:reader-options-from-dialect
    #:*autolisp-dialect-strict*

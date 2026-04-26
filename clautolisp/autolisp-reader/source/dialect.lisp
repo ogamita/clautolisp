@@ -38,6 +38,13 @@
 ;;;;                                   in `atof`
 ;;;;   :open-ccs-mode-p                runtime: accept `r,ccs=UTF-8`
 ;;;;                                   etc. in `open`
+;;;;   :unbound-variable-mode          runtime: :strict-error signals
+;;;;                                   :unbound-variable on bare
+;;;;                                   reference; :silent-nil returns
+;;;;                                   nil silently, matching BricsCAD
+;;;;                                   V26 / AutoCAD product behaviour
+;;;;                                   (autolisp-spec ch. 3,
+;;;;                                   "Unbound-Variable Reference").
 
 (defstruct (autolisp-dialect
             (:constructor make-autolisp-dialect
@@ -48,14 +55,16 @@
                  (warn-on-integer-overflow-p nil)
                  (canonical-case :upcase)
                  (hex-float-atof-p nil)
-                 (open-ccs-mode-p nil))))
+                 (open-ccs-mode-p nil)
+                 (unbound-variable-mode :strict-error))))
   (name :strict :type keyword)
   (token-mode :strict :type keyword)
   (extended-string-escapes-p nil :type boolean)
   (warn-on-integer-overflow-p nil :type boolean)
   (canonical-case :upcase :type keyword)
   (hex-float-atof-p nil :type boolean)
-  (open-ccs-mode-p nil :type boolean))
+  (open-ccs-mode-p nil :type boolean)
+  (unbound-variable-mode :strict-error :type keyword))
 
 (defparameter *autolisp-dialect-strict*
   (make-autolisp-dialect :name :strict))
@@ -68,7 +77,8 @@
    :warn-on-integer-overflow-p t
    :canonical-case :upcase
    :hex-float-atof-p nil
-   :open-ccs-mode-p nil))
+   :open-ccs-mode-p nil
+   :unbound-variable-mode :silent-nil))
 
 (defparameter *autolisp-dialect-bricscad-v26*
   (make-autolisp-dialect
@@ -78,7 +88,8 @@
    :warn-on-integer-overflow-p t
    :canonical-case :upcase
    :hex-float-atof-p t
-   :open-ccs-mode-p t))
+   :open-ccs-mode-p t
+   :unbound-variable-mode :silent-nil))
 
 (defparameter *autolisp-named-dialects*
   (list (cons :strict *autolisp-dialect-strict*)

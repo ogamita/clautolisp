@@ -92,6 +92,9 @@
 (defun autolisp-dialect-open-ccs-mode-p (dialect)
   (clautolisp.autolisp-reader.internal::autolisp-dialect-open-ccs-mode-p dialect))
 
+(defun autolisp-dialect-unbound-variable-mode (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-unbound-variable-mode dialect))
+
 (defun find-autolisp-dialect (name)
   (clautolisp.autolisp-reader.internal::find-autolisp-dialect name))
 

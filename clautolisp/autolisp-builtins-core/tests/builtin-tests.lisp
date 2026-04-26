@@ -69,6 +69,23 @@
     (is (= 20 (call-autolisp-function lsh-fn 5 2)))
     (is (= 1 (call-autolisp-function lsh-fn 4 -2)))))
 
+(test builtin-integer-division-truncates-toward-zero
+  ;; AutoLISP `/` over integers truncates toward zero (autolisp-spec
+  ;; ch. 3, "Number Tower and Division"; BricsCAD V26 probe section
+  ;; F: (/ 7 2) = 3, not 3.5). Mixed-type promotes to real.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((/-fn (autolisp-symbol-function (find-autolisp-symbol "/"))))
+    (is (eql 3 (call-autolisp-function /-fn 7 2)))
+    (is (typep (call-autolisp-function /-fn 7 2) '(signed-byte 32)))
+    (is (eql 0 (call-autolisp-function /-fn 1 5)))
+    (is (= 3.5d0 (call-autolisp-function /-fn 7.0d0 2)))
+    (is (= 3.5d0 (call-autolisp-function /-fn 7 2.0d0)))
+    (is (typep (call-autolisp-function /-fn 7.0d0 2) 'double-float))
+    (is (typep (call-autolisp-function /-fn 7 2.0d0) 'double-float))
+    ;; Multi-step int chain still truncates each step.
+    (is (eql 1 (call-autolisp-function /-fn 13 4 2)))))
+
 (test builtin-null-and-not
   (reset-autolisp-symbol-table)
   (install-core-builtins)

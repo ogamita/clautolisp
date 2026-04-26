@@ -1352,12 +1352,21 @@ profiles between subordinate evaluations within a single session."
     ((typep form 'autolisp-symbol)
      (multiple-value-bind (value boundp origin) (lookup-variable form context)
        (declare (ignore origin))
-       (if boundp
-           value
-           (signal-autolisp-runtime-error
-            :unbound-variable
-            "Unbound AutoLISP variable ~A."
-            (autolisp-symbol-name form)))))
+       (cond
+         (boundp value)
+         ;; Unbound-variable handling is dialect-controlled
+         ;; (autolisp-spec ch. 3, "Unbound-Variable Reference"). The
+         ;; strict dialect signals; AutoCAD / BricsCAD product
+         ;; profiles silently return nil.
+         ((eq :silent-nil
+              (clautolisp.autolisp-reader:autolisp-dialect-unbound-variable-mode
+               (current-evaluation-dialect context)))
+          nil)
+         (t
+          (signal-autolisp-runtime-error
+           :unbound-variable
+           "Unbound AutoLISP variable ~A."
+           (autolisp-symbol-name form))))))
     ((consp form)
      (let ((operator (first form))
            (arguments (rest form)))

@@ -790,19 +790,33 @@
        (- first-number))))
 
 (defun builtin-/ (first-number &rest more-numbers)
+  ;; AutoLISP `/` follows the per-spec rule (autolisp-spec, chapter 3,
+  ;; "Number Tower and Division"): every-argument-integer divisions
+  ;; truncate toward zero (BricsCAD V26 probe: (/ 7 2) = 3); any real
+  ;; argument promotes the entire chain to real division.
   (require-number first-number "/")
   (dolist (argument more-numbers)
     (require-number argument "/"))
-  (handler-case
-      (arithmetic-result
-       (if more-numbers
-           (apply #'/ first-number more-numbers)
-           (/ 1 first-number)))
-    (division-by-zero ()
-      (signal-builtin-host-error
-       :division-by-zero
-       "/"
-       "Division by zero in /."))))
+  (let ((all-integer (and (integerp first-number)
+                          (every #'integerp more-numbers))))
+    (handler-case
+        (cond
+          ((null more-numbers)
+           ;; Unary `/` is rare in AutoLISP corpora; preserve the
+           ;; legacy CL-style reciprocal but coerce through
+           ;; arithmetic-result so a real input yields a real result.
+           (arithmetic-result (/ 1 first-number)))
+          (all-integer
+           (arithmetic-result
+            (reduce (lambda (a b) (truncate a b))
+                    more-numbers :initial-value first-number)))
+          (t
+           (arithmetic-result (apply #'/ first-number more-numbers))))
+      (division-by-zero ()
+       (signal-builtin-host-error
+        :division-by-zero
+        "/"
+        "Division by zero in /.")))))
 
 (defun builtin-1+ (object)
   (arithmetic-result (1+ (require-number object "1+"))))
