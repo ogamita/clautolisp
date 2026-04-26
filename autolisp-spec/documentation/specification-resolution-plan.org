@@ -195,11 +195,25 @@ Closed via direct citation of the BricsCAD V26 `exit` and `quit` per-symbol page
 Bricsys distinguishes the verbs only in prose ("exits" vs "cancels"); the *signature, message, and effect* are documented identically. The historical hypothesis that some vendor or release distinguished `exit` and `quit` is not supported by current vendor evidence. Treat as alternative spellings of the same primitive.
 
 * Future Validation Work
-Phase 5 closed all five long-running open items at the *documented* level using direct vendor citations. The remaining work, deferred until a CAD product is available locally, is:
+Phase 5 closed all five long-running open items at the *documented* level using direct vendor citations. As of 2026-04-26, four of the five items have *also* been product-tested against BricsCAD V26 on macOS (atoi, atof, terpri, the printer surface). Tested-status notes are recorded in each spec entry's "Tested Behaviour" sub-section and reference [[file:../results/bricscad/macos/20260426T122808Z/results.sexp][~results/bricscad/macos/20260426T122808Z/results.sexp~]].
 
-- Run `scripts/run-probes.sh` against a real AutoCAD and BricsCAD installation, with `RUNNER_TEMPLATE` pointing at the host's batch invocation.
-- File the resulting `results.sexp` under `results/<product>/<platform>/<timestamp>/`.
-- Promote any *implementation-defined* edge that turns out to be vendor-stable in practice into a normative entry in the spec.
+The remaining work is:
+
+- Run `scripts/run-probes.sh` against a real AutoCAD installation when one becomes available, with `RUNNER_TEMPLATE` pointing at the host's batch invocation. AutoCAD product-test parity is the only open Phase-5 follow-up.
+- Re-run the probes against future BricsCAD releases when they ship, to maintain the version-qualified evidence trail.
+
+* Probe-Suite Findings (BricsCAD V26 / macOS, 2026-04-26)
+The probe run captured the following normative findings (see [[file:../results/bricscad/macos/20260426T122808Z/results.sexp][~results.sexp~]]):
+
+- *atoi* — strtol-style: skips leading whitespace, accepts optional sign, parses the longest decimal-digit prefix, returns 0 on no digits. `0x`-prefixed forms return 0 (no auto-detection). `017` is parsed as decimal, not octal. `3.9` truncates to 3.
+- *atof* — strtod-style. Notably, `(atof "0x1p4")` returns `16.0`, i.e. BricsCAD V26 *does* accept C99 hexadecimal-floating syntax. Decimal-comma is *rejected* (no locale sensitivity on the macOS build): `(atof "3,5")` returns `3.0`.
+- *terpri* — zero-arity. The 2-argument form `(terpri stream)` raises ~too few / too many arguments at [TERPRI]~.
+- *prin1* / *princ* / *print* — all accept the 2-argument form `(fn expr stream)`. Verbatim representations confirmed: `prin1` writes the round-trippable form (with quotes for strings), `princ` writes the value verbatim, `print` writes `\n` + prin1 + ` `.
+- *prompt* — returns `nil`; output goes to the command-line channel only and is not capturable through a file handle.
+
+A side-finding that extended Phase 4: BricsCAD V26 `or` returns *T or nil*, not the first non-nil value. This was discovered by running probe-core against a fresh BricsCAD instance — the original `(setq x (or x default))` idiom in probe-core silently clobbered `x` with `T`. probe-core has been patched to use `(if (not x) (setq x default))`, and the spec's `or` entry now documents the divergence with a portable-idiom note.
+
+A second side-finding: the `autolisp-script` wrapper at `~/works/sncf-reseau/src/outils-autolisp/autolisp-script/` redefines `prin1`, `princ`, `print`, and `prompt` to single-argument helpers that mirror command-line output. The 2-argument forms must therefore be tested via the direct `bricscad -B run.scr` runner (`scripts/run-probes-direct.sh`), not via the wrapper.
 
 * Final Recommendation
 Phase 5 followed the resolution-order recommendation:

@@ -1,0 +1,10 @@
+{
+  "product": "bricscad",
+  "platform": "macos",
+  "timestamp_utc": "20260426T122808Z",
+  "status": "completed",
+  "exit_code": 0,
+  "runner_template": "bash /tmp/run-probes-direct.sh __PROBE_FILE__ __RESULT_DIR__",
+  "result_file": "/Users/pjb/src/public/clautolisp/autolisp-spec/results/bricscad/macos/20260426T122808Z/results.sexp",
+  "wrapper_file": "/Users/pjb/src/public/clautolisp/autolisp-spec/results/bricscad/macos/20260426T122808Z/run-probes.lsp"
+}

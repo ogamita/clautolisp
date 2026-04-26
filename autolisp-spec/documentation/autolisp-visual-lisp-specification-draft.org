@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.7.0
+#+VERSION: 0.8.0
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.7.0*.
+The current document version is *0.8.0*.
 
 Any modification of this document must increment its version number.
 
@@ -947,16 +947,20 @@ Side effects are those of the expressions evaluated up to and including the firs
 Expressions not reached because of short-circuiting are not evaluated and have no side effects.
 
 *** Compatibility
-This differs from Common Lisp `or`, which returns the first non-`nil` value.
+This differs from Common Lisp `or`, which returns the first non-`nil` value. AutoLISP `or` returns only `T` or `nil`. Confirmed against BricsCAD V26 by direct citation: the BricsCAD V26 `or` reference page documents the return as "T if any provided argument evaluates as non-NIL; if all provided arguments evaluate as NIL, or if no argument is provided, NIL is returned" with examples `(or 123 nil) -> T`. Idioms ported from Common Lisp such as `(setq x (or x default))` *clobber* `x` with `T` rather than preserving the existing value; portable AutoLISP code must use `(if (not x) (setq x default))` instead.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page, return: "T if any provided argument evaluates as non-NIL; ... NIL otherwise").
+- Status: documented in both vendors. Phase-5 closure: behaviour confirmed identical (T / nil only) across both vendors; surfaced as a real cross-vendor *and* cross-language hazard for code ported from Common Lisp.
+
+*** See Also
+- [[file:../sources/probe-core.lsp][probe-core.lsp]] — uses an `if`-guarded init pattern explicitly because AutoLISP's `or` does not return the first non-`nil` value (the original `(setq x (or x default))` idiom was discovered to clobber `x` with `T` against BricsCAD V26 during Phase 5).
 
 *** Source Notes
-- [or (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-64ECF4D5-0714-45FD-8E27-284E9D2FC8B2.htm)
-- Status: documented and significant for compatibility.
+- [or (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-64ECF4D5-0714-45FD-8E27-284E9D2FC8B2.htm)
+- [or (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/or.htm)
+- Status: documented (Phase 5 closure; cross-vendor behaviour confirmed).
 
 #+LATEX: \newpage
 
@@ -4276,10 +4280,26 @@ The Phase-5 vendor citations below define the documented surface. Several lexica
 
 For ~clautolisp~ the chosen lex model is: skip leading whitespace, accept optional sign, parse the longest run of decimal digits, truncate the fractional part if a `.` follows the digit run, treat all leading-zero forms as base 10, treat `0x`-prefixed forms as `0` (no autodetection). The probe suite in [[file:../sources/probe-atoi.lsp][~probe-atoi.lsp~]] records the AutoCAD / BricsCAD product behaviour when run via [[file:../scripts/run-probes.sh][~scripts/run-probes.sh~]].
 
+*** Tested Behaviour (BricsCAD V26 / macOS, 2026-04-26)
+The probe suite was run against BricsCAD V26 on macOS via the direct runner. Results from `results/bricscad/macos/20260426T122808Z/results.sexp`:
+
+| Probe                | Returned |
+|----------------------+----------|
+| `(atoi "17")`        | `17`     |
+| `(atoi "017")`       | `17` (decimal interpretation; *not* octal) |
+| `(atoi "0xbabe")`    | `0`  (`0x`-prefix rejected) |
+| `(atoi "+17")`       | `17` (leading `+` accepted) |
+| `(atoi "-17")`       | `-17` (leading `-` accepted) |
+| `(atoi "17x")`       | `17` (parsing stops at first non-digit) |
+| `(atoi " 17")`       | `17` (leading whitespace accepted) |
+| `(atoi "3.9")`       | `3` (decimal-fraction truncates toward zero) |
+
+Confirms a `strtol(..., 10)`-style C-library model: skip leading whitespace, optional sign, longest decimal-digit prefix, return zero on no digits. The tested behaviour matches `clautolisp`'s implementation choice, so the lex edges previously marked *implementation-defined* are now *tested* on BricsCAD V26.
+
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).
-- BricsCAD V26: documented (BricsCAD V26 Standard Functions page; identical wrapper signature).
-- Status: documented in both vendors. Lexical-edge behaviour is implementation-defined and recorded via the probe suite.
+- BricsCAD V26: documented + product-tested on macOS (probe suite, 2026-04-26).
+- Status: documented in both vendors; lex-edge behaviour now tested against BricsCAD V26 / macOS. AutoCAD product test deferred until a local install becomes available.
 
 *** See Also
 - [[file:../sources/probe-atoi.lsp][probe-atoi.lsp]] — executable Phase-5 probe suite.
@@ -4332,10 +4352,26 @@ The Phase-5 vendor citations below define the documented surface. Several lexica
 
 For ~clautolisp~ the chosen lex model is: skip leading whitespace, accept optional sign, accept the longest prefix matching `digits ('.' digits?)? (('e'|'E') [+-]? digits)?`, no locale sensitivity (decimal-point only), no hexadecimal floating syntax. The probe suite in [[file:../sources/probe-atof.lsp][~probe-atof.lsp~]] records the AutoCAD / BricsCAD product behaviour when run via [[file:../scripts/run-probes.sh][~scripts/run-probes.sh~]].
 
+*** Tested Behaviour (BricsCAD V26 / macOS, 2026-04-26)
+Probe results from `results/bricscad/macos/20260426T122808Z/results.sexp`:
+
+| Probe                | Returned   | Note |
+|----------------------+------------+------|
+| `(atof "3.5")`       | `3.5`      | baseline |
+| `(atof ".5")`        | `0.5`      | leading-dot accepted |
+| `(atof "1.")`        | `1.0`      | trailing-dot accepted |
+| `(atof "1e3")`       | `1000.0`   | exponent accepted |
+| `(atof "017")`       | `17.0`     | leading zero treated as decimal |
+| `(atof "0x1p4")`     | `16.0`     | *hexadecimal floating syntax accepted* — BricsCAD V26 delegates to a `strtod(3)`-style implementation with C99 hex-float support |
+| `(atof "3,5")`       | `3.0`      | decimal-comma rejected; parsing stops at the comma (no locale sensitivity in BricsCAD V26 / macOS) |
+| `(atof " 3.5")`      | `3.5`      | leading whitespace accepted |
+
+The `0x1p4 → 16.0` result is the most significant finding: BricsCAD V26 *does* accept hex-float input. The conservative `clautolisp` lex model rejects it; conformant code that targets BricsCAD V26 may expand the lex model to include hex-floats. Locale sensitivity is *not* present on the macOS build; portable AutoLISP code should not rely on locale.
+
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).
-- BricsCAD V26: documented (BricsCAD V26 Standard Functions page; identical wrapper signature).
-- Status: documented in both vendors. Lexical-edge behaviour is implementation-defined and recorded via the probe suite.
+- BricsCAD V26: documented + product-tested on macOS (probe suite, 2026-04-26).
+- Status: documented in both vendors; lex-edge behaviour now tested against BricsCAD V26 / macOS. AutoCAD product test deferred until a local install becomes available.
 
 *** See Also
 - [[file:../sources/probe-atof.lsp][probe-atof.lsp]] — executable Phase-5 probe suite.
@@ -6790,20 +6826,24 @@ With `(setq x 123)`:
 - `(prin1 x)` prints `123` to the command line and returns `123`.
 - `(prin1 x fh)` writes `123` to file handle `fh` and returns `123`.
 
+*** Tested Behaviour (BricsCAD V26 / macOS, 2026-04-26)
+`(prin1 "hello" file-desc)` returns `"hello"` and writes the seven characters `"hello"` (the literal seven, including the surrounding double quotes — i.e. the round-trippable representation) to the file. The 2-argument form is fully accepted by BricsCAD V26.
+
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).
-- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
-- Status: documented in both vendors. Phase-5 closure achieved by aligning the spec body with Bricsys's per-symbol page text — the reader-round-trip wording for control-character escapes is a Phase-5 newly-locked-down detail.
+- BricsCAD V26: documented + product-tested on macOS (probe suite, 2026-04-26). 2-argument form accepted; output is round-trippable.
+- Status: documented in both vendors and tested against BricsCAD V26 / macOS.
 
 *** See Also
 - [[file:../sources/probe-output.lsp][probe-output.lsp]] — executable Phase-5 probe suite for the printer surface.
+- [[file:../results/bricscad/macos/20260426T122808Z/results.sexp][probe results, BricsCAD V26 / macOS, 2026-04-26]].
 - ~princ~ for display-oriented output (no escape rewriting).
 - ~print~ for the bracketed prin1 + leading newline + trailing space form.
 
 *** Source Notes
 - [prin1 (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-BF4CEE45-BB6F-443B-A588-A40D9BCE378F.htm)
 - [prin1 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/prin1.htm)
-- Status: documented (Phase 5 closure).
+- Status: documented and product-tested (Phase 5 closure).
 
 #+LATEX: \newpage
 
@@ -6837,20 +6877,24 @@ With `(setq x 123)`:
 - `(princ x)` prints `123` to the command line and returns `123`.
 - `(princ x fh)` writes `123` to file handle `fh` and returns `123`.
 
+*** Tested Behaviour (BricsCAD V26 / macOS, 2026-04-26)
+`(princ "hello" file-desc)` returns `"hello"` and writes the five characters `hello` to the file (no surrounding quotes, no trailing newline). Confirms the verbatim representation, distinct from `prin1`'s round-trippable representation.
+
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).
-- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
-- Status: documented in both vendors. Phase-5 closure: the verbatim-vs-escape distinction relative to `prin1` is now spelled out from the BricsCAD per-symbol page.
+- BricsCAD V26: documented + product-tested on macOS (probe suite, 2026-04-26). 2-argument form accepted; output is verbatim (no escape rewriting).
+- Status: documented in both vendors and tested against BricsCAD V26 / macOS.
 
 *** See Also
 - [[file:../sources/probe-output.lsp][probe-output.lsp]] — executable Phase-5 probe suite.
+- [[file:../results/bricscad/macos/20260426T122808Z/results.sexp][probe results, BricsCAD V26 / macOS, 2026-04-26]].
 - ~prin1~ for the round-trippable form.
 - ~vl-princ-to-string~ for the string-returning companion.
 
 *** Source Notes
 - [princ (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-7DDA298B-A97C-49C9-94BA-46C77B50AE99.htm)
 - [princ (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/princ.htm)
-- Status: documented (Phase 5 closure).
+- Status: documented and product-tested (Phase 5 closure).
 
 #+LATEX: \newpage
 
@@ -6884,13 +6928,17 @@ With `(setq x 123)`:
 - `(print x)` prints `<newline>123 ` to the command line and returns `123`.
 - `(print x fh)` writes `<newline>123 ` to file handle `fh` and returns `123`.
 
+*** Tested Behaviour (BricsCAD V26 / macOS, 2026-04-26)
+`(print "hello" file-desc)` returns `"hello"` and writes the nine characters `\n"hello" ` (literal newline, then the round-trippable seven characters of `prin1`, then a single trailing space) to the file. Confirms the framing rule from the vendor page.
+
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).
-- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
-- Status: documented in both vendors. Phase-5 closure: leading-newline / trailing-space framing now explicit (was only inferred before).
+- BricsCAD V26: documented + product-tested on macOS (probe suite, 2026-04-26). Leading-newline / trailing-space framing confirmed empirically.
+- Status: documented in both vendors and tested against BricsCAD V26 / macOS.
 
 *** See Also
 - [[file:../sources/probe-output.lsp][probe-output.lsp]] — executable Phase-5 probe suite.
+- [[file:../results/bricscad/macos/20260426T122808Z/results.sexp][probe results, BricsCAD V26 / macOS, 2026-04-26]].
 - ~prin1~ for the unframed round-trippable form.
 
 *** Source Notes
@@ -6927,18 +6975,29 @@ Emits a newline to the command line.
 *** Notes
 Bricsys recommends `(princ)` (with no arguments) instead of `(terpri)` when ending a `defun` body, because `(princ)` returns *void* and does not print an extra newline.
 
+*** Tested Behaviour (BricsCAD V26 / macOS, 2026-04-26)
+The probe suite emits `(terpri stream)` against an open file handle. BricsCAD V26 reports:
+
+| Probe                                   | Outcome                                                         |
+|-----------------------------------------+-----------------------------------------------------------------|
+| `(terpri file-desc)`                    | error: `too few / too many arguments at [TERPRI]`               |
+| `(princ "A" file-desc) + (terpri file-desc)` | first call writes `A`; second call errors with the same message |
+
+This empirically confirms BricsCAD V26's documented zero-arity contract. AutoLISP code that wishes to write a newline to a file handle must use `(princ "\n" stream)` (BricsCAD V26 confirmed acceptance: `princ-string.txt` test produced `hello\n`). `terpri` is reserved for command-line output. The same code shape ported from Common Lisp via `(terpri stream)` will not portably work in AutoLISP.
+
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).
-- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page; arity is exactly zero, no file-handle argument).
-- Status: documented in both vendors. Phase-5 closure: arity nailed down (zero arguments, command-line-only).
+- BricsCAD V26: documented + product-tested on macOS (probe suite, 2026-04-26). Arity is exactly zero; the 2-argument form `(terpri stream)` is rejected at runtime.
+- Status: documented in both vendors and tested against BricsCAD V26 / macOS. Phase-5 closure: arity nailed down (zero arguments, command-line-only) by direct citation *and* product test.
 
 *** See Also
 - [[file:../sources/probe-output.lsp][probe-output.lsp]] — executable Phase-5 probe suite.
+- [[file:../results/bricscad/macos/20260426T122808Z/results.sexp][probe results, BricsCAD V26 / macOS, 2026-04-26]].
 
 *** Source Notes
 - [terpri (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-16FB5411-7563-4FB9-AB59-A73457B092C5.htm)
 - [terpri (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/terpri.htm)
-- Status: documented (Phase 5 closure).
+- Status: documented and product-tested (Phase 5 closure).
 
 #+LATEX: \newpage
 
@@ -6966,18 +7025,22 @@ Always returns `nil`.
 *** Side Effects
 Writes the message to the active output channels.
 
+*** Tested Behaviour (BricsCAD V26 / macOS, 2026-04-26)
+`(prompt "AUTOLISP-SPEC-PROMPT>")` returns `nil`. The string was emitted to the BricsCAD command-line widget (visible to the user) but does not surface through file-handle capture, confirming the documented "active output device(s)" channel choice.
+
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).
-- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page).
-- Status: documented in both vendors. Phase-5 closure: return value pinned to `nil`; preferred-channel guidance from Bricsys recorded.
+- BricsCAD V26: documented + product-tested on macOS (probe suite, 2026-04-26). Return value confirmed `nil`; output goes to the active command-line channel.
+- Status: documented in both vendors and tested against BricsCAD V26 / macOS.
 
 *** See Also
 - [[file:../sources/probe-output.lsp][probe-output.lsp]] — executable Phase-5 probe suite.
+- [[file:../results/bricscad/macos/20260426T122808Z/results.sexp][probe results, BricsCAD V26 / macOS, 2026-04-26]].
 
 *** Source Notes
 - [prompt (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-2F702ECF-FEC7-4DEE-8575-88CDEE05F55D.htm)
 - [prompt (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/prompt.htm)
-- Status: documented (Phase 5 closure).
+- Status: documented and product-tested (Phase 5 closure).
 
 ** Dictionary Coverage Index: Printer Functions
 The core printer/output family includes at least:
@@ -24927,8 +24990,7 @@ obsolete, please use
 - [ads (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/ads.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: BPOLY
 *** Name
@@ -24971,8 +25033,7 @@ alternative : (command "_-boundary"
 - [bpoly (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/bpoly.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: FNSPLITL
 *** Name
@@ -25036,8 +25097,7 @@ not exist on disk
 - [fnsplitl (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/fnsplitl.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VMON
 *** Name
@@ -25073,8 +25133,7 @@ backward compatibility with old AutoLISP code
 - [vmon (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vmon.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: XSTRCASE
 *** Name
@@ -25117,8 +25176,7 @@ see (strcase) function
 - [xstrcase (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/xstrcase.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** BricsCAD System Functions (1 entries)
 
@@ -25149,8 +25207,7 @@ Vendor-defined; see Source Notes.
 - [bcad$disable-extended-error (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/bcaddisableextendederror.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** Generic-Properties Helpers (2 entries)
 
@@ -25202,8 +25259,7 @@ function !
 - [ispropertyvalid (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/isPropertyValid.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: LISTALLPROPERTIES
 *** Name
@@ -25232,8 +25288,7 @@ Vendor-defined; see Source Notes.
 - [listallproperties (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/listAllProperties.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** Error-Control Toggles (3 entries)
 
@@ -25283,8 +25338,7 @@ maximum length of the list (depth of backtrace) is 5
 - [vl-bt (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vl-bt.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-BT-OFF
 *** Name
@@ -25316,8 +25370,7 @@ always T
 - [vl-bt-off (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlbtoff.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-BT-ON
 *** Name
@@ -25349,8 +25402,7 @@ always T
 - [vl-bt-on (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlbton.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** Visual LISP Extensions (BricsCAD-only) (3 entries)
 
@@ -25385,8 +25437,7 @@ NIL otherwise
 - [vl-infp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vl-infp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-INIT
 *** Name
@@ -25419,8 +25470,7 @@ function)
 - [vl-init (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vl-init.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-NANP
 *** Name
@@ -25453,8 +25503,7 @@ number, NIL otherwise
 - [vl-nanp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vl-nanp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** Viewport-Layer Property Accessors (9 entries)
 
@@ -25512,8 +25561,7 @@ color
 - [vl-vplayer-get-color (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlvplayergetcolor.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-VPLAYER-GET-LINETYPE
 *** Name
@@ -25564,8 +25612,7 @@ a true override, NIL indicates a normal property value
 - [vl-vplayer-get-linetype (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlvplayergetlinetype.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-VPLAYER-GET-LINEWEIGHT
 *** Name
@@ -25670,8 +25717,7 @@ acLnWtByLwDefault = -3
 - [vl-vplayer-get-lineweight (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlvplayergetlineweight.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-VPLAYER-GET-TRANSPARENCY
 *** Name
@@ -25722,8 +25768,7 @@ a true override, NIL indicates a normal property value
 - [vl-vplayer-get-transparency (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlvplayergettransparency.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-VPLAYER-SET-COLOR
 *** Name
@@ -25779,8 +25824,7 @@ function !
 - [vl-vplayer-set-color (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vl-vplayer-set-color1.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-VPLAYER-SET-LINETYPE
 *** Name
@@ -25838,8 +25882,7 @@ successfully applied resp. removed, NIL otherwise
 - [vl-vplayer-set-linetype (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlvplayersetlinetype.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-VPLAYER-SET-LINEWEIGHT
 *** Name
@@ -25920,8 +25963,7 @@ successfully applied, NIL otherwise
 - [vl-vplayer-set-lineweight (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlvplayersetlineweight.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-VPLAYER-SET-TRANSPARENCY
 *** Name
@@ -25977,8 +26019,7 @@ is successfully applied, NIL otherwise
 - [vl-vplayer-set-transparency (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlvplayersettransparency.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VL-VPLAYER-SET-TRUECOLOR
 *** Name
@@ -26030,8 +26071,7 @@ successfully applied resp. removed, NIL otherwise
 - [vl-vplayer-set-truecolor (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlvplayersettruecolor.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** ActiveX Extensions (BricsCAD-only vlax-*) (4 entries)
 
@@ -26087,8 +26127,7 @@ BricsCAD, not available in AutoLISP !
 - [vlax-2d-point (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlax-2d-point.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-CURVE-GETPERIMETER
 *** Name
@@ -26139,8 +26178,7 @@ BricsCAD, not available in AutoLISP !
 - [vlax-curve-getperimeter (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlax-curve-getperimeter.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-QUEUEEXPR
 *** Name
@@ -26195,8 +26233,7 @@ please use with care !
 - [vlax-queueexpr (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlax-queueexpr.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLAX-SAFEARRAY-VALUE
 *** Name
@@ -26251,8 +26288,7 @@ same as (vlax-safearray->list), provided for consistency + similarity with
 - [vlax-safearray-value (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlax-safearray-value.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** Reactor Extensions (BricsCAD-only vlr-*) (3 entries)
 
@@ -26288,8 +26324,7 @@ associated document
 - [vlr-document (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlr-document.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-PERS-DICTNAME
 *** Name
@@ -26325,8 +26360,7 @@ see also (vlr-pers) and (vlr-pers-list) function
 - [vlr-pers-dictname (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlr-pers-dictname.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLR-REACTION-NAMES
 *** Name
@@ -26376,8 +26410,7 @@ events
 - [vlr-reaction-names (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlr-reaction-names.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** Obsolete VLX-Namespace Functions (3 entries)
 
@@ -26431,8 +26464,7 @@ obsolete function ! please use (vl-doc-set)
 - [vlisp-export-symbol (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlispexportsymbol.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLISP-IMPORT-EXSUBRS
 *** Name
@@ -26477,8 +26509,7 @@ obsolete function ! please use (vl-arx-import)
 - [vlisp-import-exsubrs (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlispimportexsubrs.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLISP-IMPORT-SYMBOL
 *** Name
@@ -26530,8 +26561,7 @@ obsolete function ! please use (vl-doc-ref)
 - [vlisp-import-symbol (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlispimportsymbol.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** VLE LISP Function Library (105 entries)
 
@@ -26579,8 +26609,7 @@ Green Blue)
 - [vle-aci2rgb (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleaci2rgb.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ALERT
 *** Name
@@ -26669,8 +26698,7 @@ icon, as system modal dialogue
 - [vle-alert (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlealert.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-APPEND
 *** Name
@@ -26716,8 +26744,7 @@ the item to be appended does not need to be wrapped into extra
 - [vle-append (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleappend.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ATOI32
 *** Name
@@ -26771,8 +26798,7 @@ workaround
 - [vle-atoi32 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleatoi32.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-CADRASSOC
 *** Name
@@ -26824,8 +26850,7 @@ key lst))
 - [vle-cadrassoc (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-cadrassoc.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-CEILING
 *** Name
@@ -26866,8 +26891,7 @@ not less than x
 - [vle-ceiling (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleceiling.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-COLLECTION->LIST
 *** Name
@@ -26911,8 +26935,7 @@ returns (#<VLA-OBJECT IAcadLayer>
 - [vle-collection->list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlecollectionlist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-COMPILE-SHAPE
 *** Name
@@ -26963,8 +26986,7 @@ folder as the input .shp file
 - [vle-compile-shape (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-compile-shape.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-CURVE-GETPERIMETER
 *** Name
@@ -27006,8 +27028,7 @@ returns 2.0 for a LINE with (0,0,0) -
 - [vle-curve-getperimeter (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlecurvegetperimeter.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-DICTIONARY-LIST
 *** Name
@@ -27068,8 +27089,7 @@ ACAD_COLOR
 - [vle-dictionary-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vledictionarylist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-DISPLAYPAUSE
 *** Name
@@ -27114,8 +27134,7 @@ will be automatically enabled for safety
 - [vle-displaypause (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vledisplaypause.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-DISPLAYUPDATE
 *** Name
@@ -27147,8 +27166,7 @@ T   always
 - [vle-displayupdate (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vledisplayupdate.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-EDITTEXTINPLACE
 *** Name
@@ -27199,8 +27217,7 @@ AttributeDefinition
 - [vle-edittextinplace (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-edittextinplace.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ENABLESERVERBUSY
 *** Name
@@ -27250,8 +27267,7 @@ nothing)
 - [vle-enableserverbusy (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-enableserverbusy.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ENAMEP
 *** Name
@@ -27291,8 +27307,7 @@ obj) 'ENAME) and similar
 - [vle-enamep (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleenamep.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-END-TRANSACTION
 *** Name
@@ -27345,8 +27360,7 @@ then
 - [vle-end-transaction (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleendtransaction.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ENTGET-M
 *** Name
@@ -27405,8 +27419,7 @@ code, that dxf code is not part of returned list
 - [vle-entget-m (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleentgetm.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ENTGET-MASSOC
 *** Name
@@ -27461,8 +27474,7 @@ higher performance
 - [vle-entget-massoc (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleentgetmassoc.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ENTMOD
 *** Name
@@ -27514,8 +27526,7 @@ olditem lst))
 - [vle-entmod (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleentmod.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ENTMOD-M
 *** Name
@@ -27575,8 +27586,7 @@ sets the elevation as 2.0
 - [vle-entmod-m (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleentmodm.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-EXTENSIONS-ACTIVE
 *** Name
@@ -27605,8 +27615,7 @@ Vendor-defined; see Source Notes.
 - [vle-extensions-active (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleextensionsactive.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-FASTCOM
 *** Name
@@ -27634,7 +27643,7 @@ after function call
 
 *** Examples
 #+begin_example
-(vle-fastcom t)  
+(vle-fastcom t)
  enables "Fast-COM" mode
 
 (vle-fastcom nil) disables "Fast-COM" mode -
@@ -27655,8 +27664,7 @@ trouble-shooting
 - [vle-fastcom (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlefastcom.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-FILE->LIST
 *** Name
@@ -27711,8 +27719,7 @@ used if not NIL; if NIL, all file lines are loaded
 - [vle-file->list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlefilelist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-FILEP
 *** Name
@@ -27752,8 +27759,7 @@ obj) 'FILE) and similar
 - [vle-filep (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlefilep.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-FLOOR
 *** Name
@@ -27794,8 +27800,7 @@ not greater than x
 - [vle-floor (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlefloor.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-GETGEOMEXTENTS
 *** Name
@@ -27846,8 +27851,7 @@ returns  '((-1.0 2.0 0.0) (10.0 12.0
 - [vle-getgeomextents (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlegetgeomextents.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-HIDEPROMPTMENU
 *** Name
@@ -27888,8 +27892,7 @@ versions), this is a No-Operation and does nothing
 - [vle-hidepromptmenu (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-hidepromptmenu.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-INT64TO32
 *** Name
@@ -27943,8 +27946,7 @@ workaround
 - [vle-int64to32 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleint64to32.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-INTEGERP
 *** Name
@@ -27984,8 +27986,7 @@ obj) 'INT) and similar
 - [vle-integerp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleintegerp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-IS-CURVE
 *** Name
@@ -28059,8 +28060,7 @@ AcDbXline
 - [vle-is-curve (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-is-curve.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ITOA32
 *** Name
@@ -28115,8 +28115,7 @@ workaround
 - [vle-itoa32 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-itoa32.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-LICENSELEVEL
 *** Name
@@ -28171,8 +28170,7 @@ for backward compatibility
 - [vle-licenselevel (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlelicenselevel.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-LISPINSTALL
 *** Name
@@ -28211,8 +28209,7 @@ Lisp engine is running from
 - [vle-lispinstall (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlelispinstall.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-LISPVERSION
 *** Name
@@ -28260,8 +28257,7 @@ using (atof
 - [vle-lispversion (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlelispversion.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-LIST-DIFF
 *** Name
@@ -28309,8 +28305,7 @@ not member of both lists
 - [vle-list-diff (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlelistdiff.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-LIST-INTERSECT
 *** Name
@@ -28357,8 +28352,7 @@ items, which are member in both input lists
 - [vle-list-intersect (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlelistintersect.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-LIST-MASSOC
 *** Name
@@ -28410,8 +28404,7 @@ sequence
 - [vle-list-massoc (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlelistmassoc.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-LIST-SPLIT
 *** Name
@@ -28463,8 +28456,7 @@ NIL
 - [vle-list-split (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlelistsplit.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-LIST-SUBTRACT
 *** Name
@@ -28511,8 +28503,7 @@ of 'lst1' without items of 'lst2'
 - [vle-list-subtract (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlelistsubtract.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-LIST-UNION
 *** Name
@@ -28562,8 +28553,7 @@ duplicates
 - [vle-list-union (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlelistunion.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-MEMBER
 *** Name
@@ -28614,8 +28604,7 @@ lst)
 - [vle-member (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlemember.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NTH<X>
 *** Name
@@ -28661,8 +28650,7 @@ replacement for (nth
 - [vle-nth<x> (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlenthx.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-NUMBERP
 *** Name
@@ -28702,8 +28690,7 @@ implemented for completeness
 - [vle-numberp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlenumberp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-OPTIMIZER
 *** Name
@@ -28731,7 +28718,7 @@ status
 
 *** Examples
 #+begin_example
-(vle-optimizer t)  
+(vle-optimizer t)
  enables automatic Lisp Optimiser
 
 (vle-optimizer nil) disables automatic Lisp
@@ -28763,8 +28750,7 @@ nil) only affects the particular file
 - [vle-optimizer (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleoptimizer.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-PICKSETP
 *** Name
@@ -28804,8 +28790,7 @@ obj) 'PICKSET) and similar
 - [vle-picksetp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlepicksetp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-PING-ALIVE
 *** Name
@@ -28843,8 +28828,7 @@ wrong !) "not responding" state
 - [vle-ping-alive (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-ping-alive.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-POINTP
 *** Name
@@ -28887,8 +28871,7 @@ vector
 - [vle-pointp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-pointp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-PUT-NTH
 *** Name
@@ -28938,8 +28921,7 @@ index 'idx' is 0-based
 - [vle-put-nth (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleputnth.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-REALP
 *** Name
@@ -28979,8 +28961,7 @@ obj) 'REAL) and similar
 - [vle-realp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlerealp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-REMOVE-ALL
 *** Name
@@ -29026,8 +29007,7 @@ returns '(1 2 4 5 6 7 8)
 - [vle-remove-all (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleremoveall.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-REMOVE-FIRST
 *** Name
@@ -29073,8 +29053,7 @@ returns '(1 2 4 5 123 6 7 8)
 - [vle-remove-first (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleremovefirst.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-REMOVE-NTH
 *** Name
@@ -29126,8 +29105,7 @@ index is 0-based
 - [vle-remove-nth (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleremoventh.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-RGB2ACI
 *** Name
@@ -29182,8 +29160,7 @@ syntax !
 - [vle-rgb2aci (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlergb2aci.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ROUND
 *** Name
@@ -29229,8 +29206,7 @@ x
 - [vle-round (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleround.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-ROUNDTO
 *** Name
@@ -29297,8 +29273,7 @@ it is automatically converted into double
 - [vle-roundto (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleroundto.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-SAFEARRAY->LIST
 *** Name
@@ -29346,8 +29321,7 @@ SafeArray)
 - [vle-safearray->list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-safearray-list.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-SAFEARRAYP
 *** Name
@@ -29387,8 +29361,7 @@ obj) 'SAFEARRAY) and similar
 - [vle-safearrayp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlesafearrayp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-SEARCH
 *** Name
@@ -29432,7 +29405,7 @@ returned
 (vle-search 11 '(1 2 3 11 22
 33 ) nil)   returns   '(11 22 33)
 
-(vle-search 11 '(1 2 3 11 22 33 ) t)  
+(vle-search 11 '(1 2 3 11 22 33 ) t)
    returns   3
 #+end_example
 
@@ -29449,8 +29422,7 @@ returned index is
 - [vle-search (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlesearch.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-SELECTIONSET->LIST
 *** Name
@@ -29494,8 +29466,7 @@ returns  (<#Entity name>
 - [vle-selectionset->list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleselectionsetlist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-SET-CDRASSOC
 *** Name
@@ -29556,8 +29527,7 @@ key lst) lst)
 - [vle-set-cdrassoc (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlesetcdrassoc.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-SHOWPROMPTMENU
 *** Name
@@ -29602,8 +29572,7 @@ versions), this is a No-Operation and does nothing
 - [vle-showpromptmenu (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vleshowpromptmenu.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-START-TRANSACTION
 *** Name
@@ -29659,8 +29628,7 @@ finishes, a pending / open transaction is automatically closed
 - [vle-start-transaction (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlestarttransaction.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-STARTAPP
 *** Name
@@ -29713,8 +29681,7 @@ does not wait for the process (asynchronous)
 - [vle-startapp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlestartapp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-STRING-REPLACE
 *** Name
@@ -29763,8 +29730,7 @@ can have any length, and do not need to be of same length
 - [vle-string-replace (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlestringreplace.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-STRING-SPLIT
 *** Name
@@ -29818,8 +29784,7 @@ original string
 - [vle-string-split (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlestringsplit.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-STRINGP
 *** Name
@@ -29859,8 +29824,7 @@ obj) 'STR) and similar
 - [vle-stringp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlestringp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-SUBLIST
 *** Name
@@ -29923,8 +29887,7 @@ index is 0-based
 - [vle-sublist (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlesublist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-SUBST-NTH
 *** Name
@@ -29982,8 +29945,7 @@ index idx is 0-based
 - [vle-subst-nth (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlesubstnth.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-SUNID
 *** Name
@@ -30024,8 +29986,7 @@ each ModelSpace viewport
 - [vle-sunid (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-sunid.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-TABLE-LIST
 *** Name
@@ -30078,8 +30039,7 @@ see function (vle-table-list-all-all)
 - [vle-table-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-table-list.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-TABLE-LIST-ALL
 *** Name
@@ -30129,8 +30089,7 @@ see function (vle-table-list-all-all)
 - [vle-table-list-all (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-table-list-all.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-TAN
 *** Name
@@ -30169,8 +30128,7 @@ the tangent of x
 - [vle-tan (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vletan.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VARIANTP
 *** Name
@@ -30210,8 +30168,7 @@ obj) 'VARIANT) and similar
 - [vle-variantp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlevariantp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ADD
 *** Name
@@ -30257,8 +30214,7 @@ then
 - [vle-vector-add (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-add.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ANGLETO
 *** Name
@@ -30313,8 +30269,7 @@ unit-length (non-normalised vectors are allowed)
 - [vle-vector-angleto (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-angleto.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ANGLETOREF
 *** Name
@@ -30374,8 +30329,7 @@ unit-length (non-normalised vectors are allowed)
 - [vle-vector-angletoref (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-angletoref.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-CROSSPRODUCT
 *** Name
@@ -30427,8 +30381,7 @@ not normalised !
 - [vle-vector-crossproduct (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-crossproduct.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-DOTPRODUCT
 *** Name
@@ -30484,8 +30437,7 @@ double
 - [vle-vector-dotproduct (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-dotproduct.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-GET
 *** Name
@@ -30526,8 +30478,7 @@ a 3d vector list
 - [vle-vector-get (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-get.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-GETPERPVECTOR
 *** Name
@@ -30588,8 +30539,7 @@ unit-length (non-normalised vectors are allowed)
 - [vle-vector-getperpvector (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-getperpvector.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-GETTOLERANCE
 *** Name
@@ -30627,8 +30577,7 @@ directly, use this function
 - [vle-vector-gettolerance (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-gettolerance.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-GETUCS
 *** Name
@@ -30686,8 +30635,7 @@ normalised (1-unit length)
 - [vle-vector-getucs (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-getucs.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ISCODIRECTIONAL
 *** Name
@@ -30741,8 +30689,7 @@ unit-length (non-normalised vectors are allowed)
 - [vle-vector-iscodirectional (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-iscodirectional.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ISEQUAL
 *** Name
@@ -30797,8 +30744,7 @@ interpreted as 'points'; same as (equal  vec1 vec2
 - [vle-vector-isequal (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-isequal.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ISPARALLEL
 *** Name
@@ -30858,8 +30804,7 @@ unit-length (non-normalised vectors are allowed)
 - [vle-vector-isparallel (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-isparallel.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ISPERPENDICULAR
 *** Name
@@ -30919,8 +30864,7 @@ unit-length (non-normalised vectors are allowed)
 - [vle-vector-isperpendicular (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-isperpendicular.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ISUNITLENGTH
 *** Name
@@ -30968,8 +30912,7 @@ T
 - [vle-vector-isunitlength (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-isunitlength.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ISXAXIS
 *** Name
@@ -31021,8 +30964,7 @@ length (normalised)
 - [vle-vector-isxaxis (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-isxaxis.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ISYAXIS
 *** Name
@@ -31074,8 +31016,7 @@ length (normalised)
 - [vle-vector-isyaxis (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-isyaxis.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ISZAXIS
 *** Name
@@ -31127,8 +31068,7 @@ length (normalised)
 - [vle-vector-iszaxis (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-iszaxis.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-ISZEROLENGTH
 *** Name
@@ -31180,8 +31120,7 @@ then it compares as "equal to point (0 0 0)"
 - [vle-vector-iszerolength (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-iszerolength.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-LENGTH
 *** Name
@@ -31224,8 +31163,7 @@ vector in XYZ space
 - [vle-vector-length (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-length.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-LENGTH2D
 *** Name
@@ -31268,8 +31206,7 @@ vector in XY plane
 - [vle-vector-length2d (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-length2d.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-LENGTH2DXZ
 *** Name
@@ -31312,8 +31249,7 @@ vector in XZ plane
 - [vle-vector-length2dxz (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-length2dxz.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-LENGTH2DYZ
 *** Name
@@ -31356,8 +31292,7 @@ vector in YZ plane
 - [vle-vector-length2dyz (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-length2dyz.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-MIDPOINT
 *** Name
@@ -31399,8 +31334,7 @@ list (midX midY midZ)
 - [vle-vector-midpoint (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-midpoint.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-NEGATE
 *** Name
@@ -31447,8 +31381,7 @@ identical to (but faster as) (vle-vector-scale vec -1.0)
 - [vle-vector-negate (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-negate.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-NORMALISE
 *** Name
@@ -31499,8 +31432,7 @@ a 3d vector list, always in unit-length (1.0)
 - [vle-vector-normalise (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-normalise.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-SCALE
 *** Name
@@ -31544,8 +31476,7 @@ a 3d vector list
 - [vle-vector-scale (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-scale.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-SETTOLERANCE
 *** Name
@@ -31591,8 +31522,7 @@ directly, use this function
 - [vle-vector-settolerance (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-settolerance.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-SUB
 *** Name
@@ -31633,8 +31563,7 @@ a 3d vector list
 - [vle-vector-sub (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-sub.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-TO2D
 *** Name
@@ -31674,8 +31603,7 @@ a 2D point/vector for a given 2D or 3D list, or NIL
 - [vle-vector-to2d (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-to2d.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VECTOR-TO3D
 *** Name
@@ -31715,8 +31643,7 @@ a 3D point/vector for a given 2D or 3D list, or NIL
 - [vle-vector-to3d (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle-vector-to3d.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE-VLAOBJECTP
 *** Name
@@ -31756,8 +31683,7 @@ obj) 'VLA-OBJECT) and similar
 - [vle-vlaobjectp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vlevlaobjectp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: VLE_G_VECTOL
 *** Name
@@ -31786,8 +31712,7 @@ Vendor-defined; see Source Notes.
 - [vle_g_vectol (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/vle_g_vecTol.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** ExpressTools API Support (208 entries)
 
@@ -31818,8 +31743,7 @@ Vendor-defined; see Source Notes.
 - [acet-acad-refresh (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetacadrefresh.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ALERT
 *** Name
@@ -31851,8 +31775,7 @@ Vendor-defined; see Source Notes.
 - [acet-alert (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetalert.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ANGLE-EQUAL
 *** Name
@@ -31884,8 +31807,7 @@ Vendor-defined; see Source Notes.
 - [acet-angle-equal (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetangleequal.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ANGLE-FORMAT
 *** Name
@@ -31917,8 +31839,7 @@ Vendor-defined; see Source Notes.
 - [acet-angle-format (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetangleformat.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ANNOTATION-SS
 *** Name
@@ -31950,8 +31871,7 @@ Vendor-defined; see Source Notes.
 - [acet-annotation-ss (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetannotationss.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-APPID-DELETE
 *** Name
@@ -31983,8 +31903,7 @@ Vendor-defined; see Source Notes.
 - [acet-appid-delete (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetappiddelete.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ARXLOAD-OR-BUST
 *** Name
@@ -32016,8 +31935,7 @@ Vendor-defined; see Source Notes.
 - [acet-arxload-or-bust (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetarxloadorbust.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ATT-SUBSCRIPT-DUPLICATES
 *** Name
@@ -32049,8 +31967,7 @@ Vendor-defined; see Source Notes.
 - [acet-att-subscript-duplicates (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetattsubscriptduplicates.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-AUTOLOAD
 *** Name
@@ -32082,8 +31999,7 @@ Vendor-defined; see Source Notes.
 - [acet-autoload (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetautoload.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-AUTOLOAD2
 *** Name
@@ -32115,8 +32031,7 @@ Vendor-defined; see Source Notes.
 - [acet-autoload2 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetautoload2.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-AUTOLOADARX
 *** Name
@@ -32148,8 +32063,7 @@ Vendor-defined; see Source Notes.
 - [acet-autoloadarx (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetautoloadarx.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-BLINK-AND-SHOW-OBJECT
 *** Name
@@ -32181,8 +32095,7 @@ Vendor-defined; see Source Notes.
 - [acet-blink-and-show-object (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetblinkandshowobject.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-BLK-MATCH
 *** Name
@@ -32214,8 +32127,7 @@ Vendor-defined; see Source Notes.
 - [acet-blk-match (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetblkmatch.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-BLKTBL-MATCH
 *** Name
@@ -32247,8 +32159,7 @@ Vendor-defined; see Source Notes.
 - [acet-blktbl-match (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetblktblmatch.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-BLOCK-MAKE-ANON
 *** Name
@@ -32280,8 +32191,7 @@ Vendor-defined; see Source Notes.
 - [acet-block-make-anon (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetblockmakeanon.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-BLOCK-PURGE
 *** Name
@@ -32313,8 +32223,7 @@ Vendor-defined; see Source Notes.
 - [acet-block-purge (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetblockpurge.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-BS-STRIP
 *** Name
@@ -32346,8 +32255,7 @@ Vendor-defined; see Source Notes.
 - [acet-bs-strip (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetbsstrip.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-CALC-BITLIST
 *** Name
@@ -32379,8 +32287,7 @@ Vendor-defined; see Source Notes.
 - [acet-calc-bitlist (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetcalcbitlist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-CALC-ROUND
 *** Name
@@ -32412,8 +32319,7 @@ Vendor-defined; see Source Notes.
 - [acet-calc-round (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetcalcround.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-CALC-TAN
 *** Name
@@ -32445,8 +32351,7 @@ Vendor-defined; see Source Notes.
 - [acet-calc-tan (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetcalctan.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-CLEAR-TEMP-GRAPHICS
 *** Name
@@ -32475,8 +32380,7 @@ Vendor-defined; see Source Notes.
 - [acet-clear-temp-graphics (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetcleartempgraphics.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-CMD-EXIT
 *** Name
@@ -32505,8 +32409,7 @@ Vendor-defined; see Source Notes.
 - [acet-cmd-exit (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetcmdexit.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-COPYM
 *** Name
@@ -32538,8 +32441,7 @@ Vendor-defined; see Source Notes.
 - [acet-copym (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-copym.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-COPYTOLAYER
 *** Name
@@ -32571,8 +32473,7 @@ Vendor-defined; see Source Notes.
 - [acet-copytolayer (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-copytolayer.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-CURRENTVIEWPORT-ENAME
 *** Name
@@ -32601,8 +32502,7 @@ Vendor-defined; see Source Notes.
 - [acet-currentviewport-ename (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetcurrentviewportename.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-DCL-LIST-MAKE
 *** Name
@@ -32634,8 +32534,7 @@ Vendor-defined; see Source Notes.
 - [acet-dcl-list-make (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetdcllistmake.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-DICT-ENAME
 *** Name
@@ -32667,8 +32566,7 @@ Vendor-defined; see Source Notes.
 - [acet-dict-ename (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetdictename.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-DICT-NAME-LIST
 *** Name
@@ -32700,8 +32598,7 @@ Vendor-defined; see Source Notes.
 - [acet-dict-name-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetdictnamelist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-DTOR
 *** Name
@@ -32733,8 +32630,7 @@ Vendor-defined; see Source Notes.
 - [acet-dtor (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetdtor.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-DXF
 *** Name
@@ -32766,8 +32662,7 @@ Vendor-defined; see Source Notes.
 - [acet-dxf (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetdxf.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ELIST-ADD-DEFAULTS
 *** Name
@@ -32799,8 +32694,7 @@ Vendor-defined; see Source Notes.
 - [acet-elist-add-defaults (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetelistadddefaults.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ENT-CURVEPOINTS
 *** Name
@@ -32832,8 +32726,7 @@ Vendor-defined; see Source Notes.
 - [acet-ent-curvepoints (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetentcurvepoints.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ERROR-INIT
 *** Name
@@ -32865,8 +32758,7 @@ Vendor-defined; see Source Notes.
 - [acet-error-init (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/aceterrorinit.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ERROR-RESTORE
 *** Name
@@ -32895,8 +32787,7 @@ Vendor-defined; see Source Notes.
 - [acet-error-restore (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/aceterrorrestore.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-EXPLODE
 *** Name
@@ -32928,8 +32819,7 @@ Vendor-defined; see Source Notes.
 - [acet-explode (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetexplode.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-BACKUP
 *** Name
@@ -32961,8 +32851,7 @@ Vendor-defined; see Source Notes.
 - [acet-file-backup (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilebackup.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-BACKUP-DELETE
 *** Name
@@ -32991,8 +32880,7 @@ Vendor-defined; see Source Notes.
 - [acet-file-backup-delete (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilebackupdelete.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-FIND
 *** Name
@@ -33024,8 +32912,7 @@ Vendor-defined; see Source Notes.
 - [acet-file-find (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilefind.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-FIND-FONT
 *** Name
@@ -33054,8 +32941,7 @@ Vendor-defined; see Source Notes.
 - [acet-file-find-font (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilefindfont.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-FIND-IMAGE
 *** Name
@@ -33087,8 +32973,7 @@ Vendor-defined; see Source Notes.
 - [acet-file-find-image (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilefindimage.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-FIND-ON-PATH
 *** Name
@@ -33120,8 +33005,7 @@ Vendor-defined; see Source Notes.
 - [acet-file-find-on-path (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilefindonpath.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-OPEN
 *** Name
@@ -33153,8 +33037,7 @@ Vendor-defined; see Source Notes.
 - [acet-file-open (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfileopen.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-READDIALOG
 *** Name
@@ -33186,8 +33069,7 @@ Vendor-defined; see Source Notes.
 - [acet-file-readdialog (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-file-readdialog.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILE-WRITEDIALOG
 *** Name
@@ -33219,8 +33101,7 @@ Vendor-defined; see Source Notes.
 - [acet-file-writedialog (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilewritedialog.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILENAME-ASSOCIATED-APP
 *** Name
@@ -33252,8 +33133,7 @@ Vendor-defined; see Source Notes.
 - [acet-filename-associated-app (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilenameassociatedapp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILENAME-DIRECTORY
 *** Name
@@ -33285,8 +33165,7 @@ Vendor-defined; see Source Notes.
 - [acet-filename-directory (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-filename-directory.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILENAME-EXT-REMOVE
 *** Name
@@ -33318,8 +33197,7 @@ Vendor-defined; see Source Notes.
 - [acet-filename-ext-remove (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilenameextremove.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILENAME-EXTENSION
 *** Name
@@ -33351,8 +33229,7 @@ Vendor-defined; see Source Notes.
 - [acet-filename-extension (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilenameextension.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILENAME-PATH-REMOVE
 *** Name
@@ -33384,8 +33261,7 @@ Vendor-defined; see Source Notes.
 - [acet-filename-path-remove (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilenamepathremove.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILENAME-SUPPORTPATH-REMOVE
 *** Name
@@ -33417,8 +33293,7 @@ Vendor-defined; see Source Notes.
 - [acet-filename-supportpath-remove (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilenamesupportpathremove.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FILENAME-VALID
 *** Name
@@ -33450,8 +33325,7 @@ Vendor-defined; see Source Notes.
 - [acet-filename-valid (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfilenamevalid.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-FSCREEN-TOGGLE
 *** Name
@@ -33480,8 +33354,7 @@ Vendor-defined; see Source Notes.
 - [acet-fscreen-toggle (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfscreentoggle.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GENERAL-PROPS-GET
 *** Name
@@ -33513,8 +33386,7 @@ Vendor-defined; see Source Notes.
 - [acet-general-props-get (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeneralpropsget.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GENERAL-PROPS-GET-PAIRS
 *** Name
@@ -33543,8 +33415,7 @@ Vendor-defined; see Source Notes.
 - [acet-general-props-get-pairs (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeneralpropsgetpairs.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GENERAL-PROPS-SET
 *** Name
@@ -33576,8 +33447,7 @@ Vendor-defined; see Source Notes.
 - [acet-general-props-set (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeneralpropsset.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GENERAL-PROPS-SET-PAIRS
 *** Name
@@ -33609,8 +33479,7 @@ Vendor-defined; see Source Notes.
 - [acet-general-props-set-pairs (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeneralpropssetpairs.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-ANGLE-TRANS
 *** Name
@@ -33642,8 +33511,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-angle-trans (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomangletrans.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-ARBITRARY-X
 *** Name
@@ -33675,8 +33543,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-arbitrary-x (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomarbitraryx.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-ARC-3P-D-ANGLE
 *** Name
@@ -33708,8 +33575,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-arc-3p-d-angle (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomarc3pdangle.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-ARC-BULGE
 *** Name
@@ -33741,8 +33607,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-arc-bulge (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomarcbulge.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-ARC-CENTER
 *** Name
@@ -33774,8 +33639,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-arc-center (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomarccenter.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-ARC-D-ANGLE
 *** Name
@@ -33807,8 +33671,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-arc-d-angle (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomarcdangle.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-CALC-ARC-ERROR
 *** Name
@@ -33840,8 +33703,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-calc-arc-error (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomcalcarcerror.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-CROSS-PRODUCT
 *** Name
@@ -33873,8 +33735,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-cross-product (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomcrossproduct.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-DELTA-VECTOR
 *** Name
@@ -33906,8 +33767,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-delta-vector (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomdeltavector.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-IMAGE-BOUNDS
 *** Name
@@ -33939,8 +33799,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-image-bounds (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomimagebounds.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-INTERSECTWITH
 *** Name
@@ -33972,8 +33831,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-intersectwith (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomintersectwith.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-IS-ARC
 *** Name
@@ -34005,8 +33863,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-is-arc (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomisarc.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-LIST-EXTENTS
 *** Name
@@ -34038,8 +33895,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-list-extents (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomlistextents.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-M-TRANS
 *** Name
@@ -34071,8 +33927,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-m-trans (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeommtrans.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-MID-POINT
 *** Name
@@ -34104,8 +33959,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-mid-point (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeommidpoint.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-MIDPOINT
 *** Name
@@ -34137,8 +33991,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-midpoint (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeommidpoint1.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-OBJECT-END-POINTS
 *** Name
@@ -34170,8 +34023,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-object-end-points (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomobjectendpoints.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-OBJECT-FUZ
 *** Name
@@ -34203,8 +34055,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-object-fuz (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomobjectfuz.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-OBJECT-NORMAL-VECTOR
 *** Name
@@ -34236,8 +34087,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-object-normal-vector (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomobjectnormalvector.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-OBJECT-POINT-LIST
 *** Name
@@ -34269,8 +34119,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-object-point-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomobjectpointlist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-OBJECT-Z-AXIS
 *** Name
@@ -34302,8 +34151,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-object-z-axis (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomobjectzaxis.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-PIXEL-UNIT
 *** Name
@@ -34332,8 +34180,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-pixel-unit (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeompixelunit.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-PLINE-ARC-INFO
 *** Name
@@ -34365,8 +34212,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-pline-arc-info (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomplinearcinfo.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-POINT-INSIDE
 *** Name
@@ -34398,8 +34244,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-point-inside (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeompointinside.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-POINT-ROTATE
 *** Name
@@ -34431,8 +34276,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-point-rotate (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeompointrotate.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-POINT-SCALE
 *** Name
@@ -34464,8 +34308,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-point-scale (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeompointscale.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-RECT-POINTS
 *** Name
@@ -34497,8 +34340,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-rect-points (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomrectpoints.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-SELF-INTERSECT
 *** Name
@@ -34530,8 +34372,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-self-intersect (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomselfintersect.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-SS-EXTENTS
 *** Name
@@ -34563,8 +34404,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-ss-extents (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomssextents.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-TEXTBOX
 *** Name
@@ -34596,8 +34436,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-textbox (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomtextbox.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-UNIT-VECTOR
 *** Name
@@ -34629,8 +34468,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-unit-vector (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomunitvector.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-VECTOR-ADD
 *** Name
@@ -34662,8 +34500,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-vector-add (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomvectoradd.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-VECTOR-D-ANGLE
 *** Name
@@ -34695,8 +34532,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-vector-d-angle (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomvectordangle.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-VECTOR-PARALLEL
 *** Name
@@ -34728,8 +34564,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-vector-parallel (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomvectorparallel.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-VECTOR-SCALE
 *** Name
@@ -34761,8 +34596,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-vector-scale (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomvectorscale.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-VECTOR-SIDE
 *** Name
@@ -34794,8 +34628,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-vector-side (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomvectorside.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-VERTEX-LIST
 *** Name
@@ -34827,8 +34660,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-vertex-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomvertexlist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-VIEW-POINTS
 *** Name
@@ -34857,8 +34689,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-view-points (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomviewpoints.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-Z-AXIS
 *** Name
@@ -34887,8 +34718,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-z-axis (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomzaxis.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GEOM-ZOOM-FOR-SELECT
 *** Name
@@ -34920,8 +34750,7 @@ Vendor-defined; see Source Notes.
 - [acet-geom-zoom-for-select (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgeomzoomforselect.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GET-ATT
 *** Name
@@ -34953,8 +34782,7 @@ Vendor-defined; see Source Notes.
 - [acet-get-att (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgetatt.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GET-WINFONT-PATH
 *** Name
@@ -34983,8 +34811,7 @@ Vendor-defined; see Source Notes.
 - [acet-get-winfont-path (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgetwinfontpath.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GETVAR
 *** Name
@@ -35016,8 +34843,7 @@ Vendor-defined; see Source Notes.
 - [acet-getvar (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgetvar.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GROUP-MAKE-ANON
 *** Name
@@ -35049,8 +34875,7 @@ Vendor-defined; see Source Notes.
 - [acet-group-make-anon (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgroupmakeanon.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GROUPS-SEL
 *** Name
@@ -35082,8 +34907,7 @@ Vendor-defined; see Source Notes.
 - [acet-groups-sel (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgroupssel.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-GROUPS-UNSEL
 *** Name
@@ -35112,8 +34936,7 @@ Vendor-defined; see Source Notes.
 - [acet-groups-unsel (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetgroupsunsel.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-INIT-FAS-LIB
 *** Name
@@ -35145,8 +34968,7 @@ Vendor-defined; see Source Notes.
 - [acet-init-fas-lib (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetinitfaslib.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-INSERT-ATTRIB-GET
 *** Name
@@ -35178,8 +35000,7 @@ Vendor-defined; see Source Notes.
 - [acet-insert-attrib-get (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetinsertattribget.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-INSERT-ATTRIB-MOD
 *** Name
@@ -35211,8 +35032,7 @@ Vendor-defined; see Source Notes.
 - [acet-insert-attrib-mod (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetinsertattribmod.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-INSERT-ATTRIB-SET
 *** Name
@@ -35244,8 +35064,7 @@ Vendor-defined; see Source Notes.
 - [acet-insert-attrib-set (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetinsertattribset.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LAYER-LOCKED
 *** Name
@@ -35277,8 +35096,7 @@ Vendor-defined; see Source Notes.
 - [acet-layer-locked (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlayerlocked.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LAYER-OFF
 *** Name
@@ -35310,8 +35128,7 @@ Vendor-defined; see Source Notes.
 - [acet-layer-off (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-layer-off.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LAYER-UNLOCK-ALL
 *** Name
@@ -35340,8 +35157,7 @@ Vendor-defined; see Source Notes.
 - [acet-layer-unlock-all (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlayerunlockall.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-ASSOC-APPEND
 *** Name
@@ -35373,8 +35189,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-assoc-append (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistassocappend.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-ASSOC-PUT
 *** Name
@@ -35406,8 +35221,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-assoc-put (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistassocput.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-ASSOC-REMOVE
 *** Name
@@ -35439,8 +35253,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-assoc-remove (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistassocremove.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-GROUP-BY-ASSOC
 *** Name
@@ -35472,8 +35285,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-group-by-assoc (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistgroupbyassoc.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-IS-DOTTED-PAIR
 *** Name
@@ -35505,8 +35317,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-is-dotted-pair (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistisdottedpair.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-ISORT
 *** Name
@@ -35538,8 +35349,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-isort (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistisort.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-M-ASSOC
 *** Name
@@ -35571,8 +35381,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-m-assoc (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistmassoc.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-PUT-NTH
 *** Name
@@ -35604,8 +35413,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-put-nth (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistputnth.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-REMOVE-ADJACENT-DUPS
 *** Name
@@ -35637,8 +35445,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-remove-adjacent-dups (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistremoveadjacentdups.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-REMOVE-DUPLICATE-POINTS
 *** Name
@@ -35670,8 +35477,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-remove-duplicate-points (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistremoveduplicatepoints.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-REMOVE-DUPLICATES
 *** Name
@@ -35703,8 +35509,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-remove-duplicates (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistremoveduplicates.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-REMOVE-NTH
 *** Name
@@ -35736,8 +35541,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-remove-nth (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistremoventh.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-SPLIT
 *** Name
@@ -35769,8 +35573,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-split (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlistsplit.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LIST-TO-SS
 *** Name
@@ -35802,8 +35605,7 @@ Vendor-defined; see Source Notes.
 - [acet-list-to-ss (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlisttoss.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-LWPLINE-MAKE
 *** Name
@@ -35835,8 +35637,7 @@ Vendor-defined; see Source Notes.
 - [acet-lwpline-make (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetlwplinemake.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-MOD-ATT
 *** Name
@@ -35868,8 +35669,7 @@ Vendor-defined; see Source Notes.
 - [acet-mod-att (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetmodatt.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-PLINE-IS-2D
 *** Name
@@ -35901,8 +35701,7 @@ Vendor-defined; see Source Notes.
 - [acet-pline-is-2d (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetplineis2d.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-PLINE-SEGMENT-LIST
 *** Name
@@ -35934,8 +35733,7 @@ Vendor-defined; see Source Notes.
 - [acet-pline-segment-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetplinesegmentlist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-PLINE-SEGMENT-LIST-APPLY
 *** Name
@@ -35967,8 +35765,7 @@ Vendor-defined; see Source Notes.
 - [acet-pline-segment-list-apply (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetplinesegmentlistapply.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-PLINES-EXPLODE
 *** Name
@@ -36000,8 +35797,7 @@ Vendor-defined; see Source Notes.
 - [acet-plines-explode (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetplinesexplode.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-PLINES-REBUILD
 *** Name
@@ -36033,8 +35829,7 @@ Vendor-defined; see Source Notes.
 - [acet-plines-rebuild (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetplinesrebuild.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-POINT-FLAT
 *** Name
@@ -36063,8 +35858,7 @@ Vendor-defined; see Source Notes.
 - [acet-point-flat (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetpointflat.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-PREF-SUPPORTPATH-LIST
 *** Name
@@ -36093,8 +35887,7 @@ Vendor-defined; see Source Notes.
 - [acet-pref-supportpath-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetprefsupportpathlist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-ROTATE-TEXT
 *** Name
@@ -36123,8 +35916,7 @@ Vendor-defined; see Source Notes.
 - [acet-rotate-text (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-rotate-text.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-RTOD
 *** Name
@@ -36156,8 +35948,7 @@ Vendor-defined; see Source Notes.
 - [acet-rtod (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetrtod.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SAFE-COMMAND
 *** Name
@@ -36186,8 +35977,7 @@ Vendor-defined; see Source Notes.
 - [acet-safe-command (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsafecommand.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SET-CMDECHO
 *** Name
@@ -36216,8 +36006,7 @@ Vendor-defined; see Source Notes.
 - [acet-set-cmdecho (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsetcmdecho.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SETVAR
 *** Name
@@ -36249,8 +36038,7 @@ Vendor-defined; see Source Notes.
 - [acet-setvar (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsetvar.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SHX-LOADED
 *** Name
@@ -36279,8 +36067,7 @@ Vendor-defined; see Source Notes.
 - [acet-shx-loaded (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-shx-loaded.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SHX-RELOAD
 *** Name
@@ -36309,8 +36096,7 @@ Vendor-defined; see Source Notes.
 - [acet-shx-reload (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-shx-reload.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SPINNER
 *** Name
@@ -36339,8 +36125,7 @@ Vendor-defined; see Source Notes.
 - [acet-spinner (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetspinner.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-ANNOTATION-FILTER
 *** Name
@@ -36372,8 +36157,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-annotation-filter (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssannotationfilter.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-CLEAR-PREV
 *** Name
@@ -36402,8 +36186,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-clear-prev (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssclearprev.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-ENTDEL
 *** Name
@@ -36435,8 +36218,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-entdel (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssentdel.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-FILTER
 *** Name
@@ -36468,8 +36250,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-filter (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssfilter.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-FILTER-CURRENT-UCS
 *** Name
@@ -36501,8 +36282,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-filter-current-ucs (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssfiltercurrentucs.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-FLT-CSPACE
 *** Name
@@ -36531,8 +36311,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-flt-cspace (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssfltcspace.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-INTERSECTION
 *** Name
@@ -36564,8 +36343,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-intersection (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssintersection.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-MOD
 *** Name
@@ -36597,8 +36375,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-mod (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssmod.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-NEW
 *** Name
@@ -36630,8 +36407,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-new (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssnew.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-REDRAW
 *** Name
@@ -36663,8 +36439,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-redraw (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssredraw.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-REMOVE
 *** Name
@@ -36696,8 +36471,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-remove (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssremove.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-REMOVE-DUPS
 *** Name
@@ -36729,8 +36503,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-remove-dups (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssremovedups.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-SCALE-TO-FIT
 *** Name
@@ -36762,8 +36535,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-scale-to-fit (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssscaletofit.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-SORT
 *** Name
@@ -36795,8 +36567,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-sort (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsssort.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-SSGET-FILTER
 *** Name
@@ -36828,8 +36599,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-ssget-filter (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssssgetfilter.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-TO-LIST
 *** Name
@@ -36861,8 +36631,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-to-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsstolist1.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-UNION
 *** Name
@@ -36894,8 +36663,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-union (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssunion.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-VISIBLE
 *** Name
@@ -36927,8 +36695,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-visible (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetssvisible.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SS-ZOOM-EXTENTS
 *** Name
@@ -36960,8 +36727,7 @@ Vendor-defined; see Source Notes.
 - [acet-ss-zoom-extents (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsszoomextents.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-ESC-WILDCARDS
 *** Name
@@ -36993,8 +36759,7 @@ Vendor-defined; see Source Notes.
 - [acet-str-esc-wildcards (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetstrescwildcards.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-LR-TRIM
 *** Name
@@ -37026,8 +36791,7 @@ Vendor-defined; see Source Notes.
 - [acet-str-lr-trim (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetstrlrtrim.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-M-FIND
 *** Name
@@ -37059,8 +36823,7 @@ Vendor-defined; see Source Notes.
 - [acet-str-m-find (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetstrmfind.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-SPACE-TRIM
 *** Name
@@ -37092,8 +36855,7 @@ Vendor-defined; see Source Notes.
 - [acet-str-space-trim (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetstrspacetrim.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-STR-TO-LIST
 *** Name
@@ -37125,8 +36887,7 @@ Vendor-defined; see Source Notes.
 - [acet-str-to-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetstrtolist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-CONTROL-DOWN
 *** Name
@@ -37155,8 +36916,7 @@ Vendor-defined; see Source Notes.
 - [acet-sys-control-down (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsyscontroldown.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-LMOUSE-DOWN
 *** Name
@@ -37185,8 +36945,7 @@ Vendor-defined; see Source Notes.
 - [acet-sys-lmouse-down (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsyslmousedown.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-MMOUSE-DOWN
 *** Name
@@ -37215,8 +36974,7 @@ Vendor-defined; see Source Notes.
 - [acet-sys-mmouse-down (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsysmmousedown.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-RMOUSE-DOWN
 *** Name
@@ -37245,8 +37003,7 @@ Vendor-defined; see Source Notes.
 - [acet-sys-rmouse-down (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsysrmousedown.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYS-SHIFT-DOWN
 *** Name
@@ -37275,8 +37032,7 @@ Vendor-defined; see Source Notes.
 - [acet-sys-shift-down (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsysshiftdown.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYSVAR-RESTORE
 *** Name
@@ -37305,8 +37061,7 @@ Vendor-defined; see Source Notes.
 - [acet-sysvar-restore (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsysvarrestore.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-SYSVAR-SET
 *** Name
@@ -37338,8 +37093,7 @@ Vendor-defined; see Source Notes.
 - [acet-sysvar-set (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetsysvarset.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-TABLE-NAME-LIST
 *** Name
@@ -37371,8 +37125,7 @@ Vendor-defined; see Source Notes.
 - [acet-table-name-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acettablenamelist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-TABLE-PURGE
 *** Name
@@ -37404,8 +37157,7 @@ Vendor-defined; see Source Notes.
 - [acet-table-purge (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acettablepurge.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-TBL-MATCH
 *** Name
@@ -37437,8 +37189,7 @@ Vendor-defined; see Source Notes.
 - [acet-tbl-match (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acettblmatch.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-TEMP-SEGMENT
 *** Name
@@ -37470,8 +37221,7 @@ Vendor-defined; see Source Notes.
 - [acet-temp-segment (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acettempsegment.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-TEXT2MTEXT
 *** Name
@@ -37503,8 +37253,7 @@ Vendor-defined; see Source Notes.
 - [acet-text2mtext (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-text2mtext.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-TJUST
 *** Name
@@ -37536,8 +37285,7 @@ Vendor-defined; see Source Notes.
 - [acet-tjust (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acettjust.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-TJUST-KEYWORD
 *** Name
@@ -37569,8 +37317,7 @@ Vendor-defined; see Source Notes.
 - [acet-tjust-keyword (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acettjustkeyword.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UCS-CMD
 *** Name
@@ -37602,8 +37349,7 @@ Vendor-defined; see Source Notes.
 - [acet-ucs-cmd (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetucscmd.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UCS-GET
 *** Name
@@ -37635,8 +37381,7 @@ Vendor-defined; see Source Notes.
 - [acet-ucs-get (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetucsget.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UCS-SET
 *** Name
@@ -37668,8 +37413,7 @@ Vendor-defined; see Source Notes.
 - [acet-ucs-set (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetucsset.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UCS-SET-Z
 *** Name
@@ -37701,8 +37445,7 @@ Vendor-defined; see Source Notes.
 - [acet-ucs-set-z (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetucssetz.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UCS-TO-OBJECT
 *** Name
@@ -37734,8 +37477,7 @@ Vendor-defined; see Source Notes.
 - [acet-ucs-to-object (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetucstoobject.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-ENTSEL
 *** Name
@@ -37767,8 +37509,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-entsel (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuientsel.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-FENCE-SELECT
 *** Name
@@ -37797,8 +37538,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-fence-select (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuifenceselect.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-GET-LONG-NAME
 *** Name
@@ -37830,8 +37570,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-get-long-name (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuigetlongname.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-GETCORNER
 *** Name
@@ -37863,8 +37602,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-getcorner (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuigetcorner.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-GETFILE
 *** Name
@@ -37896,8 +37634,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-getfile (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuigetfile.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-M-GET-NAMES
 *** Name
@@ -37931,8 +37668,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-m-get-names (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuimgetnames.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-POLYGON-SELECT
 *** Name
@@ -37964,8 +37700,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-polygon-select (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuipolygonselect.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-PROGRESS-DONE
 *** Name
@@ -37994,8 +37729,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-progress-done (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuiprogressdone.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-PROGRESS-INIT
 *** Name
@@ -38027,8 +37761,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-progress-init (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuiprogressinit.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-PROGRESS-SAFE
 *** Name
@@ -38060,8 +37793,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-progress-safe (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuiprogresssafe.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-SINGLE-SELECT
 *** Name
@@ -38093,8 +37825,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-single-select (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetuisingleselect.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-TABLE-NAME-GET
 *** Name
@@ -38126,8 +37857,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-table-name-get (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-ui-table-name-get.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-TABLE-NAME-GET-CMD
 *** Name
@@ -38159,8 +37889,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-table-name-get-cmd (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-ui-table-name-get-cmd.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UI-TABLE-NAME-GET-DLG
 *** Name
@@ -38192,8 +37921,7 @@ Vendor-defined; see Source Notes.
 - [acet-ui-table-name-get-dlg (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acet-ui-table-name-get-dlg.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UNDO-BEGIN
 *** Name
@@ -38222,8 +37950,7 @@ Vendor-defined; see Source Notes.
 - [acet-undo-begin (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetundobegin.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UNDO-END
 *** Name
@@ -38252,8 +37979,7 @@ Vendor-defined; see Source Notes.
 - [acet-undo-end (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetundoend.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-UTIL-VER
 *** Name
@@ -38282,8 +38008,7 @@ Vendor-defined; see Source Notes.
 - [acet-util-ver (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetutilver.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-VAR-GETVAR
 *** Name
@@ -38315,8 +38040,7 @@ Vendor-defined; see Source Notes.
 - [acet-var-getvar (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetvargetvar.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-VAR-SETVAR
 *** Name
@@ -38348,8 +38072,7 @@ Vendor-defined; see Source Notes.
 - [acet-var-setvar (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetvarsetvar.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-VIEWPORT-FROZEN-LAYER-LIST
 *** Name
@@ -38381,8 +38104,7 @@ Vendor-defined; see Source Notes.
 - [acet-viewport-frozen-layer-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetviewportfrozenlayerlist.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-VIEWPORT-LOCK-SET
 *** Name
@@ -38414,8 +38136,7 @@ Vendor-defined; see Source Notes.
 - [acet-viewport-lock-set (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetviewportlockset.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-VIEWPORT-NEXT-PICKABLE
 *** Name
@@ -38444,8 +38165,7 @@ Vendor-defined; see Source Notes.
 - [acet-viewport-next-pickable (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetviewportnextpickable.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-WMFIN
 *** Name
@@ -38477,8 +38197,7 @@ Vendor-defined; see Source Notes.
 - [acet-wmfin (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetwmfin.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-XDATA-GET
 *** Name
@@ -38510,8 +38229,7 @@ Vendor-defined; see Source Notes.
 - [acet-xdata-get (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetxdataget.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET-XDATA-SET
 *** Name
@@ -38543,8 +38261,7 @@ Vendor-defined; see Source Notes.
 - [acet-xdata-set (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetxdataset.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** ExpressTools API (acet:: namespace) (8 entries)
 
@@ -38578,8 +38295,7 @@ Vendor-defined; see Source Notes.
 - [acet::acos (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetacos.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET::ARC-POINT-LIST
 *** Name
@@ -38611,8 +38327,7 @@ Vendor-defined; see Source Notes.
 - [acet::arc-point-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetarc-point-list.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET::EXPANDFN
 *** Name
@@ -38641,8 +38356,7 @@ Vendor-defined; see Source Notes.
 - [acet::expandfn (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetexpandfn.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET::FILETYPE
 *** Name
@@ -38674,8 +38388,7 @@ Vendor-defined; see Source Notes.
 - [acet::filetype (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetfiletype.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET::NAMEONLY
 *** Name
@@ -38707,8 +38420,7 @@ Vendor-defined; see Source Notes.
 - [acet::nameonly (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetnameonly.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET::NORMALIZE-FILENAME
 *** Name
@@ -38740,8 +38452,7 @@ Vendor-defined; see Source Notes.
 - [acet::normalize-filename (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetnormalize-filename.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET::PATHONLY
 *** Name
@@ -38773,8 +38484,7 @@ Vendor-defined; see Source Notes.
 - [acet::pathonly (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetpathonly.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: ACET::PL-POINT-LIST
 *** Name
@@ -38806,8 +38516,7 @@ Vendor-defined; see Source Notes.
 - [acet::pl-point-list (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/acetpl-point-list.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 *** DOSLib for Linux + Mac (23 entries)
 
@@ -38838,8 +38547,7 @@ Vendor-defined; see Source Notes.
 - [doc_clipboard (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/doc_clipboard.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_ACITORGB
 *** Name
@@ -38871,8 +38579,7 @@ Vendor-defined; see Source Notes.
 - [dos_acitorgb (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_acitorgb.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_COMMAND
 *** Name
@@ -38904,8 +38611,7 @@ Vendor-defined; see Source Notes.
 - [dos_command (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_command.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_COPY
 *** Name
@@ -38937,8 +38643,7 @@ Vendor-defined; see Source Notes.
 - [dos_copy (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_copy.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_DELTREE
 *** Name
@@ -38970,8 +38675,7 @@ Vendor-defined; see Source Notes.
 - [dos_deltree (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_deltree.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_DIR
 *** Name
@@ -39003,8 +38707,7 @@ Vendor-defined; see Source Notes.
 - [dos_dir (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_dir.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_DIRP
 *** Name
@@ -39036,8 +38739,7 @@ Vendor-defined; see Source Notes.
 - [dos_dirp (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_dirp.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_DIRTREE
 *** Name
@@ -39069,8 +38771,7 @@ Vendor-defined; see Source Notes.
 - [dos_dirtree (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_dirtree.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_ENCRYPT
 *** Name
@@ -39102,8 +38803,7 @@ Vendor-defined; see Source Notes.
 - [dos_encrypt (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_encrypt.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_ENCRYPT_V25
 *** Name
@@ -39135,8 +38835,7 @@ Vendor-defined; see Source Notes.
 - [dos_encrypt_v25 (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_encrypt_v25.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_FILEEX
 *** Name
@@ -39168,8 +38867,7 @@ Vendor-defined; see Source Notes.
 - [dos_fileex (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_fileex.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_GETDIR
 *** Name
@@ -39201,8 +38899,7 @@ Vendor-defined; see Source Notes.
 - [dos_getdir (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_getdir.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_GETFILEM
 *** Name
@@ -39234,8 +38931,7 @@ Vendor-defined; see Source Notes.
 - [dos_getfilem (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_getfilem.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_GUIDGEN
 *** Name
@@ -39264,8 +38960,7 @@ Vendor-defined; see Source Notes.
 - [dos_guidgen (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_guidgen.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_HLSTORGB
 *** Name
@@ -39297,8 +38992,7 @@ Vendor-defined; see Source Notes.
 - [dos_hlstorgb (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_hlstorgb.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_MKDIR
 *** Name
@@ -39330,8 +39024,7 @@ Vendor-defined; see Source Notes.
 - [dos_mkdir (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_mkdir.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_POPUPMENU
 *** Name
@@ -39363,8 +39056,7 @@ Vendor-defined; see Source Notes.
 - [dos_popupmenu (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_popupmenu.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_RGBTOACI
 *** Name
@@ -39396,8 +39088,7 @@ Vendor-defined; see Source Notes.
 - [dos_rgbtoaci (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_rgbtoaci.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_RGBTOHLS
 *** Name
@@ -39429,8 +39120,7 @@ Vendor-defined; see Source Notes.
 - [dos_rgbtohls (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_rgbtohls.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_STRTOKENS
 *** Name
@@ -39450,13 +39140,13 @@ Arguments are described in the vendor page; see Source Notes.
 *** Description
 This function splits the given string into a list of tokens, based on specified splitters string; if any optional 3rd argument is given, the result list does not contain empty strings. string : (string) the string to be splitted into a list of tokens splitters : (string) specifies the characters used as delimiters [NoEmptyParts] : if a third argument is given, empty strings are not returned Examples : (dos_strtokens "Split this string
 of 	tokens
-and more strings; end." "	
+and more strings; end." "
  ,;" T) ("Split" "this" "string" "of" "tokens" "and" "more" "strings" "end.") (dos_strtokens "Split this string
 of 	tokens
-and more strings; end." "	
+and more strings; end." "
  ,;" NIL) ("Split" "this" "string" "of" "tokens" "and" "more" "strings" "end.") (dos_strtokens "Split this string
 of 	tokens
-and more strings; end." "	
+and more strings; end." "
  ,;") ("Split" "this" "string" "of" "" "tokens" "and" "more" "strings" "" "end.")
 
 *** Return Values
@@ -39471,8 +39161,7 @@ Vendor-defined; see Source Notes.
 - [dos_strtokens (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_strtokens.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_STRTRIM
 *** Name
@@ -39504,8 +39193,7 @@ Vendor-defined; see Source Notes.
 - [dos_strtrim (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_strtrim.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_STRTRIMLEFT
 *** Name
@@ -39537,8 +39225,7 @@ Vendor-defined; see Source Notes.
 - [dos_strtrimleft (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_strtrimleft.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 ** Function Entry: DOS_STRTRIMRIGHT
 *** Name
@@ -39570,8 +39257,7 @@ Vendor-defined; see Source Notes.
 - [dos_strtrimright (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/dos_strtrimright.htm)
 - Status: documented (Phase 3 follow-up: body filled from the BricsCAD V26 per-symbol page on 2026-04-26).
 
-#+LATEX: 
-ewpage
+#+LATEX: \newpage
 
 * 25 Environment Profiles and Dialects
 ** Overview
