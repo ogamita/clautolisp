@@ -57,4 +57,5 @@
    (namestring (merge-pathnames program-name release-directory nil))
    :executable t
    :compression 9
+   :save-runtime-options t
    :toplevel (make-toplevel-function main-function)))
