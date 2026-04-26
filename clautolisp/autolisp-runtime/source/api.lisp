@@ -1090,18 +1090,23 @@
               (autolisp-eval-progn (rest clause) context)
               test-value))))))
 
+;; AutoLISP `and` / `or` are *boolean*: they return T / nil only,
+;; not the first non-nil expression value (Common Lisp). This matches
+;; Bricsys's per-symbol pages — confirmed for BricsCAD V26 against the
+;; Phase-5 product test on 2026-04-26 (see autolisp-spec entry for
+;; OR / AND, plus vendor-inventory-2026.org §10 item 11). Short-circuit
+;; evaluation is preserved; only the return shape changes.
 (defun eval-and-form (arguments context)
-  (let ((result (intern-autolisp-symbol "T")))
-    (dolist (argument arguments result)
-      (setf result (autolisp-eval argument context))
-      (when (autolisp-false-p result)
+  (let ((t-symbol (intern-autolisp-symbol "T")))
+    (dolist (argument arguments t-symbol)
+      (when (autolisp-false-p (autolisp-eval argument context))
         (return nil)))))
 
 (defun eval-or-form (arguments context)
-  (dolist (argument arguments nil)
-    (let ((result (autolisp-eval argument context)))
-      (when (autolisp-true-p result)
-        (return result)))))
+  (let ((t-symbol (intern-autolisp-symbol "T")))
+    (dolist (argument arguments nil)
+      (when (autolisp-true-p (autolisp-eval argument context))
+        (return t-symbol)))))
 
 (defun eval-while-form (arguments context)
   (unless (>= (length arguments) 1)

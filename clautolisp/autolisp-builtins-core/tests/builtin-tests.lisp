@@ -1256,7 +1256,10 @@
                  (make-autolisp-string path)
                  (make-autolisp-string "w"))))
       (call-autolisp-function prin1-fn quoted file)
-      (call-autolisp-function terpri-fn file)
+      ;; Use `(princ "\n" file)` instead of `(terpri file)`: AutoLISP
+      ;; `terpri` is zero-arity (BricsCAD V26 product test, 2026-04-26;
+      ;; spec entry for TERPRI).
+      (call-autolisp-function princ-fn (make-autolisp-string (string #\Newline)) file)
       (call-autolisp-function princ-fn hello file)
       (call-autolisp-function print-fn list-value file)
       (call-autolisp-function (autolisp-symbol-function (find-autolisp-symbol "CLOSE")) file))
@@ -1297,3 +1300,99 @@
                        (getf (autolisp-runtime-error-details condition)
                              :builtin))))))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))))
+
+(test builtin-terpri-is-zero-arity
+  ;; AutoLISP `terpri` does not accept a file-handle argument. The
+  ;; 2-argument form `(terpri stream)` raises "too few / too many
+  ;; arguments at [TERPRI]" in BricsCAD V26 (Phase-5 product test,
+  ;; 2026-04-26; spec entry TERPRI). The Common Lisp implementation
+  ;; surface enforces this via the function arity itself.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((terpri-fn (autolisp-symbol-function (find-autolisp-symbol "TERPRI")))
+        (*standard-output* (make-string-output-stream)))
+    (is (null (call-autolisp-function terpri-fn)))
+    ;; Calling with an extra argument must NOT silently succeed.
+    ;; The exact host condition class (program-error /
+    ;; autolisp-runtime-error / simple-error) depends on whether the
+    ;; SUBR wrapper traps the host arity error, so we just assert that
+    ;; *some* condition was signalled.
+    (let ((signalled nil))
+      (handler-case
+          (call-autolisp-function terpri-fn (make-autolisp-string "stream"))
+        (condition () (setf signalled t)))
+      (is (eq t signalled)))))
+
+(test builtin-print-trailing-space
+  ;; AutoLISP `print` writes leading newline + prin1 form + trailing
+  ;; SPACE (not a trailing newline). Confirmed by the BricsCAD V26
+  ;; product test on 2026-04-26: print-string.txt was the literal
+  ;; nine characters `\n"hello" `.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((print-fn (autolisp-symbol-function (find-autolisp-symbol "PRINT")))
+         (open-fn (autolisp-symbol-function (find-autolisp-symbol "OPEN")))
+         (close-fn (autolisp-symbol-function (find-autolisp-symbol "CLOSE")))
+         (directory (format nil "/tmp/clautolisp-print-frame-~D/" (random 1000000000)))
+         (path (concatenate 'string directory "print.txt"))
+         (hello (make-autolisp-string "hello"))
+         contents)
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
+    (ensure-directories-exist directory)
+    (let ((file (call-autolisp-function open-fn
+                                        (make-autolisp-string path)
+                                        (make-autolisp-string "w"))))
+      (call-autolisp-function print-fn hello file)
+      (call-autolisp-function close-fn file))
+    (with-open-file (stream path :direction :input
+                                 :element-type '(unsigned-byte 8))
+      (let ((bytes (make-array 32 :element-type '(unsigned-byte 8) :fill-pointer 0)))
+        (loop for byte = (read-byte stream nil nil)
+              while byte
+              do (vector-push-extend byte bytes))
+        (setf contents
+              (map 'string #'code-char (coerce bytes 'simple-vector)))))
+    (is (string= (concatenate 'string (string #\Newline) "\"hello\" ") contents))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))))
+
+(test builtin-atoi-strtol-style
+  ;; AutoLISP `atoi` follows a strtol(..., 10) C-style lex model.
+  ;; Confirmed against BricsCAD V26 by the Phase-5 product test on
+  ;; 2026-04-26 (results.sexp, suite "atoi"). Lex edges: skip leading
+  ;; whitespace, accept optional sign, longest decimal-digit prefix,
+  ;; trailing junk truncates, decimal-fraction truncates toward zero,
+  ;; `0x`-prefix returns 0 (no hex auto-detect), leading-zero forms
+  ;; are decimal (NOT octal).
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((atoi-fn (autolisp-symbol-function (find-autolisp-symbol "ATOI"))))
+    (is (= 17  (call-autolisp-function atoi-fn (make-autolisp-string "17"))))
+    (is (= 17  (call-autolisp-function atoi-fn (make-autolisp-string "017"))))
+    (is (= 0   (call-autolisp-function atoi-fn (make-autolisp-string "0xbabe"))))
+    (is (= 17  (call-autolisp-function atoi-fn (make-autolisp-string "+17"))))
+    (is (= -17 (call-autolisp-function atoi-fn (make-autolisp-string "-17"))))
+    (is (= 17  (call-autolisp-function atoi-fn (make-autolisp-string "17x"))))
+    (is (= 17  (call-autolisp-function atoi-fn (make-autolisp-string " 17"))))
+    (is (= 3   (call-autolisp-function atoi-fn (make-autolisp-string "3.9"))))
+    (is (= 0   (call-autolisp-function atoi-fn (make-autolisp-string "xyz"))))))
+
+(test builtin-atof-strtod-style
+  ;; AutoLISP `atof` follows a strtod-style lex model. Confirmed
+  ;; against BricsCAD V26 by the Phase-5 product test on 2026-04-26.
+  ;; This implementation deliberately omits C99 hex-float syntax
+  ;; (BricsCAD V26 accepts `(atof "0x1p4") -> 16.0`, but the
+  ;; clautolisp model is conservative). Decimal-comma is rejected
+  ;; (no locale sensitivity).
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((atof-fn (autolisp-symbol-function (find-autolisp-symbol "ATOF"))))
+    (is (= 3.5d0    (call-autolisp-function atof-fn (make-autolisp-string "3.5"))))
+    (is (= 0.5d0    (call-autolisp-function atof-fn (make-autolisp-string ".5"))))
+    (is (= 1.0d0    (call-autolisp-function atof-fn (make-autolisp-string "1."))))
+    (is (= 1000.0d0 (call-autolisp-function atof-fn (make-autolisp-string "1e3"))))
+    (is (= 17.0d0   (call-autolisp-function atof-fn (make-autolisp-string "017"))))
+    (is (= 3.0d0    (call-autolisp-function atof-fn (make-autolisp-string "3,5"))))
+    (is (= 3.5d0    (call-autolisp-function atof-fn (make-autolisp-string " 3.5"))))
+    (is (= 0.0d0    (call-autolisp-function atof-fn (make-autolisp-string "xyz"))))
+    ;; Conservative-clautolisp choice: hex-float is NOT accepted.
+    (is (= 0.0d0    (call-autolisp-function atof-fn (make-autolisp-string "0x1p4"))))))

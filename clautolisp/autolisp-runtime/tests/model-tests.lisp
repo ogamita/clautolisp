@@ -445,29 +445,42 @@
            (autolisp-eval (list name 7))))))
 
 (test autolisp-eval-and-or
+  ;; AutoLISP `and` / `or` return *T or nil only*, not the first
+  ;; non-nil expression value (Common Lisp). Confirmed against
+  ;; BricsCAD V26 by Phase-5 product test on 2026-04-26 and against
+  ;; Bricsys's per-symbol pages for both AND and OR. Short-circuit
+  ;; evaluation is preserved; only the return shape changes.
   (reset-autolisp-symbol-table)
   (let* ((and-symbol (intern-autolisp-symbol "AND"))
          (or-symbol (intern-autolisp-symbol "OR"))
          (setq-symbol (intern-autolisp-symbol "SETQ"))
+         (t-symbol (intern-autolisp-symbol "T"))
          (foo (intern-autolisp-symbol "FOO")))
     (set-variable foo 0)
-    (is (eq (intern-autolisp-symbol "T")
-            (autolisp-eval (list and-symbol))))
+    ;; Empty `and` returns T per Bricsys's documented "T if all
+    ;; arguments are non-NIL" rule (vacuous truth).
+    (is (eq t-symbol (autolisp-eval (list and-symbol))))
+    ;; Empty `or` returns nil.
     (is (null (autolisp-eval (list or-symbol))))
-    (is (= 3 (autolisp-eval (list and-symbol 1 2 3))))
-    (is (= 7 (autolisp-eval (list or-symbol nil nil 7 9))))
+    ;; Non-empty `and` of all-true arguments returns T (NOT 3).
+    (is (eq t-symbol (autolisp-eval (list and-symbol 1 2 3))))
+    ;; Non-empty `or` with a non-nil somewhere returns T (NOT 7).
+    (is (eq t-symbol (autolisp-eval (list or-symbol nil nil 7 9))))
+    ;; Short-circuit: `and` stops at first nil; setq side effect not run.
     (is (null
          (autolisp-eval
           (list and-symbol
                 nil
                 (list setq-symbol foo 99)))))
     (is (= 0 (autolisp-symbol-value foo)))
-    (is (= 12
-           (autolisp-eval
-            (list or-symbol
-                  nil
-                  (list setq-symbol foo 12)
-                  99))))
+    ;; Short-circuit: `or` stops at first non-nil; setq side effect IS run
+    ;; (because the (setq foo 12) form is the first non-nil clause).
+    (is (eq t-symbol
+            (autolisp-eval
+             (list or-symbol
+                   nil
+                   (list setq-symbol foo 12)
+                   99))))
     (is (= 12 (autolisp-symbol-value foo)))))
 
 (test autolisp-eval-while-and-repeat
