@@ -21,7 +21,7 @@
        ((= status 1)
         (princ (strcat "\nHello, "
                        (if (= shout "1")
-                           (xstrcase name :upper)
+                           (strcase name)
                            name)
                        "!")))
        (T (princ "\nCancelled.")))))

@@ -222,8 +222,14 @@ exit). Returns the dialog's terminal status integer."
   "Invoked by the renderer when a tile fires its action. Looks up
 the registered AutoLISP callback (a list of forms or a callable)
 and invokes it. Sets *$key$*, *$value$*, *$reason$* per the
-AutoLISP DCL contract. The callback may call done_dialog;
-afterwards `dcl-dialog-finished-p` is t."
+AutoLISP DCL contract. Records VALUE in the dialog's state map
+so that subsequent (get_tile KEY) returns what the user just
+entered. The callback may call done_dialog; afterwards
+`dcl-dialog-finished-p` is t."
+  ;; Update the value state before firing the callback so that
+  ;; (get_tile key) inside the callback observes the new value.
+  (when (stringp value)
+    (setf (gethash key (dcl-dialog-state dialog)) value))
   (let* ((callback (gethash key (dcl-dialog-actions dialog)))
          (key-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$KEY$"))
          (value-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$VALUE$"))
