@@ -285,6 +285,45 @@
       (is (eq function binding))
       (is (eq :namespace origin)))))
 
+(test separate-vlx-application-import-uses-export-registry
+  (reset-autolisp-symbol-table)
+  (let* ((document (make-document-namespace :name "DRAWING-DOC"))
+         (producer (make-separate-vlx-namespace :name "PRODUCER"))
+         (consumer (make-separate-vlx-namespace :name "CONSUMER"))
+         (session (make-runtime-session :current-document document))
+         (producer-context (make-evaluation-context
+                            :session session
+                            :current-document document
+                            :current-namespace producer))
+         (consumer-context (make-evaluation-context
+                            :session session
+                            :current-document document
+                            :current-namespace consumer))
+         (symbol-a (intern-autolisp-symbol "APP-FN-A"))
+         (symbol-b (intern-autolisp-symbol "APP-FN-B"))
+         (function-a (make-autolisp-subr "APP-FN-A" (lambda (x) (+ x 1))))
+         (function-b (make-autolisp-subr "APP-FN-B" (lambda (x) (+ x 2)))))
+    (register-runtime-session-vlx-namespace session producer)
+    (register-runtime-session-vlx-namespace session consumer)
+    (set-function symbol-a function-a producer-context)
+    (set-function symbol-b function-b producer-context)
+    (export-function-to-current-document symbol-a producer-context)
+    (export-function-to-current-document symbol-b producer-context)
+    (is (equal '("app-fn-a" "app-fn-b")
+               (mapcar (lambda (symbol)
+                         (string-downcase (autolisp-symbol-name symbol)))
+                       (import-functions-from-application
+                        "PRODUCER"
+                        consumer-context))))
+    (multiple-value-bind (binding-a boundp-a)
+        (lookup-function symbol-a consumer-context)
+      (is (not (null boundp-a)))
+      (is (eq function-a binding-a)))
+    (multiple-value-bind (binding-b boundp-b)
+        (lookup-function symbol-b consumer-context)
+      (is (not (null boundp-b)))
+      (is (eq function-b binding-b)))))
+
 (test autolisp-eval-self-evaluating-and-symbol-lookup
   (reset-autolisp-symbol-table)
   (let ((symbol (intern-autolisp-symbol "FOO")))

@@ -8,6 +8,7 @@
                 #:current-document-namespace-ref
                 #:current-document-namespace-set
                 #:export-function-to-current-document
+                #:import-functions-from-application
                 #:import-function-from-current-document
                 #:autolisp-file
                 #:autolisp-termination

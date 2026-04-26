@@ -73,6 +73,7 @@
                 #:export-function-to-current-document
                 #:enter-document-context
                 #:import-function-from-current-document
+                #:import-functions-from-application
                 #:runtime-session-blackboard-namespace
                 #:runtime-session-current-document
                 #:set-runtime-session-current-document
@@ -80,6 +81,7 @@
                 #:set-default-evaluation-context
                 #:set-autolisp-errno
                 #:set-function
+                #:register-runtime-session-vlx-namespace
                 #:set-variable
                 #:value-cell-value
                 #:runtime-value-p)

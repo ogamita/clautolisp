@@ -123,13 +123,17 @@
   (export-function-to-current-document object))
 
 (defun builtin-vl-doc-import (object)
-  (unless (typep object 'autolisp-symbol)
-    (signal-builtin-argument-error
-     :invalid-symbol-argument
-     "VL-DOC-IMPORT"
-     "VL-DOC-IMPORT currently expects an AutoLISP symbol designator, got ~S."
-     object))
-  (import-function-from-current-document object))
+  (cond
+    ((typep object 'autolisp-symbol)
+     (import-function-from-current-document object))
+    ((typep object 'autolisp-string)
+     (import-functions-from-application object))
+    (t
+     (signal-builtin-argument-error
+      :invalid-symbol-argument
+      "VL-DOC-IMPORT"
+      "VL-DOC-IMPORT currently expects an AutoLISP symbol or application string, got ~S."
+      object))))
 
 (defun require-function-definition-list (object operator-name)
   (unless (and (consp object) (listp object))

@@ -61,6 +61,8 @@
    #:runtime-session-errno
    #:find-runtime-session-document
    #:register-runtime-session-document
+   #:find-runtime-session-vlx-namespace
+   #:register-runtime-session-vlx-namespace
    #:set-runtime-session-current-document
    #:autolisp-file
    #:make-autolisp-file
@@ -122,6 +124,7 @@
    #:current-document-namespace-set
    #:export-function-to-current-document
    #:import-function-from-current-document
+   #:import-functions-from-application
    #:blackboard-ref
    #:blackboard-set
    #:propagate-variable
