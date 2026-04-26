@@ -58,4 +58,12 @@
    #:current-dcl-renderer
    #:make-noop-renderer
    ;; Terminal renderer
-   #:make-terminal-renderer))
+   #:make-terminal-renderer
+   ;; Phase 15b — sexp wire protocol + subprocess renderer
+   #:*sexp-protocol-version*
+   #:sexp-wire-error
+   #:sexp-wire-error-message
+   #:read-sexp-message
+   #:write-sexp-message
+   #:tile->sexp
+   #:make-subprocess-renderer))

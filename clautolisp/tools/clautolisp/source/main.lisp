@@ -18,6 +18,8 @@
   (format t "  --host NAME        HAL backend: mock (default), null.~%")
   (format t "  --mock-input PATH  Attach the file at PATH as the MockHost prompt-stream.~%")
   (format t "                     Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
+  (format t "  --gui CMD          DCL renderer: subprocess CMD speaking the sexp wire protocol.~%")
+  (format t "                     Defaults to the built-in terminal renderer (or $CLAUTOLISP_GUI).~%")
   (format t "  -x EXPRESSION      Evaluate EXPRESSION instead of reading a file.~%")
   (format t "  --quiet            Suppress the REPL banner; only the prompt is shown.~%")
   (format t "  --version          Print the version string and exit.~%")
@@ -50,18 +52,20 @@
     dialect))
 
 (defun parse-arguments (arguments)
-  "Returns (values dialect mode payload quiet-p host mock-input).
+  "Returns (values dialect mode payload quiet-p host mock-input gui).
 MODE is :file, :expression or :repl. PAYLOAD is the FILE path or
 EXPRESSION string (nil for :repl). QUIET-P suppresses the REPL
 banner. HOST is the resolved HAL backend instance, defaulting to
 a fresh MockHost. MOCK-INPUT, if non-nil, is a pathname to attach
-as the MockHost's prompt-stream."
+as the MockHost's prompt-stream. GUI, if non-nil, is the
+subprocess command line for the DCL renderer."
   (let ((dialect (autolisp-dialect-strict))
         (mode :repl)
         (payload nil)
         (quiet-p nil)
         (host (make-mock-host))
-        (mock-input nil))
+        (mock-input nil)
+        (gui nil))
     (loop while arguments
           for argument = (pop arguments)
           do (cond
@@ -91,6 +95,11 @@ as the MockHost's prompt-stream."
                 (unless arguments
                   (error "Missing argument after --mock-input."))
                 (setf mock-input (pop arguments)))
+               ((string= argument "--gui")
+                (unless arguments
+                  (error "Missing argument after --gui."))
+                (setf gui (uiop:split-string (pop arguments)
+                                              :separator '(#\Space))))
                ((string= argument "-x")
                 (unless arguments
                   (error "Missing expression after -x."))
@@ -102,7 +111,7 @@ as the MockHost's prompt-stream."
                (t
                 (setf mode :file)
                 (setf payload argument))))
-    (values dialect mode payload quiet-p host mock-input)))
+    (values dialect mode payload quiet-p host mock-input gui)))
 
 (defun span->string (span)
   (if (null span)
@@ -270,10 +279,20 @@ STREAM signalled end-of-file before any input was given."
         (report-error condition)
         (quit 2)))))
 
+(defun install-gui-renderer (gui-command)
+  "Switch the active DCL renderer to a subprocess driver if
+GUI-COMMAND is non-nil. Otherwise the terminal renderer
+(installed at autolisp-dcl load time) stays in effect."
+  (when gui-command
+    (clautolisp.autolisp-dcl:install-default-renderer
+     (clautolisp.autolisp-dcl:make-subprocess-renderer
+      :command gui-command))))
+
 (defun main (&rest argv)
   (handler-case
-      (multiple-value-bind (dialect mode payload quiet-p host mock-input)
+      (multiple-value-bind (dialect mode payload quiet-p host mock-input gui)
           (parse-arguments (rest argv))
+        (install-gui-renderer gui)
         (run-with-input dialect mode payload
                         :quiet-p quiet-p
                         :host host

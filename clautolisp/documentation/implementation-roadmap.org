@@ -861,24 +861,59 @@ Out of scope (Phase 15b):
 - Image tiles render as a stub.
 - No GUI subprocess driver yet.
 
-** Phase 15b — Pluggable GUI Protocol + Qt6 C++ Driver
-*Goal:* a wire protocol that lets a separate process (Qt6 or
-web) act as the DCL renderer, while keeping the existing
-terminal renderer as the documented fallback.
+** Phase 15b — Pluggable GUI Protocol + Qt6 C++ Driver [DONE 2026-04-26]
+*Goal:* a wire protocol that lets a separate process act as the
+DCL renderer, while keeping the terminal renderer as the
+documented fallback.
 
-Scope:
-- Wire-protocol design (JSON-line over stdio, or a Unix
-  socket): ~open-dialog~, ~set-tile~, ~mode-tile~, ~focus~,
-  ~close-dialog~ messages downstream; ~action~, ~done~
-  messages upstream.
-- ~clautolisp-gui-driver~ ASDF system that wraps the wire
-  protocol behind a ~dcl-renderer~ instance.
-- Reference Qt6 C++ subprocess (~tools/clautolisp-gui-qt~)
-  that consumes the protocol.
-- Selection mechanism: ~CLAUTOLISP_GUI~ env var or
-  ~--gui qt~ CLI flag.
-- ~start_list~ / ~add_list~ / ~end_list~ wired through to a
-  list-box widget on the GUI side.
+Realised scope:
+- Sexp-based wire protocol (~autolisp-dcl/source/sexp-wire.lisp~).
+  Hand-rolled reader and writer — not full CL — so a non-CL
+  driver implements it cheaply. Token grammar: parens, quoted
+  strings with the standard escapes, ~:keywords~, integers and
+  floats, ~nil~ / ~t~ literals, bare identifiers folded to
+  uppercase keywords. Each message is one s-expression
+  terminated by a newline; readability is a design goal.
+- Downstream messages: ~(:open-dialog DID NAME TILE-FORM)~,
+  ~(:close-dialog DID STATUS)~, ~(:set-tile DID KEY VALUE)~,
+  ~(:focus DID KEY)~, ~(:mode-tile DID KEY MODE)~, ~(:bye)~,
+  plus ~(:start-list ...)~, ~(:add-list ...)~, ~(:end-list ...)~
+  reserved.
+- Upstream messages: ~(:action DID KEY VALUE REASON)~,
+  ~(:done DID STATUS)~, ~(:hello PROTOCOL-VERSION)~,
+  ~(:error MESSAGE)~.
+- TILE-FORM grammar:
+  ~(:tile TYPE KEY (:attr (NAME VALUE) ...) (:children TILE-FORM ...))~.
+- ~make-subprocess-renderer~: a ~dcl-renderer~ implementation
+  that funnels every event over the wire protocol to a child
+  process spawned via ~uiop:launch-program~. The subprocess is
+  reaped when the last active dialog closes.
+- ~--gui CMD~ CLI flag and ~CLAUTOLISP_GUI~ environment variable
+  in ~clautolisp-tool~. When neither is set, the built-in
+  terminal renderer remains in effect.
+- Reference Qt6 C++ subprocess in ~tools/clautolisp-gui-qt~
+  (CMake build): ~main.cpp~ event loop, ~sexp.{hpp,cpp}~ reader
+  / writer (mirrors the CL grammar), ~wire.{hpp,cpp}~
+  TILE-FORM decoder, ~dialog_window.{hpp,cpp}~ widget tree
+  builder. Supports ~text~, ~button~, ~edit_box~, ~toggle~,
+  ~list_box~, ~popup_list~, ~row~, ~column~, ~boxed_row~,
+  ~boxed_column~, ~ok_only~, ~ok_cancel~, ~ok_cancel_help~.
+- 8 new wire-protocol tests (round-trip primitives, escapes,
+  lists, nested forms, multi-message stream, error path, tile
+  encoding) and 3 subprocess-renderer tests (write-end
+  formatting + tile-encoding shape + write/read symmetry).
+  Total 57 DCL checks, all passing.
+
+Out of scope (next phases):
+- ~start_image~ / ~vector_image~ / ~slide_image~ widgets are
+  not yet rendered by the Qt6 driver; messages are reserved
+  but not produced.
+- ~start_list~ / ~add_list~ / ~end_list~ on the runtime side
+  remain placeholder no-ops; the wire-protocol reservation is
+  ready for when a real DCL application exercises them.
+- No autobuild of the Qt6 driver in the project Makefile —
+  CMake usage is documented in
+  ~tools/clautolisp-gui-qt/README.org~.
 
 ** Phase 16 — LiveHost Adapter
 *Goal:* run AutoLISP scripts through clautolisp against an actual
