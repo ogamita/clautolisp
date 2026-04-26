@@ -13,6 +13,16 @@
 #include <QRadioButton>
 #include <QVBoxLayout>
 
+#include <cstdlib>
+#include <iostream>
+
+namespace {
+bool guiDebug() {
+    static const bool flag = std::getenv("CLAUTOLISP_GUI_DEBUG") != nullptr;
+    return flag;
+}
+} // namespace
+
 namespace clautolisp {
 
 namespace {
@@ -165,12 +175,30 @@ QWidget* DialogWindow::buildTile(const Tile& tile) {
 }
 
 void DialogWindow::flushInputs() {
-    for (auto* edit : findChildren<QLineEdit*>()) {
+    auto edits = findChildren<QLineEdit*>();
+    auto boxes = findChildren<QCheckBox*>();
+    if (guiDebug()) {
+        std::cerr << "[gui-qt] flushInputs: "
+                  << edits.size() << " edits, "
+                  << boxes.size() << " toggles\n";
+        std::cerr.flush();
+    }
+    for (auto* edit : edits) {
+        if (guiDebug()) {
+            std::cerr << "[gui-qt] flush edit '" << edit->objectName().toStdString()
+                      << "' = '" << edit->text().toStdString() << "'\n";
+            std::cerr.flush();
+        }
         if (!edit->objectName().isEmpty()) {
             actionFn_(edit->objectName(), edit->text(), "selected");
         }
     }
-    for (auto* box : findChildren<QCheckBox*>()) {
+    for (auto* box : boxes) {
+        if (guiDebug()) {
+            std::cerr << "[gui-qt] flush toggle '" << box->objectName().toStdString()
+                      << "' = " << (box->isChecked() ? "1" : "0") << "\n";
+            std::cerr.flush();
+        }
         if (!box->objectName().isEmpty()) {
             actionFn_(box->objectName(), box->isChecked() ? "1" : "0", "selected");
         }
