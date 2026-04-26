@@ -117,6 +117,7 @@
    #:call-with-autolisp-error-handler
    #:autolisp-errno
    #:autolisp-runtime-error-errno
+   #:signal-autolisp-runtime-error
    #:set-autolisp-errno
    #:namespace-binding-cell
    #:namespace-value-cell
