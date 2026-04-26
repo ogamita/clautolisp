@@ -11,28 +11,33 @@
   (original-name nil :type (or null string))
   (plist '() :type list))
 
-(defstruct value-cell
-  (value nil)
-  (bound-p nil :type boolean))
+;;; AutoLISP is a Lisp-1 dialect: a symbol carries a single binding
+;;; cell that is shared by variable and function uses. SETQ and DEFUN
+;;; both write to that single cell; the most recent write wins.
+;;;
+;;; The runtime models that with a single `binding-cell` struct per
+;;; symbol per namespace. The optional `compatibility-definition`
+;;; slot is the side-channel DEFUN-Q stores a list-form copy of the
+;;; function in (only DEFUN-Q populates it; ordinary SETQ and DEFUN
+;;; clear it). See autolisp-spec, chapter 7, "Single-Cell Symbol
+;;; Binding (Lisp-1)" for the normative rule and its vendor evidence.
 
-(defstruct function-cell
-  (function nil)
+(defstruct binding-cell
+  (value nil)
   (bound-p nil :type boolean)
   (compatibility-definition nil :type list))
 
 (defstruct document-namespace
   (name "DOCUMENT" :type string)
-  (value-cells (make-hash-table :test #'eq))
-  (function-cells (make-hash-table :test #'eq)))
+  (bindings (make-hash-table :test #'eq)))
 
 (defstruct blackboard-namespace
   (name "BLACKBOARD" :type string)
-  (value-cells (make-hash-table :test #'eq)))
+  (bindings (make-hash-table :test #'eq)))
 
 (defstruct separate-vlx-namespace
   (name "VLX" :type string)
-  (value-cells (make-hash-table :test #'eq))
-  (function-cells (make-hash-table :test #'eq)))
+  (bindings (make-hash-table :test #'eq)))
 
 (defstruct dynamic-binding
   symbol

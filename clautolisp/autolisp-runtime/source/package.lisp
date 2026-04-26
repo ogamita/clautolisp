@@ -30,6 +30,10 @@
    #:autolisp-symbol-value-bound-p
    #:autolisp-symbol-function
    #:autolisp-symbol-function-bound-p
+   #:binding-cell
+   #:binding-cell-value
+   #:binding-cell-bound-p
+   #:binding-cell-compatibility-definition
    #:value-cell
    #:value-cell-value
    #:value-cell-bound-p
@@ -114,6 +118,7 @@
    #:autolisp-errno
    #:autolisp-runtime-error-errno
    #:set-autolisp-errno
+   #:namespace-binding-cell
    #:namespace-value-cell
    #:namespace-function-cell
    #:document-namespace-ref
@@ -207,10 +212,9 @@
    #:make-dynamic-binding
    #:make-dynamic-frame
    #:make-evaluation-context
-   #:make-function-cell
+   #:make-binding-cell
    #:make-runtime-session
    #:make-separate-vlx-namespace
-   #:make-value-cell
    #:make-autolisp-usubr
    #:make-autolisp-catch-all-error
    #:make-autolisp-variant

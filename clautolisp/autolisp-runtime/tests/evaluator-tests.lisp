@@ -54,3 +54,48 @@ value of the last expression."
     :close-stream
     (let ((result (run-autolisp-file path)))
       (is (eql 3 result)))))
+
+;;; --- Lisp-1 / single-cell binding semantics ------------------------
+;;;
+;;; AutoLISP is Lisp-1 (autolisp-spec, chapter 7): SETQ and DEFUN
+;;; share one per-symbol binding cell; the most recent assignment
+;;; wins. These tests pin the contract so a future Lisp-2 regression
+;;; would fail loudly.
+
+(test lisp1-defun-overwrites-prior-setq-value
+  "After (setq foo 42) (defun foo (x) ...), evaluating the bare symbol
+foo returns the function object, not 42."
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string "(setq foo 42) (defun foo (x) (+ 1 x))")
+  (let* ((symbol (intern-autolisp-symbol "FOO"))
+         (value (autolisp-symbol-value symbol)))
+    (is (typep value 'clautolisp.autolisp-runtime:autolisp-usubr))))
+
+(test lisp1-defun-then-call-after-setq-overwrite
+  "After (defun bar ...) (setq bar 42), calling (bar 5) signals
+:undefined-function — the function value was overwritten."
+  (reset-autolisp-symbol-table)
+  (let ((signalled-code nil))
+    (handler-case
+        (run-autolisp-string
+         "(defun bar (x) (+ 1 x)) (setq bar 42) (bar 5)")
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :undefined-function signalled-code))))
+
+(test lisp1-variable-holding-subr-is-callable
+  "(setq myfunc <some-subr>) followed by (myfunc ...) calls the stored
+subroutine — single-cell rule (BricsCAD defect SR44723)."
+  (reset-autolisp-symbol-table)
+  (let ((result
+         (run-autolisp-string
+          "(setq myfunc add2) (myfunc 3 4)"
+          :setup-fn
+          (lambda (context)
+            (declare (ignore context))
+            (let ((adder (clautolisp.autolisp-runtime:make-autolisp-subr
+                          "ADD2"
+                          (lambda (a b) (+ a b)))))
+              (clautolisp.autolisp-runtime:set-autolisp-symbol-function
+               (intern-autolisp-symbol "ADD2") adder))))))
+    (is (eql 7 result))))

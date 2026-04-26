@@ -45,6 +45,8 @@
                 #:autolisp-read-from-string
                 #:autolisp-subr
                 #:autolisp-subr-name
+                #:autolisp-usubr
+                #:autolisp-usubr-name
                 #:autolisp-true-p
                 #:autolisp-type
                 #:autolisp-vl-symbol-name
