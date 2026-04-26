@@ -57,6 +57,21 @@ xrecord representation, or another dictionary)."
 
 ;;; --- Sysvar cell -----------------------------------------------
 
+(defstruct mock-com-object
+  "In-memory COM-object record for MockHost. PROGID is the
+ProgID string the object was created from. PROPERTIES is a
+case-insensitive hash-table from name string to current value
+(populated initially from the *com-progids* template, mutated by
+vlax-put-property). METHODS is a case-insensitive hash-table from
+name string to a (lambda (mock object args) -> value) closure
+that implements the method. RELEASED-P is set by
+vlax-release-object."
+  (id          (gensym "COM-") :type t)
+  (progid      "" :type string)
+  (properties  (make-hash-table :test #'equalp))
+  (methods     (make-hash-table :test #'equalp))
+  (released-p  nil :type boolean))
+
 (defstruct sysvar-cell
   "Single AutoLISP system variable. KIND is one of :integer,
 :short, :real, :string, :point, :symbol — used by the mock
@@ -129,7 +144,16 @@ return. Cleared / reset when (tblnext KIND :rewind t).")
                              :documentation "Per-host scratch slot
 for the most recent INITGET call. Bound to an `initget-state`
 object; consumed and cleared by the next get* invocation, matching
-AutoLISP's documented one-shot semantics."))
+AutoLISP's documented one-shot semantics.")
+   (com-objects              :initform (make-hash-table :test #'equal)
+                             :reader   mock-host-com-objects
+                             :documentation "Hash-table mapping a
+unique COM-object id (string) to a MOCK-COM-OBJECT struct. The
+AutoLISP-visible VLA-object wraps that id.")
+   (next-com-counter         :initform 0
+                             :accessor mock-host-next-com-counter
+                             :documentation "Allocator state for
+COM-object ids."))
   (:default-initargs :name "mock-host")
   (:documentation "In-memory deterministic CAD-database substitute
 backend for clautolisp. Phase 9 — data structures only; Phase 10

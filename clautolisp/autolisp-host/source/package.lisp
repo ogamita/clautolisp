@@ -64,4 +64,13 @@
    #:host-grvecs
    #:host-grclear
    #:host-grread
-   #:host-redraw))
+   #:host-redraw
+   ;; --- COM / Visual LISP COM bridge (Phase 13) -----------------
+   #:host-vlax-create-object
+   #:host-vlax-get-object
+   #:host-vlax-release-object
+   #:host-vlax-get-property
+   #:host-vlax-put-property
+   #:host-vlax-invoke-method
+   #:host-vlax-property-available-p
+   #:host-vlax-method-applicable-p))

@@ -53,7 +53,15 @@
                 #:host-grvecs
                 #:host-grclear
                 #:host-grread
-                #:host-redraw)
+                #:host-redraw
+                #:host-vlax-create-object
+                #:host-vlax-get-object
+                #:host-vlax-release-object
+                #:host-vlax-get-property
+                #:host-vlax-put-property
+                #:host-vlax-invoke-method
+                #:host-vlax-property-available-p
+                #:host-vlax-method-applicable-p)
   (:export
    ;; Class hierarchy
    #:mock-host
@@ -121,4 +129,19 @@
    #:mock-host-tblnext-iterators
    #:initget-state
    #:initget-bits
-   #:initget-keywords))
+   #:initget-keywords
+   ;; COM bridge (Phase 13)
+   #:mock-com-object
+   #:make-mock-com-object
+   #:mock-com-object-id
+   #:mock-com-object-progid
+   #:mock-com-object-properties
+   #:mock-com-object-methods
+   #:mock-com-object-released-p
+   #:mock-host-com-objects
+   #:mock-host-next-com-counter
+   #:mock-host-allocate-com-id
+   #:mock-host-find-com-object
+   #:*com-progids*
+   #:register-com-progid
+   #:populate-default-com-progids))

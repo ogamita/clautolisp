@@ -1738,6 +1738,67 @@
         (is (null (call-autolisp-function handent-fn
                                           (make-autolisp-string "DEADBEEF"))))))))
 
+(test phase13-vlax-builtins-on-mock-host
+  ;; Round-trip a VLA-object create -> get-property -> put-property
+  ;; -> invoke-method, plus a SAFEARRAY round-trip and a VARIANT
+  ;; type-tagged round-trip.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((mock (clautolisp.autolisp-mock-host:make-mock-host))
+         (session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:default-evaluation-context))))
+    (clautolisp.autolisp-runtime:set-runtime-session-host session mock)
+    (let* ((create-fn  (autolisp-symbol-function (find-autolisp-symbol "VLAX-CREATE-OBJECT")))
+           (get-prop   (autolisp-symbol-function (find-autolisp-symbol "VLAX-GET-PROPERTY")))
+           (put-prop   (autolisp-symbol-function (find-autolisp-symbol "VLAX-PUT-PROPERTY")))
+           (invoke     (autolisp-symbol-function (find-autolisp-symbol "VLAX-INVOKE-METHOD")))
+           (release    (autolisp-symbol-function (find-autolisp-symbol "VLAX-RELEASE-OBJECT")))
+           (released-p (autolisp-symbol-function (find-autolisp-symbol "VLAX-OBJECT-RELEASED-P")))
+           (vla        (call-autolisp-function create-fn
+                                                (make-autolisp-string "AutoCAD.Document"))))
+      (is (typep vla 'clautolisp.autolisp-runtime:autolisp-vla-object))
+      (flet ((prop-as-string (vla name)
+               (let ((v (call-autolisp-function get-prop vla
+                                                 (make-autolisp-string name))))
+                 (cond ((stringp v) v)
+                       ((typep v 'clautolisp.autolisp-runtime:autolisp-string)
+                        (autolisp-string-value v))
+                       (t v)))))
+        (is (string= "Drawing.dwg" (prop-as-string vla "Name")))
+        (call-autolisp-function put-prop vla
+                                (make-autolisp-string "Name")
+                                (make-autolisp-string "Renamed.dwg"))
+        (is (string= "Renamed.dwg" (prop-as-string vla "Name")))
+        (call-autolisp-function invoke vla
+                                (make-autolisp-string "SaveAs")
+                                (make-autolisp-string "Other.dwg"))
+        (is (string= "Other.dwg" (prop-as-string vla "Name"))))
+      (call-autolisp-function release vla)
+      (is (string= "T"
+                   (autolisp-symbol-name
+                    (call-autolisp-function released-p vla))))))
+  ;; SAFEARRAY round-trip.
+  (let ((make-fn (autolisp-symbol-function (find-autolisp-symbol "VLAX-MAKE-SAFEARRAY")))
+        (fill-fn (autolisp-symbol-function (find-autolisp-symbol "VLAX-SAFEARRAY-FILL")))
+        (get-fn  (autolisp-symbol-function (find-autolisp-symbol "VLAX-SAFEARRAY-GET-ELEMENT")))
+        (list-fn (autolisp-symbol-function (find-autolisp-symbol "VLAX-SAFEARRAY->LIST"))))
+    (let ((sa (call-autolisp-function make-fn
+                                       (intern-autolisp-symbol "VARIANT")
+                                       (cons 0 2))))
+      (call-autolisp-function fill-fn sa '(10 20 30))
+      (is (eql 10 (call-autolisp-function get-fn sa 0)))
+      (is (eql 30 (call-autolisp-function get-fn sa 2)))
+      (is (equal '(10 20 30) (call-autolisp-function list-fn sa)))))
+  ;; VARIANT round-trip.
+  (let ((make-fn (autolisp-symbol-function (find-autolisp-symbol "VLAX-MAKE-VARIANT")))
+        (type-fn (autolisp-symbol-function (find-autolisp-symbol "VLAX-VARIANT-TYPE")))
+        (val-fn  (autolisp-symbol-function (find-autolisp-symbol "VLAX-VARIANT-VALUE"))))
+    (let ((v (call-autolisp-function make-fn 42)))
+      (is (eql 42 (call-autolisp-function val-fn v)))
+      (is (string= "INTEGER"
+                   (autolisp-symbol-name
+                    (call-autolisp-function type-fn v)))))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs
