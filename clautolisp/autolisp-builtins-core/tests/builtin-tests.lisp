@@ -1880,3 +1880,69 @@ value is returned."
                                                (T       \"d\"))" x)
                                 :setup-fn #'install-core-into)))))
     (is (equal '("a" "b" "c" "d") labels))))
+
+;;; --- Phase 7 round-out: hyperbolics, predicates, list/string ----
+
+(test phase7-hyperbolic-math
+  "sinh / cosh / tanh / atanh return the IEEE-correct values for
+the canonical inputs."
+  (reset-autolisp-symbol-table)
+  (is (< (abs (- 1.1752011936438014d0
+                 (run-autolisp-string "(sinh 1.0)"
+                                       :setup-fn #'install-core-into)))
+         1d-12))
+  (is (< (abs (- 1.5430806348152437d0
+                 (run-autolisp-string "(cosh 1.0)"
+                                       :setup-fn #'install-core-into)))
+         1d-12))
+  (is (< (abs (- 0.7615941559557649d0
+                 (run-autolisp-string "(tanh 1.0)"
+                                       :setup-fn #'install-core-into)))
+         1d-12))
+  (is (< (abs (- 0.5493061443340549d0
+                 (run-autolisp-string "(atanh 0.5)"
+                                       :setup-fn #'install-core-into)))
+         1d-12)))
+
+(test phase7-power-is-expt
+  (reset-autolisp-symbol-table)
+  (is (eql 8 (run-autolisp-string "(power 2 3)"
+                                  :setup-fn #'install-core-into))))
+
+(test phase7-position-and-vl-position-agree
+  (reset-autolisp-symbol-table)
+  (is (eql 2 (run-autolisp-string "(position 'c '(a b c d))"
+                                  :setup-fn #'install-core-into)))
+  (is (eql 2 (run-autolisp-string "(vl-position 'c '(a b c d))"
+                                  :setup-fn #'install-core-into))))
+
+(test phase7-vl-remove-and-remove-agree
+  (reset-autolisp-symbol-table)
+  ;; remove returns a list; vl-remove is a synonym in V26.
+  (let ((via-remove (run-autolisp-string "(remove 2 '(1 2 3 2 4))"
+                                          :setup-fn #'install-core-into))
+        (via-vl     (run-autolisp-string "(vl-remove 2 '(1 2 3 2 4))"
+                                          :setup-fn #'install-core-into)))
+    (is (equal '(1 3 4) via-remove))
+    (is (equal '(1 3 4) via-vl))))
+
+(test phase7-vl-string-split-on-comma
+  (reset-autolisp-symbol-table)
+  (let ((parts (run-autolisp-string
+                "(vl-string-split \",\" \"a,bb,,c\")"
+                :setup-fn #'install-core-into)))
+    (is (equal '("a" "bb" "" "c")
+               (mapcar #'autolisp-string-value parts)))))
+
+(test phase7-vl-nanp-and-vl-infp
+  "Ordinary doubles are neither NaN nor infinite; integers and
+strings yield nil (not an error)."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(vl-nanp 1.0)"
+                                  :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vl-infp 1.0)"
+                                  :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vl-nanp 42)"
+                                  :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vl-infp \"hello\")"
+                                  :setup-fn #'install-core-into))))

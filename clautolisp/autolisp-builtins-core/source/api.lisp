@@ -1212,6 +1212,28 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
                   ;; FROM character with no counterpart in TO is dropped.
                   (t nil)))))))
 
+(defun builtin-vl-string-split (separator source)
+  ;; (vl-string-split SEPARATOR STRING) -> list of strings.
+  ;; Splits STRING on each character of SEPARATOR, in the spirit of
+  ;; BricsCAD's vl-string-split (and the ad-hoc string-split alias
+  ;; used by some scripts). Empty SEPARATOR returns the source as a
+  ;; single-element list.
+  (let* ((sep (autolisp-string-value
+               (require-string separator "VL-STRING-SPLIT")))
+         (s (autolisp-string-value (require-string source "VL-STRING-SPLIT")))
+         (sep-chars (coerce sep 'list))
+         (parts (cond
+                  ((null sep-chars) (list s))
+                  (t (loop with start = 0
+                           with result = '()
+                           for i from 0 below (length s)
+                           when (member (char s i) sep-chars)
+                             do (push (subseq s start i) result)
+                                (setf start (1+ i))
+                           finally (push (subseq s start) result)
+                                   (return (nreverse result)))))))
+    (mapcar #'make-autolisp-string parts)))
+
 (defun builtin-vl-string-subst (new-string old-string source &optional start)
   ;; (vl-string-subst NEW OLD STRING [START])
   ;; Replace the FIRST occurrence of OLD with NEW. If OLD does not
@@ -2065,6 +2087,48 @@ when no dialect is in scope."
 (defun builtin-tan (object)
   (tan (coerce (require-number object "TAN") 'double-float)))
 
+(defun builtin-sinh (object)
+  (sinh (coerce (require-number object "SINH") 'double-float)))
+
+(defun builtin-cosh (object)
+  (cosh (coerce (require-number object "COSH") 'double-float)))
+
+(defun builtin-tanh (object)
+  (tanh (coerce (require-number object "TANH") 'double-float)))
+
+(defun builtin-atanh (object)
+  (let ((value (coerce (require-number object "ATANH") 'double-float)))
+    (when (or (<= value -1.0d0) (>= value 1.0d0))
+      (signal-builtin-argument-error
+       :invalid-number-argument
+       "ATANH"
+       "ATANH expects a value in (-1, 1), got ~S."
+       object))
+    (atanh value)))
+
+(defun builtin-power (base exponent)
+  ;; Synonym for EXPT — present in BricsCAD V26 alongside EXPT.
+  (builtin-expt base exponent))
+
+(defun builtin-vl-nanp (object)
+  ;; (vl-nanp OBJ) -> T if OBJ is an IEEE NaN double, nil otherwise.
+  ;; Portable test: NaN is the only IEEE value not equal to itself.
+  (cond
+    ((and (typep object 'double-float)
+          (handler-case (not (= object object)) (error () nil)))
+     (intern-autolisp-symbol "T"))
+    (t nil)))
+
+(defun builtin-vl-infp (object)
+  ;; (vl-infp OBJ) -> T if OBJ is +/-infinity, nil otherwise.
+  ;; Portable test: only an infinity satisfies x = 2*x with x /= 0.
+  (cond
+    ((and (typep object 'double-float)
+          (not (zerop object))
+          (handler-case (= object (* 2 object)) (error () nil)))
+     (intern-autolisp-symbol "T"))
+    (t nil)))
+
 (defun builtin-asin (object)
   (let ((value (coerce (require-number object "ASIN") 'double-float)))
     (when (or (< value -1.0d0) (> value 1.0d0))
@@ -2248,6 +2312,14 @@ when no dialect is in scope."
         when (autolisp-equal-p item (car cell))
           return index
         finally (return nil)))
+
+(defun builtin-position (item list)
+  ;; (position ITEM LIST) — BricsCAD V26 alias for vl-position.
+  (builtin-vl-position item list))
+
+(defun builtin-vl-remove (item list)
+  ;; (vl-remove ITEM LIST) — synonym for REMOVE.
+  (builtin-remove item list))
 
 (defun builtin-remove (item list)
   ;; (remove ITEM LIST) -> new list with all elements equal to ITEM removed.
@@ -3720,6 +3792,17 @@ through mock-host-snapshot. Callbacks must be autolisp-symbols
    (make-core-builtin-subr "SIN" #'builtin-sin)
    (make-core-builtin-subr "COS" #'builtin-cos)
    (make-core-builtin-subr "TAN" #'builtin-tan)
+   (make-core-builtin-subr "SINH" #'builtin-sinh)
+   (make-core-builtin-subr "COSH" #'builtin-cosh)
+   (make-core-builtin-subr "TANH" #'builtin-tanh)
+   (make-core-builtin-subr "ATANH" #'builtin-atanh)
+   (make-core-builtin-subr "POWER" #'builtin-power)
+   (make-core-builtin-subr "VL-NANP" #'builtin-vl-nanp)
+   (make-core-builtin-subr "VL-INFP" #'builtin-vl-infp)
+   (make-core-builtin-subr "POSITION" #'builtin-position)
+   (make-core-builtin-subr "VL-REMOVE" #'builtin-vl-remove)
+   (make-core-builtin-subr "STRING-SPLIT" #'builtin-vl-string-split)
+   (make-core-builtin-subr "VL-STRING-SPLIT" #'builtin-vl-string-split)
    (make-core-builtin-subr "ASIN" #'builtin-asin)
    (make-core-builtin-subr "ACOS" #'builtin-acos)
    (make-core-builtin-subr "ATAN" #'builtin-atan)
