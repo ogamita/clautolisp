@@ -112,6 +112,8 @@
                 #:dcl-runtime-mode-tile
                 #:dcl-runtime-client-data
                 #:dcl-runtime-set-client-data
+                #:current-dialog-id
+                #:require-current-dialog-id
                 #:install-default-renderer
                 #:make-terminal-renderer)
   (:import-from #:clautolisp.autolisp-host

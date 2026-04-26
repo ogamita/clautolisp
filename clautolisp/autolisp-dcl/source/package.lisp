@@ -54,6 +54,8 @@
    #:dcl-runtime-set-client-data
    #:dcl-runtime-find-tile
    #:dcl-runtime-fire-action
+   #:current-dialog-id
+   #:require-current-dialog-id
    #:install-default-renderer
    #:current-dcl-renderer
    #:make-noop-renderer

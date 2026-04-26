@@ -28,5 +28,7 @@
   (princ))
 
 (c:greet)
+;; (sleep 60)
 ;; (exit)
+
 
