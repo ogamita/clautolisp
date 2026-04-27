@@ -102,6 +102,7 @@ debugger can take over."
                                   (vl-catch-all-error-message result-or-error))))
                      (cons 'evaluated nil)
                      (cons 'expected nil)
+                     (cons 'stack nil)
                      (cons 'assertion 'unknown)))
               (T result-or-error)))
        (T
@@ -114,6 +115,7 @@ debugger can take over."
                         (cons 'detail "required tag(s) not satisfied")
                         (cons 'evaluated nil)
                         (cons 'expected nil)
+                        (cons 'stack nil)
                         (cons 'assertion (autolisp-test-entry-assertion-kind e))))
                (list entry)))
         (cond ((vl-catch-all-error-p result-or-error)
@@ -125,6 +127,7 @@ debugger can take over."
                                   (vl-catch-all-error-message result-or-error))))
                      (cons 'evaluated nil)
                      (cons 'expected nil)
+                     (cons 'stack nil)
                      (cons 'assertion 'unknown)))
               (T result-or-error)))))))
 
@@ -181,7 +184,8 @@ record per line, suitable for diffing across runs."
                (cons 'name      (cdr (assoc 'name r)))
                (cons 'status    (cdr (assoc 'status r)))
                (cons 'assertion (cdr (assoc 'assertion r)))
-               (cons 'detail    (cdr (assoc 'detail r))))))
+               (cons 'detail    (cdr (assoc 'detail r)))
+               (cons 'stack     (cdr (assoc 'stack r))))))
       (foreach pair matrix
         (autolisp-test--write-record
          file

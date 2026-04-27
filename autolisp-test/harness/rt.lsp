@@ -181,31 +181,92 @@ autolisp-test--coerce-to-string. Never raises."
     (setq acc (strcat acc (autolisp-test--coerce-to-string part))))
   acc)
 
-(defun autolisp-test--evaluate-form (form / catcher)
-  "Evaluate FORM. Return (KIND VALUE) where KIND is one of
-'value or 'error. On error, VALUE is a printable message string.
+(defun autolisp-test--catch-all-error-stack (catcher / fn-bound stack-catch)
+  "Return the AutoLISP call stack stored inside the catch-all error
+CATCHER, or NIL if the host implementation does not expose one.
+Calls vl-catch-all-error-stack only when it is bound, since this is
+a clautolisp extension and AutoCAD / BricsCAD do not provide it."
+  (cond
+    ((not (autolisp-test--symbol-bound-to-subr-p 'vl-catch-all-error-stack))
+     nil)
+    (T
+     (setq stack-catch
+           (vl-catch-all-apply
+            '(lambda (c) (vl-catch-all-error-stack c))
+            (list catcher)))
+     (cond ((vl-catch-all-error-p stack-catch) nil)
+           (T stack-catch)))))
+
+(defun autolisp-test--render-stack (stack / out frame kind payload)
+  "Format STACK (a list of (KIND . PAYLOAD) frames, most recent
+first) as a multi-line string. Returns the empty string when STACK
+is NIL so the harness can always concatenate the result."
+  (cond ((null stack) "")
+        (T (setq out "")
+           (foreach frame stack
+             (setq kind (car frame))
+             (setq payload (cdr frame))
+             (cond ((eq kind 'subr)
+                    (setq out (autolisp-test--safe-strcat
+                               (list out
+                                     "    in SUBR "
+                                     (car payload)
+                                     ": "
+                                     (cdr payload)
+                                     "\n"))))
+                   ((eq kind 'usubr)
+                    (setq out (autolisp-test--safe-strcat
+                               (list out
+                                     "    in USUBR "
+                                     (car payload)
+                                     ": "
+                                     (cdr payload)
+                                     "\n"))))
+                   ((eq kind 'eval)
+                    (setq out (autolisp-test--safe-strcat
+                               (list out
+                                     "    eval: "
+                                     payload
+                                     "\n"))))
+                   (T
+                    (setq out (autolisp-test--safe-strcat
+                               (list out
+                                     "    "
+                                     kind
+                                     ": "
+                                     payload
+                                     "\n"))))))
+           out)))
+
+(defun autolisp-test--evaluate-form (form / catcher message stack)
+  "Evaluate FORM. Return (KIND PAYLOAD STACK) where KIND is one of
+'value or 'error. On 'value, PAYLOAD is the evaluated value and
+STACK is nil. On 'error, PAYLOAD is a printable message string and
+STACK is the call stack snapshot captured at error time, or nil if
+the host does not expose one.
 
 When *autolisp-test-debug-p* is non-nil, the catch-all is bypassed
 so a user investigating a single test can drop into the debugger
 on failure."
   (cond
     (*autolisp-test-debug-p*
-     (list 'value (eval form)))
+     (list 'value (eval form) nil))
     ((autolisp-test--catch-all-available-p)
      (setq catcher
            (vl-catch-all-apply
             '(lambda (f) (eval f))
             (list form)))
      (cond ((vl-catch-all-error-p catcher)
-            (list 'error
-                  (autolisp-test--coerce-to-string
-                   (vl-catch-all-error-message catcher))))
-           (T (list 'value catcher))))
+            (setq message (autolisp-test--coerce-to-string
+                           (vl-catch-all-error-message catcher)))
+            (setq stack (autolisp-test--catch-all-error-stack catcher))
+            (list 'error message stack))
+           (T (list 'value catcher nil))))
     (T
      ;; vl-catch-all-apply absent -- evaluate without protection.
      ;; This branch only runs on the most minimal AutoLISP profiles
      ;; that we already mark out via deftest-error skips.
-     (list 'value (eval form)))))
+     (list 'value (eval form) nil))))
 
 (defun autolisp-test--evaluate-predicate (predicate-form / catcher)
   "Evaluate PREDICATE-FORM (which may reference *result*). Return
@@ -245,8 +306,16 @@ to assign when the predicate evaluates to a non-nil value (typically
          (list 'fail "predicate returned nil"))
         (T (list status-on-truthy "predicate"))))
 
-(defun autolisp-test--classify-body (entry / kind eval-result raw status detail
-                                              payload assertion pred-result)
+(defun autolisp-test--error-detail (raw stack prefix)
+  "Build a human-readable detail string for a test that raised an
+unexpected error. Includes the rendered call stack when STACK is
+non-nil."
+  (autolisp-test--safe-strcat
+   (list prefix raw "\n" (autolisp-test--render-stack stack))))
+
+(defun autolisp-test--classify-body (entry / kind eval-result raw stack status
+                                              detail payload assertion
+                                              pred-result)
   "Worker for autolisp-test-classify. Always returns the result alist;
 never raises."
   (setq assertion (autolisp-test-entry-assertion-kind entry))
@@ -258,6 +327,7 @@ never raises."
            (cons 'detail (autolisp-test--coerce-to-string payload))
            (cons 'evaluated nil)
            (cons 'expected nil)
+           (cons 'stack nil)
            (cons 'assertion 'skip)))
     ((and (eq assertion 'error)
           (not (autolisp-test--catch-all-available-p)))
@@ -266,33 +336,38 @@ never raises."
            (cons 'detail "vl-catch-all-apply not available")
            (cons 'evaluated nil)
            (cons 'expected payload)
+           (cons 'stack nil)
            (cons 'assertion 'error)))
     (T
      (setq eval-result (autolisp-test--evaluate-form
                         (autolisp-test-entry-form entry)))
      (setq kind (car eval-result))
      (setq raw  (cadr eval-result))
+     (setq stack (caddr eval-result))
      (setq status 'fail)
      (setq detail "unclassified")
      (cond
        ((eq assertion 'value)
         (cond ((eq kind 'error)
-               (setq detail (autolisp-test--safe-strcat
-                             (list "unexpected error: " raw))))
+               (setq detail
+                     (autolisp-test--error-detail
+                      raw stack "unexpected error: ")))
               ((autolisp-test--equal-p raw payload)
                (setq status 'pass) (setq detail "equal"))
               (T (setq detail "value mismatch (equal)"))))
        ((eq assertion 'value-eq)
         (cond ((eq kind 'error)
-               (setq detail (autolisp-test--safe-strcat
-                             (list "unexpected error: " raw))))
+               (setq detail
+                     (autolisp-test--error-detail
+                      raw stack "unexpected error: ")))
               ((autolisp-test--eq-p raw payload)
                (setq status 'pass) (setq detail "eq"))
               (T (setq detail "value mismatch (eq)"))))
        ((eq assertion 'predicate)
         (cond ((eq kind 'error)
-               (setq detail (autolisp-test--safe-strcat
-                             (list "unexpected error: " raw))))
+               (setq detail
+                     (autolisp-test--error-detail
+                      raw stack "unexpected error: ")))
               (T (setq *result* raw)
                  (setq pred-result
                        (autolisp-test--evaluate-predicate payload))
@@ -308,9 +383,11 @@ never raises."
                       (setq detail (autolisp-test--safe-strcat
                                     (list "error: " raw))))
                      (T (setq detail
-                              (autolisp-test--safe-strcat
-                               (list "error message did not mention "
-                                     payload ": " raw))))))
+                              (autolisp-test--error-detail
+                               raw stack
+                               (autolisp-test--safe-strcat
+                                (list "error message did not mention "
+                                      payload ": ")))))))
               (T (setq detail "expected error but got value"))))
        (T (setq detail (autolisp-test--safe-strcat
                         (list "unknown assertion kind: " assertion)))))
@@ -319,6 +396,7 @@ never raises."
            (cons 'detail detail)
            (cons 'evaluated raw)
            (cons 'expected payload)
+           (cons 'stack stack)
            (cons 'assertion assertion)))))
 
 (defun autolisp-test-classify (entry / catcher classified)
@@ -345,11 +423,14 @@ trips the debugger."
             (list (cons 'name (autolisp-test-entry-name entry))
                   (cons 'status 'fail)
                   (cons 'detail
-                        (autolisp-test--safe-strcat
-                         (list "internal-harness-error: "
-                               (vl-catch-all-error-message catcher))))
+                        (autolisp-test--error-detail
+                         (vl-catch-all-error-message catcher)
+                         (autolisp-test--catch-all-error-stack catcher)
+                         "internal-harness-error: "))
                   (cons 'evaluated nil)
                   (cons 'expected nil)
+                  (cons 'stack
+                        (autolisp-test--catch-all-error-stack catcher))
                   (cons 'assertion
                         (autolisp-test-entry-assertion-kind entry))))
            (T catcher)))

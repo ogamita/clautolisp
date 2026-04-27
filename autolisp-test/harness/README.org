@@ -85,6 +85,16 @@ caught by the outer per-test guard and reported as
 guards is intercepted by the CL-side handler and printed on stderr
 without entering the debugger.
 
+Failure details include an AutoLISP backtrace whenever the host
+exposes one. clautolisp's runtime tracks =*autolisp-call-stack*= and
+captures the snapshot at error time; the harness reads it back via
+=vl-catch-all-error-stack= (a clautolisp extension) and embeds it
+in the failure detail and in the s-expression report under the
+=stack= key. AutoCAD and BricsCAD do not expose the stack of a
+caught error, so the harness simply omits it on those targets. The
+=(vl-bt)= builtin prints the live stack at the point of call and
+works on any host that implements it.
+
 The =-debug= variants flip both guards off, by setting
 =*autolisp-test-debug-p*= to T on the AutoLISP side and passing
 =:debug t= to the CL driver. Use them only when interactively
