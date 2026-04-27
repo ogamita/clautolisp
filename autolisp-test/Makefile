@@ -1,4 +1,10 @@
 PANDOC ?= pandoc
+# pandoc's default PDF engine (pdflatex) does not handle arbitrary
+# UTF-8 codepoints. xelatex and lualatex both consume UTF-8 directly,
+# so we default to xelatex and allow override at build time, e.g.
+# `make documentation PDF_ENGINE=lualatex'.
+PDF_ENGINE ?= xelatex
+PANDOC_PDF_FLAGS ?= --pdf-engine=$(PDF_ENGINE)
 SBCL   ?= sbcl
 CCL    ?= ccl
 
@@ -139,7 +145,7 @@ test-asdf-ccl-debug:
 		--eval '(autolisp-test.clautolisp-driver:run-autolisp-test-suite :debug t)'
 
 %.pdf: %.org
-	$(PANDOC) --from=org --to=pdf --output="$@" "$<"
+	$(PANDOC) $(PANDOC_PDF_FLAGS) --from=org --to=pdf --output="$@" "$<"
 
 clean-pdf:
 	rm -f $(PDF_FILES)

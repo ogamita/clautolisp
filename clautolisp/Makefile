@@ -2,6 +2,13 @@ CCL  ?= ccl
 SBCL ?= sbcl
 LISP ?= $(SBCL)
 PANDOC ?= pandoc
+# pandoc's default PDF engine (pdflatex) does not handle arbitrary
+# UTF-8 codepoints (it complains about characters such as `∩` or
+# accented letters not in the active LaTeX encoding). xelatex and
+# lualatex both consume UTF-8 directly, so we default to xelatex and
+# allow override at build time, e.g. `make documentation PDF_ENGINE=lualatex'.
+PDF_ENGINE ?= xelatex
+PANDOC_PDF_FLAGS ?= --pdf-engine=$(PDF_ENGINE)
 ROOT_DIR := $(shell pwd)
 ASD_FILE := $(ROOT_DIR)/clautolisp.asd
 XDG_CACHE_HOME ?= $(ROOT_DIR)/.cache
@@ -108,7 +115,7 @@ documentation: $(PDF_FILES)
 user-manual: documentation/user-manual.pdf
 
 %.pdf: %.org
-	$(PANDOC) --from=org --to=pdf --output="$@" "$<"
+	$(PANDOC) $(PANDOC_PDF_FLAGS) --from=org --to=pdf --output="$@" "$<"
 
 clean-pdf:
 	rm -f $(PDF_FILES)

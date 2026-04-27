@@ -1,4 +1,10 @@
 PANDOC ?= pandoc
+# pandoc's default PDF engine (pdflatex) does not handle arbitrary
+# UTF-8 codepoints. xelatex and lualatex both consume UTF-8 directly,
+# so we default to xelatex and allow override at build time, e.g.
+# `make documentation PDF_ENGINE=lualatex'.
+PDF_ENGINE ?= xelatex
+PANDOC_PDF_FLAGS ?= --pdf-engine=$(PDF_ENGINE)
 AUTOCAD_RUNNER ?=
 BRICSCAD_RUNNER ?=
 
@@ -21,7 +27,7 @@ documentation: $(PDF_FILES)
 # make probe-bricscad BRICSCAD_RUNNER='"/Applications/BricsCAD.app/Contents/MacOS/bricscad" "__PROBE_FILE__"'
 
 %.pdf: %.org
-	$(PANDOC) --from=org --to=pdf --output="$@" "$<"
+	$(PANDOC) $(PANDOC_PDF_FLAGS) --from=org --to=pdf --output="$@" "$<"
 
 clean-pdf:
 	rm -f $(PDF_FILES)
