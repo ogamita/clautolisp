@@ -3,6 +3,13 @@
 ;;;; Inventory of every AutoLISP / Visual LISP entry defined in the local
 ;;;; specification draft, with an initial conformance classification.
 ;;;;
+;;;; This file is intentionally restricted to the spec. Operators that
+;;;; clautolisp installs as extensions (the longer Cxxr / Cxxxxr family,
+;;;; ERROR, LCM, LOGXOR, VL-CATCH-ALL-ERROR-STACK) are documented in
+;;;; clautolisp/autolisp-builtins-core/README.org under "clautolisp-
+;;;; Specific Operators" rather than added here, so a conformance run
+;;;; never confuses an implementation choice with a normative test.
+;;;;
 ;;;; Each record is a property list. Field reading is portable between
 ;;;; AutoLISP and Common Lisp because it only relies on uppercase symbols,
 ;;;; strings, and proper lists. The file is loadable as a single readable
