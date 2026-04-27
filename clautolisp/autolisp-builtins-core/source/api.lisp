@@ -281,9 +281,30 @@
         (set-autolisp-errno 0)
         result)
     (autolisp-termination (condition)
+      ;; (exit), (quit) -- these stop the whole evaluation context
+      ;; and are documented as not catchable by vl-catch-all-apply.
       (error condition))
     (autolisp-namespace-exit (condition)
-      (error condition))
+      ;; vl-exit-with-error / vl-exit-with-value are documented as
+      ;; catchable: they leave the dynamic extent of the apply with
+      ;; either a catch-all error (for :error) or a returned value
+      ;; (for :value). Other :kind values keep escaping until a
+      ;; matching VLX boundary or back out of vl-catch-all-apply.
+      (case (clautolisp.autolisp-runtime:autolisp-namespace-exit-kind condition)
+        (:error
+         (set-autolisp-errno 1)
+         (make-autolisp-catch-all-error
+          (let ((value (clautolisp.autolisp-runtime:autolisp-namespace-exit-value condition)))
+            (cond ((typep value 'clautolisp.autolisp-runtime:autolisp-string)
+                   (clautolisp.autolisp-runtime:autolisp-string-value value))
+                  ((stringp value) value)
+                  (t (princ-to-string value))))
+          condition))
+        (:value
+         (set-autolisp-errno 0)
+         (clautolisp.autolisp-runtime:autolisp-namespace-exit-value condition))
+        (otherwise
+         (error condition))))
     (autolisp-runtime-error (condition)
       (set-autolisp-errno
        (autolisp-runtime-error-errno condition))
