@@ -88,6 +88,8 @@ The forward-looking architectural plan — phases 7 onward, including the Host A
 - [ ] Build a deterministic mock host.
 - [ ] Add snapshot and diff support for host-facing regression tests.
 - [x] Add initial dialect and host-profile selection plumbing shared by reader and runtime. (2026-04-26: reader exposes `autolisp-dialect`, `find-autolisp-dialect`, `reader-options-from-dialect`, and the three named descriptors. Runtime sessions now carry a `dialect` slot, surfaced through `runtime-session-dialect` / `current-evaluation-dialect`. The `clautolisp` CLI propagates the choice via `--dialect`, `--strict`, `--autocad`, `--bricscad`.)
+- [x] Track clautolisp-specific operators that go beyond the local AutoLISP / Visual LISP specification. The current set is documented in [`autolisp-builtins-core/README.org`](autolisp-builtins-core/README.org#clautolisp-specific-operators) and includes the longer `Cxxr`/`Cxxxxr` accessor family, `ERROR`, `LCM`, `LOGXOR`, and the new `VL-CATCH-ALL-ERROR-STACK` introspection helper used by `autolisp-test` to render AutoLISP backtraces in failure reports.
+- [x] Add an AutoLISP-level call-stack tracker. The runtime maintains `*autolisp-call-stack*`, captures it into every `autolisp-runtime-error`, and exposes it through the `vl-bt` builtin and `vl-catch-all-error-stack`. The `autolisp-test` harness uses the snapshot to print backtraces for failing tests on clautolisp.
 
 ## Delivery Tasks
 
