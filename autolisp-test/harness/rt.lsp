@@ -136,27 +136,81 @@
 ;;; `vl-catch-all-apply' is part of every supported target (AutoCAD,
 ;;; BricsCAD, clautolisp). If it is missing, error tests are reported
 ;;; SKIP rather than failing the harness.
+;;;
+;;; *autolisp-test-debug-p* (defaults to nil) controls catch-all
+;;; behaviour: when non-nil, the harness disables every guard that
+;;; would catch errors during test evaluation, so the underlying
+;;; debugger can trap a failure inside a tested function or inside
+;;; the harness itself. Useful when investigating a single test;
+;;; should remain nil for normal runs.
+
+(if (not (boundp '*autolisp-test-debug-p*))
+    (setq *autolisp-test-debug-p* nil))
+
+(defun autolisp-test--symbol-bound-to-subr-p (name / fn-type)
+  "True iff NAME is bound to a builtin / user / external subr in
+the current environment. Avoids evaluating NAME when it is unbound."
+  (cond ((not (boundp name)) nil)
+        (T (setq fn-type (type (eval name)))
+           (or (eq fn-type 'subr)
+               (eq fn-type 'usubr)
+               (eq fn-type 'exsubr)
+               (eq fn-type 'subrf)))))
 
 (defun autolisp-test--catch-all-available-p ()
-  (and (= 'subr (type 'vl-catch-all-apply))
-       T))
+  (autolisp-test--symbol-bound-to-subr-p 'vl-catch-all-apply))
 
-(defun autolisp-test--evaluate-form (form / catcher result)
+(defun autolisp-test--coerce-to-string (value)
+  "Return a printable string representation of VALUE. Defensive
+against nil and unexpected types so the harness never crashes when
+formatting a detail message about a faulty test result."
+  (cond ((null value) "NIL")
+        ((eq (type value) 'str) value)
+        ((eq (type value) 'sym) (vl-symbol-name value))
+        ((eq (type value) 'int) (itoa value))
+        ((eq (type value) 'real) (rtos value 2 6))
+        ((autolisp-test--symbol-bound-to-subr-p 'vl-prin1-to-string)
+         (vl-prin1-to-string value))
+        (T "<unprintable>")))
+
+(defun autolisp-test--safe-strcat (parts / acc)
+  "Concatenate every element of PARTS, coercing each through
+autolisp-test--coerce-to-string. Never raises."
+  (setq acc "")
+  (foreach part parts
+    (setq acc (strcat acc (autolisp-test--coerce-to-string part))))
+  acc)
+
+(defun autolisp-test--evaluate-form (form / catcher)
   "Evaluate FORM. Return (KIND VALUE) where KIND is one of
-'value or 'error. On error, VALUE is a printable message."
-  (if (autolisp-test--catch-all-available-p)
-      (progn
-        (setq catcher
-              (vl-catch-all-apply
-               '(lambda (f) (eval f))
-               (list form)))
-        (if (vl-catch-all-error-p catcher)
-            (list 'error (vl-catch-all-error-message catcher))
-            (list 'value catcher)))
-    ;; Without catch-all: evaluate directly. Errors will abort.
-    (progn
-      (setq result (eval form))
-      (list 'value result))))
+'value or 'error. On error, VALUE is a printable message string.
+
+When *autolisp-test-debug-p* is non-nil, the catch-all is bypassed
+so a user investigating a single test can drop into the debugger
+on failure."
+  (cond
+    (*autolisp-test-debug-p*
+     (list 'value (eval form)))
+    ((autolisp-test--catch-all-available-p)
+     (setq catcher
+           (vl-catch-all-apply
+            '(lambda (f) (eval f))
+            (list form)))
+     (cond ((vl-catch-all-error-p catcher)
+            (list 'error
+                  (autolisp-test--coerce-to-string
+                   (vl-catch-all-error-message catcher))))
+           (T (list 'value catcher))))
+    (T
+     ;; vl-catch-all-apply absent -- evaluate without protection.
+     ;; This branch only runs on the most minimal AutoLISP profiles
+     ;; that we already mark out via deftest-error skips.
+     (list 'value (eval form)))))
+
+(defun autolisp-test--evaluate-predicate (predicate-form / catcher)
+  "Evaluate PREDICATE-FORM (which may reference *result*). Return
+(KIND VALUE) with the same conventions as autolisp-test--evaluate-form."
+  (autolisp-test--evaluate-form predicate-form))
 
 ;;; --- result classification -----------------------------------------
 
@@ -164,31 +218,44 @@
 
 (defun autolisp-test--eq-p (a b) (eq a b))
 
-(defun autolisp-test--message-mentions-p (message indicator)
+(defun autolisp-test--message-mentions-p (message indicator / needle)
   "True iff INDICATOR (string or symbol) appears in MESSAGE (string).
 Conservative: when INDICATOR is a symbol we accept its symbol-name
 substring. When INDICATOR is the symbol ANY we accept any error."
   (cond ((eq indicator 'any) T)
-        ((null message) nil)
-        (T (let ((needle
-                  (cond ((eq (type indicator) 'str) indicator)
-                        (T (vl-symbol-name indicator)))))
-             (if (vl-string-search (strcase needle) (strcase message))
-                 T
-                 nil)))))
+        ((or (null message) (not (eq (type message) 'str))) nil)
+        (T (setq needle
+                 (cond ((eq (type indicator) 'str) indicator)
+                       ((eq (type indicator) 'sym) (vl-symbol-name indicator))
+                       (T (autolisp-test--coerce-to-string indicator))))
+           (if (vl-string-search (strcase needle) (strcase message))
+               T
+               nil))))
 
-(defun autolisp-test-classify (entry / kind eval-result raw status detail
-                                       payload assertion)
-  "Evaluate ENTRY's form and classify the outcome.
-Return an alist with keys NAME, STATUS, DETAIL, EVALUATED, EXPECTED,
-ASSERTION."
+(defun autolisp-test--classify-pred-result (pred-result status-on-truthy)
+  "Helper: PRED-RESULT is the (KIND VALUE) shape returned by
+autolisp-test--evaluate-predicate. STATUS-ON-TRUTHY is the symbol
+to assign when the predicate evaluates to a non-nil value (typically
+'pass)."
+  (cond ((eq (car pred-result) 'error)
+         (list 'fail
+               (autolisp-test--safe-strcat
+                (list "predicate raised error: " (cadr pred-result)))))
+        ((null (cadr pred-result))
+         (list 'fail "predicate returned nil"))
+        (T (list status-on-truthy "predicate"))))
+
+(defun autolisp-test--classify-body (entry / kind eval-result raw status detail
+                                              payload assertion pred-result)
+  "Worker for autolisp-test-classify. Always returns the result alist;
+never raises."
   (setq assertion (autolisp-test-entry-assertion-kind entry))
   (setq payload (autolisp-test-entry-assertion-payload entry))
   (cond
     ((eq assertion 'skip)
      (list (cons 'name (autolisp-test-entry-name entry))
            (cons 'status 'skip)
-           (cons 'detail payload)
+           (cons 'detail (autolisp-test--coerce-to-string payload))
            (cons 'evaluated nil)
            (cons 'expected nil)
            (cons 'assertion 'skip)))
@@ -205,53 +272,89 @@ ASSERTION."
                         (autolisp-test-entry-form entry)))
      (setq kind (car eval-result))
      (setq raw  (cadr eval-result))
+     (setq status 'fail)
+     (setq detail "unclassified")
      (cond
        ((eq assertion 'value)
         (cond ((eq kind 'error)
-               (setq status 'fail) (setq detail (strcat "unexpected error: " raw)))
+               (setq detail (autolisp-test--safe-strcat
+                             (list "unexpected error: " raw))))
               ((autolisp-test--equal-p raw payload)
                (setq status 'pass) (setq detail "equal"))
-              (T
-               (setq status 'fail) (setq detail "value mismatch (equal)"))))
+              (T (setq detail "value mismatch (equal)"))))
        ((eq assertion 'value-eq)
         (cond ((eq kind 'error)
-               (setq status 'fail) (setq detail (strcat "unexpected error: " raw)))
+               (setq detail (autolisp-test--safe-strcat
+                             (list "unexpected error: " raw))))
               ((autolisp-test--eq-p raw payload)
                (setq status 'pass) (setq detail "eq"))
-              (T
-               (setq status 'fail) (setq detail "value mismatch (eq)"))))
+              (T (setq detail "value mismatch (eq)"))))
        ((eq assertion 'predicate)
         (cond ((eq kind 'error)
-               (setq status 'fail) (setq detail (strcat "unexpected error: " raw)))
-              (T
-               (setq *result* raw)
-               (setq detail "predicate")
-               (if (eval payload)
-                   (setq status 'pass)
-                   (setq status 'fail)))))
+               (setq detail (autolisp-test--safe-strcat
+                             (list "unexpected error: " raw))))
+              (T (setq *result* raw)
+                 (setq pred-result
+                       (autolisp-test--evaluate-predicate payload))
+                 (setq pred-result
+                       (autolisp-test--classify-pred-result
+                        pred-result 'pass))
+                 (setq status (car pred-result))
+                 (setq detail (cadr pred-result)))))
        ((eq assertion 'error)
         (cond ((eq kind 'error)
-               (if (autolisp-test--message-mentions-p raw payload)
-                   (progn (setq status 'pass)
-                          (setq detail (strcat "error: " raw)))
-                   (progn (setq status 'fail)
-                          (setq detail (strcat "error message did not mention "
-                                               (if (eq (type payload) 'str)
-                                                   payload
-                                                 (vl-symbol-name payload))
-                                               ": " raw)))))
-              (T
-               (setq status 'fail)
-               (setq detail "expected error but got value"))))
-       (T
-        (setq status 'fail)
-        (setq detail (strcat "unknown assertion kind"))))
+               (cond ((autolisp-test--message-mentions-p raw payload)
+                      (setq status 'pass)
+                      (setq detail (autolisp-test--safe-strcat
+                                    (list "error: " raw))))
+                     (T (setq detail
+                              (autolisp-test--safe-strcat
+                               (list "error message did not mention "
+                                     payload ": " raw))))))
+              (T (setq detail "expected error but got value"))))
+       (T (setq detail (autolisp-test--safe-strcat
+                        (list "unknown assertion kind: " assertion)))))
      (list (cons 'name (autolisp-test-entry-name entry))
            (cons 'status status)
            (cons 'detail detail)
            (cons 'evaluated raw)
            (cons 'expected payload)
            (cons 'assertion assertion)))))
+
+(defun autolisp-test-classify (entry / catcher classified)
+  "Evaluate ENTRY's form and classify the outcome.
+
+A bug inside the worker (a malformed test entry, a defensive
+mismatch, or any other unexpected harness behaviour) is converted
+into an internal-harness FAIL rather than escaping to the caller.
+The whole run therefore continues even when one test entry exposes
+a harness flaw, and CI captures the harness flaw in the report.
+
+When *autolisp-test-debug-p* is non-nil, the outer catch-all is
+disabled and the worker is called directly so the underlying error
+trips the debugger."
+  (cond
+    (*autolisp-test-debug-p*
+     (autolisp-test--classify-body entry))
+    ((autolisp-test--catch-all-available-p)
+     (setq catcher
+           (vl-catch-all-apply
+            'autolisp-test--classify-body
+            (list entry)))
+     (cond ((vl-catch-all-error-p catcher)
+            (list (cons 'name (autolisp-test-entry-name entry))
+                  (cons 'status 'fail)
+                  (cons 'detail
+                        (autolisp-test--safe-strcat
+                         (list "internal-harness-error: "
+                               (vl-catch-all-error-message catcher))))
+                  (cons 'evaluated nil)
+                  (cons 'expected nil)
+                  (cons 'assertion
+                        (autolisp-test-entry-assertion-kind entry))))
+           (T catcher)))
+    (T
+     (autolisp-test--classify-body entry))))
 
 ;;; --- selection helpers ---------------------------------------------
 
