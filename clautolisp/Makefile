@@ -32,7 +32,7 @@ FILE_COMPAT_PRODUCT_SCENARIOS ?= autolisp-file-compat/scenarios/mutations autoli
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 
-.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl build-clautolisp-sbcl build-clautolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl run-file-compat-autocad run-file-compat-bricscad audit-file-compat-autocad audit-file-compat-bricscad documentation user-manual clean-pdf
+.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl build-clautolisp-sbcl build-clautolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl run-file-compat-autocad run-file-compat-bricscad audit-file-compat-autocad audit-file-compat-bricscad documentation user-manual clean-pdf specifications
 
 all: documentation
 
@@ -112,7 +112,8 @@ audit-file-compat-bricscad:
 
 documentation: $(PDF_FILES)
 
-user-manual: documentation/user-manual.pdf
+user-manual: documentation/clautolisp-user-manual.pdf
+specifications: documentation/clautolisp-specifications.pdf
 
 %.pdf: %.org
 	$(PANDOC) $(PANDOC_PDF_FLAGS) --from=org --to=pdf --output="$@" "$<"

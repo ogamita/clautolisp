@@ -1,5 +1,5 @@
 #+TITLE: clautolisp Command Specifications
-#+AUTHOR: Codex
+#+AUTHOR: Pascal Bourguignon
 #+OPTIONS: toc:2 num:t
 
 * Scope
