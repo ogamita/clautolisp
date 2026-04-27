@@ -31,19 +31,22 @@
                           builtin-name
                           condition)
          :details (list :builtin builtin-name
-                        :condition condition)))
+                        :condition condition)
+         :call-stack (current-autolisp-call-stack)))
 
 (defun signal-builtin-argument-error (code builtin-name control-string &rest arguments)
   (error 'autolisp-runtime-error
          :code code
          :message (apply #'format nil control-string arguments)
-         :details (list* :builtin builtin-name arguments)))
+         :details (list* :builtin builtin-name arguments)
+         :call-stack (current-autolisp-call-stack)))
 
 (defun signal-builtin-host-error (code builtin-name control-string &rest arguments)
   (error 'autolisp-runtime-error
          :code code
          :message (apply #'format nil control-string arguments)
-         :details (list* :builtin builtin-name arguments)))
+         :details (list* :builtin builtin-name arguments)
+         :call-stack (current-autolisp-call-stack)))
 
 (defun wrap-builtin-function (builtin-name function)
   (lambda (&rest arguments)
@@ -1537,13 +1540,15 @@
              :code :invalid-read-syntax
              :message (format nil "READ failed to parse input: ~A" condition)
              :details (list :builtin "READ"
-                            :condition condition)))
+                            :condition condition)
+             :call-stack (current-autolisp-call-stack)))
     (error (condition)
       (error 'autolisp-runtime-error
              :code :invalid-read-syntax
              :message (format nil "READ failed to parse input: ~A" condition)
              :details (list :builtin "READ"
-                            :condition condition)))))
+                            :condition condition)
+             :call-stack (current-autolisp-call-stack)))))
 
 (defun builtin-read-line (file)
   (let ((stream (require-open-file-stream file "READ-LINE")))

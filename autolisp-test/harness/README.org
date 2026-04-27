@@ -95,10 +95,13 @@ caught error, so the harness simply omits it on those targets. The
 =(vl-bt)= builtin prints the live stack at the point of call and
 works on any host that implements it.
 
-The =-debug= variants flip both guards off, by setting
-=*autolisp-test-debug-p*= to T on the AutoLISP side and passing
-=:debug t= to the CL driver. Use them only when interactively
-investigating a single test or harness change.
+The =-debug= variants set =*autolisp-test-debug-p*= to T (and pass
+=:debug t= to the CL driver), which is a *verbosity flag* rather
+than an error-propagation switch. In debug mode the harness prints
+=[autolisp-test] >>> NAME  form: FORM= before every test and echoes
+each FAIL detail (including the captured AutoLISP backtrace) on
+stdout immediately after the test. Errors are still caught, the run
+still completes, and the report directory is still produced.
 
 The report is written under
 =autolisp-test/results/<impl>/<version>/<host>/<timestamp>/report.sexp=.
