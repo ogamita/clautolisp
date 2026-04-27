@@ -1,16 +1,87 @@
 PANDOC ?= pandoc
+SBCL   ?= sbcl
+CCL    ?= ccl
+
+ROOT_DIR := $(shell pwd)
+CLAUTOLISP_ROOT := $(ROOT_DIR)/../clautolisp
+CLAUTOLISP_ASD := $(CLAUTOLISP_ROOT)/clautolisp.asd
+AUTOLISP_TEST_ASD := $(ROOT_DIR)/autolisp-test.asd
+CLAUTOLISP_SBCL := $(CLAUTOLISP_ROOT)/tools/clautolisp/bin/clautolisp-sbcl
+CLAUTOLISP_CCL  := $(CLAUTOLISP_ROOT)/tools/clautolisp/bin/clautolisp-ccl
+XDG_CACHE_HOME ?= $(CLAUTOLISP_ROOT)/.cache
 
 DOCUMENTATION_ORG := $(wildcard documentation/*.org) $(wildcard harness/*.org) $(wildcard tests/*.org)
 PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 
-.PHONY: all documentation test clean-pdf
+# Inline AutoLISP snippet that the standalone clautolisp executables
+# evaluate to launch the conformance harness. Sets *clautolisp-version*
+# so platform-detect identifies the implementation as clautolisp, then
+# loads run.lsp and invokes (autolisp-test-run-all).
+HARNESS_SNIPPET := \
+  (setq *clautolisp-version* "0.x") \
+  (setq *autolisp-test-root* "$(ROOT_DIR)/") \
+  (load (strcat *autolisp-test-root* "harness/run.lsp")) \
+  (autolisp-test-run-all)
+
+.PHONY: all documentation test test-clautolisp-sbcl test-clautolisp-ccl \
+        test-asdf-sbcl test-asdf-ccl clean-pdf
 
 all: documentation
 
 documentation: $(PDF_FILES)
 
-test:
-	: no autolisp-test runner is implemented yet
+# `test' is the umbrella target invoked by the parent Makefile. It
+# runs the canonical SBCL path (via the standalone executable) so the
+# implementation identification matches what AutoCAD and BricsCAD
+# would report when they load run.lsp themselves.
+test: test-clautolisp-sbcl
+
+# --- Path 1: the standalone clautolisp executable ------------------
+# Requires `make build-clautolisp-sbcl' (or -ccl) to have produced
+# the binary under clautolisp/tools/clautolisp/bin/.
+
+test-clautolisp-sbcl:
+	@if [ ! -x "$(CLAUTOLISP_SBCL)" ]; then \
+	  echo "Missing $(CLAUTOLISP_SBCL); build it with"; \
+	  echo "  make -C $(CLAUTOLISP_ROOT) build-clautolisp-sbcl"; \
+	  exit 1; \
+	fi
+	"$(CLAUTOLISP_SBCL)" -x '$(HARNESS_SNIPPET)'
+
+test-clautolisp-ccl:
+	@if [ ! -x "$(CLAUTOLISP_CCL)" ]; then \
+	  echo "Missing $(CLAUTOLISP_CCL); build it with"; \
+	  echo "  make -C $(CLAUTOLISP_ROOT) build-clautolisp-ccl"; \
+	  exit 1; \
+	fi
+	"$(CLAUTOLISP_CCL)" -x '$(HARNESS_SNIPPET)'
+
+# --- Path 2: SBCL/CCL + ASDF driver --------------------------------
+# Loads the autolisp-test/clautolisp-driver system, which installs
+# the core builtins, exports *clautolisp-version*, and invokes the
+# AutoLISP harness inside a fresh runtime session. No executable
+# build is required.
+
+test-asdf-sbcl:
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	$(SBCL) --noinform --no-userinit --non-interactive \
+		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
+		--eval '(require :asdf)' \
+		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
+		--eval '(asdf:load-asd "$(AUTOLISP_TEST_ASD)")' \
+		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
+		--eval '(autolisp-test.clautolisp-driver:run-autolisp-test-suite)'
+
+test-asdf-ccl:
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	$(CCL) --no-init --quiet \
+		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
+		--eval '(require :asdf)' \
+		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
+		--eval '(asdf:load-asd "$(AUTOLISP_TEST_ASD)")' \
+		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
+		--eval '(autolisp-test.clautolisp-driver:run-autolisp-test-suite)' \
+		--eval '(ccl:quit)'
 
 %.pdf: %.org
 	$(PANDOC) --from=org --to=pdf --output="$@" "$<"
