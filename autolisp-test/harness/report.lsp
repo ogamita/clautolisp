@@ -56,20 +56,20 @@ ran. RESULT-STATUS is the symbol the harness assigned (PASS / FAIL /
 SKIP / NOT-APPLICABLE / ...). DETAIL is the failure-detail string
 when status is non-PASS; it is printed verbatim and already contains
 the AutoLISP backtrace when one was captured."
-  (when *autolisp-test-debug-p*
-    (princ
-     (autolisp-test--safe-strcat
-      (list "[autolisp-test] "
-            result-status
-            "  "
-            (autolisp-test--safe-name entry)
-            (cond ((or (eq result-status 'pass)
-                       (eq result-status 'skip)
-                       (eq result-status 'not-applicable))
-                   "")
-                  (T (autolisp-test--safe-strcat
-                      (list "  -- " detail))))
-            "\n")))))
+  (if *autolisp-test-debug-p*
+      (princ
+       (autolisp-test--safe-strcat
+        (list "[autolisp-test] "
+              result-status
+              "  "
+              (autolisp-test--safe-name entry)
+              (cond ((or (eq result-status 'pass)
+                         (eq result-status 'skip)
+                         (eq result-status 'not-applicable))
+                     "")
+                    (T (autolisp-test--safe-strcat
+                        (list "  -- " detail))))
+              "\n")))))
 
 (defun autolisp-test--process-entry (entry descriptor / catcher applicable
                                                        result-or-error)
@@ -86,14 +86,14 @@ In debug mode, every test is announced on stdout
 (`[autolisp-test] >>> NAME  form: FORM') before evaluation, and
 the FAIL detail (which already includes the captured AutoLISP
 backtrace) is echoed on stdout immediately after evaluation."
-  (when *autolisp-test-debug-p*
-    (princ
-     (autolisp-test--safe-strcat
-      (list "[autolisp-test] >>> "
-            (autolisp-test--safe-name entry)
-            "  form: "
-            (autolisp-test-entry-form entry)
-            "\n"))))
+  (if *autolisp-test-debug-p*
+      (princ
+       (autolisp-test--safe-strcat
+        (list "[autolisp-test] >>> "
+              (autolisp-test--safe-name entry)
+              "  form: "
+              (autolisp-test-entry-form entry)
+              "\n"))))
   (cond
     (T
      ;; Step 1: applicability.
