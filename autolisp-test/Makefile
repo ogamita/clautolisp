@@ -1,10 +1,12 @@
-PANDOC ?= pandoc
-# pandoc's default PDF engine (pdflatex) does not handle arbitrary
-# UTF-8 codepoints. xelatex and lualatex both consume UTF-8 directly,
-# so we default to xelatex and allow override at build time, e.g.
-# `make documentation PDF_ENGINE=lualatex'.
-PDF_ENGINE ?= xelatex
-PANDOC_PDF_FLAGS ?= --pdf-engine=$(PDF_ENGINE)
+# Documentation is exported to PDF via Emacs's native org-mode LaTeX
+# exporter rather than pandoc; pandoc's org reader trips on a number
+# of legitimate AutoLISP-spec constructs (e.g. `\"' inside backticks)
+# that org-mode parses correctly. The LaTeX compiler is set to
+# xelatex so arbitrary UTF-8 codepoints render without missing-glyph
+# errors. Both variables are overridable, e.g.
+# `make documentation LATEX_COMPILER=lualatex'.
+EMACS          ?= emacs
+LATEX_COMPILER ?= xelatex
 SBCL   ?= sbcl
 CCL    ?= ccl
 
@@ -145,7 +147,10 @@ test-asdf-ccl-debug:
 		--eval '(autolisp-test.clautolisp-driver:run-autolisp-test-suite :debug t)'
 
 %.pdf: %.org
-	$(PANDOC) $(PANDOC_PDF_FLAGS) --from=org --to=pdf --output="$@" "$<"
+	$(EMACS) --batch \
+		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
+		--visit "$<" \
+		--funcall org-latex-export-to-pdf
 
 clean-pdf:
 	rm -f $(PDF_FILES)
