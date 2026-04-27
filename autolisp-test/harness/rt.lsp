@@ -137,12 +137,17 @@
 ;;; BricsCAD, clautolisp). If it is missing, error tests are reported
 ;;; SKIP rather than failing the harness.
 ;;;
-;;; *autolisp-test-debug-p* (defaults to nil) controls catch-all
-;;; behaviour: when non-nil, the harness disables every guard that
-;;; would catch errors during test evaluation, so the underlying
-;;; debugger can trap a failure inside a tested function or inside
-;;; the harness itself. Useful when investigating a single test;
-;;; should remain nil for normal runs.
+;;; *autolisp-test-debug-p* (defaults to nil) is a verbosity flag,
+;;; not an error-propagation switch. When non-nil:
+;;;
+;;;   - the harness prints `[autolisp-test] >>> NAME  form: FORM'
+;;;     before every test so the most recent line identifies the
+;;;     test in flight,
+;;;   - on every test that raises an error (whether expected or not),
+;;;     the harness prints the captured AutoLISP backtrace inline.
+;;;
+;;; Errors are still caught and reported as test FAILs. The run
+;;; continues to completion and produces a report directory.
 
 (if (not (boundp '*autolisp-test-debug-p*))
     (setq *autolisp-test-debug-p* nil))
@@ -245,12 +250,13 @@ STACK is nil. On 'error, PAYLOAD is a printable message string and
 STACK is the call stack snapshot captured at error time, or nil if
 the host does not expose one.
 
-When *autolisp-test-debug-p* is non-nil, the catch-all is bypassed
-so a user investigating a single test can drop into the debugger
-on failure."
+The catch-all guard is always engaged when vl-catch-all-apply is
+available, irrespective of *autolisp-test-debug-p*. Debug mode is a
+verbosity flag, not an error-propagation switch: it affects what the
+harness prints around each test, not whether errors are caught.
+This lets the run complete in every mode and produces a report
+directory even when many tests raise."
   (cond
-    (*autolisp-test-debug-p*
-     (list 'value (eval form) nil))
     ((autolisp-test--catch-all-available-p)
      (setq catcher
            (vl-catch-all-apply
@@ -408,12 +414,9 @@ into an internal-harness FAIL rather than escaping to the caller.
 The whole run therefore continues even when one test entry exposes
 a harness flaw, and CI captures the harness flaw in the report.
 
-When *autolisp-test-debug-p* is non-nil, the outer catch-all is
-disabled and the worker is called directly so the underlying error
-trips the debugger."
+The catch-all guard is always engaged: debug mode is a verbosity
+flag, not an error-propagation switch."
   (cond
-    (*autolisp-test-debug-p*
-     (autolisp-test--classify-body entry))
     ((autolisp-test--catch-all-available-p)
      (setq catcher
            (vl-catch-all-apply

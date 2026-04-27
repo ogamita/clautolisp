@@ -50,6 +50,27 @@ when the entry is not a well-formed alist."
         ((eq (type catcher) 'str) catcher)
         (T (autolisp-test--coerce-to-string catcher))))
 
+(defun autolisp-test--print-debug-trace (entry result-status detail)
+  "When debug mode is on, print a single line for the test that just
+ran. RESULT-STATUS is the symbol the harness assigned (PASS / FAIL /
+SKIP / NOT-APPLICABLE / ...). DETAIL is the failure-detail string
+when status is non-PASS; it is printed verbatim and already contains
+the AutoLISP backtrace when one was captured."
+  (when *autolisp-test-debug-p*
+    (princ
+     (autolisp-test--safe-strcat
+      (list "[autolisp-test] "
+            result-status
+            "  "
+            (autolisp-test--safe-name entry)
+            (cond ((or (eq result-status 'pass)
+                       (eq result-status 'skip)
+                       (eq result-status 'not-applicable))
+                   "")
+                  (T (autolisp-test--safe-strcat
+                      (list "  -- " detail))))
+            "\n")))))
+
 (defun autolisp-test--process-entry (entry descriptor / catcher applicable
                                                        result-or-error)
   "Process a single ENTRY against DESCRIPTOR and return a result alist.
@@ -57,30 +78,23 @@ Every step (applicability check, classification, NOT-APPLICABLE
 record building) is wrapped in vl-catch-all-apply so a malformed
 entry, a defensive mismatch in the harness, or an outright bug
 becomes a FAIL with a descriptive detail string instead of
-escaping. Bypassed when *autolisp-test-debug-p* is non-nil so the
-debugger can take over.
+escaping. The same code path is taken in every mode -- debug mode
+is a verbosity flag, not an error-propagation switch -- so the run
+always completes and the report is always produced.
 
-In debug mode, the test's name and form are printed on stdout
-before evaluation so that when an error escapes, the last printed
-line correlates the AutoLISP backtrace with the failing test."
+In debug mode, every test is announced on stdout
+(`[autolisp-test] >>> NAME  form: FORM') before evaluation, and
+the FAIL detail (which already includes the captured AutoLISP
+backtrace) is echoed on stdout immediately after evaluation."
+  (when *autolisp-test-debug-p*
+    (princ
+     (autolisp-test--safe-strcat
+      (list "[autolisp-test] >>> "
+            (autolisp-test--safe-name entry)
+            "  form: "
+            (autolisp-test-entry-form entry)
+            "\n"))))
   (cond
-    (*autolisp-test-debug-p*
-     (princ
-      (autolisp-test--safe-strcat
-       (list "[autolisp-test] >>> "
-             (autolisp-test--safe-name entry)
-             "  form: "
-             (autolisp-test-entry-form entry)
-             "\n")))
-     (cond ((autolisp-test-applicable-p entry descriptor)
-            (autolisp-test-run-one entry))
-           (T (list (cons 'name (autolisp-test-entry-name entry))
-                    (cons 'status 'not-applicable)
-                    (cons 'detail "required tag(s) not satisfied")
-                    (cons 'evaluated nil)
-                    (cons 'expected nil)
-                    (cons 'assertion
-                          (autolisp-test-entry-assertion-kind entry))))))
     (T
      ;; Step 1: applicability.
      (setq catcher
@@ -150,10 +164,19 @@ order as ENTRIES.
 
 No iteration of this loop ever raises: every per-entry step is
 guarded by autolisp-test--process-entry so a single faulty test or
-malformed metadata cannot abort the run."
+malformed metadata cannot abort the run.
+
+In debug mode the per-entry trace and the FAIL detail (with the
+embedded backtrace) are echoed to stdout immediately after the
+test, so a developer can identify a failing test as soon as it
+runs without waiting for the final recap."
   (setq acc nil)
   (foreach entry entries
     (setq result (autolisp-test--process-entry entry descriptor))
+    (autolisp-test--print-debug-trace
+     entry
+     (cdr (assoc 'status result))
+     (cdr (assoc 'detail result)))
     (setq acc (cons result acc)))
   (reverse acc))
 

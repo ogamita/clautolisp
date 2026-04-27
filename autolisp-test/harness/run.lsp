@@ -54,22 +54,19 @@
   "Evaluate THUNK-FORM (a quoted lambda or quoted symbol of arity 0),
 catching any AutoLISP-runtime error. On error, prints a diagnostic
 on the AutoLISP standard output prefixed by LABEL and returns nil
-so the rest of run-all can continue. Bypassed when
-*autolisp-test-debug-p* is non-nil."
-  (cond
-    (*autolisp-test-debug-p*
-     (apply thunk-form nil))
-    (T
-     (setq catcher (vl-catch-all-apply thunk-form nil))
-     (cond ((vl-catch-all-error-p catcher)
-            (princ
-             (strcat "[autolisp-test] "
-                     label
-                     " raised: "
-                     (vl-catch-all-error-message catcher)
-                     "\n"))
-            nil)
-           (T catcher)))))
+so the rest of run-all can continue. The guard is engaged in every
+mode: debug mode is a verbosity flag, not an error-propagation
+switch."
+  (setq catcher (vl-catch-all-apply thunk-form nil))
+  (cond ((vl-catch-all-error-p catcher)
+         (princ
+          (strcat "[autolisp-test] "
+                  label
+                  " raised: "
+                  (vl-catch-all-error-message catcher)
+                  "\n"))
+         nil)
+        (T catcher)))
 
 (defun autolisp-test-run-all ( / descriptor entries results matrix overlay
                                  directory report-path)

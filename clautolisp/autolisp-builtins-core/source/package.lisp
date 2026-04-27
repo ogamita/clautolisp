@@ -15,6 +15,8 @@
                 #:autolisp-namespace-exit
                 #:autolisp-runtime-error
                 #:autolisp-runtime-error-errno
+                #:current-autolisp-call-stack
+                #:autolisp-catch-all-error-call-stack
                 #:autolisp-string
                 #:autolisp-file-stream
                 #:autolisp-function-list-definition

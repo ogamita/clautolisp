@@ -70,29 +70,33 @@ from a CI driver after the ASDF compilation phase has completed."
   "Invoke the AutoLISP harness inside a fresh clautolisp runtime
 session. DIALECT defaults to the strict dialect descriptor.
 
-When DEBUG is nil (the default), every error that escapes the
-AutoLISP harness is intercepted and reported on *error-output*; the
-function then returns NIL. This guarantees that a run never drops
-into the SBCL/CCL debugger because of a bug discovered while a tested
-function was being evaluated, regardless of how that bug surfaces.
+DEBUG is a verbosity flag, not an error-propagation switch:
 
-When DEBUG is non-nil, both this guard AND the harness-side
-*autolisp-test-debug-p* are enabled, so any unexpected error trips
-the host debugger. Use this only when interactively investigating
-a single test or harness change.
+  DEBUG nil (default)
+    Errors raised inside tested functions are caught by the harness
+    and reported as test FAILs with the captured AutoLISP backtrace
+    embedded in the FAIL detail. The recap and the s-expression
+    report are produced normally.
+
+  DEBUG non-nil
+    The harness additionally prints `[autolisp-test] >>> NAME
+    form: FORM' before every test and echoes each FAIL detail to
+    stdout immediately after evaluation. Errors are still caught;
+    the run completes and the report is still produced.
+
+In both cases a top-level handler around the AutoLISP harness
+intercepts any escape from the host runtime itself and prints a
+diagnostic on *error-output* without dropping into the SBCL/CCL
+debugger.
 
 The harness writes a self-describing s-expression report under
 autolisp-test/results/clautolisp/.../report.sexp."
-  (cond
-    (debug
-     (%invoke-harness dialect t))
-    (t
-     (handler-case
-         (%invoke-harness dialect nil)
-       (error (condition)
-         (format *error-output*
-                 "~&[autolisp-test] internal-harness-error escaped: ~A~%"
-                 condition)
-         (format *error-output*
-                 "[autolisp-test] re-run with :debug t for a backtrace.~%")
-         nil)))))
+  (handler-case
+      (%invoke-harness dialect debug)
+    (error (condition)
+      (format *error-output*
+              "~&[autolisp-test] internal-harness-error escaped: ~A~%"
+              condition)
+      (format *error-output*
+              "[autolisp-test] re-run with :debug t for a backtrace.~%")
+      nil)))
