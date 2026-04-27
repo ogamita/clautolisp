@@ -56,19 +56,39 @@ AutoLISP / Visual LISP features available on every supported target
 * Running
 
 The =autolisp-test/Makefile= provides four targets covering both
-launch paths and both supported Common Lisp implementations:
+launch paths and both supported Common Lisp implementations, plus
+their debug variants:
 
-| Target                       | Path                          | Prerequisite                                      |
-|------------------------------+-------------------------------+---------------------------------------------------|
-| =make test-clautolisp-sbcl=  | standalone executable         | =make -C clautolisp build-clautolisp-sbcl=        |
-| =make test-clautolisp-ccl=   | standalone executable         | =make -C clautolisp build-clautolisp-ccl=         |
-| =make test-asdf-sbcl=        | SBCL + ASDF driver            | none                                              |
-| =make test-asdf-ccl=         | CCL + ASDF driver             | none                                              |
+| Target                            | Path                          | Prerequisite                                      |
+|-----------------------------------+-------------------------------+---------------------------------------------------|
+| =make test-clautolisp-sbcl=       | standalone executable         | =make -C clautolisp build-clautolisp-sbcl=        |
+| =make test-clautolisp-ccl=        | standalone executable         | =make -C clautolisp build-clautolisp-ccl=         |
+| =make test-asdf-sbcl=             | SBCL + ASDF driver            | none                                              |
+| =make test-asdf-ccl=              | CCL + ASDF driver             | none                                              |
+| =make test-clautolisp-sbcl-debug= | standalone executable, debug  | (interactive only)                                |
+| =make test-clautolisp-ccl-debug=  | standalone executable, debug  | (interactive only)                                |
+| =make test-asdf-sbcl-debug=       | SBCL + ASDF driver, debug     | (interactive only)                                |
+| =make test-asdf-ccl-debug=        | CCL + ASDF driver, debug      | (interactive only)                                |
 
 The umbrella =make test= runs =test-clautolisp-sbcl=. That choice
 makes the canonical run use the same load path that AutoCAD and
 BricsCAD take when they =(load "...run.lsp")= themselves, so the
 verdict matrix is comparable across implementations.
+
+A normal run never drops into the host Lisp debugger, regardless of
+how the tested implementation behaves: errors raised inside a tested
+function are caught by =vl-catch-all-apply= and reported as test
+failures (or as expected =error= matches when the test is a
+=deftest-error=); errors that escape the harness logic itself are
+caught by the outer per-test guard and reported as
+=internal-harness-error= test failures; any error that escapes both
+guards is intercepted by the CL-side handler and printed on stderr
+without entering the debugger.
+
+The =-debug= variants flip both guards off, by setting
+=*autolisp-test-debug-p*= to T on the AutoLISP side and passing
+=:debug t= to the CL driver. Use them only when interactively
+investigating a single test or harness change.
 
 The report is written under
 =autolisp-test/results/<impl>/<version>/<host>/<timestamp>/report.sexp=.
