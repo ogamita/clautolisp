@@ -82,10 +82,30 @@
               (source-span-end-line span)
               (source-span-end-column span))))
 
+(defun format-call-stack-frame-for-cli (frame)
+  "Render one (KIND . PAYLOAD) backtrace frame as a single line."
+  (let ((kind (car frame))
+        (payload (cdr frame)))
+    (case kind
+      (:eval        (format nil "  in EVAL: ~S" payload))
+      (:special-op  (format nil "  in SPECIAL: ~S" payload))
+      (:subr        (format nil "  in SUBR ~A: args ~S"
+                            (car payload) (cdr payload)))
+      (:usubr       (format nil "  in USUBR ~A: args ~S"
+                            (car payload) (cdr payload)))
+      (otherwise    (format nil "  ~A: ~S" kind payload)))))
+
 (defun report-runtime-error (condition)
   (format *error-output* "~&clautolisp: runtime error: ~A: ~A~%"
           (autolisp-runtime-error-code condition)
-          (autolisp-runtime-error-message condition)))
+          (autolisp-runtime-error-message condition))
+  (let ((stack (autolisp-runtime-error-call-stack condition)))
+    (when stack
+      (format *error-output*
+              "AutoLISP backtrace (most recent call first):~%")
+      (dolist (frame stack)
+        (format *error-output* "~A~%"
+                (format-call-stack-frame-for-cli frame))))))
 
 (defun report-termination (condition)
   (format *error-output* "~&clautolisp: terminated by ~A~%"

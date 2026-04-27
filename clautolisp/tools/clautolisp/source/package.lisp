@@ -26,6 +26,7 @@
                 #:autolisp-runtime-error
                 #:autolisp-runtime-error-code
                 #:autolisp-runtime-error-message
+                #:autolisp-runtime-error-call-stack
                 #:autolisp-termination
                 #:autolisp-termination-kind
                 #:call-with-autolisp-error-handler

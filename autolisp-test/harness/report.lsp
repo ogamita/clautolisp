@@ -58,9 +58,20 @@ record building) is wrapped in vl-catch-all-apply so a malformed
 entry, a defensive mismatch in the harness, or an outright bug
 becomes a FAIL with a descriptive detail string instead of
 escaping. Bypassed when *autolisp-test-debug-p* is non-nil so the
-debugger can take over."
+debugger can take over.
+
+In debug mode, the test's name and form are printed on stdout
+before evaluation so that when an error escapes, the last printed
+line correlates the AutoLISP backtrace with the failing test."
   (cond
     (*autolisp-test-debug-p*
+     (princ
+      (autolisp-test--safe-strcat
+       (list "[autolisp-test] >>> "
+             (autolisp-test--safe-name entry)
+             "  form: "
+             (autolisp-test-entry-form entry)
+             "\n")))
      (cond ((autolisp-test-applicable-p entry descriptor)
             (autolisp-test-run-one entry))
            (T (list (cons 'name (autolisp-test-entry-name entry))
