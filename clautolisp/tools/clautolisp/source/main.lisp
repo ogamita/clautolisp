@@ -15,10 +15,33 @@
   (format t "  --strict           Shorthand for --dialect strict.~%")
   (format t "  --autocad          Shorthand for --dialect autocad-2026.~%")
   (format t "  --bricscad         Shorthand for --dialect bricscad-v26.~%")
+  (format t "  --host NAME        HAL backend: mock (default), null.~%")
+  (format t "  --mock-input PATH  Attach the file at PATH as the MockHost prompt-stream.~%")
+  (format t "                     Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
+  (format t "  --gui CMD          DCL renderer: subprocess CMD speaking the sexp wire protocol.~%")
+  (format t "                     Defaults to the built-in terminal renderer (or $CLAUTOLISP_GUI).~%")
+  (format t "  --trace            Print every AutoLISP function call (entry args + exit value),~%")
+  (format t "                     indented by call depth. Output goes to *trace-output* (stderr).~%")
   (format t "  -x EXPRESSION      Evaluate EXPRESSION instead of reading a file.~%")
   (format t "  --quiet            Suppress the REPL banner; only the prompt is shown.~%")
   (format t "  --version          Print the version string and exit.~%")
   (format t "  --help             Show this help and exit.~%"))
+
+(defun resolve-host-backend (name)
+  "Return a HAL backend instance for the given --host argument."
+  (cond
+    ((or (null name)
+         (string-equal name "null")
+         (string-equal name "none"))
+     *null-host*)
+    ((string-equal name "mock")
+     ;; Phase 9 deliverable: data structures only. Phase 10 fills in
+     ;; the entget / ssget / getvar / command surfaces; until then
+     ;; every host operation falls through to the base-class
+     ;; :host-not-supported diagnostic.
+     (make-mock-host))
+    (t
+     (error "Unknown host backend ~S. Expected one of: null, mock." name))))
 
 (defun print-version ()
   (format t "~&clautolisp ~A~%" *version*))
@@ -31,13 +54,15 @@
     dialect))
 
 (defun parse-arguments (arguments)
-  "Returns (values dialect mode payload quiet-p). MODE is :file,
-:expression or :repl. PAYLOAD is the FILE path or EXPRESSION string
-(nil for :repl). QUIET-P suppresses the REPL banner."
+  "Returns (values dialect mode payload quiet-p host mock-input gui trace-p)."
   (let ((dialect (autolisp-dialect-strict))
         (mode :repl)
         (payload nil)
-        (quiet-p nil))
+        (quiet-p nil)
+        (host (make-mock-host))
+        (mock-input nil)
+        (gui nil)
+        (trace-p nil))
     (loop while arguments
           for argument = (pop arguments)
           do (cond
@@ -59,6 +84,24 @@
                 (setf dialect (autolisp-dialect-autocad-2026)))
                ((string= argument "--bricscad")
                 (setf dialect (autolisp-dialect-bricscad-v26)))
+               ((string= argument "--host")
+                (unless arguments
+                  (error "Missing argument after --host."))
+                (setf host (resolve-host-backend (pop arguments))))
+               ((string= argument "--mock-input")
+                (unless arguments
+                  (error "Missing argument after --mock-input."))
+                (setf mock-input (pop arguments)))
+               ((string= argument "--gui")
+                (unless arguments
+                  (error "Missing argument after --gui."))
+                ;; Pass the command string straight through —
+                ;; uiop:launch-program routes a string through the
+                ;; shell, which is what users want for pipelines
+                ;; and quoted arguments.
+                (setf gui (pop arguments)))
+               ((string= argument "--trace")
+                (setf trace-p t))
                ((string= argument "-x")
                 (unless arguments
                   (error "Missing expression after -x."))
@@ -70,7 +113,7 @@
                (t
                 (setf mode :file)
                 (setf payload argument))))
-    (values dialect mode payload quiet-p)))
+    (values dialect mode payload quiet-p host mock-input gui trace-p)))
 
 (defun span->string (span)
   (if (null span)
@@ -114,11 +157,26 @@
 (defun report-error (condition)
   (format *error-output* "~&clautolisp: ~A~%" condition))
 
-(defun setup-builtins (context)
-  "Install the core builtins into the freshly installed evaluation
-context's namespace."
-  (declare (ignore context))
+(defun setup-context (context host &optional mock-input)
+  "Install the core builtins into the freshly created evaluation
+context's namespace and attach the chosen HAL backend to its
+session. When MOCK-INPUT is supplied and HOST is a MockHost,
+attach the file at MOCK-INPUT as the host's prompt-stream so
+that subsequent get* calls read deterministic answers from it."
+  (when host
+    (set-runtime-session-host (evaluation-context-session context) host))
+  (when (and mock-input
+             (typep host 'clautolisp.autolisp-mock-host:mock-host))
+    (let ((stream (open mock-input :direction :input
+                                   :external-format :utf-8
+                                   :if-does-not-exist :error)))
+      (setf (clautolisp.autolisp-mock-host:mock-host-prompt-stream host) stream)))
   (install-core-builtins))
+
+(defun setup-builtins (context)
+  "Backwards-compatible setup that uses the default HAL backend
+inherited from *default-runtime-host*."
+  (setup-context context nil))
 
 ;;; --- Interactive REPL -----------------------------------------------
 
@@ -176,9 +234,12 @@ STREAM signalled end-of-file before any input was given."
 
 (defun repl-loop (dialect context &key quiet-p)
   (unless quiet-p
-    (format t "~&clautolisp ~A — REPL (~A dialect) — Ctrl-D to exit.~%"
-            *version*
-            (autolisp-dialect-name dialect)))
+    (let* ((session (evaluation-context-session context))
+           (host (clautolisp.autolisp-runtime:runtime-session-host session)))
+      (format t "~&clautolisp ~A — REPL (~A dialect, ~A host) — Ctrl-D to exit.~%"
+              *version*
+              (autolisp-dialect-name dialect)
+              (host-name host))))
   (loop
     (multiple-value-bind (source eofp)
         (read-balanced-source-from-stream
@@ -207,9 +268,9 @@ STREAM signalled end-of-file before any input was given."
           (report-termination condition)
           (return))))))
 
-(defun run-repl (dialect &key quiet-p)
+(defun run-repl (dialect host &key quiet-p mock-input)
   (let ((context (make-default-runtime-context :dialect dialect)))
-    (setup-builtins context)
+    (setup-context context host mock-input)
     (handler-case
         (repl-loop dialect context :quiet-p quiet-p)
       (autolisp-termination (condition)
@@ -218,32 +279,61 @@ STREAM signalled end-of-file before any input was given."
 
 ;;; --- Batch entry points ---------------------------------------------
 
-(defun run-with-input (dialect mode payload &key quiet-p)
-  (handler-case
-      (ecase mode
-        (:file
-         (run-autolisp-file payload :dialect dialect :setup-fn #'setup-builtins))
-        (:expression
-         (run-autolisp-string payload :dialect dialect
-                              :source-name "<-x>"
-                              :setup-fn #'setup-builtins))
-        (:repl
-         (run-repl dialect :quiet-p quiet-p)))
-    (autolisp-runtime-error (condition)
-      (report-runtime-error condition)
-      (quit 1))
-    (autolisp-termination (condition)
-      (report-termination condition)
-      (quit 0))
-    (file-error (condition)
-      (report-error condition)
-      (quit 2))))
+(defun run-with-input (dialect mode payload &key quiet-p host mock-input)
+  (let ((setup (lambda (context) (setup-context context host mock-input))))
+    (handler-case
+        (ecase mode
+          (:file
+           (run-autolisp-file payload :dialect dialect :setup-fn setup))
+          (:expression
+           (run-autolisp-string payload :dialect dialect
+                                :source-name "<-x>"
+                                :setup-fn setup))
+          (:repl
+           (run-repl dialect host :quiet-p quiet-p :mock-input mock-input)))
+      (autolisp-runtime-error (condition)
+        (report-runtime-error condition)
+        (quit 1))
+      (autolisp-termination (condition)
+        (report-termination condition)
+        (quit 0))
+      (file-error (condition)
+        (report-error condition)
+        (quit 2)))))
+
+(defun install-gui-renderer (gui-command)
+  "Switch the active DCL renderer to a subprocess driver if
+GUI-COMMAND is non-nil, or if CLAUTOLISP_GUI is set in the
+environment. Otherwise the terminal renderer (installed at
+autolisp-dcl load time) stays in effect."
+  (let ((effective
+          (or gui-command
+              (let ((env (uiop:getenv "CLAUTOLISP_GUI")))
+                (and env (plusp (length env)) env))))
+        (debug-p (let ((env (uiop:getenv "CLAUTOLISP_DCL_DEBUG")))
+                   (and env (plusp (length env))))))
+    (when debug-p
+      (format *error-output*
+              "~&[dcl-debug] install-gui-renderer effective=~S~%" effective))
+    (when effective
+      (clautolisp.autolisp-dcl:install-default-renderer
+       (clautolisp.autolisp-dcl:make-subprocess-renderer
+        :command effective))
+      (when debug-p
+        (format *error-output*
+                "~&[dcl-debug] subprocess renderer installed.~%")))))
 
 (defun main (&rest argv)
   (handler-case
-      (multiple-value-bind (dialect mode payload quiet-p)
+      (multiple-value-bind (dialect mode payload quiet-p host mock-input gui trace-p)
           (parse-arguments (rest argv))
-        (run-with-input dialect mode payload :quiet-p quiet-p)
+        (install-gui-renderer gui)
+        (when trace-p
+          (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
+        (run-with-input dialect mode payload
+                        :quiet-p quiet-p
+                        :host host
+                        :mock-input mock-input)
         (finish-output)
         (quit 0))
     (error (error)

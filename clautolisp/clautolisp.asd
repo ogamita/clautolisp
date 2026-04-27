@@ -4,7 +4,10 @@
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-host"
+               "clautolisp/autolisp-mock-host"
                "clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-file-compat")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
@@ -41,9 +44,70 @@
   :components
   ((:file "autolisp-runtime/source/package")
    (:file "autolisp-runtime/source/model")
-   (:file "autolisp-runtime/source/api"))
+   (:file "autolisp-runtime/source/api")
+   (:file "autolisp-runtime/source/ontology"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-runtime/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-host"
+  :description "Host Abstraction Layer (HAL) and NullHost backend for clautolisp."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-host/source/package")
+   (:file "autolisp-host/source/protocol")
+   (:file "autolisp-host/source/null-host"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-host/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-mock-host"
+  :description "In-memory deterministic CAD-database backend (MockHost) for clautolisp."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-host" "clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-mock-host/source/package")
+   (:file "autolisp-mock-host/source/model")
+   (:file "autolisp-mock-host/source/sysvars")
+   (:file "autolisp-mock-host/source/api")
+   (:file "autolisp-mock-host/source/entity-api")
+   (:file "autolisp-mock-host/source/selection-api")
+   (:file "autolisp-mock-host/source/table-api")
+   (:file "autolisp-mock-host/source/sysvar-api")
+   (:file "autolisp-mock-host/source/prompt-api")
+   (:file "autolisp-mock-host/source/com-progids")
+   (:file "autolisp-mock-host/source/vlax-api"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-mock-host/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-dcl"
+  :description "Dialog Control Language (DCL) implementation for clautolisp."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-dcl/source/package")
+   (:file "autolisp-dcl/source/model")
+   (:file "autolisp-dcl/source/parser")
+   (:file "autolisp-dcl/source/runtime")
+   (:file "autolisp-dcl/source/sexp-wire")
+   (:file "autolisp-dcl/source/subprocess-renderer")
+   (:file "autolisp-dcl/source/terminal"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-dcl/tests")))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          :success))
@@ -52,7 +116,10 @@
   :description "Initial core builtin registry for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime" "uiop")
+  :depends-on ("clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-host"
+               "clautolisp/autolisp-dcl"
+               "uiop")
   :serial t
   :components
   ((:file "autolisp-builtins-core/source/package")
@@ -97,7 +164,10 @@
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-host"
+               "clautolisp/autolisp-mock-host"
                "clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-dcl"
                "uiop")
   :serial t
   :components
@@ -133,6 +203,62 @@
                          (uiop:symbol-call :clautolisp.autolisp-reader.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-host/tests"
+  :description "Tests for the clautolisp Host Abstraction Layer."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-host" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-host/tests/package")
+   (:file "autolisp-host/tests/test-harness")
+   (:file "autolisp-host/tests/null-host-tests")
+   (:file "autolisp-host/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-host.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/autolisp-mock-host/tests"
+  :description "Tests for the clautolisp MockHost data carriers."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-mock-host" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-mock-host/tests/package")
+   (:file "autolisp-mock-host/tests/test-harness")
+   (:file "autolisp-mock-host/tests/model-tests")
+   (:file "autolisp-mock-host/tests/entity-api-tests")
+   (:file "autolisp-mock-host/tests/selection-tests")
+   (:file "autolisp-mock-host/tests/prompt-tests")
+   (:file "autolisp-mock-host/tests/vlax-tests")
+   (:file "autolisp-mock-host/tests/reactor-tests")
+   (:file "autolisp-mock-host/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-mock-host.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/autolisp-dcl/tests"
+  :description "Tests for the clautolisp DCL subsystem."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-dcl" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-dcl/tests/package")
+   (:file "autolisp-dcl/tests/test-harness")
+   (:file "autolisp-dcl/tests/parser-tests")
+   (:file "autolisp-dcl/tests/runtime-tests")
+   (:file "autolisp-dcl/tests/sexp-wire-tests")
+   (:file "autolisp-dcl/tests/subprocess-renderer-tests")
+   (:file "autolisp-dcl/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-dcl.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/autolisp-runtime/tests"
   :description "Tests for the clautolisp AutoLISP runtime object model."
   :author "Codex"
@@ -144,6 +270,7 @@
    (:file "autolisp-runtime/tests/test-harness")
    (:file "autolisp-runtime/tests/model-tests")
    (:file "autolisp-runtime/tests/evaluator-tests")
+   (:file "autolisp-runtime/tests/ontology-tests")
    (:file "autolisp-runtime/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
@@ -154,7 +281,9 @@
   :description "Tests for the initial clautolisp core builtins."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-builtins-core" "fiveam")
+  :depends-on ("clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-mock-host"
+               "fiveam")
   :serial t
   :components
   ((:file "autolisp-builtins-core/tests/package")
@@ -188,6 +317,9 @@
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader/tests"
                "clautolisp/autolisp-runtime/tests"
+               "clautolisp/autolisp-host/tests"
+               "clautolisp/autolisp-mock-host/tests"
+               "clautolisp/autolisp-dcl/tests"
                "clautolisp/autolisp-builtins-core/tests"
                "clautolisp/autolisp-file-compat/tests")
   :perform (asdf:test-op (op system)
@@ -196,6 +328,12 @@
                            (uiop:symbol-call :clautolisp.autolisp-reader.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-runtime.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-host.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-mock-host.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-dcl.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
                                              :run-all-tests)

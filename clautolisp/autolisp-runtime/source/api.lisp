@@ -210,20 +210,55 @@ keep a snapshot beyond the dynamic extent of the active frame."
 (defun separate-vlx-namespace-name (namespace)
   (clautolisp.autolisp-runtime.internal::separate-vlx-namespace-name namespace))
 
-(defun make-runtime-session (&key current-document dialect)
+(defparameter *default-runtime-host* nil
+  "Process-wide fallback host backend for fresh runtime sessions.
+The autolisp-host module installs the NullHost singleton here when
+loaded; downstream callers (the CLI, MockHost-aware tests, etc.)
+may rebind it to switch the default backend. Sessions whose `:host`
+keyword argument is not supplied inherit this value.")
+
+(defun make-runtime-session (&key current-document dialect host)
   (let* ((document (or current-document
                        (make-document-namespace :name "DOCUMENT")))
          (chosen-dialect
           (or dialect
-              (clautolisp.autolisp-reader:autolisp-dialect-strict))))
+              (clautolisp.autolisp-reader:autolisp-dialect-strict)))
+         (chosen-host (or host *default-runtime-host*)))
     (let ((session (clautolisp.autolisp-runtime.internal::make-runtime-session
                     :current-document document
-                    :dialect chosen-dialect)))
+                    :dialect chosen-dialect
+                    :host chosen-host)))
       (setf (gethash (document-namespace-name document)
                      (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
                       session))
             document)
+      ;; Phase 14a back-pointer for event-channel resolution.
+      (setf (clautolisp.autolisp-runtime.internal::document-namespace-session
+             document)
+            session)
       session)))
+
+(defun runtime-session-host (session)
+  "Return the HAL backend SESSION was instantiated with, or
+*default-runtime-host* if the session's slot is nil."
+  (or (clautolisp.autolisp-runtime.internal::runtime-session-host session)
+      *default-runtime-host*))
+
+(defun set-runtime-session-host (session host)
+  "Replace SESSION's HAL backend. Used by tools that swap the
+backend mid-session (e.g. switching from MockHost to LiveHost
+within a single run)."
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
+        host))
+
+(defun current-evaluation-host (&optional (context (current-evaluation-context)))
+  "Return the active HAL backend for CONTEXT, falling back to
+*default-runtime-host* when no session is in scope."
+  (or (and context
+           (clautolisp.autolisp-runtime.internal::evaluation-context-session context)
+           (runtime-session-host
+            (clautolisp.autolisp-runtime.internal::evaluation-context-session context)))
+      *default-runtime-host*))
 
 (defun runtime-session-dialect (session)
   "Return the dialect descriptor SESSION was instantiated with."
@@ -813,8 +848,14 @@ profiles between subordinate evaluations within a single session."
 (defun autolisp-ename-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-ename-value object))
 
+(defun make-autolisp-ename (&key value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-ename :value value))
+
 (defun autolisp-pickset-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-pickset-value object))
+
+(defun make-autolisp-pickset (&key value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-pickset :value value))
 
 (defun autolisp-subr-name (object)
   (clautolisp.autolisp-runtime.internal::autolisp-subr-name object))
@@ -874,6 +915,15 @@ error wraps a non-autolisp-runtime condition."
 
 (defun autolisp-vla-object-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-vla-object-value object))
+
+(defun make-autolisp-vla-object (&key value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-vla-object :value value))
+
+(defun make-autolisp-safearray (&key value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-safearray :value value))
+
+(defun make-autolisp-variant (&key value)
+  (clautolisp.autolisp-runtime.internal::make-autolisp-variant :value value))
 
 (defun append-proper-and-tail (elements tail)
   (if (null elements)
@@ -1079,44 +1129,118 @@ error wraps a non-autolisp-runtime condition."
     (dolist (symbol locals)
       (bind-dynamic-variable symbol nil context))))
 
+(defparameter *autolisp-trace-p* nil
+  "When non-nil, every call into call-autolisp-function-in-context
+emits an indented trace line on entry and exit. Toggle via the
+clautolisp CLI's --trace flag, or set directly from user code.")
+
+(defparameter *autolisp-trace-depth* 0
+  "Indentation level for the trace printer. Incremented on entry,
+decremented on exit; visible as leading spaces in trace output.")
+
+(defparameter *autolisp-trace-stream* nil
+  "Stream the tracer writes to. nil means *trace-output*.")
+
+(defun autolisp-trace-stream ()
+  (or *autolisp-trace-stream* *trace-output*))
+
+(defun autolisp-function-name-for-trace (function)
+  (cond
+    ((typep function 'autolisp-subr)  (autolisp-subr-name function))
+    ((typep function 'autolisp-usubr) (or (autolisp-usubr-name function) "<lambda>"))
+    (t (format nil "~S" function))))
+
+(defun autolisp-format-trace-value (value)
+  ;; Compact one-line printer for trace-value display. Strings keep
+  ;; their quotes; other values get princ'd via existing helpers
+  ;; where available, falling back to ~S so even unfamiliar carriers
+  ;; render readably.
+  (cond
+    ((null value) "nil")
+    ((eq value t) "T")
+    ((typep value 'autolisp-string)
+     (format nil "~S" (autolisp-string-value value)))
+    ((typep value 'autolisp-symbol)
+     (autolisp-symbol-name value))
+    ((numberp value) (format nil "~A" value))
+    ((consp value)
+     (let ((items (loop for cell on value
+                        collect (autolisp-format-trace-value (car cell))
+                        until (atom (cdr cell)))))
+       (format nil "(~{~A~^ ~})" items)))
+    (t (format nil "~S" value))))
+
+(defun autolisp-trace-prefix ()
+  (make-string (* 2 *autolisp-trace-depth*) :initial-element #\Space))
+
+(defun autolisp-trace-enter (function arguments)
+  (let ((stream (autolisp-trace-stream)))
+    (format stream "~&~A-> (~A~{ ~A~})~%"
+            (autolisp-trace-prefix)
+            (autolisp-function-name-for-trace function)
+            (mapcar #'autolisp-format-trace-value arguments))
+    (force-output stream)))
+
+(defun autolisp-trace-exit (function result)
+  (let ((stream (autolisp-trace-stream)))
+    (format stream "~&~A<- ~A => ~A~%"
+            (autolisp-trace-prefix)
+            (autolisp-function-name-for-trace function)
+            (autolisp-format-trace-value result))
+    (force-output stream)))
+
 (defun call-autolisp-function-in-context (function context &rest arguments)
   (let ((clautolisp.autolisp-runtime.internal::*active-evaluation-context* context))
-    (cond
-      ((typep function 'autolisp-subr)
-       (let ((*autolisp-call-stack*
-              (cons (cons :subr
-                          (cons (autolisp-subr-name function) arguments))
-                    *autolisp-call-stack*)))
-         (handler-case
-             (apply (autolisp-subr-function function) arguments)
-           (autolisp-runtime-error (condition)
-             (error condition))
-           (error (condition)
-             (error 'autolisp-runtime-error
-                    :code :subr-call-host-error
-                    :message (format nil
-                                     "Common Lisp error while calling AutoLISP subr ~A: ~A"
-                                     (autolisp-subr-name function)
-                                     condition)
-                    :details (list :subr (autolisp-subr-name function)
-                                   :condition condition)
-                    :call-stack (current-autolisp-call-stack))))))
-      ((typep function 'autolisp-usubr)
-       (let ((*autolisp-call-stack*
-              (cons (cons :usubr
-                          (cons (or (autolisp-usubr-name function) "<lambda>")
-                                arguments))
-                    *autolisp-call-stack*)))
-         (unwind-protect
-              (progn
-                (bind-usubr-frame function arguments context)
-                (autolisp-eval-progn (autolisp-usubr-body function) context))
-           (pop-dynamic-frame context))))
-      (t
-       (signal-autolisp-runtime-error
-        :invalid-function-object
-        "Expected an AutoLISP function object, got ~S."
-        function)))))
+    (when *autolisp-trace-p*
+      (autolisp-trace-enter function arguments)
+      (incf *autolisp-trace-depth*))
+    (let ((result
+            (cond
+              ((typep function 'autolisp-subr)
+               (let ((*autolisp-call-stack*
+                      (cons (cons :subr
+                                  (cons (autolisp-subr-name function) arguments))
+                            *autolisp-call-stack*)))
+                 (handler-case
+                     (apply (autolisp-subr-function function) arguments)
+                   (autolisp-runtime-error (condition)
+                     (when *autolisp-trace-p*
+                       (decf *autolisp-trace-depth*)
+                       (autolisp-trace-exit function (format nil "<error: ~A>" condition)))
+                     (error condition))
+                   (error (condition)
+                     (when *autolisp-trace-p*
+                       (decf *autolisp-trace-depth*)
+                       (autolisp-trace-exit function (format nil "<host-error: ~A>" condition)))
+                     (error 'autolisp-runtime-error
+                            :code :subr-call-host-error
+                            :message (format nil
+                                             "Common Lisp error while calling AutoLISP subr ~A: ~A"
+                                             (autolisp-subr-name function)
+                                             condition)
+                            :details (list :subr (autolisp-subr-name function)
+                                           :condition condition)
+                            :call-stack (current-autolisp-call-stack))))))
+              ((typep function 'autolisp-usubr)
+               (let ((*autolisp-call-stack*
+                      (cons (cons :usubr
+                                  (cons (or (autolisp-usubr-name function) "<lambda>")
+                                        arguments))
+                            *autolisp-call-stack*)))
+                 (unwind-protect
+                      (progn
+                        (bind-usubr-frame function arguments context)
+                        (autolisp-eval-progn (autolisp-usubr-body function) context))
+                   (pop-dynamic-frame context))))
+              (t
+               (signal-autolisp-runtime-error
+                :invalid-function-object
+                "Expected an AutoLISP function object, got ~S."
+                function)))))
+      (when *autolisp-trace-p*
+        (decf *autolisp-trace-depth*)
+        (autolisp-trace-exit function result))
+      result)))
 
 (defun self-evaluating-runtime-value-p (object)
   (or (null object)
@@ -1402,6 +1526,14 @@ error wraps a non-autolisp-runtime condition."
     (cond
       ((self-evaluating-runtime-value-p form)
        form)
+      ((and (typep form 'autolisp-symbol)
+            (string= "T" (autolisp-symbol-name form)))
+       ;; T is the canonical truth constant in AutoLISP and must be
+       ;; self-evaluating regardless of dialect or any (setq T ...)
+       ;; the user might attempt. Without this, (cond (... ) (T ...))
+       ;; would fall through silently in dialects whose unbound-
+       ;; variable mode is :silent-nil.
+       form)
       ((typep form 'autolisp-symbol)
        (multiple-value-bind (value boundp origin) (lookup-variable form context)
          (declare (ignore origin))
@@ -1516,12 +1648,32 @@ error wraps a non-autolisp-runtime condition."
   (first (apply #'read-runtime-from-file path options)))
 
 (defun autolisp-load-file-in-context (path context &rest read-options)
-  (call-with-autolisp-error-handler
-   (lambda ()
-     (autolisp-eval-progn
-      (apply #'read-runtime-from-file path read-options)
-      context))
-   context))
+  ;; Inject the dialect's default source encoding when the caller did
+  ;; not pass an explicit :external-format. This makes
+  ;;   * the strict dialect read files as ISO-8859-1 (a 1-1 byte
+  ;;     coding, never fails on Latin-1 / Windows-1252 source);
+  ;;   * the autocad-2026 / bricscad-v26 dialects read files as
+  ;;     UTF-8, matching AutoCAD 2025+ and BricsCAD V26 defaults
+  ;;     (autolisp-spec ch. 11, "Source-File and File-Stream
+  ;;     Encoding").
+  (let* ((options-have-external-format
+          (loop for tail = read-options then (cddr tail)
+                while tail
+                thereis (eq (first tail) :external-format)))
+         (dialect (current-evaluation-dialect context))
+         (effective-options
+          (if options-have-external-format
+              read-options
+              (append read-options
+                      (list :external-format
+                            (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
+                             dialect))))))
+    (call-with-autolisp-error-handler
+     (lambda ()
+       (autolisp-eval-progn
+        (apply #'read-runtime-from-file path effective-options)
+        context))
+     context)))
 
 (defun autolisp-load-file (path &rest read-options)
   (apply #'autolisp-load-file-in-context

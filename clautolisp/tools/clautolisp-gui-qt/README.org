@@ -1,0 +1,51 @@
+#+TITLE: clautolisp-gui-qt — Qt6 driver for the clautolisp DCL renderer
+#+OPTIONS: toc:nil
+
+* Overview
+
+This is the reference Qt6 implementation of the sexp-wire-protocol
+DCL renderer documented in
+~clautolisp/autolisp-dcl/source/sexp-wire.lisp~. It is a
+subprocess: ~clautolisp~ launches it with ~--gui clautolisp-gui-qt~
+and pipes DCL events to it over stdio.
+
+The protocol is intentionally readable. A wire trace looks like:
+
+#+begin_example
+(:hello 1)
+(:open-dialog 0 "Greet" (:tile :dialog :nokey ...))
+(:set-tile 0 "name" "Alice")
+(:action 0 "name" "Alice" :reason-selected)
+(:done 0 1)
+(:close-dialog 0 1)
+(:bye)
+#+end_example
+
+* Build
+
+#+begin_src sh
+cd tools/clautolisp-gui-qt
+cmake -B build
+cmake --build build
+#+end_src
+
+The result is ~build/clautolisp-gui-qt~. Use it via:
+
+#+begin_src sh
+clautolisp --gui $(pwd)/build/clautolisp-gui-qt my-script.lsp
+#+end_src
+
+Or set ~CLAUTOLISP_GUI~ in the environment.
+
+* Status
+
+This is *Phase 15b scaffolding*. The basic widget set
+(~text~, ~button~, ~edit_box~, ~toggle~, ~list_box~, ~popup_list~,
+~row~, ~column~, ~boxed_row~, ~boxed_column~, ~ok_only~,
+~ok_cancel~, ~ok_cancel_help~) is wired. ~start_image~,
+~vector_image~, ~slide_image~, ~start_list~, ~add_list~,
+~end_list~ remain stubs to be filled in when DCL applications
+that exercise them turn up.
+
+The terminal renderer (built in to the clautolisp executable)
+remains the documented fallback when no GUI is available.

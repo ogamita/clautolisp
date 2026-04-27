@@ -114,6 +114,29 @@ code 1.
 - ~--quiet~              :: Suppress the REPL banner; only the prompt
                             is shown. No effect outside REPL mode.
 
+** Host backend
+The Host Abstraction Layer (HAL, Phase 8 of the implementation
+roadmap) decides where CAD-host effects land. The dialect descriptor
+controls the *language*; the host backend controls the *target*.
+Both axes are independent.
+
+- ~--host NAME~          :: Select the backend. Currently accepted:
+                            ~mock~ (default since 0.0.14): an
+                            in-memory deterministic CAD-database
+                            substitute capable of entget / ssget /
+                            getvar / getstring etc. ~null~: every
+                            CAD-host operation signals
+                            ~:host-not-supported~ — useful for
+                            programs that should not touch a host
+                            at all. ~live~ is reserved for Phase 16.
+- ~--mock-input PATH~    :: Attach the file at PATH as the
+                            MockHost's prompt-stream. Lines are
+                            consumed in order by ~getstring~,
+                            ~getreal~, ~getint~, ~getpoint~, etc.
+                            so headless test rigs can feed
+                            deterministic answers to interactive
+                            scripts.
+
 ** Informational
 - ~--version~            :: Print =clautolisp <version>= on standard
                             output and exit 0. The version is the
@@ -126,11 +149,12 @@ In REPL mode (and only in REPL mode) ~clautolisp~ prints a one-line
 banner before the first prompt:
 
 #+BEGIN_EXAMPLE
-clautolisp 0.0.1 — REPL (STRICT dialect) — Ctrl-D to exit.
+clautolisp 0.0.9 — REPL (STRICT dialect, null-host host) — Ctrl-D to exit.
 #+END_EXAMPLE
 
-The version string and dialect name reflect the current build and the
-selected ~--dialect~. Pass ~--quiet~ to suppress it.
+The version string, dialect name, and host backend name reflect the
+current build and the selected ~--dialect~ / ~--host~. Pass
+~--quiet~ to suppress the banner.
 
 * Exit Codes
 ~clautolisp~ uses the following exit codes. They are stable and may
