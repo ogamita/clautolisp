@@ -221,8 +221,8 @@ specification draft. The extras documented in this section are
 convenience extensions and compatibility helpers that real-world
 AutoLISP code relies on without going through the spec process.
 
-Code that targets the strict shared standard (the AutoCAD ∩
-BricsCAD intersection) MUST NOT depend on the operators below; tests
+Code that targets the strict shared standard (the AutoCAD/BricsCAD
+intersection) MUST NOT depend on the operators below; tests
 written against ~autolisp-test/harness/inventory.sexp~ are
 intentionally restricted to the spec, and the inventory does not
 list these names.
