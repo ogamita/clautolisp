@@ -43,7 +43,7 @@ The specification document has been substantially expanded into a HyperSpec-styl
 - `clautolisp`:
   early implementation stage; the reader subsystem is implemented and has already read a real AutoLISP corpus of 663 `.lsp` files, 100583 lines, and 3508077 characters successfully, the first runtime and builtin layers exist, and the file-compatibility harness now executes 69 declarative file, pathname, stream, mutation, and printer scenarios with 140 checks on both SBCL and CCL, with product-runner adapters in place for later AutoCAD and BricsCAD audits.
 - `autolisp-test`:
-  conformance-suite planning stage; the subproject structure and development plan exist, but the harness and first projected tests still need to be implemented.
+  first version implemented; pure-AutoLISP harness loadable on AutoCAD, BricsCAD and `clautolisp`, with 654 deftests across 113 files covering every operator currently implemented in `clautolisp` (Phase C STRICT corpus), three vendor-divergent twin-test files derived from the BricsCAD V26 probe (Phase D), and stubs for the families that depend on a mock host or vendor-specific runtime (Phase E: DCL, COM/VLAX, VLA, VLR, ObjectDBX, Express Tools, DOSLib, ARX, BRX). The conformance model uses three profiles (`STRICT`, `AUTOCAD`, `BRICSCAD`) and orthogonal platform/runtime tags; verdicts are reported per subset as `CONFORMS`, `DEVIATES`, or `NOT-APPLICABLE`. Run with `make -C autolisp-test test` (canonical SBCL path through the standalone executable), or one of `test-clautolisp-sbcl`, `test-clautolisp-ccl`, `test-asdf-sbcl`, `test-asdf-ccl` for the alternative paths.
 
 ## Main Deliverables
 
@@ -95,14 +95,18 @@ The implementation is written in portable Common Lisp as far as practical.
 
 `autolisp-test` is the third subproject of the project.
 
-Its role is to provide an AutoLISP analogue of Common Lisp `ansi-tests`: a specification-oriented conformance suite that tests language behavior rather than implementation-specific extensions.
+Its role is to provide a specification-oriented conformance suite that tests language behaviour against the local AutoLISP / Visual LISP draft specification, independent of any single implementation. The harness is written in pure AutoLISP and is loadable identically by `clautolisp`, AutoCAD and BricsCAD; no Common Lisp dependency is required at run time.
 
-This branch aims to provide:
+The first version provides:
 
-- a reusable test harness,
-- a corpus of specification-backed tests grouped by language area,
-- expected-failure overlays for specific implementation/version/host combinations,
-- comparable conformance reports across `clautolisp`, AutoCAD, BricsCAD, and future implementations.
+- a reusable test harness (`harness/rt.lsp`, `profiles.lsp`, `platform-detect.lsp`, `report.lsp`, `expectations.lsp`, `test-loader.lsp`, `run.lsp`),
+- a 654-deftest corpus across 113 files covering every operator currently implemented in `clautolisp`, plus vendor-divergent twin tests from the BricsCAD V26 probe and deferred stubs for the families that depend on a mock host or vendor-specific runtime,
+- expected-failure overlays per `harness/expectations/<impl>/<version>/<host>.lsp`,
+- a canonical s-expression report and verdict matrix per profile (`STRICT`, `AUTOCAD`, `BRICSCAD`) and tag combination (`CONFORMS`, `DEVIATES`, `NOT-APPLICABLE`),
+- a Common Lisp `tools/diff-reports.lisp` that aligns N reports across `clautolisp`, AutoCAD, BricsCAD and future implementations,
+- an ASDF wrapper (`autolisp-test/clautolisp-driver`) for SBCL/CCL CI runs.
+
+The Makefile exposes four launch paths (`test-clautolisp-sbcl`, `test-clautolisp-ccl`, `test-asdf-sbcl`, `test-asdf-ccl`); the umbrella `make test` runs the SBCL-via-executable path.
 
 The planning document for this branch is:
 

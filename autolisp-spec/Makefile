@@ -1,4 +1,12 @@
-PANDOC ?= pandoc
+# Documentation is exported to PDF via Emacs's native org-mode LaTeX
+# exporter rather than pandoc; pandoc's org reader trips on a number
+# of legitimate AutoLISP-spec constructs (e.g. `\"' inside backticks)
+# that org-mode parses correctly. The LaTeX compiler is set to
+# xelatex so arbitrary UTF-8 codepoints render without missing-glyph
+# errors. Both variables are overridable, e.g.
+# `make documentation LATEX_COMPILER=lualatex'.
+EMACS          ?= emacs
+LATEX_COMPILER ?= xelatex
 AUTOCAD_RUNNER ?=
 BRICSCAD_RUNNER ?=
 
@@ -21,7 +29,10 @@ documentation: $(PDF_FILES)
 # make probe-bricscad BRICSCAD_RUNNER='"/Applications/BricsCAD.app/Contents/MacOS/bricscad" "__PROBE_FILE__"'
 
 %.pdf: %.org
-	$(PANDOC) --from=org --to=pdf --output="$@" "$<"
+	$(EMACS) --batch \
+		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
+		--visit "$<" \
+		--funcall org-latex-export-to-pdf
 
 clean-pdf:
 	rm -f $(PDF_FILES)

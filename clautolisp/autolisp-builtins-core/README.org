@@ -11,3 +11,63 @@ The initial scope is intentionally narrow:
 - runtime type and predicate helpers,
 - first Visual LISP symbol helpers,
 - builtin registration into the AutoLISP symbol table.
+
+* clautolisp-Specific Operators
+
+The registry installed by ~core-builtins~ is a superset of the
+operators listed in the local AutoLISP / Visual LISP specification
+draft. The extras are convenience extensions or compatibility
+helpers that AutoCAD / BricsCAD provide informally; clautolisp ships
+them so that real-world AutoLISP code that depends on them runs
+without modification.
+
+Conformance test code that targets the strict standard MUST NOT
+rely on these extensions. When `autolisp-test/harness/inventory.sexp`
+is consulted to drive a conformance run, every clautolisp-specific
+operator listed below is registered with `:authority documented`
+and `:source-evidence "clautolisp-extension"` so the report makes
+their non-standard origin explicit.
+
+** CxxxR / CxxxxR family (compositional list accessors)
+
+Beyond ~CAR~, ~CDR~ and ~CADR~ which are in the local specification,
+clautolisp also installs:
+
+- two-level: ~CAAR~, ~CDAR~, ~CDDR~
+- three-level: ~CAAAR~, ~CAADR~, ~CADAR~, ~CADDR~, ~CDAAR~,
+  ~CDADR~, ~CDDAR~, ~CDDDR~
+- four-level: ~CAAAAR~, ~CAAADR~, ~CAADAR~, ~CAADDR~, ~CADAAR~,
+  ~CADADR~, ~CADDAR~, ~CADDDR~, ~CDAAAR~, ~CDAADR~, ~CDADAR~,
+  ~CDADDR~, ~CDDAAR~, ~CDDADR~, ~CDDDAR~, ~CDDDDR~
+
+These mirror the Common Lisp ~Cxxr~ shorthand and the way both
+Autodesk and Bricsys runtime libraries expose them de facto. Each
+delegates to ~builtin-car~ / ~builtin-cdr~ so a non-list argument
+anywhere along the chain still surfaces a CAR / CDR-shaped error
+under the proper builtin name.
+
+** ERROR
+
+~(error MESSAGE-OR-STRING ...)~ raises an AutoLISP-visible error
+with code ~:user-error~ and the supplied message. Modeled after the
+common Visual LISP idiom of calling ~(error ...)~ to abort with a
+user-supplied message.
+
+** LCM, LOGXOR
+
+Convenience numerics complementing the in-spec ~GCD~, ~LOGAND~ and
+~LOGIOR~. Reflect the same conventions Autodesk's documentation
+mentions in passing without giving them a dictionary entry.
+
+** VL-CATCH-ALL-ERROR-STACK (introspection extension)
+
+~(vl-catch-all-error-stack OBJECT)~ returns the AutoLISP call-stack
+snapshot that was captured when the catch-all error wrapped in
+OBJECT was raised. Each frame is a cons ~(KIND . PAYLOAD)~ where
+~KIND~ is one of ~:eval~, ~:special-op~, ~:subr~, ~:usubr~. The
+stack is built by clautolisp's runtime tracker
+(~*autolisp-call-stack*~) and is unique to clautolisp -- AutoCAD and
+BricsCAD do not expose it. Used by ~autolisp-test/harness/rt.lsp~
+to enrich failure details with a backtrace when the host supplies
+one. Code that wants to remain portable should test for it via
+~(boundp 'vl-catch-all-error-stack)~ before calling.

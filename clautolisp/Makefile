@@ -1,7 +1,15 @@
 CCL  ?= ccl
 SBCL ?= sbcl
 LISP ?= $(SBCL)
-PANDOC ?= pandoc
+# Documentation is exported to PDF via Emacs's native org-mode LaTeX
+# exporter rather than pandoc; pandoc's org reader trips on a number
+# of legitimate AutoLISP-spec constructs (e.g. `\"' inside backticks)
+# that org-mode parses correctly. The LaTeX compiler is set to
+# xelatex so arbitrary UTF-8 codepoints (such as set-theoretic `∩')
+# render without missing-glyph errors. Both variables are
+# overridable, e.g. `make documentation LATEX_COMPILER=lualatex'.
+EMACS          ?= emacs
+LATEX_COMPILER ?= xelatex
 ROOT_DIR := $(shell pwd)
 ASD_FILE := $(ROOT_DIR)/clautolisp.asd
 XDG_CACHE_HOME ?= $(ROOT_DIR)/.cache
@@ -25,7 +33,7 @@ FILE_COMPAT_PRODUCT_SCENARIOS ?= autolisp-file-compat/scenarios/mutations autoli
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 
-.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl build-clautolisp-sbcl build-clautolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl run-file-compat-autocad run-file-compat-bricscad audit-file-compat-autocad audit-file-compat-bricscad documentation user-manual clean-pdf builtins-coverage
+.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl build-clautolisp-sbcl build-clautolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl run-file-compat-autocad run-file-compat-bricscad audit-file-compat-autocad audit-file-compat-bricscad documentation user-manual clean-pdf specifications builtins-coverage
 
 all: documentation build-clautolisp-sbcl clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt
 
@@ -105,10 +113,14 @@ audit-file-compat-bricscad:
 
 documentation: $(PDF_FILES)
 
-user-manual: documentation/user-manual.pdf
+user-manual: documentation/clautolisp-user-manual.pdf
+specifications: documentation/clautolisp-specifications.pdf
 
 %.pdf: %.org
-	$(PANDOC) --from=org --to=pdf --output="$@" "$<"
+	$(EMACS) --batch \
+		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
+		--visit "$<" \
+		--funcall org-latex-export-to-pdf
 
 clean-pdf:
 	rm -f $(PDF_FILES)

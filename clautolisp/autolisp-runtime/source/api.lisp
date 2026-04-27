@@ -61,6 +61,29 @@
 (deftype autolisp-vla-object ()
   'clautolisp.autolisp-runtime.internal::autolisp-vla-object)
 
+;;; --- AutoLISP call-stack tracking ---------------------------------
+;;;
+;;; *autolisp-call-stack* records the chain of forms currently being
+;;; evaluated. Each frame is a cons (KIND . FORM) where KIND is
+;;;   :eval        - autolisp-eval is evaluating a form
+;;;   :special-op  - eval-special-operator is dispatching a special form
+;;;   :subr        - call-autolisp-function-in-context is calling a SUBR
+;;;   :usubr       - call-autolisp-function-in-context is calling a USUBR
+;;; The most recent frame is at the head of the list. Captured by
+;;; signal-autolisp-runtime-error and exposed to AutoLISP code through
+;;; vl-bt and through the catch-all error object.
+
+(defparameter *autolisp-call-stack* nil
+  "Current AutoLISP evaluator call stack. Each frame is a cons
+(KIND . FORM). The list is built and torn down by the evaluator
+through unwind-protect, so it is safe to consult during error
+handling.")
+
+(defun current-autolisp-call-stack ()
+  "Return a copy of the current evaluator stack so consumers can
+keep a snapshot beyond the dynamic extent of the active frame."
+  (copy-list *autolisp-call-stack*))
+
 (define-condition autolisp-runtime-error (error)
   ((code
     :initarg :code
@@ -71,7 +94,11 @@
    (details
     :initarg :details
     :initform nil
-    :reader autolisp-runtime-error-details))
+    :reader autolisp-runtime-error-details)
+   (call-stack
+    :initarg :call-stack
+    :initform nil
+    :reader autolisp-runtime-error-call-stack))
   (:report (lambda (condition stream)
              (format stream "~A" (autolisp-runtime-error-message condition)))))
 
@@ -99,7 +126,8 @@
   (error 'autolisp-runtime-error
          :code code
          :message (apply #'format nil control-string arguments)
-         :details arguments))
+         :details arguments
+         :call-stack (current-autolisp-call-stack)))
 
 (defun reset-autolisp-symbol-table ()
   (clrhash clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*)
@@ -870,6 +898,15 @@ profiles between subordinate evaluations within a single session."
 (defun autolisp-catch-all-error-condition (object)
   (clautolisp.autolisp-runtime.internal::autolisp-catch-all-error-condition object))
 
+(defun autolisp-catch-all-error-call-stack (object)
+  "Return the AutoLISP call-stack snapshot captured at the time the
+underlying autolisp-runtime-error was raised, or NIL if the catch-all
+error wraps a non-autolisp-runtime condition."
+  (let ((condition (autolisp-catch-all-error-condition object)))
+    (if (typep condition 'autolisp-runtime-error)
+        (autolisp-runtime-error-call-stack condition)
+        nil)))
+
 (defun autolisp-variant-value (object)
   (clautolisp.autolisp-runtime.internal::autolisp-variant-value object))
 
@@ -1160,31 +1197,41 @@ decremented on exit; visible as leading spaces in trace output.")
     (let ((result
             (cond
               ((typep function 'autolisp-subr)
-               (handler-case
-                   (apply (autolisp-subr-function function) arguments)
-                 (autolisp-runtime-error (condition)
-                   (when *autolisp-trace-p*
-                     (decf *autolisp-trace-depth*)
-                     (autolisp-trace-exit function (format nil "<error: ~A>" condition)))
-                   (error condition))
-                 (error (condition)
-                   (when *autolisp-trace-p*
-                     (decf *autolisp-trace-depth*)
-                     (autolisp-trace-exit function (format nil "<host-error: ~A>" condition)))
-                   (error 'autolisp-runtime-error
-                          :code :subr-call-host-error
-                          :message (format nil
-                                           "Common Lisp error while calling AutoLISP subr ~A: ~A"
-                                           (autolisp-subr-name function)
-                                           condition)
-                          :details (list :subr (autolisp-subr-name function)
-                                         :condition condition)))))
+               (let ((*autolisp-call-stack*
+                      (cons (cons :subr
+                                  (cons (autolisp-subr-name function) arguments))
+                            *autolisp-call-stack*)))
+                 (handler-case
+                     (apply (autolisp-subr-function function) arguments)
+                   (autolisp-runtime-error (condition)
+                     (when *autolisp-trace-p*
+                       (decf *autolisp-trace-depth*)
+                       (autolisp-trace-exit function (format nil "<error: ~A>" condition)))
+                     (error condition))
+                   (error (condition)
+                     (when *autolisp-trace-p*
+                       (decf *autolisp-trace-depth*)
+                       (autolisp-trace-exit function (format nil "<host-error: ~A>" condition)))
+                     (error 'autolisp-runtime-error
+                            :code :subr-call-host-error
+                            :message (format nil
+                                             "Common Lisp error while calling AutoLISP subr ~A: ~A"
+                                             (autolisp-subr-name function)
+                                             condition)
+                            :details (list :subr (autolisp-subr-name function)
+                                           :condition condition)
+                            :call-stack (current-autolisp-call-stack))))))
               ((typep function 'autolisp-usubr)
-               (unwind-protect
-                    (progn
-                      (bind-usubr-frame function arguments context)
-                      (autolisp-eval-progn (autolisp-usubr-body function) context))
-                 (pop-dynamic-frame context)))
+               (let ((*autolisp-call-stack*
+                      (cons (cons :usubr
+                                  (cons (or (autolisp-usubr-name function) "<lambda>")
+                                        arguments))
+                            *autolisp-call-stack*)))
+                 (unwind-protect
+                      (progn
+                        (bind-usubr-frame function arguments context)
+                        (autolisp-eval-progn (autolisp-usubr-body function) context))
+                   (pop-dynamic-frame context))))
               (t
                (signal-autolisp-runtime-error
                 :invalid-function-object
@@ -1470,70 +1517,76 @@ decremented on exit; visible as leading spaces in trace output.")
        (string= "LAMBDA" (autolisp-symbol-name (first form)))))
 
 (defun autolisp-eval (form &optional (context (current-evaluation-context)))
-  (cond
-    ((self-evaluating-runtime-value-p form)
-     form)
-    ((and (typep form 'autolisp-symbol)
-          (string= "T" (autolisp-symbol-name form)))
-     ;; T is the canonical truth constant in AutoLISP and must be
-     ;; self-evaluating regardless of dialect or any (setq T ...)
-     ;; the user might attempt. Without this, (cond (... ) (T ...))
-     ;; would fall through silently in dialects whose unbound-
-     ;; variable mode is :silent-nil.
-     form)
-    ((typep form 'autolisp-symbol)
-     (multiple-value-bind (value boundp origin) (lookup-variable form context)
-       (declare (ignore origin))
-       (cond
-         (boundp value)
-         ;; Unbound-variable handling is dialect-controlled
-         ;; (autolisp-spec ch. 3, "Unbound-Variable Reference"). The
-         ;; strict dialect signals; AutoCAD / BricsCAD product
-         ;; profiles silently return nil.
-         ((eq :silent-nil
-              (clautolisp.autolisp-reader:autolisp-dialect-unbound-variable-mode
-               (current-evaluation-dialect context)))
-          nil)
-         (t
-          (signal-autolisp-runtime-error
-           :unbound-variable
-           "Unbound AutoLISP variable ~A."
-           (autolisp-symbol-name form))))))
-    ((consp form)
-     (let ((operator (first form))
-           (arguments (rest form)))
-       (cond
-         ((special-operator-function operator)
-          (eval-special-operator operator arguments context))
-         (t
-          (unless (or (lambda-form-p operator)
-                      (typep operator 'autolisp-symbol))
+  ;; Push a backtrace frame for every form being evaluated. Using
+  ;; let-binding around the body via a fresh dynamic binding ensures
+  ;; the frame is automatically popped on normal return AND on
+  ;; non-local exit (autolisp-runtime-error, autolisp-termination,
+  ;; autolisp-namespace-exit) without an explicit unwind-protect.
+  (let ((*autolisp-call-stack* (cons (cons :eval form) *autolisp-call-stack*)))
+    (cond
+      ((self-evaluating-runtime-value-p form)
+       form)
+      ((and (typep form 'autolisp-symbol)
+            (string= "T" (autolisp-symbol-name form)))
+       ;; T is the canonical truth constant in AutoLISP and must be
+       ;; self-evaluating regardless of dialect or any (setq T ...)
+       ;; the user might attempt. Without this, (cond (... ) (T ...))
+       ;; would fall through silently in dialects whose unbound-
+       ;; variable mode is :silent-nil.
+       form)
+      ((typep form 'autolisp-symbol)
+       (multiple-value-bind (value boundp origin) (lookup-variable form context)
+         (declare (ignore origin))
+         (cond
+           (boundp value)
+           ;; Unbound-variable handling is dialect-controlled
+           ;; (autolisp-spec ch. 3, "Unbound-Variable Reference"). The
+           ;; strict dialect signals; AutoCAD / BricsCAD product
+           ;; profiles silently return nil.
+           ((eq :silent-nil
+                (clautolisp.autolisp-reader:autolisp-dialect-unbound-variable-mode
+                 (current-evaluation-dialect context)))
+            nil)
+           (t
             (signal-autolisp-runtime-error
-             :invalid-call-operator
-             "AutoLISP call operator must be a function name or lambda form, got ~S."
-             operator))
-          (let ((function
-                  (if (lambda-form-p operator)
-                      (autolisp-eval operator context)
-                      (multiple-value-bind (binding boundp origin) (lookup-function operator context)
-                        (declare (ignore origin))
-                        (unless boundp
-                          (signal-autolisp-runtime-error
-                           :undefined-function
-                           "Undefined AutoLISP function ~A."
-                           (autolisp-symbol-name operator)))
-                        binding))))
-            (apply #'call-autolisp-function-in-context
-                   function
-                   context
-                   (mapcar (lambda (argument)
-                             (autolisp-eval argument context))
-                           arguments)))))))
-    (t
-     (signal-autolisp-runtime-error
-      :invalid-form
-      "Cannot evaluate AutoLISP form ~S."
-      form))))
+             :unbound-variable
+             "Unbound AutoLISP variable ~A."
+             (autolisp-symbol-name form))))))
+      ((consp form)
+       (let ((operator (first form))
+             (arguments (rest form)))
+         (cond
+           ((special-operator-function operator)
+            (eval-special-operator operator arguments context))
+           (t
+            (unless (or (lambda-form-p operator)
+                        (typep operator 'autolisp-symbol))
+              (signal-autolisp-runtime-error
+               :invalid-call-operator
+               "AutoLISP call operator must be a function name or lambda form, got ~S."
+               operator))
+            (let ((function
+                    (if (lambda-form-p operator)
+                        (autolisp-eval operator context)
+                        (multiple-value-bind (binding boundp origin) (lookup-function operator context)
+                          (declare (ignore origin))
+                          (unless boundp
+                            (signal-autolisp-runtime-error
+                             :undefined-function
+                             "Undefined AutoLISP function ~A."
+                             (autolisp-symbol-name operator)))
+                          binding))))
+              (apply #'call-autolisp-function-in-context
+                     function
+                     context
+                     (mapcar (lambda (argument)
+                               (autolisp-eval argument context))
+                             arguments)))))))
+      (t
+       (signal-autolisp-runtime-error
+        :invalid-form
+        "Cannot evaluate AutoLISP form ~S."
+        form)))))
 
 (defun autolisp-type (object)
   (cond
