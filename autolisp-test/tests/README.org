@@ -2,14 +2,70 @@
 #+AUTHOR: Codex
 #+OPTIONS: toc:nil num:nil
 
-This directory is reserved for specification-oriented test files.
+This directory holds the AutoLISP / Visual LISP conformance tests.
 
-The initial organization should follow language areas rather than implementation modules, for example:
+Tests are written in pure AutoLISP and use the registration helpers
+defined in =harness/rt.lsp= (=deftest=, =deftest-eq=, =deftest-pred=,
+=deftest-error=, =deftest-skip=).
 
-- ~special-forms/~
-- ~core-functions/~
-- ~reader/~
-- ~errors/~
-- ~host-profiles/~
+* Layout
 
-Within each area, prefer one file per operator or narrowly related family, following the structure used by Common Lisp ~ansi-tests~.
+Tests are grouped by language area, then by operator or narrowly
+related family:
+
+- =reader/= :: reader-syntax conformance (literals, symbols, lists, dotted pairs, quote)
+- =variables/= :: standardised variables (=NIL=, =T=, =PI=, =PAUSE=, =*ERROR*=)
+- =types/= :: =TYPE= and the type system
+- =special-forms/= :: every special form already implemented in clautolisp
+- =equality/= :: =EQ=, =EQUAL=, =NULL=, =ATOM=, =LISTP=, =NUMBERP=, =ZEROP=, =MINUSP=
+- =list/= :: list / Cxxr / =MAPCAR= / =VL-EVERY= / =VL-SOME= / =VL-MEMBER-IF= / =VL-REMOVE-IF= / =VL-SORT= / =REMOVE= / =VL-POSITION= / =VL-LIST-LENGTH=
+- =numeric/= :: arithmetic, comparison, bitwise, math, =FIX= / =FLOAT= / =FLOOR= / =CEILING= / =ROUND=
+- =string/= :: =STRCAT=, =STRLEN=, =SUBSTR=, =STRCASE=, =ASCII= / =CHR=, =ATOI=, =ATOF=, =ITOA=, =RTOS=, =WCMATCH=, =XSTRCASE=, =SNVALID=, =VL-STRING-*=
+- =symbol/= :: =VL-SYMBOLP=, =VL-SYMBOL-NAME=, =VL-SYMBOL-VALUE=, =BOUNDP=, =ATOMS-FAMILY=
+- =namespace/= :: =VL-BB-*=, =VL-DOC-*=, =DEFUN-Q-LIST-*=
+- =control/= :: =EVAL=, =APPLY=
+- =error/= :: =VL-CATCH-ALL-*=, =VL-EXIT-WITH-*=
+- =printer/= :: =PRIN1=, =PRINC=, =PRINT=, =TERPRI=, =VL-PRIN1-TO-STRING=, =VL-PRINC-TO-STRING=
+- =file/= :: =OPEN=, =CLOSE=, =READ-LINE=, =WRITE-LINE=, =READ-CHAR=, =WRITE-CHAR=, =FINDFILE=, =VL-FILE-*=, =VL-FILENAME-*=, =VL-DIRECTORY-FILES=, =VL-MKDIR=
+- =geometry/= :: =DISTANCE=, =ANGLE=, =POLAR=, =INTERS=
+- =divergent/= :: Phase D: vendor-divergent twin tests
+- =deferred/= :: Phase E: stubs for areas requiring a mock host or
+  vendor-specific runtime (DCL, COM/VLAX, VLA, VLR, OBJECTDBX,
+  Express Tools, DOSLib, ARX, BRX)
+
+* Test metadata
+
+Every test carries a meta alist with at minimum:
+
+- =OPERATOR= ::
+  the spec entry name being tested (string)
+- =AREA= ::
+  the language area (string)
+- =PROFILE= ::
+  one of =STRICT=, =AUTOCAD=, =BRICSCAD=
+
+Optional fields:
+
+- =PLATFORM-TAGS= :: list of required platform symbols
+- =RUNTIME-TAGS= :: list of required runtime symbols
+- =AUTHORITY= :: =DOCUMENTED= (default), =TESTED-AUTOCAD=, =TESTED-BRICSCAD=, =TESTED-BOTH=, =INFERRED=
+
+* Adding a new test file
+
+1. Drop the file under the appropriate =tests/<area>/= directory.
+2. Add its relative path to =*autolisp-test-files*= in
+   =harness/test-loader.lsp= so it is loaded at run time.
+3. The next =(autolisp-test-run-all)= picks it up.
+
+* Adding a vendor-divergent twin
+
+When a function's behaviour differs between AutoCAD and BricsCAD,
+write **two** tests:
+
+- one =:profile autocad= with the AutoCAD-attested result;
+- one =:profile bricscad= with the BricsCAD-attested result;
+- optionally a narrowed =:profile strict= test for the still-shared
+  subset.
+
+The harness reports each twin under its own profile, so the verdict
+matrix shows the divergence by name.
