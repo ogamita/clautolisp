@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.8.1
+#+VERSION: 0.8.2
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.8.1*.
+The current document version is *0.8.2*.
 
 Any modification of this document must increment its version number.
 
@@ -7084,7 +7084,7 @@ Function
 - `fileHandle` (optional): handle of a file as obtained from `(open ...)`. If omitted or `nil`, output goes to the command line.
 
 *** Description
-Prints `expression` to the command line, or writes it to the open file `fileHandle`. The representation is *machine-readable*: control characters in a string expression (`\t`, `\n`, `\r`, `\"`, octal `\nnn`) are written as their backslash escape sequences so that the output round-trips through the reader.
+Prints `expression` to the command line, or writes it to the open file `fileHandle`. The representation is *machine-readable*: control characters in a string expression (`\t`, `\n`, `\r`, the escaped double-quote, octal `\nnn`) are written as their backslash escape sequences so that the output round-trips through the reader.
 
 *** Return Values
 Returns the evaluated value of `expression`. With no argument, `(prin1)` returns the *void* symbol value, useful as the last form in a `defun` to emit "nothing" to the command line.
@@ -7135,7 +7135,7 @@ Function
 - `fileHandle` (optional): handle of a file as obtained from `(open ...)`. If omitted or `nil`, output goes to the command line.
 
 *** Description
-Prints `expression` to the command line, or writes it to the open file `fileHandle`. The representation is *display-oriented*: unlike `prin1`, control characters in a string expression are written verbatim (no `\n` / `\t` / `\"` rewriting). With no argument, `(princ)` returns the *void* symbol value and is the conventional way to terminate a `defun` without emitting anything.
+Prints `expression` to the command line, or writes it to the open file `fileHandle`. The representation is *display-oriented*: unlike `prin1`, control characters in a string expression are written verbatim (no `\n` / `\t` / escaped-double-quote rewriting). With no argument, `(princ)` returns the *void* symbol value and is the conventional way to terminate a `defun` without emitting anything.
 
 *** Return Values
 Returns the evaluated value of `expression`, or *void* with no argument.
