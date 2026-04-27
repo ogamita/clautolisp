@@ -91,8 +91,11 @@
    #:make-autolisp-catch-all-error
    #:autolisp-catch-all-error-message
    #:autolisp-catch-all-error-condition
+   #:autolisp-catch-all-error-call-stack
    #:autolisp-runtime-error
    #:autolisp-runtime-error-code
+   #:autolisp-runtime-error-call-stack
+   #:current-autolisp-call-stack
    #:autolisp-runtime-error-message
    #:autolisp-runtime-error-details
    #:autolisp-termination
