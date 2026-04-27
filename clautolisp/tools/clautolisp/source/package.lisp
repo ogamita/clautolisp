@@ -34,7 +34,20 @@
                 #:make-default-runtime-context
                 #:read-runtime-from-string
                 #:run-autolisp-file
-                #:run-autolisp-string)
+                #:run-autolisp-string
+                #:set-runtime-session-host
+                #:current-evaluation-context
+                #:evaluation-context-session
+                #:*default-runtime-host*)
+  (:import-from #:clautolisp.autolisp-host
+                #:host-name
+                #:null-host
+                #:make-null-host
+                #:*null-host*)
+  (:import-from #:clautolisp.autolisp-mock-host
+                #:make-mock-host
+                #:mock-host
+                #:mock-host-prompt-stream)
   (:import-from #:clautolisp.autolisp-builtins-core
                 #:autolisp-value->string
                 #:install-core-builtins)

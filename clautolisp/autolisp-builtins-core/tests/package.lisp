@@ -53,6 +53,7 @@
                 #:find-autolisp-symbol
                 #:intern-autolisp-symbol
                 #:reset-autolisp-symbol-table
-                #:set-function)
+                #:set-function
+                #:run-autolisp-string)
   (:export #:autolisp-builtins-core-suite
            #:run-all-tests))

@@ -14,6 +14,7 @@
                 #:autolisp-termination
                 #:autolisp-namespace-exit
                 #:autolisp-runtime-error
+                #:autolisp-runtime-error-code
                 #:autolisp-runtime-error-errno
                 #:current-autolisp-call-stack
                 #:autolisp-catch-all-error-call-stack
@@ -59,7 +60,114 @@
                 #:make-autolisp-subr
                 #:propagate-variable
                 #:set-autolisp-function-list-definition
-                #:set-autolisp-symbol-function)
+                #:set-autolisp-symbol-function
+                #:current-evaluation-dialect
+                #:current-evaluation-host
+                #:autolisp-ename
+                #:autolisp-ename-value
+                #:make-autolisp-ename
+                #:autolisp-pickset
+                #:autolisp-pickset-value
+                #:make-autolisp-pickset
+                #:autolisp-vla-object
+                #:autolisp-vla-object-value
+                #:make-autolisp-vla-object
+                ;; Phase 14a/b — host-object ontology + reactors
+                #:reactor
+                #:make-reactor
+                #:reactor-id
+                #:reactor-kind
+                #:reactor-scope
+                #:reactor-callbacks
+                #:reactor-owners
+                #:reactor-data
+                #:reactor-active-p
+                #:reactor-persistent-p
+                #:reactor-notification
+                #:reactor-document
+                #:reactor-type-scope
+                #:reactor-type-keywords
+                #:add-reactor-to-document
+                #:add-reactor-to-session
+                #:remove-reactor-from-document
+                #:remove-reactor-from-session
+                #:all-document-reactors
+                #:all-application-reactors
+                #:all-session-reactors
+                #:document-namespace-persistent-reactor-index)
+  (:import-from #:clautolisp.autolisp-runtime
+                #:autolisp-safearray
+                #:autolisp-safearray-value
+                #:make-autolisp-safearray
+                #:autolisp-variant
+                #:autolisp-variant-value
+                #:make-autolisp-variant)
+  (:import-from #:clautolisp.autolisp-dcl
+                #:dcl-runtime-load-dialog
+                #:dcl-runtime-unload-dialog
+                #:dcl-runtime-new-dialog
+                #:dcl-runtime-start-dialog
+                #:dcl-runtime-done-dialog
+                #:dcl-runtime-action-tile
+                #:dcl-runtime-set-tile
+                #:dcl-runtime-get-tile
+                #:dcl-runtime-mode-tile
+                #:dcl-runtime-client-data
+                #:dcl-runtime-set-client-data
+                #:dcl-runtime-start-list
+                #:dcl-runtime-add-list
+                #:dcl-runtime-end-list
+                #:dcl-runtime-start-image
+                #:dcl-runtime-image-vector
+                #:dcl-runtime-image-fill
+                #:dcl-runtime-image-slide
+                #:dcl-runtime-end-image
+                #:current-dialog-id
+                #:require-current-dialog-id
+                #:install-default-renderer
+                #:make-terminal-renderer)
+  (:import-from #:clautolisp.autolisp-host
+                #:host-entget
+                #:host-entmod
+                #:host-entmake
+                #:host-entmakex
+                #:host-entdel
+                #:host-entupd
+                #:host-entlast
+                #:host-entnext
+                #:host-handent
+                #:host-ssget
+                #:host-ssadd
+                #:host-ssdel
+                #:host-ssname
+                #:host-sslength
+                #:host-ssmemb
+                #:host-ssgetfirst
+                #:host-sssetfirst
+                #:host-tblsearch
+                #:host-tblnext
+                #:host-tblobjname
+                #:host-getvar
+                #:host-setvar
+                #:host-prompt
+                #:host-initget
+                #:host-getstring
+                #:host-getint
+                #:host-getreal
+                #:host-getpoint
+                #:host-getcorner
+                #:host-getdist
+                #:host-getangle
+                #:host-getorient
+                #:host-getkword
+                #:host-vlax-create-object
+                #:host-vlax-get-object
+                #:host-vlax-release-object
+                #:host-vlax-get-property
+                #:host-vlax-put-property
+                #:host-vlax-invoke-method
+                #:host-vlax-property-available-p
+                #:host-vlax-method-applicable-p)
   (:export
    #:*core-builtin-names*
    #:core-builtins

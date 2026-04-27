@@ -6190,6 +6190,61 @@ File handling is part of the core AutoLISP runtime surface and is version-sensit
 
 #+LATEX: \newpage
 
+** Normative Rules: Source-File and File-Stream Encoding
+*** Statement
+AutoLISP source files and host file streams have two independent encoding axes:
+
+1. *Source-file encoding* — the encoding the runtime uses when ~load~ (and any reader entry point that takes a filesystem path) reads bytes from disk. Historically AutoLISP ran on Windows with ANSI / MBCS source files, and that legacy default is observable in pre-2025 AutoCAD and pre-V25 BricsCAD. AutoCAD 2025 changed the default to UTF-8; BricsCAD V25/V26 followed suit. The value of the host system variable ~LISPSYS~ on Autodesk products selects between two engines: ~0~ keeps the legacy ANSI/MBCS reader, ~1~ and ~2~ enable Unicode and accept the optional ~encoding~ argument on ~open~. ~LISPSYS~ requires an AutoCAD restart to take effect.
+
+2. *File-stream encoding* — the encoding the runtime uses when ~open~ reads or writes the bytes of a host file the user is doing I/O on. This is the third (optional) argument to ~open~. When the argument is omitted, the per-host default applies — ANSI/MBCS for the legacy engine, UTF-8 for the modern engine.
+
+There is no documented per-string encoding API: AutoLISP strings are sequences of code units in the host engine's native domain (8-bit code page for the legacy engine, Unicode-capable host string for the modern engine). String *content* is exchanged with files through the encoding configured for that file's stream.
+
+*** Encoding Names
+The third argument to ~open~ accepts a small documented vocabulary. Implementations should additionally accept the listed aliases since deployed source uses them interchangeably:
+
+| Designator                    | Maps to (CL external-format)        |
+|-------------------------------+-------------------------------------|
+| ~"utf8"~                      | ~:utf-8~                            |
+| ~"utf8-bom"~                  | ~:utf-8~ with byte-order mark      |
+| ~"utf16"~                     | ~:utf-16~                           |
+| ~"ANSI"~                      | ~:iso-8859-1~ (the conservative 1-1 |
+|                               | mapping that never fails on bytes)  |
+| ~"ASCII"~                     | ~:ascii~                            |
+| ~"latin1"~ / ~"iso-8859-1"~   | ~:iso-8859-1~                       |
+| ~"cp1252"~ / ~"windows-1252"~ | ~:cp1252~                           |
+
+Hosts derived from the BricsCAD codebase additionally accept the C-style ~ccs=NAME~ syntax embedded in the second (mode) argument, e.g. ~(open path "r,ccs=UTF-8")~. The clautolisp ~bricscad-v26~ dialect honours this through the existing ~open-ccs-mode-p~ knob; the ~strict~ and ~autocad-2026~ dialects do not.
+
+*** Per-Dialect Defaults
+clautolisp resolves the absent third argument of ~open~ — and the absent ~:external-format~ keyword on ~load~ — using the active dialect descriptor:
+
+| Dialect          | Default source encoding | Default file encoding |
+|------------------+-------------------------+-----------------------|
+| ~:strict~        | ~:iso-8859-1~           | ~:iso-8859-1~         |
+| ~:autocad-2026~  | ~:utf-8~                | ~:utf-8~              |
+| ~:bricscad-v26~  | ~:utf-8~                | ~:utf-8~              |
+
+The strict choice is *deliberately permissive at the byte level*: a 1-1 byte coding never raises a decoding error on any input, and existing AutoLISP corpora produced under the legacy ANSI/MBCS engine remain loadable. Source code that needs Unicode characters in literals can either (a) use the explicit ~--dialect autocad-2026~ / ~--bricscad-v26~ flag, or (b) pass ~:external-format :utf-8~ on the call site.
+
+*** Vendor Evidence
+- Autodesk reference for ~open~ (AutoCAD 2024+) documents ~"utf8"~ and ~"utf8-bom"~ as the only accepted encoding strings; "When a value isn't provided for the argument, the file is assumed to contain multibyte character set (MBCS) which is the legacy behavior."
+- Autodesk LISPSYS sysvar reference: 0 = ASCII / no encoding arg, 1 = Unicode, 2 = Unicode-with-extra-COM. Restart required.
+- AutoCAD 2025 release-note quote: "In the previous versions of AutoCAD, the encoding of the file was 'ANSI', now it is 'UTF-8'." This applies to source files emitted by the Visual LISP IDE.
+- BricsCAD V26 honours the C-runtime ~ccs=NAME~ embedded mode-string as documented in earlier Phase-6 probe evidence (~open-ccs-mode-p~).
+
+*** Cross-references
+- Special Form Entry: LOAD (chapter 11) — uses the dialect's source-encoding default.
+- Function Entry: OPEN (chapter 11) — uses the dialect's file-encoding default when its third argument is omitted.
+
+*** Source Notes
+- [open (AutoLISP, AutoCAD 2024)](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP-Reference/files/GUID-089A323F-21FF-4337-99A9-375758E23BA4.htm)
+- [LISPSYS system variable (Autodesk)](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-Customization/files/GUID-49E8AF16-D31E-4DB1-AB14-E0E9F5DEE13A.htm)
+- [AutoCAD 2025 — UTF-8 default for AutoLISP files (Autodesk Community)](https://forums.autodesk.com/t5/net-forum/unicode-characters-problem-in-autocad-2025/td-p/12703850)
+- [BricsCAD Lisp documentation](https://help.bricsys.com/en-us/document/bricscad/customization/lisp)
+
+#+LATEX: \newpage
+
 ** Function Entry: OPEN
 *** Name
 `open`
@@ -9230,7 +9285,7 @@ Function
 - `code`: integer.
   - `0`: retrieve the current digitiser calibration; the trailing arguments are omitted.
   - `1`: set the calibration; the trailing arguments are required.
-- `row1`, `row2`, `row3`: lists of three reals forming the rows of a 3×3 transformation matrix. The Z component of `row3` is normalised to 1.
+- `row1`, `row2`, `row3`: lists of three reals forming the rows of a 3_3 transformation matrix. The Z component of `row3` is normalised to 1.
 - `direction`: list of three reals; the normal vector to the tablet surface in WCS. Automatically normalised.
 
 *** Description
@@ -9713,7 +9768,7 @@ Function
 
 *** Arguments and Values
 - `vlist`: a vector list of optional color integers paired with two point lists, in the form `([color1] from1 to1 [color2] from2 to2 ...)`. Color values 0–255 are AutoCAD colors; values above 255 select XOR ink; negative values select the device's highlight style.
-- `trans` (optional): a 4×4 transformation matrix (a list of four 4-real lists) that repositions or scales every vector in `vlist`.
+- `trans` (optional): a 4_4 transformation matrix (a list of four 4-real lists) that repositions or scales every vector in `vlist`.
 
 *** Description
 Draws multiple transient vectors in the drawing area. A specified color persists for all subsequent vectors until another color value is given.
@@ -17407,13 +17462,13 @@ ActiveX Function
 #+end_example
 
 *** Arguments and Values
-- `lst`: a list of four sublists, each containing four numbers; the rows of a 4×4 transformation matrix.
+- `lst`: a list of four sublists, each containing four numbers; the rows of a 4_4 transformation matrix.
 
 *** Description
-Converts a nested list into a variant suitable for VLA methods that take a 4×4 transformation matrix (e.g. `vla-transformby`).
+Converts a nested list into a variant suitable for VLA methods that take a 4_4 transformation matrix (e.g. `vla-transformby`).
 
 *** Return Values
-A variant of type safearray representing the 4×4 matrix.
+A variant of type safearray representing the 4_4 matrix.
 
 *** Side Effects
 None.
@@ -17485,12 +17540,162 @@ Not documented on the vendor page.
 ** Overview
 Reactors are part of the Visual LISP event model.
 
+A reactor is a host-side event-callback subscription object. The
+host calls the registered callback automatically whenever a
+documented event occurs (entity modified, document opened,
+command executed, sysvar changed, mouse-down, …). Reactors are
+the AutoLISP equivalent of "event listeners" in GUI frameworks
+and the "observer pattern" in OOP, layered over a fixed reactor
+*type* taxonomy that the vendor reference ties to specific event
+classes.
+
 ** Normative Rules
 - Reactor support belongs to the Visual LISP extension layer.
 - Autodesk documents reactor support as requiring `(vl-load-com)` before reactor functions are used.
 - Autodesk documents reactor support as available only on Windows.
 - Reactor constructors accept application data and callback bindings; object reactors additionally accept an owner list.
 - Reactors are host-event-driven objects; callback execution order is therefore determined by host events rather than ordinary expression sequencing.
+
+#+LATEX: \newpage
+
+** Normative Rules: Host Object Ontology and Lifecycles
+*** Statement
+The reactor catalogue is interpretable only against the host's
+*object ontology*. Each reactor type subscribes to lifecycle
+transitions of one specific class of host object; the published
+reaction names are systematic transition labels in those classes'
+finite-state machines.
+
+This section pins down: the host object graph, the lifecycle of
+each class, the canonical event vocabulary, and the scope rule
+(per-document vs per-application).
+
+*** Host Object Graph
+The graph is small and stable; it has been the same shape since
+AutoCAD R14's Visual LISP merger.
+
+#+begin_example
+Application                       (one per process)
++--__ DocumentManager               (the documents collection)
+_    ___ Document  (_N)           (one per open drawing)
+_         +--__ ModelSpace, PaperSpace, Blocks, Layers, Linetypes,
+_         _   TextStyles, DimStyles, Views, UCSs, Viewports,
+_         _   RegisteredApplications, NamedObjectsDictionary,
+_         _   SystemVariables (per-document), ActiveSelectionSet,
+_         _   Picksets, Entities, PendingCommand, UndoStack
++--__ Preferences, ARXModules, LispEnvironment,
+_   ApplicationReactors,
+___ PromptHistory / CommandLine
+#+end_example
+
+*** Per-Class Lifecycles
+| Class | States | Notes |
+|---|---|---|
+| ~application~ | ~:running~ → ~:quitting~ → ~:quit~ | One per process |
+| ~document-manager~ | always ~:running~ | The collection itself never opens or closes; only its members do. |
+| ~document~ | ~:loading~ → ~:loaded~ _ ~:active~ _ ~:inactive~ → ~:closing~ → ~:closed~ (transient ~:saving~ during write) | The dominant lifecycle. |
+| ~command~ | ~:pending~ → ~:started~ → ~:running~ → (~:ended~ _ ~:cancelled~ _ ~:failed~) | One state machine per invocation. |
+| ~entity~ | ~:created~ → ~:committed~ _ ~:modified~ → (~:erased~ _ ~:unerased~) → ~:purged~ | The "modified" loop dominates. ~:erased~ is reversible; ~:purged~ is terminal. |
+| ~selection-set~ | ~:created~ → ~:populated~ _ ~:mutated~ → ~:released~ | Non-graphical; usually short-lived. |
+| ~dictionary-entry~ | ~:added~ → ~:present~ → (~:renamed~ _ ~:mutated~) → ~:removed~ | Persistence-domain object. |
+| ~sysvar~ | always ~:bound~; transitions ~value-will-change~ / ~value-changed~ | Atomic; no construction/destruction. |
+| ~xref~ | ~:unresolved~ → ~:resolved~ _ ~:unloaded~ _ ~:reloaded~ → ~:detached~ | Drives ~vlr-xref-reactor~. |
+| ~wblock-op~ | ~:started~ → (~:completed~ _ ~:cancelled~) | Transient. |
+| ~undo-op~ | ~:begin~ → (~:commit~ _ ~:rollback~) | Transient. |
+| ~mouse-event~ | ~:down~ → (~:drag*~) → ~:up~ | Transient. |
+| ~vlx-app~ | ~:loading~ → ~:loaded~ → ~:unloaded~ | Drives ~vlr-linker-reactor~. |
+| ~lisp-eval~ | ~:loading-source~ → ~:running~ → ~:idle~ | Drives ~vlr-lisp-reactor~. |
+| ~reactor~ | ~:armed~ _ ~:disabled~ → ~:removed~ | Reactors themselves have a lifecycle. |
+
+*** Event-Naming Convention
+Reactor reactions are systematic names for transitions in the
+table above. The convention has two halves:
+
+- A ~*WillChange~ / ~*ToBeFooed~ reaction fires *before* the
+  transition; the world is still in the old state. The callback
+  may sometimes veto the transition.
+- A ~*Changed~ / ~*BecameFoo~ / ~*Fooed~ reaction fires *after*
+  the transition; the world is in the new state.
+
+Most documented transitions emit a *pair* of reactions; this is
+why the vendor reactor reactions look so verbose.
+
+*** Event Scope Rule
+Every event has a single canonical *scope* — application or
+document — and a single canonical *reactor type*:
+
+| Event | Scope | Reactor type |
+|---|---|---|
+| ~:vlr-documentCreated~ | application | ~vlr-docmanager-reactor~ |
+| ~:vlr-documentToBeDestroyed~ | application | ~vlr-docmanager-reactor~ |
+| ~:vlr-beginDocumentClose~ | document | ~vlr-document-reactor~ |
+| ~:vlr-objectModified~ | document | ~vlr-acdb-reactor~ / ~vlr-object-reactor~ |
+| ~:vlr-sysVarChanged~ | document | ~vlr-sysvar-reactor~ |
+| ~:vlr-commandWillStart~ | document | ~vlr-command-reactor~ |
+| ~:vlr-beginQuit~ | application | ~vlr-editor-reactor~ |
+| ~:vlr-beginARXLoad~ | application | ~vlr-linker-reactor~ |
+
+Some events have *both* an application-scope and a
+document-scope reactor type subscribed to the same transition.
+Document-activation is the canonical case:
+~vlr-docmanager-reactor~ subscribers see every document's
+~:vlr-documentBecameCurrent~; ~vlr-document-reactor~ subscribers
+on document X see only X's. The runtime fires both.
+
+*** Vetoing
+A few ~*WillChange~ events let the callback veto the transition.
+clautolisp models this through the callback's *return value*:
+
+- A non-nil return permits the transition.
+- The keyword ~:veto~ rejects it; the runtime aborts the
+  transition and signals ~:transition-vetoed~ to the caller that
+  initiated it.
+
+Only events documented as vetoable by the vendor honour this:
+~:vlr-documentLockModeWillChange~,
+~:vlr-aboutToBeDeactivated~, and the ~*WillStart~ family of
+command reactions.
+
+*** Persistence
+A persistent reactor (registered through ~vlr-pers~) is stored
+in the *document's* named-object dictionary, traditionally under
+the key ~ACAD_REACTORS~. Its callback is referenced by **symbol
+name**, not by closure: closures cannot survive serialisation,
+but symbol names re-resolve when the document is opened.
+
+On document open the host walks ~ACAD_REACTORS~ and reconstructs
+each persistent reactor *before* user code executes. If the
+callback's symbol is undefined at fire time, dispatch records the
+failure and continues; the reactor is not removed.
+
+*** Vendor Evidence
+- Autodesk reference for the Visual LISP reactor family — the
+  per-class reaction tables in
+  ~AutoCAD-AutoLISP-Reference/files/GUID-...~ pages — define the
+  reactor types, the reaction names per type, and the per-event
+  argument shape.
+- Bricsys ~Lisp - BricsCAD~ help page documents the same
+  taxonomy with no functional divergence on per-document vs
+  per-application scope.
+- The reactor data model (callback by symbol name, persistence in
+  ~ACAD_REACTORS~) is documented in the AutoCAD ObjectARX guide
+  and surfaced through Visual LISP's ~vlr-pers~ family.
+
+*** Strict / Lax Policy
+The ontology is *strict* in every supported dialect; the only
+behaviour that varies between hosts is the set of reactor types
+recognised. The clautolisp ~strict~, ~autocad-2026~, and
+~bricscad-v26~ dialects accept the union of reactor types
+documented by either vendor.
+
+*** Cross-references
+- Reactor type entries (this chapter) — each lists the reactions
+  it subscribes to.
+- Function Entry: ~vlr-pers~, ~vlr-pers-release~, ~vlr-pers-list~
+  — the persistence interface.
+- Function Entry: ~vlr-set-notification~ — the
+  notification-mode toggle (~:all-documents~ /
+  ~:current-document-only~).
 
 #+LATEX: \newpage
 

@@ -29,7 +29,26 @@
 
 (defstruct document-namespace
   (name "DOCUMENT" :type string)
-  (bindings (make-hash-table :test #'eq)))
+  (bindings (make-hash-table :test #'eq))
+  ;; Phase 14a: lifecycle state per the host-object ontology.
+  ;; (:loading -> :loaded <-> :active <-> :inactive -> :closing -> :closed,
+  ;;  with a transient :saving substate during write).
+  (state :loaded :type keyword)
+  ;; Per-document reactor registry. Hash-table from reactor-id to
+  ;; reactor struct. Phase 14b populates entries via the vlr-* family;
+  ;; Phase 14a leaves the table empty but reachable.
+  (reactors (make-hash-table :test #'eq))
+  ;; Per-document persistent-reactor symbol-name index. Maps a
+  ;; reactor-id to a property list (:type :callbacks :data :owners)
+  ;; suitable for serialisation / round-trip via
+  ;; mock-host-snapshot. Maintained by vlr-pers / vlr-pers-release.
+  (persistent-reactor-index (make-hash-table :test #'eq))
+  ;; Phase 14a back-pointer: the runtime-session that owns this
+  ;; document. Set by make-runtime-session and preserved across
+  ;; register-runtime-session-document. Lets signal-document-event
+  ;; locate the session reliably without scanning the active
+  ;; evaluation context.
+  (session nil))
 
 (defstruct blackboard-namespace
   (name "BLACKBOARD" :type string)
@@ -60,7 +79,28 @@
   ;; that drove its instantiation. Builtins that have product-divergent
   ;; lex / mode behaviour (currently `atof` hex-float, `open` `ccs=`)
   ;; consult the active session's dialect.
-  (dialect nil))
+  (dialect nil)
+  ;; Phase 8: every runtime session also carries a HAL backend
+  ;; (`host`) that decides where CAD-host effects land. Defaults to
+  ;; nil when the session is created from the runtime alone; the
+  ;; autolisp-host module installs a NullHost singleton via the
+  ;; *default-runtime-host* parameter once its package is loaded.
+  ;; Higher-level callers (the CLI, the file-compat harness, etc.)
+  ;; can pass any object satisfying the HAL contract.
+  (host nil)
+  ;; Phase 14a: host-object ontology. The runtime models the
+  ;; application as a single-state-machine value and the
+  ;; document-manager implicitly via the document-namespaces table.
+  ;; Lifecycle: :running -> :quitting -> :quit. Application-scoped
+  ;; reactors live here (vlr-docmanager / vlr-editor / vlr-linker /
+  ;; vlr-lisp / vlr-miscellaneous).
+  (application-state :running :type keyword)
+  (application-reactors (make-hash-table :test #'eq))
+  ;; Optional per-session debug listener for tests. When non-nil,
+  ;; signal-document-event / signal-application-event push their
+  ;; argument tuples onto this list (newest first). Tests inspect
+  ;; the list, then clear it. Production callers leave it nil.
+  (event-trace nil))
 
 (defstruct evaluation-context
   session

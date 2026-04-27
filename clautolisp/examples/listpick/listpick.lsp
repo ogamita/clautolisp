@@ -1,0 +1,26 @@
+(defun c:listpick (/ id status pick)
+  (setq id (load_dialog
+            "/Users/pjb/src/public/clautolisp/clautolisp/examples/listpick/listpick.dcl"))
+  (cond
+    ((< id 0) (princ "\nCould not load listpick.dcl"))
+    (T
+     (new_dialog "listpick" id)
+     (start_list "colour")
+     (add_list "Red")
+     (add_list "Green")
+     (add_list "Blue")
+     (add_list "Yellow")
+     (add_list "Magenta")
+     (end_list)
+     (action_tile "colour" "(setq pick $value)")
+     (action_tile "accept" "(setq pick (get_tile \"colour\")) (done_dialog 1)")
+     (action_tile "cancel" "(done_dialog 0)")
+     (setq status (start_dialog))
+     (unload_dialog id)
+     (cond
+       ((= status 1)
+        (princ (strcat "\nYou picked index " (if pick pick "(none)"))))
+       (T (princ "\nCancelled.")))))
+  (princ))
+(c:listpick)
+(exit)

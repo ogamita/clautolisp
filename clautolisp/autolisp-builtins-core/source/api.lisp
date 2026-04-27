@@ -877,34 +877,89 @@
       "OPEN mode must be one of \"r\", \"w\", or \"a\", got ~S."
       mode))))
 
-(defun parse-open-external-format (string)
-  (labels ((keywordize (name)
-             (intern (string-upcase name) "KEYWORD")))
+(defun normalize-encoding-name (name)
+  "Map an AutoLISP / Autodesk / BricsCAD encoding name (case-folded
+ASCII, with optional dashes / underscores) to a SBCL- and CCL-
+compatible :external-format keyword."
+  (let ((canonical (with-output-to-string (out)
+                     (loop for c across name
+                           unless (or (char= c #\-) (char= c #\_) (char= c #\Space))
+                             do (write-char (char-upcase c) out)))))
     (cond
-      ((zerop (length string))
-       (signal-builtin-argument-error
-        :invalid-external-format
-        "OPEN"
-        "Invalid empty external format."))
-      ((or (char= (char string 0) #\:)
-           (char= (char string 0) #\())
-       (handler-case
-           (let ((value (read-from-string string)))
-             (unless (typep value '(or keyword cons))
-               (signal-builtin-argument-error
-                :invalid-external-format
-                "OPEN"
-                "Invalid external format ~S."
-                string))
-             value)
-         (error ()
-           (signal-builtin-argument-error
-            :invalid-external-format
-            "OPEN"
-            "Invalid external format ~S."
-            string))))
-      (t
-       (keywordize string)))))
+      ;; Autodesk's documented short names.
+      ((string= canonical "UTF8")     :utf-8)
+      ((string= canonical "UTF8BOM")  :utf-8)
+      ((string= canonical "UTF16")    :utf-16)
+      ((string= canonical "UTF16LE")  :utf-16le)
+      ((string= canonical "UTF16BE")  :utf-16be)
+      ((string= canonical "UTF32")    :utf-32)
+      ;; The "ANSI" short name historically meant the legacy host
+      ;; code page. Map it to ISO-8859-1 — a strict 1-1 byte coding
+      ;; that never fails on Western text. Hosts that need
+      ;; Windows-1252 specifically can pass "cp1252" / "WINDOWS-1252"
+      ;; explicitly.
+      ((string= canonical "ANSI")     :iso-8859-1)
+      ((string= canonical "ASCII")    :ascii)
+      ((string= canonical "LATIN1")   :iso-8859-1)
+      ((or (string= canonical "ISO88591")
+           (string= canonical "8859.1"))
+       :iso-8859-1)
+      ((string= canonical "WINDOWS1252") :cp1252)
+      ((string= canonical "CP1252")   :cp1252)
+      ;; Anything else: keywordise. SBCL / CCL accept many aliases.
+      (t (intern canonical "KEYWORD")))))
+
+(defun parse-open-external-format (string)
+  "Decode the third argument of (open path mode ENCODING). Accepted
+forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
+
+  - empty / nil      -> dialect default (resolved by the caller).
+  - keyword literal  -> e.g. \":utf-8\" / \":iso-8859-1\".
+  - sexp literal     -> a Common-Lisp external-format designator,
+                         e.g. \"(:utf-8 :replacement #\\?)\".
+  - Autodesk short   -> \"utf8\", \"utf8-bom\", \"ANSI\", \"ASCII\".
+  - BricsCAD CCS form -> \"r,ccs=UTF-8\", \"w,ccs=ISO-8859-1\". The
+                         leading mode-letter is stripped by the
+                         caller; this parser only sees the trailing
+                         encoding fragment, so a leading
+                         \"ccs=NAME\" (with or without the comma)
+                         is also accepted directly.
+"
+  (cond
+    ((or (null string) (zerop (length string)))
+     (signal-builtin-argument-error
+      :invalid-external-format
+      "OPEN"
+      "Invalid empty external format."))
+    ((or (char= (char string 0) #\:)
+         (char= (char string 0) #\())
+     (handler-case
+         (let ((value (read-from-string string)))
+           (unless (typep value '(or keyword cons))
+             (signal-builtin-argument-error
+              :invalid-external-format
+              "OPEN"
+              "Invalid external format ~S."
+              string))
+           value)
+       (error ()
+         (signal-builtin-argument-error
+          :invalid-external-format
+          "OPEN"
+          "Invalid external format ~S."
+          string))))
+    ;; BricsCAD-style "MODE,ccs=NAME" or bare "ccs=NAME".
+    ((let ((eq (position #\= string)))
+       (and eq
+            (let ((tag (subseq string 0 eq)))
+              (or (string-equal tag "ccs")
+                  (and (>= (length tag) 4)
+                       (string-equal (subseq tag (- (length tag) 4)) ",ccs"))))))
+     (let* ((eq (position #\= string))
+            (name (subseq string (1+ eq))))
+       (normalize-encoding-name name)))
+    (t
+     (normalize-encoding-name string))))
 
 (defun builtin-numberp (object)
   (if (numberp object)
@@ -1181,6 +1236,28 @@
                   ;; FROM character with no counterpart in TO is dropped.
                   (t nil)))))))
 
+(defun builtin-vl-string-split (separator source)
+  ;; (vl-string-split SEPARATOR STRING) -> list of strings.
+  ;; Splits STRING on each character of SEPARATOR, in the spirit of
+  ;; BricsCAD's vl-string-split (and the ad-hoc string-split alias
+  ;; used by some scripts). Empty SEPARATOR returns the source as a
+  ;; single-element list.
+  (let* ((sep (autolisp-string-value
+               (require-string separator "VL-STRING-SPLIT")))
+         (s (autolisp-string-value (require-string source "VL-STRING-SPLIT")))
+         (sep-chars (coerce sep 'list))
+         (parts (cond
+                  ((null sep-chars) (list s))
+                  (t (loop with start = 0
+                           with result = '()
+                           for i from 0 below (length s)
+                           when (member (char s i) sep-chars)
+                             do (push (subseq s start i) result)
+                                (setf start (1+ i))
+                           finally (push (subseq s start) result)
+                                   (return (nreverse result)))))))
+    (mapcar #'make-autolisp-string parts)))
+
 (defun builtin-vl-string-subst (new-string old-string source &optional start)
   ;; (vl-string-subst NEW OLD STRING [START])
   ;; Replace the FIRST occurrence of OLD with NEW. If OLD does not
@@ -1275,14 +1352,25 @@
   (make-autolisp-string
    (string (int32->character code "CHR"))))
 
+(defun open-default-external-format ()
+  "Resolve the active dialect's default file encoding for `open`,
+falling back to :iso-8859-1 (the historic ANSI/MBCS legacy default)
+when no dialect is in scope."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (or (and dialect
+             (clautolisp.autolisp-reader:autolisp-dialect-default-file-encoding
+              dialect))
+        :iso-8859-1)))
+
 (defun builtin-open (filename mode &optional encoding)
   (let* ((path-string (autolisp-string-value (require-string filename "OPEN")))
          (mode-string (autolisp-string-value (require-string mode "OPEN")))
          (path (resolve-open-pathname path-string))
-         (external-format (when encoding
-                            (parse-open-external-format
-                             (autolisp-string-value
-                              (require-string encoding "OPEN"))))))
+         (external-format (cond
+                            ((null encoding) (open-default-external-format))
+                            (t (parse-open-external-format
+                                (autolisp-string-value
+                                 (require-string encoding "OPEN")))))))
     (multiple-value-bind (direction if-exists if-does-not-exist)
         (open-direction-and-options mode-string)
       (handler-case
@@ -1290,7 +1378,7 @@
                               :direction direction
                               :if-exists if-exists
                               :if-does-not-exist if-does-not-exist
-                              :external-format (or external-format :default))))
+                              :external-format external-format)))
             (if stream
                 (make-autolisp-file stream path-string mode-string)
                 nil))
@@ -1753,6 +1841,22 @@
      (format nil "#<SUBR ~A>" (autolisp-subr-name object)))
     ((typep object 'autolisp-usubr)
      (format nil "#<USUBR ~A>" (autolisp-usubr-name object)))
+    ((typep object 'autolisp-ename)
+     (format nil "<Entity name: ~A>" (autolisp-ename-value object)))
+    ((typep object 'autolisp-vla-object)
+     (format nil "#<VLA-OBJECT ~A>" (autolisp-vla-object-value object)))
+    ((typep object 'autolisp-safearray)
+     (let ((data (autolisp-safearray-value object)))
+       (if (typep data 'safearray-data)
+           (format nil "#<SAFEARRAY ~S ~S>"
+                   (safearray-data-type-tag data)
+                   (safearray-data-bounds data))
+           (format nil "#<SAFEARRAY>"))))
+    ((typep object 'autolisp-variant)
+     (let ((pair (autolisp-variant-value object)))
+       (if (consp pair)
+           (format nil "#<VARIANT ~S ~S>" (car pair) (cdr pair))
+           (format nil "#<VARIANT>"))))
     ((consp object)
      (with-output-to-string (out)
        (labels ((emit-tail (tail)
@@ -2009,6 +2113,48 @@
 (defun builtin-tan (object)
   (tan (coerce (require-number object "TAN") 'double-float)))
 
+(defun builtin-sinh (object)
+  (sinh (coerce (require-number object "SINH") 'double-float)))
+
+(defun builtin-cosh (object)
+  (cosh (coerce (require-number object "COSH") 'double-float)))
+
+(defun builtin-tanh (object)
+  (tanh (coerce (require-number object "TANH") 'double-float)))
+
+(defun builtin-atanh (object)
+  (let ((value (coerce (require-number object "ATANH") 'double-float)))
+    (when (or (<= value -1.0d0) (>= value 1.0d0))
+      (signal-builtin-argument-error
+       :invalid-number-argument
+       "ATANH"
+       "ATANH expects a value in (-1, 1), got ~S."
+       object))
+    (atanh value)))
+
+(defun builtin-power (base exponent)
+  ;; Synonym for EXPT — present in BricsCAD V26 alongside EXPT.
+  (builtin-expt base exponent))
+
+(defun builtin-vl-nanp (object)
+  ;; (vl-nanp OBJ) -> T if OBJ is an IEEE NaN double, nil otherwise.
+  ;; Portable test: NaN is the only IEEE value not equal to itself.
+  (cond
+    ((and (typep object 'double-float)
+          (handler-case (not (= object object)) (error () nil)))
+     (intern-autolisp-symbol "T"))
+    (t nil)))
+
+(defun builtin-vl-infp (object)
+  ;; (vl-infp OBJ) -> T if OBJ is +/-infinity, nil otherwise.
+  ;; Portable test: only an infinity satisfies x = 2*x with x /= 0.
+  (cond
+    ((and (typep object 'double-float)
+          (not (zerop object))
+          (handler-case (= object (* 2 object)) (error () nil)))
+     (intern-autolisp-symbol "T"))
+    (t nil)))
+
 (defun builtin-asin (object)
   (let ((value (coerce (require-number object "ASIN") 'double-float)))
     (when (or (< value -1.0d0) (> value 1.0d0))
@@ -2192,6 +2338,14 @@
         when (autolisp-equal-p item (car cell))
           return index
         finally (return nil)))
+
+(defun builtin-position (item list)
+  ;; (position ITEM LIST) — BricsCAD V26 alias for vl-position.
+  (builtin-vl-position item list))
+
+(defun builtin-vl-remove (item list)
+  ;; (vl-remove ITEM LIST) — synonym for REMOVE.
+  (builtin-remove item list))
 
 (defun builtin-remove (item list)
   ;; (remove ITEM LIST) -> new list with all elements equal to ITEM removed.
@@ -2566,6 +2720,1152 @@ most recent first."
   ;; Each frame stays a cons (KIND . PAYLOAD); the harness can walk
   ;; it with car/cdr/foreach.
   (clautolisp.autolisp-runtime:autolisp-catch-all-error-call-stack object))
+;;; --- Phase 10: entity-level builtins -------------------------------
+;;;
+;;; Each builtin is a thin wrapper around the corresponding HAL
+;;; generic function on the active session's host backend
+;;; (autolisp-spec ch.16). The current-evaluation-host helper
+;;; resolves the backend through the active context; under NullHost
+;;; every call signals :host-not-supported, under MockHost it
+;;; reaches the methods in autolisp-mock-host/source/entity-api.lisp.
+
+(defun require-ename (object operator-name)
+  (unless (typep object 'autolisp-ename)
+    (signal-builtin-argument-error
+     :invalid-ename
+     operator-name
+     "~A expects an ENAME, got ~S."
+     operator-name object))
+  object)
+
+(defun builtin-entget (ename)
+  (host-entget (current-evaluation-host) (require-ename ename "ENTGET")))
+
+(defun builtin-entmod (data)
+  (require-proper-list data "ENTMOD")
+  (host-entmod (current-evaluation-host) data))
+
+(defun builtin-entmake (data)
+  (require-proper-list data "ENTMAKE")
+  (host-entmake (current-evaluation-host) data))
+
+(defun builtin-entmakex (data)
+  (require-proper-list data "ENTMAKEX")
+  (host-entmakex (current-evaluation-host) data))
+
+(defun builtin-entdel (ename)
+  (host-entdel (current-evaluation-host) (require-ename ename "ENTDEL")))
+
+(defun builtin-entupd (ename)
+  (host-entupd (current-evaluation-host) (require-ename ename "ENTUPD")))
+
+(defun builtin-entlast ()
+  (host-entlast (current-evaluation-host)))
+
+(defun builtin-entnext (&optional ename)
+  (host-entnext (current-evaluation-host)
+                (and ename (require-ename ename "ENTNEXT"))))
+
+(defun builtin-handent (handle-string)
+  (host-handent (current-evaluation-host)
+                (autolisp-string-value (require-string handle-string "HANDENT"))))
+
+(defun require-pickset (object operator-name)
+  (unless (typep object 'autolisp-pickset)
+    (signal-builtin-argument-error
+     :invalid-pickset
+     operator-name
+     "~A expects a PICKSET, got ~S."
+     operator-name object))
+  object)
+
+;;; --- Phase 11: selection-set builtins -----------------------------
+
+(defun builtin-ssget (&rest arguments)
+  ;; (ssget)                   -> interactive (host-not-supported)
+  ;; (ssget MODE)              -> mode without filter
+  ;; (ssget MODE FILTER)       -> mode + filter
+  ;; (ssget FILTER)            -> "X" + filter (rare; treated as
+  ;;                              "X" / FILTER for convenience)
+  ;; Modes are AutoLISP-strings; FILTER is a list of dotted pairs.
+  (let* ((host (current-evaluation-host))
+         mode filter)
+    (cond
+      ((null arguments) nil)
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string) (setf mode only))
+           ((listp only) (setf mode (make-autolisp-string "X")
+                              filter only))
+           (t (signal-builtin-argument-error
+               :invalid-ssget-arguments
+               "SSGET"
+               "SSGET expects (MODE [FILTER]) or (MODE) or (FILTER), got ~S."
+               only)))))
+      (t
+       (setf mode (first arguments)
+             filter (second arguments))))
+    (host-ssget host filter :mode mode)))
+
+(defun builtin-ssadd (&rest arguments)
+  ;; (ssadd)              -> empty pickset
+  ;; (ssadd ENAME)        -> singleton pickset
+  ;; (ssadd ENAME PICKSET) -> updated pickset
+  (let ((host (current-evaluation-host)))
+    (case (length arguments)
+      (0 (host-ssadd host nil nil))
+      (1 (host-ssadd host nil (require-ename (first arguments) "SSADD")))
+      (2 (host-ssadd host
+                     (require-pickset (second arguments) "SSADD")
+                     (require-ename (first arguments) "SSADD")))
+      (otherwise
+       (signal-builtin-argument-error
+        :wrong-number-of-arguments
+        "SSADD"
+        "SSADD expects 0, 1, or 2 arguments, got ~D."
+        (length arguments))))))
+
+(defun builtin-ssdel (ename pickset)
+  (host-ssdel (current-evaluation-host)
+              (require-pickset pickset "SSDEL")
+              (require-ename ename "SSDEL")))
+
+(defun builtin-ssname (pickset index)
+  (host-ssname (current-evaluation-host)
+               (require-pickset pickset "SSNAME")
+               (require-int32 index "SSNAME")))
+
+(defun builtin-sslength (pickset)
+  (host-sslength (current-evaluation-host)
+                 (require-pickset pickset "SSLENGTH")))
+
+(defun builtin-ssmemb (ename pickset)
+  (host-ssmemb (current-evaluation-host)
+               (require-pickset pickset "SSMEMB")
+               (require-ename ename "SSMEMB")))
+
+(defun builtin-ssgetfirst ()
+  (host-ssgetfirst (current-evaluation-host)))
+
+(defun builtin-sssetfirst (grip-list &optional pickset)
+  ;; AutoLISP signature: (sssetfirst GRIP-SET PICKSET). MockHost
+  ;; ignores the grip set; we route the pickset to the host.
+  (declare (ignore grip-list))
+  (host-sssetfirst (current-evaluation-host)
+                   (and pickset (require-pickset pickset "SSSETFIRST"))))
+
+;;; --- Phase 11: table walkers --------------------------------------
+
+(defun builtin-tblsearch (kind name &optional next-after)
+  (declare (ignore next-after))
+  (host-tblsearch (current-evaluation-host)
+                  (autolisp-string-value (require-string kind "TBLSEARCH"))
+                  (autolisp-string-value (require-string name "TBLSEARCH"))))
+
+(defun builtin-tblnext (kind &optional rewind)
+  (host-tblnext (current-evaluation-host)
+                (autolisp-string-value (require-string kind "TBLNEXT"))
+                :rewind (autolisp-true-p rewind)))
+
+(defun builtin-tblobjname (kind name)
+  (host-tblobjname (current-evaluation-host)
+                   (autolisp-string-value (require-string kind "TBLOBJNAME"))
+                   (autolisp-string-value (require-string name "TBLOBJNAME"))))
+
+;;; --- Phase 11: sysvar access --------------------------------------
+
+(defun builtin-getvar (name)
+  (host-getvar (current-evaluation-host)
+               (autolisp-string-value (require-string name "GETVAR"))))
+
+(defun builtin-setvar (name value)
+  (host-setvar (current-evaluation-host)
+               (autolisp-string-value (require-string name "SETVAR"))
+               value))
+
+;;; --- Phase 12: headless interaction channel -----------------------
+
+(defun optional-prompt-string (prompt operator-name)
+  (cond
+    ((null prompt) nil)
+    (t (require-string prompt operator-name))))
+
+(defun builtin-initget (&rest arguments)
+  ;; (initget [BITS] [KWORD-STRING])
+  ;; BITS is an integer; KWORD-STRING is a space-separated list.
+  ;; Accepted argument shapes:
+  ;;   (initget)
+  ;;   (initget BITS)
+  ;;   (initget KWORDS)
+  ;;   (initget BITS KWORDS)
+  (let ((bits 0)
+        (keywords '()))
+    (cond
+      ((null arguments))
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string)
+            (setf keywords (split-keyword-string only)))
+           ((integerp only) (setf bits only)))))
+      (t
+       (when (integerp (first arguments)) (setf bits (first arguments)))
+       (let ((kw (or (second arguments)
+                     (and (typep (first arguments) 'autolisp-string)
+                          (first arguments)))))
+         (when (typep kw 'autolisp-string)
+           (setf keywords (split-keyword-string kw))))))
+    (host-initget (current-evaluation-host) bits keywords)))
+
+(defun split-keyword-string (autolisp-string-value)
+  (let ((value (autolisp-string-value autolisp-string-value)))
+    (let ((result '())
+          (start 0))
+      (loop for i from 0 below (length value)
+            for c = (char value i)
+            when (or (char= c #\Space) (char= c #\Tab))
+              do (when (< start i)
+                   (push (subseq value start i) result))
+                 (setf start (1+ i)))
+      (when (< start (length value))
+        (push (subseq value start) result))
+      (nreverse result))))
+
+(defun builtin-getstring (&optional read-spaces-or-prompt prompt)
+  ;; (getstring [PROMPT])              ; one-shot, no spaces
+  ;; (getstring CRSPACES [PROMPT])     ; CRSPACES non-nil to allow spaces
+  ;; The MockHost always reads a whole line, so the CRSPACES flag is
+  ;; permissive for now.
+  (let ((effective-prompt
+         (cond
+           ((null read-spaces-or-prompt) prompt)
+           ((typep read-spaces-or-prompt 'autolisp-string) read-spaces-or-prompt)
+           (t prompt))))
+    (host-getstring (current-evaluation-host)
+                    (and effective-prompt
+                         (optional-prompt-string effective-prompt "GETSTRING")))))
+
+(defun builtin-getint (&optional prompt)
+  (host-getint (current-evaluation-host)
+               (and prompt (optional-prompt-string prompt "GETINT"))))
+
+(defun builtin-getreal (&optional prompt)
+  (host-getreal (current-evaluation-host)
+                (and prompt (optional-prompt-string prompt "GETREAL"))))
+
+(defun builtin-getpoint (&rest arguments)
+  ;; (getpoint [BASE] [PROMPT])
+  (let (base prompt)
+    (cond
+      ((null arguments))
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string) (setf prompt only))
+           ((listp only) (setf base only)))))
+      (t (setf base (first arguments) prompt (second arguments))))
+    (host-getpoint (current-evaluation-host)
+                   (and prompt (optional-prompt-string prompt "GETPOINT"))
+                   :base base)))
+
+(defun builtin-getcorner (base &optional prompt)
+  (host-getcorner (current-evaluation-host)
+                  (and prompt (optional-prompt-string prompt "GETCORNER"))
+                  :base base))
+
+(defun builtin-getdist (&rest arguments)
+  ;; (getdist [BASE] [PROMPT])
+  (let (base prompt)
+    (cond
+      ((null arguments))
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string) (setf prompt only))
+           ((listp only) (setf base only)))))
+      (t (setf base (first arguments) prompt (second arguments))))
+    (host-getdist (current-evaluation-host)
+                  (and prompt (optional-prompt-string prompt "GETDIST"))
+                  :base base)))
+
+(defun builtin-getangle (&rest arguments)
+  (let (base prompt)
+    (cond
+      ((null arguments))
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string) (setf prompt only))
+           ((listp only) (setf base only)))))
+      (t (setf base (first arguments) prompt (second arguments))))
+    (host-getangle (current-evaluation-host)
+                   (and prompt (optional-prompt-string prompt "GETANGLE"))
+                   :base base)))
+
+(defun builtin-getorient (&rest arguments)
+  (let (base prompt)
+    (cond
+      ((null arguments))
+      ((null (rest arguments))
+       (let ((only (first arguments)))
+         (cond
+           ((typep only 'autolisp-string) (setf prompt only))
+           ((listp only) (setf base only)))))
+      (t (setf base (first arguments) prompt (second arguments))))
+    (host-getorient (current-evaluation-host)
+                    (and prompt (optional-prompt-string prompt "GETORIENT"))
+                    :base base)))
+
+(defun builtin-getkword (&optional prompt)
+  (host-getkword (current-evaluation-host)
+                 (and prompt (optional-prompt-string prompt "GETKWORD"))))
+
+;;; --- Phase 13: COM bridge (vlax-* + safearray + variant) ----------
+
+(defun ensure-vlax-string (object operator-name)
+  (etypecase object
+    (autolisp-string (autolisp-string-value object))
+    (string object)))
+
+(defun builtin-vlax-create-object (progid)
+  (host-vlax-create-object (current-evaluation-host)
+                           (ensure-vlax-string
+                            (require-string progid "VLAX-CREATE-OBJECT")
+                            "VLAX-CREATE-OBJECT")))
+
+(defun builtin-vlax-get-object (progid)
+  (host-vlax-get-object (current-evaluation-host)
+                        (ensure-vlax-string
+                         (require-string progid "VLAX-GET-OBJECT")
+                         "VLAX-GET-OBJECT")))
+
+(defun builtin-vlax-get-or-create-object (progid)
+  (or (builtin-vlax-get-object progid)
+      (builtin-vlax-create-object progid)))
+
+(defun builtin-vlax-release-object (vla)
+  (host-vlax-release-object (current-evaluation-host) vla))
+
+(defun builtin-vlax-object-released-p (vla)
+  (cond
+    ((typep vla 'autolisp-vla-object)
+     (handler-case
+         (progn (host-vlax-property-available-p (current-evaluation-host) vla "Name")
+                nil)
+       (autolisp-runtime-error (condition)
+         (case (autolisp-runtime-error-code condition)
+           ((:released-vla-object :unknown-vla-object)
+            (intern-autolisp-symbol "T"))
+           (t (error condition))))))
+    (t nil)))
+
+(defun builtin-vlax-get-property (vla name)
+  (host-vlax-get-property (current-evaluation-host) vla
+                          (cond
+                            ((typep name 'autolisp-string) (autolisp-string-value name))
+                            ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+                            (t name))))
+
+(defun builtin-vlax-put-property (vla name value)
+  (host-vlax-put-property (current-evaluation-host) vla
+                          (cond
+                            ((typep name 'autolisp-string) (autolisp-string-value name))
+                            ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+                            (t name))
+                          value))
+
+(defun builtin-vlax-invoke-method (vla name &rest args)
+  (host-vlax-invoke-method (current-evaluation-host) vla
+                           (cond
+                             ((typep name 'autolisp-string) (autolisp-string-value name))
+                             ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+                             (t name))
+                           args))
+
+(defun builtin-vlax-property-available-p (vla name)
+  (if (host-vlax-property-available-p
+       (current-evaluation-host) vla
+       (cond
+         ((typep name 'autolisp-string) (autolisp-string-value name))
+         ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+         (t name)))
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun builtin-vlax-method-applicable-p (vla name)
+  (if (host-vlax-method-applicable-p
+       (current-evaluation-host) vla
+       (cond
+         ((typep name 'autolisp-string) (autolisp-string-value name))
+         ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+         (t name)))
+      (intern-autolisp-symbol "T")
+      nil))
+
+;;; --- SAFEARRAY -----------------------------------------------------
+;;
+;; SAFEARRAY is a tagged multi-dimensional array with an element-
+;; type marker and per-dimension lower/upper bounds. AutoLISP
+;; programs use `vlax-make-safearray TYPE BOUNDS...` to allocate,
+;; then `vlax-safearray-fill` / `vlax-safearray-put-element` to
+;; populate. clautolisp keeps the storage as an internal struct
+;; (`safearray-data`) inside the runtime's `autolisp-safearray`
+;; wrapper's `value` slot.
+
+(defstruct safearray-data
+  (type-tag :variant :type keyword)
+  (bounds   '() :type list)
+  (storage  nil))
+
+(defun safearray-of (object operator-name)
+  (unless (typep object 'autolisp-safearray)
+    (signal-builtin-argument-error
+     :invalid-safearray
+     operator-name
+     "~A expects a SAFEARRAY, got ~S."
+     operator-name object))
+  (let ((data (autolisp-safearray-value object)))
+    (unless (typep data 'safearray-data)
+      (signal-builtin-argument-error
+       :invalid-safearray
+       operator-name
+       "~A: SAFEARRAY storage is not a clautolisp safearray-data, got ~S."
+       operator-name data))
+    data))
+
+(defun coerce-bounds-spec (raw operator-name)
+  "Each dimension is given as (cons LOW HIGH); flatten into a list of
+(LOW HIGH) pairs, validating integers and LOW <= HIGH."
+  (unless (and raw (listp raw))
+    (signal-builtin-argument-error
+     :invalid-safearray-bounds
+     operator-name
+     "~A expects a list of (LOW . HIGH) bound pairs, got ~S."
+     operator-name raw))
+  (mapcar (lambda (pair)
+            (unless (and (consp pair)
+                         (integerp (car pair))
+                         (integerp (cdr pair))
+                         (<= (car pair) (cdr pair)))
+              (signal-builtin-argument-error
+               :invalid-safearray-bounds
+               operator-name
+               "~A: each bound must be (LOW . HIGH) integer pair with LOW <= HIGH, got ~S."
+               operator-name pair))
+            (list (car pair) (cdr pair)))
+          raw))
+
+(defun bounds-shape (bounds)
+  (mapcar (lambda (pair) (1+ (- (second pair) (first pair)))) bounds))
+
+(defun safearray-flat-index (bounds subscripts operator-name)
+  (unless (= (length bounds) (length subscripts))
+    (signal-builtin-argument-error
+     :invalid-safearray-index
+     operator-name
+     "~A: ~D subscripts required, got ~D."
+     operator-name (length bounds) (length subscripts)))
+  (let ((flat 0)
+        (stride 1))
+    (loop for pair in (reverse bounds)
+          for sub in (reverse subscripts)
+          for low = (first pair)
+          for high = (second pair)
+          do (unless (and (integerp sub) (<= low sub high))
+               (signal-builtin-argument-error
+                :invalid-safearray-index
+                operator-name
+                "~A: subscript ~S out of bounds [~D..~D]."
+                operator-name sub low high))
+             (incf flat (* (- sub low) stride))
+             (setf stride (* stride (1+ (- high low)))))
+    flat))
+
+(defun builtin-vlax-make-safearray (type &rest bounds)
+  (let* ((tag (cond
+                ((integerp type) type)
+                ((typep type 'autolisp-symbol)
+                 (intern (autolisp-symbol-name type) "KEYWORD"))
+                (t :variant)))
+         (parsed (coerce-bounds-spec bounds "VLAX-MAKE-SAFEARRAY"))
+         (size (reduce #'* (bounds-shape parsed) :initial-value 1))
+         (storage (make-array size :initial-element nil)))
+    (make-autolisp-safearray
+     :value (make-safearray-data :type-tag (if (keywordp tag) tag :variant)
+                                  :bounds parsed
+                                  :storage storage))))
+
+(defun builtin-vlax-safearray-fill (safe values)
+  (require-proper-list values "VLAX-SAFEARRAY-FILL")
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY-FILL"))
+         (storage (safearray-data-storage data)))
+    (loop for value in values
+          for i from 0
+          while (< i (length storage))
+          do (setf (aref storage i) value))
+    safe))
+
+(defun builtin-vlax-safearray-put-element (safe &rest indices-and-value)
+  (when (< (length indices-and-value) 2)
+    (signal-builtin-argument-error
+     :wrong-number-of-arguments
+     "VLAX-SAFEARRAY-PUT-ELEMENT"
+     "VLAX-SAFEARRAY-PUT-ELEMENT expects subscripts followed by a value."))
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY-PUT-ELEMENT"))
+         (subscripts (butlast indices-and-value))
+         (value (car (last indices-and-value)))
+         (flat (safearray-flat-index (safearray-data-bounds data)
+                                     subscripts
+                                     "VLAX-SAFEARRAY-PUT-ELEMENT")))
+    (setf (aref (safearray-data-storage data) flat) value)
+    value))
+
+(defun builtin-vlax-safearray-get-element (safe &rest indices)
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY-GET-ELEMENT"))
+         (flat (safearray-flat-index (safearray-data-bounds data)
+                                     indices
+                                     "VLAX-SAFEARRAY-GET-ELEMENT")))
+    (aref (safearray-data-storage data) flat)))
+
+(defun builtin-vlax-safearray->list (safe)
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY->LIST"))
+         (storage (safearray-data-storage data)))
+    (coerce storage 'list)))
+
+(defun builtin-vlax-safearray-type (safe)
+  (let ((data (safearray-of safe "VLAX-SAFEARRAY-TYPE")))
+    (intern-autolisp-symbol (symbol-name (safearray-data-type-tag data)))))
+
+(defun builtin-vlax-safearray-get-l-bound (safe dim)
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY-GET-L-BOUND"))
+         (i (require-int32 dim "VLAX-SAFEARRAY-GET-L-BOUND"))
+         (pair (nth (1- i) (safearray-data-bounds data))))
+    (cond
+      ((null pair)
+       (signal-builtin-argument-error
+        :invalid-safearray-dimension
+        "VLAX-SAFEARRAY-GET-L-BOUND"
+        "Dimension ~D is out of range." dim))
+      (t (first pair)))))
+
+(defun builtin-vlax-safearray-get-u-bound (safe dim)
+  (let* ((data (safearray-of safe "VLAX-SAFEARRAY-GET-U-BOUND"))
+         (i (require-int32 dim "VLAX-SAFEARRAY-GET-U-BOUND"))
+         (pair (nth (1- i) (safearray-data-bounds data))))
+    (cond
+      ((null pair)
+       (signal-builtin-argument-error
+        :invalid-safearray-dimension
+        "VLAX-SAFEARRAY-GET-U-BOUND"
+        "Dimension ~D is out of range." dim))
+      (t (second pair)))))
+
+;;; --- VARIANT -------------------------------------------------------
+;;
+;; Internal storage: a (cons type-keyword inner-value) pair.
+;; Inner-value is whatever the AutoLISP code supplied; type-keyword
+;; is one of :integer / :real / :string / :array / :variant /
+;; :short / :boolean — descriptive only, not type-checked beyond
+;; the identity round-trip.
+
+(defun variant-pair (object operator-name)
+  (unless (typep object 'autolisp-variant)
+    (signal-builtin-argument-error
+     :invalid-variant
+     operator-name
+     "~A expects a VARIANT, got ~S."
+     operator-name object))
+  (let ((pair (autolisp-variant-value object)))
+    (unless (consp pair)
+      (signal-builtin-argument-error
+       :invalid-variant
+       operator-name
+       "~A: VARIANT storage is not a (TYPE . VALUE) pair, got ~S."
+       operator-name pair))
+    pair))
+
+(defun builtin-vlax-make-variant (&optional value type)
+  (let* ((tag (cond
+                ((null type)
+                 (cond
+                   ((integerp value) :integer)
+                   ((numberp value) :real)
+                   ((typep value 'autolisp-string) :string)
+                   ((typep value 'autolisp-safearray) :array)
+                   ((null value) :empty)
+                   (t :variant)))
+                ((typep type 'autolisp-symbol)
+                 (intern (autolisp-symbol-name type) "KEYWORD"))
+                ((keywordp type) type)
+                ((integerp type) type)
+                (t :variant))))
+    (make-autolisp-variant :value (cons (if (keywordp tag) tag :variant) value))))
+
+(defun builtin-vlax-variant-type (variant)
+  (let ((tag (car (variant-pair variant "VLAX-VARIANT-TYPE"))))
+    (intern-autolisp-symbol (symbol-name tag))))
+
+(defun builtin-vlax-variant-value (variant)
+  (cdr (variant-pair variant "VLAX-VARIANT-VALUE")))
+
+(defun builtin-vlax-variant-change-type (variant new-type)
+  (let* ((pair (variant-pair variant "VLAX-VARIANT-CHANGE-TYPE"))
+         (target (cond
+                   ((typep new-type 'autolisp-symbol)
+                    (intern (autolisp-symbol-name new-type) "KEYWORD"))
+                   ((keywordp new-type) new-type)
+                   (t :variant))))
+    (make-autolisp-variant :value (cons target (cdr pair)))))
+
+;;; --- Phase 14b: reactor (vlr-*) builtin family ---------------------
+;;;
+;;; A reactor is a host-side event-callback subscription object.
+;;; clautolisp's reactor surface dispatches against the runtime's
+;;; per-document and per-application registries; the actual events
+;;; are emitted by MockHost (and, in Phase 16, LiveHost) via the
+;;; runtime's signal-document-event / signal-application-event
+;;; helpers. Reactors are the AutoLISP-visible piece of the
+;;; observer pattern; the host-object ontology + lifecycle is
+;;; documented in clautolisp/documentation/design.org and pinned
+;;; normatively in autolisp-spec ch.21 ("Host Object Ontology and
+;;; Lifecycles").
+
+(defun current-document-or-error (operator-name)
+  (let* ((context (clautolisp.autolisp-runtime:current-evaluation-context))
+         (document (and context
+                        (clautolisp.autolisp-runtime:evaluation-context-current-document
+                         context))))
+    (unless document
+      (signal-builtin-argument-error
+       :no-current-document
+       operator-name
+       "~A: no current document is bound to the evaluation context."
+       operator-name))
+    document))
+
+(defun current-session-or-error (operator-name)
+  (let* ((context (clautolisp.autolisp-runtime:current-evaluation-context))
+         (session (and context
+                       (clautolisp.autolisp-runtime:evaluation-context-session
+                        context))))
+    (unless session
+      (signal-builtin-argument-error
+       :no-current-session
+       operator-name
+       "~A: no current session is bound to the evaluation context."
+       operator-name))
+    session))
+
+(defun callbacks-list->table (alist operator-name)
+  "Validate and convert an AutoLISP callback alist of the form
+((reaction-name . callback-fn) ...) to a hash-table from
+keyword reaction-name to AutoLISP callable. Reaction names may
+be supplied as keywords, AutoLISP-strings, or AutoLISP-symbols
+prefixed with `:vlr-`; we normalise to keywords."
+  (require-proper-list alist operator-name)
+  (let ((table (make-hash-table :test #'eq)))
+    (dolist (pair alist table)
+      (unless (consp pair)
+        (signal-builtin-argument-error
+         :invalid-reactor-callbacks
+         operator-name
+         "~A: each callback entry must be (REACTION-NAME . FUNCTION), got ~S."
+         operator-name pair))
+      (let ((name (normalise-reaction-name (car pair) operator-name)))
+        (setf (gethash name table) (cdr pair))))))
+
+(defun normalise-reaction-name (object operator-name)
+  (cond
+    ((keywordp object) object)
+    ((typep object 'autolisp-symbol)
+     (intern (string-upcase (autolisp-symbol-name object)) "KEYWORD"))
+    ((typep object 'autolisp-string)
+     (intern (string-upcase (autolisp-string-value object)) "KEYWORD"))
+    ((stringp object) (intern (string-upcase object) "KEYWORD"))
+    (t
+     (signal-builtin-argument-error
+      :invalid-reaction-name
+      operator-name
+      "~A: reaction name must be a keyword, symbol, or string, got ~S."
+      operator-name object))))
+
+(defun coerce-data-list (data operator-name)
+  (cond
+    ((null data) nil)
+    ((listp data) data)
+    (t
+     (signal-builtin-argument-error
+      :invalid-reactor-data
+      operator-name
+      "~A: data argument must be nil or a list, got ~S."
+      operator-name data))))
+
+(defun coerce-owners-list (owners operator-name)
+  (cond
+    ((null owners) nil)
+    ((listp owners) owners)
+    (t
+     (signal-builtin-argument-error
+      :invalid-reactor-owners
+      operator-name
+      "~A: owners argument must be nil or a list, got ~S."
+      operator-name owners))))
+
+(defun ensure-reactor (object operator-name)
+  (unless (typep object 'reactor)
+    (signal-builtin-argument-error
+     :invalid-reactor
+     operator-name
+     "~A expects a reactor object, got ~S."
+     operator-name object))
+  object)
+
+(defun build-reactor (kind &key owners data callbacks)
+  (let* ((scope (reactor-type-scope kind))
+         (callback-table
+          (etypecase callbacks
+            (hash-table callbacks)
+            (list (callbacks-list->table callbacks "VLR-CONSTRUCTOR")))))
+    (make-reactor :kind kind
+                  :scope scope
+                  :owners (coerce-owners-list owners "VLR-CONSTRUCTOR")
+                  :data (coerce-data-list data "VLR-CONSTRUCTOR")
+                  :callbacks callback-table)))
+
+(defun install-new-reactor (kind owners data callbacks operator-name)
+  (declare (ignore operator-name))
+  (let* ((reactor (build-reactor kind
+                                  :owners owners
+                                  :data data
+                                  :callbacks callbacks))
+         (scope (reactor-scope reactor)))
+    (case scope
+      (:document
+       (let ((document (current-document-or-error
+                        (reactor-type-name kind))))
+         (add-reactor-to-document document reactor)))
+      (:application
+       (let ((session (current-session-or-error
+                       (reactor-type-name kind))))
+         (add-reactor-to-session session reactor))))
+    reactor))
+
+(defmacro define-vlr-constructor (name kind requires-owners-p)
+  "Generate a vlr-FOO-reactor builtin for KIND.
+
+REQUIRES-OWNERS-P is non-nil for the constructors whose first
+argument is the owners list (vlr-object-reactor and
+vlr-acdb-reactor) and nil for the ones whose first argument is
+the data list."
+  `(defun ,name (,@(if requires-owners-p '(owners) '())
+                 data callbacks)
+     ,(if requires-owners-p
+          `(install-new-reactor ,kind owners data callbacks ',name)
+          `(install-new-reactor ,kind nil data callbacks ',name))))
+
+(define-vlr-constructor builtin-vlr-acdb-reactor          :acdb           t)
+(define-vlr-constructor builtin-vlr-command-reactor       :command        nil)
+(define-vlr-constructor builtin-vlr-deepclone-reactor     :deepclone      nil)
+(define-vlr-constructor builtin-vlr-document-reactor      :document       nil)
+(define-vlr-constructor builtin-vlr-dwg-reactor           :dwg            nil)
+(define-vlr-constructor builtin-vlr-dxf-reactor           :dxf            nil)
+(define-vlr-constructor builtin-vlr-insert-reactor        :insert         nil)
+(define-vlr-constructor builtin-vlr-mouse-reactor         :mouse          nil)
+(define-vlr-constructor builtin-vlr-object-reactor        :object         t)
+(define-vlr-constructor builtin-vlr-sysvar-reactor        :sysvar         nil)
+(define-vlr-constructor builtin-vlr-toolbar-reactor       :toolbar        nil)
+(define-vlr-constructor builtin-vlr-undo-reactor          :undo           nil)
+(define-vlr-constructor builtin-vlr-wblock-reactor        :wblock         nil)
+(define-vlr-constructor builtin-vlr-window-reactor        :window         nil)
+(define-vlr-constructor builtin-vlr-xref-reactor          :xref           nil)
+(define-vlr-constructor builtin-vlr-docmanager-reactor    :docmanager     nil)
+(define-vlr-constructor builtin-vlr-editor-reactor        :editor         nil)
+(define-vlr-constructor builtin-vlr-linker-reactor        :linker         nil)
+(define-vlr-constructor builtin-vlr-lisp-reactor          :lisp           nil)
+(define-vlr-constructor builtin-vlr-miscellaneous-reactor :miscellaneous  nil)
+
+;;; Introspection / mutation -------------------------------------
+
+(defun builtin-vlr-add (reactor)
+  (ensure-reactor reactor "VLR-ADD")
+  (setf (reactor-active-p reactor) t)
+  (let ((scope (reactor-scope reactor)))
+    (case scope
+      (:document
+       (add-reactor-to-document (or (reactor-document reactor)
+                                    (current-document-or-error "VLR-ADD"))
+                                reactor))
+      (:application
+       (add-reactor-to-session (current-session-or-error "VLR-ADD")
+                               reactor))))
+  reactor)
+
+(defun builtin-vlr-remove (reactor)
+  (ensure-reactor reactor "VLR-REMOVE")
+  (let ((scope (reactor-scope reactor)))
+    (case scope
+      (:document
+       (when (reactor-document reactor)
+         (remove-reactor-from-document (reactor-document reactor) reactor)))
+      (:application
+       (let ((session (current-session-or-error "VLR-REMOVE")))
+         (remove-reactor-from-session session reactor)))))
+  (setf (reactor-active-p reactor) nil)
+  reactor)
+
+(defun builtin-vlr-remove-all (&optional kind)
+  ;; (vlr-remove-all)         -> remove every reactor in scope
+  ;; (vlr-remove-all KIND)    -> remove all reactors of KIND
+  (let ((kw (and kind (normalise-reaction-name kind "VLR-REMOVE-ALL")))
+        (session (current-session-or-error "VLR-REMOVE-ALL")))
+    (dolist (reactor (all-session-reactors session))
+      (when (or (null kw) (eq (reactor-kind reactor) kw))
+        (builtin-vlr-remove reactor)))
+    nil))
+
+(defun builtin-vlr-data (reactor)
+  (reactor-data (ensure-reactor reactor "VLR-DATA")))
+
+(defun builtin-vlr-data-set (reactor new-data)
+  (ensure-reactor reactor "VLR-DATA-SET")
+  (setf (reactor-data reactor) (coerce-data-list new-data "VLR-DATA-SET"))
+  new-data)
+
+(defun builtin-vlr-owners (reactor)
+  (reactor-owners (ensure-reactor reactor "VLR-OWNERS")))
+
+(defun builtin-vlr-owner-add (reactor owner)
+  (ensure-reactor reactor "VLR-OWNER-ADD")
+  (unless (member owner (reactor-owners reactor) :test #'equal)
+    (setf (reactor-owners reactor) (append (reactor-owners reactor) (list owner))))
+  reactor)
+
+(defun builtin-vlr-owner-remove (reactor owner)
+  (ensure-reactor reactor "VLR-OWNER-REMOVE")
+  (setf (reactor-owners reactor)
+        (remove owner (reactor-owners reactor) :test #'equal))
+  reactor)
+
+(defun builtin-vlr-set-notification (reactor mode)
+  (ensure-reactor reactor "VLR-SET-NOTIFICATION")
+  (let ((kw (cond
+              ((keywordp mode) mode)
+              ((typep mode 'autolisp-symbol)
+               (intern (string-upcase (autolisp-symbol-name mode)) "KEYWORD"))
+              (t (signal-builtin-argument-error
+                  :invalid-notification-mode
+                  "VLR-SET-NOTIFICATION"
+                  "VLR-SET-NOTIFICATION expects a notification mode keyword, got ~S."
+                  mode)))))
+    (setf (reactor-notification reactor)
+          (case kw
+            ((:active-document-only :current-document-only) :current-document-only)
+            ((:disabled) :disabled)
+            (otherwise :all-documents)))
+    reactor))
+
+(defun builtin-vlr-notification (reactor)
+  (intern-autolisp-symbol
+   (string-upcase (symbol-name
+                   (reactor-notification (ensure-reactor reactor "VLR-NOTIFICATION"))))))
+
+(defun builtin-vlr-current-reaction-name ()
+  ;; In Phase 14b we don't expose the dispatch-stack to the
+  ;; callback; this returns nil headlessly. Real AutoCAD would
+  ;; return the symbol-name of the reaction currently being
+  ;; dispatched.
+  nil)
+
+(defun builtin-vlr-reactions (reactor)
+  (let ((acc '()))
+    (maphash (lambda (name fn) (push (cons name fn) acc))
+             (reactor-callbacks (ensure-reactor reactor "VLR-REACTIONS")))
+    acc))
+
+(defun builtin-vlr-reaction-set (reactor reaction-name new-callback)
+  (ensure-reactor reactor "VLR-REACTION-SET")
+  (let ((kw (normalise-reaction-name reaction-name "VLR-REACTION-SET")))
+    (cond
+      ((null new-callback)
+       (remhash kw (reactor-callbacks reactor)))
+      (t
+       (setf (gethash kw (reactor-callbacks reactor)) new-callback)))
+    reactor))
+
+(defun builtin-vlr-added-p (reactor)
+  (ensure-reactor reactor "VLR-ADDED-P")
+  (if (reactor-active-p reactor)
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun builtin-vlr-type (reactor)
+  (intern-autolisp-symbol
+   (string-upcase (symbol-name
+                   (reactor-kind (ensure-reactor reactor "VLR-TYPE"))))))
+
+(defun builtin-vlr-types ()
+  (mapcar (lambda (kw)
+            (intern-autolisp-symbol (string-upcase (symbol-name kw))))
+          (reactor-type-keywords)))
+
+(defun builtin-vlr-reactors (&optional kind-filter)
+  (let* ((session (current-session-or-error "VLR-REACTORS"))
+         (kw (and kind-filter (normalise-reaction-name kind-filter "VLR-REACTORS")))
+         (all (all-session-reactors session)))
+    (when kw
+      (setf all (remove-if-not (lambda (r) (eq (reactor-kind r) kw)) all)))
+    all))
+
+(defun builtin-vlr-trace-reaction (reactor reaction-name)
+  ;; Headless: no actual trace — return reaction-name to acknowledge.
+  (ensure-reactor reactor "VLR-TRACE-REACTION")
+  (normalise-reaction-name reaction-name "VLR-TRACE-REACTION")
+  reaction-name)
+
+;;; Persistence --------------------------------------------------
+
+(defun reactor-as-persistent-record (reactor)
+  "Encode a reactor as a property list suitable for serialisation
+through mock-host-snapshot. Callbacks must be autolisp-symbols
+(closures cannot survive)."
+  (let ((callbacks '()))
+    (maphash (lambda (name fn)
+               (cond
+                 ((typep fn 'autolisp-symbol)
+                  (push (cons name (autolisp-symbol-name fn)) callbacks))
+                 (t
+                  (signal-builtin-argument-error
+                   :non-serializable-callback
+                   "VLR-PERS"
+                   "VLR-PERS: callback for reaction ~A must be a symbol so it can survive a save/reload cycle."
+                   name))))
+             (reactor-callbacks reactor))
+    (list :id (princ-to-string (reactor-id reactor))
+          :kind (reactor-kind reactor)
+          :owners (reactor-owners reactor)
+          :data (reactor-data reactor)
+          :callbacks callbacks
+          :notification (reactor-notification reactor))))
+
+(defun builtin-vlr-pers (reactor)
+  (ensure-reactor reactor "VLR-PERS")
+  (let ((document (or (reactor-document reactor)
+                      (current-document-or-error "VLR-PERS")))
+        (record (reactor-as-persistent-record reactor)))
+    (setf (reactor-persistent-p reactor) t)
+    (setf (gethash (reactor-id reactor)
+                   (document-namespace-persistent-reactor-index document))
+          record)
+    reactor))
+
+(defun builtin-vlr-pers-release (reactor)
+  (ensure-reactor reactor "VLR-PERS-RELEASE")
+  (let ((document (reactor-document reactor)))
+    (when document
+      (remhash (reactor-id reactor)
+               (document-namespace-persistent-reactor-index document))))
+  (setf (reactor-persistent-p reactor) nil)
+  reactor)
+
+(defun builtin-vlr-pers-list (&optional document-or-name)
+  (declare (ignore document-or-name))
+  (let* ((document (current-document-or-error "VLR-PERS-LIST"))
+         (acc '()))
+    (maphash (lambda (id record)
+               (declare (ignore record))
+               (let ((reactor (gethash id (document-reactor-registry document))))
+                 (when reactor (push reactor acc))))
+             (document-namespace-persistent-reactor-index document))
+    acc))
+
+(defun builtin-vlr-pers-p (reactor)
+  (ensure-reactor reactor "VLR-PERS-P")
+  (if (reactor-persistent-p reactor)
+      (intern-autolisp-symbol "T")
+      nil))
+
+(defun builtin-vlr-pers-dictname ()
+  ;; AutoCAD returns "ACAD_REACTORS" — the NOD entry that stores
+  ;; persistent reactors. clautolisp uses the same name.
+  (make-autolisp-string "ACAD_REACTORS"))
+
+;;; --- Phase 15a: DCL (Dialog Control Language) builtins -----------
+;;;
+;;; Thin wrappers around the autolisp-dcl runtime. The renderer is
+;;; pluggable: by default the Phase-15a terminal renderer is
+;;; installed at startup; future GUI backends (Phase 15b+) install
+;;; their own via dcl-runtime install-default-renderer.
+
+(defun builtin-load-dialog (path)
+  (let* ((value (autolisp-string-value (require-string path "LOAD_DIALOG")))
+         (resolved (resolve-load-pathname value)))
+    (cond
+      ((null resolved) -1)
+      (t (or (dcl-runtime-load-dialog (namestring resolved)) -1)))))
+
+(defun builtin-unload-dialog (id)
+  (dcl-runtime-unload-dialog (require-int32 id "UNLOAD_DIALOG"))
+  nil)
+
+(defun builtin-new-dialog (name id &optional action default-point)
+  ;; (new_dialog DIALOG-NAME DCL-ID [DEFAULT-ACTION [DEFAULT-POINT]])
+  ;; -> t on success, nil otherwise. The dialog created by this
+  ;; call becomes the *active* dialog; subsequent set_tile /
+  ;; action_tile / etc. target it implicitly.
+  (declare (ignore default-point))
+  (let* ((handle (require-int32 id "NEW_DIALOG"))
+         (dialog-id (dcl-runtime-new-dialog
+                     handle (autolisp-string-value
+                             (require-string name "NEW_DIALOG")))))
+    (when (and action (not (null action)))
+      (dcl-runtime-action-tile dialog-id "" action))
+    (intern-autolisp-symbol "T")))
+
+(defun builtin-start-dialog ()
+  ;; (start_dialog) — no arguments. Drives the renderer's run-fn
+  ;; against the currently-active dialog and returns its terminal
+  ;; status integer.
+  (cond
+    ((null (current-dialog-id)) 1)
+    (t (dcl-runtime-start-dialog (current-dialog-id)))))
+
+(defun builtin-done-dialog (&optional status)
+  ;; (done_dialog [STATUS]) — close the active dialog.
+  (let ((s (cond
+             ((null status) 1)
+             ((integerp status) status)
+             (t 1)))
+        (id (current-dialog-id)))
+    (cond
+      (id (dcl-runtime-done-dialog id s))
+      (t s))))
+
+(defun builtin-action-tile (key callback)
+  ;; (action_tile KEY CALLBACK-STRING) -> t on success
+  (dcl-runtime-action-tile
+   (require-current-dialog-id "ACTION_TILE")
+   (autolisp-string-value (require-string key "ACTION_TILE"))
+   callback)
+  (intern-autolisp-symbol "T"))
+
+(defun builtin-set-tile (key value)
+  ;; (set_tile KEY VALUE) -> VALUE
+  (dcl-runtime-set-tile
+   (require-current-dialog-id "SET_TILE")
+   (autolisp-string-value (require-string key "SET_TILE"))
+   (cond
+     ((typep value 'autolisp-string) (autolisp-string-value value))
+     (t (princ-to-string value))))
+  value)
+
+(defun builtin-get-tile (key)
+  ;; (get_tile KEY) -> string
+  (make-autolisp-string
+   (or (dcl-runtime-get-tile
+        (require-current-dialog-id "GET_TILE")
+        (autolisp-string-value (require-string key "GET_TILE")))
+       "")))
+
+(defun builtin-mode-tile (key mode)
+  ;; (mode_tile KEY MODE) -> nil
+  (dcl-runtime-mode-tile
+   (require-current-dialog-id "MODE_TILE")
+   (autolisp-string-value (require-string key "MODE_TILE"))
+   (require-int32 mode "MODE_TILE"))
+  nil)
+
+(defun builtin-client-data-tile (key &optional value)
+  ;; (client_data_tile KEY [VALUE])
+  (let ((id (require-current-dialog-id "CLIENT_DATA_TILE"))
+        (k (autolisp-string-value (require-string key "CLIENT_DATA_TILE"))))
+    (cond
+      (value (dcl-runtime-set-client-data id k value))
+      (t (dcl-runtime-client-data id k)))))
+
+(defun builtin-dimx-tile (key)
+  ;; (dimx_tile KEY) -> integer width. Headless: fixed value.
+  (declare (ignore key))
+  100)
+
+(defun builtin-dimy-tile (key)
+  (declare (ignore key))
+  20)
+
+(defun builtin-start-image (key)
+  ;; (start_image KEY) — open an image-paint batch on KEY.
+  (let ((k (autolisp-string-value (require-string key "START_IMAGE"))))
+    (dcl-runtime-start-image k)
+    (intern-autolisp-symbol "T")))
+
+(defun builtin-end-image ()
+  (dcl-runtime-end-image)
+  nil)
+
+(defun builtin-fill-image (x y width height colour)
+  (let ((xi (require-int32 x "FILL_IMAGE"))
+        (yi (require-int32 y "FILL_IMAGE"))
+        (wi (require-int32 width "FILL_IMAGE"))
+        (hi (require-int32 height "FILL_IMAGE"))
+        (ci (require-int32 colour "FILL_IMAGE")))
+    (dcl-runtime-image-fill xi yi wi hi ci)
+    ci))
+
+(defun builtin-vector-image (x1 y1 x2 y2 colour)
+  (let ((x1i (require-int32 x1 "VECTOR_IMAGE"))
+        (y1i (require-int32 y1 "VECTOR_IMAGE"))
+        (x2i (require-int32 x2 "VECTOR_IMAGE"))
+        (y2i (require-int32 y2 "VECTOR_IMAGE"))
+        (ci  (require-int32 colour "VECTOR_IMAGE")))
+    (dcl-runtime-image-vector x1i y1i x2i y2i ci)
+    ci))
+
+(defun builtin-slide-image (x y width height path)
+  (let ((xi (require-int32 x "SLIDE_IMAGE"))
+        (yi (require-int32 y "SLIDE_IMAGE"))
+        (wi (require-int32 width "SLIDE_IMAGE"))
+        (hi (require-int32 height "SLIDE_IMAGE"))
+        (p (autolisp-string-value (require-string path "SLIDE_IMAGE"))))
+    (dcl-runtime-image-slide xi yi wi hi p)
+    nil))
+
+(defun builtin-start-list (key &optional (operation 3) (index 0))
+  ;; (start_list KEY [OPERATION [INDEX]])
+  ;; OPERATION: 1 = change one item at INDEX; 2 = append;
+  ;; 3 = clear and replace (default).
+  (let ((k (autolisp-string-value (require-string key "START_LIST")))
+        (op (cond ((null operation) 3)
+                  ((integerp operation) operation)
+                  (t (require-int32 operation "START_LIST"))))
+        (idx (cond ((null index) 0)
+                   ((integerp index) index)
+                   (t (require-int32 index "START_LIST")))))
+    (dcl-runtime-start-list k op idx)
+    (make-autolisp-string k)))
+
+(defun builtin-add-list (text)
+  ;; (add_list STRING) -> STRING
+  (let ((s (autolisp-string-value (require-string text "ADD_LIST"))))
+    (dcl-runtime-add-list s)
+    (make-autolisp-string s)))
+
+(defun builtin-end-list ()
+  (dcl-runtime-end-list)
+  nil)
+
+(defun builtin-term-dialog ()
+  ;; Real AutoLISP's term_dialog tears down all active dialogs and
+  ;; never errors when there are none. We mark every active dialog
+  ;; finished with status 0 (cancel) and let the renderer's run-fn
+  ;; close them out.
+  (let ((active (symbol-value
+                 (find-symbol "*ACTIVE-DIALOGS*"
+                              :clautolisp.autolisp-dcl))))
+    (when active
+      (loop for id being the hash-keys of active
+            do (handler-case (dcl-runtime-done-dialog id 0)
+                 (error () nil)))))
+  nil)
 
 (defun core-builtins ()
   (list
@@ -2597,6 +3897,17 @@ most recent first."
    (make-core-builtin-subr "SIN" #'builtin-sin)
    (make-core-builtin-subr "COS" #'builtin-cos)
    (make-core-builtin-subr "TAN" #'builtin-tan)
+   (make-core-builtin-subr "SINH" #'builtin-sinh)
+   (make-core-builtin-subr "COSH" #'builtin-cosh)
+   (make-core-builtin-subr "TANH" #'builtin-tanh)
+   (make-core-builtin-subr "ATANH" #'builtin-atanh)
+   (make-core-builtin-subr "POWER" #'builtin-power)
+   (make-core-builtin-subr "VL-NANP" #'builtin-vl-nanp)
+   (make-core-builtin-subr "VL-INFP" #'builtin-vl-infp)
+   (make-core-builtin-subr "POSITION" #'builtin-position)
+   (make-core-builtin-subr "VL-REMOVE" #'builtin-vl-remove)
+   (make-core-builtin-subr "STRING-SPLIT" #'builtin-vl-string-split)
+   (make-core-builtin-subr "VL-STRING-SPLIT" #'builtin-vl-string-split)
    (make-core-builtin-subr "ASIN" #'builtin-asin)
    (make-core-builtin-subr "ACOS" #'builtin-acos)
    (make-core-builtin-subr "ATAN" #'builtin-atan)
@@ -2636,6 +3947,131 @@ most recent first."
    (make-core-builtin-subr "VL-BT" #'builtin-vl-bt)
    (make-core-builtin-subr "VL-BT-ON" #'builtin-vl-bt-on)
    (make-core-builtin-subr "VL-BT-OFF" #'builtin-vl-bt-off)
+   ;; Phase 10 — entity API (thin wrappers over the HAL)
+   (make-core-builtin-subr "ENTGET"   #'builtin-entget)
+   (make-core-builtin-subr "ENTMOD"   #'builtin-entmod)
+   (make-core-builtin-subr "ENTMAKE"  #'builtin-entmake)
+   (make-core-builtin-subr "ENTMAKEX" #'builtin-entmakex)
+   (make-core-builtin-subr "ENTDEL"   #'builtin-entdel)
+   (make-core-builtin-subr "ENTUPD"   #'builtin-entupd)
+   (make-core-builtin-subr "ENTLAST"  #'builtin-entlast)
+   (make-core-builtin-subr "ENTNEXT"  #'builtin-entnext)
+   (make-core-builtin-subr "HANDENT"  #'builtin-handent)
+   ;; Phase 11 — selection sets, table walkers, sysvars
+   (make-core-builtin-subr "SSGET"      #'builtin-ssget)
+   (make-core-builtin-subr "SSADD"      #'builtin-ssadd)
+   (make-core-builtin-subr "SSDEL"      #'builtin-ssdel)
+   (make-core-builtin-subr "SSNAME"     #'builtin-ssname)
+   (make-core-builtin-subr "SSLENGTH"   #'builtin-sslength)
+   (make-core-builtin-subr "SSMEMB"     #'builtin-ssmemb)
+   (make-core-builtin-subr "SSGETFIRST" #'builtin-ssgetfirst)
+   (make-core-builtin-subr "SSSETFIRST" #'builtin-sssetfirst)
+   (make-core-builtin-subr "TBLSEARCH"  #'builtin-tblsearch)
+   (make-core-builtin-subr "TBLNEXT"    #'builtin-tblnext)
+   (make-core-builtin-subr "TBLOBJNAME" #'builtin-tblobjname)
+   (make-core-builtin-subr "GETVAR"     #'builtin-getvar)
+   (make-core-builtin-subr "SETVAR"     #'builtin-setvar)
+   ;; Phase 12 — headless interaction channel (PROMPT is registered
+   ;; once already as a *standard-output* writer; we keep that)
+   (make-core-builtin-subr "INITGET"    #'builtin-initget)
+   (make-core-builtin-subr "GETSTRING"  #'builtin-getstring)
+   (make-core-builtin-subr "GETINT"     #'builtin-getint)
+   (make-core-builtin-subr "GETREAL"    #'builtin-getreal)
+   (make-core-builtin-subr "GETPOINT"   #'builtin-getpoint)
+   (make-core-builtin-subr "GETCORNER"  #'builtin-getcorner)
+   (make-core-builtin-subr "GETDIST"    #'builtin-getdist)
+   (make-core-builtin-subr "GETANGLE"   #'builtin-getangle)
+   (make-core-builtin-subr "GETORIENT"  #'builtin-getorient)
+   (make-core-builtin-subr "GETKWORD"   #'builtin-getkword)
+   ;; Phase 13 — COM bridge (vlax-* + safearray + variant)
+   (make-core-builtin-subr "VLAX-CREATE-OBJECT"           #'builtin-vlax-create-object)
+   (make-core-builtin-subr "VLAX-GET-OBJECT"              #'builtin-vlax-get-object)
+   (make-core-builtin-subr "VLAX-GET-OR-CREATE-OBJECT"    #'builtin-vlax-get-or-create-object)
+   (make-core-builtin-subr "VLAX-RELEASE-OBJECT"          #'builtin-vlax-release-object)
+   (make-core-builtin-subr "VLAX-OBJECT-RELEASED-P"       #'builtin-vlax-object-released-p)
+   (make-core-builtin-subr "VLAX-GET-PROPERTY"            #'builtin-vlax-get-property)
+   (make-core-builtin-subr "VLAX-PUT-PROPERTY"            #'builtin-vlax-put-property)
+   (make-core-builtin-subr "VLAX-INVOKE-METHOD"           #'builtin-vlax-invoke-method)
+   (make-core-builtin-subr "VLAX-PROPERTY-AVAILABLE-P"    #'builtin-vlax-property-available-p)
+   (make-core-builtin-subr "VLAX-METHOD-APPLICABLE-P"     #'builtin-vlax-method-applicable-p)
+   (make-core-builtin-subr "VLAX-MAKE-SAFEARRAY"          #'builtin-vlax-make-safearray)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-FILL"          #'builtin-vlax-safearray-fill)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-PUT-ELEMENT"   #'builtin-vlax-safearray-put-element)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-GET-ELEMENT"   #'builtin-vlax-safearray-get-element)
+   (make-core-builtin-subr "VLAX-SAFEARRAY->LIST"         #'builtin-vlax-safearray->list)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-TYPE"          #'builtin-vlax-safearray-type)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-GET-L-BOUND"   #'builtin-vlax-safearray-get-l-bound)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-GET-U-BOUND"   #'builtin-vlax-safearray-get-u-bound)
+   (make-core-builtin-subr "VLAX-MAKE-VARIANT"            #'builtin-vlax-make-variant)
+   (make-core-builtin-subr "VLAX-VARIANT-TYPE"            #'builtin-vlax-variant-type)
+   (make-core-builtin-subr "VLAX-VARIANT-VALUE"           #'builtin-vlax-variant-value)
+   (make-core-builtin-subr "VLAX-VARIANT-CHANGE-TYPE"     #'builtin-vlax-variant-change-type)
+   ;; Phase 14b — reactor (vlr-*) family
+   (make-core-builtin-subr "VLR-ACDB-REACTOR"          #'builtin-vlr-acdb-reactor)
+   (make-core-builtin-subr "VLR-COMMAND-REACTOR"       #'builtin-vlr-command-reactor)
+   (make-core-builtin-subr "VLR-DEEPCLONE-REACTOR"     #'builtin-vlr-deepclone-reactor)
+   (make-core-builtin-subr "VLR-DOCUMENT-REACTOR"      #'builtin-vlr-document-reactor)
+   (make-core-builtin-subr "VLR-DWG-REACTOR"           #'builtin-vlr-dwg-reactor)
+   (make-core-builtin-subr "VLR-DXF-REACTOR"           #'builtin-vlr-dxf-reactor)
+   (make-core-builtin-subr "VLR-INSERT-REACTOR"        #'builtin-vlr-insert-reactor)
+   (make-core-builtin-subr "VLR-MOUSE-REACTOR"         #'builtin-vlr-mouse-reactor)
+   (make-core-builtin-subr "VLR-OBJECT-REACTOR"        #'builtin-vlr-object-reactor)
+   (make-core-builtin-subr "VLR-SYSVAR-REACTOR"        #'builtin-vlr-sysvar-reactor)
+   (make-core-builtin-subr "VLR-TOOLBAR-REACTOR"       #'builtin-vlr-toolbar-reactor)
+   (make-core-builtin-subr "VLR-UNDO-REACTOR"          #'builtin-vlr-undo-reactor)
+   (make-core-builtin-subr "VLR-WBLOCK-REACTOR"        #'builtin-vlr-wblock-reactor)
+   (make-core-builtin-subr "VLR-WINDOW-REACTOR"        #'builtin-vlr-window-reactor)
+   (make-core-builtin-subr "VLR-XREF-REACTOR"          #'builtin-vlr-xref-reactor)
+   (make-core-builtin-subr "VLR-DOCMANAGER-REACTOR"    #'builtin-vlr-docmanager-reactor)
+   (make-core-builtin-subr "VLR-EDITOR-REACTOR"        #'builtin-vlr-editor-reactor)
+   (make-core-builtin-subr "VLR-LINKER-REACTOR"        #'builtin-vlr-linker-reactor)
+   (make-core-builtin-subr "VLR-LISP-REACTOR"          #'builtin-vlr-lisp-reactor)
+   (make-core-builtin-subr "VLR-MISCELLANEOUS-REACTOR" #'builtin-vlr-miscellaneous-reactor)
+   (make-core-builtin-subr "VLR-ADD"                   #'builtin-vlr-add)
+   (make-core-builtin-subr "VLR-REMOVE"                #'builtin-vlr-remove)
+   (make-core-builtin-subr "VLR-REMOVE-ALL"            #'builtin-vlr-remove-all)
+   (make-core-builtin-subr "VLR-DATA"                  #'builtin-vlr-data)
+   (make-core-builtin-subr "VLR-DATA-SET"              #'builtin-vlr-data-set)
+   (make-core-builtin-subr "VLR-OWNERS"                #'builtin-vlr-owners)
+   (make-core-builtin-subr "VLR-OWNER-ADD"             #'builtin-vlr-owner-add)
+   (make-core-builtin-subr "VLR-OWNER-REMOVE"          #'builtin-vlr-owner-remove)
+   (make-core-builtin-subr "VLR-SET-NOTIFICATION"      #'builtin-vlr-set-notification)
+   (make-core-builtin-subr "VLR-NOTIFICATION"          #'builtin-vlr-notification)
+   (make-core-builtin-subr "VLR-CURRENT-REACTION-NAME" #'builtin-vlr-current-reaction-name)
+   (make-core-builtin-subr "VLR-REACTIONS"             #'builtin-vlr-reactions)
+   (make-core-builtin-subr "VLR-REACTION-SET"          #'builtin-vlr-reaction-set)
+   (make-core-builtin-subr "VLR-ADDED-P"               #'builtin-vlr-added-p)
+   (make-core-builtin-subr "VLR-TYPE"                  #'builtin-vlr-type)
+   (make-core-builtin-subr "VLR-TYPES"                 #'builtin-vlr-types)
+   (make-core-builtin-subr "VLR-REACTORS"              #'builtin-vlr-reactors)
+   (make-core-builtin-subr "VLR-TRACE-REACTION"        #'builtin-vlr-trace-reaction)
+   (make-core-builtin-subr "VLR-PERS"                  #'builtin-vlr-pers)
+   (make-core-builtin-subr "VLR-PERS-RELEASE"          #'builtin-vlr-pers-release)
+   (make-core-builtin-subr "VLR-PERS-LIST"             #'builtin-vlr-pers-list)
+   (make-core-builtin-subr "VLR-PERS-P"                #'builtin-vlr-pers-p)
+   (make-core-builtin-subr "VLR-PERS-DICTNAME"         #'builtin-vlr-pers-dictname)
+   ;; Phase 15a — DCL (Dialog Control Language) builtins
+   (make-core-builtin-subr "LOAD_DIALOG"        #'builtin-load-dialog)
+   (make-core-builtin-subr "UNLOAD_DIALOG"      #'builtin-unload-dialog)
+   (make-core-builtin-subr "NEW_DIALOG"         #'builtin-new-dialog)
+   (make-core-builtin-subr "START_DIALOG"       #'builtin-start-dialog)
+   (make-core-builtin-subr "DONE_DIALOG"        #'builtin-done-dialog)
+   (make-core-builtin-subr "ACTION_TILE"        #'builtin-action-tile)
+   (make-core-builtin-subr "SET_TILE"           #'builtin-set-tile)
+   (make-core-builtin-subr "GET_TILE"           #'builtin-get-tile)
+   (make-core-builtin-subr "MODE_TILE"          #'builtin-mode-tile)
+   (make-core-builtin-subr "CLIENT_DATA_TILE"   #'builtin-client-data-tile)
+   (make-core-builtin-subr "DIMX_TILE"          #'builtin-dimx-tile)
+   (make-core-builtin-subr "DIMY_TILE"          #'builtin-dimy-tile)
+   (make-core-builtin-subr "START_IMAGE"        #'builtin-start-image)
+   (make-core-builtin-subr "END_IMAGE"          #'builtin-end-image)
+   (make-core-builtin-subr "FILL_IMAGE"         #'builtin-fill-image)
+   (make-core-builtin-subr "VECTOR_IMAGE"       #'builtin-vector-image)
+   (make-core-builtin-subr "SLIDE_IMAGE"        #'builtin-slide-image)
+   (make-core-builtin-subr "START_LIST"         #'builtin-start-list)
+   (make-core-builtin-subr "ADD_LIST"           #'builtin-add-list)
+   (make-core-builtin-subr "END_LIST"           #'builtin-end-list)
+   (make-core-builtin-subr "TERM_DIALOG"        #'builtin-term-dialog)
    (make-core-builtin-subr "VL-EVERY" #'builtin-vl-every)
    (make-core-builtin-subr "VL-MEMBER-IF" #'builtin-vl-member-if)
    (make-core-builtin-subr "VL-MEMBER-IF-NOT" #'builtin-vl-member-if-not)

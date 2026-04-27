@@ -95,6 +95,12 @@
 (defun autolisp-dialect-unbound-variable-mode (dialect)
   (clautolisp.autolisp-reader.internal::autolisp-dialect-unbound-variable-mode dialect))
 
+(defun autolisp-dialect-default-source-encoding (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-default-source-encoding dialect))
+
+(defun autolisp-dialect-default-file-encoding (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-default-file-encoding dialect))
+
 (defun find-autolisp-dialect (name)
   (clautolisp.autolisp-reader.internal::find-autolisp-dialect name))
 

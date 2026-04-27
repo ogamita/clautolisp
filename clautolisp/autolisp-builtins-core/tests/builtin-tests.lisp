@@ -1637,6 +1637,168 @@
     (is (null (call-autolisp-function findfile-fn
                                       (make-autolisp-string "/no/such/file.lsp"))))))
 
+(test phase-encoding-strict-loads-iso-8859-1-source
+  ;; Strict dialect default external-format is :iso-8859-1, so a
+  ;; file whose bytes are valid Latin-1 but invalid UTF-8 (e.g. byte
+  ;; 233 = e-acute) loads cleanly.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (uiop:with-temporary-file (:pathname p :stream s :type "lsp"
+                             :keep nil :direction :output
+                             :element-type '(unsigned-byte 8))
+    (write-sequence #(40 ;; "(setq foo \"<é>\")"
+                      83 69 84 81 32 70 79 79 32 34 60 233 62 34 41
+                      10)
+                    s)
+    :close-stream
+    (let ((load-fn (autolisp-symbol-function (find-autolisp-symbol "LOAD"))))
+      ;; Should not signal — strict default encoding is iso-8859-1.
+      (call-autolisp-function load-fn (make-autolisp-string (namestring p))))))
+
+(test phase-encoding-autocad-default-is-utf-8
+  ;; Under autocad-2026, the default source encoding is :utf-8 — a
+  ;; UTF-8 file with non-ASCII bytes loads, and an iso-8859-1-only
+  ;; file does NOT (the user opted into Unicode).
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (let* ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:default-evaluation-context)))
+         (autocad (clautolisp.autolisp-reader:autolisp-dialect-autocad-2026)))
+    (clautolisp.autolisp-runtime:set-runtime-session-dialect session autocad)
+    (is (eq :utf-8
+            (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
+             autocad)))
+    (is (eq :utf-8
+            (clautolisp.autolisp-reader:autolisp-dialect-default-file-encoding
+             autocad)))))
+
+(test phase-encoding-parse-open-external-format-aliases
+  ;; Autodesk short names + ANSI / latin1 / cp1252 + BricsCAD ccs=
+  ;; mode-string fragment.
+  (let ((parse 'clautolisp.autolisp-builtins-core::parse-open-external-format))
+    (is (eq :utf-8     (funcall parse "utf8")))
+    (is (eq :utf-8     (funcall parse "utf8-bom")))
+    (is (eq :utf-8     (funcall parse "UTF-8")))
+    (is (eq :iso-8859-1 (funcall parse "ANSI")))
+    (is (eq :iso-8859-1 (funcall parse "latin1")))
+    (is (eq :iso-8859-1 (funcall parse "iso-8859-1")))
+    (is (eq :cp1252    (funcall parse "cp1252")))
+    (is (eq :cp1252    (funcall parse "windows-1252")))
+    ;; Bricscad-style "MODE,ccs=NAME" — the parser sees the trailing
+    ;; "ccs=NAME" fragment.
+    (is (eq :utf-8     (funcall parse "ccs=UTF-8")))
+    (is (eq :iso-8859-1 (funcall parse "r,ccs=ANSI")))
+    ;; Common-Lisp keyword literal still works.
+    (is (eq :utf-8     (funcall parse ":utf-8")))))
+
+(test phase10-entity-builtins-on-mock-host
+  ;; The Phase-10 builtins (ENTGET/ENTMAKE/ENTLAST/ENTNEXT/HANDENT)
+  ;; route through the active session's HAL backend. Under the
+  ;; default NullHost they signal :host-not-supported; under a
+  ;; freshly-allocated MockHost they round-trip a DXF group-code
+  ;; list. We exercise both halves here.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  ;; Default NullHost: the builtins surface :host-not-supported.
+  (let ((entlast-fn (autolisp-symbol-function (find-autolisp-symbol "ENTLAST"))))
+    (handler-case (call-autolisp-function entlast-fn)
+      (autolisp-runtime-error (condition)
+        (is (eq :host-not-supported (autolisp-runtime-error-code condition))))))
+  ;; Swap the default context onto a MockHost-bearing session.
+  (let* ((mock (clautolisp.autolisp-mock-host:make-mock-host))
+         (session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:default-evaluation-context))))
+    (clautolisp.autolisp-runtime:set-runtime-session-host session mock)
+    (let* ((entmake-fn (autolisp-symbol-function (find-autolisp-symbol "ENTMAKE")))
+           (entget-fn  (autolisp-symbol-function (find-autolisp-symbol "ENTGET")))
+           (entlast-fn (autolisp-symbol-function (find-autolisp-symbol "ENTLAST")))
+           (handent-fn (autolisp-symbol-function (find-autolisp-symbol "HANDENT")))
+           (data (call-autolisp-function entmake-fn
+                                         (list (cons 0 "LINE")
+                                               (cons 8 "0")
+                                               (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                               (cons 11 '(1.0d0 1.0d0 0.0d0))))))
+      (is (consp data))
+      ;; (-1 . ENAME) head injected by entmake.
+      (is (eql -1 (car (first data))))
+      (is (typep (cdr (first data))
+                 'clautolisp.autolisp-runtime:autolisp-ename))
+      ;; entlast returns the same ename's hex handle.
+      (let ((last-ename (call-autolisp-function entlast-fn)))
+        (is (string=
+             (clautolisp.autolisp-runtime:autolisp-ename-value (cdr (first data)))
+             (clautolisp.autolisp-runtime:autolisp-ename-value last-ename)))
+        ;; entget against that ename round-trips the data list.
+        (is (consp (call-autolisp-function entget-fn last-ename))))
+      ;; handent on the recorded handle string returns an ename.
+      (let* ((handle-cell (second data))
+             (handle (cdr handle-cell)))
+        (is (typep (call-autolisp-function handent-fn
+                                            (make-autolisp-string handle))
+                   'clautolisp.autolisp-runtime:autolisp-ename))
+        (is (null (call-autolisp-function handent-fn
+                                          (make-autolisp-string "DEADBEEF"))))))))
+
+(test phase13-vlax-builtins-on-mock-host
+  ;; Round-trip a VLA-object create -> get-property -> put-property
+  ;; -> invoke-method, plus a SAFEARRAY round-trip and a VARIANT
+  ;; type-tagged round-trip.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((mock (clautolisp.autolisp-mock-host:make-mock-host))
+         (session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:default-evaluation-context))))
+    (clautolisp.autolisp-runtime:set-runtime-session-host session mock)
+    (let* ((create-fn  (autolisp-symbol-function (find-autolisp-symbol "VLAX-CREATE-OBJECT")))
+           (get-prop   (autolisp-symbol-function (find-autolisp-symbol "VLAX-GET-PROPERTY")))
+           (put-prop   (autolisp-symbol-function (find-autolisp-symbol "VLAX-PUT-PROPERTY")))
+           (invoke     (autolisp-symbol-function (find-autolisp-symbol "VLAX-INVOKE-METHOD")))
+           (release    (autolisp-symbol-function (find-autolisp-symbol "VLAX-RELEASE-OBJECT")))
+           (released-p (autolisp-symbol-function (find-autolisp-symbol "VLAX-OBJECT-RELEASED-P")))
+           (vla        (call-autolisp-function create-fn
+                                                (make-autolisp-string "AutoCAD.Document"))))
+      (is (typep vla 'clautolisp.autolisp-runtime:autolisp-vla-object))
+      (flet ((prop-as-string (vla name)
+               (let ((v (call-autolisp-function get-prop vla
+                                                 (make-autolisp-string name))))
+                 (cond ((stringp v) v)
+                       ((typep v 'clautolisp.autolisp-runtime:autolisp-string)
+                        (autolisp-string-value v))
+                       (t v)))))
+        (is (string= "Drawing.dwg" (prop-as-string vla "Name")))
+        (call-autolisp-function put-prop vla
+                                (make-autolisp-string "Name")
+                                (make-autolisp-string "Renamed.dwg"))
+        (is (string= "Renamed.dwg" (prop-as-string vla "Name")))
+        (call-autolisp-function invoke vla
+                                (make-autolisp-string "SaveAs")
+                                (make-autolisp-string "Other.dwg"))
+        (is (string= "Other.dwg" (prop-as-string vla "Name"))))
+      (call-autolisp-function release vla)
+      (is (string= "T"
+                   (autolisp-symbol-name
+                    (call-autolisp-function released-p vla))))))
+  ;; SAFEARRAY round-trip.
+  (let ((make-fn (autolisp-symbol-function (find-autolisp-symbol "VLAX-MAKE-SAFEARRAY")))
+        (fill-fn (autolisp-symbol-function (find-autolisp-symbol "VLAX-SAFEARRAY-FILL")))
+        (get-fn  (autolisp-symbol-function (find-autolisp-symbol "VLAX-SAFEARRAY-GET-ELEMENT")))
+        (list-fn (autolisp-symbol-function (find-autolisp-symbol "VLAX-SAFEARRAY->LIST"))))
+    (let ((sa (call-autolisp-function make-fn
+                                       (intern-autolisp-symbol "VARIANT")
+                                       (cons 0 2))))
+      (call-autolisp-function fill-fn sa '(10 20 30))
+      (is (eql 10 (call-autolisp-function get-fn sa 0)))
+      (is (eql 30 (call-autolisp-function get-fn sa 2)))
+      (is (equal '(10 20 30) (call-autolisp-function list-fn sa)))))
+  ;; VARIANT round-trip.
+  (let ((make-fn (autolisp-symbol-function (find-autolisp-symbol "VLAX-MAKE-VARIANT")))
+        (type-fn (autolisp-symbol-function (find-autolisp-symbol "VLAX-VARIANT-TYPE")))
+        (val-fn  (autolisp-symbol-function (find-autolisp-symbol "VLAX-VARIANT-VALUE"))))
+    (let ((v (call-autolisp-function make-fn 42)))
+      (is (eql 42 (call-autolisp-function val-fn v)))
+      (is (string= "INTEGER"
+                   (autolisp-symbol-name
+                    (call-autolisp-function type-fn v)))))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs
@@ -1649,3 +1811,138 @@
     (let ((s (autolisp-string-value (first forms))))
       (is (string= s (format nil "a~Cb~Cc~Cd"
                              #\Newline #\Tab #\Return))))))
+
+;;; --- COND clause-selection regressions --------------------------
+;;;
+;;; Real AutoLISP treats T as a self-evaluating constant, so the
+;;; idiom (cond ((test) ...) (T fallback)) must reach the fallback
+;;; whenever no earlier clause matches. The strict / autocad-2026 /
+;;; bricscad-v26 dialects all return :silent-nil for unbound
+;;; variables, which previously made the T clause silently skip —
+;;; found via greet.lsp's GUI flow on 2026-04-26.
+
+(defun install-core-into (context)
+  (declare (ignore context))
+  (install-core-builtins))
+
+(test cond-t-fallback-is-selected
+  "(cond ((false) ...) (T x)) returns x. T self-evaluates."
+  (reset-autolisp-symbol-table)
+  (is (eql 99 (run-autolisp-string "(cond ((= 1 2) 11) (T 99))"
+                                   :setup-fn #'install-core-into))))
+
+(test cond-first-true-clause-wins
+  "When two branches would match, COND picks the first."
+  (reset-autolisp-symbol-table)
+  (is (eql 1 (run-autolisp-string
+              "(cond ((= 1 1) 1) ((= 2 2) 2) (T 99))"
+              :setup-fn #'install-core-into))))
+
+(test cond-middle-branch-selected-when-others-fail
+  "A middle clause runs only when earlier ones are nil."
+  (reset-autolisp-symbol-table)
+  (is (eql 22 (run-autolisp-string
+               "(cond ((= 1 0) 11) ((= 2 2) 22) ((= 3 3) 33) (T 99))"
+               :setup-fn #'install-core-into))))
+
+(test cond-no-match-returns-nil-without-t
+  "If no clause matches and there is no T fallback, COND yields nil."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string
+             "(cond ((= 0 1) 11) ((= 0 2) 22))"
+             :setup-fn #'install-core-into))))
+
+(test cond-clause-body-is-progn
+  "All forms of a selected clause are evaluated in order; the last
+value is returned."
+  (reset-autolisp-symbol-table)
+  (is (eql 7 (run-autolisp-string
+              "(cond ((= 1 1) (setq z 3) (setq z (+ z 4)) z))"
+              :setup-fn #'install-core-into))))
+
+(test cond-test-only-clause-returns-test-value
+  "(cond ((expr))) returns expr's value when no consequent forms."
+  (reset-autolisp-symbol-table)
+  (is (eql 42 (run-autolisp-string "(cond ((* 6 7)))"
+                                   :setup-fn #'install-core-into))))
+
+(test cond-each-branch-independently-selectable
+  "For x in 0..3, each branch fires the matching clause's body."
+  (reset-autolisp-symbol-table)
+  (let ((labels (loop for x from 0 to 3
+                      collect (autolisp-string-value
+                               (run-autolisp-string
+                                (format nil
+                                        "(setq x ~D)
+                                         (cond ((= x 0) \"a\")
+                                               ((= x 1) \"b\")
+                                               ((= x 2) \"c\")
+                                               (T       \"d\"))" x)
+                                :setup-fn #'install-core-into)))))
+    (is (equal '("a" "b" "c" "d") labels))))
+
+;;; --- Phase 7 round-out: hyperbolics, predicates, list/string ----
+
+(test phase7-hyperbolic-math
+  "sinh / cosh / tanh / atanh return the IEEE-correct values for
+the canonical inputs."
+  (reset-autolisp-symbol-table)
+  (is (< (abs (- 1.1752011936438014d0
+                 (run-autolisp-string "(sinh 1.0)"
+                                       :setup-fn #'install-core-into)))
+         1d-12))
+  (is (< (abs (- 1.5430806348152437d0
+                 (run-autolisp-string "(cosh 1.0)"
+                                       :setup-fn #'install-core-into)))
+         1d-12))
+  (is (< (abs (- 0.7615941559557649d0
+                 (run-autolisp-string "(tanh 1.0)"
+                                       :setup-fn #'install-core-into)))
+         1d-12))
+  (is (< (abs (- 0.5493061443340549d0
+                 (run-autolisp-string "(atanh 0.5)"
+                                       :setup-fn #'install-core-into)))
+         1d-12)))
+
+(test phase7-power-is-expt
+  (reset-autolisp-symbol-table)
+  (is (eql 8 (run-autolisp-string "(power 2 3)"
+                                  :setup-fn #'install-core-into))))
+
+(test phase7-position-and-vl-position-agree
+  (reset-autolisp-symbol-table)
+  (is (eql 2 (run-autolisp-string "(position 'c '(a b c d))"
+                                  :setup-fn #'install-core-into)))
+  (is (eql 2 (run-autolisp-string "(vl-position 'c '(a b c d))"
+                                  :setup-fn #'install-core-into))))
+
+(test phase7-vl-remove-and-remove-agree
+  (reset-autolisp-symbol-table)
+  ;; remove returns a list; vl-remove is a synonym in V26.
+  (let ((via-remove (run-autolisp-string "(remove 2 '(1 2 3 2 4))"
+                                          :setup-fn #'install-core-into))
+        (via-vl     (run-autolisp-string "(vl-remove 2 '(1 2 3 2 4))"
+                                          :setup-fn #'install-core-into)))
+    (is (equal '(1 3 4) via-remove))
+    (is (equal '(1 3 4) via-vl))))
+
+(test phase7-vl-string-split-on-comma
+  (reset-autolisp-symbol-table)
+  (let ((parts (run-autolisp-string
+                "(vl-string-split \",\" \"a,bb,,c\")"
+                :setup-fn #'install-core-into)))
+    (is (equal '("a" "bb" "" "c")
+               (mapcar #'autolisp-string-value parts)))))
+
+(test phase7-vl-nanp-and-vl-infp
+  "Ordinary doubles are neither NaN nor infinite; integers and
+strings yield nil (not an error)."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(vl-nanp 1.0)"
+                                  :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vl-infp 1.0)"
+                                  :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vl-nanp 42)"
+                                  :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vl-infp \"hello\")"
+                                  :setup-fn #'install-core-into))))
