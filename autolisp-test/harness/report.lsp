@@ -38,26 +38,109 @@ manual pretty-print."
   (setq outcome (autolisp-test-classify entry))
   outcome)
 
-(defun autolisp-test-run-many (entries descriptor / acc result not-applicable-record)
+(defun autolisp-test--safe-name (entry / catcher)
+  "Best-effort accessor for an entry's NAME. Returns a fallback string
+when the entry is not a well-formed alist."
+  (setq catcher
+        (vl-catch-all-apply
+         '(lambda (e) (autolisp-test-entry-name e))
+         (list entry)))
+  (cond ((vl-catch-all-error-p catcher) "<malformed-entry>")
+        ((null catcher) "<unnamed-entry>")
+        ((eq (type catcher) 'str) catcher)
+        (T (autolisp-test--coerce-to-string catcher))))
+
+(defun autolisp-test--process-entry (entry descriptor / catcher applicable
+                                                       result-or-error)
+  "Process a single ENTRY against DESCRIPTOR and return a result alist.
+Every step (applicability check, classification, NOT-APPLICABLE
+record building) is wrapped in vl-catch-all-apply so a malformed
+entry, a defensive mismatch in the harness, or an outright bug
+becomes a FAIL with a descriptive detail string instead of
+escaping. Bypassed when *autolisp-test-debug-p* is non-nil so the
+debugger can take over."
+  (cond
+    (*autolisp-test-debug-p*
+     (cond ((autolisp-test-applicable-p entry descriptor)
+            (autolisp-test-run-one entry))
+           (T (list (cons 'name (autolisp-test-entry-name entry))
+                    (cons 'status 'not-applicable)
+                    (cons 'detail "required tag(s) not satisfied")
+                    (cons 'evaluated nil)
+                    (cons 'expected nil)
+                    (cons 'assertion
+                          (autolisp-test-entry-assertion-kind entry))))))
+    (T
+     ;; Step 1: applicability.
+     (setq catcher
+           (vl-catch-all-apply
+            '(lambda (e d) (autolisp-test-applicable-p e d))
+            (list entry descriptor)))
+     (cond
+       ((vl-catch-all-error-p catcher)
+        (list (cons 'name (autolisp-test--safe-name entry))
+              (cons 'status 'fail)
+              (cons 'detail
+                    (autolisp-test--safe-strcat
+                     (list "internal-harness-error in applicability check: "
+                           (vl-catch-all-error-message catcher))))
+              (cons 'evaluated nil)
+              (cons 'expected nil)
+              (cons 'assertion 'unknown)))
+       (catcher
+        ;; Applicable: classify (already guarded internally).
+        (setq result-or-error
+              (vl-catch-all-apply
+               'autolisp-test-run-one
+               (list entry)))
+        (cond ((vl-catch-all-error-p result-or-error)
+               (list (cons 'name (autolisp-test--safe-name entry))
+                     (cons 'status 'fail)
+                     (cons 'detail
+                           (autolisp-test--safe-strcat
+                            (list "internal-harness-error in classify wrapper: "
+                                  (vl-catch-all-error-message result-or-error))))
+                     (cons 'evaluated nil)
+                     (cons 'expected nil)
+                     (cons 'assertion 'unknown)))
+              (T result-or-error)))
+       (T
+        ;; Not applicable.
+        (setq result-or-error
+              (vl-catch-all-apply
+               '(lambda (e)
+                  (list (cons 'name (autolisp-test-entry-name e))
+                        (cons 'status 'not-applicable)
+                        (cons 'detail "required tag(s) not satisfied")
+                        (cons 'evaluated nil)
+                        (cons 'expected nil)
+                        (cons 'assertion (autolisp-test-entry-assertion-kind e))))
+               (list entry)))
+        (cond ((vl-catch-all-error-p result-or-error)
+               (list (cons 'name (autolisp-test--safe-name entry))
+                     (cons 'status 'fail)
+                     (cons 'detail
+                           (autolisp-test--safe-strcat
+                            (list "internal-harness-error building NOT-APPLICABLE record: "
+                                  (vl-catch-all-error-message result-or-error))))
+                     (cons 'evaluated nil)
+                     (cons 'expected nil)
+                     (cons 'assertion 'unknown)))
+              (T result-or-error)))))))
+
+(defun autolisp-test-run-many (entries descriptor / acc result)
   "Run every entry whose tags are satisfied by DESCRIPTOR. Tests that
 are not applicable are recorded with status NOT-APPLICABLE so the
 report includes them. Returns the list of result alists in the same
-order as ENTRIES."
+order as ENTRIES.
+
+No iteration of this loop ever raises: every per-entry step is
+guarded by autolisp-test--process-entry so a single faulty test or
+malformed metadata cannot abort the run."
   (setq acc nil)
   (foreach entry entries
-    (cond
-      ((autolisp-test-applicable-p entry descriptor)
-       (setq result (autolisp-test-run-one entry))
-       (setq acc (cons result acc)))
-      (T
-       (setq not-applicable-record
-             (list (cons 'name (autolisp-test-entry-name entry))
-                   (cons 'status 'not-applicable)
-                   (cons 'detail "required tag(s) not satisfied")
-                   (cons 'evaluated nil)
-                   (cons 'expected nil)
-                   (cons 'assertion (autolisp-test-entry-assertion-kind entry))))
-       (setq acc (cons not-applicable-record acc)))))
+    (setq result (autolisp-test--process-entry entry descriptor))
+    (setq acc (cons result acc)))
   (reverse acc))
 
 ;;; --- s-expression report -------------------------------------------
