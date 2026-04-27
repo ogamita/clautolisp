@@ -214,6 +214,121 @@ counter is bumped on every change that touches clautolisp source
 code; the running binary's ~--version~ output is therefore a stable
 identifier of the build.
 
+* clautolisp Extensions
+The core builtin registry installed by ~clautolisp~ is a *superset*
+of the operators listed in the local AutoLISP / Visual LISP
+specification draft. The extras documented in this section are
+convenience extensions and compatibility helpers that real-world
+AutoLISP code relies on without going through the spec process.
+
+Code that targets the strict shared standard (the AutoCAD ∩
+BricsCAD intersection) MUST NOT depend on the operators below; tests
+written against ~autolisp-test/harness/inventory.sexp~ are
+intentionally restricted to the spec, and the inventory does not
+list these names.
+
+** Compositional list accessors (~Cxxxr~ / ~Cxxxxr~ family)
+The local specification documents ~CAR~, ~CDR~ and ~CADR~. Beyond
+those, ~clautolisp~ also installs:
+
+- two-level :: ~CAAR~, ~CDAR~, ~CDDR~
+- three-level :: ~CAAAR~, ~CAADR~, ~CADAR~, ~CADDR~, ~CDAAR~,
+  ~CDADR~, ~CDDAR~, ~CDDDR~
+- four-level :: ~CAAAAR~, ~CAAADR~, ~CAADAR~, ~CAADDR~, ~CADAAR~,
+  ~CADADR~, ~CADDAR~, ~CADDDR~, ~CDAAAR~, ~CDAADR~, ~CDADAR~,
+  ~CDADDR~, ~CDDAAR~, ~CDDADR~, ~CDDDAR~, ~CDDDDR~
+
+Each composition delegates to ~CAR~ / ~CDR~ so a non-list argument
+anywhere along the chain still surfaces a CAR-shaped or CDR-shaped
+runtime error under the proper operator name.
+
+#+BEGIN_SRC autolisp
+$ clautolisp -x "(cadddr '(a b c d e))"
+D
+#+END_SRC
+
+** ~ERROR~
+~(error MESSAGE-OR-STRING ...)~ raises an AutoLISP-visible
+runtime error with code ~:user-error~ and the supplied message.
+Modeled after the common Visual LISP idiom of calling ~(error ...)~
+to abort with a user-facing message, and catchable with
+~vl-catch-all-apply~.
+
+#+BEGIN_SRC autolisp
+$ clautolisp -x "(vl-catch-all-error-message
+                   (vl-catch-all-apply 'error '(\"oops\")))"
+"oops"
+#+END_SRC
+
+** ~LCM~, ~LOGXOR~
+Convenience numerics that complement the in-spec ~GCD~, ~LOGAND~ and
+~LOGIOR~. ~LCM~ takes two or more integers and returns their least
+common multiple; ~LOGXOR~ takes two or more integers and returns
+their bitwise exclusive-or.
+
+#+BEGIN_SRC autolisp
+$ clautolisp -x "(lcm 4 6)"
+12
+$ clautolisp -x "(logxor 12 10)"
+6
+#+END_SRC
+
+** ~VL-BT~ — full backtrace
+The local specification reserves ~VL-BT~ as a Visual LISP backtrace
+operator. ~clautolisp~ implements it as a real backtrace printer
+rather than a stub: ~(vl-bt)~ prints the AutoLISP call stack at the
+current evaluation point, one line per frame, most recent first.
+
+The runtime tracks the stack through ~*autolisp-call-stack*~, a
+dynamically-bound list of evaluator frames pushed by ~autolisp-eval~
+and by every SUBR / USUBR call. Frame kinds are ~:eval~,
+~:special-op~, ~:subr~ and ~:usubr~.
+
+** ~VL-CATCH-ALL-ERROR-STACK~ — captured backtrace
+~(vl-catch-all-error-stack OBJECT)~ is a clautolisp-only extension
+companion to the standard ~vl-catch-all-error-message~. Given a
+catch-all error object, it returns the AutoLISP call-stack snapshot
+captured at the time the underlying ~autolisp-runtime-error~ was
+raised. Each frame is a cons ~(KIND . PAYLOAD)~, where ~PAYLOAD~ is
+either the form being evaluated (for ~:eval~ / ~:special-op~) or
+the cons ~(NAME . ARGS)~ of the function call (for ~:subr~ /
+~:usubr~).
+
+This is the operator the ~autolisp-test~ harness calls to render an
+AutoLISP backtrace inside a FAIL detail when a tested function
+raises. AutoCAD and BricsCAD do not expose the captured stack, so
+the harness gracefully falls back to message-only reporting on those
+hosts.
+
+#+BEGIN_SRC autolisp
+$ clautolisp -x "(setq c (vl-catch-all-apply 'car '(7)))
+                 (length (vl-catch-all-error-stack c))"
+;; one or more frames captured at the time CAR was rejected
+3
+#+END_SRC
+
+Code that needs to remain portable should test for the operator
+before calling it:
+
+#+BEGIN_SRC autolisp
+(if (boundp 'vl-catch-all-error-stack)
+    (vl-catch-all-error-stack object)
+    nil)
+#+END_SRC
+
+** Source
+The implementation of every operator listed above lives in:
+
+- ~clautolisp/autolisp-builtins-core/source/api.lisp~ — registration
+  and per-builtin code.
+- ~clautolisp/autolisp-builtins-core/README.org~ — module-level
+  rationale, kept in sync with this manual section.
+- ~clautolisp/autolisp-runtime/source/api.lisp~ — backtrace
+  tracking (~*autolisp-call-stack*~,
+  ~current-autolisp-call-stack~, the call-stack slot on
+  ~autolisp-runtime-error~, and the ~autolisp-catch-all-error-call-stack~
+  accessor).
+
 * See Also
 - ~../../autolisp-spec/~      — AutoLISP / Visual LISP language reference,
                                 including dialect divergences and the
@@ -227,3 +342,8 @@ identifier of the build.
                                           (the layer that supplies
                                           ~print~, ~+~, ~atof~, etc.
                                           consumed by the CLI).
+- ~../../autolisp-test/~       — Conformance test suite. Uses
+                                  ~vl-catch-all-error-stack~ and ~vl-bt~
+                                  to render AutoLISP backtraces inside
+                                  FAIL details when a tested function
+                                  raises on clautolisp.
