@@ -31,19 +31,22 @@
                           builtin-name
                           condition)
          :details (list :builtin builtin-name
-                        :condition condition)))
+                        :condition condition)
+         :call-stack (current-autolisp-call-stack)))
 
 (defun signal-builtin-argument-error (code builtin-name control-string &rest arguments)
   (error 'autolisp-runtime-error
          :code code
          :message (apply #'format nil control-string arguments)
-         :details (list* :builtin builtin-name arguments)))
+         :details (list* :builtin builtin-name arguments)
+         :call-stack (current-autolisp-call-stack)))
 
 (defun signal-builtin-host-error (code builtin-name control-string &rest arguments)
   (error 'autolisp-runtime-error
          :code code
          :message (apply #'format nil control-string arguments)
-         :details (list* :builtin builtin-name arguments)))
+         :details (list* :builtin builtin-name arguments)
+         :call-stack (current-autolisp-call-stack)))
 
 (defun wrap-builtin-function (builtin-name function)
   (lambda (&rest arguments)
@@ -278,9 +281,30 @@
         (set-autolisp-errno 0)
         result)
     (autolisp-termination (condition)
+      ;; (exit), (quit) -- these stop the whole evaluation context
+      ;; and are documented as not catchable by vl-catch-all-apply.
       (error condition))
     (autolisp-namespace-exit (condition)
-      (error condition))
+      ;; vl-exit-with-error / vl-exit-with-value are documented as
+      ;; catchable: they leave the dynamic extent of the apply with
+      ;; either a catch-all error (for :error) or a returned value
+      ;; (for :value). Other :kind values keep escaping until a
+      ;; matching VLX boundary or back out of vl-catch-all-apply.
+      (case (clautolisp.autolisp-runtime:autolisp-namespace-exit-kind condition)
+        (:error
+         (set-autolisp-errno 1)
+         (make-autolisp-catch-all-error
+          (let ((value (clautolisp.autolisp-runtime:autolisp-namespace-exit-value condition)))
+            (cond ((typep value 'clautolisp.autolisp-runtime:autolisp-string)
+                   (clautolisp.autolisp-runtime:autolisp-string-value value))
+                  ((stringp value) value)
+                  (t (princ-to-string value))))
+          condition))
+        (:value
+         (set-autolisp-errno 0)
+         (clautolisp.autolisp-runtime:autolisp-namespace-exit-value condition))
+        (otherwise
+         (error condition))))
     (autolisp-runtime-error (condition)
       (set-autolisp-errno
        (autolisp-runtime-error-errno condition))
@@ -1625,13 +1649,15 @@ when no dialect is in scope."
              :code :invalid-read-syntax
              :message (format nil "READ failed to parse input: ~A" condition)
              :details (list :builtin "READ"
-                            :condition condition)))
+                            :condition condition)
+             :call-stack (current-autolisp-call-stack)))
     (error (condition)
       (error 'autolisp-runtime-error
              :code :invalid-read-syntax
              :message (format nil "READ failed to parse input: ~A" condition)
              :details (list :builtin "READ"
-                            :condition condition)))))
+                            :condition condition)
+             :call-stack (current-autolisp-call-stack)))))
 
 (defun builtin-read-line (file)
   (let ((stream (require-open-file-stream file "READ-LINE")))
@@ -2636,8 +2662,39 @@ when no dialect is in scope."
 
 (defparameter *autolisp-backtrace-enabled-p* nil)
 
+(defun format-call-stack-frame (frame)
+  "Pretty-print a single backtrace frame (KIND . PAYLOAD) returned by
+clautolisp's runtime call-stack tracker."
+  (let ((kind (car frame))
+        (payload (cdr frame)))
+    (case kind
+      (:eval        (format nil "  in EVAL: ~S" payload))
+      (:special-op  (format nil "  in SPECIAL: ~S" payload))
+      (:subr        (format nil "  in SUBR ~A: args ~S"
+                            (car payload) (cdr payload)))
+      (:usubr       (format nil "  in USUBR ~A: args ~S"
+                            (car payload) (cdr payload)))
+      (otherwise    (format nil "  ~A: ~S" kind payload)))))
+
+(defun render-call-stack (stack)
+  "Render STACK (most-recent-first) as a multi-line string suitable
+for printing or for inclusion in a test report."
+  (with-output-to-string (out)
+    (format out "AutoLISP backtrace (most recent call first):~%")
+    (if (null stack)
+        (format out "  <empty>~%")
+        (dolist (frame stack)
+          (format out "~A~%" (format-call-stack-frame frame))))))
+
 (defun builtin-vl-bt ()
-  ;; (vl-bt) — print a backtrace. Headless: no-op returning nil.
+  "(vl-bt) — print the AutoLISP call stack at the current evaluation
+point and return nil. The stack is captured by the clautolisp runtime
+through *autolisp-call-stack* and includes evaluator frames, special
+forms and SUBR / USUBR calls. The output mirrors what AutoCAD and
+BricsCAD show for their own vl-bt -- one line per frame, most recent
+on top."
+  (princ (render-call-stack
+          (clautolisp.autolisp-runtime:current-autolisp-call-stack)))
   nil)
 
 (defun builtin-vl-bt-on ()
@@ -2648,6 +2705,21 @@ when no dialect is in scope."
   (setf *autolisp-backtrace-enabled-p* nil)
   nil)
 
+(defun builtin-vl-catch-all-error-stack (object)
+  "(vl-catch-all-error-stack OBJECT) — clautolisp extension. Return
+the AutoLISP call-stack snapshot captured at the time the catch-all
+error was raised. The stack is a list of (KIND . PAYLOAD) frames,
+most recent first."
+  (unless (typep object 'autolisp-catch-all-error)
+    (signal-builtin-argument-error
+     :invalid-catch-all-object
+     "VL-CATCH-ALL-ERROR-STACK"
+     "VL-CATCH-ALL-ERROR-STACK expects a catch-all error object, got ~S."
+     object))
+  ;; Convert the CL list of conses into AutoLISP-readable values.
+  ;; Each frame stays a cons (KIND . PAYLOAD); the harness can walk
+  ;; it with car/cdr/foreach.
+  (clautolisp.autolisp-runtime:autolisp-catch-all-error-call-stack object))
 ;;; --- Phase 10: entity-level builtins -------------------------------
 ;;;
 ;;; Each builtin is a thin wrapper around the corresponding HAL
@@ -4076,6 +4148,8 @@ through mock-host-snapshot. Callbacks must be autolisp-symbols
    (make-core-builtin-subr "VL-CATCH-ALL-ERROR-P" #'builtin-vl-catch-all-error-p)
    (make-core-builtin-subr "VL-CATCH-ALL-ERROR-MESSAGE"
                            #'builtin-vl-catch-all-error-message)
+   (make-core-builtin-subr "VL-CATCH-ALL-ERROR-STACK"
+                           #'builtin-vl-catch-all-error-stack)
    (make-core-builtin-subr "VL-EXIT-WITH-ERROR" #'builtin-vl-exit-with-error)
    (make-core-builtin-subr "VL-EXIT-WITH-VALUE" #'builtin-vl-exit-with-value)
    (make-core-builtin-subr "DEFUN-Q-LIST-REF" #'builtin-defun-q-list-ref)

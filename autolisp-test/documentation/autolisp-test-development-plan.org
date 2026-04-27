@@ -3,7 +3,7 @@
 #+OPTIONS: toc:3 num:t
 
 * Purpose
-This document defines the initial plan for ~autolisp-test~, a conformance-oriented AutoLISP test suite intended to play the same role for AutoLISP that ~ansi-tests~ plays for Common Lisp implementations.
+This document defines the plan for ~autolisp-test~, a conformance-oriented AutoLISP / Visual LISP test suite.
 
 The target outcome is a reusable test corpus that can be run against:
 
@@ -12,276 +12,217 @@ The target outcome is a reusable test corpus that can be run against:
 - real BricsCAD releases,
 - future third-party implementations,
 
-while keeping the reported behavior tied to:
+while keeping the reported behaviour tied to:
 
 - implementation name,
 - implementation version,
 - selected host profile,
-- execution mode.
+- detected platform,
+- detected runtime extensions.
 
 * Primary Goal
-~autolisp-test~ should test the language specification, not one implementation's private behavior.
+~autolisp-test~ tests the AutoLISP / Visual LISP language as defined by the local specification. It does not test ~clautolisp~'s private behaviour, and it does not borrow from any Common Lisp test corpus.
 
-That means the suite should prefer:
+The suite is therefore independent of the implementation under test:
 
-- vendor-documented behavior,
-- behavior confirmed by executable probes against real implementations,
+- the harness is written in pure AutoLISP,
+- the corpus is sourced from the local AutoLISP / Visual LISP draft specification and from executable probes against real AutoCAD and BricsCAD releases,
+- ~clautolisp~ runs the suite as one implementation among others, with no special privileges.
+
+It should prefer:
+
+- vendor-documented behaviour,
+- behaviour confirmed by executable probes against real implementations,
 - version-qualified results where the language is historically unstable or under-specified.
 
-It should avoid treating accidental ~clautolisp~ behavior as normative.
+It should avoid treating accidental ~clautolisp~ behaviour as normative.
 
-* Reference Study: Common Lisp ansi-tests
-The upstream ~ansi-tests~ repository was fetched and inspected locally on 2026-03-18 from:
+* Conformance Model
+~autolisp-test~ characterises every test by a *profile* and by *platform* / *runtime* tags.
 
-- ~https://gitlab.common-lisp.net/ansi-test/ansi-test.git~
+** Profiles
+The three profiles describe the language-level conformance level a test belongs to:
 
-Key implementation observations:
+- =STRICT= :: behaviour intended to hold on AutoCAD AND BricsCAD. The strict profile is *maximal* by default: an entry sits in =STRICT= unless probe data or vendor documentation establishes a divergence.
+- =AUTOCAD= :: behaviour attested or documented on AutoCAD only.
+- =BRICSCAD= :: behaviour attested or documented on BricsCAD only.
 
-1. The suite uses a small shared regression-test harness centered on ~rt.lsp~.
-2. Tests are registered declaratively with ~deftest~ and then run from a central database.
-3. The tree is organized primarily by language area, with one or more files per operator or closely related family.
-4. Tests carry metadata properties and note tags so some classes of tests can be disabled selectively.
-5. Implementation-specific instability is handled through expected-failure overlays rather than by weakening the base corpus.
-6. There is a sharp distinction between reusable harness code and test corpus files.
+The strict profile is therefore a lower bound on the shared standard. Every divergence between AutoCAD and BricsCAD is recorded by adding twin tests under the =AUTOCAD= and =BRICSCAD= profiles, and (when there is still a defensible common subset) keeping a narrowed =STRICT= test for the shared behaviour.
 
-Representative upstream files inspected:
+** Tags
+Two orthogonal axes refine applicability without inflating the profile space:
 
-- ~/tmp/ansi-test-upstream/rt.lsp~
-- ~/tmp/ansi-test-upstream/rt-package.lsp~
-- ~/tmp/ansi-test-upstream/init.lsp~
-- ~/tmp/ansi-test-upstream/doit.lsp~
-- ~/tmp/ansi-test-upstream/auxiliary/ansi-aux.lsp~
-- ~/tmp/ansi-test-upstream/data-and-control-flow/if.lsp~
-- ~/tmp/ansi-test-upstream/cons/cons.lsp~
+- =PLATFORM-TAGS= :: subset of =(WINDOWS LINUX MACOS)=. Empty list means platform-agnostic.
+- =RUNTIME-TAGS=  :: subset of =(COM VLA VLAX VLAX-CURVE VLR ARX BRX OBJECTDBX DCL GRAPHICS USER-INPUT EXPRESS-TOOLS DOSLIB)=. Empty list means no specific runtime extension is required.
 
-* What Should Be Reused From ansi-tests
-The following structural ideas are good fits for ~autolisp-test~:
+A test is *applicable* to an implementation only if every required platform tag and runtime tag is satisfied by the detected target. When a test is not applicable, it is reported =NOT-APPLICABLE= rather than =FAIL=.
 
-- a small registry-driven test harness,
-- declarative ~deftest~-style test definitions,
-- per-operator test files,
-- metadata on tests,
-- expected-failure overlays,
-- machine-readable and human-readable reports.
+For example, the COM-bound subset of =VLAX-*= carries =RUNTIME-TAGS (COM VLAX)= and =PLATFORM-TAGS (WINDOWS)=. A =clautolisp= run on Linux will mark those tests =NOT-APPLICABLE= and still revendiquate =STRICT= conformance for the rest.
 
-These ideas are worth preserving because they support incremental growth, selective execution, and multi-implementation comparison.
+** Authority
+Each entry carries an authority level that records the strength of the evidence behind it:
 
-* What Must Change For AutoLISP
-~autolisp-test~ cannot be a direct textual port of ~ansi-tests~.
+- =DOCUMENTED= :: backed by vendor documentation (Autodesk or Bricsys). This is the default. The level is kept distinct from =TESTED-*= because vendor documentation has been observed to diverge from the actual product behaviour.
+- =TESTED-AUTOCAD= :: confirmed by an executable probe against a named AutoCAD version.
+- =TESTED-BRICSCAD= :: confirmed by an executable probe against a named BricsCAD version.
+- =TESTED-BOTH= :: confirmed by probes against both AutoCAD and BricsCAD.
+- =INFERRED= :: derived from multiple sources or strong consistency arguments when no direct documentation or probe is available.
 
-AutoLISP differs from Common Lisp in at least these ways:
+A =STRICT= entry should ideally be =TESTED-BOTH=. Until probes accumulate, =DOCUMENTED= is acceptable but flagged as a candidate for promotion.
 
-- it does not expose Common Lisp multiple-value semantics,
-- `or` returns ~T~ or ~nil~, not the first truthy value,
-- errors are observed through AutoLISP-visible mechanisms such as ~*error*~, ~ERRNO~, and ~vl-catch-all-*~ rather than through raw Common Lisp condition classes,
-- dynamic scope and symbol/value behavior differ,
-- function-definition semantics differ, notably around ~defun~ and ~defun-q~,
-- host-coupled behavior must be parameterized by explicit host profile rather than inferred from the real operating system.
+** Verdicts
+A run produces a matrix of verdicts. For each combination of profile and required tag set, the harness reports one of:
 
-Therefore every projected test from ~ansi-tests~ needs classification before reuse.
+- =CONFORMS= :: every applicable test in that subset passed;
+- =DEVIATES (n failing)= :: at least one applicable test failed;
+- =NOT-APPLICABLE= :: no applicable test in that subset, given the detected target.
 
-* Projection Strategy
-Each candidate test or test family imported conceptually from ~ansi-tests~ should be classified into one of four buckets.
+Typical reported subsets:
 
-** Bucket 1: Direct Structural Reuse
-Keep the overall intent and mostly preserve the test shape.
+- =strict standard=,
+- =autocad profile=,
+- =bricscad profile=,
+- =autocad + windows + com=,
+- =bricscad + windows + com=,
+- =autocad + arx=,
+- =bricscad + brx=,
+- =strict + objectdbx=, etc.
 
-Examples:
+The matrix is the canonical output of a run.
 
-- evaluation order,
-- short-circuit behavior,
-- basic list construction,
-- quote behavior,
-- sequencing behavior.
+* Inventory
+The harness ships with a machine-readable inventory of every entry defined in the local specification at:
 
-** Bucket 2: Semantic Rewrite
-Keep the operator under test, but rewrite the expected behavior in AutoLISP terms.
+- =autolisp-test/harness/inventory.sexp=
 
-Examples:
+Initial counts (matching the current specification draft):
 
-- `or`
-- `nil`
-- function-definition tests
-- error tests
+- Functions: 938
+- Special forms: 19
+- Variables: 5
+- Types: 5
+- Reader-syntax entries: 7
+- Distinguished objects: 1
+- Conditions: 1
+- Total: 976 entries
 
-** Bucket 3: New AutoLISP Tests
-There is no useful ~ansi-tests~ source family, so new tests must be written from the AutoLISP draft specification and executable probes.
+Each entry is a property list with =KIND=, =NAME=, =PROFILE=, =PLATFORM-TAGS=, =RUNTIME-TAGS=, =AUTHORITY=, =SOURCE-EVIDENCE=. The default classification rules are documented in the file header.
 
-Examples:
+Initial classification choices:
 
-- `defun-q`
-- `defun-q-list-ref`
-- `defun-q-list-set`
-- `foreach`
-- `repeat`
-- `command`
-- host-profile-sensitive behavior
+- =PROFILE= defaults to =STRICT= (maximal strict standard).
+- =AUTHORITY= defaults to =DOCUMENTED= (kept distinct from =TESTED-*= until probes confirm the documented behaviour).
+- COM-bound =VLAX-*= and all =VLA-*= are tagged =(COM VLAX)= or =(COM VLA)= and require =WINDOWS=.
+- =VLAX-CURVE-*= are language-level helpers, no platform constraint.
+- =VLR-*= are not Windows-bound (reactors run in-process on every supported platform).
+- =DOS_*= require =WINDOWS=.
+- =ACET-*= / =ACET::*= are tagged =EXPRESS-TOOLS=.
+- Entity, table, dictionary, layer-state and related entries are tagged =OBJECTDBX=.
+- =GR*= and screen-state functions are tagged =GRAPHICS=.
+- DCL functions are tagged =DCL=.
+- Interactive prompts are tagged =USER-INPUT=.
+- =ARX*= entries are tagged =ARX=. =BRX= classification is reserved for entries surfaced by BricsCAD-specific probes.
 
-** Bucket 4: Reject
-The Common Lisp feature has no AutoLISP analogue and should not be projected.
+The inventory is expected to be refined as probes accumulate. Authorities should rise from =DOCUMENTED= to =TESTED-AUTOCAD=, =TESTED-BRICSCAD=, and ultimately =TESTED-BOTH=. Profile demotions from =STRICT= to vendor-specific occur only when concrete divergence evidence appears.
 
-Examples:
+* Harness Architecture
+The harness is written in pure AutoLISP and lives under =autolisp-test/harness/=:
 
-- package tests,
-- CLOS tests,
-- multiple values,
-- compiler-macro tests,
-- pretty printer specifics,
-- pathname/type-system machinery that exists only as Common Lisp substrate.
+- =rt.lsp= :: registration core. =deftest=, =deftest-error=, =deftest-skip=, =deftest-versioned= macros, the =*tests*= registry, and the =do-tests=, =do-test=, =do-area=, =do-tag=, =do-profile= runners.
+- =profiles.lsp= :: profile and tag definitions, =test-applicable-p=, verdict aggregation.
+- =platform-detect.lsp= :: detection of platform and runtime extensions, returning an implementation descriptor (=(impl version platform runtimes profile-target)=).
+- =report.lsp= :: canonical s-expression report and human-readable text recap.
+- =expectations/<impl>/<version>/<host>.lsp= :: expected-failure overlays, merged at run-time.
+- =run.lsp= :: top-level entry point that any implementation can =(load "...")=.
 
-* First-Version Scope
-The first version of ~autolisp-test~ should be deliberately narrow and defensible.
-
-It should start with:
-
-1. core special forms that are already identified in the local specification draft,
-2. core list, symbol, equality, numeric, and control functions that exist in both the AutoLISP draft and in some related form in Common Lisp,
-3. AutoLISP-specific rewrites where Common Lisp behavior is not the same.
-
-It should defer:
-
-- DCL,
-- ActiveX and COM semantics,
-- UI behavior,
-- command-loop integration details that require a real CAD host,
-- large host-object models.
-
-* Initial Coverage Candidates
-The current draft specification already identifies these standardized special forms:
-
-- `and`
-- `command`
-- `cond`
-- `defun`
-- `defun-q`
-- `foreach`
-- `function`
-- `if`
-- `lambda`
-- `or`
-- `progn`
-- `quote`
-- `repeat`
-- `setq`
-- `trace`
-- `untrace`
-- `vlax-for`
-- `while`
-
-For the first projected version, prioritize the subset that is both core and portable:
-
-- `and`
-- `cond`
-- `defun`
-- `defun-q`
-- `foreach`
-- `function`
-- `if`
-- `lambda`
-- `or`
-- `progn`
-- `quote`
-- `repeat`
-- `setq`
-- `while`
-
-Defer these to later phases because they are host-specific or less central:
-
-- `command`
-- `trace`
-- `untrace`
-- `vlax-for`
-
-The first non-special-form function families should likely include:
-
-- `atom`
-- `null`
-- `not`
-- `list`
-- `car`
-- `cdr`
-- `cons`
-- equality predicates present in the AutoLISP draft
-- basic arithmetic and comparison operators
-- assignment and symbol-handling functions related to the special forms above
-
-This candidate list still needs to be normalized against the draft-standard inventory before implementation begins.
+There is no Common Lisp dependency. ~clautolisp~ is driven by the same =run.lsp= file as AutoCAD and BricsCAD; the only difference is the integration boilerplate around it (the =clautolisp= side adds an ASDF wrapper for SBCL/CCL CI, but the harness itself is unchanged).
 
 * Test Model
-Each ~autolisp-test~ entry should eventually record:
+Each ~autolisp-test~ entry records:
 
 - stable test name,
 - language area,
 - operator/function under test,
-- authority level:
-  - documented
-  - executable-evidence
-  - inferred
-- applicable dialect or host constraints,
-- expected result or expected error class,
-- version qualifiers when behavior differs across hosts or releases.
+- profile (=STRICT=, =AUTOCAD=, or =BRICSCAD=),
+- platform tags,
+- runtime tags,
+- authority level,
+- source evidence reference,
+- expected result or expected-error class,
+- version qualifiers when behaviour differs across releases.
 
-Expected errors should be described in AutoLISP-visible terms, not in host Common Lisp condition classes.
+Expected errors are described in AutoLISP-visible terms (=*error*= invocations, =vl-catch-all-*= catchable structures, exit codes), not in any underlying Common Lisp condition class.
+
+When AutoCAD and BricsCAD diverge, the test is *split* into twin entries:
+
+- one carrying =:profile autocad= with the AutoCAD-attested result;
+- one carrying =:profile bricscad= with the BricsCAD-attested result;
+- a narrowed =:profile strict= entry, when there is a still-valid common subset.
+
+This keeps every divergence visible by name in the verdict matrix.
 
 * Report Model
-Each run should produce a report that answers:
+Each run produces a self-contained report under:
 
-- what implementation was tested,
-- which version was tested,
-- which host profile was selected,
-- which execution mode was used,
-- how many tests passed,
-- how many failed,
-- how many were expected failures,
-- which language areas remain unimplemented or intentionally skipped.
+- =autolisp-test/results/<impl>/<version>/<host>/<timestamp>/=
 
-The report format should be easy to compare across runs and suitable for archival in version control when testing real vendor releases.
+Each report contains:
 
-* Proposed Directory Structure
-#+begin_example
-autolisp-test/
-  harness/
-  tests/
-    special-forms/
-    core-functions/
-    reader/
-    errors/
-    host-profiles/
-#+end_example
+- the implementation descriptor (impl, version, platform, detected runtimes),
+- the inventory snapshot version used,
+- the verdict matrix, including =CONFORMS=, =DEVIATES (n failing)=, =NOT-APPLICABLE= per subset,
+- the per-test result list with status =PASS=, =FAIL=, =XFAIL=, =XPASS=, =SKIP=, =UNIMPLEMENTED=,
+- a coverage summary by language area.
 
-Recommended role of each directory:
+The report is produced as a canonical s-expression for diffing, and as a human-readable text recap.
 
-- ~harness/~: runner, registration, metadata, reporting
-- ~tests/special-forms/~: one file per special form where practical
-- ~tests/core-functions/~: one file per function or narrowly related family
-- ~tests/reader/~: reader and literal-syntax conformance probes
-- ~tests/errors/~: AutoLISP-visible error and recovery behavior
-- ~tests/host-profiles/~: version- and host-qualified behavior that cannot be purely core
+A companion tool (=tools/diff-reports.lisp=) aligns multiple reports and surfaces every divergence with the offending test name and concerned profile/tag combination.
 
-* Execution Tracking
-Actionable tasks for this subproject now live in `autolisp-test/PLAN.md`.
+* First-Version Scope
+The first version of ~autolisp-test~ should be deliberately narrow and defensible.
 
-This document remains the place for projection strategy, corpus design, and conformance rationale.
+It starts with:
+
+1. Special forms already implemented in =clautolisp=: =if=, =cond=, =and=, =or=, =setq=, =progn=, =quote=, =while=, =repeat=, =foreach=, =lambda=, =function=, =defun=, =defun-q=.
+2. Core list, equality, numeric, string, symbol-handling, and file-I/O functions present in the local specification.
+3. AutoLISP-specific behaviour: =defun-q-list-ref=, =defun-q-list-set=, =vl-catch-all-*=, =*error*=, =boundp=, =vl-bb-*=, =vl-doc-*=.
+4. Reader-syntax entries.
+
+It defers:
+
+- DCL,
+- ActiveX and COM semantics,
+- VLR reactor dispatch,
+- command-loop integration,
+- ARX/BRX runtime extensions,
+- Express Tools,
+- DOSLib.
+
+Those areas land later, after the harness, the strict-profile core, and the first vendor-divergent twin tests are stable.
+
+* Phase Outline
+The phase letters match the actionable items in =autolisp-test/PLAN.md=:
+
+- *A — Harness:* =rt.lsp=, =profiles.lsp=, =platform-detect.lsp=, =report.lsp=, =run.lsp=, expectations overlay loader.
+- *B — Inventory and classification:* completed for the bulk; refinement passes for tag accuracy and authority promotion.
+- *C — First corpus, profile STRICT:* special forms, lists, numeric, strings, symbols/errors, file I/O, reader.
+- *D — Vendor-divergent twin tests:* printer framing, read/atoi/atof lex models, =or=/=and= rules, command-loop, error mode.
+- *E — Tagged coverage:* COM, VLA, VLAX (excl. VLAX-CURVE), VLAX-CURVE, VLR, ARX, BRX, OBJECTDBX, DCL, GRAPHICS, USER-INPUT, EXPRESS-TOOLS, DOSLIB.
+- *F — Reporting and CI:* canonical report, diff tool, per-implementation archive, regression rule, =unimplemented= classification.
 
 * Open Questions
 The following points still need explicit project decisions:
 
-1. Should ~autolisp-test~ run inside ~clautolisp~ only, or also through an external-driver mode for real AutoCAD and BricsCAD sessions?
-2. Which report format should be canonical:
-   - Org,
-   - s-expression,
-   - JSON,
-   - or more than one?
-3. Should version-specific behavior live in the base test metadata or in separate expected-failure files?
-4. How should host-sensitive tests be marked so core-language conformance remains easy to read?
+1. Should ~autolisp-test~ also offer an external-driver mode that captures AutoCAD or BricsCAD console output and converts it to a canonical report, or is loading =run.lsp= inside the editor the only supported route?
+2. Final shape of vendor-version qualifiers: per-test =:version= metadata, or profile sub-versions like =autocad-2024=, =autocad-2026=, =bricscad-v25=, =bricscad-v26=?
+3. Granularity of =BRX= as a single tag, versus splitting per BRX subsystem when probes arrive.
+4. Policy for marking tests whose authority cannot rise above =DOCUMENTED= for lack of accessible probe targets (legacy AutoCAD versions, niche host profiles).
 
 * Standing Recommendation
-Do not begin by bulk-porting large amounts of ~ansi-tests~ text.
-
-Begin instead with:
+Begin with:
 
 - the harness shape,
-- the operator mapping table,
+- the inventory classification (already extracted),
 - a small corpus for the most central special forms,
 
-and treat every projected test as a specification exercise rather than a transliteration exercise.
+and treat every new test as a specification exercise rather than a transliteration of behaviour copied from any other test corpus.

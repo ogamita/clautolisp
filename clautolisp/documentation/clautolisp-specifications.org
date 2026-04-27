@@ -1,0 +1,343 @@
+#+TITLE: clautolisp Command Specifications
+#+AUTHOR: Pascal Bourguignon
+#+OPTIONS: toc:2 num:t
+
+* Scope
+This document specifies the behaviour of the standalone ~clautolisp~
+command, distributed as two interchangeable binaries:
+
+- ~clautolisp-sbcl~ — the SBCL-built executable;
+- ~clautolisp-ccl~ — the CCL-built executable.
+
+Both are produced from the same source under
+~clautolisp/tools/clautolisp/~ and present an identical command-line
+interface. Subsequent sections refer to either as ~clautolisp~.
+
+The AutoLISP / Visual LISP language semantics that the command
+evaluates are *not* re-specified here. They live in
+~autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org~
+and are referenced from this document as "the AutoLISP Spec". The
+clautolisp-specific operators that go beyond that spec are listed in
+~clautolisp/autolisp-builtins-core/README.org~ §"clautolisp-Specific
+Operators" and in ~clautolisp/documentation/user-manual.org~
+§"clautolisp Extensions"; they are not redefined here either.
+
+* Synopsis
+#+BEGIN_EXAMPLE
+clautolisp [OPTIONS] FILE.lsp           # file mode
+clautolisp [OPTIONS] -x EXPRESSION      # expression mode
+clautolisp [OPTIONS]                    # interactive REPL
+#+END_EXAMPLE
+
+The argument vector seen by ~clautolisp~ is forwarded verbatim from
+the host shell. Both SBCL- and CCL-saved cores set
+~:save-runtime-options t~ so the underlying Lisp does not intercept
+~--help~, ~--version~ or other runtime flags.
+
+* Modes of Operation
+Exactly one of three modes is selected by the argument vector:
+
+** File mode
+A single positional argument is interpreted as a path to an AutoLISP
+source file. The file is opened, decoded under the active reader
+options (see [[*Dialects]]), every form is read and evaluated in order
+against a fresh runtime session, and the value of the last form is
+discarded. Side effects are visible.
+
+If the file cannot be opened, ~clautolisp~ exits with status ~2~ and
+writes a one-line diagnostic to standard error.
+
+** Expression mode
+~-x EXPRESSION~ evaluates EXPRESSION instead of reading a file.
+EXPRESSION is treated as the entire input source: it may contain
+multiple top-level forms separated by whitespace; they are read and
+evaluated in order. The value of the last form is discarded. ~-x~
+takes exactly one argument; absence of the argument is a usage
+error.
+
+If both ~-x EXPRESSION~ and a positional FILE are supplied, the last
+occurrence on the command line wins.
+
+** Interactive REPL
+With no FILE and no ~-x~, ~clautolisp~ enters an interactive
+read-eval-print loop on standard input. The loop reads one balanced
+top-level form (multiple input lines may be consumed when the form
+spans line breaks), evaluates it, and prints the result with a
+prin1-style formatter on standard output.
+
+The loop exits cleanly when:
+
+- standard input reaches EOF, OR
+- a form invokes ~(exit)~, ~(quit)~, ~(vl-exit-with-error ...)~ or
+  ~(vl-exit-with-value ...)~.
+
+Reader and evaluator errors do not terminate the loop: they are
+reported as one-line diagnostics on standard error and the prompt
+is reissued.
+
+The default primary prompt is ~_$ ~. The continuation prompt issued
+when a partial form needs more input is three spaces. Both prompts
+are written to standard error so that ~clautolisp~ output captured
+through ~> file~ remains free of prompt strings.
+
+A startup banner is printed on standard error once, before the
+first prompt:
+
+#+BEGIN_EXAMPLE
+clautolisp <version> — REPL (<dialect> dialect) — Ctrl-D to exit.
+#+END_EXAMPLE
+
+The banner is suppressed by ~--quiet~.
+
+* Options
+Every option may appear at most once unless noted; later occurrences
+override earlier ones. Options may appear before or after the
+positional FILE argument; ~--~ is *not* recognised as end-of-options.
+
+** Dialect selection
+- ~--dialect NAME~ ::
+  Select a named dialect. NAME must be one of ~strict~,
+  ~autocad-2026~, ~bricscad-v26~. Default: ~strict~.
+- ~--strict~ ::
+  Shorthand for ~--dialect strict~.
+- ~--autocad~ ::
+  Shorthand for ~--dialect autocad-2026~.
+- ~--bricscad~ ::
+  Shorthand for ~--dialect bricscad-v26~.
+
+The selected dialect determines reader token rules, string-escape
+handling, integer-overflow warning, hex-float parsing in ~atof~,
+unbound-variable behaviour, and the implementation marker propagated
+to the runtime session. The descriptors are defined in
+~clautolisp/autolisp-reader/source/dialect.lisp~.
+
+** Input selection
+- ~-x EXPRESSION~ ::
+  Evaluate EXPRESSION instead of reading a file. Selects expression
+  mode (see above).
+
+** REPL behaviour
+- ~--quiet~ ::
+  Suppress the REPL banner. Has no effect outside interactive mode.
+
+** Informational
+- ~--version~ ::
+  Print the version string on standard output and exit ~0~. Format:
+  ~clautolisp <MAJOR.MINOR.DEVELOP>~ where the version is taken from
+  ~clautolisp.tools.clautolisp:*version*~. The DEVELOP counter is
+  bumped on every change to clautolisp source code, so the running
+  binary's ~--version~ output is a stable identifier of the build.
+- ~--help~ ::
+  Print the option summary on standard output and exit ~0~.
+
+** Unknown options
+Any unrecognised argument that begins with ~-~ aborts startup with
+exit status ~1~ and a one-line diagnostic on standard error.
+
+* Dialects
+The dialect descriptor selected at startup propagates to:
+
+- the reader, through reader options derived from the descriptor;
+- the runtime session, through its ~dialect~ slot, queryable inside
+  AutoLISP by ~current-evaluation-dialect~ and used by, e.g., the
+  unbound-variable handler.
+
+The descriptor knobs that the binary observes are listed in
+~clautolisp/autolisp-reader/source/dialect.lisp~. Their semantic
+effects are documented in the AutoLISP Spec; this document does
+not duplicate them. The three named profiles are:
+
+| Dialect             | Token mode | Extended escapes | Integer overflow warn | Hex-float atof | Unbound-variable mode |
+|---------------------+------------+------------------+-----------------------+----------------+-----------------------|
+| ~strict~            | strict     | no               | no                    | no             | silent-NIL            |
+| ~autocad-2026~      | strict     | no               | yes                   | no             | silent-NIL            |
+| ~bricscad-v26~      | lax        | yes              | yes                   | yes            | silent-NIL            |
+
+Encoding is *not* a dialect knob. It is selected at the input
+boundary by reader options (see [[*Encoding and line endings]]).
+
+* Encoding and line endings
+- File-mode input is decoded under the reader's external-format
+  setting. The default external format is determined at the input
+  boundary (~autolisp-reader/source/input.lisp~). Source bytes that
+  are valid in the chosen encoding are accepted; an unrecognised byte
+  sequence aborts the read with a reader-error diagnostic.
+- All input passes through the reader's line-ending normalisation
+  layer: ~LF~, ~CRLF~ and ~CR~ are uniformly normalised to ~LF~ for
+  source-position computation.
+- Expression-mode input (the ~EXPRESSION~ argument of ~-x~) is taken
+  verbatim from the argument vector and treated as already decoded
+  under the host shell's encoding.
+- REPL input is decoded under the host's standard-input encoding.
+
+* Exit Codes
+~clautolisp~ exits with one of the following statuses:
+
+- ~0~ ::
+  successful evaluation of the file or expression; clean ~--help~ /
+  ~--version~ output; clean termination of the REPL via EOF; a form
+  that invoked ~(exit)~, ~(quit)~ or ~(vl-exit-with-value ...)~.
+- ~1~ ::
+  uncaught runtime error escaped from the AutoLISP evaluator; or an
+  unknown command-line option; or any other unexpected internal
+  failure that reaches the top-level handler.
+- ~2~ ::
+  the FILE argument could not be opened (reported as a CL
+  ~file-error~ wrapped in a one-line diagnostic).
+
+A non-zero exit code is the only programmatic signal of failure
+suitable for use from a Makefile or CI runner.
+
+* Errors and Diagnostics
+~clautolisp~ guarantees that the host Lisp's debugger is *never*
+entered: every error path terminates the process with a non-zero
+exit code after writing a one-line diagnostic on standard error.
+
+** Reader errors
+Raised by the reader during file or expression mode, or by the REPL
+between forms. Format:
+
+#+BEGIN_EXAMPLE
+clautolisp: <severity>: <code>: <message>
+  at <source-name>:<start-line>:<start-column>-<end-line>:<end-column>
+#+END_EXAMPLE
+
+The diagnostic is built from the structured ~diagnostic~ object the
+reader attaches to the simple-error condition. ~severity~ is one of
+~error~, ~warning~, ~note~. The source-name is the FILE path in file
+mode, ~"<expression>"~ in expression mode, and ~"<repl>"~ in
+interactive mode.
+
+** Runtime errors
+Raised by the AutoLISP evaluator. Format:
+
+#+BEGIN_EXAMPLE
+clautolisp: runtime error: <code>: <message>
+AutoLISP backtrace (most recent call first):
+  in <KIND> <op>: <args>
+  ...
+#+END_EXAMPLE
+
+~code~ is the symbolic AutoLISP-runtime-error code (e.g.
+~UNDEFINED-FUNCTION~, ~UNBOUND-VARIABLE~, ~TYPE-ERROR~,
+~INVALID-NUMBER-ARGUMENT~). The backtrace section is included when
+the condition carries a captured call stack; it is omitted when the
+stack is empty (some legacy code paths in older builds did not
+capture it). Each frame names its kind (~:eval~, ~:special-op~,
+~:subr~, ~:usubr~) and the form or operator+args being evaluated at
+that point.
+
+In file and expression modes, a runtime error escape exits ~1~. In
+the REPL, the error is reported and the next prompt is issued.
+
+** Termination
+~(exit)~ and ~(quit)~ raise an ~autolisp-termination~ condition that
+the binary intercepts:
+
+#+BEGIN_EXAMPLE
+clautolisp: terminated by <kind>
+#+END_EXAMPLE
+
+These are clean exits, status ~0~. They are *not* catchable by
+~vl-catch-all-apply~.
+
+** Caught errors that escape
+~vl-exit-with-error~ and ~vl-exit-with-value~ raise an
+~autolisp-namespace-exit~ that is normally caught by an enclosing
+~vl-catch-all-apply~. If they reach the top level uncaught, the
+binary reports the carried value or message in a one-line
+diagnostic and exits ~1~ (~:error~ kind) or ~0~ (~:value~ kind).
+
+* Builtins and Special Operators
+On startup, ~clautolisp~ installs the full core builtin registry
+into the freshly created runtime session. The registry covers every
+function listed in ~clautolisp/autolisp-builtins-core/source/api.lisp~
+under ~core-builtins~. The set is a *superset* of the AutoLISP Spec:
+the operators added by clautolisp are documented in
+~clautolisp/autolisp-builtins-core/README.org~ §"clautolisp-Specific
+Operators" and in
+~clautolisp/documentation/user-manual.org~ §"clautolisp Extensions"
+(the Cxxxr/Cxxxxr family beyond ~CADR~, ~ERROR~, ~LCM~, ~LOGXOR~,
+~VL-BT~, ~VL-CATCH-ALL-ERROR-STACK~).
+
+The implemented special operators are listed in
+~*special-operator-dispatch*~ in
+~clautolisp/autolisp-runtime/source/api.lisp~. Their semantics are
+those of the AutoLISP Spec; this document does not redefine them.
+
+* Backtrace
+The runtime tracks an AutoLISP-level call stack in the
+~*autolisp-call-stack*~ dynamic variable. ~autolisp-eval~,
+~eval-special-operator~ and ~call-autolisp-function-in-context~ push
+and pop frames automatically. The captured stack is attached to
+every ~autolisp-runtime-error~ raised by the evaluator and the
+builtin layer; ~clautolisp~ renders it after the error message
+(see [[*Runtime errors]]).
+
+The ~(vl-bt)~ builtin prints the current stack at the call site
+(useful for instrumenting AutoLISP code without raising).
+~(vl-catch-all-error-stack OBJECT)~ — a clautolisp extension —
+returns the captured stack of a caught error so AutoLISP code can
+inspect it programmatically. Both are described in the user manual
+§"clautolisp Extensions".
+
+* File Compatibility
+~clautolisp~ honours the spec-derived AutoLISP path-resolution layer
+(an explicit current directory, support paths, trusted paths) rather
+than CL's pathname merging. The behavioural details are exercised by
+the declarative file-compat scenarios under
+~clautolisp/autolisp-file-compat/scenarios/~ and run by
+~make -C clautolisp run-file-compat-{sbcl,ccl}~. The scenarios
+include byte/text/newline roundtrips, encoding handling, mutation
+operations and printer/read-back loops, and form the canonical
+behavioural spec for the file-related builtins.
+
+* Building the Executable
+From the ~clautolisp/~ subproject root:
+
+#+BEGIN_EXAMPLE
+make build-clautolisp-sbcl   # produces tools/clautolisp/bin/clautolisp-sbcl
+make build-clautolisp-ccl    # produces tools/clautolisp/bin/clautolisp-ccl
+#+END_EXAMPLE
+
+Both targets reuse the ~read-autolisp~ build harness. The SBCL build
+sets ~:save-runtime-options t~ so the saved core forwards every
+command-line argument to ~clautolisp~ rather than letting SBCL
+intercept ~--help~ or other runtime flags.
+
+The build prerequisite chain (the source files that, if newer than
+the binary, trigger a rebuild) is captured by the
+~CLAUTOLISP_SOURCES~ list in ~autolisp-test/Makefile~ when running
+the conformance suite.
+
+* Versioning
+The version string is stored at
+~clautolisp/tools/clautolisp/source/version.lisp~ in
+~clautolisp.tools.clautolisp:*version*~. Format:
+~MAJOR.MINOR.DEVELOP~. The DEVELOP counter is bumped on every
+change that touches clautolisp source code; the running binary's
+~--version~ output is therefore a stable identifier of the build.
+
+* Conformance
+~clautolisp~ aims at the strict shared standard of the AutoLISP
+Spec by default (~--strict~), with vendor-specific behaviour
+selectable through ~--autocad~ and ~--bricscad~. The conformance
+test corpus that exercises this is under ~autolisp-test/~ and is
+invoked via the ~autolisp-test/clautolisp-driver~ ASDF system or
+via the standalone-binary path (~make -C autolisp-test
+test-clautolisp-sbcl~ and similar). Conformance reports for each
+binary are written under
+~autolisp-test/results/clautolisp/<version>/<host>/<timestamp>/~.
+
+* See Also
+- ~user-manual.org~ — narrative end-user manual for the same binary,
+  including REPL examples, banner format, and the clautolisp
+  extensions documentation.
+- ~implementation-roadmap.org~ — forward-looking architecture plan
+  (Host Abstraction Layer, MockHost / GuiHost / LiveHost, per-phase
+  decomposition).
+- ~development-plan.org~ — high-level architectural rationale.
+- ~PLAN.md~ — actionable task tracker for the implementation.
+- ~../../autolisp-spec/~ — AutoLISP / Visual LISP language reference.
+- ~../../autolisp-test/~ — conformance test suite that exercises
+  ~clautolisp-sbcl~ and ~clautolisp-ccl~.
