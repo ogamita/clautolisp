@@ -29,11 +29,11 @@ inside clautolisp."
      symbol version)))
 
 (defun autolisp-test-root-pathname ()
-  "Locate autolisp-test/ relative to this file."
-  (let ((this-file (or *load-pathname* *compile-file-pathname*)))
-    (make-pathname
-     :name nil :type nil :version nil
-     :defaults (merge-pathnames #P"../../" this-file))))
+  "Return the root pathname of the autolisp-test subproject. Uses
+ASDF's system-source-directory rather than *load-pathname* so the
+function works correctly when called at runtime from the REPL or
+from a CI driver after the ASDF compilation phase has completed."
+  (asdf:system-source-directory "autolisp-test"))
 
 (defun run-autolisp-test-suite (&key (dialect nil))
   "Invoke the AutoLISP harness inside a fresh clautolisp runtime
