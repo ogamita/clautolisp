@@ -125,30 +125,70 @@
               (source-span-end-line span)
               (source-span-end-column span))))
 
+(defun render-autolisp-value-safely (object)
+  "Render OBJECT through the AutoLISP value printer, falling back to
+~S if that printer signals (e.g. when the structure is malformed in
+mid-error)."
+  (handler-case (autolisp-value->string object nil)
+    (error () (prin1-to-string object))))
+
+(defun render-frame-arguments (arguments)
+  "Render a list of AutoLISP argument values as a space-separated
+parenthesised list, matching how the source would have written
+them at the call site."
+  (with-output-to-string (out)
+    (write-char #\( out)
+    (loop for cell on arguments
+          for first-p = t then nil
+          do (unless first-p (write-char #\Space out))
+             (write-string (render-autolisp-value-safely (car cell)) out))
+    (write-char #\) out)))
+
 (defun format-call-stack-frame-for-cli (frame)
   "Render one (KIND . PAYLOAD) backtrace frame as a single line."
   (let ((kind (car frame))
         (payload (cdr frame)))
     (case kind
-      (:eval        (format nil "  in EVAL: ~S" payload))
-      (:special-op  (format nil "  in SPECIAL: ~S" payload))
-      (:subr        (format nil "  in SUBR ~A: args ~S"
-                            (car payload) (cdr payload)))
-      (:usubr       (format nil "  in USUBR ~A: args ~S"
-                            (car payload) (cdr payload)))
+      (:eval        (format nil "  in EVAL: ~A"
+                            (render-autolisp-value-safely payload)))
+      (:special-op  (format nil "  in SPECIAL: ~A"
+                            (render-autolisp-value-safely payload)))
+      (:subr        (format nil "  in SUBR ~A: ~A"
+                            (car payload)
+                            (render-frame-arguments (cdr payload))))
+      (:usubr       (format nil "  in USUBR ~A: ~A"
+                            (car payload)
+                            (render-frame-arguments (cdr payload))))
       (otherwise    (format nil "  ~A: ~S" kind payload)))))
+
+(defun frame-is-noise-p (frame)
+  "True for backtrace frames that add no information — :eval frames
+whose form is a self-evaluating atom or a bare symbol. They dominate
+the printout when arguments to a call are themselves atoms; hiding
+them keeps the trace focused on actual call frames."
+  (and (eq :eval (car frame))
+       (let ((form (cdr frame)))
+         (not (consp form)))))
 
 (defun report-runtime-error (condition)
   (format *error-output* "~&clautolisp: runtime error: ~A: ~A~%"
           (autolisp-runtime-error-code condition)
           (autolisp-runtime-error-message condition))
   (let ((stack (autolisp-runtime-error-call-stack condition)))
-    (when stack
-      (format *error-output*
-              "AutoLISP backtrace (most recent call first):~%")
-      (dolist (frame stack)
-        (format *error-output* "~A~%"
-                (format-call-stack-frame-for-cli frame))))))
+    (cond
+      ((null stack)
+       (format *error-output*
+               "AutoLISP backtrace: <no frames captured — signal raised outside an active evaluation context>~%"))
+      (t
+       (let ((interesting (remove-if #'frame-is-noise-p stack)))
+         (format *error-output*
+                 "AutoLISP backtrace (most recent call first, ~D frame~:P~@[, ~D atom frame~:P hidden~]):~%"
+                 (length interesting)
+                 (let ((hidden (- (length stack) (length interesting))))
+                   (when (plusp hidden) hidden)))
+         (dolist (frame interesting)
+           (format *error-output* "~A~%"
+                   (format-call-stack-frame-for-cli frame))))))))
 
 (defun report-termination (condition)
   (format *error-output* "~&clautolisp: terminated by ~A~%"
