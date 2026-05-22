@@ -1,0 +1,15 @@
+draft -- this issue is incomplete, ignore it for now.
+
+In general when an autolisp error occurs, we will want to be able to
+find the exact form that signaled the error (form, source file, line,
+column).
+
+This means that the load (and vlisp-compile) reader should track the
+source file, and position (line, column), and record it with symbols,
+or provide a way to retrieve it.
+
+This means that error signaling operators must be instrumented to
+provide the caller (source of the error signaling).
+
+This info may be attached to the CL conditions, and retrieved for
+reporting and debugging.
