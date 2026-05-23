@@ -25,7 +25,13 @@ on top of the `clautolisp/autolisp-*` modules, producing a single
   mock backend (`source/backend-echo.lisp`), and the full CLI
   (`source/cli.lisp`) with the option grammar from
   `documentation/alfe--specifications.org`.
-- Phase 1-3 systems exist as stub packages so the aggregate ASDF
+- Phase 1 (alfe-backend-clautolisp) has landed: the in-process
+  variant binds `clautolisp.autolisp-runtime` directly and tees
+  live stdout/stderr into `WORKDIR/output.txt` / `errors.txt`;
+  the subprocess variant fork-execs `clautolisp-sbcl` with the
+  resolved CLI flags via `uiop:run-program`. `--clautolisp -x
+  '(+ 1 2)'` end-to-end prints 3 and exits 0.
+- Phases 2-3 systems exist as stub packages so the aggregate ASDF
   system loads cleanly; the per-ticket source files fill them in.
 - Specification copied from upstream `autolisp-script` and updated
   to reflect the alfe ↔ clautolisp ↔ CAD architecture and the

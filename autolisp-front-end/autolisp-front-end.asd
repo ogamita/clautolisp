@@ -31,12 +31,12 @@
                "autolisp-front-end/file-protocol"
                "autolisp-front-end/backend-bricscad"
                "autolisp-front-end/backend-autocad")
+  ;; Test-op on the aggregate delegates to the /tests system, which
+  ;; carries the perform method that actually invokes run-all-tests.
+  ;; Keep this side clean (no second :perform) so the suite isn't
+  ;; double-executed.
   :in-order-to ((asdf:test-op
-                 (asdf:test-op "autolisp-front-end/tests")))
-  :perform (asdf:test-op (op system)
-                         (declare (ignore op system))
-                         (uiop:symbol-call :autolisp-front-end.tests
-                                           :run-all-tests)))
+                 (asdf:test-op "autolisp-front-end/tests"))))
 
 (asdf:defsystem "autolisp-front-end/core"
   :description "alfe core: error hierarchy, logging, workdir helpers, abstract backend protocol, CLI dispatch."
@@ -58,13 +58,14 @@
    (:file "source/cli")))
 
 (asdf:defsystem "autolisp-front-end/backend-clautolisp"
-  :description "alfe backend driving clautolisp in-process or as a subprocess (Phase 1, stub)."
+  :description "alfe backend driving clautolisp in-process or as a subprocess."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
-  :depends-on ("autolisp-front-end/core")
+  :depends-on ("autolisp-front-end/core"
+               "trivial-gray-streams")
   :serial t
   :components
-  ((:file "source/backend-clautolisp-stub")))
+  ((:file "source/backend-clautolisp")))
 
 (asdf:defsystem "autolisp-front-end/file-protocol"
   :description "alfe file-IPC protocol driver shared by the CAD backends (Phase 2, stub)."
@@ -118,6 +119,7 @@
    (:file "tests/smoke-tests")
    (:file "tests/backend-tests")
    (:file "tests/cli-tests")
+   (:file "tests/backend-clautolisp-tests")
    (:file "tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
