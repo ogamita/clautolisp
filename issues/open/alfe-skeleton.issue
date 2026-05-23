@@ -1,0 +1,105 @@
+alfe-skeleton — subproject layout, ASDF, executable, version
+============================================================
+
+See also: alfe.plan, alfe-cli.issue, alfe-backend-interface.issue.
+
+Context
+-------
+
+The `autolisp-front-end/` subproject skeleton exists
+(`README.org`, `PLAN.md`, `Makefile`, an empty `autolisp-front-end.asd`,
+the canonical spec under `documentation/`, empty `source/` `tests/`
+`tools/alfe/` `scripts/`). This issue lands the load-bearing
+plumbing that every other alfe ticket depends on:
+
+  - ASDF system declarations for the modules each ticket adds ;
+  - a buildable `alfe` executable (SBCL + CCL images) ;
+  - a `*alfe-version*` parameter following the MAJOR.MINOR.DEVELOP
+    convention used elsewhere in the repo ;
+  - Make targets wired into the subproject Makefile (`make
+    build-alfe-sbcl`, `make build-alfe-ccl`, `make test`) and into the
+    toplevel Makefile (already done by the subproject entry).
+
+In scope
+--------
+
+  1. ASDF systems. Replace the placeholder in
+     `autolisp-front-end/autolisp-front-end.asd` with the real
+     decomposition:
+
+         autolisp-front-end                     (aggregate)
+         autolisp-front-end/core                (alfe.cli, alfe.backend
+                                                 interface, alfe.workdir,
+                                                 alfe.logging, alfe.error)
+         autolisp-front-end/backend-clautolisp  (filled by Phase 1)
+         autolisp-front-end/file-protocol       (filled by Phase 2)
+         autolisp-front-end/backend-bricscad    (filled by Phase 3)
+         autolisp-front-end/backend-autocad     (filled by Phase 3)
+         autolisp-front-end/tests               (FiveAM)
+
+     All `-on` lists wired against the existing clautolisp systems
+     (autolisp-reader, autolisp-runtime, autolisp-builtins-core,
+     autolisp-host, autolisp-mock-host).
+
+  2. Packages. Per-system packages with short names:
+     `alfe.cli`, `alfe.backend`, `alfe.backend.clautolisp`,
+     `alfe.protocol.file`, `alfe.backend.bricscad`,
+     `alfe.backend.autocad`. Tests live under
+     `alfe-front-end.tests` (mirroring the `clautolisp.*.tests`
+     convention).
+
+  3. Version. New file
+     `tools/alfe/source/version.lisp` exposing `*alfe-version*` as
+     "MAJOR.MINOR.DEVELOP", starting at "0.0.1". A memory rule
+     (mirroring the clautolisp DEVELOP-bump rule) is documented in the
+     subproject PLAN.md and in the version.lisp comment header.
+
+  4. Executable build. A new `tools/alfe/source/main.lisp` whose
+     `main` function is a stub (calls into `alfe.cli:run`, which the
+     `alfe-cli.issue` ticket implements). SBCL and CCL build targets
+     in `autolisp-front-end/Makefile`:
+
+         build-alfe-sbcl: → tools/alfe/bin/alfe-sbcl
+         build-alfe-ccl:  → tools/alfe/bin/alfe-ccl
+
+     Image format and `save-lisp-and-die`/`save-application` patterns
+     identical to those in `clautolisp/tools/clautolisp/`.
+
+  5. Toplevel wiring. The `autolisp-front-end` subproject is already
+     listed in the repo-root Makefile's `SUBPROJECTS`; this ticket
+     verifies `make autolisp-front-end` builds the documentation
+     cleanly (already does), and `make test` is wired but tolerates
+     "no tests yet" until alfe-conformance.issue ships.
+
+  6. Minimal FiveAM scaffold under `tests/` so `make test` exits 0:
+     a single dummy `(test alfe-skeleton-smoke (is (string= "alfe"
+     "alfe")))` plus a `run.lisp` harness mirroring
+     `autolisp-runtime/tests/run.lisp`.
+
+Out of scope
+------------
+
+  - Any CLI behaviour beyond `alfe --version` and `alfe --help`
+    (those land in alfe-cli.issue).
+  - Backend behaviour (every `alfe-backend-*.issue`).
+
+Acceptance criteria
+-------------------
+
+  - `make -C autolisp-front-end build-alfe-sbcl` produces a working
+    executable at `tools/alfe/bin/alfe-sbcl`.
+  - `tools/alfe/bin/alfe-sbcl --version` prints
+    "alfe 0.0.1" and exits 0.
+  - `tools/alfe/bin/alfe-sbcl --help` prints a stub usage banner and
+    exits 0.
+  - `make -C autolisp-front-end test` runs the dummy FiveAM smoke
+    test and reports 1/1 pass.
+  - The aggregate `make test` at the repo root passes (does not
+    regress).
+
+Notes
+-----
+
+Keep the SBCL/CCL build targets parametric (Makefile variables for
+the entry point and image name), so additional images (e.g. a future
+`alfe-mac`/`alfe-win` cross-build) can be added without copy-paste.

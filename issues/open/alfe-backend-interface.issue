@@ -1,0 +1,137 @@
+alfe-backend-interface — abstract backend protocol
+==================================================
+
+See also: alfe.plan, alfe-skeleton.issue, alfe-cli.issue,
+alfe-backend-clautolisp.issue, alfe-file-protocol.issue,
+alfe-backend-bricscad.issue, alfe-backend-autocad.issue.
+
+Context
+-------
+
+Three backend families (`clautolisp`, `bricscad`, `autocad`) need to
+plug into a single CLI front-end. They differ on:
+
+  - whether the AutoLISP code runs in-process (clautolisp direct),
+    as a managed subprocess (clautolisp subprocess), or inside a
+    foreign engine (BricsCAD, AutoCAD) talking back through the
+    file-IPC protocol ;
+  - whether they support `vlisp-compile`, DCL dialogs, host pickers,
+    EPURE, etc. ;
+  - how they discover their engine binaries, attach vs. launch,
+    cleanup on signal.
+
+This issue defines the *uniform* API alfe.cli calls into. Concrete
+backends implement the generics; alfe.cli stays backend-agnostic.
+
+In scope
+--------
+
+  1. Generic functions in `alfe.backend`:
+
+         (defgeneric backend-name (backend)
+           "Symbol matching the CLI flag: :clautolisp / :bricscad / :autocad.")
+
+         (defgeneric detect (backend-symbol &key)
+           "Return a backend instance if discoverable on this system,
+            or signal a `backend-not-available` condition with a
+            structured reason. The CLI default-resolver calls each
+            registered detector.")
+
+         (defgeneric prepare-workdir (backend workdir-root &key)
+           "Build the per-run WORKDIR for this backend, including
+            backend-specific subdirs (`protocol/` for CAD backends,
+            nothing extra for clautolisp).")
+
+         (defgeneric start-engine (backend workdir &key dialect host
+                                                       mock-input
+                                                       bootstrap-phase
+                                                       interactive-p
+                                                       …)
+           "Bring the backend up to the READY state, return a session
+            handle. For clautolisp this binds an evaluation context;
+            for CAD backends this writes the runtime LSP, launches the
+            engine, and polls `status.txt` until READY.")
+
+         (defgeneric eval-plan (session plan)
+           "Execute an action plan (list of (:load PATH …), (:eval
+            EXPR …), (:main SYMBOL …), (:interactive), (:quit))
+            built by alfe.cli. Returns a structured result.")
+
+         (defgeneric read-output (session &key timeout)
+           "Drain stdout/stderr captured since last read. For
+            in-process clautolisp this is a no-op (output went to
+            the live streams). For CAD backends, reads from
+            `stdout.txt` / `stderr.txt`.")
+
+         (defgeneric send-input (session text)
+           "Send a line of user input. For clautolisp direct, push
+            into the eval thread's input channel. For CAD backends,
+            atomic write into `stdin.txt`.")
+
+         (defgeneric request-control (session command)
+           "Out-of-band control (`PING`, `SHUTDOWN`, `INTERRUPT`).
+            For clautolisp direct, dispatch to internal flags; for
+            CAD backends, atomic write to `control.txt`.")
+
+         (defgeneric shutdown (session &key reason)
+           "Tear down the session. For clautolisp this resets the
+            context; for CAD backends, send `SHUTDOWN`, wait for
+            `STOPPED`, then kill if needed.")
+
+         (defgeneric cleanup-workdir (backend workdir &key keep-p)
+           "Remove the workdir unless KEEP-P or
+            $AUTOLISP_KEEP_WORKDIR is set.")
+
+  2. Conditions hierarchy:
+
+         backend-error                        (parent)
+           backend-not-available              (detector failed)
+           backend-bootstrap-error            (engine could not reach READY)
+           backend-protocol-error             (status / parse / timeout)
+           backend-eval-error                 (user code failed)
+
+     Each carries a structured plist (`:backend`, `:phase`, `:code`,
+     `:message`, `:detail`) consumable by alfe.cli for the documented
+     exit-code mapping.
+
+  3. Session structure. A `session` is a struct with at least
+     `backend`, `workdir`, `dialect`, `state` (:booting/:ready/
+     :running/:done/:stopping/:stopped/:failed), and a backend-
+     specific slot for the live engine handle.
+
+  4. Status vocabulary. Define the canonical state machine on
+     `session`'s state slot, matching the spec's status table; both
+     in-process and file-protocol backends report into the same
+     vocabulary so alfe.cli's verbose mode can render a unified
+     progress trace.
+
+  5. Mock backend. A tiny `alfe.backend.echo` (used only in tests)
+     implements the generics with a scripted answer table — lets
+     alfe.cli tests run without any real backend.
+
+Out of scope
+------------
+
+  - The concrete implementations (each `alfe-backend-*.issue`).
+  - The file-protocol layer itself (shared infrastructure for CAD
+    backends; `alfe-file-protocol.issue`).
+
+Acceptance criteria
+-------------------
+
+  - The generics compile and load through ASDF as part of the
+    `autolisp-front-end/core` system.
+  - The echo backend implements every generic and is exercised by a
+    FiveAM test that drives an end-to-end plan
+    (`(:eval "(+ 1 2)")` → output "3").
+  - `backend-error` and its subconditions carry the documented
+    plist; tests assert the shape.
+
+Notes
+-----
+
+Keep the interface narrow. Anything that is genuinely backend-
+specific (e.g. AutoCAD COM `WaitQuiescent`) lives behind the
+generics as backend-private state, not as new generics. Resist the
+urge to widen the API just because one backend can do something
+exotic.

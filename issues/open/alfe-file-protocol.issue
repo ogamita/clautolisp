@@ -1,0 +1,128 @@
+alfe-file-protocol — file-IPC driver for the CAD backends
+=========================================================
+
+See also: alfe.plan, alfe-backend-interface.issue,
+alfe-backend-bricscad.issue, alfe-backend-autocad.issue,
+spec sections "Protocole REPL distant", "Contrat AutoLISP côté
+runtime".
+
+Context
+-------
+
+AutoLISP inside BricsCAD or AutoCAD has no IPC mechanism beyond
+files: no sockets, no pipes, no shared memory, and the REPL lives
+inside the GUI. The historical bash wrapper therefore implements a
+small file protocol with a CAD-side runtime
+(`runtime/autolisp-remote-io.lsp`) and a shell-side driver
+(`lib/autolisp-remote-io.sh`).
+
+This issue rewrites the *driver* (the shell) in Common Lisp as
+`alfe.protocol.file`. The CAD-side runtime (the .lsp) is reused
+verbatim — it is AutoLISP code that runs inside the CAD engine, not
+something the rewrite touches.
+
+In scope
+--------
+
+  1. Session bring-up (`alfe.protocol.file:make-session WORKDIR`):
+       - create `WORKDIR/protocol/` with the documented file slots
+         (`status.txt`, `stdin.txt`, `stdout.txt`, `stderr.txt`,
+         `control.txt`, `heartbeat.txt`, `read-buffer.lsp`,
+         `runtime-info.txt`) ;
+       - publish `BOOTING` to `status.txt` via the atomic-publish
+         primitive ;
+       - emit `run-common.lsp` populated with the spec's variables
+         (`*AUTOLISP-*`, including the `*AUTOLISP-PROTOCOL-*`
+         family) ;
+       - resolve the AutoLISP runtime path
+         (`autolisp-remote-io.lsp`) and stage it under
+         `WORKDIR/runtime/` for the CAD to load.
+
+  2. Atomic write primitive:
+       - `(write-atomic-file PATH CONTENT)` writes to
+         `PATH.tmp.<pid>.<rand>` then `rename-file` to PATH ;
+       - used for every shell-to-runtime write (`stdin.txt`,
+         `control.txt`) ;
+       - the runtime side is *not* atomic when writing
+         `stdout.txt`/`stderr.txt` — appending is the contract per
+         the spec; alfe reads incrementally.
+
+  3. Status polling:
+       - `(wait-for-status PATH EXPECTED &key timeout)` and
+         `(wait-for-status-prefix PATH PREFIX &key timeout)` poll
+         with backoff (50 ms → 500 ms).
+       - States from the spec's table are constants in
+         `alfe.protocol.file:+status-*+` for type-safe matching.
+
+  4. Line-to-form reader. Implement the AutoLISP `read`-over-lines
+     contract described in the spec's "Modèle de lecture":
+       - read whole lines until the accumulated text balances
+         (parens, strings, comments — reuse
+         `clautolisp.autolisp-reader:read-runtime-from-string` and
+         catch the `:unexpected-eof` diagnostic to know when to
+         accumulate another line) ;
+       - present the balanced form to the consumer (`eval-plan`
+         interactive loop).
+
+  5. Output draining. `(drain-output SESSION)` advances offsets in
+     `stdout.txt`/`stderr.txt` and returns the new text. Position
+     tracking is per-channel inside the session struct.
+
+  6. Control commands. `(send-control SESSION COMMAND)` atomic-
+     publishes `PING` / `SHUTDOWN` / `INTERRUPT`. The runtime's
+     consumption is destructive (file deleted after read); alfe
+     re-publishes when the slot is free.
+
+  7. Heartbeat. Optional `(read-heartbeat SESSION)` returns the last
+     timestamp; alfe's `--verbose` may surface it. Treat absence as
+     "no heartbeat published yet", not as failure.
+
+  8. CAD-side runtime emission. A pure-CL emitter writes the
+     `run-common.lsp` template documented in the spec, substituting
+     the placeholders (`${LISP_OUTFILE}`, `${LISP_PROTOCOL_DIR}`,
+     etc.) with workdir-resolved absolute paths. The template lives
+     in source — *not* a separate file — to keep the runtime
+     contract under version control.
+
+  9. Tests under `tests/file-protocol-tests.lisp`:
+       - atomic-write contention (parallel writers; verify atomic
+         arrival semantics) ;
+       - status wait reaches expected state and times out cleanly ;
+       - drain-output handles partial lines (no torn UTF-8) ;
+       - line-to-form reader composes the right AutoLISP form for
+         the canonical multi-line test case ;
+       - end-to-end against a *mock CAD* (a Lisp thread that
+         emulates the CAD-side runtime against the same file slots).
+
+Out of scope
+------------
+
+  - Per-CAD bring-up (binary discovery, AppleScript / COM bridges,
+    template DWG resolution). Lives in alfe-backend-bricscad.issue
+    and alfe-backend-autocad.issue.
+  - Modifying `autolisp-remote-io.lsp` itself. The runtime is reused
+    as-is; if the protocol grows, this issue's CL emitter learns to
+    bundle the new revision.
+
+Acceptance criteria
+-------------------
+
+  - The session bring-up function produces a `WORKDIR/protocol/`
+    layout that matches the spec byte-for-byte (filenames,
+    permissions, initial contents).
+  - A mock CAD test scripts the full lifecycle (BOOTING → READY 0 →
+    RUNNING 1 → DONE 1 OK → STOPPING → STOPPED) and asserts every
+    transition.
+  - All atomic-write tests pass without flake under load (run the
+    suite 100× in CI; no race).
+  - The line-to-form reader produces a balanced form for the test
+    cases in the spec's "Cas d'usage visés".
+
+Notes
+-----
+
+The hardest bug in this layer is racing publishers/consumers. Lean
+on `clautolisp.autolisp-runtime`'s existing source-tracking
+diagnostics to surface "partial read of stdin.txt" cleanly. The
+runtime side already handles atomicity correctly; alfe must not
+introduce a regression by writing non-atomically.
