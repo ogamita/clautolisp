@@ -1,0 +1,104 @@
+opendcl-host-pickers — entity / layer / block pickers via HAL
+=============================================================
+
+See also: opendcl.plan, opendcl-wire-protocol.issue,
+opendcl-runtime-core.issue, opendcl-controls.issue.
+
+Context
+-------
+
+Several OpenDCL controls and dialogs prompt the user to *pick*
+something from the host CAD drawing — an entity, a layer, a block
+reference, a colour, a linetype, a point on screen. Real OpenDCL
+delegates straight to AutoCAD's `ssget` / `entsel` / colour dialog
+etc. In clautolisp the host is the HAL: `MockHost` today,
+`AutocadHost` / `BricscadHost` etc. tomorrow.
+
+This means a picker control is a *reverse synchronous* call:
+
+  GUI     → runtime :  (:pick-request 42 :entity (:filter "*LINE"))
+  runtime → HAL     :  prompt user via the active host backend
+  runtime → GUI     :  (:pick-reply 42 (:ok ((:type :entity)
+                                              (:handle "abc")
+                                              (:layer "0"))))
+
+Same request/reply envelope as property get/set; just initiated
+from the GUI side. The HAL gets a new `request-pick KIND OPTIONS`
+entry point that each backend implements.
+
+In scope
+--------
+
+  1. HAL surface. Add to `clautolisp/autolisp-host/source/api.lisp`:
+
+         (defgeneric request-pick (host kind options)
+           (:documentation "Prompt the user for KIND (:entity,
+              :layer, :block, :color, :linetype, :point, …).
+              OPTIONS is a plist. Returns either
+                (:ok <picked-value>)
+              or
+                (:cancel)
+              or
+                (:error CODE MESSAGE)."))
+
+     MockHost answers from a scripted queue (mirrors the existing
+     `mock-host-prompt-stream` pattern). Real-host backends will
+     wrap `ssget` / `entsel` / the colour dialog when those land.
+
+  2. Wire dispatch. The runtime, on receiving `(:pick-request RID
+     KIND OPTIONS)`, calls the active host's `request-pick`,
+     translates the result into a reply, and writes
+     `(:pick-reply RID …)` back. Keep this in the wire bridge,
+     not in the builtins — it must work for *every* picker
+     control without per-control glue.
+
+  3. Picker controls. The first wave:
+       - EntityPicker        → `(:pick-request RID :entity …)`
+       - LayerPicker         → `(:pick-request RID :layer …)`
+       - BlockPicker         → `(:pick-request RID :block …)`
+       - ColorPicker         → `(:pick-request RID :color …)`
+       - LinetypePicker      → `(:pick-request RID :linetype …)`
+
+     Each renders as a small composite — text-display plus an
+     ellipsis button; the button fires the pick request and the
+     reply populates the text field. The Qt control catalogue is
+     extended in `opendcl-controls.issue`.
+
+  4. AutoLISP-visible result shape. Picked values use the same
+     tagged-plist shape AutoLISP code already sees from
+     `entsel` / `tblsearch`:
+         (:entity (:handle "abc") (:layer "0") (:type :line))
+     so user dcl_* event handlers can consume them without
+     translation.
+
+  5. MockHost scripted scenarios. Conformance corpus fixtures
+     under `opendcl-conformance.issue` script the host with a
+     queue of canned picks; tests assert the round-trip.
+
+Out of scope
+------------
+
+  - Real-host backends (`AutocadHost`, `BricscadHost`). They land
+    when the broader HAL-to-CAD bridge does, and will simply
+    implement `request-pick` on their side.
+  - Interactive geometry (drag-pick, snap modes). V1 picks return a
+    single result; rubber-banding waits for V2.
+
+Acceptance criteria
+-------------------
+
+  - `request-pick` defined on `host` and implemented by MockHost;
+    its `:cancel` and `:error` paths covered by tests.
+  - At least three of the picker controls work end-to-end under
+    MockHost with scripted answers.
+  - autolisp-spec gains a "Host Pickers" subsection enumerating
+    `KIND` values, options accepted, and result shape.
+
+Notes
+-----
+
+This is where clautolisp's headless model pays off: the picker can
+be scripted from a test fixture, so a full dialog flow that ends
+"… click EntityPicker, the user picks line 'abc'" is reproducible
+in CI without a CAD host. Build that ergonomic harness as part of
+this ticket.

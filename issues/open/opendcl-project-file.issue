@@ -1,0 +1,100 @@
+opendcl-project-file — parse .odcl into a canonical runtime tree
+================================================================
+
+See also: opendcl.plan, opendcl-wire-protocol.issue,
+opendcl-runtime-core.issue.
+
+Context
+-------
+
+OpenDCL applications declare their UI in `.odcl` *project* files.
+Upstream OpenDCL persists these in an XML-ish format (newer
+versions) and a binary form (older releases); the reference is the
+upstream source under
+https://github.com/SourceForgeOpenDCL/OpenDCL .
+
+A project contains:
+  - zero or more *forms* (modal dialogs) and zero or more *palettes*
+    (dockable non-modal forms);
+  - each form holds a tree of *controls*; each control declares
+    properties (geometry, text, font, layout flags) and *events* it
+    subscribes to;
+  - resource sections: image lists, string tables, embedded
+    bitmaps.
+
+clautolisp consumes a project the same way the DCL renderer
+consumes a `(:dialog …)` tile tree: a canonical sexp shape that
+both the runtime and the renderer (over the wire) understand.
+
+In scope
+--------
+
+  1. Research first. Inspect a representative set of upstream
+     `Samples/*.odcl` files to pin down the on-disk format
+     actually used by current OpenDCL releases. Document the
+     mapping in
+     `clautolisp/autolisp-opendcl/documentation/project-file.org`.
+     Don't write code on top of guesses.
+
+  2. Reader. A pure-CL parser in
+     `clautolisp/autolisp-opendcl/source/project-reader.lisp` that
+     ingests a `.odcl` file and returns a canonical runtime tree:
+
+         (:project
+           :name "Sample1"
+           :forms ((:form :name "Form1" :size (640 480)
+                          :controls (:control :type :button
+                                              :name "btnOK"
+                                              :pos (10 10) :size (80 24)
+                                              :props ((:text . "OK")
+                                                      (:enabled . t))
+                                              :events (:click)))
+                   …)
+           :palettes (…)
+           :images   (…)
+           :strings  (…))
+
+  3. Writer (optional in V1, useful for tests). A CL writer that
+     re-emits the canonical tree as the *same* on-disk format,
+     byte-for-byte for the round-trip cases the corpus covers.
+     Defer if it slows V1; the parser alone unblocks runtime work.
+
+  4. Diagnostics. Malformed input surfaces a structured diagnostic
+     (same pattern as the autolisp-reader) — code, message, source
+     position. Don't drop into the debugger on a truncated project.
+
+  5. Tests. FiveAM coverage with a small corpus of `.odcl` files
+     pinned under `clautolisp/autolisp-opendcl/tests/fixtures/`.
+     Mirror the autolisp-file-compat scenario style: each fixture
+     has a paired `.expected.sexp` that the test asserts equal to
+     the canonical tree.
+
+Out of scope
+------------
+
+  - GUI designer (creating / editing `.odcl` interactively).
+  - Embedded binary resource extraction beyond what V1 controls
+    actually need (no need to decode every bitmap subformat the
+    upstream version ever supported; load lazily).
+  - VBA / ActiveX subforms. Captured as a follow-up in
+    opendcl-conformance.issue.
+
+Acceptance criteria
+-------------------
+
+  - At least three representative upstream `Samples/*.odcl` files
+    parse to a canonical tree that matches a hand-written expected
+    fixture.
+  - Diagnostic on a truncated project (missing closing tag, missing
+    required attribute) surfaces a meaningful code + position.
+  - asd integration: a new `clautolisp/autolisp-opendcl` ASDF
+    system whose tests run as part of `make test`.
+
+Notes
+-----
+
+OpenDCL upstream sources are LGPL; we are *not* importing code, only
+reading the on-disk format. The runtime tree we produce is our own
+canonical shape, not a verbatim transcription of upstream's XML
+schema — choose names that fit clautolisp's idioms (`:pos`/`:size`
+not `Position`/`Dimensions`, etc.).
