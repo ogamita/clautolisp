@@ -231,22 +231,43 @@ something to OPEN."
 
 ;;; --- atomic-write primitive ---------------------------------------
 
-(defparameter *atomic-write-suffix-rand-bits* 40
-  "Number of random bits in the per-write temporary suffix. 2^40 ~=
-10^12, large enough that intra-second collisions are statistically
-impossible across the lifetime of one alfe process.")
+(defparameter *atomic-write-counter* 0
+  "Monotonically-incrementing counter used as the unique component of
+each atomic-write temp suffix. Under threaded contention the shared
+*RANDOM-STATE* doesn't guarantee distinct draws across threads (its
+internal mutation isn't atomic on every implementation), so we lean
+on a counter plus a per-process random seed instead.")
+
+(defparameter *atomic-write-counter-lock*
+  #+(or sbcl ccl) (bordeaux-threads:make-lock "atomic-write-counter")
+  #-(or sbcl ccl) nil
+  "Lock protecting *ATOMIC-WRITE-COUNTER*. Pure CL-with-no-threading
+implementations leave this NIL — the lock-guarded path falls back
+to direct INCF.")
+
+(defun next-atomic-counter ()
+  (cond
+    (*atomic-write-counter-lock*
+     (bordeaux-threads:with-lock-held (*atomic-write-counter-lock*)
+       (incf *atomic-write-counter*)))
+    (t (incf *atomic-write-counter*))))
 
 (defun atomic-temp-path (target)
   "Return a sibling pathname of TARGET safe for use as the
-write-then-rename staging file. Caller owns the lifetime.
+write-then-rename staging file. The caller owns the lifetime.
 
 The temp name is built by NAMESTRING-concatenation rather than via
 MAKE-PATHNAME with a multi-dot :type, because SBCL escapes the dots
-in pathname components (so a :type of \"txt.tmp.123.abc\" round-
-trips as `txt\\.tmp\\.123\\.abc` and RENAME-FILE then fails)."
-  (let* ((rand (random (expt 2 *atomic-write-suffix-rand-bits*)))
-         (suffix (format nil ".tmp.~D.~36R" (current-pid) rand))
-         (base   (namestring target)))
+in pathname components (a :type of \"txt.tmp.123.abc\" round-trips
+as `txt\\.tmp\\.123\\.abc` and RENAME-FILE then fails).
+
+The uniqueness component is a (pid, monotonic counter) pair —
+guaranteed distinct across every call within one process, regardless
+of how many threads are racing. The legacy bash wrapper used
+`$$.$RANDOM` which works for the same reason."
+  (let* ((counter (next-atomic-counter))
+         (suffix  (format nil ".tmp.~D.~D" (current-pid) counter))
+         (base    (namestring target)))
     (pathname (concatenate 'string base suffix))))
 
 (defun write-atomic-file (target content &key (external-format :utf-8)

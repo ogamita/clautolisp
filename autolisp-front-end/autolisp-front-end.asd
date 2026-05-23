@@ -29,6 +29,7 @@
   :depends-on ("autolisp-front-end/core"
                "autolisp-front-end/backend-clautolisp"
                "autolisp-front-end/file-protocol"
+               "autolisp-front-end/backend-cad-common"
                "autolisp-front-end/backend-bricscad"
                "autolisp-front-end/backend-autocad")
   ;; Test-op on the aggregate delegates to the /tests system, which
@@ -71,30 +72,43 @@
   :description "alfe file-IPC protocol driver shared by the CAD backends."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
-  :depends-on ("autolisp-front-end/core")
+  :depends-on ("autolisp-front-end/core"
+               "bordeaux-threads")
   :serial t
   :components
   ((:file "source/file-protocol")))
 
-(asdf:defsystem "autolisp-front-end/backend-bricscad"
-  :description "alfe backend driving BricsCAD via the file-IPC protocol (Phase 3, stub)."
+(asdf:defsystem "autolisp-front-end/backend-cad-common"
+  :description "Shared helpers for the CAD-driven alfe backends (OS detection, binary discovery, VBS/AppleScript escaping, the protocol-driven eval-plan loop)."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
   :depends-on ("autolisp-front-end/core"
                "autolisp-front-end/file-protocol")
   :serial t
   :components
-  ((:file "source/backend-bricscad-stub")))
+  ((:file "source/backend-cad-common")))
+
+(asdf:defsystem "autolisp-front-end/backend-bricscad"
+  :description "alfe backend driving BricsCAD via the file-IPC protocol."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("autolisp-front-end/core"
+               "autolisp-front-end/file-protocol"
+               "autolisp-front-end/backend-cad-common")
+  :serial t
+  :components
+  ((:file "source/backend-bricscad")))
 
 (asdf:defsystem "autolisp-front-end/backend-autocad"
-  :description "alfe backend driving AutoCAD via the file-IPC protocol (Phase 3, stub)."
+  :description "alfe backend driving AutoCAD via the file-IPC protocol."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
   :depends-on ("autolisp-front-end/core"
-               "autolisp-front-end/file-protocol")
+               "autolisp-front-end/file-protocol"
+               "autolisp-front-end/backend-cad-common")
   :serial t
   :components
-  ((:file "source/backend-autocad-stub")))
+  ((:file "source/backend-autocad")))
 
 (asdf:defsystem "autolisp-front-end/alfe-tool"
   :description "Standalone alfe executable built on top of the front-end core."
@@ -121,6 +135,7 @@
    (:file "tests/cli-tests")
    (:file "tests/backend-clautolisp-tests")
    (:file "tests/file-protocol-tests")
+   (:file "tests/backend-cad-tests")
    (:file "tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
