@@ -41,8 +41,17 @@ on top of the `clautolisp/autolisp-*` modules, producing a single
   every `*AUTOLISP-*` global the spec calls for (in both hyphen
   and underscore spellings so the upstream `autolisp-remote-io.lsp`
   runtime is reused verbatim).
-- Phase 3 systems exist as stub packages so the aggregate ASDF
-  system loads cleanly; the per-ticket source files fill them in.
+- Phase 3 (alfe-backend-bricscad + alfe-backend-autocad) has
+  landed: per-platform binary discovery, batch-mode run.scr
+  emitters, AppleScript launcher for macOS BricsCAD automation,
+  VBScript bridge emitters for Windows COM on both CADs (with the
+  spec's WaitQuiescent / GetAcadState / SendCommand handshake
+  preserved), platform gating for AutoCAD on non-Windows hosts
+  (clean exit 3 with a "not distributed" message), and a
+  protocol-driven `eval-plan` that issues every action through
+  the file-IPC channel and waits for the runtime's `DONE N` reply.
+  Real-CAD smoke tests are deferred behind `BRICSCAD_SMOKE=1` /
+  `AUTOCAD_SMOKE=1` env opts.
 - Specification copied from upstream `autolisp-script` and updated
   to reflect the alfe ↔ clautolisp ↔ CAD architecture and the
   file-IPC rationale for the CAD backends.
