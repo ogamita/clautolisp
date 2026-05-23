@@ -1,0 +1,108 @@
+opendcl-conformance — scenario corpus, spec chapter, coverage tracker
+=====================================================================
+
+See also: opendcl.plan, opendcl-runtime-core.issue,
+opendcl-controls.issue, opendcl-host-pickers.issue.
+
+Context
+-------
+
+OpenDCL's surface is large (~300 AutoLISP functions, ~30 controls,
+synchronous + event paths). The DCL work showed that declarative
+scenarios (autolisp-file-compat style) are how you keep a vendor-
+sensitive surface honest. This issue captures the longitudinal
+*quality* work that runs alongside every implementation phase:
+
+  - a declarative conformance corpus that grows per scenario;
+  - an autolisp-spec chapter that documents the OpenDCL surface
+    clautolisp actually implements;
+  - a coverage tracker that maps upstream's ~300 builtins to
+    {implemented, stubbed, out-of-scope, unknown}.
+
+In scope
+--------
+
+  1. Corpus layout. Mirror `autolisp-file-compat/scenarios/`:
+
+         clautolisp/autolisp-opendcl/scenarios/
+             lifecycle/      load, show, close, multi-form
+             properties/    get / set per control class
+             events/        click, selection-changed, focus-lost
+             pickers/       entity / layer / block / colour
+             projects/      whole-project round-trips from upstream
+                            Samples/
+
+     Each scenario is a `.sexp` declaration: a `:name`,
+     `:classification` (:portable, :opendcl-only, :divergent), a
+     project to load, an event script to inject, an expected
+     wire-trace fragment, and expected AutoLISP-visible results.
+
+  2. Runner. Either:
+       (a) extend `autolisp-file-compat/tools/run-file-compat/` to
+           speak the OpenDCL `:kind :opendcl` scenario shape, or
+       (b) add a sibling
+           `clautolisp/autolisp-opendcl/tools/run-opendcl-compat/`.
+     Decision at ticket-pickup time; (a) reuses more
+     infrastructure but couples the file-compat surface to
+     OpenDCL semantics. Lean (b) by default.
+
+     The runner uses a *mock renderer* in CI (no GUI required);
+     a `--real-renderer` flag drives the actual
+     `clautolisp-gui-qt` under Xvfb for the smoke subset.
+
+  3. autolisp-spec chapter. Add
+     `autolisp-spec/documentation/opendcl-surface.org` with:
+       - per-control entries (properties, events, status);
+       - per-builtin entries (`dcl_*` functions, arguments,
+         return shape, status);
+       - the wire-protocol catalogue (cross-link to
+         `opendcl-wire-protocol.issue`);
+       - vendor parity notes when upstream OpenDCL on Windows
+         behaves differently from our implementation.
+
+  4. Coverage tracker. A small CL tool, sibling to
+     `clautolisp/tools/builtins-coverage`, that:
+       - reads upstream OpenDCL's exported `dcl_*` function list
+         (research up-front: it's enumerated in their LSP file
+         under `lsp/`);
+       - cross-checks against `clautolisp/autolisp-opendcl`'s
+         installed builtins;
+       - emits a status table (implemented / stubbed / missing).
+       - hooks into `make builtins-coverage` (or a sibling
+         `make opendcl-coverage`).
+
+  5. CI. Wire the corpus runner into `make test` (mock-renderer
+     mode) and add an optional GitLab-CI lane that runs the
+     real-renderer subset under Xvfb.
+
+Out of scope
+------------
+
+  - Snapshot-image comparison of rendered widgets. Too fragile
+    cross-platform; defer.
+  - Side-by-side execution against real AutoCAD / BricsCAD. The
+    runner *templates* should be designed to support it (the
+    file-compat runner already does this for filesystem
+    scenarios), but the actual cross-vendor capture lane is
+    follow-up work.
+
+Acceptance criteria
+-------------------
+
+  - At least one scenario per category in §1 above lands as the
+    other tickets ship their pieces.
+  - autolisp-spec opendcl-surface.org compiles cleanly and is
+    linked from the master spec TOC.
+  - Coverage tracker output committed under a known path so
+    progress is visible.
+  - `make opendcl-conformance` (or whatever target name is chosen)
+    runs the mock-renderer corpus from scratch and exits non-zero
+    on any regression.
+
+Notes
+-----
+
+Treat this issue as a *backbone* that the other tickets feed into
+— don't try to finish it standalone. Every other ticket in the
+OpenDCL plan should land at least one scenario and one spec entry
+as part of its acceptance criteria.

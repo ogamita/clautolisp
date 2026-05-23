@@ -1,0 +1,155 @@
+                       OpenDCL support for clautolisp
+                       ==============================
+
+Goal
+----
+
+Add OpenDCL — the open-source Visual LISP UI library that supersedes
+stock DCL on Windows AutoCAD/BricsCAD — to the clautolisp surface,
+using the same architectural pattern that DCL uses today: a
+declarative project description in clautolisp's address space, and a
+subprocess GUI renderer spoken to over a small sexp wire protocol.
+
+Non-goal: replicate OpenDCL's Windows-only MFC/COM implementation
+internals. We re-implement the *contract* (the AutoLISP builtin
+surface and the runtime semantics), not the codebase.
+
+Upstream reference:
+  - https://github.com/SourceForgeOpenDCL/OpenDCL  (LGPL)
+  - https://opendcl.com  (historical docs, samples)
+  - Sample `.odcl` projects in upstream's `Samples/` directory are the
+    primary conformance corpus.
+
+Why this architecture works
+---------------------------
+
+The DCL subprocess pattern earned its keep on three counts:
+  1. The runtime stays headless. Tests run in CI without a display.
+  2. The renderer is swappable (Qt today, others later — including a
+     pure-curses fallback or a Windows-native one for parity with
+     real OpenDCL on a host CAD).
+  3. The wire protocol is a small grammar that humans can debug by
+     reading the line trace.
+
+OpenDCL is a strictly larger surface than DCL, but the same three
+properties hold; nothing about OpenDCL forces the GUI in-process.
+
+Shape of the work
+-----------------
+
+Three layers, each substantially larger than its DCL counterpart:
+
+  A. Project ingestion. `.odcl` files are project descriptions —
+     XML-shaped on disk, declaring forms, controls, properties,
+     events. clautolisp parses them, canonicalises them, and ships a
+     `:project` tree over the wire. The GUI is then "dumb": it
+     materialises tiles and reports events.
+
+  B. Builtins. OpenDCL exposes ~300 AutoLISP functions
+     (`dcl_Project_Load`, `dcl_Form_Show`, `dcl_Control_GetProperty`,
+     etc.). These have to be implemented in clautolisp's
+     `autolisp-builtins-core` (or a sibling `autolisp-opendcl`
+     module). This is the bulk of the work, not the renderer.
+
+  C. Renderer. Real Win32 common controls: TreeView, ListView with
+     sortable columns, PropertyGrid, RichEdit, ImageButton,
+     DateTimePicker, dockable palette, ActiveX host. Qt6 has all of
+     these; extending `clautolisp-gui-qt` (or forking it into
+     `clautolisp-gui-qt-opendcl`) is the obvious path.
+
+One protocol twist
+------------------
+
+DCL is purely event-driven: open dialog, set tiles, await
+`:action`/`:done`. OpenDCL's API is *synchronous* —
+`(dcl_Control_GetProperty handle "Text")` returns immediately. The
+wire therefore needs request/reply correlation:
+
+    runtime → GUI :  (:request 17 :get-property F1 C3 "Text")
+    GUI     → runtime :  (:reply 17 "alpha")
+
+Same transport, additional envelope. Captured in
+`opendcl-wire-protocol.issue`.
+
+Entity-picker round-trip
+------------------------
+
+OpenDCL's entity / layer / block / colour pickers ultimately delegate
+to the host CAD ("user, click an entity"). In clautolisp the host is
+the HAL (MockHost today, CAD bridges later). The picker becomes a
+*reverse* synchronous call:
+
+    GUI     → runtime :  (:pick-request 42 :entity (:filter "*LINE"))
+    runtime → HAL     :  prompt user / let MockHost answer
+    runtime → GUI     :  (:pick-reply 42 ((:type :entity) (:handle "abc")))
+
+Same request/reply envelope as property get/set. Captured in
+`opendcl-host-pickers.issue`.
+
+Phasing and dependencies
+------------------------
+
+  Phase 0 — Foundations (unblock everything)
+    opendcl-wire-protocol.issue       (envelope, message catalogue)
+    opendcl-project-file.issue        (.odcl parser → canonical tree)
+
+  Phase 1 — Minimal end-to-end
+    opendcl-runtime-core.issue        (load/show/close + events)
+    opendcl-renderer-scaffold.issue   (Qt subprocess; form, palette,
+                                       button, edit_box)
+       blocked by Phase 0
+
+  Phase 2 — Controls breadth
+    opendcl-controls.issue            (TreeView, ListView, PropertyGrid,
+                                       ImageList, tab/group, …)
+       blocked by Phase 1
+
+  Phase 3 — Host integration
+    opendcl-host-pickers.issue        (entity/layer/block/colour
+                                       pickers via HAL)
+       blocked by opendcl-runtime-core
+
+  Phase 4 — Quality and conformance
+    opendcl-conformance.issue         (scenario corpus à la
+                                       run-file-compat + autolisp-spec
+                                       OpenDCL chapter + builtins
+                                       coverage tracker)
+       runs continuously; meaningfully gated by Phase 2
+
+Success criteria
+----------------
+
+  V1 (target for the work captured here):
+    - A representative upstream `Samples/*.odcl` project loads, shows a
+      palette plus a modal form, dispatches a button click back to a
+      user `dcl_*` callback, and a property get/set round-trips
+      through the wire.
+    - Conformance corpus runs green on SBCL + CCL under MockHost.
+    - autolisp-spec gains an "OpenDCL Surface" chapter that lists
+      every implemented builtin, marks status (implemented /
+      stubbed / out of scope), and links the upstream reference.
+
+  V2 (out of scope for this plan; flagged as follow-ups in individual
+  issues):
+    - ActiveX/COM host control parity (depends on a real host bridge).
+    - Designer round-trip: load `.odcl`, mutate, save back. Useful
+      only if we ever ship an IDE-side editor.
+    - Per-platform native renderers beyond Qt.
+
+References
+----------
+
+  - `clautolisp/autolisp-dcl/source/sexp-wire.lisp`     (DCL protocol;
+                                                         OpenDCL
+                                                         supersets it)
+  - `clautolisp/tools/clautolisp-gui-qt/`               (DCL Qt renderer;
+                                                         pattern to
+                                                         extend or fork)
+  - `clautolisp/autolisp-file-compat/`                  (scenario-driven
+                                                         conformance
+                                                         pattern to
+                                                         reuse)
+  - `autolisp-spec/specifications/clautolisp-detailed-spec.org`
+                                                        (where the
+                                                         OpenDCL
+                                                         chapter lives)

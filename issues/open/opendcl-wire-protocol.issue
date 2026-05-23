@@ -1,0 +1,104 @@
+opendcl-wire-protocol — extend the sexp-wire grammar for OpenDCL
+================================================================
+
+See also: opendcl.plan (master), opendcl-renderer-scaffold.issue,
+opendcl-runtime-core.issue, opendcl-host-pickers.issue.
+
+Context
+-------
+
+Today's DCL wire (clautolisp/autolisp-dcl/source/sexp-wire.lisp) is
+one-way streaming:
+
+  runtime → GUI  :  open-dialog / set-tile / mode-tile / image-paint / …
+  GUI     → runtime  :  action / done / hello / error
+
+OpenDCL exposes a synchronous getter/setter API on top of an
+event-driven runtime — `(dcl_Control_GetProperty h "Text")` returns
+immediately to the caller, which means the runtime has to issue a
+request and block on a reply. The wire stays a single byte-stream;
+only the message envelope grows.
+
+In scope
+--------
+
+  1. Define a `:request RID OP ARGS…` / `:reply RID RESULT-OR-ERROR`
+     envelope. RID is a runtime-assigned integer, monotonic per
+     session. Replies may carry an error tag:
+
+         (:reply RID (:ok VALUE))
+         (:reply RID (:error CODE MESSAGE))
+
+  2. Catalogue the OpenDCL-specific messages that ride either as
+     bare events (downstream) or inside the request/reply envelope:
+
+       Downstream (runtime → GUI), one-way:
+         (:opendcl-hello PROTOCOL-VERSION CAPABILITIES)
+         (:project-load PID PROJECT-TREE)
+         (:project-unload PID)
+         (:form-show PID FORM-NAME FID MODAL-P)
+         (:form-close FID STATUS)
+         (:control-create FID CONTROL-TREE)
+         (:control-destroy FID CID)
+         (:property-set FID CID NAME VALUE)         (one-way mutate)
+         (:list-populate FID CID OP INDEX (ITEMS…))
+         (:image-paint FID CID (PRIMS…))            (reused from DCL)
+
+       Downstream synchronous (require :reply):
+         (:request RID :get-property FID CID NAME)
+         (:request RID :get-selection FID CID)
+         (:request RID :measure-text FID CID TEXT)
+
+       Upstream (GUI → runtime), one-way events:
+         (:opendcl-event FID CID :click ...)
+         (:opendcl-event FID CID :selection-changed (INDICES…))
+         (:opendcl-event FID CID :property-changed NAME OLD NEW)
+         (:opendcl-event FID CID :focus-lost)
+         (:form-closed FID STATUS)
+
+       Upstream synchronous (require :pick-reply — see
+       opendcl-host-pickers.issue):
+         (:pick-request RID :entity OPTIONS)
+         (:pick-request RID :layer OPTIONS)
+         (:pick-request RID :color OPTIONS)
+
+  3. Negotiation. The renderer announces its capabilities in
+     `:opendcl-hello` (e.g. `(:tree :listview :propgrid :imagelist)`);
+     the runtime gates feature use accordingly. DCL-only renderers
+     stay forward-compatible by returning `(:dcl-only)` and ignoring
+     OpenDCL messages.
+
+  4. Reference encoder/decoder in CL, with FiveAM coverage. Mirror
+     the existing sexp-wire test pattern: byte-for-byte round-trip
+     of every message shape; malformed input surfaces a
+     `sexp-wire-error` with file:line:col where reasonable.
+
+Out of scope
+------------
+
+  - Binary-encoded variants. The sexp wire stays text; that is the
+    debuggability win.
+  - The actual builtins that emit these messages (see
+    `opendcl-runtime-core.issue` and `opendcl-controls.issue`).
+
+Acceptance criteria
+-------------------
+
+  - `clautolisp/autolisp-dcl/source/sexp-wire.lisp` (or a sibling
+    `opendcl-wire.lisp`) carries the protocol-superset definition,
+    documented with the same docstring style as the DCL grammar.
+  - A new test file under `clautolisp/autolisp-dcl/tests/` exercises
+    encode → decode round-trip for every message shape, plus
+    request/reply correlation with at least two interleaved RIDs.
+  - autolisp-spec gains a "Wire Protocol (OpenDCL)" subsection
+    capturing the message catalogue. (Detailed builtin docs go with
+    opendcl-conformance.issue.)
+  - Version bumped per the project rule (DEVELOP counter in
+    clautolisp/tools/clautolisp/source/version.lisp).
+
+Notes
+-----
+
+Keep request IDs scoped per *session* (per clautolisp instance), not
+per form — multi-form OpenDCL applications routinely fire requests
+across forms.

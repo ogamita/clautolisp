@@ -1,0 +1,95 @@
+opendcl-renderer-scaffold — Qt6 subprocess for OpenDCL
+======================================================
+
+See also: opendcl.plan, opendcl-wire-protocol.issue,
+opendcl-runtime-core.issue, opendcl-controls.issue.
+
+Context
+-------
+
+The DCL Qt renderer
+(`clautolisp/tools/clautolisp-gui-qt/`) is a clean reference for the
+subprocess pattern: stdio s-expr framing, dialog lifecycle,
+widget-key dispatch. For OpenDCL we need a renderer that speaks the
+extended protocol from opendcl-wire-protocol.issue and materialises
+a much richer widget set.
+
+Decision: *extend the existing renderer*. Multiplex DCL and OpenDCL
+in the same binary, gated by the `:opendcl-hello` handshake. Rename
+nothing; the binary's *capability* — not its name — distinguishes
+the two surfaces. This avoids two near-duplicate Qt codebases and
+keeps the `--gui` flag and `CLAUTOLISP_GUI` env discovery unchanged.
+
+In scope (V1 — just enough to land the Phase 1 vertical slice)
+---------------------------------------------------------------
+
+  1. Protocol handshake.
+       - On startup announce `(:opendcl-hello 1 (:button :edit
+         :label :ok :cancel))`.
+       - Receive `:project-load` and stash the canonical project
+         tree in a per-PID map.
+       - Receive `:form-show` and instantiate a QDialog (modal) or
+         a QDockWidget (palette).
+
+  2. Initial widget catalogue:
+       - Label  ↔ QLabel
+       - Button ↔ QPushButton
+       - EditBox ↔ QLineEdit
+       - OK/Cancel ↔ QDialogButtonBox
+
+  3. Property get/set roundtrip:
+       - `(:request RID :get-property FID CID NAME)` reads the
+         widget's property by mapped name (e.g. "Text" → `text()`),
+         emits `(:reply RID (:ok VALUE))`.
+       - `(:property-set FID CID NAME VALUE)` updates the widget
+         property; one-way, no reply.
+       - Mapping table lives in
+         `tools/clautolisp-gui-qt/source/opendcl_property_map.{hpp,cpp}`.
+
+  4. Event emission:
+       - `clicked` → `(:opendcl-event FID CID :click)`
+       - `editingFinished` → `(:opendcl-event FID CID :focus-lost)`
+       - `textChanged` → `(:opendcl-event FID CID :property-changed
+                          "Text" OLD NEW)`
+
+  5. CMake updates: new sources added to the existing
+     `clautolisp-gui-qt` target. No new binary.
+
+  6. Smoke test: a hand-written sexp wire trace driving the
+     renderer through `cat trace.sexp | clautolisp-gui-qt --replay`
+     (a debug-only flag) should bring up the form, take a synthetic
+     click, and exit cleanly. Captured as a Makefile target so CI
+     can ssh into an Xvfb session and run it.
+
+Out of scope
+------------
+
+  - The advanced widget catalogue (TreeView, ListView with columns,
+    PropertyGrid, ImageList, DateTimePicker, RichEdit, dockable
+    palette tab stacks). Captured in `opendcl-controls.issue`.
+  - Designer-mode editing.
+  - Native-Windows renderer for parity with real OpenDCL — defer.
+
+Acceptance criteria
+-------------------
+
+  - The existing `clautolisp-gui-qt` binary still passes all DCL
+    regression scenarios; no break in the DCL path.
+  - With the runtime-core builtins, running an end-to-end
+    "show a form with one Button and one EditBox, click the button"
+    flow works under Xvfb (and locally on a developer machine) and
+    produces the expected wire trace.
+  - Replay smoke test is wired into `make test` (gated by Xvfb
+    availability — skip cleanly if no display is reachable).
+
+Notes
+-----
+
+Keep widget *identity* on the C++ side keyed by `(FID, CID)`; do not
+try to recreate AutoLISP symbol identity in the renderer. The runtime
+owns the source of truth and is responsible for translating user
+events back to the right `defun`.
+
+The replay flag (`--replay FILE`) is worth keeping as a permanent
+debug aid; it costs nothing and pays back the first time a
+production scenario regresses.

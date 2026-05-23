@@ -1,0 +1,116 @@
+opendcl-controls — full common-control catalogue
+================================================
+
+See also: opendcl.plan, opendcl-renderer-scaffold.issue,
+opendcl-runtime-core.issue, opendcl-conformance.issue.
+
+Context
+-------
+
+After Phase 1 (`opendcl-runtime-core.issue` +
+`opendcl-renderer-scaffold.issue`), Button / Label / EditBox /
+OK / Cancel land. Real OpenDCL applications need substantially
+more: TreeView, ListView with sortable columns, PropertyGrid,
+ImageList-backed image buttons, tabbed pages, group boxes,
+ComboBox with autocomplete, DateTimePicker, RichEdit, dockable
+palette tab stacks. This issue captures the bulk extension of the
+catalogue.
+
+The scaffolding is fixed: each control is a triple of
+  - a runtime constructor (instantiated from the project tree),
+  - a wire encoding (under `(:control-create FID …)` and
+    associated `(:property-set …)` / `(:list-populate …)`),
+  - a Qt-side materialiser plus property-map entry.
+
+Suggested ordering (revisit per scenario need)
+----------------------------------------------
+
+  1. Layout and containers
+       - Tab / TabPage      (QTabWidget / QWidget pages)
+       - GroupBox           (QGroupBox)
+       - Panel              (QFrame with layout)
+       - Splitter           (QSplitter)
+     Layout containers come first because every later control needs
+     a layout parent.
+
+  2. Choice / selection
+       - CheckBox           (QCheckBox)
+       - RadioButton        (QRadioButton + QButtonGroup)
+       - ComboBox           (QComboBox; editable + autocomplete)
+       - ListBox            (QListWidget — single / multi select)
+
+  3. Tabular / hierarchical
+       - ListView           (QTreeView with QStandardItemModel,
+                              columns, sort indicator)
+       - TreeView           (QTreeWidget for V1 simplicity;
+                              switch to MVC later if needed)
+
+  4. Rich-edit and images
+       - RichEdit           (QTextEdit; subset of RTF in V1)
+       - ImageButton        (QToolButton with QIcon)
+       - StaticImage        (QLabel with QPixmap)
+       - ImageList          (resource-side: indexed pixmap registry
+                              shared by image-bearing controls)
+
+  5. Time / date / numeric
+       - DateTimePicker     (QDateTimeEdit)
+       - SpinBox            (QSpinBox / QDoubleSpinBox)
+       - Slider             (QSlider)
+       - ProgressBar        (QProgressBar; read-only host-driven)
+
+  6. PropertyGrid           (QTreeView with custom delegate, or
+                              third-party widget — research at the
+                              ticket stage)
+
+For each control:
+  - the property-map entry (OpenDCL property name → Qt property
+    accessor) goes in the renderer's
+    `opendcl_property_map.{hpp,cpp}` (per
+    opendcl-renderer-scaffold.issue);
+  - the AutoLISP builtin coverage stays at the *generic* property
+    surface (`dcl_Control_GetProperty` / `SetProperty`) plus the
+    list-manipulation family
+    (`dcl_List_Add`, `dcl_List_Insert`, `dcl_List_Remove`,
+    `dcl_List_Clear`, `dcl_List_Get`, `dcl_List_Set`,
+    `dcl_Tree_AddNode`, `dcl_Tree_RemoveNode`, …);
+  - the wire messages stay within the catalogue defined by
+    `opendcl-wire-protocol.issue`.
+
+In scope
+--------
+
+For each control above:
+  - constructor in clautolisp/autolisp-opendcl;
+  - property-map entries on the Qt side;
+  - mock-renderer fixture so MockHost-driven tests cover the
+    builtin behaviour without a display.
+
+Out of scope
+------------
+
+  - ActiveX/COM host controls. They require a CAD bridge and are
+    deferred to V2 (noted in `opendcl.plan`).
+  - Per-platform native renderers.
+  - Cosmetic theming (let Qt do its default thing in V1).
+
+Acceptance criteria
+-------------------
+
+  - Each control category has at least one scenario in the
+    conformance corpus (`opendcl-conformance.issue`) that exercises
+    construction + a representative property get/set + at least
+    one event.
+  - PropertyGrid renders something usable for the upstream sample
+    that uses it (one of the demo `.odcl` files); accept that V1's
+    PropertyGrid won't match every quirk of the MFC implementation.
+  - autolisp-spec "OpenDCL Controls" subsection lists every
+    implemented control and its supported properties / events,
+    cross-referenced to the upstream reference.
+
+Notes
+-----
+
+Don't try to land everything in one drop. Break the work into
+per-control or per-cluster PRs once Phase 1 is green, ideally one
+PR per row in the ordering above. Each PR adds one or two corpus
+scenarios.

@@ -1,0 +1,101 @@
+opendcl-runtime-core — minimal AutoLISP builtins for load/show/close
+====================================================================
+
+See also: opendcl.plan, opendcl-wire-protocol.issue,
+opendcl-project-file.issue, opendcl-controls.issue.
+
+Context
+-------
+
+OpenDCL applications drive the UI through a synchronous AutoLISP
+API. Before we can run *any* OpenDCL `.odcl` sample under
+clautolisp, the runtime needs:
+
+  - a project registry (per document and global);
+  - a form registry (per project, with stable form IDs);
+  - the lifecycle builtins to load a project, show a form, close
+    it, and dispatch user-supplied event handlers;
+  - the wire-side glue that turns runtime calls into
+    `(:project-load …)` / `(:form-show …)` / `(:request RID
+    :get-property …)` messages and routes `(:opendcl-event …)`
+    upstream back into the registered handler `defun`s.
+
+This issue is the smallest end-to-end vertical slice: a Button +
+Edit form should show, accept a click, and call the user's defun.
+
+In scope
+--------
+
+  1. Module layout. Mirror the existing DCL pattern:
+       clautolisp/autolisp-opendcl/source/api.lisp
+       clautolisp/autolisp-opendcl/source/model.lisp
+       clautolisp/autolisp-opendcl/source/wire-bridge.lisp
+       clautolisp/autolisp-opendcl/tests/…
+     plus its asd entry.
+
+  2. Builtins (V1 subset — names match upstream OpenDCL):
+        dcl_Project_Load           PATH                → PID
+        dcl_Project_Unload         PID                 → t/nil
+        dcl_Project_List           (none)              → (PID …)
+        dcl_Form_Show              PID FORM-NAME       → FID
+        dcl_Form_ShowModal         PID FORM-NAME       → STATUS
+        dcl_Form_Close             FID STATUS          → t/nil
+        dcl_Form_GetControl        FID NAME            → CID
+        dcl_Control_Subscribe      FID CID EVENT FN    → t
+        dcl_Control_Unsubscribe    FID CID EVENT FN    → t
+        dcl_Control_GetProperty    FID CID NAME        → VALUE
+        dcl_Control_SetProperty    FID CID NAME VALUE  → t/nil
+
+     `FN` is any AutoLISP function designator (symbol, lambda form,
+     (function …)) — i.e. the late-resolution semantics from
+     function-value.issue. Dispatch goes through
+     `call-autolisp-function`.
+
+  3. Event-loop integration. The runtime drives the wire in a
+     reactive loop: while at least one modal form is live, the
+     evaluator blocks reading messages; non-modal palettes let the
+     evaluator keep running with messages drained on demand. The
+     `dcl_Form_ShowModal` builtin is the obvious blocking point;
+     `dcl_Form_Show` (non-modal) returns immediately.
+
+  4. Tests on the MockHost. FiveAM tests under
+     `clautolisp/autolisp-opendcl/tests/lifecycle-tests.lisp`
+     should run end-to-end with a *mock renderer* that the test
+     installs: a stub that scripts the upstream side of the wire
+     (`(:opendcl-event FID CID :click)` after a small delay,
+     etc.). No real GUI process required for CI.
+
+Out of scope
+------------
+
+  - All non-trivial controls (TreeView, ListView, PropertyGrid, …).
+    Those land in opendcl-controls.issue. V1 here proves the
+    lifecycle with at most Button, EditBox, Label.
+  - Entity pickers and other host-bound controls
+    (opendcl-host-pickers.issue).
+  - Project save / write-back (out of scope per opendcl.plan).
+
+Acceptance criteria
+-------------------
+
+  - Loading a fixture project via dcl_Project_Load and showing one
+    of its forms via dcl_Form_ShowModal results in the expected
+    `:project-load` + `:form-show` sequence on the wire.
+  - An upstream `:opendcl-event :click` correctly invokes the
+    user's subscribed `defun` and the return path closes the form
+    on a `:done` reply.
+  - Mock-renderer-driven test exercises the full lifecycle: load
+    → show modal → click button → subscribed defun runs → close →
+    unload. Asserts both wire trace and AutoLISP-side side-effects.
+  - `dcl_*` builtins documented in their docstrings; coverage for
+    each in tests/lifecycle-tests.lisp.
+
+Notes
+-----
+
+`dcl_Form_ShowModal` blocks the runtime thread. Keep the blocking
+implementation simple in V1 (a synchronous read loop on the wire);
+later we can layer in a more general async model when palettes plus
+modal dialogs need to coexist in interesting ways. The reactive
+event loop is itself a follow-up if needed — file it from this issue
+once a concrete asymmetry shows up.
