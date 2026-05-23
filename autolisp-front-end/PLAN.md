@@ -31,7 +31,17 @@ on top of the `clautolisp/autolisp-*` modules, producing a single
   the subprocess variant fork-execs `clautolisp-sbcl` with the
   resolved CLI flags via `uiop:run-program`. `--clautolisp -x
   '(+ 1 2)'` end-to-end prints 3 and exits 0.
-- Phases 2-3 systems exist as stub packages so the aggregate ASDF
+- Phase 2 (alfe-file-protocol) has landed: the `alfe.protocol.file`
+  package implements the file-IPC driver shared by the upcoming
+  CAD backends — atomic publish-by-rename, status polling with
+  backoff, incremental stdout/stderr draining with per-channel
+  offsets, line-to-form reader on top of the clautolisp parser,
+  PING/SHUTDOWN/INTERRUPT control sender, optional heartbeat
+  reader, and a pure-CL `run-common.lsp` emitter that populates
+  every `*AUTOLISP-*` global the spec calls for (in both hyphen
+  and underscore spellings so the upstream `autolisp-remote-io.lsp`
+  runtime is reused verbatim).
+- Phase 3 systems exist as stub packages so the aggregate ASDF
   system loads cleanly; the per-ticket source files fill them in.
 - Specification copied from upstream `autolisp-script` and updated
   to reflect the alfe ↔ clautolisp ↔ CAD architecture and the

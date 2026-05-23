@@ -69,6 +69,8 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 	$(SBCL) --noinform --no-userinit --non-interactive \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
 		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
@@ -79,6 +81,8 @@ test-ccl:  ## Run the alfe FiveAM suite under CCL.
 	$(CCL) --no-init --quiet \
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
 		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
