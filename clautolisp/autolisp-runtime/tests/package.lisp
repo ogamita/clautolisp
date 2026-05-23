@@ -28,6 +28,8 @@
                 #:autolisp-atom
                 #:autolisp-eval
                 #:autolisp-eval-progn
+                #:call-autolisp-function
+                #:resolve-autolisp-function-designator
                 #:autolisp-boundp
                 #:autolisp-errno
                 #:autolisp-function-list-definition
