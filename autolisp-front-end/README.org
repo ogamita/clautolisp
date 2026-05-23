@@ -1,0 +1,60 @@
+#+TITLE: autolisp-front-end (=alfe=)
+#+AUTHOR: Pascal J. Bourguignon
+#+OPTIONS: toc:2 num:t
+
+* Purpose
+
+=alfe= (/AutoLISP Front-End/) is a single CLI tool that drives an
+AutoLISP REPL — and one-shot evaluation of =-x=/=-l=/=--main=
+actions — against any of three backends:
+
+  - =clautolisp= (in-process via ASDF, default when no CAD detected) ;
+  - =clautolisp= (subprocess via stdin/stdout pipes, for isolation) ;
+  - =bricscad= / =autocad= (file-IPC protocol; the CAD's LISP REPL
+    has no other IPC available).
+
+It is the Common Lisp rewrite of the historical bash wrapper
+=autolisp-script= (whose binary was also named =autolisp=).
+
+* Architectural rationale
+
+BricsCAD and AutoCAD expose their AutoLISP REPL only inside a GUI;
+AutoLISP itself has no sockets, no pipes, no shared memory. The only
+IPC available is *files*. So for CAD backends, =alfe= injects an
+AutoLISP runtime that reads/writes a small set of well-known files
+under =WORKDIR/protocol/= and translates them to/from the local CLI.
+
+=clautolisp= already presents the AutoLISP REPL on the CLI and the
+host Common Lisp gives us every IPC mechanism. So the =clautolisp=
+backend skips the file protocol entirely and binds the evaluator
+in-process (or pipes a subprocess) — the file protocol exists only
+on the CAD side because nothing better is possible there.
+
+See [[file:documentation/alfe--specifications.org][documentation/alfe--specifications.org]] for the canonical
+specification. The implementation plan and individual issues live
+under [[file:../issues/open/][../issues/open/]] (look for =alfe-*.issue=).
+
+* Status
+
+In planning. The specification and ticket breakdown are in place; the
+=tools/alfe/= executable, the backend modules under =source/=, and
+the test corpus under =tests/= are to be implemented per the issues
+in =../issues/open/=.
+
+* Layout
+
+#+begin_example
+autolisp-front-end/
+├── README.org
+├── PLAN.md
+├── Makefile
+├── autolisp-front-end.asd
+├── documentation/
+│   └── alfe--specifications.org
+├── source/                 ; CL modules: backends, file-protocol driver,
+│                           ; CLI dispatch, runtime-bootstrap emission
+├── tools/alfe/             ; the alfe executable build
+│   └── source/
+├── scripts/                ; small helpers (build, smoke, parity checks)
+└── tests/                  ; FiveAM tests + scenario-driven parity tests
+#+end_example

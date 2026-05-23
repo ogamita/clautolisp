@@ -1,4 +1,4 @@
-SUBPROJECTS := autolisp-spec clautolisp autolisp-test
+SUBPROJECTS := autolisp-spec clautolisp autolisp-test autolisp-front-end
 CLAUTOLISP_CI_IMAGE ?= registry.gitlab.com/ogamita/clautolisp/clautolisp-ci:latest
 CLAUTOLISP_CI_DOCKERFILE ?= clautolisp/docker/Dockerfile
 CLAUTOLISP_CI_PLATFORM ?= linux/amd64
@@ -37,19 +37,25 @@ clautolisp:  ## Build the clautolisp subproject — runtime, executables, GUI dr
 autolisp-test:  ## Build the autolisp-test conformance harness subproject.
 	$(MAKE) -C autolisp-test all
 
+autolisp-front-end:  ## Build the autolisp-front-end (alfe) subproject — unified CLI front-end for clautolisp + CAD-resident REPLs.
+	$(MAKE) -C autolisp-front-end all
+
 documentation:  ## Rebuild every subproject's PDF documentation (org → LaTeX → PDF).
 	$(MAKE) -C autolisp-spec documentation
 	$(MAKE) -C clautolisp documentation
 	$(MAKE) -C autolisp-test documentation
+	$(MAKE) -C autolisp-front-end documentation
 
 test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpus.
 	$(MAKE) -C clautolisp test
 	$(MAKE) -C autolisp-test test
+	$(MAKE) -C autolisp-front-end test
 
 clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources).
 	$(MAKE) -C autolisp-spec clean-pdf
 	$(MAKE) -C clautolisp clean-pdf
 	$(MAKE) -C autolisp-test clean-pdf
+	$(MAKE) -C autolisp-front-end clean-pdf
 
 docker-build-clautolisp-ci:  ## Build the GitLab-CI Docker image used to run clautolisp tests.
 	docker build \
