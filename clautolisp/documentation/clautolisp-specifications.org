@@ -24,10 +24,27 @@ Operators" and in ~clautolisp/documentation/user-manual.org~
 
 * Synopsis
 #+BEGIN_EXAMPLE
-clautolisp [OPTIONS] FILE.lsp           # file mode
-clautolisp [OPTIONS] -x EXPRESSION      # expression mode
-clautolisp [OPTIONS]                    # interactive REPL
+clautolisp [OPTIONS] FILE.lsp                  # file mode (positional)
+clautolisp [OPTIONS] -l FILE.lsp               # file mode (explicit)
+clautolisp [OPTIONS] -x EXPRESSION             # expression mode
+clautolisp [OPTIONS]                           # interactive REPL
+clautolisp [OPTIONS] {-l FILE | -x EXPR} -i    # action followed by REPL
 #+END_EXAMPLE
+
+Short and long forms of every option are interchangeable; the
+short forms listed below match the convention shared with the
+sibling =alfe= front-end:
+
+| Short | Long              | Meaning                                                   |
+|-------+-------------------+-----------------------------------------------------------|
+| =-l=  | =--load=          | Load and evaluate the file at FILE.                       |
+| =-x=  | =--eval=          | Evaluate the EXPRESSION argument as a source snippet.     |
+| =-i=  | =--interactive=   | Enter the REPL after the file/expression action (if any). |
+| =-q=  | =--quiet=         | Suppress the REPL banner.                                 |
+| =-v=  | =--verbose=       | Print extra diagnostic information.                       |
+| =-d=  | =--debug=         | Print debug traces and CL backtraces on runtime errors.   |
+| =-h=  | =--help=          | Print the option summary and exit 0.                      |
+| =-V=  | =--version=       | Print the version and exit 0.                             |
 
 The argument vector seen by ~clautolisp~ is forwarded verbatim from
 the host shell. Both SBCL- and CCL-saved cores set
@@ -35,35 +52,51 @@ the host shell. Both SBCL- and CCL-saved cores set
 ~--help~, ~--version~ or other runtime flags.
 
 * Modes of Operation
-Exactly one of three modes is selected by the argument vector:
+Exactly one of three primary modes is selected by the argument
+vector. When ~-i~ / ~--interactive~ is combined with an action,
+the action runs first and the REPL takes over its evaluation
+context.
 
 ** File mode
-A single positional argument is interpreted as a path to an AutoLISP
-source file. The file is opened, decoded under the active reader
-options (see [[*Dialects]]), every form is read and evaluated in order
-against a fresh runtime session, and the value of the last form is
+A positional argument or ~-l FILE~ / ~--load FILE~ is interpreted
+as a path to an AutoLISP source file. The file is opened, decoded
+under the active reader options (see [[*Dialects]]), every form is
+read and evaluated in order, and the value of the last form is
 discarded. Side effects are visible.
 
-If the file cannot be opened, ~clautolisp~ exits with status ~2~ and
-writes a one-line diagnostic to standard error.
+If the file cannot be opened, ~clautolisp~ exits with status ~2~
+and writes a one-line diagnostic to standard error.
 
 ** Expression mode
-~-x EXPRESSION~ evaluates EXPRESSION instead of reading a file.
-EXPRESSION is treated as the entire input source: it may contain
-multiple top-level forms separated by whitespace; they are read and
-evaluated in order. The value of the last form is discarded. ~-x~
-takes exactly one argument; absence of the argument is a usage
-error.
+~-x EXPRESSION~ (also ~--eval EXPRESSION~) evaluates EXPRESSION
+instead of reading a file. EXPRESSION is treated as a source
+snippet: it may contain multiple top-level forms separated by
+whitespace; they are read and evaluated in order. The value of
+the last form is discarded. Each ~-x~ takes exactly one argument;
+absence of the argument is a usage error.
 
-If both ~-x EXPRESSION~ and a positional FILE are supplied, the last
-occurrence on the command line wins.
+** Action queue
+Each ~-l~ / ~--load~, ~-x~ / ~--eval~, and positional FILE
+contributes one entry to an *action queue* in the order it
+appears on the command line. ~clautolisp~ builds a single fresh
+evaluation context and runs every queued action against that
+context, in order, so side effects compose: an early ~-x~ may
+define a function that a later ~-l~ then calls. When several
+input-selecting options are supplied, *all* of them run — there
+is no last-wins resolution.
+
+If the queue is empty and ~-i~ is not given, ~clautolisp~ enters
+the REPL (the historical default with no args).
 
 ** Interactive REPL
-With no FILE and no ~-x~, ~clautolisp~ enters an interactive
-read-eval-print loop on standard input. The loop reads one balanced
-top-level form (multiple input lines may be consumed when the form
-spans line breaks), evaluates it, and prints the result with a
-prin1-style formatter on standard output.
+With no input-selecting option, ~clautolisp~ enters an interactive
+read-eval-print loop on standard input. With ~-i~ /
+~--interactive~, the REPL runs *after* the action queue (if any),
+inheriting the same evaluation context — so every definition made
+by the queued actions remains visible at the prompt. The loop
+reads one balanced top-level form (multiple input lines may be
+consumed when the form spans line breaks), evaluates it, and
+prints the result with a prin1-style formatter on standard output.
 
 The loop exits cleanly when:
 
@@ -112,22 +145,54 @@ to the runtime session. The descriptors are defined in
 ~clautolisp/autolisp-reader/source/dialect.lisp~.
 
 ** Input selection
-- ~-x EXPRESSION~ ::
-  Evaluate EXPRESSION instead of reading a file. Selects expression
-  mode (see above).
+- ~-l FILE~, ~--load FILE~ ::
+  Append "load FILE" to the action queue. Each occurrence adds
+  one entry; a positional FILE on the command line is treated the
+  same way.
+- ~-x EXPRESSION~, ~--eval EXPRESSION~ ::
+  Append "evaluate EXPRESSION" to the action queue. The two
+  spellings are exact synonyms. EXPRESSION may contain multiple
+  top-level forms separated by whitespace.
+- ~-i~, ~--interactive~ ::
+  Enter the REPL after the action queue completes (or
+  immediately, if the queue is empty). The REPL inherits the
+  queue's evaluation context, so every definition made by the
+  queued actions is visible at the prompt. Without ~-i~, a
+  non-empty queue runs to completion and the process exits.
 
 ** REPL behaviour
-- ~--quiet~ ::
-  Suppress the REPL banner. Has no effect outside interactive mode.
+- ~-q~, ~--quiet~ ::
+  Suppress the REPL banner. Has no effect outside interactive
+  mode. Short and long forms are equivalent.
+
+** Verbosity
+- ~-v~, ~--verbose~ ::
+  Enable extra diagnostic output. In REPL mode the banner gains a
+  second line listing the active host and any non-default knobs
+  (mock-input path, GUI command, trace flag). In file/expression
+  mode, a one-line summary is printed to standard error when the
+  action completes successfully. Off by default.
+- ~-d~, ~--debug~ ::
+  Enable debug-level diagnostics. Currently this adds the host
+  Lisp's backtrace to the AutoLISP backtrace printed on a runtime
+  error, so the underlying CL stack is available when debugging
+  builtins or the runtime itself. Off by default. ~--debug~ implies
+  ~--verbose~ for output purposes.
+
+These two flags are antinomic when combined: ~-v~ followed by ~-q~
+turns verbosity off; ~-q~ followed by ~-v~ leaves it on. Last
+occurrence wins. ~-d~ subsumes verbose-mode output regardless of
+order.
 
 ** Informational
-- ~--version~ ::
-  Print the version string on standard output and exit ~0~. Format:
-  ~clautolisp <MAJOR.MINOR.DEVELOP>~ where the version is taken from
-  ~clautolisp.tools.clautolisp:*version*~. The DEVELOP counter is
-  bumped on every change to clautolisp source code, so the running
-  binary's ~--version~ output is a stable identifier of the build.
-- ~--help~ ::
+- ~-V~, ~--version~ ::
+  Print the version string on standard output and exit ~0~.
+  Format: ~clautolisp <MAJOR.MINOR.DEVELOP>~ where the version is
+  taken from ~clautolisp.tools.clautolisp:*version*~. The DEVELOP
+  counter is bumped on every change to clautolisp source code, so
+  the running binary's ~--version~ output is a stable identifier
+  of the build.
+- ~-h~, ~--help~ ::
   Print the option summary on standard output and exit ~0~.
 
 ** Unknown options
