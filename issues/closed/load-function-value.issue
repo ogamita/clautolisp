@@ -1,0 +1,73 @@
+
+
+_$ (load "~/src/public/clautolisp/issues/open/load-function-value.lsp")
+FUNCTION-VALUE
+_$ (test)
+clautolisp: runtime error: UNDEFINED-FUNCTION: Undefined AutoLISP function GOOD-NAME.
+_$ 
+
+1- the runtime error should give a backtrace, which should indicate
+   also the embedded functions, ie. functions defined in other functon
+   scopes.
+
+2- why do we get an error on the code in load-function-value.lsp ? It
+   should load and run oK.
+
+
+## Resolution (2026-05-23, clautolisp 0.0.34)
+
+Both points addressed.
+
+### (1) Backtrace now includes embedded/nested-defun frames
+
+The previous report showed only the error message with no frames at
+all. After commit `3d0d2cd` ("render backtrace frames as AutoLISP
+source, hide atom noise"), every USUBR call — including functions
+defun'd inside another function's scope (e.g. DOIT defined inside
+DOIT-IN-OBJECT) — appears as its own frame. Frames render the form
+as AutoLISP source instead of CL-internal #S printing, and atomic
+:eval frames are folded away to keep the trace focused on real call
+sites.
+
+### (2) `(test)` now loads and runs OK
+
+Three root causes in `clautolisp/autolisp-runtime/source/api.lisp`,
+fixed together:
+
+- `eval-function-form` eagerly resolved its argument via
+  `resolve-autolisp-function-designator`, contradicting Autodesk's
+  documentation that `function` is identical to `quote` except for a
+  Visual-LISP compiler hint. It now returns `arg` unevaluated, so
+  resolution happens lazily at APPLY / MAPCAR / dispatch time
+  against the dynamic-scope chain that exists *then*.
+
+- `lookup-function` terminated at the first dynamic-frame binding,
+  even when that binding was non-callable (e.g. a `/`-local bound to
+  nil, or a parameter holding a symbol passed via `(function foo)`).
+  It now walks past non-callable shadows and falls back to the
+  namespace cell — which is what makes the portable HOF idiom
+  `(apply (function fn) (list arg))` work when `fn` is a parameter.
+
+- `set-function` wrote the namespace cell unconditionally; an inner
+  `(defun helper ...)` inside `(defun outer (/ helper) ...)` would
+  therefore corrupt the global instead of mutating the shadow. It
+  now mirrors `set-variable`: update the dynamic shadow if present,
+  else write through to the namespace cell.
+
+### Validation
+
+`load-function-value.lsp` now produces the expected nested result:
+
+    _$ (load ".../load-function-value.lsp")
+    FUNCTION-VALUE
+    _$ (test)
+    (((GOOD-NAME 42) (EXPECTED 42)) ((IN-OBJECT 33) (EXPECTED 33)))
+
+Full CL test suite green. New autolisp-test conformance tests added
+under `autolisp-test/tests/special-forms/function.lsp` cover all four
+scenarios (parameter-shadow resolution, lambda-via-parameter,
+late-resolution against a nested `defun` shadow, post-return global
+restoration). Two pre-existing CL tests
+(`autolisp-eval-function`, `autolisp-eval-signals-runtime-errors`)
+locked in the eager-resolution misbehaviour; they were rewritten to
+assert the spec-compliant late-resolution semantics.

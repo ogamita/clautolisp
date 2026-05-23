@@ -544,6 +544,15 @@
       (is (= 100 (autolisp-symbol-value outer))))))
 
 (test autolisp-eval-function
+  ;; `function` is identical to `quote` except for a compiler hint
+  ;; (autolisp-spec ch.3, "Special Form Entry: FUNCTION"; Autodesk
+  ;; AutoLISP Reference, function): evaluating it returns the symbol
+  ;; or lambda form *unevaluated*, so that downstream call sites
+  ;; (APPLY, MAPCAR, direct call dispatch) resolve the function
+  ;; against the dynamic scope chain at the point of call. That late
+  ;; resolution is what makes the portable HOF idiom
+  ;; `(apply (function fn) (list arg))` work when `fn` shadows or is
+  ;; redefined further down the call stack.
   (reset-autolisp-symbol-table)
   (let* ((function-symbol (intern-autolisp-symbol "FUNCTION"))
          (lambda-symbol (intern-autolisp-symbol "LAMBDA"))
@@ -551,17 +560,22 @@
          (arg (intern-autolisp-symbol "X")))
     (set-function plus-symbol
                   (make-autolisp-subr "+" (lambda (left right) (+ left right))))
-    (let ((named (autolisp-eval (list function-symbol plus-symbol)))
-          (anonymous (autolisp-eval
-                      (list function-symbol
-                            (list lambda-symbol
-                                  (list arg)
-                                  (list plus-symbol arg 1))))))
-      (is (typep named 'clautolisp.autolisp-runtime:autolisp-subr))
-      (is (typep anonymous 'clautolisp.autolisp-runtime:autolisp-usubr))
+    (let* ((lambda-form (list lambda-symbol
+                              (list arg)
+                              (list plus-symbol arg 1)))
+           (named     (autolisp-eval (list function-symbol plus-symbol)))
+           (anonymous (autolisp-eval (list function-symbol lambda-form))))
+      (is (eq plus-symbol named))
+      (is (eq lambda-form anonymous))
+      ;; Late resolution via APPLY: the symbol resolves to the
+      ;; namespace-cell binding, the lambda form is reified to a usubr.
+      (is (= 3
+             (call-autolisp-function
+              (resolve-autolisp-function-designator named)
+              1 2)))
       (is (= 8
-             (clautolisp.autolisp-runtime:call-autolisp-function
-              anonymous
+             (call-autolisp-function
+              (resolve-autolisp-function-designator anonymous)
               7))))))
 
 (test autolisp-eval-foreach
@@ -639,11 +653,17 @@
                               (autolisp-eval
                                (list (intern-autolisp-symbol "FUNCTION") 42)))
                             :invalid-function-designator)
-      (expect-runtime-error (lambda ()
-                              (autolisp-eval
-                               (list (intern-autolisp-symbol "FUNCTION")
-                                     (intern-autolisp-symbol "MISSING-FUNCTION"))))
-                            :undefined-function))))
+      ;; `(function missing-function)` does NOT eagerly resolve — per
+      ;; the spec (and Autodesk doc) `function` is identical to `quote`
+      ;; except for a compiler hint. Missing-function error surfaces
+      ;; only when the returned designator is actually applied.
+      (let ((missing (intern-autolisp-symbol "MISSING-FUNCTION")))
+        (is (eq missing
+                (autolisp-eval (list (intern-autolisp-symbol "FUNCTION")
+                                     missing))))
+        (expect-runtime-error
+         (lambda () (resolve-autolisp-function-designator missing))
+         :undefined-function)))))
 
 (test autolisp-read-from-string-returns-first-form
   (reset-autolisp-symbol-table)

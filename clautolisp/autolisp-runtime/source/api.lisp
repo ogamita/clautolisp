@@ -739,27 +739,67 @@ profiles between subordinate evaluations within a single session."
     value))
 
 (defun lookup-function (symbol &optional (context (current-evaluation-context)))
-  ;; Same scope chain as lookup-variable; surface the binding only
-  ;; when the bound value is a callable subr / usubr. A non-callable
-  ;; value (e.g. an integer left over from a SETQ) means "no function
-  ;; definition" in BricsCAD's dispatch — we model that by reporting
-  ;; the binding as unbound from the call's point of view, so the
-  ;; eval call-dispatch surfaces :undefined-function naturally.
-  (multiple-value-bind (value boundp origin)
-      (lookup-variable symbol context)
+  ;; Walk the dynamic-frame chain looking for a *callable* binding,
+  ;; falling back to the namespace cell. Non-callable shadows are
+  ;; transparent in function position: in a lisp-1 with `/`-locals,
+  ;; entering `(defun foo (/ helper) ...)` shadows HELPER to nil — yet
+  ;; a later `(setq helper (function bar))` followed by
+  ;; `(apply helper (list 1))` MUST be able to look past the nil
+  ;; shadow that the parameter list installed and resolve HELPER to
+  ;; the function it now holds. Equally, when a function value is
+  ;; passed through a parameter — the portable HOF idiom documented in
+  ;; autolisp-spec ch.3 (FUNCTION / APPLY) — the parameter binds the
+  ;; *symbol*, which is itself not callable; APPLY must then resolve
+  ;; the symbol against the surrounding scope, not stop at the
+  ;; parameter shadow. This rule yields the same result as BricsCAD's
+  ;; documented behaviour for symbol-via-parameter resolution.
+  (loop for frame = (evaluation-context-dynamic-frame context)
+                then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)
+        while frame
+        for binding = (gethash symbol
+                               (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings
+                                frame))
+        when (and binding
+                  (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding)
+                  (let ((value (clautolisp.autolisp-runtime.internal::dynamic-binding-value
+                                binding)))
+                    (or (typep value 'autolisp-subr)
+                        (typep value 'autolisp-usubr))))
+          do (return-from lookup-function
+               (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
+                       t
+                       :dynamic)))
+  (let* ((cell (namespace-binding-cell (evaluation-context-current-namespace context)
+                                       symbol
+                                       :createp nil))
+         (boundp (and cell (binding-cell-bound-p cell)))
+         (value  (and boundp (binding-cell-value cell))))
     (if (and boundp
              (or (typep value 'autolisp-subr)
                  (typep value 'autolisp-usubr)))
-        (values value t origin)
-        (values nil nil origin))))
+        (values value t :namespace)
+        (values nil nil :namespace))))
 
 (defun set-function (symbol function &optional (context (current-evaluation-context)))
-  (let ((cell (namespace-binding-cell (evaluation-context-current-namespace context) symbol)))
-    (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) function
-          (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell) t
-          (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition cell)
-          nil)
-    function))
+  ;; Mirror SET-VARIABLE: if a dynamic shadow for SYMBOL already
+  ;; exists (typically installed by a `/`-locals declaration), update
+  ;; the shadow; otherwise write through to the namespace cell. This
+  ;; keeps `defun` aligned with `setq` in a lisp-1: an inner
+  ;; `(defun helper ...)` inside `(defun outer (/ helper) ...)` should
+  ;; rebind the local, not stomp the surrounding/global definition.
+  (let ((binding (find-dynamic-binding
+                  symbol
+                  (evaluation-context-dynamic-frame context))))
+    (if binding
+        (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding) function
+              (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding) t)
+        (let ((cell (namespace-binding-cell
+                     (evaluation-context-current-namespace context) symbol)))
+          (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) function
+                (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell) t
+                (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition cell)
+                nil))))
+  function)
 
 (defun set-autolisp-symbol-value (symbol value)
   (set-variable symbol value))
@@ -1420,6 +1460,17 @@ decremented on exit; visible as leading spaces in trace output.")
           (rest definition)))
 
 (defun eval-function-form (arguments context)
+  ;; Autodesk specifies that `function` is identical to `quote` except
+  ;; for a compiler hint to Visual LISP (cf. autolisp-spec ch.3,
+  ;; "Special Form Entry: FUNCTION"). Returning the unevaluated
+  ;; argument preserves *late* resolution: a symbol arg is resolved
+  ;; against the dynamic-scope chain at the point APPLY runs (or
+  ;; lookup-function fires), not at the point the FUNCTION form
+  ;; itself was reached. That late resolution is what lets the
+  ;; portable HOF idiom — `(apply (function fn) (list arg))` — work
+  ;; when `fn` is a name defined further down the dynamic stack (e.g.
+  ;; via an inner `defun` inside the calling scope's `/`-locals).
+  (declare (ignore context))
   (unless (= (length arguments) 1)
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
@@ -1427,10 +1478,8 @@ decremented on exit; visible as leading spaces in trace output.")
      (length arguments)))
   (let ((designator (first arguments)))
     (cond
-      ((typep designator 'autolisp-symbol)
-       (resolve-autolisp-function-designator designator context))
-      ((lambda-form-p designator)
-       (resolve-autolisp-function-designator designator context))
+      ((typep designator 'autolisp-symbol) designator)
+      ((lambda-form-p designator) designator)
       (t
        (signal-autolisp-runtime-error
         :invalid-function-designator
