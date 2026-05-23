@@ -1303,38 +1303,97 @@ Special Form
 #+end_example
 
 *** Arguments and Values
-- `arg`: typically a function name or lambda expression
+- `arg`: a function name (symbol) or a lambda expression; *not* evaluated.
 
 *** Description
-Produces a functional object or function designator suitable for contexts that require a function rather than ordinary evaluation.
+Returns `arg` without evaluating it, as `quote` does. The form additionally signals intent to the Visual LISP byte-compiler, which uses the hint to link and optimise `arg` as if it were a built-in operator or `defun`-named function (Autodesk: "The function function is identical to the quote function, except it tells the Visual LISP compiler to link and optimize the argument as if it were a built-in function or defun.").
 
 *** Evaluation Rules
-`arg` is treated specially and not as an ordinary value-producing form.
+No subform evaluation occurs. The returned value is the unevaluated `arg`; resolution to a callable object — symbol lookup, lambda capture — happens at the point the value is *used* (typically inside `apply`, `mapcar`, `vl-some`, `vl-every`, or any other higher-order operator), not at the point the `function` form was reached.
 
 *** Return Values
-Returns a function-related object/designator appropriate to the active AutoLISP / Visual LISP semantics.
+- For a symbol `arg`: the symbol itself, dynamically resolved by the consumer.
+- For a `(lambda ...)` form: the lambda form, reified to a function object when first applied.
 
 *** Side Effects
-None specified.
+None.
 
 *** Exceptional Situations
-Invalid arguments are erroneous.
+- `arg` neither a symbol nor a lambda form: `:invalid-function-designator`.
+- An undefined function name only surfaces when the value is actually applied — `(function missing)` itself does not signal.
+
+*** Examples
+- `(setq v (function +)) (apply v '(1 2)) => 3`
+- `(setq lam (function (lambda (x) (* x x)))) (apply lam '(5)) => 25`
+- `(mapcar (function 1+) '(1 2 3)) => (2 3 4)`
+
+*** Portable Higher-Order-Function Idiom
+AutoLISP is nominally a Lisp-1 with dynamic scope (chapter 7), so a parameter bound to a function value should be callable as `(v arg)`. The two reference implementations diverge on this point:
+
+- AutoCAD 2022/2026 warns ("parameter used as a function") and may refuse to dispatch through a parameter binding.
+- BricsCAD V25/V26 silently ignores the parameter shadow at call position and resolves the name to the surrounding (global) binding — including when the caller passed a lambda anonymously, which then becomes unreachable.
+
+Code that must run on both vendors therefore treats functions as in a Lisp-2:
+
+| Goal                                                | Portable form                                |
+|-----------------------------------------------------+----------------------------------------------|
+| Define a named function                             | `(defun foo (x) ...)`                        |
+| Obtain the function value of a name                 | `(function foo)`                             |
+| Anonymous function value                            | `(function (lambda (x) ...))`                |
+| Call a function held in a *variable* (parameter…)   | `(apply v (list arg1 ...))`                  |
+| Pass a function as parameter                        | pass `(function f)`, apply via `apply`       |
+
+Avoid:
+#+begin_example
+(defun hof (object op)
+  (op object))            ; non-portable direct call through a parameter
+#+end_example
+
+Prefer:
+#+begin_example
+(defun hof (object op)
+  (apply op (list object)))
+#+end_example
+
+*** Compiled-Code Caveats
+Two subtle effects fall out of the compiler hint:
+
+1. Visual LISP may **link** the argument of `(function foo)` at compile time. After such compilation, a later `(defun foo ...)` from elsewhere does *not* necessarily replace the call site's binding. Example:
+   #+begin_example
+   ;; foobar.lsp
+   (defun foo () 'foo)
+   (defun bar () (foo))
+
+   ;; --- separately ---
+   (load (vlisp-compile 'st "foobar.lsp"))
+   (defun foo () 'new-foo)
+   (bar) ; => foo or new-foo, depending on compile-time linking
+   #+end_example
+   Programs that need to override `foo` at runtime should avoid early-bind hints in the compiled producer (use `(quote foo)` rather than `(function foo)` for symbols that are intended to be redefinable from a host), or use `apply` with a symbol passed at runtime.
+
+2. For lambda forms, Autodesk recommends `function` over `quote` so the byte-compiler can optimise the body once, rather than rebuilding it on every call. Source: Lee Mac, *The Apostrophe and the Quote Function*.
 
 *** Compatibility
-Autodesk classifies `function` as a special form.
+Autodesk classifies `function` as a special form. Both vendors document the "identical to quote with compiler hint" semantics. clautolisp implements the same late-resolution semantic: the form returns its unevaluated argument.
 
 *** Notes
-This facility is especially relevant in functional contexts such as `mapcar` and Visual LISP utilities. The full object model still needs tighter source coverage.
+- The portable HOF rule lives at the language level: it does not depend on whether the producer is interpreted, byte-compiled (FAS/VLX), or hosted by clautolisp.
+- `function` is widely used with `mapcar`, `vl-some`, `vl-every`, `vl-remove-if`, `vl-member-if`, and other Visual LISP higher-order utilities. Whether the argument is a symbol or a lambda, the consumer resolves it via the same dispatch path used by `apply`.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
+- clautolisp: implemented (eval-function-form returns arg unevaluated; apply/mapcar/vl-* honour late resolution against the dynamic scope chain).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
 
 *** Source Notes
 - [function (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-MAC-AutoLISP-Reference/files/GUID-CF7E5870-561F-42DB-B134-CCD41EF93A25.htm)
+- [apply (AutoLISP 2023)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0574ADA0-0950-456A-9330-A2518421536E.htm)
+- [Passing and calling functions (Autodesk Community)](https://forums.autodesk.com/t5/visual-lisp-autolisp-and-general/passing-and-calling-functions-higher-order-functions-support/td-p/2463166)
+- Lee Mac, *The Apostrophe and the Quote Function* (https://www.lee-mac.com/quote.html)
+- TN003 — *Valeurs fonctions en AutoLISP* (Pascal Bourguignon, 2026-05-22)
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
-- Status: documented, with some remaining model-level ambiguity.
+- Status: documented.
 
 #+LATEX: \newpage
 

@@ -12,9 +12,10 @@
   (format t "       clautolisp [options]              (interactive REPL)~%")
   (format t "Options:~%")
   (format t "  --dialect NAME     One of: strict (default), autocad-2026, bricscad-v26.~%")
-  (format t "  --strict           Shorthand for --dialect strict.~%")
+  (format t "  --strict           Shorthand for --dialect strict (portable AutoCAD ∩ BricsCAD).~%")
   (format t "  --autocad          Shorthand for --dialect autocad-2026.~%")
   (format t "  --bricscad         Shorthand for --dialect bricscad-v26.~%")
+  (format t "  --clautolisp       Synonym for --strict: the clautolisp default dialect.~%")
   (format t "  --host NAME        HAL backend: mock (default), null.~%")
   (format t "  --mock-input PATH  Attach the file at PATH as the MockHost prompt-stream.~%")
   (format t "                     Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
@@ -84,6 +85,15 @@
                 (setf dialect (autolisp-dialect-autocad-2026)))
                ((string= argument "--bricscad")
                 (setf dialect (autolisp-dialect-bricscad-v26)))
+               ;; --clautolisp is currently a synonym for --strict.
+               ;; Per issue function-value.issue the clautolisp dialect
+               ;; is the "permissive Lisp-1 with late HOF resolution"
+               ;; profile — the actual reader-level knobs (no AutoCAD
+               ;; or BricsCAD extensions, strict tokenisation) match
+               ;; the existing :strict descriptor, so we alias instead
+               ;; of introducing a duplicate dialect descriptor.
+               ((string= argument "--clautolisp")
+                (setf dialect (autolisp-dialect-strict)))
                ((string= argument "--host")
                 (unless arguments
                   (error "Missing argument after --host."))
