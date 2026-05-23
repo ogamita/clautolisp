@@ -1,0 +1,119 @@
+alfe-cli — argument parsing, action sequencing, exit codes
+==========================================================
+
+See also: alfe.plan, alfe-skeleton.issue, alfe-backend-interface.issue,
+spec sections "Sélection du moteur et matrice backend × système",
+"Variables d'environnement", "Phases de bootstrap", "Invariants
+testés".
+
+Context
+-------
+
+`alfe` exposes the same CLI surface as the historical `autolisp`
+bash wrapper. The CLI is the only thing users see across all
+backends; its semantic is fixed by the legacy wrapper and by the
+spec under `autolisp-front-end/documentation/alfe--specifications.org`.
+This ticket implements the parser, the action-sequence model, and
+the exit-code policy in `alfe.cli`.
+
+In scope
+--------
+
+  1. Argument grammar. Implement every option documented in the spec:
+
+       backend selection : --bricscad / --autocad / --clautolisp
+       mode              : --mode {auto,automation,batch}
+       backend variant   : --backend {attach,launch}
+       actions           : -l FILE  (load)
+                           -x EXPR  (evaluate)
+                           --main FN
+       interactive       : -i / --interactive
+       quit              : --quit (force engine shutdown after actions)
+       host              : --host {mock,null}     (clautolisp only)
+       dialect           : --dialect {strict,autocad-2026,
+                                       bricscad-v26,clautolisp}
+       encoding          : -e ENC  (load-encoding)
+                           -E ENC  (I/O encoding)
+       dwg               : --dwg FILE
+       epure             : --epure
+       bootstrap         : --bootstrap-phase {marker,core,log,full}
+       verbosity         : --verbose / --quiet / --debug
+       workdir           : --workdir DIR (overrides $AUTOLISP_WORKDIR)
+       timeout           : --timeout SECS
+       help/version      : --help / --version
+       dry-run           : --dry-run
+       no-init           : --no-init
+
+     Long options accept `--opt=VALUE` and `--opt VALUE`; short
+     options are single-letter with no concatenation. Unknown options
+     exit with code 2 and a structured error.
+
+  2. Backend defaulting. Implement the algorithm in the spec
+     ("Algorithme par défaut"): explicit backend wins; otherwise
+     OS- and env-based detection; fall back to `clautolisp` when no
+     CAD is found. The detection helpers live in
+     `alfe.backend.detect` (per-backend stubs delegate to the
+     backend's own `detect` entry — implemented per backend ticket).
+
+  3. Action plan. The CLI builds an *action plan* as a list of typed
+     records ((:load PATH ENCODING), (:eval STRING), (:main SYMBOL),
+     (:interactive), (:quit)) and passes it to the resolved
+     backend's `eval-plan` generic (defined in
+     alfe-backend-interface.issue). No backend-specific code lives
+     in alfe.cli.
+
+  4. Environment-variable mirroring. Every env var documented in
+     the spec resolves to a default that the CLI option overrides:
+     `AUTOLISP_WORKDIR`, `AUTOLISP_WAIT_SECS`, `AUTOLISP_MODE`,
+     `AUTOLISP_BACKEND`, `AUTOLISP_OS`, `AUTOLISP_BOOTSTRAP_PHASE`,
+     `AUTOLISP_REMOTE_IO_MODE`, `AUTOLISP_DWG`, `AUTOLISP_EPURE`,
+     `AUTOCAD_*`, `BRICSCAD_*`, …. The mapping table is exhaustive
+     and matches the spec; add a unit test for every entry.
+
+  5. Exit codes. Match the legacy contract:
+        0  success
+        1  user-script reported failure
+        2  CLI-usage error
+        3  no usable engine found (and explicit backend unavailable)
+        4  backend bootstrap failed
+        timeout / signal cases per spec.
+
+  6. `--help` and `--version`. `--help` lists every option grouped by
+     category, mirroring the spec's table layout. `--version` prints
+     `alfe MAJOR.MINOR.DEVELOP` (and nothing else) on stdout.
+
+  7. Interactive mode. `-i` opens a REPL: read full balanced forms
+     via `clautolisp.autolisp-reader` (already used by clautolisp's
+     own REPL) and pass each form as an `(:eval STRING)` action.
+     Multi-line form support is therefore inherited from the reader.
+
+Out of scope
+------------
+
+  - Backend implementations themselves.
+  - EPURE plugin discovery (the `--epure` flag is parsed and passed
+    through; backends implement the behaviour or ignore it per spec).
+
+Acceptance criteria
+-------------------
+
+  - Every option in the spec is parsed and routed; FiveAM coverage
+    exercises positive and negative cases for each.
+  - The action-plan record list is observable from the tests (a
+    `--dry-run` mode that prints the resolved plan and exits 0 is
+    a useful by-product — keep it).
+  - Unknown options, missing required arguments, and conflicting
+    options exit with the documented code and a structured message
+    on stderr.
+  - The legacy bash wrapper's invariant suite ("Invariants testés"
+    in the spec) passes against `alfe --clautolisp` once
+    alfe-backend-clautolisp.issue lands.
+
+Notes
+-----
+
+Reuse `clautolisp/tools/clautolisp/source/main.lisp` as a starting
+template for the option-loop shape (cond chain with --opt
+matchers); the option set is broader but the discipline is the
+same. Keep `alfe.cli:parse-arguments` pure (no I/O, no side
+effects) for testability.

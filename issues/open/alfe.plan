@@ -1,0 +1,146 @@
+                  alfe — autolisp-front-end implementation plan
+                  =============================================
+
+Goal
+----
+
+Rewrite the historical bash `autolisp-script` wrapper as a single
+Common Lisp executable named `alfe` (= AutoLISP Front-End), built on
+top of the `clautolisp/autolisp-*` modules. The new binary unifies
+three backends behind one CLI:
+
+  - `clautolisp` in-process  (default, no CAD required) ;
+  - `clautolisp` subprocess  (isolation; runs `clautolisp-sbcl` under
+                              `uiop:launch-program`) ;
+  - `bricscad` / `autocad`   (file-IPC protocol; the only IPC
+                              available inside a CAD-resident
+                              AutoLISP REPL).
+
+Specification lives in
+  `autolisp-front-end/documentation/alfe--specifications.org`,
+copied from the upstream `autolisp-script` spec and updated for the
+new architecture. Read that document first; this plan summarises the
+*work* needed to land it.
+
+Why the split between backends matters
+--------------------------------------
+
+The architectural fault line is: *can the backend offer IPC other
+than files?*
+
+  - clautolisp: yes — it is a Common Lisp process; alfe binds the
+    evaluator in-process, or pipes stdin/stdout if a separate Lisp
+    image is preferred. No file protocol is involved. The workdir is
+    used only for logs and `--dry-run` symmetry.
+
+  - BricsCAD / AutoCAD: no — the AutoLISP REPL lives behind a GUI,
+    AutoLISP has neither sockets nor pipes nor shared memory, and the
+    only side channel is the file system. The file-IPC protocol
+    (`stdin.txt` / `stdout.txt` / `stderr.txt` / `status.txt` /
+    `control.txt` / `heartbeat.txt` under `WORKDIR/protocol/`) is
+    therefore *forced*, not a design choice.
+
+Concretely:
+
+  - the runtime AutoLISP that lives inside the CAD process
+    (`autolisp-remote-io.lsp`) is kept *as-is* — it is the AutoLISP
+    code that talks to the file slots from the CAD side ;
+  - the *driver* of that protocol — the bash code in
+    `lib/autolisp-remote-io.sh` — is what gets rewritten in CL, as
+    part of alfe.
+
+Modules from clautolisp that alfe directly consumes
+---------------------------------------------------
+
+  autolisp-reader        source-form reading + completeness checks
+                         (for `--interactive` multi-line forms).
+  autolisp-runtime       evaluator, contexts, dialects, error
+                         conditions, source-positions.
+  autolisp-builtins-core printing, list, string, file, stream
+                         builtins available under every backend.
+  autolisp-host          HAL contract; alfe wires `MockHost` by
+                         default for `--clautolisp`.
+  autolisp-mock-host     concrete mock host used by `--host mock`.
+
+Phasing and dependencies
+------------------------
+
+  Phase 0 — Foundations
+    alfe-skeleton.issue              (ASDF, packages, version, build,
+                                       Make targets)
+    alfe-cli.issue                   (argv → action plan → exit code)
+    alfe-backend-interface.issue     (abstract backend protocol)
+
+  Phase 1 — clautolisp backend (end-to-end)
+    alfe-backend-clautolisp.issue    (in-process + subprocess)
+       blocked by Phase 0
+
+  Phase 2 — CAD backends share-the-protocol
+    alfe-file-protocol.issue         (atomic writes, status polling,
+                                       line-to-form reader, runtime
+                                       bootstrap emission)
+       blocked by Phase 0
+
+  Phase 3 — Per-CAD backends
+    alfe-backend-bricscad.issue      (macOS/Linux batch, Windows COM)
+    alfe-backend-autocad.issue       (Windows COM, accoreconsole batch)
+       blocked by Phase 2
+
+  Phase 4 — Quality & spec
+    alfe-conformance.issue           (scenario corpus, parity tests
+                                       against the bash wrapper, spec
+                                       maintenance)
+       runs continuously; meaningfully gated by Phase 1
+
+Migration path from the bash wrapper
+------------------------------------
+
+The bash wrapper stays in place during the transition; alfe lands
+backend-by-backend behind a feature flag (`$ALFE_BACKEND_OVERRIDE`)
+that lets early adopters opt in per backend. The `alfe-conformance`
+ticket includes parity tests: run the same scenario through the bash
+`autolisp` and the new `alfe`, assert identical stdout/stderr/status
+where the contract requires it. Divergences are either documented
+(e.g. messages that the bash version produced via shell artifacts and
+that alfe replaces with structured Lisp output) or fixed.
+
+The CAD-side AutoLISP runtime (`autolisp-remote-io.lsp`) is reused
+verbatim. Only the *driver* (the bash) is rewritten.
+
+V1 success criteria
+-------------------
+
+  - `alfe --version` returns the new version string and exits 0.
+  - `alfe --clautolisp -x '(+ 1 2)'` runs in-process and prints 3.
+  - `alfe --clautolisp -i` opens an interactive REPL with multi-line
+    forms (handled by `autolisp-reader`).
+  - On a machine with BricsCAD installed,
+      `alfe --bricscad -l SCRIPT.lsp`
+    drives the CAD via the file protocol and exits with the script's
+    final status.
+  - The autolisp-test conformance corpus runs green against
+    `alfe --clautolisp --host mock`.
+  - The alfe-conformance parity suite shows no regression against
+    the bash wrapper for the listed invariants of the spec.
+
+V2 / out of scope here
+----------------------
+
+  - GUI front-end for alfe (DCL or OpenDCL). Distinct subproject.
+  - `vlisp-compile` outside `--autocad --mode automation` on Windows.
+  - EPURE-style user-specific plugin features — keep the spec hook
+    but defer the plugin model.
+  - Native Windows COM-without-shell path. The Windows backends keep
+    their VBScript bridges in V1; a future ticket can move them to a
+    pure-CL COM client (`cffi` + `OAIDispatch`).
+
+References
+----------
+
+  - autolisp-front-end/documentation/alfe--specifications.org
+  - autolisp-front-end/README.org
+  - clautolisp/autolisp-runtime/source/api.lisp           (evaluator entry points)
+  - clautolisp/autolisp-reader/source/                    (form-completeness check)
+  - clautolisp/tools/clautolisp/source/main.lisp          (reference CLI to mirror)
+  - upstream (legacy bash):
+      /Users/pjb/works/sncf-reseau/src/outils-autolisp/autolisp-script/

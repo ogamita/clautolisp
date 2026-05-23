@@ -1,0 +1,108 @@
+alfe-conformance — scenario corpus, parity tests, spec maintenance
+==================================================================
+
+See also: alfe.plan, alfe-cli.issue, alfe-backend-clautolisp.issue,
+alfe-backend-bricscad.issue, alfe-backend-autocad.issue,
+spec section "Invariants testés".
+
+Context
+-------
+
+The legacy `autolisp-script` ships a body of invariants tested
+against real AutoCAD/BricsCAD on Windows plus the in-process
+clautolisp backend. alfe must reproduce those invariants and add
+its own, plus a *parity test* layer that compares alfe's behaviour
+to the bash wrapper for the same input. This issue is the backbone
+quality work that runs alongside every implementation ticket.
+
+In scope
+--------
+
+  1. Scenario corpus. Mirror the layout of
+     `clautolisp/autolisp-file-compat/scenarios/` :
+
+         autolisp-front-end/tests/scenarios/
+             cli/             argument parsing and exit codes
+             actions/         -x / -l / --main behaviour
+             interactive/     multi-line REPL forms
+             encoding/        UTF-8 / ISO-8859-1 / Windows-1252 × LF/CRLF/CR
+             file-protocol/   atomic-publish, status polling, line→form
+             bricscad/        bricscad-specific invariants
+             autocad/         autocad-specific invariants
+
+     Each scenario is a `.sexp` declaration (matches the existing
+     autolisp-file-compat shape): name, classification (`:portable`,
+     `:bricscad-only`, `:autocad-only`, `:clautolisp-only`), action
+     plan, expected stdout/stderr fragments, expected exit code,
+     optional setup-files. CAD-bound scenarios are tagged so the
+     runner skips them when no engine is available.
+
+  2. Runner. A small CL tool under
+     `autolisp-front-end/tools/run-alfe-conformance/` that walks
+     scenarios, invokes alfe with the declared CLI, captures
+     output/exit, and emits a `report.sexp` (and optional `report.json`)
+     consistent with `clautolisp/autolisp-file-compat`'s report format.
+     `make -C autolisp-front-end test` invokes this runner with the
+     mocked-backend subset by default.
+
+  3. Parity tests. A scenario classification `:parity` declares a
+     legacy `autolisp` invocation and an `alfe` invocation that
+     should produce equivalent stdout / stderr / exit code (modulo
+     documented divergences, captured per-scenario as a
+     `:tolerated-divergence` plist). When the legacy bash wrapper
+     is reachable on the host (env var `AUTOLISP_LEGACY=path/to/autolisp`),
+     the runner executes both sides and diffs.
+
+  4. Spec maintenance. The spec under
+     `autolisp-front-end/documentation/alfe--specifications.org`
+     stays the source of truth. Every implementation ticket must
+     update the corresponding spec section before merging. This
+     issue tracks the meta-rule: a `scripts/check-spec-coverage.lisp`
+     helper walks the spec for option names and asserts that every
+     CLI option mentioned is exercised by at least one scenario.
+
+  5. CI integration:
+       - Default lane: `make test` from the repo root runs the
+         mocked-backend subset of the conformance corpus ;
+       - Optional lane: `BRICSCAD_SMOKE=1` and `AUTOCAD_SMOKE=1`
+         opt-in the real-CAD scenarios; CI fails loudly when an
+         opt-in lane runs without the env var, so a real CAD host
+         in CI can be added later without touching the runner.
+       - Parity lane: `AUTOLISP_LEGACY=...` opt-in runs the parity
+         scenarios against a co-located bash wrapper checkout.
+
+  6. Builtin coverage tracker (out-of-scope-stub). A sibling of
+     `clautolisp/tools/builtins-coverage/` ; sketches an alfe-side
+     view of "which CLI options + which env vars have at least one
+     scenario covering them". Optional; implement only if the
+     manual map starts to drift.
+
+Out of scope
+------------
+
+  - Adding tests for behaviour that the implementation tickets
+    haven't shipped yet. This issue *runs alongside* the other
+    tickets and absorbs scenarios as they become exercisable.
+  - Performance benchmarks. Worth a separate issue if performance
+    parity with the bash wrapper becomes contentious.
+
+Acceptance criteria
+-------------------
+
+  - The runner produces a green report on the mocked-backend
+    subset, on every commit, with no flake under load.
+  - Every option in the spec is referenced by at least one scenario
+    (asserted by `scripts/check-spec-coverage.lisp`).
+  - At least one parity scenario per action class (`-x`, `-l`,
+    `--main`, `-i`) passes against a current legacy bash checkout.
+  - `make -C autolisp-front-end test` invokes the runner and surfaces
+    failures with file:line:scenario-name in the CI log.
+
+Notes
+-----
+
+Treat this issue as a backbone: every other alfe-* ticket should
+land at least one scenario and one spec update as part of its
+acceptance criteria, even if it duplicates a CL unit test inside
+that ticket's own test file. Belt-and-braces is fine; the spec
+coverage check is what catches drift.

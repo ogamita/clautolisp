@@ -1,0 +1,113 @@
+alfe-backend-autocad — AutoCAD driver (Windows COM, accoreconsole)
+==================================================================
+
+See also: alfe.plan, alfe-backend-interface.issue,
+alfe-file-protocol.issue, spec section "Backend autocad".
+
+Context
+-------
+
+AutoCAD is Windows-only and offers two execution paths:
+
+  - the full GUI via the `AutoCAD.Application` COM ProgID (required
+    for `vlisp-compile` and any DCL/Visual-LISP feature), and
+  - the headless `accoreconsole.exe` Core Console (faster, no GUI,
+    but no `vlisp-compile`).
+
+Both paths drive the AutoLISP REPL via the file-IPC protocol from
+`alfe-file-protocol.issue`.
+
+In scope
+--------
+
+  1. Platform gating. On macOS / Linux, `alfe --autocad` exits with
+     code 3 and a structured "AutoCAD not distributed for this OS"
+     message. No discovery attempted.
+
+  2. Binary discovery (`alfe.backend.autocad:detect`):
+       - `$AUTOCAD_EXE` → `/c/Program Files/Autodesk/AutoCAD\ */acad.exe`
+         (descending) → `/c/Program Files/Autodesk/AutoCAD\ LT\ */acadlt.exe`
+         (descending) ;
+       - `$AUTOCAD_ACCORECONSOLE` →
+         `/c/Program Files/Autodesk/*/accoreconsole.exe` ;
+       - the detector returns *which* binary is available so the
+         backend chooses between automation and batch.
+
+  3. Automation mode (`alfe.backend.autocad.automation`):
+       - Emit `bridge-autocad.vbs` matching the spec verbatim,
+         including: `WaitQuiescent` polling on `app.GetAcadState`,
+         explicit `Documents.Add` when no `ActiveDocument`, EPURE
+         profile activation, `_SCRIPT` invocation for EPURE setup,
+         `app.Quit` gated on `created And statusReadyFlag`, the
+         `ATTACHED=`/`CREATED=` stdout protocol.
+       - Map `AUTOCAD_COM_MODE` (auto/attach/launch/off) to the
+         VBScript inputs.
+       - Path-escaping helper (`Replace(..., "\", "/")` inside VBS
+         for `(load …)` arguments).
+       - VBScript debug log gated by `AUTOLISP_DEBUG` writing to
+         `WORKDIR/debug.log` with `[VBS]` lines.
+       - Status-wait policy: do NOT call `app.Quit` if the runtime
+         hasn't published its final status — `kill_autocad_com_process`
+         (legacy) becomes a CL-side helper that uses `taskkill /PID`
+         on Windows.
+
+  3. Batch mode (`alfe.backend.autocad.batch`):
+       - Selected by `--mode batch` or `AUTOCAD_COM_MODE=off`.
+       - Requires a DWG (`--dwg` / `$AUTOLISP_DWG`) and a `.scr`
+         (the LSP transformed to a script).
+       - Command:
+            "<acc>" /i "<dwg>" /s "<SCRFILE>"
+       - `vlisp-compile` errors out cleanly under batch mode with a
+         documented diagnostic.
+
+  4. EPURE gating. `--epure` under `--autocad` requires
+     `AUTOCAD_EXE` (the full GUI binary); accoreconsole is excluded
+     (no profile support). The profile activation
+     (`app.Preferences.Profiles.ActiveProfile = "Epure"`) and the
+     `_SCRIPT` invocation are wired in the VBScript template.
+
+  5. VBS quoting helper. Implement the `escape_vbs_string` helper
+     from the spec (double internal quotes; do not touch
+     backslashes). Tests cover edge cases (embedded quotes, mixed
+     slashes, UTF-8).
+
+  6. Tests:
+       - VBScript emission produces a file byte-identical to the
+         documented template (modulo placeholder substitution),
+         under each `AUTOCAD_COM_MODE` and with/without EPURE ;
+       - parses ATTACHED/CREATED lines correctly ;
+       - mocked-engine end-to-end via the file-protocol scaffold ;
+       - real-AutoCAD smoke tests guarded by `AUTOCAD_SMOKE=1`.
+
+Out of scope
+------------
+
+  - `vlisp-compile` reimplementation. Stays an
+    `--autocad --mode automation` Windows-only feature; alfe just
+    routes the call.
+  - Pure-CL COM client (no VBS hop). A future ticket can move the
+    bridge to `cffi` + `OAIDispatch`; for V1 keep VBScript.
+
+Acceptance criteria
+-------------------
+
+  - `alfe --autocad` on macOS or Linux exits 3 with a clear
+    "not distributed" message.
+  - Emitted `bridge-autocad.vbs` matches the spec template
+    byte-for-byte (after placeholder substitution); a fixture-based
+    test enforces this.
+  - `alfe --autocad --mode batch -l fixture.lsp` runs end-to-end
+    under accoreconsole on Windows (opt-in test).
+  - `alfe --autocad -x '(vlisp-compile (quote lsa)
+    "src-vlx/schmsplus.prj")'` succeeds when run on a Windows host
+    with AutoCAD installed.
+
+Notes
+-----
+
+The AutoCAD VBScript bridge is the most fragile piece of the legacy
+wrapper; the spec captures the hard-won robustness (`WaitQuiescent`,
+status-conditional `Quit`, debug logging). Preserve every detail —
+deviations show up as flaky CI months later. When in doubt, copy
+the VBScript template verbatim into the CL emitter and parameterise
+it only at the named placeholders.

@@ -1,0 +1,123 @@
+alfe-backend-bricscad — BricsCAD driver (macOS / Linux / Windows)
+=================================================================
+
+See also: alfe.plan, alfe-backend-interface.issue,
+alfe-file-protocol.issue, spec section "Backend bricscad".
+
+Context
+-------
+
+The BricsCAD backend launches a real BricsCAD instance and drives
+its AutoLISP REPL via the file-IPC protocol from
+`alfe-file-protocol.issue`. The bring-up specifics are
+platform-dependent and were the bulk of the legacy bash wrapper.
+
+In scope
+--------
+
+  1. Binary discovery (`alfe.backend.bricscad:detect`):
+       - macOS: `$BRICSCAD_EXE` → first `/Applications/BricsCAD*.app`
+         → `$app/Contents/MacOS/bricscad` ;
+       - Linux: `$BRICSCAD_EXE` → first `bricscad` on `$PATH` →
+         `/opt/bricsys/bricscad/V*/bricscad` ;
+       - Windows: `$BRICSCAD_EXE` →
+         `/c/Program Files*/Bricsys/*/bricscad.exe` (lexicographic
+         descending) ;
+       - signal `backend-not-available` with the searched paths in
+         the condition plist when none of those match.
+
+  2. Template DWG/DWT discovery (macOS specifics from the spec):
+     `$AUTOLISP_BRICSCAD_TEMPLATE` → `--dwg FILE` / `$AUTOLISP_DWG`
+     → `~/Library/Application Support/Bricsys/.../Default-mm.dwt`
+     → `Default-m.dwt` → system-wide fallbacks. Implemented as a
+     simple ordered search.
+
+  3. Batch mode (`alfe.backend.bricscad.batch`):
+       - Default on macOS and Linux when a CLI binary is found.
+       - Emit `WORKDIR/run.scr` with the documented minimal content
+         (`(load "<RUNLSPFILE>") ._FILEDIA 0 ._QUIT _N` on macOS; the
+         last two lines are guard-rails) ;
+       - Launch:
+            <bricscad> <template> [-P <BRICSCAD_MACOS_PROFILE>]
+                       -B <WORKDIR/run.scr>
+       - PID tracking via `ps -axo pid=,command=` (macOS) or the
+         standard child-PID from `uiop:launch-program` (Linux);
+         survival check with `kill -0`.
+       - Exit handling: poll status.txt up to
+         `AUTOLISP_BRICSCAD_BATCH_EXIT_TIMEOUT_SECS` (default 10);
+         on macOS, send SIGTERM after the timeout, SIGKILL 1 s
+         later (BricsCAD on macOS does not exit on `_QUIT _Y` in
+         all configurations — spec-documented quirk).
+
+  4. Automation mode (macOS) (`alfe.backend.bricscad.automation.macos`):
+       - Selected by `--mode automation` or when no CLI binary is
+         found.
+       - Emit and execute the documented AppleScript
+         (`resetBricscadUI` + `(load …)` injection) via
+         `uiop:run-program "osascript"`.
+       - Honour the AppleScript tuning env vars
+         (`AUTOLISP_MACOS_BRICSCAD_RESET_ESCAPES`, etc.).
+       - Detect a running instance via the documented
+         `tell application "System Events"` snippet.
+
+  5. Automation mode (Windows) (`alfe.backend.bricscad.automation.win`):
+       - Implements the COM bridge by emitting `bridge-bricscad.vbs`
+         with the exact ProgID and `SendCommand` flow from the spec,
+         launches it via `cscript //nologo`.
+       - Maps `BRICSCAD_COM_MODE` (auto/attach/launch/off) to the
+         VBScript inputs; honours `--mode` override.
+       - Parses the `ATTACHED=…` / `CREATED=…` lines from VBScript
+         stdout to decide cleanup.
+       - Cleanup on attached vs created: never kill an attached
+         instance; kill created instance if it does not exit on
+         `app.Quit`.
+
+  6. Linux automation mode is *deferred*. The spec notes no
+     historical implementation exists; document this as a follow-up
+     ticket once a real BricsCAD-on-Linux test environment is
+     available.
+
+  7. EPURE gating. When `--epure` is requested under
+     `--bricscad`, force `BRICSCAD_COM_MODE=off` (batch mode), and
+     execute the documented EPURE setup script before the main load.
+
+  8. Tests:
+       - `--dry-run` parity against the bash wrapper for the
+         emitted command line (cf. `alfe-conformance.issue`) ;
+       - mock-BricsCAD end-to-end (a Lisp thread that emulates the
+         AutoLISP remote-io runtime against the same file slots)
+         under the `file-protocol` test scaffold ;
+       - real-BricsCAD smoke tests guarded by a `BRICSCAD_SMOKE=1`
+         opt-in env var so CI does not require a CAD install.
+
+Out of scope
+------------
+
+  - Linux automation (deferred).
+  - vlisp-compile under BricsCAD (the spec confirms it stays on
+    AutoCAD automation only).
+  - DCL dialog rendering inside a BricsCAD session (DCL work lives
+    in clautolisp/tools/clautolisp-gui-qt).
+
+Acceptance criteria
+-------------------
+
+  - `alfe --bricscad --mode batch -l fixture.lsp` runs end-to-end
+    on macOS or Windows with a real BricsCAD instance available
+    (opt-in test).
+  - macOS automation injection succeeds when the system grants
+    Accessibility permission.
+  - Windows COM bridge emits a `.vbs` byte-identical (after
+    normalising path substitutions) to the documented template;
+    parses ATTACHED/CREATED lines correctly.
+  - All non-CAD-dependent tests (mocked engine, dry-run parity)
+    pass in CI without a BricsCAD install.
+
+Notes
+-----
+
+The legacy bash references in the spec (`autolisp:NNNN-NNNN`) point
+at the bash implementation for each function; treat them as the
+authoritative behaviour spec when the prose is ambiguous. The
+goal here is not "rewrite line for line" but "preserve the
+observable contract".

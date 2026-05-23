@@ -1,0 +1,119 @@
+alfe-backend-clautolisp — in-process and subprocess clautolisp backends
+=======================================================================
+
+See also: alfe.plan, alfe-backend-interface.issue, alfe-cli.issue,
+spec section "Backend clautolisp".
+
+Context
+-------
+
+The clautolisp backend is the simplest of the three because
+clautolisp itself is a Common Lisp process: alfe can either *be*
+that process (in-process, default) or *spawn* it as a subprocess
+(`uiop:launch-program`) and talk to it via stdin/stdout pipes. Both
+paths skip the file-IPC protocol entirely — that protocol exists
+only because the CAD backends have no alternative.
+
+This issue lands the clautolisp backend. With it, V1 success
+criterion `alfe --clautolisp -x '(+ 1 2)'` works end-to-end.
+
+In scope
+--------
+
+  1. In-process backend (`alfe.backend.clautolisp.direct`):
+       - Implements every generic from `alfe-backend-interface.issue`.
+       - `start-engine` calls
+         `clautolisp.autolisp-runtime:make-default-runtime-context`
+         with the requested dialect, installs the core builtins via
+         `clautolisp.autolisp-builtins-core:install-core-builtins`,
+         attaches the HAL backend (defaults to MockHost when
+         `--host mock`, NullHost when `--host null`).
+       - `eval-plan` walks the action records and dispatches:
+           (:load PATH ENC)  → run-autolisp-file
+           (:eval EXPR)      → run-autolisp-string
+           (:main SYMBOL)    → look up + call
+           (:interactive)    → REPL loop using autolisp-reader for
+                                form-completeness; multi-line forms
+                                join until balanced.
+       - Output capture: bind `*standard-output*` / `*error-output*`
+         around the eval so that, in addition to writing to the live
+         terminal streams, the same text is mirrored into
+         `WORKDIR/output.txt` and `WORKDIR/errors.txt` for diagnostic
+         symmetry with the CAD backends (the spec already documents
+         this).
+       - `request-control INTERRUPT` flips a special variable that
+         user code can consult; `SHUTDOWN` triggers graceful exit
+         from the REPL loop.
+
+  2. Subprocess backend (`alfe.backend.clautolisp.subprocess`):
+       - `start-engine` spawns `clautolisp-sbcl --quiet --dialect
+         <D>` via `uiop:launch-program`, gets stdin/stdout/stderr
+         handles.
+       - `eval-plan` writes the same action plan to the subprocess
+         stdin, line by line, using clautolisp's existing REPL
+         banner conventions; tags each form with a sentinel so
+         output framing is unambiguous on read-back.
+       - `read-output` drains the subprocess stdout / stderr.
+       - `shutdown` writes a clean exit sentinel and waits up to
+         `--timeout` seconds for the process; SIGTERM/SIGKILL escape
+         hatch on timeout.
+       - Useful when the host Lisp differs from the wanted dialect
+         host, or when one wants alfe and clautolisp to live in
+         separate address spaces (e.g. when alfe drives multiple
+         clautolisp instances concurrently — out of scope for V1 but
+         the design should not preclude it).
+
+  3. Backend selection in the CLI:
+       - `--clautolisp` selects the *direct* variant by default.
+       - `--clautolisp --backend subprocess` selects the subprocess
+         variant.
+       - `alfe.backend.detect` for clautolisp always succeeds (no
+         external dependency); the detector merely returns the
+         configured variant.
+
+  4. Encoding. `-e` (load encoding) and `-E` (I/O encoding) are
+     plumbed via `babel` / Lisp external-formats; tests cover
+     `:utf-8`, `:iso-8859-1`, `:windows-1252` with LF / CRLF / CR
+     line endings (mirrors the spec's "Invariants testés").
+
+  5. Tests under `tests/backend-clautolisp-tests.lisp`:
+       - one-shot `-x '(+ 1 2)'` returns 3, exit 0 ;
+       - `-l fixture.lsp` evaluates side-effects ;
+       - `--main C:MAIN` calls the entry point ;
+       - `-i` accepts a multi-line form (the canonical
+         `(loop (print (eval (read))))` shape, terminated by a
+         sentinel) ;
+       - encoding round-trips for the three encodings × three line
+         endings.
+
+Out of scope
+------------
+
+  - HAL backends beyond `MockHost` and `NullHost`. Real CAD HAL
+    bridges are tracked separately.
+  - `vlisp-compile`. Spec confirms it stays an
+    `--autocad --mode automation` Windows-only feature.
+
+Acceptance criteria
+-------------------
+
+  - `alfe --clautolisp -x '(+ 1 2)'` prints 3 and exits 0.
+  - `alfe --clautolisp -l fixture.lsp` runs the file and exits with
+    the status it set.
+  - `alfe --clautolisp --backend subprocess -x '(+ 1 2)'` produces
+    identical stdout/stderr to the direct variant.
+  - `alfe --clautolisp -i` opens a working REPL with multi-line
+    form support inherited from autolisp-reader.
+  - The autolisp-test conformance corpus runs green against
+    `alfe --clautolisp --host mock`.
+  - FiveAM coverage for the encoding matrix + the four action
+    kinds passes.
+
+Notes
+-----
+
+The direct backend is essentially "alfe's CLI driving the same APIs
+that `tools/clautolisp/source/main.lisp` already drives". It is OK
+to refactor shared code into `clautolisp` or a new common module if
+the duplication becomes painful — but resist doing so pre-emptively;
+the two CLIs may diverge naturally in their option sets.
