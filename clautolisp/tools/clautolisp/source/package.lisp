@@ -23,6 +23,7 @@
                 #:source-span-start-line)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-eval-progn
+                #:autolisp-load-file-in-context
                 #:autolisp-runtime-error
                 #:autolisp-runtime-error-code
                 #:autolisp-runtime-error-message
