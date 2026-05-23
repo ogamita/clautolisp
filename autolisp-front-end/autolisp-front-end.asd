@@ -68,13 +68,13 @@
   ((:file "source/backend-clautolisp")))
 
 (asdf:defsystem "autolisp-front-end/file-protocol"
-  :description "alfe file-IPC protocol driver shared by the CAD backends (Phase 2, stub)."
+  :description "alfe file-IPC protocol driver shared by the CAD backends."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
   :depends-on ("autolisp-front-end/core")
   :serial t
   :components
-  ((:file "source/file-protocol-stub")))
+  ((:file "source/file-protocol")))
 
 (asdf:defsystem "autolisp-front-end/backend-bricscad"
   :description "alfe backend driving BricsCAD via the file-IPC protocol (Phase 3, stub)."
@@ -111,7 +111,7 @@
   :description "FiveAM tests for the alfe front-end (smoke + per-ticket suites)."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
-  :depends-on ("autolisp-front-end" "fiveam")
+  :depends-on ("autolisp-front-end" "fiveam" "bordeaux-threads")
   :serial t
   :components
   ((:file "tests/package")
@@ -120,6 +120,7 @@
    (:file "tests/backend-tests")
    (:file "tests/cli-tests")
    (:file "tests/backend-clautolisp-tests")
+   (:file "tests/file-protocol-tests")
    (:file "tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
