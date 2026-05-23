@@ -1,0 +1,127 @@
+See function-value--tn003.md
+
+## clautolisp-test:
+
+Add to clautolisp-test some tests to validate those semantic points
+about functions and values, and to detect extensions.
+
+
+## clautolisp:
+
+- ~--strict~
+  :: Accept only the idioms that work both on bricscad and autocad.
+     Emit an error message for the other forms (ie. pure lisp-1
+     function calls and variable use like in scheme).
+   
+- ~--autocad~
+  :: Accept only the idioms that work autocad.
+     Emit a warning for the other forms (ie. bricscad extensions,
+     clautolisp extensions, pure lisp-1 function calls and variable
+     use like in scheme).
+     
+- ~--bricscad~
+  :: Accept only the idioms that work bricscad
+     Emit a warning for the other forms (ie. autocad extensions,
+     clautolisp extensions, pure lisp-1 function calls and variable
+     use like in scheme).
+
+- ~--clautolisp~
+  :: Accept only the idioms specified for clautolisp.
+     Emit a warning for the other forms (ie. autocad extensions,
+     clautolisp extensions, pure lisp-1 function calls and variable
+     use like in scheme).
+
+For clautolisp in ~--clautolisp~ mode, we have to specify pure
+lisp-1 style, and apply accepts both function objects or symbols bound
+to function objects, so all forms are valid, and there's no other form
+to warn.
+
+
+## Resolution (2026-05-23, clautolisp 0.0.34)
+
+### clautolisp-test — DONE
+
+Four new entries added to
+`autolisp-test/tests/special-forms/function.lsp`:
+
+- `function-symbol-resolves-through-parameter-shadow`
+- `function-of-lambda-via-parameter`
+- `function-late-resolution-picks-up-shadowed-defun`
+- `function-after-outer-returns-restores-global`
+
+These cover the TN003 portable-HOF idiom and the late-resolution
+semantics that fall out of the load-function-value fix. They share
+the `(operator . "FUNCTION") (area . "special-forms")
+(profile . strict)` metadata so they run on every profile.
+
+### clautolisp CLI — DONE (minimal viable)
+
+`--strict`, `--autocad`, `--bricscad` already existed.
+`--clautolisp` is added as an explicit synonym for `--strict`. The
+help line for `--strict` now explains it is the AutoCAD ∩ BricsCAD
+portable surface.
+
+Static enforcement of dialect-specific *warnings* on non-portable
+idioms (e.g. direct lisp-1 calls through parameters) is **not**
+implemented in this round — it requires a per-call-site analyser
+that has no scaffolding yet. The CLI surface is in place so that
+when the analyser lands, only the per-dialect warning policy needs
+to be wired up.
+
+### autolisp-spec — DONE
+
+`autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org`
+§"Special Form Entry: FUNCTION" rewritten to:
+
+- state the `function` ≡ `quote` semantic explicitly (Autodesk text
+  cited),
+- document the portable HOF idiom as a table (function value of a
+  name, anonymous lambda, call via apply, pass-through parameter),
+- add a "Compiled-Code Caveats" subsection covering the
+  `(function foo)` vs `(quote foo)` compile-time-link distinction
+  and the foobar.lsp example,
+- link TN003, Lee Mac's *The Apostrophe and the Quote Function*,
+  and the Autodesk community thread on HOFs.
+
+The companion document `function-value--tn003.md` remains as the
+French-language technical note backing this entry.
+
+### Out of scope / explicit follow-ups
+
+- Per-dialect *warnings* on direct lisp-1 parameter calls and other
+  non-portable forms. Needs a static analyser at the call dispatch
+  level.
+- A dedicated `:clautolisp` dialect descriptor, distinct from
+  `:strict`. Today they would have identical knobs; introducing one
+  is deferred until something behaviourally diverges.
+
+
+## autolisp-spec:
+
+Check the specification about function calls, assignment of functions
+to variables, and passing functions and symbols bound to function as
+parameters to HOF, as well as dynamic scope, and shadowing by
+parameters and local variables. Add notes on the divergent
+implementations (autocad, bricscad) and their (documented)
+intersection.
+Note clautolisp extensions to implement pure lisp-1 semantics
+(scheme).
+
+Note also the caveats about compiled code:
+- optimisation by the use of (function foo) vs. (quote foo),
+- optimisation by compilation-time binding vs. runtime binding of
+  functions.
+
+--- foobar.lsp ---
+(defun foo ()
+  'foo)
+(defun bar ()
+  (foo))
+
+---
+(load (compile-file "foobar.lsp"))
+(defun foo ()
+  'new-foo)
+(bar) ; --> foo or new-foo depending on compile-time optimisation.
+
+
