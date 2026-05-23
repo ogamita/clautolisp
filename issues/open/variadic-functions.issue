@@ -1,0 +1,73 @@
+This issue defines an extension to the autolisp language.
+
+We want a way to define variadic Lisp functions, like princ or load in
+autolisp.
+
+Because the fact that these functions are variadic prevents us from
+overriding them cleanly (we have to choose one arity, and calls with
+other arities become errors).
+
+We propose to use & to introduce the parameter that collects all
+remaining arguments.
+
+Syntax:
+
+So the syntax of the lambda-list would be:
+
+lambda-list ::= { parameter-name } [ '&' rest-parameter-name ] [ '/' { local-name } ] .
+parameter-name ::= symbol .
+rest-parameter-name ::= parameter-name .
+local-name ::= symbol .
+
+'&' and '/' stand for the symbols & and / themselves.
+
+Semantics:
+
+When calling a function, the argument number must be at least the
+number of mandatory parameter in the list ({ parameter-name }).
+They're bound in order. The remaining arguments, when their number is
+bigger, are gathered in a list which is bound to the parameter named
+by rest-parameter-name.  The local-names define the local variables as
+usual.
+
+If there are fewer parameters than the number of parameter-name, then
+an error missing arguments is signaled.
+
+There is essentially no upper bound to the number of argument for
+functions with & in their lambda-list.
+
+
+Example:
+
+princ has no mandatory parameters, only optional parameters.
+
+<pre>
+(defun funcall (fun & arguments) 
+  (apply fun arguments))
+
+(setq original-princ (function princ))
+(defun princ (& arguments / value fileHandle)
+  (if (null arguments)
+      (funcall original-princ)
+      (progn
+        (setq value (car arguments))
+        (setq fileHandle (mymodule-output))
+        (if (cdr arguments)
+            (setq fileHandle (cadr arguments)))
+        (mymodule-write fileHandle value))))
+</pre>
+
+
+This extension is materialised in the defun operator, so the defun
+special operator section of the autolisp-spec will have to be
+augmented by an extension subsection to describe it. Currently, only
+clautolisp implements this extension (when not in --strict mode).
+
+A feature request has been posted at Bricsys support, while AutoDesk
+prevents us to post such a feature request for lack of priviledges.
+
+
+
+
+
+
