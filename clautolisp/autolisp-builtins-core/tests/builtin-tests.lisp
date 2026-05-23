@@ -707,16 +707,24 @@
       (autolisp-termination (condition)
         (is (eq :exit (autolisp-termination-kind condition)))
         (is (= 7 (autolisp-errno)))))
-    (handler-case
-        (progn
-          (call-autolisp-function apply-fn
-                                  (intern-autolisp-symbol "VL-EXIT-WITH-VALUE")
-                                  (list 42))
-          (is nil))
-      (autolisp-namespace-exit (condition)
-        (is (eq :value (autolisp-namespace-exit-kind condition)))
-        (is (= 42 (autolisp-namespace-exit-value condition)))
-        (is (= 7 (autolisp-errno)))))))
+    (let ((value (call-autolisp-function
+                  apply-fn
+                  (intern-autolisp-symbol "VL-EXIT-WITH-VALUE")
+                  (list 42))))
+      (is (= 42 value))
+      (is (= 0 (autolisp-errno)))
+      (is (null (call-autolisp-function error-p-fn value))))
+    (let ((failure (call-autolisp-function
+                    apply-fn
+                    (intern-autolisp-symbol "VL-EXIT-WITH-ERROR")
+                    (list (make-autolisp-string "boom")))))
+      (is (= 1 (autolisp-errno)))
+      (is (string= "T"
+                   (autolisp-symbol-name
+                    (call-autolisp-function error-p-fn failure))))
+      (let ((message (call-autolisp-function message-fn failure)))
+        (is (typep message 'autolisp-string))
+        (is (search "boom" (autolisp-string-value message)))))))
 
 (test builtin-mapcar
   (reset-autolisp-symbol-table)
