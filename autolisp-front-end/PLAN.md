@@ -17,13 +17,28 @@ on top of the `clautolisp/autolisp-*` modules, producing a single
 
 ## Current status
 
-- Subproject skeleton present (this file, `README.org`, `Makefile`,
-  `documentation/alfe--specifications.org`, empty `source/`,
-  `tools/alfe/`, `tests/`).
+- Subproject skeleton in place. Phase 0 (alfe-skeleton +
+  alfe-backend-interface + alfe-cli) has landed: ASDF systems,
+  `*alfe-version*` (`tools/alfe/source/version.lisp`), the SBCL/CCL
+  executable build (`make build-alfe-sbcl`, `make build-alfe-ccl`),
+  the abstract backend protocol (`source/backend.lisp`), the echo
+  mock backend (`source/backend-echo.lisp`), and the full CLI
+  (`source/cli.lisp`) with the option grammar from
+  `documentation/alfe--specifications.org`.
+- Phase 1-3 systems exist as stub packages so the aggregate ASDF
+  system loads cleanly; the per-ticket source files fill them in.
 - Specification copied from upstream `autolisp-script` and updated
   to reflect the alfe ↔ clautolisp ↔ CAD architecture and the
   file-IPC rationale for the CAD backends.
 - Implementation plan + per-area issues under `../issues/open/`.
+
+## Version-bump rule
+
+Every change that touches source under this subproject must bump the
+DEVELOP counter in `tools/alfe/source/version.lisp`. The convention
+mirrors the clautolisp rule documented in
+`../clautolisp/tools/clautolisp/source/version.lisp` and in the
+user-scope MEMORY.md note `clautolisp_version_bump.md`.
 
 ## Ticket index
 
