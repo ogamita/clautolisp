@@ -118,37 +118,46 @@ exists so the acceptance criterion in alfe-backend-interface.issue
 
 (defmethod eval-plan ((session echo-session) plan)
   (session-state-set session :running)
-  (let ((output (echo-session-output session))
-        (final-value nil)
-        (status :success))
-    (dolist (action plan)
-      (let ((kind (action-kind action))
-            (payload (action-payload action)))
-        (ecase kind
-          (:load
-           (let ((path (getf payload :path)))
-             (format output "loaded ~A~%" path)
-             (setf final-value "T")))
-          (:eval
-           (multiple-value-bind (text value)
-               (render-eval-payload payload)
-             (format output "~A~%" text)
-             (setf final-value value)))
-          (:main
-           (format output "main ~A~%" payload)
-           (setf final-value "T"))
-          (:interactive
-           (format output "(interactive)~%")
-           (setf final-value nil))
-          (:quit
-           (return)))))
+  ;; The backend contract is: write live to *STANDARD-OUTPUT* AND
+  ;; capture a copy for diagnostic introspection. We use a broadcast
+  ;; stream so every write fans out to both destinations. The capture
+  ;; lives in the session struct so tests can inspect it after the
+  ;; fact via EVAL-RESULT-OUTPUT or READ-OUTPUT.
+  (let* ((output-capture (echo-session-output session))
+         (error-capture  (echo-session-error-output session))
+         (live-stdout    (make-broadcast-stream *standard-output* output-capture))
+         (live-stderr    (make-broadcast-stream *error-output*    error-capture))
+         (final-value nil)
+         (status :success))
+    (let ((*standard-output* live-stdout)
+          (*error-output*    live-stderr))
+      (dolist (action plan)
+        (let ((kind (action-kind action))
+              (payload (action-payload action)))
+          (ecase kind
+            (:load
+             (let ((path (getf payload :path)))
+               (format t "loaded ~A~%" path)
+               (setf final-value "T")))
+            (:eval
+             (multiple-value-bind (text value)
+                 (render-eval-payload payload)
+               (format t "~A~%" text)
+               (setf final-value value)))
+            (:main
+             (format t "main ~A~%" payload)
+             (setf final-value "T"))
+            (:interactive
+             (format t "(interactive)~%")
+             (setf final-value nil))
+            (:quit
+             (return))))))
     (session-state-set session :done)
     (make-eval-result
      :status status
      :value final-value
-     :output (get-output-stream-string output)
-     :error-output (get-output-stream-string
-                    (echo-session-error-output session)))))
+     :output (get-output-stream-string output-capture)
+     :error-output (get-output-stream-string error-capture))))
 
 (defmethod read-output ((session echo-session) &key timeout)
   (declare (ignore timeout))

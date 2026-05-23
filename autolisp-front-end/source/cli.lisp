@@ -306,11 +306,17 @@ argument parsing so explicit CLI options always win."
                   :message (format nil "Unknown backend ~S" value)))))
 
 (defun parse-backend-variant (value option)
-  (cond ((string-equal value "attach") :attach)
-        ((string-equal value "launch") :launch)
+  "Recognise the documented --backend variants. `attach` and `launch`
+target the CAD backends (Phase 3); `direct`, `in-process`, and
+`subprocess` target the clautolisp backend (Phase 1)."
+  (cond ((string-equal value "attach")     :attach)
+        ((string-equal value "launch")     :launch)
+        ((or (string-equal value "direct")
+             (string-equal value "in-process"))  :direct)
+        ((string-equal value "subprocess") :subprocess)
         (t (error 'cli-usage-error
                   :option option
-                  :message (format nil "Unknown --backend variant ~S (expected attach/launch)"
+                  :message (format nil "Unknown --backend variant ~S (expected attach/launch/direct/subprocess)"
                                    value)))))
 
 (defun parse-host (value option)
@@ -579,6 +585,19 @@ Algorithm (matches spec section \"Algorithme par défaut\"):
                  :backend selected
                  :message (format nil "Backend ~S is not registered."
                                   selected)))
+        ;; When --backend subprocess is in play and the selected
+        ;; backend is the clautolisp one, swap in a fresh instance
+        ;; tagged with the requested variant. The registered backend
+        ;; is the :direct default; we don't mutate it.
+        (let ((variant (cli-options-backend-variant options)))
+          (when (and (eq selected :clautolisp)
+                     (member variant '(:subprocess :direct)))
+            (when (find-symbol "MAKE-CLAUTOLISP-BACKEND"
+                               '#:alfe.backend.clautolisp)
+              (setf backend
+                    (funcall (find-symbol "MAKE-CLAUTOLISP-BACKEND"
+                                          '#:alfe.backend.clautolisp)
+                             :variant variant)))))
         (return-from resolve-backend (detect backend))))
     ;; Auto: try each registered backend in order.
     (dolist (key (list-backends))
@@ -701,16 +720,29 @@ The handler chain matches alfe-cli.issue's exit-code table:
     (unwind-protect
          (let* ((plan (plan-from-options options))
                 (result (eval-plan session plan)))
-           ;; Echo whatever stdout the backend captured (the in-process
-           ;; clautolisp backend leaves it empty because output flows
-           ;; through the live streams; the echo and file-IPC backends
-           ;; return non-empty strings).
-           (let ((stdout (eval-result-output result))
-                 (stderr (eval-result-error-output result)))
-             (when (and stdout (plusp (length stdout)))
-               (write-string stdout *standard-output*))
-             (when (and stderr (plusp (length stderr)))
-               (write-string stderr *error-output*)))
+           ;; The backend contract is: EVAL-PLAN writes live output
+           ;; to *STANDARD-OUTPUT* / *ERROR-OUTPUT* during the call,
+           ;; AND captures a copy in EVAL-RESULT-{OUTPUT,ERROR-OUTPUT}
+           ;; for tests and diagnostics. We do not re-echo the capture
+           ;; here — doing so would double-print everything the backend
+           ;; already wrote to the live streams. Backends that genuinely
+           ;; capture-only (e.g. the file-IPC drivers, which read
+           ;; stdout.txt back from disk *after* the engine wrote it)
+           ;; are responsible for replaying their own capture to the
+           ;; live streams from inside EVAL-PLAN.
+           ;; Print the final value when an :eval action drove the plan
+           ;; and produced one — matches the spec's "alfe -x '(+ 1 2)'
+           ;; prints 3" contract, and aligns with the legacy bash
+           ;; wrapper's batch-printing behaviour. We skip the print
+           ;; under --quiet so scripts that just want exit codes can
+           ;; opt out, and skip it for interactive mode (the REPL
+           ;; already prints its own values).
+           (let ((value (eval-result-value result)))
+             (when (and value
+                        (eq (eval-result-status result) :success)
+                        (last-action-prints-value-p plan)
+                        (not (eq :warn (cli-options-verbosity options))))
+               (format *standard-output* "~A~%" value)))
            (finish-output)
            (finish-output *error-output*)
            (ecase (eval-result-status result)
@@ -720,3 +752,12 @@ The handler chain matches alfe-cli.issue's exit-code table:
       (ignore-errors (shutdown session :reason :cli-exit))
       (ignore-errors (cleanup-workdir backend workdir
                                       :keep-p (cli-options-no-init-p options))))))
+
+(defun last-action-prints-value-p (plan)
+  "True iff the plan's last value-producing action is one whose
+result should be printed on the way out — i.e. an :eval or :main,
+but not :load (loads are run for side effects)."
+  (let ((value-action (find-if (lambda (a)
+                                 (member (action-kind a) '(:eval :main)))
+                               (reverse plan))))
+    (not (null value-action))))
