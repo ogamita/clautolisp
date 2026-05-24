@@ -60,6 +60,10 @@
                 #:exit-code-for-condition)
   (:import-from #:alfe.logging
                 #:set-level)
+  (:import-from #:clautolisp.autolisp-init-files
+                #:*default-alfe-stems*
+                #:find-init-files
+                #:no-init-requested-p)
   (:export ;; public entry point
            #:run
            ;; option record + parser (also exposed for tests)
@@ -86,6 +90,7 @@
            #:options-version-p
            #:options-dry-run-p
            #:options-no-init-p
+           #:options-keep-workdir-p
            #:options-main
            #:options-positional
            ;; usage + version (so the executable's main can re-use)
@@ -124,7 +129,15 @@ calls against the backend protocol."
   (help-p           nil)
   (version-p        nil)
   (dry-run-p        nil)
+  ;; --no-init / -norc: skip user init files
+  ;; (~/.alfe / ~/.autolisp / ~/.config/{alfe,autolisp}/init).
+  ;; Honoured equivalently via $AUTOLISP_NO_INIT and $ALFE_NO_INIT.
   (no-init-p        nil)
+  ;; --keep-workdir / $AUTOLISP_KEEP_WORKDIR: keep the engine
+  ;; workdir at end of run instead of deleting it. Was previously
+  ;; mis-wired off NO-INIT-P; now lives in its own slot per the
+  ;; spec's env-var table.
+  (keep-workdir-p   nil)
   (main             nil)                ; symbol name as string
   (positional       nil :type list))
 
@@ -230,7 +243,11 @@ Bootstrap and runtime:
   --bootstrap-phase {marker,core,log,full}   Truncate the bootstrap.
   --workdir DIR          Override $AUTOLISP_WORKDIR.
   --timeout SECS         Per-action timeout.
-  --no-init              Skip site init.
+  --no-init, -norc       Skip user init files (~/.alfe{,rc}, ~/.autolisp{,rc},
+                         ~/.config/alfe/init, ~/.config/autolisp/init).
+                         Mirrors $AUTOLISP_NO_INIT and $ALFE_NO_INIT.
+  --keep-workdir         Keep the engine workdir at end of run (do not delete).
+                         Mirrors $AUTOLISP_KEEP_WORKDIR.
   --dry-run              Print the resolved action plan and exit 0.
 
 Diagnostics:
@@ -262,7 +279,8 @@ argument parsing so explicit CLI options always win."
         (env-backend (env-default :backend))
         (env-bootstrap (env-default :bootstrap-phase))
         (env-dwg     (env-default :dwg))
-        (env-epure   (env-default :epure)))
+        (env-epure   (env-default :epure))
+        (env-keep-workdir (env-default :keep-workdir)))
     (when env-workdir
       (setf (cli-options-workdir options) env-workdir))
     (when env-timeout
@@ -284,7 +302,9 @@ argument parsing so explicit CLI options always win."
     (when env-dwg
       (setf (cli-options-dwg options) env-dwg))
     (when env-epure
-      (setf (cli-options-epure-p options) t)))
+      (setf (cli-options-epure-p options) t))
+    (when env-keep-workdir
+      (setf (cli-options-keep-workdir-p options) t)))
   options)
 
 (defun parse-mode (value option)
@@ -504,8 +524,11 @@ when required. Unknown options signal CLI-USAGE-ERROR."
                ;; flags
                ((string= arg "--dry-run")
                 (setf (cli-options-dry-run-p options) t))
-               ((string= arg "--no-init")
+               ((or (string= arg "--no-init")
+                    (string= arg "-norc"))
                 (setf (cli-options-no-init-p options) t))
+               ((string= arg "--keep-workdir")
+                (setf (cli-options-keep-workdir-p options) t))
                ;; unknown long option
                ((and (>= (length arg) 2)
                      (char= (char arg 0) #\-)
@@ -611,21 +634,47 @@ Algorithm (matches spec section \"Algorithme par défaut\"):
 ;;; --- action plan ----------------------------------------------------
 
 (defun plan-from-options (options)
-  "Return the ordered action plan from OPTIONS. Currently the parser
-appends actions in command-line order; this function exists so that
-later refinements (e.g. inserting an implicit --quit when no -i and no
---interactive) have a single place to live."
+  "Return the ordered action plan from OPTIONS. PURE — does not
+touch the filesystem.
+
+The CLI-supplied actions (-l / -x / --main / positional) run in
+command-line order; a synthetic :quit is appended when neither
+--interactive nor a user :quit was requested, so backends see a
+uniform 'queue ends with quit' shape.
+
+This function is a pure transformation of OPTIONS; tests can
+inspect it without worrying about user init files on the test
+host. The init-file prepending lives in EFFECTIVE-PLAN below — it
+walks the filesystem, so only the live run path + the dry-run
+renderer go through it."
   (let ((actions (copy-list (cli-options-actions options))))
-    ;; Spec invariant: if neither --interactive nor an explicit --quit
-    ;; was requested, the engine should stop cleanly when the queue
-    ;; drains. We append a synthetic :quit so backends see a uniform
-    ;; \"queue ends with quit\" shape.
     (unless (or (cli-options-interactive-p options)
                 (cli-options-quit-p options)
                 (some (lambda (a) (eq (action-kind a) :interactive)) actions)
                 (some (lambda (a) (eq (action-kind a) :quit)) actions))
       (setf actions (append actions (list (action-quit)))))
     actions))
+
+(defun resolve-init-file-actions (options)
+  "Walk the alfe init-file stems and return a list of (:load PATH)
+actions, one per existing file in stem-list order. Returns NIL
+when --no-init is set OR $AUTOLISP_NO_INIT / $ALFE_NO_INIT gate
+the lookup."
+  (when (no-init-requested-p (cli-options-no-init-p options)
+                             "ALFE_NO_INIT")
+    (return-from resolve-init-file-actions nil))
+  (loop for path in (find-init-files *default-alfe-stems*)
+        collect (action-load (namestring path)
+                             :encoding (cli-options-load-encoding options))))
+
+(defun effective-plan (options)
+  "Return the action plan that will actually be handed to the
+backend: init-file loads first (when the lookup is not gated),
+then PLAN-FROM-OPTIONS. Touches the filesystem (via
+RESOLVE-INIT-FILE-ACTIONS); intended for the live run path and
+the dry-run renderer."
+  (append (resolve-init-file-actions options)
+          (plan-from-options options)))
 
 ;;; --- dry-run renderer ----------------------------------------------
 
@@ -647,7 +696,7 @@ later refinements (e.g. inserting an implicit --quit when no -i and no
   (format stream "  mode:      ~A~%" (cli-options-mode options))
   (format stream "  workdir:   ~A~%" (or (cli-options-workdir options) "<auto>"))
   (format stream "  actions:~%")
-  (dolist (action (plan-from-options options))
+  (dolist (action (effective-plan options))
     (format stream "    - ~A~%" (render-action action)))
   (finish-output stream))
 
@@ -718,7 +767,7 @@ The handler chain matches alfe-cli.issue's exit-code table:
                                 :interactive-p
                                 (cli-options-interactive-p options))))
     (unwind-protect
-         (let* ((plan (plan-from-options options))
+         (let* ((plan (effective-plan options))
                 (result (eval-plan session plan)))
            ;; The backend contract is: EVAL-PLAN writes live output
            ;; to *STANDARD-OUTPUT* / *ERROR-OUTPUT* during the call,
@@ -751,7 +800,7 @@ The handler chain matches alfe-cli.issue's exit-code table:
              (:aborted  1)))
       (ignore-errors (shutdown session :reason :cli-exit))
       (ignore-errors (cleanup-workdir backend workdir
-                                      :keep-p (cli-options-no-init-p options))))))
+                                      :keep-p (cli-options-keep-workdir-p options))))))
 
 (defun last-action-prints-value-p (plan)
   "True iff the plan's last value-producing action is one whose
