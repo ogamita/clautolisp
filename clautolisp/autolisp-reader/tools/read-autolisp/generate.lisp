@@ -45,6 +45,13 @@
   (when asd-file
     (asdf:load-asd asd-file))
   (asdf:load-system system-name)
+  ;; Make sure the bin/ directory exists before SAVE-LISP-AND-DIE /
+  ;; SAVE-APPLICATION tries to write into it. Locally the directory
+  ;; usually pre-exists from a prior build; in CI on a fresh clone
+  ;; it doesn't (git doesn't track empty directories), and the save
+  ;; would otherwise error with "no such file or directory" /
+  ;; SB-IMPL::SAVE-ERROR.
+  (ensure-directories-exist release-directory)
   #+ccl
   (ccl:save-application
    (merge-pathnames program-name release-directory nil)
