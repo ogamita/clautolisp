@@ -1721,9 +1721,76 @@ when one exists.
 
 ** Init inhibition
 
-| Variable                | CLI         | Effect                                       |
-|-------------------------+-------------+----------------------------------------------|
-| =AUTOLISP_NO_INIT=      | =--no-init= | Equivalent to =--no-init=.                   |
+| Variable                | CLI               | Effect                                       |
+|-------------------------+-------------------+----------------------------------------------|
+| =AUTOLISP_NO_INIT=      | =--no-init=/=-norc= | Equivalent to =--no-init= for both alfe and clautolisp. |
+| =ALFE_NO_INIT=          | =--no-init=/=-norc= | Equivalent to =--no-init= for alfe only.   |
+| =CLAUTOLISP_NO_INIT=    | —                 | Equivalent to =--no-init= for clautolisp only. |
+
+* User init files
+
+On startup, =alfe= walks a fixed four-slot lookup list and loads
+every existing file in order. Earlier files load before any user
+=-l= / =-x= / =--main= action, so the action queue runs against
+a fully-initialised evaluation context. The discovery + load-
+order policy is shared with the sibling =clautolisp= binary; both
+go through the =clautolisp.autolisp-init-files= module.
+
+** Stem list
+
+| # | Stem                                                | Bare allowed? |
+|---+-----------------------------------------------------+---------------|
+| 1 | =~/.autolisp{,rc}{,.lsp,.fas,.des,.vlx}=            | yes           |
+| 2 | =~/.config/autolisp/init{,.lsp,.fas,.des,.vlx}=     | no            |
+| 3 | =~/.alfe{,rc}{,.lsp,.fas,.des,.vlx}=                | yes           |
+| 4 | =~/.config/alfe/init{,.lsp,.fas,.des,.vlx}=         | no            |
+
+Slots 1 and 2 are shared with the =clautolisp= binary so a user
+maintaining a single =~/.autolisp= file sees it loaded by both.
+Slots 3 and 4 are specific to alfe and run *after* the shared
+pair — so program-specific definitions override the shared ones.
+Within each scope, the legacy HOME slot loads first and the XDG
+slot (=~/.config/<program>/init=) loads second, so a
+=~/.config/alfe/init.lsp= wins over both =~/.alfe= and the shared
+pair.
+
+** Per-stem extension preference
+
+For each stem:
+
+  - The bare stem (without an extension) wins outright when the
+    slot allows it (slots 1 and 3). XDG slots (2 and 4) ignore
+    the bare stem.
+  - Otherwise the picker considers =<stem>.lsp= and the compiled
+    variants =<stem>.{fas,des,vlx}=. A compiled variant wins only
+    if strictly newer than =<stem>.lsp= (editing the source
+    automatically retires a stale compile). Among qualifying
+    compiled variants, the newest wins.
+  - Falls through to =<stem>.lsp= if no compiled variant
+    qualified.
+  - The stem is silently skipped when no file matches.
+
+** Gating
+
+The lookup is gated by:
+
+  - =--no-init= or =-norc= on the command line — skip every stem.
+  - =$AUTOLISP_NO_INIT=1= (or =y= / =yes= / =true= / =on=,
+    case-insensitive) — shared kill-switch honoured by both
+    binaries.
+  - =$ALFE_NO_INIT=1= — disables init files for alfe only.
+
+The CLI flag wins over the env vars; if it's present the env-var
+rung is not consulted.
+
+** Workdir cleanup
+
+Mirroring the spec's =$AUTOLISP_KEEP_WORKDIR= env var, alfe
+honours =--keep-workdir= on the command line to skip the post-run
+workdir cleanup. The =--no-init= flag is /not/ overloaded for
+this purpose (the V0 implementation accidentally tied the two
+slots together; the fix landed alongside the init-file work).
+
 
 * Versioning
 
