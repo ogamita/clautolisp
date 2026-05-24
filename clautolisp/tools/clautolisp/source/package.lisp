@@ -52,5 +52,9 @@
   (:import-from #:clautolisp.autolisp-builtins-core
                 #:autolisp-value->string
                 #:install-core-builtins)
+  (:import-from #:clautolisp.autolisp-init-files
+                #:*default-clautolisp-stems*
+                #:find-init-files
+                #:no-init-requested-p)
   (:export #:main
            #:*version*))
