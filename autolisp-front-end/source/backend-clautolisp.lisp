@@ -390,9 +390,15 @@ SHUTDOWN."
                 (session-handle (evaluation-context-session context)))
            (set-runtime-session-host session-handle host-instance)
            (install-core-builtins)
-           (when load-encoding
-             (clautolisp.autolisp-runtime:set-default-source-encoding
-              context (encoding-keyword load-encoding)))
+           ;; Effective default source-file encoding precedence:
+           ;;   `-e ENC' (LOAD-ENCODING) > LC_ALL/LC_CTYPE/LANG > NIL.
+           ;; NIL falls through to the dialect default at load time.
+           (let ((effective
+                   (or (and load-encoding (encoding-keyword load-encoding))
+                       (clautolisp.autolisp-runtime:locale-default-source-encoding))))
+             (when effective
+               (clautolisp.autolisp-runtime:set-default-source-encoding
+                context effective)))
            (let ((session (%make-direct-session
                            :backend backend
                            :workdir workdir

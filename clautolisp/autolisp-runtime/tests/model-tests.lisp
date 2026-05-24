@@ -747,3 +747,34 @@
             (lambda ()
               3))))
     (is (= 0 (autolisp-errno)))))
+
+;;; --- POSIX locale probe (LC_ALL / LC_CTYPE / LANG) ------------------
+
+(test parse-locale-encoding-string-maps-common-encodings
+  "PARSE-LOCALE-ENCODING-STRING recognises every encoding family the
+CLI's `-e ENC' helper handles, returning a keyword usable as a Lisp
+external-format."
+  (is (eq :utf-8        (clautolisp.autolisp-runtime:parse-locale-encoding-string "UTF-8")))
+  (is (eq :utf-8        (clautolisp.autolisp-runtime:parse-locale-encoding-string "utf8")))
+  (is (eq :iso-8859-1   (clautolisp.autolisp-runtime:parse-locale-encoding-string "ISO-8859-1")))
+  (is (eq :iso-8859-1   (clautolisp.autolisp-runtime:parse-locale-encoding-string "latin1")))
+  (is (eq :windows-1252 (clautolisp.autolisp-runtime:parse-locale-encoding-string "windows-1252")))
+  (is (eq :windows-1252 (clautolisp.autolisp-runtime:parse-locale-encoding-string "cp1252")))
+  (is (eq :ascii        (clautolisp.autolisp-runtime:parse-locale-encoding-string "us-ascii")))
+  (is (null             (clautolisp.autolisp-runtime:parse-locale-encoding-string nil)))
+  (is (null             (clautolisp.autolisp-runtime:parse-locale-encoding-string ""))))
+
+(test parse-posix-locale-extracts-encoding-suffix
+  "PARSE-POSIX-LOCALE pulls the .ENCODING suffix out of a full
+POSIX locale string, ignores @modifier tails, and returns NIL when
+no encoding is present (e.g. plain 'C' / 'POSIX')."
+  (is (eq :utf-8        (clautolisp.autolisp-runtime:parse-posix-locale "en_US.UTF-8")))
+  (is (eq :utf-8        (clautolisp.autolisp-runtime:parse-posix-locale "fr_FR.UTF-8@euro")))
+  (is (eq :iso-8859-1   (clautolisp.autolisp-runtime:parse-posix-locale "fr_FR.ISO-8859-1")))
+  (is (eq :windows-1252 (clautolisp.autolisp-runtime:parse-posix-locale "ja_JP.windows-1252")))
+  (is (null             (clautolisp.autolisp-runtime:parse-posix-locale "C")))
+  (is (null             (clautolisp.autolisp-runtime:parse-posix-locale "POSIX")))
+  (is (null             (clautolisp.autolisp-runtime:parse-posix-locale "en_US")))
+  (is (null             (clautolisp.autolisp-runtime:parse-posix-locale "")))
+  (is (null             (clautolisp.autolisp-runtime:parse-posix-locale nil))))
+

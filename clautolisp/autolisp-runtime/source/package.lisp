@@ -239,7 +239,11 @@
    ;; Source-file encoding override (set by the CLI's -e flag).
    #:runtime-session-default-source-encoding
    #:set-runtime-session-default-source-encoding
-   #:set-default-source-encoding))
+   #:set-default-source-encoding
+   ;; POSIX locale probe (LC_ALL / LC_CTYPE / LANG).
+   #:locale-default-source-encoding
+   #:parse-posix-locale
+   #:parse-locale-encoding-string))
 
 (defpackage #:clautolisp.autolisp-runtime.internal
   (:use #:cl)

@@ -38,6 +38,7 @@
                 #:run-autolisp-string
                 #:set-runtime-session-host
                 #:set-default-source-encoding
+                #:locale-default-source-encoding
                 #:current-evaluation-context
                 #:evaluation-context-session
                 #:*default-runtime-host*)
