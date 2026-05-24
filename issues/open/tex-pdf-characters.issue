@@ -1,0 +1,13 @@
+
+Some document need more characters:
+
+emacs --batch \
+	    --eval "(setq org-confirm-babel-evaluate nil)" \
+	    --eval "(setq org-export-with-broken-links t)" \
+	    --eval "(setq org-latex-pdf-process '(\"xelatex -interaction=nonstopmode -output-directory=%o %f\" \"xelatex -interaction=nonstopmode -output-directory=%o %f\"))" \
+	    "documentation/alfe--specifications.org" \
+	    --funcall org-latex-export-to-pdf
+Processing LaTeX file alfe--specifications.tex...
+Warning (ox-latex): PDF file produced with warnings: [undefined reference] [Missing character(s): please load an appropriate font with the fontspec package]
+
+Find the font and unicode characters that we need to install.

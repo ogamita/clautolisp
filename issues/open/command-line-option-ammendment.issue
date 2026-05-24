@@ -1,0 +1,53 @@
+1- when one of -x or -l (or long form) option is given, then it is
+   assumed nothing more is to be done after all -x and -l are processed.
+   Notably, when -l is used, there's an implicit call to (c:main)
+   Hence the use of -i (to disable the implicit call to (c:main)) and
+   enter the REPL.
+
+   However, when no -x or -l option is given, -i should be implicit,
+   and if no -q | --quit is given, we shoud enter the REPL.
+
+   alfe or clautolisp alone don't enter the REPL. They should.
+
+
+2- when loading rc files, if there are I/O calls (eg. princ/terpri,
+   etc), they must be performed. alfe only indicates that it loaded
+   the rc file, but doesn't print its output. clautolisp prints the
+   output of the rc file. alfe should do the same.
+   
+
+
+~/src/public/clautolisp
+autolisp-spec-paged-version
+15:32[pjb@thalassa org.xquartz:0 clautolisp 105Gi]$ alfe --version
+alfe 1.0.2
+
+~/src/public/clautolisp
+autolisp-spec-paged-version
+15:32[pjb@thalassa org.xquartz:0 clautolisp 105Gi]$ alfe
+loaded /Users/pjb/.autolisp
+
+~/src/public/clautolisp
+autolisp-spec-paged-version
+15:32[pjb@thalassa org.xquartz:0 clautolisp 105Gi]$ alfe -i
+loaded /Users/pjb/.autolisp
+(interactive)
+
+~/src/public/clautolisp
+autolisp-spec-paged-version
+15:32[pjb@thalassa org.xquartz:0 clautolisp 105Gi]$ clautolisp 
+
+========================================================================
+                   Welcome to AutoLISP                                  
+========================================================================
+
+~/src/public/clautolisp
+autolisp-spec-paged-version
+15:33[pjb@thalassa org.xquartz:0 clautolisp 105Gi]$ clautolisp -i
+
+========================================================================
+                   Welcome to AutoLISP                                  
+========================================================================
+clautolisp 0.0.38 — REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+_$ (quit)
+clautolisp: terminated by QUIT
