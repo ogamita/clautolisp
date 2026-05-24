@@ -1,0 +1,93 @@
+As an autolisp developer, I want a good autolisp code debugger.
+
+See the specifications in
+clautolisp/documentation/clautolisp-debugger-spec.org
+
+Planify and implement the modules of the clautolisp debugger, inspector,
+with the dump terminal UI, the ncurses (cl-charms / PDCurses UI), and
+the emacs interface (that we'll name aldb as slime debugger is named sldb).
+
+
+------------------------------------------------------------------------
+The rest of this file is
+Historical notes and prompt chunks below.  Not useful anymore.
+------------------------------------------------------------------------
+
+In general when an autolisp error occurs, we will want to be able to
+find the exact form that signaled the error (form, source file, line,
+column).
+
+This means that the load (and vlisp-compile) reader should track the
+source file, and position (line, column), and record it with symbols,
+or provide a way to retrieve it.
+
+This means that error signaling operators must be instrumented to
+provide the caller (source of the error signaling).
+
+This info may be attached to the CL conditions, and retrieved for
+reporting and debugging.
+
+
+
+Note that this will be a debugger for autolisp programs, interpreted
+or compiled by a Common Lisp implementation. The debugger is
+implemented in Common Lisp, and bordeaux-threads are available, as
+well as the condition system, in the implementation language. But
+there's no notion of a condition system in autolisp, just a *ERROR*
+handler in a variable, and VL-CATCH-ALL-APPLY, VL-CATCH-ALL-ERROR-P,
+VL-CATCH-ALL-ERROR-MESSAGE. But happily, we're implementing the
+debugger in Common Lisp!
+
+Now, while specifying the clautolisp debugger, we want to have ahet
+modular and pluggable user interface for the debugger.
+
+Basically 3 UI:
+
+- dumb terminal user interface.
+- 2D terminal user interface (ncurses via cl-charms or PDCurses).
+- emacs user interface (kind of like sldb from slime).
+
+The autolisp reader alread tracks the source and position of symbols,
+and other tokens, so the debugger and debugger user interface can
+refer to the source files to display them and "interact" with them
+(eg. move the cursor into a form to drop a break point), or move the
+cursor to the current form in step mode, etc.
+
+We also need to specify an inspector (it's basically independent from
+the debugger, but the debugger may use the inspector to display the
+variables and let the user navigate thru its contents (lists,
+entities, etc).
+This inspector will be also accessible and usable thru the 3 UI.
+
+   +------------+
+   |  autolisp  |
+   |  program   |                  debugger
+   +------------+                   UI API
+         |                            ^
+   +------------+     +----------+    |    +-------------+
+   | clautolisp |-----| debugger |----|----| debugger UI |
+   +------------+     +----------+    |    +-------------+
+         |                 |          v
++-----------------+        |
+|   Common Lisp   |--------+
+| implementation  |
++-----------------+
+
+
+debugger UI is one of dumb terminal debugger ui,
+ncurses terminal debugger ui, or emacs debugger ui.
+
+So, you may wrap up a complete specification for the clautolisp
+debugger, with its user interfaces, and the internal interfaces with
+the required autolisp implementation data structures.
+
+
+Currently, clautolisp is implemented as an interpreter.  However, we
+will probably have to implement a compiler, targetting Common Lisp and
+generating to CL functions from one autolisp function (one "native"
+and one for debugging, ie, instrumentalised). So the debugger
+specification may specify the required elements from such autolisp
+compiled to common lisp code (the instrumentalisation required).
+
+Be sure to quote Robert Strand works, papers and sources, and (bibtex
+like stuff).
