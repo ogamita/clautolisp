@@ -36,6 +36,23 @@
                  #+sbcl (sb-ext:exit :code 0))))
     #-ecl (coerce form 'function)))
 
+(defun load-system-with-quicklisp-fetch (system-name)
+  "Load SYSTEM-NAME, asking Quicklisp to fetch transitive deps
+that aren't already on disk. Falls back to plain ASDF:LOAD-SYSTEM
+when Quicklisp isn't loaded (a host that pre-installs every dep
+via OS packages, say).
+
+This is the build-time fix for missing-component errors on Lisp
+deps like trivial-gray-streams or bordeaux-threads — they're
+declared in the .asd file but the Quicklisp install step only
+pre-fetched fiveam, so ASDF:LOAD-SYSTEM would error out at
+dependency-resolution time."
+  (let ((ql-package (find-package :ql)))
+    (if ql-package
+        (funcall (intern (symbol-name '#:quickload) ql-package)
+                 system-name)
+        (asdf:load-system system-name))))
+
 (defun generate-program (&key program-name main-function system-name source-directory
                            asdf-directories release-directory asd-file)
   (declare (ignore source-directory))
@@ -44,7 +61,7 @@
   (configure-asdf-directories asdf-directories)
   (when asd-file
     (asdf:load-asd asd-file))
-  (asdf:load-system system-name)
+  (load-system-with-quicklisp-fetch system-name)
   ;; Make sure the bin/ directory exists before SAVE-LISP-AND-DIE /
   ;; SAVE-APPLICATION tries to write into it. Locally the directory
   ;; usually pre-exists from a prior build; in CI on a fresh clone
