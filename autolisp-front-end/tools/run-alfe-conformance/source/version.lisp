@@ -3,4 +3,4 @@
 
 (in-package #:alfe.tools.run-alfe-conformance)
 
-(defparameter *version* "0.0.5")
+(defparameter *version* "1.0.0")
