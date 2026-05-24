@@ -1,0 +1,71 @@
+autolisp-spec paged version.
+
+As an autolisp developper, I need to be able to find autolisp-spec
+pages easily from different development environments.
+
+For ease of navigation, and search/query reference of the autolisp-spec,
+we need to build easily navigable derived formats:
+
+- a directory containing separate html pages for each "*" chapter and
+  level-"**" sections, with links and index, and symbol indexes,
+  similar to the hyperspec.
+
+- an info format version with the same structure as the html version.
+
+- a emacs commands to find easily the info page given a symbol name,
+  or some keywords.
+
+    M-x alref-lookup RET directory TAB
+    would give a completion list of all the autolisp symbols containing "directory" in their name.
+    choosing one and RET would jump to the corresponding autolisp-spec info page.
+    (similar to M-x hyperspec-lookup)
+
+    A minor mode alref-autodoc similar to Slime-Autodoc
+    which display in the minibuffer information about the symbol at point (or before point)
+    Basically, for operator, it displays (operator arguments…) as a reminder of the usage of the operator.
+    for alref-autodoc, I would like to add indicators of compatibility:
+      - whether it's a strict operator (compatible with all implementation), (no indicator)
+      - or if it's an extension to autocad, or bricscad, or clautolisp. [ABC] [AB] [A] [B] etc.
+
+
+- autolisp functions (a little library that can be loaded in any autolisp implementation for interactive use):
+
+   - (alref-lookup "directory") :: prints a list of symbols containing "directory" in their names.
+   - (alref-apropos-list "…") :: returns the list of symbols containing "directory" in their names.
+   - (alref-apropos "…") :: similar to alref-lookup but prints one symbol per line with indication of whether it's bound to a function or print its value (if printable and short enough).
+   - (alref-decribe 'symbol) or "symbol" :: prints the contents of the symbol description page (ascii-formated), and a description of its binding like alref-apropos.
+   - (alref-documentation 'symbol) or "symbol" :: returns a string of the contents of the symbol description page (ascii-formated), and a description of its binding like alref-apropos. (basically alref-describe calls and prints the result of alref-documentation).
+   - (alref-help "string") search autolisp-spec pages containing the string, and return a list of of symbols matching or chapter strings.
+
+alref-describe and alref-documentation can also take as string symbol names, or chapter names (numbers or title in string), to return the chapter intro pages.
+
+It will have to be initialised with the directory where the page data is stored.
+Since autolisp doesn't have file seek (random access files), we cannot just provide an index of the autolisp-spec big file, we have to split it in several pages (ascii formatted like autolisp-spec), and load an index to those files.
+
+
+The html page and the info pages will have to have hyperlinks, to other pages when symbols or sections are referenced in the text, and at least to the next page, previous page and up section (chapter).
+
+
+In summary: autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+will derivate into:
+
+--> autolisp-spec/build/html/10-function-entry-car.html etc.
+    and with html index file, a index.html to introduce it, etc.
+    
+--> autolisp-spec/build/info/… info files
+    (eg. one per chapter, with an info directory, emacs info can seek to the right section).
+
+--> autolisp-spec/build/pages/10-function-entry-car.txt
+    (basically, the content of the org-mode section, with some cruft removed
+    such as #+begin_src/#+end_src or #+latex
+    and with index files.
+
+--> autolisp-spec/build/autolisp-visual-lisp-specification-draft-${version}.pdf
+
+Then we'll have an install target to put in in $PREFIX/share/autolisp-spec/{html,info,pages}
+along with $PREFIX/share/autolisp-spec/autolisp-visual-lisp-specification-draft.{org,pdf}
+and autolisp-reference-notes.{org,pdf} and other if pertinent.
+
+Typically, PREFIX=/opt; in any case the path to
+$PREFIX/share/autolisp-spec/ will have to be configured in emacs or
+the alfe-ref library.
