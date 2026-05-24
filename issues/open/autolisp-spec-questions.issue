@@ -1,0 +1,36 @@
+These are questions and points that need to be resolved from a standard specification point of view for autolisp-spec.
+
+COND
+
+What happens when there are no expression beside the test in a clause?
+AutoCAD and BricsCAD specification should be checked,
+the implementations should be tested.
+
+Here is what I would expect:
+
+(cond
+ ((= 1 1)))
+--> t ; the value returned by (= 1 1) ie. T in autolisp.
+
+(cond
+ (42))
+--> 42 ; the valuel returned by 42, which is true.
+
+(cond
+ (nil)
+ ('ok))
+--> ok ; since nil is false.
+
+(cond
+  ()
+  (33))
+==> error () is an invalid cond clause
+
+
+AND, OR
+
+The return value appears to be boolean, not the value of the last evaluated clause (what CL does).
+So they cannot be used in short-circuiting expressions.
+
+AutoCAD and BricsCAD specification should be checked,
+the implementations should be tested.
