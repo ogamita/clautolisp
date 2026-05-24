@@ -1,6 +1,17 @@
 alfe-cli — argument parsing, action sequencing, exit codes
 ==========================================================
 
+Status: closed
+Landed in: 1a4872b "autolisp-front-end: land Phase 0 (skeleton +
+backend interface + CLI)." See autolisp-front-end/source/cli.lisp
+and tests/cli-tests.lisp.
+
+Caveat: --epure is parsed and surfaces in options-epure-p, but no
+backend consumes the flag yet — the EPURE plugin work has been
+moved to alfe-plugin-model.issue (V2).
+
+
+
 See also: alfe.plan, alfe-skeleton.issue, alfe-backend-interface.issue,
 spec sections "Sélection du moteur et matrice backend × système",
 "Variables d'environnement", "Phases de bootstrap", "Invariants

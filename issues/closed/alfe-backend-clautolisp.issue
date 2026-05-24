@@ -1,6 +1,13 @@
 alfe-backend-clautolisp — in-process and subprocess clautolisp backends
 =======================================================================
 
+Status: closed
+Landed in: 7949172 "autolisp-front-end: land Phase 1 — clautolisp
+backend (in-process + subprocess)." See autolisp-front-end/source/
+backend-clautolisp.lisp and tests/backend-clautolisp-tests.lisp.
+
+
+
 See also: alfe.plan, alfe-backend-interface.issue, alfe-cli.issue,
 spec section "Backend clautolisp".
 

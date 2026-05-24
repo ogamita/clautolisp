@@ -1,6 +1,13 @@
 alfe-file-protocol — file-IPC driver for the CAD backends
 =========================================================
 
+Status: closed
+Landed in: 0ddb1d1 "autolisp-front-end: land Phase 2 — file-IPC
+protocol driver." See autolisp-front-end/source/file-protocol.lisp
+and tests/file-protocol-tests.lisp.
+
+
+
 See also: alfe.plan, alfe-backend-interface.issue,
 alfe-backend-bricscad.issue, alfe-backend-autocad.issue,
 spec sections "Protocole REPL distant", "Contrat AutoLISP côté

@@ -17,13 +17,65 @@ on top of the `clautolisp/autolisp-*` modules, producing a single
 
 ## Current status
 
-- Subproject skeleton present (this file, `README.org`, `Makefile`,
-  `documentation/alfe--specifications.org`, empty `source/`,
-  `tools/alfe/`, `tests/`).
+- Subproject skeleton in place. Phase 0 (alfe-skeleton +
+  alfe-backend-interface + alfe-cli) has landed: ASDF systems,
+  `*alfe-version*` (`tools/alfe/source/version.lisp`), the SBCL/CCL
+  executable build (`make build-alfe-sbcl`, `make build-alfe-ccl`),
+  the abstract backend protocol (`source/backend.lisp`), the echo
+  mock backend (`source/backend-echo.lisp`), and the full CLI
+  (`source/cli.lisp`) with the option grammar from
+  `documentation/alfe--specifications.org`.
+- Phase 1 (alfe-backend-clautolisp) has landed: the in-process
+  variant binds `clautolisp.autolisp-runtime` directly and tees
+  live stdout/stderr into `WORKDIR/output.txt` / `errors.txt`;
+  the subprocess variant fork-execs `clautolisp-sbcl` with the
+  resolved CLI flags via `uiop:run-program`. `--clautolisp -x
+  '(+ 1 2)'` end-to-end prints 3 and exits 0.
+- Phase 2 (alfe-file-protocol) has landed: the `alfe.protocol.file`
+  package implements the file-IPC driver shared by the upcoming
+  CAD backends — atomic publish-by-rename, status polling with
+  backoff, incremental stdout/stderr draining with per-channel
+  offsets, line-to-form reader on top of the clautolisp parser,
+  PING/SHUTDOWN/INTERRUPT control sender, optional heartbeat
+  reader, and a pure-CL `run-common.lsp` emitter that populates
+  every `*AUTOLISP-*` global the spec calls for (in both hyphen
+  and underscore spellings so the upstream `autolisp-remote-io.lsp`
+  runtime is reused verbatim).
+- Phase 3 (alfe-backend-bricscad + alfe-backend-autocad) has
+  landed: per-platform binary discovery, batch-mode run.scr
+  emitters, AppleScript launcher for macOS BricsCAD automation,
+  VBScript bridge emitters for Windows COM on both CADs (with the
+  spec's WaitQuiescent / GetAcadState / SendCommand handshake
+  preserved), platform gating for AutoCAD on non-Windows hosts
+  (clean exit 3 with a "not distributed" message), and a
+  protocol-driven `eval-plan` that issues every action through
+  the file-IPC channel and waits for the runtime's `DONE N` reply.
+  Real-CAD smoke tests are deferred behind `BRICSCAD_SMOKE=1` /
+  `AUTOCAD_SMOKE=1` env opts.
+- Phase 4 (alfe-conformance) has landed: declarative `.sexp`
+  scenarios under `tests/scenarios/{cli,actions,encoding,
+  clautolisp,bricscad,autocad}/` are walked by the
+  `alfe.conformance` runner, which drives each through alfe's
+  in-process CLI with captured stdout/stderr and compares to the
+  scenario's expectations. 26 scenarios cover every alfe CLI
+  option in the spec (asserted by `scripts/check-spec-coverage.lisp`,
+  which scans the spec for option names and refuses to exit zero
+  on any uncovered one). Standalone runner exposed via
+  `make conformance`; coverage gate exposed via
+  `make check-spec-coverage`. Parity tests against the legacy bash
+  wrapper are gated behind `$AUTOLISP_LEGACY`; not exercised in CI.
 - Specification copied from upstream `autolisp-script` and updated
   to reflect the alfe ↔ clautolisp ↔ CAD architecture and the
   file-IPC rationale for the CAD backends.
 - Implementation plan + per-area issues under `../issues/open/`.
+
+## Version-bump rule
+
+Every change that touches source under this subproject must bump the
+DEVELOP counter in `tools/alfe/source/version.lisp`. The convention
+mirrors the clautolisp rule documented in
+`../clautolisp/tools/clautolisp/source/version.lisp` and in the
+user-scope MEMORY.md note `clautolisp_version_bump.md`.
 
 ## Ticket index
 

@@ -1,6 +1,14 @@
 alfe-backend-interface — abstract backend protocol
 ==================================================
 
+Status: closed
+Landed in: 1a4872b "autolisp-front-end: land Phase 0 (skeleton +
+backend interface + CLI)." See autolisp-front-end/source/backend.lisp
+for the generics and conditions, source/backend-echo.lisp for the
+reference in-process mock backend.
+
+
+
 See also: alfe.plan, alfe-skeleton.issue, alfe-cli.issue,
 alfe-backend-clautolisp.issue, alfe-file-protocol.issue,
 alfe-backend-bricscad.issue, alfe-backend-autocad.issue.
