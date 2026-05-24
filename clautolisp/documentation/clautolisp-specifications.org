@@ -375,6 +375,57 @@ the binary, trigger a rebuild) is captured by the
 ~CLAUTOLISP_SOURCES~ list in ~autolisp-test/Makefile~ when running
 the conformance suite.
 
+* User init files
+On startup, ~clautolisp~ walks a fixed list of stems and loads
+every file that exists, in walking order. Earlier files are
+loaded before any user-supplied ~-l~ / ~-x~ / positional action,
+so the action queue runs against a fully-initialised
+evaluation context.
+
+** Stem list
+
+| # | Stem                                                     | Bare allowed? |
+|---+----------------------------------------------------------+---------------|
+| 1 | ~~/.clautolisp{,rc}{,.lsp,.fas,.des,.vlx}~              | yes           |
+| 2 | ~~/.config/clautolisp/init{,.lsp,.fas,.des,.vlx}~       | no            |
+| 3 | ~~/.autolisp{,rc}{,.lsp,.fas,.des,.vlx}~                | yes           |
+| 4 | ~~/.config/autolisp/init{,.lsp,.fas,.des,.vlx}~         | no            |
+
+Slots 3 and 4 are shared with the sibling ~alfe~ binary; a user
+who maintains a single ~~/.autolisp~ file sees it loaded by both.
+Slots 1 and 2 are specific to clautolisp.
+
+** Per-stem extension preference
+
+For each stem:
+
+  - The bare stem (without an extension) wins outright if it
+    exists AND the slot allows it (slots 1 and 3). The XDG slots
+    (2 and 4) ignore the bare stem.
+  - Otherwise the picker considers ~<stem>.lsp~ and the compiled
+    variants ~<stem>.{fas,des,vlx}~. A compiled variant wins only
+    if it is strictly newer than ~<stem>.lsp~ (so editing the
+    ~.lsp~ source automatically retires a stale compile). Among
+    qualifying compiled variants, the newest wins.
+  - Falls through to ~<stem>.lsp~ if it exists and no compiled
+    variant qualified.
+  - The stem is silently skipped if no file matches; missing
+    init files are normal, not an error.
+
+** Gating
+
+The lookup is gated by:
+
+  - ~--no-init~ or ~-norc~ on the command line — skip every stem.
+  - ~$AUTOLISP_NO_INIT=1~ (or ~y~ / ~yes~ / ~true~ / ~on~,
+    case-insensitive) — the shared kill-switch honoured by both
+    clautolisp and alfe.
+  - ~$CLAUTOLISP_NO_INIT=1~ — disables init files for clautolisp
+    only.
+
+The CLI flag wins over the env vars; if either flag form is
+present the env-var rung is not consulted.
+
 * Versioning
 The version string is stored at
 ~clautolisp/tools/clautolisp/source/version.lisp~ in
