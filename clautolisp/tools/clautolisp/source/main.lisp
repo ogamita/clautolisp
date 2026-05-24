@@ -488,18 +488,24 @@ queue share one context, so side effects compose."
 (defun run-with-input (dialect actions
                        &key quiet-p interactive-p host mock-input gui trace-p)
   "Build a shared evaluation context, run every action in ACTIONS
-against it in order, then optionally enter the REPL on the same
-context. When ACTIONS is empty, the REPL is the implicit fallback
-(unless --interactive is also off and the caller wants a strict
-no-op — currently no such caller exists). INTERACTIVE-P forces the
-REPL to follow a non-empty action queue."
+against it in order, then enter the REPL on the same context when
+INTERACTIVE-P is true.
+
+INTERACTIVE-P expresses the *effective* request — it is true when
+either the CLI passed -i / --interactive, OR the user supplied no
+explicit -l / -x / positional action so the REPL is the implicit
+default (per command-line-option-ammendment.issue). The caller
+computes this; the function intentionally does not inspect ACTIONS
+to make the decision, because by the time this function is called
+ACTIONS may include init-file loads (which are machinery, not user
+intent)."
   (handler-case
       (let ((context (build-context dialect host mock-input)))
         (dolist (action actions)
           (let ((start (get-internal-real-time)))
             (eval-action-in-context context action dialect)
             (maybe-summarise-action (car action) (cdr action) start)))
-        (when (or (null actions) interactive-p)
+        (when interactive-p
           (repl-loop dialect context
                      :quiet-p quiet-p
                      :mock-input mock-input
@@ -545,6 +551,14 @@ autolisp-dcl load time) stays in effect."
           (parse-arguments (rest argv))
         (let ((*verbose-p* verbose-p)
               (*debug-p* debug-p)
+              ;; Implicit -i: when the user supplied no -l / -x /
+              ;; positional action, the REPL is the desired default
+              ;; (per command-line-option-ammendment.issue).
+              ;; The init-file loads added below are machinery,
+              ;; not user intent, so we snapshot `actions' emptiness
+              ;; BEFORE prepending them.
+              (effective-interactive-p
+                (or interactive-p (null actions)))
               ;; Init files run BEFORE any -l / -x / positional
               ;; action so user-supplied state can override an
               ;; init-file binding. The flag (or its env-var
@@ -556,7 +570,7 @@ autolisp-dcl load time) stays in effect."
             (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
           (run-with-input dialect effective-actions
                           :quiet-p quiet-p
-                          :interactive-p interactive-p
+                          :interactive-p effective-interactive-p
                           :host host
                           :mock-input mock-input
                           :gui gui
