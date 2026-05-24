@@ -1,0 +1,50 @@
+As an autolisp developer, I want an extension of the following functions
+
+  (alref-apropos-list "pattern")
+  (alref-apropos "pattern")     
+  (alref-describe SYMBOL-OR-STRING)
+  (alref-documentation SYMBOL-OR-STRING)
+  (alref-help "string")         
+
+These functions should include in their result, and accept as
+parameter symbols and substring of symbol names that are notonly
+specified in the autolisp-spec, but also are merely symbols interned
+in the current autolisp image.
+
+Given that there is curently no way to register documentation to
+random symbol in autolisp, alref-documentation will return "not documented".
+
+Let's add to the output format of alref-apropos an indicator [ABC]:
+
+| aligned on 5 columns | meaning                                                                    |
+|----------------------+----------------------------------------------------------------------------|
+| absent               | not a symbol specified in autolisp-spec                                    |
+| [A]                  | specified only by autocad                                                  |
+| [B]                  | specified only by bricscad                                                 |
+| [C]                  | specified only by clautolisp                                               |
+| [AB]                 | specified by both autocad and bricscad (but not implemented in clautolisp) |
+| [AC]                 | specified by both autocad and clautolisp (but not implemented by bricscad) |
+| [BC]                 | specified by both bricscad and clautolisp (but not implemented by autocad) |
+| [ABC]                | specified in autolisp-spec and implemented by all                          |
+
+
+Also, for special operators, use the "Operator" label instead of "Function":
+
+| state                       | displayed as                         |
+|-----------------------------+--------------------------------------|
+| unbound                     | <symbol-name> Variable [ABC] NIL     |
+| bound to a non-function     | <symbol-name> Variable [ABC] <value> |
+| bound to a function         | <symbol-name> Function [ABC]         |
+| bound to a special operator | <symbol-name> Operator [ABC]         |
+
+
+Furthermore, in the future, (when the autolisp reader will keep trace
+of where the symbols are read/loaded from, we could seek surrounding
+documentation comments. Create an issue to this effect, conditionnal
+of having reference of the source of a symbol foo:
+
+    #|
+      documentation
+    |#
+
+    (defun foo …)
