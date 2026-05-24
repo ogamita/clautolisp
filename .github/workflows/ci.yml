@@ -56,9 +56,15 @@ jobs:
             ~/.cache/common-lisp
           # Cache key buckets per-Lisp + per-quicklisp-dist; bump
           # the suffix when the dist version changes.
-          key: quicklisp-sbcl-dist2024.10-${{ hashFiles('**/*.asd') }}
+          # Cache-bust suffix (`cache-v1`, `cache-v2`, …) lets us
+          # force a fresh Quicklisp install when an old cache holds a
+          # stale fasl or an incompatible dist snapshot. Bump on
+          # observed CI failures that look cache-related — the v0
+          # entries land in oblivion and the next run reinstalls from
+          # beta.quicklisp.org.
+          key: quicklisp-sbcl-dist2024.10-cache-v1-${{ hashFiles('**/*.asd') }}
           restore-keys: |
-            quicklisp-sbcl-dist2024.10-
+            quicklisp-sbcl-dist2024.10-cache-v1-
 
       - name: Install Quicklisp (cache miss)
         if: steps.quicklisp-cache.outputs.cache-hit != 'true'
@@ -124,9 +130,15 @@ jobs:
           path: |
             ~/quicklisp
             ~/.cache/common-lisp
-          key: quicklisp-sbcl-dist2024.10-${{ hashFiles('**/*.asd') }}
+          # Cache-bust suffix (`cache-v1`, `cache-v2`, …) lets us
+          # force a fresh Quicklisp install when an old cache holds a
+          # stale fasl or an incompatible dist snapshot. Bump on
+          # observed CI failures that look cache-related — the v0
+          # entries land in oblivion and the next run reinstalls from
+          # beta.quicklisp.org.
+          key: quicklisp-sbcl-dist2024.10-cache-v1-${{ hashFiles('**/*.asd') }}
           restore-keys: |
-            quicklisp-sbcl-dist2024.10-
+            quicklisp-sbcl-dist2024.10-cache-v1-
 
       - name: Install Quicklisp (cache miss)
         if: steps.quicklisp-cache.outputs.cache-hit != 'true'
