@@ -282,6 +282,47 @@ HTML/Info post-processors can consume."
       (t
        (error "build-paged-spec.el: unknown format %S" format)))))
 
+(defun alref-build/attach-chapter-tocs (sections)
+  "Walk SECTIONS and, for every level-1 chapter page, append a
+\"Contents\" subsection listing the chapter's level-2 children
+as org-mode file: links. The chapter pages otherwise hold only
+the introductory prose — without this pass they'd land as
+near-empty stubs in the HTML build.
+
+Called after COMPUTE-ADJACENCY so the recorded basenames are the
+final on-disk filenames. Mutates the body slot in place."
+  (let* ((real-sections (cl-remove-if
+                         (lambda (s) (string= (alref-build/section-slug s)
+                                              "frontmatter"))
+                         sections))
+         (chapter-children (make-hash-table :test 'equal)))
+    ;; First pass: bucket subsections under their chapter.
+    (dolist (section real-sections)
+      (when (= (alref-build/section-level section) 2)
+        (let ((up (alref-build/section-up section)))
+          (when up
+            (push section (gethash up chapter-children))))))
+    ;; Second pass: append TOC to each chapter's body.
+    (dolist (section real-sections)
+      (when (= (alref-build/section-level section) 1)
+        (let* ((basename (alref-build/section-filename section))
+               (children (nreverse (gethash basename chapter-children))))
+          (when children
+            ;; Push the TOC lines onto the (still-reverse-order)
+            ;; body. The block leads with a blank line so the
+            ;; ** Contents heading parses cleanly under the
+            ;; chapter's own * <Title> heading that
+            ;; SECTION-PAGE will emit.
+            (push "" (alref-build/section-body section))
+            (push "** Contents" (alref-build/section-body section))
+            (push "" (alref-build/section-body section))
+            (dolist (child children)
+              (let ((child-name (alref-build/section-filename child))
+                    (child-title (alref-build/section-title child)))
+                (push (format "- [[file:%s.html][%s]]"
+                              child-name child-title)
+                      (alref-build/section-body section))))))))))
+
 (defun alref-build/compute-adjacency (sections)
   "Fill in the PREV / NEXT / UP slots on every SECTION. PREV and
 NEXT walk the linear page sequence (skipping the synthetic
@@ -403,6 +444,7 @@ documentation page in O(1) (after loading the file)."
   (let ((sections (alref-build/parse-org-file input-file)))
     (alref-build/disambiguate-slugs sections)
     (alref-build/compute-adjacency sections)
+    (alref-build/attach-chapter-tocs sections)
     (let ((count (alref-build/write-pages sections output-dir format)))
       (alref-build/write-index sections output-dir)
       (alref-build/write-symbols sections output-dir)
