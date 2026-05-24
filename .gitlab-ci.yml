@@ -77,3 +77,62 @@ test:clautolisp:file-compat:ccl:
     when: always
     paths:
       - clautolisp/.artifacts/file-compat-ccl.json
+
+# ---------------------------------------------------------------------
+# autolisp-test + alfe lanes — parity with the GitHub Actions workflow
+# (.github/workflows/ci.yml). GitLab CI ran a narrower matrix until
+# now (clautolisp-only); the autolisp-front-end / autolisp-test lanes
+# only existed on GitHub, which is why a clutch of fresh-checkout
+# bugs (cache key, save-image dir, --dry-run engine probe) sailed
+# through GitLab's pipeline while breaking on GitHub. Adding them
+# here keeps both CIs symmetrical.
+
+test:autolisp-test:sbcl:
+  stage: test
+  script:
+    - make -C autolisp-test test
+
+test:alfe:sbcl:
+  stage: test
+  script:
+    - make -C autolisp-front-end test-sbcl
+
+test:alfe:ccl:
+  stage: test
+  script:
+    - make -C autolisp-front-end test-ccl
+
+test:alfe:conformance:
+  stage: test
+  script:
+    - make -C autolisp-front-end conformance
+
+test:alfe:spec-coverage:
+  stage: test
+  script:
+    - make -C autolisp-front-end check-spec-coverage
+
+# Mirror of the GitHub `alfe-binary` job: build alfe-sbcl, assert
+# its --version matches the source-declared version, smoke-test the
+# headline `--clautolisp -x '(+ 1 2)'` invocation, and publish the
+# binary as a GitLab artifact for downstream consumers.
+build:alfe:sbcl:
+  stage: test
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - |
+      declared=$(sed -n 's/.*\*version\* "\([^"]*\)".*/\1/p' \
+                     autolisp-front-end/tools/alfe/source/version.lisp)
+      actual=$(autolisp-front-end/tools/alfe/bin/alfe-sbcl --version)
+      echo "declared: $declared"
+      echo "actual:   $actual"
+      [ "$actual" = "alfe $declared" ]
+    - |
+      output=$(autolisp-front-end/tools/alfe/bin/alfe-sbcl --clautolisp -x '(+ 1 2)')
+      echo "output: $output"
+      [ "$output" = "3" ]
+  artifacts:
+    when: always
+    paths:
+      - autolisp-front-end/tools/alfe/bin/alfe-sbcl
+    expire_in: 14 days
