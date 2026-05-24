@@ -67,6 +67,88 @@
           (forward-line 1))))
     (nreverse entries)))
 
+(defconst alref-html/css
+  "<style>
+body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em;color:#222;line-height:1.5}
+h1,h2,h3,h4{font-family:sans-serif;color:#111}
+a{color:#0066cc;text-decoration:none}
+a:hover{text-decoration:underline}
+/* Backticked spans the spec uses for code, names, and outputs.
+   Same tinted monospace look as pre.example so the visual
+   recovery is consistent across kinds; em stays italic to
+   distinguish project/system names from literal code, tt drops
+   the italic + slightly brighter tint to set output apart. */
+code,em.alref-name,tt.alref-result{
+  font-family:Menlo,Consolas,monospace;
+  background:#f5f5f5;border:1px solid #e0e0e0;border-radius:3px;
+  padding:0 0.35em;font-size:0.95em
+}
+em.alref-name{font-style:italic;background:#f7f2ec;border-color:#e6dccc}
+tt.alref-result{background:#eef5ee;border-color:#d4e3d4}
+pre.example{
+  font-family:Menlo,Consolas,monospace;
+  background:#f5f5f5;border:1px solid #e0e0e0;border-radius:4px;
+  padding:0.6em 0.8em;overflow-x:auto;font-size:0.95em
+}
+</style>"
+  "CSS head injected into every per-section HTML page so backticked
+spans (code / em / tt) all carry the tinted-monospace look the
+spec's example blocks already use.")
+
+(defconst alref-html/code-em-names
+  '("clautolisp" "alfe" "autolisp" "visual lisp" "visuallisp"
+    "autocad" "bricscad" "hyperspec" "elisp" "emacs"
+    "autodesk" "bricsys")
+  "Lower-cased project / vendor / language names. Backticked
+mentions of these in the spec are *names* — not code — and get
+retagged from <code> to <em class='alref-name'>.")
+
+(defun alref-html/retag-code-spans (html)
+  "Walk HTML for ``backticked`` spans (the org source's quoting
+convention) and emit a semantic HTML tag based on the content:
+
+  <em class='alref-name'>    project / vendor / language name
+                             (clautolisp, alfe, AutoCAD, …)
+  <tt class='alref-result'>  evaluation result: a span containing
+                             '=>' or the bare T / NIL literals
+  <code>                     everything else — the default for
+                             code samples, function names,
+                             operators, sysvars, string literals
+
+Why the source-side backticks aren't already <code>: org-mode
+treats backticks as plain text characters; its built-in code
+markup is =verbatim= or ~code~. The spec source was written in a
+markdown-ish style with backticks, so the backticks survive
+org-html-export verbatim. This post-pass is the recovery: detect
+the backticked spans in the rendered HTML and emit the right
+semantic tag for each."
+  (replace-regexp-in-string
+   ;; `…` containing no newline, no nested backtick, no angle
+   ;; bracket (so we don't accidentally chew into HTML tag
+   ;; attribute values that happen to live near a backtick).
+   "`\\([^`<\n]+\\)`"
+   (lambda (full-match)
+     (let* ((content (match-string 1 full-match))
+            (downcased (downcase content)))
+       (cond
+         ;; '=>' marks 'evaluate to' lines; the whole span is a
+         ;; result expression -> tt.
+         ((string-match-p "=>" content)
+          (format "<tt class='alref-result'>%s</tt>" content))
+         ;; Bare T / NIL / nil are conventional AutoLISP literals
+         ;; used as evaluation results.
+         ((member content '("T" "NIL" "nil" "t"))
+          (format "<tt class='alref-result'>%s</tt>" content))
+         ;; Known project / vendor names — these are emphasis,
+         ;; not literal code. List is small and lower-cased so we
+         ;; can match case-insensitively without losing the
+         ;; original casing in the output.
+         ((member downcased alref-html/code-em-names)
+          (format "<em class='alref-name'>%s</em>" content))
+         (t
+          (format "<code>%s</code>" content)))))
+   html t t))
+
 (defun alref-html/export-section (org-file html-dir)
   "Run org-html-export-to-html on ORG-FILE, then move the result
 into HTML-DIR. Returns the destination HTML pathname.
@@ -75,7 +157,14 @@ Uses find-file + kill-buffer rather than with-temp-buffer so
 org-html-export-to-html has a real file context — the temp-buffer
 recipe silently no-ops the export. Disables org-html's default
 postamble (the 'Created by Emacs … using …' footer) since the
-nav header at the top of each org page is sufficient."
+nav header at the top of each org page is sufficient. Injects
+the alref CSS via `org-html-head' so every page picks up the
+backtick-span styling without needing per-page #+HTML_HEAD
+directives.
+
+After org-html writes the file, runs RETAG-CODE-SPANS on its
+content to recover the semantic distinction between code / em /
+tt that the source's uniform backticks lost on the way to HTML."
   (let* ((basename (file-name-base org-file))
          (html-target (expand-file-name (format "%s.html" basename) html-dir))
          (org-out (concat (file-name-sans-extension org-file) ".html")))
@@ -85,12 +174,21 @@ nav header at the top of each org page is sufficient."
             (let ((org-export-with-toc nil)
                   (org-export-with-section-numbers nil)
                   (org-html-postamble nil)
+                  (org-html-head alref-html/css)
                   (org-html-htmlize-output-type 'css))
               (org-html-export-to-html)))
         (kill-buffer buffer)))
     (when (file-exists-p org-out)
       (when (file-exists-p html-target) (delete-file html-target))
       (rename-file org-out html-target))
+    ;; Post-process to retag the semantically-distinct backtick
+    ;; spans (code / em / tt). Read, transform, rewrite.
+    (when (file-exists-p html-target)
+      (let ((raw (with-temp-buffer
+                   (insert-file-contents html-target)
+                   (buffer-string))))
+        (with-temp-file html-target
+          (insert (alref-html/retag-code-spans raw)))))
     html-target))
 
 (defun alref-html/write-index-html (index html-dir)
@@ -101,10 +199,11 @@ order, grouped by chapter."
       (insert "<!DOCTYPE html>\n<html><head>\n")
       (insert "<meta charset='utf-8'>\n")
       (insert "<title>AutoLISP Spec — Index</title>\n")
-      (insert "<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}")
+      (insert alref-html/css)
+      (insert "<style>")
       (insert "h2{margin-top:1.5em;border-bottom:1px solid #ccc;padding-bottom:0.2em}")
       (insert "ul{list-style:none;padding-left:1em;margin:0.3em 0}")
-      (insert "li{margin:0.15em 0}a{text-decoration:none;color:#0066cc}a:hover{text-decoration:underline}</style>\n")
+      (insert "li{margin:0.15em 0}</style>\n")
       (insert "</head><body>\n")
       (insert "<h1>AutoLISP / Visual LISP Specification</h1>\n")
       (insert "<p><a href='symbols.html'>Symbols index</a> · ")
@@ -144,11 +243,11 @@ section."
       (insert "<!DOCTYPE html>\n<html><head>\n")
       (insert "<meta charset='utf-8'>\n")
       (insert "<title>AutoLISP Spec — Symbols</title>\n")
-      (insert "<style>body{font-family:sans-serif;max-width:60em;margin:2em auto;padding:0 1em}")
+      (insert alref-html/css)
+      (insert "<style>")
       (insert "h2{margin-top:1.5em}")
       (insert "ul{column-count:3;column-gap:2em;list-style:none;padding-left:0}")
-      (insert "li{margin:0.1em 0;break-inside:avoid}a{text-decoration:none;color:#0066cc}")
-      (insert "a:hover{text-decoration:underline}code{font-family:Menlo,monospace}</style>\n")
+      (insert "li{margin:0.1em 0;break-inside:avoid}</style>\n")
       (insert "</head><body>\n")
       (insert "<h1>Symbols index</h1>\n")
       (insert "<p><a href='index.html'>Back to top index</a></p>\n")
