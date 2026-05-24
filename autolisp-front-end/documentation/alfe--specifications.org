@@ -1740,13 +1740,19 @@ go through the =clautolisp.autolisp-init-files= module.
 
 | # | Stem                                                | Bare allowed? |
 |---+-----------------------------------------------------+---------------|
-| 1 | =~/.alfe{,rc}{,.lsp,.fas,.des,.vlx}=                | yes           |
-| 2 | =~/.config/alfe/init{,.lsp,.fas,.des,.vlx}=         | no            |
-| 3 | =~/.autolisp{,rc}{,.lsp,.fas,.des,.vlx}=            | yes           |
-| 4 | =~/.config/autolisp/init{,.lsp,.fas,.des,.vlx}=     | no            |
+| 1 | =~/.autolisp{,rc}{,.lsp,.fas,.des,.vlx}=            | yes           |
+| 2 | =~/.config/autolisp/init{,.lsp,.fas,.des,.vlx}=     | no            |
+| 3 | =~/.alfe{,rc}{,.lsp,.fas,.des,.vlx}=                | yes           |
+| 4 | =~/.config/alfe/init{,.lsp,.fas,.des,.vlx}=         | no            |
 
-Slots 3 and 4 are shared with the =clautolisp= binary so a user
+Slots 1 and 2 are shared with the =clautolisp= binary so a user
 maintaining a single =~/.autolisp= file sees it loaded by both.
+Slots 3 and 4 are specific to alfe and run *after* the shared
+pair — so program-specific definitions override the shared ones.
+Within each scope, the legacy HOME slot loads first and the XDG
+slot (=~/.config/<program>/init=) loads second, so a
+=~/.config/alfe/init.lsp= wins over both =~/.alfe= and the shared
+pair.
 
 ** Per-stem extension preference
 
