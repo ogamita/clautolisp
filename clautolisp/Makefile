@@ -14,6 +14,14 @@ ROOT_DIR := $(shell pwd)
 ASD_FILE := $(ROOT_DIR)/clautolisp.asd
 XDG_CACHE_HOME ?= $(ROOT_DIR)/.cache
 
+# Install destination. Override on the command line:
+#   make install PREFIX=/usr/local DESTDIR=/staging
+# Default /opt/local matches the MacPorts hierarchy and the
+# repo-wide convention documented in the root Makefile.
+PREFIX ?= /opt/local
+DESTDIR ?=
+SUBPROJECT_NAME := clautolisp
+
 # Host OS detection — used by the per-platform run-file-compat
 # targets below. Wrong-platform recipes call require-os-* which
 # prints a [skip] line and exits 0 per the policy in
@@ -173,4 +181,62 @@ builtins-coverage:
 
 clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
 	cd tools/clautolisp-gui-qt/ ; cmake --build build
+
+# ---------------------------------------------------------------------
+# Install / uninstall.
+#
+# Layout follows the repo-wide convention (see the root Makefile):
+#
+#   $(PREFIX)/bin/                                  user-facing executables
+#                                                   clautolisp-{sbcl,ccl}
+#                                                   read-autolisp-{sbcl,ccl}
+#                                                   clautolisp-gui-qt (when built)
+#   $(PREFIX)/libexec/clautolisp/                   support executables
+#                                                   run-file-compat (shell driver)
+#   $(PREFIX)/share/doc/clautolisp/                 .org + .pdf documentation
+#
+# install ships only what's already built — it doesn't depend on
+# the build targets, so the user controls when the heavy executables
+# are produced. A missing binary skips silently with a [no-op]
+# trace; an interactive install run that wants all four binaries
+# should do `make build-clautolisp-sbcl build-clautolisp-ccl
+# build-read-autolisp-sbcl build-read-autolisp-ccl` first.
+
+BIN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/bin
+LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
+DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
+
+CLAUTOLISP_GUI_QT_BIN := tools/clautolisp-gui-qt/build/clautolisp-gui-qt
+RUN_FILE_COMPAT_BIN   := $(RUN_FILE_COMPAT)
+
+.PHONY: install uninstall
+
+install:  ## Install built executables, run-file-compat, and docs into $$PREFIX.
+	install -d $(BIN_INSTALL_DIR)
+	install -d $(LIBEXEC_INSTALL_DIR)
+	install -d $(DOC_INSTALL_DIR)
+	@for exe in $(CLAUTOLISP_SBCL) $(CLAUTOLISP_CCL) \
+	            $(READ_AUTOLISP_SBCL) $(READ_AUTOLISP_CCL) \
+	            $(CLAUTOLISP_GUI_QT_BIN); do \
+	  if [ -x "$$exe" ]; then \
+	    install -m 0755 "$$exe" $(BIN_INSTALL_DIR)/ ; \
+	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/" ; \
+	  else \
+	    echo "[skip] $$exe not built (run the matching build target first)" ; \
+	  fi ; \
+	done
+	@if [ -x "$(RUN_FILE_COMPAT_BIN)" ]; then \
+	  install -m 0755 "$(RUN_FILE_COMPAT_BIN)" $(LIBEXEC_INSTALL_DIR)/ ; \
+	  echo "installed: $(RUN_FILE_COMPAT_BIN) -> $(LIBEXEC_INSTALL_DIR)/" ; \
+	fi
+	@for f in documentation/*.org documentation/*.pdf; do \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	done
+	@echo "clautolisp install complete: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+
+uninstall:  ## Remove the clautolisp install from $$PREFIX.
+	rm -f $(BIN_INSTALL_DIR)/clautolisp-sbcl $(BIN_INSTALL_DIR)/clautolisp-ccl \
+	      $(BIN_INSTALL_DIR)/read-autolisp-sbcl $(BIN_INSTALL_DIR)/read-autolisp-ccl \
+	      $(BIN_INSTALL_DIR)/clautolisp-gui-qt
+	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
 

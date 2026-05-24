@@ -51,6 +51,14 @@ CLAUTOLISP_SBCL := $(CLAUTOLISP_ROOT)/tools/clautolisp/bin/clautolisp-sbcl
 CLAUTOLISP_CCL  := $(CLAUTOLISP_ROOT)/tools/clautolisp/bin/clautolisp-ccl
 XDG_CACHE_HOME ?= $(CLAUTOLISP_ROOT)/.cache
 
+# Install destination. Override on the command line:
+#   make install PREFIX=/usr/local DESTDIR=/staging
+# Default /opt/local matches the MacPorts hierarchy and the
+# repo-wide convention documented in the root Makefile.
+PREFIX ?= /opt/local
+DESTDIR ?=
+SUBPROJECT_NAME := autolisp-test
+
 DOCUMENTATION_ORG := $(wildcard documentation/*.org) $(wildcard harness/*.org) $(wildcard tests/*.org)
 PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 
@@ -310,3 +318,50 @@ test-autocad-windows-autocad:
 	 "$(ALFE_SBCL)" --autocad --dialect autocad-2026 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-autocad-windows: test-autocad-windows-strict test-autocad-windows-autocad
+
+# ---------------------------------------------------------------------
+# Install / uninstall.
+#
+# Layout follows the repo-wide convention (see the root Makefile):
+#
+#   $(PREFIX)/libexec/autolisp-test/                harness/*.lsp +
+#                                                   tests/*.lsp — the
+#                                                   actual conformance
+#                                                   AutoLISP source the
+#                                                   user runs via
+#                                                   `clautolisp -l
+#                                                    <…>/harness/run.lsp`
+#   $(PREFIX)/share/doc/autolisp-test/              .org + .pdf docs
+#
+# autolisp-test ships no user-facing executables — the harness is
+# loaded INTO a running AutoLISP engine (AutoCAD / BricsCAD /
+# clautolisp-sbcl) rather than spawned as its own process. So the
+# 'libexec' slot houses the harness + test files for the engine to
+# load. The 'bin' install dir stays empty for this subproject.
+
+LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
+DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
+
+.PHONY: install uninstall
+
+install:  ## Install harness + tests + docs into $$PREFIX.
+	install -d $(LIBEXEC_INSTALL_DIR)/harness
+	install -d $(LIBEXEC_INSTALL_DIR)/tests
+	install -d $(DOC_INSTALL_DIR)
+	@if [ -d harness ]; then \
+	  for f in harness/*.lsp; do \
+	    [ -f "$$f" ] && install -m 0644 "$$f" $(LIBEXEC_INSTALL_DIR)/harness/ ; \
+	  done ; \
+	fi
+	@if [ -d tests ]; then \
+	  for f in tests/*.lsp tests/*/*.lsp; do \
+	    [ -f "$$f" ] && install -D -m 0644 "$$f" $(LIBEXEC_INSTALL_DIR)/"$$f" ; \
+	  done ; \
+	fi
+	@for f in documentation/*.org documentation/*.pdf; do \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	done
+	@echo "autolisp-test install complete: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+
+uninstall:  ## Remove the autolisp-test install from $$PREFIX.
+	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)

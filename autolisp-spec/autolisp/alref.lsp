@@ -44,7 +44,11 @@
 ;;;; strlen, strcase, princ, terpri, basic list ops). No vl-string-*,
 ;;;; no host-specific extensions.
 
-(setq *alref-root* "/opt/share/autolisp-spec/")
+;; Default install root. Matches the repo-wide PREFIX=/opt/local
+;; convention documented in the root Makefile's install target.
+;; Override at load time via:
+;;   (alref-set-root "/usr/local/share/autolisp-spec/")
+(setq *alref-root* "/opt/local/share/autolisp-spec/")
 
 (defun alref-set-root (path)
   "Point the library at the install directory. The directory must
