@@ -1,0 +1,180 @@
+name: CI
+
+# Mirror — but not duplicate — what .gitlab-ci.yml covers. GitLab
+# CI runs against a custom Docker image with both SBCL and CCL
+# preinstalled (clautolisp/docker/Dockerfile); GitHub Actions
+# bootstraps SBCL on the standard ubuntu-latest runner. CCL coverage
+# stays GitLab-only for now — the GitHub side is here mostly for
+# the alfe (autolisp-front-end) lanes the GitLab pipeline does not
+# yet cover.
+
+on:
+  push:
+    branches: [master, alfe-development]
+    tags: ['*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# Cancel in-progress runs on the same ref when a new push lands.
+# Releases on tags get their own concurrency group so a master
+# push doesn't pull the rug out from under a tag build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+  # ---------------------------------------------------------------------
+  # The bulk of CI: every FiveAM suite under SBCL, plus the alfe
+  # conformance corpus and spec-coverage gate. Combined into one job
+  # so we pay SBCL+Quicklisp install costs once.
+
+  sbcl-test:
+    name: SBCL — full test matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SBCL
+        run: |
+          sudo apt-get update -qq
+          # apt's sbcl is fine for our purposes (we don't rely on
+          # any feature newer than 2.2). Pinning a specific version
+          # is not worth the extra friction — if a regression lands,
+          # we'll pin then.
+          sudo apt-get install -y --no-install-recommends sbcl
+          sbcl --version
+
+      - name: Cache Quicklisp
+        id: quicklisp-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/quicklisp
+            ~/.cache/common-lisp
+          # Cache key buckets per-Lisp + per-quicklisp-dist; bump
+          # the suffix when the dist version changes.
+          key: quicklisp-sbcl-dist2024.10-${{ hashFiles('**/*.asd') }}
+          restore-keys: |
+            quicklisp-sbcl-dist2024.10-
+
+      - name: Install Quicklisp (cache miss)
+        if: steps.quicklisp-cache.outputs.cache-hit != 'true'
+        run: |
+          # Bootstrap quicklisp into ~/quicklisp the same way every
+          # contributor does locally. The --quit at the end is what
+          # makes (ql:add-to-init-file) non-interactive.
+          curl -sSO https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive --no-userinit \
+               --load quicklisp.lisp \
+               --eval '(quicklisp-quickstart:install)' \
+               --eval '(let ((ql:*quickload-prompt* nil))
+                         (funcall (find-symbol "ADD-TO-INIT-FILE" :ql-util) t))'
+          rm -f quicklisp.lisp
+
+      - name: Pre-warm Quicklisp dependencies
+        # Pull every quicklisp-distributed library the test image
+        # touches, in one go. Subsequent ASDF loads re-use these
+        # without reaching out to beta.quicklisp.org.
+        run: |
+          sbcl --non-interactive \
+               --load ~/quicklisp/setup.lisp \
+               --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)'
+
+      - name: clautolisp — FiveAM suite (SBCL)
+        run: make -C clautolisp test-sbcl
+
+      - name: autolisp-test — conformance harness
+        run: make -C autolisp-test test
+
+      - name: autolisp-front-end (alfe) — FiveAM suite (SBCL)
+        run: make -C autolisp-front-end test-sbcl
+
+      - name: autolisp-front-end (alfe) — scenario conformance
+        run: make -C autolisp-front-end conformance
+
+      - name: autolisp-front-end (alfe) — spec-coverage gate
+        run: make -C autolisp-front-end check-spec-coverage
+
+  # ---------------------------------------------------------------------
+  # Smoke build: produce the alfe-sbcl binary and verify --version
+  # reports the right string. Uploads the binary as a workflow
+  # artifact so contributors can grab a pre-built alfe from a PR
+  # without setting up SBCL locally.
+
+  alfe-binary:
+    name: alfe — SBCL binary build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SBCL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends sbcl
+
+      - name: Cache Quicklisp
+        id: quicklisp-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/quicklisp
+            ~/.cache/common-lisp
+          key: quicklisp-sbcl-dist2024.10-${{ hashFiles('**/*.asd') }}
+          restore-keys: |
+            quicklisp-sbcl-dist2024.10-
+
+      - name: Install Quicklisp (cache miss)
+        if: steps.quicklisp-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSO https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive --no-userinit \
+               --load quicklisp.lisp \
+               --eval '(quicklisp-quickstart:install)' \
+               --eval '(let ((ql:*quickload-prompt* nil))
+                         (funcall (find-symbol "ADD-TO-INIT-FILE" :ql-util) t))'
+          rm -f quicklisp.lisp
+
+      - name: Build alfe-sbcl
+        run: make -C autolisp-front-end build-alfe-sbcl
+
+      - name: Verify alfe --version
+        # Cross-check the built binary reports the version the
+        # source declares — catches mismatches between the alfe
+        # bump and a forgotten conformance scenario.
+        run: |
+          declared=$(sed -n 's/.*\*version\* "\([^"]*\)".*/\1/p' \
+                       autolisp-front-end/tools/alfe/source/version.lisp)
+          actual=$(./autolisp-front-end/tools/alfe/bin/alfe-sbcl --version)
+          echo "declared: $declared"
+          echo "actual:   $actual"
+          [ "$actual" = "alfe $declared" ] || {
+            echo "Version mismatch: built binary says '$actual', source says 'alfe $declared'." >&2
+            exit 1
+          }
+
+      - name: Smoke-test alfe --clautolisp -x '(+ 1 2)'
+        # The headline V1 acceptance criterion. Worth keeping as a
+        # post-build assertion: if this regresses, every other CI
+        # check could pass while real users see breakage.
+        run: |
+          output=$(./autolisp-front-end/tools/alfe/bin/alfe-sbcl --clautolisp -x '(+ 1 2)')
+          echo "output: $output"
+          [ "$output" = "3" ] || {
+            echo "Headline acceptance failed: alfe --clautolisp -x '(+ 1 2)' produced '$output' (expected '3')." >&2
+            exit 1
+          }
+
+      - name: Upload alfe-sbcl artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alfe-sbcl-linux-x64
+          path: autolisp-front-end/tools/alfe/bin/alfe-sbcl
+          if-no-files-found: error
+          # Keep alfe-sbcl artifacts around for a couple of weeks
+          # so PR reviewers can pull a build without rebuilding.
+          retention-days: 14
