@@ -69,3 +69,6 @@ and autolisp-reference-notes.{org,pdf} and other if pertinent.
 Typically, PREFIX=/opt; in any case the path to
 $PREFIX/share/autolisp-spec/ will have to be configured in emacs or
 the alfe-ref library.
+
+The emacs library and minor mode will be installed in $PREFIX/share/emacs/site-lisp/autolisp-spec/
+and the autolisp alfe-ref library will be installed in $PREFIX/share/autolisp/site-lisp/autolisp-spec/
