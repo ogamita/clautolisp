@@ -50,6 +50,60 @@ printing. All 1235 + 252 existing tests still green.
 
 Versions bumped: clautolisp 1.0.41 -> 1.0.42, alfe 1.0.5 -> 1.0.6.
 
+--- Follow-up: ANSI-colour portion (separate commit) ---
+
+The colour ticket landed on the same branch. New module
+`clautolisp/autolisp-runtime/source/terminal-color.lisp' carries
+the full policy:
+
+  - *COLOR-OUTPUT* parameter (nil / :yellow / :blue) — the single
+    switch the AUTOLISP-SYMBOL PRINT-OBJECT method consults.
+  - ANSI-COLORIZE / WRITE-ANSI-COLORIZED — SGR helpers used by the
+    method; both no-op cheaply when colour is off.
+  - RESOLVE-COLOR-POLICY (no-color-flag, stream, probe-luminance-p)
+    — combines --no-color, $NO_COLOR (https://no-color.org), an
+    isatty(3) check via sb-alien / ccl::isatty, and the luminance
+    cascade.
+  - TERMINAL-BACKGROUND-LUMINANCE — cascade: $CLAUTOLISP_BACKGROUND
+    override → $COLORFGBG (rxvt convention) → OSC 11 query of
+    /dev/tty with tmux / screen passthrough.
+  - PROBE-TERMINAL-BACKGROUND-VIA-OSC11 — spawns a small /bin/sh
+    pipeline (stty + printf + dd) with a 150 ms read timeout, so a
+    non-responding terminal silently falls through to the default
+    without delaying the user. Choice of shell-helper avoids
+    per-implementation termios bindings on SBCL / CCL.
+
+The AUTOLISP-SYMBOL PRINT-OBJECT method now reads *COLOR-OUTPUT*
+and wraps the rendered name in an SGR sequence when non-NIL.
+Cons cells / NIL / integers / floats are unaffected (CL prints
+them natively) so a backtrace like `in SUBR CAR: (A-SYMBOL)' is
+unchanged in structure but acquires colour on the symbol only.
+
+CLI plumbing:
+  - clautolisp: new --no-color flag in parse-arguments, banner
+    updated, MAIN binds *COLOR-OUTPUT* to RESOLVE-COLOR-POLICY's
+    result for the run.
+  - alfe: new --no-color flag on cli-options, banner updated, RUN
+    binds *COLOR-OUTPUT* and additionally sets NO_COLOR=1 in the
+    subprocess env when the policy says off (so subprocess
+    backends agree with the parent).
+
+Tests: 8 new FiveAM cases in model-tests.lisp covering ansi-
+colorize NIL / yellow / blue, PRINT-OBJECT method with armed
+policy, parse-colorfgbg index classification, parse-osc11-response
+ESC-ST and BEL variants, luminance-of-rgb against Rec-601 weights,
+resolve-color-policy with --no-color flag and $NO_COLOR. The
+runtime suite is now 263 / 263; alfe still 252 / 252.
+
+Spec docs updated:
+  - clautolisp-specifications.org: new "Colour output" subsection
+    under Options, listing --no-color, $NO_COLOR,
+    $CLAUTOLISP_BACKGROUND, and the cascade rationale.
+  - alfe--specifications.org: new "Colour output" environment-
+    variable table alongside the init-inhibition one.
+
+Versions bumped: clautolisp 1.0.42 -> 1.0.43, alfe 1.0.6 -> 1.0.7.
+
 --- Original issue ---
 
 As an autolisp developper, I want better display of autolisp symbols in error messages.
