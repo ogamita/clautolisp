@@ -561,7 +561,7 @@ the head of ARGV-TAIL (and the returned remaining is its tail)."
 
 ;;; --- backend resolution ---------------------------------------------
 
-(defun resolve-backend (options)
+(defun resolve-backend (options &key (detect-p t))
   "Apply the spec's backend-defaulting algorithm to OPTIONS. Returns
 the registered backend instance to drive.
 
@@ -572,7 +572,18 @@ Algorithm (matches spec section \"Algorithme par défaut\"):
   3. Otherwise, $AUTOLISP_BACKEND supplies the legacy default.
   4. Otherwise, every registered backend's DETECT is called in order;
      the first to succeed wins.
-  5. If everything fails, signal BACKEND-NOT-AVAILABLE."
+  5. If everything fails, signal BACKEND-NOT-AVAILABLE.
+
+DETECT-P, when NIL, skips the DETECT call on the selected backend
+— used by --dry-run, which prints the action plan but never
+actually launches an engine. With DETECT-P NIL and an explicit
+backend, the function returns the registered instance
+unconditionally; in auto mode it returns the first registered
+backend without probing. Without this knob a host that doesn't
+have BricsCAD or AutoCAD installed would fail
+`alfe --bricscad --dry-run -x \"(+ 1 2)\"` with exit 3 even
+though no engine is actually needed — caught by the matching
+conformance scenarios under tests/scenarios/{bricscad,cli}/."
   (let* ((selected (or (cli-options-backend options)
                        (let ((override (env-default :override)))
                          (when override
@@ -598,13 +609,18 @@ Algorithm (matches spec section \"Algorithme par défaut\"):
                     (funcall (find-symbol "MAKE-CLAUTOLISP-BACKEND"
                                           '#:alfe.backend.clautolisp)
                              :variant variant)))))
-        (return-from resolve-backend (detect backend))))
+        (return-from resolve-backend
+          (if detect-p (detect backend) backend))))
     ;; Auto: try each registered backend in order.
     (dolist (key (list-backends))
       (let ((backend (find-backend key)))
-        (handler-case
-            (return-from resolve-backend (detect backend))
-          (backend-not-available () nil))))
+        (cond
+          (detect-p
+           (handler-case
+               (return-from resolve-backend (detect backend))
+             (backend-not-available () nil)))
+          (t
+           (return-from resolve-backend backend)))))
     (error 'backend-not-available
            :message "No backend detected. Set --clautolisp explicitly or install a supported CAD.")))
 
@@ -676,7 +692,15 @@ The handler chain matches alfe-cli.issue's exit-code table:
            0)
           (t
            (set-level (cli-options-verbosity options))
-           (let ((backend (resolve-backend options)))
+           ;; --dry-run resolves the backend by *name* only (no
+           ;; engine probe), so an `alfe --bricscad --dry-run …`
+           ;; invocation on a host without BricsCAD still prints
+           ;; the action plan and exits 0 — matching the user
+           ;; intent of "show me what would happen" rather than
+           ;; "verify the engine works".
+           (let ((backend (resolve-backend
+                           options
+                           :detect-p (not (cli-options-dry-run-p options)))))
              (cond
                ((cli-options-dry-run-p options)
                 (emit-dry-run options backend)
