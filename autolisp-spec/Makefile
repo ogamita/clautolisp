@@ -7,6 +7,7 @@
 # `make documentation LATEX_COMPILER=lualatex'.
 EMACS          ?= emacs
 LATEX_COMPILER ?= xelatex
+MAKEINFO       ?= makeinfo
 AUTOCAD_RUNNER ?=
 BRICSCAD_RUNNER ?=
 
@@ -45,8 +46,22 @@ pages:  ## Emit one .txt per * chapter and ** subsection under build/pages/.
 html: $(BUILD_DIR)/.org-stamp
 	$(EMACS) --batch --script scripts/build-paged-html.el $(BUILD_DIR)
 
-info: $(BUILD_DIR)/.org-stamp
-	@echo "info: see Phase C follow-up."
+info: $(INFO_DIR)/autolisp-spec.info  ## Build the .info manual from the spec.
+
+$(INFO_DIR)/autolisp-spec.texi: $(SPEC_ORG) scripts/build-paged-info.el
+	$(EMACS) --batch --script scripts/build-paged-info.el \
+		$(SPEC_ORG) $(BUILD_DIR)
+
+$(INFO_DIR)/autolisp-spec.info: $(INFO_DIR)/autolisp-spec.texi
+	# --force + --no-validate keep two pre-existing source-side
+	# bugs in the spec from killing the whole build: lines 38191
+	# and 38192 of the spec org file start with '* ' because they
+	# are continuations of a multi-line string in an example
+	# paragraph (a separate spec-author cleanup ticket should wrap
+	# them in #+begin_example/#+end_example). makeinfo's strict
+	# section-level + menu-cross-reference checks complain, but
+	# the rest of the manual is fine.
+	$(MAKEINFO) --force --no-validate --no-split $< -o $@
 
 paged: pages html info  ## Build every paged derivative (pages + html + info).
 
