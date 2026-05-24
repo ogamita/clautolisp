@@ -32,7 +32,8 @@ PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 TEST_SYSTEM ?= autolisp-front-end
 
 .PHONY: help all documentation test test-sbcl test-ccl \
-        build-alfe-sbcl build-alfe-ccl clean-pdf clean
+        build-alfe-sbcl build-alfe-ccl clean-pdf clean \
+        conformance check-spec-coverage
 
 help:  ## Show this message (list available targets and their purpose).
 	@awk 'BEGIN { \
@@ -111,6 +112,31 @@ build-alfe-ccl:  ## Build tools/alfe/bin/alfe-ccl via save-application.
 		--eval '(require :asdf)' \
 		--load "$(ALFE_GENERATE)" \
 		--eval '(ccl:quit)'
+
+# ---------------------------------------------------------------------
+# Conformance lane. `make test` already invokes the conformance runner
+# inside the FiveAM suite (see tests/conformance-tests.lisp); this
+# target lets a developer (or CI) drive the corpus on its own,
+# producing a focused summary without the surrounding unit-test
+# output.
+
+conformance:  ## Run the alfe scenario corpus and exit non-zero on any failure.
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	$(SBCL) --noinform --no-userinit --non-interactive \
+		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
+		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
+		--eval '(require :asdf)' \
+		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
+		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
+		--eval '(asdf:load-system "autolisp-front-end/tool-run-alfe-conformance")' \
+		--eval '(alfe.tools.run-alfe-conformance:main nil)'
+
+check-spec-coverage:  ## Assert every CLI option in the spec is covered by ≥1 scenario.
+	env XDG_CACHE_HOME="$(XDG_CACHE_HOME)" \
+	$(SBCL) --noinform --no-userinit --non-interactive \
+		--load scripts/check-spec-coverage.lisp
 
 clean: clean-pdf  ## Remove built executables and generated PDFs.
 	rm -f $(ALFE_SBCL) $(ALFE_CCL)

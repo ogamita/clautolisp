@@ -110,6 +110,25 @@
   :components
   ((:file "source/backend-autocad")))
 
+(asdf:defsystem "autolisp-front-end/conformance"
+  :description "alfe scenario corpus runner — drives declarative .sexp scenarios through alfe.cli:run and compares captured streams against expectations."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("autolisp-front-end")
+  :serial t
+  :components
+  ((:file "source/conformance")))
+
+(asdf:defsystem "autolisp-front-end/tool-run-alfe-conformance"
+  :description "Standalone CLI wrapper around alfe.conformance; what `make -C autolisp-front-end conformance` invokes."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("autolisp-front-end/conformance")
+  :serial t
+  :components
+  ((:file "tools/run-alfe-conformance/source/main")
+   (:file "tools/run-alfe-conformance/source/version")))
+
 (asdf:defsystem "autolisp-front-end/alfe-tool"
   :description "Standalone alfe executable built on top of the front-end core."
   :author "Pascal J. Bourguignon"
@@ -125,7 +144,9 @@
   :description "FiveAM tests for the alfe front-end (smoke + per-ticket suites)."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
-  :depends-on ("autolisp-front-end" "fiveam" "bordeaux-threads")
+  :depends-on ("autolisp-front-end"
+               "autolisp-front-end/conformance"
+               "fiveam" "bordeaux-threads")
   :serial t
   :components
   ((:file "tests/package")
@@ -136,6 +157,7 @@
    (:file "tests/backend-clautolisp-tests")
    (:file "tests/file-protocol-tests")
    (:file "tests/backend-cad-tests")
+   (:file "tests/conformance-tests")
    (:file "tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
