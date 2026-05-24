@@ -90,6 +90,7 @@
            #:options-version-p
            #:options-dry-run-p
            #:options-no-init-p
+           #:options-no-color-p
            #:options-keep-workdir-p
            #:options-main
            #:options-positional
@@ -133,6 +134,12 @@ calls against the backend protocol."
   ;; (~/.alfe / ~/.autolisp / ~/.config/{alfe,autolisp}/init).
   ;; Honoured equivalently via $AUTOLISP_NO_INIT and $ALFE_NO_INIT.
   (no-init-p        nil)
+  ;; --no-color: disable ANSI colour in AutoLISP value output for
+  ;; both the in-process clautolisp backend (via *COLOR-OUTPUT*)
+  ;; and any subprocess backend (via $NO_COLOR in the child env).
+  ;; The runtime's own RESOLVE-COLOR-POLICY also honours $NO_COLOR
+  ;; directly, so this flag is the per-invocation override.
+  (no-color-p       nil)
   ;; --keep-workdir / $AUTOLISP_KEEP_WORKDIR: keep the engine
   ;; workdir at end of run instead of deleting it. Was previously
   ;; mis-wired off NO-INIT-P; now lives in its own slot per the
@@ -246,6 +253,11 @@ Bootstrap and runtime:
   --no-init, -norc       Skip user init files (~/.alfe{,rc}, ~/.autolisp{,rc},
                          ~/.config/alfe/init, ~/.config/autolisp/init).
                          Mirrors $AUTOLISP_NO_INIT and $ALFE_NO_INIT.
+  --no-color             Disable ANSI colour in AutoLISP value output. Honoured
+                         equivalently via $NO_COLOR (https://no-color.org).
+                         Without it, the runtime probes the terminal background
+                         and picks a contrasting accent (yellow on dark,
+                         blue on light).
   --keep-workdir         Keep the engine workdir at end of run (do not delete).
                          Mirrors $AUTOLISP_KEEP_WORKDIR.
   --dry-run              Print the resolved action plan and exit 0.
@@ -527,6 +539,8 @@ when required. Unknown options signal CLI-USAGE-ERROR."
                ((or (string= arg "--no-init")
                     (string= arg "-norc"))
                 (setf (cli-options-no-init-p options) t))
+               ((string= arg "--no-color")
+                (setf (cli-options-no-color-p options) t))
                ((string= arg "--keep-workdir")
                 (setf (cli-options-keep-workdir-p options) t))
                ;; unknown long option
@@ -777,21 +791,41 @@ The handler chain matches alfe-cli.issue's exit-code table:
            0)
           (t
            (set-level (cli-options-verbosity options))
-           ;; --dry-run resolves the backend by *name* only (no
-           ;; engine probe), so an `alfe --bricscad --dry-run …`
-           ;; invocation on a host without BricsCAD still prints
-           ;; the action plan and exits 0 — matching the user
-           ;; intent of "show me what would happen" rather than
-           ;; "verify the engine works".
-           (let ((backend (resolve-backend
-                           options
-                           :detect-p (not (cli-options-dry-run-p options)))))
-             (cond
-               ((cli-options-dry-run-p options)
-                (emit-dry-run options backend)
-                0)
-               (t
-                (run-plan options backend)))))))
+           ;; Colour policy is computed once, against *standard-output*
+           ;; as it stood when the CLI started, and bound for the
+           ;; duration of the run. The binding covers both the
+           ;; in-process clautolisp backend (which prints AutoLISP
+           ;; values directly from this process and therefore sees
+           ;; *COLOR-OUTPUT*) and the dry-run renderer below. For
+           ;; subprocess backends the runtime in the child does its
+           ;; own probe; we additionally export $NO_COLOR=1 to the
+           ;; child env when the parent's policy is off, so the
+           ;; child's probe agrees with the parent.
+           (let* ((color-policy
+                    (clautolisp.autolisp-runtime:resolve-color-policy
+                     :no-color-flag (cli-options-no-color-p options))))
+             (when (and (null color-policy)
+                        (or (cli-options-no-color-p options)
+                            (clautolisp.autolisp-runtime:env-no-color-set-p)))
+               ;; Make the off-policy explicit to any subprocess —
+               ;; child can't observe our --no-color flag directly.
+               (setf (uiop:getenv "NO_COLOR") "1"))
+             (let ((clautolisp.autolisp-runtime:*color-output* color-policy))
+               ;; --dry-run resolves the backend by *name* only (no
+               ;; engine probe), so an `alfe --bricscad --dry-run …`
+               ;; invocation on a host without BricsCAD still prints
+               ;; the action plan and exits 0 — matching the user
+               ;; intent of "show me what would happen" rather than
+               ;; "verify the engine works".
+               (let ((backend (resolve-backend
+                               options
+                               :detect-p (not (cli-options-dry-run-p options)))))
+                 (cond
+                   ((cli-options-dry-run-p options)
+                    (emit-dry-run options backend)
+                    0)
+                   (t
+                    (run-plan options backend)))))))))
     (cli-usage-error (condition)
       (format *error-output* "~&alfe: ~A~%" condition)
       2)

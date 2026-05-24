@@ -104,6 +104,109 @@ Spec docs updated:
 
 Versions bumped: clautolisp 1.0.42 -> 1.0.43, alfe 1.0.6 -> 1.0.7.
 
+--- Hotfix: OSC 11 probe hangs CLI startup on macOS arm64 ---
+
+The active OSC 11 probe shipped enabled by default and immediately
+regressed the CLI: on macOS arm64 the /bin/sh helper running
+`stty -icanon -echo` against /dev/tty receives SIGTTOU and is left
+:STOPPED; uiop:run-program's wait then blocks the parent forever.
+Repro: simply launching `clautolisp --clautolisp` or `alfe
+--clautolisp` from an interactive terminal hangs before the REPL
+appears (Ctrl-C backtrace lands in PROBE-TERMINAL-BACKGROUND-VIA-OSC11
+-> WAIT-PROCESS).
+
+Fix (clautolisp 1.0.43 -> 1.0.44, alfe 1.0.7 -> 1.0.8):
+
+  - RESOLVE-COLOR-POLICY's new PROBE-OSC11-P keyword defaults to NIL
+    unless $CLAUTOLISP_PROBE_OSC11 is set in the env. The cheap
+    rungs of the cascade ($CLAUTOLISP_BACKGROUND, $COLORFGBG) still
+    run; when nothing resolves, the policy falls back to :yellow
+    (dark default) — matching the convention most CLI tools use
+    on hosts where they cannot detect the background.
+  - The OSC 11 helper and the probe function remain in place,
+    behind the env-var opt-in. The spec sections in both
+    clautolisp-specifications.org and alfe--specifications.org
+    now document the env var and the hang rationale.
+  - New regression test
+    `resolve-color-policy-does-not-spawn-osc11-probe-by-default'
+    monkey-patches PROBE-TERMINAL-BACKGROUND-VIA-OSC11 to raise if
+    called; without it a stuck future caller would hang the entire
+    suite. Runtime suite is now 265 / 265 (was 263 + 2 new); alfe
+    still 252 / 252.
+
+Users who want to try the OSC 11 query can opt in:
+  export CLAUTOLISP_PROBE_OSC11=1
+The cascade then walks $CLAUTOLISP_BACKGROUND -> $COLORFGBG ->
+the OSC 11 helper, same as the previous default.
+
+--- Follow-up: explicit per-axis colour env vars ---
+
+The luminance probe (whether OSC 11 or the cheaper $COLORFGBG)
+infers a colour; users on multiplexed / SSH / non-cooperating
+terminals may want to spell the colour out. Two new env vars do
+exactly that, and they win over the probe so the choice is
+deterministic:
+
+  CLAUTOLISP_SYMBOL_FOREGROUND=NAME
+  CLAUTOLISP_SYMBOL_BACKGROUND=NAME
+
+NAME is one of black / red / green / yellow / blue / magenta /
+cyan / white plus their `bright-` prefixed siblings (with
+`grey' / `gray' as aliases for `bright-black`). The parser is
+case- and whitespace-insensitive. `default' / `none' / `off'
+leaves the axis bare so a user who only wants to set the
+background can do so without also having to spell out a
+foreground. Unknown names silently drop the axis.
+
+Either env var (or both) being set returns a (FG BG) pair from
+RESOLVE-COLOR-POLICY; *COLOR-OUTPUT* now accepts that shape in
+addition to the original bare-keyword foreground-only shape, so
+the luminance-based default code path is unchanged. PRINT-OBJECT
+on AUTOLISP-SYMBOL emits a two-parameter SGR sequence
+(`ESC [ FG ; BG m NAME ESC [ 0 m`) when both axes are set,
+keeping only the recognised codes when one is unknown.
+
+Implementation: terminal-color.lisp grew *ANSI-FOREGROUND-TABLE*
++ *ANSI-BACKGROUND-TABLE* (16-colour palette incl. bright variants),
+%NORMALIZE-COLOUR-SPEC (turns NIL / keyword / (FG BG) into a
+canonical (FG BG)), PARSE-COLOUR-NAME, ENV-SYMBOL-FOREGROUND /
+ENV-SYMBOL-BACKGROUND / ENV-SYMBOL-COLOUR-SPEC, and a new step in
+RESOLVE-COLOR-POLICY that consults the env-spec before the
+luminance probe.
+
+Tests: 5 new FiveAM cases in model-tests.lisp covering (FG BG)
+SGR emission incl. bright variants and bg-only sequences, colour-
+name parsing (case / whitespace / sentinels), env-spec pairing,
+RESOLVE-COLOR-POLICY honouring the env vars over the luminance
+probe, and PRINT-OBJECT rendering with both axes set. Runtime
+suite is now 287 / 287 (was 265 + 22 from 5 new tests with
+multiple `is`); alfe still 252 / 252.
+
+Spec docs updated:
+  - clautolisp-specifications.org: the Colour-output subsection
+    now lists the two env vars and the 5-step resolution order.
+  - clautolisp-user-manual.org: new Colour-output subsection
+    under Options with the full env-var menu + a worked example.
+  - alfe--specifications.org: env-var table extended with the
+    two new entries.
+
+Versions bumped: clautolisp 1.0.44 -> 1.0.45, alfe 1.0.8 -> 1.0.9.
+
+--- Follow-up: design document ---
+
+The accumulated discussion about OSC 11 — why the probe is
+opt-in, what cl-charms can and cannot help with, how MS-Windows
+splits into three sub-targets (pure conhost, msys2 / mintty, WSL),
+and what the migration plan looks like when cl-charms lands for
+the debugger — now lives in a dedicated design document so the
+next engineer touching this code doesn't have to re-derive it:
+
+  clautolisp/documentation/terminal-color-design.org
+
+Cross-linked from clautolisp-specifications.org's See-Also.
+Versions not bumped (documentation-only change to an existing
+shipped feature).
+
 --- Original issue ---
 
 As an autolisp developper, I want better display of autolisp symbols in error messages.

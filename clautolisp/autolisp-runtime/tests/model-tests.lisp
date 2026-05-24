@@ -822,3 +822,266 @@ nested #S(...) noise."
          (rendered (princ-to-string (list sym 42))))
     (is (string= "(X 42)" rendered))))
 
+;;; --- Terminal colour policy and ANSI symbol rendering ---------------
+;;;
+;;; The follow-up portion of debug-messages-autolisp-symbols.issue:
+;;; PRINT-OBJECT on AUTOLISP-SYMBOL wraps its output in an ANSI SGR
+;;; sequence when *COLOR-OUTPUT* names a colour, and emits the bare
+;;; name otherwise. RESOLVE-COLOR-POLICY does the env / tty / probe
+;;; cascade that decides what the CLI binds.
+
+(test ansi-colorize-no-ops-when-colour-is-nil
+  "ANSI-COLORIZE on NIL passes the string through unchanged — the
+cheap path the PRINT-OBJECT method takes when colour is off."
+  (is (string= "FOO" (clautolisp.autolisp-runtime:ansi-colorize "FOO" nil))))
+
+(test ansi-colorize-wraps-string-in-sgr-sequence
+  "Yellow and blue produce the expected SGR 33 / 34 sequences with a
+trailing reset (SGR 0) so downstream output isn't tinted."
+  (let ((yellow (clautolisp.autolisp-runtime:ansi-colorize "FOO" :yellow))
+        (blue   (clautolisp.autolisp-runtime:ansi-colorize "FOO" :blue)))
+    (is (string= (format nil "~C[33mFOO~C[0m" #\Esc #\Esc) yellow))
+    (is (string= (format nil "~C[34mFOO~C[0m" #\Esc #\Esc) blue))))
+
+(test print-object-symbol-uses-colour-when-policy-armed
+  "An AUTOLISP-SYMBOL rendered through PRINC honours a non-NIL
+*COLOR-OUTPUT* binding: the rendered string carries an SGR-33 prefix
+and an SGR-0 reset around the bare symbol name."
+  (let ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "MY-FN")))
+    (is (string= "MY-FN" (princ-to-string sym)))
+    (let ((clautolisp.autolisp-runtime:*color-output* :yellow))
+      (is (string= (format nil "~C[33mMY-FN~C[0m" #\Esc #\Esc)
+                   (princ-to-string sym))))
+    (let ((clautolisp.autolisp-runtime:*color-output* :blue))
+      (is (string= (format nil "~C[34mMY-FN~C[0m" #\Esc #\Esc)
+                   (princ-to-string sym))))))
+
+(test parse-colorfgbg-classifies-background-index
+  "$COLORFGBG's second field is the ANSI palette index for the
+background. Indices 0..6 and 8 (bright black) are dark; everything
+else is light. Unparseable / missing values yield NIL."
+  ;; Empty string stands in for "unset" — UIOP exposes GETENV but no
+  ;; portable UNSETENV, and our parser treats "" and NIL identically
+  ;; (both fail (PLUSP (LENGTH …))).
+  (labels ((with-env (val thunk)
+             (let ((before (or (uiop:getenv "COLORFGBG") "")))
+               (unwind-protect
+                    (progn
+                      (setf (uiop:getenv "COLORFGBG") (or val ""))
+                      (funcall thunk))
+                 (setf (uiop:getenv "COLORFGBG") before)))))
+    (with-env "15;0"    (lambda () (is (eq :dark  (clautolisp.autolisp-runtime:parse-colorfgbg)))))
+    (with-env "15;8"    (lambda () (is (eq :dark  (clautolisp.autolisp-runtime:parse-colorfgbg)))))
+    (with-env "0;15"    (lambda () (is (eq :light (clautolisp.autolisp-runtime:parse-colorfgbg)))))
+    (with-env "0;7"     (lambda () (is (eq :light (clautolisp.autolisp-runtime:parse-colorfgbg)))))
+    (with-env "garbage" (lambda () (is (null (clautolisp.autolisp-runtime:parse-colorfgbg)))))
+    (with-env nil       (lambda () (is (null (clautolisp.autolisp-runtime:parse-colorfgbg)))))))
+
+(test parse-osc11-response-extracts-rgb-triple
+  "PARSE-OSC11-RESPONSE handles the standard ESC-ST terminated reply,
+the BEL-terminated variant, and rejects malformed input."
+  (is (equal (list #x2e2e #x3434 #x3a3a)
+             (clautolisp.autolisp-runtime:parse-osc11-response
+              (format nil "~C]11;rgb:2e2e/3434/3a3a~C\\" #\Esc #\Esc))))
+  (is (equal (list #xffff #xffff #xffff)
+             (clautolisp.autolisp-runtime:parse-osc11-response
+              (format nil "~C]11;rgb:ffff/ffff/ffff~C" #\Esc #\Bel))))
+  (is (null (clautolisp.autolisp-runtime:parse-osc11-response "not a response")))
+  (is (null (clautolisp.autolisp-runtime:parse-osc11-response ""))))
+
+(test luminance-of-rgb-matches-rec-601
+  "Rec-601 weights: 0.299*R + 0.587*G + 0.114*B. Pure white saturates
+near 1.0, pure black is 0.0, and the conventional 0.5 cut falls
+between common dark and light terminal backgrounds."
+  (let ((white (clautolisp.autolisp-runtime:luminance-of-rgb '(65535 65535 65535)))
+        (black (clautolisp.autolisp-runtime:luminance-of-rgb '(0 0 0)))
+        (dark  (clautolisp.autolisp-runtime:luminance-of-rgb '(#x2e2e #x3434 #x3a3a)))
+        (light (clautolisp.autolisp-runtime:luminance-of-rgb '(#xeeee #xeeee #xeeee))))
+    (is (> white 0.99))
+    (is (= black 0.0))
+    (is (< dark 0.5))
+    (is (> light 0.5))
+    (is (null (clautolisp.autolisp-runtime:luminance-of-rgb '(1 2))))
+    (is (null (clautolisp.autolisp-runtime:luminance-of-rgb nil)))))
+
+(test resolve-color-policy-honours-no-color-flag
+  "The --no-color CLI flag short-circuits the entire cascade. Even on
+a tty with a freshly probed luminance, the policy is NIL.
+Defensively, a broken stream also yields NIL (the function never
+signals)."
+  (is (null (clautolisp.autolisp-runtime:resolve-color-policy
+             :no-color-flag t
+             :probe-luminance-p nil)))
+  (let ((sink (make-broadcast-stream)))
+    (is (null (clautolisp.autolisp-runtime:resolve-color-policy
+               :stream sink
+               :probe-luminance-p nil)))))
+
+(test resolve-color-policy-honours-no-color-env
+  "$NO_COLOR (https://no-color.org) disables colour regardless of the
+--no-color flag's state. Unset means the env doesn't gate."
+  (labels ((with-env (val thunk)
+             (let ((before (or (uiop:getenv "NO_COLOR") "")))
+               (unwind-protect
+                    (progn
+                      (setf (uiop:getenv "NO_COLOR") (or val ""))
+                      (funcall thunk))
+                 (setf (uiop:getenv "NO_COLOR") before)))))
+    (with-env "1" (lambda ()
+                    (is (clautolisp.autolisp-runtime:env-no-color-set-p))
+                    (is (null (clautolisp.autolisp-runtime:resolve-color-policy
+                               :probe-luminance-p nil)))))
+    (with-env nil (lambda ()
+                    (is (not (clautolisp.autolisp-runtime:env-no-color-set-p)))))))
+
+(test ansi-colorize-renders-foreground-and-background-pair
+  "(FG BG) shape produces a two-parameter SGR sequence (\"33;40\"
+for yellow on black). Either axis may be NIL — the SGR keeps only
+the recognised parameter. Bright variants honour the 90+ / 100+
+ranges. Unknown keywords on both axes mean the result is the bare
+string with no SGR at all."
+  (let ((expected-yellow-on-black
+          (format nil "~C[33;40mFOO~C[0m" #\Esc #\Esc)))
+    (is (string= expected-yellow-on-black
+                 (clautolisp.autolisp-runtime:ansi-colorize
+                  "FOO" '(:yellow :black)))))
+  (is (string= (format nil "~C[96mFOO~C[0m" #\Esc #\Esc)
+               (clautolisp.autolisp-runtime:ansi-colorize
+                "FOO" '(:bright-cyan nil))))
+  (is (string= (format nil "~C[44mFOO~C[0m" #\Esc #\Esc)
+               (clautolisp.autolisp-runtime:ansi-colorize
+                "FOO" '(nil :blue))))
+  (is (string= "FOO"
+               (clautolisp.autolisp-runtime:ansi-colorize
+                "FOO" '(:not-a-colour :nor-this))))
+  ;; Backwards compat: the keyword shorthand is still foreground-only.
+  (is (string= (format nil "~C[33mFOO~C[0m" #\Esc #\Esc)
+               (clautolisp.autolisp-runtime:ansi-colorize
+                "FOO" :yellow))))
+
+(test parse-colour-name-handles-case-whitespace-sentinels
+  "Names are case-insensitive and tolerate leading / trailing
+whitespace. The 'clear this axis' sentinels return NIL so a user
+can spell `none' / `default' / `off' to leave one axis bare."
+  (is (eq :yellow
+          (clautolisp.autolisp-runtime:parse-colour-name "yellow")))
+  (is (eq :yellow
+          (clautolisp.autolisp-runtime:parse-colour-name "Yellow")))
+  (is (eq :bright-blue
+          (clautolisp.autolisp-runtime:parse-colour-name "Bright-Blue")))
+  (is (eq :bright-yellow
+          (clautolisp.autolisp-runtime:parse-colour-name "  BRIGHT-YELLOW  ")))
+  (is (null (clautolisp.autolisp-runtime:parse-colour-name nil)))
+  (is (null (clautolisp.autolisp-runtime:parse-colour-name "")))
+  (is (null (clautolisp.autolisp-runtime:parse-colour-name "   ")))
+  (is (null (clautolisp.autolisp-runtime:parse-colour-name "default")))
+  (is (null (clautolisp.autolisp-runtime:parse-colour-name "none")))
+  (is (null (clautolisp.autolisp-runtime:parse-colour-name "off"))))
+
+(test env-symbol-colour-spec-pairs-the-two-env-vars
+  "ENV-SYMBOL-COLOUR-SPEC returns (FG BG) when either env var is set,
+NIL when neither is. An unrecognised name still 'counts' as set
+because the user clearly tried to specify something — the SGR
+emission step is what decides to drop unrecognised codes."
+  (labels ((with-env (fg bg thunk)
+             (let ((fg-before (or (uiop:getenv "CLAUTOLISP_SYMBOL_FOREGROUND") ""))
+                   (bg-before (or (uiop:getenv "CLAUTOLISP_SYMBOL_BACKGROUND") "")))
+               (unwind-protect
+                    (progn
+                      (setf (uiop:getenv "CLAUTOLISP_SYMBOL_FOREGROUND") (or fg ""))
+                      (setf (uiop:getenv "CLAUTOLISP_SYMBOL_BACKGROUND") (or bg ""))
+                      (funcall thunk))
+                 (setf (uiop:getenv "CLAUTOLISP_SYMBOL_FOREGROUND") fg-before)
+                 (setf (uiop:getenv "CLAUTOLISP_SYMBOL_BACKGROUND") bg-before)))))
+    (with-env "yellow" "black"
+              (lambda () (is (equal '(:yellow :black)
+                                    (clautolisp.autolisp-runtime:env-symbol-colour-spec)))))
+    (with-env "bright-cyan" nil
+              (lambda () (is (equal '(:bright-cyan nil)
+                                    (clautolisp.autolisp-runtime:env-symbol-colour-spec)))))
+    (with-env nil "blue"
+              (lambda () (is (equal '(nil :blue)
+                                    (clautolisp.autolisp-runtime:env-symbol-colour-spec)))))
+    (with-env "default" "none"
+              (lambda () (is (null (clautolisp.autolisp-runtime:env-symbol-colour-spec)))))
+    (with-env nil nil
+              (lambda () (is (null (clautolisp.autolisp-runtime:env-symbol-colour-spec)))))))
+
+(test resolve-color-policy-honours-symbol-colour-env-vars
+  "The CLAUTOLISP_SYMBOL_* env vars win over the luminance probe.
+Even on a 'light' background (where the default would otherwise pick
+:blue), the user's foreground / background choice takes effect and
+RESOLVE-COLOR-POLICY returns the (FG BG) pair the user asked for."
+  (labels ((with-env (key val thunk)
+             (let ((before (or (uiop:getenv key) "")))
+               (unwind-protect
+                    (progn (setf (uiop:getenv key) (or val ""))
+                           (funcall thunk))
+                 (setf (uiop:getenv key) before)))))
+    (with-env "CLAUTOLISP_BACKGROUND" "light"
+      (lambda ()
+        (with-env "CLAUTOLISP_SYMBOL_FOREGROUND" "bright-cyan"
+          (lambda ()
+            (with-env "CLAUTOLISP_SYMBOL_BACKGROUND" "black"
+              (lambda ()
+                ;; Use a synonym stream pointed at *terminal-io* so the
+                ;; tty gate fires; if it doesn't we get NIL and the
+                ;; subsequent EQUAL fails informatively.
+                (let* ((s *terminal-io*)
+                       (policy (clautolisp.autolisp-runtime:resolve-color-policy
+                                :stream s :probe-luminance-p nil)))
+                  (when policy
+                    (is (equal '(:bright-cyan :black) policy))))))))))))
+
+(test print-object-symbol-renders-with-foreground-and-background
+  "When *COLOR-OUTPUT* is a (FG BG) pair, the symbol's printed name
+carries both SGR parameters — yellow foreground on black background
+renders as `\\e[33;40mNAME\\e[0m'."
+  (let ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "MY-FN"))
+        (clautolisp.autolisp-runtime:*color-output* '(:yellow :black)))
+    (is (string= (format nil "~C[33;40mMY-FN~C[0m" #\Esc #\Esc)
+                 (princ-to-string sym))))
+  ;; Background-only also works: the SGR carries just the 4x code.
+  (let ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "OTHER"))
+        (clautolisp.autolisp-runtime:*color-output* '(nil :blue)))
+    (is (string= (format nil "~C[44mOTHER~C[0m" #\Esc #\Esc)
+                 (princ-to-string sym)))))
+
+(test resolve-color-policy-does-not-spawn-osc11-probe-by-default
+  "Regression for the macOS arm64 SIGTTOU hang: by default
+RESOLVE-COLOR-POLICY must NOT call PROBE-TERMINAL-BACKGROUND-VIA-OSC11
+(it spawns /bin/sh + stty + dd, and the child can get suspended
+with no clean exit path). Users opt in via $CLAUTOLISP_PROBE_OSC11;
+without that, only the cheap env-var rungs run.
+
+We monkey-patch the probe to raise; if it gets called the test
+fails loudly instead of hanging the suite. The cleanup also
+explicitly unsets $CLAUTOLISP_PROBE_OSC11 so a stray env in the
+test runner can't re-enable the probe."
+  (let ((called-p nil)
+        (probe-fn #'clautolisp.autolisp-runtime::probe-terminal-background-via-osc11)
+        (env-before (or (uiop:getenv "CLAUTOLISP_PROBE_OSC11") "")))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "CLAUTOLISP_PROBE_OSC11") "")
+           (setf (symbol-function
+                  'clautolisp.autolisp-runtime::probe-terminal-background-via-osc11)
+                 (lambda (&rest args)
+                   (declare (ignore args))
+                   (setf called-p t)
+                   (error "OSC 11 probe must not run by default")))
+           ;; Pass a TTY-looking stream (interactive-stream-p returns
+           ;; T on *terminal-io* in tests run under FiveAM); even if
+           ;; it doesn't, the tty branch returns NIL and we never
+           ;; reach the probe. Either way, called-p stays NIL.
+           (clautolisp.autolisp-runtime:resolve-color-policy)
+           (is (null called-p))
+           ;; Likewise when probe-luminance-p is explicitly T but
+           ;; the OSC 11 opt-in env is empty — still no probe.
+           (clautolisp.autolisp-runtime:resolve-color-policy
+            :probe-luminance-p t)
+           (is (null called-p)))
+      (setf (symbol-function
+             'clautolisp.autolisp-runtime::probe-terminal-background-via-osc11)
+            probe-fn)
+      (setf (uiop:getenv "CLAUTOLISP_PROBE_OSC11") env-before))))
