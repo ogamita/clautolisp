@@ -473,15 +473,23 @@ them. Mirrors the same helper in autolisp-front-end's backend-clautolisp."
 
 (defun build-context (dialect host mock-input &optional load-encoding)
   "Make a fresh runtime context, install builtins, attach the host
-and any mock-input stream. When LOAD-ENCODING is a non-nil CLI
-encoding string (eg. \"utf-8\"), install it as the session's source-
-file encoding override so subsequent loads use it instead of the
-dialect default."
+and any mock-input stream. Computes an effective default source-file
+encoding via the precedence:
+
+  1. `-e ENC' on the CLI (LOAD-ENCODING — strongest, explicit).
+  2. POSIX locale env: LC_ALL > LC_CTYPE > LANG (host-wide hint).
+  3. NIL — fall through to the dialect's default at load time.
+
+When (1) or (2) yields an encoding it is installed on the session;
+subsequent loads (including nested (load ...) calls in init files)
+use it instead of the dialect default."
   (let ((context (make-default-runtime-context :dialect dialect)))
     (setup-context context host mock-input)
-    (when load-encoding
-      (set-default-source-encoding context
-                                   (encoding-keyword load-encoding)))
+    (let ((effective
+            (or (and load-encoding (encoding-keyword load-encoding))
+                (locale-default-source-encoding))))
+      (when effective
+        (set-default-source-encoding context effective)))
     context))
 
 (defun maybe-summarise-action (kind label start-time)

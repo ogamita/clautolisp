@@ -235,6 +235,43 @@ boundary by reader options (see [[*Encoding and line endings]]).
   under the host shell's encoding.
 - REPL input is decoded under the host's standard-input encoding.
 
+** Default source-file encoding — precedence
+~clautolisp~ resolves the default encoding for source files in the
+following order, strongest first. Each step is applied only when the
+previous one yielded NIL:
+
+1. The reader-option override passed by a caller into
+   ~autolisp-load-file-in-context~ (only used by embedders; the CLI
+   itself does not exercise this path).
+2. ~-e ENC~ on the command line. Accepts ~utf-8~, ~iso-8859-1~,
+   ~latin-1~ / ~latin1~, ~windows-1252~ / ~cp1252~, ~ascii~. Any
+   other value is passed through to the underlying Lisp's ~open~ as
+   an unscrubbed keyword.
+3. The POSIX locale environment, in POSIX order: ~LC_ALL~ then
+   ~LC_CTYPE~ then ~LANG~. The encoding suffix of the first non-empty
+   value is used (~en_US.UTF-8~ → ~:utf-8~, ~fr_FR.ISO-8859-1@euro~ →
+   ~:iso-8859-1~). A bare value with no ~.ENCODING~ suffix (~C~,
+   ~POSIX~, ~en_US~) yields NIL — no override.
+4. The dialect default (see [[*Dialects]]):
+   - ~strict~        → ~iso-8859-1~ (1-1 byte coding; never errors on
+                                     legacy Latin-1 / Windows-1252
+                                     source).
+   - ~autocad-2026~  → ~utf-8~ (matches AutoCAD 2025+ default).
+   - ~bricscad-v26~  → ~utf-8~ (matches BricsCAD V26 default).
+
+Crucially: the override is installed on the *session* before any
+load runs, so it applies to /every/ load in the session — including
+the nested ~(load …)~ calls a user init file makes.
+
+The OTHER ~LC_*~ categories (~LC_COLLATE~, ~LC_MESSAGES~,
+~LC_NUMERIC~, ~LC_TIME~, …) are intentionally *not* consulted for
+source-file encoding. They govern string ordering, message
+translation, decimal separators, and date formats — using them for
+byte-stream interpretation would be misuse of the POSIX standard.
+If ~clautolisp~ ever localises error messages or honours decimal
+separators by locale, /those/ features will consult their own
+matching ~LC_*~ category.
+
 * Exit Codes
 ~clautolisp~ exits with one of the following statuses:
 

@@ -1341,8 +1341,48 @@ The =alfe= binary can:
 ** Encodings
 
 Full support via =babel=: every coding and every line ending. =-e=
-sets =*load-encoding*= for =(load …)=; =-E= sets the I/O encoding.
-No dependency on =iconv= or =LC_*= beyond the default.
+sets the session-wide source-file encoding (applied to every load
+in the session, including nested =(load …)= calls a user init file
+makes); =-E= sets the I/O encoding.
+
+*** Default source-file encoding — precedence
+
+When the caller does not pass =-e ENC=, =alfe= (and the
+=clautolisp= backend it drives) resolves the default encoding from
+the POSIX locale environment in the standard order:
+
+1. =LC_ALL=   — global locale override.
+2. =LC_CTYPE= — character-classification + encoding category.
+3. =LANG=     — catch-all default.
+
+The encoding suffix of the first non-empty value wins
+(=en_US.UTF-8= → =:utf-8=, =fr_FR.ISO-8859-1@euro= →
+=:iso-8859-1=). A bare value with no =.ENCODING= suffix (=C=,
+=POSIX=, =en_US=) yields no override, and the resolution falls
+through to the dialect default (see =clautolisp= spec section
+/Encoding and line endings/: =:iso-8859-1= for =strict=,
+=:utf-8= for =autocad-2026= and =bricscad-v26=).
+
+The OTHER =LC_*= categories (=LC_COLLATE=, =LC_MESSAGES=,
+=LC_NUMERIC=, =LC_TIME=, …) are intentionally *not* consulted
+for source-file encoding. They govern string ordering, message
+translation, decimal separators, and date formats — using them
+for byte-stream interpretation would be misuse of the POSIX
+standard.
+
+The resulting full precedence is, strongest first:
+
+| Step | Source                                  | Notes                                     |
+|------+-----------------------------------------+-------------------------------------------|
+|    1 | =-e ENC= on the alfe command line       | Explicit user intent.                     |
+|    2 | =LC_ALL= / =LC_CTYPE= / =LANG=          | POSIX host hint.                          |
+|    3 | Dialect default                         | =strict=→latin-1, autocad/bricscad→utf-8. |
+
+The matching slot lives on the runtime session, so it applies to
+every load in the session including the nested =(load …)= calls
+a user init file makes. The =subprocess= backend variant inherits
+the parent =alfe='s environment, so the spawned =clautolisp-sbcl=
+performs its own equivalent probe and reaches the same conclusion.
 
 ** macOS, Linux, MS-Windows
 
