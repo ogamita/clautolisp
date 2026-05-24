@@ -171,6 +171,14 @@
 
 ;;; ---- PRINT-OBJECT methods for AutoLISP runtime values --------------
 ;;;
+;;; *COLOR-OUTPUT* lives in terminal-color.lisp, which is loaded AFTER
+;;; this file (it depends on the structs defined above). The DECLAIM
+;;; tells the compiler that the symbol names a special variable so the
+;;; reference inside the AUTOLISP-SYMBOL PRINT-OBJECT method below
+;;; compiles without a "undefined variable" warning. The DEFPARAMETER
+;;; in terminal-color.lisp later attaches the actual value cell.
+(declaim (special clautolisp.autolisp-runtime:*color-output*))
+;;;
 ;;; Why: CL's default DEFSTRUCT printer renders an AutoLISP symbol "T"
 ;;; as `#S(CLAUTOLISP.AUTOLISP-RUNTIME.INTERNAL:AUTOLISP-SYMBOL :NAME
 ;;; "T" :ORIGINAL-NAME "T" :PLIST NIL)' — useful for the debugger, but
@@ -214,8 +222,19 @@ because the print-object method lives here."
       (write-string string-value stream)))
 
 (defmethod print-object ((object autolisp-symbol) stream)
+  ;; Symbols are the one runtime value that gets a colour accent
+  ;; when the CLI has armed *COLOR-OUTPUT* (yellow on dark, blue on
+  ;; light terminals). The OR clause keeps the cheap path —
+  ;; `(write-string name stream)` — when colour is off, which is
+  ;; the case for every non-CLI caller and for piped output where
+  ;; *COLOR-OUTPUT* is NIL by policy. See terminal-color.lisp.
   (handler-case
-      (write-string (autolisp-symbol-name object) stream)
+      (let ((colour (and (boundp 'clautolisp.autolisp-runtime:*color-output*)
+                         clautolisp.autolisp-runtime:*color-output*)))
+        (if colour
+            (clautolisp.autolisp-runtime:write-ansi-colorized
+             (autolisp-symbol-name object) colour stream)
+            (write-string (autolisp-symbol-name object) stream)))
     (error ()
       (call-next-method))))
 

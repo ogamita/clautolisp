@@ -45,6 +45,7 @@
   :components
   ((:file "autolisp-runtime/source/package")
    (:file "autolisp-runtime/source/model")
+   (:file "autolisp-runtime/source/terminal-color")
    (:file "autolisp-runtime/source/api")
    (:file "autolisp-runtime/source/ontology"))
   :in-order-to ((asdf:test-op

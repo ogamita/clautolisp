@@ -34,6 +34,10 @@
   (format t "  -q, --quiet            Suppress the REPL banner.~%")
   (format t "  -v, --verbose          Print extra diagnostic information (banner, summary, …).~%")
   (format t "  -d, --debug            Print debug traces; include CL backtraces on runtime errors.~%")
+  (format t "  --no-color             Disable ANSI colour in AutoLISP value output. Honoured~%")
+  (format t "                         equivalently via $NO_COLOR (https://no-color.org).~%")
+  (format t "                         Without it, the CLI probes the terminal and picks a~%")
+  (format t "                         contrasting accent (yellow on dark, blue on light).~%")
   (format t "Source-file encoding:~%")
   (format t "  -e ENC                 Override the default source-file encoding for this session.~%")
   (format t "                         ENC is one of: utf-8, iso-8859-1, latin-1, windows-1252, cp1252.~%")
@@ -82,7 +86,8 @@ mentioning OPTION. Returns (values value remaining-arguments)."
 
 (defun parse-arguments (arguments)
   "Returns (values dialect actions quiet-p verbose-p debug-p
-interactive-p host mock-input gui trace-p no-init-p).
+interactive-p host mock-input gui trace-p no-init-p load-encoding
+no-color-p).
 
 ACTIONS is a list of action records in the order they appear on
 the command line. Each record is either (:FILE PATH) or
@@ -96,6 +101,13 @@ NO-INIT-P, when true, suppresses the user-init-file lookup
 plus the `~/.autolisp` and `~/.config/autolisp/init` siblings).
 Mirrors the `-norc` / `--no-init` flag of the legacy bash
 autolisp wrapper and matches alfe's flag of the same name.
+
+NO-COLOR-P, when true, forces *COLOR-OUTPUT* to NIL so the
+AutoLISP value printers emit no ANSI escape sequences. The
+$NO_COLOR environment variable (https://no-color.org) is honoured
+equivalently inside RESOLVE-COLOR-POLICY, so this flag is only
+needed when the user wants per-invocation suppression without
+exporting the variable.
 
 The short-form aliases (-l, -x, -i, -q, -v, -d, -h, -V, -norc)
 match the generic CLI surface specified for the sibling alfe
@@ -111,7 +123,8 @@ front-end."
         (mock-input nil)
         (gui nil)
         (trace-p nil)
-        (no-init-p nil))
+        (no-init-p nil)
+        (no-color-p nil))
     (labels ((take (option)
                (multiple-value-bind (value rest)
                    (pop-required-argument option arguments)
@@ -180,6 +193,8 @@ front-end."
                  ((or (string= argument "--no-init")
                       (string= argument "-norc"))
                   (setf no-init-p t))
+                 ((string= argument "--no-color")
+                  (setf no-color-p t))
                  ((or (string= argument "-x")
                       (string= argument "--eval"))
                   (queue-action :expression (take argument)))
@@ -199,7 +214,7 @@ front-end."
                   (queue-action :file argument)))))
     (values dialect actions quiet-p verbose-p debug-p
             interactive-p host mock-input gui trace-p
-            no-init-p load-encoding)))
+            no-init-p load-encoding no-color-p)))
 
 (defun prepend-init-file-actions (actions no-init-p)
   "Walk the user's init-file stem list and prepend a (:FILE PATH)
@@ -592,10 +607,21 @@ autolisp-dcl load time) stays in effect."
   (handler-case
       (multiple-value-bind (dialect actions quiet-p verbose-p debug-p
                             interactive-p host mock-input gui trace-p
-                            no-init-p load-encoding)
+                            no-init-p load-encoding no-color-p)
           (parse-arguments (rest argv))
         (let ((*verbose-p* verbose-p)
               (*debug-p* debug-p)
+              ;; Colour policy is computed exactly once per CLI run
+              ;; against the LIVE *standard-output* — by the time
+              ;; RUN-WITH-INPUT redirects (it doesn't, but a future
+              ;; caller might) the original stream's tty state is
+              ;; the one that matters. NIL means "no colour"; a
+              ;; keyword (:YELLOW / :BLUE) is the accent the
+              ;; AUTOLISP-SYMBOL PRINT-OBJECT method will wrap
+              ;; rendered names in.
+              (clautolisp.autolisp-runtime:*color-output*
+                (clautolisp.autolisp-runtime:resolve-color-policy
+                 :no-color-flag no-color-p))
               ;; Implicit -i: when the user supplied no -l / -x /
               ;; positional action, the REPL is the desired default
               ;; (per command-line-option-ammendment.issue).

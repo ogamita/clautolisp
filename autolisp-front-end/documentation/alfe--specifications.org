@@ -1768,6 +1768,27 @@ when one exists.
 | =ALFE_NO_INIT=          | =--no-init=/=-norc= | Equivalent to =--no-init= for alfe only.   |
 | =CLAUTOLISP_NO_INIT=    | —                 | Equivalent to =--no-init= for clautolisp only. |
 
+** Colour output
+
+| Variable                  | CLI           | Effect                                                                |
+|---------------------------+---------------+-----------------------------------------------------------------------|
+| =NO_COLOR=                | =--no-color=  | Disable ANSI colour in AutoLISP value output, per https://no-color.org. |
+| =CLAUTOLISP_BACKGROUND=   | —             | Force the luminance probe to =dark= or =light= without probing.       |
+| =COLORFGBG=               | —             | Consumed by the rxvt-style cascade (=fg;bg= palette indices).         |
+| =CLAUTOLISP_PROBE_OSC11=  | —             | Opt-in to the active OSC 11 probe of =/dev/tty=. Off by default — the helper subprocess can stop on SIGTTOU on some hosts (notably macOS arm64) and hang startup. |
+| =CLAUTOLISP_SYMBOL_FOREGROUND=NAME= | — | Explicit foreground for printed AutoLISP symbols. Names: =black=/=red=/=green=/=yellow=/=blue=/=magenta=/=cyan=/=white= plus their =bright-= variants (=bright-black= is also =grey=/=gray=). Case- and whitespace-insensitive; =default=/=none=/=off= leaves the axis bare. Wins over the luminance probe. |
+| =CLAUTOLISP_SYMBOL_BACKGROUND=NAME= | — | Background sibling of =CLAUTOLISP_SYMBOL_FOREGROUND=. Either or both may be set independently — set just one to override a single axis. |
+
+The =--no-color= flag short-circuits the probe entirely. When
+neither =--no-color= nor =$NO_COLOR= is set, alfe binds
+=clautolisp.autolisp-runtime:*color-output*= for the duration of
+the run so the in-process clautolisp backend's printer emits the
+selected accent (yellow on dark, blue on light, defaulting to
+yellow on the dark fallback when no cascade rung resolves). For
+subprocess backends, alfe additionally exports =NO_COLOR=1= to
+the child environment when its own policy is off, so the child's
+runtime probe never disagrees with the parent.
+
 * User init files
 
 On startup, =alfe= walks a fixed four-slot lookup list and loads

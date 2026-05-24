@@ -243,7 +243,25 @@
    ;; POSIX locale probe (LC_ALL / LC_CTYPE / LANG).
    #:locale-default-source-encoding
    #:parse-posix-locale
-   #:parse-locale-encoding-string))
+   #:parse-locale-encoding-string
+   ;; Terminal colour-output policy. *COLOR-OUTPUT* is the single
+   ;; switch the AUTOLISP-SYMBOL PRINT-OBJECT method consults; the
+   ;; CLI calls RESOLVE-COLOR-POLICY at startup, binds the result
+   ;; for the run, and library code below never touches it.
+   #:*color-output*
+   #:ansi-colorize
+   #:write-ansi-colorized
+   #:env-no-color-set-p
+   #:parse-colorfgbg
+   #:parse-colour-name
+   #:env-symbol-foreground
+   #:env-symbol-background
+   #:env-symbol-colour-spec
+   #:parse-osc11-response
+   #:luminance-of-rgb
+   #:terminal-background-luminance
+   #:output-stream-is-tty-p
+   #:resolve-color-policy))
 
 (defpackage #:clautolisp.autolisp-runtime.internal
   (:use #:cl)

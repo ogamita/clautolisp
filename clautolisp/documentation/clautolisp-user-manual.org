@@ -145,6 +145,61 @@ Both axes are independent.
                             deterministic answers to interactive
                             scripts.
 
+** Colour output
+~clautolisp~ accents AutoLISP-symbol names in error messages,
+backtraces, and trace output with an ANSI colour when standard
+output is a terminal. The default is conservative (yellow on
+assumed-dark) and never fires when the output is being captured
+(pipe, file redirect, test harness).
+
+- ~--no-color~           :: Disable colour for this invocation.
+                            Equivalent to setting ~$NO_COLOR~ to
+                            any non-empty value (see https://no-color.org).
+- ~$NO_COLOR~            :: Universal no-color convention; honoured
+                            equivalently to ~--no-color~.
+- ~$CLAUTOLISP_SYMBOL_FOREGROUND=NAME~ ::
+                            Force the foreground colour for printed
+                            AutoLISP symbols. Accepted names (case
+                            and whitespace insensitive): ~black~,
+                            ~red~, ~green~, ~yellow~, ~blue~,
+                            ~magenta~, ~cyan~, ~white~ and their
+                            ~bright-~ prefixed variants
+                            (~bright-black~ is also ~grey~ / ~gray~).
+                            ~default~ / ~none~ / ~off~ leaves the
+                            foreground axis bare.
+- ~$CLAUTOLISP_SYMBOL_BACKGROUND=NAME~ ::
+                            Force the background colour for printed
+                            AutoLISP symbols. Same vocabulary as the
+                            foreground sibling; either or both env
+                            vars may be set. Both win over the
+                            automatic luminance probe so the user
+                            gets a deterministic look without
+                            depending on terminal detection.
+- ~$CLAUTOLISP_BACKGROUND=dark|light~ ::
+                            Override the terminal-background guess
+                            without specifying a colour. ~dark~ keeps
+                            the yellow accent; ~light~ flips it to
+                            blue.
+- ~$CLAUTOLISP_PROBE_OSC11~ ::
+                            Opt-in to the active OSC 11 terminal
+                            query (spawns ~/bin/sh~ + ~stty~ + ~dd~
+                            against ~/dev/tty~). Off by default
+                            because on some platforms — notably
+                            macOS arm64 — the helper subprocess
+                            receives SIGTTOU and hangs CLI startup.
+                            Safe to set on most Linux desktops and
+                            iTerm2 / Terminal.app launched from a
+                            normal shell.
+
+Example: yellow symbols on a dim-blue background, deterministically,
+no probing:
+
+#+BEGIN_SRC sh
+  export CLAUTOLISP_SYMBOL_FOREGROUND=bright-yellow
+  export CLAUTOLISP_SYMBOL_BACKGROUND=blue
+  clautolisp -x '(foreach x t (princ x))'
+#+END_SRC
+
 ** Informational
 - ~--version~            :: Print =clautolisp <version>= on standard
                             output and exit 0. The version is the
