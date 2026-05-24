@@ -14,9 +14,12 @@
 ;;;;   (alref-apropos-list "pattern")  -- the underlying list-returning
 ;;;;                                      variant (no printing)
 ;;;;   (alref-apropos "pattern")       -- print one symbol per line
-;;;;                                      with a [bound] / [unbound]
-;;;;                                      indicator drawn from the
-;;;;                                      current runtime
+;;;;                                      with its current live state:
+;;;;                                        NAME<TAB>Function
+;;;;                                        NAME<TAB>Variable<TAB>VALUE
+;;;;                                        NAME<TAB>Variable<TAB>NIL
+;;;;                                      (matching the user-spec
+;;;;                                      table in alref's docs)
 ;;;;   (alref-describe SYMBOL-OR-STRING)
 ;;;;                                   -- print the spec page for the
 ;;;;                                      symbol (or chapter title /
@@ -190,32 +193,54 @@ interactive use)."
     (terpri))
   (length names))
 
-(defun alref-bound-p (name / sym)
-  "T iff the symbol named NAME is currently bound to a value in
-this AutoLISP runtime. Used by alref-apropos to annotate
-documented symbols with their live status."
-  (setq sym (read name))
-  (and (= (type sym) 'SYM) (boundp sym)))
+(defun alref-function-value-p (val / kind)
+  "T iff VAL is a callable function value: a SUBR (built-in),
+USUBR (user-defined via DEFUN), or one of the external-subroutine
+flavours AutoLISP dialects expose (EXSUBR / EXTSUBR). The type
+test is by symbol equality of the (TYPE VAL) tag, which is
+portable across AutoCAD / BricsCAD / clautolisp."
+  (setq kind (type val))
+  (or (= kind 'SUBR)
+      (= kind 'USUBR)
+      (= kind 'EXSUBR)
+      (= kind 'EXTSUBR)))
 
-(defun alref-apropos (pattern / matches entries entry name kind bound)
-  "Print every documented symbol matching PATTERN with a [bound]
-or [unbound] indicator drawn from the live AutoLISP state.
+(defun alref-apropos (pattern / matches name sym)
+  "Print every documented symbol matching PATTERN with its current
+live state in the AutoLISP runtime:
+
+    NAME<TAB>Function                — bound to a callable.
+    NAME<TAB>Variable<TAB>VALUE      — bound to a non-callable value.
+    NAME<TAB>Variable<TAB>NIL        — symbol present but unbound.
+
+Symbols not present in the documented index are never shown by
+this function; reach those via (alref-describe NAME), which
+reports an explicit `Inexistant' line.
+
+The Variable/Function distinction is by (TYPE (EVAL SYM)) at the
+moment apropos runs, so loading a library that defines new
+functions makes them show up as Function on the next call.
+
 Returns the count of matches printed."
   (setq matches (alref-apropos-list pattern))
-  (setq entries (alref-load-symbols))
   (foreach name matches
-    (foreach entry entries
-      (if (= (car entry) name)
-        (progn
-          (setq kind (cadr entry))
-          (setq bound (if (alref-bound-p name) "bound" "unbound"))
-          (princ name)
-          (princ "\t")
-          (princ kind)
-          (princ "\t[")
-          (princ bound)
-          (princ "]")
-          (terpri)))))
+    (setq sym (read name))
+    (princ name)
+    (princ "\t")
+    (cond
+      ((not (boundp sym))
+       ;; AutoLISP conflates unbound with bound-to-nil in much of its
+       ;; surface (READ of an unbound symbol returns nil, etc.); we
+       ;; surface the absence here as `Variable<TAB>NIL' rather than
+       ;; a separate `Unbound' kind because the user-facing distinction
+       ;; is "no value" — same display either way.
+       (princ "Variable\tNIL"))
+      ((alref-function-value-p (eval sym))
+       (princ "Function"))
+      (t
+       (princ "Variable\t")
+       (prin1 (eval sym))))
+    (terpri))
   (length matches))
 
 (defun alref-symbol-name (key / )
@@ -258,7 +283,7 @@ the basename (a string) on hit, nil on miss."
   (setq entry (assoc uppercased-name entries))
   (if entry (caddr entry) nil))
 
-(defun alref-find-chapter-page (key / entries entry candidate)
+(defun alref-find-chapter-page (key / entries entry candidate basename title)
   "Look up KEY among the chapter-level pages. KEY can be a
 chapter number ('1', '21A') OR a chapter title fragment
 ('Functions', 'Macros'). Returns the basename on hit, nil on
@@ -266,16 +291,20 @@ miss."
   (setq entries (alref-load-index))
   (setq candidate nil)
   (foreach entry entries
-    (let ((basename (car entry))
-          (title (cadr entry)))
-      ;; A chapter page has basename '<N>-<slug>' AND its title is
-      ;; the chapter title (no further '*' nesting). We detect
-      ;; chapter pages by basename pattern + the slug not containing
-      ;; entry markers like 'function-entry-' — a simple proxy.
-      (if (and (null candidate)
-               (or (alref-string-contains-p key title)
-                   (alref-string-contains-p key basename)))
-        (setq candidate basename))))
+    ;; A chapter page has basename '<N>-<slug>' AND its title is
+    ;; the chapter title (no further '*' nesting). We detect
+    ;; chapter pages by basename pattern + the slug not containing
+    ;; entry markers like 'function-entry-' — a simple proxy.
+    ;;
+    ;; AutoLISP has no `let' — the previous version of this fn
+    ;; used (let ...) and crashed at first call. Locals declared
+    ;; via the `/' convention on the defun argument list.
+    (setq basename (car entry))
+    (setq title (cadr entry))
+    (if (and (null candidate)
+             (or (alref-string-contains-p key title)
+                 (alref-string-contains-p key basename)))
+      (setq candidate basename)))
   candidate)
 
 (defun alref-page-text (basename / lines)
@@ -299,13 +328,20 @@ alref-page-text to rejoin slurped lines into one big string."
 
 (defun alref-describe (key / basename text)
   "Print the spec page for KEY (a symbol, a string symbol-name,
-a chapter number, or a chapter title). Surfaces a clear error
-when no page matches."
+a chapter number, or a chapter title). When KEY does not resolve
+to any documented symbol or chapter, prints:
+
+    KEY<TAB>Inexistant
+
+— matching the alref-apropos `Variable/Function/Variable NIL'
+display family. The Inexistant row is reachable only via
+alref-describe; alref-apropos filters the documented index and
+never sees a missing symbol."
   (setq basename (alref-resolve-key key))
   (if (null basename)
     (progn
-      (princ "alref-describe: no page found for ")
       (princ key)
+      (princ "\tInexistant")
       (terpri)
       nil)
     (progn
