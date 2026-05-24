@@ -1,3 +1,57 @@
+RESOLVED — implemented on branch autolisp-spec-paged-version.
+
+PRINT-OBJECT methods on the runtime value structs now render
+AutoLISP surface syntax instead of the underlying defstruct form.
+Every `~S` / `~A' in error messages, trace output, REPL display,
+and the format calls inside SIGNAL-AUTOLISP-RUNTIME-ERROR routes
+through them.
+
+Before:
+  FOREACH list argument must evaluate to a proper list, got
+  #S(CLAUTOLISP.AUTOLISP-RUNTIME.INTERNAL:AUTOLISP-SYMBOL
+                       :NAME "T" :ORIGINAL-NAME "T" :PLIST NIL).
+
+After:
+  FOREACH list argument must evaluate to a proper list, got T.
+
+Coverage (every value type a clautolisp user can encounter):
+
+  autolisp-symbol           -> name              (T, MY-FN, NIL, ...)
+  autolisp-string           -> "abc" / abc       (per *print-escape*)
+  autolisp-subr / -usubr    -> #<SUBR X> / #<USUBR X>
+  autolisp-ename            -> <Entity name: V>
+  autolisp-pickset          -> <Selection set: V>
+  autolisp-file             -> #<file PATH>
+  autolisp-vla-object       -> #<VLA-OBJECT V>
+  autolisp-safearray        -> #<SAFEARRAY>
+  autolisp-variant          -> #<VARIANT type value>
+  autolisp-catch-all-error  -> #<catch-all-error "msg">
+
+CL handles cons cells, integers, floats, and NIL natively — and
+since the list printer recurses through PRINT-OBJECT, backtraces
+like `in SUBR CAR: (A-SYMBOL)' now come out cleanly.
+
+Each method wraps its work in a handler-case so a malformed
+struct can never deadlock the debugger: on failure, the default
+defstruct printer takes over via CALL-NEXT-METHOD.
+
+ANSI-color rendering of symbols (yellow on dark / blue on light)
++ NO_COLOR / --no-color is intentionally NOT in this commit. It
+needs the OSC-11 background-luminance probe described in the
+issue body and crosses into the terminal-handling design space,
+which is a separate ticket worth its own branch. The current fix
+is the plain-text portion of the issue — the structurally noisy
+debug-output bug that was making error messages unreadable.
+
+Tests: 3 new FiveAM tests in
+clautolisp/autolisp-runtime/tests/model-tests.lisp covering
+symbol rendering, string escape modes, and recursive list
+printing. All 1235 + 252 existing tests still green.
+
+Versions bumped: clautolisp 1.0.41 -> 1.0.42, alfe 1.0.5 -> 1.0.6.
+
+--- Original issue ---
+
 As an autolisp developper, I want better display of autolisp symbols in error messages.
 
 

@@ -778,3 +778,47 @@ no encoding is present (e.g. plain 'C' / 'POSIX')."
   (is (null             (clautolisp.autolisp-runtime:parse-posix-locale "")))
   (is (null             (clautolisp.autolisp-runtime:parse-posix-locale nil))))
 
+;;; --- PRINT-OBJECT routes AutoLISP values to their surface syntax ----
+;;;
+;;; Regression for debug-messages-autolisp-symbols.issue: error
+;;; messages containing AutoLISP values used to dump the underlying
+;;; defstruct form (#S(... :NAME "T" :ORIGINAL-NAME "T" :PLIST NIL))
+;;; — useless to an AutoLISP developer. PRINT-OBJECT methods on every
+;;; runtime value struct now render the AutoLISP surface syntax.
+
+(test print-object-renders-autolisp-symbol-by-name
+  "An autolisp-symbol prints as its name in princ and prin1 alike —
+no #S(...) structure dump in error messages."
+  (let ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")))
+    (is (string= "T" (princ-to-string sym)))
+    (is (string= "T" (prin1-to-string sym))))
+  (let ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "MY-FN")))
+    (is (string= "MY-FN" (princ-to-string sym)))))
+
+(test print-object-renders-autolisp-string-with-escape
+  "An autolisp-string prints quoted under prin1 (~S), unquoted under
+princ (~A), matching the (princ \"abc\") / (prin1 \"abc\") semantics
+AutoLISP itself uses."
+  (let* ((s "hello"))
+    (let ((al-str (clautolisp.autolisp-runtime.internal::make-autolisp-string :value s)))
+      (is (string= "hello"   (princ-to-string al-str)))
+      (is (string= "\"hello\"" (prin1-to-string al-str)))))
+  ;; Embedded quote / backslash get escape-doubled under prin1.
+  (let ((al-str (clautolisp.autolisp-runtime.internal::make-autolisp-string
+                 :value "a\"b\\c")))
+    (is (string= "\"a\\\"b\\\\c\"" (prin1-to-string al-str)))))
+
+(test print-object-conses-recurse-into-autolisp-values
+  "PRINT-OBJECT methods compose: a cons of AutoLISP values is printed
+by CL's list printer using our methods element-by-element, so error
+backtraces like `in SUBR CAR: (A-SYMBOL)' come out cleanly without
+nested #S(...) noise."
+  (let* ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "A-SYMBOL"))
+         (lst (list sym))
+         (rendered (princ-to-string lst)))
+    (is (string= "(A-SYMBOL)" rendered)))
+  ;; Mixed list of an autolisp-symbol and a CL integer.
+  (let* ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "X"))
+         (rendered (princ-to-string (list sym 42))))
+    (is (string= "(X 42)" rendered))))
+
