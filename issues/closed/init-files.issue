@@ -1,6 +1,37 @@
 init-files — load user init files in clautolisp and alfe
 =========================================================
 
+Status: closed
+Landed in: 44679f6 "Merge init-files: land RC-file loading for
+clautolisp + alfe." (the four-commit phased landing the branch
+walked through: f8d3df5 Phase 1, a1f97ef Phase 2, 2c3398c
+Phase 3, 66392d3 order-flip).
+
+Status of acceptance criteria:
+  - clautolisp-sbcl + alfe-sbcl both walk the four-stem lookup
+    list and load every existing file in order. ✓
+  - Within each scope HOME loads first, XDG loads second so the
+    .config/<program>/init path overrides the legacy
+    ~/.<program> path. ✓
+  - Across scopes the shared ~/.autolisp pair loads first and
+    the program-specific pair last, so program-specific
+    overrides shared (the order was originally reversed in this
+    issue; the user confirmed the conventional Unix layering
+    after seeing the surprising behaviour). ✓
+  - --no-init / -norc / $AUTOLISP_NO_INIT /
+    $CLAUTOLISP_NO_INIT / $ALFE_NO_INIT all gate the lookup
+    correctly. ✓
+  - The mis-wired alfe --no-init slot (which had been driving
+    cleanup-workdir's :keep-p) is now decoupled: a new
+    --keep-workdir flag + cli-options-keep-workdir-p slot picks
+    up the cleanup duty, matching the spec's
+    $AUTOLISP_KEEP_WORKDIR env var. ✓
+  - 42 FiveAM unit tests + 5 conformance scenarios + matching
+    spec sections in both clautolisp-specifications.org and
+    alfe--specifications.org. ✓
+
+
+
 See also: clautolisp/documentation/clautolisp-specifications.org,
 autolisp-front-end/documentation/alfe--specifications.org,
 the legacy bash wrapper at
