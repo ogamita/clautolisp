@@ -145,13 +145,19 @@ pathname."))
 
 (defgeneric start-engine (backend workdir &key dialect host
                                           mock-input bootstrap-phase
-                                          interactive-p)
+                                          interactive-p load-encoding)
   (:documentation
    "Bring BACKEND up to the READY state under WORKDIR, returning a
 session handle (a `session` instance, or a subclass thereof). For
 clautolisp this binds an evaluation context; for CAD backends this
 writes the runtime LSP, launches the engine, and polls status.txt
-until READY."))
+until READY.
+
+LOAD-ENCODING, when non-nil, is the user-facing CLI string from
+`-e ENC' (e.g. \"utf-8\"). Backends that can honour a session-wide
+source-file encoding apply it to their runtime; backends that
+can't (CAD-resident engines whose AutoLISP runtime owns the
+encoding policy) ignore it."))
 
 (defgeneric eval-plan (session plan)
   (:documentation

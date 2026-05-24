@@ -260,6 +260,32 @@ within a single run)."
             (clautolisp.autolisp-runtime.internal::evaluation-context-session context)))
       *default-runtime-host*))
 
+(defun runtime-session-default-source-encoding (session)
+  "Return SESSION's user-configured source-file encoding override
+(a keyword such as :UTF-8 / :ISO-8859-1 / :WINDOWS-1252), or NIL
+when no override was set. Honoured by AUTOLISP-LOAD-FILE-IN-CONTEXT
+for loads without an explicit :external-format. Set by the CLI's
+`-e ENC' flag."
+  (clautolisp.autolisp-runtime.internal::runtime-session-default-source-encoding
+   session))
+
+(defun set-runtime-session-default-source-encoding (session encoding)
+  "Install ENCODING (a keyword or NIL) as SESSION's source-file
+encoding override. See RUNTIME-SESSION-DEFAULT-SOURCE-ENCODING for
+how it's consumed."
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-default-source-encoding
+         session)
+        encoding))
+
+(defun set-default-source-encoding (context encoding)
+  "Convenience setter for callers holding an EVALUATION-CONTEXT
+(the shape the runtime exposes outside its session struct). Installs
+ENCODING on the context's underlying session."
+  (let ((session (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                  context)))
+    (when session
+      (set-runtime-session-default-source-encoding session encoding))))
+
 (defun runtime-session-dialect (session)
   "Return the dialect descriptor SESSION was instantiated with."
   (clautolisp.autolisp-runtime.internal::runtime-session-dialect session))
@@ -1697,26 +1723,38 @@ decremented on exit; visible as leading spaces in trace output.")
   (first (apply #'read-runtime-from-file path options)))
 
 (defun autolisp-load-file-in-context (path context &rest read-options)
-  ;; Inject the dialect's default source encoding when the caller did
-  ;; not pass an explicit :external-format. This makes
-  ;;   * the strict dialect read files as ISO-8859-1 (a 1-1 byte
-  ;;     coding, never fails on Latin-1 / Windows-1252 source);
-  ;;   * the autocad-2026 / bricscad-v26 dialects read files as
-  ;;     UTF-8, matching AutoCAD 2025+ and BricsCAD V26 defaults
-  ;;     (autolisp-spec ch. 11, "Source-File and File-Stream
-  ;;     Encoding").
+  ;; Source-file encoding precedence, when the caller did NOT pass
+  ;; an explicit :external-format:
+  ;;   1. Session override (set by the CLI's `-e ENC' flag).
+  ;;      Honoured by every load in this session, including the
+  ;;      nested `(load …)` calls a user's init file makes.
+  ;;   2. Dialect default — strict reads ISO-8859-1 (a 1-1 byte
+  ;;      coding that never errors on Latin-1 / Windows-1252
+  ;;      source); autocad-2026 / bricscad-v26 read UTF-8 (matches
+  ;;      AutoCAD 2025+ / BricsCAD V26 defaults; autolisp-spec
+  ;;      ch. 11, "Source-File and File-Stream Encoding").
   (let* ((options-have-external-format
           (loop for tail = read-options then (cddr tail)
                 while tail
                 thereis (eq (first tail) :external-format)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (session-encoding (and session
+                                (runtime-session-default-source-encoding
+                                 session)))
          (dialect (current-evaluation-dialect context))
+         (effective-encoding
+          (cond
+            (options-have-external-format nil) ; caller supplied one
+            (session-encoding session-encoding)
+            (t (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
+                dialect))))
          (effective-options
-          (if options-have-external-format
-              read-options
+          (if effective-encoding
               (append read-options
-                      (list :external-format
-                            (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
-                             dialect))))))
+                      (list :external-format effective-encoding))
+              read-options)))
     (call-with-autolisp-error-handler
      (lambda ()
        (autolisp-eval-progn

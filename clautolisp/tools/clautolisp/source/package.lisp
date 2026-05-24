@@ -37,6 +37,7 @@
                 #:run-autolisp-file
                 #:run-autolisp-string
                 #:set-runtime-session-host
+                #:set-default-source-encoding
                 #:current-evaluation-context
                 #:evaluation-context-session
                 #:*default-runtime-host*)

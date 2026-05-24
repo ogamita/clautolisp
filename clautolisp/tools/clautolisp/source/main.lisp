@@ -34,6 +34,11 @@
   (format t "  -q, --quiet            Suppress the REPL banner.~%")
   (format t "  -v, --verbose          Print extra diagnostic information (banner, summary, …).~%")
   (format t "  -d, --debug            Print debug traces; include CL backtraces on runtime errors.~%")
+  (format t "Source-file encoding:~%")
+  (format t "  -e ENC                 Override the default source-file encoding for this session.~%")
+  (format t "                         ENC is one of: utf-8, iso-8859-1, latin-1, windows-1252, cp1252.~%")
+  (format t "                         Applied to every load in the session, including the nested~%")
+  (format t "                         (load ...) calls a user's init file may issue.~%")
   (format t "Init files:~%")
   (format t "  -norc, --no-init       Skip user init files (~~/.clautolisp{,rc}, ~~/.autolisp{,rc},~%")
   (format t "                         ~~/.config/clautolisp/init, ~~/.config/autolisp/init).~%")
@@ -97,6 +102,7 @@ match the generic CLI surface specified for the sibling alfe
 front-end."
   (let ((dialect (autolisp-dialect-strict))
         (actions '())
+        (load-encoding nil)
         (quiet-p nil)
         (verbose-p nil)
         (debug-p nil)
@@ -180,6 +186,12 @@ front-end."
                  ((or (string= argument "-l")
                       (string= argument "--load"))
                   (queue-action :file (take argument)))
+                 ;; -e ENC: session-wide source-file encoding override
+                 ;; (utf-8 / iso-8859-1 / windows-1252 / latin-1 / cp1252).
+                 ;; Honoured by every load in the session, including
+                 ;; nested (load …) calls from user init files.
+                 ((string= argument "-e")
+                  (setf load-encoding (take argument)))
                  ((and (> (length argument) 0)
                        (char= (char argument 0) #\-))
                   (error "Unknown option ~S." argument))
@@ -187,7 +199,7 @@ front-end."
                   (queue-action :file argument)))))
     (values dialect actions quiet-p verbose-p debug-p
             interactive-p host mock-input gui trace-p
-            no-init-p)))
+            no-init-p load-encoding)))
 
 (defun prepend-init-file-actions (actions no-init-p)
   "Walk the user's init-file stem list and prepend a (:FILE PATH)
@@ -441,11 +453,35 @@ exactly what they are typing into."
           (report-termination condition)
           (return))))))
 
-(defun build-context (dialect host mock-input)
+(defun encoding-keyword (encoding-string)
+  "Map a CLI encoding string (\"utf-8\", \"iso-8859-1\",
+\"windows-1252\", \"cp1252\", \"latin-1\", \"latin1\") to the Lisp
+keyword external-format. Unknown values are passed through as a
+keyword interned from the upper-cased string — the underlying
+implementation's OPEN will surface the failure if it can't honour
+them. Mirrors the same helper in autolisp-front-end's backend-clautolisp."
+  (cond
+    ((null encoding-string) nil)
+    ((or (string-equal encoding-string "utf-8")
+         (string-equal encoding-string "utf8"))            :utf-8)
+    ((or (string-equal encoding-string "iso-8859-1")
+         (string-equal encoding-string "latin-1")
+         (string-equal encoding-string "latin1"))          :iso-8859-1)
+    ((or (string-equal encoding-string "windows-1252")
+         (string-equal encoding-string "cp1252"))          :windows-1252)
+    (t (intern (string-upcase encoding-string) :keyword))))
+
+(defun build-context (dialect host mock-input &optional load-encoding)
   "Make a fresh runtime context, install builtins, attach the host
-and any mock-input stream. Returns the context."
+and any mock-input stream. When LOAD-ENCODING is a non-nil CLI
+encoding string (eg. \"utf-8\"), install it as the session's source-
+file encoding override so subsequent loads use it instead of the
+dialect default."
   (let ((context (make-default-runtime-context :dialect dialect)))
     (setup-context context host mock-input)
+    (when load-encoding
+      (set-default-source-encoding context
+                                   (encoding-keyword load-encoding)))
     context))
 
 (defun maybe-summarise-action (kind label start-time)
@@ -486,7 +522,8 @@ queue share one context, so side effects compose."
 ;;; --- Batch entry points ---------------------------------------------
 
 (defun run-with-input (dialect actions
-                       &key quiet-p interactive-p host mock-input gui trace-p)
+                       &key quiet-p interactive-p host mock-input gui trace-p
+                            load-encoding)
   "Build a shared evaluation context, run every action in ACTIONS
 against it in order, then enter the REPL on the same context when
 INTERACTIVE-P is true.
@@ -500,7 +537,7 @@ to make the decision, because by the time this function is called
 ACTIONS may include init-file loads (which are machinery, not user
 intent)."
   (handler-case
-      (let ((context (build-context dialect host mock-input)))
+      (let ((context (build-context dialect host mock-input load-encoding)))
         (dolist (action actions)
           (let ((start (get-internal-real-time)))
             (eval-action-in-context context action dialect)
@@ -547,7 +584,7 @@ autolisp-dcl load time) stays in effect."
   (handler-case
       (multiple-value-bind (dialect actions quiet-p verbose-p debug-p
                             interactive-p host mock-input gui trace-p
-                            no-init-p)
+                            no-init-p load-encoding)
           (parse-arguments (rest argv))
         (let ((*verbose-p* verbose-p)
               (*debug-p* debug-p)
@@ -574,7 +611,8 @@ autolisp-dcl load time) stays in effect."
                           :host host
                           :mock-input mock-input
                           :gui gui
-                          :trace-p trace-p)
+                          :trace-p trace-p
+                          :load-encoding load-encoding)
           (finish-output)
           (quit 0)))
     (error (error)
