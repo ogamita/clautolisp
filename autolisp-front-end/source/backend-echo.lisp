@@ -97,8 +97,8 @@ both after the fact."
 
 (defmethod start-engine ((backend echo-backend) workdir
                          &key dialect host mock-input bootstrap-phase
-                              interactive-p)
-  (declare (ignore host mock-input bootstrap-phase interactive-p))
+                              interactive-p load-encoding)
+  (declare (ignore host mock-input bootstrap-phase interactive-p load-encoding))
   (let ((session (%make-echo-session :backend backend
                                      :workdir workdir
                                      :dialect dialect)))

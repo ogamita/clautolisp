@@ -34,6 +34,15 @@
   (format t "  -q, --quiet            Suppress the REPL banner.~%")
   (format t "  -v, --verbose          Print extra diagnostic information (banner, summary, …).~%")
   (format t "  -d, --debug            Print debug traces; include CL backtraces on runtime errors.~%")
+  (format t "  --no-color             Disable ANSI colour in AutoLISP value output. Honoured~%")
+  (format t "                         equivalently via $NO_COLOR (https://no-color.org).~%")
+  (format t "                         Without it, the CLI probes the terminal and picks a~%")
+  (format t "                         contrasting accent (yellow on dark, blue on light).~%")
+  (format t "Source-file encoding:~%")
+  (format t "  -e ENC                 Override the default source-file encoding for this session.~%")
+  (format t "                         ENC is one of: utf-8, iso-8859-1, latin-1, windows-1252, cp1252.~%")
+  (format t "                         Applied to every load in the session, including the nested~%")
+  (format t "                         (load ...) calls a user's init file may issue.~%")
   (format t "Init files:~%")
   (format t "  -norc, --no-init       Skip user init files (~~/.clautolisp{,rc}, ~~/.autolisp{,rc},~%")
   (format t "                         ~~/.config/clautolisp/init, ~~/.config/autolisp/init).~%")
@@ -77,7 +86,8 @@ mentioning OPTION. Returns (values value remaining-arguments)."
 
 (defun parse-arguments (arguments)
   "Returns (values dialect actions quiet-p verbose-p debug-p
-interactive-p host mock-input gui trace-p no-init-p).
+interactive-p host mock-input gui trace-p no-init-p load-encoding
+no-color-p).
 
 ACTIONS is a list of action records in the order they appear on
 the command line. Each record is either (:FILE PATH) or
@@ -92,11 +102,19 @@ plus the `~/.autolisp` and `~/.config/autolisp/init` siblings).
 Mirrors the `-norc` / `--no-init` flag of the legacy bash
 autolisp wrapper and matches alfe's flag of the same name.
 
+NO-COLOR-P, when true, forces *COLOR-OUTPUT* to NIL so the
+AutoLISP value printers emit no ANSI escape sequences. The
+$NO_COLOR environment variable (https://no-color.org) is honoured
+equivalently inside RESOLVE-COLOR-POLICY, so this flag is only
+needed when the user wants per-invocation suppression without
+exporting the variable.
+
 The short-form aliases (-l, -x, -i, -q, -v, -d, -h, -V, -norc)
 match the generic CLI surface specified for the sibling alfe
 front-end."
   (let ((dialect (autolisp-dialect-strict))
         (actions '())
+        (load-encoding nil)
         (quiet-p nil)
         (verbose-p nil)
         (debug-p nil)
@@ -105,7 +123,8 @@ front-end."
         (mock-input nil)
         (gui nil)
         (trace-p nil)
-        (no-init-p nil))
+        (no-init-p nil)
+        (no-color-p nil))
     (labels ((take (option)
                (multiple-value-bind (value rest)
                    (pop-required-argument option arguments)
@@ -174,12 +193,20 @@ front-end."
                  ((or (string= argument "--no-init")
                       (string= argument "-norc"))
                   (setf no-init-p t))
+                 ((string= argument "--no-color")
+                  (setf no-color-p t))
                  ((or (string= argument "-x")
                       (string= argument "--eval"))
                   (queue-action :expression (take argument)))
                  ((or (string= argument "-l")
                       (string= argument "--load"))
                   (queue-action :file (take argument)))
+                 ;; -e ENC: session-wide source-file encoding override
+                 ;; (utf-8 / iso-8859-1 / windows-1252 / latin-1 / cp1252).
+                 ;; Honoured by every load in the session, including
+                 ;; nested (load …) calls from user init files.
+                 ((string= argument "-e")
+                  (setf load-encoding (take argument)))
                  ((and (> (length argument) 0)
                        (char= (char argument 0) #\-))
                   (error "Unknown option ~S." argument))
@@ -187,7 +214,7 @@ front-end."
                   (queue-action :file argument)))))
     (values dialect actions quiet-p verbose-p debug-p
             interactive-p host mock-input gui trace-p
-            no-init-p)))
+            no-init-p load-encoding no-color-p)))
 
 (defun prepend-init-file-actions (actions no-init-p)
   "Walk the user's init-file stem list and prepend a (:FILE PATH)
@@ -441,11 +468,43 @@ exactly what they are typing into."
           (report-termination condition)
           (return))))))
 
-(defun build-context (dialect host mock-input)
+(defun encoding-keyword (encoding-string)
+  "Map a CLI encoding string (\"utf-8\", \"iso-8859-1\",
+\"windows-1252\", \"cp1252\", \"latin-1\", \"latin1\") to the Lisp
+keyword external-format. Unknown values are passed through as a
+keyword interned from the upper-cased string — the underlying
+implementation's OPEN will surface the failure if it can't honour
+them. Mirrors the same helper in autolisp-front-end's backend-clautolisp."
+  (cond
+    ((null encoding-string) nil)
+    ((or (string-equal encoding-string "utf-8")
+         (string-equal encoding-string "utf8"))            :utf-8)
+    ((or (string-equal encoding-string "iso-8859-1")
+         (string-equal encoding-string "latin-1")
+         (string-equal encoding-string "latin1"))          :iso-8859-1)
+    ((or (string-equal encoding-string "windows-1252")
+         (string-equal encoding-string "cp1252"))          :windows-1252)
+    (t (intern (string-upcase encoding-string) :keyword))))
+
+(defun build-context (dialect host mock-input &optional load-encoding)
   "Make a fresh runtime context, install builtins, attach the host
-and any mock-input stream. Returns the context."
+and any mock-input stream. Computes an effective default source-file
+encoding via the precedence:
+
+  1. `-e ENC' on the CLI (LOAD-ENCODING — strongest, explicit).
+  2. POSIX locale env: LC_ALL > LC_CTYPE > LANG (host-wide hint).
+  3. NIL — fall through to the dialect's default at load time.
+
+When (1) or (2) yields an encoding it is installed on the session;
+subsequent loads (including nested (load ...) calls in init files)
+use it instead of the dialect default."
   (let ((context (make-default-runtime-context :dialect dialect)))
     (setup-context context host mock-input)
+    (let ((effective
+            (or (and load-encoding (encoding-keyword load-encoding))
+                (locale-default-source-encoding))))
+      (when effective
+        (set-default-source-encoding context effective)))
     context))
 
 (defun maybe-summarise-action (kind label start-time)
@@ -486,20 +545,27 @@ queue share one context, so side effects compose."
 ;;; --- Batch entry points ---------------------------------------------
 
 (defun run-with-input (dialect actions
-                       &key quiet-p interactive-p host mock-input gui trace-p)
+                       &key quiet-p interactive-p host mock-input gui trace-p
+                            load-encoding)
   "Build a shared evaluation context, run every action in ACTIONS
-against it in order, then optionally enter the REPL on the same
-context. When ACTIONS is empty, the REPL is the implicit fallback
-(unless --interactive is also off and the caller wants a strict
-no-op — currently no such caller exists). INTERACTIVE-P forces the
-REPL to follow a non-empty action queue."
+against it in order, then enter the REPL on the same context when
+INTERACTIVE-P is true.
+
+INTERACTIVE-P expresses the *effective* request — it is true when
+either the CLI passed -i / --interactive, OR the user supplied no
+explicit -l / -x / positional action so the REPL is the implicit
+default (per command-line-option-ammendment.issue). The caller
+computes this; the function intentionally does not inspect ACTIONS
+to make the decision, because by the time this function is called
+ACTIONS may include init-file loads (which are machinery, not user
+intent)."
   (handler-case
-      (let ((context (build-context dialect host mock-input)))
+      (let ((context (build-context dialect host mock-input load-encoding)))
         (dolist (action actions)
           (let ((start (get-internal-real-time)))
             (eval-action-in-context context action dialect)
             (maybe-summarise-action (car action) (cdr action) start)))
-        (when (or (null actions) interactive-p)
+        (when interactive-p
           (repl-loop dialect context
                      :quiet-p quiet-p
                      :mock-input mock-input
@@ -541,10 +607,29 @@ autolisp-dcl load time) stays in effect."
   (handler-case
       (multiple-value-bind (dialect actions quiet-p verbose-p debug-p
                             interactive-p host mock-input gui trace-p
-                            no-init-p)
+                            no-init-p load-encoding no-color-p)
           (parse-arguments (rest argv))
         (let ((*verbose-p* verbose-p)
               (*debug-p* debug-p)
+              ;; Colour policy is computed exactly once per CLI run
+              ;; against the LIVE *standard-output* — by the time
+              ;; RUN-WITH-INPUT redirects (it doesn't, but a future
+              ;; caller might) the original stream's tty state is
+              ;; the one that matters. NIL means "no colour"; a
+              ;; keyword (:YELLOW / :BLUE) is the accent the
+              ;; AUTOLISP-SYMBOL PRINT-OBJECT method will wrap
+              ;; rendered names in.
+              (clautolisp.autolisp-runtime:*color-output*
+                (clautolisp.autolisp-runtime:resolve-color-policy
+                 :no-color-flag no-color-p))
+              ;; Implicit -i: when the user supplied no -l / -x /
+              ;; positional action, the REPL is the desired default
+              ;; (per command-line-option-ammendment.issue).
+              ;; The init-file loads added below are machinery,
+              ;; not user intent, so we snapshot `actions' emptiness
+              ;; BEFORE prepending them.
+              (effective-interactive-p
+                (or interactive-p (null actions)))
               ;; Init files run BEFORE any -l / -x / positional
               ;; action so user-supplied state can override an
               ;; init-file binding. The flag (or its env-var
@@ -556,11 +641,12 @@ autolisp-dcl load time) stays in effect."
             (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
           (run-with-input dialect effective-actions
                           :quiet-p quiet-p
-                          :interactive-p interactive-p
+                          :interactive-p effective-interactive-p
                           :host host
                           :mock-input mock-input
                           :gui gui
-                          :trace-p trace-p)
+                          :trace-p trace-p
+                          :load-encoding load-encoding)
           (finish-output)
           (quit 0)))
     (error (error)

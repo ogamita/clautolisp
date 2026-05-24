@@ -260,6 +260,103 @@ within a single run)."
             (clautolisp.autolisp-runtime.internal::evaluation-context-session context)))
       *default-runtime-host*))
 
+(defun runtime-session-default-source-encoding (session)
+  "Return SESSION's user-configured source-file encoding override
+(a keyword such as :UTF-8 / :ISO-8859-1 / :WINDOWS-1252), or NIL
+when no override was set. Honoured by AUTOLISP-LOAD-FILE-IN-CONTEXT
+for loads without an explicit :external-format. Set by the CLI's
+`-e ENC' flag."
+  (clautolisp.autolisp-runtime.internal::runtime-session-default-source-encoding
+   session))
+
+(defun set-runtime-session-default-source-encoding (session encoding)
+  "Install ENCODING (a keyword or NIL) as SESSION's source-file
+encoding override. See RUNTIME-SESSION-DEFAULT-SOURCE-ENCODING for
+how it's consumed."
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-default-source-encoding
+         session)
+        encoding))
+
+(defun set-default-source-encoding (context encoding)
+  "Convenience setter for callers holding an EVALUATION-CONTEXT
+(the shape the runtime exposes outside its session struct). Installs
+ENCODING on the context's underlying session."
+  (let ((session (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                  context)))
+    (when session
+      (set-runtime-session-default-source-encoding session encoding))))
+
+;;; --- POSIX locale probe --------------------------------------------
+;;;
+;;; The CLI's `-e ENC' is one way to set the session's source-file
+;;; encoding override. The other — implicit and very common — is the
+;;; POSIX locale: a host with LC_CTYPE=en_US.UTF-8 (or LC_ALL, or
+;;; LANG) is telling every program "treat byte streams as UTF-8 by
+;;; default." We honour the same convention so the user doesn't have
+;;; to spell `-e utf-8' explicitly on a UTF-8 host.
+;;;
+;;; Precedence (POSIX, see also issues/open/lc-environment.txt):
+;;;   LC_ALL  →  LC_CTYPE  →  LANG  →  C
+;;;
+;;; The OTHER LC_* categories (LC_COLLATE, LC_TIME, LC_NUMERIC, …)
+;;; are intentionally NOT consulted for source-file encoding: they
+;;; govern strings comparison, dates, decimal separators, etc., not
+;;; byte-stream interpretation. Using them for file encoding would be
+;;; misuse of the standard. If the runtime ever localises error
+;;; messages or honours decimal separators via locale, *those*
+;;; features will consult their own LC_MESSAGES / LC_NUMERIC.
+
+(defun parse-locale-encoding-string (s)
+  "Map an encoding suffix (\"UTF-8\", \"utf8\", \"ISO-8859-1\",
+\"latin1\", \"cp1252\", …) to a Lisp external-format keyword, or
+return NIL when nothing recognisable comes through. Used by
+LOCALE-DEFAULT-SOURCE-ENCODING."
+  (cond
+    ((null s) nil)
+    ((zerop (length s)) nil)
+    ((or (string-equal s "utf-8") (string-equal s "utf8"))      :utf-8)
+    ((or (string-equal s "iso-8859-1") (string-equal s "iso88591")
+         (string-equal s "latin-1")    (string-equal s "latin1"))
+                                                                :iso-8859-1)
+    ((or (string-equal s "windows-1252") (string-equal s "cp1252"))
+                                                                :windows-1252)
+    ((or (string-equal s "ascii") (string-equal s "us-ascii"))  :ascii)
+    (t
+     ;; Unknown encodings pass through as upper-cased keywords —
+     ;; the underlying Lisp's OPEN will surface a clear error if
+     ;; it can't honour them.
+     (intern (string-upcase s) :keyword))))
+
+(defun parse-posix-locale (value)
+  "Extract the encoding suffix of a POSIX locale string such as
+\"en_US.UTF-8\", \"fr_FR.ISO-8859-1@euro\", or just \"C\".
+Returns the parsed external-format keyword (via
+PARSE-LOCALE-ENCODING-STRING) or NIL when no encoding portion is
+present. Strips a trailing `@modifier' segment."
+  (when (and value (plusp (length value)))
+    (let ((dot (position #\. value)))
+      (when dot
+        (let* ((tail (subseq value (1+ dot)))
+               (at   (position #\@ tail))
+               (raw  (if at (subseq tail 0 at) tail)))
+          (parse-locale-encoding-string raw))))))
+
+(defun locale-default-source-encoding ()
+  "Resolve the host's default source-file encoding from the POSIX
+locale environment.
+
+Probes (in POSIX order):
+  1. LC_ALL    — global override.
+  2. LC_CTYPE  — character classification + encoding category.
+  3. LANG      — catch-all fallback.
+
+Returns a keyword (e.g. :UTF-8) or NIL when nothing is set or
+the resolved locale carries no encoding suffix (the `C' / `POSIX'
+case)."
+  (or (parse-posix-locale (uiop:getenv "LC_ALL"))
+      (parse-posix-locale (uiop:getenv "LC_CTYPE"))
+      (parse-posix-locale (uiop:getenv "LANG"))))
+
 (defun runtime-session-dialect (session)
   "Return the dialect descriptor SESSION was instantiated with."
   (clautolisp.autolisp-runtime.internal::runtime-session-dialect session))
@@ -1697,26 +1794,38 @@ decremented on exit; visible as leading spaces in trace output.")
   (first (apply #'read-runtime-from-file path options)))
 
 (defun autolisp-load-file-in-context (path context &rest read-options)
-  ;; Inject the dialect's default source encoding when the caller did
-  ;; not pass an explicit :external-format. This makes
-  ;;   * the strict dialect read files as ISO-8859-1 (a 1-1 byte
-  ;;     coding, never fails on Latin-1 / Windows-1252 source);
-  ;;   * the autocad-2026 / bricscad-v26 dialects read files as
-  ;;     UTF-8, matching AutoCAD 2025+ and BricsCAD V26 defaults
-  ;;     (autolisp-spec ch. 11, "Source-File and File-Stream
-  ;;     Encoding").
+  ;; Source-file encoding precedence, when the caller did NOT pass
+  ;; an explicit :external-format:
+  ;;   1. Session override (set by the CLI's `-e ENC' flag).
+  ;;      Honoured by every load in this session, including the
+  ;;      nested `(load …)` calls a user's init file makes.
+  ;;   2. Dialect default — strict reads ISO-8859-1 (a 1-1 byte
+  ;;      coding that never errors on Latin-1 / Windows-1252
+  ;;      source); autocad-2026 / bricscad-v26 read UTF-8 (matches
+  ;;      AutoCAD 2025+ / BricsCAD V26 defaults; autolisp-spec
+  ;;      ch. 11, "Source-File and File-Stream Encoding").
   (let* ((options-have-external-format
           (loop for tail = read-options then (cddr tail)
                 while tail
                 thereis (eq (first tail) :external-format)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (session-encoding (and session
+                                (runtime-session-default-source-encoding
+                                 session)))
          (dialect (current-evaluation-dialect context))
+         (effective-encoding
+          (cond
+            (options-have-external-format nil) ; caller supplied one
+            (session-encoding session-encoding)
+            (t (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
+                dialect))))
          (effective-options
-          (if options-have-external-format
-              read-options
+          (if effective-encoding
               (append read-options
-                      (list :external-format
-                            (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
-                             dialect))))))
+                      (list :external-format effective-encoding))
+              read-options)))
     (call-with-autolisp-error-handler
      (lambda ()
        (autolisp-eval-progn

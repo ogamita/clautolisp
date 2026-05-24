@@ -100,7 +100,19 @@
   ;; signal-document-event / signal-application-event push their
   ;; argument tuples onto this list (newest first). Tests inspect
   ;; the list, then clear it. Production callers leave it nil.
-  (event-trace nil))
+  (event-trace nil)
+  ;; Session-level source-file encoding override. When non-nil
+  ;; (a keyword such as :UTF-8 / :ISO-8859-1 / :WINDOWS-1252),
+  ;; AUTOLISP-LOAD-FILE-IN-CONTEXT uses this instead of the
+  ;; dialect's default-source-encoding for files loaded WITHOUT
+  ;; an explicit :external-format. Set by the CLI from the user's
+  ;; `-e ENC' flag, so a single `-e utf-8' at the alfe / clautolisp
+  ;; command line takes effect for every load — including the
+  ;; nested `(load …)` calls a user's init file makes (which was
+  ;; the failure mode before this slot existed: the runtime
+  ;; couldn't see the CLI's encoding because it ran far below the
+  ;; CLI layer).
+  (default-source-encoding nil))
 
 (defstruct evaluation-context
   session
@@ -156,3 +168,136 @@
 
 (defstruct autolisp-vla-object
   value)
+
+;;; ---- PRINT-OBJECT methods for AutoLISP runtime values --------------
+;;;
+;;; *COLOR-OUTPUT* lives in terminal-color.lisp, which is loaded AFTER
+;;; this file (it depends on the structs defined above). The DECLAIM
+;;; tells the compiler that the symbol names a special variable so the
+;;; reference inside the AUTOLISP-SYMBOL PRINT-OBJECT method below
+;;; compiles without a "undefined variable" warning. The DEFPARAMETER
+;;; in terminal-color.lisp later attaches the actual value cell.
+(declaim (special clautolisp.autolisp-runtime:*color-output*))
+;;;
+;;; Why: CL's default DEFSTRUCT printer renders an AutoLISP symbol "T"
+;;; as `#S(CLAUTOLISP.AUTOLISP-RUNTIME.INTERNAL:AUTOLISP-SYMBOL :NAME
+;;; "T" :ORIGINAL-NAME "T" :PLIST NIL)' — useful for the debugger, but
+;;; opaque in error messages and trace output where an AutoLISP
+;;; developer just wants to see what their code is seeing.
+;;;
+;;; The methods below render each runtime value type with its AutoLISP
+;;; surface syntax: a symbol becomes its name, a string becomes
+;;; "abc" / abc depending on *print-escape*, an entity becomes
+;;; `<Entity name: …>', etc. CL handles cons cells, nil, integers, and
+;;; floats natively — and our methods are dispatched recursively by
+;;; the list printer for nested values, so `(princ (cons sym other))'
+;;; comes out as `(T 42)' instead of the structure dump.
+;;;
+;;; *print-escape* (NIL for princ, T for prin1) controls whether
+;;; AutoLISP strings get quoted; AutoLISP follows the same convention
+;;; (princ "abc" -> abc, prin1 "abc" -> "abc"). Other types are
+;;; printed identically under both modes — there is no quote-able
+;;; surface syntax for SUBR / USUBR / ENAME / SAFEARRAY / etc.
+;;;
+;;; A failsafe handler-case keeps the printer from looping if any
+;;; underlying slot accessor errors out: on failure we fall back to
+;;; the default structure printer (PRINT-NOT-READABLE-OBJECT). This
+;;; matters because PRINT-OBJECT runs inside the debugger and a
+;;; loop here would deadlock recovery.
+
+(defun %print-autolisp-string (string-value stream)
+  "Print STRING-VALUE (a Common Lisp string carried by an
+autolisp-string) honouring *PRINT-ESCAPE*. Mirrors
+autolisp-builtins-core::escape-prin1-string, kept in the runtime
+because the print-object method lives here."
+  (if *print-escape*
+      (progn
+        (write-char #\" stream)
+        (loop for ch across string-value do
+              (case ch
+                (#\\ (write-string "\\\\" stream))
+                (#\" (write-string "\\\"" stream))
+                (t   (write-char ch stream))))
+        (write-char #\" stream))
+      (write-string string-value stream)))
+
+(defmethod print-object ((object autolisp-symbol) stream)
+  ;; Symbols are the one runtime value that gets a colour accent
+  ;; when the CLI has armed *COLOR-OUTPUT* (yellow on dark, blue on
+  ;; light terminals). The OR clause keeps the cheap path —
+  ;; `(write-string name stream)` — when colour is off, which is
+  ;; the case for every non-CLI caller and for piped output where
+  ;; *COLOR-OUTPUT* is NIL by policy. See terminal-color.lisp.
+  (handler-case
+      (let ((colour (and (boundp 'clautolisp.autolisp-runtime:*color-output*)
+                         clautolisp.autolisp-runtime:*color-output*)))
+        (if colour
+            (clautolisp.autolisp-runtime:write-ansi-colorized
+             (autolisp-symbol-name object) colour stream)
+            (write-string (autolisp-symbol-name object) stream)))
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-string) stream)
+  (handler-case
+      (%print-autolisp-string (autolisp-string-value object) stream)
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-subr) stream)
+  (handler-case
+      (format stream "#<SUBR ~A>" (autolisp-subr-name object))
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-usubr) stream)
+  (handler-case
+      (format stream "#<USUBR ~A>" (autolisp-usubr-name object))
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-ename) stream)
+  (handler-case
+      (format stream "<Entity name: ~A>" (autolisp-ename-value object))
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-pickset) stream)
+  (handler-case
+      (format stream "<Selection set: ~A>" (autolisp-pickset-value object))
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-file) stream)
+  (handler-case
+      (format stream "#<file ~A>" (or (autolisp-file-path object) "?"))
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-vla-object) stream)
+  (handler-case
+      (format stream "#<VLA-OBJECT ~A>" (autolisp-vla-object-value object))
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-safearray) stream)
+  (handler-case
+      (format stream "#<SAFEARRAY>")
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-variant) stream)
+  (handler-case
+      (let ((pair (autolisp-variant-value object)))
+        (if (consp pair)
+            (format stream "#<VARIANT ~A ~A>" (car pair) (cdr pair))
+            (format stream "#<VARIANT>")))
+    (error ()
+      (call-next-method))))
+
+(defmethod print-object ((object autolisp-catch-all-error) stream)
+  (handler-case
+      (format stream "#<catch-all-error ~S>"
+              (autolisp-catch-all-error-message object))
+    (error ()
+      (call-next-method))))

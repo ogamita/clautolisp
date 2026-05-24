@@ -23,6 +23,29 @@ ALFE_GENERATE := $(ALFE_TOOL_DIR)/generate-alfe.lisp
 # the parent hasn't set XDG_CACHE_HOME.
 XDG_CACHE_HOME ?= $(CLAUTOLISP_ROOT)/.cache
 
+# Install destination. Override on the command line:
+#   make install PREFIX=/usr/local DESTDIR=/staging
+# Default /opt/local matches the MacPorts hierarchy and the
+# repo-wide convention documented in the root Makefile.
+PREFIX ?= /opt/local
+DESTDIR ?=
+SUBPROJECT_NAME := autolisp-front-end
+
+# ---------------------------------------------------------------------
+# Available Common Lisp implementations (probed at Make-parse time).
+# Same convention as clautolisp/Makefile: the user-facing 'build' and
+# 'install' walk this list; per-impl 'build-sbcl' / 'build-ccl'
+# variants are strict (error when their impl is missing).
+HAVE_SBCL := $(shell command -v $(SBCL) >/dev/null 2>&1 && echo yes)
+HAVE_CCL  := $(shell command -v $(CCL)  >/dev/null 2>&1 && echo yes)
+AVAILABLE_IMPLEMENTATIONS :=
+ifeq ($(HAVE_SBCL),yes)
+  AVAILABLE_IMPLEMENTATIONS += sbcl
+endif
+ifeq ($(HAVE_CCL),yes)
+  AVAILABLE_IMPLEMENTATIONS += ccl
+endif
+
 # Host OS detection — used by the per-platform alfe-backend test
 # targets below (test-alfe-{sbcl,ccl}-{bricscad,autocad}-*). Wrong-
 # platform targets call require-os-* which prints a [skip] line and
@@ -50,6 +73,7 @@ PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 TEST_SYSTEM ?= autolisp-front-end
 
 .PHONY: help all documentation test test-sbcl test-ccl \
+        build build-sbcl build-ccl probe-check \
         build-alfe-sbcl build-alfe-ccl clean-pdf clean \
         conformance check-spec-coverage \
         test-alfe-sbcl-clautolisp test-alfe-ccl-clautolisp \
@@ -66,13 +90,46 @@ help:  ## Show this message (list available targets and their purpose).
 	    printf "  %-32s %s\n", $$1, $$2; \
 	  }' $(MAKEFILE_LIST)
 
-all: documentation build-alfe-sbcl  ## Default: docs + the SBCL alfe binary.
+all: documentation build  ## Default: docs + alfe binaries for every available CL implementation.
+
+# ---------------------------------------------------------------------
+# build / build-<impl> — user-facing build entry points.
+# Same shape as clautolisp/Makefile: `build` covers every available
+# implementation, the per-impl aliases are strict.
+
+BUILD_TARGETS := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),build-alfe-$(impl))
+
+build: probe-check $(BUILD_TARGETS) documentation  ## Build alfe binaries + docs (everything `install` ships) for every available CL implementation.
+
+probe-check:
+	@if [ -z "$(strip $(AVAILABLE_IMPLEMENTATIONS))" ]; then \
+	  echo "Error: no Common Lisp implementation found on PATH"; \
+	  echo "  Tried: sbcl ($(SBCL)), ccl ($(CCL))"; \
+	  echo "  Override via 'make build SBCL=/path/to/sbcl' or 'CCL=/path/to/ccl'."; \
+	  exit 2; \
+	fi
+	@echo "Building alfe with: $(AVAILABLE_IMPLEMENTATIONS)"
+
+build-sbcl:  ## Strictly build the SBCL alfe image (errors if sbcl is missing).
+	@if [ "$(HAVE_SBCL)" != "yes" ]; then \
+	  echo "Error: sbcl not found in PATH (looked for '$(SBCL)')"; \
+	  exit 2; \
+	fi
+	$(MAKE) build-alfe-sbcl
+
+build-ccl:  ## Strictly build the CCL alfe image (errors if ccl is missing).
+	@if [ "$(HAVE_CCL)" != "yes" ]; then \
+	  echo "Error: ccl not found in PATH (looked for '$(CCL)')"; \
+	  exit 2; \
+	fi
+	$(MAKE) build-alfe-ccl
 
 documentation: $(PDF_FILES)  ## Render every documentation/*.org into a PDF via Emacs org-export.
 
 %.pdf: %.org
 	$(EMACS) --batch \
 	    --eval "(setq org-confirm-babel-evaluate nil)" \
+	    --eval "(setq org-export-with-broken-links t)" \
 	    --eval "(setq org-latex-pdf-process '(\"$(LATEX_COMPILER) -interaction=nonstopmode -output-directory=%o %f\" \"$(LATEX_COMPILER) -interaction=nonstopmode -output-directory=%o %f\"))" \
 	    "$<" \
 	    --funcall org-latex-export-to-pdf
@@ -224,3 +281,51 @@ $(ALFE_SBCL):
 
 $(ALFE_CCL):
 	$(MAKE) build-alfe-ccl
+
+# ---------------------------------------------------------------------
+# Install / uninstall.
+#
+# Layout follows the repo-wide convention (see the root Makefile):
+#
+#   $(PREFIX)/bin/                                  alfe-sbcl, alfe-ccl
+#   $(PREFIX)/libexec/autolisp-front-end/           run-alfe-conformance
+#                                                   (shell driver — built lazily
+#                                                    via the existing make target)
+#   $(PREFIX)/share/doc/autolisp-front-end/         .org + .pdf documentation
+#
+# install depends on `build`, which builds for every CL
+# implementation found on the host; an SBCL-only host installs the
+# SBCL image and skips ccl naturally because AVAILABLE_IMPLEMENTATIONS
+# doesn't include it.
+
+BIN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/bin
+LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
+DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
+
+INSTALL_BINARIES_sbcl := $(ALFE_SBCL)
+INSTALL_BINARIES_ccl  := $(ALFE_CCL)
+INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
+
+.PHONY: install uninstall
+
+install: build  ## Install built alfe binaries + docs into $$PREFIX (run `make build` first so this can be sudo'd cleanly).
+	install -d $(BIN_INSTALL_DIR)
+	install -d $(LIBEXEC_INSTALL_DIR)
+	install -d $(DOC_INSTALL_DIR)
+	@for exe in $(INSTALL_BINARIES); do \
+	  if [ -x "$$exe" ]; then \
+	    install -m 0755 "$$exe" $(BIN_INSTALL_DIR)/ ; \
+	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/" ; \
+	  else \
+	    echo "Error: $$exe missing after build (unexpected)" ; \
+	    exit 1 ; \
+	  fi ; \
+	done
+	@for f in documentation/*.org documentation/*.pdf; do \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	done
+	@echo "alfe install complete: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+
+uninstall:  ## Remove the alfe install from $$PREFIX.
+	rm -f $(BIN_INSTALL_DIR)/alfe-sbcl $(BIN_INSTALL_DIR)/alfe-ccl
+	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)

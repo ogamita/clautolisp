@@ -150,6 +150,45 @@ implicit :quit so backends see a uniform queue terminator."
          (plan (plan-from-options opts)))
     (is (null (find :quit plan :key #'action-kind)))))
 
+;;; --- implicit -i: bare `alfe' drops into the REPL -------------------
+;;;
+;;; Per command-line-option-ammendment.issue, invoking alfe with no
+;;; -l / -x / --main / positional action enters the REPL by default,
+;;; matching clautolisp. The init-file loads added by EFFECTIVE-PLAN
+;;; do not count — they're machinery, not user intent — so the
+;;; pure transformation under test (PLAN-FROM-OPTIONS) sees an empty
+;;; CLI-OPTIONS-ACTIONS list and is expected to append :interactive.
+
+(test cli-plan-appends-interactive-when-no-user-action
+  "PLAN-FROM-OPTIONS with no user-supplied action appends :interactive
+so the backend drops the user into the REPL once any init-file loads
+have run."
+  (let* ((opts (parse-arguments '()))
+         (plan (plan-from-options opts)))
+    (is (= 1 (length plan)))
+    (is (eq :interactive (action-kind (first plan))))
+    (is (null (find :quit plan :key #'action-kind)))))
+
+(test cli-plan-quit-suppresses-implicit-interactive
+  "--quit on its own (no content action either) wins over the implicit
+-i: the plan ends with :quit so the backend shuts down cleanly."
+  (let* ((opts (parse-arguments '("--quit")))
+         (plan (plan-from-options opts)))
+    (is (= 1 (length plan)))
+    (is (eq :quit (action-kind (first plan))))
+    (is (null (find :interactive plan :key #'action-kind)))))
+
+(test cli-plan-content-action-still-quits
+  "When the user supplies a content action (-l / -x / --main) and
+neither -i nor --quit, PLAN-FROM-OPTIONS appends :quit so the backend
+runs in batch mode and exits — same as before the implicit-REPL
+change."
+  (let* ((opts (parse-arguments '("-l" "/dev/null")))
+         (plan (plan-from-options opts)))
+    (is (= 2 (length plan)))
+    (is (eq :load (action-kind (first plan))))
+    (is (eq :quit (action-kind (second plan))))))
+
 ;;; --- env-var mapping is exhaustive ----------------------------------
 
 (test cli-env-default-table-is-complete

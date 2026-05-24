@@ -312,7 +312,10 @@ In the dictionary entries this becomes:
   ~acad_truecolorcli~, ~acad_truecolordlg~, ~acad-pop-dbmod~,
   ~acad-push-dbmod~.
 
-** 6.2 Feature categories (canonical Autodesk grouping) <<#62-feature-categories>>
+** 6.2 Feature categories (canonical Autodesk grouping)
+   :PROPERTIES:
+   :CUSTOM_ID: 62-feature-categories
+   :END:
 
 This is the Autodesk-published partition. Phase 2 should align spec
 chapter ordering with these categories where possible, since this is
@@ -401,7 +404,10 @@ Construct individual page URLs as
 (There are no public J, K, or Y letter pages because no AutoLISP
 function name starts with those letters.)
 
-* 7 Spec-only Entries and Issues <<#7-spec-only-entries-and-issues>>
+* 7 Spec-only Entries and Issues
+  :PROPERTIES:
+  :CUSTOM_ID: 7-spec-only-entries-and-issues
+  :END:
 
 The following 14 spec dictionary entries do not appear on the
 Autodesk per-letter pages. All but one are concept-level entries
@@ -422,6 +428,9 @@ One issue:
   must rename the entry.
 
 * 8 Delta — Missing from the Spec
+  :PROPERTIES:
+  :CUSTOM_ID: 8-delta--missing-from-the-spec
+  :END:
 
 171 symbols documented by Autodesk 2026 are absent from the spec
 draft. This section partitions them so Phase 2 can attack them in
@@ -565,6 +574,9 @@ The full name → BricsCAD V26 page-URL list lives in
 ~bricscad-stubs-data.tsv~ (Phase-2 generator input).
 
 * 9 BricsCAD V26 BricsCAD-Specific Extensions
+  :PROPERTIES:
+  :CUSTOM_ID: 9-bricscad-v26-bricscad-specific-extensions
+  :END:
 
 Bricsys explicitly documents the following 96 LISP symbols as
 BricsCAD-only extensions. They must each appear in the spec as
@@ -654,6 +666,9 @@ when present.
 - ~vle-file-encoding~ — encoding declarator for text-file I/O.
 
 * 10 Cross-Vendor Divergence Items Identified in Phase 1
+  :PROPERTIES:
+  :CUSTOM_ID: 10-cross-vendor-divergence-items-identified-in-phase-1
+  :END:
 
 The following points were noticed during inventory and must be
 reflected in dictionary entries during Phase 3 / 4:

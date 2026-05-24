@@ -1,0 +1,86 @@
+RESOLVED — implemented on branch autolisp-spec-paged-version.
+
+Both points addressed:
+
+(1) Implicit -i when no user content action: plan-from-options in
+    autolisp-front-end/source/cli.lisp now appends :interactive
+    instead of :quit when CLI-OPTIONS-ACTIONS has no :load / :eval /
+    :main entry AND neither -i nor --quit is set. clautolisp's main
+    captures (null actions) BEFORE init-file prepending and passes
+    that as :interactive-p to run-with-input.
+
+(2) rc-file output surfaced for alfe: was caused by alfe defaulting
+    to the :echo backend (whose :load handler only prints "loaded
+    PATH" without actually reading the file). resolve-backend now
+    skips :echo from the auto-detect list when any real backend is
+    registered, so plain `alfe' resolves to :clautolisp and the
+    rc-file's (princ ...) tees to stdout via the existing
+    make-tee-stream path in eval-plan.
+
+User-visible behaviour now matches the desired transcript: `alfe`
+alone prints its rc-file output then drops into `alfe> ` prompt;
+`alfe --quit` runs the rc-file then exits.
+
+Tests added in autolisp-front-end/tests/cli-tests.lisp:
+- cli-plan-appends-interactive-when-no-user-action
+- cli-plan-quit-suppresses-implicit-interactive
+- cli-plan-content-action-still-quits
+
+Versions bumped: clautolisp 0.0.38 -> 0.0.39, alfe 1.0.2 -> 1.0.3.
+
+--------------------------------------------------------------------
+ORIGINAL ISSUE:
+
+1- when one of -x or -l (or long form) option is given, then it is
+   assumed nothing more is to be done after all -x and -l are processed.
+   Notably, when -l is used, there's an implicit call to (c:main)
+   Hence the use of -i (to disable the implicit call to (c:main)) and
+   enter the REPL.
+
+   However, when no -x or -l option is given, -i should be implicit,
+   and if no -q | --quit is given, we shoud enter the REPL.
+
+   alfe or clautolisp alone don't enter the REPL. They should.
+
+
+2- when loading rc files, if there are I/O calls (eg. princ/terpri,
+   etc), they must be performed. alfe only indicates that it loaded
+   the rc file, but doesn't print its output. clautolisp prints the
+   output of the rc file. alfe should do the same.
+   
+
+
+~/src/public/clautolisp
+autolisp-spec-paged-version
+15:32[pjb@thalassa org.xquartz:0 clautolisp 105Gi]$ alfe --version
+alfe 1.0.2
+
+~/src/public/clautolisp
+autolisp-spec-paged-version
+15:32[pjb@thalassa org.xquartz:0 clautolisp 105Gi]$ alfe
+loaded /Users/pjb/.autolisp
+
+~/src/public/clautolisp
+autolisp-spec-paged-version
+15:32[pjb@thalassa org.xquartz:0 clautolisp 105Gi]$ alfe -i
+loaded /Users/pjb/.autolisp
+(interactive)
+
+~/src/public/clautolisp
+autolisp-spec-paged-version
+15:32[pjb@thalassa org.xquartz:0 clautolisp 105Gi]$ clautolisp 
+
+========================================================================
+                   Welcome to AutoLISP                                  
+========================================================================
+
+~/src/public/clautolisp
+autolisp-spec-paged-version
+15:33[pjb@thalassa org.xquartz:0 clautolisp 105Gi]$ clautolisp -i
+
+========================================================================
+                   Welcome to AutoLISP                                  
+========================================================================
+clautolisp 0.0.38 — REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+_$ (quit)
+clautolisp: terminated by QUIT
