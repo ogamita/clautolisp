@@ -147,12 +147,16 @@ jobs:
       - name: Install Quicklisp (cache miss)
         if: steps.quicklisp-cache.outputs.cache-hit != 'true'
         run: |
+          # Mirror of the sbcl-test job's install step. See the
+          # comment block on that step for why (ql:add-to-init-file)
+          # is intentionally omitted: it modifies ~/.sbclrc (useless
+          # in CI, all our Makefile invocations pass --no-userinit)
+          # and the 2026-01-01 dist relocated the function so
+          # FIND-SYMBOL came back NIL, FUNCALL crashed.
           curl -sSO https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive --no-userinit \
                --load quicklisp.lisp \
-               --eval '(quicklisp-quickstart:install)' \
-               --eval '(let ((ql:*quickload-prompt* nil))
-                         (funcall (find-symbol "ADD-TO-INIT-FILE" :ql-util) t))'
+               --eval '(quicklisp-quickstart:install)'
           rm -f quicklisp.lisp
 
       - name: Build alfe-sbcl
