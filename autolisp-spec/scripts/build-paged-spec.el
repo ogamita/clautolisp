@@ -115,9 +115,13 @@ strings, NAME uppercased. Returns nil otherwise."
 (cl-defstruct alref-build/section
   "One emitted page: chapter number, level (1 or 2), original
 title, slugified title, body lines (a list of strings in reverse
-order — `push`-ed onto, reversed on emit), and optional entry
-metadata (KIND . NAME) for symbol-index entries."
-  chapter level title slug body entry)
+order — `push`-ed onto, reversed on emit), optional entry
+metadata (KIND . NAME) for symbol-index entries, plus the
+adjacent basenames the navigation header links to (prev / next /
+up — strings, nil at the ends of the document or the chapter
+roots)."
+  chapter level title slug body entry
+  prev next up)
 
 (defun alref-build/section-filename (section)
   "Compose the on-disk basename for SECTION: <chapter>-<slug>."
@@ -243,6 +247,7 @@ HTML/Info post-processors can consume."
       ((eq format :org)
        (with-output-to-string
          (princ (format "#+TITLE: %s\n" title))
+         (princ "#+OPTIONS: toc:nil num:nil html-postamble:nil\n")
          (when chapter
            (princ (format "#+PROPERTY: ALREF-CHAPTER %s\n" chapter)))
          (princ (format "#+PROPERTY: ALREF-LEVEL %d\n" level))
@@ -250,10 +255,62 @@ HTML/Info post-processors can consume."
            (princ (format "#+PROPERTY: ALREF-ENTRY-KIND %s\n" (car entry)))
            (princ (format "#+PROPERTY: ALREF-ENTRY-NAME %s\n" (cdr entry))))
          (terpri)
+         ;; Top-of-page navigation strip. The links are
+         ;; org-mode file: links so org-html renders them as
+         ;; href="basename.html". Pages with no prev / next /
+         ;; up get a bracketed placeholder so the layout doesn't
+         ;; jump as the user walks the chain.
+         (let ((prev (alref-build/section-prev section))
+               (next (alref-build/section-next section))
+               (up   (alref-build/section-up   section)))
+           (princ "<<navigation>>\n")
+           (princ (if prev
+                      (format "[[file:%s.html][← Prev]]" prev)
+                      "[← Prev]"))
+           (princ " | ")
+           (princ (if up
+                      (format "[[file:%s.html][↑ Chapter]]" up)
+                      "[↑ Chapter]"))
+           (princ " | ")
+           (princ (if next
+                      (format "[[file:%s.html][Next →]]" next)
+                      "[Next →]"))
+           (princ " | [[file:index.html][Index]]")
+           (princ " | [[file:symbols.html][Symbols]]\n\n"))
          (princ (format "%s %s\n" (make-string level ?\*) title))
          (princ body)))
       (t
        (error "build-paged-spec.el: unknown format %S" format)))))
+
+(defun alref-build/compute-adjacency (sections)
+  "Fill in the PREV / NEXT / UP slots on every SECTION. PREV and
+NEXT walk the linear page sequence (skipping the synthetic
+'frontmatter'); UP for a level-2 subsection points at the
+chapter page it sits under, or nil for chapter-level pages.
+Called after DISAMBIGUATE-SLUGS so the recorded basenames are
+the final, on-disk filenames."
+  (let* ((real-sections (cl-remove-if
+                         (lambda (s) (string= (alref-build/section-slug s)
+                                              "frontmatter"))
+                         sections))
+         (current-chapter-page nil))
+    (dotimes (i (length real-sections))
+      (let* ((section (nth i real-sections))
+             (level (alref-build/section-level section))
+             (prev (and (> i 0)
+                        (alref-build/section-filename
+                         (nth (1- i) real-sections))))
+             (next (and (< (1+ i) (length real-sections))
+                        (alref-build/section-filename
+                         (nth (1+ i) real-sections)))))
+        (setf (alref-build/section-prev section) prev)
+        (setf (alref-build/section-next section) next)
+        (cond
+          ((= level 1)
+           (setq current-chapter-page (alref-build/section-filename section))
+           (setf (alref-build/section-up section) nil))
+          (t
+           (setf (alref-build/section-up section) current-chapter-page)))))))
 
 (defun alref-build/disambiguate-slugs (sections)
   "Walk SECTIONS in order and ensure every (chapter, slug) pair is
@@ -345,6 +402,7 @@ documentation page in O(1) (after loading the file)."
            input-file output-dir format-arg)
   (let ((sections (alref-build/parse-org-file input-file)))
     (alref-build/disambiguate-slugs sections)
+    (alref-build/compute-adjacency sections)
     (let ((count (alref-build/write-pages sections output-dir format)))
       (alref-build/write-index sections output-dir)
       (alref-build/write-symbols sections output-dir)

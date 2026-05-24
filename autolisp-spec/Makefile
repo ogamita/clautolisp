@@ -43,7 +43,7 @@ pages:  ## Emit one .txt per * chapter and ** subsection under build/pages/.
 		$(SPEC_ORG) $(PAGES_DIR) text
 
 html: $(BUILD_DIR)/.org-stamp
-	@echo "html: see Phase B follow-up."
+	$(EMACS) --batch --script scripts/build-paged-html.el $(BUILD_DIR)
 
 info: $(BUILD_DIR)/.org-stamp
 	@echo "info: see Phase C follow-up."
