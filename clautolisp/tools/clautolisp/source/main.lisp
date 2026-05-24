@@ -34,6 +34,10 @@
   (format t "  -q, --quiet            Suppress the REPL banner.~%")
   (format t "  -v, --verbose          Print extra diagnostic information (banner, summary, …).~%")
   (format t "  -d, --debug            Print debug traces; include CL backtraces on runtime errors.~%")
+  (format t "Init files:~%")
+  (format t "  -norc, --no-init       Skip user init files (~~/.clautolisp{,rc}, ~~/.autolisp{,rc},~%")
+  (format t "                         ~~/.config/clautolisp/init, ~~/.config/autolisp/init).~%")
+  (format t "                         Honoured equivalently via $AUTOLISP_NO_INIT or $CLAUTOLISP_NO_INIT.~%")
   (format t "Informational:~%")
   (format t "  -V, --version          Print the version string and exit.~%")
   (format t "  -h, --help             Show this help and exit.~%"))
@@ -73,7 +77,7 @@ mentioning OPTION. Returns (values value remaining-arguments)."
 
 (defun parse-arguments (arguments)
   "Returns (values dialect actions quiet-p verbose-p debug-p
-interactive-p host mock-input gui trace-p).
+interactive-p host mock-input gui trace-p no-init-p).
 
 ACTIONS is a list of action records in the order they appear on
 the command line. Each record is either (:FILE PATH) or
@@ -82,8 +86,15 @@ a single shared evaluation context; -i additionally drops into
 the REPL on the same context once the queue is drained. With no
 actions and no -i, the REPL is the implicit fallback.
 
-The short-form aliases (-l, -x, -i, -q, -v, -d, -h, -V) match the
-generic CLI surface specified for the sibling alfe front-end."
+NO-INIT-P, when true, suppresses the user-init-file lookup
+(`~/.clautolisp{,rc}{...}`, `~/.config/clautolisp/init{...}`,
+plus the `~/.autolisp` and `~/.config/autolisp/init` siblings).
+Mirrors the `-norc` / `--no-init` flag of the legacy bash
+autolisp wrapper and matches alfe's flag of the same name.
+
+The short-form aliases (-l, -x, -i, -q, -v, -d, -h, -V, -norc)
+match the generic CLI surface specified for the sibling alfe
+front-end."
   (let ((dialect (autolisp-dialect-strict))
         (actions '())
         (quiet-p nil)
@@ -93,7 +104,8 @@ generic CLI surface specified for the sibling alfe front-end."
         (host (make-mock-host))
         (mock-input nil)
         (gui nil)
-        (trace-p nil))
+        (trace-p nil)
+        (no-init-p nil))
     (labels ((take (option)
                (multiple-value-bind (value rest)
                    (pop-required-argument option arguments)
@@ -159,6 +171,9 @@ generic CLI surface specified for the sibling alfe front-end."
                   (setf gui (take "--gui")))
                  ((string= argument "--trace")
                   (setf trace-p t))
+                 ((or (string= argument "--no-init")
+                      (string= argument "-norc"))
+                  (setf no-init-p t))
                  ((or (string= argument "-x")
                       (string= argument "--eval"))
                   (queue-action :expression (take argument)))
@@ -171,7 +186,27 @@ generic CLI surface specified for the sibling alfe front-end."
                  (t
                   (queue-action :file argument)))))
     (values dialect actions quiet-p verbose-p debug-p
-            interactive-p host mock-input gui trace-p)))
+            interactive-p host mock-input gui trace-p
+            no-init-p)))
+
+(defun prepend-init-file-actions (actions no-init-p)
+  "Walk the user's init-file stem list and prepend a (:FILE PATH)
+action for each existing file, so they run before any -l / -x /
+positional action. Returns the new action list. When NO-INIT-P is
+true (the CLI flag or the documented env vars), returns ACTIONS
+unchanged.
+
+The two-arg env-var check `no-init-requested-p NO-INIT-P
+\"CLAUTOLISP_NO_INIT\"` consolidates the CLI flag, the
+$AUTOLISP_NO_INIT shared kill-switch, and the per-program
+$CLAUTOLISP_NO_INIT env var into one boolean."
+  (when (no-init-requested-p no-init-p "CLAUTOLISP_NO_INIT")
+    (return-from prepend-init-file-actions actions))
+  (let ((init-paths (find-init-files *default-clautolisp-stems*)))
+    (append
+     (loop for path in init-paths
+           collect (cons :file (namestring path)))
+     actions)))
 
 ;;; --- Verbosity / debug flags -----------------------------------------
 ;;;
@@ -505,14 +540,21 @@ autolisp-dcl load time) stays in effect."
 (defun main (&rest argv)
   (handler-case
       (multiple-value-bind (dialect actions quiet-p verbose-p debug-p
-                            interactive-p host mock-input gui trace-p)
+                            interactive-p host mock-input gui trace-p
+                            no-init-p)
           (parse-arguments (rest argv))
         (let ((*verbose-p* verbose-p)
-              (*debug-p* debug-p))
+              (*debug-p* debug-p)
+              ;; Init files run BEFORE any -l / -x / positional
+              ;; action so user-supplied state can override an
+              ;; init-file binding. The flag (or its env-var
+              ;; mirror) short-circuits the lookup entirely.
+              (effective-actions
+                (prepend-init-file-actions actions no-init-p)))
           (install-gui-renderer gui)
           (when trace-p
             (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
-          (run-with-input dialect actions
+          (run-with-input dialect effective-actions
                           :quiet-p quiet-p
                           :interactive-p interactive-p
                           :host host

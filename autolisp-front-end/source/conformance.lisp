@@ -175,6 +175,47 @@ backend is registered AND (for CAD backends) detects successfully."
 
 ;;; --- per-scenario execution --------------------------------------
 
+(defun call-with-sandboxed-init-env (workdir env-var-names thunk)
+  "Run THUNK with $HOME = WORKDIR and every name in ENV-VAR-NAMES
+temporarily unset, restoring the prior values on return. Used by
+RUN-SCENARIO to keep the test host's real init files and env-var
+state from leaking into a scenario's run."
+  (let ((saved (loop for name in env-var-names
+                     collect (cons name (uiop:getenv name)))))
+    (unwind-protect
+        (progn
+          ;; Force $HOME to point at the scenario's workdir so the
+          ;; init-file lookup only sees fixtures the scenario
+          ;; declared. Anything not bound to a fixture is absent.
+          (setf (uiop:getenv "HOME") (namestring workdir))
+          (dolist (name env-var-names)
+            (unless (string= name "HOME")
+              (handler-case
+                  #+sbcl (sb-posix:unsetenv name)
+                  #+ccl  (ccl::unsetenv name)
+                  #-(or sbcl ccl) (setf (uiop:getenv name) "")
+                (error () nil))))
+          (funcall thunk))
+      (dolist (entry saved)
+        (cond
+          ((cdr entry)
+           (setf (uiop:getenv (car entry)) (cdr entry)))
+          (t
+           (handler-case
+               #+sbcl (sb-posix:unsetenv (car entry))
+               #+ccl  (ccl::unsetenv (car entry))
+               #-(or sbcl ccl) (setf (uiop:getenv (car entry)) "")
+             (error () nil))))))))
+
+(defmacro with-sandboxed-init-env ((workdir &rest env-var-names) &body body)
+  "Macro wrapper around CALL-WITH-SANDBOXED-INIT-ENV. The
+ENV-VAR-NAMES are evaluated once at expansion time as a literal
+list of strings, matching the way the caller in RUN-SCENARIO
+spells the names inline."
+  `(call-with-sandboxed-init-env
+    ,workdir (list ,@env-var-names)
+    (lambda () ,@body)))
+
 (defun run-scenario (scenario)
   "Execute SCENARIO against alfe.cli:run with captured streams. Returns
 a SCENARIO-RESULT; the caller is responsible for surfacing failures.
@@ -208,13 +249,24 @@ autocad) at the start of every scenario."
                                         (make-string-input-stream
                                          (scenario-stdin scenario)))
                                       (make-string-input-stream "")))
+                    ;; Sandbox $HOME + the env vars that gate init
+                    ;; files so a scenario sees only the fixtures it
+                    ;; declared via :setup-files. Without this, the
+                    ;; test host's real ~/.autolisp file (or a
+                    ;; contaminated CI env's $AUTOLISP_NO_INIT) would
+                    ;; leak into every run.
                     (exit-code
-                      (uiop:with-current-directory (workdir)
-                        (let ((*standard-output* stdout-stream)
-                              (*error-output*    stderr-stream)
-                              (*standard-input*  stdin-stream))
-                          (run (scenario-argv scenario)
-                               :version (scenario-version-arg scenario))))))
+                      (with-sandboxed-init-env
+                          (workdir
+                           "HOME" "AUTOLISP_NO_INIT"
+                           "ALFE_NO_INIT" "CLAUTOLISP_NO_INIT"
+                           "AUTOLISP_KEEP_WORKDIR")
+                        (uiop:with-current-directory (workdir)
+                          (let ((*standard-output* stdout-stream)
+                                (*error-output*    stderr-stream)
+                                (*standard-input*  stdin-stream))
+                            (run (scenario-argv scenario)
+                                 :version (scenario-version-arg scenario)))))))
                (setf (scenario-result-exit-code result) exit-code
                      (scenario-result-stdout result)
                        (get-output-stream-string stdout-stream)
