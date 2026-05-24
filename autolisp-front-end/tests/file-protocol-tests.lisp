@@ -107,28 +107,44 @@ formed value, never a partial one."
          (allowed-values (loop for i below (* n-writers writes-per-writer)
                                collect (format nil "value-~D" i)))
          (observed-corruptions nil)
+         (thread-errors nil)
          (mutex (bordeaux-threads:make-lock)))
-    (unwind-protect
+    (flet ((record-thread-error (label condition)
+             ;; Mutex-guarded so 16 writers' caught errors don't
+             ;; clobber each other on push.
+             (bordeaux-threads:with-lock-held (mutex)
+               (push (list :label label :error (format nil "~A" condition))
+                     thread-errors))))
+      (unwind-protect
         (let (threads)
           ;; Pre-fill so the reader doesn't see a missing file.
           (alfe.protocol.file:write-atomic-file target "seed")
           ;; Reader thread: continuously read the target and verify
           ;; it's one of the allowed values (or "seed", or "value-..."
           ;; with trailing newline). Any other shape is corruption.
+          ;;
+          ;; The HANDLER-CASE wrapping the body is the
+          ;; non-interactive-CCL guard: on SBCL an uncaught thread
+          ;; condition is just dropped, but CCL prompts on the
+          ;; nonexistent terminal ('requires access to Shared
+          ;; Terminal Input … Type (:y N)' — Job 14519641143 hung
+          ;; on this for ~15 minutes). Catch and record instead.
           (let ((reader
                   (bordeaux-threads:make-thread
                    (lambda ()
-                     (loop for ch from 0 below 1000
-                           for content = (alfe.protocol.file:read-file-as-string target)
-                           do (let ((trimmed (string-right-trim
-                                              '(#\Newline #\Space) content)))
-                                (unless (or (string= trimmed "seed")
-                                            (and (> (length trimmed) 6)
-                                                 (string= "value-" trimmed
-                                                          :end2 6)))
-                                  (bordeaux-threads:with-lock-held (mutex)
-                                    (push (list :corruption-at ch :content trimmed)
-                                          observed-corruptions))))))
+                     (handler-case
+                         (loop for ch from 0 below 1000
+                               for content = (alfe.protocol.file:read-file-as-string target)
+                               do (let ((trimmed (string-right-trim
+                                                  '(#\Newline #\Space) content)))
+                                    (unless (or (string= trimmed "seed")
+                                                (and (> (length trimmed) 6)
+                                                     (string= "value-" trimmed
+                                                              :end2 6)))
+                                      (bordeaux-threads:with-lock-held (mutex)
+                                        (push (list :corruption-at ch :content trimmed)
+                                              observed-corruptions)))))
+                       (error (c) (record-thread-error "reader" c))))
                    :name "atomic-write-reader")))
             (dotimes (writer-id n-writers)
               ;; Bind WRITER-ID afresh per iteration. DOTIMES under
@@ -140,11 +156,14 @@ formed value, never a partial one."
                 (push
                  (bordeaux-threads:make-thread
                   (lambda ()
-                    (dotimes (n writes-per-writer)
-                      (alfe.protocol.file:write-atomic-file
-                       target
-                       (format nil "value-~D"
-                               (+ (* id writes-per-writer) n)))))
+                    (handler-case
+                        (dotimes (n writes-per-writer)
+                          (alfe.protocol.file:write-atomic-file
+                           target
+                           (format nil "value-~D"
+                                   (+ (* id writes-per-writer) n))))
+                      (error (c) (record-thread-error
+                                  (format nil "writer-~D" id) c))))
                   :name (format nil "atomic-writer-~D" id))
                  threads)))
             (dolist (thread threads)
@@ -153,6 +172,8 @@ formed value, never a partial one."
             ;; just in case).
             (handler-case (bordeaux-threads:join-thread reader)
               (error () nil))
+            (is (null thread-errors)
+                "Threads raised uncaught errors: ~S" thread-errors)
             (is (null observed-corruptions)
                 "Saw torn writes: ~S" observed-corruptions)
             ;; Final state is one of the published values or the seed.
@@ -162,7 +183,7 @@ formed value, never a partial one."
               (is (or (string= final "seed")
                       (find final allowed-values :test #'string=))
                   "Final content ~S is not one of the published values" final))))
-      (delete-workdir workdir))))
+      (delete-workdir workdir)))))
 
 ;;; --- status polling ------------------------------------------------
 
