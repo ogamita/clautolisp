@@ -100,7 +100,19 @@
   ;; signal-document-event / signal-application-event push their
   ;; argument tuples onto this list (newest first). Tests inspect
   ;; the list, then clear it. Production callers leave it nil.
-  (event-trace nil))
+  (event-trace nil)
+  ;; Session-level source-file encoding override. When non-nil
+  ;; (a keyword such as :UTF-8 / :ISO-8859-1 / :WINDOWS-1252),
+  ;; AUTOLISP-LOAD-FILE-IN-CONTEXT uses this instead of the
+  ;; dialect's default-source-encoding for files loaded WITHOUT
+  ;; an explicit :external-format. Set by the CLI from the user's
+  ;; `-e ENC' flag, so a single `-e utf-8' at the alfe / clautolisp
+  ;; command line takes effect for every load — including the
+  ;; nested `(load …)` calls a user's init file makes (which was
+  ;; the failure mode before this slot existed: the runtime
+  ;; couldn't see the CLI's encoding because it ran far below the
+  ;; CLI layer).
+  (default-source-encoding nil))
 
 (defstruct evaluation-context
   session

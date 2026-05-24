@@ -825,7 +825,9 @@ The handler chain matches alfe-cli.issue's exit-code table:
                                 :bootstrap-phase
                                 (cli-options-bootstrap-phase options)
                                 :interactive-p
-                                (cli-options-interactive-p options))))
+                                (cli-options-interactive-p options)
+                                :load-encoding
+                                (cli-options-load-encoding options))))
     (unwind-protect
          (let* ((plan (effective-plan options))
                 (result (eval-plan session plan)))

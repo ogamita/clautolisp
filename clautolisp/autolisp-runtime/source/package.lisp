@@ -235,7 +235,11 @@
    #:document-namespace-persistent-reactor-index
    #:runtime-session-event-trace
    #:set-runtime-session-event-trace
-   #:call-with-event-trace))
+   #:call-with-event-trace
+   ;; Source-file encoding override (set by the CLI's -e flag).
+   #:runtime-session-default-source-encoding
+   #:set-runtime-session-default-source-encoding
+   #:set-default-source-encoding))
 
 (defpackage #:clautolisp.autolisp-runtime.internal
   (:use #:cl)

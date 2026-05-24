@@ -472,6 +472,7 @@ SHUTDOWN can terminate it."
 (defmethod start-engine ((backend bricscad-backend) workdir
                          &key dialect host mock-input bootstrap-phase
                               interactive-p
+                              load-encoding
                               (mode :auto)
                               (launcher #'uiop:launch-program)
                               (wait-for-ready t)
@@ -483,11 +484,16 @@ engine via LAUNCHER, and wait for the runtime to publish READY 0.
 The :launcher knob lets the test suite substitute a thread-based
 mock CAD for the real engine; the production code path passes
 UIOP:LAUNCH-PROGRAM. WAIT-FOR-READY can be turned off when the
-test driver is responsible for the state walk."
+test driver is responsible for the state walk.
+
+LOAD-ENCODING is accepted for protocol compatibility but ignored:
+the BricsCAD-resident AutoLISP runtime owns the source-file
+encoding policy; user `-e ENC' over the file-IPC protocol is a
+future ticket."
   ;; DIALECT is currently irrelevant on the CAD side: the AutoLISP
   ;; dialect lives inside the CAD engine and is not swappable from
   ;; outside. HOST is meaningful only to clautolisp.
-  (declare (ignore host mock-input dialect))
+  (declare (ignore host mock-input dialect load-encoding))
   (handler-case
       (let* ((protocol (alfe.protocol.file:init-session workdir))
              (run-common
