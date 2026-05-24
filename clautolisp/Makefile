@@ -14,6 +14,24 @@ ROOT_DIR := $(shell pwd)
 ASD_FILE := $(ROOT_DIR)/clautolisp.asd
 XDG_CACHE_HOME ?= $(ROOT_DIR)/.cache
 
+# Host OS detection — used by the per-platform run-file-compat
+# targets below. Wrong-platform recipes call require-os-* which
+# prints a [skip] line and exits 0 per the policy in
+# issues/closed/test-targets.issue.
+HOST_OS := $(shell uname -s)
+define require-os-darwin
+if [ "$(HOST_OS)" != "Darwin" ]; then \
+  echo "[skip] $(1): macOS-only (current: $(HOST_OS))"; \
+  exit 0; \
+fi
+endef
+define require-os-windows
+case "$(HOST_OS)" in MINGW*|MSYS*|CYGWIN*) :;; *) \
+  echo "[skip] $(1): Windows-only (current: $(HOST_OS))"; \
+  exit 0;; \
+esac
+endef
+
 TEST_SYSTEM ?= clautolisp
 EXECUTABLE ?= bin/clautolisp
 READ_AUTOLISP_TOOL_DIR := autolisp-reader/tools/read-autolisp
@@ -33,7 +51,9 @@ FILE_COMPAT_PRODUCT_SCENARIOS ?= autolisp-file-compat/scenarios/mutations autoli
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 
-.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl build-clautolisp-sbcl build-clautolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl run-file-compat-autocad run-file-compat-bricscad audit-file-compat-autocad audit-file-compat-bricscad documentation user-manual clean-pdf specifications builtins-coverage
+.PHONY: all test test-sbcl test-ccl build-read-autolisp-sbcl build-read-autolisp-ccl build-clautolisp-sbcl build-clautolisp-ccl run-file-compat run-file-compat-sbcl run-file-compat-ccl run-file-compat-autocad run-file-compat-bricscad audit-file-compat-autocad audit-file-compat-bricscad documentation user-manual clean-pdf specifications builtins-coverage \
+        run-file-compat-bricscad-macos run-file-compat-bricscad-windows \
+        run-file-compat-autocad-windows
 
 all: documentation build-clautolisp-sbcl clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt
 
@@ -109,6 +129,28 @@ audit-file-compat-autocad:
 
 audit-file-compat-bricscad:
 	$(RUN_FILE_COMPAT) --bricscad --report-format json $(FILE_COMPAT_ARGS) $(FILE_COMPAT_PRODUCT_SCENARIOS)
+
+# ---------------------------------------------------------------------
+# Per-platform run-file-compat targets.
+#
+# The platform-agnostic `run-file-compat-bricscad` / `-autocad`
+# targets above stay for back-compat (some CI scripts already
+# reference them). The new -macos / -windows variants add the
+# host-OS gate the test-targets issue called for: trying to run
+# the macOS-only target on Linux/Windows prints a [skip] line and
+# exits 0, never errors.
+
+run-file-compat-bricscad-macos:
+	@$(call require-os-darwin,$@); \
+	 $(RUN_FILE_COMPAT) --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+
+run-file-compat-bricscad-windows:
+	@$(call require-os-windows,$@); \
+	 $(RUN_FILE_COMPAT) --bricscad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
+
+run-file-compat-autocad-windows:
+	@$(call require-os-windows,$@); \
+	 $(RUN_FILE_COMPAT) --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 
 documentation: $(PDF_FILES)
