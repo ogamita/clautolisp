@@ -1,0 +1,159 @@
+ci-github-ccl-lane — extend the GitHub Actions workflow with a CCL job
+======================================================================
+
+See also: .github/workflows/ci.yml (the SBCL-only lanes that
+landed alongside the alfe v1.0.0 release, commit 1b16da9),
+.gitlab-ci.yml (the existing CCL lane GitLab CI already runs),
+clautolisp/docker/Dockerfile (the prebuilt SBCL+CCL image
+GitLab uses, registered under
+registry.gitlab.com/ogamita/clautolisp/clautolisp-ci).
+
+Context
+-------
+
+CI parity between GitLab and GitHub is currently lopsided:
+
+  - GitLab runs against the custom clautolisp-ci Docker image,
+    which has SBCL + CCL preinstalled by clautolisp/docker/Dockerfile.
+    test-sbcl and test-ccl run in parallel on every push.
+  - GitHub runs on stock ubuntu-latest with SBCL installed from
+    apt. Ubuntu does NOT carry a CCL package in apt, so the
+    GitHub workflow is SBCL-only — every CCL-specific regression
+    has to wait for the GitLab pipeline to surface it.
+
+Single-implementation coverage on GitHub is a real gap. clautolisp
+intentionally targets both SBCL and CCL: the autolisp-runtime,
+autolisp-reader, autolisp-builtins-core suites all have
+implementation-conditional code (CCL's external-format
+defaulting, SBCL's reader-internals, etc.), and pure-SBCL CI has
+twice missed CCL-only regressions that the GitLab pipeline caught
+on the same commit. PR reviewers who only look at GitHub status
+get a false-green signal.
+
+Why this isn't already done
+---------------------------
+
+Three viable implementation paths, none clearly dominant — V1
+left the call deliberately to avoid speculating without a
+contributor preference:
+
+  - **Path A — reuse the GitLab image directly.**
+    GitHub Actions supports `container: image: ...` at the job
+    level. If registry.gitlab.com/ogamita/clautolisp/clautolisp-ci
+    is exposed as a public pull, the GitHub job can use it
+    verbatim. Pros: zero duplication, the image is already
+    maintained. Cons: requires the GitLab registry to allow
+    anonymous pulls; if it's gated, GitHub needs credentials
+    stashed in repo secrets, which expands the trust surface.
+    Probably the right answer if the registry is already public.
+
+  - **Path B — publish the same image to GHCR.**
+    Add a docker-build step that emits clautolisp/docker/Dockerfile
+    to ghcr.io/ogamita/clautolisp-ci:latest, then have the CCL
+    job consume that image. Pros: GitHub-native, no cross-cloud
+    pulls. Cons: two registries to keep in sync (a tag drift bug
+    on one masks reality on the other), one more CI lane.
+
+  - **Path C — install CCL inline in the job, no Docker.**
+    Mirror what the Dockerfile does: curl
+    https://github.com/Clozure/ccl/releases/download/v1.13/linuxx86.tar.gz
+    into the runner, extract under /opt/ccl, wrap with a
+    /usr/local/bin/ccl shell script. Pros: no Docker dependency,
+    every step is visible in the workflow file (easier to debug
+    on a runner you can't shell into). Cons: re-downloads ~80 MB
+    of CCL release on every cache miss; can be mitigated by
+    actions/cache, but the cache becomes one more thing to
+    invalidate when CCL upgrades.
+
+In scope
+--------
+
+  1. Pick a path. Recommendation: start with **Path C** (inline
+     install) because:
+
+       - it adds no inter-system dependencies (the workflow file
+         stands on its own — anyone can read it and reproduce
+         locally on a Linux box without Docker);
+       - the install fits in ~10 lines of bash;
+       - actions/cache on /opt/ccl makes the second-run cost
+         negligible.
+
+     If Path C grows hair (CCL ARM64 support, Windows runners,
+     etc.), promote to Path B with the existing Dockerfile.
+
+  2. New job `ccl-test` in .github/workflows/ci.yml, parallel to
+     the existing sbcl-test. Mirror the SBCL job's matrix:
+
+       - make -C clautolisp test-ccl
+       - make -C autolisp-test test          (the harness runs
+         under SBCL today; a CCL variant is a separate, smaller
+         issue)
+       - make -C autolisp-front-end test-ccl
+       - make -C autolisp-front-end conformance
+         (the runner is implementation-agnostic; only the
+         underlying alfe binary matters)
+
+  3. Cache layout. Cache /opt/ccl AND ~/quicklisp + ~/.cache/common-lisp
+     separately — CCL's tarball changes only on a version bump,
+     while quicklisp's cache moves with every .asd edit. Key the
+     CCL cache on the CCL_VERSION variable so a future bump
+     invalidates cleanly.
+
+  4. Update the `alfe-binary` smoke job to optionally also build
+     `alfe-ccl` alongside `alfe-sbcl`, on the same runner that
+     has CCL installed. Upload both as artifacts so PR reviewers
+     can pull either implementation.
+
+  5. Update .github/workflows/ci.yml's preamble comment — the
+     current text claims "CCL coverage stays GitLab-only for
+     now"; once this issue lands, that line should reflect the
+     new parity.
+
+  6. Tests: the proof is the workflow running green against a
+     commit that intentionally regresses CCL only (a test branch
+     can introduce e.g. an `#-sbcl (error ...)` line in
+     autolisp-runtime to confirm the CCL lane goes red while the
+     SBCL lane stays green). Take the screenshot for the PR
+     description, then drop the regression.
+
+Out of scope
+------------
+
+  - CCL on macOS / Windows runners. Stock GitHub macOS runners
+    can install CCL via Homebrew (`brew install clozure-cl`) but
+    that's a separate maintenance surface; Linux first.
+  - Pinning to a specific Quicklisp dist version. The current
+    workflow uses whatever beta.quicklisp.org serves; if we want
+    reproducibility, do it across all lanes in one go (different
+    ticket).
+  - Replacing the GitLab pipeline. Both pipelines stay; the
+    GitLab one is the source-of-truth for release cuts because it
+    runs in a controlled image.
+
+Acceptance criteria
+-------------------
+
+  - .github/workflows/ci.yml has a `ccl-test` job that runs
+    parallel to `sbcl-test` on every push to master /
+    alfe-development, every PR against master, and every tag push.
+  - Both jobs complete in under 10 minutes from a warm cache.
+  - A deliberately CCL-only regression (test-only commit, see
+    above) turns the CCL lane red while the SBCL lane stays
+    green.
+  - The preamble comment in .github/workflows/ci.yml is updated
+    to reflect the new lane.
+  - .gitlab-ci.yml stays unchanged — this is purely additive to
+    GitHub.
+
+Notes
+-----
+
+The legacy GitLab Dockerfile (clautolisp/docker/Dockerfile) is a
+good reference for the CCL install recipe — copy the curl-and-
+extract logic, drop the apt + git steps that the GitHub runner
+already provides.
+
+The Clozure release tarball naming has been stable across recent
+versions (v1.12, v1.13), so a CCL_VERSION env var with a
+sensible default is enough. When CCL 1.14 drops, bump the
+default and invalidate the cache key — usually a one-line PR.
