@@ -1,6 +1,24 @@
 alfe-backend-autocad — AutoCAD driver (Windows COM, accoreconsole)
 ==================================================================
 
+Status: closed
+Landed in: ee45a36 "autolisp-front-end: land Phase 3 — BricsCAD +
+AutoCAD backends." See autolisp-front-end/source/backend-autocad.lisp
+and tests/backend-cad-tests.lisp.
+
+Deferred items moved to other tickets:
+  - EPURE gating (section 4) — moved to alfe-plugin-model.issue
+    (no plugin model exists yet; the --epure flag parses but no
+    backend acts on it, the VBS template does not yet activate
+    the Epure profile).
+  - vlisp-compile routing — confirmed out of scope per the issue's
+    "Out of scope" note; the flag is accepted in argv and routed
+    through to the engine, but alfe does not validate it.
+  - Real-CAD smoke tests — gated behind AUTOCAD_SMOKE=1; the
+    mocked-engine end-to-end test covers the protocol path.
+
+
+
 See also: alfe.plan, alfe-backend-interface.issue,
 alfe-file-protocol.issue, spec section "Backend autocad".
 
