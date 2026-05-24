@@ -101,6 +101,14 @@ permissive parsing, and the runtime knobs documented in
 - ~--strict~             :: Equivalent to ~--dialect strict~.
 - ~--autocad~            :: Equivalent to ~--dialect autocad-2026~.
 - ~--bricscad~           :: Equivalent to ~--dialect bricscad-v26~.
+- ~--clautolisp~         :: Equivalent to ~--dialect clautolisp~.
+
+The ~clautolisp~ dialect includes `clautolisp extensions`
+(eg. variadic functions).
+
+Whatever the dialect selected, all the operators are available. Only
+those that are not specifically inside the set defined by the dialect
+produce warnings when compiled and when used.
 
 Unknown dialect names produce a diagnostic on standard error and exit
 code 1.

@@ -55,6 +55,7 @@ the CADs' AutoLISP. On the =clautolisp= side, =alfe= uses the APIs
 directly and never touches the file protocol; the workdir exists for
 symmetry (logs, =--dry-run=) but no communication passes through it.
 
+
 ** Unified execution model
 
 Regardless of the backend, =alfe= exposes the same sequence:
@@ -430,11 +431,11 @@ installation.
 
 ** Supported matrix
 
-| Backend      | macOS                                            | Linux             | MS-Windows                                                       |
-|--------------+--------------------------------------------------+-------------------+------------------------------------------------------------------|
-| =bricscad=   | =batch= (default); =automation= via AppleScript  | Not supported¹    | =automation= via COM (default); =batch= via =-B run.scr=         |
-| =autocad=    | Not supported²                                   | Not supported²    | =automation= via COM (default); =batch= via =accoreconsole.exe=  |
-| =clautolisp= | Always supported                                 | Always supported  | Always supported                                                 |
+| Backend      | macOS                                  | Linux            | MS-Windows                                                      |
+|--------------+----------------------------------------+------------------+-----------------------------------------------------------------|
+| =bricscad=   | =batch= ; =automation= via AppleScript | Not supported¹   | =automation= via COM (default); =batch= via =-B run.scr=        |
+| =autocad=    | Not supported²                         | Not supported²   | =automation= via COM (default); =batch= via =accoreconsole.exe= |
+| =clautolisp= | (default) Always supported             | Always supported | Always supported                                                |
 
 ¹ Bricsys distributes BricsCAD for Linux, but the historical wrapper
 did not support it. The new implementation must reuse the same
