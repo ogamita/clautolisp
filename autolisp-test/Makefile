@@ -97,7 +97,7 @@ CLAUTOLISP_SOURCES := \
   $(wildcard $(CLAUTOLISP_ROOT)/tools/clautolisp/source/*.lisp) \
   $(CLAUTOLISP_ROOT)/clautolisp.asd
 
-.PHONY: all documentation test test-clautolisp-sbcl test-clautolisp-ccl \
+.PHONY: all build documentation test test-clautolisp-sbcl test-clautolisp-ccl \
         test-clautolisp-sbcl-debug test-clautolisp-ccl-debug \
         test-asdf-sbcl test-asdf-ccl \
         test-asdf-sbcl-debug test-asdf-ccl-debug \
@@ -112,6 +112,13 @@ CLAUTOLISP_SOURCES := \
         test-autocad-windows test-autocad-windows-strict test-autocad-windows-autocad
 
 all: documentation
+
+# `build` is a convenience alias for `documentation` so the
+# repo-wide `make build && sudo make install` pattern works
+# uniformly across subprojects — autolisp-test ships only docs +
+# AutoLISP source (no compiled executables), so there's nothing
+# else to produce before install.
+build: documentation  ## Build everything `install` would ship (docs only — no executables for this subproject).
 
 documentation: $(PDF_FILES)
 
@@ -197,7 +204,7 @@ test-asdf-ccl-debug:
 
 %.pdf: %.org
 	$(EMACS) --batch \
-		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
+		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
 
@@ -344,7 +351,7 @@ DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 
 .PHONY: install uninstall
 
-install:  ## Install harness + tests + docs into $$PREFIX.
+install: build  ## Install harness + tests + docs into $$PREFIX (run `make build` first so this can be sudo'd cleanly).
 	install -d $(LIBEXEC_INSTALL_DIR)/harness
 	install -d $(LIBEXEC_INSTALL_DIR)/tests
 	install -d $(DOC_INSTALL_DIR)

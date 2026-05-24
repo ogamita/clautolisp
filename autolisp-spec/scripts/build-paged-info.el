@@ -85,6 +85,19 @@ system-wide dir on the install step."
   ;; makeinfo is hard to diagnose. Splitting the two steps gives
   ;; us an explicit failure point + lets the user override the
   ;; binary via $MAKEINFO without touching this script.
+  ;; Pre-seed org-texinfo-supports-math--cache so ox-texinfo skips
+  ;; its one-time probe. The probe creates a temp file as
+  ;; `testXXXXXX.info' (note the `.info' extension instead of
+  ;; `.texi') and invokes makeinfo on it, which prints a noisy
+  ;; warning to stderr:
+  ;;   makeinfo: warning: input file ...info; did you mean
+  ;;   ...texi?
+  ;; The probe result is irrelevant under batch mode: any
+  ;; current GNU texinfo (>=5.0, 2013) supports @math, and if a
+  ;; very old one doesn't, the real export downstream would fail
+  ;; loudly with a clear error rather than this silent fallback.
+  ;; Pre-seeding to t is therefore safe and removes the warning.
+  (setq org-texinfo-supports-math--cache t)
   (let ((buffer (find-file-noselect work-org)))
     (unwind-protect
         (with-current-buffer buffer
