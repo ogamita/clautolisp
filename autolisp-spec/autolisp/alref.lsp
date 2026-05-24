@@ -272,8 +272,17 @@ titles; integers are interpreted as chapter numbers."
     ((= (type key) 'SYM)
      (alref-find-symbol-page (strcase (alref-symbol-name key))))
     ((= (type key) 'STR)
-     (or (alref-find-symbol-page (strcase key))
-         (alref-find-chapter-page key)))
+     ;; AutoLISP's `or' is boolean — it returns T/NIL, not the
+     ;; first non-NIL value the way Common Lisp's does. We need
+     ;; the actual basename here (a string fed to strcat downstream
+     ;; in alref-page-path), so we use the cond-as-or idiom: a
+     ;; clause with just a test expression returns that test value
+     ;; when non-NIL. That's the canonical AutoLISP way to express
+     ;; "first non-NIL of these expressions."
+     (cond
+       ((alref-find-symbol-page (strcase key)))
+       ((alref-find-chapter-page key))
+       (t nil)))
     (t nil)))
 
 (defun alref-find-symbol-page (uppercased-name / entries entry)
