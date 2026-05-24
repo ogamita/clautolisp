@@ -295,12 +295,16 @@ inputs. Pass :newline-p nil for binary-ish writes (rare)."
                          :external-format external-format)
       (write-string text out)
       (finish-output out))
-    ;; rename-file's behavior across filesystems is uniform under
-    ;; POSIX; on Windows, MoveFileEx with MOVEFILE_REPLACE_EXISTING is
-    ;; what we'd want, but the upstream legacy bash wrapper already
-    ;; uses mv on Windows too via msys/git-bash, so the contract
-    ;; matches.
-    (rename-file temp target)
+    ;; Use UIOP's overwriting-rename helper rather than CL's
+    ;; RENAME-FILE: the standard's RENAME-FILE doesn't promise to
+    ;; replace an existing target — SBCL happens to inherit POSIX
+    ;; rename(2)'s replace-on-success semantic and works, but CCL
+    ;; raises "File exists" instead. UIOP:RENAME-FILE-OVERWRITING-
+    ;; TARGET dispatches to the right primitive per implementation
+    ;; (POSIX rename on Unix, MoveFileEx with
+    ;; MOVEFILE_REPLACE_EXISTING on Windows) so the contract holds
+    ;; cross-Lisp + cross-OS without us probing *features*.
+    (uiop:rename-file-overwriting-target temp target)
     target))
 
 ;;; --- reads ---------------------------------------------------------
