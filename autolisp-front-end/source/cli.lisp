@@ -635,15 +635,27 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
         (return-from resolve-backend
           (if detect-p (detect backend) backend))))
     ;; Auto: try each registered backend in order.
-    (dolist (key (list-backends))
-      (let ((backend (find-backend key)))
-        (cond
-          (detect-p
-           (handler-case
-               (return-from resolve-backend (detect backend))
-             (backend-not-available () nil)))
-          (t
-           (return-from resolve-backend backend)))))
+    ;;
+    ;; :echo is a test-only backend whose DETECT method always
+    ;; succeeds — left visible in the auto-detect list it would
+    ;; win every default resolution and the user-visible `alfe`
+    ;; without flags would just print "loaded …" instead of
+    ;; actually loading. We therefore skip :echo when any real
+    ;; backend is registered, and only fall back to it when the
+    ;; registry contains nothing else (the FiveAM test image
+    ;; relies on this: it rebinds *backends* to an echo-only map
+    ;; and expects the auto-resolver to pick echo).
+    (let* ((all (list-backends))
+           (auto-candidates (or (remove :echo all) all)))
+      (dolist (key auto-candidates)
+        (let ((backend (find-backend key)))
+          (cond
+            (detect-p
+             (handler-case
+                 (return-from resolve-backend (detect backend))
+               (backend-not-available () nil)))
+            (t
+             (return-from resolve-backend backend))))))
     (error 'backend-not-available
            :message "No backend detected. Set --clautolisp explicitly or install a supported CAD.")))
 
@@ -654,22 +666,46 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
 touch the filesystem.
 
 The CLI-supplied actions (-l / -x / --main / positional) run in
-command-line order; a synthetic :quit is appended when neither
---interactive nor a user :quit was requested, so backends see a
-uniform 'queue ends with quit' shape.
+command-line order. A synthetic terminator is appended depending
+on what the user expressed:
+
+  * The user explicitly requested -i / :interactive → no terminator;
+    the backend will hand control to its REPL once the queue drains.
+  * The user explicitly requested --quit / :quit → no terminator;
+    their :quit already terminates the queue.
+  * The user supplied content actions (-l / -x / --main / positional)
+    but neither -i nor --quit → append :quit so the backend exits
+    cleanly after the last action (batch mode, current behaviour).
+  * The user supplied no content actions at all (e.g. plain `alfe')
+    → append :interactive. Per command-line-option-ammendment.issue,
+    `alfe' alone drops into the REPL the same way `clautolisp' does,
+    because the init-file loads in EFFECTIVE-PLAN are machinery,
+    not user intent.
 
 This function is a pure transformation of OPTIONS; tests can
 inspect it without worrying about user init files on the test
 host. The init-file prepending lives in EFFECTIVE-PLAN below — it
 walks the filesystem, so only the live run path + the dry-run
 renderer go through it."
-  (let ((actions (copy-list (cli-options-actions options))))
-    (unless (or (cli-options-interactive-p options)
-                (cli-options-quit-p options)
-                (some (lambda (a) (eq (action-kind a) :interactive)) actions)
-                (some (lambda (a) (eq (action-kind a) :quit)) actions))
-      (setf actions (append actions (list (action-quit)))))
-    actions))
+  (let* ((actions (copy-list (cli-options-actions options)))
+         (has-content
+           (some (lambda (a) (member (action-kind a) '(:load :eval :main)))
+                 actions))
+         (has-interactive
+           (or (cli-options-interactive-p options)
+               (some (lambda (a) (eq (action-kind a) :interactive)) actions)))
+         (has-quit
+           (or (cli-options-quit-p options)
+               (some (lambda (a) (eq (action-kind a) :quit)) actions))))
+    (cond
+      ;; User explicitly asked for REPL or quit — keep queue as-is.
+      ((or has-interactive has-quit) actions)
+      ;; User has content actions but neither -i nor --quit —
+      ;; append :quit so the backend exits after the last action
+      ;; (batch mode).
+      (has-content (append actions (list (action-quit))))
+      ;; No user actions of any kind — implicit -i: drop into REPL.
+      (t (append actions (list (action-interactive)))))))
 
 (defun resolve-init-file-actions (options)
   "Walk the alfe init-file stems and return a list of (:load PATH)
