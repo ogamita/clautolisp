@@ -1,0 +1,64 @@
+As an autolisp developper, I want better display of autolisp symbols in error messages.
+
+
+In debugging messages, autolisp symbols are printed as their implementation (common lisp structures).
+
+[autolisp-test] matrix raised: FOREACH list argument must evaluate to a proper list,
+got #S(CLAUTOLISP.AUTOLISP-RUNTIME.INTERNAL:AUTOLISP-SYMBOL
+                     :NAME "T"
+                     :ORIGINAL-NAME "T"
+                     :PLIST NIL).
+
+Instead, they should be printed with the autolisp printer.
+
+We'd expect:
+
+[autolisp-test] matrix raised: FOREACH list argument must evaluate to a proper list,
+got T.
+
+Note: when printing on a terminal that supports color (ansi codes),
+such as xterm-color, etc, and if not forbidden by a NO_COLOR
+environment variable cf. https://no-color.org or a --no-color option
+to be added, autolisp symbols could be prined in yellow (on black/dark
+background or in blue (on white/light background).
+
+--- 
+When working with ANSI color terminals, is there a way to determine the background color (if it's dark or light) to choose contrasting colors in accordance? eg. yellow on dark, blue on light?
+
+Yes, there are a few approaches, though none are perfectly reliable across all terminals.
+
+**The XTerm OSC 11 query** is the most direct method. You send the escape sequence `\033]11;?\033\\` to the terminal, and a compliant terminal responds with its background color in RGB format, like `\033]11;rgb:ffff/ffff/ffff\033\\`. You then compute the luminance to decide dark vs. light. Most modern terminals support this (xterm, iTerm2, Alacritty, Kitty, recent GNOME Terminal, WezTerm), but some don't respond at all, and you need to read the response with a timeout in case nothing comes back.
+
+Here's a sketch in shell:
+
+```bash
+IFS=: read -t 0.1 -d $'\a' -r -p $'\e]11;?\a' _ bg < /dev/tty
+# bg will be something like "rgb/ffff/ffff" — parse and compute luminance
+```
+
+In Python:
+
+```python
+import sys, select, termios, tty
+
+def get_bg():
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        sys.stdout.write("\033]11;?\033\\")
+        sys.stdout.flush()
+        if select.select([sys.stdin], [], [], 0.1)[0]:
+            return sys.stdin.read(24)  # parse rgb:RRRR/GGGG/BBBB
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    return None
+```
+
+Once you have RGB, compute relative luminance (e.g. `0.299*R + 0.587*G + 0.114*B`) and treat values above ~0.5 as light.
+
+**The `COLORFGBG` environment variable** is a simpler but less reliable fallback. rxvt sets it, and some other terminals do too, in the form `15;0` (foreground;background) where the second number is an ANSI color index. Index 0 (black) through 6, plus 8 (bright black), generally indicates a dark background; the rest indicate light. It's not always present and can go stale if the user changes their theme mid-session.
+
+**What real tools do.** Vim's `'background'` option uses exactly this cascade: check `COLORFGBG`, fall back to OSC 11, and otherwise guess from `$TERM`. Neovim does the same. It's worth giving the user an override flag because detection will occasionally be wrong — someone SSH'd through tmux with a mismatched theme is a common failure case.
+
+One gotcha: inside tmux or screen, you need to wrap the OSC sequence in a passthrough (`\033Ptmux;\033\033]11;?\033\033\\\033\\` for tmux) or the multiplexer will swallow it.
