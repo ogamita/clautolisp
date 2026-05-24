@@ -1,0 +1,254 @@
+init-files — load user init files in clautolisp and alfe
+=========================================================
+
+See also: clautolisp/documentation/clautolisp-specifications.org,
+autolisp-front-end/documentation/alfe--specifications.org,
+the legacy bash wrapper at
+/Users/pjb/works/sncf-reseau/src/outils-autolisp/autolisp-script/autolisp
+(lines 318-364 — the existing ~/.autolisp{,rc}{,.lsp,.fas,.des,.vlx}
+discovery contract).
+
+Context
+-------
+
+Today neither clautolisp nor alfe loads any user init file. The
+legacy bash `autolisp` wrapper does — it walks ~/.autolisp followed
+by ~/.autolisprc with a documented .lsp-vs-compiled preference,
+prepends the chosen file to the action list as a synthetic
+(load …), and gates the whole lookup behind --no-init /
+$AUTOLISP_NO_INIT. alfe inherited the --no-init flag's name but
+not its implementation; clautolisp doesn't even have the flag.
+
+This issue extends the discovery contract to four init files per
+program, lands the implementation in a shared CL module both
+binaries consume, fixes alfe's mis-wired --no-init slot, and adds
+the matching scenarios + spec sections.
+
+The contract
+------------
+
+Each program loads *every* existing init file from its lookup
+list, in order — not first-match-wins. A user who maintains both
+a program-specific init and a shared `~/.autolisp` gets both, in
+the documented order, so a `defun` in the program-specific file
+can override one in the shared file (the later (load …) wins).
+
+The lookup list per program:
+
+  clautolisp:                                          alfe:
+    1. ~/.clautolisp{,rc}{,.lsp,.fas,.des,.vlx}          1. ~/.alfe{,rc}{,.lsp,.fas,.des,.vlx}
+    2. ~/.config/clautolisp/init{,.lsp,.fas,.des,.vlx}   2. ~/.config/alfe/init{,.lsp,.fas,.des,.vlx}
+    3. ~/.autolisp{,rc}{,.lsp,.fas,.des,.vlx}            3. ~/.autolisp{,rc}{,.lsp,.fas,.des,.vlx}
+    4. ~/.config/autolisp/init{,.lsp,.fas,.des,.vlx}     4. ~/.config/autolisp/init{,.lsp,.fas,.des,.vlx}
+
+NOTE: alfe's lookup list above normalises the order the user
+sketched ("alfe to load ~/.alfe{...} and then ~/.autolisp{...}
+and then ~/.config/alfe/init.{...}" — three paths) to match the
+four-slot pattern clautolisp's listing made explicit:
+program-HOME → program-XDG → autolisp-HOME → autolisp-XDG. If a
+different order is wanted (e.g. HOME files for both stems before
+any XDG file), update the contract here before implementing.
+
+Per-stem extension preference (same as the legacy bash):
+
+  - The bare stem (`~/.clautolisp`, `~/.autolisp`, etc.) wins
+    outright if it exists. The XDG paths have no bare-stem variant
+    — they always carry an extension. Treat `init` itself as a
+    bare stem at those locations and apply the same rule.
+  - Otherwise: look at `<stem>.lsp` and the compiled variants
+    `<stem>.{fas,des,vlx}`. Prefer a compiled form ONLY if it's
+    newer than the .lsp source (otherwise the source has been
+    edited since the cached compile, so use .lsp). Among compiled
+    variants, pick the newest.
+  - Fall through to `.lsp` if no compiled variant qualifies.
+
+Gating:
+
+  - Per-program flags: clautolisp gains a `--no-init` / `-norc`
+    flag (it currently has neither). alfe already has `--no-init`
+    parsed; this issue rewires it to actually disable the lookup
+    instead of controlling workdir cleanup (a documented bug).
+  - Env vars: `$AUTOLISP_NO_INIT=1` disables every file for both
+    programs (matches the legacy bash). `$CLAUTOLISP_NO_INIT=1`
+    and `$ALFE_NO_INIT=1` disable everything for the corresponding
+    program only. The flag wins over the env var when both are set.
+
+Implementation
+--------------
+
+  1. Shared module under
+     `clautolisp/autolisp-init-files/source/` with package
+     `clautolisp.autolisp-init-files`. Exports:
+
+       - `*default-clautolisp-stems*` — the four-entry lookup
+         list for clautolisp.
+       - `*default-alfe-stems*` — the four-entry lookup list for
+         alfe.
+       - `find-init-file STEM &key require-extension-p` — apply
+         the bare-vs-extension preference to ONE stem; returns the
+         pathname or NIL. REQUIRE-EXTENSION-P is T for the XDG
+         `init` slots (no bare-stem fallback).
+       - `find-init-files STEMS` — walk every stem, return the
+         list of resolved pathnames in order (NILs filtered).
+       - `apply-init-files-to-plan PLAN STEMS &key no-init-p`
+         — prepend each discovered file as a (:load PATH) action;
+         no-op when no-init-p is true.
+
+     ASDF system entry `clautolisp/autolisp-init-files` so both
+     consumers can `:depends-on` it.
+
+  2. clautolisp wiring
+     (`clautolisp/tools/clautolisp/source/main.lisp`):
+
+       - Add `--no-init` / `-norc` long+short option parsing
+         alongside the existing flag matrix.
+       - In the action-plan resolution path, call
+         `(apply-init-files-to-plan plan *default-clautolisp-stems*
+            :no-init-p (or option-no-init-p
+                            (env-getenv-true-p "AUTOLISP_NO_INIT")
+                            (env-getenv-true-p "CLAUTOLISP_NO_INIT")))`.
+       - Document the new flag + env vars in the help banner.
+
+  3. alfe wiring (`autolisp-front-end/source/cli.lisp`):
+
+       - Keep `--no-init` parsing; route it to a new
+         `cli-options-no-init-p` *consumer* in the action-plan
+         build phase via the same shared helper. The current
+         mis-wiring of `--no-init` to `cleanup-workdir`'s `:keep-p`
+         moves to a new (parsed but otherwise NOT YET acted-on)
+         `--keep-workdir` flag — see the matching note in the
+         issue's "Migration" section below.
+       - Use `*default-alfe-stems*` for the lookup list.
+       - Honour `$ALFE_NO_INIT` alongside the existing
+         `$AUTOLISP_NO_INIT`.
+
+  4. Spec updates:
+
+       - `autolisp-front-end/documentation/alfe--specifications.org`:
+         Add a "Init files" subsection documenting the four-slot
+         lookup, the .lsp-vs-compiled preference, the gating
+         flags + env vars, and the prepend-as-(:load …) semantic.
+         Update the existing `--no-init` env-var table entry to
+         reflect that it now disables init-file loading (not
+         workdir cleanup).
+       - `clautolisp/documentation/clautolisp-specifications.org`:
+         Same subsection (mirror the prose; keep the lookup list
+         specific to clautolisp's four stems).
+       - `clautolisp/documentation/clautolisp-user-manual.org`:
+         Add a brief "Customising your environment" entry with a
+         worked example: a user's `~/.config/clautolisp/init.lsp`
+         defining a couple of helper functions, surviving across
+         clautolisp REPL sessions.
+
+  5. Migration note for the existing alfe `--no-init` misuse:
+
+       - The current code uses `cli-options-no-init-p` as the
+         workdir-cleanup `:keep-p`. Move that consumer to a new
+         `cli-options-keep-workdir-p` slot (matching the spec's
+         `$AUTOLISP_KEEP_WORKDIR` env var). Add a `--keep-workdir`
+         CLI option. This is a behaviour change for anyone who
+         was relying on `--no-init` to keep the workdir — but
+         since the flag's documented effect was "skip site init"
+         (not "keep workdir"), the change restores documented
+         behaviour rather than departing from it.
+
+  6. Tests:
+
+       Unit tests (FiveAM):
+
+         - `find-init-file` against fixtures laying down each
+           possible variant (bare / .lsp / .fas-newer-than-lsp /
+           .fas-older-than-lsp / no-bare-allowed) and asserting
+           the right pick.
+         - `find-init-files` walks every stem in order, returns
+           NIL for missing slots, preserves order for present ones.
+         - `apply-init-files-to-plan` prepends the (:load …)
+           actions before whatever was already in the plan;
+           no-init-p short-circuits to identity.
+         - `$AUTOLISP_NO_INIT=1` and `$ALFE_NO_INIT=1` /
+           `$CLAUTOLISP_NO_INIT=1` are honoured.
+
+       Conformance scenarios (in tests/scenarios/cli/):
+
+         - `init-file-loads-shared-autolisp.sexp` — set up
+           ~/.autolisp.lsp with `(setq init-marker "shared")`,
+           run `alfe -x init-marker`, assert "shared" on stdout.
+         - `init-file-program-specific-wins.sexp` — set up both
+           ~/.alfe.lsp and ~/.autolisp.lsp setting init-marker;
+           assert the alfe-specific one ran last (later in the
+           chain → overrides → wins on print).
+         - `init-file-no-init-skips.sexp` — same fixtures, run
+           with `--no-init`, assert init-marker is unbound (the
+           CLI surfaces the runtime error).
+         - `init-file-compiled-newer-than-source.sexp` —
+           write .lsp + .fas with the .fas newer; assert the .fas
+           loaded.
+         - `init-file-source-newer-than-compiled.sexp` —
+           inverse; assert the .lsp loaded.
+
+       Each scenario uses a per-test tmp HOME override (set HOME
+       to a fresh tmpdir in the runner's environment so the user's
+       real ~/.autolisp file doesn't leak in).
+
+       Parity test, gated behind $AUTOLISP_LEGACY (per
+       alfe-conformance.issue): run the legacy bash wrapper with
+       the same fixture and assert identical (load …) sequence.
+       The legacy wrapper picks only ONE file (first match wins);
+       this issue's contract picks UP TO FOUR — so the parity
+       assertion is "the legacy's pick is present in alfe's
+       chain", not "exact same set".
+
+Out of scope
+------------
+
+  - Init-file path overrides via CLI (`--init FILE`). Could be a
+    follow-up; the current contract has enough knobs.
+  - Per-init-file gating (e.g. "load shared but not
+    program-specific"). The all-or-nothing `--no-init` mirrors
+    the legacy bash and is sufficient for V1.
+  - Loading init files inside the CAD backends (BricsCAD,
+    AutoCAD). Those backends don't run in the alfe process — the
+    CAD-side runtime has its own customisation hooks (the
+    autolisp-remote-io.lsp file alfe stages). If users want to
+    inject local code into the CAD session, that's the plugin
+    model territory of alfe-plugin-model.issue.
+
+Acceptance criteria
+-------------------
+
+  - `clautolisp-sbcl -x '(setq x 1)'` with `~/.clautolisp.lsp`
+    containing `(princ "loaded")` prints "loaded" before the
+    eval — verified by a unit test that mocks $HOME.
+  - `alfe --clautolisp -x '(princ init-marker)'` with all four
+    alfe init files present prints the program-specific value
+    (the last file in the chain wins).
+  - `clautolisp-sbcl --no-init -x …` and `alfe --no-init -x …`
+    both skip every lookup; the unit test asserts no file-system
+    probes happen.
+  - `$AUTOLISP_NO_INIT=1`, `$CLAUTOLISP_NO_INIT=1`, `$ALFE_NO_INIT=1`
+    each gate the right subset of files.
+  - The spec subsection lands in both
+    clautolisp-specifications.org and alfe--specifications.org;
+    `make -C autolisp-front-end check-spec-coverage` stays green
+    after the new `--no-init` and `--keep-workdir` options are
+    referenced by scenarios.
+  - At least one conformance scenario per major variant of the
+    extension-preference rule (bare wins / compiled-newer-wins /
+    source-newer-wins / no-bare-at-XDG) passes.
+
+Notes
+-----
+
+The legacy bash `autolisp` script's RC discovery is the reference
+implementation; preserving its observable behaviour (in
+particular the .lsp-vs-compiled mtime check) is more important
+than line-for-line transliteration. The CL version should be a
+small pure function over (HOME, list of stems, gating flag) so
+the unit tests stay fixture-driven.
+
+Backward compatibility: users with an existing `~/.autolisp` or
+`~/.autolisprc` see their file loaded by both clautolisp AND alfe
+once this lands — intentional, since the file's contents are
+already framed as "shared AutoLISP init". Anyone who wants the
+file applied to only one program can move it to the program-
+specific stem (`~/.clautolisp` or `~/.alfe`).
