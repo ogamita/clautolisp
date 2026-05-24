@@ -65,32 +65,40 @@ Modules from clautolisp that alfe directly consumes
 Phasing and dependencies
 ------------------------
 
-  Phase 0 — Foundations
+All five phases of the V1 rollout have landed; their tickets live
+under `issues/closed/`. The plan stays here as the historical
+index. V2 work (currently `alfe-plugin-model.issue`) lives in
+`issues/open/`.
+
+  Phase 0 — Foundations [CLOSED, commit 1a4872b]
     alfe-skeleton.issue              (ASDF, packages, version, build,
                                        Make targets)
     alfe-cli.issue                   (argv → action plan → exit code)
     alfe-backend-interface.issue     (abstract backend protocol)
 
-  Phase 1 — clautolisp backend (end-to-end)
+  Phase 1 — clautolisp backend (end-to-end) [CLOSED, commit 7949172]
     alfe-backend-clautolisp.issue    (in-process + subprocess)
-       blocked by Phase 0
 
-  Phase 2 — CAD backends share-the-protocol
+  Phase 2 — CAD backends share-the-protocol [CLOSED, commit 0ddb1d1]
     alfe-file-protocol.issue         (atomic writes, status polling,
                                        line-to-form reader, runtime
                                        bootstrap emission)
-       blocked by Phase 0
 
-  Phase 3 — Per-CAD backends
+  Phase 3 — Per-CAD backends [CLOSED, commit ee45a36]
     alfe-backend-bricscad.issue      (macOS/Linux batch, Windows COM)
     alfe-backend-autocad.issue       (Windows COM, accoreconsole batch)
-       blocked by Phase 2
 
-  Phase 4 — Quality & spec
+  Phase 4 — Quality & spec [CLOSED, commit 97a8974]
     alfe-conformance.issue           (scenario corpus, parity tests
                                        against the bash wrapper, spec
                                        maintenance)
-       runs continuously; meaningfully gated by Phase 1
+
+  Phase 5 — V2 plugin model [OPEN]
+    alfe-plugin-model.issue          (the plugin contract EPURE and
+                                       similar user-specific
+                                       customisations ride on; --epure
+                                       currently parses but no backend
+                                       acts on it)
 
 Migration path from the bash wrapper
 ------------------------------------
@@ -128,8 +136,9 @@ V2 / out of scope here
 
   - GUI front-end for alfe (DCL or OpenDCL). Distinct subproject.
   - `vlisp-compile` outside `--autocad --mode automation` on Windows.
-  - EPURE-style user-specific plugin features — keep the spec hook
-    but defer the plugin model.
+  - EPURE-style user-specific plugin features — has its own ticket
+    now (`alfe-plugin-model.issue`); --epure parses but no backend
+    consumes it until the plugin model lands.
   - Native Windows COM-without-shell path. The Windows backends keep
     their VBScript bridges in V1; a future ticket can move them to a
     pure-CL COM client (`cffi` + `OAIDispatch`).

@@ -1,0 +1,170 @@
+alfe-plugin-model — V2 plugin contract + EPURE as the first consumer
+====================================================================
+
+See also: alfe.plan ("V2 / out of scope here" bullet),
+issues/closed/alfe-cli.issue (the parsed-but-inert --epure flag),
+issues/closed/alfe-backend-bricscad.issue section 7,
+issues/closed/alfe-backend-autocad.issue section 4,
+spec section "Exposed helpers" (the *AUTOLISP-* hook surface a
+plugin can read).
+
+Context
+-------
+
+alfe today carries the *flag* surface of a plugin model — --epure
+is parsed, stored in `options-epure-p`, mirrored via
+$AUTOLISP_EPURE, and surfaces in `--help` — but no backend
+consumes it. The Phase 3 tickets described what EPURE *should* do
+under each CAD (BricsCAD: force batch mode + run a setup script;
+AutoCAD: activate the "Epure" preferences profile + `_SCRIPT`
+invocation in the VBS bridge), but those bullets were deliberately
+deferred per the master plan's V2 bullet:
+
+  "EPURE-style user-specific plugin features — keep the spec hook
+   but defer the plugin model."
+
+This issue is the deferred work. It is the design-and-land for the
+plugin contract itself, with EPURE as the first concrete consumer
+so the design has at least one driving use case (a vacuous plugin
+model invites yak-shaving; EPURE keeps it honest).
+
+Why this isn't already done
+---------------------------
+
+The plugin question splits into three sub-decisions that we have
+not yet picked an answer to:
+
+  - **Discovery.** Do plugins live on a search path
+    ($ALFE_PLUGIN_PATH, with a default like
+    `~/.config/alfe/plugins/`), in a manifest the user passes
+    explicitly (`--plugin path/to/plugin.lisp`), or as
+    user-installable ASDF systems? The shape of the answer changes
+    the install story.
+  - **Lifecycle hooks.** What does a plugin get to intercept? The
+    minimal set EPURE needs is pre-engine-start (so the bridge can
+    activate the profile before run-common.lsp loads), but a future
+    plugin might want pre-action / post-action / pre-shutdown.
+  - **Per-backend gating.** EPURE has different semantics per CAD —
+    BricsCAD forces batch mode, AutoCAD activates a profile,
+    clautolisp ignores it. The plugin needs a way to say "I apply
+    to backend X only" without each backend having to special-case
+    each plugin by name.
+
+V1 left these unanswered intentionally — there was no other plugin
+asking for the surface, so over-specifying the model would have
+been speculative work. This ticket either makes those calls or
+ships a minimal answer that defers them.
+
+In scope
+--------
+
+  1. Plugin discovery. Land *one* of:
+
+       a. **File-path plugins.** `--plugin FILE.lisp` loads FILE
+          into the alfe image at startup. `$ALFE_PLUGIN_PATH` lists
+          fallback directories. The plugin file is a normal Lisp
+          source file; it calls `alfe.plugin:register-plugin` to
+          hook in.
+
+       b. **ASDF-system plugins.** Plugins ship as
+          `alfe-plugin-NAME` ASDF systems on the host's source
+          registry; `--plugin NAME` does `(asdf:load-system
+          (format nil "alfe-plugin-~A" name))`.
+
+       Decision needed up front. Recommendation: start with (a) —
+       it is the smaller surface, matches how DCL/AutoLISP users
+       already think about "drop this file in", and (b) can be
+       added later by promoting (a)'s register-plugin call into an
+       ASDF :perform.
+
+  2. Plugin contract. New package `alfe.plugin` exposing:
+
+       - `register-plugin NAME &key hooks applies-to` — the
+         plugin's entry point.
+       - `*registered-plugins*` — list of `plugin` structs.
+       - Hook names: at minimum :pre-start, :pre-action,
+         :post-action, :pre-shutdown.
+       - `applies-to`: list of backend keywords
+         (`(:bricscad :autocad)`) or `:all`.
+
+     Hook callbacks receive the alfe session struct and a
+     hook-specific argument (the action being run, etc.). Errors
+     in a hook surface as `backend-bootstrap-error` (for :pre-start)
+     or `backend-eval-error` (for action hooks).
+
+  3. EPURE as the first plugin. Ship
+     `autolisp-front-end/plugins/epure.lisp` (the canonical
+     in-tree example):
+
+       - Reads `*AUTOLISP-EPURE-LSP*` (or a similarly-named env
+         var) for the EPURE setup script path.
+       - :pre-start under :bricscad — forces batch mode via the
+         CLI-options channel, emits the EPURE setup script into the
+         workdir, makes run-common.lsp `(load …)` it before the
+         main load.
+       - :pre-start under :autocad-automation — emits a
+         `Profiles.ActiveProfile = "Epure"` line into the VBS
+         bridge template (parameterise the template to accept a
+         pre-load hook block).
+       - :pre-start under :autocad-batch — refuse with a structured
+         BACKEND-BOOTSTRAP-ERROR ("EPURE requires the full GUI
+         binary; accoreconsole has no profile support") matching
+         what alfe-backend-autocad.issue section 4 spelled out.
+
+  4. CLI wiring. `--epure` now triggers
+     `(alfe.plugin:request-plugin :epure)` instead of just setting
+     `options-epure-p`. The flag stays for compatibility — a future
+     ticket can deprecate it in favour of `--plugin epure`.
+
+  5. Spec update. Move the EPURE section in
+     `documentation/alfe--specifications.org` from "Out of scope V1"
+     to a real section under "Backend bricscad" + "Backend autocad",
+     documenting what each backend does when EPURE is active.
+
+  6. Tests:
+
+       - Unit tests for the plugin registry (register / look up /
+         walk-hooks-for-backend).
+       - A fixture plugin that records each hook it sees, asserts
+         the lifecycle order across :pre-start, :pre-action,
+         :post-action, :pre-shutdown.
+       - EPURE-specific scenarios under
+         `tests/scenarios/plugins/epure-*.sexp`: parse the flag,
+         emit the right artefacts, refuse under
+         `--autocad --mode batch`.
+       - Coverage: every option the spec adds for the plugin model
+         must be picked up by `make check-spec-coverage`.
+
+Out of scope
+------------
+
+  - Plugin sandboxing or untrusted-code protection. V1 of the
+    plugin model trusts every loaded plugin; if hardening becomes
+    relevant, a separate ticket lands a sandbox.
+  - A plugin marketplace / package registry. ASDF + git is enough
+    for V2.
+  - vlisp-compile as a plugin. It is wedded to AutoCAD automation
+    on Windows and does not benefit from the plugin model.
+
+Acceptance criteria
+-------------------
+
+  - `--epure --bricscad ...` runs the EPURE setup script before the
+    main load. Mock-CAD test asserts the load order.
+  - `--epure --autocad --mode batch` exits 4 with the documented
+    "EPURE requires the full GUI binary" message.
+  - `--plugin path/to/plugin.lisp` loads an arbitrary plugin file
+    and the hooks it registers fire at the right lifecycle points.
+    Asserted by the fixture-plugin test.
+  - `make check-spec-coverage` stays green after the new --plugin /
+    --epure semantics land.
+  - The EPURE section of the spec exists and matches what alfe
+    actually does (no more "deferred" bullets).
+
+Migration note
+--------------
+
+The original Phase 3 tickets (now in `issues/closed/`) carried
+EPURE bullets that this ticket subsumes. When this ticket lands,
+update the "Deferred items" notes in those closed issues to point
+at the closing commit.

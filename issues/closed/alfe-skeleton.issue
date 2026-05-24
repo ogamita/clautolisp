@@ -1,6 +1,14 @@
 alfe-skeleton — subproject layout, ASDF, executable, version
 ============================================================
 
+Status: closed
+Landed in: 1a4872b "autolisp-front-end: land Phase 0 (skeleton +
+backend interface + CLI)." Together with alfe-cli + alfe-backend-
+interface (same commit). See autolisp-front-end/PLAN.md for the
+current state.
+
+
+
 See also: alfe.plan, alfe-cli.issue, alfe-backend-interface.issue.
 
 Context
