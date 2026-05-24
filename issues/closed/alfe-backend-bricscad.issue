@@ -1,6 +1,23 @@
 alfe-backend-bricscad — BricsCAD driver (macOS / Linux / Windows)
 =================================================================
 
+Status: closed
+Landed in: ee45a36 "autolisp-front-end: land Phase 3 — BricsCAD +
+AutoCAD backends." See autolisp-front-end/source/backend-bricscad.lisp
+and tests/backend-cad-tests.lisp.
+
+Deferred items moved to other tickets:
+  - EPURE gating (section 7) — moved to alfe-plugin-model.issue
+    (no plugin model exists yet; the --epure flag parses but no
+    backend acts on it).
+  - Linux automation mode — still deferred per the issue's own
+    "Out of scope" note; requires a Linux BricsCAD test host.
+  - Real-CAD smoke tests — gated behind BRICSCAD_SMOKE=1; the
+    mocked-engine end-to-end test in backend-cad-tests.lisp covers
+    the protocol path.
+
+
+
 See also: alfe.plan, alfe-backend-interface.issue,
 alfe-file-protocol.issue, spec section "Backend bricscad".
 

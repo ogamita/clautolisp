@@ -1,6 +1,26 @@
 alfe-conformance — scenario corpus, parity tests, spec maintenance
 ==================================================================
 
+Status: closed
+Landed in: 97a8974 "autolisp-front-end: land Phase 4 — conformance
+corpus + spec coverage." See autolisp-front-end/source/conformance.lisp,
+tests/scenarios/, scripts/check-spec-coverage.lisp, and
+tools/run-alfe-conformance/.
+
+Status of acceptance criteria:
+  - Mocked-backend corpus: 26 scenarios, all green
+    (make conformance).
+  - Spec coverage: 22/22 alfe CLI options covered by ≥1 scenario
+    (make check-spec-coverage).
+  - make -C autolisp-front-end test invokes the runner and surfaces
+    failures inline.
+  - Parity lane is wired ($AUTOLISP_LEGACY opt-in) but not exercised
+    in CI because no legacy bash checkout is bundled in this tree.
+  - Real-CAD opt-in lanes (BRICSCAD_SMOKE, AUTOCAD_SMOKE) are
+    documented; CI does not run them.
+
+
+
 See also: alfe.plan, alfe-cli.issue, alfe-backend-clautolisp.issue,
 alfe-backend-bricscad.issue, alfe-backend-autocad.issue,
 spec section "Invariants testés".
