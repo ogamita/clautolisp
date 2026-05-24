@@ -23,6 +23,24 @@ ALFE_GENERATE := $(ALFE_TOOL_DIR)/generate-alfe.lisp
 # the parent hasn't set XDG_CACHE_HOME.
 XDG_CACHE_HOME ?= $(CLAUTOLISP_ROOT)/.cache
 
+# Host OS detection — used by the per-platform alfe-backend test
+# targets below (test-alfe-{sbcl,ccl}-{bricscad,autocad}-*). Wrong-
+# platform targets call require-os-* which prints a [skip] line and
+# exits 0 per the policy in issues/closed/test-targets.issue.
+HOST_OS := $(shell uname -s)
+define require-os-darwin
+if [ "$(HOST_OS)" != "Darwin" ]; then \
+  echo "[skip] $(1): macOS-only (current: $(HOST_OS))"; \
+  exit 0; \
+fi
+endef
+define require-os-windows
+case "$(HOST_OS)" in MINGW*|MSYS*|CYGWIN*) :;; *) \
+  echo "[skip] $(1): Windows-only (current: $(HOST_OS))"; \
+  exit 0;; \
+esac
+endef
+
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
 
@@ -33,7 +51,11 @@ TEST_SYSTEM ?= autolisp-front-end
 
 .PHONY: help all documentation test test-sbcl test-ccl \
         build-alfe-sbcl build-alfe-ccl clean-pdf clean \
-        conformance check-spec-coverage
+        conformance check-spec-coverage \
+        test-alfe-sbcl-clautolisp test-alfe-ccl-clautolisp \
+        test-alfe-sbcl-bricscad-macos test-alfe-ccl-bricscad-macos \
+        test-alfe-sbcl-bricscad-windows test-alfe-ccl-bricscad-windows \
+        test-alfe-sbcl-autocad-windows test-alfe-ccl-autocad-windows
 
 help:  ## Show this message (list available targets and their purpose).
 	@awk 'BEGIN { \
@@ -140,3 +162,65 @@ check-spec-coverage:  ## Assert every CLI option in the spec is covered by ≥1 
 
 clean: clean-pdf  ## Remove built executables and generated PDFs.
 	rm -f $(ALFE_SBCL) $(ALFE_CCL)
+
+# ---------------------------------------------------------------------
+# Per-backend smoke tests for the built alfe binaries.
+#
+# Each target drives a built alfe binary (either alfe-sbcl or
+# alfe-ccl) with one of the documented backend selectors and
+# checks that the binary exits 0 on a simple workload. The CAD
+# targets are gated on the host OS via REQUIRE_OS_*; without the
+# right OS they print a [skip] line and exit 0 (the "wrong
+# platform is a no-op" policy from issues/closed/test-targets.issue).
+#
+# These targets do NOT replace the FiveAM suite (`make test`) or
+# the scenario corpus (`make conformance`). They are smoke checks
+# for the *built* artefacts — the lane a tester walks when they
+# want to verify a fresh alfe-sbcl actually runs end-to-end against
+# a chosen backend, separate from "the test image works".
+#
+# The CAD targets assume the matching engine + env vars (e.g.
+# $BRICSCAD_EXE) are configured. If alfe's DETECT phase can't
+# find an engine, it exits 3 and the make target reports failure;
+# the OS guard only handles the "obviously wrong platform" case.
+
+test-alfe-sbcl-clautolisp: $(ALFE_SBCL)  ## alfe-sbcl --clautolisp smoke test (any OS).
+	"$(ALFE_SBCL)" --clautolisp -x '(+ 1 2)'
+
+test-alfe-ccl-clautolisp: $(ALFE_CCL)  ## alfe-ccl --clautolisp smoke test (any OS).
+	"$(ALFE_CCL)" --clautolisp -x '(+ 1 2)'
+
+test-alfe-sbcl-bricscad-macos: $(ALFE_SBCL)  ## alfe-sbcl --bricscad smoke test (macOS).
+	@$(call require-os-darwin,$@); \
+	 "$(ALFE_SBCL)" --bricscad -x '(princ (+ 1 2))'
+
+test-alfe-ccl-bricscad-macos: $(ALFE_CCL)  ## alfe-ccl --bricscad smoke test (macOS).
+	@$(call require-os-darwin,$@); \
+	 "$(ALFE_CCL)" --bricscad -x '(princ (+ 1 2))'
+
+test-alfe-sbcl-bricscad-windows: $(ALFE_SBCL)  ## alfe-sbcl --bricscad smoke test (Windows).
+	@$(call require-os-windows,$@); \
+	 "$(ALFE_SBCL)" --bricscad -x '(princ (+ 1 2))'
+
+test-alfe-ccl-bricscad-windows: $(ALFE_CCL)  ## alfe-ccl --bricscad smoke test (Windows).
+	@$(call require-os-windows,$@); \
+	 "$(ALFE_CCL)" --bricscad -x '(princ (+ 1 2))'
+
+test-alfe-sbcl-autocad-windows: $(ALFE_SBCL)  ## alfe-sbcl --autocad smoke test (Windows).
+	@$(call require-os-windows,$@); \
+	 "$(ALFE_SBCL)" --autocad -x '(princ (+ 1 2))'
+
+test-alfe-ccl-autocad-windows: $(ALFE_CCL)  ## alfe-ccl --autocad smoke test (Windows).
+	@$(call require-os-windows,$@); \
+	 "$(ALFE_CCL)" --autocad -x '(princ (+ 1 2))'
+
+# Dependencies — if the alfe binary doesn't exist, build it first.
+# Use the existing build-alfe-* targets so the recipe stays in one
+# place. The .PHONY build targets force a rebuild when invoked
+# directly; the binary file targets here are real files, so make
+# rebuilds only when missing.
+$(ALFE_SBCL):
+	$(MAKE) build-alfe-sbcl
+
+$(ALFE_CCL):
+	$(MAKE) build-alfe-ccl

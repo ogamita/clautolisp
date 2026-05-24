@@ -10,7 +10,40 @@ LATEX_COMPILER ?= xelatex
 SBCL   ?= sbcl
 CCL    ?= ccl
 
+# Host OS detection — used by the per-platform CAD targets below
+# (BricsCAD/AutoCAD on macOS/Windows). The "wrong platform is a
+# no-op" policy from issues/closed/test-targets.issue is enforced
+# by `$(call require-os-darwin,$@)` at the top of each gated recipe.
+HOST_OS := $(shell uname -s)
+
+# require-os-darwin / require-os-windows — Make function macros.
+# Used as `$(call require-os-darwin,$@)` from a recipe; the call
+# expands to a shell `if` that prints a [skip] line and exit 0s
+# when the host doesn't match. $@ is the calling target; we have to
+# pass it explicitly because Make does not re-expand $@ inside a
+# variable's stored value.
+define require-os-darwin
+if [ "$(HOST_OS)" != "Darwin" ]; then \
+  echo "[skip] $(1): macOS-only (current: $(HOST_OS))"; \
+  exit 0; \
+fi
+endef
+define require-os-windows
+case "$(HOST_OS)" in MINGW*|MSYS*|CYGWIN*) :;; *) \
+  echo "[skip] $(1): Windows-only (current: $(HOST_OS))"; \
+  exit 0;; \
+esac
+endef
+
 ROOT_DIR := $(shell pwd)
+
+# Path to alfe-sbcl / alfe-ccl. Used by the CAD-driven targets that
+# load the harness through a real BricsCAD/AutoCAD engine via the
+# file-IPC protocol Phase 3 wired up. Defined AFTER ROOT_DIR so the
+# `:=` expansion sees the resolved working directory.
+ALFE_ROOT := $(ROOT_DIR)/../autolisp-front-end
+ALFE_SBCL := $(ALFE_ROOT)/tools/alfe/bin/alfe-sbcl
+ALFE_CCL  := $(ALFE_ROOT)/tools/alfe/bin/alfe-ccl
 CLAUTOLISP_ROOT := $(ROOT_DIR)/../clautolisp
 CLAUTOLISP_ASD := $(CLAUTOLISP_ROOT)/clautolisp.asd
 AUTOLISP_TEST_ASD := $(ROOT_DIR)/autolisp-test.asd
@@ -60,7 +93,15 @@ CLAUTOLISP_SOURCES := \
         test-clautolisp-sbcl-debug test-clautolisp-ccl-debug \
         test-asdf-sbcl test-asdf-ccl \
         test-asdf-sbcl-debug test-asdf-ccl-debug \
-        build-clautolisp-sbcl build-clautolisp-ccl clean-pdf
+        build-clautolisp-sbcl build-clautolisp-ccl clean-pdf \
+        test-clautolisp-sbcl-strict test-clautolisp-sbcl-clautolisp \
+        test-clautolisp-sbcl-bricscad test-clautolisp-sbcl-autocad \
+        test-clautolisp-ccl-strict  test-clautolisp-ccl-clautolisp \
+        test-clautolisp-ccl-bricscad test-clautolisp-ccl-autocad \
+        test-clautolisp-sbcl-all test-clautolisp-ccl-all test-clautolisp-all \
+        test-bricscad-macos test-bricscad-macos-strict test-bricscad-macos-bricscad \
+        test-bricscad-windows test-bricscad-windows-strict test-bricscad-windows-bricscad \
+        test-autocad-windows test-autocad-windows-strict test-autocad-windows-autocad
 
 all: documentation
 
@@ -154,3 +195,118 @@ test-asdf-ccl-debug:
 
 clean-pdf:
 	rm -f $(PDF_FILES)
+
+# ---------------------------------------------------------------------
+# autolisp-test × clautolisp × dialect matrix
+# ---------------------------------------------------------------------
+# Per issues/closed/test-targets.issue, expose eight leaf targets
+# (2 implementations × 4 dialects) plus three aggregate targets so a
+# tester can drive a single combination or run the whole grid with
+# one command.
+#
+# The dialect is selected via clautolisp-sbcl's --dialect CLI flag,
+# whose accepted values are documented in
+# clautolisp/tools/clautolisp/source/main.lisp: strict,
+# autocad-2026, bricscad-v26. The :clautolisp dialect the alfe
+# runtime exposes is internally an alias for :strict — the
+# standalone clautolisp executable does not accept "clautolisp" at
+# the --dialect flag, so the -clautolisp targets below pass
+# `--dialect strict` and rely on the documented alias. Kept as a
+# separate target name (rather than dropped) so the tester-facing
+# surface matches what the test-targets issue requested.
+#
+# All targets re-use the existing HARNESS_SNIPPET so a change in
+# the harness entry point only needs editing one place.
+
+test-clautolisp-sbcl-strict: $(CLAUTOLISP_SBCL)
+	"$(CLAUTOLISP_SBCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+
+test-clautolisp-sbcl-clautolisp: $(CLAUTOLISP_SBCL)
+	"$(CLAUTOLISP_SBCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+
+test-clautolisp-sbcl-bricscad: $(CLAUTOLISP_SBCL)
+	"$(CLAUTOLISP_SBCL)" --dialect bricscad-v26 -x '$(HARNESS_SNIPPET)'
+
+test-clautolisp-sbcl-autocad: $(CLAUTOLISP_SBCL)
+	"$(CLAUTOLISP_SBCL)" --dialect autocad-2026 -x '$(HARNESS_SNIPPET)'
+
+test-clautolisp-ccl-strict: $(CLAUTOLISP_CCL)
+	"$(CLAUTOLISP_CCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+
+test-clautolisp-ccl-clautolisp: $(CLAUTOLISP_CCL)
+	"$(CLAUTOLISP_CCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+
+test-clautolisp-ccl-bricscad: $(CLAUTOLISP_CCL)
+	"$(CLAUTOLISP_CCL)" --dialect bricscad-v26 -x '$(HARNESS_SNIPPET)'
+
+test-clautolisp-ccl-autocad: $(CLAUTOLISP_CCL)
+	"$(CLAUTOLISP_CCL)" --dialect autocad-2026 -x '$(HARNESS_SNIPPET)'
+
+# Aggregate: every dialect against one implementation.
+test-clautolisp-sbcl-all: \
+    test-clautolisp-sbcl-strict \
+    test-clautolisp-sbcl-clautolisp \
+    test-clautolisp-sbcl-bricscad \
+    test-clautolisp-sbcl-autocad
+
+test-clautolisp-ccl-all: \
+    test-clautolisp-ccl-strict \
+    test-clautolisp-ccl-clautolisp \
+    test-clautolisp-ccl-bricscad \
+    test-clautolisp-ccl-autocad
+
+# Aggregate: every (dialect, implementation) pair.
+test-clautolisp-all: test-clautolisp-sbcl-all test-clautolisp-ccl-all
+
+# ---------------------------------------------------------------------
+# autolisp-test × real-CAD matrix (BricsCAD/AutoCAD via alfe)
+# ---------------------------------------------------------------------
+# These targets drive the autolisp-test harness inside a real
+# BricsCAD or AutoCAD engine via alfe's file-IPC protocol (Phase 3
+# of the alfe rollout). Each is gated on the host OS — running a
+# macOS target on Linux prints a [skip] line and exits 0, matching
+# the "wrong platform is a no-op" policy from the issue.
+#
+# The recipes assume alfe-sbcl is built (see autolisp-front-end's
+# build-alfe-sbcl). The actual real-CAD drive is itself gated by
+# the matching $BRICSCAD_EXE / $AUTOCAD_EXE; without those, alfe's
+# DETECT phase will exit 3 and the test reports the engine as
+# unavailable.
+
+# alfe driving the autolisp-test harness inside a CAD engine.
+# Loads harness/run.lsp (which the runtime then runs through its
+# autolisp-test-run-all entry) and asks alfe to evaluate the entry
+# point. The CAD-side runtime publishes status transitions; alfe's
+# eval-plan waits for DONE between each action.
+ALFE_HARNESS_LOAD := -l "$(ROOT_DIR)/harness/run.lsp"
+ALFE_HARNESS_RUN  := -x "(autolisp-test-run-all)"
+
+test-bricscad-macos-strict:
+	@$(call require-os-darwin,$@); \
+	 "$(ALFE_SBCL)" --bricscad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+
+test-bricscad-macos-bricscad:
+	@$(call require-os-darwin,$@); \
+	 "$(ALFE_SBCL)" --bricscad --dialect bricscad-v26 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+
+test-bricscad-macos: test-bricscad-macos-strict test-bricscad-macos-bricscad
+
+test-bricscad-windows-strict:
+	@$(call require-os-windows,$@); \
+	 "$(ALFE_SBCL)" --bricscad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+
+test-bricscad-windows-bricscad:
+	@$(call require-os-windows,$@); \
+	 "$(ALFE_SBCL)" --bricscad --dialect bricscad-v26 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+
+test-bricscad-windows: test-bricscad-windows-strict test-bricscad-windows-bricscad
+
+test-autocad-windows-strict:
+	@$(call require-os-windows,$@); \
+	 "$(ALFE_SBCL)" --autocad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+
+test-autocad-windows-autocad:
+	@$(call require-os-windows,$@); \
+	 "$(ALFE_SBCL)" --autocad --dialect autocad-2026 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+
+test-autocad-windows: test-autocad-windows-strict test-autocad-windows-autocad

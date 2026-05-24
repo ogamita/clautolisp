@@ -1,0 +1,63 @@
+Status: closed
+Landed in: (this commit; see git log).
+
+The matrix from the original request below is implemented across
+three subproject Makefiles:
+
+  - autolisp-test/Makefile: test-clautolisp-{sbcl,ccl}-{strict,
+    clautolisp,bricscad,autocad} (8 leaves) + test-clautolisp-
+    {sbcl,ccl}-all + test-clautolisp-all aggregates, plus the CAD-
+    driven test-bricscad-{macos,windows}-{strict,bricscad} and
+    test-autocad-windows-{strict,autocad} matrix (6 leaves) with
+    matching all-of-platform aggregates. The :clautolisp dialect
+    targets pass --dialect strict because the standalone
+    clautolisp-sbcl does not accept "clautolisp" at --dialect
+    (it is an alfe-runtime alias for :strict); the target name
+    is kept for tester ergonomics.
+
+  - clautolisp/Makefile: run-file-compat-bricscad-macos,
+    run-file-compat-bricscad-windows,
+    run-file-compat-autocad-windows. The pre-existing
+    platform-agnostic run-file-compat-{bricscad,autocad} targets
+    stay for back-compat.
+
+  - autolisp-front-end/Makefile: test-alfe-{sbcl,ccl}-clautolisp
+    (any OS) plus test-alfe-{sbcl,ccl}-{bricscad-macos,
+    bricscad-windows,autocad-windows} (6 platform-gated leaves).
+
+Cross-platform policy: every recipe gated on a specific host
+calls $(call require-os-darwin,$@) or require-os-windows; running
+on the wrong OS prints `[skip] <target>: <OS>-only (current: ...)`
+and exit 0 — never errors, per the original request.
+
+------------------------------------------------------------
+
+Original request:
+
+As a tester I'd need make targets to tests easily the following configurations:
+
+- test of clautolisp-sbcl (any platform)
+- test of clautolisp-ccl  (any platform)
+
+- run autolisp-test against clautolisp-{sbcl,ccl} x {--strict,--bricscad,--autocad,--clautolisp} (8 separate targets, 2 targets {ccl, sbcl} running the four case in sequence, and one target to do everything.
+- run autolisp-test against bricscad on macOS x {--strict,--bricscad} (2 separate targets, and one target to do both).
+- run autolisp-test against bricscad on MS-Windows x {--strict,--bricscad} (2 separate targets, and one target to do both).
+- run autolisp-test against autocad on MS-Windows x {--strict,--autocad} (2 separate targets, and one target to do both).
+
+Similarly, targets to run your run-file-compat tests:
+
+- run run-file-compat tests against clautolisp
+- run run-file-compat tests against bricscad on macOS
+- run run-file-compat tests against bricscad on MS-Windows
+- run run-file-compat tests against autocad on MS-Windows
+
+- test of alfe-sbcl --clautolisp (any platform)
+- test of alfe-ccl  --clautolisp (any platform)
+- test of alfe-sbcl --bricscad (macOS and MS-Windows)
+- test of alfe-ccl  --bricscad (macOS and MS-Windows)
+- test of alfe-sbcl --autocad (MS-Windows)
+- test of alfe-ccl  --autocad (MS-Windows)
+
+and add other targets if you have any other tests that might be interesting to run independently.
+
+If we try to run a test designed to run on a different platform it should issue a message and exit successfully (wrong platform is nop).
