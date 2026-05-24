@@ -326,14 +326,27 @@ movement within the same name doesn't re-render unchanged.")
 
 (defun alref-autodoc--echo ()
   "Display the autodoc line for the symbol at point in the echo
-area. Bound to `post-command-hook' by the minor mode."
-  (let ((sym (alref--symbol-at-point)))
-    (unless (equal sym alref-autodoc--last-symbol)
-      (setq alref-autodoc--last-symbol sym)
-      (let ((doc (and sym (alref--autodoc-for-symbol sym))))
-        (when doc
-          (let ((message-log-max nil))
-            (message "%s" doc)))))))
+area. Bound to `post-command-hook' by the minor mode.
+
+Wrapped in `condition-case' so any error inside lookup never
+breaks `post-command-hook' — Emacs would otherwise disable the
+hook the first time it errors, and the user would lose every
+post-command behaviour they have stacked behind us (auto-complete,
+flyspell, etc.). On error we silently disable autodoc in this
+buffer and surface a `lwarn' once."
+  (condition-case err
+      (let ((sym (alref--symbol-at-point)))
+        (unless (equal sym alref-autodoc--last-symbol)
+          (setq alref-autodoc--last-symbol sym)
+          (let ((doc (and sym (alref--autodoc-for-symbol sym))))
+            (when doc
+              (let ((message-log-max nil))
+                (message "%s" doc))))))
+    (error
+     (remove-hook 'post-command-hook #'alref-autodoc--echo t)
+     (lwarn 'alref :warning
+            "alref-autodoc disabled in %s: %s"
+            (buffer-name) (error-message-string err)))))
 
 ;;;###autoload
 (define-minor-mode alref-autodoc-mode

@@ -36,7 +36,7 @@ DESTDIR ?=
 # the top level should carry a `## ...` description so it appears in
 # `make help`.
 
-.PHONY: help all documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS)
+.PHONY: help all build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS)
 
 help:  ## Show this message (list available targets and their purpose).
 	@awk 'BEGIN { \
@@ -75,6 +75,20 @@ documentation:  ## Rebuild every subproject's PDF documentation (org → LaTeX �
 	$(MAKE) -C clautolisp documentation
 	$(MAKE) -C autolisp-test documentation
 	$(MAKE) -C autolisp-front-end documentation
+
+build:  ## Build every subproject's artefacts (executables + docs + paged derivatives) — what `install` then copies. Run this WITHOUT sudo, then `sudo make install`.
+	$(MAKE) -C autolisp-spec      build
+	$(MAKE) -C clautolisp         build
+	$(MAKE) -C autolisp-test      build
+	$(MAKE) -C autolisp-front-end build
+
+build-sbcl:  ## Strictly build SBCL images across subprojects (errors if sbcl is missing).
+	$(MAKE) -C clautolisp         build-sbcl
+	$(MAKE) -C autolisp-front-end build-sbcl
+
+build-ccl:  ## Strictly build CCL images across subprojects (errors if ccl is missing).
+	$(MAKE) -C clautolisp         build-ccl
+	$(MAKE) -C autolisp-front-end build-ccl
 
 test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpus.
 	$(MAKE) -C clautolisp test

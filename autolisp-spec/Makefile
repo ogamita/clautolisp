@@ -31,10 +31,19 @@ PREFIX ?= /opt/local
 DESTDIR ?=
 SUBPROJECT_NAME := autolisp-spec
 
-.PHONY: all documentation clean-pdf probe-autocad probe-bricscad probes \
+.PHONY: all build documentation clean-pdf probe-autocad probe-bricscad probes \
         pages html info paged install uninstall clean-build
 
 all: documentation
+
+# `build` is the repo-wide convention for "produce everything
+# `install` would ship, but without copying it anywhere". For
+# autolisp-spec that's the PDFs plus the paged derivatives (plain
+# pages, HTML manual, Info manual). Splitting build from install
+# means `sudo make install` only does file-copy — the heavy Emacs
+# batch runs and xelatex passes happen earlier under the user's
+# own UID where caches stay in $HOME.
+build: paged documentation  ## Build PDFs + paged HTML/Info derivatives (everything `install` ships).
 
 documentation: $(PDF_FILES)
 
@@ -116,7 +125,7 @@ INFO_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/info
 EMACS_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/emacs/site-lisp/$(SUBPROJECT_NAME)
 LISP_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/autolisp/site-lisp/$(SUBPROJECT_NAME)
 
-install: paged  ## Install docs (.org + .pdf + HTML), Info, alref libs, plain pages into $$PREFIX.
+install: build  ## Install docs (.org + .pdf + HTML), Info, alref libs, plain pages into $$PREFIX (run `make build` first so this can be sudo'd cleanly).
 	install -d $(DOC_INSTALL_DIR)/html
 	install -d $(DATA_INSTALL_DIR)/pages
 	install -d $(INFO_INSTALL_DIR)
@@ -154,7 +163,7 @@ uninstall:  ## Remove the spec install from $$PREFIX.
 
 %.pdf: %.org
 	$(EMACS) --batch \
-		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
+		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
 
