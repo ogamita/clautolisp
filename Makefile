@@ -24,6 +24,8 @@ help:  ## Show this message (list available targets and their purpose).
 	    printf "Each subproject has its own Makefile with finer-grained\n"; \
 	    printf "targets; see e.g. `make -C clautolisp help` once those\n"; \
 	    printf "Makefiles grow their own help target.\n"; \
+	    printf "\nFor the test×dialect×platform matrix forwarded at the root,\n"; \
+	    printf "see `make help-test-matrix`.\n"; \
 	  }' $(MAKEFILE_LIST)
 
 all: documentation  ## Default target: build full documentation across all subprojects.
@@ -56,6 +58,77 @@ clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources
 	$(MAKE) -C clautolisp clean-pdf
 	$(MAKE) -C autolisp-test clean-pdf
 	$(MAKE) -C autolisp-front-end clean-pdf
+
+# ---------------------------------------------------------------------
+# Forwarded fine-grained test targets (see issues/closed/test-targets.issue).
+#
+# Each subproject Makefile owns its own grid of test×implementation×
+# dialect×platform targets. The root re-exposes every one of those
+# names as a passthrough so testers can write `make <target>` from
+# the repo root without having to remember which subproject owns
+# each combo. The lists below are the source of truth — adding a
+# new target in a subproject Makefile requires a one-line append
+# here to surface it at the root.
+#
+# `make help-test-matrix` prints the full forwarded inventory grouped
+# by subproject.
+
+# autolisp-test owns the harness-driven matrix: 4 dialects × 2 Lisp
+# implementations against clautolisp, plus 6 dialect-on-CAD targets
+# via alfe (BricsCAD on macOS/Windows, AutoCAD on Windows), plus
+# the matching aggregates.
+AUTOLISP_TEST_FORWARDED := \
+  test-clautolisp-sbcl-strict     test-clautolisp-sbcl-clautolisp \
+  test-clautolisp-sbcl-bricscad   test-clautolisp-sbcl-autocad \
+  test-clautolisp-ccl-strict      test-clautolisp-ccl-clautolisp \
+  test-clautolisp-ccl-bricscad    test-clautolisp-ccl-autocad \
+  test-clautolisp-sbcl-all        test-clautolisp-ccl-all        test-clautolisp-all \
+  test-bricscad-macos             test-bricscad-macos-strict     test-bricscad-macos-bricscad \
+  test-bricscad-windows           test-bricscad-windows-strict   test-bricscad-windows-bricscad \
+  test-autocad-windows            test-autocad-windows-strict    test-autocad-windows-autocad
+
+# clautolisp owns the run-file-compat per-platform splits.
+CLAUTOLISP_FORWARDED := \
+  run-file-compat-bricscad-macos \
+  run-file-compat-bricscad-windows \
+  run-file-compat-autocad-windows
+
+# autolisp-front-end owns the built-alfe per-backend smoke tests.
+ALFE_FORWARDED := \
+  test-alfe-sbcl-clautolisp        test-alfe-ccl-clautolisp \
+  test-alfe-sbcl-bricscad-macos    test-alfe-ccl-bricscad-macos \
+  test-alfe-sbcl-bricscad-windows  test-alfe-ccl-bricscad-windows \
+  test-alfe-sbcl-autocad-windows   test-alfe-ccl-autocad-windows
+
+.PHONY: $(AUTOLISP_TEST_FORWARDED) $(CLAUTOLISP_FORWARDED) $(ALFE_FORWARDED) \
+        help-test-matrix
+
+# Forwarding macro. $(call forward-target-to,TARGET-NAME,SUBPROJECT)
+# generates a one-line rule that delegates to that subproject's
+# Makefile. The $$@ inside the recipe defers expansion until rule
+# evaluation so the right target name lands in the recursive
+# $(MAKE) call.
+define forward-target-to
+$(1):
+	$$(MAKE) -C $(2) $$@
+endef
+
+$(foreach t,$(AUTOLISP_TEST_FORWARDED), \
+  $(eval $(call forward-target-to,$(t),autolisp-test)))
+$(foreach t,$(CLAUTOLISP_FORWARDED), \
+  $(eval $(call forward-target-to,$(t),clautolisp)))
+$(foreach t,$(ALFE_FORWARDED), \
+  $(eval $(call forward-target-to,$(t),autolisp-front-end)))
+
+help-test-matrix:  ## List every fine-grained test target the root forwards.
+	@printf "Forwarded test targets (run from the repo root via 'make <target>'):\n\n"
+	@printf "  via autolisp-test/Makefile:\n"
+	@for t in $(AUTOLISP_TEST_FORWARDED); do printf "    %s\n" "$$t"; done
+	@printf "\n  via clautolisp/Makefile:\n"
+	@for t in $(CLAUTOLISP_FORWARDED); do printf "    %s\n" "$$t"; done
+	@printf "\n  via autolisp-front-end/Makefile:\n"
+	@for t in $(ALFE_FORWARDED); do printf "    %s\n" "$$t"; done
+	@printf "\nWrong-platform targets are no-ops (print [skip] and exit 0).\n"
 
 docker-build-clautolisp-ci:  ## Build the GitLab-CI Docker image used to run clautolisp tests.
 	docker build \
