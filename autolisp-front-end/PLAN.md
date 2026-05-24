@@ -52,6 +52,18 @@ on top of the `clautolisp/autolisp-*` modules, producing a single
   the file-IPC channel and waits for the runtime's `DONE N` reply.
   Real-CAD smoke tests are deferred behind `BRICSCAD_SMOKE=1` /
   `AUTOCAD_SMOKE=1` env opts.
+- Phase 4 (alfe-conformance) has landed: declarative `.sexp`
+  scenarios under `tests/scenarios/{cli,actions,encoding,
+  clautolisp,bricscad,autocad}/` are walked by the
+  `alfe.conformance` runner, which drives each through alfe's
+  in-process CLI with captured stdout/stderr and compares to the
+  scenario's expectations. 26 scenarios cover every alfe CLI
+  option in the spec (asserted by `scripts/check-spec-coverage.lisp`,
+  which scans the spec for option names and refuses to exit zero
+  on any uncovered one). Standalone runner exposed via
+  `make conformance`; coverage gate exposed via
+  `make check-spec-coverage`. Parity tests against the legacy bash
+  wrapper are gated behind `$AUTOLISP_LEGACY`; not exercised in CI.
 - Specification copied from upstream `autolisp-script` and updated
   to reflect the alfe ↔ clautolisp ↔ CAD architecture and the
   file-IPC rationale for the CAD backends.
