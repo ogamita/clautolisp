@@ -69,15 +69,19 @@ jobs:
       - name: Install Quicklisp (cache miss)
         if: steps.quicklisp-cache.outputs.cache-hit != 'true'
         run: |
-          # Bootstrap quicklisp into ~/quicklisp the same way every
-          # contributor does locally. The --quit at the end is what
-          # makes (ql:add-to-init-file) non-interactive.
+          # Bootstrap quicklisp into ~/quicklisp. We do NOT call
+          # (ql:add-to-init-file) — that helper modifies ~/.sbclrc
+          # to auto-load quicklisp on every interactive SBCL launch,
+          # which is meaningless in CI (every Makefile target passes
+          # --no-userinit and loads ~/quicklisp/setup.lisp explicitly).
+          # Skipping it also dodges a Quicklisp-API churn: the
+          # 2026-01-01 dist relocated the function and FIND-SYMBOL
+          # of an out-of-date package name returned NIL, which then
+          # got FUNCALLed and crashed with "function NIL undefined".
           curl -sSO https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive --no-userinit \
                --load quicklisp.lisp \
-               --eval '(quicklisp-quickstart:install)' \
-               --eval '(let ((ql:*quickload-prompt* nil))
-                         (funcall (find-symbol "ADD-TO-INIT-FILE" :ql-util) t))'
+               --eval '(quicklisp-quickstart:install)'
           rm -f quicklisp.lisp
 
       - name: Pre-warm Quicklisp dependencies
