@@ -3,12 +3,40 @@ CLAUTOLISP_CI_IMAGE ?= registry.gitlab.com/ogamita/clautolisp/clautolisp-ci:late
 CLAUTOLISP_CI_DOCKERFILE ?= clautolisp/docker/Dockerfile
 CLAUTOLISP_CI_PLATFORM ?= linux/amd64
 
+# Install destination. Override on the command line:
+#   make install PREFIX=/usr/local
+#   make install DESTDIR=/staging PREFIX=/opt/local      # packager use
+#
+# Repo-wide install convention (every subproject's Makefile honours
+# the same layout):
+#
+#   $(DESTDIR)$(PREFIX)/bin/                         user-facing executables
+#                                                    (clautolisp-{sbcl,ccl},
+#                                                     read-autolisp-{sbcl,ccl},
+#                                                     clautolisp-gui-qt, alfe-{sbcl,ccl})
+#   $(DESTDIR)$(PREFIX)/libexec/<subproject>/        support executables
+#                                                    (run-file-compat,
+#                                                     autolisp-test harness, …)
+#   $(DESTDIR)$(PREFIX)/share/doc/<subproject>/      .org + .pdf docs + HTML
+#                                                    + man pages (when present)
+#   $(DESTDIR)$(PREFIX)/share/info/                  GNU Info manuals
+#   $(DESTDIR)$(PREFIX)/share/<subproject>/          data files
+#                                                    (autolisp-spec pages/)
+#   $(DESTDIR)$(PREFIX)/share/emacs/site-lisp/<…>/   Emacs libraries
+#   $(DESTDIR)$(PREFIX)/share/autolisp/site-lisp/<…>/  AutoLISP libraries
+#
+# /opt/local matches the MacPorts hierarchy; /usr/local and
+# /usr are the common alternatives the override accepts.
+
+PREFIX ?= /opt/local
+DESTDIR ?=
+
 # Help text comes from `## ` comments after each target name. Keep
 # new targets self-documenting: any target whose recipe matters at
 # the top level should carry a `## ...` description so it appears in
 # `make help`.
 
-.PHONY: help all documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci $(SUBPROJECTS)
+.PHONY: help all documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS)
 
 help:  ## Show this message (list available targets and their purpose).
 	@awk 'BEGIN { \
@@ -58,6 +86,18 @@ clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources
 	$(MAKE) -C clautolisp clean-pdf
 	$(MAKE) -C autolisp-test clean-pdf
 	$(MAKE) -C autolisp-front-end clean-pdf
+
+install:  ## Install every subproject's built artefacts into $$PREFIX (default /opt/local).
+	$(MAKE) -C autolisp-spec      install PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
+	$(MAKE) -C clautolisp         install PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
+	$(MAKE) -C autolisp-test      install PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
+	$(MAKE) -C autolisp-front-end install PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
+
+uninstall:  ## Remove every subproject's install from $$PREFIX.
+	$(MAKE) -C autolisp-spec      uninstall PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
+	$(MAKE) -C clautolisp         uninstall PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
+	$(MAKE) -C autolisp-test      uninstall PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
+	$(MAKE) -C autolisp-front-end uninstall PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
 
 # ---------------------------------------------------------------------
 # Forwarded fine-grained test targets (see issues/closed/test-targets.issue).

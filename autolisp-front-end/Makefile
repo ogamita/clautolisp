@@ -23,6 +23,14 @@ ALFE_GENERATE := $(ALFE_TOOL_DIR)/generate-alfe.lisp
 # the parent hasn't set XDG_CACHE_HOME.
 XDG_CACHE_HOME ?= $(CLAUTOLISP_ROOT)/.cache
 
+# Install destination. Override on the command line:
+#   make install PREFIX=/usr/local DESTDIR=/staging
+# Default /opt/local matches the MacPorts hierarchy and the
+# repo-wide convention documented in the root Makefile.
+PREFIX ?= /opt/local
+DESTDIR ?=
+SUBPROJECT_NAME := autolisp-front-end
+
 # Host OS detection — used by the per-platform alfe-backend test
 # targets below (test-alfe-{sbcl,ccl}-{bricscad,autocad}-*). Wrong-
 # platform targets call require-os-* which prints a [skip] line and
@@ -224,3 +232,45 @@ $(ALFE_SBCL):
 
 $(ALFE_CCL):
 	$(MAKE) build-alfe-ccl
+
+# ---------------------------------------------------------------------
+# Install / uninstall.
+#
+# Layout follows the repo-wide convention (see the root Makefile):
+#
+#   $(PREFIX)/bin/                                  alfe-sbcl, alfe-ccl
+#   $(PREFIX)/libexec/autolisp-front-end/           run-alfe-conformance
+#                                                   (shell driver — built lazily
+#                                                    via the existing make target)
+#   $(PREFIX)/share/doc/autolisp-front-end/         .org + .pdf documentation
+#
+# install ships only what's already built; missing binaries are
+# skipped with a [skip] note (so an SBCL-only host can install
+# without first building the CCL image).
+
+BIN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/bin
+LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
+DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
+
+.PHONY: install uninstall
+
+install:  ## Install built alfe binaries + docs into $$PREFIX.
+	install -d $(BIN_INSTALL_DIR)
+	install -d $(LIBEXEC_INSTALL_DIR)
+	install -d $(DOC_INSTALL_DIR)
+	@for exe in $(ALFE_SBCL) $(ALFE_CCL); do \
+	  if [ -x "$$exe" ]; then \
+	    install -m 0755 "$$exe" $(BIN_INSTALL_DIR)/ ; \
+	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/" ; \
+	  else \
+	    echo "[skip] $$exe not built (run make build-alfe-sbcl / build-alfe-ccl first)" ; \
+	  fi ; \
+	done
+	@for f in documentation/*.org documentation/*.pdf; do \
+	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
+	done
+	@echo "alfe install complete: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+
+uninstall:  ## Remove the alfe install from $$PREFIX.
+	rm -f $(BIN_INSTALL_DIR)/alfe-sbcl $(BIN_INSTALL_DIR)/alfe-ccl
+	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)

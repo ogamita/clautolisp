@@ -25,8 +25,11 @@ INFO_DIR  := $(BUILD_DIR)/info
 
 # Install destination. Override on the command line:
 #   make install PREFIX=/usr/local
-PREFIX ?= /opt
+# The default /opt/local matches the MacPorts hierarchy + the repo-
+# wide convention documented in the root Makefile's install target.
+PREFIX ?= /opt/local
 DESTDIR ?=
+SUBPROJECT_NAME := autolisp-spec
 
 .PHONY: all documentation clean-pdf probe-autocad probe-bricscad probes \
         pages html info paged install uninstall clean-build
@@ -38,13 +41,25 @@ documentation: $(PDF_FILES)
 # ---------------------------------------------------------------------
 # Paged spec build — splits the canonical org file into per-section
 # pages, then renders HTML and Info from the same split source.
+#
+# The convenience names (pages / html / info) are .PHONY aliases for
+# the real-file stamp targets below. The stamps are what `paged`
+# (and the install target) actually depend on, so a second
+# `make install` against an up-to-date tree is near-instant —
+# stale-checking is by file mtime, not by always re-running.
 
-pages:  ## Emit one .txt per * chapter and ** subsection under build/pages/.
+pages: $(PAGES_DIR)/.stamp  ## Emit one .txt per * chapter and ** subsection under build/pages/.
+
+$(PAGES_DIR)/.stamp: $(SPEC_ORG) scripts/build-paged-spec.el
 	$(EMACS) --batch --script scripts/build-paged-spec.el \
 		$(SPEC_ORG) $(PAGES_DIR) text
+	@touch $@
 
-html: $(BUILD_DIR)/.org-stamp
+html: $(HTML_DIR)/.stamp  ## Render every section + the index/symbol pages as HTML.
+
+$(HTML_DIR)/.stamp: $(BUILD_DIR)/.org-stamp scripts/build-paged-html.el
 	$(EMACS) --batch --script scripts/build-paged-html.el $(BUILD_DIR)
+	@touch $@
 
 info: $(INFO_DIR)/autolisp-spec.info  ## Build the .info manual from the spec.
 
@@ -78,27 +93,43 @@ clean-build:  ## Remove every paged derivative under build/.
 	rm -rf $(BUILD_DIR)
 
 # ---------------------------------------------------------------------
-# Install / uninstall the paged spec into $PREFIX/share/autolisp-spec/.
-# Sibling install paths (per the issue):
-#   $PREFIX/share/emacs/site-lisp/autolisp-spec/     — alref.el
-#   $PREFIX/share/autolisp/site-lisp/autolisp-spec/  — alref.lsp
+# Install / uninstall.
+#
+# Layout follows the repo-wide convention documented in the root
+# Makefile's install target:
+#
+#   $(PREFIX)/share/doc/autolisp-spec/           org + pdf reference docs
+#   $(PREFIX)/share/doc/autolisp-spec/html/      HTML manual (browse-able)
+#   $(PREFIX)/share/info/                        autolisp-spec.info (info dir)
+#   $(PREFIX)/share/autolisp-spec/pages/         plain-text pages (data files
+#                                                the alref libraries read)
+#   $(PREFIX)/share/emacs/site-lisp/autolisp-spec/    alref.el
+#   $(PREFIX)/share/autolisp/site-lisp/autolisp-spec/ alref.lsp
+#
+# pages/ stays under share/autolisp-spec/ rather than share/doc/
+# because both alref libraries treat it as data (open it for read,
+# parse the index, etc.), not as readable docs.
 
-DATA_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/autolisp-spec
-EMACS_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/emacs/site-lisp/autolisp-spec
-LISP_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/autolisp/site-lisp/autolisp-spec
+DOC_INSTALL_DIR   := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
+DATA_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/$(SUBPROJECT_NAME)
+INFO_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/info
+EMACS_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/emacs/site-lisp/$(SUBPROJECT_NAME)
+LISP_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/autolisp/site-lisp/$(SUBPROJECT_NAME)
 
-install: paged  ## Install pages, HTML, Info, PDFs, alref libs into $$PREFIX.
+install: paged  ## Install docs (.org + .pdf + HTML), Info, alref libs, plain pages into $$PREFIX.
+	install -d $(DOC_INSTALL_DIR)/html
 	install -d $(DATA_INSTALL_DIR)/pages
-	install -d $(DATA_INSTALL_DIR)/html
-	install -d $(DATA_INSTALL_DIR)/info
+	install -d $(INFO_INSTALL_DIR)
+	@if [ -d $(HTML_DIR)  ]; then cp -R $(HTML_DIR)/.  $(DOC_INSTALL_DIR)/html/;  fi
 	@if [ -d $(PAGES_DIR) ]; then cp -R $(PAGES_DIR)/. $(DATA_INSTALL_DIR)/pages/; fi
-	@if [ -d $(HTML_DIR)  ]; then cp -R $(HTML_DIR)/.  $(DATA_INSTALL_DIR)/html/;  fi
-	@if [ -d $(INFO_DIR)  ]; then cp -R $(INFO_DIR)/.  $(DATA_INSTALL_DIR)/info/;  fi
+	@if [ -f $(INFO_DIR)/autolisp-spec.info ]; then \
+	  install -m 0644 $(INFO_DIR)/autolisp-spec.info $(INFO_INSTALL_DIR)/; \
+	fi
 	@for f in documentation/autolisp-visual-lisp-specification-draft.org \
 	          documentation/autolisp-visual-lisp-specification-draft.pdf \
 	          documentation/autolisp-reference-notes.org \
 	          documentation/autolisp-reference-notes.pdf; do \
-	  if [ -f $$f ]; then install -m 0644 $$f $(DATA_INSTALL_DIR)/; fi; \
+	  if [ -f $$f ]; then install -m 0644 $$f $(DOC_INSTALL_DIR)/; fi; \
 	done
 	@if [ -d emacs ]; then \
 	  install -d $(EMACS_INSTALL_DIR); \
@@ -109,8 +140,10 @@ install: paged  ## Install pages, HTML, Info, PDFs, alref libs into $$PREFIX.
 	  for f in autolisp/*.lsp; do [ -f "$$f" ] && install -m 0644 "$$f" $(LISP_INSTALL_DIR)/; done; \
 	fi
 
-uninstall:  ## Remove the paged spec from $$PREFIX.
-	rm -rf $(DATA_INSTALL_DIR) $(EMACS_INSTALL_DIR) $(LISP_INSTALL_DIR)
+uninstall:  ## Remove the spec install from $$PREFIX.
+	rm -rf $(DOC_INSTALL_DIR) $(DATA_INSTALL_DIR) \
+	       $(EMACS_INSTALL_DIR) $(LISP_INSTALL_DIR)
+	rm -f $(INFO_INSTALL_DIR)/autolisp-spec.info
 
 # Runner templates must contain:
 # - __PROBE_FILE__ for the generated probe wrapper

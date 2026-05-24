@@ -74,13 +74,22 @@ single-arg-URL-taking function."
 (defun alref--default-spec-directory ()
   "Search the well-known install locations for the paged spec
 data root. Return the first existing directory, or nil if none
-match — the user will need to set `alref-spec-directory' by hand."
+match — the user will need to set `alref-spec-directory' by hand.
+
+Candidates in priority order:
+  - sibling-of-this-elisp-file via ../../autolisp-spec/, which
+    resolves under $PREFIX/share/autolisp-spec/ when alref.el is
+    installed at $PREFIX/share/emacs/site-lisp/autolisp-spec/
+  - /opt/local/share/autolisp-spec/  (MacPorts; repo default
+    PREFIX)
+  - /usr/local/share/autolisp-spec/  (Homebrew)
+  - /usr/share/autolisp-spec/        (system-wide)"
   (let ((candidates
          (list
-          (expand-file-name "../share/autolisp-spec/"
+          (expand-file-name "../../autolisp-spec/"
                             (file-name-directory
                              (or load-file-name buffer-file-name "")))
-          "/opt/share/autolisp-spec/"
+          "/opt/local/share/autolisp-spec/"
           "/usr/local/share/autolisp-spec/"
           "/usr/share/autolisp-spec/")))
     (cl-loop for dir in candidates
