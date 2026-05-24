@@ -30,23 +30,30 @@
 ;;; --- default stem lists per program -------------------------------
 
 (defparameter *default-clautolisp-stems*
-  '(("~/.clautolisp"                   nil)
-    ("~/.config/clautolisp/init"       t)
-    ("~/.autolisp"                     nil)
-    ("~/.config/autolisp/init"         t))
+  '(("~/.autolisp"                     nil)
+    ("~/.config/autolisp/init"         t)
+    ("~/.clautolisp"                   nil)
+    ("~/.config/clautolisp/init"       t))
   "Four-slot lookup list for the clautolisp binary, per
-issues/open/init-files.issue. Order is significant: earlier files
-load first, later files override.")
+issues/closed/init-files.issue. Order is significant: earlier files
+load first, later files override. The shared ~/.autolisp pair runs
+first so a defun in the program-specific ~/.clautolisp /
+~/.config/clautolisp/init pair can override it — that matches the
+conventional Unix layering (more-specific overrides less-specific).
+Within each scope, the legacy HOME slot loads before the modern
+XDG slot so the XDG path is the higher-priority override.")
 
 (defparameter *default-alfe-stems*
-  '(("~/.alfe"                         nil)
-    ("~/.config/alfe/init"             t)
-    ("~/.autolisp"                     nil)
-    ("~/.config/autolisp/init"         t))
+  '(("~/.autolisp"                     nil)
+    ("~/.config/autolisp/init"         t)
+    ("~/.alfe"                         nil)
+    ("~/.config/alfe/init"             t))
   "Four-slot lookup list for the alfe binary. Mirrors
 *DEFAULT-CLAUTOLISP-STEMS* with the program-specific stems swapped
 in; the shared autolisp stems are identical so a user maintaining
-a single ~/.autolisp file sees it loaded by both binaries.")
+a single ~/.autolisp file sees it loaded by both binaries with the
+same priority — both binaries' program-specific files override
+it.")
 
 ;;; --- home-relative path expansion ---------------------------------
 

@@ -219,11 +219,12 @@ do not."
   (is (eq t (second (nth 3 *default-alfe-stems*)))))
 
 (test default-stems-share-autolisp-slots
-  "Both default lists end with the shared ~/.autolisp +
-~/.config/autolisp/init pair so a user maintaining a single
-~/.autolisp file sees it loaded by both binaries."
-  (is (equal (subseq *default-clautolisp-stems* 2)
-             (subseq *default-alfe-stems* 2))))
+  "Both default lists START with the shared ~/.autolisp +
+~/.config/autolisp/init pair (positions 0 and 1) so a user
+maintaining a single ~/.autolisp file sees it loaded by both
+binaries before each program's specific files override."
+  (is (equal (subseq *default-clautolisp-stems* 0 2)
+             (subseq *default-alfe-stems* 0 2))))
 
 ;;; --- gating --------------------------------------------------------
 
