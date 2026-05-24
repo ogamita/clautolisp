@@ -346,7 +346,11 @@ resolved at START-ENGINE time."
   (process-info nil)
   (host         nil)
   (output-file  nil)
-  (errors-file  nil))
+  (errors-file  nil)
+  ;; User-supplied `-e ENC' string, forwarded as the subprocess
+  ;; argv's `-e ENC' so the spawned engine reads source files in
+  ;; the same encoding. NIL when the user did not pass `-e'.
+  (load-encoding nil))
 
 ;;; --- START-ENGINE: direct variant ----------------------------------
 
@@ -362,11 +366,19 @@ SHUTDOWN."
 
 (defmethod start-engine ((backend clautolisp-backend) workdir
                          &key dialect host mock-input
-                              bootstrap-phase interactive-p)
+                              bootstrap-phase interactive-p
+                              load-encoding)
   ;; INTERACTIVE-P is forwarded to start-subprocess-engine below; the
   ;; direct branch doesn't use it (the REPL is opened by EVAL-PLAN
   ;; when the action plan carries an :interactive action). MOCK-INPUT
   ;; and BOOTSTRAP-PHASE are reserved for future tickets.
+  ;;
+  ;; LOAD-ENCODING is the user's `-e ENC' string (utf-8 / iso-8859-1
+  ;; / latin-1 / windows-1252 / cp1252). The direct variant installs
+  ;; it on the runtime session so every load — including nested
+  ;; (load …) from a user init file — uses it instead of the dialect
+  ;; default. The subprocess variant forwards it as `-e ENC' to the
+  ;; spawned clautolisp-sbcl binary's CLI.
   (declare (ignore mock-input bootstrap-phase))
   (ecase (clautolisp-backend-variant backend)
     (:direct
@@ -378,6 +390,15 @@ SHUTDOWN."
                 (session-handle (evaluation-context-session context)))
            (set-runtime-session-host session-handle host-instance)
            (install-core-builtins)
+           ;; Effective default source-file encoding precedence:
+           ;;   `-e ENC' (LOAD-ENCODING) > LC_ALL/LC_CTYPE/LANG > NIL.
+           ;; NIL falls through to the dialect default at load time.
+           (let ((effective
+                   (or (and load-encoding (encoding-keyword load-encoding))
+                       (clautolisp.autolisp-runtime:locale-default-source-encoding))))
+             (when effective
+               (clautolisp.autolisp-runtime:set-default-source-encoding
+                context effective)))
            (let ((session (%make-direct-session
                            :backend backend
                            :workdir workdir
@@ -401,7 +422,8 @@ SHUTDOWN."
      (start-subprocess-engine backend workdir
                               :dialect dialect
                               :host host
-                              :interactive-p interactive-p))))
+                              :interactive-p interactive-p
+                              :load-encoding load-encoding))))
 
 ;;; --- START-ENGINE: subprocess variant ------------------------------
 
@@ -416,7 +438,8 @@ tools/clautolisp/source/main.lisp."
     (:bricscad-v26  "bricscad-v26")
     (otherwise      "strict")))
 
-(defun start-subprocess-engine (backend workdir &key dialect host interactive-p)
+(defun start-subprocess-engine (backend workdir &key dialect host interactive-p
+                                load-encoding)
   ;; The Phase 1 subprocess variant defers the actual fork to
   ;; EVAL-PLAN so we can map every action to a clautolisp-sbcl CLI
   ;; flag and run the engine *once* with the right argv (rather than
@@ -424,6 +447,9 @@ tools/clautolisp/source/main.lisp."
   ;; sentinels — that's the harder design the issue describes as
   ;; the v2 path). START-ENGINE just stashes the binary path and
   ;; the engine flags it has resolved so far.
+  ;;
+  ;; LOAD-ENCODING is stashed in the session so EVAL-PLAN below can
+  ;; forward it as `-e ENC' to the spawned clautolisp-sbcl invocation.
   (declare (ignore interactive-p))
   (let ((binary (clautolisp-backend-executable-path backend)))
     (unless (and binary (probe-file binary))
@@ -440,7 +466,8 @@ tools/clautolisp/source/main.lisp."
                     :output-file (when workdir
                                    (open-output-file workdir "output.txt"))
                     :errors-file (when workdir
-                                   (open-output-file workdir "errors.txt")))))
+                                   (open-output-file workdir "errors.txt"))
+                    :load-encoding load-encoding)))
       (session-state-set session :ready)
       session)))
 
@@ -707,6 +734,13 @@ subprocess variant."
                   "--quiet"
                   "--dialect" (dialect-cli-name dialect)
                   "--host"    host-name)
+            ;; Forward the user's `-e ENC' so the spawned
+            ;; clautolisp-sbcl reads source files in the same
+            ;; encoding the user asked alfe for. Placed BEFORE the
+            ;; action flags so it's in effect from the very first
+            ;; -l/-x in the queue.
+            (let ((enc (clautolisp-subprocess-session-load-encoding session)))
+              (when enc (list "-e" enc)))
             (loop for action in plan
                   for flags = (action-to-cli-flags action)
                   when flags append flags))))

@@ -1,0 +1,19 @@
+As a developer, I want make to issue nice concise output for each target, instead of dumping unwieldly commands.
+
+eg. Instead of dumping:
+
+emacs --batch \
+	    --eval "(setq org-confirm-babel-evaluate nil)" \
+	    --eval "(setq org-export-with-broken-links t)" \
+	    --eval "(setq org-latex-pdf-process '(\"xelatex -interaction=nonstopmode -output-directory=%o %f\" \"xelatex -interaction=nonstopmode -output-directory=%o %f\"))" \
+	    "documentation/alfe--specifications.org" \
+	    --funcall org-latex-export-to-pdf
+
+it could display:
+
+[emacs producing pdf from documentation/alfe--specifications.org]
+
+
+A DEBUG flag would make make display the whole commands again.
+
+Low priority, we'll do that at the end, when everything is mostly debugged and we don't need the whole commands.

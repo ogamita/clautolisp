@@ -55,6 +55,7 @@ the CADs' AutoLISP. On the =clautolisp= side, =alfe= uses the APIs
 directly and never touches the file protocol; the workdir exists for
 symmetry (logs, =--dry-run=) but no communication passes through it.
 
+
 ** Unified execution model
 
 Regardless of the backend, =alfe= exposes the same sequence:
@@ -430,11 +431,11 @@ installation.
 
 ** Supported matrix
 
-| Backend      | macOS                                            | Linux             | MS-Windows                                                       |
-|--------------+--------------------------------------------------+-------------------+------------------------------------------------------------------|
-| =bricscad=   | =batch= (default); =automation= via AppleScript  | Not supported¹    | =automation= via COM (default); =batch= via =-B run.scr=         |
-| =autocad=    | Not supported²                                   | Not supported²    | =automation= via COM (default); =batch= via =accoreconsole.exe=  |
-| =clautolisp= | Always supported                                 | Always supported  | Always supported                                                 |
+| Backend      | macOS                                  | Linux            | MS-Windows                                                      |
+|--------------+----------------------------------------+------------------+-----------------------------------------------------------------|
+| =bricscad=   | =batch= ; =automation= via AppleScript | Not supported¹   | =automation= via COM (default); =batch= via =-B run.scr=        |
+| =autocad=    | Not supported²                         | Not supported²   | =automation= via COM (default); =batch= via =accoreconsole.exe= |
+| =clautolisp= | (default) Always supported             | Always supported | Always supported                                                |
 
 ¹ Bricsys distributes BricsCAD for Linux, but the historical wrapper
 did not support it. The new implementation must reuse the same
@@ -1341,8 +1342,48 @@ The =alfe= binary can:
 ** Encodings
 
 Full support via =babel=: every coding and every line ending. =-e=
-sets =*load-encoding*= for =(load …)=; =-E= sets the I/O encoding.
-No dependency on =iconv= or =LC_*= beyond the default.
+sets the session-wide source-file encoding (applied to every load
+in the session, including nested =(load …)= calls a user init file
+makes); =-E= sets the I/O encoding.
+
+*** Default source-file encoding — precedence
+
+When the caller does not pass =-e ENC=, =alfe= (and the
+=clautolisp= backend it drives) resolves the default encoding from
+the POSIX locale environment in the standard order:
+
+1. =LC_ALL=   — global locale override.
+2. =LC_CTYPE= — character-classification + encoding category.
+3. =LANG=     — catch-all default.
+
+The encoding suffix of the first non-empty value wins
+(=en_US.UTF-8= → =:utf-8=, =fr_FR.ISO-8859-1@euro= →
+=:iso-8859-1=). A bare value with no =.ENCODING= suffix (=C=,
+=POSIX=, =en_US=) yields no override, and the resolution falls
+through to the dialect default (see =clautolisp= spec section
+/Encoding and line endings/: =:iso-8859-1= for =strict=,
+=:utf-8= for =autocad-2026= and =bricscad-v26=).
+
+The OTHER =LC_*= categories (=LC_COLLATE=, =LC_MESSAGES=,
+=LC_NUMERIC=, =LC_TIME=, …) are intentionally *not* consulted
+for source-file encoding. They govern string ordering, message
+translation, decimal separators, and date formats — using them
+for byte-stream interpretation would be misuse of the POSIX
+standard.
+
+The resulting full precedence is, strongest first:
+
+| Step | Source                                  | Notes                                     |
+|------+-----------------------------------------+-------------------------------------------|
+|    1 | =-e ENC= on the alfe command line       | Explicit user intent.                     |
+|    2 | =LC_ALL= / =LC_CTYPE= / =LANG=          | POSIX host hint.                          |
+|    3 | Dialect default                         | =strict=→latin-1, autocad/bricscad→utf-8. |
+
+The matching slot lives on the runtime session, so it applies to
+every load in the session including the nested =(load …)= calls
+a user init file makes. The =subprocess= backend variant inherits
+the parent =alfe='s environment, so the spawned =clautolisp-sbcl=
+performs its own equivalent probe and reaches the same conclusion.
 
 ** macOS, Linux, MS-Windows
 
@@ -1726,6 +1767,27 @@ when one exists.
 | =AUTOLISP_NO_INIT=      | =--no-init=/=-norc= | Equivalent to =--no-init= for both alfe and clautolisp. |
 | =ALFE_NO_INIT=          | =--no-init=/=-norc= | Equivalent to =--no-init= for alfe only.   |
 | =CLAUTOLISP_NO_INIT=    | —                 | Equivalent to =--no-init= for clautolisp only. |
+
+** Colour output
+
+| Variable                  | CLI           | Effect                                                                |
+|---------------------------+---------------+-----------------------------------------------------------------------|
+| =NO_COLOR=                | =--no-color=  | Disable ANSI colour in AutoLISP value output, per https://no-color.org. |
+| =CLAUTOLISP_BACKGROUND=   | —             | Force the luminance probe to =dark= or =light= without probing.       |
+| =COLORFGBG=               | —             | Consumed by the rxvt-style cascade (=fg;bg= palette indices).         |
+| =CLAUTOLISP_PROBE_OSC11=  | —             | Opt-in to the active OSC 11 probe of =/dev/tty=. Off by default — the helper subprocess can stop on SIGTTOU on some hosts (notably macOS arm64) and hang startup. |
+| =CLAUTOLISP_SYMBOL_FOREGROUND=NAME= | — | Explicit foreground for printed AutoLISP symbols. Names: =black=/=red=/=green=/=yellow=/=blue=/=magenta=/=cyan=/=white= plus their =bright-= variants (=bright-black= is also =grey=/=gray=). Case- and whitespace-insensitive; =default=/=none=/=off= leaves the axis bare. Wins over the luminance probe. |
+| =CLAUTOLISP_SYMBOL_BACKGROUND=NAME= | — | Background sibling of =CLAUTOLISP_SYMBOL_FOREGROUND=. Either or both may be set independently — set just one to override a single axis. |
+
+The =--no-color= flag short-circuits the probe entirely. When
+neither =--no-color= nor =$NO_COLOR= is set, alfe binds
+=clautolisp.autolisp-runtime:*color-output*= for the duration of
+the run so the in-process clautolisp backend's printer emits the
+selected accent (yellow on dark, blue on light, defaulting to
+yellow on the dark fallback when no cascade rung resolves). For
+subprocess backends, alfe additionally exports =NO_COLOR=1= to
+the child environment when its own policy is off, so the child's
+runtime probe never disagrees with the parent.
 
 * User init files
 

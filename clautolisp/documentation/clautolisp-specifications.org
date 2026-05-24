@@ -184,6 +184,75 @@ turns verbosity off; ~-q~ followed by ~-v~ leaves it on. Last
 occurrence wins. ~-d~ subsumes verbose-mode output regardless of
 order.
 
+** Colour output
+- ~--no-color~ ::
+  Disable ANSI colour escapes in AutoLISP value output. Without it,
+  the CLI probes the controlling terminal at startup and chooses a
+  contrasting accent for printed AutoLISP symbols (yellow on dark
+  backgrounds, blue on light). Colour is unconditionally off when
+  standard output is not a terminal (pipe, redirection, captured
+  by a test harness), so the flag is only needed for the rare case
+  where a user wants to suppress colour on an interactive terminal
+  without exporting an environment variable.
+- ~$NO_COLOR~ ::
+  Set to any non-empty value to disable colour, per
+  https://no-color.org. Equivalent to passing ~--no-color~ and
+  honoured by both the CLI policy and the runtime's PRINT-OBJECT
+  method for AutoLISP symbols.
+- ~$CLAUTOLISP_BACKGROUND=dark|light~ ::
+  Explicit override for the luminance probe. Useful when the
+  cascade is unreliable (older terminals, exotic multiplexers,
+  recent kernel SIGTTOU policy) and the user knows whether their
+  background is dark or light.
+- ~$CLAUTOLISP_PROBE_OSC11~ ::
+  Opt-in to the active OSC 11 query of ~/dev/tty~. Off by default
+  because the probe spawns a /bin/sh + stty + dd pipeline; on
+  platforms / process-group configurations where the child receives
+  SIGTTOU and gets STOPPED, the parent's WAIT would block
+  indefinitely (observed on macOS arm64). Set this variable to any
+  non-empty value to enable the probe — at your own risk; users on
+  well-behaved hosts (most Linux desktops, modern macOS Terminal /
+  iTerm2 launched from a normal shell) see no regressions.
+- ~$CLAUTOLISP_SYMBOL_FOREGROUND=NAME~, ~$CLAUTOLISP_SYMBOL_BACKGROUND=NAME~ ::
+  Explicit per-axis colour for the AutoLISP-symbol accent the
+  PRINT-OBJECT method emits. Either or both may be set; an unset
+  (or empty / =default= / =none= / =off=) value leaves that SGR
+  axis bare so a user who only wants to override the background
+  doesn't have to spell out the foreground (or vice versa). Accepted
+  names (case- and whitespace-insensitive): =black=, =red=, =green=,
+  =yellow=, =blue=, =magenta=, =cyan=, =white=, plus their
+  =bright-= prefixed variants (=bright-black= is also spelled
+  =grey= / =gray=). Unknown names silently drop the axis. Useful
+  when ~$CLAUTOLISP_PROBE_OSC11~ is off (or unset) and the user
+  wants a deterministic look without depending on the luminance
+  probe — and they win over the probe even when it is on, so an
+  explicit setting always takes effect.
+
+The luminance probe cascade is, cheapest first: explicit
+~$CLAUTOLISP_BACKGROUND~, then ~$COLORFGBG~ (rxvt convention),
+then — only when ~$CLAUTOLISP_PROBE_OSC11~ is set — an OSC 11
+query of ~/dev/tty~ with tmux / screen passthrough. When all
+rungs come back empty the CLI defaults to dark (yellow). The
+query is spawned through ~/bin/sh~ so each platform's
+~stty~ / ~dd~ handles the raw-mode dance, and the whole pipeline
+runs once per CLI invocation with a 150 ms ~stty time~ guard
+— but the guard is best-effort; if your terminal stops the
+helper with SIGTTOU you will need to clear the env var.
+
+The full policy order, evaluated once at CLI startup and bound
+for the duration of the run:
+
+  1. ~--no-color~ or ~$NO_COLOR~ — colour off, regardless of
+     anything else.
+  2. Output stream is not a tty (pipe / redirect) — colour off,
+     so captured output stays plain.
+  3. ~$CLAUTOLISP_SYMBOL_FOREGROUND~ /
+     ~$CLAUTOLISP_SYMBOL_BACKGROUND~ — explicit per-axis user
+     choice, wins over the luminance probe.
+  4. Luminance probe (when ~$CLAUTOLISP_PROBE_OSC11~ is set) —
+     ~:LIGHT~ ⇒ blue foreground, anything else ⇒ yellow.
+  5. Fallback yellow (dark default).
+
 ** Informational
 - ~-V~, ~--version~ ::
   Print the version string on standard output and exit ~0~.
@@ -234,6 +303,43 @@ boundary by reader options (see [[*Encoding and line endings]]).
   verbatim from the argument vector and treated as already decoded
   under the host shell's encoding.
 - REPL input is decoded under the host's standard-input encoding.
+
+** Default source-file encoding — precedence
+~clautolisp~ resolves the default encoding for source files in the
+following order, strongest first. Each step is applied only when the
+previous one yielded NIL:
+
+1. The reader-option override passed by a caller into
+   ~autolisp-load-file-in-context~ (only used by embedders; the CLI
+   itself does not exercise this path).
+2. ~-e ENC~ on the command line. Accepts ~utf-8~, ~iso-8859-1~,
+   ~latin-1~ / ~latin1~, ~windows-1252~ / ~cp1252~, ~ascii~. Any
+   other value is passed through to the underlying Lisp's ~open~ as
+   an unscrubbed keyword.
+3. The POSIX locale environment, in POSIX order: ~LC_ALL~ then
+   ~LC_CTYPE~ then ~LANG~. The encoding suffix of the first non-empty
+   value is used (~en_US.UTF-8~ → ~:utf-8~, ~fr_FR.ISO-8859-1@euro~ →
+   ~:iso-8859-1~). A bare value with no ~.ENCODING~ suffix (~C~,
+   ~POSIX~, ~en_US~) yields NIL — no override.
+4. The dialect default (see [[*Dialects]]):
+   - ~strict~        → ~iso-8859-1~ (1-1 byte coding; never errors on
+                                     legacy Latin-1 / Windows-1252
+                                     source).
+   - ~autocad-2026~  → ~utf-8~ (matches AutoCAD 2025+ default).
+   - ~bricscad-v26~  → ~utf-8~ (matches BricsCAD V26 default).
+
+Crucially: the override is installed on the *session* before any
+load runs, so it applies to /every/ load in the session — including
+the nested ~(load …)~ calls a user init file makes.
+
+The OTHER ~LC_*~ categories (~LC_COLLATE~, ~LC_MESSAGES~,
+~LC_NUMERIC~, ~LC_TIME~, …) are intentionally *not* consulted for
+source-file encoding. They govern string ordering, message
+translation, decimal separators, and date formats — using them for
+byte-stream interpretation would be misuse of the POSIX standard.
+If ~clautolisp~ ever localises error messages or honours decimal
+separators by locale, /those/ features will consult their own
+matching ~LC_*~ category.
 
 * Exit Codes
 ~clautolisp~ exits with one of the following statuses:
@@ -454,6 +560,10 @@ binary are written under
 - ~user-manual.org~ — narrative end-user manual for the same binary,
   including REPL examples, banner format, and the clautolisp
   extensions documentation.
+- ~terminal-color-design.org~ — design rationale for the colour-
+  output policy: why the OSC 11 probe is opt-in, how the cl-charms
+  migration is planned, and what the Windows portability story
+  looks like.
 - ~implementation-roadmap.org~ — forward-looking architecture plan
   (Host Abstraction Layer, MockHost / GuiHost / LiveHost, per-phase
   decomposition).

@@ -1,0 +1,36 @@
+Some bugs:
+
+-e utf-8 doesn't seem to be efficient with alfe, it reads
+ /opt/local/share/autolisp/site-lisp/autolisp-spec/alref.lsp in
+ iso-8859-1 instead of utf-8 in alfe, and it's rejected in clautolisp.
+
+alref-apropos formats the variables incorrectly: if the symbol is unbound, it's not a Function.
+Also, if the symbol is visible by alref-apropos, it's not really inexistant as a variable.
+autolisp conflates nil and unbound but this is not correct in absolute.
+
+|                    | state                   | displayed as                   |                                  |
+|--------------------+-------------------------+--------------------------------+----------------------------------|
+| symbol present     | unbound                 | <symbol-name> Variable NIL     | (alref-apropos "<symbol-name>")  |
+| symbol present     | bound to a non-function | <symbol-name> Variable <value> |                                  |
+| symbol present     | bound to a function     | <symbol-name> Function         |                                  |
+|--------------------+-------------------------+--------------------------------+----------------------------------|
+| symbol not-present | N/A                     | <symbol-name> Inexistant       | (alref-describe "<symbol-name>") |
+
+apropos doesn't display non-present symbols, but if we use
+(alref-describe "foo") we can designate symbols that don't
+exist. describe will just say symbol doesn't exist or no such symbol.
+
+
+17:24[pjb@thalassa org.xquartz:0 clautolisp 103Gi]$ for c in alfe clautolisp ; do ${c}-sbcl -e utf-8 -x '(progn (princ "Hello World!") (terpri))' -x '(alref-apropos "CAR")' ; done
+
+========================================================================
+                   Welcome to AutoLISP                                  
+========================================================================
+alref.lsp loaded. (alref-set-root "â¦") to point at the install root.
+Hello World!
+CAR	Function	[bound]
+MAPCAR	Function	[bound]
+ACET-STR-ESC-WILDCARDS	Function	[unbound]
+3
+clautolisp: Unknown option "-e".
+

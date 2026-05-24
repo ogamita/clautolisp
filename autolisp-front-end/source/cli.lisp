@@ -90,6 +90,7 @@
            #:options-version-p
            #:options-dry-run-p
            #:options-no-init-p
+           #:options-no-color-p
            #:options-keep-workdir-p
            #:options-main
            #:options-positional
@@ -133,6 +134,12 @@ calls against the backend protocol."
   ;; (~/.alfe / ~/.autolisp / ~/.config/{alfe,autolisp}/init).
   ;; Honoured equivalently via $AUTOLISP_NO_INIT and $ALFE_NO_INIT.
   (no-init-p        nil)
+  ;; --no-color: disable ANSI colour in AutoLISP value output for
+  ;; both the in-process clautolisp backend (via *COLOR-OUTPUT*)
+  ;; and any subprocess backend (via $NO_COLOR in the child env).
+  ;; The runtime's own RESOLVE-COLOR-POLICY also honours $NO_COLOR
+  ;; directly, so this flag is the per-invocation override.
+  (no-color-p       nil)
   ;; --keep-workdir / $AUTOLISP_KEEP_WORKDIR: keep the engine
   ;; workdir at end of run instead of deleting it. Was previously
   ;; mis-wired off NO-INIT-P; now lives in its own slot per the
@@ -246,6 +253,11 @@ Bootstrap and runtime:
   --no-init, -norc       Skip user init files (~/.alfe{,rc}, ~/.autolisp{,rc},
                          ~/.config/alfe/init, ~/.config/autolisp/init).
                          Mirrors $AUTOLISP_NO_INIT and $ALFE_NO_INIT.
+  --no-color             Disable ANSI colour in AutoLISP value output. Honoured
+                         equivalently via $NO_COLOR (https://no-color.org).
+                         Without it, the runtime probes the terminal background
+                         and picks a contrasting accent (yellow on dark,
+                         blue on light).
   --keep-workdir         Keep the engine workdir at end of run (do not delete).
                          Mirrors $AUTOLISP_KEEP_WORKDIR.
   --dry-run              Print the resolved action plan and exit 0.
@@ -527,6 +539,8 @@ when required. Unknown options signal CLI-USAGE-ERROR."
                ((or (string= arg "--no-init")
                     (string= arg "-norc"))
                 (setf (cli-options-no-init-p options) t))
+               ((string= arg "--no-color")
+                (setf (cli-options-no-color-p options) t))
                ((string= arg "--keep-workdir")
                 (setf (cli-options-keep-workdir-p options) t))
                ;; unknown long option
@@ -635,15 +649,27 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
         (return-from resolve-backend
           (if detect-p (detect backend) backend))))
     ;; Auto: try each registered backend in order.
-    (dolist (key (list-backends))
-      (let ((backend (find-backend key)))
-        (cond
-          (detect-p
-           (handler-case
-               (return-from resolve-backend (detect backend))
-             (backend-not-available () nil)))
-          (t
-           (return-from resolve-backend backend)))))
+    ;;
+    ;; :echo is a test-only backend whose DETECT method always
+    ;; succeeds — left visible in the auto-detect list it would
+    ;; win every default resolution and the user-visible `alfe`
+    ;; without flags would just print "loaded …" instead of
+    ;; actually loading. We therefore skip :echo when any real
+    ;; backend is registered, and only fall back to it when the
+    ;; registry contains nothing else (the FiveAM test image
+    ;; relies on this: it rebinds *backends* to an echo-only map
+    ;; and expects the auto-resolver to pick echo).
+    (let* ((all (list-backends))
+           (auto-candidates (or (remove :echo all) all)))
+      (dolist (key auto-candidates)
+        (let ((backend (find-backend key)))
+          (cond
+            (detect-p
+             (handler-case
+                 (return-from resolve-backend (detect backend))
+               (backend-not-available () nil)))
+            (t
+             (return-from resolve-backend backend))))))
     (error 'backend-not-available
            :message "No backend detected. Set --clautolisp explicitly or install a supported CAD.")))
 
@@ -654,22 +680,46 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
 touch the filesystem.
 
 The CLI-supplied actions (-l / -x / --main / positional) run in
-command-line order; a synthetic :quit is appended when neither
---interactive nor a user :quit was requested, so backends see a
-uniform 'queue ends with quit' shape.
+command-line order. A synthetic terminator is appended depending
+on what the user expressed:
+
+  * The user explicitly requested -i / :interactive → no terminator;
+    the backend will hand control to its REPL once the queue drains.
+  * The user explicitly requested --quit / :quit → no terminator;
+    their :quit already terminates the queue.
+  * The user supplied content actions (-l / -x / --main / positional)
+    but neither -i nor --quit → append :quit so the backend exits
+    cleanly after the last action (batch mode, current behaviour).
+  * The user supplied no content actions at all (e.g. plain `alfe')
+    → append :interactive. Per command-line-option-ammendment.issue,
+    `alfe' alone drops into the REPL the same way `clautolisp' does,
+    because the init-file loads in EFFECTIVE-PLAN are machinery,
+    not user intent.
 
 This function is a pure transformation of OPTIONS; tests can
 inspect it without worrying about user init files on the test
 host. The init-file prepending lives in EFFECTIVE-PLAN below — it
 walks the filesystem, so only the live run path + the dry-run
 renderer go through it."
-  (let ((actions (copy-list (cli-options-actions options))))
-    (unless (or (cli-options-interactive-p options)
-                (cli-options-quit-p options)
-                (some (lambda (a) (eq (action-kind a) :interactive)) actions)
-                (some (lambda (a) (eq (action-kind a) :quit)) actions))
-      (setf actions (append actions (list (action-quit)))))
-    actions))
+  (let* ((actions (copy-list (cli-options-actions options)))
+         (has-content
+           (some (lambda (a) (member (action-kind a) '(:load :eval :main)))
+                 actions))
+         (has-interactive
+           (or (cli-options-interactive-p options)
+               (some (lambda (a) (eq (action-kind a) :interactive)) actions)))
+         (has-quit
+           (or (cli-options-quit-p options)
+               (some (lambda (a) (eq (action-kind a) :quit)) actions))))
+    (cond
+      ;; User explicitly asked for REPL or quit — keep queue as-is.
+      ((or has-interactive has-quit) actions)
+      ;; User has content actions but neither -i nor --quit —
+      ;; append :quit so the backend exits after the last action
+      ;; (batch mode).
+      (has-content (append actions (list (action-quit))))
+      ;; No user actions of any kind — implicit -i: drop into REPL.
+      (t (append actions (list (action-interactive)))))))
 
 (defun resolve-init-file-actions (options)
   "Walk the alfe init-file stems and return a list of (:load PATH)
@@ -741,21 +791,41 @@ The handler chain matches alfe-cli.issue's exit-code table:
            0)
           (t
            (set-level (cli-options-verbosity options))
-           ;; --dry-run resolves the backend by *name* only (no
-           ;; engine probe), so an `alfe --bricscad --dry-run …`
-           ;; invocation on a host without BricsCAD still prints
-           ;; the action plan and exits 0 — matching the user
-           ;; intent of "show me what would happen" rather than
-           ;; "verify the engine works".
-           (let ((backend (resolve-backend
-                           options
-                           :detect-p (not (cli-options-dry-run-p options)))))
-             (cond
-               ((cli-options-dry-run-p options)
-                (emit-dry-run options backend)
-                0)
-               (t
-                (run-plan options backend)))))))
+           ;; Colour policy is computed once, against *standard-output*
+           ;; as it stood when the CLI started, and bound for the
+           ;; duration of the run. The binding covers both the
+           ;; in-process clautolisp backend (which prints AutoLISP
+           ;; values directly from this process and therefore sees
+           ;; *COLOR-OUTPUT*) and the dry-run renderer below. For
+           ;; subprocess backends the runtime in the child does its
+           ;; own probe; we additionally export $NO_COLOR=1 to the
+           ;; child env when the parent's policy is off, so the
+           ;; child's probe agrees with the parent.
+           (let* ((color-policy
+                    (clautolisp.autolisp-runtime:resolve-color-policy
+                     :no-color-flag (cli-options-no-color-p options))))
+             (when (and (null color-policy)
+                        (or (cli-options-no-color-p options)
+                            (clautolisp.autolisp-runtime:env-no-color-set-p)))
+               ;; Make the off-policy explicit to any subprocess —
+               ;; child can't observe our --no-color flag directly.
+               (setf (uiop:getenv "NO_COLOR") "1"))
+             (let ((clautolisp.autolisp-runtime:*color-output* color-policy))
+               ;; --dry-run resolves the backend by *name* only (no
+               ;; engine probe), so an `alfe --bricscad --dry-run …`
+               ;; invocation on a host without BricsCAD still prints
+               ;; the action plan and exits 0 — matching the user
+               ;; intent of "show me what would happen" rather than
+               ;; "verify the engine works".
+               (let ((backend (resolve-backend
+                               options
+                               :detect-p (not (cli-options-dry-run-p options)))))
+                 (cond
+                   ((cli-options-dry-run-p options)
+                    (emit-dry-run options backend)
+                    0)
+                   (t
+                    (run-plan options backend)))))))))
     (cli-usage-error (condition)
       (format *error-output* "~&alfe: ~A~%" condition)
       2)
@@ -789,7 +859,9 @@ The handler chain matches alfe-cli.issue's exit-code table:
                                 :bootstrap-phase
                                 (cli-options-bootstrap-phase options)
                                 :interactive-p
-                                (cli-options-interactive-p options))))
+                                (cli-options-interactive-p options)
+                                :load-encoding
+                                (cli-options-load-encoding options))))
     (unwind-protect
          (let* ((plan (effective-plan options))
                 (result (eval-plan session plan)))

@@ -1,0 +1,275 @@
+RESOLVED — implemented on branch autolisp-spec-paged-version.
+
+PRINT-OBJECT methods on the runtime value structs now render
+AutoLISP surface syntax instead of the underlying defstruct form.
+Every `~S` / `~A' in error messages, trace output, REPL display,
+and the format calls inside SIGNAL-AUTOLISP-RUNTIME-ERROR routes
+through them.
+
+Before:
+  FOREACH list argument must evaluate to a proper list, got
+  #S(CLAUTOLISP.AUTOLISP-RUNTIME.INTERNAL:AUTOLISP-SYMBOL
+                       :NAME "T" :ORIGINAL-NAME "T" :PLIST NIL).
+
+After:
+  FOREACH list argument must evaluate to a proper list, got T.
+
+Coverage (every value type a clautolisp user can encounter):
+
+  autolisp-symbol           -> name              (T, MY-FN, NIL, ...)
+  autolisp-string           -> "abc" / abc       (per *print-escape*)
+  autolisp-subr / -usubr    -> #<SUBR X> / #<USUBR X>
+  autolisp-ename            -> <Entity name: V>
+  autolisp-pickset          -> <Selection set: V>
+  autolisp-file             -> #<file PATH>
+  autolisp-vla-object       -> #<VLA-OBJECT V>
+  autolisp-safearray        -> #<SAFEARRAY>
+  autolisp-variant          -> #<VARIANT type value>
+  autolisp-catch-all-error  -> #<catch-all-error "msg">
+
+CL handles cons cells, integers, floats, and NIL natively — and
+since the list printer recurses through PRINT-OBJECT, backtraces
+like `in SUBR CAR: (A-SYMBOL)' now come out cleanly.
+
+Each method wraps its work in a handler-case so a malformed
+struct can never deadlock the debugger: on failure, the default
+defstruct printer takes over via CALL-NEXT-METHOD.
+
+ANSI-color rendering of symbols (yellow on dark / blue on light)
++ NO_COLOR / --no-color is intentionally NOT in this commit. It
+needs the OSC-11 background-luminance probe described in the
+issue body and crosses into the terminal-handling design space,
+which is a separate ticket worth its own branch. The current fix
+is the plain-text portion of the issue — the structurally noisy
+debug-output bug that was making error messages unreadable.
+
+Tests: 3 new FiveAM tests in
+clautolisp/autolisp-runtime/tests/model-tests.lisp covering
+symbol rendering, string escape modes, and recursive list
+printing. All 1235 + 252 existing tests still green.
+
+Versions bumped: clautolisp 1.0.41 -> 1.0.42, alfe 1.0.5 -> 1.0.6.
+
+--- Follow-up: ANSI-colour portion (separate commit) ---
+
+The colour ticket landed on the same branch. New module
+`clautolisp/autolisp-runtime/source/terminal-color.lisp' carries
+the full policy:
+
+  - *COLOR-OUTPUT* parameter (nil / :yellow / :blue) — the single
+    switch the AUTOLISP-SYMBOL PRINT-OBJECT method consults.
+  - ANSI-COLORIZE / WRITE-ANSI-COLORIZED — SGR helpers used by the
+    method; both no-op cheaply when colour is off.
+  - RESOLVE-COLOR-POLICY (no-color-flag, stream, probe-luminance-p)
+    — combines --no-color, $NO_COLOR (https://no-color.org), an
+    isatty(3) check via sb-alien / ccl::isatty, and the luminance
+    cascade.
+  - TERMINAL-BACKGROUND-LUMINANCE — cascade: $CLAUTOLISP_BACKGROUND
+    override → $COLORFGBG (rxvt convention) → OSC 11 query of
+    /dev/tty with tmux / screen passthrough.
+  - PROBE-TERMINAL-BACKGROUND-VIA-OSC11 — spawns a small /bin/sh
+    pipeline (stty + printf + dd) with a 150 ms read timeout, so a
+    non-responding terminal silently falls through to the default
+    without delaying the user. Choice of shell-helper avoids
+    per-implementation termios bindings on SBCL / CCL.
+
+The AUTOLISP-SYMBOL PRINT-OBJECT method now reads *COLOR-OUTPUT*
+and wraps the rendered name in an SGR sequence when non-NIL.
+Cons cells / NIL / integers / floats are unaffected (CL prints
+them natively) so a backtrace like `in SUBR CAR: (A-SYMBOL)' is
+unchanged in structure but acquires colour on the symbol only.
+
+CLI plumbing:
+  - clautolisp: new --no-color flag in parse-arguments, banner
+    updated, MAIN binds *COLOR-OUTPUT* to RESOLVE-COLOR-POLICY's
+    result for the run.
+  - alfe: new --no-color flag on cli-options, banner updated, RUN
+    binds *COLOR-OUTPUT* and additionally sets NO_COLOR=1 in the
+    subprocess env when the policy says off (so subprocess
+    backends agree with the parent).
+
+Tests: 8 new FiveAM cases in model-tests.lisp covering ansi-
+colorize NIL / yellow / blue, PRINT-OBJECT method with armed
+policy, parse-colorfgbg index classification, parse-osc11-response
+ESC-ST and BEL variants, luminance-of-rgb against Rec-601 weights,
+resolve-color-policy with --no-color flag and $NO_COLOR. The
+runtime suite is now 263 / 263; alfe still 252 / 252.
+
+Spec docs updated:
+  - clautolisp-specifications.org: new "Colour output" subsection
+    under Options, listing --no-color, $NO_COLOR,
+    $CLAUTOLISP_BACKGROUND, and the cascade rationale.
+  - alfe--specifications.org: new "Colour output" environment-
+    variable table alongside the init-inhibition one.
+
+Versions bumped: clautolisp 1.0.42 -> 1.0.43, alfe 1.0.6 -> 1.0.7.
+
+--- Hotfix: OSC 11 probe hangs CLI startup on macOS arm64 ---
+
+The active OSC 11 probe shipped enabled by default and immediately
+regressed the CLI: on macOS arm64 the /bin/sh helper running
+`stty -icanon -echo` against /dev/tty receives SIGTTOU and is left
+:STOPPED; uiop:run-program's wait then blocks the parent forever.
+Repro: simply launching `clautolisp --clautolisp` or `alfe
+--clautolisp` from an interactive terminal hangs before the REPL
+appears (Ctrl-C backtrace lands in PROBE-TERMINAL-BACKGROUND-VIA-OSC11
+-> WAIT-PROCESS).
+
+Fix (clautolisp 1.0.43 -> 1.0.44, alfe 1.0.7 -> 1.0.8):
+
+  - RESOLVE-COLOR-POLICY's new PROBE-OSC11-P keyword defaults to NIL
+    unless $CLAUTOLISP_PROBE_OSC11 is set in the env. The cheap
+    rungs of the cascade ($CLAUTOLISP_BACKGROUND, $COLORFGBG) still
+    run; when nothing resolves, the policy falls back to :yellow
+    (dark default) — matching the convention most CLI tools use
+    on hosts where they cannot detect the background.
+  - The OSC 11 helper and the probe function remain in place,
+    behind the env-var opt-in. The spec sections in both
+    clautolisp-specifications.org and alfe--specifications.org
+    now document the env var and the hang rationale.
+  - New regression test
+    `resolve-color-policy-does-not-spawn-osc11-probe-by-default'
+    monkey-patches PROBE-TERMINAL-BACKGROUND-VIA-OSC11 to raise if
+    called; without it a stuck future caller would hang the entire
+    suite. Runtime suite is now 265 / 265 (was 263 + 2 new); alfe
+    still 252 / 252.
+
+Users who want to try the OSC 11 query can opt in:
+  export CLAUTOLISP_PROBE_OSC11=1
+The cascade then walks $CLAUTOLISP_BACKGROUND -> $COLORFGBG ->
+the OSC 11 helper, same as the previous default.
+
+--- Follow-up: explicit per-axis colour env vars ---
+
+The luminance probe (whether OSC 11 or the cheaper $COLORFGBG)
+infers a colour; users on multiplexed / SSH / non-cooperating
+terminals may want to spell the colour out. Two new env vars do
+exactly that, and they win over the probe so the choice is
+deterministic:
+
+  CLAUTOLISP_SYMBOL_FOREGROUND=NAME
+  CLAUTOLISP_SYMBOL_BACKGROUND=NAME
+
+NAME is one of black / red / green / yellow / blue / magenta /
+cyan / white plus their `bright-` prefixed siblings (with
+`grey' / `gray' as aliases for `bright-black`). The parser is
+case- and whitespace-insensitive. `default' / `none' / `off'
+leaves the axis bare so a user who only wants to set the
+background can do so without also having to spell out a
+foreground. Unknown names silently drop the axis.
+
+Either env var (or both) being set returns a (FG BG) pair from
+RESOLVE-COLOR-POLICY; *COLOR-OUTPUT* now accepts that shape in
+addition to the original bare-keyword foreground-only shape, so
+the luminance-based default code path is unchanged. PRINT-OBJECT
+on AUTOLISP-SYMBOL emits a two-parameter SGR sequence
+(`ESC [ FG ; BG m NAME ESC [ 0 m`) when both axes are set,
+keeping only the recognised codes when one is unknown.
+
+Implementation: terminal-color.lisp grew *ANSI-FOREGROUND-TABLE*
++ *ANSI-BACKGROUND-TABLE* (16-colour palette incl. bright variants),
+%NORMALIZE-COLOUR-SPEC (turns NIL / keyword / (FG BG) into a
+canonical (FG BG)), PARSE-COLOUR-NAME, ENV-SYMBOL-FOREGROUND /
+ENV-SYMBOL-BACKGROUND / ENV-SYMBOL-COLOUR-SPEC, and a new step in
+RESOLVE-COLOR-POLICY that consults the env-spec before the
+luminance probe.
+
+Tests: 5 new FiveAM cases in model-tests.lisp covering (FG BG)
+SGR emission incl. bright variants and bg-only sequences, colour-
+name parsing (case / whitespace / sentinels), env-spec pairing,
+RESOLVE-COLOR-POLICY honouring the env vars over the luminance
+probe, and PRINT-OBJECT rendering with both axes set. Runtime
+suite is now 287 / 287 (was 265 + 22 from 5 new tests with
+multiple `is`); alfe still 252 / 252.
+
+Spec docs updated:
+  - clautolisp-specifications.org: the Colour-output subsection
+    now lists the two env vars and the 5-step resolution order.
+  - clautolisp-user-manual.org: new Colour-output subsection
+    under Options with the full env-var menu + a worked example.
+  - alfe--specifications.org: env-var table extended with the
+    two new entries.
+
+Versions bumped: clautolisp 1.0.44 -> 1.0.45, alfe 1.0.8 -> 1.0.9.
+
+--- Follow-up: design document ---
+
+The accumulated discussion about OSC 11 — why the probe is
+opt-in, what cl-charms can and cannot help with, how MS-Windows
+splits into three sub-targets (pure conhost, msys2 / mintty, WSL),
+and what the migration plan looks like when cl-charms lands for
+the debugger — now lives in a dedicated design document so the
+next engineer touching this code doesn't have to re-derive it:
+
+  clautolisp/documentation/terminal-color-design.org
+
+Cross-linked from clautolisp-specifications.org's See-Also.
+Versions not bumped (documentation-only change to an existing
+shipped feature).
+
+--- Original issue ---
+
+As an autolisp developper, I want better display of autolisp symbols in error messages.
+
+
+In debugging messages, autolisp symbols are printed as their implementation (common lisp structures).
+
+[autolisp-test] matrix raised: FOREACH list argument must evaluate to a proper list,
+got #S(CLAUTOLISP.AUTOLISP-RUNTIME.INTERNAL:AUTOLISP-SYMBOL
+                     :NAME "T"
+                     :ORIGINAL-NAME "T"
+                     :PLIST NIL).
+
+Instead, they should be printed with the autolisp printer.
+
+We'd expect:
+
+[autolisp-test] matrix raised: FOREACH list argument must evaluate to a proper list,
+got T.
+
+Note: when printing on a terminal that supports color (ansi codes),
+such as xterm-color, etc, and if not forbidden by a NO_COLOR
+environment variable cf. https://no-color.org or a --no-color option
+to be added, autolisp symbols could be prined in yellow (on black/dark
+background or in blue (on white/light background).
+
+--- 
+When working with ANSI color terminals, is there a way to determine the background color (if it's dark or light) to choose contrasting colors in accordance? eg. yellow on dark, blue on light?
+
+Yes, there are a few approaches, though none are perfectly reliable across all terminals.
+
+**The XTerm OSC 11 query** is the most direct method. You send the escape sequence `\033]11;?\033\\` to the terminal, and a compliant terminal responds with its background color in RGB format, like `\033]11;rgb:ffff/ffff/ffff\033\\`. You then compute the luminance to decide dark vs. light. Most modern terminals support this (xterm, iTerm2, Alacritty, Kitty, recent GNOME Terminal, WezTerm), but some don't respond at all, and you need to read the response with a timeout in case nothing comes back.
+
+Here's a sketch in shell:
+
+```bash
+IFS=: read -t 0.1 -d $'\a' -r -p $'\e]11;?\a' _ bg < /dev/tty
+# bg will be something like "rgb/ffff/ffff" — parse and compute luminance
+```
+
+In Python:
+
+```python
+import sys, select, termios, tty
+
+def get_bg():
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        sys.stdout.write("\033]11;?\033\\")
+        sys.stdout.flush()
+        if select.select([sys.stdin], [], [], 0.1)[0]:
+            return sys.stdin.read(24)  # parse rgb:RRRR/GGGG/BBBB
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    return None
+```
+
+Once you have RGB, compute relative luminance (e.g. `0.299*R + 0.587*G + 0.114*B`) and treat values above ~0.5 as light.
+
+**The `COLORFGBG` environment variable** is a simpler but less reliable fallback. rxvt sets it, and some other terminals do too, in the form `15;0` (foreground;background) where the second number is an ANSI color index. Index 0 (black) through 6, plus 8 (bright black), generally indicates a dark background; the rest indicate light. It's not always present and can go stale if the user changes their theme mid-session.
+
+**What real tools do.** Vim's `'background'` option uses exactly this cascade: check `COLORFGBG`, fall back to OSC 11, and otherwise guess from `$TERM`. Neovim does the same. It's worth giving the user an override flag because detection will occasionally be wrong — someone SSH'd through tmux with a mismatched theme is a common failure case.
+
+One gotcha: inside tmux or screen, you need to wrap the OSC sequence in a passthrough (`\033Ptmux;\033\033]11;?\033\033\\\033\\` for tmux) or the multiplexer will swallow it.

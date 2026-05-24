@@ -1,0 +1,24 @@
+Change of backend default, and precision for the dialect.
+
+If no dialect option is given to clautolisp or alfe,
+the default dialect remains the conservative ~strict~ profile.
+
+As added to the clautolisp user manual the dialect:
+
+    - ~--clautolisp~         :: Equivalent to ~--dialect clautolisp~.
+
+    The ~clautolisp~ dialect includes `clautolisp extensions`
+    (eg. variadic functions).
+
+    Whatever the dialect selected, all the operators are available. Only
+    those that are not specifically inside the set defined by the dialect
+    produce warnings when compiled and when used.
+
+
+If no backend option is given to alfe, then the default backend is now
+clautolisp. The CAD need explicit backend options, as indicated by
+the change in the alfe--specifications.org.
+
+Update the clautolisp specification according to the change in user-manual, and implement it.
+
+Write a user manual for alfe, and implement  the change in specification.
