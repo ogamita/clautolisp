@@ -355,7 +355,11 @@ install:  ## Install harness + tests + docs into $$PREFIX.
 	fi
 	@if [ -d tests ]; then \
 	  for f in tests/*.lsp tests/*/*.lsp; do \
-	    [ -f "$$f" ] && install -D -m 0644 "$$f" $(LIBEXEC_INSTALL_DIR)/"$$f" ; \
+	    if [ -f "$$f" ]; then \
+	      target="$(LIBEXEC_INSTALL_DIR)/$$f" ; \
+	      mkdir -p "$$(dirname "$$target")" ; \
+	      install -m 0644 "$$f" "$$target" ; \
+	    fi ; \
 	  done ; \
 	fi
 	@for f in documentation/*.org documentation/*.pdf; do \
