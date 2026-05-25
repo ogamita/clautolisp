@@ -68,9 +68,18 @@ plain CL cons chain."
 implied by OPTIONS. BACKEND is the tool-identity string published as
 *AUTOLISP-BACKEND* (\"CLAUTOLISP\" or \"ALFE\"). USAGE-TEXT is the
 --help string published as *AUTOLISP-HELP*; pass nil to publish nil.
-VERSION-TEXT becomes *AUTOLISP-VERSION* — required."
+VERSION-TEXT becomes *AUTOLISP-VERSION* — required.
+
+*AUTOLISP-VERSION* is the FIRST entry per transmit-options.issue's
+remote table convention, so a downstream emit-as-setq-list run-
+common.lsp consumer can show the version before any other CLI-
+derived value."
   (declare (type cli-options options))
   (list
+   ;; *AUTOLISP-VERSION* must come first — transmit-options.issue's
+   ;; remote-forwarding table.
+   (list "*AUTOLISP-VERSION*"
+         (make-autolisp-string (or version-text "0.0.0")))
    (list "*AUTOLISP-BACKEND*"            (intern-autolisp-symbol backend))
    (list "*AUTOLISP-DIALECT*"
          (dialect-name-symbol-keyword (cli-options-dialect options)))
@@ -127,9 +136,7 @@ VERSION-TEXT becomes *AUTOLISP-VERSION* — required."
    (list "*AUTOLISP-LOAD-PATHNAME*" nil) ; dynamically set during -l
    (list "*AUTOLISP-EXPRESSION*" nil)    ; dynamically set during -x
    (list "*AUTOLISP-HELP*"
-         (autolisp-string-or-nil (or usage-text "")))
-   (list "*AUTOLISP-VERSION*"
-         (make-autolisp-string (or version-text "0.0.0")))))
+         (autolisp-string-or-nil (or usage-text "")))))
 
 (defun install-transmit-variables (context bindings)
   "Intern each binding's name as an AutoLISP symbol and set it to

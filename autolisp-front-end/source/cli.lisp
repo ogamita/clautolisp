@@ -147,7 +147,9 @@
            #:env-default
            ;; resolution
            #:resolve-backend
-           #:plan-from-options))
+           #:plan-from-options
+           ;; transmit-options bridge
+           #:cli-options-transmit-bindings-for-alfe))
 
 (in-package #:alfe.cli)
 
@@ -433,30 +435,49 @@ build the action plan (PLAN-FROM-OPTIONS).
 
 Internally delegates to clautolisp.autolisp-cli's spec-driven
 parser with the union of *common-option-specs* + *alfe-option-specs*.
-Post-translation steps fold env-var defaults in, normalise positional
-args, and rewrite the action conses produced by the shared parser
-into alfe.backend action objects so the rest of alfe (PLAN-FROM-
-OPTIONS, EVAL-PLAN, etc.) sees the legacy shape."
+Post-translation steps fold env-var defaults in and rewrite the
+action conses produced by the shared parser into alfe.backend
+action objects so the rest of alfe (PLAN-FROM-OPTIONS, EVAL-PLAN,
+etc.) sees the legacy shape. The transmit-options installer reads
+through CLI-OPTIONS->TRANSMIT-BINDINGS-FOR-ALFE which translates
+the action objects back to conses on the fly."
   (let* ((options (make-cli-options)))
     (apply-env-defaults options)
     (parse-arguments-with-spec
      (append *alfe-option-specs* *common-option-specs*)
      argv
      :initial-options options)
-    ;; Rewrite the action-conses to alfe.backend action objects so
-    ;; EFFECTIVE-PLAN / RUN-PLAN can call ACTION-KIND / ACTION-PAYLOAD
-    ;; unchanged. Backend conflict detection ran in-line in the old
-    ;; parser via SET-BACKEND; today the common spec just last-write-
-    ;; wins for the dialect shorthands (--autocad/--bricscad/etc.),
-    ;; which also set cli-options-backend. Conflicting selectors
-    ;; (`--autocad --bricscad`) are surfaced as the LATER one winning,
-    ;; matching how the shared parser handles other repeated options.
     (setf (cli-options-actions options)
           (mapcar (lambda (a)
                     (%translate-action-cons
                      a (cli-options-load-encoding options)))
                   (cli-options-actions options)))
     options))
+
+(defun %action-object-to-cons (action)
+  "Inverse of %TRANSLATE-ACTION-CONS. Used by
+CLI-OPTIONS->TRANSMIT-BINDINGS-FOR-ALFE to render the actions
+slot in the shared parser's cons format so the runtime installer
+(which doesn't know about alfe.backend) can render it as the
+*AUTOLISP-ACTIONS* AutoLISP value."
+  (ecase (action-kind action)
+    (:load        (cons :file (getf (action-payload action) :path)))
+    (:eval        (cons :expression (action-payload action)))
+    (:interactive (cons :interactive t))
+    (:main        (cons :main (action-payload action)))
+    (:quit        (cons :quit t))))
+
+(defun cli-options-transmit-bindings-for-alfe (options &key backend version-text)
+  "Wrap CLI-OPTIONS->TRANSMIT-BINDINGS so alfe's action-object
+actions slot is rendered as the cons format the shared installer
+expects. Returns the ((NAME-STRING VALUE) …) bindings list."
+  (let ((normalised (copy-cli-options options)))
+    (setf (cli-options-actions normalised)
+          (mapcar #'%action-object-to-cons (cli-options-actions options)))
+    (clautolisp.autolisp-cli:cli-options->transmit-bindings
+     normalised
+     :backend backend
+     :version-text version-text)))
 
 ;; STARTS-WITH-DOUBLE-DASH-P, SPLIT-LONG-OPTION, POP-REQUIRED,
 ;; OPTION-VALUE, CONSUME-LONG-OPTION moved into the shared parser
@@ -693,7 +714,7 @@ The handler chain matches alfe-cli.issue's exit-code table:
                     (emit-dry-run options backend)
                     0)
                    (t
-                    (run-plan options backend)))))))))
+                    (run-plan options backend :version-text version)))))))))
     (cli-usage-error (condition)
       (format *error-output* "~&alfe: ~A~%" condition)
       2)
@@ -716,8 +737,11 @@ The handler chain matches alfe-cli.issue's exit-code table:
       (format *error-output* "~&alfe: ~A~%" condition)
       1)))
 
-(defun run-plan (options backend)
-  "Drive a real backend through the action plan. Returns the exit code."
+(defun run-plan (options backend &key version-text)
+  "Drive a real backend through the action plan. Returns the exit code.
+VERSION-TEXT propagates the alfe version string from RUN so backends
+can publish it as the *AUTOLISP-VERSION* global of their hosted
+engine."
   (let* ((workdir (prepare-workdir backend
                                    (cli-options-workdir options)))
          (session (start-engine backend workdir
@@ -729,7 +753,11 @@ The handler chain matches alfe-cli.issue's exit-code table:
                                 :interactive-p
                                 (cli-options-interactive-p options)
                                 :load-encoding
-                                (cli-options-load-encoding options))))
+                                (cli-options-load-encoding options)
+                                :io-encoding
+                                (cli-options-io-encoding options)
+                                :cli-options options
+                                :version-text version-text)))
     (unwind-protect
          (let* ((plan (effective-plan options))
                 (result (eval-plan session plan)))
