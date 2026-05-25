@@ -200,12 +200,101 @@ no probing:
   clautolisp -x '(foreach x t (princ x))'
 #+END_SRC
 
+** Source-file and terminal encoding
+- ~-e ENC~                :: Set the default source-file encoding for
+                             every ~load~ in the session, including
+                             nested ~(load …)~ calls from init files.
+                             ENC is one of ~utf-8~, ~iso-8859-1~,
+                             ~latin-1~, ~windows-1252~, ~cp1252~.
+                             Overrides the dialect default and the
+                             POSIX-locale guess (~LC_ALL~ /
+                             ~LC_CTYPE~ / ~LANG~). Surfaced to user
+                             code as the ~*AUTOLISP-FILE-ENCODING*~
+                             global.
+- ~-E ENC~                :: Declared terminal-IO encoding for the
+                             session. Surfaced to user code as the
+                             ~*AUTOLISP-TERMINAL-ENCODING*~ global so
+                             code that emits raw bytes can adapt. No
+                             stream rebinding is performed at the CL
+                             level — set this when your downstream
+                             tooling needs the declared encoding to
+                             match what you actually emit. Same ENC
+                             vocabulary as ~-e~.
+
 ** Informational
 - ~--version~            :: Print =clautolisp <version>= on standard
                             output and exit 0. The version is the
                             value of ~clautolisp.tools.clautolisp:*version*~
                             (format ~MAJOR.MINOR.DEVELOP~).
 - ~--help~               :: Print a short usage summary and exit 0.
+
+* Image-introspection variables (~*AUTOLISP-…*~)
+At startup ~clautolisp~ publishes a set of globally-bound variables
+in the running AutoLISP image describing how it was invoked. User
+code can read them to branch on backend, dialect, encoding, etc.
+See ~issues/closed/transmit-options.issue~ for the full design and
+the alfe-side counterpart.
+
+** Static — bound once, before the first user action
+- ~*AUTOLISP-BACKEND*~          :: The symbol ~CLAUTOLISP~.
+- ~*AUTOLISP-DIALECT*~          :: The active dialect's canonical
+                                   name as a symbol — ~STRICT~,
+                                   ~AUTOCAD-2026~, ~BRICSCAD-V26~.
+- ~*AUTOLISP-HOST*~             :: The HAL backend's name as a symbol
+                                   — ~MOCK-HOST~, ~NULL-HOST~, or nil.
+- ~*AUTOLISP-MOCK-INPUT*~       :: Pathname (string) passed to
+                                   ~--mock-input~, or nil.
+- ~*AUTOLISP-GUI-COMMAND*~      :: Subprocess renderer command
+                                   passed to ~--gui~, or nil.
+- ~*AUTOLISP-TRACE*~            :: T when ~--trace~ was on at startup.
+- ~*AUTOLISP-FILE-ENCODING*~    :: Value passed to ~-e ENC~ as a
+                                   string, or nil.
+- ~*AUTOLISP-TERMINAL-ENCODING*~ :: Value passed to ~-E ENC~ as a
+                                    string, or nil.
+- ~*AUTOLISP-NO-INIT*~          :: T when ~-norc~ / ~--no-init~ was
+                                   passed, or the env-var override
+                                   suppressed init files.
+- ~*AUTOLISP-NO-COLOR*~         :: T when ~--no-color~ was passed.
+- ~*AUTOLISP-VERBOSE*~          :: T when ~-v~ / ~--verbose~ was
+                                   passed.
+- ~*AUTOLISP-DEBUG*~            :: T when ~-d~ / ~--debug~ was passed.
+- ~*AUTOLISP-QUIET*~            :: T when ~-q~ / ~--quiet~ was passed.
+- ~*AUTOLISP-WILL-QUIT*~        :: Reserved for the ~--quit~ flag;
+                                   always nil under clautolisp
+                                   today. alfe sets it.
+- ~*AUTOLISP-MAIN*~             :: Reserved for the ~--main~ flag;
+                                   always nil under clautolisp
+                                   today.
+- ~*AUTOLISP-ACTIONS*~          :: Ordered list of the actions parsed
+                                   off the command line, each shaped
+                                   ~(load "PATH")~, ~(eval "TEXT")~, or
+                                   ~(interactive T)~. Empty list when
+                                   the implicit REPL is the only
+                                   action.
+- ~*AUTOLISP-HELP*~             :: String containing the ~--help~
+                                   output.
+- ~*AUTOLISP-VERSION*~          :: String like ~"1.0.47"~.
+
+User code may ~setq~ any of these; the runtime does not re-read the
+values, so the modification is purely an information change visible
+to subsequent ~boundp~/value lookups.
+
+** Dynamic — bound only while the matching action runs
+- ~*AUTOLISP-LOAD-PATHNAME*~    :: The pathname of the file being
+                                   loaded by a ~-l~ action. Bound to
+                                   the path string for the duration
+                                   of the ~load~ call; reset to nil
+                                   on return (success or signal).
+- ~*AUTOLISP-EXPRESSION*~       :: The source text of a ~-x~ action,
+                                   bound while the expression is
+                                   evaluated. Cleared on return.
+- ~*AUTOLISP-INTERACTIVE*~      :: T while the REPL is active.
+                                   Cleared on REPL exit.
+
+Code running inside an init file can therefore distinguish "loaded
+because of ~-l init.lsp~" (~*AUTOLISP-LOAD-PATHNAME*~ points at
+~init.lsp~) from "loaded as an init file from the standard search
+path" (~*AUTOLISP-LOAD-PATHNAME*~ is nil).
 
 * Banner
 In REPL mode (and only in REPL mode) ~clautolisp~ prints a one-line

@@ -145,7 +145,9 @@ pathname."))
 
 (defgeneric start-engine (backend workdir &key dialect host
                                           mock-input bootstrap-phase
-                                          interactive-p load-encoding)
+                                          interactive-p load-encoding
+                                          io-encoding
+                                          cli-options version-text)
   (:documentation
    "Bring BACKEND up to the READY state under WORKDIR, returning a
 session handle (a `session` instance, or a subclass thereof). For
@@ -157,7 +159,17 @@ LOAD-ENCODING, when non-nil, is the user-facing CLI string from
 `-e ENC' (e.g. \"utf-8\"). Backends that can honour a session-wide
 source-file encoding apply it to their runtime; backends that
 can't (CAD-resident engines whose AutoLISP runtime owns the
-encoding policy) ignore it."))
+encoding policy) ignore it.
+
+CLI-OPTIONS is the fully-parsed CLAUTOLISP.AUTOLISP-CLI:CLI-OPTIONS
+struct (or NIL). When non-NIL, the backend installs the matching
+*AUTOLISP-…* globals (transmit-options.issue) in the engine — for
+the in-process clautolisp backend that's a direct call into
+INSTALL-TRANSMIT-VARIABLES against the just-created context; for
+CAD backends that means emitting additional (setq …) forms into
+run-common.lsp. The clautolisp subprocess variant ignores
+CLI-OPTIONS — the spawned `clautolisp-sbcl` binary installs its
+own *AUTOLISP-…* globals from its own argv."))
 
 (defgeneric eval-plan (session plan)
   (:documentation
