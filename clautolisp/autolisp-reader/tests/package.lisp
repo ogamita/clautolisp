@@ -18,6 +18,7 @@
                 #:cons-object-dotted-p
                 #:cons-object-elements
                 #:cons-object-tail
+                #:cons-object-preceding-doc
                 #:diagnostic
                 #:diagnostic-code
                 #:diagnostic-severity

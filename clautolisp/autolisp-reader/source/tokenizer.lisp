@@ -277,6 +277,16 @@
            (incf index)
            (incf column)))))))
 
+(defun block-comment-token-p (token)
+  "T iff TOKEN is a :COMMENT token spelt ;| ... |; — the AutoLISP
+block-comment form. Used by the tokenizer to keep block comments
+in the stream even when RETAIN-COMMENTS-P is nil so the parser
+can capture them as doc-strings for the next form."
+  (and (eq (token-kind token) :comment)
+       (let ((lex (token-lexeme token)))
+         (and (>= (length lex) 2)
+              (string= ";|" lex :end2 2)))))
+
 (defun scan-comment (text start-index line column options)
   (let ((length (length text)))
     (if (and (< (1+ start-index) length)
@@ -465,7 +475,16 @@
                    ((char= ch #\;)
                     (multiple-value-bind (token next-index next-line next-column diags)
                         (scan-comment text index line column options)
-                      (when (reader-options-retain-comments-p options)
+                      ;; Block comments (;| ... |;) are always emitted so
+                      ;; the parser can consume them as the doc-carrying
+                      ;; tokens of source-aware-defun-documentation. Line
+                      ;; comments stay gated on RETAIN-COMMENTS-P because
+                      ;; they never carry documentation and dropping them
+                      ;; cheapens the token stream for the common case
+                      ;; (concrete-syntax tooling overrides via the flag).
+                      (when (or (reader-options-retain-comments-p options)
+                                (and token
+                                     (block-comment-token-p token)))
                         (emit token))
                       (emit-diagnostics diags)
                       (setf index next-index

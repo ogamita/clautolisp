@@ -101,11 +101,19 @@ unmodified string when no chapter number is present."
 (defun alref-build/entry-symbol (subsection-title)
   "When SUBSECTION-TITLE matches one of the documented entry-type
 patterns ('Function Entry: NAME', 'Reader Syntax Entry: NAME',
-'Special Operator Entry: NAME', 'Variable Entry: NAME', 'Macro
-Entry: NAME', 'Type Entry: NAME'), return (KIND . NAME) — both
-strings, NAME uppercased. Returns nil otherwise."
+'Special Form Entry: NAME', 'Special Operator Entry: NAME',
+'Variable Entry: NAME', 'Macro Entry: NAME', 'Type Entry: NAME'),
+return (KIND . NAME) — both strings, NAME uppercased. Returns nil
+otherwise.
+
+'Special Form' and 'Special Operator' are both surfaced as the
+'Special Form' KIND in symbols.txt — the spec uses the two terms
+interchangeably (Autodesk says 'Special Function', the AutoLISP
+draft says 'Special Form'). The runtime alref library treats a
+'Special Form' KIND or a hardcoded special-operator name as the
+'Operator' apropos kind."
   (when (string-match
-         "^\\(Function\\|Reader Syntax\\|Special Operator\\|Variable\\|Macro\\|Type\\)\\s-+Entry:\\s-+\\(.+\\)$"
+         "^\\(Function\\|Reader Syntax\\|Special Form\\|Special Operator\\|Variable\\|Macro\\|Type\\)\\s-+Entry:\\s-+\\(.+\\)$"
          subsection-title)
     (cons (match-string 1 subsection-title)
           (upcase (string-trim (match-string 2 subsection-title))))))
@@ -119,8 +127,13 @@ order — `push`-ed onto, reversed on emit), optional entry
 metadata (KIND . NAME) for symbol-index entries, plus the
 adjacent basenames the navigation header links to (prev / next /
 up — strings, nil at the ends of the document or the chapter
-roots)."
-  chapter level title slug body entry
+roots).
+
+FLAGS holds the spec-coverage letter set (a subset of \"AB\")
+derived from the entry's *** Availability section; computed
+once during the dedicated COMPUTE-AVAILABILITY pass before
+the body is destructively finalised by write-pages."
+  chapter level title slug body entry flags
   prev next up)
 
 (defun alref-build/section-filename (section)
@@ -353,6 +366,65 @@ the final, on-disk filenames."
           (t
            (setf (alref-build/section-up section) current-chapter-page)))))))
 
+(defun alref-build/availability-flags-from-lines (lines)
+  "Walk LINES (a list of strings, in forward order) looking for
+the '*** Availability' section and return a string of letters
+denoting per-vendor spec coverage: 'A' for AutoCAD, 'B' for
+BricsCAD, both as 'AB', empty string when the section is missing
+or marks both vendors as 'not documented'. The runtime alref
+library augments this with a per-image 'C' flag computed live
+from `atoms-family'.
+
+The Availability section is a literal org sublist of the form
+
+    *** Availability
+    - AutoCAD 2026: documented.
+    - BricsCAD V26: presumed compatible.
+    - Status: ...
+
+Any value other than the explicit 'not documented' counts as
+specified, so 'documented', 'presumed compatible', 'parallel
+to ...', 'returns T on success', vendor-specific wording etc.
+all flip the corresponding flag on."
+  (let ((tail lines)
+        (in-availability nil)
+        (flags ""))
+    (while tail
+      (let ((line (car tail)))
+        (cond
+          ((string-match-p "^\\*\\*\\* Availability\\b" line)
+           (setq in-availability t))
+          ((and in-availability (string-match-p "^\\*\\*\\*" line))
+           (setq in-availability nil))
+          (in-availability
+           (when (string-match
+                  "^-\\s-+AutoCAD\\b[^:]*:\\s-*\\(.*\\)$" line)
+             (let ((rest (string-trim (match-string 1 line))))
+               (unless (string-match-p "^not\\b" rest)
+                 (unless (cl-search "A" flags)
+                   (setq flags (concat flags "A"))))))
+           (when (string-match
+                  "^-\\s-+BricsCAD\\b[^:]*:\\s-*\\(.*\\)$" line)
+             (let ((rest (string-trim (match-string 1 line))))
+               (unless (string-match-p "^not\\b" rest)
+                 (unless (cl-search "B" flags)
+                   (setq flags (concat flags "B"))))))))
+        (setq tail (cdr tail))))
+    flags))
+
+(defun alref-build/compute-availability (sections)
+  "Populate the FLAGS slot of every entry-bearing SECTION before
+write-pages destructively reverses the body. Reads the body
+slot non-destructively (the slot still holds a reverse-order
+list at this point — we walk it in forward order via
+`reverse')."
+  (dolist (section sections)
+    (when (alref-build/section-entry section)
+      (let* ((rev-body (alref-build/section-body section))
+             (lines (reverse rev-body))
+             (flags (alref-build/availability-flags-from-lines lines)))
+        (setf (alref-build/section-flags section) flags)))))
+
 (defun alref-build/disambiguate-slugs (sections)
   "Walk SECTIONS in order and ensure every (chapter, slug) pair is
 unique. When two sections under the same chapter would emit the
@@ -412,9 +484,15 @@ sides build their lookup tables off this file at load time."
 
 (defun alref-build/write-symbols (sections output-dir)
   "Write OUTPUT-DIR/symbols.txt — one line per entry-typed
-subsection, as `SYMBOL\tKIND\tBASENAME`. Used by alref-lookup +
-the AutoLISP alref-apropos-list to resolve a symbol name to its
-documentation page in O(1) (after loading the file)."
+subsection, as `SYMBOL\tKIND\tBASENAME\tFLAGS`. FLAGS is a
+possibly-empty subset of the letters \"AB\" denoting per-vendor
+spec coverage extracted from the entry's `*** Availability'
+section; the runtime alref library augments it with a per-image
+'C' flag from `atoms-family'.
+
+The 4th column is a backward-compatible extension: legacy
+3-column readers see the basename in the third field unchanged
+and ignore the trailing tab + flags."
   (let ((path (expand-file-name "symbols.txt" output-dir)))
     (with-temp-file path
       (dolist (section sections)
@@ -425,6 +503,8 @@ documentation page in O(1) (after loading the file)."
             (insert (car entry))
             (insert "\t")
             (insert (alref-build/section-filename section))
+            (insert "\t")
+            (insert (or (alref-build/section-flags section) ""))
             (insert "\n")))))))
 
 ;;; --- main ----------------------------------------------------------
@@ -444,6 +524,7 @@ documentation page in O(1) (after loading the file)."
   (let ((sections (alref-build/parse-org-file input-file)))
     (alref-build/disambiguate-slugs sections)
     (alref-build/compute-adjacency sections)
+    (alref-build/compute-availability sections)
     (alref-build/attach-chapter-tocs sections)
     (let ((count (alref-build/write-pages sections output-dir format)))
       (alref-build/write-index sections output-dir)

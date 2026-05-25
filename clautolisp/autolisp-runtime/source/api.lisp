@@ -84,6 +84,41 @@ handling.")
 keep a snapshot beyond the dynamic extent of the active frame."
   (copy-list *autolisp-call-stack*))
 
+;;; --- source-aware-defun-documentation: read-time → eval-time bridge
+
+(defparameter *preceding-docs* (make-hash-table :test 'eq)
+  "Side-table populated by REGISTER-PRECEDING-DOC during the
+reader→runtime conversion: maps the freshly-allocated CL cons
+representing a parsed cons-object to the text of the ;|…|; block
+comment that preceded it in the source. Looked up by
+EVAL-DEFUN-FORM / EVAL-SETQ-FORM via *current-form*. EQ-keyed
+because we want pointer-identity on the cons; the table grows
+once per file load and is not pruned (entries become unreachable
+when the form cons is GCed; SBCL/CCL handle that for us via the
+weak-reference semantics of an EQ hash with no other references).")
+
+(defparameter *current-form* nil
+  "Bound by AUTOLISP-EVAL's cons-dispatch to the form being
+dispatched, so EVAL-DEFUN-FORM and EVAL-SETQ-FORM can recover
+the parse-tree's preceding-doc via (gethash *current-form*
+*preceding-docs*). nil during evaluation of self-evaluating
+values, symbol lookups, and programmatically-constructed forms
+that were never registered.")
+
+(defun register-preceding-doc (cl-cons doc-text)
+  "Record DOC-TEXT (a string) as the preceding-doc of CL-CONS.
+Called from REGISTER-PRECEDING-DOC during the reader→runtime
+conversion when a cons-object carried a non-nil preceding-doc."
+  (when (and (consp cl-cons) doc-text)
+    (setf (gethash cl-cons *preceding-docs*) doc-text)))
+
+(defun current-form-preceding-doc ()
+  "Return the doc string registered for the form currently being
+dispatched by AUTOLISP-EVAL, or nil. Called by EVAL-DEFUN-FORM
+and EVAL-SETQ-FORM (and only by them) at the moment they update
+the binding-cell doc slot."
+  (and *current-form* (gethash *current-form* *preceding-docs*)))
+
 (define-condition autolisp-runtime-error (error)
   ((code
     :initarg :code
@@ -561,6 +596,9 @@ profiles between subordinate evaluations within a single session."
 (defun binding-cell-compatibility-definition (cell)
   (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition cell))
 
+(defun binding-cell-doc (cell)
+  (clautolisp.autolisp-runtime.internal::binding-cell-doc cell))
+
 ;; Lisp-1 single-cell rule (autolisp-spec, chapter 7): the legacy
 ;; "value cell" and "function cell" accessors are facades over the
 ;; same per-symbol binding cell. Existing callers compile unchanged;
@@ -884,6 +922,49 @@ must not create a new frame-local binding mid-execution (§16.1)."
                  cell)
                 nil)))
     value))
+
+(defun lookup-documentation (symbol &optional (context (current-evaluation-context)))
+  "Walk the dynamic frame chain like LOOKUP-VARIABLE; return the
+`doc' slot of the innermost binding for SYMBOL. Returns nil for
+an unbound symbol or for a binding with no recorded doc.
+
+The returned value is a tagged list:
+  nil                — no documentation.
+  (function \"STR\")   — last installed by DEFUN with a preceding ;|…|;.
+  (variable \"STR\")   — last installed by SETQ with a preceding ;|…|;.
+
+The bare doc-string is extracted by CLAUTOLISP-DOCUMENTATION via
+cadr; the head symbol is read by CLAUTOLISP-DOCUMENTATION-KIND
+via car. See source-aware-defun-documentation.issue for the
+update-rule table."
+  (let ((binding (find-dynamic-binding symbol (evaluation-context-dynamic-frame context))))
+    (cond
+      (binding
+       (clautolisp.autolisp-runtime.internal::dynamic-binding-doc binding))
+      (t
+       (let ((cell (namespace-binding-cell (evaluation-context-current-namespace context)
+                                           symbol
+                                           :createp nil)))
+         (and cell (binding-cell-doc cell)))))))
+
+(defun set-binding-doc (symbol new-doc &optional (context (current-evaluation-context)))
+  "Install NEW-DOC (nil or a (function|variable \"STR\") tag) on
+the doc slot of the innermost binding cell for SYMBOL. The
+binding is expected to exist — callers are SET-VARIABLE /
+SET-FUNCTION wrappers, which have just created or updated it.
+Silently no-ops when no cell exists (defensive; should not
+happen in the documented call sites)."
+  (let ((binding (find-dynamic-binding symbol (evaluation-context-dynamic-frame context))))
+    (cond
+      (binding
+       (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-doc binding) new-doc))
+      (t
+       (let ((cell (namespace-binding-cell (evaluation-context-current-namespace context)
+                                           symbol
+                                           :createp nil)))
+         (when cell
+           (setf (clautolisp.autolisp-runtime.internal::binding-cell-doc cell) new-doc))))))
+  new-doc)
 
 (defun callable-value-p (value)
   "True iff VALUE is something AutoLISP can call in operator
@@ -1247,9 +1328,16 @@ break-on-caught is enabled; NIL by default (off).")
                         (append-proper-and-tail
                          elements
                          (reader-object->runtime-value (cons-object-tail object)))
-                        elements)))
+                        elements))
+            (doc (cons-object-preceding-doc object)))
        (when (and clautolisp.source:*track-source-positions* (consp result))
          (clautolisp.source:note-position result (cons-object-span object)))
+       ;; Source-aware-defun-documentation: if the parsed cons-object
+       ;; carried a ;|…|; block-comment doc, register that text against
+       ;; the fresh CL cons we are returning. eval-defun-form /
+       ;; eval-setq-form consult *preceding-docs* via *current-form*.
+       (when (and doc (consp result))
+         (register-preceding-doc result doc))
        result))
     (quote-object
      (let ((result (list (intern-autolisp-symbol "QUOTE")
@@ -1773,7 +1861,12 @@ flag only."
      :invalid-setq-arguments
      "SETQ expects an even number of arguments, got ~D."
      (length arguments)))
-  (let ((result nil))
+  (let ((result nil)
+        ;; Source-aware-defun-documentation: the parser's preceding-doc
+        ;; (if any) belongs to the *first* name in a multi-pair setq.
+        ;; The remaining pairs apply the no-block rule independently.
+        (preceding-text (current-form-preceding-doc))
+        (first-pair-p t))
     (loop for (symbol-form value-form) on arguments by #'cddr
           do (unless (typep symbol-form 'autolisp-symbol)
                (signal-autolisp-runtime-error
@@ -1781,7 +1874,31 @@ flag only."
                 "SETQ place must be an AutoLISP symbol, got ~S."
                 symbol-form))
              (setf result (autolisp-eval value-form context))
-             (set-variable symbol-form result context))
+             (set-variable symbol-form result context)
+             ;; Apply the setq update rule from
+             ;; source-aware-defun-documentation:
+             ;;   preceding ;|…|; → install (:variable "TEXT")
+             ;;   no preceding block, current doc is (:function _)
+             ;;                    → clear (function-doc no longer applies)
+             ;;   no preceding block, current doc is nil
+             ;;                    → leave nil
+             ;;   no preceding block, current doc is (:variable _)
+             ;;                    → leave it (plain mutation does not
+             ;;                      erase a documented variable)
+             ;; Only the FIRST pair sees the parse-tree's preceding-doc;
+             ;; subsequent pairs in a multi-pair setq behave as if no
+             ;; block preceded them.
+             (let ((block-text (and first-pair-p preceding-text)))
+               (cond
+                 (block-text
+                  (set-binding-doc symbol-form
+                                   (list :variable block-text)
+                                   context))
+                 (t
+                  (let ((current (lookup-documentation symbol-form context)))
+                    (when (and (consp current) (eq (car current) :function))
+                      (set-binding-doc symbol-form nil context))))))
+             (setf first-pair-p nil))
     result))
 
 (defun eval-set-form (arguments context)
@@ -2054,6 +2171,17 @@ malformed cases surface at call-time via `bind-usubr-frame')."
                                          body
                                          context)))
       (set-function name function context)
+      ;; Source-aware-defun-documentation: DEFUN always rewrites the
+      ;; binding cell's doc slot. With a preceding ;|…|; block the
+      ;; new doc is (:function "TEXT"); without one it is nil. Every
+      ;; defun is an authoritative redeclaration — the absence of a
+      ;; doc means "the author has not documented this revision."
+      ;; The keyword head is internal; the CLAUTOLISP-DOCUMENTATION
+      ;; / -KIND builtins translate to AutoLISP-visible values.
+      (set-binding-doc name
+                       (let ((text (current-form-preceding-doc)))
+                         (and text (list :function text)))
+                       context)
       name)))
 
 (defparameter *special-operator-dispatch*
@@ -2160,7 +2288,14 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
              (autolisp-symbol-name form))))))
       ((consp form)
        (let ((operator (first form))
-             (arguments (rest form)))
+             (arguments (rest form))
+             ;; Source-aware-defun-documentation: expose the
+             ;; current form to eval-defun-form / eval-setq-form
+             ;; so they can pull the parser's preceding-doc out
+             ;; of *preceding-docs* and tag the binding cell.
+             ;; Other special operators / function calls ignore
+             ;; this binding.
+             (*current-form* form))
          (cond
            ((special-operator-function operator)
             (eval-special-operator operator arguments context))

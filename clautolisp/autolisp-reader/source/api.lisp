@@ -267,6 +267,9 @@
 (defun cons-object-span (object)
   (clautolisp.autolisp-reader.internal::cons-object-span object))
 
+(defun cons-object-preceding-doc (object)
+  (clautolisp.autolisp-reader.internal::cons-object-preceding-doc object))
+
 (defun quote-object-object (object)
   (clautolisp.autolisp-reader.internal::quote-object-object object))
 

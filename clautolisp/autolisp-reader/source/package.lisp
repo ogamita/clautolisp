@@ -61,6 +61,7 @@
    #:cons-object-tail
    #:cons-object-dotted-p
    #:cons-object-span
+   #:cons-object-preceding-doc
    #:quote-object
    #:quote-object-object
    #:quote-object-span

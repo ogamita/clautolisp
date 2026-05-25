@@ -55,6 +55,7 @@
                 #:find-runtime-session-document
                 #:function-cell-function
                 #:intern-autolisp-symbol
+                #:lookup-documentation
                 #:lookup-function
                 #:lookup-variable
                 #:make-document-namespace

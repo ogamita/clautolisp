@@ -531,3 +531,87 @@ without two separate captures."
       (is (search "(ID 5)" text))
       (is (not (search "(ID 7)" text))))))
 
+;;; --- source-aware-defun-documentation: doc-update rules -----------
+
+(defun %doc (name)
+  "Helper for the doc-rule tests: look up the doc tag attached to
+the innermost binding of NAME (uppercased string). Returns nil,
+(:function \"S\"), or (:variable \"S\")."
+  (lookup-documentation (intern-autolisp-symbol name)))
+
+(test doc-rule-defun-with-block-installs-function-doc
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string ";| hello |;
+(defun foo () 1)")
+  (is (equal '(:function " hello ") (%doc "FOO"))))
+
+(test doc-rule-defun-without-block-clears-existing-doc
+  ;; DEFUN is an authoritative redeclaration: absent block → nil.
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string ";| first |;
+(defun foo () 1)
+(defun foo () 2)")
+  (is (null (%doc "FOO"))))
+
+(test doc-rule-setq-with-block-installs-variable-doc
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string ";| counter |;
+(setq counter 0)")
+  (is (equal '(:variable " counter ") (%doc "COUNTER"))))
+
+(test doc-rule-bare-setq-preserves-variable-doc
+  ;; A bare (setq x ...) after a documented (setq x ...) leaves the
+  ;; doc alone — plain mutation does not erase a variable's doc.
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string ";| counter |;
+(setq counter 0)
+(setq counter 1)
+(setq counter 2)")
+  (is (equal '(:variable " counter ") (%doc "COUNTER"))))
+
+(test doc-rule-bare-setq-clears-function-doc
+  ;; A bare (setq x ...) after a documented (defun x ...) clears
+  ;; the function-doc — it no longer describes what is bound.
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string ";| handler |;
+(defun handler () nil)
+(setq handler 42)")
+  (is (null (%doc "HANDLER"))))
+
+(test doc-rule-multi-pair-setq-only-first-pair-sees-block
+  ;; The parse-tree's preceding-doc belongs to the form, not to
+  ;; each pair: only the first name receives the doc; subsequent
+  ;; pairs apply the no-block rule independently.
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string ";| pair |;
+(setq a 1 b 2 c 3)")
+  (is (equal '(:variable " pair ") (%doc "A")))
+  (is (null (%doc "B")))
+  (is (null (%doc "C"))))
+
+(test doc-rule-locally-rebound-name-shadows-outer-doc
+  ;; The shadowing example from the issue: an inner (defun foo …)
+  ;; inside (defun foo (/ foo) …) writes its doc to the LOCAL
+  ;; binding cell, not the global one; the global doc survives
+  ;; the call. The "inner doc visible inside the body" half of
+  ;; the contract is exercised end-to-end via the
+  ;; CLAUTOLISP-DOCUMENTATION builtin in autolisp-test; here at
+  ;; the runtime layer the meaningful invariant is the after-call
+  ;; state — the global cell is untouched.
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string ";| global doc |;
+(defun foo (/ foo)
+  ;| inner doc |;
+  (defun foo () 1)
+  (foo))
+(foo)")
+  (is (equal '(:function " global doc ") (%doc "FOO"))))
+
+(test doc-rule-second-block-clobbers-first-at-read-time
+  ;; Two ;|…|; blocks before one defun: the second wins (the
+  ;; parser's pending-doc slot is overwritten by each block).
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string ";| first |;
+;| second |;
+(defun foo () 1)")
+  (is (equal '(:function " second ") (%doc "FOO"))))
