@@ -27,6 +27,10 @@ clautolisp [options] FILE.lsp
 clautolisp [options] -x EXPRESSION
 clautolisp [options]                 (interactive REPL)
 #+END_EXAMPLE
+#+TEXINFO_FILENAME: clautolisp-user-manual.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: clautolisp: (clautolisp-user-manual).
+#+TEXINFO_DIR_DESC: Clautolisp standalone interpreter user manual.
 
 The implementation is shipped as two image-built executables, one per
 supported Common Lisp host:

@@ -4,6 +4,10 @@
 #+OPTIONS: toc:4 num:t
 #+VERSION: 0.8.2
 #+LICENSE: CC-BY-SA
+#+TEXINFO_FILENAME: autolisp-visual-lisp-specification-draft.info
+#+TEXINFO_DIR_CATEGORY: AutoLISP specification
+#+TEXINFO_DIR_TITLE: autolisp-spec: (autolisp-visual-lisp-specification-draft).
+#+TEXINFO_DIR_DESC: AutoLISP / Visual LISP language specification.
 
 * 1 Introduction
 ** Overview

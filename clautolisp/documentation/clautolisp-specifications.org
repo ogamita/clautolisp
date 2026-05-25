@@ -24,6 +24,10 @@ Operators" and in ~clautolisp/documentation/user-manual.org~
 
 * Synopsis
 #+BEGIN_EXAMPLE
+#+TEXINFO_FILENAME: clautolisp-specifications.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: clautolisp-specifications: (clautolisp-specifications).
+#+TEXINFO_DIR_DESC: Clautolisp interpreter specifications.
 clautolisp [OPTIONS] FILE.lsp                  # file mode (positional)
 clautolisp [OPTIONS] -l FILE.lsp               # file mode (explicit)
 clautolisp [OPTIONS] -x EXPRESSION             # expression mode

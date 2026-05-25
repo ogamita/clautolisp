@@ -1,6 +1,10 @@
 #+TITLE: autolisp-reader Specification
 #+AUTHOR: Codex
 #+OPTIONS: toc:2 num:t
+#+TEXINFO_FILENAME: autolisp-reader-specifications.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: autolisp-reader-specifications: (autolisp-reader-specifications).
+#+TEXINFO_DIR_DESC: AutoLISP reader subsystem specifications.
 
 * Overview
 This document specifies the first reader subsystem for the ~clautolisp~ implementation subproject.

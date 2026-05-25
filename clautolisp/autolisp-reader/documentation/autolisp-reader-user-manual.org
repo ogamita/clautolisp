@@ -23,6 +23,10 @@ Typical use:
 (asdf:load-system "clautolisp/autolisp-reader")
 (use-package :clautolisp.autolisp-reader)
 #+end_src
+#+TEXINFO_FILENAME: autolisp-reader-user-manual.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: autolisp-reader-user-manual: (autolisp-reader-user-manual).
+#+TEXINFO_DIR_DESC: AutoLISP reader programmer's guide.
 
 * Main Entry Points
 There are three families of entry points.

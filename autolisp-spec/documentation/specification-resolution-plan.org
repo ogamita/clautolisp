@@ -1,6 +1,10 @@
 #+TITLE: Plan To Resolve Under-Specified AutoLISP / Visual LISP Semantics
 #+AUTHOR: Codex
 #+OPTIONS: toc:3 num:t
+#+TEXINFO_FILENAME: specification-resolution-plan.info
+#+TEXINFO_DIR_CATEGORY: AutoLISP specification
+#+TEXINFO_DIR_TITLE: specification-resolution-plan: (specification-resolution-plan).
+#+TEXINFO_DIR_DESC: Resolution plan for the AutoLISP / Visual LISP spec.
 
 * Purpose
 This document defines a concrete plan to resolve the currently under-specified areas in `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org`.

@@ -1,4 +1,8 @@
 #+TITLE: autolisp-file-compat Design
+#+TEXINFO_FILENAME: design.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: autolisp-file-compat-design: (design).
+#+TEXINFO_DIR_DESC: AutoLISP file-compat design notes.
 
 * Purpose
 
