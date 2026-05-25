@@ -31,6 +31,18 @@ CLAUTOLISP_CI_PLATFORM ?= linux/amd64
 PREFIX ?= /opt/local
 DESTDIR ?=
 
+# Which CL implementation the bare `clautolisp' / `read-autolisp' /
+# `alfe' symlinks under $(PREFIX)/bin point at after install.
+# Each subproject Makefile picks the first available Lisp on the
+# host as its own default; passing DEFAULT_LISP on the command
+# line forces every subproject to agree:
+#
+#   make install DEFAULT_LISP=ccl
+#
+# If neither sbcl nor ccl is on PATH, install errors out before
+# the symlink step (the build-time probe-check guards against it).
+DEFAULT_LISP ?=
+
 # Help text comes from `## ` comments after each target name. Keep
 # new targets self-documenting: any target whose recipe matters at
 # the top level should carry a `## ...` description so it appears in
@@ -101,17 +113,27 @@ clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources
 	$(MAKE) -C autolisp-test clean-pdf
 	$(MAKE) -C autolisp-front-end clean-pdf
 
-install:  ## Install every subproject's built artefacts into $$PREFIX (default /opt/local).
-	$(MAKE) -C autolisp-spec      install PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
-	$(MAKE) -C clautolisp         install PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
-	$(MAKE) -C autolisp-test      install PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
-	$(MAKE) -C autolisp-front-end install PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
+# Forwards PREFIX, DESTDIR, and DEFAULT_LISP to every subproject so a
+# single CLI override (e.g. `make install DEFAULT_LISP=ccl') flows
+# through. When the user does not set DEFAULT_LISP, each subproject
+# falls back to its own (firstword $(AVAILABLE_IMPLEMENTATIONS)) —
+# so an SBCL-only host installs SBCL symlinks, etc.
+INSTALL_VARS := PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
+ifneq ($(DEFAULT_LISP),)
+  INSTALL_VARS += DEFAULT_LISP=$(DEFAULT_LISP)
+endif
+
+install:  ## Install every subproject's built artefacts into $$PREFIX (default /opt/local). Override the bare-name symlink target with DEFAULT_LISP=sbcl|ccl.
+	$(MAKE) -C autolisp-spec      install $(INSTALL_VARS)
+	$(MAKE) -C clautolisp         install $(INSTALL_VARS)
+	$(MAKE) -C autolisp-test      install $(INSTALL_VARS)
+	$(MAKE) -C autolisp-front-end install $(INSTALL_VARS)
 
 uninstall:  ## Remove every subproject's install from $$PREFIX.
-	$(MAKE) -C autolisp-spec      uninstall PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
-	$(MAKE) -C clautolisp         uninstall PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
-	$(MAKE) -C autolisp-test      uninstall PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
-	$(MAKE) -C autolisp-front-end uninstall PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
+	$(MAKE) -C autolisp-spec      uninstall $(INSTALL_VARS)
+	$(MAKE) -C clautolisp         uninstall $(INSTALL_VARS)
+	$(MAKE) -C autolisp-test      uninstall $(INSTALL_VARS)
+	$(MAKE) -C autolisp-front-end uninstall $(INSTALL_VARS)
 
 # ---------------------------------------------------------------------
 # Forwarded fine-grained test targets (see issues/closed/test-targets.issue).
