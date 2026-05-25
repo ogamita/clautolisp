@@ -92,6 +92,27 @@ recognised encoding still gets caught here."
   (signals cli-usage-error
     (parse-arguments '("-E" "/etc/passwd"))))
 
+(test cli-encoding-line-terminator-suffix
+  "Line-termination.issue: `-e UTF-8-mac' / `-dos' / `-unix' / -lf /
+-cr / -crlf are accepted on top of any base encoding. The slot
+keeps the suffix (so *AUTOLISP-FILE-ENCODING* surfaces it
+unchanged); the canonical spelling preserves it as documented."
+  (dolist (suffix '("-mac" "-dos" "-unix" "-lf" "-cr" "-crlf" "-MAC" "-Dos"))
+    (let ((opts (parse-arguments (list "-e" (format nil "UTF-8~A" suffix)))))
+      (is (search (string-downcase suffix)
+                  (cli-options-load-encoding opts))
+          "Suffix ~A preserved in load-encoding slot" suffix)
+      (is (search "UTF-8" (cli-options-load-encoding opts))
+          "Base UTF-8 preserved alongside ~A" suffix)))
+  ;; Same on -E.
+  (let ((opts (parse-arguments '("-E" "ISO-8859-1-crlf"))))
+    (is (string= "ISO-8859-1-crlf" (cli-options-io-encoding opts))))
+  ;; A suffix on a typo still fails — the base is validated.
+  (signals cli-usage-error
+    (parse-arguments '("-e" "UTF-8-banana")))
+  (signals cli-usage-error
+    (parse-arguments '("-e" "ftu-8-mac"))))
+
 (test cli-bootstrap-and-host-and-dialect
   "Phase truncation, host, and dialect are routed onto the right slots."
   (let ((opts (parse-arguments '("--bootstrap-phase" "core"

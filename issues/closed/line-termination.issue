@@ -1,3 +1,29 @@
+RESOLVED on the line-termination branch:
+
+  - clautolisp/autolisp-cli/source/encoding.lisp gains
+    *line-terminator-suffixes* and %match-line-terminator-suffix.
+    RESOLVE-ENCODING-NAME tries the line-terminator path first:
+    strip a recognised suffix (-mac/-dos/-unix/-lf/-cr/-crlf,
+    case-insensitive), recurse on the base for the keyword, and
+    return (canonical-base + canonical-suffix,
+    (base-kw :newline nl-kw)).
+  - For -e the compound form propagates through build-context to
+    set-default-source-encoding to CL OPEN, so the file actually
+    reads with the requested line discipline.
+  - For -E the suffix lands in the cli-options slot and the
+    *AUTOLISP-TERMINAL-ENCODING* global unchanged, but is not
+    acted on at runtime: terminal IO is line-buffered in LINE
+    discipline mode and the kernel already strips line terminators.
+  - print-encodings catalogues the suffix shorthand at the top of
+    its output.
+  - Typo guard still catches base-encoding typos: -e UTF-8-banana
+    fails (unknown SUFFIX); -e ftu-8-mac fails (unknown BASE).
+  - 19 new test checks; 278 alfe checks total, all green.
+
+Version 1.0.52.
+
+--- Original issue ---
+
 line terminations have been dropped. They must be accepted and processed for -e ; they should be accepted for -E, but unless the terminal is configured specifically they'll have to be ignored (by default terminal line discipline is LINE which means we receive data line by line, so the line termination is not processed. We'd have to swich to character line discipline to have to process it, which could matter only if we hooked stdin to a remote process with specific line termination... So for now -E linetermination is accepted but ignored.  but for -e it must be processed. 
 
 17:29[pjb@thalassa org.xquartz:0 clautolisp 83Gi]$ ~/check-vars 
