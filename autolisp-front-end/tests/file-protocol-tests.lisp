@@ -386,13 +386,18 @@ work without us forking the runtime."
             (is (search "*AUTOLISP-PROTOCOL-STDINFILE*" content))
             (is (search "*AUTOLISP-PROTOCOL-DIR*" content))
             (is (search "*AUTOLISP-DEBUG*" content))
-            (is (search "*AUTOLISP-VERSION*" content))
+            ;; The run-common.lsp protocol generation moved from
+            ;; *AUTOLISP-VERSION* to *AUTOLISP-RUNCOMMON-VERSION*
+            ;; so the CLI-derived *AUTOLISP-VERSION* (alfe build
+            ;; version string from transmit-options.issue) can
+            ;; occupy its canonical name without colliding.
+            (is (search "*AUTOLISP-RUNCOMMON-VERSION*" content))
             ;; Underscore variants (what the actual runtime reads)
             (is (search "*AUTOLISP_PROTOCOL_STATUSFILE*" content))
             (is (search "*AUTOLISP_PROTOCOL_STDINFILE*" content))
             (is (search "*AUTOLISP_PROTOCOL_DIR*" content))
             (is (search "*AUTOLISP_DEBUG*" content))
-            (is (search "*AUTOLISP_VERSION*" content))))
+            (is (search "*AUTOLISP_RUNCOMMON_VERSION*" content))))
       (delete-workdir workdir))))
 
 ;;; --- heartbeat -----------------------------------------------------
