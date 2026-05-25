@@ -1,0 +1,204 @@
+#+TITLE: Missing-functions implementation — design notes
+#+AUTHOR: clautolisp
+#+OPTIONS: toc:2 num:t
+
+Status: open
+Companion to: [[file:missing-functions.issue][issues/open/missing-functions.issue]]
+Baseline: origin/master @ 2288f6c
+
+This file records the architecture and scoping decisions that gate
+the implementation of the 649 currently-missing spec operators. The
+flat list and family counts live in =missing-functions.issue=; this
+document is the "how / in what order / what has to be decided first"
+companion.
+
+* Cross-cutting decision: stub everything first
+
+Primary, project-wide policy agreed up front:
+
+- *Every* spec operator that is not yet implemented must still be
+  *registered* (as a builtin / special operator), never left
+  undefined.
+- A stub must NOT raise on load and must NOT hard-error when called.
+- Default stub behaviour: print a warning and continue, returning
+  =nil= (or a benign value where a specific shape is obviously
+  required).
+
+Rationale: real-world =.lsp= corpora reference hundreds of operators
+we have not implemented yet. If those names are undefined, the files
+fail to load (=UNDEFINED-FUNCTION=) or abort on first call, which
+blocks all forward progress. Stubbing lets large programs load and
+run partially so we can make progress rapidly and discover what is
+actually exercised.
+
+** Stub mechanics (proposed)
+
+- Generate the stub registry mechanically from the missing-operator
+  inventory (the 649 names), so it stays in sync with the spec and
+  shrinks automatically as real implementations land.
+- Each stub, when called, emits one warning on =*error-output*= of
+  the form:
+  : ; warning: <NAME> is not implemented in clautolisp (stub); returning nil
+  then returns =nil=.
+- Warn at most once per operator name per session (dedupe via a
+  hash-table) to avoid drowning the output of a program that calls a
+  stub in a loop. (Implementation detail; can start un-deduped.)
+- A real implementation simply overrides the stub by being
+  registered later / taking precedence in =core-builtins=.
+
+** Reconciliation with the conformance harness (open point)
+
+A warn-and-return-nil stub would make an =autolisp-test= value
+assertion *FAIL*, which is misleading — the operator is not wrong,
+it is absent. Options to keep the verdict honest:
+
+1. Mark stubs in a registry the harness can consult, so a result
+   from a stubbed operator is reported =UNIMPLEMENTED= rather than
+   =FAIL=. (Preferred — the harness already has an =UNIMPLEMENTED=
+   status.)
+2. Have the stub raise a recognizable =:not-implemented=
+   =autolisp-runtime-error= in a "strict / conformance" mode while
+   warning-and-continuing in the default "bring-up" mode, gated by a
+   session flag.
+
+Decision deferred; option 1 is the leading candidate because it does
+not change runtime behaviour between modes.
+
+* Execution-model finding (informs the command loop)
+
+In both AutoCAD and BricsCAD, AutoLISP / Visual LISP runs
+*single-threaded on the main application thread* — the same thread
+that runs the command processor and pumps the UI message loop. There
+is no separate LISP thread and no cross-thread handoff:
+
+- =(command …)= feeds tokens into the same command engine the
+  command line uses and runs synchronously.
+- =PAUSE= suspends the LISP evaluation and re-enters the message
+  pump to gather user input, then resumes on the same thread.
+- Reactor (=VLR-*=) callbacks fire synchronously on that thread.
+- The drawing database and the interpreter are not designed for
+  concurrent access (ObjectARX / BRX require main-thread access).
+
+Consequence for clautolisp: do NOT introduce a separate thread for
+the command loop or interaction — threading would be *less* faithful.
+Model everything as synchronous calls that, at suspension points,
+pull from the existing headless interaction channel (master phase 12).
+
+* Command loop — re-scoped (was "C.1")
+
+The command surface is two separate things; only one carries cost,
+and it is smaller than first stated.
+
+** Trivial: the REPL / command-line dispatch
+Typing =FOO= at the prompt is just a reader rule: read a bare token,
+look it up, dispatch. A user-defined =(defun c:foo () …)= is invoked
+by =FOO= → =(c:foo)=; =(C:FOO)= already works as a plain call. No
+architecture.
+
+** Bounded: the =(command …)= builtin
+=(command …)= feeds an argument *stream* into a command's prompt
+state machine. The plumbing is medium-sized, not monolithic:
+- the token-feed protocol (a command consumes successive prompt
+  answers of expected types);
+- =PAUSE= / resume pulling from the interaction channel;
+- mid-command cancellation + =*error*= unwinding (this is what
+  =*push-error-using-command*= / =*pop-error-mode*= exist for).
+- =command-s= is *easier*: it forbids =PAUSE= (all args supplied) —
+  a pure synchronous "run or error". =vl-cmdf= is =command-s=
+  returning T/nil instead of raising.
+
+** Scope-gated, optional: the built-in command library
+The open-ended part is *how many* native commands (LINE, CIRCLE,
+LAYER, …) we emulate, each a state machine mutating the MockHost DB.
+This is content, not architecture, and is optional. If scope is
+"=(command …)= drives user =C:= commands plus a chosen small set of
+MockHost commands", the command loop is modest.
+
+* ActiveX / COM object model (VLAX-* 46, VLA-* 2, VLAX-FOR, …)
+
+Two execution paths, selected by platform:
+
+** MS-Windows path: real COM via CFFI
+On Windows we can bind the COM ABI through CFFI and operate on real
+ActiveX objects (the live AutoCAD/BricsCAD application object,
+documents, model space, external automation servers such as Excel,
+etc.). =vlax-create-object= / =vlax-get-object= return genuine COM
+interface pointers; property/method dispatch goes through =IDispatch=.
+
+** macOS / Linux path: simulation
+Off Windows there is no COM. We simulate the object model:
+- a registry of emulated classes with their properties and methods,
+  backed by the MockHost data structures;
+- =vlax-get-property= / =vlax-put-property= / =vlax-invoke-method=
+  dispatch against that emulated type information;
+- =vlax-for= enumerates emulated collections;
+- variant / safearray conversions (foundations already exist on
+  master, phase 13).
+
+** Objects that interface with the OS
+Some ActiveX objects are bridges to OS / external applications
+(filesystem objects, shells, Office automation). On Windows these
+are real; off Windows they are either simulated to a useful subset
+or stubbed (warn + nil) per the project-wide stub policy. Which
+ones to simulate vs stub is decided case by case as real programs
+exercise them.
+
+** Property-reflection family
+=getpropertyvalue= / =setpropertyvalue= / =ispropertyreadonly= /
+=ispropertyvalid= / =listallproperties= / =dumpallproperties= ride
+on the same object/type model and follow the same Windows-real /
+elsewhere-simulated split.
+
+* DOSLib (DOS_* — 22) — postponed
+
+None of the =DOS_*= functions are used by current target corpora, so
+implementation is postponed. They remain stubbed (warn + nil) like
+everything else. When needed: DOSLib is Windows-oriented; revisit
+with an explicit platform-gating decision at that time.
+
+* ARX / BRX (ARX*, AUTOARXLOAD, VL-ARX-IMPORT, …) — load-only scope
+
+We do not need to reimplement ObjectARX / BRX. The only requirement
+is to be able to *load* the arx/brx libraries the target programs
+depend on — concretely, the *EPURE* library.
+
+Action item: audit which AutoLISP functions EPURE (and any other
+required arx/brx module) actually *calls* and *defines*. Those become
+the real implementation priority; the arx/brx loader itself can be a
+stub that:
+- accepts the load request, warns that native module loading is not
+  performed, and returns success-shaped =nil=/=T= as appropriate so
+  the calling program continues;
+- (later) optionally maps a known module name to a Lisp-side
+  reimplementation of just the functions that module would have
+  provided.
+
+So "implement ARX" reduces to "stub the loaders + reimplement the
+handful of EPURE-provided entry points that are exercised", not
+"emulate ObjectARX".
+
+* Suggested first-pass order
+
+1. Install the mechanical stub layer for all 649 missing operators
+   (warn + nil), wired so nothing is ever undefined. This unblocks
+   loading real corpora immediately.
+2. Audit EPURE (and target corpora) to learn which operators are
+   actually called; promote those out of the stub layer first.
+3. Implement the genuinely portable, host-free operators (SET, the
+   core/misc compute helpers, portable VLE-*/ACET-* subsets).
+4. Extend the HAL + MockHost for the database / prompt / graphics
+   families as corpora demand them.
+5. ActiveX: simulation backend off Windows; CFFI/COM backend on
+   Windows, behind one HAL interface.
+6. Defer DOSLib, native ARX/BRX emulation, VLISP-IDE surfaces, and
+   any vendor-internal (BCAD$*, LISP$*, ADS) operators — they stay
+   stubbed until a concrete need appears.
+
+* See also
+- [[file:missing-functions.issue][missing-functions.issue]] — the flat list + family counts.
+- =../../clautolisp/documentation/implementation-roadmap.org= — HAL /
+  MockHost / GuiHost / LiveHost phase plan.
+- =../../clautolisp/documentation/specifications.org= — the
+  clautolisp command specification.
+- =../../autolisp-test/= — conformance harness that should report
+  stubbed operators as UNIMPLEMENTED.
