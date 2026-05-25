@@ -4,7 +4,7 @@
 
 This file tracks actionable work for the `autolisp-reader` system.
 
-Architecture and normative design notes belong in `documentation/specification.org`.
+Architecture and normative design notes belong in `documentation/autolisp-reader-specifications.org`.
 
 ## Current Status
 

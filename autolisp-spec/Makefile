@@ -8,6 +8,7 @@
 EMACS          ?= emacs
 LATEX_COMPILER ?= xelatex
 MAKEINFO       ?= makeinfo
+INSTALL_INFO   ?= install-info
 AUTOCAD_RUNNER ?=
 BRICSCAD_RUNNER ?=
 
@@ -131,11 +132,15 @@ install: build  ## Install docs (.org + .pdf + HTML), Info, alref libs, plain pa
 	@if [ -d $(PAGES_DIR) ]; then cp -R $(PAGES_DIR)/. $(DATA_INSTALL_DIR)/pages/; fi
 	@if [ -f $(INFO_DIR)/autolisp-spec.info ]; then \
 	  install -m 0644 $(INFO_DIR)/autolisp-spec.info $(INFO_INSTALL_DIR)/; \
+	  $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" \
+	    $(INFO_DIR)/autolisp-spec.info 2>/dev/null \
+	    || echo "[skip] install-info dir update for autolisp-spec.info"; \
 	fi
 	@for f in documentation/autolisp-visual-lisp-specification-draft.org \
 	          documentation/autolisp-visual-lisp-specification-draft.pdf \
 	          documentation/autolisp-reference-notes.org \
-	          documentation/autolisp-reference-notes.pdf; do \
+	          documentation/autolisp-reference-notes.pdf \
+	          documentation/autolisp-spec-user-manual.org; do \
 	  if [ -f $$f ]; then install -m 0644 $$f $(DOC_INSTALL_DIR)/; fi; \
 	done
 	@if [ -d emacs ]; then \
@@ -150,6 +155,8 @@ install: build  ## Install docs (.org + .pdf + HTML), Info, alref libs, plain pa
 uninstall:  ## Remove the spec install from $$PREFIX.
 	rm -rf $(DOC_INSTALL_DIR) $(DATA_INSTALL_DIR) \
 	       $(EMACS_INSTALL_DIR) $(LISP_INSTALL_DIR)
+	@$(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" \
+	  autolisp-spec.info 2>/dev/null || true
 	rm -f $(INFO_INSTALL_DIR)/autolisp-spec.info
 
 # Runner templates must contain:

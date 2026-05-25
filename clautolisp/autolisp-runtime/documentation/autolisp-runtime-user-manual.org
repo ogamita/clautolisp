@@ -1,37 +1,141 @@
 #+TITLE: AutoLISP Runtime
-#+SUBTITLE: USER MANUAL
+#+SUBTITLE: User Manual
 #+AUTHOR: clautolisp contributors
 #+EMAIL: pjb@informatimago.com
 #+OPTIONS: toc:t num:t html-postamble:nil
 #+TEXINFO_FILENAME: autolisp-runtime-user-manual.info
 #+TEXINFO_DIR_CATEGORY: clautolisp
 #+TEXINFO_DIR_TITLE: autolisp-runtime-user-manual: (autolisp-runtime-user-manual).
-#+TEXINFO_DIR_DESC: AutoLISP Runtime.
+#+TEXINFO_DIR_DESC: AutoLISP Runtime — programmer's guide.
 
 * Introduction
 
-How a Common Lisp developer integrates and drives the clautolisp.autolisp-runtime system.
+This manual is the programmer's guide to the
+=clautolisp.autolisp-runtime= system. The audience is a Common
+Lisp developer integrating the runtime — embedding the AutoLISP
+evaluator in a host application, adding new builtins, or driving
+it from CL code for tests or batch processing.
 
-This document is a stub seeded by documentation-synchronisation.issue.
-Audience: user / integrator.
+The CLI front-ends (=clautolisp(1)= and =alfe(1)=) wrap this
+system; their man pages cover end-user concerns. Library
+mechanics live here.
 
-* Scope
+* Loading
 
-User manual: how autolisp-runtime is used.
+The system is named =clautolisp/autolisp-runtime= in =clautolisp.asd=.
+Load it via ASDF:
 
-* Topics
-  - Installation\n- Loading + entry points\n- Usage examples\n- Configuration knobs\n- Troubleshooting\n- See also (specs, source, related projects)
+  (asdf:load-system "clautolisp/autolisp-runtime")
 
-* References
+The dependency is =clautolisp/autolisp-reader= and =uiop=.
 
-- Source code: see the subproject's =source/= directory.
-- README: =README.org= in the subproject root.
-- Plan / roadmap: =PLAN.md= in the subproject root.
-- Sibling tracks: autolisp-runtime-specifications.org
+* Running AutoLISP code
+
+The high-level entry points are:
+
+- =run-autolisp-string= TEXT &key dialect setup-fn — parse
+  TEXT, run every form in a fresh runtime session, return the
+  value of the last form.
+- =run-autolisp-file= PATH &key dialect — load and run the file's
+  forms in a fresh session.
+- =autolisp-eval= FORM &optional context — evaluate a single
+  pre-parsed runtime value against the given evaluation context.
+- =autolisp-eval-progn= FORMS context — evaluate a sequence,
+  returning the last value.
+
+The =:dialect= keyword takes a dialect descriptor from
+=clautolisp.autolisp-reader= (=autolisp-dialect-strict=,
+=autolisp-dialect-autocad-2026=, =autolisp-dialect-bricscad-v26=).
+
+* Building a context manually
+
+For long-lived sessions, build a context once and reuse it:
+
+  (let* ((context (make-default-runtime-context
+                   :dialect (autolisp-dialect-strict))))
+    ;; install core builtins (separate system)
+    (clautolisp.autolisp-builtins-core:install-core-builtins)
+    ;; run a few forms
+    (autolisp-eval-progn forms context))
+
+The context owns a session; the session owns a document
+namespace. Inspect via =evaluation-context-session=,
+=runtime-session-current-document=, etc.
+
+* Variable / function binding
+
+The runtime is Lisp-1: SETQ and DEFUN write the same per-symbol
+binding cell. Read and write via:
+
+- =lookup-variable= SYMBOL &optional CONTEXT → (values value boundp origin)
+- =lookup-function= SYMBOL &optional CONTEXT → (values function boundp origin)
+- =set-variable= SYMBOL VALUE &optional CONTEXT
+- =set-function= SYMBOL FUNCTION &optional CONTEXT
+- =intern-autolisp-symbol= NAME → autolisp-symbol
+
+Both lookup functions walk the dynamic-frame stack first, then
+fall back to the namespace cell. =set-variable= mirrors:
+updates the innermost dynamic shadow if one exists, else writes
+to the namespace cell.
+
+* The HAL backend
+
+When the runtime is asked to perform a host-side AutoLISP
+operation (entget, ssget, getvar, command, …) it delegates to the
+session's HAL backend. Install one via:
+
+  (set-runtime-session-host session host-instance)
+
+See =clautolisp.autolisp-host= for the protocol and
+=clautolisp.autolisp-mock-host= for the in-memory test backend.
+When no HAL is attached, host-side ops signal
+=:host-not-supported=.
+
+* Encoding
+
+The session's =default-source-encoding= slot lets code override
+the dialect's default for file loads:
+
+  (set-default-source-encoding context :utf-8)
+
+The CLI's =-e ENC= flag wires this on startup; programmatic code
+can call =set-default-source-encoding= at any point.
+
+* Error handling
+
+Runtime errors signal =autolisp-runtime-error= with a structured
+=:code= and =:message=. The CL handler chain is the natural way
+to catch them:
+
+  (handler-case
+      (autolisp-eval form context)
+    (autolisp-runtime-error (condition)
+      (format t "AutoLISP error: ~A~%"
+              (autolisp-runtime-error-message condition))))
+
+The =call-with-autolisp-error-handler= helper wraps a thunk with
+the same handler the CLI uses, surfacing the call stack on
+debug-mode invocations.
+
+* Printing AutoLISP values
+
+The runtime installs CL =print-object= methods so an =autolisp-string=
+prints as =abc= or ="abc"= (depending on =*print-escape*=), an
+=autolisp-symbol= prints as its name, an =autolisp-ename= prints
+as =<Entity name: …>=, and so on. The print pathway honours
+=clautolisp.autolisp-runtime:*color-output*= when set to a
+keyword accent (:yellow / :blue) — symbols get wrapped in the
+matching ANSI sequence.
+
+* See also
+
+- =autolisp-runtime-specifications.org= — internal design + invariants.
+- =autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org= —
+  the normative AutoLISP language reference.
+- =clautolisp.autolisp-builtins-core= — the standard builtin set
+  this runtime expects loaded for real AutoLISP code to run.
+- =clautolisp.autolisp-host= — HAL contract.
 
 * Synchronisation
 
-Per the project-wide synchronisation rule (AGENTS.md, Documentation
-Synchronisation section), changes to the code, the autolisp-runtime
-specifications, this user-manual, or the man page (where applicable)
-must be propagated to every track.
+Per AGENTS.md, code / spec / user-manual changes propagate.
