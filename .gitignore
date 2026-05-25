@@ -130,3 +130,9 @@ autolisp-spec/results/
 bin/
 .artifacts/
 .claude/
+
+# Generated documentation artifacts (built from .org sources via the
+# Makefile pipeline; not checked in).
+documentation/*.info
+**/documentation/*.info
+**/documentation/*.texi
