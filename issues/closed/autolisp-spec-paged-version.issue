@@ -1,3 +1,26 @@
+RESOLVED — merged into master as 98ca5d5
+(Merge autolisp-spec-paged-version: paged spec, build/install
+rework, CLI fixes, debugger spec.)
+
+The six implementation phases all landed as separate commits on
+the autolisp-spec-paged-version branch before the merge:
+
+  28211e3  Phase A — split the spec into per-section pages.
+  ffcbb34  Phase B — HTML build with per-page navigation.
+  ff1f8f2  Phases C-F — info build, install target, alref libs
+           (Emacs alref.el + AutoLISP alref.lsp).
+  50bd51c  autolisp-spec: chapter TOCs + semantic retag of
+           backticked spans (em / code / tt).
+  43dc50b  install: repo-wide convention + per-subproject
+           install/uninstall targets.
+
+Subsequent on-branch work (probe-based build/install,
+CLI fixes, runtime PRINT-OBJECT, locale-aware encoding, …)
+landed alongside before the merge — see `git log
+8a6c46f..master' for the full set if you need it.
+
+--- Original issue ---
+
 autolisp-spec paged version.
 
 As an autolisp developper, I need to be able to find autolisp-spec
