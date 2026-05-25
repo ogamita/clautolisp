@@ -121,7 +121,7 @@ is useful for testing.
 Whatever the dialect selected, all operators remain callable.
 Out-of-dialect operators are eligible for a diagnostic warning at
 use time (the warning machinery itself is tracked separately —
-see =clautolisp-out-of-dialect-warnings.issue= in the project
+see =deferred-clautolisp-out-of-dialect-warnings.issue= in the project
 issue tracker).
 
 * Host selection

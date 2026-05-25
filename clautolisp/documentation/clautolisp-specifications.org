@@ -165,7 +165,7 @@ gates DEFAULTS (encoding, token-mode, ~atof~ behaviour), not
 operator visibility. Calling an operator that lies outside the
 selected dialect's documented surface is eligible for a diagnostic
 warning at use time; the warning machinery itself is tracked
-separately (see ~clautolisp-out-of-dialect-warnings.issue~ in the
+separately (see ~deferred-clautolisp-out-of-dialect-warnings.issue~ in the
 project issue tracker).
 
 ** Input selection
