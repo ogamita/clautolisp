@@ -216,3 +216,113 @@ than (EXPECTED …)."
     (is (consp result))
     (is (eq (intern-autolisp-symbol "EXPECTED") (first result)))
     (is (= 33 (second result)))))
+
+;;;; ----- M1 special operators: SET, TRACE, UNTRACE -----
+
+(test eval-set-form-with-quoted-symbol
+  "(set 'foo 99) binds FOO to 99 and returns 99 — the canonical
+SET shape (Autodesk reference)."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(set 'foo 99) foo")))
+    (is (eql 99 result))))
+
+(test eval-set-form-evaluates-place
+  "(setq name 'target) (set name 42) binds the runtime symbol
+named by NAME's value — the distinguishing feature vs SETQ,
+which never evaluates its place."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(setq name 'target) (set name 42) target")))
+    (is (eql 42 result))))
+
+(test eval-set-form-wrong-arg-count-signals
+  "(set 'foo) with one argument raises :wrong-number-of-arguments."
+  (reset-autolisp-symbol-table)
+  (let (signalled-code)
+    (handler-case
+        (run-autolisp-string "(set 'foo)")
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :wrong-number-of-arguments signalled-code))))
+
+(test eval-set-form-place-must-evaluate-to-symbol
+  "(set 5 99) — place evaluates to an integer, not a symbol —
+raises :invalid-set-place."
+  (reset-autolisp-symbol-table)
+  (let (signalled-code)
+    (handler-case
+        (run-autolisp-string "(set 5 99)")
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :invalid-set-place signalled-code))))
+
+(test eval-trace-form-adds-name-to-set
+  "(trace foo) inserts FOO into *autolisp-traced-symbols* and
+returns the FOO symbol (the SETQ current-value idiom)."
+  (reset-autolisp-symbol-table)
+  (let ((clautolisp.autolisp-runtime:*autolisp-traced-symbols*
+          (make-hash-table :test 'equal)))
+    (let ((result (run-autolisp-string "(defun foo () 1) (trace foo)")))
+      (is (typep result 'clautolisp.autolisp-runtime:autolisp-symbol))
+      (is (string= "FOO" (autolisp-symbol-name result)))
+      (is (gethash "FOO"
+                   clautolisp.autolisp-runtime:*autolisp-traced-symbols*)))))
+
+(test eval-untrace-form-removes-one-name
+  "(untrace foo) removes FOO from *autolisp-traced-symbols* and
+leaves other entries alone."
+  (reset-autolisp-symbol-table)
+  (let ((clautolisp.autolisp-runtime:*autolisp-traced-symbols*
+          (make-hash-table :test 'equal)))
+    (setf (gethash "FOO" clautolisp.autolisp-runtime:*autolisp-traced-symbols*) t)
+    (setf (gethash "BAR" clautolisp.autolisp-runtime:*autolisp-traced-symbols*) t)
+    (run-autolisp-string "(defun foo () 1) (defun bar () 2) (untrace foo)")
+    (is (not (gethash "FOO" clautolisp.autolisp-runtime:*autolisp-traced-symbols*)))
+    (is (gethash "BAR" clautolisp.autolisp-runtime:*autolisp-traced-symbols*))))
+
+(test eval-untrace-no-args-clears-all
+  "(untrace) with no arguments is the clautolisp clear-all
+extension — empties the entire trace set."
+  (reset-autolisp-symbol-table)
+  (let ((clautolisp.autolisp-runtime:*autolisp-traced-symbols*
+          (make-hash-table :test 'equal)))
+    (setf (gethash "FOO" clautolisp.autolisp-runtime:*autolisp-traced-symbols*) t)
+    (setf (gethash "BAR" clautolisp.autolisp-runtime:*autolisp-traced-symbols*) t)
+    (run-autolisp-string "(untrace)")
+    (is (zerop (hash-table-count
+                clautolisp.autolisp-runtime:*autolisp-traced-symbols*)))))
+
+(test trace-emits-enter-exit-lines-on-traced-call
+  "After (trace id), calling (id 5) emits two trace lines on the
+trace stream — `-> (ID 5)` and `<- ID => 5` — driven by the
+per-symbol filter without touching *autolisp-trace-p*. Uses the
+identity function so no core builtins are required (the
+autolisp-runtime test image doesn't load autolisp-builtins-core)."
+  (reset-autolisp-symbol-table)
+  (let* ((captured (make-string-output-stream))
+         (clautolisp.autolisp-runtime:*autolisp-trace-p* nil)
+         (clautolisp.autolisp-runtime:*autolisp-trace-stream* captured)
+         (clautolisp.autolisp-runtime:*autolisp-traced-symbols*
+           (make-hash-table :test 'equal)))
+    (run-autolisp-string "(defun id (x) x) (trace id) (id 5)")
+    (let ((text (get-output-stream-string captured)))
+      (is (search "-> (ID 5)" text))
+      (is (search "<- ID => 5" text)))))
+
+(test untrace-stops-emitting-trace-lines
+  "After (trace id) then (untrace id), a subsequent (id 7) must
+NOT add new lines to the trace stream. Single run-autolisp-string
+call so the defun + the post-untrace use share one session (each
+run-autolisp-string spins up a fresh session by design). Marker
+text after the second call lets us split before/after the untrace
+without two separate captures."
+  (reset-autolisp-symbol-table)
+  (let* ((captured (make-string-output-stream))
+         (clautolisp.autolisp-runtime:*autolisp-trace-p* nil)
+         (clautolisp.autolisp-runtime:*autolisp-trace-stream* captured)
+         (clautolisp.autolisp-runtime:*autolisp-traced-symbols*
+           (make-hash-table :test 'equal)))
+    (run-autolisp-string
+     "(defun id (x) x) (trace id) (id 5) (untrace id) (id 7)")
+    (let* ((text (get-output-stream-string captured)))
+      (is (search "(ID 5)" text))
+      (is (not (search "(ID 7)" text))))))
