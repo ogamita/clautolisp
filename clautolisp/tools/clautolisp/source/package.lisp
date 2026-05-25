@@ -10,6 +10,7 @@
                 #:autolisp-dialect-strict
                 #:autolisp-dialect-autocad-2026
                 #:autolisp-dialect-bricscad-v26
+                #:autolisp-dialect-clautolisp
                 #:diagnostic
                 #:diagnostic-code
                 #:diagnostic-message

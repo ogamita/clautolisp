@@ -95,7 +95,8 @@
    #:reader-options-from-dialect
    #:autolisp-dialect-strict
    #:autolisp-dialect-autocad-2026
-   #:autolisp-dialect-bricscad-v26))
+   #:autolisp-dialect-bricscad-v26
+   #:autolisp-dialect-clautolisp))
 
 (defpackage #:clautolisp.autolisp-reader.internal
   (:use #:cl)
@@ -144,4 +145,5 @@
    #:reader-options-from-dialect
    #:*autolisp-dialect-strict*
    #:*autolisp-dialect-autocad-2026*
-   #:*autolisp-dialect-bricscad-v26*))
+   #:*autolisp-dialect-bricscad-v26*
+   #:*autolisp-dialect-clautolisp*))
