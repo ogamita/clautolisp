@@ -1,0 +1,88 @@
+As an autolisp developper I need to have access to some options given to the CLI of alfe or clautolisp.
+
+
+This table defines variables that are available in the autolisp image,
+taken from the CLI arguments and options of alfe or clautolisp:
+
+| option                                   | RO/RW | A/C  | autolisp variable                              | value                                                                  |
+|------------------------------------------+-------+------+------------------------------------------------+------------------------------------------------------------------------|
+| --clautolisp                             | RO    | A    | *AUTOLISP-BACKEND*                             | CLAUTOLISP                                                             |
+| --bricscad                               | RO    | A    | *AUTOLISP-BACKEND*                             | BRICSCAD                                                               |
+| --autocad                                | RO    | A    | *AUTOLISP-BACKEND*                             | AUTOCAD                                                                |
+|                                          |       |      |                                                |                                                                        |
+| --mode {auto,automation,batch}           | RO    | A    | *AUTOLISP-MODE*                                | AUTO AUTOMATION BATCH                                                  |
+| --backend {attach,launch}                | RO    | A    | *AUTOLISP-PROCESS*                             | ATTACH LAUNCH                                                          |
+|                                          |       |      |                                                |                                                                        |
+| Before executing -l -x --main -i -q      | RO    | AC   | *AUTOLISP-ACTIONS*                             | list of (load "FILE") (eval EXPR) (main MAIN) (interactive t) (quit t) |
+| -l, --load FILE                          | RW 0  | AC   | while loading: *AUTOLISP-LOAD-PATHNAME*        | "FILE"                                                                 |
+| -x, --eval EXPR                          | RW 0  | AC   | while evaluating: *AUTOLISP-EXPRESSION*        | EXPR                                                                   |
+| --main FN                                | RW    | AC   | *AUTOLISP-MAIN*                                | FN                                                                     |
+| -i, --interactive                        | RO    | AC   | while running the REPL: *AUTOLISP-INTERACTIVE* | T                                                                      |
+| --quit                                   | RW    | AC   | *AUTOLISP-WILL-QUIT*                           | T                                                                      |
+|                                          |       |      |                                                |                                                                        |
+| --dialect NAME                           | RW    | AC   | *AUTOLISP-DIALECT*                             | STRICT AUTOCAD-2026 BRICSCAD-V26 CLAUTOLISP …                          |
+| --host {mock,null}                       | RO    | AC   | *AUTOLISP-HOST*                                | MOCK NIL                                                               |
+| --mock-input PATH                        | RO    | C    | *AUTOLISP-MOCK-INPUT*                          | "PATH"                                                                 |
+| --gui CMD                                | ro    | C    | *AUTOLISP-GUI-COMMAND*                         | "CMD"                                                                  |
+| --trace                                  | RW    | C    | *AUTOLISP-TRACE*                               | T                                                                      |
+|                                          |       |      |                                                |                                                                        |
+| -e ENC                                   | RW    | AC   | *AUTOLISP-FILE-ENCODING*                       | ISO-8859-1 WINDOWS-1252 UTF-8 …                                        |
+| -E ENC                                   | RW    | AC 2 | *AUTOLISP-TERMINAL-ENCODING*                   | ISO-8859-1 WINDOWS-1252 UTF-8 …                                        |
+|                                          |       |      |                                                |                                                                        |
+| --dwg FILE                               | RW    | A    | *AUTOLISP-DRAWING*                             | "FILE"                                                                 |
+| --epure                                  | RW 1  | A    | *AUTOLISP-PLUGIN-OPTIONS*                      | (EPURE)                                                                |
+|                                          |       |      |                                                |                                                                        |
+| --bootstrap-phase {marker,core,log,full} | RO    | A    | N/A ?                                          |                                                                        |
+|                                          |       |      |                                                |                                                                        |
+| --workdir DIR                            | RO    | A    | *AUTOLISP-WORKDIR*                             | "DIR"                                                                  |
+| --keep-workdir                           | RW    | A    | *AUTOLISP-KEEP-WORKDIR*                        | T                                                                      |
+| --timeout SECS                           | RW    | A    | *AUTOLISP-TIMEOUT*                             | SECS                                                                   |
+|                                          |       |      |                                                |                                                                        |
+| --no-init, -norc                         | RO    | AC   | *AUTOLISP-NO-INIT*                             | T                                                                      |
+|                                          |       |      | note: *AUTOLISP-LOAD-PATHNAME*                 |                                                                        |
+| --no-color                               | RW    | AC   | *AUTOLISP-NO-COLOR*                            | T                                                                      |
+| --dry-run                                | RO    | A    | *AUTOLISP-DRY-RUN*                             | T                                                                      |
+|                                          |       |      |                                                |                                                                        |
+| -v, --verbose                            | RW    | AC   | *AUTOLISP-VERBOSE*                             | T                                                                      |
+| -q, --quiet                              | RW    | AC   | *AUTOLISP-WILL-QUIT*                           | T                                                                      |
+| -d, --debug                              | RW    | AC   | *AUTOLISP-DEBUG*                               | T                                                                      |
+|                                          |       |      |                                                |                                                                        |
+| -h, --help                               | RO    | AC   | *AUTOLISP-HELP*                                | "string containing --help output"                                      |
+| -V, --version                            | RO    | AC   | *AUTOLISP-VERSION*                             | "1.0.0"                                                                |
+
+A/C: A = alfe, C = clautolisp AC = both
+
+0: the user code may modify these variable, but this has no impact.
+1: the user code may modify this variable, but this has no impact, unless a pluging activation function is called (To Be Defined).
+2: this option is missing from clautolisp --help (and from the implementation: clautolisp: Unknown option "-E".) This issue implies an update of the specification, user-manual, man page, and code of clautolisp to add this -E ENC option.
+
+The variables defined above are forwared to the remote autolisp CAD implementation by alfe.
+If clautolisp is used a subprocess, it will get these variables, in addition to the previous ones (some overlap).
+
+| variable  in alfe remote autolisp |
+|-----------------------------------|
+| *AUTOLISP-VERSION*                |
+| *AUTOLISP-OUTFILE*                |
+| *AUTOLISP-ERRFILE*                |
+| *AUTOLISP-STATUSFILE*             |
+| *AUTOLISP-INPFILE*                |
+| *AUTOLISP-LOGDIR*                 |
+| *AUTOLISP-RENDERFILE*             |
+| *AUTOLISP-LOGNAME*                |
+| *AUTOLISP-QUIT-ON-FINISH*         |
+| *AUTOLISP-BOOTSTRAP-PHASE*        |
+| *AUTOLISP-INVOCATION-DIR*         |
+| *AUTOLISP-DEBUG*                  |
+| *AUTOLISP-DEBUGFILE*              |
+| *AUTOLISP-USE-REMOTE-PROTOCOL*    |
+| *AUTOLISP-PROTOCOL-DIR*           |
+| *AUTOLISP-PROTOCOL-STATUSFILE*    |
+| *AUTOLISP-PROTOCOL-STDINFILE*     |
+| *AUTOLISP-PROTOCOL-STDOUTFILE*    |
+| *AUTOLISP-PROTOCOL-STDERRFILE*    |
+| *AUTOLISP-PROTOCOL-CONTROLFILE*   |
+| *AUTOLISP-PROTOCOL-HEARTBEATFILE* |
+| *AUTOLISP-PROTOCOL-READFILE*      |
+| *AUTOLISP-PROTOCOL-INFOFILE*      |
+| *AUTOLISP-PROTOCOL-RUNTIMEFILE*   |
+
