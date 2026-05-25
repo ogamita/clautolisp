@@ -7,7 +7,7 @@ autolisp-spec-pdf-versioned-filename.issue
 autolisp-spec-questions.issue
 
 clautolisp-debugger.issue
-clautolisp-out-of-dialect-warnings.issue
+deferred-clautolisp-out-of-dialect-warnings.issue
 
 missing-functions.issue
 
