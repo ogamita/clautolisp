@@ -9,15 +9,15 @@ Its responsibility is to accept AutoLISP source text, decode it at the input bou
 
 * Main Files
 - ~PLAN.md~
-- ~documentation/specification.org~
-- ~documentation/usage.org~
+- ~documentation/autolisp-reader-specifications.org~
+- ~documentation/autolisp-reader-user-manual.org~
 - ~tools/read-autolisp/README.org~
 
 * Status
 This module is in specification-first mode.
 
-The first implementation work should follow the syntax and data-model decisions recorded in ~documentation/specification.org~.
+The first implementation work should follow the syntax and data-model decisions recorded in ~documentation/autolisp-reader-specifications.org~.
 
-The current user-facing API is documented in ~documentation/usage.org~.
+The current user-facing API is documented in ~documentation/autolisp-reader-user-manual.org~.
 
 The batch validation tool is documented in ~tools/read-autolisp/README.org~.
