@@ -45,6 +45,19 @@ ifeq ($(HAVE_CCL),yes)
   AVAILABLE_IMPLEMENTATIONS += ccl
 endif
 
+# DEFAULT_LISP picks the implementation the bare `clautolisp' /
+# `read-autolisp' symlinks in $(PREFIX)/bin point at after install.
+# Defaults to the first implementation found on the host (SBCL
+# wins over CCL because of the order we append above). Override on
+# the command line to pin a different one, e.g.
+#
+#   make install DEFAULT_LISP=ccl
+#
+# When AVAILABLE_IMPLEMENTATIONS is empty (no CL on PATH) DEFAULT_LISP
+# is empty too — install's probe-check (via build) errors out before
+# we ever reach the symlink step, so the empty-string case is safe.
+DEFAULT_LISP ?= $(firstword $(AVAILABLE_IMPLEMENTATIONS))
+
 # Host OS detection — used by the per-platform run-file-compat
 # targets below. Wrong-platform recipes call require-os-* which
 # prints a [skip] line and exits 0 per the policy in
@@ -341,10 +354,28 @@ install: build  ## Install built executables, run-file-compat, and docs into $$P
 	@for f in documentation/*.org documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
+	@# Bare-name symlinks pointing at the user's preferred CL impl.
+	@# Relative targets so the install tree stays relocatable
+	@# (the user can rsync $(PREFIX)/bin/ to another machine and
+	@# the link keeps pointing at the sibling binary).
+	@if [ -n "$(DEFAULT_LISP)" ]; then \
+	  for stem in clautolisp read-autolisp; do \
+	    target="$$stem-$(DEFAULT_LISP)" ; \
+	    if [ -x "$(BIN_INSTALL_DIR)/$$target" ]; then \
+	      ln -sf "$$target" "$(BIN_INSTALL_DIR)/$$stem" ; \
+	      echo "linked:    $(BIN_INSTALL_DIR)/$$stem -> $$target" ; \
+	    else \
+	      echo "[skip]     $(BIN_INSTALL_DIR)/$$stem (target $$target not installed)" ; \
+	    fi ; \
+	  done ; \
+	else \
+	  echo "[skip]     bare symlinks (DEFAULT_LISP is empty)" ; \
+	fi
 	@echo "clautolisp install complete: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the clautolisp install from $$PREFIX.
-	rm -f $(BIN_INSTALL_DIR)/clautolisp-sbcl $(BIN_INSTALL_DIR)/clautolisp-ccl \
+	rm -f $(BIN_INSTALL_DIR)/clautolisp $(BIN_INSTALL_DIR)/read-autolisp \
+	      $(BIN_INSTALL_DIR)/clautolisp-sbcl $(BIN_INSTALL_DIR)/clautolisp-ccl \
 	      $(BIN_INSTALL_DIR)/read-autolisp-sbcl $(BIN_INSTALL_DIR)/read-autolisp-ccl \
 	      $(BIN_INSTALL_DIR)/clautolisp-gui-qt
 	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)

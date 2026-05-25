@@ -46,6 +46,20 @@ ifeq ($(HAVE_CCL),yes)
   AVAILABLE_IMPLEMENTATIONS += ccl
 endif
 
+# DEFAULT_LISP picks the implementation the bare `alfe' symlink
+# in $(PREFIX)/bin points at after install. Defaults to the first
+# implementation found on the host (SBCL wins over CCL because of
+# the order we append above). Override on the command line to pin
+# a different one, e.g.
+#
+#   make install DEFAULT_LISP=ccl
+#
+# Mirrors clautolisp/Makefile's variable of the same name; when
+# the root forwards `make install', a single CLI override flows
+# through both subprojects so the bare `clautolisp' and `alfe'
+# symlinks always agree on the underlying CL.
+DEFAULT_LISP ?= $(firstword $(AVAILABLE_IMPLEMENTATIONS))
+
 # Host OS detection — used by the per-platform alfe-backend test
 # targets below (test-alfe-{sbcl,ccl}-{bricscad,autocad}-*). Wrong-
 # platform targets call require-os-* which prints a [skip] line and
@@ -324,8 +338,22 @@ install: build  ## Install built alfe binaries + docs into $$PREFIX (run `make b
 	@for f in documentation/*.org documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
+	@# Bare-name `alfe' symlink pointing at the user's preferred
+	@# CL impl. Relative target so the install tree stays
+	@# relocatable across machines/staging dirs.
+	@if [ -n "$(DEFAULT_LISP)" ]; then \
+	  target="alfe-$(DEFAULT_LISP)" ; \
+	  if [ -x "$(BIN_INSTALL_DIR)/$$target" ]; then \
+	    ln -sf "$$target" "$(BIN_INSTALL_DIR)/alfe" ; \
+	    echo "linked:    $(BIN_INSTALL_DIR)/alfe -> $$target" ; \
+	  else \
+	    echo "[skip]     $(BIN_INSTALL_DIR)/alfe (target $$target not installed)" ; \
+	  fi ; \
+	else \
+	  echo "[skip]     bare alfe symlink (DEFAULT_LISP is empty)" ; \
+	fi
 	@echo "alfe install complete: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the alfe install from $$PREFIX.
-	rm -f $(BIN_INSTALL_DIR)/alfe-sbcl $(BIN_INSTALL_DIR)/alfe-ccl
+	rm -f $(BIN_INSTALL_DIR)/alfe $(BIN_INSTALL_DIR)/alfe-sbcl $(BIN_INSTALL_DIR)/alfe-ccl
 	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
