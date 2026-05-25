@@ -17,11 +17,13 @@
   (format t "  -x, --eval EXPRESSION  Evaluate EXPRESSION instead of reading a file.~%")
   (format t "  -i, --interactive      Enter the REPL after the action (same evaluation context).~%")
   (format t "Dialect:~%")
-  (format t "  --dialect NAME         One of: strict (default), autocad-2026, bricscad-v26.~%")
+  (format t "  --dialect NAME         One of: strict (default), autocad-2026, bricscad-v26, clautolisp.~%")
   (format t "  --strict               Shorthand for --dialect strict (portable AutoCAD ∩ BricsCAD).~%")
   (format t "  --autocad              Shorthand for --dialect autocad-2026.~%")
   (format t "  --bricscad             Shorthand for --dialect bricscad-v26.~%")
-  (format t "  --clautolisp           Synonym for --strict: the clautolisp default dialect.~%")
+  (format t "  --clautolisp           Shorthand for --dialect clautolisp. Enables clautolisp~%")
+  (format t "                         extensions (e.g. variadic functions). Out-of-dialect~%")
+  (format t "                         operators stay callable but emit a diagnostic at use.~%")
   (format t "Host:~%")
   (format t "  --host NAME            HAL backend: mock (default), null.~%")
   (format t "  --mock-input PATH      Attach the file at PATH as the MockHost prompt-stream.~%")
@@ -93,10 +95,14 @@ The descriptor carries the reader-level knobs the runtime uses."
     (:strict        (autolisp-dialect-strict))
     (:autocad-2026  (autolisp-dialect-autocad-2026))
     (:bricscad-v26  (autolisp-dialect-bricscad-v26))
-    ;; --clautolisp is currently a synonym for --strict; the
-    ;; clautolisp dialect's runtime knobs match :strict (no
-    ;; AutoCAD or BricsCAD extensions).
-    (:clautolisp    (autolisp-dialect-strict))))
+    ;; The clautolisp dialect is a superset of :strict (same
+    ;; reader knobs, conservative defaults that work on every
+    ;; conforming host) plus clautolisp extensions (variadic
+    ;; functions via &REST, future quality-of-life conveniences).
+    ;; It defaults to UTF-8 for source/file encoding, matching
+    ;; modern AutoCAD 2025+ / BricsCAD V26 baselines rather than
+    ;; the strict-dialect ISO-8859-1 ANSI/MBCS legacy default.
+    (:clautolisp    (autolisp-dialect-clautolisp))))
 
 (defun keyword->host (host-keyword)
   "Map :mock / :null to a HAL backend instance. Defaults to the

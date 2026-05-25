@@ -130,10 +130,34 @@
    :default-source-encoding :utf-8
    :default-file-encoding   :utf-8))
 
+(defparameter *autolisp-dialect-clautolisp*
+  ;; The clautolisp dialect is a superset of :strict — the conservative
+  ;; reader and runtime knobs that work on every conforming host,
+  ;; PLUS clautolisp-specific extensions (e.g. variadic functions via
+  ;; &REST, future quality-of-life conveniences). Code written for
+  ;; :clautolisp doesn't run unmodified on real AutoCAD / BricsCAD;
+  ;; that's the user's choice when they pick `--dialect clautolisp'
+  ;; over `--strict'. Default source/file encoding is UTF-8, matching
+  ;; the modern AutoCAD/BricsCAD baseline rather than the legacy
+  ;; AutoLISP ANSI/MBCS one — clautolisp is a 21st-century front-end
+  ;; for code editing under contemporary tooling.
+  (make-autolisp-dialect
+   :name :clautolisp
+   :token-mode :strict
+   :extended-string-escapes-p nil
+   :warn-on-integer-overflow-p nil
+   :canonical-case :upcase
+   :hex-float-atof-p nil
+   :open-ccs-mode-p nil
+   :unbound-variable-mode :silent-nil
+   :default-source-encoding :utf-8
+   :default-file-encoding   :utf-8))
+
 (defparameter *autolisp-named-dialects*
   (list (cons :strict *autolisp-dialect-strict*)
         (cons :autocad-2026 *autolisp-dialect-autocad-2026*)
-        (cons :bricscad-v26 *autolisp-dialect-bricscad-v26*)))
+        (cons :bricscad-v26 *autolisp-dialect-bricscad-v26*)
+        (cons :clautolisp *autolisp-dialect-clautolisp*)))
 
 (defun find-autolisp-dialect (name)
   "Return the canonical dialect descriptor named NAME, or nil."

@@ -413,25 +413,28 @@ The textual statuses written to =*AUTOLISP-PROTOCOL-STATUSFILE*=
 #+begin_example
 if --bricscad, --autocad or --clautolisp is explicit:
     use that backend
-else if MS-Windows:
-    if AUTOCAD_EXE or AUTOCAD_ACCORECONSOLE or
-       glob "C:/Program Files/Autodesk/*/accoreconsole.exe":
-        backend = autocad
-    else if BRICSCAD_EXE or
-            glob "C:/Program Files*/Bricsys/*/bricscad.exe":
-        backend = bricscad
-    else:
-        backend = clautolisp     ; new: in-process fallback
-else (macOS, Linux):
-    if /Applications/BricsCAD*.app (macOS) or BRICSCAD_EXE:
-        backend = bricscad
-    else:
-        backend = clautolisp     ; new: in-process fallback
+else if $ALFE_BACKEND_OVERRIDE is set:
+    use that backend
+else if $AUTOLISP_BACKEND is set:
+    use that backend (legacy alias)
+else:
+    backend = clautolisp     ; default on every system
 #+end_example
 
-The historical "no CAD => exit 3" fallback is replaced by the
-=clautolisp= backend, which makes the tool usable without any CAD
-installation.
+CAD backends (=autocad= / =bricscad=) are NEVER auto-selected. The
+default is always the in-process =clautolisp= engine, which ships
+with alfe and is available on every system. Selecting a CAD
+backend requires an explicit =--autocad= / =--bricscad= flag or
+the equivalent environment override.
+
+This is a deliberate behaviour change from the historical
+auto-detection. A host with both BricsCAD and AutoCAD installed
+got surprising and order-dependent results from auto-detect;
+with this rule, =alfe= with no flags always means "talk to the
+in-process clautolisp engine" — no probing, no surprises, no
+dependency on CAD installation state. Users who want a CAD
+backend by default can set =$ALFE_BACKEND_OVERRIDE=bricscad= (or
+=autocad=) once in their shell init.
 
 ** Supported matrix
 
