@@ -8,6 +8,7 @@ autolisp-spec-questions.issue
 
 clautolisp-debugger.issue
 deferred-clautolisp-out-of-dialect-warnings.issue
+deferred-command-special-form.issue
 
 missing-functions.issue
 
