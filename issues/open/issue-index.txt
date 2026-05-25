@@ -3,6 +3,12 @@
 
 alfe.plan -- remains to be tested with the CADs on macOS and MS-Windows
 
+autolisp-spec-pdf-versioned-filename.issue
+autolisp-spec-questions.issue
+
+clautolisp-debugger.issue
+deferred-clautolisp-out-of-dialect-warnings.issue
+
 missing-functions.issue
 
 
