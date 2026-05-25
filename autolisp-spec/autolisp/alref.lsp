@@ -47,6 +47,17 @@
 ;;;; strlen, strcase, princ, terpri, basic list ops). No vl-string-*,
 ;;;; no host-specific extensions.
 
+;; Library version. Bump the DEVELOP counter (third component) on
+;; every change that touches alref.lsp's behaviour. (alref-version)
+;; returns this string — useful when a user reports a bug, so we
+;; know which revision of the library they're running against.
+(setq *alref-version* "1.0.0")
+
+(defun alref-version ( )
+  "Return the alref.lsp library version as a string (e.g. \"1.0.0\").
+Format is MAJOR.MINOR.DEVELOP, matching the clautolisp convention."
+  *alref-version*)
+
 ;; Default install root. Matches the repo-wide PREFIX=/opt/local
 ;; convention documented in the root Makefile's install target.
 ;; Override at load time via:
@@ -490,6 +501,7 @@ page contains a match. Slow (reads all 1126 pages on each call)
       (setq matches (cons basename matches))))
   (reverse matches))
 
-(princ "alref.lsp loaded. (alref-set-root \"…\") to point at the install root.")
+(princ (strcat "alref.lsp " *alref-version*
+               " loaded. (alref-set-root \"…\") to point at the install root."))
 (terpri)
 (princ)
