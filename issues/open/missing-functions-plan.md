@@ -71,16 +71,14 @@ DEFER functions don't appear in any milestone of this plan.
 
 ---
 
-## Milestone 1 — Special forms (4)
+## Milestone 1 — Special forms (4) [LANDED 1.0.57]
 
-| Operator  | Tier   | Notes                                                                 |
-|-----------|--------|-----------------------------------------------------------------------|
-| SET       | NATIVE | `(set 'foo 1)` — like SETQ but evaluates the name.                    |
-| TRACE     | NATIVE | Adds symbols to a per-session trace-on set; reuses `*autolisp-trace-p*` mechanism but gates on a set, not a flag. |
-| UNTRACE   | NATIVE | Removes from same set; with no args, clears the set.                  |
-| COMMAND   | DEFER  | Sends commands to the active host (CAD). MockHost stub possible, real impl waits on HAL work. |
-
-**Estimated effort:** ½ day. 3 native + 1 deferred.
+| Operator  | Tier   | Status                                                                 |
+|-----------|--------|------------------------------------------------------------------------|
+| SET       | NATIVE | Landed. `eval-set-form` in autolisp-runtime/source/api.lisp. 4 tests.  |
+| TRACE     | NATIVE | Landed. `eval-trace-form` + `*autolisp-traced-symbols*` hash table; consulted by new `autolisp-function-trace-p`. 3 tests. |
+| UNTRACE   | NATIVE | Landed. `eval-untrace-form`; arg-less form clears all (clautolisp extension over Autodesk's single-symbol form). 2 tests. |
+| COMMAND   | DEFER  | Deferred to host work. Will be filed as `deferred-command-special-form.issue` when HAL work begins. |
 
 ---
 

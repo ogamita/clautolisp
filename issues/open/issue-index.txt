@@ -14,8 +14,9 @@ source-aware-defun-documentation.lsp
 
 clautolisp-debugger.issue
 
-
 deferred-clautolisp-out-of-dialect-warnings.issue
+deferred-command-special-form.issue
+
 autolisp-spec-pdf-versioned-filename.issue
 autolisp-spec-questions.issue
 
