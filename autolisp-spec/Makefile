@@ -77,15 +77,13 @@ $(INFO_DIR)/autolisp-spec.texi: $(SPEC_ORG) scripts/build-paged-info.el
 		$(SPEC_ORG) $(BUILD_DIR)
 
 $(INFO_DIR)/autolisp-spec.info: $(INFO_DIR)/autolisp-spec.texi
-	# --force + --no-validate keep two pre-existing source-side
-	# bugs in the spec from killing the whole build: lines 38191
-	# and 38192 of the spec org file start with '* ' because they
-	# are continuations of a multi-line string in an example
-	# paragraph (a separate spec-author cleanup ticket should wrap
-	# them in #+begin_example/#+end_example). makeinfo's strict
-	# section-level + menu-cross-reference checks complain, but
-	# the rest of the manual is fine.
-	$(MAKEINFO) --force --no-validate --no-split $< -o $@
+	# Strict build: --force / --no-validate are NOT needed any
+	# more. The two-line acet-ui-m-get-names example whose multi-
+	# line string literal continued onto column 0 with '*' (lines
+	# 38191-38192 of the spec org pre-fix) has been wrapped in a
+	# #+begin_example block with the leading stars comma-escaped
+	# (',*'), which org's parser unescapes at export time.
+	$(MAKEINFO) --no-split $< -o $@
 
 paged: pages html info  ## Build every paged derivative (pages + html + info).
 

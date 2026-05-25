@@ -38187,9 +38187,44 @@ BricsCAD ExpressTools API Function
 Arguments are described in the vendor page; see Source Notes.
 
 *** Description
-This function provides extended user-input functionality similar to (getkword), but allows multiple.keyword selection. argumentList is a single list providing detailed parameters : (allowSpace prompt keywords) allowSpace : T/NIL to allows input of space character(s) by user (same as in prompt : string to be displayed at commandline (same as in (getstring) function) keywords : list of keywords to be used (similar to (initget) function, which uses a flat string instead) Return : a list of matching keywords, always in uppercase notation If no matching key is found, a message is printed to commandline, and input query is repeated; empty input always finishes the query, returning NIL. User can enter multiple keywords, separated by "," colon; wildcards can be used with each key, in answer string; this function then checks each entered keyword against the keyword list, and matching keyword(s) are added to result list examples : (acet-ui-m-get-names (list nil "
-* aaa bbb ccc : " lst)) => space input finishes input => input : a* returns '("AAA") => input : aaa returns '("AAA") => input : * returns '("AAA" "BBB" "CCC") => input : a*,bbb returns '("AAA" "BBB") (acet-ui-m-get-names (list T "
-* a1 a2 a3 : " lst)) => space input is allowed => input : a* returns '("A1" "A2" "A3") => input : *3 returns '("A3")
+This function provides extended user-input functionality similar
+to (getkword), but allows multiple-keyword selection. argumentList
+is a single list providing detailed parameters: (allowSpace prompt
+keywords).
+
+- allowSpace :: T / NIL to allow input of space character(s) by
+  the user (same as in (initget) function).
+- prompt :: string to be displayed at the commandline (same as in
+  (getstring) function).
+- keywords :: list of keywords to be used (similar to (initget)
+  function, which uses a flat string instead).
+
+Returns a list of matching keywords, always in uppercase notation.
+If no matching key is found, a message is printed to the
+commandline and the input query is repeated; empty input always
+finishes the query, returning NIL. The user can enter multiple
+keywords, separated by "," (comma); wildcards can be used with
+each key in the answer string. This function then checks each
+entered keyword against the keyword list, and matching keyword(s)
+are added to the result list.
+
+Examples:
+
+#+begin_example
+(acet-ui-m-get-names (list nil "
+,* aaa bbb ccc : " lst))
+  => space input finishes input
+  => input : a*       returns '("AAA")
+  => input : aaa      returns '("AAA")
+  => input : *        returns '("AAA" "BBB" "CCC")
+  => input : a*,bbb   returns '("AAA" "BBB")
+
+(acet-ui-m-get-names (list T "
+,* a1 a2 a3 : " lst))
+  => space input is allowed
+  => input : a*       returns '("A1" "A2" "A3")
+  => input : *3       returns '("A3")
+#+end_example
 
 *** Return Values
 Vendor-defined; see Source Notes.
