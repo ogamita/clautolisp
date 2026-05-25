@@ -1,3 +1,42 @@
+RESOLVED — clautolisp 1.0.46.
+
+Root cause: the evaluator's LOOKUP-FUNCTION only accepted SUBR /
+USUBR values when walking the dynamic-frame chain. A parameter
+bound to `(function (lambda …))' carries the unevaluated lambda-
+form list (per the spec's FUNCTION ≡ QUOTE rule), not a USUBR,
+so the parameter shadow was invisible in operator position and
+the call dispatched to the same-named global function instead.
+
+Fix in clautolisp/autolisp-runtime/source/api.lisp:
+
+  * New CALLABLE-VALUE-P predicate — SUBR, USUBR, or LAMBDA-FORM.
+  * LOOKUP-FUNCTION walks the dynamic frames matching the
+    extended predicate, so a parameter holding a lambda-form list
+    is now found in dynamic scope ahead of any global shadow.
+  * CALL-AUTOLISP-FUNCTION-IN-CONTEXT lazily coerces a lambda-form
+    value into a USUBR via EVAL-LAMBDA-FORM — the coercion runs
+    at the *call site*, which is exactly the place the lambda's
+    dynamic context should be captured (matching the late-
+    resolution semantics already documented for LOOKUP-FUNCTION).
+
+Reproduction now returns the expected output:
+
+  $ clautolisp -l function-value.lsp -x '(princ (test)) (terpri)'
+  (((GOOD-NAME 42) (GOOD-NAME 42) (EXPECTED 42))
+   ((IN-OBJECT 33) (IN-OBJECT 33) (EXPECTED 33)))
+
+Two new FiveAM cases in autolisp-runtime/tests/evaluator-tests.lisp
+exercise the bug end-to-end:
+
+  * FUNCTION-OF-LAMBDA-VIA-PARAMETER-RESOLVES-TO-LAMBDA
+  * FUNCTION-OF-LAMBDA-VIA-PARAMETER-RESPECTS-INNER-DEFUN-SHADOW
+
+clautolisp 1.0.45 -> 1.0.46. All 455 + 76 + 42 + 130 + 168 + 67 +
+29 + 289 + 42 = 1298 host-side tests still green; 252 alfe tests
+unchanged.
+
+--- Original issue ---
+
 This issue is re-opened, it's not entirely done, since the result of
 the function-value.lsp file is not correct.
 
