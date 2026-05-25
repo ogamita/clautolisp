@@ -1,0 +1,63 @@
+.TH READ-AUTOLISP 1 "May 2026" "read-autolisp" "User Commands"
+.SH NAME
+read-autolisp \- AutoLISP reader CLI: tokenise and parse files, report diagnostics.
+.SH SYNOPSIS
+.B read-autolisp
+.RI [ options ]
+.I file.lsp
+.RI [ ... ]
+.SH DESCRIPTION
+.B read-autolisp
+runs the clautolisp AutoLISP reader against one or more source
+files and reports parser diagnostics (lexical and structural). It
+is the reader half of clautolisp with no evaluator attached — useful
+as a syntax-only smoke test in CI, in pre-commit hooks, or when
+isolating a parse error from a runtime error.
+.SH OPTIONS
+.TP
+.B \-\-strict
+Use strict token mode (default; matches the
+.B :strict
+dialect).
+.TP
+.B \-\-lax
+Use lax token mode (matches the AutoCAD / BricsCAD lenient modes).
+.TP
+.B \-\-warn-on-integer-overflow
+Warn when an int32 literal overflows and is read as a real.
+.TP
+.B \-\-extended-string-escapes
+Enable the implementation-defined backslash escapes inside string
+literals.
+.TP
+.BR \-\-canonical-case " " \fIMODE\fR
+.IR MODE " is " upcase ", " downcase ", or " preserve .
+Controls how the reader folds symbol names.
+.TP
+.BR \-\-external-format " " \fIFORMAT\fR
+Open the input files with this CL external-format
+.RB ( :UTF-8 ", " :ISO-8859-1 ", "
+.BR :WINDOWS-1252 ", " :US-ASCII ).
+.TP
+.BR \-v ", " \-\-verbose
+Print a per-file banner and a completion summary.
+.TP
+.BR \-V ", " \-\-version
+Print the version string and exit.
+.TP
+.BR \-h ", " \-\-help
+Show the
+.B \-\-help
+banner and exit.
+.SH "EXIT STATUS"
+.TP
+.B 0
+All files parsed without error.
+.TP
+.B 1
+One or more files reported a parse / lex diagnostic.
+.SH "SEE ALSO"
+.BR clautolisp (1),
+.BR alfe (1).
+.SH AUTHOR
+Pascal J. Bourguignon and contributors.

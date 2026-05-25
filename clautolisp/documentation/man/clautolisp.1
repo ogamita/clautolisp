@@ -1,0 +1,180 @@
+.TH CLAUTOLISP 1 "May 2026" "clautolisp 1.0.52" "User Commands"
+.SH NAME
+clautolisp \- standalone AutoLISP evaluator and interactive REPL.
+.SH SYNOPSIS
+.B clautolisp
+.RI [ options ]
+.RI [ FILE.lsp ]
+.br
+.B clautolisp
+.RI [ options ]
+.B \-l
+.I FILE.lsp
+.br
+.B clautolisp
+.RI [ options ]
+.B \-x
+.I EXPRESSION
+.br
+.B clautolisp
+.RI [ options ]
+.RB { \-l
+.IR FILE " | " \-x " " EXPR }
+.B \-i
+.SH DESCRIPTION
+.B clautolisp
+is a Common Lisp implementation of the AutoLISP / Visual LISP
+runtime. It reads AutoLISP source files (or
+.B \-x
+expressions, or stdin via the interactive REPL), evaluates each
+form in a fresh runtime session under a chosen dialect, and exits
+with a meaningful status code. With no
+.B \-l
+/
+.B \-x
+/ positional argument and no
+.BR \-i ,
+the REPL is the implicit default.
+.SH OPTIONS
+.SS Input selection
+.TP
+.BR \-l ", " \-\-load " " \fIFILE\fR
+Load and evaluate FILE. Equivalent to the positional form.
+.TP
+.BR \-x ", " \-\-eval " " \fIEXPR\fR
+Evaluate EXPR instead of reading a file.
+.TP
+.BR \-i ", " \-\-interactive
+Enter the REPL after the action queue is drained (same context).
+.SS Dialect
+.TP
+.BR \-\-dialect " " \fINAME\fR
+One of:
+.BR strict " (default), " autocad-2026 ", " bricscad-v26 .
+.TP
+.BR \-\-strict ", " \-\-autocad ", " \-\-bricscad ", " \-\-clautolisp
+Shorthands for the matching
+.BR \-\-dialect .
+.SS Host (HAL backend)
+.TP
+.BR \-\-host " " \fIBACKEND\fR
+.BR mock " (default) or " null .
+.TP
+.BR \-\-mock-input " " \fIPATH\fR
+Feed the file at PATH to the MockHost as its prompt-stream.
+.TP
+.BR \-\-gui " " \fICMD\fR
+Subprocess command speaking the DCL sexp wire protocol.
+.TP
+.B \-\-trace
+Print every AutoLISP call (entry args + exit value) on stderr.
+.SS REPL and diagnostics
+.TP
+.BR \-q ", " \-\-quiet
+Suppress the REPL banner.
+.TP
+.BR \-v ", " \-\-verbose
+Print extra diagnostic information.
+.TP
+.BR \-d ", " \-\-debug
+Debug traces, including CL backtraces on runtime errors.
+.TP
+.B \-\-no-color
+Disable ANSI colour in AutoLISP value output. Honoured equivalently
+via
+.BR $NO_COLOR " (" https://no-color.org ).
+.SS Source-file encoding
+.TP
+.BR \-e " " \fIENC\fR
+Override the default source-file encoding for this session.
+Encoding names are case-insensitive. Mandatory:
+.BR UTF-8 ", " ISO-8859-1 ", " WINDOWS-1252 ", " US-ASCII .
+Run
+.B clautolisp \-\-list-encodings
+for the full catalogue, including the
+.BR \-mac " / " \-dos " / " \-unix " / " \-lf " / " \-cr " / " \-crlf
+line-terminator suffixes.
+.TP
+.BR \-E " " \fIENC\fR
+Declared terminal-IO encoding. Surfaced as
+.B *AUTOLISP-TERMINAL-ENCODING*
+to user code. The CL streams are not rebound at runtime — terminal
+IO is line-buffered.
+.SS Init files
+.TP
+.BR \-norc ", " \-\-no-init
+Skip user init files
+.RB ( ~/.clautolisp{,rc} ", " ~/.autolisp{,rc} ", "
+.IR ~/.config/clautolisp/init ", "
+.IR ~/.config/autolisp/init ).
+Honoured equivalently via
+.BR $AUTOLISP_NO_INIT " / " $CLAUTOLISP_NO_INIT .
+.SS Informational
+.TP
+.BR \-V ", " \-\-version
+Print the version string and exit.
+.TP
+.BR \-h ", " \-\-help
+Show the
+.B \-\-help
+banner and exit.
+.TP
+.B \-\-list-encodings
+Print every encoding name accepted by
+.BR \-e " / " \-E
+(mandatory four + every encoding the running CL implementation
+exposes) and exit.
+.SH "*AUTOLISP-…* GLOBALS"
+clautolisp publishes a set of
+.B *AUTOLISP-…*
+globals in the running AutoLISP image, reflecting the CLI options
+that launched it
+.RB ( *AUTOLISP-BACKEND* ", " *AUTOLISP-DIALECT* ", "
+.BR *AUTOLISP-VERSION* ", " *AUTOLISP-FILE-ENCODING* ", " *AUTOLISP-ACTIONS* ", "
+…). See the user-manual for the full table.
+.SH ENVIRONMENT
+.TP
+.B LC_ALL\fR, \fBLANG\fR, \fBLC_CTYPE
+Probed in that order for the default source-file and terminal
+encoding when
+.B \-e
+/
+.B \-E
+are not given.
+.TP
+.B NO_COLOR
+Disable ANSI colour output (https://no-color.org).
+.TP
+.B AUTOLISP_NO_INIT\fR, \fBCLAUTOLISP_NO_INIT
+Equivalent to
+.BR \-norc .
+.SH FILES
+.TP
+.B ~/.clautolisp\fR, \fB~/.clautolisprc\fR, \fB~/.autolisp\fR, \fB~/.autolisprc
+User init files, loaded before any
+.BR \-l " / " \-x .
+.TP
+.B ~/.config/clautolisp/init\fR, \fB~/.config/autolisp/init
+XDG variant of the init files.
+.SH "EXIT STATUS"
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Runtime error or unhandled condition.
+.TP
+.B 2
+File error (cannot open / read).
+.SH "SEE ALSO"
+.BR alfe (1),
+.BR read-autolisp (1).
+.PP
+Full documentation as info pages:
+.B info clautolisp-user-manual
+or
+.B info clautolisp-specifications .
+.SH AUTHOR
+Pascal J. Bourguignon and contributors.
+.SH BUGS
+Report at https://gitlab.com/informatimago/lisp/-/issues.

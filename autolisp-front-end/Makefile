@@ -3,6 +3,8 @@
 # The LaTeX compiler defaults to xelatex for UTF-8 codepoint coverage;
 # both variables are overridable.
 EMACS          ?= emacs
+MAKEINFO       ?= makeinfo
+INSTALL_INFO   ?= install-info
 LATEX_COMPILER ?= xelatex
 SBCL   ?= sbcl
 CCL    ?= ccl
@@ -79,7 +81,12 @@ esac
 endef
 
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
-PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
+NESTED_DOC_ORG := $(wildcard tools/*/documentation/*.org)
+ALL_ORG_FILES := $(DOCUMENTATION_ORG) $(NESTED_DOC_ORG)
+PDF_FILES := $(ALL_ORG_FILES:.org=.pdf)
+INFO_FILES := $(ALL_ORG_FILES:.org=.info)
+MAN_FILES := $(wildcard documentation/man/*.1) \
+             $(wildcard tools/*/documentation/man/*.1)
 
 # The aggregate ASDF test system. Keeping it in a variable mirrors
 # the clautolisp Makefile so additional images (alfe-mac, alfe-win,
@@ -138,7 +145,7 @@ build-ccl:  ## Strictly build the CCL alfe image (errors if ccl is missing).
 	fi
 	$(MAKE) build-alfe-ccl
 
-documentation: $(PDF_FILES)  ## Render every documentation/*.org into a PDF via Emacs org-export.
+documentation: $(PDF_FILES) $(INFO_FILES)  ## Render every documentation/*.org into a PDF and .info via Emacs org-export.
 
 %.pdf: %.org
 	$(EMACS) --batch \
@@ -148,8 +155,17 @@ documentation: $(PDF_FILES)  ## Render every documentation/*.org into a PDF via 
 	    "$<" \
 	    --funcall org-latex-export-to-pdf
 
-clean-pdf:  ## Remove every generated PDF (keeps .org sources).
-	rm -f $(PDF_FILES)
+%.texi: %.org
+	$(EMACS) --batch \
+	    --eval '(progn (require (quote ox-texinfo)) (setq org-export-with-broken-links t))' \
+	    --visit "$<" \
+	    --funcall org-texinfo-export-to-texinfo
+
+%.info: %.texi
+	$(MAKEINFO) --no-split -o $@ $<
+
+clean-pdf:  ## Remove every generated PDF / .info / .texi (keeps .org sources).
+	rm -f $(PDF_FILES) $(INFO_FILES) $(ALL_ORG_FILES:.org=.texi)
 
 # ---------------------------------------------------------------------
 # Test targets — mirror clautolisp/Makefile so both subprojects share
@@ -315,6 +331,8 @@ $(ALFE_CCL):
 BIN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/bin
 LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
 DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
+INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
+MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1
 
 INSTALL_BINARIES_sbcl := $(ALFE_SBCL)
 INSTALL_BINARIES_ccl  := $(ALFE_CCL)
@@ -338,6 +356,22 @@ install: build  ## Install built alfe binaries + docs into $$PREFIX (run `make b
 	@for f in documentation/*.org documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
+	install -d $(INFO_INSTALL_DIR)
+	@for f in documentation/*.info; do \
+	  if [ -f "$$f" ]; then \
+	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
+	    echo "installed: $$f -> $(INFO_INSTALL_DIR)/" ; \
+	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
+	      || echo "[skip] install-info dir update for $$f" ; \
+	  fi ; \
+	done
+	install -d $(MAN_INSTALL_DIR)
+	@for f in documentation/man/*.1 tools/*/documentation/man/*.1; do \
+	  if [ -f "$$f" ]; then \
+	    install -m 0644 "$$f" $(MAN_INSTALL_DIR)/ ; \
+	    echo "installed: $$f -> $(MAN_INSTALL_DIR)/" ; \
+	  fi ; \
+	done
 	@# Bare-name `alfe' symlink pointing at the user's preferred
 	@# CL impl. Relative target so the install tree stays
 	@# relocatable across machines/staging dirs.
@@ -356,4 +390,14 @@ install: build  ## Install built alfe binaries + docs into $$PREFIX (run `make b
 
 uninstall:  ## Remove the alfe install from $$PREFIX.
 	rm -f $(BIN_INSTALL_DIR)/alfe $(BIN_INSTALL_DIR)/alfe-sbcl $(BIN_INSTALL_DIR)/alfe-ccl
+	@for f in documentation/*.info; do \
+	  if [ -f "$$f" ]; then \
+	    $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
+	      || true ; \
+	    rm -f "$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
+	  fi ; \
+	done
+	@for f in documentation/man/*.1 tools/*/documentation/man/*.1; do \
+	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename $$f)" ; fi ; \
+	done
 	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
