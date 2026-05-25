@@ -158,6 +158,7 @@
   :serial t
   :components
   ((:file "autolisp-reader/tools/read-autolisp/source/package")
+   (:file "autolisp-reader/tools/read-autolisp/source/version")
    (:file "autolisp-reader/tools/read-autolisp/source/main")))
 
 (asdf:defsystem "clautolisp/clautolisp-tool"

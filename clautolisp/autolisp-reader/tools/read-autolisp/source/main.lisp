@@ -1,5 +1,11 @@
 (in-package #:clautolisp.autolisp-reader.tools.read-autolisp)
 
+(defparameter *verbose-p* nil
+  "Set by -v/--verbose; switches on the per-file `;;; FILE …' banner
+and prints a one-line completion summary on stderr after each file
+has been read. The default behaviour (no banner, no summary) keeps
+the tool's stdout pipeable into the next stage of a build.")
+
 (defun usage ()
   (format t "~&Usage: read-autolisp [options] file.lsp ...~%")
   (format t "Options:~%")
@@ -9,7 +15,12 @@
   (format t "  --extended-string-escapes     Enable implementation-defined backslash escapes in strings.~%")
   (format t "  --canonical-case MODE         MODE is upcase, downcase, or preserve.~%")
   (format t "  --external-format FORMAT      Use FORMAT when opening files.~%")
-  (format t "  --help                        Show this help and exit.~%"))
+  (format t "  -v, --verbose                 Print a per-file banner and a completion summary.~%")
+  (format t "  -V, --version                 Print the version string and exit.~%")
+  (format t "  -h, --help                    Show this help and exit.~%"))
+
+(defun print-version ()
+  (format t "~&read-autolisp ~A~%" *version*))
 
 (defun parse-canonical-case (string)
   (let ((keyword (intern (string-upcase string) "KEYWORD")))
@@ -39,13 +50,22 @@
         (extended-string-escapes-p nil)
         (canonical-case :upcase)
         (external-format nil)
+        (verbose-p nil)
         (files '()))
     (loop while arguments
           for argument = (pop arguments)
           do (cond
-               ((string= argument "--help")
+               ((or (string= argument "--help")
+                    (string= argument "-h"))
                 (usage)
                 (quit 0))
+               ((or (string= argument "--version")
+                    (string= argument "-V"))
+                (print-version)
+                (quit 0))
+               ((or (string= argument "--verbose")
+                    (string= argument "-v"))
+                (setf verbose-p t))
                ((string= argument "--strict")
                 (setf token-mode :strict))
                ((string= argument "--lax")
@@ -77,7 +97,8 @@
       :extended-string-escapes-p extended-string-escapes-p
       :canonical-case canonical-case)
      external-format
-     (nreverse files))))
+     (nreverse files)
+     verbose-p)))
 
 (defun span->string (span)
   (if (null span)
@@ -128,7 +149,8 @@
             (append-proper-and-tail (rest elements) tail))))
 
 (defun process-file (path options external-format)
-  (let* ((result (if external-format
+  (let* ((start (get-internal-real-time))
+         (result (if external-format
                      (read-forms-from-file path
                                            :options options
                                            :external-format external-format
@@ -140,17 +162,28 @@
          (objects (read-result-objects result)))
     (dolist (diagnostic diagnostics)
       (report-diagnostic diagnostic))
-    (format t "~&;;; FILE ~A~%" path)
+    (when *verbose-p*
+      (format t "~&;;; FILE ~A~%" path))
     (dolist (object objects)
       (pprint (autolisp-object->cl object))
       (terpri))
+    (when *verbose-p*
+      (let ((elapsed (/ (float (- (get-internal-real-time) start))
+                        internal-time-units-per-second)))
+        (format *error-output*
+                "~&read-autolisp: ~A — ~D form~:P, ~D diagnostic~:P in ~,3F s~%"
+                path
+                (length objects)
+                (length diagnostics)
+                elapsed)))
     (not (diagnostics-have-errors-p diagnostics))))
 
 (defun main (&rest argv)
   (handler-case
-      (multiple-value-bind (options external-format files)
+      (multiple-value-bind (options external-format files verbose-p)
           (parse-arguments (rest argv))
-        (let ((all-succeeded-p t))
+        (let ((*verbose-p* verbose-p)
+              (all-succeeded-p t))
           (dolist (path files)
             (unless (process-file path options external-format)
               (setf all-succeeded-p nil)))
