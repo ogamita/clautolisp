@@ -209,13 +209,28 @@ the matching --encoding hint, and assert the value round-trips."
 
 (test clautolisp-direct-encoding-keyword-helper
   "Internal ENCODING-KEYWORD maps the documented encoding strings to
-the right Lisp external-format keywords."
+the right Lisp external-format keywords (now delegated to the
+shared clautolisp.autolisp-cli registry)."
   (is (eq :utf-8 (alfe.backend.clautolisp::encoding-keyword "utf-8")))
   (is (eq :utf-8 (alfe.backend.clautolisp::encoding-keyword "UTF-8")))
   (is (eq :iso-8859-1 (alfe.backend.clautolisp::encoding-keyword "iso-8859-1")))
   (is (eq :iso-8859-1 (alfe.backend.clautolisp::encoding-keyword "latin-1")))
   (is (eq :windows-1252 (alfe.backend.clautolisp::encoding-keyword "cp1252")))
-  (is (eq :windows-1252 (alfe.backend.clautolisp::encoding-keyword "windows-1252"))))
+  (is (eq :windows-1252 (alfe.backend.clautolisp::encoding-keyword "windows-1252")))
+  ;; US-ASCII via every documented alias.
+  (is (eq :us-ascii (alfe.backend.clautolisp::encoding-keyword "us-ascii")))
+  (is (eq :us-ascii (alfe.backend.clautolisp::encoding-keyword "ascii"))))
+
+(test clautolisp-direct-encoding-typo-rejected
+  "A clearly-malformed encoding name (e.g. `uft-8') signals a
+cli-usage-error from the shared validator rather than passing
+through to OPEN and surfacing as an opaque external-format error
+later. Plausibly-named-but-unknown encodings are still forwarded
+to the implementation."
+  (signals clautolisp.autolisp-cli:cli-usage-error
+    (alfe.backend.clautolisp::encoding-keyword "8859"))
+  (signals clautolisp.autolisp-cli:cli-usage-error
+    (alfe.backend.clautolisp::encoding-keyword "/etc/passwd")))
 
 (test clautolisp-direct-encoding-utf8-lf
   "UTF-8 source with LF line endings round-trips through -l."

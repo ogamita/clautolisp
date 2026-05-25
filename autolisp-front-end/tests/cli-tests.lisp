@@ -68,13 +68,29 @@
 
 (test cli-encoding-flags-stick
   "-e and -E set their respective encoding slots; -l after -e inherits
-the load encoding."
+the load encoding. Per encoding.issue the parser canonicalises the
+user's spelling against the shared alias registry, so `-e cp1252'
+lands as \"WINDOWS-1252\" (and `-E utf-8' as \"UTF-8\")."
   (let ((opts (parse-arguments '("-e" "cp1252" "-l" "/tmp/x.lsp" "-E" "utf-8"))))
-    (is (string= "cp1252" (cli-options-load-encoding opts)))
-    (is (string= "utf-8" (cli-options-io-encoding opts)))
+    (is (string= "WINDOWS-1252" (cli-options-load-encoding opts)))
+    (is (string= "UTF-8"        (cli-options-io-encoding opts)))
     (let ((action (first (cli-options-actions opts))))
       (is (eq :load (action-kind action)))
-      (is (string= "cp1252" (getf (action-payload action) :encoding))))))
+      (is (string= "WINDOWS-1252" (getf (action-payload action) :encoding))))))
+
+(test cli-encoding-typo-rejected
+  "A typo'd -e value (e.g. `-e uft-8') signals cli-usage-error at
+parse time, not later as a cryptic external-format error from
+OPEN. Encoding.issue's headline rule. The validator probes the
+running CL implementation's external-format registry, so a value
+that looks alphanumerically plausible but isn't actually a
+recognised encoding still gets caught here."
+  (signals cli-usage-error
+    (parse-arguments '("-e" "uft-8")))      ; user's exact typo
+  (signals cli-usage-error
+    (parse-arguments '("-e" "1234not-an-encoding")))
+  (signals cli-usage-error
+    (parse-arguments '("-E" "/etc/passwd"))))
 
 (test cli-bootstrap-and-host-and-dialect
   "Phase truncation, host, and dialect are routed onto the right slots."

@@ -1,3 +1,31 @@
+RESOLVED on the encoding branch:
+
+  - Shared encoding alias registry in clautolisp/autolisp-cli/source/encoding.lisp
+    (US-ASCII, ISO-8859-1, WINDOWS-1252, UTF-8 with the common aliases —
+    utf8/utf-8, latin-1/iso-8859-1, cp1252/windows-1252, ascii/us-ascii).
+    Other encodings the running CL implementation recognises pass through.
+  - -e and -E validated at CLI parse time. A typo like `-e uft-8' signals a
+    clean cli-usage-error mentioning the expected encodings, rather than
+    surfacing later as "Undefined external-format" from CL OPEN. SBCL +
+    CCL implementations are introspected via sb-impl::get-external-format
+    / ccl:lookup-character-encoding so even alphabetically-plausible typos
+    are caught.
+  - Locale fallback chain reordered to LC_ALL > LANG > LC_CTYPE per the
+    issue (deviates from POSIX's LC_ALL > LC_CTYPE > LANG; LANG is what
+    shells expose by default, so probing it earlier matches user-observed
+    encoding).
+  - *AUTOLISP-FILE-ENCODING* and *AUTOLISP-TERMINAL-ENCODING* are never NIL:
+    fall back to locale > "US-ASCII" at cli-options->transmit-bindings.
+  - Duplicate encoding-keyword copies in clautolisp's main.lisp and
+    alfe's backend-clautolisp.lisp now delegate to the shared resolver.
+  - Babel was suggested by the issue but not pulled in — the four
+    mandatories are natively supported by SBCL and CCL. Babel can be
+    added later if an exotic encoding the impls don't carry comes up.
+
+Tests: 1083 across all four suites pass on SBCL.
+
+--- Original issue ---
+
 1- clautolisp must support all the encoding supported by its underlying CL implementation,
    and this must include at minima US-ASCII, ISO-8859-1, WINDOWS-1252 and UTF-8.
    (use babel).

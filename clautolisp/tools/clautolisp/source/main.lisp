@@ -416,22 +416,13 @@ exactly what they are typing into."
           (return))))))
 
 (defun encoding-keyword (encoding-string)
-  "Map a CLI encoding string (\"utf-8\", \"iso-8859-1\",
-\"windows-1252\", \"cp1252\", \"latin-1\", \"latin1\") to the Lisp
-keyword external-format. Unknown values are passed through as a
-keyword interned from the upper-cased string — the underlying
-implementation's OPEN will surface the failure if it can't honour
-them. Mirrors the same helper in autolisp-front-end's backend-clautolisp."
-  (cond
-    ((null encoding-string) nil)
-    ((or (string-equal encoding-string "utf-8")
-         (string-equal encoding-string "utf8"))            :utf-8)
-    ((or (string-equal encoding-string "iso-8859-1")
-         (string-equal encoding-string "latin-1")
-         (string-equal encoding-string "latin1"))          :iso-8859-1)
-    ((or (string-equal encoding-string "windows-1252")
-         (string-equal encoding-string "cp1252"))          :windows-1252)
-    (t (intern (string-upcase encoding-string) :keyword))))
+  "Map a CLI encoding string to the Lisp keyword external-format.
+Delegates to the shared CLI alias registry
+(clautolisp.autolisp-cli:encoding-keyword); kept here as a thin
+wrapper to preserve the (potentially nil-accepting) call shape used
+by BUILD-CONTEXT below."
+  (and encoding-string
+       (clautolisp.autolisp-cli:encoding-keyword encoding-string "-e")))
 
 (defun build-context (dialect host mock-input &optional load-encoding)
   "Make a fresh runtime context, install builtins, attach the host
@@ -439,7 +430,8 @@ and any mock-input stream. Computes an effective default source-file
 encoding via the precedence:
 
   1. `-e ENC' on the CLI (LOAD-ENCODING — strongest, explicit).
-  2. POSIX locale env: LC_ALL > LC_CTYPE > LANG (host-wide hint).
+  2. POSIX locale env: LC_ALL > LANG > LC_CTYPE (host-wide hint;
+     LANG before LC_CTYPE per encoding.issue).
   3. NIL — fall through to the dialect's default at load time.
 
 When (1) or (2) yields an encoding it is installed on the session;
