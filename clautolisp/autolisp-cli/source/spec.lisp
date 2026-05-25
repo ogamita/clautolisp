@@ -120,16 +120,23 @@ specs without mutating the shared template."
                              (list (cons :interactive t))))))
 
    ;; --- encoding --------------------------------------------------
+   ;; -e ENC and -E ENC validate the value at parse time via the
+   ;; shared encoding alias registry (encoding.issue). A typo
+   ;; (e.g. `-e uft-8') surfaces here as a cli-usage-error rather
+   ;; than later as a cryptic "Undefined external-format" from
+   ;; CL OPEN. The canonical spelling is stored on the slot so
+   ;; *AUTOLISP-FILE-ENCODING* / *AUTOLISP-TERMINAL-ENCODING* show
+   ;; the registered name regardless of which alias the user typed.
    (make-option-spec
     :longs nil :shorts '("-e") :takes-arg-p t
     :handler (lambda (opts value name)
-               (declare (ignore name))
-               (setf (cli-options-load-encoding opts) value)))
+               (setf (cli-options-load-encoding opts)
+                     (canonical-encoding-name value (or name "-e")))))
    (make-option-spec
     :longs nil :shorts '("-E") :takes-arg-p t
     :handler (lambda (opts value name)
-               (declare (ignore name))
-               (setf (cli-options-io-encoding opts) value)))
+               (setf (cli-options-io-encoding opts)
+                     (canonical-encoding-name value (or name "-E")))))
 
    ;; --- init files / colour --------------------------------------
    (make-option-spec

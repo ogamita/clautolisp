@@ -171,6 +171,7 @@
   :components
   ((:file "autolisp-cli/source/package")
    (:file "autolisp-cli/source/conditions")
+   (:file "autolisp-cli/source/encoding")
    (:file "autolisp-cli/source/options")
    (:file "autolisp-cli/source/spec")
    (:file "autolisp-cli/source/parser")
