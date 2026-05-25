@@ -523,20 +523,13 @@ to AUTOLISP-LOAD-FILE-IN-CONTEXT."
         (autolisp-load-file-in-context path context :options options))))
 
 (defun encoding-keyword (encoding-string)
-  "Map a CLI encoding string (\"utf-8\", \"iso-8859-1\",
-\"windows-1252\", \"cp1252\", \"latin-1\") to the Lisp keyword
-external-format. Unknown values are passed through verbatim — the
-underlying Lisp's OPEN will surface the failure if it can't honour
-them."
-  (cond
-    ((or (string-equal encoding-string "utf-8")
-         (string-equal encoding-string "utf8"))            :utf-8)
-    ((or (string-equal encoding-string "iso-8859-1")
-         (string-equal encoding-string "latin-1")
-         (string-equal encoding-string "latin1"))          :iso-8859-1)
-    ((or (string-equal encoding-string "windows-1252")
-         (string-equal encoding-string "cp1252"))          :windows-1252)
-    (t (intern (string-upcase encoding-string) :keyword))))
+  "Map a CLI encoding string to the Lisp keyword external-format.
+Delegates to the shared CLI alias registry
+(clautolisp.autolisp-cli:encoding-keyword). The shared resolver
+signals a cli-usage-error on a typo at CLI parse time, so by the
+time the backend reaches this helper the value is either a
+canonical alias or already-validated alphanumeric."
+  (clautolisp.autolisp-cli:encoding-keyword encoding-string "-e"))
 
 (defun direct-eval (session action)
   (let* ((text    (action-payload action))

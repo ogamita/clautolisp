@@ -345,17 +345,24 @@ present. Strips a trailing `@modifier' segment."
   "Resolve the host's default source-file encoding from the POSIX
 locale environment.
 
-Probes (in POSIX order):
+Probes (encoding.issue order — LANG before LC_CTYPE):
   1. LC_ALL    — global override.
-  2. LC_CTYPE  — character classification + encoding category.
-  3. LANG      — catch-all fallback.
+  2. LANG      — user-visible language + encoding selector.
+  3. LC_CTYPE  — character classification category, last-resort
+                 because users rarely set it explicitly while LANG
+                 is the conventional knob shells expose.
+
+The user-facing order intentionally deviates from POSIX's
+LC_ALL > LC_CTYPE > LANG. Most distributions set LANG and leave
+LC_CTYPE unset, so probing LANG first gives the user-observable
+encoding the higher priority.
 
 Returns a keyword (e.g. :UTF-8) or NIL when nothing is set or
 the resolved locale carries no encoding suffix (the `C' / `POSIX'
 case)."
   (or (parse-posix-locale (uiop:getenv "LC_ALL"))
-      (parse-posix-locale (uiop:getenv "LC_CTYPE"))
-      (parse-posix-locale (uiop:getenv "LANG"))))
+      (parse-posix-locale (uiop:getenv "LANG"))
+      (parse-posix-locale (uiop:getenv "LC_CTYPE"))))
 
 (defun runtime-session-dialect (session)
   "Return the dialect descriptor SESSION was instantiated with."

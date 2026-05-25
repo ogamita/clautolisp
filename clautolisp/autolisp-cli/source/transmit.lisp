@@ -98,10 +98,18 @@ derived value."
          (autolisp-string-or-nil (cli-options-gui options)))
    (list "*AUTOLISP-TRACE*"
          (autolisp-bool (cli-options-trace-p options)))
+   ;; *AUTOLISP-FILE-ENCODING* and *AUTOLISP-TERMINAL-ENCODING*
+   ;; are never NIL — encoding.issue rule. RESOLVE-EFFECTIVE-
+   ;; ENCODING applies the documented three-tier fallback:
+   ;;   1. explicit -e / -E (already canonicalised at parse time)
+   ;;   2. host locale (LC_ALL > LANG > LC_CTYPE)
+   ;;   3. "US-ASCII"
    (list "*AUTOLISP-FILE-ENCODING*"
-         (autolisp-string-or-nil (cli-options-load-encoding options)))
+         (make-autolisp-string
+          (resolve-effective-encoding (cli-options-load-encoding options))))
    (list "*AUTOLISP-TERMINAL-ENCODING*"
-         (autolisp-string-or-nil (cli-options-io-encoding options)))
+         (make-autolisp-string
+          (resolve-effective-encoding (cli-options-io-encoding options))))
    (list "*AUTOLISP-NO-INIT*"
          (autolisp-bool (cli-options-no-init-p options)))
    (list "*AUTOLISP-NO-COLOR*"
