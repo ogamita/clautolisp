@@ -1,0 +1,88 @@
+line terminations have been dropped. They must be accepted and processed for -e ; they should be accepted for -E, but unless the terminal is configured specifically they'll have to be ignored (by default terminal line discipline is LINE which means we receive data line by line, so the line termination is not processed. We'd have to swich to character line discipline to have to process it, which could matter only if we hooked stdin to a remote process with specific line termination... So for now -E linetermination is accepted but ignored.  but for -e it must be processed. 
+
+17:29[pjb@thalassa org.xquartz:0 clautolisp 83Gi]$ ~/check-vars 
+=== LC_ALL=en_US.UTF-8 LANG=fr_FR.ISO-8859-1 LC_CTYPE=de_GE.WINDOWS-1252 -E koi-8 -e iso-8859-15
+clautolisp: -E: Unknown encoding "KOI-8". Expected one of: US-ASCII, ISO-8859-1, WINDOWS-1252, UTF-8 (with the usual aliases).
+=== LC_ALL=en_US.UTF-8 LANG=fr_FR.ISO-8859-1 LC_CTYPE=de_GE.WINDOWS-1252 no -e -E
+
+(*AUTOLISP-VERSION* "1.0.50") 
+(*AUTOLISP-FILE-ENCODING* "UTF-8") 
+(*AUTOLISP-TERMINAL-ENCODING* "UTF-8") 
+=== LC_ALL=undefined LANG=fr_FR.ISO-8859-1 LC_CTYPE=de_GE.WINDOWS-1252 no -e -E
+
+(*AUTOLISP-VERSION* "1.0.50") 
+(*AUTOLISP-FILE-ENCODING* "ISO-8859-1") 
+(*AUTOLISP-TERMINAL-ENCODING* "ISO-8859-1") 
+=== LC_ALL=undefined LANG=undefined LC_CTYPE=de_GE.WINDOWS-1252 no -e -E
+
+(*AUTOLISP-VERSION* "1.0.50") 
+(*AUTOLISP-FILE-ENCODING* "WINDOWS-1252") 
+(*AUTOLISP-TERMINAL-ENCODING* "WINDOWS-1252") 
+=== -e UTF-8
+
+(*AUTOLISP-VERSION* "1.0.50") 
+(*AUTOLISP-FILE-ENCODING* "UTF-8") 
+(*AUTOLISP-TERMINAL-ENCODING* "UTF-8") 
+>=== -e UTF-8-mac
+clautolisp: -e: Unknown encoding "UTF-8-mac". Expected one of: US-ASCII, ISO-8859-1, WINDOWS-1252, UTF-8 (with the usual aliases).
+=== -e UTF-8-dos
+clautolisp: -e: Unknown encoding "UTF-8-dos". Expected one of: US-ASCII, ISO-8859-1, WINDOWS-1252, UTF-8 (with the usual aliases).
+=== -e UTF-8-unix
+clautolisp: -e: Unknown encoding "UTF-8-unix". Expected one of: US-ASCII, ISO-8859-1, WINDOWS-1252, UTF-8 (with the usual aliases).
+
+~/src/public/clautolisp
+master
+17:30[pjb@thalassa org.xquartz:0 clautolisp 83Gi]$ cat ~/check-vars
+#!/bin/bash
+
+driver=clautolisp
+
+for arg ; do
+    case "$arg" in
+    (clautolisp)  driver=clautolisp ;;
+    (alfe)        driver=alfe ;;
+    (*)
+        printf "Error; usage: %s [clautolisp|alfe]\n" "$0"
+        exit 1
+        ;;
+    esac
+done
+
+(
+    export LC_ALL=en_US.UTF-8
+    export LANG=fr_FR.ISO-8859-1
+    export LC_CTYPE=de_GE.WINDOWS-1252
+    echo === LC_ALL=${LC_ALL:-undefined} LANG=${LANG:-undefined} LC_CTYPE=${LC_CTYPE:-undefined} -E koi-8 -e iso-8859-15
+    "$driver" \
+        -norc \
+        -E KOI-8 \
+        -e ISO-8859-15 \
+        -x '(print (list (quote *autolisp-version*) *autolisp-version*))' \
+        -x '(print (list (quote *AUTOLISP-FILE-ENCODING*) *AUTOLISP-FILE-ENCODING*))' \
+        -x '(print (list (quote *AUTOLISP-TERMINAL-ENCODING*) *AUTOLISP-TERMINAL-ENCODING*))' \
+        -x '(terpri)'
+    for var in LC_ALL LANG LC_CTYPE ; do
+        echo === LC_ALL=${LC_ALL:-undefined} LANG=${LANG:-undefined} LC_CTYPE=${LC_CTYPE:-undefined} no -e -E
+        "$driver" \
+            -norc \
+            -x '(print (list (quote *autolisp-version*) *autolisp-version*))' \
+            -x '(print (list (quote *AUTOLISP-FILE-ENCODING*) *AUTOLISP-FILE-ENCODING*))' \
+            -x '(print (list (quote *AUTOLISP-TERMINAL-ENCODING*) *AUTOLISP-TERMINAL-ENCODING*))' \
+            -x '(terpri)'
+        unset $var
+    done
+)
+
+
+for line_termination in '' -mac -dos -unix ; do
+        echo === -e UTF-8$line_termination
+        "$driver" \
+            -norc \
+            -e UTF-8$line_termination \
+            -E UTF-8 \zss
+            -x '(print (list (quote *autolisp-version*) *autolisp-version*))' \
+            -x '(print (list (quote *AUTOLISP-FILE-ENCODING*) *AUTOLISP-FILE-ENCODING*))' \
+            -x '(print (list (quote *AUTOLISP-TERMINAL-ENCODING*) *AUTOLISP-TERMINAL-ENCODING*))' \
+            -x '(terpri)'
+        unset $var
+done
