@@ -439,7 +439,35 @@ display whether the symbol is documented or not."
      (prin1 (eval sym))))
   (terpri))
 
-(defun alref-describe (key / basename text name)
+;;; --- live per-binding documentation (source-aware-defun-documentation)
+;;; clautolisp registers a ;|…|; doc block against a defun'd/setq'd
+;;; binding, queryable via the CLAUTOLISP-DOCUMENTATION{,-KIND} builtins.
+;;; alref consults them by late binding so the SAME alref.lsp stays
+;;; portable to AutoCAD / BricsCAD, where the builtins are absent.
+
+(defun alref-call-by-name (fn-name arg / sym fn)
+  "If FN-NAME (a string naming a symbol) is bound to a callable in the
+current image, call it with ARG and return the result; nil when the
+symbol is unbound or not callable."
+  (setq sym (read fn-name))
+  (cond
+    ((and (= (type sym) 'SYM) (boundp sym))
+     (setq fn (eval sym))
+     (if (alref-function-value-p fn) (apply fn (list arg)) nil))
+    (t nil)))
+
+(defun alref-runtime-doc (name)
+  "The doc-string attached to NAME's innermost binding via the
+CLAUTOLISP-DOCUMENTATION builtin, or nil when the builtin is absent
+or no doc was recorded."
+  (alref-call-by-name "CLAUTOLISP-DOCUMENTATION" name))
+
+(defun alref-runtime-doc-kind (name)
+  "The kind tag ('FUNCTION or 'VARIABLE) attached to NAME's innermost
+binding via CLAUTOLISP-DOCUMENTATION-KIND, or nil."
+  (alref-call-by-name "CLAUTOLISP-DOCUMENTATION-KIND" name))
+
+(defun alref-describe (key / basename text name doc kind)
   "Print the spec page for KEY (a symbol, a string symbol-name,
 a chapter number, or a chapter title). When KEY isn't in the
 documented catalog but IS a currently-bound runtime symbol,
@@ -466,7 +494,21 @@ display family."
         (terpri)
         basename)))
     ((and (setq name (alref-key->name key))
-          (alref-runtime-bound-p name))
+          (setq doc (alref-runtime-doc name)))
+     ;; Live per-binding doc (clautolisp): print it with a Function: /
+     ;; Variable: prefix from the recorded kind, then the live state.
+     (setq kind (alref-runtime-doc-kind name))
+     (princ (cond
+              ((and kind (= (type kind) 'SYM)
+                    (= (strcase (alref-symbol-name kind)) "FUNCTION")) "Function: ")
+              ((and kind (= (type kind) 'SYM)
+                    (= (strcase (alref-symbol-name kind)) "VARIABLE")) "Variable: ")
+              (t "")))
+     (princ doc)
+     (terpri)
+     (alref-print-runtime-state name)
+     name)
+    ((and name (alref-runtime-bound-p name))
      (alref-print-runtime-state name)
      name)
     (t
@@ -475,17 +517,25 @@ display family."
      (terpri)
      nil)))
 
-(defun alref-documentation (key / basename)
-  "Like alref-describe but returns the page text as a string
-instead of printing. Useful for tooling that wants to inspect or
-forward the page. Returns nil for runtime-only symbols — there's
-no docstring API to draw from in stock AutoLISP. (When clautolisp
-ships its planned per-symbol doc store, this function will
-return the docstring for runtime-only symbols too.)"
+(defun alref-documentation (key / basename name doc)
+  "Like alref-describe but returns the page text (or live doc-string)
+as a string instead of printing. Lookup tiers:
+  1. autolisp-spec page text;
+  2. live per-binding doc via CLAUTOLISP-DOCUMENTATION (clautolisp
+     only, when the binding carries a ;|…|; doc block);
+  3. the literal \"not documented\" for an image-only symbol with no
+     recorded doc (distinguishes \"known but undocumented\" from nil);
+  4. nil when KEY resolves to nothing."
   (setq basename (alref-resolve-key key))
-  (if (null basename)
-    nil
-    (alref-page-text basename)))
+  (cond
+    (basename (alref-page-text basename))
+    (t
+     (setq name (alref-key->name key))
+     (cond
+       ((null name) nil)
+       ((setq doc (alref-runtime-doc name)) doc)
+       ((alref-runtime-bound-p name) "not documented")
+       (t nil)))))
 
 (defun alref-help (pattern / entries entry basename text matches)
   "Search the body of every documented page for PATTERN

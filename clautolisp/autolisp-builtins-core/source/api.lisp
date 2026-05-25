@@ -3261,6 +3261,47 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
       "SETFUNHELP expects a function name (string or symbol), got ~S."
       function-name))))
 
+;;; --- source-aware-defun-documentation (clautolisp-only) -----------
+
+(defun %resolve-documentation-symbol (arg builtin-name)
+  "Coerce ARG (an autolisp-symbol or autolisp-string) to an
+autolisp-symbol whose binding cell carries the doc. Used by the
+CLAUTOLISP-DOCUMENTATION{,-KIND} builtins."
+  (cond
+    ((typep arg 'autolisp-symbol) arg)
+    ((typep arg 'autolisp-string)
+     (intern-autolisp-symbol (autolisp-string-value arg)))
+    (t
+     (signal-builtin-argument-error
+      :invalid-symbol-argument
+      builtin-name
+      "~A expects a symbol or string, got ~S."
+      builtin-name arg))))
+
+(defun builtin-clautolisp-documentation (name)
+  ;; (clautolisp-documentation NAME) -> string | nil
+  ;; Walks the current dynamic frame chain like value lookup and
+  ;; returns the doc-string of the innermost binding for NAME.
+  ;; Returns nil when the binding carries no doc OR no binding
+  ;; exists. NAME is coerced to its uppercased symbol name.
+  (let* ((sym (%resolve-documentation-symbol name "CLAUTOLISP-DOCUMENTATION"))
+         (tag (clautolisp.autolisp-runtime:lookup-documentation sym)))
+    (and tag (consp tag) (make-autolisp-string (cadr tag)))))
+
+(defun builtin-clautolisp-documentation-kind (name)
+  ;; (clautolisp-documentation-kind NAME) -> 'function | 'variable | nil
+  ;; Returns the head of the doc-tag from the innermost binding cell.
+  ;; Independent of the value's runtime type — reflects the last
+  ;; *documented* assignment, not the current value.
+  (let* ((sym (%resolve-documentation-symbol name "CLAUTOLISP-DOCUMENTATION-KIND"))
+         (tag (clautolisp.autolisp-runtime:lookup-documentation sym)))
+    (cond
+      ((and (consp tag) (eq (car tag) :function))
+       (intern-autolisp-symbol "FUNCTION"))
+      ((and (consp tag) (eq (car tag) :variable))
+       (intern-autolisp-symbol "VARIABLE"))
+      (t nil))))
+
 (defparameter *autolisp-backtrace-enabled-p* nil)
 
 (defun format-call-stack-frame (frame)
@@ -7155,6 +7196,13 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "ATOMS-FAMILY" #'builtin-atoms-family)
    ;; Phase 7 — help / tracing (headless stubs)
    (make-core-builtin-subr "SETFUNHELP" #'builtin-setfunhelp)
+   ;; clautolisp-only: surface the per-binding doc captured by
+   ;; eval-defun-form / eval-setq-form from a preceding ;|…|; block
+   ;; comment in the source (source-aware-defun-documentation).
+   (make-core-builtin-subr "CLAUTOLISP-DOCUMENTATION"
+                           #'builtin-clautolisp-documentation)
+   (make-core-builtin-subr "CLAUTOLISP-DOCUMENTATION-KIND"
+                           #'builtin-clautolisp-documentation-kind)
    (make-core-builtin-subr "VL-BT" #'builtin-vl-bt)
    (make-core-builtin-subr "VL-BT-ON" #'builtin-vl-bt-on)
    (make-core-builtin-subr "VL-BT-OFF" #'builtin-vl-bt-off)

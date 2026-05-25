@@ -98,12 +98,22 @@ Reader objects are not raw Common Lisp symbols or numbers used directly as the s
 
 ** Comments
 - A semicolon comment begins at ~;~ and ends immediately before the next physical line terminator or end of input.
-- By default, comments are skipped and do not appear in the ordinary parsed form stream.
-- The reader shall provide an option to retain comments as source-aware comment objects.
+- A block comment begins at ~;|~ and ends at the matching ~|;~. Block comments may span any number of lines and contain any character other than the closing delimiter sequence.
+- By default, line comments are skipped and do not appear in the ordinary parsed form stream.
+- Block comments are *always* emitted as tokens by the tokenizer, even when comment retention is disabled, so that the parser can consume them as documentation attached to the following form (see "Documentation comments" below). The parser itself drops them after consumption, preserving the comment-skipping invariant for downstream consumers.
+- The reader shall provide an option to retain *line* comments as source-aware comment objects.
 - When comments are retained, their relative ordering with neighboring forms shall be preserved.
 - Comment retention changes the concrete syntax stream seen by downstream consumers.
 - Therefore a comment-preserving reader result shall not be modeled as the same object stream as ordinary comment-skipping form reading.
 - In particular, comments that occur around dotted-pair syntax must not be forced into ordinary cons structure in a way that destroys the syntactic role of the dot token.
+
+** Documentation comments
+- A ~;| ... |;~ block comment immediately preceding a form (at any nesting depth) is its /documentation comment/: the parser attaches the text between the delimiters (delimiters stripped, internal whitespace and newlines preserved verbatim) to that form's parse-tree node.
+- The pending-doc slot persists across whitespace and ~;~ line comments — neither clears the slot. Only a non-comment, non-whitespace form consumes it.
+- A second block comment before any consuming form replaces the first; only the immediately-preceding block survives. This matches Common Lisp / Emacs Lisp doc-string semantics.
+- Only ~cons-object~ nodes carry a ~preceding-doc~ slot. A documentation comment preceding an atom (symbol, string, number, quote) is silently dropped — atoms cannot carry documentation under this design.
+- The runtime side (defun / setq evaluation) consumes the attached doc when present: see autolisp-runtime documentation and the source-aware-defun-documentation issue for the per-binding update rules and the CLAUTOLISP-DOCUMENTATION{,-KIND} builtins that surface it to AutoLISP code.
+- A block comment at the very start of input attaches to the first form that follows; a block comment at end of input with no following form is silently discarded.
 
 ** Lists and Dotted Pairs
 - ~()~ reads as the empty list object.

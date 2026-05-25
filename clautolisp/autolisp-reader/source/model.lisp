@@ -77,7 +77,16 @@
   (elements '() :type list)
   (tail nil)
   (dotted-p nil :type boolean)
-  (span nil :type (or null source-span)))
+  (span nil :type (or null source-span))
+  ;; Text of the ;| ... |; block comment immediately preceding this
+  ;; form in the source (delimiters stripped, internal indentation
+  ;; preserved). Threaded through the parser's pending-doc slot and
+  ;; consumed by the runtime's defun / setq handlers as documentation
+  ;; attached to the binding being created or modified. nil when no
+  ;; block comment preceded the form. See
+  ;; issues/closed/source-aware-defun-documentation.issue for the
+  ;; design and the read-time / eval-time split.
+  (preceding-doc nil :type (or null string)))
 
 (defstruct quote-object
   object

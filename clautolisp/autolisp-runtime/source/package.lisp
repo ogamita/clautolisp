@@ -7,6 +7,7 @@
                 #:cons-object-tail
                 #:cons-object-span
                 #:quote-object-span
+                #:cons-object-preceding-doc
                 #:integer-object
                 #:integer-object-value
                 #:quote-object
@@ -36,6 +37,7 @@
    #:binding-cell-value
    #:binding-cell-bound-p
    #:binding-cell-compatibility-definition
+   #:binding-cell-doc
    #:value-cell
    #:value-cell-value
    #:value-cell-bound-p
@@ -150,6 +152,12 @@
    #:set-variable
    #:lookup-function
    #:set-function
+   #:lookup-documentation
+   #:set-binding-doc
+   #:*preceding-docs*
+   #:*current-form*
+   #:register-preceding-doc
+   #:current-form-preceding-doc
    #:push-dynamic-frame
    #:pop-dynamic-frame
    #:bind-dynamic-variable

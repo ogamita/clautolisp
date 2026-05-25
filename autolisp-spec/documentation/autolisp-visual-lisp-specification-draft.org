@@ -2841,6 +2841,95 @@ None.
 
 #+LATEX: \newpage
 
+** Function Entry: CLAUTOLISP-DOCUMENTATION
+*** Name
+`clautolisp-documentation`
+
+*** Class
+Function
+
+*** Syntax
+#+begin_example
+(clautolisp-documentation name)
+#+end_example
+
+*** Arguments and Values
+- `name`: a symbol or a string naming the symbol. Strings are coerced to the symbol's uppercased name; symbols are used directly.
+
+*** Description
+Returns the documentation string attached to the innermost binding cell for `name` in the current dynamic frame chain. Documentation is captured at read time: a `;| ... |;` block comment immediately preceding a `(defun NAME ...)` or `(setq NAME ...)` form becomes the binding's documentation when that form is evaluated.
+
+Because `clautolisp` is dynamically scoped and the documentation lives on the binding cell (not the symbol), the result follows the same shadowing rules as value lookup: a `/`-local, lambda parameter, or `foreach` iteration variable that rebinds the name carries its own documentation slot that is restored when the rebinding frame is popped.
+
+The doc-update rules differ between defun and setq. `(defun NAME …)` always rewrites the doc — installing the new block-comment text or `nil` when no block preceded. `(setq NAME …)` rewrites only conditionally: a preceding block installs the new text; without one, an existing function-doc (from an earlier `defun`) is cleared (the binding is no longer that function) but an existing variable-doc is preserved (plain mutation does not erase a variable's description).
+
+*** Return Values
+A string when documentation has been recorded for the resolved binding; `nil` otherwise (no recorded doc, or no binding for `name`).
+
+*** Side Effects
+None.
+
+*** Examples
+- After `;| greet user |; (defun foo (n) (princ n))`, `(clautolisp-documentation 'foo)` returns `" greet user "`.
+- After `(setq foo 42)` following the above, `(clautolisp-documentation 'foo)` returns `nil` — the bare `setq` cleared the now-stale function-doc.
+- After `;| counter |; (setq c 0)` then `(setq c (1+ c))`, `(clautolisp-documentation 'c)` returns `" counter "` — plain mutation preserves a variable-doc.
+- `(clautolisp-documentation 'no-such-binding)` returns `nil`.
+
+*** Availability
+- AutoCAD 2026: not documented.
+- BricsCAD V26: not documented.
+- clautolisp: implemented.
+- Status: clautolisp-only extension; the AutoCAD / BricsCAD vendor surface offers no comparable per-binding documentation API.
+
+*** Source Notes
+- No vendor reference. Specified by the `source-aware-defun-documentation` issue in this repository; implemented in `autolisp-builtins-core/source/api.lisp`.
+
+#+LATEX: \newpage
+
+** Function Entry: CLAUTOLISP-DOCUMENTATION-KIND
+*** Name
+`clautolisp-documentation-kind`
+
+*** Class
+Function
+
+*** Syntax
+#+begin_example
+(clautolisp-documentation-kind name)
+#+end_example
+
+*** Arguments and Values
+- `name`: a symbol or a string, as for `clautolisp-documentation`.
+
+*** Description
+Returns the *kind* of the documentation attached to `name`'s innermost binding: the symbol `function` when the binding was last documented by a `defun`, the symbol `variable` when it was last documented by a `setq`, or `nil` when no documentation is recorded.
+
+The kind reflects the most recent *documented* assignment, not the current value's runtime type. A binding documented by `(defun foo …)` reports `function` even after a subsequent bare `(setq foo 42)` only if the function-doc has not been cleared (i.e., another doc-block-bearing form re-documented it as a variable in between).
+
+This builtin is the companion to `clautolisp-documentation`; tooling that pretty-prints documentation (such as `alref-describe`) uses both to render a `Function: ...` or `Variable: ...` prefix.
+
+*** Return Values
+The symbol `function`, the symbol `variable`, or `nil`.
+
+*** Side Effects
+None.
+
+*** Examples
+- After `;| doc |; (defun foo () 1)`, `(clautolisp-documentation-kind 'foo)` returns `function`.
+- After `;| doc |; (setq bar 0)`, `(clautolisp-documentation-kind 'bar)` returns `variable`.
+- `(clautolisp-documentation-kind 'no-such-binding)` returns `nil`.
+
+*** Availability
+- AutoCAD 2026: not documented.
+- BricsCAD V26: not documented.
+- clautolisp: implemented.
+- Status: clautolisp-only extension; companion to `clautolisp-documentation`.
+
+*** Source Notes
+- No vendor reference. Specified by the `source-aware-defun-documentation` issue in this repository.
+
+#+LATEX: \newpage
+
 
 * 8 Numbers
 ** Overview

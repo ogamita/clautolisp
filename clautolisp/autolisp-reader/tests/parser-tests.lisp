@@ -101,3 +101,105 @@ comment |; b)"))
              (is (typep (first objects) 'cons-object))))
       (when (probe-file path)
         (delete-file path)))))
+
+;;; --- preceding-doc (source-aware-defun-documentation) -------------
+
+(test preceding-doc-attaches-to-following-cons-form
+  ;; A ;| block |; immediately before a (form) lands in the
+  ;; cons-object's preceding-doc slot, delimiters stripped, internal
+  ;; whitespace preserved verbatim.
+  (let* ((result (read-forms-from-string ";| hello |;
+(defun foo () 1)"))
+         (object (first (read-result-objects result))))
+    (is (typep object 'cons-object))
+    (is (string= " hello " (cons-object-preceding-doc object)))))
+
+(test preceding-doc-line-comments-between-block-and-form
+  ;; Plain ; line comments between the block and the next form do
+  ;; not clear the pending-doc — the block still attaches.
+  (let* ((result (read-forms-from-string ";| doc |;
+; line one
+; line two
+(defun foo () 1)"))
+         (object (first (read-result-objects result))))
+    (is (typep object 'cons-object))
+    (is (string= " doc " (cons-object-preceding-doc object)))))
+
+(test preceding-doc-second-block-clobbers-first
+  ;; Two block comments before any form: the SECOND one wins
+  ;; (matches Common Lisp / Emacs Lisp doc-string semantics).
+  (let* ((result (read-forms-from-string ";| first |;
+;| second |;
+(defun foo () 1)"))
+         (object (first (read-result-objects result))))
+    (is (typep object 'cons-object))
+    (is (string= " second " (cons-object-preceding-doc object)))))
+
+(test preceding-doc-absent-when-no-block
+  ;; A bare (defun ...) with no preceding block has nil for
+  ;; preceding-doc — distinguishable from the empty string.
+  (let* ((result (read-forms-from-string "(defun foo () 1)"))
+         (object (first (read-result-objects result))))
+    (is (typep object 'cons-object))
+    (is (null (cons-object-preceding-doc object)))))
+
+(test preceding-doc-nested-form
+  ;; The pending-doc threading operates at any nesting depth, not
+  ;; just top-level — an inner (defun ...) preceded by a block
+  ;; comment inside an outer form gets its own preceding-doc.
+  (let* ((result (read-forms-from-string
+                  "(progn
+                     ;| inner |;
+                     (defun foo () 1))"))
+         (outer (first (read-result-objects result)))
+         (inner (second (cons-object-elements outer))))
+    (is (typep outer 'cons-object))
+    (is (null (cons-object-preceding-doc outer)))
+    (is (typep inner 'cons-object))
+    (is (string= " inner " (cons-object-preceding-doc inner)))))
+
+(test preceding-doc-dropped-on-atom
+  ;; An atom (symbol, string, number, quote) cannot carry doc —
+  ;; the pending-doc is silently dropped so it does not bleed onto
+  ;; a later form.
+  (let* ((result (read-forms-from-string ";| dropped |;
+foo
+(defun bar () 1)"))
+         (objects (read-result-objects result))
+         (atom (first objects))
+         (form (second objects)))
+    (is (typep atom 'symbol-object))
+    (is (typep form 'cons-object))
+    (is (null (cons-object-preceding-doc form)))))
+
+(test preceding-doc-preserves-internal-whitespace
+  ;; Internal newlines and indentation between ;| and |; are kept
+  ;; verbatim so multi-line doc blocks survive the round trip.
+  (let* ((result (read-forms-from-string ";|
+  line one
+  line two
+|;
+(defun foo () 1)"))
+         (object (first (read-result-objects result))))
+    (is (typep object 'cons-object))
+    (is (string= (format nil "~%  line one~%  line two~%")
+                 (cons-object-preceding-doc object)))))
+
+(test preceding-doc-at-file-start-attaches-to-first-form
+  ;; A block comment at the very start of input (no prior whitespace)
+  ;; attaches to the first form that follows.
+  (let* ((result (read-forms-from-string ";|head|;(defun foo () 1)"))
+         (object (first (read-result-objects result))))
+    (is (typep object 'cons-object))
+    (is (string= "head" (cons-object-preceding-doc object)))))
+
+(test preceding-doc-trailing-block-is-dropped
+  ;; A block comment at end-of-file with no following form is
+  ;; silently discarded — there is no form to attach it to.
+  (let* ((result (read-forms-from-string "(defun foo () 1)
+;| trailing |;"))
+         (objects (read-result-objects result))
+         (object (first objects)))
+    (is (= 1 (length objects)))
+    (is (typep object 'cons-object))
+    (is (null (cons-object-preceding-doc object)))))

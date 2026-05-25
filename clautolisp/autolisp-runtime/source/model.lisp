@@ -25,7 +25,16 @@
 (defstruct binding-cell
   (value nil)
   (bound-p nil :type boolean)
-  (compatibility-definition nil :type list))
+  (compatibility-definition nil :type list)
+  ;; Per-binding documentation for source-aware-defun-documentation.
+  ;; Holds nil, (function "STR"), or (variable "STR"); the head
+  ;; symbol records which special operator last installed the doc
+  ;; so SETQ can preserve a variable-doc across plain mutation
+  ;; while clearing a stale function-doc when the binding is
+  ;; reassigned with no preceding ;| ... |; block. Read via
+  ;; LOOKUP-DOCUMENTATION; surfaced to AutoLISP via the
+  ;; CLAUTOLISP-DOCUMENTATION{,-KIND} builtins.
+  (doc nil :type list))
 
 (defstruct document-namespace
   (name "DOCUMENT" :type string)
@@ -61,7 +70,12 @@
 (defstruct dynamic-binding
   symbol
   (value nil)
-  (bound-p nil :type boolean))
+  (bound-p nil :type boolean)
+  ;; See binding-cell's doc slot — same semantics for the dynamic
+  ;; shadow that `/'-locals / lambda parameters / foreach iteration
+  ;; variables push onto the stack. lookup-documentation walks the
+  ;; frame chain and returns this slot on the innermost hit.
+  (doc nil :type list))
 
 (defstruct dynamic-frame
   (bindings (make-hash-table :test #'eq))
