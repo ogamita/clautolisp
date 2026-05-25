@@ -1,37 +1,148 @@
 #+TITLE: AutoLISP / Visual LISP Spec Reference (alref)
-#+SUBTITLE: USER MANUAL
+#+SUBTITLE: User Manual
 #+AUTHOR: clautolisp contributors
 #+EMAIL: pjb@informatimago.com
 #+OPTIONS: toc:t num:t html-postamble:nil
 #+TEXINFO_FILENAME: autolisp-spec-user-manual.info
 #+TEXINFO_DIR_CATEGORY: clautolisp
 #+TEXINFO_DIR_TITLE: autolisp-spec-user-manual: (autolisp-spec-user-manual).
-#+TEXINFO_DIR_DESC: AutoLISP / Visual LISP Spec Reference (alref).
+#+TEXINFO_DIR_DESC: AutoLISP / Visual LISP spec reference — alref user manual.
 
 * Introduction
 
-How to consume the autolisp-spec data from Emacs (alref.el) and AutoLISP (alref.lsp) — alref-lookup / -apropos / -describe / -documentation / -help.
+=alref= is the spec-reference library shipped with =autolisp-spec=.
+It has two parallel surfaces:
 
-This document is a stub seeded by documentation-synchronisation.issue.
-Audience: user / integrator.
+- =alref.el= — an Emacs minor-mode + commands
+  (=M-x alref-lookup=, =alref-autodoc-mode=).
+- =alref.lsp= — an AutoLISP library you can load into any
+  conforming runtime (AutoCAD, BricsCAD, clautolisp) for
+  interactive use at the AutoLISP REPL.
 
-* Scope
+Both consume the paged spec artefacts produced by
+=scripts/build-paged-spec.el= (=build/pages/=, =build/html/=,
+=build/info/=) and expose the same vocabulary: look up a symbol
+to find its description, search the index by substring, walk
+chapter intros, etc.
 
-User manual: how autolisp-spec is used.
+* Installation
 
-* Topics
-  - Installation\n- Loading + entry points\n- Usage examples\n- Configuration knobs\n- Troubleshooting\n- See also (specs, source, related projects)
+The paged spec data, the Emacs lib, and the AutoLISP lib install
+under:
 
-* References
+  $(PREFIX)/share/autolisp-spec/pages/         data files (alref reads)
+  $(PREFIX)/share/doc/autolisp-spec/           reference org + pdf docs
+  $(PREFIX)/share/info/                        autolisp-spec.info
+  $(PREFIX)/share/emacs/site-lisp/autolisp-spec/    alref.el
+  $(PREFIX)/share/autolisp/site-lisp/autolisp-spec/ alref.lsp
 
-- Source code: see the subproject's =source/= directory.
-- README: =README.org= in the subproject root.
-- Plan / roadmap: =PLAN.md= in the subproject root.
-- Sibling tracks: autolisp-spec-specifications.org
+Run =sudo make install= from this subproject to lay everything
+down. The default =PREFIX= is =/opt/local=; override on the
+command line.
+
+* alref.el — Emacs
+
+After installation, add the site-lisp directory to your =load-path=
+(distros usually do this automatically) and:
+
+  (require 'alref)
+
+Then:
+
+- =M-x alref-lookup RET name RET= — completing read over every
+  documented symbol, opens the matching HTML page in your browser.
+- =M-x alref-autodoc-mode= — buffer-local minor mode that shows
+  the operator signature of the symbol at point in the
+  minibuffer, like slime-autodoc. Picks up the
+  =[A]= / =[B]= / =[C]= / =[ABC]= compatibility tag from the
+  symbol's Compatibility section when the page has one.
+- Customise the data root via
+  =M-x customize-variable RET alref-spec-directory= or set it in
+  your init file.
+
+* alref.lsp — AutoLISP
+
+At the AutoLISP REPL, load the library (typically from a user
+init file):
+
+  (load "/opt/local/share/autolisp/site-lisp/autolisp-spec/alref.lsp")
+  (alref-set-root "/opt/local/share/autolisp-spec/")
+
+Then call:
+
+- =(alref-lookup "pattern")= — print every documented symbol
+  whose name contains PATTERN (case-insensitive).
+- =(alref-apropos-list "pattern")= — same, but returns the
+  list of names rather than printing.
+- =(alref-apropos "pattern")= — print one symbol per line with
+  its live state and a five-column =[ABC]= coverage indicator:
+
+    NAME<TAB>Function<TAB>[ABC]
+    NAME<TAB>Operator<TAB>[ABC]
+    NAME<TAB>Variable<TAB>[ABC]<TAB>VALUE
+    NAME<TAB>Variable<TAB>[ABC]<TAB>NIL
+
+  The indicator's letters mean: A=spec'd by AutoCAD,
+  B=spec'd by BricsCAD, C=implemented in this image (the
+  running runtime).
+- =(alref-describe NAME)= — print the spec page for NAME (a
+  symbol, a string name, a chapter number, or a chapter title).
+  When NAME isn't in the spec but is live in the image, prints
+  the single-line apropos display instead.
+- =(alref-documentation NAME)= — return the spec page text as a
+  string (instead of printing). Returns ="not documented"= for
+  image-only symbols and =nil= for names neither in the spec nor
+  in the image.
+- =(alref-help "string")= — search the body of every documented
+  page for STRING and return the list of matching page
+  basenames.
+
+* The [ABC] coverage indicator
+
+The indicator surfaces in two places:
+
+- =alref.el='s =alref-autodoc-mode= shows it at the end of the
+  minibuffer signature line.
+- =alref.lsp='s =alref-apropos= shows it as a fixed-width
+  five-character column.
+
+  [A]    spec'd by AutoCAD only
+  [B]    spec'd by BricsCAD only
+  [C]    implemented in this image only (no spec entry)
+  [AB]   spec'd by both vendors, not in this image
+  [AC]   spec'd by AutoCAD, implemented in this image
+  [BC]   spec'd by BricsCAD, implemented in this image
+  [ABC]  spec'd by both vendors AND in this image
+
+The data comes from the per-spec-entry =Availability= section
+(parsed at paged-build time into the 4th column of
+=symbols.txt=) plus the runtime's =atoms-family= (for the C bit).
+
+* Re-building the data
+
+After editing the canonical spec
+(=autolisp-visual-lisp-specification-draft.org=), regenerate
+the paged artefacts:
+
+  make pages           ## emits build/pages/*.txt + symbols.txt + index.txt
+  make html            ## emits build/html/*.html
+  make info            ## emits build/info/autolisp-spec.info
+  make documentation   ## also rebuilds the PDF
+
+=make install= ships every artefact.
+
+* See also
+
+- =autolisp-visual-lisp-specification-draft.org= — the canonical
+  source of truth for the spec content.
+- =build/pages/= — plain-text per-section pages alref reads.
+- =scripts/build-paged-spec.el= — the splitter.
+- =issues/closed/apropos-non-alref-symbols.issue= — origin of the
+  image-symbol union + [ABC] indicator.
+- =issues/closed/autolisp-spec-paged-version.issue= — origin of
+  the paged-build infrastructure.
 
 * Synchronisation
 
-Per the project-wide synchronisation rule (AGENTS.md, Documentation
-Synchronisation section), changes to the code, the autolisp-spec
-specifications, this user-manual, or the man page (where applicable)
-must be propagated to every track.
+Per AGENTS.md, changes to the spec source / paged build / alref
+libs / this manual must propagate.

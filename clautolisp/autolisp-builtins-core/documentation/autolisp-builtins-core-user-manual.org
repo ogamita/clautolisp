@@ -1,37 +1,114 @@
 #+TITLE: AutoLISP Builtins (Core)
-#+SUBTITLE: USER MANUAL
+#+SUBTITLE: User Manual
 #+AUTHOR: clautolisp contributors
 #+EMAIL: pjb@informatimago.com
 #+OPTIONS: toc:t num:t html-postamble:nil
 #+TEXINFO_FILENAME: autolisp-builtins-core-user-manual.info
 #+TEXINFO_DIR_CATEGORY: clautolisp
 #+TEXINFO_DIR_TITLE: autolisp-builtins-core-user-manual: (autolisp-builtins-core-user-manual).
-#+TEXINFO_DIR_DESC: AutoLISP Builtins (Core).
+#+TEXINFO_DIR_DESC: AutoLISP Builtins (Core) — programmer's guide.
 
 * Introduction
 
-How a developer extends or re-installs the core builtins and queries the registered set.
+This manual is the programmer's guide to
+=clautolisp.autolisp-builtins-core=. The audience is a Common
+Lisp developer adding a new AutoLISP built-in, replacing one,
+or driving the builtins layer from CL.
 
-This document is a stub seeded by documentation-synchronisation.issue.
-Audience: user / integrator.
+End-user AutoLISP developers don't need this manual — they invoke
+the builtins from AutoLISP via their documented names. See the
+autolisp-spec reference for the surface contract.
 
-* Scope
+* Loading
 
-User manual: how autolisp-builtins-core is used.
+  (asdf:load-system "clautolisp/autolisp-builtins-core")
 
-* Topics
-  - Installation\n- Loading + entry points\n- Usage examples\n- Configuration knobs\n- Troubleshooting\n- See also (specs, source, related projects)
+Dependencies: =clautolisp/autolisp-runtime= +
+=clautolisp/autolisp-host= +
+=clautolisp/autolisp-mock-host=.
 
-* References
+* Installing the builtins
 
-- Source code: see the subproject's =source/= directory.
-- README: =README.org= in the subproject root.
-- Plan / roadmap: =PLAN.md= in the subproject root.
-- Sibling tracks: autolisp-builtins-core-specifications.org
+Call =install-core-builtins= once per session, after the runtime
+context is built:
+
+  (let ((context (clautolisp.autolisp-runtime:make-default-runtime-context
+                  :dialect (clautolisp.autolisp-reader:autolisp-dialect-strict))))
+    (clautolisp.autolisp-builtins-core:install-core-builtins)
+    ;; … run user code …
+    )
+
+Every standard AutoLISP function name becomes a bound subr in the
+context's document namespace. Re-installing on the same context
+is idempotent — values are overwritten.
+
+* Adding a builtin
+
+Three steps:
+
+1. Write the CL implementation. Use =require-*= helpers to coerce /
+   validate arguments. Signal =signal-builtin-argument-error= for
+   type violations; raise =autolisp-runtime-error= for runtime
+   issues. Return an AutoLISP value (autolisp-string, integer,
+   real, list, autolisp-symbol, …).
+
+2. Register it via =make-core-builtin-subr=:
+
+     (make-core-builtin-subr "MY-FUNCTION" #'builtin-my-function)
+
+   The name is the uppercased AutoLISP symbol-name.
+
+3. Add a test under =tests/= covering the happy path and the
+   argument-validation path. Update
+   =documentation/builtins-coverage.md= if the new builtin closes
+   a gap.
+
+* Example: writing a new pure-language builtin
+
+  (defun builtin-double (arg)
+    (let ((n (require-int-or-real arg "DOUBLE")))
+      (* 2 n)))
+
+  ;; Registration goes alongside the other math entries:
+  (make-core-builtin-subr "DOUBLE" #'builtin-double)
+
+After =install-core-builtins= the AutoLISP user can call =(double 21)=
+and get =42=.
+
+* Example: writing a HAL-mediated builtin
+
+  (defun builtin-my-hostop (arg)
+    (let* ((host (current-evaluation-host)))
+      (host-my-hostop host (require-string arg "MY-HOSTOP"))))
+
+  (make-core-builtin-subr "MY-HOSTOP" #'builtin-my-hostop)
+
+The HAL generic function =host-my-hostop= is defined in
+=clautolisp.autolisp-host= alongside =NullHost='s default
+=:host-not-supported= implementation. =MockHost= adds the
+in-memory test version.
+
+* Querying the registry
+
+The runtime's =atoms-family= returns the bound symbol names —
+includes every registered builtin plus user-defined SETQ /
+DEFUN bindings.
+
+  ;; In AutoLISP:
+  (atoms-family 0)   ; → list of symbols
+  (atoms-family 1)   ; → list of name strings
+
+* See also
+
+- =autolisp-builtins-core-specifications.org= — internal design,
+  categories, HAL contract.
+- =autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org= —
+  normative reference for every builtin.
+- =documentation/builtins-coverage.md= — implementation status.
+- =clautolisp.autolisp-host= / =clautolisp.autolisp-mock-host= —
+  HAL surface the host-mediated builtins go through.
 
 * Synchronisation
 
-Per the project-wide synchronisation rule (AGENTS.md, Documentation
-Synchronisation section), changes to the code, the autolisp-builtins-core
-specifications, this user-manual, or the man page (where applicable)
-must be propagated to every track.
+Per AGENTS.md, code / spec / user-manual / coverage notes
+propagate. New host-mediated builtins also touch the HAL specs.

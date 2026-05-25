@@ -348,6 +348,8 @@ test-autocad-windows: test-autocad-windows-strict test-autocad-windows-autocad
 
 LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
 DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
+INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
+INSTALL_INFO        ?= install-info
 
 .PHONY: install uninstall
 
@@ -372,7 +374,22 @@ install: build  ## Install harness + tests + docs into $$PREFIX (run `make build
 	@for f in documentation/*.org documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
+	install -d $(INFO_INSTALL_DIR)
+	@for f in documentation/*.info; do \
+	  if [ -f "$$f" ]; then \
+	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
+	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
+	      || echo "[skip] install-info dir update for $$f" ; \
+	  fi ; \
+	done
 	@echo "autolisp-test install complete: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the autolisp-test install from $$PREFIX.
 	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
+	@for f in documentation/*.info; do \
+	  if [ -f "$$f" ]; then \
+	    $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
+	      || true ; \
+	    rm -f "$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
+	  fi ; \
+	done

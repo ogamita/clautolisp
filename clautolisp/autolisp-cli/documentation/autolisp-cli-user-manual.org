@@ -1,37 +1,141 @@
 #+TITLE: Shared CLI option parser + *AUTOLISP-…* installer
-#+SUBTITLE: USER MANUAL
+#+SUBTITLE: User Manual
 #+AUTHOR: clautolisp contributors
 #+EMAIL: pjb@informatimago.com
 #+OPTIONS: toc:t num:t html-postamble:nil
 #+TEXINFO_FILENAME: autolisp-cli-user-manual.info
 #+TEXINFO_DIR_CATEGORY: clautolisp
 #+TEXINFO_DIR_TITLE: autolisp-cli-user-manual: (autolisp-cli-user-manual).
-#+TEXINFO_DIR_DESC: Shared CLI option parser + *AUTOLISP-…* installer.
+#+TEXINFO_DIR_DESC: Shared CLI option parser + *AUTOLISP-…* installer — programmer's guide.
 
 * Introduction
 
-How to extend the CLI option spec with tool-specific options, build the option list, parse argv, and install transmit-options globals into a runtime context.
+This manual is the programmer's guide to
+=clautolisp.autolisp-cli=. The audience is a clautolisp developer
+adding a CLI option to either =clautolisp(1)= or =alfe(1)=, or
+writing a new tool that wants the same standard surface.
 
-This document is a stub seeded by documentation-synchronisation.issue.
-Audience: user / integrator.
+End-users of the existing CLIs don't need this manual — the
+=clautolisp(1)= and =alfe(1)= man pages and =--help= banners cover
+the user-facing surface.
 
-* Scope
+* Loading
 
-User manual: how autolisp-cli is used.
+  (asdf:load-system "clautolisp/autolisp-cli")
 
-* Topics
-  - Installation\n- Loading + entry points\n- Usage examples\n- Configuration knobs\n- Troubleshooting\n- See also (specs, source, related projects)
+Dependency: =clautolisp/autolisp-runtime= (used by the transmit
+installer to call =set-variable=).
 
-* References
+* Anatomy of an option
 
-- Source code: see the subproject's =source/= directory.
-- README: =README.org= in the subproject root.
-- Plan / roadmap: =PLAN.md= in the subproject root.
-- Sibling tracks: autolisp-cli-specifications.org
+Each CLI option is one =option-spec= record:
+
+  (make-option-spec
+    :longs '("--load") :shorts '("-l") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-actions opts)
+                     (append (cli-options-actions opts)
+                             (list (cons :file value))))))
+
+The HANDLER receives:
+- OPTS  — the cli-options struct being populated.
+- VALUE — the consumed argument when TAKES-ARG-P, nil otherwise.
+- NAME  — the long or short form actually seen, useful in
+          error messages.
+
+The handler mutates OPTS directly (typically via SETF on a slot).
+
+* The common option set
+
+=*common-option-specs*= covers everything both tools accept:
+=--help= / =-h=, =--version= / =-V=, =--list-encodings=,
+=--quiet= / =-q=, =--verbose= / =-v=, =--debug= / =-d=,
+=--dialect=, the dialect shorthands (=--strict= / =--autocad= /
+=--bricscad= / =--clautolisp=), =--host=, =--load= / =-l=,
+=--eval= / =-x=, =--interactive= / =-i=, =-e=, =-E=,
+=--no-init= / =-norc=, =--no-color=.
+
+Each tool prepends or appends its own tool-specific specs. alfe
+adds =--mode=, =--backend=, =--dwg=, =--epure=,
+=--bootstrap-phase=, =--workdir=, =--keep-workdir=, =--timeout=,
+=--dry-run=, =--main=, =--quit=, plus conflict-checking wrappers
+for the dialect shorthands. clautolisp adds =--mock-input=,
+=--gui=, =--trace=.
+
+* Building a tool's parser
+
+  (defun my-tool/parse-arguments (argv)
+    (let* ((specs (append *my-tool-option-specs* *common-option-specs*))
+           (options (make-cli-options)))
+      (parse-arguments-with-spec specs argv
+                                 :initial-options options)
+      options))
+
+The first-match-wins lookup means specs you prepend take priority
+over the common ones; this is how alfe wraps the dialect
+shorthands with mutual-exclusion checking.
+
+* Installing the *AUTOLISP-…* globals
+
+After the runtime context is built (and before init files load),
+install the transmit-options globals:
+
+  (install-transmit-variables
+   context
+   (cli-options->transmit-bindings options
+                                   :backend "MYTOOL"
+                                   :version-text *version*
+                                   :usage-text (usage-string)))
+
+For alfe, use =alfe.cli:cli-options-transmit-bindings-for-alfe=
+instead — it handles the action-object ↔ cons translation.
+
+For dynamic-scope variables (=*AUTOLISP-LOAD-PATHNAME*=,
+=*AUTOLISP-EXPRESSION*=, =*AUTOLISP-INTERACTIVE*=), wrap each
+action with:
+
+  (call-with-dynamic-transmit-binding
+    context "*AUTOLISP-LOAD-PATHNAME*"
+    (make-autolisp-string (namestring path))
+    (lambda () (autolisp-load-file-in-context path context ...)))
+
+* Encoding resolution
+
+To validate a user-typed encoding string, call:
+
+  (canonical-encoding-name "utf-8" "-e")  ;; => "UTF-8"
+  (encoding-keyword "Utf-8-mac" "-e")     ;; => (:UTF-8 :NEWLINE :CR)
+
+Both signal =cli-usage-error= on typos. The validator probes the
+running CL implementation's external-format registry on SBCL / CCL,
+so even alphabetically-plausible-but-wrong names are caught.
+
+To enumerate every encoding the impl handles, call
+=print-encodings= (the implementation behind =--list-encodings=).
+
+* The cli-usage-error condition
+
+  (define-condition cli-usage-error (simple-error)
+    ((option :initarg :option :reader cli-usage-error-option)
+     (message :initarg :message :reader cli-usage-error-message)))
+
+Raise it directly from a value parser to surface a clean message
+to the user:
+
+  (error 'cli-usage-error
+         :option "--mode"
+         :message "Unknown mode 'foo' (expected auto/automation/batch)")
+
+* See also
+
+- =autolisp-cli-specifications.org= — design + internal invariants.
+- =issues/closed/transmit-options.issue= — the *AUTOLISP-…* contract.
+- =issues/closed/encodings.issue= — the encoding registry rules.
+- =issues/closed/line-termination.issue= — line-terminator suffix.
+- =issues/closed/source-aware-defun-documentation.issue= — future
+  work that will add a documentation tier to the transmit installer.
 
 * Synchronisation
 
-Per the project-wide synchronisation rule (AGENTS.md, Documentation
-Synchronisation section), changes to the code, the autolisp-cli
-specifications, this user-manual, or the man page (where applicable)
-must be propagated to every track.
+Per AGENTS.md, code / spec / user-manual changes propagate.
