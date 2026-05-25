@@ -122,6 +122,7 @@ Whatever the dialect selected, all operators remain callable.
 Out-of-dialect operators are eligible for a diagnostic warning at
 use time (the warning machinery itself is tracked separately —
 see =deferred-clautolisp-out-of-dialect-warnings.issue= in the project
+>>>>>>> 2d2e344 (default-dialect: distinct :clautolisp dialect + alfe defaults to clautolisp backend.)
 issue tracker).
 
 * Host selection
