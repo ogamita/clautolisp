@@ -1,0 +1,72 @@
+As an autolisp-spec consumer, I want the built PDF's filename
+to embed the spec's version number so that an installed or
+downloaded copy is self-identifying — `0.8.2`, `0.9.0`,
+`1.0.0`, … visible in the filename rather than determined
+by mtime, file hash, or opening the PDF and reading the
+title page.
+
+Today the build produces
+
+    autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.pdf
+
+regardless of which version of the spec was built. The
+original autolisp-spec-paged-version issue (closed
+2026-05-25, merge 98ca5d5) asked for
+
+    autolisp-spec/build/autolisp-visual-lisp-specification-draft-${version}.pdf
+
+— versioned filename, under build/ rather than alongside the
+org source. The merge took the simpler convention
+(`$(ORG_FILES:.org=.pdf)' in the Makefile, same dir as the
+source, no version suffix), which left this naming wish
+unmet.
+
+The version is already in the source — line 5 of
+autolisp-visual-lisp-specification-draft.org carries
+`#+VERSION: 0.8.2', and the document body asserts at line
+16 that "Any modification of this document must increment
+its version number." A Make rule can extract that string
+and use it.
+
+Acceptance:
+
+- `make documentation` (and the umbrella `make build')
+  produces a PDF whose basename includes the version,
+  e.g. `autolisp-visual-lisp-specification-draft-0.8.2.pdf'.
+- The location may remain `documentation/' (alongside the
+  org source) or move to `build/' — either is fine; pick
+  whichever is more consistent with sibling subprojects.
+  Document the choice in the Makefile header comment.
+- `make install' installs the versioned PDF under
+  $(PREFIX)/share/doc/autolisp-spec/ AND drops an
+  unversioned symlink (or copy) next to it so consumers
+  who don't want to hard-code a version can refer to
+  `autolisp-visual-lisp-specification-draft.pdf'.
+  The unversioned name is what existing tooling and
+  bookmarks already use; keep it working.
+- `make uninstall' removes both.
+- The version string is extracted from the org source's
+  `#+VERSION:' line at build time — not hard-coded in the
+  Makefile — so bumping the spec's version in one place
+  (the org file) propagates to the PDF filename without a
+  second edit.
+
+Out of scope:
+
+- Versioning the other PDFs (autolisp-reference-notes,
+  vendor-inventory-2026, specification-resolution-plan).
+  Those documents don't carry a `#+VERSION:' line today
+  and don't share the spec's release cadence; if a need
+  arises, open a separate issue.
+- Embedding the version into the HTML/Info builds. The
+  HTML manual is browsed in-place from one rendered tree
+  and doesn't need filename versioning; Info already
+  ships under `autolisp-spec.info' with the version
+  visible in the title page.
+- Changing the source-file convention (`#+VERSION:').
+  This issue consumes that field, doesn't redefine it.
+
+Spawned from the autolisp-spec-paged-version close-out
+audit: the PDF filename was the one unmet line item from
+that issue's deliverable list, called out as worth either
+fixing or accepting-as-deviation.

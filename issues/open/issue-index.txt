@@ -32,3 +32,4 @@
 | alfe-plugin-model.issue                |                                                            |
 | tex-pdf-characters.issue               |                                                            |
 | nice-make-output.issue                 |                                                            |
+| autolisp-spec-pdf-versioned-filename.issue |                                                        |
