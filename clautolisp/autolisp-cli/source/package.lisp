@@ -69,4 +69,12 @@
    #:actions-to-autolisp-list
    #:cli-options->transmit-bindings
    #:install-transmit-variables
-   #:call-with-dynamic-transmit-binding))
+   #:call-with-dynamic-transmit-binding
+
+   ;; encoding registry + resolver
+   #:*encoding-aliases*
+   #:resolve-encoding-name
+   #:encoding-keyword
+   #:canonical-encoding-name
+   #:resolve-locale-encoding-name
+   #:resolve-effective-encoding))
