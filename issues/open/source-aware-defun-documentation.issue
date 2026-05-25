@@ -1,0 +1,449 @@
+As an autolisp developer, I want alref-documentation and
+alref-describe to surface the documentation comment block that
+precedes a definition, so that user defuns and module-level
+setq's can carry their own help text the same way the
+autolisp-spec entries do.
+
+The doc-carrying convention, in actual AutoLISP source files:
+a ;| ... |; block comment immediately preceding a
+`(defun NAME ...)' or `(setq NAME VALUE ...)' attaches the
+comment text to whichever binding NAME resolves to when the
+form is evaluated. A survey of a representative AutoLISP
+codebase showed every observed ;| |; block already precedes
+a `defun'; none precede `defun-q'; `setq' is the natural place
+to document module-level constants and parameter tables and is
+included from day one so the convention doesn't need a follow-up
+issue when that idiom gets picked up.
+
+    ;|
+      documentation
+    |;
+
+    (defun foo …)
+
+    ;|
+      documentation
+    |;
+
+    (setq foo …)
+
+For the multi-pair form `(setq a 1 b 2 c 3)' the doc attaches
+only to the first pair (`a' in the example) — the form
+documents the assignment as a whole, not each variable
+individually. Source files that want per-name docs should split
+into separate `setq's.
+
+Acceptance:
+- (clautolisp-documentation 'FOO) — and the alref-documentation
+  / alref-describe wrappers built on it — return the raw text
+  inside the ;| |; block (delimiters stripped, internal
+  indentation and blank lines preserved verbatim) for the
+  innermost binding of FOO, or nil ("not documented" from the
+  alref wrapper) when the active binding carries no doc.
+- alref-describe FOO prints the documentation block, then the
+  defun signature (lambda list) or the setq value, then
+  "Defined in <path>:<line>".
+- Symbols defined interactively without a preceding block return
+  nil.
+- Any `setq' or `defun' (with or without a preceding block)
+  overwrites both value AND doc on the cell it touches;
+  re-loading a source file with the doc-block edited out leaves
+  no stale documentation behind.
+- Locally-rebound names (via `/' locals, lambda parameters,
+  foreach iteration variables, …) get their own
+  per-call-frame doc slot that shadows the outer one for the
+  duration of the call; the outer doc is restored when the
+  frame is popped. See the worked example in
+  "Design and architecture" below.
+
+Out of scope for this issue (future work):
+- ; line comments preceding a definition. The ;| |; block was
+  chosen because it has unambiguous delimiters and survives
+  whitespace reformatting.
+- defun-q. The codebase survey found no defun-q with a
+  preceding doc block, and defun-q's semantics (the body is
+  data, not code) make doc-attachment slightly different. If
+  a real use case emerges, the reader plumbing is already in
+  place — add defun-q to the recorder in
+  autolisp-runtime/source/api.lisp.
+- Doc-string conventions (first string in the body). AutoLISP
+  defun bodies don't conventionally start with a doc-string, so
+  we don't try to mine one.
+
+Spawned from apropos-non-alref-symbols.issue, which delivers
+alref-documentation "not documented" for image-only symbols and
+notes this as the planned upgrade path.
+
+* Design and architecture
+
+Two simpler designs were considered and rejected:
+
+1. **Re-open the source file at lookup time.** Store
+   (path, position) per symbol; on
+   (clautolisp-documentation 'FOO) re-open the file, seek
+   backwards over whitespace, parse a `;| ... |;' block.
+   Rejected: AutoLISP has no file-seek primitive, so a
+   portable AutoLISP variant would have to re-read every
+   file from byte 0 on every lookup; the source file may
+   also have been edited/moved/deleted; and the information
+   is already present in the reader's token stream — better
+   to capture it once than to recover it lazily.
+
+2. **Flat hashtable keyed by symbol-name.** Keep a global
+   `name -> doc-string' table populated by `defun' and
+   `setq'. Rejected because AutoLISP is dynamically scoped
+   and the user's expected semantic is that a locally
+   rebound name (via `/' locals, lambda parameter, foreach
+   var, etc.) carries its own doc that shadows the outer
+   one for the duration of the call. A flat global table
+   can't express that. Lifetime is not the deciding factor
+   here — AutoLISP has no `unintern' (verified against the
+   spec and the clautolisp builtin table) so a hashtable
+   wouldn't leak — scope is.
+
+The design has two distinct phases. Conflating them was the
+source of an earlier mistake in this issue's drafting; the
+two-phase framing is load-bearing.
+
+** Phase 1 — Read time: lexical attachment of the doc text
+
+This phase is purely textual. There are no bindings, no
+scopes, no values — just tokens being read off a stream.
+
+The autolisp-reader threads a /pending doc-comment/ slot
+through its read loop:
+
+- Whitespace and `;' line comments do not clear the slot.
+- A `;| ... |;' block comment overwrites the slot with the
+  text between the delimiters (delimiters stripped, internal
+  indentation preserved verbatim).
+- The next non-comment, non-whitespace form consumes the
+  slot: the form is read, the slot's value is attached to
+  the resulting parse-tree node as a `:preceding-doc'
+  property, and the slot is cleared.
+- A second `;| ... |;' block before any form replaces the
+  first — only the immediately-preceding block survives.
+  Matches how doc-strings work in Common Lisp / Emacs Lisp.
+
+The pending-doc slot operates at any nesting depth, not just
+on top-level forms. The inner `(defun foo ...)` in the
+worked example below is nested two levels deep yet still
+picks up its preceding block.
+
+Only block comments contribute; `;' line comments are
+ignored by design (per the out-of-scope note above).
+
+After this phase the AST carries `:preceding-doc' on every
+form that had one. It is the lexical record of "what was
+written before this form in the source," nothing more.
+
+** Phase 2 — Eval time: doc rides along with value assignment
+
+`setq' and `defun' both resolve to the same primitive
+operation in a Lisp-1: find the binding cell for NAME via
+the normal dynamic-scope lookup (innermost `/' local,
+lambda parameter, foreach iteration variable, etc., else
+the global cell), then update its value slot. The change
+here: each operator may also update the cell's `doc' slot
+under operator-specific rules.
+
+The doc slot stores a *tagged* value so the runtime can
+tell function-docs from variable-docs apart:
+
+    nil                         no documentation
+    (function "doc-string")     documentation of a defun
+    (variable "doc-string")     documentation of a setq
+
+The tag is internal to the runtime — `clautolisp-documentation'
+returns the bare string for the user. The tag exists so that
+`setq' can distinguish "this binding was previously documented
+as a function and I'm now replacing it with a value" (clear
+the now-stale function-doc) from "this binding was already
+a documented variable and I'm just updating its value"
+(leave the doc alone).
+
+*** Update rules
+
+DEFUN always rewrites the doc slot:
+
+    preceding ;| BLOCK |;  →  doc := (function "BLOCK")
+    no preceding block     →  doc := nil
+
+SETQ rewrites conditionally:
+
+    preceding ;| BLOCK |;                       →  doc := (variable "BLOCK")
+    no preceding block, current doc = nil       →  doc unchanged (stays nil)
+    no preceding block, current doc = (function _)
+                                                →  doc := nil
+    no preceding block, current doc = (variable _)
+                                                →  doc unchanged
+
+The DEFUN rule treats every defun as an authoritative
+redeclaration: the doc block (or its absence) is the new
+description. The SETQ rule preserves variable docs across
+plain mutation — `(setq counter (1+ counter))' after a
+`;| counter |; (setq counter 0)' should not silently undo
+the original documentation — while still invalidating a
+stale function-doc when the binding is repurposed as a
+plain value (`(defun foo …)' then `(setq foo 42)' → the
+doc that described the function no longer applies, so it
+goes).
+
+For the multi-pair form `(setq a 1 b 2 c 3)' only the first
+pair (`a') sees the parse-tree's `:preceding-doc'; the
+remaining pairs are conceptually individual assignments
+with no preceding block and apply the SETQ-without-block
+rule independently to each cell's current doc.
+
+** Binding-cell shape
+
+A binding cell today is conceptually `(symbol . value)'.
+We extend it to:
+
+  (symbol value doc)   ;; doc :: (function string) | (variable string) | nil
+
+
+— or, in CLOS terms, the binding-cell class gains a `doc'
+slot defaulting to nil. Value lookup is unchanged.
+Documentation lookup walks the same dynamic frame chain
+and returns the `doc' slot of the innermost matching cell.
+
+** Worked example 1 — the four update rules
+
+Exercises every case in the update table above on four
+fresh local bindings.
+
+    ((lambda (/ foo bar quux counter)
+
+       ;| inner fun foo |;
+       (defun foo () 'inner)
+       ;; foo's local cell:
+       ;;   (function "inner fun foo")
+       ;; — DEFUN with block, fresh cell.
+
+       (defun bar () 'inner)
+       ;; bar's local cell:
+       ;;   nil
+       ;; — DEFUN without block always overwrites; previous
+       ;;   doc was nil, new doc is nil. Net: still nil.
+       ;| inner fun new bar |;
+       (defun bar () 'inner)
+       ;; bar's local cell:
+       ;;   (function "inner fun new bar")
+       ;; — DEFUN with block overwrites the nil above.
+
+       ;| inner fun quux |;
+       (defun quux () 'inner)
+       ;; quux's local cell:
+       ;;   (function "inner fun quux")
+       (setq quux 42)
+       ;; quux's local cell:
+       ;;   nil
+       ;; — SETQ without block, previous was function-doc,
+       ;;   so cleared. The function-doc no longer describes
+       ;;   what's bound (42).
+
+       ;| inner var |;
+       (setq counter 'xii)
+       ;; counter's local cell:
+       ;;   (variable "inner var")
+       (setq counter 12)
+       ;; counter's local cell:
+       ;;   (variable "inner var")    ; UNCHANGED
+       ;; — SETQ without block, previous was variable-doc,
+       ;;   left alone. Plain mutation doesn't erase the
+       ;;   original variable description.
+
+       (list (clautolisp-documentation 'foo)
+             (clautolisp-documentation 'bar)
+             (clautolisp-documentation 'quux)
+             (clautolisp-documentation 'counter))))
+
+    ;; --> ("inner fun foo"
+    ;;      "inner fun new bar"
+    ;;      nil
+    ;;      "inner var")
+
+** Worked example 2 — shadowing across dynamic frames
+
+Exercises the shadowing behaviour: a `/ foo' local
+inside the outer `defun foo' creates a fresh cell that
+intercepts the inner `defun foo' and the in-body
+`(setq foo 42)' — the global cell is never touched.
+
+    ;| global doc |;
+    (defun foo (/ foo)
+      ;| recursive inner doc |;
+      (defun foo (x docs)
+        (if (= 0 x)
+            (progn (setq foo 42)
+                   (cons x (cons (clautolisp-documentation 'foo) docs)))
+            (foo (- x 1)
+                 (cons x (cons (clautolisp-documentation 'foo) docs)))))
+      (foo 3 nil))
+
+    (cons (foo) (clautolisp-documentation 'foo))
+    ;; --> ((0 nil
+    ;;       1 "recursive inner doc"
+    ;;       2 "recursive inner doc"
+    ;;       3 "recursive inner doc")
+    ;;      "global doc")
+
+Trace:
+
+- File load: outer `(defun foo ...)' evaluated at the top
+  level → finds the global cell → writes USUBR +
+  `(function "global doc")'.
+- `(foo)' is called → outer USUBR runs → the `/ foo'
+  arglist pushes a fresh dynamic cell (value nil, doc nil)
+  shadowing the global.
+- Inner `(defun foo (x docs) ...)' evaluated → dynamic
+  lookup finds the just-pushed local cell → writes inner
+  USUBR + `(function "recursive inner doc")'. The global
+  cell is untouched.
+- `(foo 3 nil)' calls the inner USUBR; at x=3,2,1
+  `(clautolisp-documentation 'foo)' returns
+  "recursive inner doc".
+- At x=0, `(setq foo 42)' assigns to the same local cell:
+  no preceding block, previous doc was function-doc, so
+  cleared to nil. value becomes 42.
+  `(clautolisp-documentation 'foo)' returns nil.
+- Outer USUBR returns → local cell popped → only the
+  global cell remains for `foo'.
+- Top-level `(clautolisp-documentation 'foo)' returns
+  "global doc".
+
+The lexical placement of each `;| |;' block determined
+*which doc text* went where; the dynamic-scope rule
+determined *which cell* received it; the function/variable
+tag determined whether subsequent plain `setq's preserved
+or invalidated it.
+
+** Expose to AutoLISP via two builtins
+
+A primary builtin returns the doc text:
+
+    (clautolisp-documentation SYM-OR-STRING) -> string | nil
+
+walks the current dynamic frame chain exactly like value
+lookup does, finds the innermost binding cell for the named
+symbol, and returns the string from its `doc' slot — stripped
+of the `(function …)' / `(variable …)' tag. Returns nil when
+the cell carries no doc OR when no binding cell exists for
+the name (unbound symbol). SYM-OR-STRING is coerced to the
+uppercased name.
+
+Same call site, same dynamic frame chain → same cell for
+value and doc. That equivalence is the design contract: if
+`(eval 'foo)' resolves to the inner USUBR, then
+`(clautolisp-documentation 'foo)' returns the doc of that
+same cell.
+
+A secondary builtin exposes the kind tag:
+
+    (clautolisp-documentation-kind SYM-OR-STRING) -> 'function | 'variable | nil
+
+returns the head of the tagged doc list — used by
+`alref-describe' to print the right "Function:" /
+"Variable:" prefix. Independent of the value's runtime type
+(a binding could have been a defun and then been mutated by
+setq; the kind reflects the most recent /documented/
+assignment, not the current value's type).
+
+Both are documented in autolisp-spec under `clautolisp-only'
+availability — they are synthetic extensions; AutoCAD and
+BricsCAD do not provide them. The `clautolisp-' prefix
+matches the spec's namespacing rule for vendor-specific
+extensions and keeps the names from colliding with future
+Autodesk additions.
+
+** Consume from alref
+
+`alref-documentation' (in autolisp-spec/autolisp/alref.lsp)
+gets a third lookup tier between the spec page and the
+"not documented" fallback:
+
+  1. Spec page (current behaviour).
+  2. (clautolisp-documentation NAME) — when the builtin
+     exists in this image and returns a non-nil string.
+     Resolves through the current dynamic frame chain, so
+     the right doc surfaces for shadowed bindings.
+  3. Literal "not documented".
+
+`alref-describe' similarly prints, in order, the spec page
+*or* the live doc block (prefixed with "Function" or
+"Variable" using `clautolisp-documentation-kind') followed
+by the runtime kind line that alref-print-apropos-line
+already emits.
+
+The builtin is `boundp'-probed, so alref.lsp remains portable:
+in AutoCAD / BricsCAD the second tier is skipped and the
+existing two-tier behaviour is preserved.
+
+** Affected components
+
+- autolisp-reader/documentation/specification.org —
+  document the pending-doc-comment slot and the
+  `:preceding-doc' parse-tree property.
+- autolisp-reader/source/tokenizer.lisp +
+  autolisp-reader/source/parser.lisp — implement the
+  pending-doc thread. The `retain-comments-p' option is
+  already there but is currently a per-token retain; the
+  pending-doc slot is orthogonal (always populated, not
+  gated on retain-comments-p).
+- autolisp-reader/tests/ — add cases covering:
+  block before defun → captured; line comments between
+  block and defun → captured; second block clobbers first;
+  form-without-block → nil; block at top of file before
+  any form → captured by first form.
+- autolisp-runtime/source/api.lisp — extend the binding-cell
+  structure with a `doc' slot defaulting to nil. The slot
+  holds nil, `(function "STRING")', or `(variable "STRING")'.
+  `eval-defun-form' always overwrites the slot (with
+  `(function …)' when a `:preceding-doc' is present on the
+  parse-tree node, with nil otherwise). `eval-setq-form'
+  applies the conditional rule from the "Update rules"
+  table: install `(variable …)' on preceding-doc; on no
+  preceding-doc, clear when the current doc head is
+  `function', leave alone otherwise. Multi-pair `setq'
+  applies the rule pair-by-pair, with the first pair seeing
+  the parse-tree's preceding-doc and the rest seeing nil.
+  Add a `lookup-documentation' helper that walks the
+  dynamic frame chain mirroring `lookup-variable' and
+  returns the tagged-doc value (or nil).
+- autolisp-builtins-core/source/api.lisp — register two
+  core builtins via `make-core-builtin-subr':
+  `CLAUTOLISP-DOCUMENTATION' (returns the bare string via
+  `lookup-documentation' + `cadr') and
+  `CLAUTOLISP-DOCUMENTATION-KIND' (returns the head symbol
+  via `lookup-documentation' + `car').
+- autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org —
+  two new ** Function Entries: CLAUTOLISP-DOCUMENTATION and
+  CLAUTOLISP-DOCUMENTATION-KIND, both with Availability:
+  clautolisp only. Worth a paragraph in the binding-and-scope
+  chapter noting that documentation is per-binding
+  (not per-symbol), follows dynamic scope, and carries a
+  function-vs-variable tag that determines whether subsequent
+  bare `setq's invalidate it.
+- autolisp-spec/autolisp/alref.lsp — third lookup tier in
+  `alref-documentation' and `alref-describe', guarded by
+  `boundp' probe of `clautolisp-documentation'.
+- autolisp-test/tests/ — end-to-end cases covering each
+  row of the Phase 2 update-rules table:
+  + `;| doc |; (defun foo () ...)' → "doc" / kind 'function.
+  + `(defun foo () ...)' after the above → nil / kind nil.
+  + `;| doc |; (setq bar 42)' → "doc" / kind 'variable.
+  + `(setq bar 99)' after the above → "doc" preserved.
+  + `(setq foo 42)' after a documented `defun foo' → nil.
+  + multi-pair setq attaches only to the first name; the
+    remaining pairs apply the SETQ-without-block rule
+    to their cells independently.
+  + re-loading the file with the block removed leaves
+    the binding with the appropriate nil/preserved doc
+    per the rules — no stale documentation.
+  + the shadowing example (worked example 2 above) —
+    inner doc visible inside the body, in-body
+    `(setq foo 42)' clears it, outer doc restored after
+    the frame is popped.
+- clautolisp/tools/clautolisp/source/version.lisp — bump
+  DEVELOP per the repo-wide convention.
