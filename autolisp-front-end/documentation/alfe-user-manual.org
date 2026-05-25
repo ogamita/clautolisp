@@ -4,7 +4,7 @@
 #+EMAIL: pjb@informatimago.com
 #+OPTIONS: toc:t num:t html-postamble:nil
 #+TEXINFO_FILENAME: alfe-user-manual.info
-#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_CATEGORY: alfe
 #+TEXINFO_DIR_TITLE: alfe-user-manual: (alfe-user-manual).
 #+TEXINFO_DIR_DESC: alfe — AutoLISP CLI front-end.
 

@@ -33,8 +33,8 @@ ox-texinfo needs to produce a real Info manual:
 
   #+TEXINFO_FILENAME: autolisp-spec.info
   #+TEXINFO_HEADER: @syncodeindex pg cp
-  #+TEXINFO_DIR_CATEGORY: Programming
-  #+TEXINFO_DIR_TITLE: AutoLISP Spec: (autolisp-spec).
+  #+TEXINFO_DIR_CATEGORY: AutoLISP specification
+  #+TEXINFO_DIR_TITLE: autolisp-spec: (autolisp-spec).
   #+TEXINFO_DIR_DESC: AutoLISP / Visual LISP language specification.
 
 The original org source isn't modified — the spec stays a pure
@@ -43,8 +43,8 @@ fly. Returns DEST."
   (with-temp-file dest
     (insert "#+TEXINFO_FILENAME: autolisp-spec.info\n")
     (insert "#+TEXINFO_HEADER: @syncodeindex pg cp\n")
-    (insert "#+TEXINFO_DIR_CATEGORY: Programming\n")
-    (insert "#+TEXINFO_DIR_TITLE: AutoLISP Spec: (autolisp-spec).\n")
+    (insert "#+TEXINFO_DIR_CATEGORY: AutoLISP specification\n")
+    (insert "#+TEXINFO_DIR_TITLE: autolisp-spec: (autolisp-spec).\n")
     (insert "#+TEXINFO_DIR_DESC: AutoLISP / Visual LISP language specification.\n")
     (insert-file-contents org-file))
   dest)
@@ -62,8 +62,8 @@ system-wide dir on the install step."
       (insert "File: dir,\tNode: Top,\tThis is the top of the INFO tree\n\n")
       (insert "  This (the Directory node) gives a menu of major topics.\n\n")
       (insert "* Menu:\n\n")
-      (insert "Programming\n")
-      (insert "* AutoLISP Spec: (autolisp-spec).      AutoLISP / Visual LISP language specification.\n"))
+      (insert "AutoLISP specification\n")
+      (insert "* autolisp-spec: (autolisp-spec).      AutoLISP / Visual LISP language specification.\n"))
     dir-path))
 
 ;;; --- main ----------------------------------------------------------
