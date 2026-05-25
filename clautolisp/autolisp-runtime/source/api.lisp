@@ -1295,7 +1295,10 @@ error wraps a non-autolisp-runtime condition."
 (defparameter *autolisp-trace-p* nil
   "When non-nil, every call into call-autolisp-function-in-context
 emits an indented trace line on entry and exit. Toggle via the
-clautolisp CLI's --trace flag, or set directly from user code.")
+clautolisp CLI's --trace flag, or set directly from user code.
+For per-symbol filtering instead of session-wide instrumentation
+see `*autolisp-traced-symbols*' and the TRACE / UNTRACE special
+operators.")
 
 (defparameter *autolisp-trace-depth* 0
   "Indentation level for the trace printer. Incremented on entry,
@@ -1303,6 +1306,14 @@ decremented on exit; visible as leading spaces in trace output.")
 
 (defparameter *autolisp-trace-stream* nil
   "Stream the tracer writes to. nil means *trace-output*.")
+
+(defparameter *autolisp-traced-symbols* (make-hash-table :test 'equal)
+  "Upcased AutoLISP function-name strings whose invocations are
+traced even when *autolisp-trace-p* is nil. Populated by the
+TRACE special operator and emptied by UNTRACE called with no
+arguments. Anonymous functions (lambdas without DEFUN) can't be
+selected this way — they fall back to the session-wide
+*autolisp-trace-p* flag.")
 
 (defun autolisp-trace-stream ()
   (or *autolisp-trace-stream* *trace-output*))
@@ -1312,6 +1323,19 @@ decremented on exit; visible as leading spaces in trace output.")
     ((typep function 'autolisp-subr)  (autolisp-subr-name function))
     ((typep function 'autolisp-usubr) (or (autolisp-usubr-name function) "<lambda>"))
     (t (format nil "~S" function))))
+
+(defun autolisp-function-trace-p (function)
+  "T iff FUNCTION's invocation should be traced — either the
+session-wide *autolisp-trace-p* flag is on, or the function has
+a name that's been registered via the TRACE special operator.
+Anonymous lambdas (no name) fall through to the session-wide
+flag only."
+  (or *autolisp-trace-p*
+      (let ((name (cond ((typep function 'autolisp-subr)
+                         (autolisp-subr-name function))
+                        ((typep function 'autolisp-usubr)
+                         (autolisp-usubr-name function)))))
+        (and name (gethash name *autolisp-traced-symbols*)))))
 
 (defun autolisp-format-trace-value (value)
   ;; Compact one-line printer for trace-value display. Strings keep
@@ -1363,8 +1387,14 @@ decremented on exit; visible as leading spaces in trace output.")
   ;; surface semantics of FUNCTION ≡ QUOTE.
   (when (lambda-form-p function)
     (setf function (eval-lambda-form (rest function) context)))
-  (let ((clautolisp.autolisp-runtime.internal::*active-evaluation-context* context))
-    (when *autolisp-trace-p*
+  (let ((clautolisp.autolisp-runtime.internal::*active-evaluation-context* context)
+        ;; Capture the trace decision ONCE on entry. Per-symbol
+        ;; trace state can change mid-call (e.g. the traced
+        ;; function itself runs UNTRACE on its own name) but the
+        ;; enter/exit lines must agree on whether this call is
+        ;; instrumented or the depth counter will skew.
+        (trace-this-call (autolisp-function-trace-p function)))
+    (when trace-this-call
       (autolisp-trace-enter function arguments)
       (incf *autolisp-trace-depth*))
     (let ((result
@@ -1377,12 +1407,12 @@ decremented on exit; visible as leading spaces in trace output.")
                  (handler-case
                      (apply (autolisp-subr-function function) arguments)
                    (autolisp-runtime-error (condition)
-                     (when *autolisp-trace-p*
+                     (when trace-this-call
                        (decf *autolisp-trace-depth*)
                        (autolisp-trace-exit function (format nil "<error: ~A>" condition)))
                      (error condition))
                    (error (condition)
-                     (when *autolisp-trace-p*
+                     (when trace-this-call
                        (decf *autolisp-trace-depth*)
                        (autolisp-trace-exit function (format nil "<host-error: ~A>" condition)))
                      (error 'autolisp-runtime-error
@@ -1410,7 +1440,7 @@ decremented on exit; visible as leading spaces in trace output.")
                 :invalid-function-object
                 "Expected an AutoLISP function object, got ~S."
                 function)))))
-      (when *autolisp-trace-p*
+      (when trace-this-call
         (decf *autolisp-trace-depth*)
         (autolisp-trace-exit function result))
       result)))
@@ -1464,6 +1494,65 @@ decremented on exit; visible as leading spaces in trace output.")
              (setf result (autolisp-eval value-form context))
              (set-variable symbol-form result context))
     result))
+
+(defun eval-set-form (arguments context)
+  ;; (set 'foo VALUE)  — like SETQ but the place form is evaluated.
+  ;; AutoLISP's SET takes exactly two arguments (one symbol-producing
+  ;; form + one value form); the pair-iteration shape of SETQ is
+  ;; not a feature of SET in any documented dialect.
+  (unless (= 2 (length arguments))
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "SET expects two arguments, got ~D."
+     (length arguments)))
+  (let* ((place-result (autolisp-eval (first arguments) context))
+         (value-result (autolisp-eval (second arguments) context)))
+    (unless (typep place-result 'autolisp-symbol)
+      (signal-autolisp-runtime-error
+       :invalid-set-place
+       "SET place must evaluate to an AutoLISP symbol, got ~S."
+       place-result))
+    (set-variable place-result value-result context)
+    value-result))
+
+(defun eval-trace-form (arguments context)
+  ;; (trace foo bar)  — symbol-name arguments are taken bare (not
+  ;; evaluated), upcased, and added to *autolisp-traced-symbols*.
+  ;; Returns the last symbol traced (the SETQ "current value"
+  ;; idiom). Autodesk's reference page documents single-symbol
+  ;; calls; clautolisp accepts a variadic form for ergonomic
+  ;; (trace a b c) at the REPL.
+  (declare (ignore context))
+  (let ((last-symbol nil))
+    (dolist (arg arguments)
+      (unless (typep arg 'autolisp-symbol)
+        (signal-autolisp-runtime-error
+         :invalid-trace-argument
+         "TRACE argument must be a bare symbol, got ~S." arg))
+      (setf (gethash (autolisp-symbol-name arg) *autolisp-traced-symbols*) t)
+      (setf last-symbol arg))
+    last-symbol))
+
+(defun eval-untrace-form (arguments context)
+  ;; (untrace foo bar)  — remove each named symbol from the trace
+  ;; set. (untrace) with no arguments clears the whole set — a
+  ;; common extension over Autodesk's single-symbol form, useful
+  ;; at the REPL to wipe out a noisy trace session.
+  (declare (ignore context))
+  (cond
+    ((null arguments)
+     (clrhash *autolisp-traced-symbols*)
+     nil)
+    (t
+     (let ((last-symbol nil))
+       (dolist (arg arguments)
+         (unless (typep arg 'autolisp-symbol)
+           (signal-autolisp-runtime-error
+            :invalid-untrace-argument
+            "UNTRACE argument must be a bare symbol, got ~S." arg))
+         (remhash (autolisp-symbol-name arg) *autolisp-traced-symbols*)
+         (setf last-symbol arg))
+       last-symbol))))
 
 (defun eval-progn-form (arguments context)
   (autolisp-eval-progn arguments context))
@@ -1666,6 +1755,7 @@ decremented on exit; visible as leading spaces in trace output.")
 (defparameter *special-operator-dispatch*
   (list (cons "QUOTE" #'eval-quote-form)
         (cons "SETQ" #'eval-setq-form)
+        (cons "SET" #'eval-set-form)
         (cons "PROGN" #'eval-progn-form)
         (cons "IF" #'eval-if-form)
         (cons "COND" #'eval-cond-form)
@@ -1677,7 +1767,9 @@ decremented on exit; visible as leading spaces in trace output.")
         (cons "LAMBDA" #'eval-lambda-form)
         (cons "FUNCTION" #'eval-function-form)
         (cons "DEFUN-Q" #'eval-defun-q-form)
-        (cons "DEFUN" #'eval-defun-form)))
+        (cons "DEFUN" #'eval-defun-form)
+        (cons "TRACE" #'eval-trace-form)
+        (cons "UNTRACE" #'eval-untrace-form)))
 
 (defun special-operator-function (operator)
   (cdr (assoc (special-operator-name operator)
