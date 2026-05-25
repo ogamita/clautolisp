@@ -78,38 +78,90 @@ what rejects typos like `uft-8' that pass syntax but aren't real."
        (%implementation-knows-encoding-p
         (intern (string-upcase name) :keyword))))
 
+(defparameter *line-terminator-suffixes*
+  '(("-MAC"   :cr   "-mac")
+    ("-DOS"   :crlf "-dos")
+    ("-UNIX"  :lf   "-unix")
+    ("-CR"    :cr   "-cr")
+    ("-CRLF"  :crlf "-crlf")
+    ("-LF"    :lf   "-lf"))
+  "Alist of (UPCASED-SUFFIX NEWLINE-KEYWORD CANONICAL-SUFFIX).
+RESOLVE-ENCODING-NAME strips a matching suffix from the user's
+input, validates the base against the alias table, then re-
+attaches CANONICAL-SUFFIX to the returned canonical-name so
+the *AUTOLISP-{FILE,TERMINAL}-ENCODING* globals show what the
+user asked for (`-e UTF-8-mac' → \"UTF-8-mac\"). The NEWLINE-
+KEYWORD goes into the compound external-format
+(BASE-KEYWORD :NEWLINE NEWLINE-KEYWORD) the CL implementation
+honours at OPEN time, so -e UTF-8-mac actually reads files
+with CR line endings.
+
+For -E the suffix is accepted, surfaced in the global, and
+ignored at runtime — the terminal's line discipline already
+strips line terminators in LINE mode, so reconfiguring the
+external-format would only matter for stdin streams hooked to
+a non-line-disciplined remote. Pursued separately if/when that
+need arises.")
+
+(defun %match-line-terminator-suffix (name)
+  "When NAME ends with one of the documented line-terminator
+suffixes (case-insensitively), return (values BASE NEWLINE-KW
+CANONICAL-SUFFIX). Otherwise (values nil nil nil). BASE is the
+prefix of NAME with the suffix lopped off."
+  (loop for (suffix newline canonical) in *line-terminator-suffixes*
+        for sufflen = (length suffix)
+        when (and (> (length name) sufflen)
+                  (string-equal name suffix :start1 (- (length name) sufflen)))
+        return (values (subseq name 0 (- (length name) sufflen))
+                       newline
+                       canonical)))
+
 (defun resolve-encoding-name (name &optional option)
   "Map NAME (the user-typed -e / -E value, a string) to the canonical
 encoding spelling (a string published in *AUTOLISP-…-ENCODING* and
-returned as the first value) and the CL external-format keyword
-(returned as the second value).
+returned as the first value) and the CL external-format spec
+(returned as the second value — either a bare keyword or, for
+encodings with an explicit -mac/-dos/-unix line-terminator
+suffix, a compound list (BASE-KEYWORD :NEWLINE NEWLINE-KW)).
 
-Mandatory encodings (US-ASCII / ISO-8859-1 / WINDOWS-1252 / UTF-8)
-match through *ENCODING-ALIASES*. An encoding name not on that
-list, but whose syntax passes %PLAUSIBLE-ENCODING-NAME-P, is
-forwarded to the underlying CL implementation by upcasing it and
-returning both the upper-cased string and its KEYWORD twin —
-implementations that don't recognise it surface their own error
-at OPEN time. Implausible spellings (typos, garbage) signal
-CLI-USAGE-ERROR mentioning OPTION."
-  ;; SOME drops secondary values, so locate the row first then call
-  ;; VALUES from the outer scope.
-  (let ((row (find-if (lambda (r) (%encoding-alias-match-p name (cddr r)))
-                      *encoding-aliases*)))
+Resolution order:
+  1. Strip a recognised line-terminator suffix (-mac/-dos/-unix/
+     -lf/-cr/-crlf), recurse on the base for the keyword half,
+     and recombine.
+  2. Match the (suffix-less) name against *ENCODING-ALIASES* —
+     mandatory four with their CLI-accepted aliases.
+  3. Pass an alphabetically-plausible name to the impl's
+     external-format registry (SBCL: sb-impl::get-external-
+     format). Accept if known.
+  4. Otherwise signal CLI-USAGE-ERROR mentioning OPTION."
+  (multiple-value-bind (base newline canonical-suffix)
+      (%match-line-terminator-suffix name)
     (cond
-      (row
-       (values (first row) (second row)))
-      ((%plausible-encoding-name-p name)
-       (let ((up (string-upcase name)))
-         (values up (intern up :keyword))))
+      (base
+       (multiple-value-bind (base-canonical base-keyword)
+           (resolve-encoding-name base option)
+         (values (concatenate 'string base-canonical canonical-suffix)
+                 (list base-keyword :newline newline))))
       (t
-       (error 'cli-usage-error
-              :option option
-              :message
-              (format nil "Unknown encoding ~S. Expected one of: ~
-~{~A~^, ~} (with the usual aliases)."
-                      name
-                      (mapcar #'first *encoding-aliases*)))))))
+       ;; SOME drops secondary values, so locate the row first then
+       ;; call VALUES from the outer scope.
+       (let ((row (find-if (lambda (r) (%encoding-alias-match-p name (cddr r)))
+                           *encoding-aliases*)))
+         (cond
+           (row
+            (values (first row) (second row)))
+           ((%plausible-encoding-name-p name)
+            (let ((up (string-upcase name)))
+              (values up (intern up :keyword))))
+           (t
+            (error 'cli-usage-error
+                   :option option
+                   :message
+                   (format nil "Unknown encoding ~S. Expected one of: ~
+~{~A~^, ~} (with the usual aliases; append -mac / -dos / -unix / ~
+-lf / -cr / -crlf to force a line-ending variant)."
+                           name
+                           (mapcar #'first *encoding-aliases*))))))))))
 
 (defun encoding-keyword (name &optional option)
   "Return the CL external-format keyword for NAME — the second value
@@ -226,6 +278,13 @@ remaining encodings the running CL implementation accepts."
   (format stream "~&clautolisp / alfe — supported encoding names.~%~%")
   (format stream "Encoding names are case-insensitive on the CLI: ~
 utf-8 = UTF-8 = Utf-8.~%~%")
+  (format stream "Line-ending suffix (append to any encoding name):~%")
+  (format stream "  -mac    Mac classic (CR only)~%")
+  (format stream "  -dos    DOS / Windows (CRLF)~%")
+  (format stream "  -unix   Unix (LF, the default)~%")
+  (format stream "  -lf / -cr / -crlf  — synonyms~%")
+  (format stream "  Honoured on -e (file reads); accepted-and-ignored ~
+on -E (terminal IO~%  is line-buffered by default).~%~%")
   (format stream "Mandatory (always supported; CLI also accepts ~
 these aliases):~%")
   (dolist (row *encoding-aliases*)
