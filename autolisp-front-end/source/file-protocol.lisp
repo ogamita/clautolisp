@@ -614,6 +614,80 @@ canonicalise but accept the merged path otherwise."
 (defun bool->autolisp (boolean)
   (if boolean "T" "nil"))
 
+(defun %render-autolisp-literal-element (value)
+  "Render VALUE as its element-position spelling inside an already
+quoted list context — symbols are bare, strings are quoted, lists
+are parenthesised without a leading apostrophe. Inverse helper to
+%RENDER-AUTOLISP-LITERAL, which prepends the apostrophe at top
+level only."
+  (cond
+    ((null value) "nil")
+    ((eq value t) "t")
+    ((typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+     (clautolisp.autolisp-runtime:autolisp-symbol-name value))
+    ((typep value 'clautolisp.autolisp-runtime:autolisp-string)
+     (format nil "~S"
+             (clautolisp.autolisp-runtime.internal::autolisp-string-value value)))
+    ((integerp value) (format nil "~D" value))
+    ((consp value)
+     ;; Nested list inside an already-quoted context: bare parens,
+     ;; no extra apostrophe.
+     (format nil "(~{~A~^ ~})"
+             (mapcar #'%render-autolisp-literal-element value)))
+    (t (format nil "~S" value))))
+
+(defun %render-autolisp-literal (value)
+  "Render VALUE as the AutoLISP literal source the remote engine
+will read via LOAD. Used by EMIT-CLI-TRANSMIT-BINDINGS to format
+the CLI-derived globals into setq forms. A list value is rendered
+with a single leading apostrophe (`'(…)`); nested lists inside
+are rendered bare (`(…)`) to avoid double-quoting."
+  (cond
+    ((null value) "nil")
+    ((eq value t) "t")
+    ((typep value 'clautolisp.autolisp-runtime:autolisp-symbol)
+     (format nil "'~A"
+             (clautolisp.autolisp-runtime:autolisp-symbol-name value)))
+    ((typep value 'clautolisp.autolisp-runtime:autolisp-string)
+     (format nil "~S"
+             (clautolisp.autolisp-runtime.internal::autolisp-string-value value)))
+    ((integerp value) (format nil "~D" value))
+    ((consp value)
+     (format nil "'(~{~A~^ ~})"
+             (mapcar #'%render-autolisp-literal-element value)))
+    (t (format nil "~S" value))))
+
+(defun emit-cli-transmit-bindings (stream cli-options version-text emit-var)
+  "Walk ALFE.CLI:CLI-OPTIONS-TRANSMIT-BINDINGS-FOR-ALFE on
+CLI-OPTIONS (the alfe-side action-object → cons translation
+wrapper) and emit a setq form per binding via EMIT-VAR (which
+already knows the hyphen + underscore pairing convention). Skip
+the dynamically-scoped *AUTOLISP-INTERACTIVE* / *AUTOLISP-LOAD-
+PATHNAME* / *AUTOLISP-EXPRESSION* — those are set per-action by
+the runtime, not statically at run-common emission. The HELP
+string is omitted by default to keep run-common.lsp small; user
+code that needs it can re-derive it from --help on demand."
+  (declare (ignore stream))
+  (let* ((bindings (alfe.cli:cli-options-transmit-bindings-for-alfe
+                    cli-options
+                    :backend "ALFE"
+                    :version-text version-text))
+         (skip '("*AUTOLISP-INTERACTIVE*"
+                 "*AUTOLISP-LOAD-PATHNAME*"
+                 "*AUTOLISP-EXPRESSION*"
+                 "*AUTOLISP-HELP*")))
+    (dolist (binding bindings)
+      (let ((name (first binding))
+            (value (second binding)))
+        (unless (member name skip :test #'string=)
+          (funcall emit-var
+                   name
+                   ;; Underscore-variant for the AutoCAD reader: the
+                   ;; transmit globals are part of the same ;-_-
+                   ;; double-emission scheme as the protocol slots.
+                   (substitute #\_ #\- name)
+                   (%render-autolisp-literal value)))))))
+
 (defun emit-run-common-lsp (session
                             &key (path
                                    (merge-pathnames
@@ -625,11 +699,23 @@ canonicalise but accept the merged path otherwise."
                                  (quit-on-finish-p t)
                                  (debug-p nil)
                                  (invocation-dir (uiop:getcwd))
-                                 (log-name "autolisp-session.log"))
+                                 (log-name "autolisp-session.log")
+                                 cli-options
+                                 version-text)
   "Write the run-common.lsp init script the CAD-side runtime sources
 at startup. Substitutes the spec's placeholders with absolute paths
-drawn from SESSION; the remaining knobs (VERSION, BOOTSTRAP-PHASE,
-DEBUG-P, …) come from the alfe CLI options.
+drawn from SESSION; the remaining knobs (BOOTSTRAP-PHASE, DEBUG-P,
+…) come from the alfe CLI options.
+
+When CLI-OPTIONS is non-NIL, the CLI-derived *AUTOLISP-…* globals
+from transmit-options.issue are emitted at the *top* of the file
+(*AUTOLISP-VERSION* in first position, per the issue's remote
+table). They precede the protocol-related globals so the CAD-side
+init code can branch on them while it's still wiring up the
+protocol scaffolding. VERSION-TEXT is the alfe build version
+string published as *AUTOLISP-VERSION* (e.g. \"1.0.9\"); the
+run-common protocol generation (e.g. (0 0 3)) moves to
+*AUTOLISP-RUNCOMMON-VERSION* to avoid collision.
 
 Returns the path of the emitted file."
   (let* ((workdir (protocol-session-workdir session))
@@ -649,6 +735,15 @@ Returns the path of the emitted file."
             (flet ((emit-var (hyphen underscore value-form)
                      (format out "(setq ~A ~A)~%" hyphen value-form)
                      (format out "(setq ~A ~A)~%" underscore value-form)))
+              ;; --- CLI-derived globals (transmit-options.issue) ---
+              ;; Emitted *first* so the CAD-side init code sees the
+              ;; alfe-invocation metadata before any protocol wiring.
+              ;; *AUTOLISP-VERSION* is the first entry per the issue's
+              ;; remote table.
+              (when cli-options
+                (emit-cli-transmit-bindings out cli-options
+                                            (or version-text "0.0.0")
+                                            #'emit-var))
               (flet ((emit-path (hyphen underscore path)
                        (emit-var hyphen underscore
                                  (format nil "~S" (stringify-path path)))))
@@ -698,8 +793,13 @@ Returns the path of the emitted file."
               (emit-var "*AUTOLISP-DEBUG*"
                         "*AUTOLISP_DEBUG*"
                         (bool->autolisp debug-p))
-              (emit-var "*AUTOLISP-VERSION*"
-                        "*AUTOLISP_VERSION*"
+              ;; The run-common.lsp protocol generation (a list like
+              ;; (0 0 3)) used to be emitted as *AUTOLISP-VERSION*.
+              ;; Renamed here to avoid colliding with the CLI-derived
+              ;; *AUTOLISP-VERSION* (the alfe build version, a string)
+              ;; published above when CLI-OPTIONS is supplied.
+              (emit-var "*AUTOLISP-RUNCOMMON-VERSION*"
+                        "*AUTOLISP_RUNCOMMON_VERSION*"
                         (format nil "'(~D ~D ~D)"
                                 (first version)
                                 (second version)

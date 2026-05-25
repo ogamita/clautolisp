@@ -382,6 +382,8 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
                          &key dialect host mock-input bootstrap-phase
                               interactive-p
                               load-encoding
+                              io-encoding
+                              cli-options version-text
                               (mode :auto)
                               (dwg nil)
                               (launcher #'uiop:launch-program)
@@ -389,7 +391,7 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
                               (ready-timeout 60))
   ;; LOAD-ENCODING accepted but ignored: the AutoCAD-resident
   ;; AutoLISP runtime owns the source-file encoding policy.
-  (declare (ignore dialect host mock-input load-encoding))
+  (declare (ignore dialect host mock-input load-encoding io-encoding))
   (handler-case
       (let* ((protocol (alfe.protocol.file:init-session workdir))
              (run-common
@@ -397,7 +399,9 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
                 protocol
                 :bootstrap-phase bootstrap-phase
                 :use-remote-protocol-p t
-                :quit-on-finish-p (not interactive-p)))
+                :quit-on-finish-p (not interactive-p)
+                :cli-options cli-options
+                :version-text version-text))
              (variant (choose-effective-mode backend mode)))
         (case variant
           (:automation

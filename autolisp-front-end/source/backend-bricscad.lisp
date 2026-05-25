@@ -473,6 +473,8 @@ SHUTDOWN can terminate it."
                          &key dialect host mock-input bootstrap-phase
                               interactive-p
                               load-encoding
+                              io-encoding
+                              cli-options version-text
                               (mode :auto)
                               (launcher #'uiop:launch-program)
                               (wait-for-ready t)
@@ -493,7 +495,7 @@ future ticket."
   ;; DIALECT is currently irrelevant on the CAD side: the AutoLISP
   ;; dialect lives inside the CAD engine and is not swappable from
   ;; outside. HOST is meaningful only to clautolisp.
-  (declare (ignore host mock-input dialect load-encoding))
+  (declare (ignore host mock-input dialect load-encoding io-encoding))
   (handler-case
       (let* ((protocol (alfe.protocol.file:init-session workdir))
              (run-common
@@ -501,7 +503,9 @@ future ticket."
                 protocol
                 :bootstrap-phase bootstrap-phase
                 :use-remote-protocol-p t
-                :quit-on-finish-p (not interactive-p))))
+                :quit-on-finish-p (not interactive-p)
+                :cli-options cli-options
+                :version-text version-text)))
         ;; Emit the engine-side launcher in the right shape.
         (let ((variant (choose-effective-mode backend mode)))
           (case variant

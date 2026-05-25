@@ -367,7 +367,8 @@ SHUTDOWN."
 (defmethod start-engine ((backend clautolisp-backend) workdir
                          &key dialect host mock-input
                               bootstrap-phase interactive-p
-                              load-encoding)
+                              load-encoding io-encoding
+                              cli-options version-text)
   ;; INTERACTIVE-P is forwarded to start-subprocess-engine below; the
   ;; direct branch doesn't use it (the REPL is opened by EVAL-PLAN
   ;; when the action plan carries an :interactive action). MOCK-INPUT
@@ -379,7 +380,13 @@ SHUTDOWN."
   ;; (load …) from a user init file — uses it instead of the dialect
   ;; default. The subprocess variant forwards it as `-e ENC' to the
   ;; spawned clautolisp-sbcl binary's CLI.
-  (declare (ignore mock-input bootstrap-phase))
+  ;;
+  ;; CLI-OPTIONS is the alfe-side cli-options struct; the direct
+  ;; variant uses it to install the *AUTOLISP-…* globals in the
+  ;; freshly created runtime context (transmit-options.issue). The
+  ;; subprocess variant ignores it — the spawned clautolisp-sbcl
+  ;; installs its own from argv.
+  (declare (ignore mock-input bootstrap-phase io-encoding))
   (ecase (clautolisp-backend-variant backend)
     (:direct
      (handler-case
@@ -390,6 +397,19 @@ SHUTDOWN."
                 (session-handle (evaluation-context-session context)))
            (set-runtime-session-host session-handle host-instance)
            (install-core-builtins)
+           ;; Install the *AUTOLISP-…* globals derived from alfe's
+           ;; CLI options, with backend = "ALFE" (the running
+           ;; front-end's identity, not the in-process engine).
+           ;; Variables visible to user code as if clautolisp had
+           ;; been invoked directly, plus alfe-specific slots like
+           ;; *AUTOLISP-MODE* / *AUTOLISP-DRAWING* / etc.
+           (when cli-options
+             (clautolisp.autolisp-cli:install-transmit-variables
+              context
+              (alfe.cli:cli-options-transmit-bindings-for-alfe
+               cli-options
+               :backend "ALFE"
+               :version-text (or version-text "0.0.0"))))
            ;; Effective default source-file encoding precedence:
            ;;   `-e ENC' (LOAD-ENCODING) > LC_ALL/LC_CTYPE/LANG > NIL.
            ;; NIL falls through to the dialect default at load time.
