@@ -13,6 +13,7 @@ mention each one."
         "--backend" "direct"
         "--bootstrap-phase" "full"
         "--no-init"
+        "--no-color"
         "--quiet"
         "--timeout" "30"
         "-x" "(+ 1 2)")
@@ -20,4 +21,5 @@ mention each one."
  :covers-options ("--clautolisp" "--dry-run"
                   "--mode" "--backend"
                   "--bootstrap-phase" "--no-init"
+                  "--no-color"
                   "--quiet" "--timeout"))
