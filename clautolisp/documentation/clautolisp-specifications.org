@@ -134,19 +134,39 @@ positional FILE argument; ~--~ is *not* recognised as end-of-options.
 ** Dialect selection
 - ~--dialect NAME~ ::
   Select a named dialect. NAME must be one of ~strict~,
-  ~autocad-2026~, ~bricscad-v26~. Default: ~strict~.
+  ~autocad-2026~, ~bricscad-v26~, ~clautolisp~. Default: ~strict~.
 - ~--strict~ ::
   Shorthand for ~--dialect strict~.
 - ~--autocad~ ::
   Shorthand for ~--dialect autocad-2026~.
 - ~--bricscad~ ::
   Shorthand for ~--dialect bricscad-v26~.
+- ~--clautolisp~ ::
+  Shorthand for ~--dialect clautolisp~. The ~clautolisp~ dialect
+  is a superset of ~strict~ — same conservative reader knobs that
+  work on every conforming host, plus clautolisp-specific
+  extensions (variadic functions via ~&REST~, future quality-of-
+  life conveniences). Source/file encoding defaults to UTF-8,
+  matching the AutoCAD 2025+ and BricsCAD V26 baseline rather
+  than the strict-dialect ISO-8859-1 ANSI/MBCS legacy. Code
+  written for ~clautolisp~ does NOT run unmodified on real
+  AutoCAD or BricsCAD; that's the user's choice when they pick
+  ~--dialect clautolisp~ over ~--strict~.
 
 The selected dialect determines reader token rules, string-escape
 handling, integer-overflow warning, hex-float parsing in ~atof~,
 unbound-variable behaviour, and the implementation marker propagated
 to the runtime session. The descriptors are defined in
 ~clautolisp/autolisp-reader/source/dialect.lisp~.
+
+Operator availability rule: regardless of dialect, every operator
+the runtime implements remains callable — the dialect descriptor
+gates DEFAULTS (encoding, token-mode, ~atof~ behaviour), not
+operator visibility. Calling an operator that lies outside the
+selected dialect's documented surface is eligible for a diagnostic
+warning at use time; the warning machinery itself is tracked
+separately (see ~clautolisp-out-of-dialect-warnings.issue~ in the
+project issue tracker).
 
 ** Input selection
 - ~-l FILE~, ~--load FILE~ ::
@@ -283,16 +303,27 @@ The dialect descriptor selected at startup propagates to:
 The descriptor knobs that the binary observes are listed in
 ~clautolisp/autolisp-reader/source/dialect.lisp~. Their semantic
 effects are documented in the AutoLISP Spec; this document does
-not duplicate them. The three named profiles are:
+not duplicate them. The four named profiles are:
 
-| Dialect             | Token mode | Extended escapes | Integer overflow warn | Hex-float atof | Unbound-variable mode |
-|---------------------+------------+------------------+-----------------------+----------------+-----------------------|
-| ~strict~            | strict     | no               | no                    | no             | silent-NIL            |
-| ~autocad-2026~      | strict     | no               | yes                   | no             | silent-NIL            |
-| ~bricscad-v26~      | lax        | yes              | yes                   | yes            | silent-NIL            |
+| Dialect             | Token mode | Extended escapes | Integer overflow warn | Hex-float atof | Unbound-variable mode | Default encoding |
+|---------------------+------------+------------------+-----------------------+----------------+-----------------------+------------------|
+| ~strict~            | strict     | no               | no                    | no             | silent-NIL            | iso-8859-1       |
+| ~autocad-2026~      | strict     | no               | yes                   | no             | silent-NIL            | utf-8            |
+| ~bricscad-v26~      | lax        | yes              | yes                   | yes            | silent-NIL            | utf-8            |
+| ~clautolisp~        | strict     | no               | no                    | no             | silent-NIL            | utf-8            |
 
-Encoding is *not* a dialect knob. It is selected at the input
-boundary by reader options (see [[*Encoding and line endings]]).
+The ~clautolisp~ dialect inherits the conservative reader knobs
+from ~strict~, but defaults to UTF-8 source/file encoding (modern
+baseline) instead of ISO-8859-1 (legacy MBCS baseline). The reader
+distinction matters mainly when the same source must round-trip
+through a real AutoCAD or BricsCAD: ~strict~ guarantees that;
+~clautolisp~ only guarantees portability across clautolisp's own
+in-process engine and (by inclusion) the strict reader rules.
+
+Encoding default IS a dialect knob (the ~default-source-encoding~ /
+~default-file-encoding~ fields above); each dialect carries its own
+baseline. The =-e ENC= CLI option overrides the dialect default
+for the session (see [[*Encoding and line endings]]).
 
 * Encoding and line endings
 - File-mode input is decoded under the reader's external-format

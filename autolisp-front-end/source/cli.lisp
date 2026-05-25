@@ -500,25 +500,41 @@ Algorithm (matches spec section \"Algorithme par défaut\"):
   2. Otherwise, $ALFE_BACKEND_OVERRIDE supplies a default for early
      adopters.
   3. Otherwise, $AUTOLISP_BACKEND supplies the legacy default.
-  4. Otherwise, every registered backend's DETECT is called in order;
-     the first to succeed wins.
-  5. If everything fails, signal BACKEND-NOT-AVAILABLE.
+  4. Otherwise, the default is :clautolisp — the in-process engine
+     that ships with alfe and is available on every system. CAD
+     backends are NEVER auto-selected: they require explicit
+     --autocad / --bricscad (a host with both BricsCAD and
+     AutoCAD installed got surprising and order-dependent results
+     from the historical auto-detect; with this rule, `alfe` with
+     no flags always means \"talk to the in-process clautolisp
+     engine\").
+  5. If the :clautolisp backend itself isn't registered (a
+     stripped-down test image), the first registered backend
+     wins; if there are none, signal BACKEND-NOT-AVAILABLE.
 
 DETECT-P, when NIL, skips the DETECT call on the selected backend
 — used by --dry-run, which prints the action plan but never
-actually launches an engine. With DETECT-P NIL and an explicit
-backend, the function returns the registered instance
-unconditionally; in auto mode it returns the first registered
-backend without probing. Without this knob a host that doesn't
-have BricsCAD or AutoCAD installed would fail
-`alfe --bricscad --dry-run -x \"(+ 1 2)\"` with exit 3 even
+actually launches an engine. With DETECT-P NIL the function
+returns the registered instance unconditionally. Without this
+knob a host that doesn't have BricsCAD or AutoCAD installed would
+fail `alfe --bricscad --dry-run -x \"(+ 1 2)\"` with exit 3 even
 though no engine is actually needed — caught by the matching
 conformance scenarios under tests/scenarios/{bricscad,cli}/."
   (let* ((selected (or (cli-options-backend options)
                        (let ((override (env-default :override)))
                          (when override
                            (parse-backend-symbol
-                            override "$ALFE_BACKEND_OVERRIDE"))))))
+                            override "$ALFE_BACKEND_OVERRIDE")))
+                       ;; Default — no auto-detection of CADs.
+                       ;; The :clautolisp engine ships with alfe and
+                       ;; is always available; CADs need explicit
+                       ;; opt-in via --autocad / --bricscad. If the
+                       ;; :clautolisp key isn't registered (test
+                       ;; image rebound *backends* to an echo-only
+                       ;; map), fall back to the first registered
+                       ;; backend below.
+                       (when (find :clautolisp (list-backends))
+                         :clautolisp))))
     (when selected
       (let ((backend (find-backend selected)))
         (unless backend
@@ -541,20 +557,13 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
                              :variant variant)))))
         (return-from resolve-backend
           (if detect-p (detect backend) backend))))
-    ;; Auto: try each registered backend in order.
-    ;;
-    ;; :echo is a test-only backend whose DETECT method always
-    ;; succeeds — left visible in the auto-detect list it would
-    ;; win every default resolution and the user-visible `alfe`
-    ;; without flags would just print "loaded …" instead of
-    ;; actually loading. We therefore skip :echo when any real
-    ;; backend is registered, and only fall back to it when the
-    ;; registry contains nothing else (the FiveAM test image
-    ;; relies on this: it rebinds *backends* to an echo-only map
-    ;; and expects the auto-resolver to pick echo).
-    (let* ((all (list-backends))
-           (auto-candidates (or (remove :echo all) all)))
-      (dolist (key auto-candidates)
+    ;; Stripped-down test image: :clautolisp wasn't registered,
+    ;; nothing else explicit chosen. Fall back to the first
+    ;; registered backend (the FiveAM test image rebinds *backends*
+    ;; to an echo-only map and expects the auto-resolver to pick
+    ;; echo here).
+    (let ((all (list-backends)))
+      (dolist (key all)
         (let ((backend (find-backend key)))
           (cond
             (detect-p
@@ -564,7 +573,7 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
             (t
              (return-from resolve-backend backend))))))
     (error 'backend-not-available
-           :message "No backend detected. Set --clautolisp explicitly or install a supported CAD.")))
+           :message "No backend registered.")))
 
 ;;; --- action plan ----------------------------------------------------
 
