@@ -81,6 +81,27 @@
              name-or-keyword))
     dialect))
 
+(defun keyword->dialect (dialect-keyword)
+  "Map a parser dialect keyword (:strict / :autocad-2026 /
+:bricscad-v26 / :clautolisp) to clautolisp's dialect descriptor.
+The descriptor carries the reader-level knobs the runtime uses."
+  (ecase (or dialect-keyword :strict)
+    (:strict        (autolisp-dialect-strict))
+    (:autocad-2026  (autolisp-dialect-autocad-2026))
+    (:bricscad-v26  (autolisp-dialect-bricscad-v26))
+    ;; --clautolisp is currently a synonym for --strict; the
+    ;; clautolisp dialect's runtime knobs match :strict (no
+    ;; AutoCAD or BricsCAD extensions).
+    (:clautolisp    (autolisp-dialect-strict))))
+
+(defun keyword->host (host-keyword)
+  "Map :mock / :null to a HAL backend instance. Defaults to the
+MockHost when HOST-KEYWORD is nil (the empty default for clautolisp
+omits --host)."
+  (case host-keyword
+    ((nil :mock) (make-mock-host))
+    ((:null)     *null-host*)))
+
 (defun pop-required-argument (option arguments)
   "Pop the next argument off ARGUMENTS or signal a usage error
 mentioning OPTION. Returns (values value remaining-arguments)."
@@ -116,118 +137,31 @@ exporting the variable.
 The short-form aliases (-l, -x, -i, -q, -v, -d, -h, -V, -norc)
 match the generic CLI surface specified for the sibling alfe
 front-end."
-  (let ((dialect (autolisp-dialect-strict))
-        (actions '())
-        (load-encoding nil)
-        (io-encoding nil)
-        (quiet-p nil)
-        (verbose-p nil)
-        (debug-p nil)
-        (interactive-p nil)
-        (host (make-mock-host))
-        (mock-input nil)
-        (gui nil)
-        (trace-p nil)
-        (no-init-p nil)
-        (no-color-p nil))
-    (labels ((take (option)
-               (multiple-value-bind (value rest)
-                   (pop-required-argument option arguments)
-                 (setf arguments rest)
-                 value))
-             (queue-action (kind payload)
-               (setf actions (append actions (list (cons kind payload))))))
-      (loop while arguments
-            for argument = (pop arguments)
-            do (cond
-                 ((or (string= argument "--help")
-                      (string= argument "-h"))
-                  (usage)
-                  (quit 0))
-                 ((or (string= argument "--version")
-                      (string= argument "-V"))
-                  (print-version)
-                  (quit 0))
-                 ((or (string= argument "--quiet")
-                      (string= argument "-q"))
-                  (setf quiet-p t
-                        ;; Last-wins between -q and -v.
-                        verbose-p nil))
-                 ((or (string= argument "--verbose")
-                      (string= argument "-v"))
-                  (setf verbose-p t
-                        quiet-p nil))
-                 ((or (string= argument "--debug")
-                      (string= argument "-d"))
-                  ;; --debug subsumes --verbose for output purposes.
-                  (setf debug-p t
-                        verbose-p t
-                        quiet-p nil))
-                 ((or (string= argument "--interactive")
-                      (string= argument "-i"))
-                  (setf interactive-p t))
-                 ((string= argument "--dialect")
-                  (setf dialect (resolve-dialect (take "--dialect"))))
-                 ((string= argument "--strict")
-                  (setf dialect (autolisp-dialect-strict)))
-                 ((string= argument "--autocad")
-                  (setf dialect (autolisp-dialect-autocad-2026)))
-                 ((string= argument "--bricscad")
-                  (setf dialect (autolisp-dialect-bricscad-v26)))
-                 ;; --clautolisp is currently a synonym for --strict.
-                 ;; Per issue function-value.issue the clautolisp dialect
-                 ;; is the "permissive Lisp-1 with late HOF resolution"
-                 ;; profile — the actual reader-level knobs (no AutoCAD
-                 ;; or BricsCAD extensions, strict tokenisation) match
-                 ;; the existing :strict descriptor, so we alias instead
-                 ;; of introducing a duplicate dialect descriptor.
-                 ((string= argument "--clautolisp")
-                  (setf dialect (autolisp-dialect-strict)))
-                 ((string= argument "--host")
-                  (setf host (resolve-host-backend (take "--host"))))
-                 ((string= argument "--mock-input")
-                  (setf mock-input (take "--mock-input")))
-                 ((string= argument "--gui")
-                  ;; Pass the command string straight through —
-                  ;; uiop:launch-program routes a string through the
-                  ;; shell, which is what users want for pipelines
-                  ;; and quoted arguments.
-                  (setf gui (take "--gui")))
-                 ((string= argument "--trace")
-                  (setf trace-p t))
-                 ((or (string= argument "--no-init")
-                      (string= argument "-norc"))
-                  (setf no-init-p t))
-                 ((string= argument "--no-color")
-                  (setf no-color-p t))
-                 ((or (string= argument "-x")
-                      (string= argument "--eval"))
-                  (queue-action :expression (take argument)))
-                 ((or (string= argument "-l")
-                      (string= argument "--load"))
-                  (queue-action :file (take argument)))
-                 ;; -e ENC: session-wide source-file encoding override
-                 ;; (utf-8 / iso-8859-1 / windows-1252 / latin-1 / cp1252).
-                 ;; Honoured by every load in the session, including
-                 ;; nested (load …) calls from user init files.
-                 ((string= argument "-e")
-                  (setf load-encoding (take argument)))
-                 ;; -E ENC: terminal-IO encoding override. Sets the
-                 ;; external-format of *standard-output* / *error-output*
-                 ;; / *standard-input* for the lifetime of the CLI run
-                 ;; (PRINC and PRIN1 honour it, including the REPL).
-                 ;; Mirrors alfe's -E and is what
-                 ;; transmit-options.issue notes as previously missing.
-                 ((string= argument "-E")
-                  (setf io-encoding (take argument)))
-                 ((and (> (length argument) 0)
-                       (char= (char argument 0) #\-))
-                  (error "Unknown option ~S." argument))
-                 (t
-                  (queue-action :file argument)))))
-    (values dialect actions quiet-p verbose-p debug-p
-            interactive-p host mock-input gui trace-p
-            no-init-p load-encoding io-encoding no-color-p)))
+  ;; Build clautolisp's spec: common-option-specs + clautolisp-only
+  ;; specs for --mock-input / --gui / --trace. The shared parser
+  ;; produces a CLI-OPTIONS struct; clautolisp maps the keyword
+  ;; values to its runtime types (dialect descriptor, host instance)
+  ;; further downstream in MAIN.
+  (let ((specs
+          (append
+           clautolisp.autolisp-cli:*common-option-specs*
+           (list
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--mock-input") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (declare (ignore name))
+                        (setf (clautolisp.autolisp-cli:cli-options-mock-input opts) value)))
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--gui") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (declare (ignore name))
+                        (setf (clautolisp.autolisp-cli:cli-options-gui opts) value)))
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--trace") :shorts nil :takes-arg-p nil
+             :handler (lambda (opts value name)
+                        (declare (ignore value name))
+                        (setf (clautolisp.autolisp-cli:cli-options-trace-p opts) t)))))))
+    (clautolisp.autolisp-cli:parse-arguments-with-spec specs arguments)))
 
 (defun prepend-init-file-actions (actions no-init-p)
   "Walk the user's init-file stem list and prepend a (:FILE PATH)
@@ -535,37 +469,24 @@ text (filename or an excerpt of the expression)."
               label
               elapsed))))
 
-(defun call-with-dynamic-transmit-binding (context name value thunk)
-  "Set *AUTOLISP-…* variable NAME to VALUE for the duration of THUNK,
-then reset to nil. Used to scope *AUTOLISP-LOAD-PATHNAME* around
-each -l action, *AUTOLISP-EXPRESSION* around each -x, and
-*AUTOLISP-INTERACTIVE* around the REPL. The reset-on-exit guard
-runs even on non-local exit (autolisp-runtime-error etc.) so a
-later (clautolisp-documentation 'foo) or just a top-level
-reference doesn't see stale state from a failed action."
-  (let ((sym (intern-autolisp-symbol name)))
-    (unwind-protect
-         (progn
-           (set-variable sym value context)
-           (funcall thunk))
-      (set-variable sym nil context))))
-
 (defun eval-action-in-context (context action dialect)
-  "Run one action — (:FILE . PATH) or (:EXPRESSION . TEXT) — against
-CONTEXT (an already-set-up evaluation context). DIALECT is the
-dialect descriptor used to derive reader options. All actions in a
-queue share one context, so side effects compose.
+  "Run one action — (:FILE . PATH) or (:EXPRESSION . TEXT) or
+(:INTERACTIVE . T) — against CONTEXT (an already-set-up evaluation
+context). DIALECT is the dialect descriptor used to derive reader
+options. All actions in a queue share one context, so side
+effects compose.
 
-While the action runs the matching dynamic *AUTOLISP-…* variable
-is set: *AUTOLISP-LOAD-PATHNAME* for :file, *AUTOLISP-EXPRESSION*
-for :expression. Cleared on return (success or signal)."
+Dynamic *AUTOLISP-…* variables are bound for the action's duration:
+*AUTOLISP-LOAD-PATHNAME* for :file, *AUTOLISP-EXPRESSION* for
+:expression. Cleared on return (success or signal). (:interactive)
+is handled separately by the REPL wrapper in RUN-WITH-INPUT."
   (let ((kind (car action))
         (payload (cdr action)))
     (ecase kind
       (:file
        (let ((options (derive-reader-options-for-dialect
                        dialect :source-name (namestring payload))))
-         (call-with-dynamic-transmit-binding
+         (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
           context "*AUTOLISP-LOAD-PATHNAME*"
           (make-autolisp-string (namestring payload))
           (lambda ()
@@ -574,108 +495,21 @@ for :expression. Cleared on return (success or signal)."
        (let* ((options (derive-reader-options-for-dialect
                         dialect :source-name "<-x>"))
               (forms (read-runtime-from-string payload :options options)))
-         (call-with-dynamic-transmit-binding
+         (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
           context "*AUTOLISP-EXPRESSION*"
           (make-autolisp-string payload)
           (lambda ()
             (call-with-autolisp-error-handler
              (lambda () (autolisp-eval-progn forms context))
-             context))))))))
+             context)))))
+      (:interactive
+       ;; The (:interactive . T) action is a placeholder so the
+       ;; queue order is preserved when the user mixed -i in with
+       ;; -l/-x; the actual REPL invocation is driven by the
+       ;; interactive-p flag in RUN-WITH-INPUT.
+       nil))))
 
 ;;; --- Batch entry points ---------------------------------------------
-
-;;; --- transmit-options: CLI-derived *AUTOLISP-…* globals -----------
-;;;
-;;; The CLI publishes a set of *AUTOLISP-…* variables in the running
-;;; AutoLISP image so user code can introspect how it was invoked.
-;;; Set before any user action runs (init files included), so init
-;;; files can branch on them. See issues/open/transmit-options.issue
-;;; for the full contract; the per-clautolisp subset is implemented
-;;; here.
-
-(defun autolisp-bool (truth-value)
-  "Return the AutoLISP T symbol when TRUTH-VALUE is true, nil otherwise."
-  (and truth-value (intern-autolisp-symbol "T")))
-
-(defun autolisp-string-or-nil (string-value)
-  "Return an autolisp-string carrying STRING-VALUE, or nil when nil/empty."
-  (and string-value (> (length string-value) 0)
-       (make-autolisp-string string-value)))
-
-(defun dialect-name-symbol (dialect)
-  "Return an autolisp-symbol whose name is DIALECT's canonical name
-(STRICT, AUTOCAD-2026, BRICSCAD-V26, …). Used as the value of
-*AUTOLISP-DIALECT*."
-  (intern-autolisp-symbol (symbol-name (autolisp-dialect-name dialect))))
-
-(defun host-name-symbol (host)
-  "Return MOCK / NULL autolisp-symbol per HOST's kind, or nil when
-HOST is itself nil. Matches the --host parameter vocabulary."
-  (when host
-    (intern-autolisp-symbol (string-upcase (host-name host)))))
-
-(defun actions-to-autolisp-list (actions interactive-p)
-  "Render the queued ACTIONS — each a (:KIND . PAYLOAD) cons — as
-an AutoLISP list of two-element lists, the value of *AUTOLISP-ACTIONS*:
-  (:FILE . PATH)       → (load \"PATH\")
-  (:EXPRESSION . TEXT) → (eval \"TEXT\")
-plus a trailing (interactive t) when the REPL is scheduled. The
-symbols (`load', `eval', `interactive') are AutoLISP symbols; the
-payload strings are AutoLISP strings."
-  (let ((out '()))
-    (dolist (a actions)
-      (let ((kind (car a))
-            (payload (cdr a)))
-        (push (ecase kind
-                (:file (list (intern-autolisp-symbol "LOAD")
-                             (make-autolisp-string (namestring payload))))
-                (:expression (list (intern-autolisp-symbol "EVAL")
-                                   (make-autolisp-string payload))))
-              out)))
-    (when interactive-p
-      (push (list (intern-autolisp-symbol "INTERACTIVE")
-                  (intern-autolisp-symbol "T"))
-            out))
-    (nreverse out)))
-
-(defun install-transmit-variables (context dialect actions
-                                   &key quiet-p verbose-p debug-p trace-p
-                                        interactive-p host mock-input gui
-                                        load-encoding io-encoding
-                                        no-init-p no-color-p
-                                        usage-text version-text)
-  "Intern and bind every *AUTOLISP-…* global the CLI publishes for
-this clautolisp invocation (the C and AC columns of the
-transmit-options.issue table — minus the dynamically-scoped ones
-LOAD-PATHNAME / EXPRESSION / INTERACTIVE which are bound around
-each action by the eval loop). Called once, before the first user
-action, so init files can branch on the values."
-  (flet ((bind-var (name value)
-           (set-variable (intern-autolisp-symbol name) value context)))
-    (bind-var "*AUTOLISP-BACKEND*"            (intern-autolisp-symbol "CLAUTOLISP"))
-    (bind-var "*AUTOLISP-DIALECT*"            (dialect-name-symbol dialect))
-    (bind-var "*AUTOLISP-HOST*"               (host-name-symbol host))
-    (bind-var "*AUTOLISP-MOCK-INPUT*"         (autolisp-string-or-nil mock-input))
-    (bind-var "*AUTOLISP-GUI-COMMAND*"        (autolisp-string-or-nil gui))
-    (bind-var "*AUTOLISP-TRACE*"              (autolisp-bool trace-p))
-    (bind-var "*AUTOLISP-FILE-ENCODING*"      (autolisp-string-or-nil load-encoding))
-    (bind-var "*AUTOLISP-TERMINAL-ENCODING*"  (autolisp-string-or-nil io-encoding))
-    (bind-var "*AUTOLISP-NO-INIT*"            (autolisp-bool no-init-p))
-    (bind-var "*AUTOLISP-NO-COLOR*"           (autolisp-bool no-color-p))
-    (bind-var "*AUTOLISP-VERBOSE*"            (autolisp-bool verbose-p))
-    (bind-var "*AUTOLISP-DEBUG*"              (autolisp-bool debug-p))
-    (bind-var "*AUTOLISP-QUIET*"              (autolisp-bool quiet-p))
-    (bind-var "*AUTOLISP-WILL-QUIT*"          nil) ;; clautolisp has no --quit
-    (bind-var "*AUTOLISP-MAIN*"               nil) ;; clautolisp has no --main
-    (bind-var "*AUTOLISP-ACTIONS*"
-          (actions-to-autolisp-list actions interactive-p))
-    (bind-var "*AUTOLISP-INTERACTIVE*"        nil) ;; dynamically true in REPL
-    (bind-var "*AUTOLISP-LOAD-PATHNAME*"      nil) ;; dynamically set during -l
-    (bind-var "*AUTOLISP-EXPRESSION*"         nil) ;; dynamically set during -x
-    (bind-var "*AUTOLISP-HELP*"
-          (autolisp-string-or-nil (or usage-text "")))
-    (bind-var "*AUTOLISP-VERSION*"
-          (make-autolisp-string (or version-text *version*)))))
 
 (defun usage-string ()
   "Return the --help output as a string. Captured for the
@@ -683,40 +517,44 @@ action, so init files can branch on the values."
   (with-output-to-string (*standard-output*)
     (usage)))
 
-(defun run-with-input (dialect actions
+(defun run-with-input (dialect actions cli-options
                        &key quiet-p verbose-p debug-p
                             interactive-p host mock-input gui trace-p
                             load-encoding io-encoding
                             no-init-p no-color-p)
   "Build a shared evaluation context, install the CLI-derived
-*AUTOLISP-…* globals, run every action in ACTIONS in order, then
-enter the REPL on the same context when INTERACTIVE-P is true.
+*AUTOLISP-…* globals from CLI-OPTIONS via the shared
+clautolisp.autolisp-cli installer, run every action in ACTIONS in
+order, then enter the REPL on the same context when INTERACTIVE-P
+is true.
 
-INTERACTIVE-P expresses the *effective* request — it is true when
-either the CLI passed -i / --interactive, OR the user supplied no
-explicit -l / -x / positional action so the REPL is the implicit
-default (per command-line-option-ammendment.issue). The caller
-computes this; the function intentionally does not inspect ACTIONS
-to make the decision, because by the time this function is called
-ACTIONS may include init-file loads (which are machinery, not user
-intent)."
+INTERACTIVE-P expresses the *effective* request — true when either
+the CLI passed -i / --interactive, OR the user supplied no explicit
+-l / -x / positional action so the REPL is the implicit default.
+The caller computes this; the function intentionally does not
+inspect ACTIONS to make the decision, because by the time this
+function is called ACTIONS may include init-file loads (which are
+machinery, not user intent)."
+  (declare (ignore verbose-p debug-p
+                   load-encoding io-encoding
+                   no-init-p no-color-p))
   (handler-case
-      (let ((context (build-context dialect host mock-input load-encoding)))
-        (install-transmit-variables
-         context dialect actions
-         :quiet-p quiet-p :verbose-p verbose-p :debug-p debug-p
-         :trace-p trace-p :interactive-p interactive-p
-         :host host :mock-input mock-input :gui gui
-         :load-encoding load-encoding :io-encoding io-encoding
-         :no-init-p no-init-p :no-color-p no-color-p
-         :usage-text (usage-string)
-         :version-text *version*)
+      (let* ((context (build-context dialect host mock-input
+                                     (clautolisp.autolisp-cli:cli-options-load-encoding
+                                      cli-options)))
+             (bindings (clautolisp.autolisp-cli:cli-options->transmit-bindings
+                        cli-options
+                        :backend "CLAUTOLISP"
+                        :usage-text (usage-string)
+                        :version-text *version*)))
+        (clautolisp.autolisp-cli:install-transmit-variables context bindings)
         (dolist (action actions)
-          (let ((start (get-internal-real-time)))
-            (eval-action-in-context context action dialect)
-            (maybe-summarise-action (car action) (cdr action) start)))
+          (unless (eq :interactive (car action))
+            (let ((start (get-internal-real-time)))
+              (eval-action-in-context context action dialect)
+              (maybe-summarise-action (car action) (cdr action) start))))
         (when interactive-p
-          (call-with-dynamic-transmit-binding
+          (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
            context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
            (lambda ()
              (repl-loop dialect context
@@ -758,55 +596,80 @@ autolisp-dcl load time) stays in effect."
 
 (defun main (&rest argv)
   (handler-case
-      (multiple-value-bind (dialect actions quiet-p verbose-p debug-p
-                            interactive-p host mock-input gui trace-p
-                            no-init-p load-encoding io-encoding no-color-p)
-          (parse-arguments (rest argv))
-        (let ((*verbose-p* verbose-p)
-              (*debug-p* debug-p)
-              ;; Colour policy is computed exactly once per CLI run
-              ;; against the LIVE *standard-output* — by the time
-              ;; RUN-WITH-INPUT redirects (it doesn't, but a future
-              ;; caller might) the original stream's tty state is
-              ;; the one that matters. NIL means "no colour"; a
-              ;; keyword (:YELLOW / :BLUE) is the accent the
-              ;; AUTOLISP-SYMBOL PRINT-OBJECT method will wrap
-              ;; rendered names in.
-              (clautolisp.autolisp-runtime:*color-output*
-                (clautolisp.autolisp-runtime:resolve-color-policy
-                 :no-color-flag no-color-p))
-              ;; Implicit -i: when the user supplied no -l / -x /
-              ;; positional action, the REPL is the desired default
-              ;; (per command-line-option-ammendment.issue).
-              ;; The init-file loads added below are machinery,
-              ;; not user intent, so we snapshot `actions' emptiness
-              ;; BEFORE prepending them.
-              (effective-interactive-p
-                (or interactive-p (null actions)))
-              ;; Init files run BEFORE any -l / -x / positional
-              ;; action so user-supplied state can override an
-              ;; init-file binding. The flag (or its env-var
-              ;; mirror) short-circuits the lookup entirely.
-              (effective-actions
-                (prepend-init-file-actions actions no-init-p)))
-          (install-gui-renderer gui)
-          (when trace-p
-            (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
-          (run-with-input dialect effective-actions
-                          :quiet-p quiet-p
-                          :verbose-p verbose-p
-                          :debug-p debug-p
-                          :interactive-p effective-interactive-p
-                          :host host
-                          :mock-input mock-input
-                          :gui gui
-                          :trace-p trace-p
-                          :load-encoding load-encoding
-                          :io-encoding io-encoding
-                          :no-init-p no-init-p
-                          :no-color-p no-color-p)
-          (finish-output)
-          (quit 0)))
+      (let* ((options (parse-arguments (rest argv))))
+        ;; --help / --version short-circuit before any context build.
+        (when (clautolisp.autolisp-cli:cli-options-help-p options)
+          (usage) (quit 0))
+        (when (clautolisp.autolisp-cli:cli-options-version-p options)
+          (print-version) (quit 0))
+        (let* ((verbosity (clautolisp.autolisp-cli:cli-options-verbosity options))
+               (verbose-p (member verbosity '(:verbose :debug)))
+               (debug-p   (eq verbosity :debug))
+               (quiet-p   (eq verbosity :warn))
+               (dialect   (keyword->dialect
+                           (clautolisp.autolisp-cli:cli-options-dialect options)))
+               (host      (keyword->host
+                           (clautolisp.autolisp-cli:cli-options-host options)))
+               (actions   (clautolisp.autolisp-cli:cli-options-actions options))
+               (mock-input (clautolisp.autolisp-cli:cli-options-mock-input options))
+               (gui       (clautolisp.autolisp-cli:cli-options-gui options))
+               (trace-p   (clautolisp.autolisp-cli:cli-options-trace-p options))
+               (load-encoding (clautolisp.autolisp-cli:cli-options-load-encoding options))
+               (io-encoding   (clautolisp.autolisp-cli:cli-options-io-encoding options))
+               (no-init-p (clautolisp.autolisp-cli:cli-options-no-init-p options))
+               (no-color-p (clautolisp.autolisp-cli:cli-options-no-color-p options))
+               (explicit-interactive-p
+                 (clautolisp.autolisp-cli:cli-options-interactive-p options)))
+          (let ((*verbose-p* verbose-p)
+                (*debug-p* debug-p)
+                ;; Colour policy is computed exactly once per CLI run
+                ;; against the LIVE *standard-output*. NIL means "no
+                ;; colour"; a keyword is the accent the symbol
+                ;; PRINT-OBJECT method will wrap names in.
+                (clautolisp.autolisp-runtime:*color-output*
+                  (clautolisp.autolisp-runtime:resolve-color-policy
+                   :no-color-flag no-color-p))
+                ;; Implicit -i: when the user supplied no -l / -x /
+                ;; positional action, the REPL is the desired default.
+                ;; The init-file loads added below are machinery, not
+                ;; user intent, so we snapshot `actions' emptiness
+                ;; BEFORE prepending them. The `actions' from the
+                ;; cli-options include an explicit (:interactive . T)
+                ;; entry when -i was on the command line, so use
+                ;; EXPLICIT-INTERACTIVE-P as the user-intent witness
+                ;; rather than the action-list contents.
+                (effective-interactive-p
+                  (or explicit-interactive-p
+                      ;; Empty action-list means no -l / -x AND no -i;
+                      ;; the implicit REPL is what the user wants.
+                      ;; -i alone shows up as a single (:interactive)
+                      ;; action — non-empty, so we wouldn't fall into
+                      ;; this branch.
+                      (null actions)))
+                (effective-actions
+                  (prepend-init-file-actions actions no-init-p)))
+            (install-gui-renderer gui)
+            (when trace-p
+              (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
+            (run-with-input dialect effective-actions options
+                            :quiet-p quiet-p
+                            :verbose-p verbose-p
+                            :debug-p debug-p
+                            :interactive-p effective-interactive-p
+                            :host host
+                            :mock-input mock-input
+                            :gui gui
+                            :trace-p trace-p
+                            :load-encoding load-encoding
+                            :io-encoding io-encoding
+                            :no-init-p no-init-p
+                            :no-color-p no-color-p)
+            (finish-output)
+            (quit 0))))
+    (clautolisp.autolisp-cli:cli-usage-error (condition)
+      (format *error-output* "~&clautolisp: ~A~%" condition)
+      (finish-output *error-output*)
+      (quit 1))
     (error (error)
       (report-error error)
       (finish-output *error-output*)

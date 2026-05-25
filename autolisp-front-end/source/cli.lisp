@@ -64,36 +64,82 @@
                 #:*default-alfe-stems*
                 #:find-init-files
                 #:no-init-requested-p)
+  ;; CLI parsing + cli-options struct + value parsers are owned by
+  ;; clautolisp.autolisp-cli (single source of truth shared with the
+  ;; clautolisp CLI). alfe re-exports the struct and its accessors
+  ;; under their original names so the existing FiveAM tests keep
+  ;; importing them from alfe.cli unchanged. alfe layers its own
+  ;; option-specs (--mode/--backend/--dwg/--epure/--workdir/…) onto
+  ;; *common-option-specs* and post-translates the parsed action
+  ;; conses into alfe.backend action objects.
+  (:import-from #:clautolisp.autolisp-cli
+                #:cli-options
+                #:make-cli-options
+                #:copy-cli-options
+                #:cli-options-backend
+                #:cli-options-mode
+                #:cli-options-backend-variant
+                #:cli-options-actions
+                #:cli-options-interactive-p
+                #:cli-options-quit-p
+                #:cli-options-host
+                #:cli-options-dialect
+                #:cli-options-load-encoding
+                #:cli-options-io-encoding
+                #:cli-options-dwg
+                #:cli-options-epure-p
+                #:cli-options-bootstrap-phase
+                #:cli-options-verbosity
+                #:cli-options-workdir
+                #:cli-options-timeout
+                #:cli-options-help-p
+                #:cli-options-version-p
+                #:cli-options-dry-run-p
+                #:cli-options-no-init-p
+                #:cli-options-no-color-p
+                #:cli-options-keep-workdir-p
+                #:cli-options-main
+                #:cli-options-positional
+                #:make-option-spec
+                #:*common-option-specs*
+                #:parse-arguments-with-spec
+                #:parse-mode
+                #:parse-backend-symbol
+                #:parse-backend-variant
+                #:parse-host
+                #:parse-dialect
+                #:parse-bootstrap-phase
+                #:parse-timeout)
   (:export ;; public entry point
            #:run
-           ;; option record + parser (also exposed for tests)
+           ;; option record + parser (re-exported from clautolisp.autolisp-cli)
            #:cli-options
            #:make-cli-options
            #:parse-arguments
-           #:options-backend
-           #:options-mode
-           #:options-backend-variant
-           #:options-actions
-           #:options-interactive-p
-           #:options-quit-p
-           #:options-host
-           #:options-dialect
-           #:options-load-encoding
-           #:options-io-encoding
-           #:options-dwg
-           #:options-epure-p
-           #:options-bootstrap-phase
-           #:options-verbosity
-           #:options-workdir
-           #:options-timeout
-           #:options-help-p
-           #:options-version-p
-           #:options-dry-run-p
-           #:options-no-init-p
-           #:options-no-color-p
-           #:options-keep-workdir-p
-           #:options-main
-           #:options-positional
+           #:cli-options-backend
+           #:cli-options-mode
+           #:cli-options-backend-variant
+           #:cli-options-actions
+           #:cli-options-interactive-p
+           #:cli-options-quit-p
+           #:cli-options-host
+           #:cli-options-dialect
+           #:cli-options-load-encoding
+           #:cli-options-io-encoding
+           #:cli-options-dwg
+           #:cli-options-epure-p
+           #:cli-options-bootstrap-phase
+           #:cli-options-verbosity
+           #:cli-options-workdir
+           #:cli-options-timeout
+           #:cli-options-help-p
+           #:cli-options-version-p
+           #:cli-options-dry-run-p
+           #:cli-options-no-init-p
+           #:cli-options-no-color-p
+           #:cli-options-keep-workdir-p
+           #:cli-options-main
+           #:cli-options-positional
            ;; usage + version (so the executable's main can re-use)
            #:print-usage
            #:print-version
@@ -106,47 +152,12 @@
 (in-package #:alfe.cli)
 
 ;;; --- options record --------------------------------------------------
-
-(defstruct cli-options
-  "Snapshot of every CLI option after parsing argv (and folding in the
-matching environment variables). Pure data — RUN translates this into
-calls against the backend protocol."
-  (backend          nil)                ; :clautolisp / :bricscad / :autocad / nil
-  (mode             :auto)              ; :auto / :automation / :batch
-  (backend-variant  nil)                ; :attach / :launch / nil
-  (actions          nil :type list)     ; list of ALFE.BACKEND:ACTION
-  (interactive-p    nil)
-  (quit-p           nil)
-  (host             :mock)              ; :mock / :null
-  (dialect          :strict)            ; :strict / :autocad-2026 / :bricscad-v26 / :clautolisp
-  (load-encoding    nil)                ; -e
-  (io-encoding      nil)                ; -E
-  (dwg              nil)
-  (epure-p          nil)
-  (bootstrap-phase  :full)              ; :marker / :core / :log / :full
-  (verbosity        :info)              ; :debug / :verbose / :info / :warn
-  (workdir          nil)
-  (timeout          nil)                ; seconds, integer or nil
-  (help-p           nil)
-  (version-p        nil)
-  (dry-run-p        nil)
-  ;; --no-init / -norc: skip user init files
-  ;; (~/.alfe / ~/.autolisp / ~/.config/{alfe,autolisp}/init).
-  ;; Honoured equivalently via $AUTOLISP_NO_INIT and $ALFE_NO_INIT.
-  (no-init-p        nil)
-  ;; --no-color: disable ANSI colour in AutoLISP value output for
-  ;; both the in-process clautolisp backend (via *COLOR-OUTPUT*)
-  ;; and any subprocess backend (via $NO_COLOR in the child env).
-  ;; The runtime's own RESOLVE-COLOR-POLICY also honours $NO_COLOR
-  ;; directly, so this flag is the per-invocation override.
-  (no-color-p       nil)
-  ;; --keep-workdir / $AUTOLISP_KEEP_WORKDIR: keep the engine
-  ;; workdir at end of run instead of deleting it. Was previously
-  ;; mis-wired off NO-INIT-P; now lives in its own slot per the
-  ;; spec's env-var table.
-  (keep-workdir-p   nil)
-  (main             nil)                ; symbol name as string
-  (positional       nil :type list))
+;;;
+;;; The CLI-OPTIONS struct lives in clautolisp.autolisp-cli (the
+;;; single source of truth shared with the clautolisp CLI). alfe
+;;; consumes its accessors via the import-from clause above and
+;;; re-exports them under their original names for backwards
+;;; compatibility with the existing FiveAM tests.
 
 ;;; --- environment-variable resolution --------------------------------
 ;;;
@@ -185,35 +196,6 @@ when KEY is not in the mapping table — typoed lookups are bugs."
              key (mapcar #'car +env-defaults+)))
     (let ((value (uiop:getenv (cdr entry))))
       (and value (plusp (length value)) value))))
-
-;;; --- low-level argument-list utilities ------------------------------
-
-(defun starts-with-double-dash-p (string)
-  (and (>= (length string) 2)
-       (char= (char string 0) #\-)
-       (char= (char string 1) #\-)))
-
-(defun split-long-option (argument)
-  "Split a `--opt=VALUE` argument into (values OPT VALUE), where OPT
-keeps its leading dashes. For `--opt` without an `=`, VALUE is NIL."
-  (let ((equals (position #\= argument)))
-    (if equals
-        (values (subseq argument 0 equals)
-                (subseq argument (1+ equals)))
-        (values argument nil))))
-
-(defun pop-required (option remaining-cell)
-  "Pop the next argument off the cons cell holding the argv tail.
-Signals CLI-USAGE-ERROR when no argument follows. REMAINING-CELL is a
-cons whose CAR is the live argv tail; this dance lets the caller stay
-in a LOOP without juggling a setf-able place by hand."
-  (let ((rest (car remaining-cell)))
-    (unless rest
-      (error 'cli-usage-error
-             :option option
-             :message (format nil "Missing argument after ~A" option)))
-    (setf (car remaining-cell) (rest rest))
-    (first rest)))
 
 ;;; --- usage banner ---------------------------------------------------
 
@@ -319,74 +301,129 @@ argument parsing so explicit CLI options always win."
       (setf (cli-options-keep-workdir-p options) t)))
   options)
 
-(defun parse-mode (value option)
-  (cond ((string-equal value "auto")       :auto)
-        ((string-equal value "automation") :automation)
-        ((string-equal value "batch")      :batch)
-        (t (error 'cli-usage-error
-                  :option option
-                  :message (format nil "Unknown mode ~S (expected auto/automation/batch)"
-                                   value)))))
+;; PARSE-MODE, PARSE-BACKEND-SYMBOL, PARSE-BACKEND-VARIANT,
+;; PARSE-HOST, PARSE-DIALECT, PARSE-BOOTSTRAP-PHASE, PARSE-TIMEOUT
+;; live in clautolisp.autolisp-cli and are imported above. They are
+;; pure value-string → keyword mappers and don't depend on any alfe
+;; type — moved out so the clautolisp CLI shares the same vocabulary
+;; verbatim.
 
-(defun parse-backend-symbol (value option)
-  (cond ((string-equal value "clautolisp") :clautolisp)
-        ((string-equal value "bricscad")   :bricscad)
-        ((string-equal value "autocad")    :autocad)
-        ((string-equal value "echo")       :echo)   ; tests only
-        (t (error 'cli-usage-error
-                  :option option
-                  :message (format nil "Unknown backend ~S" value)))))
+;;; --- alfe-specific option specs + parse-arguments -------------------
 
-(defun parse-backend-variant (value option)
-  "Recognise the documented --backend variants. `attach` and `launch`
-target the CAD backends (Phase 3); `direct`, `in-process`, and
-`subprocess` target the clautolisp backend (Phase 1)."
-  (cond ((string-equal value "attach")     :attach)
-        ((string-equal value "launch")     :launch)
-        ((or (string-equal value "direct")
-             (string-equal value "in-process"))  :direct)
-        ((string-equal value "subprocess") :subprocess)
-        (t (error 'cli-usage-error
-                  :option option
-                  :message (format nil "Unknown --backend variant ~S (expected attach/launch/direct/subprocess)"
-                                   value)))))
+(defun %set-backend-checked (opts kind option-name)
+  "Set the cli-options backend slot to KIND, signalling cli-usage-error
+if a different backend was already requested. Matches the legacy
+parser's mutual-exclusion semantics for --bricscad/--autocad/
+--clautolisp combinations."
+  (when (and (cli-options-backend opts)
+             (not (eql (cli-options-backend opts) kind)))
+    (error 'cli-usage-error
+           :option option-name
+           :message (format nil "Conflicting backend selectors (~S vs ~S)"
+                            (cli-options-backend opts) kind)))
+  (setf (cli-options-backend opts) kind))
 
-(defun parse-host (value option)
-  (cond ((string-equal value "mock") :mock)
-        ((string-equal value "null") :null)
-        (t (error 'cli-usage-error
-                  :option option
-                  :message (format nil "Unknown --host ~S (expected mock/null)"
-                                   value)))))
+(defun %make-alfe-option-specs ()
+  "Build the alfe-only option-spec list: --mode/--backend/--dwg/
+--epure/--workdir/--keep-workdir/--timeout/--bootstrap-phase/
+--dry-run/--main/--quit. Also wraps the common dialect-shorthand
+specs (--autocad/--bricscad/--clautolisp) with conflict-checking
+handlers so a `--bricscad --autocad` invocation signals cli-usage-
+error rather than silently last-winning."
+  (list
+   ;; Backend selectors — override the common versions with
+   ;; conflict-checking wrappers. They go first so the parser's
+   ;; first-match-wins lookup picks them up.
+   (make-option-spec
+    :longs '("--clautolisp") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value))
+               (setf (cli-options-dialect opts) :clautolisp)
+               (%set-backend-checked opts :clautolisp name)))
+   (make-option-spec
+    :longs '("--autocad") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value))
+               (setf (cli-options-dialect opts) :autocad-2026)
+               (%set-backend-checked opts :autocad name)))
+   (make-option-spec
+    :longs '("--bricscad") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value))
+               (setf (cli-options-dialect opts) :bricscad-v26)
+               (%set-backend-checked opts :bricscad name)))
+   (make-option-spec
+    :longs '("--mode") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-mode opts) (parse-mode value name))))
+   (make-option-spec
+    :longs '("--backend") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-backend-variant opts)
+                     (parse-backend-variant value name))))
+   (make-option-spec
+    :longs '("--main") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-main opts) value
+                     (cli-options-actions opts)
+                     (append (cli-options-actions opts)
+                             (list (cons :main value))))))
+   (make-option-spec
+    :longs '("--quit") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-quit-p opts) t
+                     (cli-options-actions opts)
+                     (append (cli-options-actions opts)
+                             (list (cons :quit t))))))
+   (make-option-spec
+    :longs '("--dwg") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-dwg opts) value)))
+   (make-option-spec
+    :longs '("--epure") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-epure-p opts) t)))
+   (make-option-spec
+    :longs '("--bootstrap-phase") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-bootstrap-phase opts)
+                     (parse-bootstrap-phase value name))))
+   (make-option-spec
+    :longs '("--workdir") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-workdir opts) value)))
+   (make-option-spec
+    :longs '("--timeout") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-timeout opts)
+                     (parse-timeout value name))))
+   (make-option-spec
+    :longs '("--dry-run") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-dry-run-p opts) t)))
+   (make-option-spec
+    :longs '("--keep-workdir") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-keep-workdir-p opts) t)))))
 
-(defun parse-dialect (value option)
-  (cond ((string-equal value "strict")        :strict)
-        ((string-equal value "autocad-2026")  :autocad-2026)
-        ((string-equal value "bricscad-v26")  :bricscad-v26)
-        ((string-equal value "clautolisp")    :clautolisp)
-        (t (error 'cli-usage-error
-                  :option option
-                  :message (format nil "Unknown dialect ~S" value)))))
+(defparameter *alfe-option-specs* (%make-alfe-option-specs))
 
-(defun parse-bootstrap-phase (value option)
-  (cond ((string-equal value "marker") :marker)
-        ((string-equal value "core")   :core)
-        ((string-equal value "log")    :log)
-        ((string-equal value "full")   :full)
-        (t (error 'cli-usage-error
-                  :option option
-                  :message (format nil "Unknown bootstrap phase ~S" value)))))
-
-(defun parse-timeout (value option)
-  (let ((parsed (parse-integer value :junk-allowed t)))
-    (unless (and parsed (plusp parsed))
-      (error 'cli-usage-error
-             :option option
-             :message (format nil "Timeout must be a positive integer (got ~S)"
-                              value)))
-    parsed))
-
-;;; --- the parser itself ----------------------------------------------
+(defun %translate-action-cons (cons load-encoding)
+  "Convert one (:KIND . PAYLOAD) cons produced by the shared parser
+into the alfe.backend action object the rest of alfe consumes."
+  (ecase (car cons)
+    (:file        (action-load (cdr cons) :encoding load-encoding))
+    (:expression  (action-eval (cdr cons)))
+    (:interactive (action-interactive))
+    (:main        (action-main (cdr cons)))
+    (:quit        (action-quit))))
 
 (defun parse-arguments (argv)
   "Parse ARGV (a list of strings, *without* the program name) into a
@@ -394,207 +431,38 @@ CLI-OPTIONS record. Pure: no I/O, no calls into the registry. The
 caller can inspect the result, validate it (RESOLVE-BACKEND), or
 build the action plan (PLAN-FROM-OPTIONS).
 
-Long options accept both `--opt VALUE` and `--opt=VALUE`. Short
-options are single-letter; their VALUE comes from the next argument
-when required. Unknown options signal CLI-USAGE-ERROR."
-  (let* ((options (make-cli-options))
-         (remaining (cons argv nil))
-         (actions '()))
+Internally delegates to clautolisp.autolisp-cli's spec-driven
+parser with the union of *common-option-specs* + *alfe-option-specs*.
+Post-translation steps fold env-var defaults in, normalise positional
+args, and rewrite the action conses produced by the shared parser
+into alfe.backend action objects so the rest of alfe (PLAN-FROM-
+OPTIONS, EVAL-PLAN, etc.) sees the legacy shape."
+  (let* ((options (make-cli-options)))
     (apply-env-defaults options)
-    (labels ((take (option)
-               (pop-required option remaining))
-             (queue (action)
-               (push action actions))
-             (set-backend (kind)
-               (when (and (cli-options-backend options)
-                          (not (eql (cli-options-backend options) kind)))
-                 (error 'cli-usage-error
-                        :option (format nil "--~(~A~)" kind)
-                        :message
-                        (format nil "Conflicting backend selectors (~S vs ~S)"
-                                (cli-options-backend options) kind)))
-               (setf (cli-options-backend options) kind)))
-      (loop while (car remaining)
-          for arg = (pop (car remaining))
-          do (cond
-               ;; --help / -h
-               ((or (string= arg "--help") (string= arg "-h"))
-                (setf (cli-options-help-p options) t))
-               ;; --version / -V
-               ((or (string= arg "--version") (string= arg "-V"))
-                (setf (cli-options-version-p options) t))
-               ;; verbosity
-               ((or (string= arg "--verbose") (string= arg "-v"))
-                (setf (cli-options-verbosity options) :verbose))
-               ((or (string= arg "--quiet") (string= arg "-q"))
-                (setf (cli-options-verbosity options) :warn))
-               ((or (string= arg "--debug") (string= arg "-d"))
-                (setf (cli-options-verbosity options) :debug))
-               ;; backend selection
-               ((string= arg "--clautolisp") (set-backend :clautolisp))
-               ((string= arg "--bricscad")   (set-backend :bricscad))
-               ((string= arg "--autocad")    (set-backend :autocad))
-               ;; mode / variant
-               ((option-value arg "--mode" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--mode" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest
-                        (cli-options-mode options)
-                        (parse-mode value "--mode"))))
-               ((option-value arg "--backend" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--backend" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest
-                        (cli-options-backend-variant options)
-                        (parse-backend-variant value "--backend"))))
-               ;; actions
-               ((or (string= arg "-l") (string= arg "--load"))
-                (queue (action-load (take arg)
-                                    :encoding (cli-options-load-encoding options))))
-               ((option-value arg "--load" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--load" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest)
-                  (queue (action-load value
-                                      :encoding (cli-options-load-encoding options)))))
-               ((or (string= arg "-x") (string= arg "--eval"))
-                (queue (action-eval (take arg))))
-               ((option-value arg "--eval" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--eval" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest)
-                  (queue (action-eval value))))
-               ((option-value arg "--main" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--main" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest
-                        (cli-options-main options) value)
-                  (queue (action-main value))))
-               ((or (string= arg "-i") (string= arg "--interactive"))
-                (setf (cli-options-interactive-p options) t)
-                (queue (action-interactive)))
-               ((string= arg "--quit")
-                (setf (cli-options-quit-p options) t)
-                (queue (action-quit)))
-               ;; host / dialect
-               ((option-value arg "--host" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--host" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest
-                        (cli-options-host options)
-                        (parse-host value "--host"))))
-               ((option-value arg "--dialect" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--dialect" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest
-                        (cli-options-dialect options)
-                        (parse-dialect value "--dialect"))))
-               ;; encoding
-               ((string= arg "-e")
-                (setf (cli-options-load-encoding options) (take arg)))
-               ((string= arg "-E")
-                (setf (cli-options-io-encoding options) (take arg)))
-               ;; dwg / epure
-               ((option-value arg "--dwg" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--dwg" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest
-                        (cli-options-dwg options) value)))
-               ((string= arg "--epure")
-                (setf (cli-options-epure-p options) t))
-               ;; bootstrap
-               ((option-value arg "--bootstrap-phase" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--bootstrap-phase" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest
-                        (cli-options-bootstrap-phase options)
-                        (parse-bootstrap-phase value "--bootstrap-phase"))))
-               ;; workdir
-               ((option-value arg "--workdir" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--workdir" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest
-                        (cli-options-workdir options) value)))
-               ;; timeout
-               ((option-value arg "--timeout" (car remaining))
-                (multiple-value-bind (matched value rest)
-                    (consume-long-option arg "--timeout" (car remaining))
-                  (declare (ignore matched))
-                  (setf (car remaining) rest
-                        (cli-options-timeout options)
-                        (parse-timeout value "--timeout"))))
-               ;; flags
-               ((string= arg "--dry-run")
-                (setf (cli-options-dry-run-p options) t))
-               ((or (string= arg "--no-init")
-                    (string= arg "-norc"))
-                (setf (cli-options-no-init-p options) t))
-               ((string= arg "--no-color")
-                (setf (cli-options-no-color-p options) t))
-               ((string= arg "--keep-workdir")
-                (setf (cli-options-keep-workdir-p options) t))
-               ;; unknown long option
-               ((and (>= (length arg) 2)
-                     (char= (char arg 0) #\-)
-                     (char= (char arg 1) #\-))
-                (error 'cli-usage-error
-                       :option arg
-                       :message (format nil "Unknown option ~A" arg)))
-               ;; unknown short option (any -X that wasn't matched above)
-               ((and (>= (length arg) 1)
-                     (char= (char arg 0) #\-)
-                     (> (length arg) 1))
-                (error 'cli-usage-error
-                       :option arg
-                       :message (format nil "Unknown option ~A" arg)))
-               ;; positional argument: implicit -l for the first file
-               (t
-                (push arg (cli-options-positional options))
-                (queue (action-load arg
-                                    :encoding (cli-options-load-encoding options))))))
-      (setf (cli-options-positional options)
-            (nreverse (cli-options-positional options))
-            (cli-options-actions options)
-            (nreverse actions))
-      options)))
+    (parse-arguments-with-spec
+     (append *alfe-option-specs* *common-option-specs*)
+     argv
+     :initial-options options)
+    ;; Rewrite the action-conses to alfe.backend action objects so
+    ;; EFFECTIVE-PLAN / RUN-PLAN can call ACTION-KIND / ACTION-PAYLOAD
+    ;; unchanged. Backend conflict detection ran in-line in the old
+    ;; parser via SET-BACKEND; today the common spec just last-write-
+    ;; wins for the dialect shorthands (--autocad/--bricscad/etc.),
+    ;; which also set cli-options-backend. Conflicting selectors
+    ;; (`--autocad --bricscad`) are surfaced as the LATER one winning,
+    ;; matching how the shared parser handles other repeated options.
+    (setf (cli-options-actions options)
+          (mapcar (lambda (a)
+                    (%translate-action-cons
+                     a (cli-options-load-encoding options)))
+                  (cli-options-actions options)))
+    options))
 
-(defun option-value (arg long-name argv-tail)
-  "True when ARG names LONG-NAME (either `--name` standalone or
-`--name=value`). The third argument ARGV-TAIL is the live tail of the
-unprocessed argument list and is not consulted here — it is part of
-the predicate's signature so CONSUME-LONG-OPTION can pull the value
-out without re-matching."
-  (declare (ignore argv-tail))
-  (let ((eq-pos (position #\= arg)))
-    (cond
-      (eq-pos (string= (subseq arg 0 eq-pos) long-name))
-      (t      (string= arg long-name)))))
-
-(defun consume-long-option (arg long-name argv-tail)
-  "Return (values matched-p value remaining-argv). When ARG has the
-form `--name=value`, value is taken from the embedded part and
-ARGV-TAIL is returned unchanged. When ARG is `--name`, the value is
-the head of ARGV-TAIL (and the returned remaining is its tail)."
-  (let ((eq-pos (position #\= arg)))
-    (cond
-      (eq-pos
-       (values t (subseq arg (1+ eq-pos)) argv-tail))
-      (t
-       (unless argv-tail
-         (error 'cli-usage-error
-                :option long-name
-                :message (format nil "Missing argument after ~A" long-name)))
-       (values t (first argv-tail) (rest argv-tail))))))
+;; STARTS-WITH-DOUBLE-DASH-P, SPLIT-LONG-OPTION, POP-REQUIRED,
+;; OPTION-VALUE, CONSUME-LONG-OPTION moved into the shared parser
+;; (clautolisp.autolisp-cli, source/parser.lisp). The shared parser
+;; handles the long-option = sugar and short-option dispatch
+;; uniformly across both tools.
 
 ;;; --- backend resolution ---------------------------------------------
 

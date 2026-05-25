@@ -20,6 +20,14 @@
 
 (defpackage #:alfe.error
   (:use #:cl)
+  ;; cli-usage-error is owned by clautolisp.autolisp-cli (single
+  ;; definition shared by both clautolisp and alfe). alfe re-exports
+  ;; it from alfe.error so existing callers and the FiveAM tests can
+  ;; keep importing it from alfe.error.
+  (:import-from #:clautolisp.autolisp-cli
+                #:cli-usage-error
+                #:cli-usage-error-message
+                #:cli-usage-error-option)
   (:export #:backend-error
            #:backend-error-backend
            #:backend-error-phase
@@ -92,17 +100,8 @@ on a subsequent request."))
 escaped to the top level, --main exited with a non-zero result, etc.).
 Maps to exit code 1."))
 
-(define-condition cli-usage-error (error)
-  ((message :initarg :message :reader cli-usage-error-message :initform "")
-   (option  :initarg :option  :reader cli-usage-error-option  :initform nil))
-  (:documentation
-   "Unknown option, missing required argument, conflicting options.
-Always maps to exit code 2.")
-  (:report
-   (lambda (condition stream)
-     (format stream "~A~@[ (option ~A)~]"
-             (cli-usage-error-message condition)
-             (cli-usage-error-option condition)))))
+;; CLI-USAGE-ERROR moved to clautolisp.autolisp-cli; alfe re-exports
+;; the same condition class via this package's defpackage above.
 
 (defun exit-code-for-condition (condition)
   "Map a condition to the alfe exit-code policy documented in

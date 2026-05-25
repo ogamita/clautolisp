@@ -46,6 +46,7 @@
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-cli"
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-mock-host"
                "clautolisp/autolisp-init-files"

@@ -7,6 +7,7 @@
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-mock-host"
                "clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-file-compat"
                "clautolisp/autolisp-init-files")
@@ -161,6 +162,25 @@
    (:file "autolisp-reader/tools/read-autolisp/source/version")
    (:file "autolisp-reader/tools/read-autolisp/source/main")))
 
+(asdf:defsystem "clautolisp/autolisp-cli"
+  :description "Shared CLI option parser + *AUTOLISP-…* variable installer for clautolisp and alfe."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-cli/source/package")
+   (:file "autolisp-cli/source/conditions")
+   (:file "autolisp-cli/source/options")
+   (:file "autolisp-cli/source/spec")
+   (:file "autolisp-cli/source/parser")
+   (:file "autolisp-cli/source/transmit"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-cli/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
 (asdf:defsystem "clautolisp/clautolisp-tool"
   :description "Standalone AutoLISP evaluator built on top of the clautolisp runtime."
   :author "Codex"
@@ -170,6 +190,7 @@
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-mock-host"
                "clautolisp/autolisp-builtins-core"
+               "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-init-files"
                "uiop")
