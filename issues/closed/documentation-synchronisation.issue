@@ -1,0 +1,88 @@
+RESOLVED on the doc-sync branch:
+
+  - AGENTS.md gains a Documentation Synchronisation section with
+    the four-track matrix (code / specs / user-manual / man), the
+    install layout (bin / share/doc / share/info / share/man/man1),
+    and the synchronisation rule (any change in one track requires
+    matching changes in the others; drift is a review-blocking
+    defect).
+  - 4 hand-written man(1) pages: clautolisp, alfe, read-autolisp,
+    run-alfe-conformance. Each NAME / SYNOPSIS / DESCRIPTION /
+    OPTIONS / ENVIRONMENT / FILES / EXIT STATUS / SEE ALSO.
+  - 18 documentation stubs (.org) for every previously-undocumented
+    subproject: autolisp-runtime, autolisp-host, autolisp-mock-host,
+    autolisp-builtins-core, autolisp-dcl, autolisp-init-files,
+    autolisp-cli, autolisp-test, plus tool wrappers and
+    autolisp-spec / alfe user-manuals. Each carries the conventional
+    org-texinfo metadata (TEXINFO_FILENAME / TEXINFO_DIR_*) and
+    points at the existing README / PLAN.md / source for content.
+    Stubs are the structural skeleton; prose follow-ups land later.
+  - clautolisp + alfe Makefiles gain a generic org -> .texi -> .info
+    pipeline (%.texi: %.org via Emacs ox-texinfo; %.info: %.texi via
+    makeinfo) alongside the existing %.pdf rule. make documentation
+    now produces both PDF and .info for every documentation/*.org
+    plus the nested subproject stubs.
+  - Install layouts normalised on both:
+      $(PREFIX)/bin              binaries (unchanged)
+      $(PREFIX)/libexec/<sub>    support tools (unchanged)
+      $(PREFIX)/share/doc/<sub>  .org + .pdf (unchanged)
+      $(PREFIX)/share/info       .info + install-info dir update
+      $(PREFIX)/share/man/man1   .1 man pages
+    Uninstall mirrors: install-info --remove + rm man pages.
+
+Deferred to future branches (the issue is closed once the
+infrastructure + stubs land; prose fleshing is its own work):
+
+  - Real content in the library-stub user-manuals (today they
+    point at README/PLAN.md/source).
+  - autolisp-spec Makefile install layout still needs the
+    share/man + share/info path normalisation.
+  - autolisp-test Makefile has no install target at all.
+  - autolisp-reader / autolisp-file-compat already have docs
+    under a different naming convention.
+
+Version 1.0.53.
+
+--- Original issue ---
+
+As a user of the project, I need up-to-date documentation.
+
+Note in CLAUDE.md that we need to keep the documentation up-to-date and synchronised.
+
+For each subprojects, we have these items:
+
+- code (including --help option output, and the implementation itself)
+- specifications -> .org .pdf .info
+- user-manual -> .org .pdf .info
+- man page -> .man
+
+A modification in one of these items, must involve an upgrade of the other items.
+Eg. a change in the specifications will lead to modified code, user-manual and possibly man page.
+A change in the code may need an update to the specifications and/or user-manual and man page.
+etc.
+
+Specifications gather what the program should do, for the developer of
+the program.
+
+User-manual gather all information about what the program does, and
+how it's used for the user of the program.
+
+Man page gather a description of the usage (options), and a short
+description of what the program does, and the effect of each
+option. It's an extract of the user-manual, between user-manual and
+--help, for use at the terminal. (Often, the man page and the --help
+can be very close in contents, --help is only terser in formatting.
+
+
+The programs are installed in $PREFIX/bin
+The user-manuals are installed along with other documents in $PREFIX/share/doc/$subproject/ but the .info of the user-manual.
+The user-manual .info are installed in $PREFIX/share/info (the file $PREFIX/share/info/dir should be updated, see if there's an emacs command to do it).
+The man pages are installed in $PREFIX/man/man1
+
+1- Verify and update for each subproject the synchronism between these
+   elements (add the missing elements).
+
+2- Update the Makefiles, including the intall target.
+
+3- take note that the synchronism must be maintained in the future at
+   each modification of one or the other item.

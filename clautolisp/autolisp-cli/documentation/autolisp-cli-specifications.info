@@ -1,0 +1,92 @@
+This is autolisp-cli-specifications.info, produced by makeinfo version
+7.3 from autolisp-cli-specifications.texi.
+
+INFO-DIR-SECTION clautolisp
+START-INFO-DIR-ENTRY
+* autolisp-cli-specifications: (autolisp-cli-specifications). Shared CLI option parser + *AUTOLISP-…* installer.
+END-INFO-DIR-ENTRY
+
+
+File: autolisp-cli-specifications.info,  Node: Top,  Next: Introduction,  Up: (dir)
+
+Shared CLI option parser + *AUTOLISP-…* installer
+*************************************************
+
+* Menu:
+
+* Introduction::
+* Scope::
+* Topics::
+* References::
+* Synchronisation::
+
+
+File: autolisp-cli-specifications.info,  Node: Introduction,  Next: Scope,  Prev: Top,  Up: Top
+
+1 Introduction
+**************
+
+The autolisp-cli system provides the spec-driven argv parser,
+cli-options struct, transmit-options installer, and encoding registry
+shared by clautolisp and alfe.
+
+   This document is a stub seeded by
+documentation-synchronisation.issue.  Audience: developer of the
+project.
+
+
+File: autolisp-cli-specifications.info,  Node: Scope,  Next: Topics,  Prev: Introduction,  Up: Top
+
+2 Scope
+*******
+
+Specifications: what autolisp-cli should do.
+
+
+File: autolisp-cli-specifications.info,  Node: Topics,  Next: References,  Prev: Scope,  Up: Top
+
+3 Topics
+********
+
+   • Goals and contract\n- Public interfaces (functions, structs,
+     packages)\n- Internal invariants\n- Test coverage expectations\n-
+     Open questions / decisions deferred
+
+
+File: autolisp-cli-specifications.info,  Node: References,  Next: Synchronisation,  Prev: Topics,  Up: Top
+
+4 References
+************
+
+   • Source code: see the subproject's ‘source/’ directory.
+   • README: ‘README.org’ in the subproject root.
+   • Plan / roadmap: ‘PLAN.md’ in the subproject root.
+   • Sibling tracks: autolisp-cli-user-manual.org
+
+
+File: autolisp-cli-specifications.info,  Node: Synchronisation,  Prev: References,  Up: Top
+
+5 Synchronisation
+*****************
+
+Per the project-wide synchronisation rule (AGENTS.md, Documentation
+Synchronisation section), changes to the code, the autolisp-cli
+specifications, this user-manual, or the man page (where applicable)
+must be propagated to every track.
+
+
+Tag Table:
+Node: Top299
+Node: Introduction572
+Node: Scope978
+Node: Topics1143
+Node: References1443
+Node: Synchronisation1816
+
+End Tag Table
+
+
+Local Variables:
+coding: utf-8
+Info-documentlanguage: en
+End:

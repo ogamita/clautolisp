@@ -1,0 +1,32 @@
+.TH RUN-ALFE-CONFORMANCE 1 "May 2026" "run-alfe-conformance" "User Commands"
+.SH NAME
+run-alfe-conformance \- run the alfe CLI conformance scenario corpus.
+.SH SYNOPSIS
+.B run-alfe-conformance
+.RI [ options ]
+.SH DESCRIPTION
+.B run-alfe-conformance
+walks the conformance scenario corpus under
+.B autolisp-front-end/tests/scenarios/
+and runs each scenario against a freshly-spawned
+.BR alfe (1)
+process, asserting that the exit code, stdout, and stderr match
+the scenario's
+.BR :expected-* " keys. "
+Used by CI and as a manual regression-test driver after CLI changes.
+.SH OPTIONS
+See
+.BR \-\-help
+for the live option list. The corpus location, filter regex, and
+summary verbosity are the typical knobs.
+.SH "EXIT STATUS"
+.TP
+.B 0
+Every non-skipped scenario passed.
+.TP
+.B 1
+One or more scenarios failed (the summary lists which).
+.SH "SEE ALSO"
+.BR alfe (1).
+.SH AUTHOR
+Pascal J. Bourguignon and contributors.
