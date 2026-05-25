@@ -1,0 +1,45 @@
+Write test fixtures and tests for the file encoding and line termination.
+
+Prepare 6 files containing this lisp expression:
+------------------------------------------------------------------------
+(setq
+ text
+ (strcat
+   "« À Noël, l’âgé Ægyr brûla du maïs rôti près d’un cañon où Fœdor "
+   "jugea déçu que l’île exiguë, bâtie sur du würmien, était trop naïve "
+   "pour Zoë et Cécÿle. »"))
+------------------------------------------------------------------------
+
+encoded in utf-8 and in iso-8859-1
+and with dos, mac and unix line terminations.
+
+1- Write a script using alfe to load them using -e {utf-8,iso-8859-1,us-ascii}x{-mac,-dos,-unix,}
+
+- expect read errors when the wrong encoding or line-termination is used.
+
+- check that the text variable is equal to:
+   "« À Noël, l’âgé Ægyr brûla du maïs rôti près d’un cañon où Fœdor jugea déçu que l’île exiguë, bâtie sur du würmien, était trop naïve pour Zoë et Cécÿle. »"
+  (be careful with the encoding when doing the check, and reset the text variable before loading each file).
+
+2- Write a script using alfe to read the files with read-line using  -e {utf-8,iso-8859-1,us-ascii}x{-mac,-dos,-unix,}
+
+with the same expectations for errors,
+and verifying the content of the file is read correctly.
+
+
+2- Write an autolisp program, that loops on the *AUTOLISP-FILE-ENCODING*
+  variables to try to load and to read (read-line) each file with the various
+  encoding-line-terminations combination and perform the same
+  expectations and checks as in the script. 
+  
+Note: since *AUTOLISP-FILE-ENCODING* is writable, we can change it
+between two calls to load or open (and then read, read-line, and read-char).
+
+Note: AFAIK in autocad and bricscad, you can only choose the encoding
+at load or open time, not for each read, read-line or read-char
+call. This should be verified (documentation and tests of the *cad),
+and the autolisp-spec should be updated to precise this fact. The
+clautolisp extension using *AUTOLISP-FILE-ENCODING* as defaut encoding
+for load and open should be precised, and the fact that the encoding
+doesn't change between read, read-line, read-char calls (or
+print/write calls).

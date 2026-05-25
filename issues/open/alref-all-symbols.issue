@@ -1,0 +1,100 @@
+alref doesn't find all the symbols.
+
+For some symbols, it's not possible or easy to do it, since
+atoms-family only return symbols that have been defun'ed or setq'ed,
+not symbols that have been just interned:
+
+_$ (setq will-quit nil)
+nil
+_$ '(wont-quit)
+(WONT-QUIT)
+_$ (atoms-family 0 '("WILL-QUIT" "WONT-QUIT"))
+(WILL-QUIT nil)
+_$ (list (boundp 'WILL-QUIT) (boundp 'WONT-QUIT)) 
+(nil nil)
+
+So we cannot find WONT-QUIT.
+(We have to remember to set a variable, even to NIL, to make it exist).
+
+However, even when symbols are setq'ed and boundp'ed,
+alref-apropos-list doesn't collect them:
+
+
+~/src/public/clautolisp
+master
+21:05[pjb@thalassa org.xquartz:0 clautolisp 70Gi]$ clautolisp
+
+========================================================================
+                   Welcome to AutoLISP                                  
+========================================================================
+clautolisp 1.0.55 — REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+_$ (misc)
+MISC
+_$ (cat "~/.autolisp")
+;; -*- mode:autocad-lisp-mode -*-
+
+(terpri)
+(princ "========================================================================")
+(terpri)
+(princ "                   Welcome to AutoLISP                                  ")
+(terpri)
+(princ "========================================================================")
+(terpri)
+
+(defun lisp-implementation-type    () *autolisp-backend*)
+(defun lisp-implementation-version () *autolisp-version*)
+
+(defun alref ()
+  (load "/opt/local/share/autolisp/site-lisp/autolisp-spec/alref.lsp")
+  'alref)
+
+(defun misc ()
+  (load "/Users/pjb/works/sncf-reseau/src/outils-autolisp/autolisp-misc/src/browser.lsp")
+  (load "/Users/pjb/works/sncf-reseau/src/outils-autolisp/autolisp-misc/src/format.lsp")
+  ;; (load "/Users/pjb/works/sncf-reseau/src/outils-autolisp/autolisp-misc/src/cat.lsp")
+  'misc)
+
+(defun apropos-list (substr / all result)
+  (setq all (atoms-family 1))
+  (foreach s all
+    (if (wcmatch (strcase s) (strcat "*" (strcase substr) "*"))
+      (setq result (cons s result))))
+  (reverse result))
+
+
+
+nil
+_$ (alref)
+alref.lsp loaded. (alref-set-root "…") to point at the install root.
+ALREF
+_$ (alref-apropos-list "CAR")
+("CAR" "MAPCAR" "ACET-STR-ESC-WILDCARDS")
+_$ (apropos-list "CAR")
+("MAPCAR" "CAR")
+_$ '(caravane cardan cadre)
+(CARAVANE CARDAN CADRE)
+_$ (apropos-list "CAR")                   ; just interned don't exist in autolisp
+("MAPCAR" "CAR")
+_$ (alref-apropos-list "CAR")
+("CAR" "MAPCAR" "ACET-STR-ESC-WILDCARDS")
+_$ (setq caravane 1 cardan 2 cadre 3)     ; but set variables
+3
+_$ (apropos-list "CAR")                   ; do exist and are found by atoms-family
+("MAPCAR" "CAR" "CARAVANE" "CARDAN")     
+_$ (alref-apropos-list "CAR")             ; but not by alref-apropos-list
+("CAR" "MAPCAR" "ACET-STR-ESC-WILDCARDS") 
+_$ 
+
+
+The following functions should also work with symbols found in
+atoms-family (cf apropos-list):
+
+ALREF-LOOKUP
+ALREF-APROPOS-LIST
+ALREF-APROPOS
+ALREF-DESCRIBE
+ALREF-DOCUMENTATION
+ALREF-HELP
+
+Notably, ALREF-HELP will be able to search the docstrings when we'll collect them,
+and ALREF-DOCUMENTATION and ALREF-DESCRIBE will be able to return and display these docstrings.
