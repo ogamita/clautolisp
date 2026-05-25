@@ -78,6 +78,20 @@ jobs:
           # 2026-01-01 dist relocated the function and FIND-SYMBOL
           # of an out-of-date package name returned NIL, which then
           # got FUNCALLed and crashed with "function NIL undefined".
+          #
+          # Guard against a restore-key partial hit: the cache key
+          # embeds hashFiles('**/*.asd'), so any .asd change misses
+          # the exact key — but `restore-keys` still repopulates
+          # ~/quicklisp from an older cache. cache-hit is only 'true'
+          # on an *exact* match, so this step still runs with a fully
+          # installed quicklisp on disk, and quicklisp-quickstart:install
+          # errors out ("already installed"). When setup.lisp is already
+          # there, don't reinstall — the steps that follow load it
+          # explicitly, which is all we need.
+          if [ -f "$HOME/quicklisp/setup.lisp" ]; then
+            echo "Quicklisp already present (restored from cache); skipping install."
+            exit 0
+          fi
           curl -sSO https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive --no-userinit \
                --load quicklisp.lisp \
@@ -153,6 +167,17 @@ jobs:
           # in CI, all our Makefile invocations pass --no-userinit)
           # and the 2026-01-01 dist relocated the function so
           # FIND-SYMBOL came back NIL, FUNCALL crashed.
+          #
+          # Also mirrors the partial-hit guard: a `restore-keys` match
+          # repopulates ~/quicklisp without setting cache-hit=='true'
+          # (only an exact key match does), so skip the install when
+          # setup.lisp is already on disk — quicklisp-quickstart:install
+          # errors on an existing install, and the build step that
+          # follows loads setup.lisp itself.
+          if [ -f "$HOME/quicklisp/setup.lisp" ]; then
+            echo "Quicklisp already present (restored from cache); skipping install."
+            exit 0
+          fi
           curl -sSO https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive --no-userinit \
                --load quicklisp.lisp \
