@@ -1,4 +1,57 @@
-See function-value--tn003.md
+This issue is re-opened, it's not entirely done, since the result of
+the function-value.lsp file is not correct.
+
+    (load "function-value.lsp")
+    (test)
+
+should return:
+
+    (((GOOD-NAME 42) (GOOD-NAME 42) (EXPECTED 42))
+     ((IN-OBJECT 33) (IN-OBJECT 33) (EXPECTED 33)))
+
+instead of:
+
+    (((GOOD-NAME 42) (GOOD-NAME 42) (GOOD-NAME 42))
+     ((IN-OBJECT 33) (IN-OBJECT 33) (IN-OBJECT 33)))
+
+-----function-value.lsp--------------------------------------------------
+
+(defun good-name (object)
+  (list 'good-name object))
+
+(defun funny-fun (object good-name)
+  (good-name object))
+
+(defun doit-in-object (/ object good-name)
+  (setq object 33)
+  (defun good-name (object)
+    (list 'in-object object))
+  (defun doit ()
+    (list (funny-fun object good-name)
+          (funny-fun object (function good-name))
+          (funny-fun object (function (lambda (object) (list 'expected object))))))
+  (doit))
+
+(defun test ()
+  (list
+   (list (funny-fun 42 good-name)
+         (funny-fun 42 (function good-name))
+         (funny-fun 42 (function (lambda (object) (list 'expected object)))))
+   (doit-in-object)))
+
+
+;; autolisp> (test)
+;; (((GOOD-NAME 42) (GOOD-NAME 42) (GOOD-NAME 42))
+;;  ((IN-OBJECT 33) (IN-OBJECT 33) (IN-OBJECT 33)))
+;; ;;                                  ^ definitely not good.
+;; ;;          they should be (EXPECTED 42) and (EXPECTED 33)
+
+(princ "Call (test)") (terpri)
+'function-value
+------------------------------------------------------------------------
+
+Read function-value--tn003.md
+
 
 ## clautolisp-test:
 
@@ -12,13 +65,13 @@ about functions and values, and to detect extensions.
   :: Accept only the idioms that work both on bricscad and autocad.
      Emit an error message for the other forms (ie. pure lisp-1
      function calls and variable use like in scheme).
-   
+
 - ~--autocad~
   :: Accept only the idioms that work autocad.
      Emit a warning for the other forms (ie. bricscad extensions,
      clautolisp extensions, pure lisp-1 function calls and variable
      use like in scheme).
-     
+
 - ~--bricscad~
   :: Accept only the idioms that work bricscad
      Emit a warning for the other forms (ie. autocad extensions,
@@ -123,5 +176,3 @@ Note also the caveats about compiled code:
 (defun foo ()
   'new-foo)
 (bar) ; --> foo or new-foo depending on compile-time optimisation.
-
-

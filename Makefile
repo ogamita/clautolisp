@@ -48,7 +48,7 @@ DEFAULT_LISP ?=
 # the top level should carry a `## ...` description so it appears in
 # `make help`.
 
-.PHONY: help all build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS)
+.PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS)
 
 help:  ## Show this message (list available targets and their purpose).
 	@awk 'BEGIN { \
@@ -69,6 +69,7 @@ help:  ## Show this message (list available targets and their purpose).
 	  }' $(MAKEFILE_LIST)
 
 all: documentation  ## Default target: build full documentation across all subprojects.
+
 
 autolisp-spec:  ## Build the autolisp-spec subproject (delegates to its Makefile).
 	$(MAKE) -C autolisp-spec all
@@ -107,11 +108,17 @@ test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpu
 	$(MAKE) -C autolisp-test test
 	$(MAKE) -C autolisp-front-end test
 
+clean:: clean-pdf
 clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources).
 	$(MAKE) -C autolisp-spec clean-pdf
 	$(MAKE) -C clautolisp clean-pdf
 	$(MAKE) -C autolisp-test clean-pdf
 	$(MAKE) -C autolisp-front-end clean-pdf
+
+clean:: clean-backups
+clean-backups:
+	@printf 'Cleaning backup files.\n'
+	@find . -name \*~ -exec rm -f {} \;
 
 # Forwards PREFIX, DESTDIR, and DEFAULT_LISP to every subproject so a
 # single CLI override (e.g. `make install DEFAULT_LISP=ccl') flows
