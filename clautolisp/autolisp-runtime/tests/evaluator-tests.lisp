@@ -161,3 +161,58 @@ Discovered via greet.lsp's GUI flow on 2026-04-26."
   (let ((result (run-autolisp-string "T")))
     (is (typep result 'clautolisp.autolisp-runtime:autolisp-symbol))
     (is (string= "T" (clautolisp.autolisp-runtime:autolisp-symbol-name result)))))
+
+(defun install-list-subr-for-test (context)
+  "Test helper: register a LIST subr in the bare runtime (which
+doesn't load autolisp-builtins-core) so test snippets can use
+`(list 'a 'b)' without hitting :undefined-function."
+  (declare (ignore context))
+  (let ((list-subr (clautolisp.autolisp-runtime:make-autolisp-subr
+                    "LIST"
+                    (lambda (&rest args) args))))
+    (clautolisp.autolisp-runtime:set-autolisp-symbol-function
+     (intern-autolisp-symbol "LIST") list-subr)))
+
+(test function-of-lambda-via-parameter-resolves-to-lambda
+  "Regression for issues/open/function-value.issue. A parameter
+bound to `(function (lambda …))' — i.e. an unevaluated lambda-form
+list, per the spec's FUNCTION ≡ QUOTE equivalence — must be
+callable in operator position. Before the fix, lookup-function
+rejected any value that wasn't a SUBR or USUBR; the parameter's
+binding was therefore invisible to call dispatch and a same-named
+global function was invoked instead. (funny-fun 42 (function
+(lambda (x) (list 'expected x)))) returned (GOOD-NAME 42) instead
+of (EXPECTED 42)."
+  (reset-autolisp-symbol-table)
+  (let ((result
+          (run-autolisp-string
+           "(defun good-name (object) (list 'good-name object))
+            (defun funny-fun (object good-name) (good-name object))
+            (funny-fun 42 (function (lambda (object) (list 'expected object))))"
+           :setup-fn #'install-list-subr-for-test)))
+    (is (consp result))
+    (is (eq (intern-autolisp-symbol "EXPECTED") (first result)))
+    (is (= 42 (second result)))))
+
+(test function-of-lambda-via-parameter-respects-inner-defun-shadow
+  "Same regression, second half: when an inner DEFUN inside
+`(/ object good-name)' locals shadows the global GOOD-NAME and a
+parameter then carries a `(function (lambda …))', the lambda must
+still win in operator position. Before the fix, the inner DEFUN's
+GOOD-NAME was invoked instead, returning (IN-OBJECT …) rather
+than (EXPECTED …)."
+  (reset-autolisp-symbol-table)
+  (let ((result
+          (run-autolisp-string
+           "(defun good-name (object) (list 'good-name object))
+            (defun funny-fun (object good-name) (good-name object))
+            (defun doit-in-object (/ object good-name)
+              (setq object 33)
+              (defun good-name (object) (list 'in-object object))
+              (funny-fun object
+                         (function (lambda (object) (list 'expected object)))))
+            (doit-in-object)"
+           :setup-fn #'install-list-subr-for-test)))
+    (is (consp result))
+    (is (eq (intern-autolisp-symbol "EXPECTED") (first result)))
+    (is (= 33 (second result)))))

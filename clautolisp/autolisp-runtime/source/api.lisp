@@ -835,6 +835,17 @@ profiles between subordinate evaluations within a single session."
                 nil)))
     value))
 
+(defun callable-value-p (value)
+  "True iff VALUE is something AutoLISP can call in operator
+position: a built-in SUBR, a user-defined USUBR, or a literal
+LAMBDA-form list (e.g. `(LAMBDA (X) (PRINC X))`) passed through
+a parameter via `(function (lambda …))'. Function-call dispatch
+unwraps the lambda-form lazily into a USUBR via EVAL-LAMBDA-FORM
+when it actually invokes the binding."
+  (or (typep value 'autolisp-subr)
+      (typep value 'autolisp-usubr)
+      (lambda-form-p value)))
+
 (defun lookup-function (symbol &optional (context (current-evaluation-context)))
   ;; Walk the dynamic-frame chain looking for a *callable* binding,
   ;; falling back to the namespace cell. Non-callable shadows are
@@ -850,6 +861,18 @@ profiles between subordinate evaluations within a single session."
   ;; the symbol against the surrounding scope, not stop at the
   ;; parameter shadow. This rule yields the same result as BricsCAD's
   ;; documented behaviour for symbol-via-parameter resolution.
+  ;;
+  ;; Lambda-form bindings — values shaped (LAMBDA ARGS BODY...) —
+  ;; are also accepted as callables here. `(function (lambda …))'
+  ;; returns the unevaluated list per the spec (FUNCTION ≡ QUOTE),
+  ;; so a parameter receiving such a value carries a *list*, not a
+  ;; pre-cooked USUBR. Issue function-value.issue demonstrates the
+  ;; failure mode when this path is omitted: the parameter shadow
+  ;; is invisible in operator position and the call falls through
+  ;; to a same-named global. The actual lambda-form -> usubr
+  ;; coercion happens lazily in CALL-AUTOLISP-FUNCTION-IN-CONTEXT
+  ;; so the dynamic context at the call site is the one EVAL-LAMBDA-
+  ;; FORM captures (matching the late-resolution rule above).
   (loop for frame = (evaluation-context-dynamic-frame context)
                 then (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame)
         while frame
@@ -858,10 +881,8 @@ profiles between subordinate evaluations within a single session."
                                 frame))
         when (and binding
                   (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding)
-                  (let ((value (clautolisp.autolisp-runtime.internal::dynamic-binding-value
-                                binding)))
-                    (or (typep value 'autolisp-subr)
-                        (typep value 'autolisp-usubr))))
+                  (callable-value-p
+                   (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)))
           do (return-from lookup-function
                (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
                        t
@@ -871,9 +892,7 @@ profiles between subordinate evaluations within a single session."
                                        :createp nil))
          (boundp (and cell (binding-cell-bound-p cell)))
          (value  (and boundp (binding-cell-value cell))))
-    (if (and boundp
-             (or (typep value 'autolisp-subr)
-                 (typep value 'autolisp-usubr)))
+    (if (and boundp (callable-value-p value))
         (values value t :namespace)
         (values nil nil :namespace))))
 
@@ -1327,6 +1346,16 @@ decremented on exit; visible as leading spaces in trace output.")
     (force-output stream)))
 
 (defun call-autolisp-function-in-context (function context &rest arguments)
+  ;; Lambda-form coercion: when FUNCTION is a literal
+  ;; (LAMBDA ARGS BODY...) list — typically the value of a
+  ;; parameter that received `(function (lambda …))' — wrap it
+  ;; into a USUBR right here, so the dynamic context at the call
+  ;; site (and not the original FUNCTION form's site) is what
+  ;; gets captured. This makes the lisp-1 parameter-shadowing
+  ;; path (issue function-value.issue) work without changing the
+  ;; surface semantics of FUNCTION ≡ QUOTE.
+  (when (lambda-form-p function)
+    (setf function (eval-lambda-form (rest function) context)))
   (let ((clautolisp.autolisp-runtime.internal::*active-evaluation-context* context))
     (when *autolisp-trace-p*
       (autolisp-trace-enter function arguments)
