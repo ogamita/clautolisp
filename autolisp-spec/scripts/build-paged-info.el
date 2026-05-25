@@ -98,11 +98,23 @@ system-wide dir on the install step."
   ;; loudly with a clear error rather than this silent fallback.
   ;; Pre-seeding to t is therefore safe and removes the warning.
   (setq org-texinfo-supports-math--cache t)
+  ;; Cap exported headline depth at 2 so Function Entries (level 2,
+  ;; e.g. "Function Entry: LOAD_DIALOG") render as a single
+  ;; self-contained Info node. Level-3 sub-parts (Name, Class,
+  ;; Syntax, Arguments and Values, Description, Return Values, Side
+  ;; Effects, Availability, Source Notes, Examples, Notes,
+  ;; Compatibility, …) then export as @item entries with
+  ;; @anchor{NAME} inside the parent section — no @node line, no
+  ;; @menu entry, no fragmentation into one-line navigable stubs.
+  ;; Cross-references via [[*NAME]] still resolve through the
+  ;; @anchor. PDF output is unaffected: this only changes the
+  ;; one-off ox-texinfo export run inside this script.
   (let ((buffer (find-file-noselect work-org)))
     (unwind-protect
         (with-current-buffer buffer
           (let ((org-export-with-toc nil)
-                (org-export-with-section-numbers t))
+                (org-export-with-section-numbers t)
+                (org-export-headline-levels 2))
             (org-texinfo-export-to-texinfo)))
       (kill-buffer buffer)))
   (alref-info/write-dir-entry info-dir)
