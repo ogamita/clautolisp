@@ -178,6 +178,7 @@
    #:*autolisp-trace-p*
    #:*autolisp-trace-depth*
    #:*autolisp-trace-stream*
+   #:*autolisp-traced-symbols*
    #:runtime-value-p
    #:reader-object->runtime-value
    #:reader-objects->runtime-values
