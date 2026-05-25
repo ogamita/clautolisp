@@ -1,35 +1,35 @@
 -*- mode:org -*-
 
-| issue                                  | note                                                       |
-|----------------------------------------+------------------------------------------------------------|
-| alfe.plan                              | remains to be tested with the CADs on macOS and MS-Windows |
-|                                        |                                                            |
-| source-aware-defun-documentation.issue |                                                            |
-|                                        |                                                            |
-| default-dialect.issue                  |                                                            |
-|                                        |                                                            |
-| transmit-options.issue                 |                                                            |
-|                                        |                                                            |
-| documentation-synchronisation.issue    |                                                            |
-|                                        |                                                            |
-| variadic-functions.issue               |                                                            |
-|                                        |                                                            |
-| clautolisp-debugger.issue              |                                                            |
-|                                        |                                                            |
-| autolisp-spec-questions.issue          |                                                            |
-|                                        |                                                            |
-| ci-github-ccl-lane.issue               |                                                            |
-|                                        |                                                            |
-| opendcl.plan                           |                                                            |
-| opendcl-conformance.issue              |                                                            |
-| opendcl-controls.issue                 |                                                            |
-| opendcl-host-pickers.issue             |                                                            |
-| opendcl-project-file.issue             |                                                            |
-| opendcl-renderer-scaffold.issue        |                                                            |
-| opendcl-runtime-core.issue             |                                                            |
-| opendcl-wire-protocol.issue            |                                                            |
-|                                        |                                                            |
-| alfe-plugin-model.issue                |                                                            |
-| tex-pdf-characters.issue               |                                                            |
-| nice-make-output.issue                 |                                                            |
-| autolisp-spec-pdf-versioned-filename.issue |                                                        |
+
+alfe.plan -- remains to be tested with the CADs on macOS and MS-Windows
+
+autolisp-spec-pdf-versioned-filename.issue
+autolisp-spec-questions.issue
+
+default-dialect.issue
+
+clautolisp-debugger.issue
+
+missing-functions.issue
+
+source-aware-defun-documentation.issue
+source-aware-defun-documentation.lsp
+test-file-encodings.issue
+tex-pdf-characters.issue
+transmit-options.issue
+variadic-functions.issue
+
+
+opendcl.plan
+opendcl-conformance.issue
+opendcl-controls.issue
+opendcl-host-pickers.issue
+opendcl-project-file.issue
+opendcl-renderer-scaffold.issue
+opendcl-runtime-core.issue
+opendcl-wire-protocol.issue
+
+
+alfe-plugin-model.issue
+nice-make-output.issue
+ci-github-ccl-lane.issue
