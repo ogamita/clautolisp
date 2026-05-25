@@ -1,0 +1,198 @@
+.TH ALFE 1 "May 2026" "alfe 1.0.9" "User Commands"
+.SH NAME
+alfe \- AutoLISP front-end driving clautolisp, BricsCAD or AutoCAD.
+.SH SYNOPSIS
+.B alfe
+.RI [ options ]
+.RI [ FILE.lsp ]
+.br
+.B alfe
+.B \-\-clautolisp
+.RI [ options ]
+.B \-l
+.I FILE
+.br
+.B alfe
+.B \-\-bricscad
+.RI [ options ]
+.B \-x
+.I EXPR
+.br
+.B alfe
+.B \-\-autocad
+.RI [ options ]
+.B \-\-dwg
+.I DRAWING.dwg
+.B \-l
+.I script.lsp
+.SH DESCRIPTION
+.B alfe
+is a single CLI front-end that drives an AutoLISP runtime against
+one of three backends: the in-process or subprocess clautolisp
+evaluator, or a CAD-resident engine (BricsCAD / AutoCAD) over a
+file-IPC protocol. It accepts the standard option vocabulary
+.RB ( \-l ", " \-x ", " \-i ", " \-\-dialect ", " \-\-host ", "
+.BR \-e ", " \-E ", " \-\-no-init ", " \-\-no-color "), "
+plus a handful of CAD-specific knobs
+.RB ( \-\-mode ", " \-\-backend ", " \-\-dwg ", " \-\-epure ", "
+.BR \-\-workdir ", " \-\-keep-workdir ", " \-\-timeout ", "
+.BR \-\-bootstrap-phase ", " \-\-main ", " \-\-quit ", " \-\-dry-run ).
+.SH OPTIONS
+.SS Backend selection (mutually exclusive)
+.TP
+.B \-\-clautolisp
+Default. Drive
+.BR clautolisp (1)
+in-process or as a subprocess.
+.TP
+.B \-\-bricscad
+Drive BricsCAD via the file-IPC protocol.
+.TP
+.B \-\-autocad
+Drive AutoCAD via the file-IPC protocol.
+.SS Mode and variant
+.TP
+.BR \-\-mode " " \fI{auto,automation,batch}\fR
+How to launch the engine (default: auto).
+.TP
+.BR \-\-backend " " \fI{attach,launch}\fR
+Attach to a running CAD or launch a fresh one.
+.SS Actions (processed in order)
+.TP
+.BR \-l ", " \-\-load " " \fIFILE\fR
+Load and evaluate FILE.
+.TP
+.BR \-x ", " \-\-eval " " \fIEXPR\fR
+Evaluate EXPR.
+.TP
+.BR \-\-main " " \fIFN\fR
+Call FN as the script entry point after loading.
+.TP
+.BR \-i ", " \-\-interactive
+Drop into a REPL after the action queue.
+.TP
+.B \-\-quit
+Force the engine to shut down after the queue.
+.SS Dialect, host, encoding
+.TP
+.BR \-\-dialect " " \fINAME\fR
+.BR strict " (default), " autocad-2026 ", " bricscad-v26 ", " clautolisp .
+.TP
+.BR \-\-host " " \fI{mock,null}\fR
+HAL backend (clautolisp only).
+.TP
+.BR \-e " " \fIENC\fR
+Source-file encoding (case-insensitive). Accepts
+.BR \-mac " / " \-dos " / " \-unix " / " \-lf " / " \-cr " / " \-crlf
+line-terminator suffixes. Run
+.B alfe \-\-list-encodings
+for the catalogue.
+.TP
+.BR \-E " " \fIENC\fR
+Declared terminal-IO encoding. Accepted-and-ignored on the
+terminal side (line-buffered by default).
+.SS CAD-specific options
+.TP
+.BR \-\-dwg " " \fIFILE\fR
+Drawing to open before running the script.
+.TP
+.B \-\-epure
+Enable the EPURE plugin hook.
+.SS Bootstrap and runtime
+.TP
+.BR \-\-bootstrap-phase " " \fI{marker,core,log,full}\fR
+Truncate the bootstrap.
+.TP
+.BR \-\-workdir " " \fIDIR\fR
+Override
+.BR $AUTOLISP_WORKDIR .
+.TP
+.BR \-\-timeout " " \fISECS\fR
+Per-action timeout.
+.TP
+.BR \-\-no-init ", " \-norc
+Skip user init files. Honoured equivalently via
+.BR $AUTOLISP_NO_INIT " / " $ALFE_NO_INIT .
+.TP
+.B \-\-no-color
+Disable ANSI colour. Honoured equivalently via
+.BR $NO_COLOR .
+.TP
+.B \-\-keep-workdir
+Keep the engine workdir at end of run (do not delete). Honoured
+equivalently via
+.BR $AUTOLISP_KEEP_WORKDIR .
+.TP
+.B \-\-dry-run
+Print the resolved action plan and exit 0.
+.SS Diagnostics
+.TP
+.BR \-v ", " \-\-verbose
+Verbose progress.
+.TP
+.BR \-q ", " \-\-quiet
+Suppress non-error output.
+.TP
+.BR \-d ", " \-\-debug
+Debug traces (implies
+.BR \-\-verbose ).
+.SS Informational
+.TP
+.BR \-h ", " \-\-help
+Show help and exit.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.TP
+.B \-\-list-encodings
+Print every encoding name accepted by
+.BR \-e " / " \-E
+and exit.
+.SH ENVIRONMENT
+.TP
+.B AUTOLISP_WORKDIR\fR, \fBAUTOLISP_WAIT_SECS\fR, \fBAUTOLISP_MODE
+Defaults for
+.BR \-\-workdir ", " \-\-timeout ", " \-\-mode .
+.TP
+.B AUTOLISP_BACKEND\fR, \fBALFE_BACKEND_OVERRIDE
+Backend selector defaults; explicit
+.BR \-\-clautolisp " / " \-\-bricscad " / " \-\-autocad
+overrides.
+.TP
+.B AUTOLISP_BOOTSTRAP_PHASE\fR, \fBAUTOLISP_DWG\fR, \fBAUTOLISP_EPURE
+CAD-side defaults.
+.TP
+.B AUTOLISP_KEEP_WORKDIR
+Keep the engine workdir after run.
+.TP
+.B NO_COLOR
+Disable ANSI colour output.
+.SH "EXIT STATUS"
+.TP
+.B 0
+Success.
+.TP
+.B 1
+User script failure / unhandled condition.
+.TP
+.B 2
+Usage error
+.RB ( CLI-USAGE-ERROR ).
+.TP
+.B 3
+Backend not available
+.RB ( BACKEND-NOT-AVAILABLE ).
+.TP
+.B 4
+Backend bootstrap or protocol error.
+.SH "SEE ALSO"
+.BR clautolisp (1).
+.PP
+Full documentation as info pages:
+.B info alfe-user-manual
+or
+.B info alfe-specifications .
+.SH AUTHOR
+Pascal J. Bourguignon and contributors.
+.SH BUGS
+Report at https://gitlab.com/informatimago/lisp/-/issues.
