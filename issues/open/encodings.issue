@@ -1,0 +1,75 @@
+1- clautolisp must support all the encoding supported by its underlying CL implementation,
+   and this must include at minima US-ASCII, ISO-8859-1, WINDOWS-1252 and UTF-8.
+   (use babel).
+   
+2- processing of -e and -E options. When they're not given, they must
+take as default encoding what is specified by the environment
+variables: LC_ALL or else LANG or else LC_CTYPE. And by default, if no
+-e -E and no environment variable, US-ASCII.
+
+So *AUTOLISP-FILE-ENCODING* and *AUTOLISP-TERMINAL-ENCODING* can never be NIL.
+
+
+~/src/public/clautolisp/issues/open
+master
+16:50[pjb@thalassa org.xquartz:0 open 84Gi]$ env|grep -e 'LC_\|LANG'
+LANG=en_US.UTF-8
+LC_CTYPE=en_US.UTF-8
+
+16:52[pjb@thalassa org.xqiuartz:0 open 84Gi]$  ~/check-vars
+
+(*AUTOLISP-VERSION* "1.0.49") 
+(*AUTOLISP-FILE-ENCODING* "uft-8") 
+(*AUTOLISP-TERMINAL-ENCODING* nil) 
+clautolisp: Undefined external-format: :UFT-8
+
+
+
+~/src/public/clautolisp/issues/open
+master
+16:53[pjb@thalassa org.xquartz:0 open 84Gi]$ cat ~/check-vars
+#!/bin/bash
+
+driver=clautolisp
+
+for arg ; do
+    case "$arg" in
+    (clautolisp)  driver=clautolisp ;;
+    (alfe)        driver=alfe ;;
+    (*)
+        printf "Error; usage: %s [clautolisp|alfe]\n" "$0"
+        exit 1
+        ;;
+    esac
+done
+
+"$driver" \
+    -norc -e uft-8 \
+    -x '(print (list (quote *autolisp-version*) *autolisp-version*))' \
+    -x '(print (list (quote *AUTOLISP-FILE-ENCODING*) *AUTOLISP-FILE-ENCODING*))' \
+    -x '(print (list (quote *AUTOLISP-TERMINAL-ENCODING*) *AUTOLISP-TERMINAL-ENCODING*))' \
+    -x '(terpri)' \
+    --load "/opt/local/share/autolisp/site-lisp/autolisp-spec/alref.lsp" \
+    -x '(alref-apropos "AUTOLISP-")' \
+    -q
+
+ Kent's Heuristic:                                                                                                        
+ Look for it first where you'd most like to find it.                                                                      
+~/src/public/clautolisp/issues/open
+master
+16:59[pjb@thalassa org.xquartz:0 open 84Gi]$ ~/check-vars
+
+(*AUTOLISP-VERSION* "1.0.49") 
+(*AUTOLISP-FILE-ENCODING* "uft-8") 
+(*AUTOLISP-TERMINAL-ENCODING* nil) 
+clautolisp: Undefined external-format: :UFT-8
+
+~/src/public/clautolisp/issues/open
+master
+17:00[pjb@thalassa org.xquartz:0 open 84Gi]$ ~/check-vars alfe
+
+(*AUTOLISP-VERSION* "1.0.9") 
+(*AUTOLISP-FILE-ENCODING* "uft-8") 
+(*AUTOLISP-TERMINAL-ENCODING* nil) 
+
+; unexpected error: Undefined external-format: :UFT-8
