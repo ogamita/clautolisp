@@ -1,0 +1,37 @@
+#+TITLE: AutoLISP Runtime
+#+SUBTITLE: SPECIFICATIONS
+#+AUTHOR: clautolisp contributors
+#+EMAIL: pjb@informatimago.com
+#+OPTIONS: toc:t num:t html-postamble:nil
+#+TEXINFO_FILENAME: autolisp-runtime-specifications.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: autolisp-runtime-specifications: (autolisp-runtime-specifications).
+#+TEXINFO_DIR_DESC: AutoLISP Runtime.
+
+* Introduction
+
+The clautolisp.autolisp-runtime system implements the AutoLISP evaluator, environment model, and binding semantics.
+
+This document is a stub seeded by documentation-synchronisation.issue.
+Audience: developer of the project.
+
+* Scope
+
+Specifications: what autolisp-runtime should do.
+
+* Topics
+  - Goals and contract\n- Public interfaces (functions, structs, packages)\n- Internal invariants\n- Test coverage expectations\n- Open questions / decisions deferred
+
+* References
+
+- Source code: see the subproject's =source/= directory.
+- README: =README.org= in the subproject root.
+- Plan / roadmap: =PLAN.md= in the subproject root.
+- Sibling tracks: autolisp-runtime-user-manual.org
+
+* Synchronisation
+
+Per the project-wide synchronisation rule (AGENTS.md, Documentation
+Synchronisation section), changes to the code, the autolisp-runtime
+specifications, this user-manual, or the man page (where applicable)
+must be propagated to every track.

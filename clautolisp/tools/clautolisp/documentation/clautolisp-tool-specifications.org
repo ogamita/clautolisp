@@ -1,0 +1,37 @@
+#+TITLE: clautolisp tool
+#+SUBTITLE: SPECIFICATIONS
+#+AUTHOR: clautolisp contributors
+#+EMAIL: pjb@informatimago.com
+#+OPTIONS: toc:t num:t html-postamble:nil
+#+TEXINFO_FILENAME: clautolisp-tool-specifications.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: clautolisp-tool-specifications: (clautolisp-tool-specifications).
+#+TEXINFO_DIR_DESC: clautolisp tool.
+
+* Introduction
+
+The clautolisp executable: standalone AutoLISP evaluator and interactive REPL built on top of the clautolisp library stack.
+
+This document is a stub seeded by documentation-synchronisation.issue.
+Audience: developer of the project.
+
+* Scope
+
+Specifications: what clautolisp-tool should do.
+
+* Topics
+  - Goals and contract\n- Public interfaces (functions, structs, packages)\n- Internal invariants\n- Test coverage expectations\n- Open questions / decisions deferred
+
+* References
+
+- Source code: see the subproject's =source/= directory.
+- README: =README.org= in the subproject root.
+- Plan / roadmap: =PLAN.md= in the subproject root.
+- Sibling tracks: clautolisp-tool-user-manual.org
+
+* Synchronisation
+
+Per the project-wide synchronisation rule (AGENTS.md, Documentation
+Synchronisation section), changes to the code, the clautolisp-tool
+specifications, this user-manual, or the man page (where applicable)
+must be propagated to every track.

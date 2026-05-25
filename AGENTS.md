@@ -154,6 +154,49 @@ General directives for this repository.
 - Use Quicklisp libraries for portability and tooling support, not to outsource core AutoLISP semantics.
 - Keep the project's core semantics independent from any single external library so the runtime remains understandable and portable.
 
+## Documentation Synchronisation
+
+Each subproject keeps four parallel documentation tracks that must
+stay in lock-step. The matrix:
+
+| Track            | Authoring             | Built artifacts           | Install location                          |
+|------------------|-----------------------|---------------------------|-------------------------------------------|
+| code             | source/, tools/       | binaries + `--help`       | `$(PREFIX)/bin/`, `$(PREFIX)/libexec/<s>` |
+| specifications   | `documentation/*specifications.org` | `.pdf` + `.info` | `$(PREFIX)/share/doc/<subproject>/`       |
+| user-manual      | `documentation/*user-manual.org`    | `.pdf` + `.info` | `$(PREFIX)/share/doc/<s>/` + `share/info` |
+| man page         | `documentation/<bin>.1.man`         | `.1` (groff)     | `$(PREFIX)/share/man/man1/`               |
+
+`.info` files for user-manuals install under `$(PREFIX)/share/info`
+and the dir node is updated via `install-info --info-dir`.
+
+**The synchronisation rule.** Any change to one track requires
+matching changes in the others:
+
+- A spec change → review code, user-manual, man page; bring them up.
+- A code change adding/modifying an option → update the `--help`
+  string, the man page (OPTIONS section), the user-manual, and the
+  spec if the option carries semantic weight.
+- A `--help` text change → mirror into the man page (it is the
+  terse cousin of the user-manual and reads off the same option
+  vocabulary).
+- A new subproject → seed all four tracks at creation time (even
+  if specifications and user-manual start as stubs that point at
+  the README + PLAN.md).
+
+The intent: a contributor opening any single track can trust the
+others reflect the same world. Drift between code and docs is a
+review-blocking defect, treated the same as a failing test.
+
+**On the man-page convention.** Library subprojects (those without
+a CLI binary) skip the man page — there is no `man 1` audience for
+them — but still ship specs + user-manual (where "user" means a
+Common Lisp developer integrating the library).
+
+**On the `dir` update.** `make install` runs `install-info` after
+copying the `.info` files so `info <doc>` works against the
+standard top-level dir node. The accompanying `make uninstall`
+runs `install-info --remove` to clean up.
+
 ## Change Discipline
 
 - Prefer small, composable modules.

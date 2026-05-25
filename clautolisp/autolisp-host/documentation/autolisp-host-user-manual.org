@@ -1,0 +1,37 @@
+#+TITLE: AutoLISP HAL — host abstraction layer
+#+SUBTITLE: USER MANUAL
+#+AUTHOR: clautolisp contributors
+#+EMAIL: pjb@informatimago.com
+#+OPTIONS: toc:t num:t html-postamble:nil
+#+TEXINFO_FILENAME: autolisp-host-user-manual.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: autolisp-host-user-manual: (autolisp-host-user-manual).
+#+TEXINFO_DIR_DESC: AutoLISP HAL — host abstraction layer.
+
+* Introduction
+
+How to attach a backend to the HAL protocol and drive AutoLISP code against a chosen host.
+
+This document is a stub seeded by documentation-synchronisation.issue.
+Audience: user / integrator.
+
+* Scope
+
+User manual: how autolisp-host is used.
+
+* Topics
+  - Installation\n- Loading + entry points\n- Usage examples\n- Configuration knobs\n- Troubleshooting\n- See also (specs, source, related projects)
+
+* References
+
+- Source code: see the subproject's =source/= directory.
+- README: =README.org= in the subproject root.
+- Plan / roadmap: =PLAN.md= in the subproject root.
+- Sibling tracks: autolisp-host-specifications.org
+
+* Synchronisation
+
+Per the project-wide synchronisation rule (AGENTS.md, Documentation
+Synchronisation section), changes to the code, the autolisp-host
+specifications, this user-manual, or the man page (where applicable)
+must be propagated to every track.
