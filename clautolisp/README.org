@@ -17,7 +17,7 @@ The implementation plan exists, but the concrete reader, runtime, and host modul
 - ~clautolisp.asd~
 - ~documentation/development-plan.org~
 - ~autolisp-reader/PLAN.md~
-- ~autolisp-reader/documentation/specification.org~
+- ~autolisp-reader/documentation/autolisp-reader-specifications.org~
 
 * Planning Document
 The planning document for this subproject is:
