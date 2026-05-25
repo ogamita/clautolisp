@@ -32,11 +32,14 @@
                 #:autolisp-termination-kind
                 #:call-with-autolisp-error-handler
                 #:derive-reader-options-for-dialect
+                #:intern-autolisp-symbol
+                #:make-autolisp-string
                 #:make-default-runtime-context
                 #:read-runtime-from-string
                 #:run-autolisp-file
                 #:run-autolisp-string
                 #:set-runtime-session-host
+                #:set-variable
                 #:set-default-source-encoding
                 #:locale-default-source-encoding
                 #:current-evaluation-context
