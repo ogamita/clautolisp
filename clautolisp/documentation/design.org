@@ -120,14 +120,14 @@ Subclasses of host objects use a subset of these states.
 | ~application~ | ~:running~ → ~:quitting~ → ~:quit~ | One per process. |
 | ~document-manager~ | always ~:running~ | The collection itself never opens or closes; only its members do. |
 | ~document~ | ~:loading~ → ~:loaded~ <-> ~:active~ <-> ~:inactive~ → ~:closing~ → ~:closed~ | Plus a transient ~:saving~ substate during DWG/DXF write. The dominant lifecycle. |
-| ~command~ | ~:pending~ → ~:started~ → ~:running~ → (~:ended~ | ~:cancelled~ | ~:failed~) | One state machine per invocation, opened by the command-reactor family. |
+| ~command~ | ~:pending~ → ~:started~ → ~:running~ → (~:ended~ \vert{} ~:cancelled~ \vert{} ~:failed~) | One state machine per invocation, opened by the command-reactor family. |
 | ~entity~ | ~:created~ → ~:committed~ <-> ~:modified~ → (~:erased~ <-> ~:unerased~) → ~:purged~ | The "modified" loop is the dominant reaction. ~:erased~ is reversible (toggle), ~:purged~ is terminal. |
 | ~selection-set~ | ~:created~ → ~:populated~ <-> ~:mutated~ → ~:released~ | Non-graphical; usually short-lived. |
 | ~dictionary-entry~ | ~:added~ → ~:present~ → (~:renamed~ <-> ~:mutated~) → ~:removed~ | Persistence-domain object; fires ~:vlr-objectAppended~ etc. via acdb reactor. |
 | ~sysvar~ | always ~:bound~; transitions are "value will change" / "value changed" | Atomic; no construction/destruction. |
 | ~xref~ | ~:unresolved~ → ~:resolved~ <-> ~:unloaded~ <-> ~:reloaded~ → ~:detached~ | Drives ~vlr-xref-reactor~. |
-| ~wblock-op~ | ~:started~ → (~:completed~ | ~:cancelled~) | Transient. |
-| ~undo-op~ | ~:begin~ → (~:commit~ | ~:rollback~) | Transient. |
+| ~wblock-op~ | ~:started~ → (~:completed~ \vert{} ~:cancelled~) | Transient. |
+| ~undo-op~ | ~:begin~ → (~:commit~ \vert{} ~:rollback~) | Transient. |
 | ~mouse-event~ | ~:down~ → (~:drag*~) → ~:up~ | Transient. |
 | ~vlx-app~ | ~:loading~ → ~:loaded~ → ~:unloaded~ | Drives ~vlr-linker-reactor~. |
 | ~lisp-eval~ | ~:loading-source~ → ~:running~ → ~:idle~ | Drives ~vlr-lisp-reactor~. |
