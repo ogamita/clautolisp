@@ -39,6 +39,7 @@
   (verbosity        :info)            ; AC  :debug / :verbose / :info / :warn
   (help-p           nil)              ; AC
   (version-p        nil)              ; AC
+  (list-encodings-p nil)              ; AC  --list-encodings
   (dry-run-p        nil)              ; A
   (no-init-p        nil)              ; AC
   (no-color-p       nil)              ; AC

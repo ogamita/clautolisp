@@ -94,6 +94,7 @@
                 #:cli-options-timeout
                 #:cli-options-help-p
                 #:cli-options-version-p
+                #:cli-options-list-encodings-p
                 #:cli-options-dry-run-p
                 #:cli-options-no-init-p
                 #:cli-options-no-color-p
@@ -134,6 +135,7 @@
            #:cli-options-timeout
            #:cli-options-help-p
            #:cli-options-version-p
+           #:cli-options-list-encodings-p
            #:cli-options-dry-run-p
            #:cli-options-no-init-p
            #:cli-options-no-color-p
@@ -254,6 +256,8 @@ Diagnostics:
 Informational:
   -h, --help             Show this help and exit.
   -V, --version          Print version and exit.
+  --list-encodings       Print every encoding name accepted by -e / -E and exit.
+                         Encoding names are case-insensitive on the CLI.
 ")
 
 (defun print-usage (&optional (stream *standard-output*))
@@ -677,6 +681,9 @@ The handler chain matches alfe-cli.issue's exit-code table:
            0)
           ((cli-options-version-p options)
            (print-version (or version "0.0.0"))
+           0)
+          ((cli-options-list-encodings-p options)
+           (clautolisp.autolisp-cli:print-encodings)
            0)
           (t
            (set-level (cli-options-verbosity options))

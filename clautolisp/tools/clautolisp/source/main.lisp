@@ -53,7 +53,11 @@
   (format t "                         Honoured equivalently via $AUTOLISP_NO_INIT or $CLAUTOLISP_NO_INIT.~%")
   (format t "Informational:~%")
   (format t "  -V, --version          Print the version string and exit.~%")
-  (format t "  -h, --help             Show this help and exit.~%"))
+  (format t "  -h, --help             Show this help and exit.~%")
+  (format t "  --list-encodings       Print every encoding name accepted by -e / -E~%")
+  (format t "                         (mandatory four + every encoding the running CL~%")
+  (format t "                         implementation exposes) and exit. Encoding names~%")
+  (format t "                         are case-insensitive on the CLI.~%"))
 
 (defun resolve-host-backend (name)
   "Return a HAL backend instance for the given --host argument."
@@ -589,11 +593,14 @@ autolisp-dcl load time) stays in effect."
 (defun main (&rest argv)
   (handler-case
       (let* ((options (parse-arguments (rest argv))))
-        ;; --help / --version short-circuit before any context build.
+        ;; --help / --version / --list-encodings short-circuit
+        ;; before any context build.
         (when (clautolisp.autolisp-cli:cli-options-help-p options)
           (usage) (quit 0))
         (when (clautolisp.autolisp-cli:cli-options-version-p options)
           (print-version) (quit 0))
+        (when (clautolisp.autolisp-cli:cli-options-list-encodings-p options)
+          (clautolisp.autolisp-cli:print-encodings) (quit 0))
         (let* ((verbosity (clautolisp.autolisp-cli:cli-options-verbosity options))
                (verbose-p (member verbosity '(:verbose :debug)))
                (debug-p   (eq verbosity :debug))
