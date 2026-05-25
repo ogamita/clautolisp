@@ -117,6 +117,9 @@
 (defun autolisp-dialect-bricscad-v26 ()
   (symbol-value 'clautolisp.autolisp-reader.internal::*autolisp-dialect-bricscad-v26*))
 
+(defun autolisp-dialect-clautolisp ()
+  (symbol-value 'clautolisp.autolisp-reader.internal::*autolisp-dialect-clautolisp*))
+
 (defun reader-options-token-mode (options)
   (clautolisp.autolisp-reader.internal::reader-options-token-mode options))
 
