@@ -145,6 +145,123 @@ etc."
              ;; carried.
              (symbol-name keyword)))))
 
+;;; --- catalogue + --list-encodings printer ------------------------
+
+#+sbcl
+(defparameter *sbcl-common-encoding-probes*
+  '(:us-ascii :iso-8859-1 :iso-8859-2 :iso-8859-3 :iso-8859-4
+    :iso-8859-5 :iso-8859-6 :iso-8859-7 :iso-8859-8 :iso-8859-9
+    :iso-8859-10 :iso-8859-13 :iso-8859-14 :iso-8859-15 :iso-8859-16
+    :cp437 :cp850 :cp852 :cp855 :cp857 :cp860 :cp861 :cp862 :cp863
+    :cp864 :cp865 :cp866 :cp869 :cp874
+    :cp1250 :cp1251 :cp1252 :cp1253 :cp1254 :cp1255 :cp1256 :cp1257 :cp1258
+    :mac-roman :mac-cyrillic :mac-greek :mac-iceland
+    :koi8-r :koi8-u :ebcdic-us :ebcdic-international
+    :utf-8 :utf-16 :utf-16be :utf-16le :utf-32 :utf-32be :utf-32le
+    :ucs-2 :ucs-2be :ucs-2le :ucs-4 :ucs-4be :ucs-4le
+    :euc-jp :shift_jis :gbk :gb2312 :big5 :euc-kr)
+  "Names probed at --list-encodings time so SBCL's on-demand
+loader pulls them into *external-formats*. The catalogue then
+shows every encoding the running SBCL can handle, not just the
+ones some earlier user code already triggered.")
+
+(defun enumerate-implementation-encodings ()
+  "Return the list of canonical encoding names the running CL
+implementation accepts as :EXTERNAL-FORMAT, sorted alphabetically.
+Each entry is a (CANONICAL-NAME . ALIASES) cons, with CANONICAL-NAME
+the impl-preferred spelling (its first registered alias) and
+ALIASES the rest of the names it answers to. On implementations
+without an introspectable registry, returns NIL — the --list-
+encodings printer falls back to the mandatory four with a note.
+
+SBCL stores its built-in formats in *external-formats* but resolves
+lazy-loaded ones (the ISO-8859-* family, KOI8-*, CP*, etc.) through
+a separate path that doesn't register them in the same vector.
+We probe each name in *SBCL-COMMON-ENCODING-PROBES* via
+GET-EXTERNAL-FORMAT to surface them; the returned struct's
+EF-NAMES list gives the canonical spelling and aliases. Built-in
+formats are read straight from the vector."
+  #+sbcl
+  (let ((rows '()))
+    ;; (1) Built-in formats from the static vector. Filter to struct
+    ;; entries — the ((:newline-variant) . struct) conses are the
+    ;; per-line-ending duplicates we'd otherwise double-count.
+    (loop for fmt across sb-impl::*external-formats*
+          when (typep fmt 'sb-impl::external-format)
+          do (let* ((names (sb-impl::ef-names fmt))
+                    (canonical (string (first names)))
+                    (aliases (mapcar #'string (rest names))))
+               (pushnew (cons canonical aliases) rows
+                        :test #'equal :key #'car)))
+    ;; (2) Lazy-loaded formats — probe each, extract its EF-NAMES.
+    ;; Unknown probe entries return nil; we silently skip them so
+    ;; the catalogue stays accurate to what this SBCL build can
+    ;; actually handle, even when the probe table optimistically
+    ;; lists more.
+    (dolist (name *sbcl-common-encoding-probes*)
+      (let ((fmt (ignore-errors (sb-impl::get-external-format name))))
+        (when (typep fmt 'sb-impl::external-format)
+          (let* ((names (sb-impl::ef-names fmt))
+                 (canonical (string (first names)))
+                 (aliases (mapcar #'string (rest names))))
+            (pushnew (cons canonical aliases) rows
+                     :test #'equal :key #'car)))))
+    (sort rows #'string< :key #'car))
+  #+ccl
+  (let ((rows '()))
+    (ccl::map-character-encodings
+     (lambda (name encoding)
+       (declare (ignore encoding))
+       (let ((s (string name)))
+         (pushnew (cons s '()) rows :test #'equal :key #'car))))
+    (sort rows #'string< :key #'car))
+  #-(or sbcl ccl)
+  nil)
+
+(defun print-encodings (&optional (stream *standard-output*))
+  "Print the catalogue of supported encoding names to STREAM. Used
+by the --list-encodings CLI action. The output has two sections:
+the mandatory four with their hand-curated aliases, and the
+remaining encodings the running CL implementation accepts."
+  (format stream "~&clautolisp / alfe — supported encoding names.~%~%")
+  (format stream "Encoding names are case-insensitive on the CLI: ~
+utf-8 = UTF-8 = Utf-8.~%~%")
+  (format stream "Mandatory (always supported; CLI also accepts ~
+these aliases):~%")
+  (dolist (row *encoding-aliases*)
+    (format stream "  ~14A ~{~A~^, ~}~%"
+            (first row) (cddr row)))
+  (let* ((impl (enumerate-implementation-encodings))
+         (canonicals (mapcar #'first *encoding-aliases*))
+         (extra (remove-if (lambda (r)
+                             (or (member (car r) canonicals
+                                         :test #'string-equal)
+                                 (some (lambda (alias)
+                                         (member alias canonicals
+                                                 :test #'string-equal))
+                                       (cdr r))))
+                           impl)))
+    (cond
+      ((null impl)
+       (format stream "~%Implementation-supported: unknown — this CL ~
+implementation does not expose an introspectable external-format ~
+registry. Pass any name; if the runtime rejects it the CLI will ~
+report a clean usage error.~%"))
+      ((null extra)
+       (format stream "~%(No additional impl-supported encodings ~
+beyond the mandatory set.)~%"))
+      (t
+       (format stream "~%Additional impl-supported (~A; CLI accepts ~
+any case):~%"
+               #+sbcl "SBCL" #+ccl "CCL" #-(or sbcl ccl) "this Common Lisp")
+       (dolist (row extra)
+         (cond
+           ((cdr row)
+            (format stream "  ~14A ~{~A~^, ~}~%" (car row) (cdr row)))
+           (t
+            (format stream "  ~A~%" (car row))))))))
+  (force-output stream))
+
 (defun resolve-effective-encoding (cli-value)
   "Three-tier resolution for the *AUTOLISP-FILE-ENCODING* and
 *AUTOLISP-TERMINAL-ENCODING* publication contract from
