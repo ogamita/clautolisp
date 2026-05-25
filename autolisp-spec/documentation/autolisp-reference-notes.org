@@ -1,6 +1,10 @@
 #+TITLE: AutoLISP / Visual LISP Reference Notes
 #+AUTHOR: Codex
 #+OPTIONS: toc:2 num:t
+#+TEXINFO_FILENAME: autolisp-reference-notes.info
+#+TEXINFO_DIR_CATEGORY: AutoLISP specification
+#+TEXINFO_DIR_TITLE: autolisp-reference-notes: (autolisp-reference-notes).
+#+TEXINFO_DIR_DESC: Side notes accompanying the AutoLISP spec.
 
 * Purpose
 This file inventories the official references consulted during the information-gathering phase for AutoLISP / Visual LISP specification work.

@@ -2,6 +2,10 @@
 #+AUTHOR: Pascal J. Bourguignon
 #+LANGUAGE: en
 #+OPTIONS: toc:3 num:t
+#+TEXINFO_FILENAME: alfe--specifications.info
+#+TEXINFO_DIR_CATEGORY: alfe
+#+TEXINFO_DIR_TITLE: alfe-specifications: (alfe--specifications).
+#+TEXINFO_DIR_DESC: alfe - autolisp-front-end - comprehensive specification.
 
 * Purpose and scope
 

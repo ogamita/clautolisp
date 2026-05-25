@@ -1,6 +1,10 @@
 #+TITLE: Terminal Colour-Output Policy — Design Notes
 #+AUTHOR: Codex
 #+OPTIONS: toc:3 num:t
+#+TEXINFO_FILENAME: terminal-color-design.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: clautolisp-terminal-color: (terminal-color-design).
+#+TEXINFO_DIR_DESC: Clautolisp terminal-colour output policy.
 
 * Purpose
 

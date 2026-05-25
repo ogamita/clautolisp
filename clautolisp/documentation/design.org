@@ -1,6 +1,10 @@
 #+TITLE: Clautolisp Design — Host Object Ontology, Lifecycles, Reactors
 #+AUTHOR: Codex
 #+OPTIONS: toc:3 num:t
+#+TEXINFO_FILENAME: design.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: clautolisp-design: (design).
+#+TEXINFO_DIR_DESC: Clautolisp design — host object ontology, lifecycles, reactors.
 
 * Purpose
 

@@ -394,8 +394,9 @@ install: build  ## Install built executables, run-file-compat, and docs into $$P
 	  if [ -f "$$f" ]; then \
 	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
 	    echo "installed: $$f -> $(INFO_INSTALL_DIR)/" ; \
-	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
-	      || echo "[skip] install-info dir update for $$f" ; \
+	    installed="$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
+	    $(INSTALL_INFO) --info-dir="$(INFO_INSTALL_DIR)" "$$installed" 2>/dev/null \
+	      || echo "[skip] install-info dir update for $$installed" ; \
 	  fi ; \
 	done
 	@# Man pages under share/man/man1.

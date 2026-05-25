@@ -1,6 +1,10 @@
 #+TITLE: autolisp-test Development Plan
 #+AUTHOR: Codex
 #+OPTIONS: toc:3 num:t
+#+TEXINFO_FILENAME: autolisp-test-development-plan.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: autolisp-test-development-plan: (autolisp-test-development-plan).
+#+TEXINFO_DIR_DESC: AutoLISP test harness development plan.
 
 * Purpose
 This document defines the plan for ~autolisp-test~, a conformance-oriented AutoLISP / Visual LISP test suite.

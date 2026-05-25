@@ -1,6 +1,10 @@
 #+TITLE: autolisp-runtime Design
 #+AUTHOR: Codex
 #+OPTIONS: toc:2 num:t
+#+TEXINFO_FILENAME: design.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: autolisp-runtime-design: (design).
+#+TEXINFO_DIR_DESC: AutoLISP runtime design notes.
 
 * Purpose
 This document defines the initial runtime object model for ~clautolisp~.

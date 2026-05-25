@@ -2,6 +2,10 @@
 #+AUTHOR: Draft v0.1
 #+OPTIONS: toc:3 num:nil ^:nil
 #+STARTUP: showall indent
+#+TEXINFO_FILENAME: clautolisp-debugger-spec.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: clautolisp-debugger: (clautolisp-debugger-spec).
+#+TEXINFO_DIR_DESC: Clautolisp Debugger specification.
 
 - *Status:* Draft v0.1
 - *Scope:* Debugger, inspector, and three pluggable user interfaces for

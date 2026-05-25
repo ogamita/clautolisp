@@ -1,6 +1,10 @@
 #+TITLE: Clautolisp Development Plan
 #+AUTHOR: Codex
 #+OPTIONS: toc:2 num:t
+#+TEXINFO_FILENAME: development-plan.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: clautolisp-development-plan: (development-plan).
+#+TEXINFO_DIR_DESC: Clautolisp development plan.
 
 * Purpose
 This document turns the current specification drafts into an executable development plan.

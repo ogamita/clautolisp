@@ -3,6 +3,10 @@
 #+AUTHOR: Codex
 #+OPTIONS: toc:3 num:t
 #+LICENSE: CC-BY-SA
+#+TEXINFO_FILENAME: vendor-inventory-2026.info
+#+TEXINFO_DIR_CATEGORY: AutoLISP specification
+#+TEXINFO_DIR_TITLE: vendor-inventory-2026: (vendor-inventory-2026).
+#+TEXINFO_DIR_DESC: Per-vendor AutoLISP feature inventory (2026).
 
 * 1 Purpose
 
