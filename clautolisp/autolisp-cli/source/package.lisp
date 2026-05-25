@@ -32,6 +32,7 @@
    #:cli-options-timeout         ; A
    #:cli-options-help-p          ; AC
    #:cli-options-version-p       ; AC
+   #:cli-options-list-encodings-p ; AC
    #:cli-options-dry-run-p       ; A
    #:cli-options-no-init-p       ; AC
    #:cli-options-no-color-p      ; AC
@@ -77,4 +78,6 @@
    #:encoding-keyword
    #:canonical-encoding-name
    #:resolve-locale-encoding-name
-   #:resolve-effective-encoding))
+   #:resolve-effective-encoding
+   #:enumerate-implementation-encodings
+   #:print-encodings))

@@ -41,6 +41,16 @@ specs without mutating the shared template."
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-version-p opts) t)))
+   ;; --list-encodings dumps the encoding catalogue (mandatory four
+   ;; + every encoding the running CL impl exposes) and exits. The
+   ;; flag is the same shape as --help / --version: the slot is set
+   ;; here, and each tool's main() short-circuits before running
+   ;; any user action.
+   (make-option-spec
+    :longs '("--list-encodings") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-list-encodings-p opts) t)))
 
    ;; --- verbosity -------------------------------------------------
    (make-option-spec
