@@ -170,18 +170,67 @@ call after `alref-set-root' moves the root."
       (setq *alref-index-root* *alref-root*)
       *alref-index-cache*)))
 
+;;; --- runtime-symbol helpers --------------------------------------
+;;;
+;;; The alref-* lookup functions union the documented spec catalog
+;;; with the live AutoLISP image's bound symbols, so user-defun'd /
+;;; user-setq'd names show up alongside specified ones. The runtime
+;;; list isn't cached — `atoms-family' changes whenever the user
+;;; defuns or setqs anything, and the cost is low (the image's
+;;; symbol table is in memory).
+;;;
+;;; Caveat documented in the issue: AutoLISP's `atoms-family' only
+;;; returns symbols that have a binding (defun'd or setq'd). A bare
+;;; '(WONT-QUIT) read at the REPL interns WONT-QUIT but doesn't bind
+;;; it, so it stays invisible to atoms-family and therefore to the
+;;; union. This is a strict-spec property, not an alref limitation.
+
+(defun alref-runtime-symbol-names ( / raw acc s)
+  "Return the list of uppercased symbol-name strings for every
+currently-bound symbol in the image — what (atoms-family 1)
+exposes. Used to widen alref-apropos-list / alref-resolve-key
+beyond the documented spec catalog. Re-queried each call (the
+runtime symbol table changes with each defun / setq)."
+  (setq raw (atoms-family 1))
+  (setq acc nil)
+  (foreach s raw
+    ;; atoms-family 1 returns NAMES (strings); fold to uppercase
+    ;; for the case-insensitive substring scan downstream.
+    (if s (setq acc (cons (strcase s) acc))))
+  (reverse acc))
+
+(defun alref-spec-symbol-p (uppercased-name / )
+  "T iff UPPERCASED-NAME is present in the documented spec catalog
+(`pages/symbols.txt')."
+  (not (null (assoc uppercased-name (alref-load-symbols)))))
+
 ;;; --- public API ----------------------------------------------------
 
-(defun alref-apropos-list (pattern / matches entry)
-  "Return the list of documented symbol names that contain
-PATTERN as a substring (case-insensitive). Sorted in the order
-the symbols index was emitted (chapter-major, then walking order
-within each chapter — close enough to alphabetical-by-kind for
-interactive use)."
+(defun alref-apropos-list (pattern / matches entry name)
+  "Return the list of symbol names matching PATTERN (case-insensitive
+substring), drawing from BOTH the documented spec catalog AND the
+live AutoLISP image's bound symbols (`(atoms-family 1)'). Spec
+matches are listed first, in the order pages/symbols.txt emitted
+them (chapter-major, walking order within each chapter). Runtime-
+only matches follow in atoms-family order, with the union
+de-duplicated by uppercased name so a spec-and-bound symbol like
+CAR appears once.
+
+Caveat: AutoLISP's atoms-family only surfaces symbols with a
+binding. Just reading '(WONT-QUIT) at the REPL interns the
+symbol but doesn't bind it, so it remains invisible — set it to
+NIL or define it to make it findable."
   (setq matches nil)
+  ;; Pass 1: spec catalog (preserves the canonical spec ordering).
   (foreach entry (alref-load-symbols)
-    (if (alref-string-contains-p pattern (car entry))
-      (setq matches (cons (car entry) matches))))
+    (setq name (car entry))
+    (if (alref-string-contains-p pattern name)
+      (setq matches (cons name matches))))
+  ;; Pass 2: runtime symbols not already in matches.
+  (foreach name (alref-runtime-symbol-names)
+    (if (and (alref-string-contains-p pattern name)
+             (not (member name matches)))
+      (setq matches (cons name matches))))
   (reverse matches))
 
 (defun alref-lookup (pattern / names)
@@ -206,16 +255,19 @@ portable across AutoCAD / BricsCAD / clautolisp."
       (= kind 'EXTSUBR)))
 
 (defun alref-apropos (pattern / matches name sym)
-  "Print every documented symbol matching PATTERN with its current
-live state in the AutoLISP runtime:
+  "Print every symbol matching PATTERN with its current live
+state in the AutoLISP runtime:
 
     NAME<TAB>Function                — bound to a callable.
     NAME<TAB>Variable<TAB>VALUE      — bound to a non-callable value.
     NAME<TAB>Variable<TAB>NIL        — symbol present but unbound.
 
-Symbols not present in the documented index are never shown by
-this function; reach those via (alref-describe NAME), which
-reports an explicit `Inexistant' line.
+The match set is the union of the documented spec catalog and the
+live image's bound symbols — see `alref-apropos-list' for the
+exact rule. Runtime-only symbols (defun'd or setq'd at the REPL,
+loaded from a user file, …) are displayed exactly the same way
+the spec ones are; they're just missing from the spec catalog,
+which doesn't change the apropos line shape.
 
 The Variable/Function distinction is by (TYPE (EVAL SYM)) at the
 moment apropos runs, so loading a library that defines new
@@ -335,41 +387,90 @@ alref-page-text to rejoin slurped lines into one big string."
       (progn (setq acc (cons x (cons sep acc))))))
   (reverse acc))
 
-(defun alref-describe (key / basename text)
+(defun alref-key->name (key / )
+  "Coerce KEY (symbol or string) to its uppercased name string for
+runtime-symbol probes. Returns nil for non-symbol/non-string keys
+(integers, etc.) — those can only be chapter numbers, never
+runtime-symbol references."
+  (cond
+    ((= (type key) 'SYM) (strcase (alref-symbol-name key)))
+    ((= (type key) 'STR) (strcase key))
+    (t nil)))
+
+(defun alref-runtime-bound-p (uppercased-name / sym)
+  "T iff UPPERCASED-NAME names a symbol currently bound in the
+image (the same test atoms-family applies). Lets alref-describe /
+alref-documentation distinguish a runtime-only symbol from one
+the user just typed and hasn't bound."
+  (setq sym (read uppercased-name))
+  (and sym (boundp sym)))
+
+(defun alref-print-runtime-state (uppercased-name / sym)
+  "Print the alref-apropos-style line for a runtime symbol that
+has no spec page — one of:
+
+    NAME<TAB>Function
+    NAME<TAB>Variable<TAB>VALUE
+    NAME<TAB>Variable<TAB>NIL
+
+The shape matches alref-apropos so the user sees a consistent
+display whether the symbol is documented or not."
+  (setq sym (read uppercased-name))
+  (princ uppercased-name)
+  (princ "\t")
+  (cond
+    ((not (boundp sym))
+     (princ "Variable\tNIL"))
+    ((alref-function-value-p (eval sym))
+     (princ "Function"))
+    (t
+     (princ "Variable\t")
+     (prin1 (eval sym))))
+  (terpri))
+
+(defun alref-describe (key / basename text name)
   "Print the spec page for KEY (a symbol, a string symbol-name,
-a chapter number, or a chapter title). When KEY does not resolve
-to any documented symbol or chapter, prints:
+a chapter number, or a chapter title). When KEY isn't in the
+documented catalog but IS a currently-bound runtime symbol,
+prints its alref-apropos-style live-state line instead (no spec
+page available — there's no docstring API in stock AutoLISP).
+When KEY resolves to nothing at all, prints:
 
     KEY<TAB>Inexistant
 
 — matching the alref-apropos `Variable/Function/Variable NIL'
-display family. The Inexistant row is reachable only via
-alref-describe; alref-apropos filters the documented index and
-never sees a missing symbol."
+display family."
   (setq basename (alref-resolve-key key))
-  (if (null basename)
-    (progn
-      (princ key)
-      (princ "\tInexistant")
-      (terpri)
-      nil)
-    (progn
-      (setq text (alref-page-text basename))
-      (if (null text)
-        (progn
-          (princ "alref-describe: page file missing: ")
-          (princ basename)
-          (terpri)
-          nil)
-        (progn
-          (princ text)
-          (terpri)
-          basename)))))
+  (cond
+    (basename
+     (setq text (alref-page-text basename))
+     (cond
+       ((null text)
+        (princ "alref-describe: page file missing: ")
+        (princ basename)
+        (terpri)
+        nil)
+       (t
+        (princ text)
+        (terpri)
+        basename)))
+    ((and (setq name (alref-key->name key))
+          (alref-runtime-bound-p name))
+     (alref-print-runtime-state name)
+     name)
+    (t
+     (princ key)
+     (princ "\tInexistant")
+     (terpri)
+     nil)))
 
 (defun alref-documentation (key / basename)
   "Like alref-describe but returns the page text as a string
 instead of printing. Useful for tooling that wants to inspect or
-forward the page."
+forward the page. Returns nil for runtime-only symbols — there's
+no docstring API to draw from in stock AutoLISP. (When clautolisp
+ships its planned per-symbol doc store, this function will
+return the docstring for runtime-only symbols too.)"
   (setq basename (alref-resolve-key key))
   (if (null basename)
     nil
