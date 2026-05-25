@@ -10,28 +10,252 @@
 
 * Introduction
 
-The alfe(1) executable is the unified front-end driving clautolisp (in-process or subprocess) and CAD-resident AutoLISP REPLs (BricsCAD, AutoCAD) via a file-IPC protocol. This manual covers everyday use: actions, dialects, hosts, encodings, init files, the --dry-run plan renderer, and the *AUTOLISP-…* globals available to user code.
+=alfe(1)= is the unified command-line front-end for AutoLISP. It
+drives three backends behind a single command-line shape:
 
-This document is a stub seeded by documentation-synchronisation.issue.
-Audience: user / integrator.
+- =clautolisp= — an in-process AutoLISP evaluator that ships with
+  alfe. No CAD required. The default backend.
+- =bricscad= — BricsCAD V26+, via batch (=-b run.scr=) or COM
+  /AppleScript automation.
+- =autocad= — AutoCAD 2026+, via =accoreconsole= batch or COM
+  automation (MS-Windows only).
 
-* Scope
+The same =-x EXPR=, =-l FILE=, =--dialect NAME= and =--host MODE=
+options work against every backend. Programs written for alfe run
+unchanged whether you point them at the local clautolisp engine
+or at a real CAD session.
 
-User manual: how alfe is used.
+* Installation
 
-* Topics
-  - Installation\n- Loading + entry points\n- Usage examples\n- Configuration knobs\n- Troubleshooting\n- See also (specs, source, related projects)
+The build target produces two binaries: =alfe-sbcl= (preferred,
+faster startup) and =alfe-ccl= (Clozure CL backup, when SBCL is
+unavailable). The =install= rule places them under
+=$(PREFIX)/bin/= along with a wrapper =alfe= that resolves to one
+or the other:
 
-* References
+#+begin_src sh
+cd autolisp-front-end
+make build
+sudo make install PREFIX=/opt/local
+#+end_src
 
-- Source code: see the subproject's =source/= directory.
-- README: =README.org= in the subproject root.
-- Plan / roadmap: =PLAN.md= in the subproject root.
-- Sibling tracks: alfe-specifications.org
+After install:
+
+#+begin_src sh
+alfe --help          # full option reference
+alfe -x "(+ 1 2)"    # one-shot eval, default clautolisp backend → "3"
+alfe -l script.lsp   # load a file, default backend
+alfe                 # interactive REPL, default backend
+#+end_src
+
+The =--clautolisp= / =--bricscad= / =--autocad= flags select a
+specific backend; absent a flag, the in-process clautolisp engine
+is used (see [[#backend-selection][Backend selection]]).
+
+* Backend selection
+:PROPERTIES:
+:CUSTOM_ID: backend-selection
+:END:
+
+When no backend flag is given, alfe defaults to the =clautolisp=
+in-process engine. This is a change from the historical
+auto-detection: CAD backends are now NEVER selected automatically
+— they require an explicit =--autocad= / =--bricscad= flag (or
+an environment override).
+
+** Algorithm
+
+#+begin_example
+if --bricscad, --autocad or --clautolisp is explicit:
+    use that backend
+else if $ALFE_BACKEND_OVERRIDE is set:
+    use that backend
+else if $AUTOLISP_BACKEND is set:
+    use that backend (legacy alias)
+else:
+    backend = clautolisp     ; default on every system
+#+end_example
+
+** Why not auto-detect?
+
+A host with both BricsCAD and AutoCAD installed got
+order-dependent results from the historical auto-detect (whichever
+backend's =DETECT= method was probed first won). With the new
+rule, =alfe= with no flags always means "talk to the in-process
+clautolisp engine" — no probing, no surprises, no dependency on
+CAD installation state.
+
+** Pinning a default backend per shell
+
+Users who want a CAD backend selected by default can set
+=$ALFE_BACKEND_OVERRIDE= once in their shell init:
+
+#+begin_src sh
+# ~/.zshrc or ~/.bashrc
+export ALFE_BACKEND_OVERRIDE=bricscad
+#+end_src
+
+Explicit flags still win — =alfe --clautolisp -x "(+ 1 2)"= runs
+under clautolisp even with the override set.
+
+* Dialect selection
+
+The =--dialect NAME= option (and its =--strict= / =--autocad= /
+=--bricscad= / =--clautolisp= shorthands) selects the AutoLISP
+dialect descriptor the runtime uses: which reader knobs are on,
+which encoding default applies, which special-case syntax is
+accepted.
+
+| Option         | Dialect        | Notes                                           |
+|----------------+----------------+-------------------------------------------------|
+| =--dialect strict= / =--strict= | =strict=       | Default. Portable AutoCAD ∩ BricsCAD subset.    |
+| =--dialect autocad-2026= / =--autocad= | =autocad-2026= | AutoCAD 2026 surface. UTF-8 default encoding.   |
+| =--dialect bricscad-v26= / =--bricscad= | =bricscad-v26= | BricsCAD V26. Lax reader, hex-float =atof=.     |
+| =--dialect clautolisp= / =--clautolisp= | =clautolisp=   | Superset of strict + clautolisp extensions.     |
+
+The dialect is independent of the backend — you can run
+=alfe --clautolisp --dialect bricscad-v26 script.lsp= to evaluate
+under the BricsCAD reader rules in the in-process engine, which
+is useful for testing.
+
+Whatever the dialect selected, all operators remain callable.
+Out-of-dialect operators are eligible for a diagnostic warning at
+use time (the warning machinery itself is tracked separately —
+see =clautolisp-out-of-dialect-warnings.issue= in the project
+issue tracker).
+
+* Host selection
+
+=--host MODE= picks the HAL (host abstraction layer) backend the
+clautolisp engine talks to. Defaults to =mock= (a recording host
+that consumes =--mock-input PATH= for =GETSTRING= /
+=GETPOINT= prompts).
+
+| Option        | Host                                           |
+|---------------+------------------------------------------------|
+| =--host mock= | MockHost (default). Drives prompts from a file or stdin. |
+| =--host null= | NullHost. All host calls return nil immediately.        |
+
+For the CAD backends the host is the CAD itself — =--host= has no
+effect there.
+
+* Actions
+
+alfe accepts an ordered queue of actions on the command line. The
+queue runs in order then the engine terminates (or enters the
+REPL with =-i=).
+
+| Option              | Action                                          |
+|---------------------+-------------------------------------------------|
+| =-x EXPR= / =--eval EXPR= | Evaluate EXPR.                                  |
+| =-l FILE= / =--load FILE= | Load and evaluate FILE.                         |
+| =FILE.lsp= (positional)  | Equivalent to =-l FILE.lsp=.                    |
+| =-i= / =--interactive=   | Enter REPL after the queue (same context).      |
+| =--quit=               | Force engine shutdown after the queue.          |
+| =--dry-run=            | Print the resolved plan; don't run anything.    |
+
+Examples:
+
+#+begin_src sh
+alfe -x "(+ 1 2)"                        # → 3
+alfe -l prelude.lsp -x "(my-main)"       # load then call
+alfe -l script.lsp -i                    # load then drop to REPL
+alfe --bricscad -l ../scripts/draw.lsp   # run under BricsCAD
+alfe --dry-run -l foo.lsp                # show the plan only
+#+end_src
+
+* Encoding
+
+| Option   | Effect                                                              |
+|----------+---------------------------------------------------------------------|
+| =-e ENC= | Override the source-file encoding for the whole session.            |
+| =-E ENC= | Declared terminal-IO encoding; surfaced to AutoLISP code.           |
+
+Accepted ENC values: =utf-8=, =iso-8859-1= (= =latin-1=),
+=windows-1252= (= =cp1252=), =us-ascii=. Suffixes select a
+line-ending variant: =-mac= / =-cr= for CR, =-dos= / =-crlf= for
+CRLF, =-unix= / =-lf= for LF. So =-e utf-8-crlf= reads a UTF-8 file
+with CRLF terminators.
+
+Without =-e=, the dialect's default applies (=iso-8859-1= for
+=strict=, =utf-8= for =autocad-2026= / =bricscad-v26= /
+=clautolisp=). When neither dialect nor option specifies one, the
+process locale (=$LC_ALL=, then =$LANG=, then =$LC_CTYPE=)
+supplies the fallback.
+
+=--list-encodings= prints every accepted ENC name and exits.
+
+* Init files
+
+On startup (unless =--no-init= / =-norc= is given), alfe loads
+the first init file it finds in this order:
+
+1. =~/.alfe= or =~/.alferc=
+2. =~/.autolisp= or =~/.autolisprc=
+3. =~/.config/alfe/init=
+4. =~/.config/autolisp/init=
+
+The init file runs under the selected dialect and backend; it's a
+natural place to put =alref-set-root= calls, custom helpers, REPL
+preferences, etc.
+
+* The *AUTOLISP-…* globals
+
+User AutoLISP code can read these globals to branch on session
+state:
+
+| Variable                       | Meaning                                                |
+|--------------------------------+--------------------------------------------------------|
+| =*AUTOLISP-BACKEND*=           | =:clautolisp= / =:bricscad= / =:autocad= / =:echo=.    |
+| =*AUTOLISP-DIALECT*=           | =:strict= / =:autocad-2026= / =:bricscad-v26= / =:clautolisp=. |
+| =*AUTOLISP-HOST*=              | =:mock= / =:null= / a CAD-specific keyword.            |
+| =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (never nil).               |
+| =*AUTOLISP-TERMINAL-ENCODING*= | Active terminal encoding (never nil).                  |
+| =*AUTOLISP-VERSION*=           | Version string of the running engine.                  |
+| =*AUTOLISP-LOAD-PATHNAME*=     | Set by =LOAD= during evaluation of the loaded file.    |
+| =*AUTOLISP-EXPRESSION*=        | Set during evaluation of a =-x= expression.            |
+| =*AUTOLISP-INTERACTIVE*=       | =T= when the REPL is active, =NIL= otherwise.          |
+
+The specifications document the full set and their lifetimes.
+
+* Troubleshooting
+
+** =alfe= prints "Backend ... is not registered"
+
+You selected an explicit backend that isn't compiled into this
+build. Usually means a CAD backend is referenced on a host build
+that doesn't ship it. Pick =--clautolisp= or omit the flag for
+the default.
+
+** =alfe --bricscad= fails on Linux
+
+BricsCAD ships for Linux but the wrapper integration is currently
+macOS- and Windows-only. Track =alfe-bricscad-linux.issue=.
+
+** =alfe --autocad= fails on macOS or Linux
+
+AutoCAD is not distributed for those platforms. =alfe= exits with
+code 3 and a clear message. Use =--bricscad= (where supported) or
+=--clautolisp= instead.
+
+** "alfe with no flags is suddenly different"
+
+Yes — see the [[#backend-selection][Backend selection]] section.
+Auto-detection of installed CADs has been removed. Set
+=$ALFE_BACKEND_OVERRIDE= in your shell init if you want a CAD
+backend by default.
+
+* See also
+
+- =alfe(1)= — short man page summarising the same options.
+- =alfe--specifications.org= — the full specification (algorithms,
+  exit codes, file-protocol wire format, per-backend constraints).
+- =clautolisp(1)= / =clautolisp-user-manual.org= — the in-process
+  engine that powers the =--clautolisp= backend.
 
 * Synchronisation
 
 Per the project-wide synchronisation rule (AGENTS.md, Documentation
 Synchronisation section), changes to the code, the alfe
-specifications, this user-manual, or the man page (where applicable)
-must be propagated to every track.
+specifications, this user-manual, or the man page must be
+propagated to every track.
