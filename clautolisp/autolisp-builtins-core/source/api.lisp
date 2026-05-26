@@ -4126,11 +4126,13 @@ install-transmit-variables step)."
       (t "0.0.0"))))
 
 (defun builtin-ver ()
-  ;; (ver) -> "Clautolisp X.Y.Z". The Autodesk page returns a
-  ;; vendor-prefixed string; we follow the convention so user
-  ;; banner code can dispatch on substring.
+  ;; (ver) -> "clautolisp X.Y.Z". The Autodesk page returns a
+  ;; vendor-prefixed string; we follow that convention so user
+  ;; banner code can dispatch on substring. The vendor prefix is
+  ;; the project name as styled everywhere else (binary name,
+  ;; package name, docs) — lower-case, not mixed-case.
   (make-autolisp-string
-   (format nil "Clautolisp ~A" (read-autolisp-version-string))))
+   (format nil "clautolisp ~A" (read-autolisp-version-string))))
 
 (defun builtin-lisp$version ()
   ;; (lisp$version) -> same string as (ver). Legacy Visual LISP
