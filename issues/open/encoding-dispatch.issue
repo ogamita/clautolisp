@@ -34,6 +34,88 @@ written against any of the supported dialects is validated, and so that
 a portable clautolisp-native API is available for users who don't want
 to commit to either vendor's spelling.
 
+## Status — partial fix landed in 1.0.72
+
+A partial fix for the long-standing "user setq doesn't reach
+LOAD" bug landed on master at commit `39b2148` (version 1.0.72).
+It addresses the most-reported symptom — `(setq
+*autolisp-file-encoding* "ISO-8859-1")` at the REPL had no
+effect on the next LOAD — but it deliberately stops short of the
+full dialect-dispatch design below, which still needs to land.
+
+### What landed
+
+`autolisp-load-file-in-context` (autolisp-runtime/source/api.lisp)
+now consults the AutoLISP-level `*AUTOLISP-FILE-ENCODING*`
+variable through a new `lookup-autolisp-file-encoding` helper.
+The helper reads the global via the runtime's `lookup-variable`,
+unwraps the autolisp-string, and runs it through the existing
+`parse-locale-encoding-string` which already knows the four
+documented spellings + their common aliases (UTF-8,
+ISO-8859-1 / LATIN-1, WINDOWS-1252 / CP1252, US-ASCII).
+
+### New precedence (current code)
+
+When LOAD's caller doesn't pass an explicit `:external-format`:
+
+  1. **Caller's explicit `:external-format` (CL code)** — unchanged.
+  2. **`*AUTOLISP-FILE-ENCODING*` (NEW)** — a user's `setq` at the
+     REPL now takes effect on the next LOAD.
+  3. **session-default-source-encoding** — set once at startup by
+     the CLI's `-e` flag or the locale fallback.
+  4. **Dialect default** — strict → ISO-8859-1; autocad-2026 /
+     bricscad-v26 / clautolisp → UTF-8.
+
+The bug report was: a user with locale `en_US.UTF-8` running the
+in-process engine had `(setq *autolisp-file-encoding* "ISO-8859-1")`
+in their init file, but `(load "schmsplus-source-tree")` failed
+with `UTF-8 stream decoding error on #(233 ...)` — because step 3
+(session default = locale UTF-8) silently won. After the fix,
+step 2 is consulted first and the override takes effect.
+
+Test added: `load-honours-autolisp-file-encoding-override` in
+`autolisp-builtins-core/tests/builtin-tests.lisp` writes a raw
+14-byte Latin-1 file (with `\xE9`), sets the AutoLISP variable
+via SETQ, calls LOAD, asserts the loaded string is one character
+long.
+
+### What still needs the full dispatch design
+
+The partial fix does NOT address step 4 — the dialect default —
+nor the cross-dialect form recognition (AutoCAD's third `open`
+argument, BricsCAD's `,ccs=…` mode suffix, LISPSYS, etc.). It
+also doesn't introduce a `:encoding` keyword on `load` or `open`,
+doesn't implement BOM sniffing, doesn't ship the `:cp-NNNN`
+code-page registry, and doesn't emit the `enc-*` diagnostics.
+
+Concretely, the design below is still needed because:
+
+  * Step 4 of the precedence assumes a clean "one dialect → one
+    encoding" mapping, but real AutoCAD code reads bytes per
+    LISPSYS at runtime, not per dialect at startup. Once LISPSYS
+    is observable, step 4 should consult it under `--autocad`.
+  * The `:encoding` keyword on `load` / `open` (specified below
+    under "Per-call: `:encoding` keyword") is the
+    clautolisp-native equivalent of the precedence we just wired
+    in via the global — promoting it from global-only to
+    per-call gives users finer control without binding the
+    global.
+  * The cross-dialect translation table is the eventual home of
+    `parse-locale-encoding-string`. Today that helper handles a
+    flat list of four spellings; the table extends it to the
+    full per-dialect surface (utf8-bom, ccs= modes, named code
+    pages, BOM detection).
+
+Treat the 1.0.72 fix as the bottom rung of the dispatch
+ladder — it's the minimum that makes `*AUTOLISP-FILE-ENCODING*`
+useful at the REPL today, and it doesn't preclude any of the
+design below. When the full dialect-dispatch work lands, step 2
+of the precedence chain stays where it is; the only
+re-engineering needed there is to extend the resolver to
+recognise `:utf-8-bom`, `:cp-NNNN`, and the auto-detect mode.
+
+---
+
 ## Goals
 
 1. Document and implement a clautolisp-native encoding API.
