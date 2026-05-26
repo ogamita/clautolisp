@@ -326,3 +326,4 @@ without two separate captures."
     (let* ((text (get-output-stream-string captured)))
       (is (search "(ID 5)" text))
       (is (not (search "(ID 7)" text))))))
+

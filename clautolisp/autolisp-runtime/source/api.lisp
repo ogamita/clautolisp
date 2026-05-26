@@ -1921,21 +1921,45 @@ flag only."
 (defun autolisp-read-from-file (path &rest options &key &allow-other-keys)
   (first (apply #'read-runtime-from-file path options)))
 
+(defun lookup-autolisp-file-encoding (context)
+  "Resolve the AutoLISP-level *AUTOLISP-FILE-ENCODING* global to a
+CL external-format keyword, or NIL when the global isn't bound
+to a usable string. Lets a user's `(setq *autolisp-file-encoding*
+\"ISO-8859-1\")' at the REPL actually take effect on the next
+LOAD — without it the CL session slot (set at startup by the
+CLI's -e flag) silently wins."
+  (handler-case
+      (multiple-value-bind (value boundp)
+          (lookup-variable (intern-autolisp-symbol "*AUTOLISP-FILE-ENCODING*")
+                           context)
+        (cond
+          ((not boundp) nil)
+          ((typep value 'autolisp-string)
+           (parse-locale-encoding-string (autolisp-string-value value)))
+          (t nil)))
+    (error () nil)))
+
 (defun autolisp-load-file-in-context (path context &rest read-options)
   ;; Source-file encoding precedence, when the caller did NOT pass
   ;; an explicit :external-format:
-  ;;   1. Session override (set by the CLI's `-e ENC' flag).
-  ;;      Honoured by every load in this session, including the
-  ;;      nested `(load …)` calls a user's init file makes.
-  ;;   2. Dialect default — strict reads ISO-8859-1 (a 1-1 byte
+  ;;   1. AutoLISP-level *AUTOLISP-FILE-ENCODING* global. Lets the
+  ;;      user override mid-session: (setq *autolisp-file-encoding*
+  ;;      \"ISO-8859-1\") and the next LOAD picks the new encoding.
+  ;;   2. CL-level session override (set by the CLI's `-e ENC' flag
+  ;;      at startup; carried in the session's
+  ;;      default-source-encoding slot).
+  ;;   3. Dialect default — strict reads ISO-8859-1 (a 1-1 byte
   ;;      coding that never errors on Latin-1 / Windows-1252
-  ;;      source); autocad-2026 / bricscad-v26 read UTF-8 (matches
-  ;;      AutoCAD 2025+ / BricsCAD V26 defaults; autolisp-spec
-  ;;      ch. 11, "Source-File and File-Stream Encoding").
+  ;;      source); autocad-2026 / bricscad-v26 / clautolisp read
+  ;;      UTF-8 (matches AutoCAD 2025+ / BricsCAD V26 defaults;
+  ;;      autolisp-spec ch. 11, "Source-File and File-Stream
+  ;;      Encoding").
   (let* ((options-have-external-format
           (loop for tail = read-options then (cddr tail)
                 while tail
                 thereis (eq (first tail) :external-format)))
+         (global-encoding (unless options-have-external-format
+                            (lookup-autolisp-file-encoding context)))
          (session (and context
                        (clautolisp.autolisp-runtime.internal::evaluation-context-session
                         context)))
@@ -1946,6 +1970,7 @@ flag only."
          (effective-encoding
           (cond
             (options-have-external-format nil) ; caller supplied one
+            (global-encoding global-encoding)
             (session-encoding session-encoding)
             (t (clautolisp.autolisp-reader:autolisp-dialect-default-source-encoding
                 dialect))))

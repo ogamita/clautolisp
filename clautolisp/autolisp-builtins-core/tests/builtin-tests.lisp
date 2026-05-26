@@ -3198,3 +3198,41 @@ session table; DESCENDENTS lists value-names."
                   "(listallproperties 'foo)"))
     (is (null (run-autolisp-string form :setup-fn #'install-core-into))
         "~A should return nil under the stub impl" form)))
+
+;;;; ----- LOAD honours the AutoLISP-level *AUTOLISP-FILE-ENCODING* -----
+
+(test load-honours-autolisp-file-encoding-override
+  "A user's (setq *autolisp-file-encoding* \"ISO-8859-1\") at the
+REPL must affect the next LOAD. Without the override, the
+CL-level session-default-source-encoding silently wins — a
+long-standing bug that produced 'octet sequence cannot be
+decoded' errors when a UTF-8 session loaded a Latin-1 source.
+
+Fixture: a file with a non-ASCII Latin-1 byte (#xE9 = é).
+Under UTF-8 the file is invalid (#xE9 starts a 2-byte sequence
+expecting a continuation byte that isn't there). Under
+ISO-8859-1 it's valid and the read-in string is one char long.
+
+We assert the positive case: ISO-8859-1 override lets the load
+succeed and the string carries one character. The negative case
+(UTF-8 fails) isn't portably checkable here — SBCL and CCL
+recover from invalid UTF-8 differently."
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (with-open-file (out path :direction :output
+                              :if-exists :supersede
+                              :element-type '(unsigned-byte 8))
+      ;; "(setq msg \"\xE9\")\n" — Latin-1 e-acute inside a string.
+      (write-sequence #(40 115 101 116 113 32 109 115 103 32 34
+                        #xE9 34 41 10)
+                      out))
+    (let ((result (run-autolisp-string
+                   (format nil "(setq *autolisp-file-encoding* \"ISO-8859-1\")
+                                (load ~S)
+                                msg"
+                           (namestring path))
+                   :setup-fn #'install-core-into)))
+      (is (typep result 'autolisp-string))
+      (is (= 1 (length (autolisp-string-value result)))
+          "Latin-1 byte 0xE9 should decode to a single character; got ~S"
+          (and (typep result 'autolisp-string) (autolisp-string-value result))))))
