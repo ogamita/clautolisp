@@ -40,6 +40,9 @@
   (:import-from #:clautolisp.autolisp-runtime
                 #:derive-reader-options-for-dialect
                 #:read-runtime-from-string)
+  (:import-from #:alfe.logging
+                #:log-debug
+                #:log-verbose)
   (:export ;; session struct + accessors
            #:protocol-session
            #:make-protocol-session
@@ -386,14 +389,29 @@ suffix carries a request-counter we don't pin a priori."
   "Like WAIT-FOR-STATUS but matches by prefix — the spec's status
 table has parameterised states (`READY N`, `RUNNING N`, `DONE N OK`)
 whose counter is set by the runtime."
+  (log-debug "protocol: wait-for-status-prefix ~S (timeout ~A s)"
+             prefix timeout)
   (let ((start (universal-time-now))
         (interval-ms *poll-initial-ms*)
-        (last-seen nil))
+        (last-seen nil)
+        (prev-status nil))
     (loop
       (setf last-seen (read-current-status session))
+      ;; Log on CHANGE only — the polling loop runs many times,
+      ;; we don't want to flood the debug stream with identical
+      ;; status reads. Matches the bash-script
+      ;; `wait_for_status` pattern.
+      (when (and last-seen (not (equal last-seen prev-status)))
+        (log-debug "protocol: status now ~S (elapsed ~,2F s)"
+                   last-seen (seconds-elapsed-since start))
+        (setf prev-status last-seen))
       (when (and last-seen (starts-with-p last-seen prefix))
+        (log-debug "protocol: matched ~S after ~,2F s"
+                   prefix (seconds-elapsed-since start))
         (return (values t (seconds-elapsed-since start) last-seen)))
       (when (>= (seconds-elapsed-since start) timeout)
+        (log-debug "protocol: timeout after ~,2F s (last status ~S)"
+                   (seconds-elapsed-since start) last-seen)
         (return (values nil (seconds-elapsed-since start) last-seen)))
       (sleep-ms interval-ms)
       (setf interval-ms (min *poll-max-ms* (* 2 interval-ms))))))
