@@ -2021,11 +2021,13 @@ signal."
   (is (null (run-autolisp-string "(gc)" :setup-fn #'install-core-into))))
 
 (test m2-ver-returns-version-string
-  "(ver) returns a non-empty autolisp-string starting with \"Clautolisp\"."
+  "(ver) returns a non-empty autolisp-string starting with the
+lower-case project name \"clautolisp\" (matching the binary,
+package, and doc styling)."
   (reset-autolisp-symbol-table)
   (let ((result (run-autolisp-string "(ver)" :setup-fn #'install-core-into)))
     (is (typep result 'autolisp-string))
-    (is (search "Clautolisp" (autolisp-string-value result)))))
+    (is (search "clautolisp" (autolisp-string-value result)))))
 
 (test m2-lisp$version-alias
   "(lisp$version) returns the same string as (ver)."
