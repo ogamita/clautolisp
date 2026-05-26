@@ -3908,11 +3908,16 @@ defvar so the value survives multiple test-image reloads.")
 
 (defun builtin-getenv (name)
   ;; (getenv "VAR") -> string-or-nil. Reads the process environment
-  ;; via uiop:getenv; missing or empty values return nil per
-  ;; Autodesk's documented behaviour.
+  ;; via uiop:getenv. Per the AutoLISP Spec § GETENV Description,
+  ;; "Returns nil if the variable is not defined" — undefined is
+  ;; the ONLY nil-returning case. A defined-but-empty variable is
+  ;; distinct from undefined on POSIX (and a useful signal for
+  ;; flag-style env vars like NO_COLOR), so we preserve the
+  ;; distinction: uiop:getenv returns nil for unset → we return
+  ;; nil; uiop:getenv returns "" for set-to-empty → we return "".
   (let* ((var (autolisp-string-value (require-string name "GETENV")))
          (value (uiop:getenv var)))
-    (if (and value (plusp (length value)))
+    (if value
         (make-autolisp-string value)
         nil)))
 
