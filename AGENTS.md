@@ -228,3 +228,29 @@ Once a probe resolves the uncertainty, replace the
 (the matching `autolisp-spec` Tested Behaviour line, or the
 probe script that produced the answer), and move the issue
 entry to the issue's Resolved tail.
+
+## Stubbed Implementations
+
+Operators registered as "name exists, body returns the documented
+no-op (nil or "")" — so portable user code that calls or
+boundp-checks them keeps running, but the actual behaviour
+is deferred — follow the same two-place pattern as
+SPEC-UNCERTAIN, with a different marker:
+
+1. **In the source**, an inline `;;; STUB: <one-line summary>`
+   marker pointing at the catalog entry. Greppable with
+
+       grep -rnE "STUB:" clautolisp/
+
+2. **In `issues/open/deferred-stubbed-functions.issue`**, a
+   section per stubbed operator (or per stubbed-family group)
+   with concrete upgrade paths sorted lightest → heaviest.
+   The catalog distinguishes "could never reasonably be more
+   than a no-op" (TABLET) from "trivially upgradable" (HELP
+   → exec info) from "ambitious but feasible"
+   (SHOWHTMLMODALWINDOW → embed a WebView).
+
+When a stub is promoted to a real implementation, delete the
+`STUB:` marker, replace it with a normal docstring describing
+the real behaviour, and move the issue entry to the issue's
+Resolved tail.

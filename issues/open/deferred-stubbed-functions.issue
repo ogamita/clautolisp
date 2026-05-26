@@ -1,0 +1,139 @@
+Promote stubbed-as-no-op builtins to richer implementations.
+
+A subset of the missing-functions milestones registers the
+operator name and returns the documented no-op (nil or "") so
+portable user code that calls or boundp-checks them keeps
+running, but does NOT implement the actual behaviour. Real
+behaviour for these is feasible — sometimes trivially (spawn
+`lynx` or open a text editor), sometimes ambitiously (embed a
+WebView, ship a tablet protocol bridge) — but it would distract
+from the headline "make the name callable" milestone goal.
+
+This issue collects every stub the missing-functions branch
+ships, with one or more concrete upgrade paths per function
+(sorted lightest → heaviest). When the time comes, we pick
+the right path for each.
+
+Convention (mirrors deferred-spec-research.issue, AGENTS.md
+§ Unverified Spec Behaviour for the SPEC-UNCERTAIN twin):
+
+  * Every stubbed builtin carries an inline `;;; STUB:` marker
+    in its CL source, naming what's stubbed and pointing here.
+    Greppable from the repo:
+
+        grep -rnE "STUB:" clautolisp/
+
+  * Every marker has a matching entry in this issue. When the
+    stub is promoted, replace the source marker with a normal
+    docstring describing the real behaviour, and move the
+    issue entry to the Resolved tail.
+
+Open stubs (sorted by family, then function name):
+
+== Graphics-screen no-ops (M2) ==
+
+GRAPHSCR, TEXTSCR, TEXTPAGE, REDRAW
+
+Single-CAD pretty-much-obsolete operators from the era when
+AutoCAD ran in DOS and toggled between an EGA text page and a
+graphics page. In a headless engine they're nil-returning
+no-ops; that matches Autodesk's documented "no effect when not
+applicable" semantics.
+
+Upgrade paths:
+  * Light: under interactive REPL, emit ANSI clear-screen +
+    cursor-home on GRAPHSCR/TEXTSCR transitions. REDRAW reflows
+    the printer to repaint the prompt line.
+  * Medium: integrate with a TUI framework (cl-charms /
+    cl-termbox) when running with an interactive terminal so
+    REDRAW genuinely repaints user widgets.
+  * Heavy: only meaningful with a real graphics surface — drop
+    once alfe gains a Qt or web display backend, at which point
+    these become forwarders into that surface's API.
+
+== SETVIEW (M2) ==
+
+Sets a viewport's view (eye / target / twist / front-clip /
+back-clip). No viewport, no view to set; returns nil.
+
+Upgrade paths:
+  * Light: nothing more is honest without a render surface.
+  * Medium: record set-view calls into a per-session log so a
+    later renderer can replay them.
+  * Heavy: wired through to a real viewport when alfe gains a
+    DWG render path.
+
+== TABLET (M2) ==
+
+Configures a physical digitizing tablet. Obsolete in modern
+CAD workflows; pretty much no-one uses tablets any more.
+
+Upgrade paths:
+  * Likely none. Keep as a documented nil-returning no-op
+    forever unless a tablet user complains.
+
+== Menu system stubs (M2) ==
+
+MENUCMD, MENUGROUP
+
+AutoCAD's menu system loads .mns / .cui menu files and dispatches
+clicks via these accessors. The CLI has no menu UI — MENUCMD
+returns "", MENUGROUP returns nil.
+
+Upgrade paths:
+  * Light: a session-level menu registry that defun-ed code can
+    populate; MENUGROUP enumerates it, MENUCMD looks up an entry.
+    No user-visible UI, but interactive scripts that just want
+    to discover registered groups work.
+  * Medium: TUI menu bar (cl-charms based) when running in a
+    terminal that supports it; menu items dispatch the matching
+    function.
+  * Heavy: GUI menu when the Qt/web backend lands.
+
+== SHOWHTMLMODALWINDOW (M2) ==
+
+The CAD pops a modal dialog rendering an HTML page; user code
+waits on it. We return nil.
+
+Upgrade paths:
+  * Light: render with `lynx -dump` / `w3m -dump` / `elinks
+    -dump-charset utf-8 -dump` and print the result on
+    *standard-output*. Returns the documented "user dismissed"
+    nil immediately.
+  * Medium: spawn an interactive text browser (lynx / w3m) so
+    the user can scroll + follow links. Block until the user
+    quits the browser, then return nil.
+  * Heavy: embed a WebView (WebKit on macOS, Edge WebView2 on
+    Windows, GTK WebKit on Linux). Full HTML5 + CSS + JS.
+  * Heaviest: implement Autodesk's JS AutoCAD API in the
+    embedded view so dialog scripts that call e.g.
+    `acad.app.command(…)` from JS round-trip through to the
+    AutoLISP runtime. Matches AutoCAD's modern Web View dialog
+    contract.
+
+== HELP (M2) ==
+
+Currently prints `clautolisp: help is in `info clautolisp' or
+`man clautolisp'.` and returns nil. Not a no-op but very thin.
+
+Upgrade paths:
+  * Light: when called with no arguments, exec
+    `info clautolisp` (or fall back to `man clautolisp`)
+    directly so the user lands in the docs without a second
+    command.
+  * Medium: (help "STRING") opens the matching info node:
+    look STRING up in the symbols.txt index alref builds; if
+    found, exec `info -f autolisp-spec NODE`.
+  * Heavy: integrate with the SHOWHTMLMODALWINDOW upgrade
+    above so `(help …)` pops the HTML doc in the embedded
+    WebView.
+
+== Future entries ==
+
+When opening a new STUB marker in future M3/M4/M5 work, add an
+`== NAME[s] (Mn) ==` section here with a one-paragraph rationale
++ a sorted-by-effort upgrade-paths bullet list.
+
+== Resolved ==
+
+(none yet)
