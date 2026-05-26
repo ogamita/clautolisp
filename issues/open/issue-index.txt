@@ -33,3 +33,4 @@
 | tex-pdf-characters.issue               |                                                            |
 | nice-make-output.issue                 |                                                            |
 | autolisp-spec-pdf-versioned-filename.issue |                                                        |
+| system-variables.issue                 | collect AutoCAD/BricsCAD sysvars; spec chapter + impl      |
