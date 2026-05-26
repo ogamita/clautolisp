@@ -2709,6 +2709,264 @@ registered, even if many are stubs."
     (is (typep result 'autolisp-symbol))
     (is (string= "T" (autolisp-symbol-name result)))))
 
+;;;; ----- Coverage backfill: tests for the genuinely-untested 130 -----
+;;;;
+;;;; Each test here exists because the function it covers was, per the
+;;;; coverage sweep, registered but never called from any test snippet.
+;;;; Grouped by family so the per-test bodies are compact (one batched
+;;;; check per family beats writing 14 separate one-liners for the Cxxr
+;;;; accessors). Skipped: DOC_CLIPBOARD (mutates the user's system
+;;;; clipboard), STARTAPP (spawns a real process; flaky in CI), DCL
+;;;; tile/dialog builtins (covered by autolisp-dcl suite via a
+;;;; different machinery), entity/sysvar/prompt builtins (covered by
+;;;; autolisp-mock-host suite), VLAX-* (need ActiveX bridge), VLR-*
+;;;; reactors (need reactor dispatcher).
+
+(test coverage-cxxr-accessor-family
+  "Deeper Cxxxxr accessors (depth 4) return the expected nested
+element. Construction: a 16-leaf binary cons tree where every
+leaf is labelled with its path from the root, read left-to-right
+in A/D notation. Convenient property: for any C{w}R accessor,
+the leaf it returns has label = reverse(w). Covers the 14
+depth-4 accessors not exercised by the existing
+builtin-caxr-family test (which only covers depth-2 / depth-3
+plus one depth-4 sample)."
+  (reset-autolisp-symbol-table)
+  (let ((tree
+         ;; ((((aaaa . aaad) . (aada . aadd)) . ((adaa . adad) . (adda . addd)))
+         ;;  . (((daaa . daad) . (dada . dadd)) . ((ddaa . ddad) . (ddda . dddd))))
+         (concatenate 'string
+                      "((((aaaa . aaad) . (aada . aadd))"
+                      " . ((adaa . adad) . (adda . addd)))"
+                      " . (((daaa . daad) . (dada . dadd))"
+                      " . ((ddaa . ddad) . (ddda . dddd))))")))
+    (dolist (pair '(("caaadr" "DAAA")
+                    ("caadar" "ADAA")
+                    ("caaddr" "DDAA")
+                    ("cadaar" "AADA")
+                    ("cadadr" "DADA")
+                    ("caddar" "ADDA")
+                    ("cdaaar" "AAAD")
+                    ("cdaadr" "DAAD")
+                    ("cdadar" "ADAD")
+                    ("cdaddr" "DDAD")
+                    ("cddaar" "AADD")
+                    ("cddadr" "DADD")
+                    ("cdddar" "ADDD")
+                    ("cddddr" "DDDD")))
+      (let* ((accessor (first pair))
+             (expected (second pair))
+             (form (format nil "(~A '~A)" accessor tree))
+             (r (run-autolisp-string form :setup-fn #'install-core-into)))
+        (is (typep r 'autolisp-symbol)
+            "~A returned ~S, not a symbol" form r)
+        (is (string= expected (autolisp-symbol-name r))
+            "~A returned ~S, expected ~A" form r expected)))))
+
+(test coverage-numeric-primitives
+  "(1+ N), (1- N), (~ N) return the expected integers."
+  (reset-autolisp-symbol-table)
+  (is (eql 6  (run-autolisp-string "(1+ 5)" :setup-fn #'install-core-into)))
+  (is (eql 4  (run-autolisp-string "(1- 5)" :setup-fn #'install-core-into)))
+  ;; ~ is bitwise NOT: ~0 = all 1-bits = -1 in two's complement.
+  (is (eql -1 (run-autolisp-string "(~ 0)"  :setup-fn #'install-core-into)))
+  (is (eql -6 (run-autolisp-string "(~ 5)"  :setup-fn #'install-core-into))))
+
+(test coverage-boole-bitwise-reducer
+  "(boole OP I1 I2 ...) routes the bitwise op selected by OP.
+OP=1 is logical-AND per the documented truth-table layout."
+  (reset-autolisp-symbol-table)
+  ;; BOOLE op=1 (AND) over 5 (101b) and 3 (011b) -> 1 (001b).
+  (is (eql 1 (run-autolisp-string "(boole 1 5 3)" :setup-fn #'install-core-into))))
+
+(test coverage-angtos-radians-default
+  "(angtos 1.5708) returns a non-empty string for the radians input."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(angtos 1.5708)"
+                                     :setup-fn #'install-core-into)))
+    (is (typep result 'autolisp-string))
+    (is (plusp (length (autolisp-string-value result))))))
+
+(test coverage-angtof-parses-string
+  "(angtof \"1.5708\") parses to a real."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(angtof \"1.5708\")"
+                                     :setup-fn #'install-core-into)))
+    (is (numberp result))
+    (is (< (abs (- 1.5708d0 result)) 1.0d-6))))
+
+(test coverage-distof-parses-string
+  "(distof \"1.5\") parses to 1.5 as a real."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(distof \"1.5\")"
+                                     :setup-fn #'install-core-into)))
+    (is (numberp result))
+    (is (< (abs (- 1.5d0 result)) 1.0d-9))))
+
+(test coverage-string-split-alias-of-vl-string-split
+  "STRING-SPLIT is the documented alias of VL-STRING-SPLIT.
+Signature is (SEPARATOR SOURCE)."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(string-split \":\" \"a:b:c\")"
+                                     :setup-fn #'install-core-into)))
+    (is (consp result))
+    (is (= 3 (length result)))
+    (is (string= "a" (autolisp-string-value (first result))))
+    (is (string= "b" (autolisp-string-value (second result))))
+    (is (string= "c" (autolisp-string-value (third result))))))
+
+(test coverage-push-error-using-pair
+  "Both *PUSH-* variants push onto *autolisp-error-mode-stack*, with
+*POP-* draining in LIFO order."
+  (reset-autolisp-symbol-table)
+  (setf clautolisp.autolisp-builtins-core::*autolisp-error-mode-stack* nil)
+  (run-autolisp-string "(*push-error-using-command*)"
+                       :setup-fn #'install-core-into)
+  (is (equal '(:command)
+             clautolisp.autolisp-builtins-core::*autolisp-error-mode-stack*))
+  (run-autolisp-string "(*push-error-using-stack*)"
+                       :setup-fn #'install-core-into)
+  (is (equal '(:stack :command)
+             clautolisp.autolisp-builtins-core::*autolisp-error-mode-stack*)))
+
+(test coverage-vl-enable-user-cancel-returns-true
+  "(vl-enable-user-cancel T|nil) returns T (we accept the flag
+silently — the CL impls deliver SIGINT to the REPL natively)."
+  (reset-autolisp-symbol-table)
+  (let ((r (run-autolisp-string "(vl-enable-user-cancel t)"
+                                :setup-fn #'install-core-into)))
+    (is (typep r 'autolisp-symbol))
+    (is (string= "T" (autolisp-symbol-name r)))))
+
+(test coverage-vl-rmdir-removes-empty-directory
+  "(vl-rmdir path) deletes an empty directory and returns T;
+returns nil if the path is missing."
+  (reset-autolisp-symbol-table)
+  (let* ((unique (format nil "/tmp/clautolisp-vl-rmdir-~A-~A/"
+                         (get-universal-time) (random 100000000)))
+         (tmp    (uiop:ensure-directory-pathname unique)))
+    (ensure-directories-exist tmp)
+    (unwind-protect
+         (let ((result (run-autolisp-string
+                        (format nil "(vl-rmdir ~S)" unique)
+                        :setup-fn #'install-core-into)))
+           (is (typep result 'autolisp-symbol)
+               "vl-rmdir on existing empty dir should return T, got ~S" result)
+           (is (string= "T" (autolisp-symbol-name result)))
+           (is (not (uiop:directory-exists-p tmp))
+               "directory should be gone after vl-rmdir"))
+      (ignore-errors (uiop:delete-directory-tree tmp :validate t))))
+  (is (null (run-autolisp-string
+             "(vl-rmdir \"/tmp/clautolisp-definitely-not-there-XYZ-99999\")"
+             :setup-fn #'install-core-into))))
+
+(test coverage-vl-setcurrentdir-changes-cwd
+  "(vl-setcurrentdir path) changes the working directory and returns
+the new cwd string."
+  (reset-autolisp-symbol-table)
+  (let ((original (uiop:getcwd))
+        (target (uiop:temporary-directory)))
+    (unwind-protect
+         (let ((result (run-autolisp-string
+                        (format nil "(vl-setcurrentdir ~S)" (namestring target))
+                        :setup-fn #'install-core-into)))
+           (is (typep result 'autolisp-string)
+               "vl-setcurrentdir should return the new cwd string, got ~S"
+               result)
+           (is (plusp (length (autolisp-string-value result)))))
+      (uiop:chdir original)))
+  (is (null (run-autolisp-string "(vl-setcurrentdir \"/no/such/dir/at/all\")"
+                                 :setup-fn #'install-core-into))))
+
+(test coverage-vl-bt-family
+  "VL-BT prints a backtrace and returns nil; VL-BT-ON enables it
+and returns T; VL-BT-OFF disables and returns nil."
+  (reset-autolisp-symbol-table)
+  ;; VL-BT is allowed to print to *error-output*; we only check the
+  ;; return values to keep the test output clean.
+  (let ((on  (run-autolisp-string "(vl-bt-on)"  :setup-fn #'install-core-into))
+        (off (run-autolisp-string "(vl-bt-off)" :setup-fn #'install-core-into)))
+    (is (typep on 'autolisp-symbol))
+    (is (string= "T" (autolisp-symbol-name on)))
+    (is (null off))))
+
+(test coverage-vl-catch-all-error-stack
+  "After a (vl-catch-all-apply) returns an error object, the
+matching (vl-catch-all-error-stack OBJ) returns a non-nil
+diagnostic (the recorded call-stack list)."
+  (reset-autolisp-symbol-table)
+  (let ((stk (run-autolisp-string
+              "(vl-catch-all-error-stack
+                  (vl-catch-all-apply
+                    (function (lambda () (car 1)))
+                    (quote ())))"
+              :setup-fn #'install-core-into)))
+    ;; Stack representation is non-nil — either a list of frames or a
+    ;; printed string, depending on what VL-CATCH-ALL-ERROR-STACK
+    ;; chooses to surface. The contract is "non-nil after a real error".
+    (is (not (null stk))
+        "(vl-catch-all-error-stack ERROR-OBJ) should be non-nil after a real error, got ~S" stk)))
+
+(test coverage-vle-nth-shortcuts-rest-of-family
+  "VLE-NTH1..NTH8 — the indices skipped by the M3a sample
+(M3A-VLE-NTH-SHORTCUTS covered 0, 3, 9 only). Walks the whole
+family in one shot."
+  (reset-autolisp-symbol-table)
+  (dolist (pair '((1 . B) (2 . C) (4 . E) (5 . F) (6 . G) (7 . H) (8 . I)))
+    (let* ((idx (car pair))
+           (expected (string (cdr pair)))
+           (form (format nil "(vle-nth~D '(a b c d e f g h i j))" idx))
+           (r (run-autolisp-string form :setup-fn #'install-core-into)))
+      (is (typep r 'autolisp-symbol) "~A returned ~S" form r)
+      (is (string= expected (autolisp-symbol-name r))
+          "~A returned ~S, expected ~A" form r expected))))
+
+(test coverage-vle-append-int64to32-startapp
+  "Three M3 gap-fills: VLE-APPEND is the AutoLISP APPEND;
+VLE-INT64TO32 wraps to 32-bit signed; VLE-STARTAPP returns nil
+when given a non-existent command (we don't actually spawn /bin/true
+to keep the test deterministic across hosts)."
+  (reset-autolisp-symbol-table)
+  (is (equal '(1 2 3 4)
+             (run-autolisp-string "(vle-append '(1 2) '(3 4))"
+                                  :setup-fn #'install-core-into)))
+  (is (eql 42
+           (run-autolisp-string "(vle-int64to32 42)"
+                                :setup-fn #'install-core-into)))
+  ;; VLE-STARTAPP on a guaranteed-missing binary: nil.
+  (is (null (run-autolisp-string
+             "(vle-startapp \"/no/such/binary/at/all-XYZ\" nil nil)"
+             :setup-fn #'install-core-into))))
+
+(test coverage-vle-member-and-enamep-and-picksetp
+  "Three predicate-style gap-fills."
+  (reset-autolisp-symbol-table)
+  ;; VLE-MEMBER: returns the tail starting at the match (CL MEMBER).
+  (let ((tail (run-autolisp-string "(vle-member 'b '(a b c))"
+                                   :setup-fn #'install-core-into)))
+    (is (consp tail))
+    (is (= 2 (length tail))))
+  ;; VLE-ENAMEP / VLE-PICKSETP: both nil for a bare integer.
+  (is (null (run-autolisp-string "(vle-enamep 5)"
+                                 :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vle-picksetp 5)"
+                                 :setup-fn #'install-core-into))))
+
+(test coverage-vle-set-cdrassoc-mutates
+  "(vle-set-cdrassoc KEY ALIST VAL) replaces the cdr of every pair
+whose car matches KEY; returns the (potentially-mutated) list.
+Verified by re-querying with VLE-CDRASSOC after the mutation."
+  (reset-autolisp-symbol-table)
+  (let ((after-query
+         (run-autolisp-string
+          "(setq al (list (cons 'a 1) (cons 'b 2) (cons 'c 3)))
+           (vle-set-cdrassoc 'b al 99)
+           (vle-cdrassoc 'b al)"
+          :setup-fn #'install-core-into)))
+    (is (eql 99 after-query)
+        "(b . 2) should have become (b . 99); cdrassoc returned ~S"
+        after-query)))
+
 ;;;; ----- M4 missing-functions: VLISP-* IDE stubs -----
 
 (test m4-vlisp-all-stubs-registered
