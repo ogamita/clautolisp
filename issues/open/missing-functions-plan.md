@@ -166,7 +166,52 @@ runtime can carry the stack as a session-level parameter.
 
 ---
 
-## Milestone 3 — VLE-* native (~80)
+## Milestone 3 — VLE-* (~123) [LANDED 1.0.65 - 1.0.68]
+
+123 of 123 functions land across four sub-batches:
+
+  * M3a (1.0.65): 47 list/predicate/number helpers — NTH0..NTH9,
+    PUT-NTH, SUBST-NTH, REMOVE-{NTH,ALL,FIRST,LAST}, LIST-SPLIT,
+    SUBLIST, LIST-{DIFF,INTERSECT,SUBTRACT,UNION},
+    {CADR,CDR,SET-CDR,LIST-M}ASSOC, APPEND, MEMBER, SEARCH,
+    {INTEGER,REAL,NUMBER,STRING,POINT,ENAME,PICKSET}P (native) +
+    {VARIANT,SAFEARRAY,VLAOBJECT}P (stub), CEILING, FLOOR,
+    ROUND, ROUNDTO, ATOI32, ITOA32, INT64TO32, TAN.
+
+  * M3b (1.0.66): 30 vector-math operators — ADD, SUB, NEGATE,
+    SCALE, MIDPOINT, GET, NORMALISE, DOTPRODUCT, CROSSPRODUCT,
+    ANGLETO, ANGLETOREF, LENGTH{,2D,2DXZ,2DYZ},
+    ISUNITLENGTH, ISEQUAL, ISZEROLENGTH, ISPARALLEL,
+    ISCODIRECTIONAL, ISPERPENDICULAR, IS{X,Y,Z}AXIS,
+    GETPERPVECTOR, GETUCS, TO2D, TO3D, GET/SETTOLERANCE.
+    New private `coerce-vec3` / `vec3-*` helpers underlie all
+    of them.
+
+  * M3c (1.0.67): 12 string/file/color/misc — STRING-{REPLACE,
+    SPLIT}, FILE->LIST, FILEP, FILE-ENCODING (stub),
+    ACI2RGB / RGB2ACI (partial 16-entry palette;
+    SPEC-UNCERTAIN for indices 10-249), STARTAPP,
+    PING-ALIVE, OPTIMISER/OPTIMIZER/FASTCOM (stubs).
+
+  * M3d (1.0.68): 34 CAD / COM / UI stubs — ALERT (native print
+    fallback), ENT* / DICT* / TABLE* / TBL* (entity DB family),
+    DISPLAY* / EDITTEXTINPLACE / *PROMPTMENU (UI),
+    *-TRANSACTION (transactions), COLLECTION-/
+    SELECTIONSET-/SAFEARRAY->LIST (COM bridge),
+    LICENSELEVEL / LISPINSTALL / LISPVERSION /
+    EXTENSIONS-ACTIVE / ENABLESERVERBUSY (info / flags),
+    COMPILE-SHAPE, SUNID, NTH<X>.
+
+Tests: 39 new FiveAM tests, 172 new checks; builtins-core
+suite 455 -> 685 over the four sub-batches, 100% green.
+SPEC-UNCERTAIN markers: 5 (SUBST-NTH, LIST-SPLIT, MEMBER,
+NORMALISE zero-length, GETUCS near-vertical, STRING-REPLACE,
+STRING-SPLIT empty-tokens, ACI2RGB 10-249 range, RGB2ACI
+argument shape — entries in deferred-spec-research.issue).
+STUB markers: 6 new in M3c-d, all enumerated in
+deferred-stubbed-functions.issue § VLE-* CAD/COM/UI stubs.
+
+
 
 Three sub-batches: list/predicate/number helpers (fast), vector
 math (volume work), string/file/color (medium).
