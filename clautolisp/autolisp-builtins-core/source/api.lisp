@@ -44,7 +44,21 @@
     "VLE-POINTP" "VLE-ENAMEP" "VLE-PICKSETP"
     "VLE-VARIANTP" "VLE-SAFEARRAYP" "VLE-VLAOBJECTP"
     "VLE-CEILING" "VLE-FLOOR" "VLE-ROUND" "VLE-ROUNDTO"
-    "VLE-ATOI32" "VLE-ITOA32" "VLE-INT64TO32" "VLE-TAN"))
+    "VLE-ATOI32" "VLE-ITOA32" "VLE-INT64TO32" "VLE-TAN"
+    ;; --- M3b VLE-VECTOR-* math ---
+    "VLE-VECTOR-GET" "VLE-VECTOR-ADD" "VLE-VECTOR-SUB"
+    "VLE-VECTOR-NEGATE" "VLE-VECTOR-SCALE" "VLE-VECTOR-MIDPOINT"
+    "VLE-VECTOR-NORMALISE" "VLE-VECTOR-DOTPRODUCT"
+    "VLE-VECTOR-CROSSPRODUCT" "VLE-VECTOR-ANGLETO"
+    "VLE-VECTOR-ANGLETOREF" "VLE-VECTOR-LENGTH"
+    "VLE-VECTOR-LENGTH2D" "VLE-VECTOR-LENGTH2DXZ" "VLE-VECTOR-LENGTH2DYZ"
+    "VLE-VECTOR-ISUNITLENGTH" "VLE-VECTOR-ISEQUAL"
+    "VLE-VECTOR-ISZEROLENGTH" "VLE-VECTOR-ISPARALLEL"
+    "VLE-VECTOR-ISCODIRECTIONAL" "VLE-VECTOR-ISPERPENDICULAR"
+    "VLE-VECTOR-ISXAXIS" "VLE-VECTOR-ISYAXIS" "VLE-VECTOR-ISZAXIS"
+    "VLE-VECTOR-GETPERPVECTOR" "VLE-VECTOR-GETUCS"
+    "VLE-VECTOR-TO2D" "VLE-VECTOR-TO3D"
+    "VLE-VECTOR-GETTOLERANCE" "VLE-VECTOR-SETTOLERANCE"))
 
 (defun make-builtin-runtime-error (code builtin-name condition)
   (error 'autolisp-runtime-error
@@ -4765,6 +4779,294 @@ contract: AutoCAD's 32-bit integer wrap."
 
 ;;; --- end M3a ------------------------------------------------------
 
+;;; --- M3b: VLE-VECTOR-* math ---------------------------------------
+;;;
+;;; All operators in this sub-batch take 2D or 3D point/vector
+;;; lists (lists of 2 or 3 numbers) and return 3D vectors / numbers
+;;; / T-or-nil predicates. Z defaults to 0.0d0 when omitted on
+;;; input; outputs are always 3D unless the spec explicitly says
+;;; otherwise (VLE-VECTOR-TO2D). Tolerance for equality /
+;;; parallelism / codirectionality predicates is read from
+;;; *vle-vector-tolerance* (installed in M2 via VLE_G_VECTOL).
+
+(defun coerce-vec3 (v operator-name)
+  "Coerce a 2D or 3D point/vector list to three double-float
+multiple values (x y z); Z defaults to 0.0d0 when V is a 2-element
+list. Errors out via require-* helpers if V isn't a proper list of
+numbers."
+  (require-proper-list v operator-name)
+  (let* ((len (length v)))
+    (unless (member len '(2 3))
+      (signal-builtin-argument-error
+       :invalid-vector operator-name
+       "~A vector must be a list of 2 or 3 numbers, got ~D-element list."
+       operator-name len))
+    (values (coerce (require-number (nth 0 v) operator-name) 'double-float)
+            (coerce (require-number (nth 1 v) operator-name) 'double-float)
+            (if (= len 3)
+                (coerce (require-number (nth 2 v) operator-name) 'double-float)
+                0.0d0))))
+
+(defun vec3-list (x y z) (list x y z))
+
+(defun vec3-dot (ax ay az bx by bz)
+  (+ (* ax bx) (* ay by) (* az bz)))
+
+(defun vec3-cross (ax ay az bx by bz)
+  (vec3-list (- (* ay bz) (* az by))
+             (- (* az bx) (* ax bz))
+             (- (* ax by) (* ay bx))))
+
+(defun vec3-length (x y z)
+  (sqrt (+ (* x x) (* y y) (* z z))))
+
+(defun vec3-zero-p (x y z &optional (tol *vle-vector-tolerance*))
+  (< (vec3-length x y z) tol))
+
+(defun vec3-normalize (x y z &optional (tol *vle-vector-tolerance*))
+  "Return (values nx ny nz) for the unit vector; (values nil nil nil)
+when the input is zero-length under TOL."
+  (let ((len (vec3-length x y z)))
+    (cond
+      ((< len tol) (values nil nil nil))
+      (t (values (/ x len) (/ y len) (/ z len))))))
+
+(defun builtin-vle-vector-get (from to)
+  ;; (vle-vector-get from to) -> 3D vector from FROM to TO.
+  (multiple-value-bind (fx fy fz) (coerce-vec3 from "VLE-VECTOR-GET")
+    (multiple-value-bind (tx ty tz) (coerce-vec3 to "VLE-VECTOR-GET")
+      (vec3-list (- tx fx) (- ty fy) (- tz fz)))))
+
+(defun builtin-vle-vector-add (v1 v2)
+  (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-ADD")
+    (multiple-value-bind (bx by bz) (coerce-vec3 v2 "VLE-VECTOR-ADD")
+      (vec3-list (+ ax bx) (+ ay by) (+ az bz)))))
+
+(defun builtin-vle-vector-sub (v1 v2)
+  (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-SUB")
+    (multiple-value-bind (bx by bz) (coerce-vec3 v2 "VLE-VECTOR-SUB")
+      (vec3-list (- ax bx) (- ay by) (- az bz)))))
+
+(defun builtin-vle-vector-negate (v)
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-NEGATE")
+    (vec3-list (- x) (- y) (- z))))
+
+(defun builtin-vle-vector-scale (v factor)
+  (let ((f (coerce (require-number factor "VLE-VECTOR-SCALE") 'double-float)))
+    (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-SCALE")
+      (vec3-list (* x f) (* y f) (* z f)))))
+
+(defun builtin-vle-vector-midpoint (p1 p2)
+  (multiple-value-bind (ax ay az) (coerce-vec3 p1 "VLE-VECTOR-MIDPOINT")
+    (multiple-value-bind (bx by bz) (coerce-vec3 p2 "VLE-VECTOR-MIDPOINT")
+      (vec3-list (/ (+ ax bx) 2.0d0)
+                 (/ (+ ay by) 2.0d0)
+                 (/ (+ az bz) 2.0d0)))))
+
+(defun builtin-vle-vector-normalise (v)
+  ;; British spelling per the spec; AutoCAD docs use the same form.
+  ;; Returns nil for a zero-length input (Autodesk's documented
+  ;; "undefined" case — we surface nil instead of erroring).
+  ;;
+  ;;; SPEC-UNCERTAIN: zero-length input — return nil (our choice)
+  ;;;   vs return zero vector vs signal. Probe queued in
+  ;;;   deferred-spec-research.issue § VLE-VECTOR-NORMALISE.
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-NORMALISE")
+    (multiple-value-bind (nx ny nz) (vec3-normalize x y z)
+      (and nx (vec3-list nx ny nz)))))
+
+(defun builtin-vle-vector-dotproduct (v1 v2)
+  (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-DOTPRODUCT")
+    (multiple-value-bind (bx by bz) (coerce-vec3 v2 "VLE-VECTOR-DOTPRODUCT")
+      (vec3-dot ax ay az bx by bz))))
+
+(defun builtin-vle-vector-crossproduct (v1 v2)
+  (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-CROSSPRODUCT")
+    (multiple-value-bind (bx by bz) (coerce-vec3 v2 "VLE-VECTOR-CROSSPRODUCT")
+      (vec3-cross ax ay az bx by bz))))
+
+(defun builtin-vle-vector-angleto (v1 v2)
+  ;; Unsigned angle between v1 and v2 (radians, in [0, π]).
+  (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-ANGLETO")
+    (multiple-value-bind (bx by bz) (coerce-vec3 v2 "VLE-VECTOR-ANGLETO")
+      (let* ((la (vec3-length ax ay az))
+             (lb (vec3-length bx by bz)))
+        (cond
+          ((or (< la *vle-vector-tolerance*)
+               (< lb *vle-vector-tolerance*))
+           0.0d0)
+          (t (let ((cos-theta (/ (vec3-dot ax ay az bx by bz) (* la lb))))
+               ;; clamp cos-theta to [-1, 1] to defeat fp noise
+               (acos (max -1.0d0 (min 1.0d0 cos-theta))))))))))
+
+(defun builtin-vle-vector-angletoref (v1 v2 normal)
+  ;; Signed angle between v1 and v2 in the plane defined by NORMAL.
+  ;; Sign is determined by (cross v1 v2) · normal — positive when
+  ;; cross is codirectional with normal.
+  (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-ANGLETOREF")
+    (multiple-value-bind (bx by bz) (coerce-vec3 v2 "VLE-VECTOR-ANGLETOREF")
+      (multiple-value-bind (nx ny nz) (coerce-vec3 normal "VLE-VECTOR-ANGLETOREF")
+        (let* ((unsigned (builtin-vle-vector-angleto v1 v2))
+               (cross (vec3-cross ax ay az bx by bz))
+               (sign-dot (vec3-dot (nth 0 cross) (nth 1 cross) (nth 2 cross)
+                                   nx ny nz)))
+          (if (minusp sign-dot) (- unsigned) unsigned))))))
+
+(defun builtin-vle-vector-length (v)
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-LENGTH")
+    (vec3-length x y z)))
+
+(defun builtin-vle-vector-length2d (v)
+  ;; XY-plane projection length.
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-LENGTH2D")
+    (declare (ignore z))
+    (vec3-length x y 0.0d0)))
+
+(defun builtin-vle-vector-length2dxz (v)
+  ;; XZ-plane projection length.
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-LENGTH2DXZ")
+    (declare (ignore y))
+    (vec3-length x 0.0d0 z)))
+
+(defun builtin-vle-vector-length2dyz (v)
+  ;; YZ-plane projection length.
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-LENGTH2DYZ")
+    (declare (ignore x))
+    (vec3-length 0.0d0 y z)))
+
+(defun builtin-vle-vector-isunitlength (v)
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-ISUNITLENGTH")
+    (if (< (abs (- (vec3-length x y z) 1.0d0)) *vle-vector-tolerance*)
+        (autolisp-true) nil)))
+
+(defun builtin-vle-vector-isequal (v1 v2)
+  (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-ISEQUAL")
+    (multiple-value-bind (bx by bz) (coerce-vec3 v2 "VLE-VECTOR-ISEQUAL")
+      (if (and (< (abs (- ax bx)) *vle-vector-tolerance*)
+               (< (abs (- ay by)) *vle-vector-tolerance*)
+               (< (abs (- az bz)) *vle-vector-tolerance*))
+          (autolisp-true) nil))))
+
+(defun builtin-vle-vector-iszerolength (v)
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-ISZEROLENGTH")
+    (if (vec3-zero-p x y z) (autolisp-true) nil)))
+
+(defun builtin-vle-vector-isparallel (v1 v2)
+  ;; Parallel iff cross product is zero (under tolerance).
+  (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-ISPARALLEL")
+    (multiple-value-bind (bx by bz) (coerce-vec3 v2 "VLE-VECTOR-ISPARALLEL")
+      (let ((c (vec3-cross ax ay az bx by bz)))
+        (if (vec3-zero-p (nth 0 c) (nth 1 c) (nth 2 c))
+            (autolisp-true) nil)))))
+
+(defun builtin-vle-vector-iscodirectional (v1 v2)
+  ;; Parallel AND pointing the same way (dot > 0).
+  (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-ISCODIRECTIONAL")
+    (multiple-value-bind (bx by bz) (coerce-vec3 v2 "VLE-VECTOR-ISCODIRECTIONAL")
+      (let* ((c (vec3-cross ax ay az bx by bz))
+             (parallel-p (vec3-zero-p (nth 0 c) (nth 1 c) (nth 2 c)))
+             (same-dir-p (plusp (vec3-dot ax ay az bx by bz))))
+        (if (and parallel-p same-dir-p) (autolisp-true) nil)))))
+
+(defun builtin-vle-vector-isperpendicular (v1 v2)
+  ;; Perpendicular iff dot product is zero.
+  (multiple-value-bind (ax ay az) (coerce-vec3 v1 "VLE-VECTOR-ISPERPENDICULAR")
+    (multiple-value-bind (bx by bz) (coerce-vec3 v2 "VLE-VECTOR-ISPERPENDICULAR")
+      (if (< (abs (vec3-dot ax ay az bx by bz)) *vle-vector-tolerance*)
+          (autolisp-true) nil))))
+
+(defun vec3-equal-axis-p (x y z ax ay az)
+  (and (< (abs (- x ax)) *vle-vector-tolerance*)
+       (< (abs (- y ay)) *vle-vector-tolerance*)
+       (< (abs (- z az)) *vle-vector-tolerance*)))
+
+(defun builtin-vle-vector-isxaxis (v)
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-ISXAXIS")
+    (if (vec3-equal-axis-p x y z 1.0d0 0.0d0 0.0d0) (autolisp-true) nil)))
+
+(defun builtin-vle-vector-isyaxis (v)
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-ISYAXIS")
+    (if (vec3-equal-axis-p x y z 0.0d0 1.0d0 0.0d0) (autolisp-true) nil)))
+
+(defun builtin-vle-vector-iszaxis (v)
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-ISZAXIS")
+    (if (vec3-equal-axis-p x y z 0.0d0 0.0d0 1.0d0) (autolisp-true) nil)))
+
+(defun builtin-vle-vector-getperpvector (v)
+  ;; Returns a 3D vector perpendicular to V. Cross V with whichever
+  ;; axis has the smallest absolute component (avoiding the near-
+  ;; parallel case).
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-GETPERPVECTOR")
+    (let* ((ax (abs x)) (ay (abs y)) (az (abs z)))
+      (cond
+        ((and (<= ax ay) (<= ax az))
+         (vec3-cross x y z 1.0d0 0.0d0 0.0d0))
+        ((and (<= ay ax) (<= ay az))
+         (vec3-cross x y z 0.0d0 1.0d0 0.0d0))
+        (t
+         (vec3-cross x y z 0.0d0 0.0d0 1.0d0))))))
+
+(defun builtin-vle-vector-getucs (normal)
+  ;; AutoCAD's "Arbitrary Axis Algorithm" — given a Z-axis (NORMAL),
+  ;; return the (X-axis Y-axis) basis pair that defines the
+  ;; entity's OCS / UCS.
+  ;;
+  ;;; SPEC-UNCERTAIN: orientation when normal == ±world-Z (the
+  ;;;   algorithm has a 1/64 threshold; we match Autodesk's
+  ;;;   documented formula but haven't probe-validated against a
+  ;;;   real CAD). Queued in deferred-spec-research.issue.
+  (multiple-value-bind (nx ny nz) (coerce-vec3 normal "VLE-VECTOR-GETUCS")
+    (multiple-value-bind (unx uny unz) (vec3-normalize nx ny nz)
+      (when (null unx)
+        (return-from builtin-vle-vector-getucs nil))
+      (let* ((threshold (/ 1.0d0 64.0d0))
+             ;; Reference up: world-Y if normal is near vertical,
+             ;; otherwise world-Z.
+             (use-world-y-p (and (< (abs unx) threshold)
+                                 (< (abs uny) threshold)))
+             (ref (if use-world-y-p
+                      (list 0.0d0 1.0d0 0.0d0)
+                      (list 0.0d0 0.0d0 1.0d0)))
+             (ax-cross (vec3-cross (nth 0 ref) (nth 1 ref) (nth 2 ref)
+                                    unx uny unz))
+             (ax-vec (multiple-value-bind (x y z)
+                         (vec3-normalize (nth 0 ax-cross)
+                                          (nth 1 ax-cross)
+                                          (nth 2 ax-cross))
+                       (and x (vec3-list x y z))))
+             (ay-cross (and ax-vec
+                            (vec3-cross unx uny unz
+                                         (nth 0 ax-vec) (nth 1 ax-vec) (nth 2 ax-vec))))
+             (ay-vec  (and ay-cross
+                           (multiple-value-bind (x y z)
+                               (vec3-normalize (nth 0 ay-cross)
+                                                (nth 1 ay-cross)
+                                                (nth 2 ay-cross))
+                             (and x (vec3-list x y z))))))
+        (and ax-vec ay-vec (list ax-vec ay-vec))))))
+
+(defun builtin-vle-vector-to2d (v)
+  ;; Drop Z; return a 2-element list.
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-TO2D")
+    (declare (ignore z))
+    (list x y)))
+
+(defun builtin-vle-vector-to3d (v)
+  ;; Pad Z to 0.0 if input is 2D; pass through if already 3D.
+  (multiple-value-bind (x y z) (coerce-vec3 v "VLE-VECTOR-TO3D")
+    (vec3-list x y z)))
+
+(defun builtin-vle-vector-gettolerance ()
+  *vle-vector-tolerance*)
+
+(defun builtin-vle-vector-settolerance (tol)
+  (let ((new-tol (coerce (require-number tol "VLE-VECTOR-SETTOLERANCE")
+                          'double-float)))
+    (setf *vle-vector-tolerance* new-tol)
+    new-tol))
+
+;;; --- end M3b ------------------------------------------------------
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -5195,7 +5497,38 @@ contract: AutoCAD's 32-bit integer wrap."
    (make-core-builtin-subr "VLE-ATOI32"        #'builtin-vle-atoi32)
    (make-core-builtin-subr "VLE-ITOA32"        #'builtin-vle-itoa32)
    (make-core-builtin-subr "VLE-INT64TO32"     #'builtin-vle-int64to32)
-   (make-core-builtin-subr "VLE-TAN"           #'builtin-vle-tan)))
+   (make-core-builtin-subr "VLE-TAN"           #'builtin-vle-tan)
+   ;; --- M3b VLE-VECTOR-* math ---
+   (make-core-builtin-subr "VLE-VECTOR-GET"             #'builtin-vle-vector-get)
+   (make-core-builtin-subr "VLE-VECTOR-ADD"             #'builtin-vle-vector-add)
+   (make-core-builtin-subr "VLE-VECTOR-SUB"             #'builtin-vle-vector-sub)
+   (make-core-builtin-subr "VLE-VECTOR-NEGATE"          #'builtin-vle-vector-negate)
+   (make-core-builtin-subr "VLE-VECTOR-SCALE"           #'builtin-vle-vector-scale)
+   (make-core-builtin-subr "VLE-VECTOR-MIDPOINT"        #'builtin-vle-vector-midpoint)
+   (make-core-builtin-subr "VLE-VECTOR-NORMALISE"       #'builtin-vle-vector-normalise)
+   (make-core-builtin-subr "VLE-VECTOR-DOTPRODUCT"      #'builtin-vle-vector-dotproduct)
+   (make-core-builtin-subr "VLE-VECTOR-CROSSPRODUCT"    #'builtin-vle-vector-crossproduct)
+   (make-core-builtin-subr "VLE-VECTOR-ANGLETO"         #'builtin-vle-vector-angleto)
+   (make-core-builtin-subr "VLE-VECTOR-ANGLETOREF"      #'builtin-vle-vector-angletoref)
+   (make-core-builtin-subr "VLE-VECTOR-LENGTH"          #'builtin-vle-vector-length)
+   (make-core-builtin-subr "VLE-VECTOR-LENGTH2D"        #'builtin-vle-vector-length2d)
+   (make-core-builtin-subr "VLE-VECTOR-LENGTH2DXZ"      #'builtin-vle-vector-length2dxz)
+   (make-core-builtin-subr "VLE-VECTOR-LENGTH2DYZ"      #'builtin-vle-vector-length2dyz)
+   (make-core-builtin-subr "VLE-VECTOR-ISUNITLENGTH"    #'builtin-vle-vector-isunitlength)
+   (make-core-builtin-subr "VLE-VECTOR-ISEQUAL"         #'builtin-vle-vector-isequal)
+   (make-core-builtin-subr "VLE-VECTOR-ISZEROLENGTH"    #'builtin-vle-vector-iszerolength)
+   (make-core-builtin-subr "VLE-VECTOR-ISPARALLEL"      #'builtin-vle-vector-isparallel)
+   (make-core-builtin-subr "VLE-VECTOR-ISCODIRECTIONAL" #'builtin-vle-vector-iscodirectional)
+   (make-core-builtin-subr "VLE-VECTOR-ISPERPENDICULAR" #'builtin-vle-vector-isperpendicular)
+   (make-core-builtin-subr "VLE-VECTOR-ISXAXIS"         #'builtin-vle-vector-isxaxis)
+   (make-core-builtin-subr "VLE-VECTOR-ISYAXIS"         #'builtin-vle-vector-isyaxis)
+   (make-core-builtin-subr "VLE-VECTOR-ISZAXIS"         #'builtin-vle-vector-iszaxis)
+   (make-core-builtin-subr "VLE-VECTOR-GETPERPVECTOR"   #'builtin-vle-vector-getperpvector)
+   (make-core-builtin-subr "VLE-VECTOR-GETUCS"          #'builtin-vle-vector-getucs)
+   (make-core-builtin-subr "VLE-VECTOR-TO2D"            #'builtin-vle-vector-to2d)
+   (make-core-builtin-subr "VLE-VECTOR-TO3D"            #'builtin-vle-vector-to3d)
+   (make-core-builtin-subr "VLE-VECTOR-GETTOLERANCE"    #'builtin-vle-vector-gettolerance)
+   (make-core-builtin-subr "VLE-VECTOR-SETTOLERANCE"    #'builtin-vle-vector-settolerance)))
 
 (defun find-core-builtin (name)
   (find name (core-builtins)
