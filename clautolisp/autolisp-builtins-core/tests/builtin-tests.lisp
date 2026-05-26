@@ -2376,3 +2376,178 @@ doesn't carry the COM types these predicate over."
   (reset-autolisp-symbol-table)
   (is (< (abs (run-autolisp-string "(vle-tan 0)" :setup-fn #'install-core-into))
          1.0d-12)))
+
+;;;; ----- M3b missing-functions: VLE-VECTOR-* math -----
+
+(defun close-vec3-p (vec expected &key (tol 1.0d-9))
+  "Helper: compare a returned VEC against EXPECTED triple within TOL."
+  (and (consp vec)
+       (= 3 (length vec))
+       (every (lambda (a b) (< (abs (- a b)) tol)) vec expected)))
+
+(test m3b-vle-vector-arithmetic
+  "ADD / SUB / NEGATE / SCALE / MIDPOINT / GET produce the
+expected component-wise results."
+  (reset-autolisp-symbol-table)
+  (is (close-vec3-p
+       (run-autolisp-string "(vle-vector-add '(1 2 3) '(10 20 30))"
+                            :setup-fn #'install-core-into)
+       '(11d0 22d0 33d0)))
+  (is (close-vec3-p
+       (run-autolisp-string "(vle-vector-sub '(10 20 30) '(1 2 3))"
+                            :setup-fn #'install-core-into)
+       '(9d0 18d0 27d0)))
+  (is (close-vec3-p
+       (run-autolisp-string "(vle-vector-negate '(1 2 3))"
+                            :setup-fn #'install-core-into)
+       '(-1d0 -2d0 -3d0)))
+  (is (close-vec3-p
+       (run-autolisp-string "(vle-vector-scale '(1 2 3) 2)"
+                            :setup-fn #'install-core-into)
+       '(2d0 4d0 6d0)))
+  (is (close-vec3-p
+       (run-autolisp-string "(vle-vector-midpoint '(0 0 0) '(4 4 4))"
+                            :setup-fn #'install-core-into)
+       '(2d0 2d0 2d0)))
+  (is (close-vec3-p
+       (run-autolisp-string "(vle-vector-get '(1 1 1) '(4 5 6))"
+                            :setup-fn #'install-core-into)
+       '(3d0 4d0 5d0))))
+
+(test m3b-vle-vector-products
+  "Dot of perpendicular vectors is 0; cross of X×Y is Z."
+  (reset-autolisp-symbol-table)
+  (let ((dot (run-autolisp-string
+              "(vle-vector-dotproduct '(1 0 0) '(0 1 0))"
+              :setup-fn #'install-core-into)))
+    (is (< (abs dot) 1.0d-12)))
+  (is (close-vec3-p
+       (run-autolisp-string "(vle-vector-crossproduct '(1 0 0) '(0 1 0))"
+                            :setup-fn #'install-core-into)
+       '(0d0 0d0 1d0))))
+
+(test m3b-vle-vector-lengths
+  "LENGTH = sqrt(x²+y²+z²); LENGTH2D drops Z; LENGTH2DXZ drops Y;
+LENGTH2DYZ drops X."
+  (reset-autolisp-symbol-table)
+  (is (< (abs (- 5d0 (run-autolisp-string
+                       "(vle-vector-length '(3 4 0))"
+                       :setup-fn #'install-core-into)))
+         1.0d-9))
+  (is (< (abs (- 5d0 (run-autolisp-string
+                       "(vle-vector-length2d '(3 4 999))"
+                       :setup-fn #'install-core-into)))
+         1.0d-9))
+  (is (< (abs (- 5d0 (run-autolisp-string
+                       "(vle-vector-length2dxz '(3 999 4))"
+                       :setup-fn #'install-core-into)))
+         1.0d-9))
+  (is (< (abs (- 5d0 (run-autolisp-string
+                       "(vle-vector-length2dyz '(999 3 4))"
+                       :setup-fn #'install-core-into)))
+         1.0d-9)))
+
+(test m3b-vle-vector-normalise
+  "NORMALISE produces a unit vector; zero-length input returns NIL."
+  (reset-autolisp-symbol-table)
+  (is (close-vec3-p
+       (run-autolisp-string "(vle-vector-normalise '(0 3 0))"
+                            :setup-fn #'install-core-into)
+       '(0d0 1d0 0d0)))
+  (is (null (run-autolisp-string "(vle-vector-normalise '(0 0 0))"
+                                 :setup-fn #'install-core-into))))
+
+(test m3b-vle-vector-angles
+  "ANGLETO unsigned π/2 between X and Y axes; ANGLETOREF sign
+flips when the normal flips."
+  (reset-autolisp-symbol-table)
+  (let* ((half-pi (/ (acos -1d0) 2d0))
+         (raw (run-autolisp-string "(vle-vector-angleto '(1 0 0) '(0 1 0))"
+                                   :setup-fn #'install-core-into))
+         (pos (run-autolisp-string
+               "(vle-vector-angletoref '(1 0 0) '(0 1 0) '(0 0 1))"
+               :setup-fn #'install-core-into))
+         (neg (run-autolisp-string
+               "(vle-vector-angletoref '(1 0 0) '(0 1 0) '(0 0 -1))"
+               :setup-fn #'install-core-into)))
+    (is (< (abs (- raw half-pi)) 1.0d-9))
+    (is (< (abs (- pos half-pi)) 1.0d-9))
+    (is (< (abs (- neg (- half-pi))) 1.0d-9))))
+
+(test m3b-vle-vector-predicates
+  "Equality, unit-length, zero-length, parallelism,
+codirectionality, perpendicularity, axis-tests."
+  (reset-autolisp-symbol-table)
+  (flet ((bool (form)
+           (let ((r (run-autolisp-string form :setup-fn #'install-core-into)))
+             (and (typep r 'autolisp-symbol)
+                  (string= "T" (autolisp-symbol-name r))))))
+    (is      (bool "(vle-vector-isequal '(1 2 3) '(1 2 3))"))
+    (is (not (bool "(vle-vector-isequal '(1 2 3) '(1 2 4))")))
+    (is      (bool "(vle-vector-isunitlength '(1 0 0))"))
+    (is (not (bool "(vle-vector-isunitlength '(2 0 0))")))
+    (is      (bool "(vle-vector-iszerolength '(0 0 0))"))
+    (is (not (bool "(vle-vector-iszerolength '(0 0 1))")))
+    (is      (bool "(vle-vector-isparallel '(1 2 3) '(2 4 6))"))
+    (is      (bool "(vle-vector-isparallel '(1 2 3) '(-2 -4 -6))"))
+    (is      (bool "(vle-vector-iscodirectional '(1 0 0) '(5 0 0))"))
+    (is (not (bool "(vle-vector-iscodirectional '(1 0 0) '(-2 0 0))")))
+    (is      (bool "(vle-vector-isperpendicular '(1 0 0) '(0 1 0))"))
+    (is (not (bool "(vle-vector-isperpendicular '(1 0 0) '(1 1 0))")))
+    (is      (bool "(vle-vector-isxaxis '(1 0 0))"))
+    (is      (bool "(vle-vector-isyaxis '(0 1 0))"))
+    (is      (bool "(vle-vector-iszaxis '(0 0 1))"))
+    (is (not (bool "(vle-vector-isxaxis '(0 1 0))")))))
+
+(test m3b-vle-vector-getperpvector-orthogonal
+  "GETPERPVECTOR's result is orthogonal to its input."
+  (reset-autolisp-symbol-table)
+  (let* ((v   (run-autolisp-string "'(1 2 3)" :setup-fn #'install-core-into))
+         (p   (run-autolisp-string
+               "(vle-vector-getperpvector '(1 2 3))"
+               :setup-fn #'install-core-into))
+         (dot (run-autolisp-string
+               "(vle-vector-dotproduct '(1 2 3) (vle-vector-getperpvector '(1 2 3)))"
+               :setup-fn #'install-core-into)))
+    (declare (ignore v p))
+    (is (< (abs dot) 1.0d-9))))
+
+(test m3b-vle-vector-getucs-orthonormal-basis
+  "GETUCS of world-Z returns the standard X/Y axes; both axes are
+unit-length and mutually orthogonal."
+  (reset-autolisp-symbol-table)
+  (let ((basis (run-autolisp-string "(vle-vector-getucs '(0 0 1))"
+                                    :setup-fn #'install-core-into)))
+    (is (consp basis))
+    (is (= 2 (length basis)))
+    (is (close-vec3-p (first  basis) '(1d0 0d0 0d0)))
+    (is (close-vec3-p (second basis) '(0d0 1d0 0d0)))))
+
+(test m3b-vle-vector-to2d-to3d
+  "TO2D drops Z; TO3D pads Z=0 on a 2-list input."
+  (reset-autolisp-symbol-table)
+  (let ((two (run-autolisp-string "(vle-vector-to2d '(1 2 3))"
+                                  :setup-fn #'install-core-into))
+        (three (run-autolisp-string "(vle-vector-to3d '(1 2))"
+                                    :setup-fn #'install-core-into)))
+    (is (= 2 (length two)))
+    (is (< (abs (- 1d0 (first  two))) 1.0d-9))
+    (is (< (abs (- 2d0 (second two))) 1.0d-9))
+    (is (close-vec3-p three '(1d0 2d0 0d0)))))
+
+(test m3b-vle-vector-tolerance-get-set
+  "GETTOLERANCE returns the current value; SETTOLERANCE replaces
+and returns the new value; subsequent predicates use it."
+  (reset-autolisp-symbol-table)
+  ;; Reset the shared parameter so independent test runs are
+  ;; deterministic.
+  (setf clautolisp.autolisp-builtins-core::*vle-vector-tolerance* 1.0d-10)
+  (let ((before (run-autolisp-string "(vle-vector-gettolerance)"
+                                     :setup-fn #'install-core-into)))
+    (is (< (abs (- 1.0d-10 before)) 1.0d-20)))
+  (let ((set-result (run-autolisp-string
+                     "(vle-vector-settolerance 0.01)"
+                     :setup-fn #'install-core-into)))
+    (is (< (abs (- 0.01d0 set-result)) 1.0d-9)))
+  ;; Restore.
+  (setf clautolisp.autolisp-builtins-core::*vle-vector-tolerance* 1.0d-10))
