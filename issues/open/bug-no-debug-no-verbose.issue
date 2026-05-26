@@ -1,7 +1,53 @@
 # Bug: --verbose and --debug produce no output (alfe --bricscad and friends)
 
-Status: open
+Status: fixed (pending merge)
 Reported against: alfe (master @ 6b97ea6, clautolisp 1.0.72)
+Fixed at: alfe 1.0.10 — instrumentation added in cli.lisp,
+backend-bricscad.lisp, backend-autocad.lisp, backend-clautolisp.lisp,
+backend-cad-common.lisp, file-protocol.lisp.
+
+The reporter's BOOTSTRAP-timeout case now prints, under `--debug`:
+
+    alfe[debug]: cli: version 1.0.10
+    alfe[debug]: cli: backend :BRICSCAD, dialect :BRICSCAD-V26, host :MOCK, mode :BATCH
+    alfe[debug]: cli: load-encoding NIL, io-encoding NIL, no-color-p NIL
+    alfe[debug]: cli: actions = 1
+    alfe[debug]: resolve-backend: selected :BRICSCAD (source: explicit flag)
+    alfe[verbose]: cli: load-encoding NIL, io-encoding NIL
+    alfe[verbose]: backend BRICSCAD: starting engine (mode AUTO)
+    alfe[debug]: backend BRICSCAD: workdir = /var/folders/.../alfe-bricscad-XXXX/
+    alfe[debug]: backend BRICSCAD: ready-timeout = 30 s; wait-for-ready = T
+    alfe[debug]: backend BRICSCAD: emitted run-common.lsp -> .../run-common.lsp
+    alfe[debug]: backend BRICSCAD: protocol status file -> .../protocol/status.txt
+    alfe[verbose]: backend BRICSCAD: effective mode = BATCH
+    alfe[debug]: backend BRICSCAD: wrote run.scr -> .../run.scr
+    alfe[verbose]: backend BRICSCAD: launching: /Applications/BricsCAD V26.app/.../bricscad … -B .../run.scr
+    alfe[debug]: backend BRICSCAD: spawned, process-info-pid = NNNNN
+    alfe[verbose]: backend BRICSCAD: waiting for READY (timeout 30 s)
+    alfe[debug]: protocol: wait-for-status-prefix "READY" (timeout 30 s)
+    alfe[debug]: protocol: status now "BOOTING" (elapsed 0.00 s)
+    alfe[debug]: protocol: timeout after 30.04 s (last status "BOOTING")
+    alfe[warn]: backend BRICSCAD: READY timeout after 30.04 s; last status = "BOOTING"
+    alfe: alfe BRICSCAD backend error (phase BOOTSTRAP): … [READY-TIMEOUT]
+
+`--verbose` produces only the `[verbose]` and `[warn]` lines above;
+default-verbosity runs are unchanged (single error line). `--quiet`
+suppresses `[info]` as well.
+
+Two items from the acceptance list were intentionally NOT
+instrumented:
+  * `vbs-escape` / `applescript-escape` per-call input+output. These
+    are pure utility functions invoked many times per VBS/AppleScript
+    file; logging every call would flood the debug stream with little
+    signal. The relevant "we emitted X to PATH" facts are covered by
+    the bricscad/autocad backend `wrote bridge-…vbs -> PATH` lines.
+  * `--trace` interaction. The clautolisp runtime's `--trace` is
+    orthogonal (function-call tracing in the AutoLISP layer) and not
+    in scope.
+
+Original report follows.
+
+---
 
 ## Reporter's reproduction
 

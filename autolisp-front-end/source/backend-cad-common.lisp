@@ -15,6 +15,9 @@
                 #:backend-eval-error)
   (:import-from #:alfe.backend
                 #:make-eval-result)
+  (:import-from #:alfe.logging
+                #:log-debug
+                #:log-verbose)
   (:export ;; OS detection
            #:host-os
            #:macos-p
@@ -140,8 +143,13 @@ the OK/FAIL/QUIT suffix."
 the runtime to acknowledge DONE."
            (alfe.protocol.file:send-stdin protocol-session form-text)
            (wait-done)))
+      (log-verbose "cad-common: driving ~D action~:P (request-timeout ~A s)"
+                   (length plan) request-timeout)
       (dolist (action plan)
         (unless (eq status :success) (return))
+        (log-debug "cad-common: action ~A payload ~S"
+                   (alfe.backend:action-kind action)
+                   (alfe.backend:action-payload action))
         (case (alfe.backend:action-kind action)
           (:load
            (let ((path (getf (alfe.backend:action-payload action) :path)))
