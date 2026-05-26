@@ -1,0 +1,101 @@
+Vendor-validate uncertain behaviour in already-implemented builtins.
+
+Some builtins ship with implementations that satisfy the documented
+contract under the spec's *headline* description, but make
+implementation choices for edge cases the spec doesn't pin down.
+We need to test those choices against real AutoCAD and BricsCAD to
+either confirm or correct them.
+
+Convention (project-wide, going forward):
+
+  * Every builtin whose behaviour rests on an unverified assumption
+    carries an inline `;;; SPEC-UNCERTAIN:` marker in its CL
+    docstring / comment block. One marker per uncertain point.
+    Greppable from the source with:
+
+        grep -nE "SPEC-UNCERTAIN" \
+             clautolisp/autolisp-builtins-core/source/*.lisp
+
+  * Every marker has a matching entry in this issue (below) so
+    we can plan a focused research pass instead of rediscovering
+    each uncertainty one builtin at a time.
+
+  * Once vendor-validated, the marker is replaced by a concrete
+    `;;; Vendor: ...` cite (filename:line of the matching
+    `autolisp-spec` Tested Behaviour section, or a probe-script
+    name), and the issue entry is moved to the resolved tail.
+
+Open uncertainties (open this list as you add SPEC-UNCERTAIN
+markers — keep it sorted by function name):
+
+== TRANS (M2) ==
+
+  * Behaviour when the source space (FROM) is not equal to the
+    target space (TO) in a *loaded* drawing. Our headless engine
+    has no UCS, no viewport DCS, no PSDCS — every space
+    collapses to WCS, so identity is the only correct answer
+    here. But Autodesk's TRANS on a fresh empty drawing where
+    UCS == WCS — does it still apply some normalization (e.g.
+    z-fill, rounding) we'd need to mirror? Probe needed.
+
+  * What happens with a 3D point when TO is DCS or PSDCS (which
+    are 2D coordinate spaces)? Does TRANS drop Z, project, or
+    return a 3-tuple with z=0? Currently we return (x y z) with
+    z preserved.
+
+  * The DISPLACEMENT-P fourth argument: when true, the point is
+    a free vector (rotation only, no translation). Our identity
+    transform handles points and vectors the same way (no-op),
+    so the flag has no observable effect. Once we have a real
+    UCS/DCS matrix, DISPLACEMENT-P must skip the translation
+    component. Locking in the flag's documented contract via a
+    probe is what's needed here.
+
+  * FROM / TO as entity-name lists (ECS, Entity Coordinate
+    System). We accept the argument shape but ignore the entity
+    identity. What does AutoCAD return for
+    (trans pt 0 (entlast)) on a 2D entity's ECS?
+
+== TEXTBOX (M2) ==
+
+  * Width calculation. We approximate width as
+    `0.6 × height × character-count` — a monospace-font ratio.
+    Real AutoCAD looks the width up per-character in the active
+    text style's SHX or TTF font. The 0.6 ratio is a placeholder
+    until we ship a font-metrics back-end. What ratio does
+    Autodesk use as a fallback when no font is loaded? Is it
+    fixed-per-style, or computed?
+
+  * Lower-left corner. We return ((0 0 0) (w h 0)) — lower-left
+    at the origin. Real TEXTBOX returns the box in the entity's
+    OCS centered/aligned per the text's justification (40/41/72/
+    73 DXF group codes). We currently ignore justification.
+    Probe: what does Autodesk return for a centered-text
+    entity?
+
+  * Behaviour when the entity-list lacks DXF group 1 (text
+    string) or group 40 (height). Currently we default to ""
+    and 1.0 — but Autodesk may raise an error instead. Probe.
+
+== MEM (M2) ==
+
+  * Triple layout: Autodesk's docs say "approximate values" but
+    don't lock the slot order or units. We assume
+    (used free reserved) in bytes — but BricsCAD V26 might use
+    (used reserved free) or units of kilobytes. Probe needed.
+
+  * Static / stack accounting. CCL's room output includes Stacks
+    and Static rows; we only consume the Lisp Heap row. Should
+    they fold into one of the three slots? Currently neither
+    appears in our triple.
+
+== Future entries ==
+
+When opening a new SPEC-UNCERTAIN marker, add an `== NAME (Mn) ==`
+section here and list the specific questions. Group questions per
+function; keep the same wording style (one paragraph per
+uncertainty).
+
+== Resolved ==
+
+(none yet)
