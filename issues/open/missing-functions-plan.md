@@ -338,7 +338,35 @@ success.
 
 ---
 
-## Milestone 5 — Core / Misc stubs (~75)
+## Milestone 5 — Core / Misc rest (~71) [LANDED 1.0.70]
+
+~71 functions land: 8 native + 6 session-state record-only +
+57 stubs. CVUNIT, COMMAND-S, and UNTIL stay deferred (per the
+M2/M5 plan and the deferred-spec-research / deferred-stubbed-
+functions issues).
+
+  * Native (8): VL-INIT, VL-LOAD-COM, VL-LOAD-REACTORS,
+    VL-LOAD-ALL (all return T), VL-ENABLE-USER-CANCEL,
+    LAYOUTLIST (returns ("Model")), ACDIMENABLEUPDATE (T),
+    VPORTS (default-singleton).
+  * Session-state (6): VL-REGISTRY-{READ,WRITE,DELETE,
+    DESCENDENTS} backed by a session hash; GETCFG / SETCFG
+    same. State doesn't persist across processes; upgrade path
+    (JSON file / INI file) catalogued in
+    deferred-stubbed-functions.issue.
+  * Stubs (57): VL-* management, VL-LOCAL-UNDO-* (5),
+    VL-ANNOTATIVE-* (11), VL-SUBENT-* (5), VL-VPLAYER-* (9),
+    ActiveX property accessors (6), BricsCAD-specific (4),
+    INSPECTOR / DLG-SYSVARS / etc. All carry STUB markers;
+    catalog entries in deferred-stubbed-functions.issue
+    § Core/misc rest stubs.
+
+Tests: 8 new FiveAM cases (112 new checks). The
+m5-all-stubs-registered test asserts every stub-family name
+binds a callable SUBR (62 names checked). builtins-core suite:
+705 -> 817, 100% green.
+
+
 
 The rest of the Core/Misc 106 functions, all CAD-coupled or
 deferred-to-roadmap. Stub each with a docstring noting why the

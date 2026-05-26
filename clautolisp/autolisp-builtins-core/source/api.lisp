@@ -82,7 +82,40 @@
     "VLE-SUNID" "VLE-TABLE-LIST" "VLE-TABLE-LIST-ALL" "VLE-TBLSEARCH"
     ;; --- M4 VLISP-* IDE stubs ---
     "VLISP-COMPILE" "VLISP-EXPORT-SYMBOL" "VLISP-IMPORT-SYMBOL"
-    "VLISP-IMPORT-EXSUBRS" "VLISP-OPTIMIZER"))
+    "VLISP-IMPORT-EXSUBRS" "VLISP-OPTIMIZER"
+    ;; --- M5 core/misc rest ---
+    "VL-INIT" "VL-LOAD-COM" "VL-LOAD-REACTORS" "VL-LOAD-ALL"
+    "VL-ENABLE-USER-CANCEL" "LAYOUTLIST" "ACDIMENABLEUPDATE" "VPORTS"
+    "VL-REGISTRY-READ" "VL-REGISTRY-WRITE" "VL-REGISTRY-DELETE"
+    "VL-REGISTRY-DESCENDENTS"
+    "GETCFG" "SETCFG"
+    "ADS" "INITDIA" "INSPECTOR" "DLG-SYSVARS" "EXPAND"
+    "LISP$INSTALL" "LISP$ENABLEFASTCOM" "BPOLY"
+    "BCAD$DISABLE-EXTENDED-ERROR" "BCAD$LICENSELEVELS"
+    "VMON" "_VLAX-SAFEARRAY-MODE"
+    "LISTALLPROPERTIES" "DUMPALLPROPERTIES"
+    "ISPROPERTYREADONLY" "ISPROPERTYVALID"
+    "GETPROPERTYVALUE" "SETPROPERTYVALUE"
+    "VL-LIST-LOADED-LISP" "VL-LIST-LOADED-VLX" "VL-VLX-LOADED-P"
+    "VL-UNLOAD-VLX" "VL-LIST-EXPORTED-FUNCTIONS"
+    "VL-VBALOAD" "VL-VBARUN" "VL-CMDF"
+    "VL-ACAD-DEFUN" "VL-ACAD-UNDEFUN" "VL-GET-RESOURCE"
+    "VL-GETGEOMEXTENTS" "VL-HIDEPROMPTMENU" "VL-SHOWPROMPTMENU"
+    "VL-LOCAL-UNDO-CLEAR" "VL-LOCAL-UNDO-POP" "VL-LOCAL-UNDO-PUSH"
+    "VL-LOCAL-UNDO-RESET" "VL-LOCAL-UNDO-STEPS"
+    "VL-ANNOTATIVE-ADDSCALE" "VL-ANNOTATIVE-GET"
+    "VL-ANNOTATIVE-GETSCALES" "VL-ANNOTATIVE-REMOVE"
+    "VL-ANNOTATIVE-REMOVESCALE" "VL-ANNOTATIVE-RESET"
+    "VL-ANNOTATIVE-SCALELIST" "VL-ANNOTATIVE-SET"
+    "VL-ANNOTATIVE-SETSCALES" "VL-ANNOTATIVE-SUPPORTED"
+    "VL-SUBENT-ATPOINT" "VL-SUBENT-SELECT" "VL-SUBENT-SSADD"
+    "VL-SUBENT-SSDEL" "VL-SUBENT-SSMEMB"
+    "VL-VPLAYER-GET-COLOR" "VL-VPLAYER-GET-LINETYPE"
+    "VL-VPLAYER-GET-LINEWEIGHT" "VL-VPLAYER-GET-TRANSPARENCY"
+    "VL-VPLAYER-SET-COLOR" "VL-VPLAYER-SET-LINETYPE"
+    "VL-VPLAYER-SET-LINEWEIGHT" "VL-VPLAYER-SET-TRANSPARENCY"
+    "VL-VPLAYER-SET-TRUECOLOR"
+    "VL-VECTOR-PROJECT-POINTTOENTITY"))
 
 (defun make-builtin-runtime-error (code builtin-name condition)
   (error 'autolisp-runtime-error
@@ -5517,6 +5550,255 @@ name strings."
 
 ;;; --- end M4 -------------------------------------------------------
 
+;;; --- M5: core/misc rest (missing-functions.issue) -----------------
+;;;
+;;; The remaining 70-ish core/misc operators from
+;;; missing-functions.issue: VL-* management, VL-ANNOTATIVE-*,
+;;; VL-SUBENT-*, VL-VPLAYER-*, VL-LOCAL-UNDO-*, VL-REGISTRY-*,
+;;; ActiveX property accessors, BricsCAD-specific flags, GETCFG /
+;;; SETCFG, etc. Most are stubs (CAD/COM-coupled); ~8 ship with
+;;; real behaviour, two families (registry, cfg) ship with
+;;; session-table impls that preserve API round-trip semantics
+;;; even though state doesn't yet survive process exit.
+;;;
+;;; CVUNIT, COMMAND-S, and UNTIL stay deferred per
+;;; missing-functions-plan.md (CVUNIT needs the acad.unt unit-
+;;; definitions file; COMMAND-S waits on the COMMAND host work;
+;;; UNTIL needs Autodesk-side verification — Bricsys may or may
+;;; not ship it). SPEC-UNCERTAIN markers point at
+;;; deferred-spec-research.issue for the open questions.
+
+;;; ---- Native M5 ----
+
+(defun builtin-vl-init ()
+  ;; (vl-init) — Bricsys' "load Visual LISP base" call. In
+  ;; clautolisp the VLE-* set is always loaded; T (success).
+  (autolisp-true))
+
+(defun builtin-vl-load-com () (autolisp-true))      ; no COM bridge; success.
+(defun builtin-vl-load-reactors () (autolisp-true)) ; no reactors yet; success.
+(defun builtin-vl-load-all () (autolisp-true))      ; alias of the above.
+
+(defun builtin-vl-enable-user-cancel (flag)
+  ;; (vl-enable-user-cancel T|nil) — toggle whether Ctrl-C
+  ;; interrupts user code. SBCL/CCL already deliver SIGINT to
+  ;; the REPL, so we accept the flag and return T (success)
+  ;; without rewiring the handler.
+  ;;
+  ;;; SPEC-UNCERTAIN: behaviour when called mid-loop. We accept
+  ;;;   the flag silently; AutoCAD may install/remove the
+  ;;;   handler atomically. Probe queued in
+  ;;;   deferred-spec-research.issue § VL-ENABLE-USER-CANCEL.
+  (declare (ignore flag))
+  (autolisp-true))
+
+(defun builtin-layoutlist ()
+  ;; (layoutlist) — list of layout-tab names. With no drawing
+  ;; loaded the only layout is "Model".
+  (list (make-autolisp-string "Model")))
+
+(defun builtin-acdimenableupdate (&optional flag)
+  ;; (acdimenableupdate [flag]) — toggle dimension-auto-update.
+  ;; No dimensions in a headless engine; accept and return T.
+  (declare (ignore flag))
+  (autolisp-true))
+
+(defun builtin-vports ()
+  ;; (vports) — list of viewports. Without a drawing, return the
+  ;; documented single-viewport sentinel.
+  (list (list 1
+              (list 0.0d0 0.0d0)        ; lower-left corner (DCS)
+              (list 1.0d0 1.0d0))))     ; upper-right corner (DCS)
+
+;;; ---- Session-state M5 (record-only registry / cfg) ----
+
+(defparameter *vl-registry* (make-hash-table :test 'equal)
+  "In-memory session-table backing VL-REGISTRY-* calls. Keyed by
+the full registry path (a string); values are autolisp-strings.
+Survives only for the running process — see
+deferred-stubbed-functions.issue § VL-REGISTRY-* for the
+JSON-backed persistent upgrade path.")
+
+(defparameter *acad-cfg* (make-hash-table :test 'equal)
+  "In-memory session-table backing GETCFG / SETCFG. Keyed by the
+full ACAD-style path string; values are autolisp-strings.
+Survives only for the running process — see
+deferred-stubbed-functions.issue § GETCFG/SETCFG for the file-
+backed persistent upgrade path.")
+
+(defun builtin-vl-registry-read (key &optional value-name)
+  ;; (vl-registry-read key [valuename]) — read a Windows-registry
+  ;; key. clautolisp keeps a per-session hash backing; the
+  ;; "[valuename]" sub-key is concatenated to the path for our
+  ;; lookup, mirroring how VL-REGISTRY-WRITE encodes it.
+  (let* ((k (autolisp-string-value (require-string key "VL-REGISTRY-READ")))
+         (v (and value-name
+                 (autolisp-string-value
+                  (require-string value-name "VL-REGISTRY-READ"))))
+         (full (if v (format nil "~A|~A" k v) k))
+         (stored (gethash full *vl-registry*)))
+    (or stored nil)))
+
+(defun builtin-vl-registry-write (key value-name value)
+  ;; (vl-registry-write key valuename value) — write to the
+  ;; registry. Stored in *vl-registry*; returns VALUE on success.
+  (let* ((k (autolisp-string-value (require-string key "VL-REGISTRY-WRITE")))
+         (v (autolisp-string-value (require-string value-name "VL-REGISTRY-WRITE")))
+         (data (require-string value "VL-REGISTRY-WRITE"))
+         (full (format nil "~A|~A" k v)))
+    (setf (gethash full *vl-registry*) data)
+    data))
+
+(defun builtin-vl-registry-delete (key &optional value-name)
+  ;; (vl-registry-delete key [valuename]) — delete a key or value.
+  ;; Returns T on success, NIL when the key wasn't present.
+  (let* ((k (autolisp-string-value (require-string key "VL-REGISTRY-DELETE")))
+         (v (and value-name
+                 (autolisp-string-value
+                  (require-string value-name "VL-REGISTRY-DELETE"))))
+         (full (if v (format nil "~A|~A" k v) k)))
+    (cond
+      ((gethash full *vl-registry*)
+       (remhash full *vl-registry*)
+       (autolisp-true))
+      (t nil))))
+
+(defun builtin-vl-registry-descendents (key &optional value-names-p)
+  ;; (vl-registry-descendents key [valuenames]) — list immediate
+  ;; sub-keys (or value-names) at KEY. We do a prefix scan over
+  ;; the in-memory table.
+  (let* ((k (autolisp-string-value (require-string key "VL-REGISTRY-DESCENDENTS")))
+         (prefix (concatenate 'string k "|"))
+         (results '()))
+    (maphash (lambda (full _)
+               (declare (ignore _))
+               (when (and (>= (length full) (length prefix))
+                          (string= prefix full :end2 (length prefix)))
+                 (push (subseq full (length prefix)) results)))
+             *vl-registry*)
+    (cond
+      ((null results) nil)
+      (t (mapcar #'make-autolisp-string
+                 (if value-names-p
+                     (sort (remove-duplicates results :test #'string=)
+                           #'string<)
+                     (sort (remove-duplicates results :test #'string=)
+                           #'string<)))))))
+
+(defun builtin-getcfg (path)
+  ;; (getcfg path) — read a value from the AppData section.
+  ;; Returns the autolisp-string value or NIL.
+  (let* ((k (autolisp-string-value (require-string path "GETCFG"))))
+    (or (gethash k *acad-cfg*) nil)))
+
+(defun builtin-setcfg (path value)
+  ;; (setcfg path value) — write a value into AppData. Returns
+  ;; the new value on success.
+  (let* ((k (autolisp-string-value (require-string path "SETCFG")))
+         (v (require-string value "SETCFG")))
+    (setf (gethash k *acad-cfg*) v)
+    v))
+
+;;; ---- Stubs (CAD/COM/UI-coupled, no host) ----
+;;;
+;;; All return nil unless documented otherwise; STUB markers point
+;;; at deferred-stubbed-functions.issue § M5 stubs.
+
+;;; STUB: ACDIM-style read-onlys. See deferred-stubbed-functions.issue § M5 stubs.
+(defun builtin-ads () nil)
+;;; STUB: INITDIA — initial-dialog flag.
+(defun builtin-initdia (&optional flag) (declare (ignore flag)) nil)
+;;; STUB: INSPECTOR — Visual LISP IDE inspector.
+(defun builtin-inspector (&optional obj) (declare (ignore obj)) nil)
+;;; STUB: DLG-SYSVARS — sysvar dialog (Visual LISP UI).
+(defun builtin-dlg-sysvars (&rest _) (declare (ignore _)) nil)
+;;; STUB: EXPAND — Lisp memory-area expansion. Auto-managed by CL GC.
+(defun builtin-expand (segments) segments)
+;;; STUB: LISP$INSTALL — VLISP install info.
+(defun builtin-lisp$install () nil)
+;;; STUB: LISP$ENABLEFASTCOM — VLISP fast-COM toggle.
+(defun builtin-lisp$enablefastcom (&optional flag) (declare (ignore flag)) nil)
+;;; STUB: BPOLY — boundary polyline creation; needs CAD geometry.
+(defun builtin-bpoly (&rest _) (declare (ignore _)) nil)
+
+;;; STUB: BricsCAD-specific status helpers.
+(defun builtin-bcad$disable-extended-error (&optional flag) (declare (ignore flag)) nil)
+(defun builtin-bcad$licenselevels () nil)
+
+;;; STUB: VMON — Visual LISP memory monitor toggle.
+(defun builtin-vmon () nil)
+;;; STUB: _VLAX-SAFEARRAY-MODE — internal ActiveX SAFEARRAY policy.
+(defun builtin-_vlax-safearray-mode (&optional mode) (declare (ignore mode)) nil)
+
+;;; STUB: ActiveX property accessors — no COM in clautolisp.
+(defun builtin-listallproperties (obj) (declare (ignore obj)) nil)
+(defun builtin-dumpallproperties (obj &optional depth) (declare (ignore obj depth)) nil)
+(defun builtin-ispropertyreadonly (obj name) (declare (ignore obj name)) nil)
+(defun builtin-ispropertyvalid    (obj name) (declare (ignore obj name)) nil)
+(defun builtin-getpropertyvalue   (obj name) (declare (ignore obj name)) nil)
+(defun builtin-setpropertyvalue   (obj name value) (declare (ignore obj name value)) nil)
+
+;;; STUB: VL-* management surface.
+(defun builtin-vl-list-loaded-lisp ()  nil) ; we don't track per-load filenames yet
+(defun builtin-vl-list-loaded-vlx ()   nil) ; no VLX system
+(defun builtin-vl-vlx-loaded-p (name)  (declare (ignore name)) nil)
+(defun builtin-vl-unload-vlx (name)    (declare (ignore name)) nil)
+(defun builtin-vl-list-exported-functions (&optional name) (declare (ignore name)) nil)
+(defun builtin-vl-vbaload  (file) (declare (ignore file)) nil)
+(defun builtin-vl-vbarun   (proc) (declare (ignore proc)) nil)
+(defun builtin-vl-cmdf     (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-acad-defun   (sym ns) (declare (ignore sym ns)) (autolisp-true))
+(defun builtin-vl-acad-undefun (sym ns) (declare (ignore sym ns)) (autolisp-true))
+(defun builtin-vl-get-resource (name)   (declare (ignore name)) nil)
+(defun builtin-vl-getgeomextents (ename) (declare (ignore ename)) nil)
+(defun builtin-vl-hidepromptmenu  () (autolisp-true))
+(defun builtin-vl-showpromptmenu  (&rest _) (declare (ignore _)) (autolisp-true))
+
+;;; STUB: VL-LOCAL-UNDO-* (5) — local-scope undo stack; not wired
+;;; to a real transactional store. All return nil.
+(defun builtin-vl-local-undo-clear ()  nil)
+(defun builtin-vl-local-undo-pop ()    nil)
+(defun builtin-vl-local-undo-push ()   nil)
+(defun builtin-vl-local-undo-reset ()  nil)
+(defun builtin-vl-local-undo-steps ()  nil)
+
+;;; STUB: VL-ANNOTATIVE-* (11) — annotative-scale machinery.
+(defun builtin-vl-annotative-addscale       (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-annotative-get            (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-annotative-getscales      (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-annotative-remove         (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-annotative-removescale    (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-annotative-reset          (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-annotative-scalelist      (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-annotative-set            (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-annotative-setscales      (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-annotative-supported      (&rest _) (declare (ignore _)) nil)
+
+;;; STUB: VL-SUBENT-* (5) — subentity operations.
+(defun builtin-vl-subent-atpoint   (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-subent-select    (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-subent-ssadd     (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-subent-ssdel     (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-subent-ssmemb    (&rest _) (declare (ignore _)) nil)
+
+;;; STUB: VL-VPLAYER-* (9) — viewport-layer property accessors.
+(defun builtin-vl-vplayer-get-color         (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-vplayer-get-linetype      (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-vplayer-get-lineweight    (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-vplayer-get-transparency  (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-vplayer-set-color         (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-vplayer-set-linetype      (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-vplayer-set-lineweight    (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-vplayer-set-transparency  (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-vplayer-set-truecolor     (&rest _) (declare (ignore _)) nil)
+
+;;; STUB: VL-VECTOR-PROJECT-POINTTOENTITY — needs entity geometry.
+(defun builtin-vl-vector-project-pointtoentity (&rest _)
+  (declare (ignore _))
+  nil)
+
+;;; --- end M5 -------------------------------------------------------
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -6032,7 +6314,95 @@ name strings."
    (make-core-builtin-subr "VLISP-EXPORT-SYMBOL"     #'builtin-vlisp-export-symbol)
    (make-core-builtin-subr "VLISP-IMPORT-SYMBOL"     #'builtin-vlisp-import-symbol)
    (make-core-builtin-subr "VLISP-IMPORT-EXSUBRS"    #'builtin-vlisp-import-exsubrs)
-   (make-core-builtin-subr "VLISP-OPTIMIZER"         #'builtin-vlisp-optimizer)))
+   (make-core-builtin-subr "VLISP-OPTIMIZER"         #'builtin-vlisp-optimizer)
+   ;; --- M5 core/misc rest ---
+   ;; native
+   (make-core-builtin-subr "VL-INIT"                 #'builtin-vl-init)
+   (make-core-builtin-subr "VL-LOAD-COM"             #'builtin-vl-load-com)
+   (make-core-builtin-subr "VL-LOAD-REACTORS"        #'builtin-vl-load-reactors)
+   (make-core-builtin-subr "VL-LOAD-ALL"             #'builtin-vl-load-all)
+   (make-core-builtin-subr "VL-ENABLE-USER-CANCEL"   #'builtin-vl-enable-user-cancel)
+   (make-core-builtin-subr "LAYOUTLIST"              #'builtin-layoutlist)
+   (make-core-builtin-subr "ACDIMENABLEUPDATE"       #'builtin-acdimenableupdate)
+   (make-core-builtin-subr "VPORTS"                  #'builtin-vports)
+   ;; session-state (registry + cfg)
+   (make-core-builtin-subr "VL-REGISTRY-READ"        #'builtin-vl-registry-read)
+   (make-core-builtin-subr "VL-REGISTRY-WRITE"       #'builtin-vl-registry-write)
+   (make-core-builtin-subr "VL-REGISTRY-DELETE"      #'builtin-vl-registry-delete)
+   (make-core-builtin-subr "VL-REGISTRY-DESCENDENTS" #'builtin-vl-registry-descendents)
+   (make-core-builtin-subr "GETCFG"                  #'builtin-getcfg)
+   (make-core-builtin-subr "SETCFG"                  #'builtin-setcfg)
+   ;; misc stubs
+   (make-core-builtin-subr "ADS"                     #'builtin-ads)
+   (make-core-builtin-subr "INITDIA"                 #'builtin-initdia)
+   (make-core-builtin-subr "INSPECTOR"               #'builtin-inspector)
+   (make-core-builtin-subr "DLG-SYSVARS"             #'builtin-dlg-sysvars)
+   (make-core-builtin-subr "EXPAND"                  #'builtin-expand)
+   (make-core-builtin-subr "LISP$INSTALL"            #'builtin-lisp$install)
+   (make-core-builtin-subr "LISP$ENABLEFASTCOM"      #'builtin-lisp$enablefastcom)
+   (make-core-builtin-subr "BPOLY"                   #'builtin-bpoly)
+   (make-core-builtin-subr "BCAD$DISABLE-EXTENDED-ERROR" #'builtin-bcad$disable-extended-error)
+   (make-core-builtin-subr "BCAD$LICENSELEVELS"      #'builtin-bcad$licenselevels)
+   (make-core-builtin-subr "VMON"                    #'builtin-vmon)
+   (make-core-builtin-subr "_VLAX-SAFEARRAY-MODE"    #'builtin-_vlax-safearray-mode)
+   ;; ActiveX property accessors
+   (make-core-builtin-subr "LISTALLPROPERTIES"       #'builtin-listallproperties)
+   (make-core-builtin-subr "DUMPALLPROPERTIES"       #'builtin-dumpallproperties)
+   (make-core-builtin-subr "ISPROPERTYREADONLY"      #'builtin-ispropertyreadonly)
+   (make-core-builtin-subr "ISPROPERTYVALID"         #'builtin-ispropertyvalid)
+   (make-core-builtin-subr "GETPROPERTYVALUE"        #'builtin-getpropertyvalue)
+   (make-core-builtin-subr "SETPROPERTYVALUE"        #'builtin-setpropertyvalue)
+   ;; VL-* management stubs
+   (make-core-builtin-subr "VL-LIST-LOADED-LISP"     #'builtin-vl-list-loaded-lisp)
+   (make-core-builtin-subr "VL-LIST-LOADED-VLX"      #'builtin-vl-list-loaded-vlx)
+   (make-core-builtin-subr "VL-VLX-LOADED-P"         #'builtin-vl-vlx-loaded-p)
+   (make-core-builtin-subr "VL-UNLOAD-VLX"           #'builtin-vl-unload-vlx)
+   (make-core-builtin-subr "VL-LIST-EXPORTED-FUNCTIONS" #'builtin-vl-list-exported-functions)
+   (make-core-builtin-subr "VL-VBALOAD"              #'builtin-vl-vbaload)
+   (make-core-builtin-subr "VL-VBARUN"               #'builtin-vl-vbarun)
+   (make-core-builtin-subr "VL-CMDF"                 #'builtin-vl-cmdf)
+   (make-core-builtin-subr "VL-ACAD-DEFUN"           #'builtin-vl-acad-defun)
+   (make-core-builtin-subr "VL-ACAD-UNDEFUN"         #'builtin-vl-acad-undefun)
+   (make-core-builtin-subr "VL-GET-RESOURCE"         #'builtin-vl-get-resource)
+   (make-core-builtin-subr "VL-GETGEOMEXTENTS"       #'builtin-vl-getgeomextents)
+   (make-core-builtin-subr "VL-HIDEPROMPTMENU"       #'builtin-vl-hidepromptmenu)
+   (make-core-builtin-subr "VL-SHOWPROMPTMENU"       #'builtin-vl-showpromptmenu)
+   ;; VL-LOCAL-UNDO-* (5)
+   (make-core-builtin-subr "VL-LOCAL-UNDO-CLEAR"     #'builtin-vl-local-undo-clear)
+   (make-core-builtin-subr "VL-LOCAL-UNDO-POP"       #'builtin-vl-local-undo-pop)
+   (make-core-builtin-subr "VL-LOCAL-UNDO-PUSH"      #'builtin-vl-local-undo-push)
+   (make-core-builtin-subr "VL-LOCAL-UNDO-RESET"     #'builtin-vl-local-undo-reset)
+   (make-core-builtin-subr "VL-LOCAL-UNDO-STEPS"     #'builtin-vl-local-undo-steps)
+   ;; VL-ANNOTATIVE-* (11)
+   (make-core-builtin-subr "VL-ANNOTATIVE-ADDSCALE"    #'builtin-vl-annotative-addscale)
+   (make-core-builtin-subr "VL-ANNOTATIVE-GET"         #'builtin-vl-annotative-get)
+   (make-core-builtin-subr "VL-ANNOTATIVE-GETSCALES"   #'builtin-vl-annotative-getscales)
+   (make-core-builtin-subr "VL-ANNOTATIVE-REMOVE"      #'builtin-vl-annotative-remove)
+   (make-core-builtin-subr "VL-ANNOTATIVE-REMOVESCALE" #'builtin-vl-annotative-removescale)
+   (make-core-builtin-subr "VL-ANNOTATIVE-RESET"       #'builtin-vl-annotative-reset)
+   (make-core-builtin-subr "VL-ANNOTATIVE-SCALELIST"   #'builtin-vl-annotative-scalelist)
+   (make-core-builtin-subr "VL-ANNOTATIVE-SET"         #'builtin-vl-annotative-set)
+   (make-core-builtin-subr "VL-ANNOTATIVE-SETSCALES"   #'builtin-vl-annotative-setscales)
+   (make-core-builtin-subr "VL-ANNOTATIVE-SUPPORTED"   #'builtin-vl-annotative-supported)
+   ;; VL-SUBENT-* (5)
+   (make-core-builtin-subr "VL-SUBENT-ATPOINT"       #'builtin-vl-subent-atpoint)
+   (make-core-builtin-subr "VL-SUBENT-SELECT"        #'builtin-vl-subent-select)
+   (make-core-builtin-subr "VL-SUBENT-SSADD"         #'builtin-vl-subent-ssadd)
+   (make-core-builtin-subr "VL-SUBENT-SSDEL"         #'builtin-vl-subent-ssdel)
+   (make-core-builtin-subr "VL-SUBENT-SSMEMB"        #'builtin-vl-subent-ssmemb)
+   ;; VL-VPLAYER-* (9)
+   (make-core-builtin-subr "VL-VPLAYER-GET-COLOR"        #'builtin-vl-vplayer-get-color)
+   (make-core-builtin-subr "VL-VPLAYER-GET-LINETYPE"     #'builtin-vl-vplayer-get-linetype)
+   (make-core-builtin-subr "VL-VPLAYER-GET-LINEWEIGHT"   #'builtin-vl-vplayer-get-lineweight)
+   (make-core-builtin-subr "VL-VPLAYER-GET-TRANSPARENCY" #'builtin-vl-vplayer-get-transparency)
+   (make-core-builtin-subr "VL-VPLAYER-SET-COLOR"        #'builtin-vl-vplayer-set-color)
+   (make-core-builtin-subr "VL-VPLAYER-SET-LINETYPE"     #'builtin-vl-vplayer-set-linetype)
+   (make-core-builtin-subr "VL-VPLAYER-SET-LINEWEIGHT"   #'builtin-vl-vplayer-set-lineweight)
+   (make-core-builtin-subr "VL-VPLAYER-SET-TRANSPARENCY" #'builtin-vl-vplayer-set-transparency)
+   (make-core-builtin-subr "VL-VPLAYER-SET-TRUECOLOR"    #'builtin-vl-vplayer-set-truecolor)
+   ;; misc geometry-coupled
+   (make-core-builtin-subr "VL-VECTOR-PROJECT-POINTTOENTITY"
+                           #'builtin-vl-vector-project-pointtoentity)))
 
 (defun find-core-builtin (name)
   (find name (core-builtins)

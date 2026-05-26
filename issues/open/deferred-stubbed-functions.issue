@@ -210,6 +210,58 @@ namespace), so all five ship as register-and-stub.
   * VLISP-OPTIMIZER — no bytecode optimiser to toggle/query.
     Drop-in stub.
 
+== Core/misc rest stubs (M5) ==
+
+~63 core/misc stubs land in M5, organised by family. All return
+nil unless documented otherwise.
+
+  * VL-* management (~14): VL-LIST-LOADED-{LISP,VLX},
+    VL-VLX-LOADED-P, VL-UNLOAD-VLX, VL-LIST-EXPORTED-FUNCTIONS,
+    VL-VBALOAD, VL-VBARUN, VL-CMDF, VL-{ACAD-DEFUN,ACAD-UNDEFUN},
+    VL-GET-RESOURCE, VL-GETGEOMEXTENTS,
+    VL-{HIDE,SHOW}PROMPTMENU. Real once VLX namespaces and the
+    interactive prompt-menu UI land.
+  * VL-LOCAL-UNDO-* (5): CLEAR/POP/PUSH/RESET/STEPS. Light
+    upgrade: per-session undo stack object (no rollback);
+    medium: actual undo on a transactional store.
+  * VL-ANNOTATIVE-* (11): ADDSCALE/GET/GETSCALES/REMOVE/
+    REMOVESCALE/RESET/SCALELIST/SET/SETSCALES/SUPPORTED.
+    Annotative-scale machinery — CAD-only.
+  * VL-SUBENT-* (5): ATPOINT/SELECT/SSADD/SSDEL/SSMEMB.
+    Subentity ops; need the entity DB.
+  * VL-VPLAYER-* (9): GET/SET for COLOR/LINETYPE/LINEWEIGHT/
+    TRANSPARENCY + SET-TRUECOLOR. Viewport-layer overrides.
+  * VL-VECTOR-PROJECT-POINTTOENTITY: geometry op needing the
+    entity DB.
+  * ActiveX property accessors (6): LISTALLPROPERTIES,
+    DUMPALLPROPERTIES, ISPROPERTYREADONLY, ISPROPERTYVALID,
+    GETPROPERTYVALUE, SETPROPERTYVALUE. No COM bridge.
+  * BricsCAD-specific (4): BCAD$DISABLE-EXTENDED-ERROR,
+    BCAD$LICENSELEVELS, LISP$INSTALL, LISP$ENABLEFASTCOM.
+    Vendor-specific configuration knobs.
+  * Misc (~9): ADS, INITDIA, INSPECTOR, DLG-SYSVARS, EXPAND
+    (returns its arg — CL GC handles memory), BPOLY, VMON,
+    _VLAX-SAFEARRAY-MODE.
+
+== Session-state record-only impls (M5) ==
+
+Two families ship with in-memory hash-table backings — they
+preserve API round-trip semantics within a session but state
+doesn't survive process exit. Each is one upgrade step away
+from full persistence.
+
+  * VL-REGISTRY-{READ,WRITE,DELETE,DESCENDENTS} — currently
+    backed by `*vl-registry*` (CL hash table). Upgrade: serialise
+    to/from `~/.config/clautolisp/registry.json` on every write
+    + load on first use.
+  * GETCFG / SETCFG — currently backed by `*acad-cfg*`. Upgrade:
+    serialise to/from `~/.config/clautolisp/cfg.ini`.
+
+The session-only design is intentional for M5: it lets us ship
+the API working (round-trip succeeds within a run) without
+pulling in a JSON / INI dependency. The persistence upgrade is
+small and self-contained.
+
 == Future entries ==
 
 When opening a new STUB marker in future M3/M4/M5 work, add an

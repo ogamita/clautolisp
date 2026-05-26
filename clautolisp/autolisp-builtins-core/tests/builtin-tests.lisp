@@ -2774,3 +2774,169 @@ and returns T. Accepts both a single symbol and a list."
                                  :setup-fn #'install-core-into)))
   (is (null (run-autolisp-string "(vlisp-optimizer t)"
                                  :setup-fn #'install-core-into))))
+
+;;;; ----- M5 missing-functions: core/misc rest -----
+
+(test m5-native-vl-load-family-returns-t
+  "VL-INIT / VL-LOAD-COM / VL-LOAD-REACTORS / VL-LOAD-ALL all
+return T — no-op success on a system without VLX / COM /
+reactors."
+  (reset-autolisp-symbol-table)
+  (flet ((true-p (form)
+           (let ((r (run-autolisp-string form :setup-fn #'install-core-into)))
+             (and (typep r 'autolisp-symbol)
+                  (string= "T" (autolisp-symbol-name r))))))
+    (is (true-p "(vl-init)"))
+    (is (true-p "(vl-load-com)"))
+    (is (true-p "(vl-load-reactors)"))
+    (is (true-p "(vl-load-all)"))))
+
+(test m5-layoutlist-returns-model-only
+  "(layoutlist) returns a single-element list with the autolisp-string \"Model\"."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(layoutlist)"
+                                     :setup-fn #'install-core-into)))
+    (is (consp result))
+    (is (= 1 (length result)))
+    (is (typep (first result) 'autolisp-string))
+    (is (string= "Model" (autolisp-string-value (first result))))))
+
+(test m5-vports-returns-single-default
+  "(vports) returns a list with one entry: id=1, full-screen corners."
+  (reset-autolisp-symbol-table)
+  (let* ((result (run-autolisp-string "(vports)"
+                                      :setup-fn #'install-core-into))
+         (first-entry (first result)))
+    (is (consp result))
+    (is (= 1 (length result)))
+    (is (eql 1 (first first-entry)))
+    (is (equal '(0.0d0 0.0d0) (second first-entry)))
+    (is (equal '(1.0d0 1.0d0) (third first-entry)))))
+
+(test m5-acdimenableupdate-returns-t
+  "(acdimenableupdate) and (acdimenableupdate <flag>) both return T."
+  (reset-autolisp-symbol-table)
+  (flet ((true-p (form)
+           (let ((r (run-autolisp-string form :setup-fn #'install-core-into)))
+             (and (typep r 'autolisp-symbol)
+                  (string= "T" (autolisp-symbol-name r))))))
+    (is (true-p "(acdimenableupdate)"))
+    (is (true-p "(acdimenableupdate t)"))
+    (is (true-p "(acdimenableupdate nil)"))))
+
+(test m5-vl-registry-roundtrip
+  "VL-REGISTRY-WRITE / READ / DELETE round-trip through the
+session table; DESCENDENTS lists value-names."
+  (reset-autolisp-symbol-table)
+  (clrhash clautolisp.autolisp-builtins-core::*vl-registry*)
+  ;; Write + read
+  (let ((written (run-autolisp-string
+                  "(vl-registry-write \"HKLM/test\" \"k1\" \"v1\")"
+                  :setup-fn #'install-core-into)))
+    (is (typep written 'autolisp-string))
+    (is (string= "v1" (autolisp-string-value written))))
+  (let ((read-back (run-autolisp-string
+                    "(vl-registry-read \"HKLM/test\" \"k1\")"
+                    :setup-fn #'install-core-into)))
+    (is (typep read-back 'autolisp-string))
+    (is (string= "v1" (autolisp-string-value read-back))))
+  ;; Descendents
+  (run-autolisp-string "(vl-registry-write \"HKLM/test\" \"k2\" \"v2\")"
+                       :setup-fn #'install-core-into)
+  (let ((children (run-autolisp-string
+                   "(vl-registry-descendents \"HKLM/test\" t)"
+                   :setup-fn #'install-core-into)))
+    (is (consp children))
+    (is (= 2 (length children)))
+    (is (string= "k1" (autolisp-string-value (first  children))))
+    (is (string= "k2" (autolisp-string-value (second children)))))
+  ;; Delete + miss-on-read
+  (let ((deleted (run-autolisp-string
+                  "(vl-registry-delete \"HKLM/test\" \"k1\")"
+                  :setup-fn #'install-core-into)))
+    (is (typep deleted 'autolisp-symbol))
+    (is (string= "T" (autolisp-symbol-name deleted))))
+  (is (null (run-autolisp-string "(vl-registry-read \"HKLM/test\" \"k1\")"
+                                 :setup-fn #'install-core-into)))
+  ;; Cleanup
+  (clrhash clautolisp.autolisp-builtins-core::*vl-registry*))
+
+(test m5-getcfg-setcfg-roundtrip
+  "SETCFG / GETCFG round-trip through the session table."
+  (reset-autolisp-symbol-table)
+  (clrhash clautolisp.autolisp-builtins-core::*acad-cfg*)
+  (let ((written (run-autolisp-string
+                  "(setcfg \"AppData/test\" \"hello\")"
+                  :setup-fn #'install-core-into)))
+    (is (typep written 'autolisp-string))
+    (is (string= "hello" (autolisp-string-value written))))
+  (let ((read-back (run-autolisp-string "(getcfg \"AppData/test\")"
+                                        :setup-fn #'install-core-into)))
+    (is (typep read-back 'autolisp-string))
+    (is (string= "hello" (autolisp-string-value read-back))))
+  (is (null (run-autolisp-string "(getcfg \"AppData/missing\")"
+                                 :setup-fn #'install-core-into)))
+  (clrhash clautolisp.autolisp-builtins-core::*acad-cfg*))
+
+(test m5-all-stubs-registered
+  "Every M5 stub binds a callable SUBR on its AutoLISP symbol."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (dolist (name '("ADS" "INITDIA" "INSPECTOR" "DLG-SYSVARS" "EXPAND"
+                  "LISP$INSTALL" "LISP$ENABLEFASTCOM" "BPOLY"
+                  "BCAD$DISABLE-EXTENDED-ERROR" "BCAD$LICENSELEVELS"
+                  "VMON" "_VLAX-SAFEARRAY-MODE"
+                  "LISTALLPROPERTIES" "DUMPALLPROPERTIES"
+                  "ISPROPERTYREADONLY" "ISPROPERTYVALID"
+                  "GETPROPERTYVALUE" "SETPROPERTYVALUE"
+                  "VL-LIST-LOADED-LISP" "VL-LIST-LOADED-VLX"
+                  "VL-VLX-LOADED-P" "VL-UNLOAD-VLX"
+                  "VL-LIST-EXPORTED-FUNCTIONS"
+                  "VL-VBALOAD" "VL-VBARUN" "VL-CMDF"
+                  "VL-ACAD-DEFUN" "VL-ACAD-UNDEFUN"
+                  "VL-GET-RESOURCE" "VL-GETGEOMEXTENTS"
+                  "VL-HIDEPROMPTMENU" "VL-SHOWPROMPTMENU"
+                  "VL-LOCAL-UNDO-CLEAR" "VL-LOCAL-UNDO-POP"
+                  "VL-LOCAL-UNDO-PUSH" "VL-LOCAL-UNDO-RESET"
+                  "VL-LOCAL-UNDO-STEPS"
+                  "VL-ANNOTATIVE-ADDSCALE" "VL-ANNOTATIVE-GET"
+                  "VL-ANNOTATIVE-GETSCALES" "VL-ANNOTATIVE-REMOVE"
+                  "VL-ANNOTATIVE-REMOVESCALE" "VL-ANNOTATIVE-RESET"
+                  "VL-ANNOTATIVE-SCALELIST" "VL-ANNOTATIVE-SET"
+                  "VL-ANNOTATIVE-SETSCALES" "VL-ANNOTATIVE-SUPPORTED"
+                  "VL-SUBENT-ATPOINT" "VL-SUBENT-SELECT"
+                  "VL-SUBENT-SSADD" "VL-SUBENT-SSDEL"
+                  "VL-SUBENT-SSMEMB"
+                  "VL-VPLAYER-GET-COLOR" "VL-VPLAYER-GET-LINETYPE"
+                  "VL-VPLAYER-GET-LINEWEIGHT" "VL-VPLAYER-GET-TRANSPARENCY"
+                  "VL-VPLAYER-SET-COLOR" "VL-VPLAYER-SET-LINETYPE"
+                  "VL-VPLAYER-SET-LINEWEIGHT" "VL-VPLAYER-SET-TRANSPARENCY"
+                  "VL-VPLAYER-SET-TRUECOLOR"
+                  "VL-VECTOR-PROJECT-POINTTOENTITY"))
+    (let* ((sym (find-autolisp-symbol name))
+           (subr (and sym (autolisp-symbol-function sym))))
+      (is (typep subr 'autolisp-subr) "~A should bind to a SUBR, got ~S" name subr))))
+
+(test m5-stubs-return-nil
+  "Spot-check that the M5 stubs return nil under representative calls."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(ads)"
+                  "(initdia)"
+                  "(inspector 'foo)"
+                  "(vl-list-loaded-lisp)"
+                  "(vl-list-loaded-vlx)"
+                  "(vl-vlx-loaded-p \"foo.vlx\")"
+                  "(vl-cmdf \"FOO\")"
+                  "(vl-vbaload \"x.vba\")"
+                  "(vl-get-resource \"foo\")"
+                  "(vl-annotative-supported 'foo)"
+                  "(vl-annotative-get 'foo)"
+                  "(vl-subent-atpoint nil)"
+                  "(vl-vplayer-get-color \"Layer\" 1)"
+                  "(vl-local-undo-clear)"
+                  "(vl-vector-project-pointtoentity '(0 0 0) 'foo nil)"
+                  "(bpoly '(0 0))"
+                  "(vmon)"
+                  "(listallproperties 'foo)"))
+    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+        "~A should return nil under the stub impl" form)))
