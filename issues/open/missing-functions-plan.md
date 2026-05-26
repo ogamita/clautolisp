@@ -306,7 +306,20 @@ meaning. Register + return documented no-op:
 
 ---
 
-## Milestone 4 — VLISP-* (5)
+## Milestone 4 — VLISP-* (5) [LANDED 1.0.69]
+
+All 5 VLISP-* functions ship as register-and-stub.
+
+  * VLISP-COMPILE — returns nil (no separate compile step).
+  * VLISP-EXPORT-SYMBOL — records names in
+    *vlisp-exported-symbols* (observable but ungated); returns T.
+  * VLISP-IMPORT-SYMBOL — no-op T.
+  * VLISP-IMPORT-EXSUBRS — no-op T.
+  * VLISP-OPTIMIZER — no-op nil.
+
+Tests: 6 new (20 checks); builtins-core suite 685 -> 705.
+
+
 
 All five are IDE-level operations with no in-process meaning.
 Stub with a documented warning at first use; return nil on

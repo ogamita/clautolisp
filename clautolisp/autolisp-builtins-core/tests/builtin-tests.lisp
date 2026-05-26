@@ -2708,3 +2708,69 @@ registered, even if many are stubs."
                                      :setup-fn #'install-core-into)))
     (is (typep result 'autolisp-symbol))
     (is (string= "T" (autolisp-symbol-name result)))))
+
+;;;; ----- M4 missing-functions: VLISP-* IDE stubs -----
+
+(test m4-vlisp-all-stubs-registered
+  "All five VLISP-* names bind to a SUBR after install."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (dolist (name '("VLISP-COMPILE" "VLISP-EXPORT-SYMBOL"
+                  "VLISP-IMPORT-SYMBOL" "VLISP-IMPORT-EXSUBRS"
+                  "VLISP-OPTIMIZER"))
+    (let* ((sym (find-autolisp-symbol name))
+           (subr (and sym (autolisp-symbol-function sym))))
+      (is (typep subr 'autolisp-subr) "~A should bind to a SUBR" name))))
+
+(test m4-vlisp-compile-returns-nil
+  "(vlisp-compile mode src) is a no-op returning nil."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(vlisp-compile 'sym \"foo.lsp\")"
+                                 :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vlisp-compile 'sym \"foo.lsp\" \"foo.fas\")"
+                                 :setup-fn #'install-core-into))))
+
+(test m4-vlisp-export-symbol-records-and-returns-t
+  "VLISP-EXPORT-SYMBOL pushes names into *vlisp-exported-symbols*
+and returns T. Accepts both a single symbol and a list."
+  (reset-autolisp-symbol-table)
+  (setf clautolisp.autolisp-builtins-core::*vlisp-exported-symbols* nil)
+  (let ((r1 (run-autolisp-string "(vlisp-export-symbol 'foo)"
+                                 :setup-fn #'install-core-into))
+        (r2 (run-autolisp-string "(vlisp-export-symbol '(bar baz))"
+                                 :setup-fn #'install-core-into)))
+    (is (typep r1 'autolisp-symbol))
+    (is (string= "T" (autolisp-symbol-name r1)))
+    (is (typep r2 'autolisp-symbol))
+    (is (string= "T" (autolisp-symbol-name r2))))
+  ;; All three names recorded (order not guaranteed).
+  (let ((recorded clautolisp.autolisp-builtins-core::*vlisp-exported-symbols*))
+    (is (member "FOO" recorded :test #'string=))
+    (is (member "BAR" recorded :test #'string=))
+    (is (member "BAZ" recorded :test #'string=)))
+  ;; Cleanup
+  (setf clautolisp.autolisp-builtins-core::*vlisp-exported-symbols* nil))
+
+(test m4-vlisp-import-symbol-returns-t
+  "VLISP-IMPORT-SYMBOL is a no-op returning T."
+  (reset-autolisp-symbol-table)
+  (let ((r (run-autolisp-string "(vlisp-import-symbol '(a b c))"
+                                :setup-fn #'install-core-into)))
+    (is (typep r 'autolisp-symbol))
+    (is (string= "T" (autolisp-symbol-name r)))))
+
+(test m4-vlisp-import-exsubrs-returns-t
+  "VLISP-IMPORT-EXSUBRS — no-op, returns T."
+  (reset-autolisp-symbol-table)
+  (let ((r (run-autolisp-string "(vlisp-import-exsubrs)"
+                                :setup-fn #'install-core-into)))
+    (is (typep r 'autolisp-symbol))
+    (is (string= "T" (autolisp-symbol-name r)))))
+
+(test m4-vlisp-optimizer-returns-nil
+  "VLISP-OPTIMIZER returns nil (no optimiser to toggle/query)."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(vlisp-optimizer)"
+                                 :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vlisp-optimizer t)"
+                                 :setup-fn #'install-core-into))))
