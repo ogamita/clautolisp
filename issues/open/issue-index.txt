@@ -17,6 +17,7 @@ clautolisp-debugger.issue
 deferred-clautolisp-out-of-dialect-warnings.issue
 deferred-command-special-form.issue
 deferred-spec-research.issue
+deferred-stubbed-functions.issue
 
 autolisp-spec-pdf-versioned-filename.issue
 autolisp-spec-questions.issue

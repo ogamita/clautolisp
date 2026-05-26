@@ -4245,6 +4245,12 @@ the caller can fall back to a placeholder triple)."
   ;; (help [topic [cmd [flags]]]) -> nil. The CAD opens its help
   ;; viewer; in a headless engine we print a one-liner pointing
   ;; the user at the installed Info / man pages and return nil.
+  ;;
+  ;;; STUB: prints a one-liner pointer instead of opening the
+  ;;;   actual viewer / matching node. See
+  ;;;   deferred-stubbed-functions.issue § HELP for the
+  ;;;   upgrade ladder (exec info, then topic-aware info, then
+  ;;;   embedded WebView).
   (declare (ignore topic command-name flags))
   (format t "~&clautolisp: help is in `info clautolisp' or `man clautolisp'.~%")
   nil)
@@ -4326,28 +4332,42 @@ codirectionality predicates. Land alongside VLE_G_VECTOL so
 later M3 (vector math) functions can pick it up from one place.")
 
 ;;; ---- CLI no-ops (no graphics surface in a headless engine) ----
+;;;
+;;; All of the following ship as documented no-ops so portable user
+;;; code that calls or boundp-checks them keeps running. Upgrade
+;;; paths (lynx/w3m for SHOWHTMLMODALWINDOW, TUI for MENUCMD, etc.)
+;;; are catalogued in `issues/open/deferred-stubbed-functions.issue'.
 
-(defun builtin-graphscr ()         nil)  ; switch to graphics screen -> no-op
-(defun builtin-textscr  ()         nil)  ; switch to text screen     -> no-op
-(defun builtin-textpage ()         nil)  ; alias of textscr          -> no-op
+;;; STUB: graphics-screen toggle. See deferred-stubbed-functions.issue § Graphics-screen no-ops.
+(defun builtin-graphscr ()         nil)
+;;; STUB: text-screen toggle. See deferred-stubbed-functions.issue § Graphics-screen no-ops.
+(defun builtin-textscr  ()         nil)
+;;; STUB: text-page alias. See deferred-stubbed-functions.issue § Graphics-screen no-ops.
+(defun builtin-textpage ()         nil)
+;;; STUB: redraw display. See deferred-stubbed-functions.issue § Graphics-screen no-ops.
 (defun builtin-redraw   (&rest _)
   (declare (ignore _))
-  nil)                                   ; redraw display            -> no-op
+  nil)
+;;; STUB: set viewport view. See deferred-stubbed-functions.issue § SETVIEW.
 (defun builtin-setview  (&rest _)
   (declare (ignore _))
-  nil)                                   ; set viewport view         -> no-op
+  nil)
+;;; STUB: tablet configuration. See deferred-stubbed-functions.issue § TABLET.
 (defun builtin-tablet   (&rest _)
   (declare (ignore _))
-  nil)                                   ; tablet configuration      -> no-op
+  nil)
+;;; STUB: menu-command accessor. See deferred-stubbed-functions.issue § Menu system stubs.
 (defun builtin-menucmd  (&optional _)
   (declare (ignore _))
-  (make-autolisp-string ""))             ; menu command              -> ""
+  (make-autolisp-string ""))
+;;; STUB: menu-group query. See deferred-stubbed-functions.issue § Menu system stubs.
 (defun builtin-menugroup (&optional _)
   (declare (ignore _))
-  nil)                                   ; menu group query          -> nil
+  nil)
+;;; STUB: HTML modal dialog. See deferred-stubbed-functions.issue § SHOWHTMLMODALWINDOW.
 (defun builtin-showhtmlmodalwindow (&rest _)
   (declare (ignore _))
-  nil)                                   ; html dialog               -> nil
+  nil)
 
 ;;; ---- *error* mode helpers ----
 
