@@ -4139,19 +4139,94 @@ install-transmit-variables step)."
   ;; alias.
   (builtin-ver))
 
+(defun extract-integers-after (text marker max-count)
+  "Find MARKER in TEXT; from its end, collect up to MAX-COUNT
+non-negative integers as they appear, stopping at the next
+newline. Returns the list (in order); shorter than MAX-COUNT if
+fewer integers fit on the marker's line, or nil if MARKER is
+absent."
+  (let ((start (search marker text)))
+    (when start
+      (let* ((cursor (+ start (length marker)))
+             (eol (or (position #\Newline text :start cursor) (length text)))
+             (results '()))
+        (loop while (and (< cursor eol) (< (length results) max-count))
+              do (let ((digit-pos (position-if #'digit-char-p text
+                                               :start cursor :end eol)))
+                   (cond
+                     ((null digit-pos) (loop-finish))
+                     (t (multiple-value-bind (n end)
+                            (parse-integer text :start digit-pos
+                                                :end eol
+                                                :junk-allowed t)
+                          (cond
+                            ((null n) (loop-finish))
+                            (t (push n results)
+                               (setf cursor (or end eol))))))))
+              finally (return (nreverse results)))))))
+
+#+ccl
+(defun ccl-room-mem-triple ()
+  "Capture CCL's (room) output and parse out (USED FREE RESERVED),
+all in bytes. The `Lisp Heap:' line interleaves byte-counts with
+the same number expressed in K-bytes — we keep the byte columns
+(positions 0, 2, 4 of the six integers on the line). The
+`reserved for heap expansion.' line carries a single MB value as
+a float; we round it to bytes. Returns NIL on parse failure (so
+the caller can fall back to a placeholder triple)."
+  (handler-case
+      (let* ((text (with-output-to-string (*standard-output*)
+                     (ccl::room)))
+             (heap-nums (extract-integers-after text "Lisp Heap:" 6))
+             (reserved-marker "reserved for heap expansion")
+             (reserved-pos (search reserved-marker text)))
+        (cond
+          ((null heap-nums) nil)
+          ((< (length heap-nums) 5) nil)
+          (t
+           (let* ((total (nth 0 heap-nums))
+                  (free  (nth 2 heap-nums))
+                  (used  (nth 4 heap-nums))
+                  (reserved-bytes
+                    (when reserved-pos
+                      (let* ((line-start
+                               (or (position #\Newline text :end reserved-pos
+                                                            :from-end t)
+                                   -1))
+                             (line (subseq text (1+ line-start) reserved-pos))
+                             (mb (with-input-from-string (in line)
+                                   (read in nil nil))))
+                        (when (realp mb)
+                          (round (* mb 1024 1024)))))))
+             (declare (ignore total))
+             (list used free (or reserved-bytes 0))))))
+    (error () nil)))
+
 (defun builtin-mem ()
   ;; (mem) -> list of three integers: (used free reserved).
   ;; Autodesk's contract is "approximate values describing the
   ;; running image's allocation state". We surface the dynamic
-  ;; heap size as USED; FREE and RESERVED stay 0 because neither
-  ;; impl-specific snapshot maps cleanly onto Autodesk's three-
-  ;; slot view. Stub-quality but always returns a valid triple.
-  (let ((used (or (ignore-errors
-                    #+sbcl (sb-ext:dynamic-space-size)
-                    #+ccl  (ccl::%freebytes)
-                    #-(or sbcl ccl) 0)
-                  0)))
-    (list used 0 0)))
+  ;; heap snapshot:
+  ;;
+  ;;   - SBCL: dynamic-space-size as USED (size, not actual usage;
+  ;;     SBCL has no portable cheap "currently consed bytes"
+  ;;     accessor). FREE and RESERVED stay 0.
+  ;;
+  ;;   - CCL: parse (room) output for the Lisp Heap row's USED /
+  ;;     FREE byte counts and the `reserved for heap expansion'
+  ;;     MB value. Falls back to the 0-triple on parse failure.
+  ;;
+  ;; Stub-quality but always returns a valid triple of integers.
+  (let ((triple
+          #+ccl  (ccl-room-mem-triple)
+          #+sbcl (let ((used (or (ignore-errors (sb-ext:dynamic-space-size))
+                                 0)))
+                   (list used 0 0))
+          #-(or sbcl ccl) nil))
+    (cond
+      ((and triple (= 3 (length triple)) (every #'integerp triple))
+       triple)
+      (t (list 0 0 0)))))
 
 (defun builtin-alloc (size)
   ;; (alloc N) -> N. Autodesk's contract: "doesn't apply to
