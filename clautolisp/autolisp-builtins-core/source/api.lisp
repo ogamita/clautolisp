@@ -79,7 +79,10 @@
     "VLE-IS-CURVE" "VLE-LICENSELEVEL"
     "VLE-LISPINSTALL" "VLE-LISPVERSION" "VLE-NTH<X>"
     "VLE-SAFEARRAY->LIST" "VLE-SELECTIONSET->LIST"
-    "VLE-SUNID" "VLE-TABLE-LIST" "VLE-TABLE-LIST-ALL" "VLE-TBLSEARCH"))
+    "VLE-SUNID" "VLE-TABLE-LIST" "VLE-TABLE-LIST-ALL" "VLE-TBLSEARCH"
+    ;; --- M4 VLISP-* IDE stubs ---
+    "VLISP-COMPILE" "VLISP-EXPORT-SYMBOL" "VLISP-IMPORT-SYMBOL"
+    "VLISP-IMPORT-EXSUBRS" "VLISP-OPTIMIZER"))
 
 (defun make-builtin-runtime-error (code builtin-name condition)
   (error 'autolisp-runtime-error
@@ -5424,6 +5427,96 @@ into the argv list uiop:run-program wants."
 
 ;;; --- end M3d ------------------------------------------------------
 
+;;; --- M4: VLISP-* IDE stubs ----------------------------------------
+;;;
+;;; The Visual LISP IDE family — bytecode compile, VLX-namespace
+;;; symbol export/import, optimiser toggle. clautolisp has no
+;;; separate compile step and no VLX/application namespace
+;;; structure (every loaded file lands in the single session
+;;; namespace), so all five operators ship as register-and-stub
+;;; with STUB markers. Two of them (EXPORT-SYMBOL and IMPORT-SYMBOL)
+;;; do record arguments into a per-session table so debuggers can
+;;; observe that the calls happened, but the recorded state is
+;;; never consulted — there's no namespace for it to gate.
+
+(defparameter *vlisp-exported-symbols* nil
+  "Per-session list of symbol-name strings the user has handed to
+VLISP-EXPORT-SYMBOL. clautolisp has no VLX namespace, so this
+list is record-only — nothing consults it. Documented so an
+upgrade path (when VLX namespaces land) doesn't have to invent
+the parameter from scratch.")
+
+(defun vlisp-symbol-or-list->names (arg operator-name)
+  "VLISP-EXPORT-SYMBOL / IMPORT-SYMBOL accept either a single
+symbol/string or a list of them. Returns a flat list of upcased
+name strings."
+  (cond
+    ((null arg) nil)
+    ((typep arg 'autolisp-symbol)
+     (list (autolisp-symbol-name arg)))
+    ((typep arg 'autolisp-string)
+     (list (string-upcase (autolisp-string-value arg))))
+    ((consp arg)
+     (let ((names '()))
+       (dolist (e arg)
+         (cond
+           ((typep e 'autolisp-symbol)
+            (push (autolisp-symbol-name e) names))
+           ((typep e 'autolisp-string)
+            (push (string-upcase (autolisp-string-value e)) names))
+           (t
+            (signal-builtin-argument-error
+             :invalid-symbol-designator operator-name
+             "~A list entry must be a symbol or string, got ~S."
+             operator-name e))))
+       (nreverse names)))
+    (t (signal-builtin-argument-error
+        :invalid-symbol-designator operator-name
+        "~A expects a symbol, string, or list of them, got ~S."
+        operator-name arg))))
+
+;;; STUB: VLISP-COMPILE — no separate compile step in clautolisp;
+;;; future upgrade could emit FASL via compile-file. See
+;;; deferred-stubbed-functions.issue § VLISP-* IDE stubs.
+(defun builtin-vlisp-compile (mode source-file &optional out-file)
+  (declare (ignore mode source-file out-file))
+  nil)
+
+;;; STUB: VLISP-EXPORT-SYMBOL — records names in
+;;; *vlisp-exported-symbols* (observable from CL) but doesn't
+;;; gate any real VLX namespace. Returns T per the BricsCAD
+;;; reference page's documented success value.
+(defun builtin-vlisp-export-symbol (arg)
+  (let ((names (vlisp-symbol-or-list->names arg "VLISP-EXPORT-SYMBOL")))
+    (dolist (n names)
+      (pushnew n *vlisp-exported-symbols* :test #'string=))
+    (autolisp-true)))
+
+;;; STUB: VLISP-IMPORT-SYMBOL — VLX namespaces don't exist in
+;;; clautolisp, so "importing" is a no-op. Returns T.
+(defun builtin-vlisp-import-symbol (arg)
+  (let ((names (vlisp-symbol-or-list->names arg "VLISP-IMPORT-SYMBOL")))
+    (declare (ignore names))
+    (autolisp-true)))
+
+;;; STUB: VLISP-IMPORT-EXSUBRS — pulls vendor-extension subrs
+;;; into the current namespace. Already imported globally in
+;;; clautolisp; no-op returning T.
+(defun builtin-vlisp-import-exsubrs (&rest _)
+  (declare (ignore _))
+  (autolisp-true))
+
+;;; STUB: VLISP-OPTIMIZER — no bytecode optimiser in clautolisp.
+;;; Per the BricsCAD reference description: queries when called
+;;; with no argument, toggles when called with T/NIL. We return
+;;; nil unconditionally (no optimiser to query, nothing to
+;;; toggle). See deferred-stubbed-functions.issue § VLISP-* IDE stubs.
+(defun builtin-vlisp-optimizer (&optional flag)
+  (declare (ignore flag))
+  nil)
+
+;;; --- end M4 -------------------------------------------------------
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -5933,7 +6026,13 @@ into the argv list uiop:run-program wants."
    (make-core-builtin-subr "VLE-SUNID"               #'builtin-vle-sunid)
    (make-core-builtin-subr "VLE-TABLE-LIST"          #'builtin-vle-table-list)
    (make-core-builtin-subr "VLE-TABLE-LIST-ALL"      #'builtin-vle-table-list-all)
-   (make-core-builtin-subr "VLE-TBLSEARCH"           #'builtin-vle-tblsearch)))
+   (make-core-builtin-subr "VLE-TBLSEARCH"           #'builtin-vle-tblsearch)
+   ;; --- M4 VLISP-* IDE stubs ---
+   (make-core-builtin-subr "VLISP-COMPILE"           #'builtin-vlisp-compile)
+   (make-core-builtin-subr "VLISP-EXPORT-SYMBOL"     #'builtin-vlisp-export-symbol)
+   (make-core-builtin-subr "VLISP-IMPORT-SYMBOL"     #'builtin-vlisp-import-symbol)
+   (make-core-builtin-subr "VLISP-IMPORT-EXSUBRS"    #'builtin-vlisp-import-exsubrs)
+   (make-core-builtin-subr "VLISP-OPTIMIZER"         #'builtin-vlisp-optimizer)))
 
 (defun find-core-builtin (name)
   (find name (core-builtins)
