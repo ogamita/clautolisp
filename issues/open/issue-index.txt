@@ -6,21 +6,16 @@ alfe.plan -- remains to be tested with the CADs on macOS and MS-Windows
 autolisp-spec-pdf-versioned-filename.issue
 autolisp-spec-questions.issue
 
-missing-functions.issue
-
-
-source-aware-defun-documentation.issue
-source-aware-defun-documentation.lsp
-
 clautolisp-debugger.issue
-
 deferred-clautolisp-out-of-dialect-warnings.issue
 deferred-command-special-form.issue
 deferred-spec-research.issue
 deferred-stubbed-functions.issue
 
-autolisp-spec-pdf-versioned-filename.issue
-autolisp-spec-questions.issue
+missing-functions.issue
+
+source-aware-defun-documentation.issue
+source-aware-defun-documentation.lsp
 
 test-file-encodings.issue
 tex-pdf-characters.issue
@@ -42,4 +37,3 @@ opendcl-wire-protocol.issue
 alfe-plugin-model.issue
 nice-make-output.issue
 ci-github-ccl-lane.issue
-
