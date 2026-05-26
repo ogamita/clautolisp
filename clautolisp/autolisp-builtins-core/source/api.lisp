@@ -21,7 +21,16 @@
     "BOUNDP" "CAR" "CDR" "CONS" "LIST" "APPEND" "ASSOC" "LENGTH" "NTH"
     "REVERSE" "LAST" "MEMBER" "SUBST" "LISTP" "VL-CONSP" "VL-LIST*"
     "NUMBERP" "=" "/=" "<" "<=" ">" ">=" "ABS" "FIX" "FLOAT" "ZEROP"
-    "MINUSP"))
+    "MINUSP"
+    ;; --- M2 (missing-functions.issue) ---
+    "GETENV" "SETENV" "GETPID" "SLEEP" "GC" "STARTAPP"
+    "VL-GETCURRENTDIR" "VL-SETCURRENTDIR" "VL-GETSTARTUPDIR"
+    "VL-RMDIR" "FNSPLITL" "DOC_CLIPBOARD"
+    "VER" "LISP$VERSION" "MEM" "ALLOC" "HELP"
+    "TRANS" "TEXTBOX" "VLE_G_VECTOL"
+    "GRAPHSCR" "TEXTSCR" "TEXTPAGE" "REDRAW" "SETVIEW"
+    "TABLET" "MENUCMD" "MENUGROUP" "SHOWHTMLMODALWINDOW"
+    "*PUSH-ERROR-USING-COMMAND*" "*PUSH-ERROR-USING-STACK*" "*POP-ERROR-MODE*"))
 
 (defun make-builtin-runtime-error (code builtin-name condition)
   (error 'autolisp-runtime-error
@@ -3867,6 +3876,363 @@ through mock-host-snapshot. Callbacks must be autolisp-symbols
                  (error () nil)))))
   nil)
 
+;;; --- M2: Core / Misc native (missing-functions.issue) -------------
+;;;
+;;; OS / process / filesystem, version / inspection, geometry / math,
+;;; CLI no-ops, and *error*-mode helpers. Landed under
+;;; missing-functions-plan.md M2; each function is documented in the
+;;; AutoLISP Spec under its Function Entry. The CLI no-op group
+;;; (GRAPHSCR / TEXTSCR / TEXTPAGE / REDRAW / SETVIEW / TABLET /
+;;; MENUCMD / MENUGROUP / SHOWHTMLMODALWINDOW) ships as documented
+;;; nil-returning stubs — there's no graphics surface in a headless
+;;; engine, but the names must be callable for portable user code
+;;; that probes `boundp' or wraps the call in `vl-catch-all-apply'.
+
+(defparameter *autolisp-error-mode-stack* nil
+  "Push-down stack of *error* protocol frames, populated by
+*PUSH-ERROR-USING-COMMAND* / *PUSH-ERROR-USING-STACK* and
+drained by *POP-ERROR-MODE*. Each frame is a keyword keyword:
+:COMMAND or :STACK, used by host error-handlers to decide how
+to format the *error* output. Sticky across calls — bounded only
+by stack discipline in user code, not by session lifetime.")
+
+(defvar *clautolisp-startup-directory*
+  (or (ignore-errors (namestring (uiop:getcwd))) "")
+  "Directory clautolisp was invoked from, captured the first time
+this defvar is evaluated (i.e. at image build / install-core-
+builtins, whichever comes first). VL-GETSTARTUPDIR returns this
+string; once captured it doesn't track later `chdir' calls. A
+defvar so the value survives multiple test-image reloads.")
+
+;;; ---- OS / process / filesystem ----
+
+(defun builtin-getenv (name)
+  ;; (getenv "VAR") -> string-or-nil. Reads the process environment
+  ;; via uiop:getenv; missing or empty values return nil per
+  ;; Autodesk's documented behaviour.
+  (let* ((var (autolisp-string-value (require-string name "GETENV")))
+         (value (uiop:getenv var)))
+    (if (and value (plusp (length value)))
+        (make-autolisp-string value)
+        nil)))
+
+(defun builtin-setenv (name value)
+  ;; (setenv "VAR" "VALUE") -> "VALUE". Writes the process
+  ;; environment via (setf uiop:getenv). VALUE nil deletes the
+  ;; variable on hosts that support it; otherwise sets it to "".
+  ;; Returns the new value (or nil if value was nil).
+  (let* ((var (autolisp-string-value (require-string name "SETENV")))
+         (new (cond ((null value) "")
+                    (t (autolisp-string-value (require-string value "SETENV"))))))
+    (setf (uiop:getenv var) new)
+    (if value (make-autolisp-string new) nil)))
+
+(defun builtin-getpid ()
+  ;; (getpid) -> integer. Process ID of the running clautolisp.
+  ;; UIOP doesn't expose a portable getpid for the CURRENT process
+  ;; (only process-info-pid for spawned ones), so we go through
+  ;; the implementation primitive directly. Returns 0 if the host
+  ;; lacks one.
+  (or (ignore-errors
+        #+sbcl (sb-posix:getpid)
+        #+ccl  (ccl::getpid)
+        #-(or sbcl ccl) 0)
+      0))
+
+(defun builtin-sleep (milliseconds)
+  ;; (sleep N) -> nil. AutoLISP SLEEP takes milliseconds; CL's
+  ;; sleep takes seconds, so we divide. Negative or zero values
+  ;; are documented as "return immediately".
+  (let ((ms (require-number milliseconds "SLEEP")))
+    (when (plusp ms)
+      (sleep (/ (coerce ms 'double-float) 1000.0d0)))
+    nil))
+
+(defun builtin-gc ()
+  ;; (gc) -> nil. Forces a garbage collection. SBCL: `sb-ext:gc`.
+  ;; Other impls: best-effort via uiop where available.
+  (handler-case
+      (progn
+        #+sbcl (sb-ext:gc :full t)
+        #+ccl  (ccl:gc)
+        #-(or sbcl ccl) (values))
+    (error () nil))
+  nil)
+
+(defun builtin-startapp (command &optional file)
+  ;; (startapp "cmd" ["file"]) -> integer-or-nil. Launches an
+  ;; external program asynchronously. Autodesk returns the process
+  ;; ID on success, nil on failure. We use uiop:launch-program
+  ;; for the spawn; the program runs detached.
+  (let* ((cmd (autolisp-string-value (require-string command "STARTAPP")))
+         (arg (and file
+                   (autolisp-string-value (require-string file "STARTAPP"))))
+         (argv (if arg (list cmd arg) cmd)))
+    (handler-case
+        (let ((proc (uiop:launch-program argv :output nil :error-output nil)))
+          (or (ignore-errors (uiop:process-info-pid proc)) 1))
+      (error () nil))))
+
+(defun builtin-vl-getcurrentdir ()
+  ;; (vl-getcurrentdir) -> string. Current working directory.
+  (make-autolisp-string (namestring (uiop:getcwd))))
+
+(defun builtin-vl-setcurrentdir (path)
+  ;; (vl-setcurrentdir "/some/path") -> string-or-nil. Returns the
+  ;; new cwd on success, nil if the path doesn't exist or chdir
+  ;; fails.
+  (let ((target (autolisp-string-value (require-string path "VL-SETCURRENTDIR"))))
+    (handler-case
+        (let ((resolved (uiop:ensure-directory-pathname
+                         (uiop:parse-native-namestring target))))
+          (unless (uiop:directory-exists-p resolved)
+            (return-from builtin-vl-setcurrentdir nil))
+          (uiop:chdir resolved)
+          (make-autolisp-string (namestring (uiop:getcwd))))
+      (error () nil))))
+
+(defun builtin-vl-getstartupdir ()
+  ;; (vl-getstartupdir) -> string. The cwd at clautolisp's first
+  ;; install of core-builtins (image build time, captured by
+  ;; *clautolisp-startup-directory* via defvar).
+  (make-autolisp-string *clautolisp-startup-directory*))
+
+(defun builtin-vl-rmdir (path)
+  ;; (vl-rmdir "/some/path") -> T-or-nil. Removes an EMPTY
+  ;; directory; returns nil on failure (path missing, non-empty,
+  ;; permission denied). Autodesk does NOT recurse — we match that
+  ;; (use rm -rf at the shell for recursive removal).
+  (let ((target (autolisp-string-value (require-string path "VL-RMDIR"))))
+    (handler-case
+        (let ((resolved (uiop:ensure-directory-pathname
+                         (uiop:parse-native-namestring target))))
+          (cond
+            ((not (uiop:directory-exists-p resolved)) nil)
+            (t
+             (uiop:delete-empty-directory resolved)
+             (intern-autolisp-symbol "T"))))
+      (error () nil))))
+
+(defun builtin-fnsplitl (filename)
+  ;; (fnsplitl "/path/to/file.lsp") ->
+  ;;     ("/path/to/" "file" ".lsp")
+  ;; Autodesk's three-element split: directory + basename + extension.
+  ;; The directory part keeps its trailing slash; the extension keeps
+  ;; its leading dot. Names with no extension yield "" in slot 3.
+  (let* ((value (autolisp-string-value (require-string filename "FNSPLITL")))
+         (slash (position #\/ value :from-end t)))
+    (let* ((dir (if slash
+                    (subseq value 0 (1+ slash))
+                    ""))
+           (file-part (if slash (subseq value (1+ slash)) value))
+           (dot (position #\. file-part :from-end t))
+           (base (if dot (subseq file-part 0 dot) file-part))
+           (ext  (if dot (subseq file-part dot) "")))
+      (list (make-autolisp-string dir)
+            (make-autolisp-string base)
+            (make-autolisp-string ext)))))
+
+(defun builtin-doc-clipboard (&optional value)
+  ;; (doc_clipboard)            -> reads clipboard text, returns string or nil
+  ;; (doc_clipboard "new text") -> writes, returns "new text"
+  ;; macOS: pbpaste / pbcopy. Linux: xclip. Stub-returning-nil on
+  ;; platforms without the binaries (Windows for now).
+  (let ((reader #+darwin "pbpaste" #+linux "xclip" #-(or darwin linux) nil)
+        (writer #+darwin "pbcopy"  #+linux "xclip" #-(or darwin linux) nil))
+    (cond
+      ((null reader) nil)
+      ((null value)
+       (handler-case
+           (let ((output (uiop:run-program (if (string= reader "xclip")
+                                               (list reader "-selection" "clipboard" "-o")
+                                               (list reader))
+                                           :output :string
+                                           :ignore-error-status t)))
+             (make-autolisp-string output))
+         (error () nil)))
+      (t
+       (let ((text (autolisp-string-value
+                    (require-string value "DOC_CLIPBOARD"))))
+         (handler-case
+             (let ((argv (if (string= writer "xclip")
+                             (list writer "-selection" "clipboard")
+                             (list writer))))
+               (uiop:run-program argv :input (make-string-input-stream text)
+                                      :output nil :error-output nil)
+               (make-autolisp-string text))
+           (error () nil)))))))
+
+;;; ---- Version / inspection ----
+
+(defun read-autolisp-version-string ()
+  "Return the *AUTOLISP-VERSION* value as a CL string, falling
+back to \"0.0.0\" when the global isn't installed (the bare
+autolisp-runtime test image, which doesn't load the CLI's
+install-transmit-variables step)."
+  (multiple-value-bind (value boundp)
+      (lookup-variable (intern-autolisp-symbol "*AUTOLISP-VERSION*"))
+    (cond
+      ((and boundp (typep value 'autolisp-string))
+       (autolisp-string-value value))
+      (t "0.0.0"))))
+
+(defun builtin-ver ()
+  ;; (ver) -> "Clautolisp X.Y.Z". The Autodesk page returns a
+  ;; vendor-prefixed string; we follow the convention so user
+  ;; banner code can dispatch on substring.
+  (make-autolisp-string
+   (format nil "Clautolisp ~A" (read-autolisp-version-string))))
+
+(defun builtin-lisp$version ()
+  ;; (lisp$version) -> same string as (ver). Legacy Visual LISP
+  ;; alias.
+  (builtin-ver))
+
+(defun builtin-mem ()
+  ;; (mem) -> list of three integers: (used free reserved).
+  ;; Autodesk's contract is "approximate values describing the
+  ;; running image's allocation state". We surface the dynamic
+  ;; heap size as USED; FREE and RESERVED stay 0 because neither
+  ;; impl-specific snapshot maps cleanly onto Autodesk's three-
+  ;; slot view. Stub-quality but always returns a valid triple.
+  (let ((used (or (ignore-errors
+                    #+sbcl (sb-ext:dynamic-space-size)
+                    #+ccl  (ccl::%freebytes)
+                    #-(or sbcl ccl) 0)
+                  0)))
+    (list used 0 0)))
+
+(defun builtin-alloc (size)
+  ;; (alloc N) -> N. Autodesk's contract: "doesn't apply to
+  ;; AutoLISP / Visual LISP" — return the argument unchanged so
+  ;; existing user code that calls it as a no-op tuning hook keeps
+  ;; running.
+  (require-int32 size "ALLOC"))
+
+(defun builtin-help (&optional topic command-name flags)
+  ;; (help [topic [cmd [flags]]]) -> nil. The CAD opens its help
+  ;; viewer; in a headless engine we print a one-liner pointing
+  ;; the user at the installed Info / man pages and return nil.
+  (declare (ignore topic command-name flags))
+  (format t "~&clautolisp: help is in `info clautolisp' or `man clautolisp'.~%")
+  nil)
+
+;;; ---- Geometry / math ----
+
+(defun builtin-trans (point from to &optional displacement-p)
+  ;; (trans POINT FROM TO [DISPLACEMENT-P])
+  ;; Coordinate-system transform. With no host, every coordinate
+  ;; space (WCS = 0, UCS = 1, DCS = 2, PSDCS = 3, entity Z-axis
+  ;; ECS = (ENAME)) collapses to a single identity space — there's
+  ;; no document loaded to define a UCS or a viewport DCS. We
+  ;; therefore return the input point unchanged after validating
+  ;; the FROM / TO arguments. This matches what Autodesk does on
+  ;; a fresh empty drawing where UCS == WCS.
+  (declare (ignore displacement-p))
+  (require-proper-list point "TRANS")
+  ;; FROM and TO may be integers (0/1/2/3) or entity-name lists.
+  (unless (or (numberp from) (consp from)) ; permissive
+    (signal-builtin-argument-error
+     :invalid-trans-source "TRANS"
+     "TRANS FROM must be an integer (0=WCS, 1=UCS, 2=DCS, 3=PSDCS) or an entity-name list, got ~S."
+     from))
+  (unless (or (numberp to) (consp to))
+    (signal-builtin-argument-error
+     :invalid-trans-target "TRANS"
+     "TRANS TO must be an integer or an entity-name list, got ~S."
+     to))
+  ;; Coerce coordinates to double-float so the returned list is
+  ;; numerically clean even if the input had integer slots.
+  (let* ((x (coerce (require-number (nth 0 point) "TRANS") 'double-float))
+         (y (coerce (require-number (nth 1 point) "TRANS") 'double-float))
+         (z (if (>= (length point) 3)
+                (coerce (require-number (nth 2 point) "TRANS") 'double-float)
+                0.0d0)))
+    (list x y z)))
+
+(defun builtin-textbox (entity-list)
+  ;; (textbox '((1 . "TEXT") (40 . 2.5))) -> ((x1 y1 z1) (x2 y2 z2))
+  ;; Autodesk returns the bounding-box corners of a TEXT entity in
+  ;; the text's OCS. Without a font-metrics back-end we approximate:
+  ;; width = char-width × content-length, height = (40 . HEIGHT),
+  ;; char-width = 0.6 × height (a common monospace ratio).
+  ;; Returns ((0 0 0) (w h 0)). Stub-quality; full impl waits on
+  ;; an SHX/TTF font loader.
+  (require-proper-list entity-list "TEXTBOX")
+  (let* ((text-pair (assoc 1 entity-list))
+         (height-pair (assoc 40 entity-list))
+         (text (cond ((and text-pair (typep (cdr text-pair) 'autolisp-string))
+                      (autolisp-string-value (cdr text-pair)))
+                     (t "")))
+         (height (cond ((and height-pair (numberp (cdr height-pair)))
+                        (coerce (cdr height-pair) 'double-float))
+                       (t 1.0d0)))
+         (width (* (length text) 0.6d0 height)))
+    (list (list 0.0d0 0.0d0 0.0d0)
+          (list width height 0.0d0))))
+
+(defun builtin-vle-g-vectol ()
+  ;; (vle_g_vectol) -> tolerance value used by VLE-VECTOR-* operators.
+  ;; Documented as "geometric tolerance, double-float", default 1e-10.
+  ;; Configurable via the same Visual LISP path Autodesk exposes — we
+  ;; ship a session-scoped binding via a defparameter.
+  *vle-vector-tolerance*)
+
+(defparameter *vle-vector-tolerance* 1.0d-10
+  "Tolerance used by VLE-VECTOR-* equality / parallelism /
+codirectionality predicates. Land alongside VLE_G_VECTOL so
+later M3 (vector math) functions can pick it up from one place.")
+
+;;; ---- CLI no-ops (no graphics surface in a headless engine) ----
+
+(defun builtin-graphscr ()         nil)  ; switch to graphics screen -> no-op
+(defun builtin-textscr  ()         nil)  ; switch to text screen     -> no-op
+(defun builtin-textpage ()         nil)  ; alias of textscr          -> no-op
+(defun builtin-redraw   (&rest _)
+  (declare (ignore _))
+  nil)                                   ; redraw display            -> no-op
+(defun builtin-setview  (&rest _)
+  (declare (ignore _))
+  nil)                                   ; set viewport view         -> no-op
+(defun builtin-tablet   (&rest _)
+  (declare (ignore _))
+  nil)                                   ; tablet configuration      -> no-op
+(defun builtin-menucmd  (&optional _)
+  (declare (ignore _))
+  (make-autolisp-string ""))             ; menu command              -> ""
+(defun builtin-menugroup (&optional _)
+  (declare (ignore _))
+  nil)                                   ; menu group query          -> nil
+(defun builtin-showhtmlmodalwindow (&rest _)
+  (declare (ignore _))
+  nil)                                   ; html dialog               -> nil
+
+;;; ---- *error* mode helpers ----
+
+(defun builtin-push-error-using-command ()
+  ;; (*push-error-using-command*) -> nil. Pushes a :COMMAND frame
+  ;; onto *autolisp-error-mode-stack*; host *error* handlers can
+  ;; consult the top of the stack to format diagnostics using
+  ;; (command) output instead of stack traces.
+  (push :command *autolisp-error-mode-stack*)
+  nil)
+
+(defun builtin-push-error-using-stack ()
+  ;; (*push-error-using-stack*) -> nil. Pushes a :STACK frame —
+  ;; the host's *error* should emit a call stack on diagnostic.
+  (push :stack *autolisp-error-mode-stack*)
+  nil)
+
+(defun builtin-pop-error-mode ()
+  ;; (*pop-error-mode*) -> the popped mode keyword, or nil if the
+  ;; stack was empty. Pairs with the two *push- variants above.
+  (cond
+    ((null *autolisp-error-mode-stack*) nil)
+    (t (let ((top (pop *autolisp-error-mode-stack*)))
+         (intern-autolisp-symbol (symbol-name top))))))
+
+;;; --- end M2 -------------------------------------------------------
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -4209,7 +4575,47 @@ through mock-host-snapshot. Callbacks must be autolisp-symbols
    (make-core-builtin-subr "FIX" #'builtin-fix)
    (make-core-builtin-subr "FLOAT" #'builtin-float)
    (make-core-builtin-subr "ZEROP" #'builtin-zerop)
-   (make-core-builtin-subr "MINUSP" #'builtin-minusp)))
+   (make-core-builtin-subr "MINUSP" #'builtin-minusp)
+   ;; --- M2 OS / process / filesystem ---
+   (make-core-builtin-subr "GETENV"             #'builtin-getenv)
+   (make-core-builtin-subr "SETENV"             #'builtin-setenv)
+   (make-core-builtin-subr "GETPID"             #'builtin-getpid)
+   (make-core-builtin-subr "SLEEP"              #'builtin-sleep)
+   (make-core-builtin-subr "GC"                 #'builtin-gc)
+   (make-core-builtin-subr "STARTAPP"           #'builtin-startapp)
+   (make-core-builtin-subr "VL-GETCURRENTDIR"   #'builtin-vl-getcurrentdir)
+   (make-core-builtin-subr "VL-SETCURRENTDIR"   #'builtin-vl-setcurrentdir)
+   (make-core-builtin-subr "VL-GETSTARTUPDIR"   #'builtin-vl-getstartupdir)
+   (make-core-builtin-subr "VL-RMDIR"           #'builtin-vl-rmdir)
+   (make-core-builtin-subr "FNSPLITL"           #'builtin-fnsplitl)
+   (make-core-builtin-subr "DOC_CLIPBOARD"      #'builtin-doc-clipboard)
+   ;; --- M2 version / inspection ---
+   (make-core-builtin-subr "VER"                #'builtin-ver)
+   (make-core-builtin-subr "LISP$VERSION"       #'builtin-lisp$version)
+   (make-core-builtin-subr "MEM"                #'builtin-mem)
+   (make-core-builtin-subr "ALLOC"              #'builtin-alloc)
+   (make-core-builtin-subr "HELP"               #'builtin-help)
+   ;; --- M2 geometry / math ---
+   (make-core-builtin-subr "TRANS"              #'builtin-trans)
+   (make-core-builtin-subr "TEXTBOX"            #'builtin-textbox)
+   (make-core-builtin-subr "VLE_G_VECTOL"       #'builtin-vle-g-vectol)
+   ;; --- M2 CLI no-ops ---
+   (make-core-builtin-subr "GRAPHSCR"           #'builtin-graphscr)
+   (make-core-builtin-subr "TEXTSCR"            #'builtin-textscr)
+   (make-core-builtin-subr "TEXTPAGE"           #'builtin-textpage)
+   (make-core-builtin-subr "REDRAW"             #'builtin-redraw)
+   (make-core-builtin-subr "SETVIEW"            #'builtin-setview)
+   (make-core-builtin-subr "TABLET"             #'builtin-tablet)
+   (make-core-builtin-subr "MENUCMD"            #'builtin-menucmd)
+   (make-core-builtin-subr "MENUGROUP"          #'builtin-menugroup)
+   (make-core-builtin-subr "SHOWHTMLMODALWINDOW"#'builtin-showhtmlmodalwindow)
+   ;; --- M2 *error* mode helpers ---
+   (make-core-builtin-subr "*PUSH-ERROR-USING-COMMAND*"
+                           #'builtin-push-error-using-command)
+   (make-core-builtin-subr "*PUSH-ERROR-USING-STACK*"
+                           #'builtin-push-error-using-stack)
+   (make-core-builtin-subr "*POP-ERROR-MODE*"
+                           #'builtin-pop-error-mode)))
 
 (defun find-core-builtin (name)
   (find name (core-builtins)

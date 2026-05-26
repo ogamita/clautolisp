@@ -1954,3 +1954,202 @@ strings yield nil (not an error)."
                                   :setup-fn #'install-core-into)))
   (is (null (run-autolisp-string "(vl-infp \"hello\")"
                                   :setup-fn #'install-core-into))))
+
+;;;; ----- M2 missing-functions: core/misc native -----
+
+(test m2-getenv-existing-var
+  "(getenv \"PATH\") returns a non-nil autolisp-string when the env
+var is set in the running process — PATH is essentially always set."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(getenv \"PATH\")"
+                                     :setup-fn #'install-core-into)))
+    (is (typep result 'autolisp-string))
+    (is (plusp (length (autolisp-string-value result))))))
+
+(test m2-getenv-missing-returns-nil
+  "(getenv \"DEFINITELY_NOT_SET\") returns nil for an unset var."
+  (reset-autolisp-symbol-table)
+  (is (null
+       (run-autolisp-string "(getenv \"DEFINITELY_NOT_SET_X\")"
+                            :setup-fn #'install-core-into))))
+
+(test m2-setenv-getenv-roundtrip
+  "(setenv \"X\" \"v\") followed by (getenv \"X\") returns \"v\"."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string
+                 "(setenv \"CLAUTOLISP_TEST_M2\" \"hello\") (getenv \"CLAUTOLISP_TEST_M2\")"
+                 :setup-fn #'install-core-into)))
+    (is (typep result 'autolisp-string))
+    (is (string= "hello" (autolisp-string-value result)))))
+
+(test m2-getpid-returns-positive-integer
+  "(getpid) returns the running process's PID as a positive integer."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(getpid)"
+                                     :setup-fn #'install-core-into)))
+    (is (integerp result))
+    (is (plusp result))))
+
+(test m2-sleep-returns-nil
+  "(sleep 1) returns nil — Autodesk's documented return."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(sleep 1)"
+                                 :setup-fn #'install-core-into))))
+
+(test m2-gc-returns-nil
+  "(gc) returns nil and doesn't crash."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(gc)" :setup-fn #'install-core-into))))
+
+(test m2-ver-returns-version-string
+  "(ver) returns a non-empty autolisp-string starting with \"Clautolisp\"."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(ver)" :setup-fn #'install-core-into)))
+    (is (typep result 'autolisp-string))
+    (is (search "Clautolisp" (autolisp-string-value result)))))
+
+(test m2-lisp$version-alias
+  "(lisp$version) returns the same string as (ver)."
+  (reset-autolisp-symbol-table)
+  (let ((ver (run-autolisp-string "(ver)" :setup-fn #'install-core-into))
+        (lv  (run-autolisp-string "(lisp$version)" :setup-fn #'install-core-into)))
+    (is (string= (autolisp-string-value ver)
+                 (autolisp-string-value lv)))))
+
+(test m2-mem-returns-three-integers
+  "(mem) returns a list of three integers (the documented triple)."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(mem)" :setup-fn #'install-core-into)))
+    (is (consp result))
+    (is (= 3 (length result)))
+    (is (every #'integerp result))))
+
+(test m2-alloc-returns-argument
+  "(alloc N) returns N (Autodesk: doesn't apply)."
+  (reset-autolisp-symbol-table)
+  (is (eql 1234 (run-autolisp-string "(alloc 1234)"
+                                     :setup-fn #'install-core-into))))
+
+(test m2-vl-getcurrentdir-returns-string
+  "(vl-getcurrentdir) returns the current working directory."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(vl-getcurrentdir)"
+                                     :setup-fn #'install-core-into)))
+    (is (typep result 'autolisp-string))
+    (is (plusp (length (autolisp-string-value result))))))
+
+(test m2-vl-getstartupdir-returns-string
+  "(vl-getstartupdir) returns the directory captured at startup."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(vl-getstartupdir)"
+                                     :setup-fn #'install-core-into)))
+    (is (typep result 'autolisp-string))))
+
+(test m2-fnsplitl-three-parts
+  "(fnsplitl \"/tmp/file.lsp\") -> (\"/tmp/\" \"file\" \".lsp\")."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(fnsplitl \"/tmp/file.lsp\")"
+                                     :setup-fn #'install-core-into)))
+    (is (consp result))
+    (is (= 3 (length result)))
+    (is (string= "/tmp/" (autolisp-string-value (first  result))))
+    (is (string= "file"  (autolisp-string-value (second result))))
+    (is (string= ".lsp"  (autolisp-string-value (third  result))))))
+
+(test m2-fnsplitl-no-extension
+  "(fnsplitl \"noext\") -> (\"\" \"noext\" \"\")."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(fnsplitl \"noext\")"
+                                     :setup-fn #'install-core-into)))
+    (is (string= ""      (autolisp-string-value (first  result))))
+    (is (string= "noext" (autolisp-string-value (second result))))
+    (is (string= ""      (autolisp-string-value (third  result))))))
+
+(test m2-trans-identity-preserves-coordinates
+  "(trans '(1 2 3) 0 1) returns (1.0 2.0 3.0) — identity transform
+in a headless engine where every coordinate space collapses to WCS."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(trans '(1 2 3) 0 1)"
+                                     :setup-fn #'install-core-into)))
+    (is (consp result))
+    (is (= 3 (length result)))
+    (is (= 1.0d0 (first  result)))
+    (is (= 2.0d0 (second result)))
+    (is (= 3.0d0 (third  result)))))
+
+(test m2-trans-2d-fills-z-zero
+  "(trans '(1 2) 0 1) -> (1.0 2.0 0.0) — missing Z defaults to 0."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(trans '(1 2) 0 1)"
+                                     :setup-fn #'install-core-into)))
+    (is (= 3 (length result)))
+    (is (= 0.0d0 (third result)))))
+
+(test m2-textbox-stub-shape
+  "(textbox '((1 . \"hello\") (40 . 1.0))) returns a 2-corner box."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string
+                 "(textbox (list (cons 1 \"hello\") (cons 40 1.0)))"
+                 :setup-fn #'install-core-into)))
+    (is (consp result))
+    (is (= 2 (length result)))
+    (is (= 3 (length (first  result))))    ; (x1 y1 z1)
+    (is (= 3 (length (second result))))    ; (x2 y2 z2)
+    ;; Lower-left corner at origin in our stub.
+    (is (= 0.0d0 (first  (first result))))
+    (is (= 0.0d0 (second (first result))))))
+
+(test m2-vle-g-vectol-returns-tolerance
+  "(vle_g_vectol) returns the configured vector tolerance."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(vle_g_vectol)"
+                                     :setup-fn #'install-core-into)))
+    (is (numberp result))
+    (is (plusp result))))
+
+(test m2-cli-noops-all-return-nil
+  "GRAPHSCR, TEXTSCR, TEXTPAGE, REDRAW, SETVIEW, TABLET return nil."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(graphscr)" "(textscr)" "(textpage)"
+                  "(redraw)" "(setview)" "(tablet)"))
+    (is (null (run-autolisp-string form :setup-fn #'install-core-into)))))
+
+(test m2-cli-noops-string-return
+  "MENUCMD returns \"\"; MENUGROUP and SHOWHTMLMODALWINDOW return nil."
+  (reset-autolisp-symbol-table)
+  (let ((mcmd (run-autolisp-string "(menucmd)" :setup-fn #'install-core-into)))
+    (is (typep mcmd 'autolisp-string))
+    (is (string= "" (autolisp-string-value mcmd))))
+  (is (null (run-autolisp-string "(menugroup)" :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(showhtmlmodalwindow)"
+                                 :setup-fn #'install-core-into))))
+
+(test m2-error-mode-push-pop-lifo
+  "*push-error-using-command* / *push-error-using-stack* / *pop-error-mode*
+form a LIFO stack returning the keyword names of pushed modes."
+  (reset-autolisp-symbol-table)
+  ;; Drain any state from earlier tests.
+  (setf clautolisp.autolisp-builtins-core::*autolisp-error-mode-stack* nil)
+  (let ((first-pop
+          (run-autolisp-string
+           "(*push-error-using-command*)
+            (*push-error-using-stack*)
+            (*pop-error-mode*)"
+           :setup-fn #'install-core-into)))
+    (is (typep first-pop 'autolisp-symbol))
+    (is (string= "STACK" (autolisp-symbol-name first-pop))))
+  (let ((second-pop
+          (run-autolisp-string "(*pop-error-mode*)"
+                               :setup-fn #'install-core-into)))
+    (is (typep second-pop 'autolisp-symbol))
+    (is (string= "COMMAND" (autolisp-symbol-name second-pop))))
+  (let ((third-pop
+          (run-autolisp-string "(*pop-error-mode*)"
+                               :setup-fn #'install-core-into)))
+    (is (null third-pop))))
+
+(test m2-help-returns-nil
+  "(help) prints a one-liner and returns nil."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(help)"
+                                 :setup-fn #'install-core-into))))

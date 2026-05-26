@@ -82,7 +82,19 @@ DEFER functions don't appear in any milestone of this plan.
 
 ---
 
-## Milestone 2 — Core / Misc native (~30)
+## Milestone 2 — Core / Misc native (~30) [LANDED 1.0.58]
+
+  * 28 native builtins + 3 stubs registered in
+    `autolisp-builtins-core/source/api.lisp` under a new
+    "M2: Core / Misc native" section.
+  * `*core-builtin-names*` extended; `core-builtins` registers the
+    new names alongside the existing roster.
+  * `lookup-variable` added to the package imports for VER /
+    LISP$VERSION which read `*AUTOLISP-VERSION*`.
+  * Tests: 22 new in `autolisp-builtins-core/tests/builtin-tests.lisp`,
+    builtins-core suite 455 → 513 (100% green).
+
+
 
 ### 2a. OS / process / filesystem (12)
 

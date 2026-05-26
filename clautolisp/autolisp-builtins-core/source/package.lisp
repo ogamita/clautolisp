@@ -57,6 +57,7 @@
                 #:autolisp-vl-symbol-value
                 #:close-autolisp-file
                 #:intern-autolisp-symbol
+                #:lookup-variable
                 #:make-autolisp-subr
                 #:propagate-variable
                 #:set-autolisp-function-list-definition
