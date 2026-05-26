@@ -128,6 +128,66 @@ Upgrade paths:
     above so `(help …)` pops the HTML doc in the embedded
     WebView.
 
+== VLE-* CAD / COM / UI stubs (M3d) ==
+
+34 Visual LISP Extensions register-and-stub, organised by sub-
+family. None has a non-trivial implementation today because each
+needs CAD-resident state (entity database, dictionaries, symbol
+tables, transaction manager, ActiveX/COM bridge, SAFEARRAY type,
+or interactive Bricsys IDE).
+
+Upgrade paths — most of these become real once the corresponding
+host surface lands. See `clautolisp/implementation-roadmap.org`
+phases 8-16 for the per-surface schedule.
+
+  * Entity DB family (8): VLE-ENTGET, VLE-ENTGET-M,
+    VLE-ENTGET-MASSOC, VLE-ENTMOD, VLE-ENTMOD-M,
+    VLE-ENAME-VALID, VLE-IS-CURVE, VLE-GETGEOMEXTENTS,
+    VLE-CURVE-GETPERIMETER. All real once MockHost extends to
+    serve entity-list queries.
+
+  * Dictionary family (3): VLE-DICTIONARY-LIST, VLE-DICTOBJNAME,
+    VLE-DICTSEARCH. Real once the named-object dictionary lands
+    in MockHost.
+
+  * Symbol-table family (3): VLE-TABLE-LIST, VLE-TABLE-LIST-ALL,
+    VLE-TBLSEARCH. Real once MockHost stores the symbol tables
+    (LAYER / LTYPE / TEXTSTYLE / VPORT / VIEW / DIMSTYLE / UCS /
+    APPID / BLOCK).
+
+  * Selection / pickset / collection (3): VLE-COLLECTION->LIST,
+    VLE-SELECTIONSET->LIST, VLE-SAFEARRAY->LIST. Real once
+    the host serves selection sets + the ActiveX SAFEARRAY type.
+
+  * UI display (5): VLE-DISPLAYPAUSE, VLE-DISPLAYUPDATE,
+    VLE-EDITTEXTINPLACE, VLE-HIDEPROMPTMENU,
+    VLE-SHOWPROMPTMENU. Real once alfe gains an interactive
+    display surface.
+
+  * Transaction (2): VLE-START-TRANSACTION,
+    VLE-END-TRANSACTION. Real once a transactional store
+    backs the entity DB.
+
+  * Info / flags (5): VLE-LICENSELEVEL ("FULL" placeholder),
+    VLE-LISPINSTALL (""), VLE-LISPVERSION ("0.0"),
+    VLE-EXTENSIONS-ACTIVE (T — the names ARE registered),
+    VLE-ENABLESERVERBUSY (no-op). Light upgrade: tie
+    LICENSELEVEL into the CLI's --license flag if/when added.
+
+  * Compile (1): VLE-COMPILE-SHAPE. SHX shape compilation — out
+    of scope for the in-process engine; deferred indefinitely.
+
+  * Sun-ID (1): VLE-SUNID. Returns 0 placeholder. Light upgrade:
+    return a session-local counter for uniqueness within a run.
+
+  * VLE-NTH<X> (1): spec's template entry for the NTH0..NTH9
+    family; not a callable function in real BricsCAD. Stubbed
+    to nil so boundp probes succeed; no upgrade needed.
+
+  * VLE-ALERT (1): native — prints to *error-output* with an
+    [ALERT] prefix. Upgrade path matches SHOWHTMLMODALWINDOW
+    (terminal beep / TUI dialog / WebView).
+
 == Future entries ==
 
 When opening a new STUB marker in future M3/M4/M5 work, add an
