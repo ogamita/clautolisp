@@ -4217,6 +4217,12 @@ the caller can fall back to a placeholder triple)."
   ;;     MB value. Falls back to the 0-triple on parse failure.
   ;;
   ;; Stub-quality but always returns a valid triple of integers.
+  ;;
+  ;;; SPEC-UNCERTAIN: slot order (used/free/reserved vs another
+  ;;;   permutation), units (bytes vs kilobytes), and whether
+  ;;;   the Stacks / Static rows should fold into one of the
+  ;;;   three slots. Probes queued in deferred-spec-research.issue
+  ;;;   § MEM.
   (let ((triple
           #+ccl  (ccl-room-mem-triple)
           #+sbcl (let ((used (or (ignore-errors (sb-ext:dynamic-space-size))
@@ -4254,6 +4260,11 @@ the caller can fall back to a placeholder triple)."
   ;; therefore return the input point unchanged after validating
   ;; the FROM / TO arguments. This matches what Autodesk does on
   ;; a fresh empty drawing where UCS == WCS.
+  ;;
+  ;;; SPEC-UNCERTAIN: identity in a loaded drawing; 3D point to 2D
+  ;;;   space (DCS/PSDCS) handling; DISPLACEMENT-P contract under
+  ;;;   real UCS; FROM/TO as entity-name lists (ECS). Probes
+  ;;;   queued in deferred-spec-research.issue § TRANS.
   (declare (ignore displacement-p))
   (require-proper-list point "TRANS")
   ;; FROM and TO may be integers (0/1/2/3) or entity-name lists.
@@ -4284,6 +4295,11 @@ the caller can fall back to a placeholder triple)."
   ;; char-width = 0.6 × height (a common monospace ratio).
   ;; Returns ((0 0 0) (w h 0)). Stub-quality; full impl waits on
   ;; an SHX/TTF font loader.
+  ;;
+  ;;; SPEC-UNCERTAIN: char-width-to-height ratio in real CADs;
+  ;;;   justification (DXF 72/73/40/41) effect on box origin;
+  ;;;   behaviour on entity-lists missing group 1 or 40. Probes
+  ;;;   queued in deferred-spec-research.issue § TEXTBOX.
   (require-proper-list entity-list "TEXTBOX")
   (let* ((text-pair (assoc 1 entity-list))
          (height-pair (assoc 40 entity-list))

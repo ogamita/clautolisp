@@ -203,3 +203,28 @@ runs `install-info --remove` to clean up.
 - Avoid mixing speculative features into foundational modules.
 - Record significant architectural decisions in documentation when they affect future work.
 - Do not silently broaden scope; note new standing directives here when they become project policy.
+
+## Unverified Spec Behaviour
+
+When an implementation chooses behaviour that the spec doesn't
+explicitly pin down (edge cases, missing-host shortcuts,
+character-width ratios, etc.), record the uncertainty in two
+places so it doesn't get lost:
+
+1. **In the source**, as an inline `;;; SPEC-UNCERTAIN:` marker
+   in the function's comment block, naming what's unverified.
+   Greppable from the repo with
+
+       grep -rnE "SPEC-UNCERTAIN" clautolisp/
+
+2. **In `issues/open/deferred-spec-research.issue`**, as a
+   section under the function's name with concrete probe
+   questions. Lets us run one focused vendor-validation pass
+   over many functions at a time instead of rediscovering each
+   uncertainty separately.
+
+Once a probe resolves the uncertainty, replace the
+`SPEC-UNCERTAIN` marker with a concrete `;;; Vendor: ...` cite
+(the matching `autolisp-spec` Tested Behaviour line, or the
+probe script that produced the answer), and move the issue
+entry to the issue's Resolved tail.
