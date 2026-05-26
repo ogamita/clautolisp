@@ -2648,3 +2648,63 @@ palette entry."
   (dolist (form '("(vle-optimiser t)" "(vle-optimizer nil)" "(vle-fastcom t)"))
     (is (null (run-autolisp-string form :setup-fn #'install-core-into))
         "~A should return nil under the stub impl" form)))
+
+;;;; ----- M3d missing-functions: VLE-* CAD / COM / UI stubs -----
+
+(test m3d-vle-all-stubs-registered
+  "Every M3d stub binds a callable subr on its AutoLISP symbol."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (dolist (name '("VLE-ALERT" "VLE-COLLECTION->LIST" "VLE-COMPILE-SHAPE"
+                  "VLE-CURVE-GETPERIMETER" "VLE-DICTIONARY-LIST"
+                  "VLE-DICTOBJNAME" "VLE-DICTSEARCH"
+                  "VLE-DISPLAYPAUSE" "VLE-DISPLAYUPDATE"
+                  "VLE-EDITTEXTINPLACE" "VLE-ENABLESERVERBUSY"
+                  "VLE-ENAME-VALID" "VLE-END-TRANSACTION"
+                  "VLE-START-TRANSACTION" "VLE-ENTGET" "VLE-ENTGET-M"
+                  "VLE-ENTGET-MASSOC" "VLE-ENTMOD" "VLE-ENTMOD-M"
+                  "VLE-EXTENSIONS-ACTIVE" "VLE-GETGEOMEXTENTS"
+                  "VLE-HIDEPROMPTMENU" "VLE-SHOWPROMPTMENU"
+                  "VLE-IS-CURVE" "VLE-LICENSELEVEL"
+                  "VLE-LISPINSTALL" "VLE-LISPVERSION" "VLE-NTH<X>"
+                  "VLE-SAFEARRAY->LIST" "VLE-SELECTIONSET->LIST"
+                  "VLE-SUNID" "VLE-TABLE-LIST" "VLE-TABLE-LIST-ALL"
+                  "VLE-TBLSEARCH"))
+    (let* ((sym (find-autolisp-symbol name))
+           (subr (and sym (autolisp-symbol-function sym))))
+      (is (typep subr 'autolisp-subr) "~A should bind to a SUBR, got ~S" name subr))))
+
+(test m3d-vle-entity-stubs-return-nil
+  "Entity DB / dictionary / table family stubs return nil so user
+code that wraps them in IF / WHEN keeps the falsy branch."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(vle-entget 'foo)"
+                  "(vle-entmod nil)"
+                  "(vle-dictionary-list)"
+                  "(vle-tblsearch \"LAYER\" \"X\")"
+                  "(vle-table-list \"LAYER\")"
+                  "(vle-is-curve 'foo)"
+                  "(vle-ename-valid 'foo)"
+                  "(vle-curve-getperimeter 'foo)"
+                  "(vle-collection->list 'foo)"
+                  "(vle-selectionset->list 'foo)"))
+    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+        "~A should return nil under the stub impl" form)))
+
+(test m3d-vle-info-stubs-return-strings
+  "LICENSELEVEL / LISPINSTALL / LISPVERSION return string
+placeholders so user code can format them without nil-checking."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(vle-licenselevel)" "(vle-lispinstall)" "(vle-lispversion)"))
+    (let ((result (run-autolisp-string form :setup-fn #'install-core-into)))
+      (is (typep result 'autolisp-string)
+          "~A should return a string, got ~S" form result))))
+
+(test m3d-vle-extensions-active-is-true
+  "(vle-extensions-active) returns T — the VLE-* names ARE
+registered, even if many are stubs."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(vle-extensions-active)"
+                                     :setup-fn #'install-core-into)))
+    (is (typep result 'autolisp-symbol))
+    (is (string= "T" (autolisp-symbol-name result)))))
