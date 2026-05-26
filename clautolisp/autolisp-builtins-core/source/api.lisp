@@ -4037,35 +4037,79 @@ defvar so the value survives multiple test-image reloads.")
             (make-autolisp-string base)
             (make-autolisp-string ext)))))
 
+(defun doc-clipboard-read-argv ()
+  "Per-OS argv that reads the clipboard to stdout. nil on platforms
+without a known reader."
+  #+darwin                 '("pbpaste")
+  #+linux                  '("xclip" "-selection" "clipboard" "-o")
+  ;; Windows: PowerShell ships in-box on Windows 10+ (PowerShell 5.1)
+  ;; — `Get-Clipboard -Raw' returns the clipboard as a single string
+  ;; instead of an array of lines. -NoProfile / -NonInteractive
+  ;; suppress per-user profile load + interactive prompts so the call
+  ;; is reproducible.
+  #+windows                '("powershell" "-NoProfile" "-NonInteractive"
+                             "-Command" "Get-Clipboard -Raw")
+  #-(or darwin linux windows) nil)
+
+(defun doc-clipboard-write-argv ()
+  "Per-OS argv that reads stdin and writes it to the clipboard. nil
+on platforms without a known writer."
+  #+darwin                 '("pbcopy")
+  #+linux                  '("xclip" "-selection" "clipboard")
+  ;; Windows: pipe stdin via `$input | Set-Clipboard' so we don't
+  ;; have to quote-escape the text on the command line.
+  #+windows                '("powershell" "-NoProfile" "-NonInteractive"
+                             "-Command" "$input | Set-Clipboard")
+  #-(or darwin linux windows) nil)
+
+(defun strip-trailing-newline (string)
+  "PowerShell's Get-Clipboard -Raw appends a final CRLF that doesn't
+exist on the clipboard itself. Strip up to one trailing CRLF or LF
+so round-trip set→get returns the user's exact text."
+  (let* ((end (length string))
+         (end (if (and (plusp end) (char= (char string (1- end)) #\Newline))
+                  (1- end) end))
+         (end (if (and (plusp end) (char= (char string (1- end)) #\Return))
+                  (1- end) end)))
+    (subseq string 0 end)))
+
 (defun builtin-doc-clipboard (&optional value)
   ;; (doc_clipboard)            -> reads clipboard text, returns string or nil
   ;; (doc_clipboard "new text") -> writes, returns "new text"
-  ;; macOS: pbpaste / pbcopy. Linux: xclip. Stub-returning-nil on
-  ;; platforms without the binaries (Windows for now).
-  (let ((reader #+darwin "pbpaste" #+linux "xclip" #-(or darwin linux) nil)
-        (writer #+darwin "pbcopy"  #+linux "xclip" #-(or darwin linux) nil))
-    (cond
-      ((null reader) nil)
-      ((null value)
-       (handler-case
-           (let ((output (uiop:run-program (if (string= reader "xclip")
-                                               (list reader "-selection" "clipboard" "-o")
-                                               (list reader))
-                                           :output :string
-                                           :ignore-error-status t)))
-             (make-autolisp-string output))
-         (error () nil)))
-      (t
-       (let ((text (autolisp-string-value
-                    (require-string value "DOC_CLIPBOARD"))))
-         (handler-case
-             (let ((argv (if (string= writer "xclip")
-                             (list writer "-selection" "clipboard")
-                             (list writer))))
-               (uiop:run-program argv :input (make-string-input-stream text)
-                                      :output nil :error-output nil)
-               (make-autolisp-string text))
-           (error () nil)))))))
+  ;; macOS uses pbpaste / pbcopy. Linux uses xclip (X11 selections —
+  ;; not installed on stripped-down headless boxes; falls through to
+  ;; nil there). Windows uses PowerShell's Get-Clipboard /
+  ;; Set-Clipboard, which ships in-box since Windows 10 (PowerShell
+  ;; 5.1) and accepts the same stdin-pipe pattern as the Unix tools.
+  ;; The trailing newline PowerShell adds to Get-Clipboard -Raw
+  ;; output is stripped so a set→get round-trip returns the user's
+  ;; exact text.
+  (cond
+    ((null value)
+     ;; Read mode.
+     (let ((argv (doc-clipboard-read-argv)))
+       (cond
+         ((null argv) nil)
+         (t (handler-case
+                (let ((output (uiop:run-program argv
+                                                :output :string
+                                                :ignore-error-status t)))
+                  (make-autolisp-string (strip-trailing-newline output)))
+              (error () nil))))))
+    (t
+     ;; Write mode.
+     (let ((text (autolisp-string-value
+                  (require-string value "DOC_CLIPBOARD")))
+           (argv (doc-clipboard-write-argv)))
+       (cond
+         ((null argv) nil)
+         (t (handler-case
+                (progn
+                  (uiop:run-program argv
+                                    :input (make-string-input-stream text)
+                                    :output nil :error-output nil)
+                  (make-autolisp-string text))
+              (error () nil))))))))
 
 ;;; ---- Version / inspection ----
 
