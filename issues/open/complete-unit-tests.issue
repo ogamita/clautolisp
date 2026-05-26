@@ -1,0 +1,244 @@
+# Complete unit-test coverage for all clautolisp builtins
+
+Status: open
+Baseline: master @ 0a45e4b (clautolisp 1.0.70 + missing-functions
+landed + the M2-M5 coverage backfill)
+
+## Goal
+
+Bring every implemented AutoLISP operator under a focused FiveAM
+unit test. Today's coverage is 65% behavioural / 80% any-mention.
+Target: 100% any-mention, ≥ 95% behavioural (the 5% slack covers
+host-coupled families whose meaningful test is a MockHost
+scenario, not a builtin unit test).
+
+## Current state (measured 2026-05-26)
+
+Methodology: extract every name registered via
+`make-core-builtin-subr` + the special-operator dispatch table
+(the implemented set), then cross-reference against names
+appearing in:
+
+  * FiveAM test snippets — names as form heads inside
+    `run-autolisp-string` calls in
+    `clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp`
+    and `clautolisp/autolisp-runtime/tests/evaluator-tests.lisp`.
+  * Bulk registration sweeps — names as bare strings in CL
+    `dolist` lists (the `m3d-vle-all-stubs-registered` /
+    `m4-vlisp-*` / `m5-*` group tests assert "binds a SUBR" but
+    don't actually call the function).
+  * Scenario corpus — `.sexp` files under `autolisp-test/tests/`
+    and `autolisp-front-end/tests/scenarios/`.
+
+| Metric | Count | % of 578 |
+|--------|------:|---------:|
+| Implemented (core builtins + special ops) | 578 | 100% |
+| Behavioural coverage (called from a test snippet)         | 379 | 65.6% |
+| Registration-only (in a `dolist`, never called)           |  88 | 15.2% |
+| Any test mention                                          | 467 | 80.8% |
+| **Genuinely untested**                                    | **111** | **19.2%** |
+
+## Acceptance criteria
+
+  * Every of the 111 genuinely-untested operators gains at least
+    one FiveAM test that invokes it from an AutoLISP snippet and
+    asserts the result (not just `(is (not (null result)))` —
+    the test should pin down the documented return value or a
+    specific structural property).
+  * Every of the 88 registration-only operators gains at least
+    one behavioural test. For pure stubs that documentation says
+    return nil, that's a single-line `(is (null …))` check —
+    fine. The point is to exercise the call path, not just the
+    registry.
+  * The coverage-measurement script above (or a moral
+    equivalent) is checked in as
+    `autolisp-builtins-core/tests/scripts/coverage-report.sh` so
+    the next regression is caught.
+  * builtins-core suite count climbs to ~1100+ checks (from 817
+    today); every other suite stays 100% green.
+
+## Genuinely untested — by family
+
+Total: 111. Grouped by natural batch shape.
+
+== Cxxr accessors (14) ==
+
+CAAADR CAADAR CAADDR CADAAR CADADR CADDAR CDAAAR CDAADR CDADAR
+CDADDR CDDAAR CDDADR CDDDAR CDDDDR
+
+One test per accessor verifying the right car/cdr chain on a
+nested list. The existing `builtin-caxr-family` test spot-checks
+a few; extend to the full set. Trivial — ~20 lines total.
+
+== DCL dialog / tile / image / list builtins (14) ==
+
+ADD_LIST CLIENT_DATA_TILE DIMX_TILE DIMY_TILE END_IMAGE END_LIST
+FILL_IMAGE MODE_TILE SLIDE_IMAGE START_IMAGE START_LIST
+TERM_DIALOG UNLOAD_DIALOG VECTOR_IMAGE
+
+These work against the autolisp-dcl test fixture. Pattern: open
+a small dialog, drive a tile / image / list operation, assert
+the resulting state. Look at the existing `runtime-set-and-get-
+tile-roundtrip` test in `autolisp-dcl-suite` for the shape.
+
+== Interactive prompts (GET* / INITGET) (11) ==
+
+GETANGLE GETCORNER GETDIST GETINT GETKWORD GETORIENT GETPOINT
+GETREAL GETSTRING GETVAR INITGET
+
+The `autolisp-mock-host-suite` already exercises these against
+MockHost via mocked input streams. The BUILTIN side just
+delegates to the host; the gap is that builtins-core has no
+matching tests. Either:
+  (a) Add thin builtins-core tests asserting the delegation
+      shape (the call reaches the active host with the right
+      arg shape), OR
+  (b) Move the coverage-counting goalpost — mark these as
+      "tested via mock-host suite" and exempt from
+      builtins-core's count.
+
+Option (a) is the cleaner answer; pick that.
+
+== Selection-set + entity DB ops (9) ==
+
+ENTDEL ENTMAKEX ENTUPD SSADD SSDEL SSGETFIRST SSMEMB SSNAME
+SSSETFIRST TBLOBJNAME
+
+Same situation as GET* — covered indirectly via the mock-host
+suite's pickset / entity tests. Backfill builtins-core
+delegation-shape tests.
+
+== VLAX-* (8) ==
+
+VLAX-GET-OR-CREATE-OBJECT VLAX-METHOD-APPLICABLE-P
+VLAX-PROPERTY-AVAILABLE-P VLAX-SAFEARRAY-GET-L-BOUND
+VLAX-SAFEARRAY-GET-U-BOUND VLAX-SAFEARRAY-PUT-ELEMENT
+VLAX-SAFEARRAY-TYPE VLAX-VARIANT-CHANGE-TYPE
+
+ActiveX/COM surface. Covered indirectly by mock-host VLAX tests;
+backfill builtins-core spot-checks.
+
+== VLE-NTH shortcuts (7) ==
+
+VLE-NTH1 VLE-NTH2 VLE-NTH4 VLE-NTH5 VLE-NTH6 VLE-NTH7 VLE-NTH8
+VLE-SET-CDRASSOC
+
+The `m3a-vle-nth-shortcuts` test covers NTH0, NTH3, NTH9 as
+representatives. Extend to the rest of the family for symmetry
+(or move to a `:test-all-nths` macro that generates one is per
+index). VLE-SET-CDRASSOC needs a dedicated test asserting the
+mutation.
+
+== VLR-* reactors (~40) ==
+
+VLR-ACDB-REACTOR VLR-ADDED-P VLR-CURRENT-REACTION-NAME VLR-DATA
+VLR-DEEPCLONE-REACTOR VLR-DOCMANAGER-REACTOR VLR-DOCUMENT-REACTOR
+VLR-DWG-REACTOR VLR-DXF-REACTOR VLR-INSERT-REACTOR
+VLR-LINKER-REACTOR VLR-LISP-REACTOR VLR-MISCELLANEOUS-REACTOR
+VLR-MOUSE-REACTOR VLR-NOTIFICATION VLR-OWNER-ADD VLR-OWNER-REMOVE
+VLR-OWNERS VLR-PERS VLR-PERS-DICTNAME VLR-PERS-LIST VLR-PERS-P
+VLR-PERS-RELEASE VLR-REACTION-SET VLR-REACTIONS VLR-REACTORS
+VLR-REMOVE-ALL VLR-SET-NOTIFICATION VLR-SYSVAR-REACTOR
+VLR-TOOLBAR-REACTOR VLR-TRACE-REACTION VLR-TYPE VLR-TYPES
+VLR-UNDO-REACTOR VLR-WBLOCK-REACTOR VLR-WINDOW-REACTOR
+VLR-XREF-REACTOR
+
+These were registered as part of the pre-missing-functions work
+(VLR-REACTORS, VLR-* family). They exist on the BUILTIN side but
+have no FiveAM tests. The reactor-fires-on-mock-host-mutation
+test in the mock-host suite covers the dispatch; backfill
+builtins-core unit tests for the predicate/accessor surface.
+
+== Misc one-offs (8) ==
+
+1+ 1- ~ DOC_CLIPBOARD STARTAPP SETFUNHELP VL-BT _VLAX-SAFEARRAY-MODE
+
+  * 1+, 1- — covered indirectly via arithmetic tests but lack
+    direct tests. Add one each.
+  * ~ — bitwise NOT; covered via the arithmetic family test but
+    no direct test exists.
+  * DOC_CLIPBOARD — smoke-tested manually but no FiveAM. Add a
+    test that uses pbpaste/pbcopy roundtrip when available
+    (`#+darwin` reader conditional) and skips on other platforms.
+  * STARTAPP — covered by VLE-STARTAPP's test via aliasing? No,
+    different code path. Add a test that launches `/usr/bin/true`
+    and asserts the PID return.
+  * SETFUNHELP — Visual LISP help-string registrar; add a stub
+    test that calls it and asserts T return.
+  * VL-BT — backtrace dump; covered manually but no FiveAM.
+  * _VLAX-SAFEARRAY-MODE — internal ActiveX policy flag; add a
+    nil-return test.
+
+## Registration-only — by family
+
+Total: 88. These already have a `is (typep subr 'autolisp-subr)`
+assertion via the bulk M3d/M4/M5 sweep tests. The gap is
+behavioural coverage. Most return documented nil/T; a one-line
+`(is (null (run-autolisp-string "(foo …)")))` per function
+suffices.
+
+== VLE-* CAD/COM/UI stubs (20) ==
+
+VLE-ALERT (native) + VLE-COLLECTION->LIST VLE-COMPILE-SHAPE
+VLE-CURVE-GETPERIMETER VLE-DICTIONARY-LIST VLE-DICTOBJNAME
+VLE-DICTSEARCH VLE-DISPLAYPAUSE VLE-DISPLAYUPDATE
+VLE-EDITTEXTINPLACE VLE-ENABLESERVERBUSY VLE-END-TRANSACTION
+VLE-ENTGET-MASSOC VLE-EXTENSIONS-ACTIVE VLE-GETGEOMEXTENTS
+VLE-HIDEPROMPTMENU VLE-NTH<X> VLE-SAFEARRAY->LIST
+VLE-SELECTIONSET->LIST VLE-SHOWPROMPTMENU VLE-START-TRANSACTION
+VLE-SUNID VLE-TBLSEARCH
+
+== VL-ANNOTATIVE-* (8) ==
+
+VL-ANNOTATIVE-ADDSCALE VL-ANNOTATIVE-GET VL-ANNOTATIVE-GETSCALES
+VL-ANNOTATIVE-REMOVE VL-ANNOTATIVE-REMOVESCALE
+VL-ANNOTATIVE-RESET VL-ANNOTATIVE-SCALELIST VL-ANNOTATIVE-SET
+VL-ANNOTATIVE-SETSCALES VL-ANNOTATIVE-SUPPORTED
+
+== VL-SUBENT-* (4) ==
+
+VL-SUBENT-ATPOINT VL-SUBENT-SELECT VL-SUBENT-SSADD
+VL-SUBENT-SSDEL VL-SUBENT-SSMEMB
+
+== VL-VPLAYER-* (8) ==
+
+VL-VPLAYER-GET-COLOR VL-VPLAYER-GET-LINETYPE
+VL-VPLAYER-GET-LINEWEIGHT VL-VPLAYER-GET-TRANSPARENCY
+VL-VPLAYER-SET-COLOR VL-VPLAYER-SET-LINETYPE
+VL-VPLAYER-SET-LINEWEIGHT VL-VPLAYER-SET-TRANSPARENCY
+VL-VPLAYER-SET-TRUECOLOR
+
+== VL-LOCAL-UNDO-* (4) ==
+
+VL-LOCAL-UNDO-CLEAR VL-LOCAL-UNDO-POP VL-LOCAL-UNDO-PUSH
+VL-LOCAL-UNDO-RESET VL-LOCAL-UNDO-STEPS
+
+## Suggested execution
+
+One PR per family, smallest first so each lands quickly:
+
+  1. Cxxr accessors (14) — half an hour
+  2. VLE-NTH1..8 + SET-CDRASSOC (8) — half an hour
+  3. Misc one-offs (8) — half an hour
+  4. VL-LOCAL-UNDO-* + VL-SUBENT-* + VL-VPLAYER-* + VL-ANNOTATIVE-*
+     (24, all nil-return stubs) — one hour
+  5. VLE-* CAD/COM/UI stubs (20) — one hour
+  6. Cxxr-style sweep over the GET* / SS* / ENT* / TBL* /
+     VLAX-SAFEARRAY-* / VLR-* families (~70) — three hours, plus
+     a chunk of head-down work figuring out the right delegation
+     assertions for each.
+
+Total: half a day of focused work; reaches >95% behavioural
+coverage. The coverage-report.sh script lands in step 1 so each
+subsequent PR shows the delta in the commit message.
+
+## Out of scope
+
+  * Spec-conformance vendor probes (those live in
+    `deferred-spec-research.issue`).
+  * Stub-to-real promotion of any of the 88 register-only
+    entries (those live in `deferred-stubbed-functions.issue`).
+    This issue is strictly about test coverage.
+  * The 411 still-missing operators tracked in
+    `missing-functions.issue` — they don't exist yet, so they
+    can't be tested. (Closes naturally as those families land.)
