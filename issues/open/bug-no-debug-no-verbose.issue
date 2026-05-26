@@ -1,0 +1,18 @@
+
+I would have expected more info from alfe the second time.
+And bricscad usually worked well in --mode batch with the bash script autolisp.
+But first, --debug output !
+
+~/src/public/clautolisp
+master
+14:03[pjb@thalassa org.xquartz:0 clautolisp 90Gi]$ alfe --bricscad --mode batch -i
+alfe: alfe BRICSCAD backend error (phase BOOTSTRAP): BricsCAD did not reach READY within 30 s (last status: "BOOTING"). [READY-TIMEOUT]
+
+~/src/public/clautolisp
+master
+14:04[pjb@thalassa org.xquartz:0 clautolisp 90Gi]$ alfe --debug --verbose --bricscad --mode batch -i
+alfe: alfe BRICSCAD backend error (phase BOOTSTRAP): BricsCAD did not reach READY within 30 s (last status: "BOOTING"). [READY-TIMEOUT]
+
+~/src/public/clautolisp
+master
+14:09[pjb@thalassa org.xquartz:0 clautolisp 90Gi]$ 
