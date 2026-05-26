@@ -1,0 +1,473 @@
+# Specify and implement dialect-aware file-encoding behavior for `load` and `open`
+
+## Summary
+
+Both AutoCAD and BricsCAD extended AutoLISP's `open` (and, in AutoCAD's
+case, the broader source-loading pipeline) to handle non-MBCS encodings,
+but they did so with **incompatible APIs**:
+
+- **AutoCAD** (2021+) added a third positional `encoding` argument to
+  `open` (`"utf8"`, `"utf8-bom"`), and gates source-file encoding
+  globally via the `LISPSYS` system variable (`0` = legacy MBCS,
+  `1`/`2` = Unicode). There is no per-call encoding control for `load`.
+- **BricsCAD** extended `open`'s `mode` string with a C-runtime-style
+  suffix (`"r,ccs=UTF-8"`, `"r,ccs=UNICODE"`, etc.) and supplies the
+  helper `(vle-file-encoding filename)` for probing. Source files
+  loaded via `load` are interpreted per-file by sniffing the BOM; there
+  is no global `LISPSYS` equivalent.
+- **clautolisp** currently does not formalize either, and does not
+  expose its own portable equivalent.
+
+Orthogonally to both vendors' Unicode extensions, the legacy "MBCS" /
+"ANSI" mode used by `LISPSYS = 0` (AutoCAD) and the no-BOM/no-`ccs=`
+default (BricsCAD) is **not a single encoding** — it's "interpret
+bytes per the current Windows ANSI code page." That code page is
+observable from LISP via the read-only system variables `SYSCODEPAGE`
+(the running process's code page) and `DWGCODEPAGE` (the code page
+baked into the current drawing). Neither is settable from LISP, but
+they are nonetheless a deterministic way to *name* the legacy
+encoding currently in effect, which clautolisp can record, diagnose
+mismatches on, and surface to user code.
+
+clautolisp should pick a dialect-dispatched behavior so that user code
+written against any of the supported dialects is validated, and so that
+a portable clautolisp-native API is available for users who don't want
+to commit to either vendor's spelling.
+
+## Status — partial fix landed in 1.0.72
+
+A partial fix for the long-standing "user setq doesn't reach
+LOAD" bug landed on master at commit `39b2148` (version 1.0.72).
+It addresses the most-reported symptom — `(setq
+*autolisp-file-encoding* "ISO-8859-1")` at the REPL had no
+effect on the next LOAD — but it deliberately stops short of the
+full dialect-dispatch design below, which still needs to land.
+
+### What landed
+
+`autolisp-load-file-in-context` (autolisp-runtime/source/api.lisp)
+now consults the AutoLISP-level `*AUTOLISP-FILE-ENCODING*`
+variable through a new `lookup-autolisp-file-encoding` helper.
+The helper reads the global via the runtime's `lookup-variable`,
+unwraps the autolisp-string, and runs it through the existing
+`parse-locale-encoding-string` which already knows the four
+documented spellings + their common aliases (UTF-8,
+ISO-8859-1 / LATIN-1, WINDOWS-1252 / CP1252, US-ASCII).
+
+### New precedence (current code)
+
+When LOAD's caller doesn't pass an explicit `:external-format`:
+
+  1. **Caller's explicit `:external-format` (CL code)** — unchanged.
+  2. **`*AUTOLISP-FILE-ENCODING*` (NEW)** — a user's `setq` at the
+     REPL now takes effect on the next LOAD.
+  3. **session-default-source-encoding** — set once at startup by
+     the CLI's `-e` flag or the locale fallback.
+  4. **Dialect default** — strict → ISO-8859-1; autocad-2026 /
+     bricscad-v26 / clautolisp → UTF-8.
+
+The bug report was: a user with locale `en_US.UTF-8` running the
+in-process engine had `(setq *autolisp-file-encoding* "ISO-8859-1")`
+in their init file, but `(load "schmsplus-source-tree")` failed
+with `UTF-8 stream decoding error on #(233 ...)` — because step 3
+(session default = locale UTF-8) silently won. After the fix,
+step 2 is consulted first and the override takes effect.
+
+Test added: `load-honours-autolisp-file-encoding-override` in
+`autolisp-builtins-core/tests/builtin-tests.lisp` writes a raw
+14-byte Latin-1 file (with `\xE9`), sets the AutoLISP variable
+via SETQ, calls LOAD, asserts the loaded string is one character
+long.
+
+### What still needs the full dispatch design
+
+The partial fix does NOT address step 4 — the dialect default —
+nor the cross-dialect form recognition (AutoCAD's third `open`
+argument, BricsCAD's `,ccs=…` mode suffix, LISPSYS, etc.). It
+also doesn't introduce a `:encoding` keyword on `load` or `open`,
+doesn't implement BOM sniffing, doesn't ship the `:cp-NNNN`
+code-page registry, and doesn't emit the `enc-*` diagnostics.
+
+Concretely, the design below is still needed because:
+
+  * Step 4 of the precedence assumes a clean "one dialect → one
+    encoding" mapping, but real AutoCAD code reads bytes per
+    LISPSYS at runtime, not per dialect at startup. Once LISPSYS
+    is observable, step 4 should consult it under `--autocad`.
+  * The `:encoding` keyword on `load` / `open` (specified below
+    under "Per-call: `:encoding` keyword") is the
+    clautolisp-native equivalent of the precedence we just wired
+    in via the global — promoting it from global-only to
+    per-call gives users finer control without binding the
+    global.
+  * The cross-dialect translation table is the eventual home of
+    `parse-locale-encoding-string`. Today that helper handles a
+    flat list of four spellings; the table extends it to the
+    full per-dialect surface (utf8-bom, ccs= modes, named code
+    pages, BOM detection).
+
+Treat the 1.0.72 fix as the bottom rung of the dispatch
+ladder — it's the minimum that makes `*AUTOLISP-FILE-ENCODING*`
+useful at the REPL today, and it doesn't preclude any of the
+design below. When the full dialect-dispatch work lands, step 2
+of the precedence chain stays where it is; the only
+re-engineering needed there is to extend the resolver to
+recognise `:utf-8-bom`, `:cp-NNNN`, and the auto-detect mode.
+
+---
+
+## Goals
+
+1. Document and implement a clautolisp-native encoding API.
+2. Validate user code against the selected dialect, warning when the
+   wrong vendor's spelling is used.
+3. Preserve the option (`--lax`) to accept everything without warning,
+   for users porting heterogeneous codebases.
+
+## Dialect matrix
+
+The selected dialect is set via `--strict`, `--autocad`, `--bricscad`,
+`--clautolisp`, or `--lax` (mutually exclusive; default TBD, suggest
+`--clautolisp`).
+
+| Dialect | `open` 3rd-arg form (`"utf8"`, `"utf8-bom"`) | `open` mode-suffix form (`,ccs=…`) | `vle-file-encoding` | `LISPSYS` sysvar | clautolisp params (`*autolisp-file-encoding*`, `:encoding` keyword) |
+|---|---|---|---|---|---|
+| `--strict`     | warn | warn | warn | warn | warn |
+| `--autocad`    | **accept** | warn | warn | **accept** | warn |
+| `--bricscad`   | warn | **accept** | **accept** | warn | warn |
+| `--clautolisp` | warn | warn | warn | warn | **accept** |
+| `--lax`        | accept | accept | accept | accept | accept |
+
+"Accept" means the form is recognized by the linter/compiler/runtime
+and its documented semantics are honored. "Warn" means the form is
+diagnosed (style: `encoding-api-foreign-dialect`) but still executed
+under the corresponding vendor semantics where the underlying runtime
+supports it; under `--strict`, the runtime should additionally refuse
+to *emit* foreign-dialect calls in compiled output.
+
+## clautolisp-native API (`--clautolisp`)
+
+### Global default: `*autolisp-file-encoding*`
+
+A dynamically scoped special variable holding the default encoding
+used when no per-call override is given. Reading and writing it is the
+clautolisp-native equivalent of AutoCAD's `LISPSYS`-driven global mode
+and BricsCAD's "whatever the BOM says" implicit default.
+
+```lisp
+*autolisp-file-encoding*  ; => :utf-8 (default)
+(setq *autolisp-file-encoding* :utf-8-bom)
+```
+
+Accepted values (symbols, case-insensitive):
+
+| Value | Meaning |
+|---|---|
+| `:ansi` / `:mbcs` | Legacy multibyte (platform code page) |
+| `:utf-8` | UTF-8, no BOM (**default**) |
+| `:utf-8-bom` | UTF-8, write BOM on output; tolerate on input |
+| `:utf-16-le` | UTF-16 little-endian (BOM required for read) |
+| `:utf-16-be` | UTF-16 big-endian (BOM required for read) |
+| `:auto` | On read: sniff BOM, fall back to `:utf-8`. On write: error. |
+
+### Per-call: `:encoding` keyword
+
+Both `open` and `load` accept a trailing `:encoding ENC` keyword
+argument:
+
+```lisp
+(open "data.txt" "r" :encoding :utf-8)
+(open "data.txt" "w" :encoding :utf-16-le)
+(load "lib/helpers" :encoding :utf-8-bom)
+(load "lib/helpers" nil :encoding :auto)  ; onfailure + encoding
+```
+
+When omitted, the value of `*autolisp-file-encoding*` is used. This
+gives `load` a per-call encoding control that neither vendor exposes
+today — a deliberate clautolisp-only extension.
+
+### Introspection
+
+```lisp
+(clautolisp:file-encoding filename) ; => :utf-8 | :utf-16-le | :ansi | …
+```
+
+Equivalent in spirit to BricsCAD's `vle-file-encoding`, returning a
+clautolisp keyword rather than a vendor-specific string. Under
+`--bricscad` this delegates to `vle-file-encoding` and translates the
+result; under `--autocad` it implements BOM sniffing directly.
+
+## Per-dialect behavior
+
+### `--strict`
+
+- Reject (warn) **any** encoding-related extension: AutoCAD's third
+  `open` argument, BricsCAD's `,ccs=…` mode suffix,
+  `vle-file-encoding`, references to `LISPSYS`, references to
+  `*autolisp-file-encoding*`, and the `:encoding` keyword on `load` /
+  `open`.
+- Diagnostic: `encoding-api-extension-used` (one variant per source
+  feature, so users can suppress individually).
+- Rationale: code that must run unmodified on the AutoCAD-2020 / MBCS-
+  only baseline.
+
+### `--autocad`
+
+- Accept `(open filename mode encoding)` with `encoding` ∈
+  `{"utf8", "utf8-bom"}` (case-insensitive string).
+- Accept reads/writes of `LISPSYS` via `getvar`/`setvar`. Warn if the
+  user attempts to *set* `LISPSYS` to a value other than `0`, `1`, or
+  `2`.
+- Warn on the BricsCAD mode-suffix form, on `vle-file-encoding`, on
+  `*autolisp-file-encoding*`, and on the `:encoding` keyword. Diagnostic:
+  `encoding-api-foreign-dialect` (sub-tag `bricscad` or `clautolisp`).
+- Document that `load` has no per-call encoding control in this
+  dialect, mirroring upstream.
+
+### `--bricscad`
+
+- Accept `(open filename "MODE,ccs=ENC")` where `ENC` ∈
+  `{"UTF-8", "UTF-16LE", "UNICODE"}` (where `UNICODE` aliases
+  `UTF-16LE`, matching upstream).
+- Accept `(vle-file-encoding filename)` returning one of
+  `"ANSI" | "UTF-8" | "UTF-16LE" | "UTF-16BE" | "UTF-32LE" | "UTF-32BE"`.
+- Warn on AutoCAD's third-argument form, on any reference to `LISPSYS`,
+  on `*autolisp-file-encoding*`, and on the `:encoding` keyword.
+  Diagnostic: `encoding-api-foreign-dialect`.
+- Document that `load` has no per-call encoding control in this
+  dialect; encoding is determined per-file by the BOM.
+
+### `--clautolisp`
+
+- Accept `*autolisp-file-encoding*` and the `:encoding` keyword on
+  `load` and `open` as specified above.
+- Warn on AutoCAD's third-argument form, on BricsCAD's `,ccs=…` suffix,
+  on `vle-file-encoding`, and on any reference to `LISPSYS`.
+  Diagnostic: `encoding-api-foreign-dialect`.
+
+### `--lax`
+
+- All four spellings (`utf8`/`utf8-bom` argument, `,ccs=…` suffix,
+  `LISPSYS` sysvar, `*autolisp-file-encoding*` + `:encoding`) are
+  accepted with no diagnostic.
+- The runtime maps every spelling onto the same underlying I/O path
+  (see "Implementation notes" below).
+- Useful for downstream tools that consume code from multiple vendors.
+
+## Cross-dialect translation table
+
+The runtime should normalize all four spellings onto a single internal
+representation. The table below is the source of truth for that mapping
+and should be reproduced in the spec.
+
+| Internal | AutoCAD `open` arg | BricsCAD `,ccs=` | LISPSYS context | clautolisp keyword |
+|---|---|---|---|---|
+| MBCS / ANSI | *(omit arg)* | *(omit suffix)* | `LISPSYS = 0` | `:ansi` / `:mbcs` |
+| UTF-8 (no BOM) | `"utf8"` | `ccs=UTF-8` (no BOM written unless BOM is in data) | `LISPSYS = 1` or `2` | `:utf-8` |
+| UTF-8 + BOM | `"utf8-bom"` | *(write `UTF-8`, prepend BOM manually)* | `LISPSYS = 1` or `2` | `:utf-8-bom` |
+| UTF-16 LE | *(not supported)* | `ccs=UTF-16LE` or `ccs=UNICODE` | *(n/a)* | `:utf-16-le` |
+| UTF-16 BE | *(not supported)* | *(read-only via `vle-file-encoding` detection)* | *(n/a)* | `:utf-16-be` |
+| Auto-detect on read | *(no equivalent)* | `ccs=UNICODE` (effectively) | *(n/a)* | `:auto` |
+
+Note the asymmetries: AutoCAD does not expose UTF-16, and BricsCAD's
+write side only supports UTF-8 and UTF-16LE. Under `--lax`, requesting
+an encoding the underlying host does not support raises a runtime
+error rather than a warning, since silent fallback would corrupt data.
+
+## Code pages: the `:ansi` row, expanded
+
+The `MBCS / ANSI` row above is a placeholder for an entire family of
+encodings. Which one is actually in effect at runtime depends on the
+host's ANSI code page, which clautolisp **cannot set** but **can
+observe and pin** via the read-only `SYSCODEPAGE` and `DWGCODEPAGE`
+system variables. Both AutoCAD and BricsCAD expose these with
+identical names and identical (string-valued, `"ANSI_1252"`-style)
+semantics; on Linux and macOS BricsCAD they still return a
+Windows-style code-page string, synthesized from the platform locale.
+
+This gives clautolisp a defensible answer to "but which encoding is
+`:ansi`, really?" — namely, "whatever `SYSCODEPAGE` says right now."
+
+### Extended internal encoding values
+
+The internal encoding enum should include named code pages, so that
+code calling `(open … :encoding :cp-1252)` is portable across hosts
+even when the host's `SYSCODEPAGE` differs:
+
+| Internal | Windows code page | Notes |
+|---|---|---|
+| `:ansi` | *(host-dependent)* | Resolves to whatever `(getvar "SYSCODEPAGE")` reports |
+| `:cp-1252` | 1252 | Western European |
+| `:cp-1250` | 1250 | Central European |
+| `:cp-1251` | 1251 | Cyrillic |
+| `:cp-1253` | 1253 | Greek |
+| `:cp-1254` | 1254 | Turkish |
+| `:cp-932` | 932 | Japanese (Shift-JIS, DBCS) |
+| `:cp-936` | 936 | Simplified Chinese (GBK, DBCS) |
+| `:cp-949` | 949 | Korean (EUC-KR, DBCS) |
+| `:cp-950` | 950 | Traditional Chinese (Big5, DBCS) |
+
+Under `--clautolisp`, `(open "data.txt" "r" :encoding :cp-1252)`
+should work regardless of what `SYSCODEPAGE` happens to be on the
+host machine, by transcoding at the I/O boundary. This is genuinely
+more expressive than what either vendor offers natively: AutoCAD and
+BricsCAD let you choose between "the host code page" and "UTF-8", but
+not "specifically code page 1252 even though I'm running on a
+Japanese Windows box."
+
+### Helper functions
+
+```lisp
+(clautolisp:system-codepage)   ; => :cp-1252  — wraps (getvar "SYSCODEPAGE")
+(clautolisp:drawing-codepage)  ; => :cp-1252  — wraps (getvar "DWGCODEPAGE")
+(clautolisp:codepage-mismatch-p)  ; t if the two differ
+```
+
+These should be implemented for all dialects (the underlying sysvars
+exist in both vendors). The return value is a clautolisp keyword
+(`:cp-1252`, `:utf-8`, etc.); under `--strict` calling these still
+warns, because the legacy code-page concept doesn't exist in pure
+strict mode.
+
+### Interaction with `*autolisp-file-encoding*`
+
+When `*autolisp-file-encoding*` is bound to `:ansi`, the actual bytes
+written/read are resolved against `SYSCODEPAGE` at the time of the
+I/O call. When bound to an explicit `:cp-NNNN`, that code page is
+used regardless of host state. This distinction matters for
+reproducibility: code that does
+
+```lisp
+(let ((*autolisp-file-encoding* :cp-1252))
+  (with-open-file (f "out.txt" :direction :output) ...))
+```
+
+produces byte-identical output on any host, whereas the same code
+with `:ansi` produces host-dependent output.
+
+### A new diagnostic for code-page mismatches
+
+When clautolisp detects a `DWGCODEPAGE` / `SYSCODEPAGE` mismatch at
+load time, it should emit `enc-codepage-mismatch` (warning, not
+error). This catches the classic "I authored this drawing on a
+Czech Windows machine and now I'm reading it on a French one and the
+strings are garbled" bug.
+
+## Diagnostics
+
+New warning/error codes (suggest the `enc-*` prefix):
+
+- `enc-foreign-dialect` — a form belonging to a non-selected dialect
+  was used. Sub-tag identifies which (`autocad`, `bricscad`,
+  `clautolisp`, `lispsys`).
+- `enc-extension-used` (`--strict` only) — any encoding extension used.
+- `enc-unsupported-target` — selected encoding cannot be expressed on
+  the active host (e.g. UTF-16 under `--autocad`).
+- `enc-invalid-value` — bad keyword/string value
+  (e.g. `:encoding :utf-7`).
+- `enc-lispsys-out-of-range` — `(setvar "LISPSYS" n)` with
+  `n ∉ {0,1,2}`.
+- `enc-codepage-mismatch` — `DWGCODEPAGE` and `SYSCODEPAGE` differ;
+  string data from the drawing may not survive a round-trip through
+  the current host's ANSI code page. Warning.
+- `enc-unknown-codepage` — `(getvar "SYSCODEPAGE")` returned a string
+  clautolisp does not know how to map to an internal keyword. The
+  runtime falls back to `:ansi` (host-dependent) and emits this so the
+  user can file a bug.
+
+All diagnostics should be suppressible per-file via the usual
+clautolisp pragma mechanism.
+
+## Implementation work
+
+1. **Spec doc** — add a new section "File Encoding" to the clautolisp
+   reference, covering the dialect matrix above and the translation
+   table. Cross-link from the `open` and `load` reference entries.
+2. **Reader / linter**
+   - Recognize all four spellings.
+   - Emit the appropriate diagnostic based on `--<dialect>`.
+   - For `--strict`, also reject the spellings at compile time.
+3. **Runtime**
+   - Implement `*autolisp-file-encoding*` (dynamically scoped, default
+     `:utf-8`).
+   - Extend `open` and `load` to accept `:encoding`.
+   - Implement `clautolisp:file-encoding` (BOM sniffer; under
+     `--bricscad`, may delegate to `vle-file-encoding`).
+   - Implement `clautolisp:system-codepage` and
+     `clautolisp:drawing-codepage` by parsing `SYSCODEPAGE` /
+     `DWGCODEPAGE` strings into internal keywords (`"ANSI_1252"` →
+     `:cp-1252`, etc.). Maintain the parse table as part of the
+     reference doc.
+   - Under `--autocad`, parse the third positional argument to `open`;
+     under `--bricscad`, parse the `,ccs=…` mode suffix.
+   - Bundle a transcoding layer (e.g. ICU, iconv, or equivalent) so
+     `:cp-NNNN` encodings work regardless of host code page.
+   - Map all four onto the single internal encoding enum.
+4. **Tests**
+   - Round-trip read/write for each `Internal` row in the translation
+     table, **including each named code page** with a fixture string
+     that exercises bytes `0x80`–`0xFF`.
+   - For each dialect flag, assert that foreign forms produce the
+     expected diagnostic and that native forms do not.
+   - BOM sniffing: ANSI, UTF-8 (no BOM), UTF-8 (BOM), UTF-16LE,
+     UTF-16BE fixture files.
+   - `load`-with-`:encoding` under `--clautolisp`, and that the same
+     form warns under `--autocad` / `--bricscad` / `--strict`.
+   - `SYSCODEPAGE` / `DWGCODEPAGE` mismatch fixture: load a drawing
+     authored under one code page on a host reporting another, assert
+     `enc-codepage-mismatch` fires.
+   - `clautolisp:system-codepage` returns the right keyword for at
+     least 1252, 1250, 1251, 932 (mock the sysvar).
+5. **Migration note** — short doc page for users coming from each
+   vendor explaining the equivalent clautolisp form.
+
+## Open questions
+
+- What is the default dialect when no `--<dialect>` flag is given?
+  Suggest `--clautolisp` so that idiomatic clautolisp code is the path
+  of least friction; alternative is `--lax` for compatibility.
+- Should `*autolisp-file-encoding*` also govern `load` of `.lsp`
+  source files, or only data-file I/O? Recommend yes for source files
+  too, with the understanding that this gives clautolisp a capability
+  neither vendor offers — and is itself a reason to use the
+  clautolisp dialect.
+- Should `--strict` forbid `getvar`/`setvar` of `LISPSYS` outright,
+  or only the modification? Recommend forbidding both, since reading
+  it implies the code is branching on a non-portable concept.
+- Naming: `*autolisp-file-encoding*` vs `*default-file-encoding*` vs
+  `*file-encoding*`. The current name is intentionally verbose to
+  avoid collision with anything users might define; bikeshed welcome.
+- Should `:ansi` (host-resolved) be allowed at all under
+  `--clautolisp`, or should the dialect insist on explicit
+  `:cp-NNNN` for reproducibility? Suggest: allow `:ansi` but emit
+  `enc-host-dependent` (info-level) when it's used in a context that
+  will be written to disk, so users at least see the non-determinism.
+- Which code pages must be supported in the first cut? Suggest the
+  ten in the table above (Western/Central European, Cyrillic, Greek,
+  Turkish, the four CJK DBCS pages), with everything else producing
+  `enc-unknown-codepage` for now and being added on demand.
+- For `--strict`, should `clautolisp:system-codepage` /
+  `clautolisp:drawing-codepage` be available at all? They wrap a
+  read-only sysvar that exists in every host, but their *use* implies
+  the code is making locale-dependent decisions. Suggest: warn but
+  don't outright forbid, on the grounds that detecting a mismatch
+  and refusing to proceed is a legitimate defensive pattern even in
+  strict code.
+
+## References
+
+- AutoCAD `open` reference (2024): the third `encoding` argument with
+  `"utf8"` and `"utf8-bom"`, introduced 2021, gated by `LISPSYS`.
+- AutoCAD `LISPSYS` system variable (2026): values `0`/`1`/`2` and
+  their semantics.
+- BricsCAD developer reference, "read + write text files": the
+  `,ccs=UTF-8` / `UTF-16LE` / `UNICODE` mode-suffix extension.
+- BricsCAD `vle-file-encoding` helper: returns the encoding of a file
+  as a string suitable for use in the `,ccs=` suffix.
+- AutoCAD `SYSCODEPAGE` system variable: read-only, string-valued
+  (`"ANSI_1252"`-style), present since R12; reflects the host's ANSI
+  code page. Counterpart `DWGCODEPAGE` is saved in the drawing and
+  exposes the code page the drawing was authored under.
+- BricsCAD exposes `SYSCODEPAGE` and `DWGCODEPAGE` with identical
+  semantics, including on Linux and macOS, where the values are
+  synthesized from the platform locale.
