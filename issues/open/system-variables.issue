@@ -1,0 +1,219 @@
+# AutoCAD / BricsCAD system variables: collect, specify, and implement
+
+Status: open
+Baseline: origin/master @ 0dd68c8
+Spec: autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org (v0.8.2)
+
+## Summary
+
+System variables (the things `(getvar "NAME")` / `(setvar "NAME" v)`
+read and write) are a namespace *distinct from* AutoLISP symbols: they
+live in the host/engine, are addressed by string name, are typed, and
+many are read-only. AutoCAD ships several hundred; BricsCAD ships its
+own (overlapping but not identical) set, where the support-file search
+path and other preferences also surface as settings.
+
+clautolisp today documents only the *accessors* and ships a deliberately
+tiny stand-in catalogue:
+
+  - Spec: `GETVAR` / `SETVAR` are documented as Function Entries
+    (`autolisp-visual-lisp-specification-draft.org:7885,7931`); individual
+    sysvars appear only in scattered prose (LISPSYS, EXTNAMES, ERRNO,
+    TILEMODE, CVPORT, ANGBASE, SNAPANG, DATE, …). There is NO enumerated
+    catalogue chapter, and no per-sysvar entry analogous to a Function
+    Entry.
+  - Implementation: `clautolisp/autolisp-mock-host/source/sysvars.lisp`
+    defines `*default-sysvars*` — ~30 cells (`CMDECHO`, `CLAYER`,
+    `OSMODE`, `USERR1..5`, `LISPSYS`, …), explicitly described as "a
+    conservative subset … the ones that published AutoLISP corpora
+    actually consult." `SRCHPATH` and the vast majority are absent.
+
+This issue covers three phases: (1) collect every system variable from
+the AutoCAD and BricsCAD references into a machine-readable inventory;
+(2) add a "System Variables" chapter to autolisp-spec built from that
+inventory; (3) implement them in clautolisp — both as host sysvar cells
+and, crucially, by wiring the functions that read or write them.
+
+## Goals / deliverables
+
+  1. `autolisp-spec/documentation/system-variables-inventory.sexp`
+     — one record per sysvar, per the schema below, sourced from the
+     vendor references (NOT invented).
+  2. A new spec chapter specifying every sysvar (entry template below),
+     generated/curated from the inventory. Bump spec 0.8.2 → 0.9.0.
+  3. clautolisp implementation: a data-driven sysvar catalogue in the
+     host layer, read-only enforcement, type coercion, ERRNO semantics,
+     and the function↔sysvar couplings (§ "Coupling").
+  4. autolisp-test conformance records exercising getvar/setvar and the
+     coupled functions for the sysvars we implement.
+
+Non-goal: making clautolisp's defaults byte-identical to a specific CAD
+build. Where a value is host/version/drawing-specific we record that it
+is, and mark the cell accordingly, rather than guessing.
+
+## Phase 1 — Data collection
+
+### Sources
+
+  - AutoCAD: the "System Variables" reference (alphabetical A–Z) in the
+    Autodesk "Commands and System Variables Reference". Cross-check with
+    the in-product `SETVAR ?` enumeration and `SYSVARMONITOR`. Note the
+    support-file search path is NOT an AutoCAD sysvar — it is the
+    Preferences object `AcadPreferencesFiles.SupportPath`; the related
+    *security* sysvars are `TRUSTEDPATHS` and `SECURELOAD`.
+  - BricsCAD: the Bricsys "System Variables" / "Settings" reference
+    (the `SETTINGS` dialog is the in-product index). BricsCAD exposes a
+    `SRCHPATH` support-path setting and reads it via ExpressTools
+    `acet-pref-supportpath-list` (spec `:36411`).
+  - Internal corroboration already in-repo: the LISPSYS/encoding prose
+    (`...draft.org:6256,6291,6301`), EXTNAMES (`:9098`), ERRNO
+    (`:9354`), TILEMODE (`:9389`), CVPORT (`:9432`), the SETVAR
+    angular-radians note (`:7975`).
+
+### Per-sysvar schema (one record each)
+
+    (:name        "EXTNAMES"          ; canonical upcased string
+     :type        :integer            ; :integer :short :real :string
+                                      ;  :point :point3d :symbol :ename
+     :default     1                   ; or (:host-specific) / (:drawing) /
+                                      ;  (:session) / (:unknown) when not a
+                                      ;  fixed constant — never guessed
+     :read-only   nil
+     :range       (0 1)               ; or NIL; for integers a (lo hi) pair
+     :scope       :drawing            ; :drawing :document :registry
+                                      ;  :session :preference
+     :saved-in    :registry           ; where the engine persists it
+     :versions    (:autocad "all" :bricscad "V20+")
+     :vendor      :both               ; :autocad :bricscad :both
+     :divergence  nil                 ; prose when AutoCAD≠BricsCAD
+     :summary     "Controls strict vs. relaxed symbol-table naming."
+     :coupled     ("SNVALID")         ; AutoLISP fns that read/write it
+     :source      (:autocad "GUID-…" :bricscad "…"))
+
+### Method
+
+  - One pass per vendor; union by upcased name; AutoCAD and BricsCAD
+    differences captured in `:divergence`, not by dropping either.
+  - `:default` is a *literal* only when the reference states a fixed
+    initial value; otherwise one of the `(:host-specific)` /
+    `(:drawing)` / `(:session)` / `(:unknown)` markers. Do not invent.
+  - Record provenance (`:source`) for every record so Phase-4-style
+    verification can re-check against the live products later.
+
+## Phase 2 — autolisp-spec chapter
+
+Add a chapter "System Variables" as a sub-tree of §16 *Host
+Interaction* (e.g. `16.N`), so chapters 17–28 are not renumbered.
+Mirror the Function-Entry house style with a per-sysvar entry:
+
+    ** System Variable Entry: EXTNAMES
+    *** Name        EXTNAMES
+    *** Type        integer (0 | 1)
+    *** Default     1
+    *** Read-Only   no
+    *** Scope       drawing; saved in registry
+    *** Description …
+    *** Read/Written By  snvalid (and the symbol-table creators)
+    *** Compatibility    AutoCAD: all; BricsCAD: V20+; divergence: …
+    *** Source Notes     <vendor URLs>
+
+The chapter opens with normative rules common to all sysvars: name
+case-insensitivity, type coercion on `setvar`, the integer range
+`-32768..32767` (`:7973`), the `setvar` radians semantics for
+`ANGBASE`/`SNAPANG` (`:7975`), read-only error behaviour, and `getvar`
+returning `nil` for unknown names (`:7908`). Update the `GETVAR`/
+`SETVAR` Function Entries to cross-link the new chapter. Increment the
+document version header (0.8.2 → 0.9.0).
+
+## Phase 3 — Implementation in clautolisp
+
+Architecture is already in place; this phase scales the *data* and
+wires the *couplings*:
+
+  - Accessors: `builtin-getvar` / `builtin-setvar`
+    (`autolisp-builtins-core/source/api.lisp:2878-2885`) → host generics
+    `host-getvar` / `host-setvar`
+    (`autolisp-host/source/protocol.lisp:101-102`).
+  - Storage: `sysvar-cell` (name/kind/value/read-only-p,
+    `autolisp-mock-host/source/model.lisp:75`) populated by
+    `*default-sysvars*` (`sysvars.lisp:45`); coercion/validation in
+    `present-sysvar-value` / `ensure-sysvar-name`
+    (`autolisp-mock-host/source/sysvar-api.lisp`).
+
+Work items:
+
+  1. Make the mock-host catalogue **data-driven from the Phase-1
+     inventory** instead of the hand-written 30-entry list. Map the
+     inventory `:type` to the existing cell `:kind` keywords; honour
+     `:read-only`; for non-constant `:default` markers, install a
+     sensible session default and flag the cell so tests don't assert a
+     vendor-exact value.
+  2. Enforce read-only on `setvar` (already partially present — extend
+     to the full catalogue) and unknown-name behaviour on `getvar`
+     (`nil`) consistent with the spec chapter.
+  3. ERRNO: give it real semantics — the functions that document
+     "returns nil and sets ERRNO" must actually set it
+     (`:9354`); add a runtime helper used by those builtins.
+  4. Real hosts: the BricsCAD/AutoCAD backends already round-trip
+     getvar/setvar to the engine; ensure the catalogue is only the
+     *fallback* (mock/null host) and never shadows a live engine value.
+
+### Coupling — functions that read or write sysvars (the bulk of the work)
+
+Most sysvars are not just storage; they steer function behaviour. The
+inventory's `:coupled` field drives this, and each coupling needs code +
+a test. Known couplings to seed the list:
+
+  - LISPSYS        → `load`, `open` (encoding/engine selection; ch.11).
+  - EXTNAMES       → `snvalid` (symbol-table naming rules; `:9098`).
+  - ERRNO          → set by `open`/file IO/entity/selection functions on
+                     failure (`:9354`).
+  - ANGBASE/ANGDIR/AUNITS/AUPREC → `angtos`, `angle`, `getangle`,
+                     `getorient` (angle parse/format).
+  - LUNITS/LUPREC/DIMZIN/UNITMODE → `rtos`, `distance` formatting.
+  - SNAPANG/ANGBASE → `setvar` radians-vs-display semantics (`:7975`).
+  - TILEMODE/CVPORT → `vports`, `setview`, viewport-aware access
+                     (`:9389`, `:9432`).
+  - CMDECHO        → `command` / `vl-cmdf` echo policy.
+  - OSMODE         → `osnap` defaults.
+  - DWGNAME/DWGPREFIX → default path resolution for file builtins.
+  - DATE/CDATE/TDCREATE/TDUPDATE → `menucmd` DIESEL `edtime` (`:9024`).
+  - MAXSORT        → `acad_strlsort`.
+  - USERR1..5 / USERI1..5 / USERS1..5 → user scratch (read/write round
+                     trip; no behavioural coupling).
+  - SRCHPATH (BricsCAD) / support path → `findfile`, `load` search
+                     (see `issues/` discussion; AutoCAD has no `SRCHPATH`
+                     sysvar — its path lives in Preferences).
+  - TRUSTEDPATHS/SECURELOAD → `load`, `open`, `findtrustedfile` trust
+                     gating (`:6449`, `:6486`).
+
+## Test plan
+
+  - autolisp-test: promote inventory records into conformance entries —
+    one per implemented sysvar asserting type/read-only round-trip, plus
+    behavioural tests for each coupling above. Keep vendor-exact-default
+    assertions only for cells whose `:default` is a documented constant.
+  - check-spec-coverage analogue: a gate asserting every sysvar in the
+    new chapter has an inventory record and (where implemented) a cell.
+
+## Risks / open questions
+
+  - Volume: ~hundreds of sysvars; phase the *implementation* by coupling
+    priority (file/encoding/error/units first), not alphabetically.
+  - Vendor drift: AutoCAD vs BricsCAD names/defaults/ranges differ;
+    `:divergence` must be filled, not flattened.
+  - Defaults that depend on drawing/template/registry must be marked
+    non-constant rather than guessed — accuracy over completeness.
+  - Placement under §16 vs. a new appendix chapter: chosen §16 sub-tree
+    to avoid renumbering 17–28; revisit if the chapter grows large.
+
+## Acceptance criteria
+
+  - [ ] `system-variables-inventory.sexp` exists, schema-valid, with
+        provenance for every record.
+  - [ ] Spec chapter present; GETVAR/SETVAR cross-link it; version 0.9.0.
+  - [ ] mock/null host catalogue is data-driven from the inventory;
+        read-only + unknown-name + coercion behave per the chapter.
+  - [ ] ERRNO has real semantics; each listed coupling implemented and
+        tested.
+  - [ ] autolisp-test conformance green; spec-coverage-style gate green.
