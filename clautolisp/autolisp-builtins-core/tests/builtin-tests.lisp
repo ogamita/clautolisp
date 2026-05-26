@@ -2182,3 +2182,197 @@ form a LIFO stack returning the keyword names of pushed modes."
   (reset-autolisp-symbol-table)
   (is (null (run-autolisp-string "(help)"
                                  :setup-fn #'install-core-into))))
+
+;;;; ----- M3a missing-functions: VLE-* list/predicate/number helpers -----
+
+(test m3a-vle-nth-shortcuts
+  "VLE-NTH0..VLE-NTH9 return the element at their fixed index, or
+NIL past the end."
+  (reset-autolisp-symbol-table)
+  (is (eq (intern-autolisp-symbol "A")
+          (run-autolisp-string "(vle-nth0 '(a b c d))"
+                               :setup-fn #'install-core-into)))
+  (is (eq (intern-autolisp-symbol "D")
+          (run-autolisp-string "(vle-nth3 '(a b c d))"
+                               :setup-fn #'install-core-into)))
+  (is (null
+       (run-autolisp-string "(vle-nth9 '(a b c d))"
+                            :setup-fn #'install-core-into))))
+
+(test m3a-vle-put-nth-pads-and-replaces
+  "(vle-put-nth lst idx val) replaces at IDX, or pads with NIL
+if IDX > length; returns lst unchanged for negative IDX."
+  (reset-autolisp-symbol-table)
+  (let ((replaced (run-autolisp-string
+                   "(vle-put-nth '(10 20 30) 1 99)"
+                   :setup-fn #'install-core-into)))
+    (is (equal '(10 99 30) replaced)))
+  (let ((padded (run-autolisp-string
+                 "(vle-put-nth '(10 20) 4 99)"
+                 :setup-fn #'install-core-into)))
+    (is (equal '(10 20 nil nil 99) padded))))
+
+(test m3a-vle-subst-nth-leaves-out-of-range-unchanged
+  "VLE-SUBST-NTH keeps lst untouched on out-of-range IDX (the
+conservative interpretation chosen until vendor-validation)."
+  (reset-autolisp-symbol-table)
+  (let ((unchanged (run-autolisp-string
+                    "(vle-subst-nth '(10 20) 4 99)"
+                    :setup-fn #'install-core-into)))
+    (is (equal '(10 20) unchanged))))
+
+(test m3a-vle-remove-family
+  "REMOVE-NTH / REMOVE-ALL / REMOVE-FIRST / REMOVE-LAST behave per
+their respective spec descriptions."
+  (reset-autolisp-symbol-table)
+  (is (equal '(10 30)
+             (run-autolisp-string "(vle-remove-nth 1 '(10 20 30))"
+                                  :setup-fn #'install-core-into)))
+  (is (equal '(10 30)
+             (run-autolisp-string "(vle-remove-all 20 '(10 20 30 20))"
+                                  :setup-fn #'install-core-into)))
+  (is (equal '(10 30 20)
+             (run-autolisp-string "(vle-remove-first 20 '(10 20 30 20))"
+                                  :setup-fn #'install-core-into)))
+  (is (equal '(10 20)
+             (run-autolisp-string "(vle-remove-last '(10 20 30))"
+                                  :setup-fn #'install-core-into))))
+
+(test m3a-vle-list-split-returns-head-tail
+  "(vle-list-split lst item) returns (head tail) with the
+splitter dropped at the split point."
+  (reset-autolisp-symbol-table)
+  (let ((split (run-autolisp-string "(vle-list-split '(a b 0 c d) 0)"
+                                    :setup-fn #'install-core-into)))
+    (is (equal (list (list (intern-autolisp-symbol "A")
+                           (intern-autolisp-symbol "B"))
+                     (list (intern-autolisp-symbol "C")
+                           (intern-autolisp-symbol "D")))
+               split))))
+
+(test m3a-vle-sublist-extracts-n-items
+  "(vle-sublist lst start n) returns N items starting at START
+(0-based), clamped to the list end."
+  (reset-autolisp-symbol-table)
+  (is (equal '(30 40 50)
+             (run-autolisp-string "(vle-sublist '(10 20 30 40 50 60) 2 3)"
+                                  :setup-fn #'install-core-into)))
+  ;; clamp to end
+  (is (equal '(50 60)
+             (run-autolisp-string "(vle-sublist '(10 20 30 40 50 60) 4 10)"
+                                  :setup-fn #'install-core-into))))
+
+(test m3a-vle-set-ops
+  "LIST-DIFF is symmetric difference; INTERSECT / SUBTRACT / UNION
+follow the standard set semantics."
+  (reset-autolisp-symbol-table)
+  (is (equal '(1 4)
+             (run-autolisp-string "(vle-list-diff '(1 2 3) '(2 3 4))"
+                                  :setup-fn #'install-core-into)))
+  (is (equal '(2 3)
+             (run-autolisp-string "(vle-list-intersect '(1 2 3) '(2 3 4))"
+                                  :setup-fn #'install-core-into)))
+  (is (equal '(1 4)
+             (run-autolisp-string "(vle-list-subtract '(1 2 3 4) '(2 3))"
+                                  :setup-fn #'install-core-into)))
+  (is (equal '(1 2 3 4)
+             (run-autolisp-string "(vle-list-union '(1 2 3) '(2 3 4))"
+                                  :setup-fn #'install-core-into))))
+
+(test m3a-vle-cdrassoc-and-cadrassoc
+  "VLE-CDRASSOC == (cdr (assoc k l)); VLE-CADRASSOC == (cadr (assoc k l))."
+  (reset-autolisp-symbol-table)
+  (is (equal '(2) (run-autolisp-string "(vle-cdrassoc 'b '((a 1) (b 2) (c 3)))"
+                                       :setup-fn #'install-core-into)))
+  (is (eql 2 (run-autolisp-string "(vle-cadrassoc 'b '((a 1) (b 2) (c 3)))"
+                                  :setup-fn #'install-core-into))))
+
+(test m3a-vle-list-massoc-collects-all
+  "(vle-list-massoc key alist) returns the cdr of every pair whose car matches KEY."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string
+                 "(vle-list-massoc 'b '((a 1) (b 2) (b 22) (c 3)))"
+                 :setup-fn #'install-core-into)))
+    (is (equal '((2) (22)) result))))
+
+(test m3a-vle-search-tail-and-index
+  "(vle-search item lst nil) returns the tail starting at ITEM
+(MEMBER semantics); (vle-search item lst t) returns the 0-based
+index. NIL when not found."
+  (reset-autolisp-symbol-table)
+  (let ((tail (run-autolisp-string "(vle-search 'c '(a b c d) nil)"
+                                   :setup-fn #'install-core-into)))
+    (is (equal (list (intern-autolisp-symbol "C")
+                     (intern-autolisp-symbol "D"))
+               tail)))
+  (is (eql 2 (run-autolisp-string "(vle-search 'c '(a b c d) t)"
+                                  :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vle-search 'z '(a b c d) t)"
+                                 :setup-fn #'install-core-into))))
+
+(test m3a-vle-type-predicates-native
+  "Native predicates return T for matches, NIL for non-matches."
+  (reset-autolisp-symbol-table)
+  (let ((tests '(("(vle-integerp 5)"      t)
+                 ("(vle-integerp 1.5)"    nil)
+                 ("(vle-realp 1.5)"       t)
+                 ("(vle-realp 5)"         nil)
+                 ("(vle-numberp 5)"       t)
+                 ("(vle-numberp 1.5)"     t)
+                 ("(vle-numberp \"a\")"   nil)
+                 ("(vle-stringp \"x\")"   t)
+                 ("(vle-stringp 5)"       nil)
+                 ("(vle-pointp '(1 2))"   t)
+                 ("(vle-pointp '(1 2 3))" t)
+                 ("(vle-pointp '(1))"     nil)
+                 ("(vle-pointp '(1 2 \"a\"))" nil))))
+    (dolist (pair tests)
+      (let* ((form     (first pair))
+             (expected (second pair))
+             (result   (run-autolisp-string form
+                                            :setup-fn #'install-core-into)))
+        (cond
+          (expected
+           (is (typep result 'autolisp-symbol) "~A returned ~S, not a symbol" form result)
+           (is (string= "T" (autolisp-symbol-name result))
+               "~A returned ~S, not T" form result))
+          (t
+           (is (null result) "~A returned ~S, not nil" form result)))))))
+
+(test m3a-vle-com-predicates-are-stubs
+  "VARIANTP / SAFEARRAYP / VLAOBJECTP return nil — clautolisp
+doesn't carry the COM types these predicate over."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(vle-variantp 5)"
+                  "(vle-safearrayp 5)"
+                  "(vle-vlaobjectp 5)"))
+    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+        "~A should be nil under the stub impl" form)))
+
+(test m3a-vle-rounding
+  "CEILING / FLOOR / ROUND / ROUNDTO match their spec descriptions."
+  (reset-autolisp-symbol-table)
+  (is (eql 2 (run-autolisp-string "(vle-ceiling 1.3)" :setup-fn #'install-core-into)))
+  (is (eql 1 (run-autolisp-string "(vle-floor 1.7)"   :setup-fn #'install-core-into)))
+  (is (eql 2 (run-autolisp-string "(vle-round 1.5)"   :setup-fn #'install-core-into)))
+  (let ((rounded (run-autolisp-string "(vle-roundto 3.14159 2)"
+                                      :setup-fn #'install-core-into)))
+    (is (and (numberp rounded)
+             (< (abs (- rounded 3.14d0)) 1.0d-9))
+        "vle-roundto 3.14159 2 -> ~S, expected ~~3.14" rounded)))
+
+(test m3a-vle-int32-conversions
+  "ATOI32 / ITOA32 / INT64TO32 wrap large values to 32-bit signed."
+  (reset-autolisp-symbol-table)
+  (is (eql 42 (run-autolisp-string "(vle-atoi32 \"42\")"
+                                   :setup-fn #'install-core-into)))
+  (let ((s (run-autolisp-string "(vle-itoa32 -7)"
+                                :setup-fn #'install-core-into)))
+    (is (typep s 'autolisp-string))
+    (is (string= "-7" (autolisp-string-value s)))))
+
+(test m3a-vle-tan
+  "(vle-tan 0) returns 0.0."
+  (reset-autolisp-symbol-table)
+  (is (< (abs (run-autolisp-string "(vle-tan 0)" :setup-fn #'install-core-into))
+         1.0d-12)))

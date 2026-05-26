@@ -30,7 +30,21 @@
     "TRANS" "TEXTBOX" "VLE_G_VECTOL"
     "GRAPHSCR" "TEXTSCR" "TEXTPAGE" "REDRAW" "SETVIEW"
     "TABLET" "MENUCMD" "MENUGROUP" "SHOWHTMLMODALWINDOW"
-    "*PUSH-ERROR-USING-COMMAND*" "*PUSH-ERROR-USING-STACK*" "*POP-ERROR-MODE*"))
+    "*PUSH-ERROR-USING-COMMAND*" "*PUSH-ERROR-USING-STACK*" "*POP-ERROR-MODE*"
+    ;; --- M3a VLE-* list/predicate/number helpers ---
+    "VLE-NTH0" "VLE-NTH1" "VLE-NTH2" "VLE-NTH3" "VLE-NTH4"
+    "VLE-NTH5" "VLE-NTH6" "VLE-NTH7" "VLE-NTH8" "VLE-NTH9"
+    "VLE-PUT-NTH" "VLE-SUBST-NTH" "VLE-REMOVE-NTH"
+    "VLE-REMOVE-ALL" "VLE-REMOVE-FIRST" "VLE-REMOVE-LAST"
+    "VLE-LIST-SPLIT" "VLE-SUBLIST"
+    "VLE-LIST-DIFF" "VLE-LIST-INTERSECT" "VLE-LIST-SUBTRACT" "VLE-LIST-UNION"
+    "VLE-CDRASSOC" "VLE-CADRASSOC" "VLE-SET-CDRASSOC" "VLE-LIST-MASSOC"
+    "VLE-APPEND" "VLE-MEMBER" "VLE-SEARCH"
+    "VLE-INTEGERP" "VLE-REALP" "VLE-NUMBERP" "VLE-STRINGP"
+    "VLE-POINTP" "VLE-ENAMEP" "VLE-PICKSETP"
+    "VLE-VARIANTP" "VLE-SAFEARRAYP" "VLE-VLAOBJECTP"
+    "VLE-CEILING" "VLE-FLOOR" "VLE-ROUND" "VLE-ROUNDTO"
+    "VLE-ATOI32" "VLE-ITOA32" "VLE-INT64TO32" "VLE-TAN"))
 
 (defun make-builtin-runtime-error (code builtin-name condition)
   (error 'autolisp-runtime-error
@@ -4395,6 +4409,362 @@ later M3 (vector math) functions can pick it up from one place.")
 
 ;;; --- end M2 -------------------------------------------------------
 
+;;; --- M3a: VLE-* list/predicate/number helpers ---------------------
+;;;
+;;; Bricsys' Visual LISP Extensions library — name-prefix VLE-*.
+;;; Almost all entries here have a matching Function Entry in
+;;; autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+;;; (BricsCAD V26 DevRef catalogue page is the upstream). Two
+;;; classes of entry:
+;;;
+;;;   - "BricsCAD VLE Library Function" — full spec with
+;;;     description / examples / return values. Reliable.
+;;;
+;;;   - "BricsCAD Extension Function" — terser one-liner of the
+;;;     form "Optimised idiom for ..." with vendor-defined return
+;;;     values. We follow the optimisation hint (e.g. VLE-CDRASSOC
+;;;     == (cdr (assoc key alist))) and add SPEC-UNCERTAIN markers
+;;;     where the exact return shape isn't pinned down.
+
+;;; ---- Nth shortcuts (VLE-NTH0..NTH9, PUT-NTH, SUBST-NTH, REMOVE-NTH)
+
+(defmacro define-vle-nth-shortcut (n)
+  "Emit (defun builtin-vle-nthN (lst) (nth N lst)) so VLE-NTH0
+through VLE-NTH9 share a single source spec without 10 hand-
+written copies. Body matches the spec: 0-based index, returns
+the element at position N or NIL if shorter."
+  `(defun ,(intern (format nil "BUILTIN-VLE-NTH~D" n)) (lst)
+     (require-proper-list lst ,(format nil "VLE-NTH~D" n))
+     (nth ,n lst)))
+
+(define-vle-nth-shortcut 0)
+(define-vle-nth-shortcut 1)
+(define-vle-nth-shortcut 2)
+(define-vle-nth-shortcut 3)
+(define-vle-nth-shortcut 4)
+(define-vle-nth-shortcut 5)
+(define-vle-nth-shortcut 6)
+(define-vle-nth-shortcut 7)
+(define-vle-nth-shortcut 8)
+(define-vle-nth-shortcut 9)
+
+(defun builtin-vle-put-nth (lst idx val)
+  ;; (vle-put-nth lst idx val) — replace item at IDX; pad with NIL
+  ;; if IDX > length; return lst unchanged if IDX < 0.
+  (require-proper-list lst "VLE-PUT-NTH")
+  (let ((i (require-int32 idx "VLE-PUT-NTH")))
+    (cond
+      ((minusp i) lst)
+      (t (let ((result (copy-list lst)))
+           (cond
+             ((< i (length result))
+              (setf (nth i result) val)
+              result)
+             (t
+              ;; Pad with NIL up to position i, then append val.
+              (append result
+                      (make-list (- i (length result)) :initial-element nil)
+                      (list val)))))))))
+
+(defun builtin-vle-subst-nth (lst idx val)
+  ;; (vle-subst-nth lst idx val) — replace item at IDX. Per spec,
+  ;; the description matches VLE-PUT-NTH almost verbatim but
+  ;; doesn't pin down the out-of-range behaviour. We take the
+  ;; conservative interpretation: return lst unchanged when IDX
+  ;; is out of range (no padding, no error).
+  ;;
+  ;;; SPEC-UNCERTAIN: out-of-range IDX in VLE-SUBST-NTH (pad like
+  ;;;   VLE-PUT-NTH, or leave unchanged, or signal?). Probe queued
+  ;;;   in deferred-spec-research.issue.
+  (require-proper-list lst "VLE-SUBST-NTH")
+  (let ((i (require-int32 idx "VLE-SUBST-NTH")))
+    (cond
+      ((or (minusp i) (>= i (length lst))) lst)
+      (t (let ((result (copy-list lst)))
+           (setf (nth i result) val)
+           result)))))
+
+(defun builtin-vle-remove-nth (idx lst)
+  ;; (vle-remove-nth idx lst) — return lst without element at IDX.
+  ;; Negative or out-of-range IDX returns lst unchanged.
+  (let ((i (require-int32 idx "VLE-REMOVE-NTH")))
+    (require-proper-list lst "VLE-REMOVE-NTH")
+    (cond
+      ((or (minusp i) (>= i (length lst))) lst)
+      (t (append (subseq lst 0 i) (subseq lst (1+ i)))))))
+
+;;; ---- List mutators (REMOVE-ALL, REMOVE-FIRST, REMOVE-LAST, LIST-SPLIT, SUBLIST)
+
+(defun builtin-vle-remove-all (item lst)
+  ;; (vle-remove-all item lst) — remove every occurrence of ITEM.
+  ;; Equivalent to VL-REMOVE.
+  (require-proper-list lst "VLE-REMOVE-ALL")
+  (remove-if (lambda (e) (autolisp-value= e item)) lst))
+
+(defun builtin-vle-remove-first (item lst)
+  ;; (vle-remove-first item lst) — remove the first occurrence of
+  ;; ITEM only.
+  (require-proper-list lst "VLE-REMOVE-FIRST")
+  (let ((removed nil))
+    (remove-if (lambda (e)
+                 (cond
+                   (removed nil)
+                   ((autolisp-value= e item) (setf removed t) t)
+                   (t nil)))
+               lst)))
+
+(defun builtin-vle-remove-last (lst)
+  ;; (vle-remove-last lst) — drop the last element (CL BUTLAST).
+  ;; Spec wording ("Optimised drop-the-last-element on a list")
+  ;; says ELEMENT, not "occurrence of item" — VLE-REMOVE-LAST is
+  ;; a 1-arg function, not the symmetric counterpart of
+  ;; VLE-REMOVE-FIRST.
+  (require-proper-list lst "VLE-REMOVE-LAST")
+  (butlast lst))
+
+(defun builtin-vle-list-split (lst item)
+  ;; (vle-list-split lst item) — split LST at ITEM and return both
+  ;; parts. We interpret the result as a 2-list (head tail), with
+  ;; ITEM dropped at the split point.
+  ;;
+  ;;; SPEC-UNCERTAIN: result shape (head tail) vs (head . tail);
+  ;;;   whether the splitter item lands in head, in tail, or is
+  ;;;   dropped; behaviour when ITEM not present. Probe queued in
+  ;;;   deferred-spec-research.issue.
+  (require-proper-list lst "VLE-LIST-SPLIT")
+  (let ((tail (member-if (lambda (e) (autolisp-value= e item)) lst)))
+    (cond
+      ((null tail) (list lst nil))   ; not found
+      (t (list (ldiff lst tail) (rest tail))))))
+
+(defun builtin-vle-sublist (lst start-idx nritems)
+  ;; (vle-sublist lst startidx nritems) — return NRITEMS items
+  ;; from LST starting at STARTIDX (0-based). Clamps to list end.
+  (require-proper-list lst "VLE-SUBLIST")
+  (let* ((s (require-int32 start-idx "VLE-SUBLIST"))
+         (n (require-int32 nritems   "VLE-SUBLIST"))
+         (len (length lst)))
+    (cond
+      ((or (minusp s) (>= s len) (not (plusp n))) nil)
+      (t (let ((end (min (+ s n) len)))
+           (subseq lst s end))))))
+
+;;; ---- Set-style list ops (LIST-DIFF, LIST-INTERSECT, LIST-SUBTRACT, LIST-UNION)
+
+(defun autolisp-list-equal (a b)
+  "Element-equality test matching VL-MEMBER's EQUAL-ish semantics —
+the same predicate the set-style VLE-LIST-* operators apply when
+deciding membership."
+  (autolisp-value= a b))
+
+(defun builtin-vle-list-diff (lst1 lst2)
+  ;; (vle-list-diff lst1 lst2) — SYMMETRIC difference. Spec:
+  ;; "all items, which are member of either 'lst1' or 'lst2', but
+  ;; not member of both lists."
+  (require-proper-list lst1 "VLE-LIST-DIFF")
+  (require-proper-list lst2 "VLE-LIST-DIFF")
+  (append (remove-if (lambda (x)
+                       (some (lambda (y) (autolisp-list-equal x y)) lst2))
+                     lst1)
+          (remove-if (lambda (x)
+                       (some (lambda (y) (autolisp-list-equal x y)) lst1))
+                     lst2)))
+
+(defun builtin-vle-list-intersect (lst1 lst2)
+  ;; (vle-list-intersect lst1 lst2) — items in both lists.
+  (require-proper-list lst1 "VLE-LIST-INTERSECT")
+  (require-proper-list lst2 "VLE-LIST-INTERSECT")
+  (remove-if-not (lambda (x)
+                   (some (lambda (y) (autolisp-list-equal x y)) lst2))
+                 lst1))
+
+(defun builtin-vle-list-subtract (lst1 lst2)
+  ;; (vle-list-subtract lst1 lst2) — set difference LST1 - LST2.
+  (require-proper-list lst1 "VLE-LIST-SUBTRACT")
+  (require-proper-list lst2 "VLE-LIST-SUBTRACT")
+  (remove-if (lambda (x)
+               (some (lambda (y) (autolisp-list-equal x y)) lst2))
+             lst1))
+
+(defun builtin-vle-list-union (lst1 lst2)
+  ;; (vle-list-union lst1 lst2) — merge with duplicates removed.
+  (require-proper-list lst1 "VLE-LIST-UNION")
+  (require-proper-list lst2 "VLE-LIST-UNION")
+  (let ((result '()))
+    (dolist (x (append lst1 lst2))
+      (unless (some (lambda (y) (autolisp-list-equal x y)) result)
+        (push x result)))
+    (nreverse result)))
+
+;;; ---- Assoc family (CADRASSOC, CDRASSOC, SET-CDRASSOC, LIST-MASSOC)
+
+(defun builtin-vle-cdrassoc (key alist)
+  ;; (vle-cdrassoc key alist) — optimised (cdr (assoc key alist)).
+  (require-proper-list alist "VLE-CDRASSOC")
+  (let ((pair (assoc key alist :test #'autolisp-value=)))
+    (and pair (cdr pair))))
+
+(defun builtin-vle-cadrassoc (key alist)
+  ;; (vle-cadrassoc key alist) — optimised (cadr (assoc key alist)).
+  (require-proper-list alist "VLE-CADRASSOC")
+  (let ((pair (assoc key alist :test #'autolisp-value=)))
+    (cond
+      ((null pair) nil)
+      ((consp (cdr pair)) (cadr pair))
+      (t nil))))
+
+(defun builtin-vle-set-cdrassoc (key alist val)
+  ;; (vle-set-cdrassoc key lst val) — set the cdr of every pair
+  ;; whose car matches KEY. Returns the modified list.
+  (require-proper-list alist "VLE-SET-CDRASSOC")
+  (dolist (pair alist)
+    (when (and (consp pair) (autolisp-value= (car pair) key))
+      (setf (cdr pair) val)))
+  alist)
+
+(defun builtin-vle-list-massoc (key alist)
+  ;; (vle-list-massoc key alist) — return the cdr of every pair
+  ;; whose car matches KEY (multi-assoc). "all values using same
+  ;; 'key' in assoc-list 'lst'".
+  (require-proper-list alist "VLE-LIST-MASSOC")
+  (let ((result '()))
+    (dolist (pair alist)
+      (when (and (consp pair) (autolisp-value= (car pair) key))
+        (push (cdr pair) result)))
+    (nreverse result)))
+
+;;; ---- Other list helpers (APPEND, MEMBER, SEARCH)
+
+(defun builtin-vle-append (&rest lists)
+  ;; (vle-append . lists) — same as APPEND.
+  (apply #'append lists))
+
+(defun builtin-vle-member (item lst)
+  ;; (vle-member item lst) — verifies whether LST contains ITEM.
+  ;; Spec wording is loose: "verifies whether". We return the tail
+  ;; starting at ITEM (matching VL-MEMBER / CL MEMBER), so the
+  ;; result is truthy in IF / WHILE contexts and the user can pull
+  ;; the tail when needed.
+  ;;
+  ;;; SPEC-UNCERTAIN: pure boolean (T/NIL) vs tail-returning. Probe
+  ;;;   queued in deferred-spec-research.issue.
+  (require-proper-list lst "VLE-MEMBER")
+  (member item lst :test #'autolisp-value=))
+
+(defun builtin-vle-search (item lst &optional as-idx)
+  ;; (vle-search item lst asIdx) — search LST for ITEM. If ASIDX
+  ;; is NIL or omitted, return the list starting at ITEM (CL
+  ;; MEMBER semantics). If non-NIL, return the 0-based index.
+  ;; NIL when ITEM isn't found.
+  (require-proper-list lst "VLE-SEARCH")
+  (let ((tail (member item lst :test #'autolisp-value=)))
+    (cond
+      ((null tail) nil)
+      ((null as-idx) tail)
+      (t (- (length lst) (length tail))))))
+
+;;; ---- Type predicates (5 native + 4 stub)
+
+(defun autolisp-true ()
+  (intern-autolisp-symbol "T"))
+
+(defun builtin-vle-integerp (x)
+  (if (typep x '(signed-byte 32)) (autolisp-true) nil))
+
+(defun builtin-vle-realp (x)
+  (if (typep x 'double-float) (autolisp-true) nil))
+
+(defun builtin-vle-numberp (x)
+  (if (numberp x) (autolisp-true) nil))
+
+(defun builtin-vle-stringp (x)
+  (if (typep x 'autolisp-string) (autolisp-true) nil))
+
+(defun builtin-vle-pointp (x)
+  ;; A point is a list of 2 or 3 numbers.
+  (cond
+    ((not (consp x)) nil)
+    ((not (member (length x) '(2 3))) nil)
+    ((every #'numberp x) (autolisp-true))
+    (t nil)))
+
+(defun builtin-vle-enamep (x)
+  ;; Stub-style native: clautolisp has an autolisp-ename type but
+  ;; the runtime test image doesn't always import it; fall back
+  ;; to find-symbol guarded.
+  (let ((class (find-symbol "AUTOLISP-ENAME" '#:clautolisp.autolisp-runtime)))
+    (if (and class (typep x class))
+        (autolisp-true)
+        nil)))
+
+;;; STUB: VARIANTP — no ActiveX VARIANT type in clautolisp. See deferred-stubbed-functions.issue § VLE COM predicates.
+(defun builtin-vle-variantp    (x) (declare (ignore x)) nil)
+;;; STUB: SAFEARRAYP — no SAFEARRAY type. See deferred-stubbed-functions.issue § VLE COM predicates.
+(defun builtin-vle-safearrayp  (x) (declare (ignore x)) nil)
+;;; STUB: VLAOBJECTP — VLA objects exist only under the mock-host ActiveX bridge; not visible from the bare runtime. See deferred-stubbed-functions.issue § VLE COM predicates.
+(defun builtin-vle-vlaobjectp  (x) (declare (ignore x)) nil)
+
+(defun builtin-vle-picksetp (x)
+  ;; PICKSET is a real type in autolisp-runtime — promote out of
+  ;; the stub group.
+  (let ((class (find-symbol "AUTOLISP-PICKSET" '#:clautolisp.autolisp-runtime)))
+    (if (and class (typep x class))
+        (autolisp-true)
+        nil)))
+
+;;; ---- Number conversions (CEILING, FLOOR, ROUND, ROUNDTO, ATOI32, ITOA32, INT64TO32, TAN)
+
+(defun clamp-to-int32 (n)
+  "Sign-extending 32-bit truncation matching the VLE-*32 family's
+contract: AutoCAD's 32-bit integer wrap."
+  (let* ((mask (1- (ash 1 32)))
+         (mod  (logand n mask)))
+    (if (>= mod (ash 1 31))
+        (- mod (ash 1 32))
+        mod)))
+
+(defun builtin-vle-ceiling (x)
+  (let ((n (require-number x "VLE-CEILING")))
+    (ceiling n)))
+
+(defun builtin-vle-floor (x)
+  (let ((n (require-number x "VLE-FLOOR")))
+    (floor n)))
+
+(defun builtin-vle-round (x)
+  (let ((n (require-number x "VLE-ROUND")))
+    (round n)))
+
+(defun builtin-vle-roundto (x digits)
+  ;; (vle-roundto x digits) — round to DIGITS decimal places.
+  (let* ((n (coerce (require-number x "VLE-ROUNDTO") 'double-float))
+         (d (require-int32 digits "VLE-ROUNDTO"))
+         (factor (expt 10.0d0 d)))
+    (/ (coerce (round (* n factor)) 'double-float) factor)))
+
+(defun builtin-vle-atoi32 (numstr)
+  ;; (vle-atoi32 numstr) — parse string to 32-bit signed int.
+  ;; Truncates 64-bit values to 32-bit (matching the BricsCAD
+  ;; contract for x64 builds).
+  (let* ((s (autolisp-string-value (require-string numstr "VLE-ATOI32")))
+         (parsed (or (ignore-errors (parse-integer s :junk-allowed t)) 0)))
+    (clamp-to-int32 parsed)))
+
+(defun builtin-vle-itoa32 (intval)
+  ;; (vle-itoa32 intval) — render integer in 32-bit form.
+  (let ((clamped (clamp-to-int32 (require-int32 intval "VLE-ITOA32"))))
+    (make-autolisp-string (format nil "~D" clamped))))
+
+(defun builtin-vle-int64to32 (intval)
+  ;; (vle-int64to32 intval) — truncate integer to 32-bit signed.
+  (clamp-to-int32 (require-int32 intval "VLE-INT64TO32")))
+
+(defun builtin-vle-tan (x)
+  (let ((n (coerce (require-number x "VLE-TAN") 'double-float)))
+    (tan n)))
+
+;;; --- end M3a ------------------------------------------------------
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -4777,7 +5147,55 @@ later M3 (vector math) functions can pick it up from one place.")
    (make-core-builtin-subr "*PUSH-ERROR-USING-STACK*"
                            #'builtin-push-error-using-stack)
    (make-core-builtin-subr "*POP-ERROR-MODE*"
-                           #'builtin-pop-error-mode)))
+                           #'builtin-pop-error-mode)
+   ;; --- M3a VLE-* list/predicate/number helpers ---
+   (make-core-builtin-subr "VLE-NTH0"          #'builtin-vle-nth0)
+   (make-core-builtin-subr "VLE-NTH1"          #'builtin-vle-nth1)
+   (make-core-builtin-subr "VLE-NTH2"          #'builtin-vle-nth2)
+   (make-core-builtin-subr "VLE-NTH3"          #'builtin-vle-nth3)
+   (make-core-builtin-subr "VLE-NTH4"          #'builtin-vle-nth4)
+   (make-core-builtin-subr "VLE-NTH5"          #'builtin-vle-nth5)
+   (make-core-builtin-subr "VLE-NTH6"          #'builtin-vle-nth6)
+   (make-core-builtin-subr "VLE-NTH7"          #'builtin-vle-nth7)
+   (make-core-builtin-subr "VLE-NTH8"          #'builtin-vle-nth8)
+   (make-core-builtin-subr "VLE-NTH9"          #'builtin-vle-nth9)
+   (make-core-builtin-subr "VLE-PUT-NTH"       #'builtin-vle-put-nth)
+   (make-core-builtin-subr "VLE-SUBST-NTH"     #'builtin-vle-subst-nth)
+   (make-core-builtin-subr "VLE-REMOVE-NTH"    #'builtin-vle-remove-nth)
+   (make-core-builtin-subr "VLE-REMOVE-ALL"    #'builtin-vle-remove-all)
+   (make-core-builtin-subr "VLE-REMOVE-FIRST"  #'builtin-vle-remove-first)
+   (make-core-builtin-subr "VLE-REMOVE-LAST"   #'builtin-vle-remove-last)
+   (make-core-builtin-subr "VLE-LIST-SPLIT"    #'builtin-vle-list-split)
+   (make-core-builtin-subr "VLE-SUBLIST"       #'builtin-vle-sublist)
+   (make-core-builtin-subr "VLE-LIST-DIFF"     #'builtin-vle-list-diff)
+   (make-core-builtin-subr "VLE-LIST-INTERSECT" #'builtin-vle-list-intersect)
+   (make-core-builtin-subr "VLE-LIST-SUBTRACT" #'builtin-vle-list-subtract)
+   (make-core-builtin-subr "VLE-LIST-UNION"    #'builtin-vle-list-union)
+   (make-core-builtin-subr "VLE-CDRASSOC"      #'builtin-vle-cdrassoc)
+   (make-core-builtin-subr "VLE-CADRASSOC"     #'builtin-vle-cadrassoc)
+   (make-core-builtin-subr "VLE-SET-CDRASSOC"  #'builtin-vle-set-cdrassoc)
+   (make-core-builtin-subr "VLE-LIST-MASSOC"   #'builtin-vle-list-massoc)
+   (make-core-builtin-subr "VLE-APPEND"        #'builtin-vle-append)
+   (make-core-builtin-subr "VLE-MEMBER"        #'builtin-vle-member)
+   (make-core-builtin-subr "VLE-SEARCH"        #'builtin-vle-search)
+   (make-core-builtin-subr "VLE-INTEGERP"      #'builtin-vle-integerp)
+   (make-core-builtin-subr "VLE-REALP"         #'builtin-vle-realp)
+   (make-core-builtin-subr "VLE-NUMBERP"       #'builtin-vle-numberp)
+   (make-core-builtin-subr "VLE-STRINGP"       #'builtin-vle-stringp)
+   (make-core-builtin-subr "VLE-POINTP"        #'builtin-vle-pointp)
+   (make-core-builtin-subr "VLE-ENAMEP"        #'builtin-vle-enamep)
+   (make-core-builtin-subr "VLE-PICKSETP"      #'builtin-vle-picksetp)
+   (make-core-builtin-subr "VLE-VARIANTP"      #'builtin-vle-variantp)
+   (make-core-builtin-subr "VLE-SAFEARRAYP"    #'builtin-vle-safearrayp)
+   (make-core-builtin-subr "VLE-VLAOBJECTP"    #'builtin-vle-vlaobjectp)
+   (make-core-builtin-subr "VLE-CEILING"       #'builtin-vle-ceiling)
+   (make-core-builtin-subr "VLE-FLOOR"         #'builtin-vle-floor)
+   (make-core-builtin-subr "VLE-ROUND"         #'builtin-vle-round)
+   (make-core-builtin-subr "VLE-ROUNDTO"       #'builtin-vle-roundto)
+   (make-core-builtin-subr "VLE-ATOI32"        #'builtin-vle-atoi32)
+   (make-core-builtin-subr "VLE-ITOA32"        #'builtin-vle-itoa32)
+   (make-core-builtin-subr "VLE-INT64TO32"     #'builtin-vle-int64to32)
+   (make-core-builtin-subr "VLE-TAN"           #'builtin-vle-tan)))
 
 (defun find-core-builtin (name)
   (find name (core-builtins)
