@@ -1,18 +1,165 @@
+# Bug: --verbose and --debug produce no output (alfe --bricscad and friends)
+
+Status: open
+Reported against: alfe (master @ 6b97ea6, clautolisp 1.0.72)
+
+## Reporter's reproduction
 
 I would have expected more info from alfe the second time.
 And bricscad usually worked well in --mode batch with the bash script autolisp.
 But first, --debug output !
 
-~/src/public/clautolisp
-master
-14:03[pjb@thalassa org.xquartz:0 clautolisp 90Gi]$ alfe --bricscad --mode batch -i
-alfe: alfe BRICSCAD backend error (phase BOOTSTRAP): BricsCAD did not reach READY within 30 s (last status: "BOOTING"). [READY-TIMEOUT]
+    ~/src/public/clautolisp
+    master
+    14:03[pjb@thalassa org.xquartz:0 clautolisp 90Gi]$ alfe --bricscad --mode batch -i
+    alfe: alfe BRICSCAD backend error (phase BOOTSTRAP): BricsCAD did not reach READY within 30 s (last status: "BOOTING"). [READY-TIMEOUT]
 
-~/src/public/clautolisp
-master
-14:04[pjb@thalassa org.xquartz:0 clautolisp 90Gi]$ alfe --debug --verbose --bricscad --mode batch -i
-alfe: alfe BRICSCAD backend error (phase BOOTSTRAP): BricsCAD did not reach READY within 30 s (last status: "BOOTING"). [READY-TIMEOUT]
+    ~/src/public/clautolisp
+    master
+    14:04[pjb@thalassa org.xquartz:0 clautolisp 90Gi]$ alfe --debug --verbose --bricscad --mode batch -i
+    alfe: alfe BRICSCAD backend error (phase BOOTSTRAP): BricsCAD did not reach READY within 30 s (last status: "BOOTING"). [READY-TIMEOUT]
 
-~/src/public/clautolisp
-master
-14:09[pjb@thalassa org.xquartz:0 clautolisp 90Gi]$ 
+    ~/src/public/clautolisp
+    master
+    14:09[pjb@thalassa org.xquartz:0 clautolisp 90Gi]$
+
+Both invocations produce a single error line; `--debug --verbose`
+has no observable effect compared to the bare run. The user
+wants to know what the backend was doing before the timeout
+(which subprocess was launched, where the workdir was, what was
+in run.scr, what the status-file polling saw) — none of which
+surfaces today.
+
+## Root cause
+
+`autolisp-front-end/source/logging.lisp` defines a 5-level
+logger — `log-debug`, `log-verbose`, `log-info`, `log-warn`,
+`log-error` — gated by a `*current-level*` parameter that
+`cli.lisp` populates correctly from the `--quiet` / `--verbose` /
+`--debug` flags:
+
+    autolisp-front-end/source/cli.lisp:698
+      (set-level (cli-options-verbosity options))
+
+So the level is set, but a repo-wide grep for `(log-debug` /
+`(log-verbose` / `(log-info` / `(log-warn` / `(log-error` turns
+up **zero call sites outside `logging.lisp` itself**:
+
+    grep -rnE "\(log-(debug|verbose|info|warn|error)" \
+         autolisp-front-end/
+    (no output)
+
+In other words, the logger is wired up but no producer code
+actually emits any record. The flags are dead.
+
+This holds across every backend (clautolisp / bricscad / autocad
+/ echo); bricscad is just the most painful case because the user
+most wants observability there — the CAD-side workflow involves
+a lot of file generation, subprocess spawn, AppleScript / COM
+bridging, and wire-protocol round-trips that all silently
+happen. The BOOTSTRAP-timeout path in the reporter's session is
+exactly the kind of failure where the user expects the verbose
+trace to say "I wrote run.scr to X, launched bricscad with argv
+Y, started polling status file Z, saw `BOOTING` at t=2s, t=5s,
+… last poll at t=30s before giving up" — and instead they get
+one line and nothing else.
+
+## Acceptance
+
+The fix is "instrument every diagnostically-interesting code
+path." Specifically:
+
+  * Backend resolution — log the chosen backend + variant at
+    `:debug`; log the source of the choice (explicit flag /
+    env override / default) at `:debug`.
+  * Plan resolution — log each action in the resolved plan at
+    `:verbose`; log the per-action timing at `:debug`.
+  * BricsCAD backend (`backend-bricscad.lisp`):
+    - launching the binary + the argv (`:debug`)
+    - workdir creation + the resolved path (`:verbose`)
+    - run.scr / bridge.vbs / launcher.applescript emission +
+      path of each (`:debug`)
+    - subprocess wait + exit code (`:verbose`)
+    - status-file polling cadence + each non-empty status read
+      (`:debug` — would have shown the user every "BOOTING"
+      poll on its way to the READY-TIMEOUT)
+    - workdir cleanup decision (`:verbose`)
+  * AutoCAD backend (`backend-autocad.lisp`):
+    - accoreconsole vs COM mode choice (`:debug`)
+    - argv (`:debug`)
+    - DWG path resolution (`:debug`)
+    - bridge.vbs emission + path (`:debug`)
+  * Cad-common (`backend-cad-common.lisp`):
+    - VBS / AppleScript escape input + output (`:debug`)
+  * Clautolisp backend — log the subprocess argv at `:debug`
+    when running with `--backend subprocess`; in-process mode
+    needs less since the runtime traces are already wired (the
+    `--trace` flag does work).
+  * File-protocol (`file-protocol.lisp`):
+    - each protocol exchange at `:verbose` (request kind +
+      payload size; full payload at `:debug`)
+    - heartbeat detection (`:debug`)
+  * Plan / cli boundary (`cli.lisp` itself):
+    - resolved encoding (file + terminal) at `:verbose`
+    - exit code + duration at `:verbose`
+
+Every log line should go through `log-*` so suppressing via
+`--quiet` (only `:warn` and above) works uniformly.
+
+The BOOTSTRAP-timeout path specifically should add at minimum:
+
+    [verbose] backend BRICSCAD: writing run.scr to /tmp/alfe-XXXX/run.scr
+    [verbose] backend BRICSCAD: launching: bricscad -b /tmp/alfe-XXXX/run.scr
+    [debug] backend BRICSCAD: status poll #1 (t=2.0s): "BOOTING"
+    [debug] backend BRICSCAD: status poll #2 (t=4.0s): "BOOTING"
+    ...
+    [debug] backend BRICSCAD: status poll #15 (t=30.0s): "BOOTING"
+    [verbose] backend BRICSCAD: READY timeout (last status: "BOOTING")
+    alfe: alfe BRICSCAD backend error (phase BOOTSTRAP): …
+
+so the user can immediately tell whether bricscad got launched
+at all, whether it wrote any status, and whether the status
+ever changed.
+
+## Tests
+
+  * Per-backend smoke test: `alfe --bricscad --debug -x "(+ 1 2)"`
+    with `BRICSCAD_EXE=/usr/bin/true` (or a stand-in) emits the
+    expected lines on `*error-output*`. Assert via scenario-
+    corpus expected-stderr-includes.
+  * `alfe --verbose` produces every `[verbose]` line and no
+    `[debug]` line; `alfe --debug` produces both; default
+    produces neither.
+  * `--quiet` suppresses even `[info]` lines (only `[warn]` and
+    `[error]` survive).
+  * Regression test for the reporter's case: a fake bricscad
+    that loops printing "BOOTING" to the status file should
+    show every poll line under `--debug` before the timeout.
+
+## Out of scope
+
+  * Adding NEW kinds of diagnostics beyond what the existing
+    code paths naturally have to say. The instrumentation is
+    descriptive (what's the backend doing right now), not
+    redesigning the backends to add new behaviour.
+  * Tracing AutoLISP-level function calls — that's the
+    runtime's `--trace` flag (clautolisp 1.0.57+), wired
+    independently.
+  * Structured logging / json output — the existing logger
+    emits human-readable `[level] message` lines; converting to
+    a structured format would be a separate, larger issue.
+  * The BOOTSTRAP-timeout itself (whether 30s is the right
+    default, whether the bridge script is launching bricscad
+    correctly on the reporter's machine). That's a separate
+    investigation; this issue is strictly about making the
+    diagnostics flags surface what's happening so THAT
+    investigation has data to work with.
+
+## See also
+
+  * `autolisp-front-end/source/logging.lisp` — the existing
+    five-level logger, awaiting consumers.
+  * `cli.lisp:698` (`set-level …`) — where the CLI plumbs the
+    level from `cli-options-verbosity`.
+  * `--trace` (clautolisp): the runtime-level call tracer,
+    orthogonal to alfe's logger.
