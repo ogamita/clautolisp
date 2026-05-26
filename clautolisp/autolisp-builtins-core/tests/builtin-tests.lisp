@@ -2551,3 +2551,100 @@ and returns the new value; subsequent predicates use it."
     (is (< (abs (- 0.01d0 set-result)) 1.0d-9)))
   ;; Restore.
   (setf clautolisp.autolisp-builtins-core::*vle-vector-tolerance* 1.0d-10))
+
+;;;; ----- M3c missing-functions: VLE-* string / file / color / misc -----
+
+(test m3c-vle-string-replace-replaces-all
+  "(vle-string-replace new old in) replaces every occurrence."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string
+                 "(vle-string-replace \"X\" \"BAR\" \"FOO BAR BAZ BAR\")"
+                 :setup-fn #'install-core-into)))
+    (is (typep result 'autolisp-string))
+    (is (string= "FOO X BAZ X" (autolisp-string-value result)))))
+
+(test m3c-vle-string-split-keeps-empty-tokens
+  "(vle-string-split keys s) splits on any char in KEYS; empty
+tokens between adjacent delimiters are kept."
+  (reset-autolisp-symbol-table)
+  (let ((tokens (run-autolisp-string
+                 "(vle-string-split \",\" \"a,b,,c\")"
+                 :setup-fn #'install-core-into)))
+    (is (consp tokens))
+    (is (= 4 (length tokens)))
+    (is (string= "a" (autolisp-string-value (first  tokens))))
+    (is (string= "b" (autolisp-string-value (second tokens))))
+    (is (string= ""  (autolisp-string-value (third  tokens))))
+    (is (string= "c" (autolisp-string-value (fourth tokens))))))
+
+(test m3c-vle-file->list-reads-and-skips-comments
+  "(vle-file->list path commentchar) returns one line per
+non-comment line; lines whose first non-whitespace char matches
+commentchar are dropped."
+  (reset-autolisp-symbol-table)
+  (let ((path (uiop:tmpize-pathname
+               (uiop:with-temporary-file (:pathname p :keep t) p))))
+    (unwind-protect
+         (progn
+           (with-open-file (out path :direction :output
+                                     :if-exists :supersede)
+             (format out "line 1~%# comment~%   # indented comment~%line 4~%"))
+           (let ((lines (run-autolisp-string
+                         (format nil "(vle-file->list ~S \"#\")"
+                                 (namestring path))
+                         :setup-fn #'install-core-into)))
+             (is (consp lines))
+             (is (= 2 (length lines)))
+             (is (string= "line 1" (autolisp-string-value (first  lines))))
+             (is (string= "line 4" (autolisp-string-value (second lines))))))
+      (ignore-errors (delete-file path)))))
+
+(test m3c-vle-filep-recognises-open-handles
+  "(vle-filep H) is T for an OPEN'd file handle, nil for anything else."
+  (reset-autolisp-symbol-table)
+  ;; A non-file value returns nil.
+  (is (null (run-autolisp-string "(vle-filep 'foo)"
+                                 :setup-fn #'install-core-into))))
+
+(test m3c-vle-file-encoding-stub-returns-string
+  "(vle-file-encoding handle) returns an autolisp-string with the
+session's encoding; the per-handle reset is the stub."
+  (reset-autolisp-symbol-table)
+  (let ((result (run-autolisp-string "(vle-file-encoding nil)"
+                                     :setup-fn #'install-core-into)))
+    (is (typep result 'autolisp-string))
+    (is (plusp (length (autolisp-string-value result))))))
+
+(test m3c-vle-aci2rgb-known-indices
+  "ACI 1 -> red, 7 -> white, 100 -> nil (in the un-tabulated 10-249 range)."
+  (reset-autolisp-symbol-table)
+  (is (equal '(255 0 0)
+             (run-autolisp-string "(vle-aci2rgb 1)" :setup-fn #'install-core-into)))
+  (is (equal '(255 255 255)
+             (run-autolisp-string "(vle-aci2rgb 7)" :setup-fn #'install-core-into)))
+  (is (null (run-autolisp-string "(vle-aci2rgb 100)"
+                                 :setup-fn #'install-core-into))))
+
+(test m3c-vle-rgb2aci-nearest-known
+  "(vle-rgb2aci '(R G B)) returns the index of the nearest known
+palette entry."
+  (reset-autolisp-symbol-table)
+  (is (eql 1 (run-autolisp-string "(vle-rgb2aci '(255 0 0))"
+                                  :setup-fn #'install-core-into)))
+  (is (eql 5 (run-autolisp-string "(vle-rgb2aci '(0 0 255))"
+                                  :setup-fn #'install-core-into))))
+
+(test m3c-vle-ping-alive-always-true
+  "(vle-ping-alive) returns T."
+  (reset-autolisp-symbol-table)
+  (let ((r (run-autolisp-string "(vle-ping-alive)"
+                                :setup-fn #'install-core-into)))
+    (is (typep r 'autolisp-symbol))
+    (is (string= "T" (autolisp-symbol-name r)))))
+
+(test m3c-vle-optimiser-and-fastcom-stubs-return-nil
+  "VLE-OPTIMISER / VLE-OPTIMIZER / VLE-FASTCOM stubs return nil."
+  (reset-autolisp-symbol-table)
+  (dolist (form '("(vle-optimiser t)" "(vle-optimizer nil)" "(vle-fastcom t)"))
+    (is (null (run-autolisp-string form :setup-fn #'install-core-into))
+        "~A should return nil under the stub impl" form)))

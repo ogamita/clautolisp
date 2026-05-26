@@ -58,7 +58,13 @@
     "VLE-VECTOR-ISXAXIS" "VLE-VECTOR-ISYAXIS" "VLE-VECTOR-ISZAXIS"
     "VLE-VECTOR-GETPERPVECTOR" "VLE-VECTOR-GETUCS"
     "VLE-VECTOR-TO2D" "VLE-VECTOR-TO3D"
-    "VLE-VECTOR-GETTOLERANCE" "VLE-VECTOR-SETTOLERANCE"))
+    "VLE-VECTOR-GETTOLERANCE" "VLE-VECTOR-SETTOLERANCE"
+    ;; --- M3c VLE-* string/file/color/misc ---
+    "VLE-STRING-REPLACE" "VLE-STRING-SPLIT"
+    "VLE-FILE->LIST" "VLE-FILEP" "VLE-FILE-ENCODING"
+    "VLE-ACI2RGB" "VLE-RGB2ACI"
+    "VLE-STARTAPP" "VLE-PING-ALIVE"
+    "VLE-OPTIMISER" "VLE-OPTIMIZER" "VLE-FASTCOM"))
 
 (defun make-builtin-runtime-error (code builtin-name condition)
   (error 'autolisp-runtime-error
@@ -5067,6 +5073,256 @@ when the input is zero-length under TOL."
 
 ;;; --- end M3b ------------------------------------------------------
 
+;;; --- M3c: VLE-* string / file / color / misc ----------------------
+
+(defun builtin-vle-string-replace (new-str old-str in-string)
+  ;; (vle-string-replace newStr oldStr inString) — replace EVERY
+  ;; occurrence of OLD-STR with NEW-STR in IN-STRING.
+  ;;
+  ;;; SPEC-UNCERTAIN: replace-first vs replace-all. The Bricsys
+  ;;;   description ("new string replacing oldStr") doesn't pin
+  ;;;   it down; we chose replace-all because that matches the
+  ;;;   common idiom and the function isn't named "replace-first".
+  ;;;   Probe queued in deferred-spec-research.issue.
+  (let ((needle (autolisp-string-value (require-string old-str "VLE-STRING-REPLACE")))
+        (rep    (autolisp-string-value (require-string new-str "VLE-STRING-REPLACE")))
+        (hay    (autolisp-string-value (require-string in-string "VLE-STRING-REPLACE"))))
+    (cond
+      ((zerop (length needle)) (make-autolisp-string hay))
+      (t
+       (let ((out (make-string-output-stream))
+             (cursor 0)
+             (nl (length needle)))
+         (loop
+           (let ((pos (search needle hay :start2 cursor)))
+             (cond
+               ((null pos)
+                (write-string (subseq hay cursor) out)
+                (return))
+               (t
+                (write-string (subseq hay cursor pos) out)
+                (write-string rep out)
+                (setf cursor (+ pos nl))))))
+         (make-autolisp-string (get-output-stream-string out)))))))
+
+(defun builtin-vle-string-split (keys string)
+  ;; (vle-string-split keys string) — tokenise STRING on any of
+  ;; the characters in KEYS. Empty tokens between consecutive
+  ;; delimiters are kept (matches the BricsCAD reference output).
+  ;;
+  ;;; SPEC-UNCERTAIN: empty-token handling between adjacent
+  ;;;   delimiters. We keep them; BricsCAD might collapse them.
+  ;;;   Probe queued in deferred-spec-research.issue.
+  (let ((k (autolisp-string-value (require-string keys "VLE-STRING-SPLIT")))
+        (s (autolisp-string-value (require-string string "VLE-STRING-SPLIT"))))
+    (let ((result '())
+          (cursor 0))
+      (loop
+        for i from cursor below (length s)
+        when (find (char s i) k :test #'char=)
+          do (push (make-autolisp-string (subseq s cursor i)) result)
+             (setf cursor (1+ i)))
+      (push (make-autolisp-string (subseq s cursor)) result)
+      (nreverse result))))
+
+(defun builtin-vle-file->list (filename comment-char)
+  ;; (vle-file->list filename commentchar) — slurp FILENAME into a
+  ;; list of one autolisp-string per line. When COMMENT-CHAR is
+  ;; a non-NIL string, any line whose first non-whitespace
+  ;; character matches its first character is dropped.
+  (let* ((path (autolisp-string-value (require-string filename "VLE-FILE->LIST")))
+         (skip-char
+           (cond
+             ((null comment-char) nil)
+             ((typep comment-char 'autolisp-string)
+              (let ((s (autolisp-string-value comment-char)))
+                (and (plusp (length s)) (char s 0))))
+             (t nil))))
+    (handler-case
+        (with-open-file (stream path :direction :input
+                                     :if-does-not-exist nil)
+          (cond
+            ((null stream) nil)
+            (t (let ((lines '()))
+                 (loop
+                   for line = (read-line stream nil nil)
+                   while line
+                   do (let ((first-non-ws (position-if-not
+                                            (lambda (c) (member c '(#\Space #\Tab)))
+                                            line)))
+                        (unless (and skip-char
+                                     first-non-ws
+                                     (char= (char line first-non-ws) skip-char))
+                          (push (make-autolisp-string line) lines))))
+                 (nreverse lines)))))
+      (error () nil))))
+
+(defun builtin-vle-filep (obj)
+  ;; (vle-filep obj) — T iff OBJ is an autolisp-file (OPEN'd handle).
+  (let ((class (find-symbol "AUTOLISP-FILE" '#:clautolisp.autolisp-runtime)))
+    (if (and class (typep obj class))
+        (autolisp-true) nil)))
+
+(defun builtin-vle-file-encoding (handle &optional encoding)
+  ;; (vle-file-encoding HANDLE [ENCODING])
+  ;; The actual BricsCAD function declares the encoding to use on
+  ;; future I/O against HANDLE. Without a way to re-bind the
+  ;; external-format on an already-open CL stream portably, we
+  ;; surface this as a query-only stub: returns the session's
+  ;; *autolisp-file-encoding* (which the CLI installs) and ignores
+  ;; the per-handle ENCODING argument.
+  ;;
+  ;;; STUB: per-handle encoding re-bind. See deferred-stubbed-functions.issue
+  ;;;   § VLE-FILE-ENCODING. (Possible upgrade: track the encoding in
+  ;;;   the autolisp-file wrapper and re-open the underlying stream
+  ;;;   on change — non-trivial but feasible.)
+  (declare (ignore handle encoding))
+  (multiple-value-bind (value boundp)
+      (lookup-variable (intern-autolisp-symbol "*AUTOLISP-FILE-ENCODING*"))
+    (cond
+      ((and boundp (typep value 'autolisp-string)) value)
+      (t (make-autolisp-string "UTF-8")))))
+
+;;; ---- ACI palette + RGB conversions ----
+;;;
+;;; The AutoCAD Color Index (ACI) is a 256-entry palette. We ship a
+;;; partial table covering the well-defined slots — 0 (ByBlock,
+;;; black for paint purposes), 1-9 (basic colors), 250-255 (grayscale
+;;; ramp). The 10-249 range is the algorithmic
+;;; hue x saturation x brightness palette that AutoCAD computes
+;;; from a fixed scheme; we leave those slots NIL until the full
+;;; table is vendor-validated (entry queued in
+;;; deferred-spec-research.issue § VLE-ACI2RGB).
+
+(defparameter *aci-base-palette*
+  ;; (INDEX R G B)
+  '((0   0   0   0)      ; ByBlock — black on paint
+    (1   255 0   0)      ; red
+    (2   255 255 0)      ; yellow
+    (3   0   255 0)      ; green
+    (4   0   255 255)    ; cyan
+    (5   0   0   255)    ; blue
+    (6   255 0   255)    ; magenta
+    (7   255 255 255)    ; white (or black on a white background)
+    (8   128 128 128)    ; dark grey
+    (9   192 192 192)    ; light grey
+    (250 51  51  51)     ; grey ramp
+    (251 91  91  91)
+    (252 132 132 132)
+    (253 173 173 173)
+    (254 214 214 214)
+    (255 255 255 255))
+  "Well-defined entries of the AutoCAD ACI palette. Indices 10-249
+are the algorithmic hue ring and are not yet covered — see
+deferred-spec-research.issue § VLE-ACI2RGB.")
+
+(defun aci-palette-lookup (index)
+  "Return the (R G B) triple for INDEX, or NIL when INDEX is in
+the un-tabulated 10-249 range."
+  (let ((row (assoc index *aci-base-palette*)))
+    (and row (rest row))))
+
+(defun builtin-vle-aci2rgb (color)
+  ;; (vle-aci2rgb color) -> (R G B) list, or NIL for indices we
+  ;; haven't tabulated yet (10-249).
+  ;;
+  ;;; SPEC-UNCERTAIN: ACI 10-249 range. We return NIL there until
+  ;;;   the full 256-entry palette is checked-in. Probe queued in
+  ;;;   deferred-spec-research.issue § VLE-ACI2RGB.
+  (let* ((idx (require-int32 color "VLE-ACI2RGB"))
+         (rgb (aci-palette-lookup idx)))
+    (and rgb (list (nth 0 rgb) (nth 1 rgb) (nth 2 rgb)))))
+
+(defun builtin-vle-rgb2aci (rgb)
+  ;; (vle-rgb2aci rgb) — find the nearest ACI index for the given
+  ;; RGB. Spec is loose on the argument shape (single 24-bit
+  ;; integer vs 3 separate values); we accept the most common
+  ;; in-practice form: a 3-element list (R G B), each 0-255.
+  ;;
+  ;;; SPEC-UNCERTAIN: argument shape. Spec arguments list mentions
+  ;;;   both "an integer specifying the RGB value" and three
+  ;;;   separate red/green/blue ints. We accept the list form.
+  ;;;   Probe queued in deferred-spec-research.issue § VLE-RGB2ACI.
+  (require-proper-list rgb "VLE-RGB2ACI")
+  (unless (= 3 (length rgb))
+    (signal-builtin-argument-error
+     :invalid-rgb "VLE-RGB2ACI"
+     "VLE-RGB2ACI expects a 3-element (R G B) list, got ~D-element list."
+     (length rgb)))
+  (let* ((r (require-int32 (nth 0 rgb) "VLE-RGB2ACI"))
+         (g (require-int32 (nth 1 rgb) "VLE-RGB2ACI"))
+         (b (require-int32 (nth 2 rgb) "VLE-RGB2ACI"))
+         (best-idx nil)
+         (best-d2 nil))
+    (dolist (row *aci-base-palette*)
+      (let* ((idx (first row))
+             (rr  (second row))
+             (gg  (third row))
+             (bb  (fourth row))
+             (d2  (+ (expt (- r rr) 2)
+                     (expt (- g gg) 2)
+                     (expt (- b bb) 2))))
+        (when (or (null best-d2) (< d2 best-d2))
+          (setf best-d2 d2  best-idx idx))))
+    (or best-idx 7)))
+
+;;; ---- Misc ----
+
+(defun builtin-vle-startapp (cmd args mode)
+  ;; (vle-startapp cmd args mode) — launch CMD with optional ARGS
+  ;; (string or NIL). MODE T waits for the process; NIL runs it
+  ;; in the background. Returns the PID on success, NIL on failure.
+  (let* ((cmd-str (autolisp-string-value (require-string cmd "VLE-STARTAPP")))
+         (args-str (cond
+                     ((null args) nil)
+                     (t (autolisp-string-value (require-string args "VLE-STARTAPP")))))
+         (argv (cond
+                 ((and args-str (plusp (length args-str)))
+                  (list* cmd-str (autolisp-string-tokenise args-str)))
+                 (t (list cmd-str))))
+         (wait-p (autolisp-true-p mode)))
+    (handler-case
+        (cond
+          (wait-p
+           (uiop:run-program argv :output nil :error-output nil
+                                   :ignore-error-status t)
+           (autolisp-true))
+          (t
+           (let ((proc (uiop:launch-program argv :output nil :error-output nil)))
+             (or (ignore-errors (uiop:process-info-pid proc)) (autolisp-true)))))
+      (error () nil))))
+
+(defun autolisp-string-tokenise (s)
+  "Naive whitespace split of S, returning a list of tokens. Used
+by VLE-STARTAPP to convert the spec's single-string args form
+into the argv list uiop:run-program wants."
+  (let ((result '())
+        (cursor 0))
+    (loop for i from 0 below (length s)
+          when (member (char s i) '(#\Space #\Tab))
+            do (when (< cursor i)
+                 (push (subseq s cursor i) result))
+               (setf cursor (1+ i)))
+    (when (< cursor (length s))
+      (push (subseq s cursor) result))
+    (nreverse result)))
+
+(defun builtin-vle-ping-alive ()
+  ;; (vle-ping-alive) — Windows "I'm still alive" signal; always
+  ;; T in our headless engine.
+  (autolisp-true))
+
+;;; STUB: Bricsys LISP optimiser is a no-op in clautolisp (no
+;;; bytecode compile step). See deferred-stubbed-functions.issue
+;;; § VLE-OPTIMISER/OPTIMIZER.
+(defun builtin-vle-optimiser  (flag) (declare (ignore flag)) nil)
+;;; STUB: alias of OPTIMISER (US spelling).
+(defun builtin-vle-optimizer  (flag) (declare (ignore flag)) nil)
+;;; STUB: BricsCAD "Fast-COM" is a no-op in clautolisp (no COM).
+(defun builtin-vle-fastcom    (flag) (declare (ignore flag)) nil)
+
+;;; --- end M3c ------------------------------------------------------
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -5528,7 +5784,20 @@ when the input is zero-length under TOL."
    (make-core-builtin-subr "VLE-VECTOR-TO2D"            #'builtin-vle-vector-to2d)
    (make-core-builtin-subr "VLE-VECTOR-TO3D"            #'builtin-vle-vector-to3d)
    (make-core-builtin-subr "VLE-VECTOR-GETTOLERANCE"    #'builtin-vle-vector-gettolerance)
-   (make-core-builtin-subr "VLE-VECTOR-SETTOLERANCE"    #'builtin-vle-vector-settolerance)))
+   (make-core-builtin-subr "VLE-VECTOR-SETTOLERANCE"    #'builtin-vle-vector-settolerance)
+   ;; --- M3c VLE-* string/file/color/misc ---
+   (make-core-builtin-subr "VLE-STRING-REPLACE"  #'builtin-vle-string-replace)
+   (make-core-builtin-subr "VLE-STRING-SPLIT"    #'builtin-vle-string-split)
+   (make-core-builtin-subr "VLE-FILE->LIST"      #'builtin-vle-file->list)
+   (make-core-builtin-subr "VLE-FILEP"           #'builtin-vle-filep)
+   (make-core-builtin-subr "VLE-FILE-ENCODING"   #'builtin-vle-file-encoding)
+   (make-core-builtin-subr "VLE-ACI2RGB"         #'builtin-vle-aci2rgb)
+   (make-core-builtin-subr "VLE-RGB2ACI"         #'builtin-vle-rgb2aci)
+   (make-core-builtin-subr "VLE-STARTAPP"        #'builtin-vle-startapp)
+   (make-core-builtin-subr "VLE-PING-ALIVE"      #'builtin-vle-ping-alive)
+   (make-core-builtin-subr "VLE-OPTIMISER"       #'builtin-vle-optimiser)
+   (make-core-builtin-subr "VLE-OPTIMIZER"       #'builtin-vle-optimizer)
+   (make-core-builtin-subr "VLE-FASTCOM"         #'builtin-vle-fastcom)))
 
 (defun find-core-builtin (name)
   (find name (core-builtins)
