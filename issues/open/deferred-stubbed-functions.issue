@@ -188,6 +188,28 @@ phases 8-16 for the per-surface schedule.
     [ALERT] prefix. Upgrade path matches SHOWHTMLMODALWINDOW
     (terminal beep / TUI dialog / WebView).
 
+== VLISP-* IDE stubs (M4) ==
+
+5 Visual LISP IDE-level operators, all stubs. clautolisp has
+no separate compile step and no VLX/application namespace
+structure (every loaded file lands in the single session
+namespace), so all five ship as register-and-stub.
+
+  * VLISP-COMPILE — bytecode compile to .fas/.vlx. Light
+    upgrade: emit a CL FASL via `compile-file` when clautolisp
+    grows a separate compile step. Medium: a real .fas writer
+    that real BricsCAD can load. Heavy: full VLX packaging.
+  * VLISP-EXPORT-SYMBOL — records names in
+    *vlisp-exported-symbols* (observable from CL) but doesn't
+    gate any real VLX namespace. Light upgrade: gate visibility
+    once per-VLX namespaces land.
+  * VLISP-IMPORT-SYMBOL — symmetric counterpart of EXPORT.
+    Same upgrade path.
+  * VLISP-IMPORT-EXSUBRS — vendor-extension subrs are already
+    globally available in clautolisp; no-op T return.
+  * VLISP-OPTIMIZER — no bytecode optimiser to toggle/query.
+    Drop-in stub.
+
 == Future entries ==
 
 When opening a new STUB marker in future M3/M4/M5 work, add an
