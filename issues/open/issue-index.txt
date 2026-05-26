@@ -1,7 +1,25 @@
--*- mode:org -*-
-
+---  almost done, soon to be closed
 
 alfe.plan -- remains to be tested with the CADs on macOS and MS-Windows
+
+missing-functions-plan.md
+missing-functions.issue -- remains to implement some groups.
+
+---
+
+bug-no-debug-no-verbose.issue
+ammend-option-variables.issue
+encoding-dispatch.issue
+test-file-encodings.issue
+
+system-variables.issues
+
+source-aware-defun-documentation.issue
+source-aware-defun-documentation.lsp
+
+clautolisp-debugger.issue
+
+
 
 autolisp-spec-pdf-versioned-filename.issue
 autolisp-spec-questions.issue
@@ -21,13 +39,6 @@ deferred-command-special-form.issue
 deferred-spec-research.issue
 deferred-stubbed-functions.issue
 
-autolisp-spec-pdf-versioned-filename.issue
-autolisp-spec-questions.issue
-
-test-file-encodings.issue
-tex-pdf-characters.issue
-
-transmit-options.issue
 
 variadic-functions.issue
 
@@ -41,6 +52,7 @@ opendcl-runtime-core.issue
 opendcl-wire-protocol.issue
 
 
+tex-pdf-characters.issue
 alfe-plugin-model.issue
 nice-make-output.issue
 ci-github-ccl-lane.issue
