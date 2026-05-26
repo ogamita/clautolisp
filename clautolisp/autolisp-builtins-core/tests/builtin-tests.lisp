@@ -2038,12 +2038,20 @@ package, and doc styling)."
                  (autolisp-string-value lv)))))
 
 (test m2-mem-returns-three-integers
-  "(mem) returns a list of three integers (the documented triple)."
+  "(mem) returns a list of three integers (the documented triple).
+On CCL we parse (room) output and expect non-zero used+free heap
+counts; on SBCL we only require the slot shape (the SBCL impl
+returns dynamic-space-size as USED + zero placeholders)."
   (reset-autolisp-symbol-table)
   (let ((result (run-autolisp-string "(mem)" :setup-fn #'install-core-into)))
     (is (consp result))
     (is (= 3 (length result)))
-    (is (every #'integerp result))))
+    (is (every #'integerp result))
+    #+ccl
+    (let ((used (first result))
+          (free (second result)))
+      (is (plusp used) "(mem) USED slot under CCL should reflect real heap use, got ~D" used)
+      (is (plusp free) "(mem) FREE slot under CCL should reflect real heap free, got ~D" free))))
 
 (test m2-alloc-returns-argument
   "(alloc N) returns N (Autodesk: doesn't apply)."
