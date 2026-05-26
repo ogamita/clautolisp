@@ -64,7 +64,22 @@
     "VLE-FILE->LIST" "VLE-FILEP" "VLE-FILE-ENCODING"
     "VLE-ACI2RGB" "VLE-RGB2ACI"
     "VLE-STARTAPP" "VLE-PING-ALIVE"
-    "VLE-OPTIMISER" "VLE-OPTIMIZER" "VLE-FASTCOM"))
+    "VLE-OPTIMISER" "VLE-OPTIMIZER" "VLE-FASTCOM"
+    ;; --- M3d VLE-* CAD / COM / UI stubs ---
+    "VLE-ALERT" "VLE-COLLECTION->LIST" "VLE-COMPILE-SHAPE"
+    "VLE-CURVE-GETPERIMETER" "VLE-DICTIONARY-LIST"
+    "VLE-DICTOBJNAME" "VLE-DICTSEARCH"
+    "VLE-DISPLAYPAUSE" "VLE-DISPLAYUPDATE" "VLE-EDITTEXTINPLACE"
+    "VLE-ENABLESERVERBUSY" "VLE-ENAME-VALID"
+    "VLE-END-TRANSACTION" "VLE-START-TRANSACTION"
+    "VLE-ENTGET" "VLE-ENTGET-M" "VLE-ENTGET-MASSOC"
+    "VLE-ENTMOD" "VLE-ENTMOD-M"
+    "VLE-EXTENSIONS-ACTIVE" "VLE-GETGEOMEXTENTS"
+    "VLE-HIDEPROMPTMENU" "VLE-SHOWPROMPTMENU"
+    "VLE-IS-CURVE" "VLE-LICENSELEVEL"
+    "VLE-LISPINSTALL" "VLE-LISPVERSION" "VLE-NTH<X>"
+    "VLE-SAFEARRAY->LIST" "VLE-SELECTIONSET->LIST"
+    "VLE-SUNID" "VLE-TABLE-LIST" "VLE-TABLE-LIST-ALL" "VLE-TBLSEARCH"))
 
 (defun make-builtin-runtime-error (code builtin-name condition)
   (error 'autolisp-runtime-error
@@ -5323,6 +5338,92 @@ into the argv list uiop:run-program wants."
 
 ;;; --- end M3c ------------------------------------------------------
 
+;;; --- M3d: VLE-* CAD / COM / UI stubs ------------------------------
+;;;
+;;; These VLE-* functions all need the entity database, the
+;;; ActiveX/COM bridge, the SAFEARRAY type, the pickset/selection
+;;; surface, the dictionary store, the table store, or the
+;;; interactive Bricsys IDE — none of which the in-process
+;;; clautolisp engine carries. Each ships as a register-and-return-
+;;; documented-no-op stub with a `;;; STUB:` marker pointing at the
+;;; matching entry in deferred-stubbed-functions.issue.
+
+;;; STUB: VLE-ALERT — Bricsys' message dialog. Print to *error-output* + return nil.
+(defun builtin-vle-alert (msg)
+  (let ((text (autolisp-string-value (require-string msg "VLE-ALERT"))))
+    (format *error-output* "~&[ALERT] ~A~%" text)
+    (force-output *error-output*))
+  nil)
+
+;;; STUB: VLE-COLLECTION->LIST — needs ActiveX collection. See deferred-stubbed-functions.issue.
+(defun builtin-vle-collection->list (col) (declare (ignore col)) nil)
+;;; STUB: VLE-COMPILE-SHAPE — SHX shape compile; out of scope.
+(defun builtin-vle-compile-shape (&rest _) (declare (ignore _)) nil)
+;;; STUB: VLE-CURVE-GETPERIMETER — needs entity DB.
+(defun builtin-vle-curve-getperimeter (ename) (declare (ignore ename)) nil)
+;;; STUB: VLE-DICTIONARY-LIST — needs named-object dictionary.
+(defun builtin-vle-dictionary-list (&optional dict-ename) (declare (ignore dict-ename)) nil)
+;;; STUB: VLE-DICTOBJNAME — needs dictionary store.
+(defun builtin-vle-dictobjname (&rest _) (declare (ignore _)) nil)
+;;; STUB: VLE-DICTSEARCH — needs dictionary store.
+(defun builtin-vle-dictsearch (&rest _) (declare (ignore _)) nil)
+;;; STUB: VLE-DISPLAYPAUSE — UI display pause; no-op in headless.
+(defun builtin-vle-displaypause () nil)
+;;; STUB: VLE-DISPLAYUPDATE — UI display refresh.
+(defun builtin-vle-displayupdate () nil)
+;;; STUB: VLE-EDITTEXTINPLACE — interactive in-place text edit.
+(defun builtin-vle-edittextinplace (&rest _) (declare (ignore _)) nil)
+;;; STUB: VLE-ENABLESERVERBUSY — Windows COM server-busy guard.
+(defun builtin-vle-enableserverbusy (flag) (declare (ignore flag)) nil)
+;;; STUB: VLE-ENAME-VALID — needs entity DB; with no entities, always nil.
+(defun builtin-vle-ename-valid (ename) (declare (ignore ename)) nil)
+;;; STUB: VLE-END-TRANSACTION — needs transaction manager.
+(defun builtin-vle-end-transaction () nil)
+;;; STUB: VLE-ENTGET — needs entity DB.
+(defun builtin-vle-entget (ename) (declare (ignore ename)) nil)
+;;; STUB: VLE-ENTGET-M — multi-entity entget; needs entity DB.
+(defun builtin-vle-entget-m (enames) (declare (ignore enames)) nil)
+;;; STUB: VLE-ENTGET-MASSOC — entget + cadrassoc combo.
+(defun builtin-vle-entget-massoc (&rest _) (declare (ignore _)) nil)
+;;; STUB: VLE-ENTMOD — entity-modify; needs entity DB.
+(defun builtin-vle-entmod (data) (declare (ignore data)) nil)
+;;; STUB: VLE-ENTMOD-M — batched entmod.
+(defun builtin-vle-entmod-m (datas) (declare (ignore datas)) nil)
+;;; STUB: VLE-EXTENSIONS-ACTIVE — BricsCAD VLE-loaded flag. T (we register the names).
+(defun builtin-vle-extensions-active () (autolisp-true))
+;;; STUB: VLE-GETGEOMEXTENTS — needs entity DB.
+(defun builtin-vle-getgeomextents (ename) (declare (ignore ename)) nil)
+;;; STUB: VLE-HIDEPROMPTMENU — interactive UI menu; no-op in headless.
+(defun builtin-vle-hidepromptmenu () nil)
+;;; STUB: VLE-SHOWPROMPTMENU — interactive UI menu; no-op in headless.
+(defun builtin-vle-showpromptmenu (&rest _) (declare (ignore _)) nil)
+;;; STUB: VLE-IS-CURVE — entity predicate; needs entity DB.
+(defun builtin-vle-is-curve (ename) (declare (ignore ename)) nil)
+;;; STUB: VLE-LICENSELEVEL — BricsCAD license tier; static "PRO" placeholder.
+(defun builtin-vle-licenselevel () (make-autolisp-string "FULL"))
+;;; STUB: VLE-LISPINSTALL — BricsCAD install path.
+(defun builtin-vle-lispinstall () (make-autolisp-string ""))
+;;; STUB: VLE-LISPVERSION — VLE library version string.
+(defun builtin-vle-lispversion () (make-autolisp-string "0.0"))
+;;; STUB: VLE-NTH<X> — spec entry is the template that VLE-NTH0..NTH9 instantiate; no callable function under that exact name. Registered as a no-op so boundp probes succeed.
+(defun builtin-vle-nth<x> (&rest _) (declare (ignore _)) nil)
+;;; STUB: VLE-SAFEARRAY->LIST — needs SAFEARRAY (no COM in clautolisp).
+(defun builtin-vle-safearray->list (sa) (declare (ignore sa)) nil)
+;;; STUB: VLE-SELECTIONSET->LIST — needs pickset surface in a driven CAD; returns nil here.
+(defun builtin-vle-selectionset->list (ss) (declare (ignore ss)) nil)
+;;; STUB: VLE-START-TRANSACTION — needs transaction manager.
+(defun builtin-vle-start-transaction () nil)
+;;; STUB: VLE-SUNID — Bricsys sun-ID generator; returns a placeholder integer.
+(defun builtin-vle-sunid () 0)
+;;; STUB: VLE-TABLE-LIST — needs CAD symbol-table store.
+(defun builtin-vle-table-list (name) (declare (ignore name)) nil)
+;;; STUB: VLE-TABLE-LIST-ALL — needs CAD symbol-table store.
+(defun builtin-vle-table-list-all (name) (declare (ignore name)) nil)
+;;; STUB: VLE-TBLSEARCH — needs CAD symbol-table store.
+(defun builtin-vle-tblsearch (table-name entry &optional setnext) (declare (ignore table-name entry setnext)) nil)
+
+;;; --- end M3d ------------------------------------------------------
+
 (defun core-builtins ()
   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
@@ -5797,7 +5898,42 @@ into the argv list uiop:run-program wants."
    (make-core-builtin-subr "VLE-PING-ALIVE"      #'builtin-vle-ping-alive)
    (make-core-builtin-subr "VLE-OPTIMISER"       #'builtin-vle-optimiser)
    (make-core-builtin-subr "VLE-OPTIMIZER"       #'builtin-vle-optimizer)
-   (make-core-builtin-subr "VLE-FASTCOM"         #'builtin-vle-fastcom)))
+   (make-core-builtin-subr "VLE-FASTCOM"         #'builtin-vle-fastcom)
+   ;; --- M3d VLE-* CAD / COM / UI stubs ---
+   (make-core-builtin-subr "VLE-ALERT"               #'builtin-vle-alert)
+   (make-core-builtin-subr "VLE-COLLECTION->LIST"    #'builtin-vle-collection->list)
+   (make-core-builtin-subr "VLE-COMPILE-SHAPE"       #'builtin-vle-compile-shape)
+   (make-core-builtin-subr "VLE-CURVE-GETPERIMETER"  #'builtin-vle-curve-getperimeter)
+   (make-core-builtin-subr "VLE-DICTIONARY-LIST"     #'builtin-vle-dictionary-list)
+   (make-core-builtin-subr "VLE-DICTOBJNAME"         #'builtin-vle-dictobjname)
+   (make-core-builtin-subr "VLE-DICTSEARCH"          #'builtin-vle-dictsearch)
+   (make-core-builtin-subr "VLE-DISPLAYPAUSE"        #'builtin-vle-displaypause)
+   (make-core-builtin-subr "VLE-DISPLAYUPDATE"       #'builtin-vle-displayupdate)
+   (make-core-builtin-subr "VLE-EDITTEXTINPLACE"     #'builtin-vle-edittextinplace)
+   (make-core-builtin-subr "VLE-ENABLESERVERBUSY"    #'builtin-vle-enableserverbusy)
+   (make-core-builtin-subr "VLE-ENAME-VALID"         #'builtin-vle-ename-valid)
+   (make-core-builtin-subr "VLE-END-TRANSACTION"     #'builtin-vle-end-transaction)
+   (make-core-builtin-subr "VLE-ENTGET"              #'builtin-vle-entget)
+   (make-core-builtin-subr "VLE-ENTGET-M"            #'builtin-vle-entget-m)
+   (make-core-builtin-subr "VLE-ENTGET-MASSOC"       #'builtin-vle-entget-massoc)
+   (make-core-builtin-subr "VLE-ENTMOD"              #'builtin-vle-entmod)
+   (make-core-builtin-subr "VLE-ENTMOD-M"            #'builtin-vle-entmod-m)
+   (make-core-builtin-subr "VLE-EXTENSIONS-ACTIVE"   #'builtin-vle-extensions-active)
+   (make-core-builtin-subr "VLE-GETGEOMEXTENTS"      #'builtin-vle-getgeomextents)
+   (make-core-builtin-subr "VLE-HIDEPROMPTMENU"      #'builtin-vle-hidepromptmenu)
+   (make-core-builtin-subr "VLE-SHOWPROMPTMENU"      #'builtin-vle-showpromptmenu)
+   (make-core-builtin-subr "VLE-IS-CURVE"            #'builtin-vle-is-curve)
+   (make-core-builtin-subr "VLE-LICENSELEVEL"        #'builtin-vle-licenselevel)
+   (make-core-builtin-subr "VLE-LISPINSTALL"         #'builtin-vle-lispinstall)
+   (make-core-builtin-subr "VLE-LISPVERSION"         #'builtin-vle-lispversion)
+   (make-core-builtin-subr "VLE-NTH<X>"              #'builtin-vle-nth<x>)
+   (make-core-builtin-subr "VLE-SAFEARRAY->LIST"     #'builtin-vle-safearray->list)
+   (make-core-builtin-subr "VLE-SELECTIONSET->LIST"  #'builtin-vle-selectionset->list)
+   (make-core-builtin-subr "VLE-START-TRANSACTION"   #'builtin-vle-start-transaction)
+   (make-core-builtin-subr "VLE-SUNID"               #'builtin-vle-sunid)
+   (make-core-builtin-subr "VLE-TABLE-LIST"          #'builtin-vle-table-list)
+   (make-core-builtin-subr "VLE-TABLE-LIST-ALL"      #'builtin-vle-table-list-all)
+   (make-core-builtin-subr "VLE-TBLSEARCH"           #'builtin-vle-tblsearch)))
 
 (defun find-core-builtin (name)
   (find name (core-builtins)
