@@ -1,9 +1,64 @@
 # Deferred: port the legacy autolisp-* runtime helpers so CAD eval round-trips
 
-Status: open
+Status: closed (resolved 2026-05-27 on branch impl-bootstrap-helpers, alfe 1.0.14)
 Reported against: alfe (master @ fix-bricscad-bootstrap-exit, 1.0.11)
 Reported by: discovered 2026-05-27 while fixing
   `issues/closed/bug-bricscad-bootstrap-exits.issue`.
+
+## Resolution (2026-05-27)
+
+Strategy 1 from the "Decision needed" section landed:
+
+  * `autolisp-bootstrap.lsp` (888 lines, 67 `(defun autolisp-…)` blocks
+    plus a handful of supporting top-level `setq`s) is now vendored at
+    `autolisp-front-end/source/runtime/autolisp-bootstrap.lsp`,
+    extracted verbatim from a working SNCF-tree `run-common.lsp`
+    sample (the bash wrapper's heredoc-emitted helpers). Declared
+    `:static-file` in the `backend-cad-common` ASDF system so it
+    ships with installers + executable image dumps alongside
+    `autolisp-remote-io.lsp`.
+
+  * `alfe.backend.cad-common` gained `discover-bootstrap-lsp`,
+    mirroring `discover-runtime-lsp` (env-var `$ALFE_BOOTSTRAP_LSP`
+    → vendored → fallback list `/opt/local/share/alfe/runtime/`, …).
+    The two discoverers share a parameterised `%resolve-asset`
+    helper to keep the precedence rules in lockstep.
+
+  * `protocol-session` gained `bootstrap-lsp-source` /
+    `bootstrap-lsp-staged` slots; `init-session` accepts
+    `:bootstrap-lsp-source` and a new exported `stage-bootstrap-lsp`
+    copies the file into `workdir/runtime/autolisp-bootstrap.lsp`.
+
+  * `emit-run-common-lsp` now emits a `(load <bootstrap>)` block
+    immediately after the CAD-side debug logger and *before* the
+    runtime `(load …)`, wrapped in `vl-catch-all-apply` with debug-log
+    breadcrumbs. Order matters: the runtime's server loop calls into
+    helpers defined in the bootstrap, so the bootstrap must land
+    first.
+
+  * Both bricscad and autocad `start-engine` now discover + stage the
+    bootstrap alongside the runtime; the discovery + staging both log
+    at `--debug`.
+
+Bumped alfe 1.0.13 → 1.0.14.
+
+## Acceptance check
+
+The acceptance criteria from below now have a path through the code:
+
+  * `alfe --bricscad --mode batch -x '(+ 1 2)'` — bootstrap defines
+    `autolisp-eval-request-form`, `autolisp-log-err`,
+    `autolisp-set-status`, the entire `autolisp-source-load-*`
+    chain. The next BricsCAD smoke test should walk
+    READY 0 → RUNNING 1 → DONE 1 OK and print `3`.
+
+  * No new helpers referenced in `autolisp-remote-io.lsp` that aren't
+    either defined in the staged bootstrap or in vanilla AutoLISP —
+    `grep autolisp-` against the loop body and cross-checking against
+    the bootstrap defun set confirms this.
+
+End-to-end confirmation against a live BricsCAD V26 is the
+acceptance step the user will run next.
 
 ## Confirmation (2026-05-27, alfe 1.0.12)
 

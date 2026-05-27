@@ -58,6 +58,7 @@
                 #:first-existing
                 #:vbs-escape
                 #:discover-runtime-lsp
+                #:discover-bootstrap-lsp
                 #:drive-protocol-actions)
   (:import-from #:alfe.logging
                 #:log-debug
@@ -403,12 +404,17 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
              dwg ready-timeout wait-for-ready)
   (handler-case
       (let* ((runtime-source (discover-runtime-lsp))
+             (bootstrap-source (discover-bootstrap-lsp))
              (protocol (alfe.protocol.file:init-session
                         workdir
-                        :runtime-lsp-source runtime-source))
+                        :runtime-lsp-source runtime-source
+                        :bootstrap-lsp-source bootstrap-source))
              (staged-runtime
                (when runtime-source
                  (alfe.protocol.file:stage-runtime-lsp protocol)))
+             (staged-bootstrap
+               (when bootstrap-source
+                 (alfe.protocol.file:stage-bootstrap-lsp protocol)))
              (run-common
                (alfe.protocol.file:emit-run-common-lsp
                 protocol
@@ -421,6 +427,14 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
                 :cli-options cli-options
                 :version-text version-text))
              (variant (choose-effective-mode backend mode)))
+        (cond
+          (staged-bootstrap
+           (log-debug "backend AUTOCAD: staged bootstrap -> ~A" staged-bootstrap))
+          (bootstrap-source
+           (log-warn "backend AUTOCAD: bootstrap source ~A resolved but staging returned NIL"
+                     bootstrap-source))
+          (t
+           (log-warn "backend AUTOCAD: no bootstrap LSP found; set $ALFE_BOOTSTRAP_LSP or install autolisp-bootstrap.lsp")))
         (cond
           (staged-runtime
            (log-debug "backend AUTOCAD: staged runtime -> ~A" staged-runtime))
