@@ -8,4 +8,4 @@
 ;;;; The memory rule for the clautolisp version bump applies here too —
 ;;;; see ../../PLAN.md for the wording.
 
-(defparameter *version* "1.0.16")
+(defparameter *version* "1.0.17")

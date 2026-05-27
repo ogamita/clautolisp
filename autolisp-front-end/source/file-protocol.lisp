@@ -971,6 +971,35 @@ Returns the path of the emitted file."
     (vl-catch-all-error-message *ALFE-RUNTIME-LOAD-RESULT*)))~%  ~
   (alfe-debug-log \"runtime LOAD succeeded\"))~%"
                          runtime-path runtime-path))
+               ;; --- Bridge bootstrap I/O channels onto the file-IPC ---
+               ;; The bootstrap's print/princ/prin1 shadows call into
+               ;; autolisp-emit-user-line / autolisp-emit-user-out,
+               ;; which (a) write to *AUTOLISP_OUTFILE* — not the
+               ;; protocol stdout slot alfe drains — and (b) no-op
+               ;; whenever *AUTOLISP_CAPTURE_STDOUT* is nil. That
+               ;; flag is only flipped on inside autolisp-source-
+               ;; load-core-impl, never around protocol-driven evals,
+               ;; so every (print …) / (princ …) issued via -x / -e
+               ;; vanished silently.
+               ;;
+               ;; Redefine the emitters here so they write straight to
+               ;; *AUTOLISP_PROTOCOL_STDOUTFILE* and ignore the
+               ;; capture flag. Same trick for autolisp-log-err →
+               ;; *AUTOLISP_PROTOCOL_STDERRFILE*, so eval errors land
+               ;; in alfe's stderr channel.
+               (format out "~%~
+;;; --- alfe: bridge bootstrap I/O channels onto the file-IPC ---~%~
+(defun autolisp-emit-user-line (text)~%~
+  (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE* text)~%~
+  text)~%~
+(defun autolisp-emit-user-out (obj)~%~
+  (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE*~%~
+                       (autolisp-stdout-text obj))~%~
+  obj)~%~
+(defun autolisp-log-err (text)~%~
+  (autolisp-write-line *AUTOLISP_PROTOCOL_STDERRFILE* text))~%~
+(setq *AUTOLISP_CAPTURE_STDOUT* T)~%~
+(alfe-debug-log \"I/O bridged onto protocol/stdout.txt and protocol/stderr.txt\")~%")
                ;; Drive the server loop. The runtime defines the
                ;; function but does not call it at top level; the
                ;; legacy bash wrapper emitted an autolisp-main-entry
