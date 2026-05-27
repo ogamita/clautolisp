@@ -42,10 +42,11 @@ sudo make install PREFIX=/opt/local
 After install:
 
 #+begin_src sh
-alfe --help          # full option reference
-alfe -x "(+ 1 2)"    # one-shot eval, default clautolisp backend → "3"
-alfe -l script.lsp   # load a file, default backend
-alfe                 # interactive REPL, default backend
+alfe --help                    # full option reference
+alfe -x "(print (+ 1 2))"      # one-shot eval, prints "3" then exits
+alfe -x "(+ 1 2)"              # silent — see "Action output semantics" below
+alfe -l script.lsp             # load a file, default backend
+alfe                           # interactive REPL, default backend
 #+end_src
 
 The =--clautolisp= / =--bricscad= / =--autocad= flags select a
@@ -147,21 +148,46 @@ REPL with =-i=).
 
 | Option              | Action                                          |
 |---------------------+-------------------------------------------------|
-| =-x EXPR= / =--eval EXPR= | Evaluate EXPR.                                  |
+| =-x EXPR= / =--eval EXPR= | Evaluate EXPR. Value is NOT auto-printed — wrap with =(print …)= if you want it back on stdout. See "Action output semantics" below. |
 | =-l FILE= / =--load FILE= | Load and evaluate FILE.                         |
 | =FILE.lsp= (positional)  | Equivalent to =-l FILE.lsp=.                    |
-| =-i= / =--interactive=   | Enter REPL after the queue (same context).      |
+| =-i= / =--interactive=   | Enter REPL after the queue (same context). Auto-printing is enabled in the REPL only.      |
 | =--quit=               | Force engine shutdown after the queue.          |
 | =--dry-run=            | Print the resolved plan; don't run anything.    |
 
 Examples:
 
 #+begin_src sh
-alfe -x "(+ 1 2)"                        # → 3
+alfe -x "(print (+ 1 2))"                # → 3
+alfe -x "(+ 1 2)"                        # silent — value discarded
 alfe -l prelude.lsp -x "(my-main)"       # load then call
 alfe -l script.lsp -i                    # load then drop to REPL
 alfe --bricscad -l ../scripts/draw.lsp   # run under BricsCAD
 alfe --dry-run -l foo.lsp                # show the plan only
+#+end_src
+
+** Action output semantics
+
+=-x EXPR=, =-l FILE= and =--main FN= are *batch* evaluations, not
+REPL steps. The value an action produces is *not* echoed to alfe's
+stdout — use an explicit printing primitive in the expression
+(=(print …)=, =(princ …)=, =(prin1 …)=) when you want the value
+to come back. This is uniform across the =--clautolisp=,
+=--bricscad= and =--autocad= backends.
+
+The interactive REPL (=-i= / =--interactive=) is the only context
+where values are auto-printed: there, each top-level form's value
+is read, evaluated and printed (read-eval-print loop). =-x= and
+=-l= actions issued alongside =-i= remain silent-by-default; only
+forms typed AT the REPL prompt print their values.
+
+If you want a one-line shorthand for "evaluate and print", define a
+helper in your init file:
+
+#+begin_src lisp
+(defun ep (form) (print (eval form)))
+;; … then …
+alfe -l ~/.autolisp -x "(ep (quote (list 1 2 3)))"
 #+end_src
 
 * Encoding

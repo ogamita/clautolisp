@@ -3,7 +3,7 @@
 plumbing as host-mock; the HAL backend itself just doesn't expose
 any CAD entities."
  :classification :clautolisp-only
- :argv ("--clautolisp" "--host" "null" "-x" "(+ 1 2)")
+ :argv ("--clautolisp" "--host" "null" "-x" "(print (+ 1 2))")
  :expected-exit 0
  :expected-stdout-includes ("3")
  :covers-options ("--clautolisp" "--host"))

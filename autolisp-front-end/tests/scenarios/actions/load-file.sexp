@@ -3,7 +3,7 @@
 -x sees the side effects. Tests the shared-context invariant
 across load + eval."
  :classification :clautolisp-only
- :argv ("--clautolisp" "-l" "fixture.lsp" "-x" "z")
+ :argv ("--clautolisp" "-l" "fixture.lsp" "-x" "(print z)")
  :setup-files
    (("fixture.lsp"
      "(setq z 41)
