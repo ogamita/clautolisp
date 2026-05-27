@@ -51,7 +51,7 @@
 ;; every change that touches alref.lsp's behaviour. (alref-version)
 ;; returns this string — useful when a user reports a bug, so we
 ;; know which revision of the library they're running against.
-(setq *alref-version* "1.0.0")
+(setq *alref-version* "1.0.1")
 
 (defun alref-version ( )
   "Return the alref.lsp library version as a string (e.g. \"1.0.0\").
@@ -504,4 +504,4 @@ page contains a match. Slow (reads all 1126 pages on each call)
 (princ (strcat "alref.lsp " *alref-version*
                " loaded. (alref-set-root \"…\") to point at the install root."))
 (terpri)
-(princ)
+(princ "")
