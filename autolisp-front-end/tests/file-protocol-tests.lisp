@@ -262,6 +262,61 @@ full file contents."
             (is (string= (format nil "delta~%") batch2))))
       (delete-workdir workdir))))
 
+(test protocol-drain-debug-log-incremental
+  "DRAIN-DEBUG-LOG behaves like DRAIN-STDOUT but reads from the CAD-
+side debug log (workdir/logs/debug.log). Returns \"\" when the file is
+absent (the runtime hasn't published anything yet), the new bytes once
+the file appears, and \"\" again on a no-change drain. The session's
+DEBUG-LOG-PATH is set by INIT-SESSION even though the file isn't
+created eagerly."
+  (let ((workdir (make-test-workdir "drain-debug")))
+    (unwind-protect
+        (let* ((session (alfe.protocol.file:init-session workdir))
+               (path (alfe.protocol.file:protocol-session-debug-log-path session)))
+          (is (not (null path)))
+          ;; File does not exist yet — drain is a cheap no-op.
+          (is (string= "" (alfe.protocol.file:drain-debug-log session)))
+          ;; Create the file with two lines.
+          (ensure-directories-exist path)
+          (with-open-file (out path :direction :output :if-exists :supersede
+                                    :if-does-not-exist :create
+                                    :external-format :utf-8)
+            (format out "[CAD] hello~%[CAD] entering loop~%"))
+          (let ((batch (alfe.protocol.file:drain-debug-log session)))
+            (is (search "[CAD] hello" batch))
+            (is (search "[CAD] entering loop" batch)))
+          ;; No new bytes: empty drain.
+          (is (string= "" (alfe.protocol.file:drain-debug-log session)))
+          ;; Append a third line; drain returns only that.
+          (with-open-file (out path :direction :output :if-exists :append
+                                    :external-format :utf-8)
+            (format out "[CAD] crash~%"))
+          (let ((batch (alfe.protocol.file:drain-debug-log session)))
+            (is (search "[CAD] crash" batch))
+            (is (not (search "[CAD] hello" batch)))))
+      (delete-workdir workdir))))
+
+(test protocol-stream-debug-log-to-logger-counts-lines
+  "STREAM-DEBUG-LOG-TO-LOGGER drains and returns the number of non-
+empty lines surfaced through the alfe logger. The actual log emission
+is exercised in practice by the polling helpers."
+  (let ((workdir (make-test-workdir "stream-debug")))
+    (unwind-protect
+        (let* ((session (alfe.protocol.file:init-session workdir))
+               (path (alfe.protocol.file:protocol-session-debug-log-path session)))
+          ;; Nothing on disk: 0 lines streamed.
+          (is (zerop (alfe.protocol.file:stream-debug-log-to-logger session)))
+          ;; Write three CAD lines.
+          (ensure-directories-exist path)
+          (with-open-file (out path :direction :output :if-exists :supersede
+                                    :if-does-not-exist :create
+                                    :external-format :utf-8)
+            (format out "[CAD] one~%[CAD] two~%[CAD] three~%"))
+          (is (= 3 (alfe.protocol.file:stream-debug-log-to-logger session)))
+          ;; Second call streams 0 (offset advanced past the previous tail).
+          (is (zerop (alfe.protocol.file:stream-debug-log-to-logger session))))
+      (delete-workdir workdir))))
+
 (test protocol-drain-stdout-survives-utf8
   "A drain that lands across multi-byte boundaries does not split a
 character (the runtime appends line-at-a-time, so this is structurally
