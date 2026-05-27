@@ -122,11 +122,31 @@ unchanged); the canonical spelling preserves it as documented."
     (is (eq :null (cli-options-host opts)))
     (is (eq :autocad-2026 (cli-options-dialect opts)))))
 
-(test cli-verbosity-flags-cascade
-  "Last-wins between -v, -q, -d; --debug subsumes --verbose."
+(test cli-verbosity-flags-single
+  "Each verbosity flag in isolation yields its documented level."
   (is (eq :verbose (cli-options-verbosity (parse-arguments '("-v")))))
   (is (eq :warn    (cli-options-verbosity (parse-arguments '("-q")))))
   (is (eq :debug   (cli-options-verbosity (parse-arguments '("-d"))))))
+
+(test cli-verbosity-flags-additive-and-commutative
+  "When more than one verbosity flag is given the most verbose wins,
+regardless of CLI argument order — so `--quiet --debug` and
+`--debug --quiet` both land on :DEBUG, and `--quiet --verbose` /
+`--verbose --quiet` both land on :VERBOSE. This is the new semantics
+introduced to replace the original \"last-wins\" behaviour."
+  ;; --quiet + --debug, both orders.
+  (is (eq :debug   (cli-options-verbosity (parse-arguments '("-q" "-d")))))
+  (is (eq :debug   (cli-options-verbosity (parse-arguments '("-d" "-q")))))
+  ;; --quiet + --verbose, both orders.
+  (is (eq :verbose (cli-options-verbosity (parse-arguments '("-q" "-v")))))
+  (is (eq :verbose (cli-options-verbosity (parse-arguments '("-v" "-q")))))
+  ;; --verbose + --debug, both orders.
+  (is (eq :debug   (cli-options-verbosity (parse-arguments '("-v" "-d")))))
+  (is (eq :debug   (cli-options-verbosity (parse-arguments '("-d" "-v")))))
+  ;; All three flags — debug still wins regardless of order.
+  (is (eq :debug   (cli-options-verbosity (parse-arguments '("-q" "-v" "-d")))))
+  (is (eq :debug   (cli-options-verbosity (parse-arguments '("-d" "-v" "-q")))))
+  (is (eq :debug   (cli-options-verbosity (parse-arguments '("-v" "-d" "-q"))))))
 
 (test cli-workdir-and-timeout
   "--workdir is verbatim; --timeout parses an integer and rejects junk."

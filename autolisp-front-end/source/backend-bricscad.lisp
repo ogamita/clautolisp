@@ -520,6 +520,9 @@ future ticket."
                 :bootstrap-phase bootstrap-phase
                 :use-remote-protocol-p t
                 :quit-on-finish-p (not interactive-p)
+                :debug-p (and cli-options
+                              (eq :debug
+                                  (alfe.cli:cli-options-verbosity cli-options)))
                 :cli-options cli-options
                 :version-text version-text)))
         (cond

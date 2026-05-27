@@ -415,6 +415,9 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
                 :bootstrap-phase bootstrap-phase
                 :use-remote-protocol-p t
                 :quit-on-finish-p (not interactive-p)
+                :debug-p (and cli-options
+                              (eq :debug
+                                  (alfe.cli:cli-options-verbosity cli-options)))
                 :cli-options cli-options
                 :version-text version-text))
              (variant (choose-effective-mode backend mode)))
