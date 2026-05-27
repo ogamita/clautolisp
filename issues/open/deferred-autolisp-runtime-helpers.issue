@@ -5,6 +5,21 @@ Reported against: alfe (master @ fix-bricscad-bootstrap-exit, 1.0.11)
 Reported by: discovered 2026-05-27 while fixing
   `issues/closed/bug-bricscad-bootstrap-exits.issue`.
 
+## Confirmation (2026-05-27, alfe 1.0.12)
+
+The prediction in "## Symptom" below was confirmed end-to-end on
+BricsCAD V26 / macOS. With the CAD-side debug logger added in
+alfe 1.0.12, a `--debug --bricscad --mode batch -i` run produced
+exactly the diagnostic the prediction described — the loop entered,
+`READY 0` was published, the first form was received and triggered
+`RUNNING 1`, then `(autolisp-log-err ...)` failed with:
+
+    [CAD] server-loop CAUGHT error: no function definition <AUTOLISP-LOG-ERR> ; expected FUNCTION at [eval]
+
+So the loop unwinds without ever publishing `DONE N`, alfe waits the
+full request-timeout, and the run exits :ABORTED. This issue therefore
+remains the next blocker on the BricsCAD acceptance criteria.
+
 ## Problem
 
 The vendored CAD runtime (`autolisp-front-end/source/runtime/autolisp-remote-io.lsp`,

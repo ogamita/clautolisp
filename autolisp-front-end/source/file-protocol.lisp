@@ -59,8 +59,10 @@
            #:protocol-session-runtime-info-path
            #:protocol-session-runtime-lsp-source
            #:protocol-session-runtime-lsp-staged
+           #:protocol-session-debug-log-path
            #:protocol-session-stdout-offset
            #:protocol-session-stderr-offset
+           #:protocol-session-debug-log-offset
            ;; lifecycle
            #:init-session
            #:reset-session
@@ -85,6 +87,8 @@
            ;; output draining
            #:drain-stdout
            #:drain-stderr
+           #:drain-debug-log
+           #:stream-debug-log-to-logger
            ;; line-to-form reader
            #:read-balanced-form-from-lines
            ;; control commands
@@ -154,8 +158,15 @@ and DRAIN-STDERR so successive reads see only the new bytes."
   ;; provides it later" (Phase 3 wires this up; tests pass NIL).
   (runtime-lsp-source     nil :type (or null pathname string))
   (runtime-lsp-staged     nil :type (or null pathname))
+  ;; Path of the CAD-side debug log (workdir/logs/debug.log). The
+  ;; emitted run-common.lsp writes one line per bootstrap milestone
+  ;; here (gated on *AUTOLISP_DEBUG*); DRAIN-DEBUG-LOG / the polling
+  ;; helpers stream those lines back to the alfe logger so the user
+  ;; sees them under --debug without having to read the workdir.
+  (debug-log-path         nil :type (or null pathname))
   (stdout-offset            0 :type unsigned-byte)
-  (stderr-offset            0 :type unsigned-byte))
+  (stderr-offset            0 :type unsigned-byte)
+  (debug-log-offset         0 :type unsigned-byte))
 
 ;;; --- INIT-SESSION --------------------------------------------------
 
@@ -172,6 +183,12 @@ WORKDIR/runtime/; pass NIL when staging is the caller's job
 (tests do this)."
   (let* ((workdir (uiop:ensure-directory-pathname workdir))
          (protocol-dir (ensure-subdir workdir "protocol"))
+         ;; Mirror the path emit-run-common-lsp computes for the CAD-
+         ;; side debug log: workdir/logs/debug.log. We DON'T eagerly
+         ;; create logs/ here — the emitter does that at run-common
+         ;; emission time — but tracking the path lets the polling
+         ;; helpers tail the file as soon as it appears on disk.
+         (debug-log-path (merge-pathnames "logs/debug.log" workdir))
          (session (%make-protocol-session
                    :workdir workdir
                    :protocol-dir protocol-dir
@@ -185,7 +202,8 @@ WORKDIR/runtime/; pass NIL when staging is the caller's job
                                                       protocol-dir)
                    :runtime-info-path (merge-pathnames "runtime-info.txt"
                                                        protocol-dir)
-                   :runtime-lsp-source runtime-lsp-source)))
+                   :runtime-lsp-source runtime-lsp-source
+                   :debug-log-path debug-log-path)))
     (ensure-directories-exist protocol-dir)
     ;; Pre-create the empty output streams so the CAD-side runtime's
     ;; first append doesn't have to race a missing file. The
@@ -365,15 +383,22 @@ helpers. The interval doubles each iteration up to *poll-max-ms*.")
   "Poll status.txt until its current line is STRING= to EXPECTED, or
 TIMEOUT seconds have passed. Returns (values matched-p elapsed
 last-status). Used for terminal transitions whose target is known
-exactly (`BOOTING` → `STOPPED`, etc.)."
+exactly (`BOOTING` → `STOPPED`, etc.).
+
+On every tick we also drain workdir/logs/debug.log into the alfe
+logger so any CAD-side debug lines surface in near-real time under
+--debug; no-ops cheaply when the file is absent or empty."
   (let ((start (universal-time-now))
         (interval-ms *poll-initial-ms*)
         (last-seen nil))
     (loop
+      (stream-debug-log-to-logger session)
       (setf last-seen (read-current-status session))
       (when (and last-seen (string= last-seen expected))
+        (stream-debug-log-to-logger session) ; final tail
         (return (values t (seconds-elapsed-since start) last-seen)))
       (when (>= (seconds-elapsed-since start) timeout)
+        (stream-debug-log-to-logger session) ; final tail
         (return (values nil (seconds-elapsed-since start) last-seen)))
       (sleep-ms interval-ms)
       (setf interval-ms (min *poll-max-ms* (* 2 interval-ms))))))
@@ -388,7 +413,14 @@ suffix carries a request-counter we don't pin a priori."
 (defun wait-for-status-prefix (session prefix &key (timeout 10))
   "Like WAIT-FOR-STATUS but matches by prefix — the spec's status
 table has parameterised states (`READY N`, `RUNNING N`, `DONE N OK`)
-whose counter is set by the runtime."
+whose counter is set by the runtime.
+
+On every tick we also stream any new CAD-side debug-log lines through
+the alfe logger (see STREAM-DEBUG-LOG-TO-LOGGER) so under --debug the
+user sees the remote bootstrap progress as it happens. We also drain
+once more before each return so the *final* state of the log (a crash
+message, the last `runtime LOAD succeeded` line, etc.) is surfaced
+before the helper hands control back."
   (log-debug "protocol: wait-for-status-prefix ~S (timeout ~A s)"
              prefix timeout)
   (let ((start (universal-time-now))
@@ -396,6 +428,7 @@ whose counter is set by the runtime."
         (last-seen nil)
         (prev-status nil))
     (loop
+      (stream-debug-log-to-logger session)
       (setf last-seen (read-current-status session))
       ;; Log on CHANGE only — the polling loop runs many times,
       ;; we don't want to flood the debug stream with identical
@@ -408,10 +441,12 @@ whose counter is set by the runtime."
       (when (and last-seen (starts-with-p last-seen prefix))
         (log-debug "protocol: matched ~S after ~,2F s"
                    prefix (seconds-elapsed-since start))
+        (stream-debug-log-to-logger session) ; final tail
         (return (values t (seconds-elapsed-since start) last-seen)))
       (when (>= (seconds-elapsed-since start) timeout)
         (log-debug "protocol: timeout after ~,2F s (last status ~S)"
                    (seconds-elapsed-since start) last-seen)
+        (stream-debug-log-to-logger session) ; final tail
         (return (values nil (seconds-elapsed-since start) last-seen)))
       (sleep-ms interval-ms)
       (setf interval-ms (min *poll-max-ms* (* 2 interval-ms))))))
@@ -469,6 +504,46 @@ DRAIN-STDOUT call. Advances SESSION's offset."
      (if new-value
          (setf (protocol-session-stderr-offset session) new-value)
          (protocol-session-stderr-offset session)))))
+
+(defun drain-debug-log (session)
+  "Read any new bytes from the CAD-side debug log (workdir/logs/debug.log)
+since the previous call, and return them as a string. Empty string when
+the file doesn't exist yet (the CAD hasn't published anything) or when
+nothing new has been appended since the last drain. Advances the
+SESSION's DEBUG-LOG-OFFSET as a side-effect.
+
+The log is populated by the CAD-side ALFE-DEBUG-LOG helper that
+EMIT-RUN-COMMON-LSP wires up; that helper no-ops when *AUTOLISP_DEBUG*
+is nil, so under non-debug runs this drain consistently returns the
+empty string and does no useful work — cheap enough to call on every
+status-poll tick."
+  (drain-channel
+   (protocol-session-debug-log-path session)
+   (lambda (&optional new-value)
+     (if new-value
+         (setf (protocol-session-debug-log-offset session) new-value)
+         (protocol-session-debug-log-offset session)))))
+
+(defun stream-debug-log-to-logger (session)
+  "Drain any new lines from the CAD-side debug log and emit each one
+through alfe.logging:log-debug so the user sees them under --debug
+without having to inspect the workdir. Returns the number of lines
+emitted (0 when the log is empty / not present, so the caller can
+gate on it for a heartbeat-style status line).
+
+Called from the protocol-polling helpers (WAIT-FOR-STATUS / WAIT-FOR-
+STATUS-PREFIX) on every tick, so the CAD's bootstrap milestones
+appear in alfe's output in near-real time. The CAD-side ALFE-DEBUG-LOG
+helper writes one line per milestone (prefixed `[CAD] `), and this
+function emits each verbatim so the source is unambiguous."
+  (let* ((chunk (drain-debug-log session))
+         (count 0))
+    (when (plusp (length chunk))
+      (dolist (line (uiop:split-string chunk :separator '(#\Newline)))
+        (when (plusp (length line))
+          (log-debug "~A" line)
+          (incf count))))
+    count))
 
 ;;; --- line-to-form reader ------------------------------------------
 
