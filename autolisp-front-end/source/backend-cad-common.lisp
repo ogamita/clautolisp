@@ -28,6 +28,8 @@
            #:first-existing
            #:vbs-escape
            #:applescript-escape
+           ;; runtime LSP discovery
+           #:discover-runtime-lsp
            ;; protocol-driven eval-plan
            #:drive-protocol-actions))
 
@@ -95,6 +97,60 @@ quote both have to be escaped."
                (#\\ (write-string "\\\\" out))
                (#\" (write-string "\\\"" out))
                (t   (write-char ch out))))))
+
+;;; --- runtime LSP discovery ---------------------------------------
+;;;
+;;; The CAD-side runtime (autolisp-remote-io.lsp) is shared by every
+;;; CAD backend — both bricscad and autocad LOAD the same file. The
+;;; canonical copy lives next to this source tree under
+;;; source/runtime/autolisp-remote-io.lsp, and users can override the
+;;; location via $ALFE_RUNTIME_LSP for advanced setups (e.g. a
+;;; system-wide /opt/local/share/alfe/runtime/ install).
+
+(defun %vendored-runtime-lsp-pathname ()
+  "Return the absolute path of the in-tree runtime LSP, or NIL if it
+isn't present (e.g. a stripped install). Resolves via ASDF's system
+registry so the answer survives fasl caching and frozen executable
+builds — *load-pathname* alone would point at the cached .fasl, not
+the source tree."
+  (let ((candidate
+          (ignore-errors
+           (asdf:system-relative-pathname
+            "autolisp-front-end/backend-cad-common"
+            "source/runtime/autolisp-remote-io.lsp"))))
+    (when (and candidate (probe-file candidate))
+      (namestring (truename candidate)))))
+
+(defparameter *runtime-lsp-fallback-paths*
+  '("/opt/local/share/alfe/runtime/autolisp-remote-io.lsp"
+    "/usr/local/share/alfe/runtime/autolisp-remote-io.lsp"
+    "/usr/share/alfe/runtime/autolisp-remote-io.lsp"
+    "~/works/sncf-reseau/src/outils-autolisp/autolisp-script/runtime/autolisp-remote-io.lsp")
+  "Fallback locations consulted when $ALFE_RUNTIME_LSP is unset and
+the vendored copy is missing. The last entry points at the legacy
+SNCF tree so developers with that checkout keep working without
+configuration.")
+
+(defun discover-runtime-lsp ()
+  "Resolve the CAD-side runtime LSP path. Order of precedence:
+
+  1. $ALFE_RUNTIME_LSP (when the file exists)
+  2. The vendored copy under source/runtime/ next to this code
+  3. Built-in fallback search list (/opt/local/share/alfe/runtime/, …)
+
+Returns an absolute namestring, or NIL when no copy is found — in
+which case the caller leaves the runtime unstaged and run-common.lsp
+will not LOAD it (the historical broken behavior)."
+  (let ((env (uiop:getenv "ALFE_RUNTIME_LSP"))
+        (vendored (%vendored-runtime-lsp-pathname)))
+    (cond
+      ((and env (plusp (length env)) (probe-file env))
+       (namestring (truename env)))
+      (vendored vendored)
+      (t
+       (first-existing
+        (mapcar (lambda (p) (uiop:native-namestring p))
+                *runtime-lsp-fallback-paths*))))))
 
 ;;; --- protocol-driven eval-plan ------------------------------------
 

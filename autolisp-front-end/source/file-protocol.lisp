@@ -825,13 +825,24 @@ Returns the path of the emitted file."
             ;; --- Source the CAD-side runtime ---
             ;; When the runtime has been staged, instruct the CAD to
             ;; LOAD it so the *AUTOLISP_PROTOCOL_* helpers exist before
-            ;; user code runs. The CAD backend is responsible for
+            ;; user code runs, then enter the server loop at top level
+            ;; so BricsCAD's SCR / accoreconsole doesn't fall through
+            ;; to EOF and exit. The CAD backend is responsible for
             ;; sourcing run-common.lsp itself (usually via a one-line
             ;; SCR script).
             (when (protocol-session-runtime-lsp-staged session)
               (format out "~%(load ~S)~%"
                       (stringify-path
-                       (protocol-session-runtime-lsp-staged session)))))))
+                       (protocol-session-runtime-lsp-staged session)))
+              ;; Drive the loop. The runtime defines the function but
+              ;; does not call it at top level; the legacy bash wrapper
+              ;; emitted an autolisp-main-entry tail that we replicate
+              ;; here in a leaner form. vl-catch-all-apply contains any
+              ;; bootstrap error so a misconfigured runtime publishes a
+              ;; FAILED status rather than crashing BricsCAD silently.
+              (format out
+                      "(setq *AUTOLISP-PROTOCOL-LOOP-RESULT*~%~
+                              (vl-catch-all-apply 'autolisp-protocol-server-loop nil))~%")))))
     (with-open-file (out path :direction :output
                               :if-exists :supersede
                               :if-does-not-exist :create

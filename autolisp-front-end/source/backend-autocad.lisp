@@ -57,6 +57,7 @@
                 #:env-binary
                 #:first-existing
                 #:vbs-escape
+                #:discover-runtime-lsp
                 #:drive-protocol-actions)
   (:import-from #:alfe.logging
                 #:log-debug
@@ -401,7 +402,13 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
   (log-debug "backend AUTOCAD: dwg = ~A; ready-timeout = ~A s; wait-for-ready = ~A"
              dwg ready-timeout wait-for-ready)
   (handler-case
-      (let* ((protocol (alfe.protocol.file:init-session workdir))
+      (let* ((runtime-source (discover-runtime-lsp))
+             (protocol (alfe.protocol.file:init-session
+                        workdir
+                        :runtime-lsp-source runtime-source))
+             (staged-runtime
+               (when runtime-source
+                 (alfe.protocol.file:stage-runtime-lsp protocol)))
              (run-common
                (alfe.protocol.file:emit-run-common-lsp
                 protocol
@@ -411,6 +418,14 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
                 :cli-options cli-options
                 :version-text version-text))
              (variant (choose-effective-mode backend mode)))
+        (cond
+          (staged-runtime
+           (log-debug "backend AUTOCAD: staged runtime -> ~A" staged-runtime))
+          (runtime-source
+           (log-warn "backend AUTOCAD: runtime source ~A resolved but staging returned NIL"
+                     runtime-source))
+          (t
+           (log-warn "backend AUTOCAD: no runtime LSP found; set $ALFE_RUNTIME_LSP or install autolisp-remote-io.lsp")))
         (log-debug "backend AUTOCAD: emitted run-common.lsp -> ~A" run-common)
         (log-verbose "backend AUTOCAD: effective mode = ~A" variant)
         (case variant

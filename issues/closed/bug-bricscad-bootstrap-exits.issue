@@ -1,8 +1,63 @@
 # Bug: BricsCAD exits immediately under alfe --bricscad (READY timeout, status stays "BOOTING")
 
-Status: open
+Status: closed (resolved 2026-05-27 on branch fix-bricscad-bootstrap-exit, alfe 1.0.11)
 Reported against: alfe (master @ b4bfea9, 1.0.10)
 Reported by: user, 2026-05-27 follow-up to bug-no-debug-no-verbose.issue.
+
+## Resolution (2026-05-27)
+
+Three defects identified in the original report were addressed; see the
+commits on branch `fix-bricscad-bootstrap-exit`:
+
+  * **Defect 1 — `emit-run-scr` always emitted `_QUIT _N`.**  Both
+    `start-engine` call sites now forward `(not interactive-p)` to
+    `emit-run-scr`'s `:quit-on-finish-p` keyword. Interactive runs
+    (`-i`) no longer write `._FILEDIA 0` or `._QUIT _N` into
+    `run.scr`; batch runs still do.
+
+  * **Defect 2 — runtime LSP never staged.**  The legacy SNCF
+    `autolisp-remote-io.lsp` is now vendored verbatim at
+    `autolisp-front-end/source/runtime/autolisp-remote-io.lsp`
+    (declared as `:static-file` in the `backend-cad-common` ASDF
+    system so installers ship it). A new helper
+    `alfe.backend.cad-common:discover-runtime-lsp` resolves the path
+    in priority order: `$ALFE_RUNTIME_LSP`, the vendored copy, then a
+    built-in fallback list. Both CAD backends call it and pass the
+    result to `alfe.protocol.file:init-session :runtime-lsp-source`,
+    then `stage-runtime-lsp`. Result: `*AUTOLISP-PROTOCOL-RUNTIMEFILE*`
+    is populated, `runtime/autolisp-remote-io.lsp` lands in the
+    workdir, and `run-common.lsp` ends with a `(load …)` for it.
+
+  * **Defect 3 — no top-level loop entry.**  The vendored runtime
+    only *defines* `autolisp-protocol-server-loop`; the legacy bash
+    wrapper relied on its emitted `run-common.lsp` to call it. The
+    `emit-run-common-lsp` emitter now appends a top-level
+    `(vl-catch-all-apply 'autolisp-protocol-server-loop nil)` right
+    after the runtime `(load …)`, so BricsCAD's SCR doesn't fall
+    through to EOF. The catch-all wrapper keeps bootstrap errors from
+    crashing BricsCAD silently.
+
+`--debug` now logs `backend BRICSCAD: staged runtime -> …` when
+staging succeeds, per the acceptance criterion. `alfe` was bumped to
+1.0.11 as part of this commit.
+
+## Follow-up
+
+Filed as [`deferred-autolisp-runtime-helpers.issue`][1]: the vendored
+runtime's `autolisp-protocol-server-loop` references helpers
+(`autolisp-eval-request-form`, `autolisp-log-err`,
+`autolisp-set-status`, `autolisp-effective-error-message`,
+`autolisp-quit-signal-p`, `autolisp-clear-last-error-context`) that
+the legacy bash wrapper materialised in run-common.lsp via ~78
+helper `defun`s. Until those are ported, the loop publishes `READY 0`
+correctly (so the immediate symptom is fixed) but eval round-trips
+will fail at `autolisp-log-err`.
+
+[1]: ../open/deferred-autolisp-runtime-helpers.issue
+
+## Original report
+
+---
 
 ## Reporter's reproduction
 
