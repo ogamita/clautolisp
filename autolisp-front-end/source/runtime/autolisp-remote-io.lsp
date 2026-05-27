@@ -289,7 +289,7 @@
                 (strcat "DONE " (itoa req-id)
                         (if (= rc 0) " OK" " FAIL")))))))))
   (autolisp-protocol-set-status "STOPPED")
-  (princ))
+  (princ ""))
 
 (defun autolisp-protocol-selftest-loop (/ keep control line form)
   (setq *AUTOLISP_PROTOCOL_INPUT_QUEUE* nil)
@@ -317,7 +317,7 @@
             (autolisp-protocol-set-status "READY"))
           (setq keep nil)))))
   (autolisp-protocol-set-status "STOPPED")
-  (princ))
+  (princ ""))
 
 (defun C:AUTOLISP-PROTOCOL-SELFTEST ()
   (autolisp-protocol-selftest-loop))
