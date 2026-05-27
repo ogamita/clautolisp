@@ -822,6 +822,30 @@ Returns the path of the emitted file."
                                 (first version)
                                 (second version)
                                 (third version))))
+            ;; --- CAD-side debug logging helper -----------------------
+            ;; A tiny self-contained logger that writes one line per
+            ;; bootstrap milestone into *AUTOLISP_DEBUGFILE*. The legacy
+            ;; bash wrapper had ~78 helper defuns including a logger;
+            ;; we don't (yet) — see deferred-autolisp-runtime-helpers.
+            ;; In the meantime this minimal logger gives the user a
+            ;; window into the CAD-side bootstrap without needing the
+            ;; full helper set.
+            ;;
+            ;; The logger no-ops when *AUTOLISP_DEBUG* is nil so a
+            ;; non-debug run leaves no trace. Each write opens + closes
+            ;; the file so a crash mid-bootstrap still leaves a
+            ;; diagnosable tail on disk.
+            (format out "~%~
+;;; --- CAD-side debug logger (gated on *AUTOLISP_DEBUG*) ---~%~
+(defun alfe-debug-log (msg / f path)~%~
+  (if *AUTOLISP_DEBUG*~%~
+    (progn~%~
+      (setq path *AUTOLISP_DEBUGFILE*)~%~
+      (if (and path (/= path \"\"))~%~
+        (progn~%~
+          (setq f (open path \"a\"))~%~
+          (if f (progn (write-line (strcat \"[CAD] \" msg) f) (close f))))))))~%~
+(alfe-debug-log \"run-common.lsp evaluated; about to bootstrap runtime\")~%")
             ;; --- Source the CAD-side runtime ---
             ;; When the runtime has been staged, instruct the CAD to
             ;; LOAD it so the *AUTOLISP_PROTOCOL_* helpers exist before
@@ -830,19 +854,42 @@ Returns the path of the emitted file."
             ;; to EOF and exit. The CAD backend is responsible for
             ;; sourcing run-common.lsp itself (usually via a one-line
             ;; SCR script).
-            (when (protocol-session-runtime-lsp-staged session)
-              (format out "~%(load ~S)~%"
-                      (stringify-path
-                       (protocol-session-runtime-lsp-staged session)))
-              ;; Drive the loop. The runtime defines the function but
-              ;; does not call it at top level; the legacy bash wrapper
-              ;; emitted an autolisp-main-entry tail that we replicate
-              ;; here in a leaner form. vl-catch-all-apply contains any
-              ;; bootstrap error so a misconfigured runtime publishes a
-              ;; FAILED status rather than crashing BricsCAD silently.
-              (format out
-                      "(setq *AUTOLISP-PROTOCOL-LOOP-RESULT*~%~
-                              (vl-catch-all-apply 'autolisp-protocol-server-loop nil))~%")))))
+            (cond
+              ((protocol-session-runtime-lsp-staged session)
+               (let ((runtime-path (stringify-path
+                                    (protocol-session-runtime-lsp-staged
+                                     session))))
+                 (format out
+                         "~%(alfe-debug-log (strcat \"loading runtime: \" ~S))~%~
+(setq *ALFE-RUNTIME-LOAD-RESULT*~%  ~
+  (vl-catch-all-apply 'load (list ~S)))~%~
+(if (vl-catch-all-error-p *ALFE-RUNTIME-LOAD-RESULT*)~%  ~
+  (alfe-debug-log (strcat \"runtime LOAD failed: \"~%    ~
+    (vl-catch-all-error-message *ALFE-RUNTIME-LOAD-RESULT*)))~%  ~
+  (alfe-debug-log \"runtime LOAD succeeded\"))~%"
+                         runtime-path runtime-path))
+               ;; Drive the server loop. The runtime defines the
+               ;; function but does not call it at top level; the
+               ;; legacy bash wrapper emitted an autolisp-main-entry
+               ;; tail that we replicate here in a leaner form.
+               ;; vl-catch-all-apply contains any bootstrap error so a
+               ;; misconfigured runtime publishes a FAILED status
+               ;; rather than crashing BricsCAD silently. We also
+               ;; surface the caught error to *AUTOLISP_DEBUGFILE* —
+               ;; that's the single most-useful diagnostic when the
+               ;; runtime references undefined helpers (the current
+               ;; deferred-autolisp-runtime-helpers gap).
+               (format out
+                       "~%(alfe-debug-log \"entering autolisp-protocol-server-loop\")~%~
+(setq *AUTOLISP-PROTOCOL-LOOP-RESULT*~%  ~
+  (vl-catch-all-apply 'autolisp-protocol-server-loop nil))~%~
+(if (vl-catch-all-error-p *AUTOLISP-PROTOCOL-LOOP-RESULT*)~%  ~
+  (alfe-debug-log (strcat \"server-loop CAUGHT error: \"~%    ~
+    (vl-catch-all-error-message *AUTOLISP-PROTOCOL-LOOP-RESULT*)))~%  ~
+  (alfe-debug-log \"server-loop returned normally\"))~%"))
+              (t
+               (format out
+                       "~%(alfe-debug-log \"WARNING: runtime LSP was not staged; no server loop will run\")~%"))))))
     (with-open-file (out path :direction :output
                               :if-exists :supersede
                               :if-does-not-exist :create

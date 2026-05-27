@@ -36,6 +36,8 @@
   (format t "  -q, --quiet            Suppress the REPL banner.~%")
   (format t "  -v, --verbose          Print extra diagnostic information (banner, summary, …).~%")
   (format t "  -d, --debug            Print debug traces; include CL backtraces on runtime errors.~%")
+  (format t "                         --quiet/--verbose/--debug compose additively and commutatively:~%")
+  (format t "                         the most verbose request wins regardless of CLI argument order.~%")
   (format t "  --no-color             Disable ANSI colour in AutoLISP value output. Honoured~%")
   (format t "                         equivalently via $NO_COLOR (https://no-color.org).~%")
   (format t "                         Without it, the CLI probes the terminal and picks a~%")

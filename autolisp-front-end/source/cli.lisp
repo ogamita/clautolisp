@@ -255,6 +255,10 @@ Diagnostics:
   -v, --verbose          Verbose progress.
   -q, --quiet            Suppress non-error output.
   -d, --debug            Debug traces (implies --verbose).
+                         The three flags compose additively and are
+                         commutative: among --quiet/--verbose/--debug,
+                         the most verbose request wins regardless of
+                         CLI argument order.
 
 Informational:
   -h, --help             Show this help and exit.
