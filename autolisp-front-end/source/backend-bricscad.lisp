@@ -65,6 +65,7 @@
                 #:first-existing
                 #:vbs-escape
                 #:applescript-escape
+                #:discover-runtime-lsp
                 #:drive-protocol-actions)
   (:import-from #:alfe.logging
                 #:log-debug
@@ -506,7 +507,13 @@ future ticket."
   (log-debug "backend BRICSCAD: ready-timeout = ~A s; wait-for-ready = ~A"
              ready-timeout wait-for-ready)
   (handler-case
-      (let* ((protocol (alfe.protocol.file:init-session workdir))
+      (let* ((runtime-source (discover-runtime-lsp))
+             (protocol (alfe.protocol.file:init-session
+                        workdir
+                        :runtime-lsp-source runtime-source))
+             (staged-runtime
+               (when runtime-source
+                 (alfe.protocol.file:stage-runtime-lsp protocol)))
              (run-common
                (alfe.protocol.file:emit-run-common-lsp
                 protocol
@@ -515,6 +522,14 @@ future ticket."
                 :quit-on-finish-p (not interactive-p)
                 :cli-options cli-options
                 :version-text version-text)))
+        (cond
+          (staged-runtime
+           (log-debug "backend BRICSCAD: staged runtime -> ~A" staged-runtime))
+          (runtime-source
+           (log-warn "backend BRICSCAD: runtime source ~A resolved but staging returned NIL"
+                     runtime-source))
+          (t
+           (log-warn "backend BRICSCAD: no runtime LSP found; set $ALFE_RUNTIME_LSP or install autolisp-remote-io.lsp")))
         (log-debug "backend BRICSCAD: emitted run-common.lsp -> ~A" run-common)
         (log-debug "backend BRICSCAD: protocol status file -> ~A"
                    (alfe.protocol.file:protocol-session-status-path protocol))
@@ -523,8 +538,10 @@ future ticket."
           (log-verbose "backend BRICSCAD: effective mode = ~A" variant)
           (case variant
             (:batch
-             (let ((scr (emit-run-scr workdir run-common)))
-               (log-debug "backend BRICSCAD: wrote run.scr -> ~A" scr)))
+             (let ((scr (emit-run-scr workdir run-common
+                                      :quit-on-finish-p (not interactive-p))))
+               (log-debug "backend BRICSCAD: wrote run.scr (quit-on-finish-p ~A) -> ~A"
+                          (not interactive-p) scr)))
             (:automation
              (cond
                ((windows-p)
