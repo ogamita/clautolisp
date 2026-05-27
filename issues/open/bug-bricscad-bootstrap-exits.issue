@@ -1,0 +1,176 @@
+# Bug: BricsCAD exits immediately under alfe --bricscad (READY timeout, status stays "BOOTING")
+
+Status: open
+Reported against: alfe (master @ b4bfea9, 1.0.10)
+Reported by: user, 2026-05-27 follow-up to bug-no-debug-no-verbose.issue.
+
+## Reporter's reproduction
+
+    $ alfe --debug --verbose --bricscad --mode batch -i
+    alfe[verbose]: cli: load-encoding NIL, io-encoding NIL
+    alfe[verbose]: backend BRICSCAD: starting engine (mode AUTO)
+    alfe[verbose]: backend BRICSCAD: effective mode = BATCH
+    alfe[verbose]: backend BRICSCAD: launching: /Applications/BricsCAD V26.app/.../bricscad … -B …/run.scr
+    alfe[verbose]: backend BRICSCAD: waiting for READY (timeout 30 s)
+    alfe[warn]: backend BRICSCAD: READY timeout after 30.03 s; last status = "BOOTING"
+    alfe: alfe BRICSCAD backend error (phase BOOTSTRAP): BricsCAD did not reach READY within 30 s … [READY-TIMEOUT]
+
+The reporter observes BricsCAD launching, briefly showing in the
+Dock, and then exiting immediately — long before the 30 s READY
+timeout fires. So status.txt stays at "BOOTING" forever and alfe
+correctly times out, but the root cause is that BricsCAD never
+*tried* to reach READY — it exited at the end of run.scr.
+
+## Investigation
+
+Inspected the emitted workdir with `--keep-workdir`:
+
+    workdir/run.scr:
+        (load ".../run-common.lsp")
+        ._FILEDIA 0
+        ._QUIT _N                  ← issued even with `-i`
+
+    workdir/run-common.lsp:
+        ;;; alfe — generated run-common.lsp
+        (setq *AUTOLISP-VERSION* "1.0.10")
+        … (~50 setq pairs of *AUTOLISP-*/...*) …
+        (setq *AUTOLISP-PROTOCOL-RUNTIMEFILE* "")     ← empty
+        (setq *AUTOLISP-QUIT-ON-FINISH* nil)          ← correct for -i
+        (setq *AUTOLISP-RUNCOMMON-VERSION* '(0 0 3))
+
+    workdir/protocol/status.txt:
+        BOOTING
+
+So there are three layered defects:
+
+### Defect 1 — `emit-run-scr` defaults to `:quit-on-finish-p t`, caller never passes it through
+
+`autolisp-front-end/source/backend-bricscad.lisp:526`
+
+    (:batch
+     (let ((scr (emit-run-scr workdir run-common)))
+       (log-debug …)))
+
+Calls `emit-run-scr` with the default `:quit-on-finish-p t`,
+emitting `._QUIT _N` at the end of the script. The bricscad
+backend's `start-engine` already computes the right value
+(`(not interactive-p)`) for `emit-run-common-lsp` two forms
+above — it just doesn't forward that to `emit-run-scr`. Trivial
+fix: forward `interactive-p` to `emit-run-scr`.
+
+### Defect 2 — `autolisp-remote-io.lsp` is never staged into the workdir
+
+`autolisp-front-end/source/backend-bricscad.lisp:509`
+
+    (let* ((protocol (alfe.protocol.file:init-session workdir))
+           …)
+
+`init-session` accepts `:runtime-lsp-source PATHNAME` and, when
+provided, `emit-run-common-lsp` appends `(load "<staged-path>")`
+at the bottom of run-common.lsp. Both backend call sites pass NIL
+(the default), so:
+
+  * `protocol-session-runtime-lsp-source` stays NIL,
+  * `stage-runtime-lsp` is never called,
+  * `runtime-lsp-staged` stays NIL,
+  * `*AUTOLISP-PROTOCOL-RUNTIMEFILE*` is emitted as `""`,
+  * `(load …)` of the runtime is omitted from run-common.lsp.
+
+The upstream `autolisp-remote-io.lsp` lives in the legacy bash
+wrapper at
+
+    ~/works/sncf-reseau/src/outils-autolisp/autolisp-script/runtime/autolisp-remote-io.lsp
+
+(the SNCF outils-autolisp tree). It's the file that defines the
+CAD-side READY publisher and the `(while (or (probe-file stdin)
+…))` main loop. Without it, run-common.lsp is a sequence of bare
+setq's with no main loop; BricsCAD `(load …)` returns
+immediately and `run.scr` falls through to EOF.
+
+Fix requires three sub-steps:
+
+  (a) Decide where the canonical `autolisp-remote-io.lsp` lives in
+      the alfe codebase. Three options:
+        (i)   Vendor a copy into `autolisp-front-end/source/runtime/`
+              (same convention as the rest of the .lisp tree).
+        (ii)  Locate it via `$ALFE_RUNTIME_LSP` env var with a
+              built-in fallback search list (e.g. the SNCF tree,
+              `/opt/local/share/alfe/runtime/`, …).
+        (iii) Both — vendor + env override.
+      (iii) is the suggested default: works on a fresh checkout and
+      lets advanced users override.
+
+  (b) Wire the resolved path through `init-session` so
+      `runtime-lsp-source` is populated, then call `stage-runtime-lsp`
+      after `init-session` returns. The bricscad and autocad
+      backends both need this.
+
+  (c) The legacy `autolisp-remote-io.lsp` reads variables from
+      `*AUTOLISP_*` (underscore-only) names. The emitted run-common
+      writes both hyphen and underscore variants, so the runtime
+      will see them either way — verify nothing else needs
+      translating.
+
+### Defect 3 — even with the QUIT removed, BricsCAD finishes the SCR and exits
+
+`bricscad -B run.scr` runs each SCR line sequentially and exits at
+EOF. So even if defect 1 is fixed (no `_QUIT _N`) AND defect 2 is
+fixed (runtime is loaded), the runtime's main loop must actually
+*block* — i.e. the runtime LSP's top-level form must enter a
+`(while …)` that keeps reading `protocol/stdin.txt`. If
+`autolisp-remote-io.lsp` only defines functions and returns to the
+SCR, BricsCAD will still exit.
+
+The legacy bash wrapper relies on the runtime LSP entering a
+read-eval loop on `*AUTOLISP_PROTOCOL_STDINFILE*` at top level.
+Verify that's still the case in the vendored copy.
+
+## Reproduction in CI-friendly form
+
+Until the fix lands the reporter's command line is the simplest
+reproducer. Once an alternative runtime LSP is in tree, a fake
+BricsCAD (`bash -c 'cat run.scr'`-style stand-in) can drive the
+same path against `BRICSCAD_EXE`.
+
+## Acceptance
+
+  * `alfe --bricscad --mode batch -i` launches BricsCAD, BricsCAD
+    publishes `READY 0` to `protocol/status.txt`, alfe's poll loop
+    matches it, and the REPL becomes usable.
+  * `alfe --bricscad --mode batch -x '(+ 1 2)'` round-trips
+    through the file IPC and prints `3`.
+  * `alfe --bricscad --mode batch -x '(+ 1 2)' --keep-workdir`
+    leaves a workdir whose `run-common.lsp` ends with
+    `(load "<workdir>/runtime/autolisp-remote-io.lsp")` and
+    whose `run.scr` does NOT contain `_QUIT _N` (interactive
+    case) or DOES contain it (batch-with-quit case).
+  * `--debug` logs the staged runtime path:
+        alfe[debug]: backend BRICSCAD: staged runtime -> …/runtime/autolisp-remote-io.lsp
+
+## See also
+
+  * bug-no-debug-no-verbose.issue — the upstream issue whose
+    diagnostic instrumentation made this bug observable.
+  * `autolisp-front-end/source/file-protocol.lisp:162`
+    (`init-session :runtime-lsp-source`) — the hook that wants
+    populating.
+  * `autolisp-front-end/source/file-protocol.lisp:844`
+    (`stage-runtime-lsp`) — the copy helper that has to be
+    invoked.
+  * `autolisp-front-end/source/file-protocol.lisp:831` — the
+    `(when (protocol-session-runtime-lsp-staged session) …)`
+    branch in `emit-run-common-lsp` that's currently dead.
+  * `~/works/sncf-reseau/src/outils-autolisp/autolisp-script/runtime/autolisp-remote-io.lsp`
+    — the upstream runtime to vendor.
+
+## Out of scope
+
+  * The 30 s READY timeout default. It's plausibly too short for
+    a cold BricsCAD launch on a busy machine, but tuning it is
+    pointless until the runtime actually publishes READY in the
+    first place.
+  * The AutoCAD backend — same defects exist there
+    (`backend-autocad.lisp:404` also init-sessions without
+    `:runtime-lsp-source`, line 416 also emits run.scr without
+    threading interactive-p). Fix in one pass since the runtime
+    LSP itself is shared.
