@@ -216,4 +216,91 @@ a category has a single applicable code it's noted in parentheses.
 
 == Resolved ==
 
-(none yet)
+Three concrete deliverables, each verifiable in isolation:
+
+  1. ERRNO code table verified against vendor docs.
+     The canonical 86-row table was pulled from Autodesk's 2015
+     ENU AutoLISP help page (GUID-97327347-...) and committed as
+     a normative table in autolisp-spec §15. The Phase-1.5
+     inventory record for ERRNO already cites both the AutoCAD
+     per-sysvar URL (GUID-08E19480-...) and the Bricsys page; no
+     inventory change needed.
+
+     The speculative subset I sketched in the original Scope
+     block (codes 0..14, 51..52, 60) was wrong on the details --
+     the real numbering puts 51 = "Exceeded maximum XDATA size",
+     not "Bad symbol-table name". The §15 table supersedes that
+     sketch.
+
+  2. ERRNO wired through the documented-coupling builtins in
+     clautolisp/autolisp-builtins-core/source/api.lisp:
+
+         findfile         miss -> 22, hit -> 0
+         findtrustedfile  miss -> 22, hit -> 0
+         open             miss -> 22, hit -> 0
+         read-line        EOF  -> 8,  byte -> 0
+         write-line       -> 0 on success (no nil-failure path)
+         load             miss -> 73 on the onfailure path;
+                          the signalling path keeps the existing
+                          condition-to-errno mapping (5)
+         entget           bad / deleted ename -> 2, hit -> 0
+         entmod           bad / deleted ename -> 2, hit -> 0
+         entmake          bad DXF -> 36, hit -> 0
+         entmakex         bad DXF -> 36, hit -> 0
+         entdel/entupd    -> 0 on success; no documented failure
+                          (Autodesk does not specify ERRNO for these)
+         entlast/entnext  -> no ERRNO change (end-of-list is not
+                          an error per spec)
+         handent          bad handle -> 13, hit -> 0
+         ssget            hit -> 0; filter-shape errors 56..67
+                          remain TBD until MockHost ssget executes
+                          the filter rather than signalling
+                          :host-not-supported
+         ssname           out-of-range -> 22, hit -> 0
+         tblsearch        hit -> 0; documented not-found miss
+                          leaves ERRNO alone (per spec)
+         tblobjname       same shape as tblsearch
+         tablet (STUB)    always nil -> 68 ("Digitizer is not a
+                          tablet")
+
+     Total: 16 builtins wired, +24 set-autolisp-errno call sites
+     (grep -c set-autolisp-errno rises from 5 pre-followup to 29).
+
+     A small helper ~(errno-and-return code value)~ landed near
+     the head of api.lisp so each wired site stays one line.
+
+  3. Per-builtin failure-and-success tests:
+     clautolisp/autolisp-builtins-core/tests/errno-coupling-tests.lisp
+     -- 24 checks covering findfile / findtrustedfile / open /
+     read-line / load / handent / entget / ssname / tblsearch
+     (miss-leaves-alone AND hit-resets) / tablet. The builtins-
+     core suite went 902 -> 926 checks (all green); runtime / host
+     / mock-host suites unchanged at 307 / 29 / 220.
+
+  Version bumps land in the same commit:
+     autolisp-spec/.../draft.org             0.9.0 -> 0.9.1
+     clautolisp/tools/clautolisp/source/version.lisp
+                                             1.0.73 -> 1.0.74
+
+What is NOT yet in (still deferred, but tracked separately if
+needed):
+
+  - entsel / nentsel / xdsize / xdroom / regapp are in the ERRNO
+    :coupled inventory entry but not yet implemented as builtins
+    in clautolisp/autolisp-builtins-core. They'll inherit ERRNO
+    wiring when those builtins land.
+  - The legacy condition-to-errno mapping in
+    clautolisp/autolisp-runtime/source/api.lisp:464 uses small
+    codes (2, 3, 5, 6, ...) that do NOT match the canonical
+    AutoLISP table. Kept as-is here: rewriting would break the
+    existing VL-CATCH-ALL-APPLY conformance tests that assert
+    ERRNO=5 for :invalid-open-mode etc. A separate follow-up
+    should choose between (a) migrating those tests to the
+    canonical codes or (b) leaving the legacy mapping in place.
+    The two paths coexist today because the legacy mapping fires
+    only on the signalling path; the nil-return paths now wired
+    here use the canonical numbers.
+  - ssget filter-shape errors (codes 56..67) are documented but
+    not yet observable because MockHost ssget signals
+    :host-not-supported rather than executing the filter. The
+    wiring slot is in place; just needs the host implementation.

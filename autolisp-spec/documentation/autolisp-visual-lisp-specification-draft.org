@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.9.0
+#+VERSION: 0.9.1
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.9.0*.
+The current document version is *0.9.1*.
 
 Any modification of this document must increment its version number.
 
@@ -7451,6 +7451,127 @@ Source:
 * 15 Errors and Recovery
 ** Overview
 AutoLISP error handling is specified through `*error*`, `ERRNO`, and Visual LISP catch-all functions, not through a CL-style condition system.
+
+** Normative ERRNO code table
+The integer value of `ERRNO` after a documented failure is normative
+per the Autodesk "Error Codes Reference (AutoLISP)" table. The table
+was first published in the AutoCAD 2015 ENU AutoLISP help (GUID
+`97327347-2A13-4CBC-BDBF-979C7F1CABD5`) and has remained stable in
+later releases (Autodesk no longer publishes a standalone code-list
+page in the 2026 cloudhelp index, but the per-function pages still
+reference these codes by number).
+
+| Code | Meaning                                                    |
+|------+------------------------------------------------------------|
+|    0 | No error / success                                          |
+|    1 | Invalid symbol-table name                                   |
+|    2 | Invalid entity or selection-set name                        |
+|    3 | Exceeded maximum number of selection sets                   |
+|    4 | Invalid selection set                                       |
+|    5 | Improper use of block definition                            |
+|    6 | Improper use of xref                                        |
+|    7 | Object selection: pick failed                               |
+|    8 | End of entity file                                          |
+|    9 | End of block definition file                                |
+|   10 | Failed to find last entity                                  |
+|   11 | Illegal attempt to delete viewport object                   |
+|   12 | Operation not allowed during PLINE                          |
+|   13 | Invalid handle                                              |
+|   14 | Handles not enabled                                         |
+|   15 | Invalid arguments in coordinate transform request           |
+|   16 | Invalid space in coordinate transform request               |
+|   17 | Invalid use of deleted entity                               |
+|   18 | Invalid table name                                          |
+|   19 | Invalid table function argument                             |
+|   20 | Attempt to set a read-only variable                         |
+|   21 | Zero value not allowed                                      |
+|   22 | Value out of range                                          |
+|   23 | Complex REGEN in progress                                   |
+|   24 | Attempt to change entity type                               |
+|   25 | Bad layer name                                              |
+|   26 | Bad linetype name                                           |
+|   27 | Bad color name                                              |
+|   28 | Bad text style name                                         |
+|   29 | Bad shape name                                              |
+|   30 | Bad field for entity type                                   |
+|   31 | Attempt to modify deleted entity                            |
+|   32 | Attempt to modify seqend subentity                          |
+|   33 | Attempt to change handle                                    |
+|   34 | Attempt to modify viewport visibility                       |
+|   35 | Entity on locked layer                                      |
+|   36 | Bad entity type                                             |
+|   37 | Bad polyline entity                                         |
+|   38 | Incomplete complex entity in block                          |
+|   39 | Invalid block name field                                    |
+|   40 | Duplicate block flag fields                                 |
+|   41 | Duplicate block name fields                                 |
+|   42 | Bad normal vector                                           |
+|   43 | Missing block name                                          |
+|   44 | Missing block flags                                         |
+|   45 | Invalid anonymous block                                     |
+|   46 | Invalid block definition                                    |
+|   47 | Mandatory field missing                                     |
+|   48 | Unrecognized extended data (XDATA) type                     |
+|   49 | Improper nesting of list in XDATA                           |
+|   50 | Improper location of APPID field                            |
+|   51 | Exceeded maximum XDATA size                                 |
+|   52 | Entity selection: null response                             |
+|   53 | Duplicate APPID                                             |
+|   54 | Attempt to make or modify viewport entity                   |
+|   55 | Attempt to make or modify an xref, xdef, or xdep            |
+|   56 | ssget filter: unexpected end of list                        |
+|   57 | ssget filter: missing test operand                          |
+|   58 | ssget filter: invalid opcode (-4) string                    |
+|   59 | ssget filter: improper nesting or empty conditional clause  |
+|   60 | ssget filter: mismatched begin and end of conditional clause|
+|   61 | ssget filter: wrong number of arguments in conditional      |
+|   62 | ssget filter: exceeded maximum nesting limit                |
+|   63 | ssget filter: invalid group code                            |
+|   64 | ssget filter: invalid string test                           |
+|   65 | ssget filter: invalid vector test                           |
+|   66 | ssget filter: invalid real test                             |
+|   67 | ssget filter: invalid integer test                          |
+|   68 | Digitizer is not a tablet                                   |
+|   69 | Tablet is not calibrated                                    |
+|   70 | Invalid tablet arguments                                    |
+|   71 | ADS error: unable to allocate new result buffer             |
+|   72 | ADS error: null pointer detected                            |
+|   73 | Cannot open executable file                                 |
+|   74 | Application is already loaded                               |
+|   75 | Maximum number of applications already loaded               |
+|   76 | Unable to execute application                               |
+|   77 | Incompatible version number                                 |
+|   78 | Unable to unload nested application                         |
+|   79 | Application refused to unload                               |
+|   80 | Application is not currently loaded                         |
+|   81 | Not enough memory to load application                       |
+|   82 | ADS error: invalid transformation matrix                    |
+|   83 | ADS error: invalid symbol name                              |
+|   84 | ADS error: invalid symbol value                             |
+|   85 | AutoLISP/ADS operation prohibited while a dialog box        |
+
+Per Autodesk's note attached to the `ERRNO` sysvar entry, "ERRNO is
+not always cleared to zero. Unless it is inspected immediately
+after an AutoLISP function has reported an error, the error that
+its value indicates may be misleading." `ERRNO` is reset to ~0~ on
+the *success* path of every builtin that documents itself as
+"sets ERRNO on failure"; an arbitrary other-builtin success leaves
+the previous value in place.
+
+The host implementation in `clautolisp/autolisp-builtins-core`
+wires the matching `set-autolisp-errno` calls into the builtins
+that Autodesk documents in the `ERRNO` sysvar entry's coupling
+list (~entget~, ~entmake~, ~entmod~, ~entsel~, ~findfile~, ~load~,
+~nentsel~, ~open~, ~read-line~, ~ssget~, ~ssname~, ~tablet~,
+~write-line~, ~xdsize~). Builtins outside that list -- including
+the `entdel` / `entupd` / `entlast` / `entnext` family -- do not
+touch `ERRNO` because Autodesk's documentation does not specify a
+behaviour for them.
+
+** Source Notes for the ERRNO table
+- [Error Codes Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2015/ENU/AutoCAD-AutoLISP/files/GUID-97327347-2A13-4CBC-BDBF-979C7F1CABD5.htm)
+- [ERRNO (System Variable)](https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-08E19480-F87B-46E9-9C37-64693F95F680)
+- [BricsCAD V25 ERRNO sysvar](https://help.bricsys.com/en-us/document/system-variable-reference/e/errno-system-variable)
 
 #+LATEX: \newpage
 
