@@ -1,11 +1,79 @@
 ;;;; -*- Mode: Lisp; coding: utf-8 -*-
-;;;; Phase 1 deliverable: enumerated AutoCAD + BricsCAD system
-;;;; variables. Generated from help.bricsys.com (V25) and
-;;;; help.autodesk.com (2026 ENU). One plist per sysvar,
+;;;; Phase 1.5 deliverable: enumerated AutoCAD + BricsCAD
+;;;; system variables. Generated from help.bricsys.com (V25)
+;;;; and help.autodesk.com (2026 ENU). One plist per sysvar,
 ;;;; sorted alphabetically by :NAME.
 ;;;;
 ;;;; Schema: see issues/open/system-variables.issue.
 ;;;; Provenance: every record carries :versions and :source.
+
+(
+  :name "3DCONVERSIONMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Used to convert material and light definitions to the current product release."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D5143EED-F2B3-4652-BC04-53B43BAB381D" :bricscad NIL)
+)
+
+(
+  :name "3DDWFPREC"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the precision of 3D DWF or 3D DWFx publishing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0D9D7C23-8D2B-4856-BDDD-546812B5AB19" :bricscad NIL)
+)
+
+(
+  :name "3DOSMODE"
+  :type :integer
+  :default 139
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets running 3D object snaps."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-10DD6098-8B87-45B4-9BB9-325D58695764" :bricscad NIL)
+)
+
+(
+  :name "3DSELECTIONMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the selection precedence of both visually and physically overlapping objects when using 3D visual styles."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0FA5D420-2A1C-406B-A267-6619E0B6C760" :bricscad NIL)
+)
 
 (
   :name "ACADLSPASDOC"
@@ -19,15 +87,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "on_start.lsp for each doc: Loads the on_start_default.lsp, on_start.lsp, on_doc_load.lsp and on_doc_load_default.lsp files, for every new drawing. If off, only loads these files for the first drawing."
+  :summary "Controls whether the acad.lsp file, or acadlt.lsp file for AutoCAD LT, file is loaded into every drawing or just the first drawing opened in a session."
   :coupled ("load")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/acadlspasdoc-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E0049DB8-DC45-47A1-A8B7-67012F7AEDB8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/acadlspasdoc-system-variable")
 )
 
 (
   :name "ACADPREFIX"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -36,15 +104,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Program folder path: List of support paths, with path separators if necessary."
+  :summary "Lists the Support File Search paths specified in the Options dialog box, Files tab."
   :coupled ("findfile" "getenv")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/acadprefix-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CA03058E-999B-4BA0-BA38-61DFC5EB3214" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/acadprefix-system-variable")
 )
 
 (
   :name "ACADVER"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -55,7 +123,7 @@
   :divergence NIL
   :summary "AutoCAD version: Shows the AutoCAD® compatible program version number."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/acadver-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/acadver-system-variable")
 )
 
 (
@@ -89,7 +157,7 @@
   :divergence NIL
   :summary "Acisout version: Controls the ACIS version of the SAT files for the ACISOUT command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/acisoutver-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/acisoutver-system-variable")
 )
 
 (
@@ -110,6 +178,142 @@
 )
 
 (
+  :name "ACTIVITYINSIGHTSPATH"
+  :type :string
+  :default "C:\\Users\\{username}\\AppData\\Local\\Autodesk\\ActivityInsights\\Common"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the location Activity Insights activities are recorded."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-06C78FAB-4DC9-467C-9D6A-82E1DD0F64B2" :bricscad NIL)
+)
+
+(
+  :name "ACTIVITYINSIGHTSSTATE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Activity Insights palette is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7B01C113-BB74-4EC2-8B9E-633D3EE9A323" :bricscad NIL)
+)
+
+(
+  :name "ACTIVITYINSIGHTSSUPPORT"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Enables or disables the Activity Insights feature."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EAA81DD3-E8BD-45AE-AC1C-B757209A9ABC" :bricscad NIL)
+)
+
+(
+  :name "ACTIVITYINSIGHTSVIEWEDLOGGING"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Turns on or off logging Opened activities, such as opening a drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-34D77CB3-E9E2-4956-835C-8EDFAA1D00CE" :bricscad NIL)
+)
+
+(
+  :name "ACTPATH"
+  :type :string
+  :default ""
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the additional paths to load action macros from for playback."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E63ED007-A45B-46EE-9777-3665AA593B6C" :bricscad NIL)
+)
+
+(
+  :name "ACTRECORDERSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the current state of the Action Recorder."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6254B281-6523-4C56-AC9E-CDEE32A27606" :bricscad NIL)
+)
+
+(
+  :name "ACTRECPATH"
+  :type :string
+  :default (:host-specific)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the path used to store new action macros."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DE0E53A7-9DF4-4545-93AC-F57ACA43B391" :bricscad NIL)
+)
+
+(
+  :name "ACTUI"
+  :type :integer
+  :default 6
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the behavior of the Action Recorder panel when recording and playing back macros."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-06266E09-CC31-46F4-B386-7F923026B6D0" :bricscad NIL)
+)
+
+(
   :name "ADAPTIVEGRIDSTEPSIZE"
   :type :real
   :default 4.0
@@ -127,9 +331,26 @@
 )
 
 (
+  :name "ADCSTATE"
+  :type :integer
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the DesignCenter window is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E26B699F-2274-4C02-883E-757FCFB41357" :bricscad NIL)
+)
+
+(
   :name "AFLAGS"
-  :type :short
-  :default 0
+  :type :integer
+  :default 16
   :read-only NIL
   :range (0 63)
   :bitcoded T
@@ -137,10 +358,10 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Attribute options: Sets the default options for attribute creation."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 16, BricsCAD 0"
+  :summary "Sets options for attributes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/aflags-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4C49E401-7CCA-45B9-A126-36E597416236" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/aflags-system-variable")
 )
 
 (
@@ -259,13 +480,13 @@
   :divergence NIL
   :summary "Mechanical2D annotation scaling: Controls the display of Mechanical2D symbols and text in Model Space."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/amsymscale-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/amsymscale-system-variable")
 )
 
 (
   :name "ANGBASE"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -273,10 +494,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Angle base: Controls the start location of angle 0."
-  :coupled ("angtos" "angle" "getangle" "getorient" "rtos")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/angbase-system-variable")
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the zero (0) base angle with respect to the current UCS."
+  :coupled ("angle" "angtos" "getangle" "getorient" "rtos" "setvar")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B7CAB5F3-16BC-4E06-97BC-AAAEC052727E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/angbase-system-variable")
 )
 
 (
@@ -291,14 +512,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Angle direction: Toggles the angle direction clockwise/Counterclockwise."
-  :coupled ("angtos" "angle" "getangle" "getorient")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/angdir-system-variable")
+  :summary "Sets the direction of positive angles."
+  :coupled ("angle" "angtos" "getangle" "getorient")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A432574D-35B6-4D9E-8D8F-4259F2066234" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/angdir-system-variable")
 )
 
 (
   :name "ANNOALLVISIBLE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range NIL
@@ -307,15 +528,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Annotation visibility: Hides or displays annotative entities that do not support the current annotation scale. The setting is saved individually for model space and each layout."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Hides or displays annotative objects that do not support the current annotation scale."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/annoallvisible-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D8E50F6F-FB71-4A20-A3B9-7701C0518B81" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/annoallvisible-system-variable")
 )
 
 (
   :name "ANNOAUTOSCALE"
-  :type :short
+  :type :integer
   :default -4
   :read-only NIL
   :range NIL
@@ -324,15 +545,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Annotation scaling: Synchronizes new annotative entities with the current annotation scale."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Updates annotative objects to support the annotation scale when the annotation scale is changed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/annoautoscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-15AC894C-4B21-4543-AD86-F86C8BFAC6E6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/annoautoscale-system-variable")
 )
 
 (
   :name "ANNOMONITOR"
-  :type :short
+  :type :integer
   :default -2
   :read-only NIL
   :range NIL
@@ -341,10 +562,27 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Annotation monitor: Turns the annotation monitor on or off. When ON, a warning sign is displayed near the disassociated dimension."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Turns the annotation monitor on or off. When the annotation monitor is turned on, a yellow warning badge displays on all non-associative dimensions and leaders."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/annomonitor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EEF0796B-9C18-476A-A0E8-876BC5346C97" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/annomonitor-system-variable")
+)
+
+(
+  :name "ANNOSCALEZOOM"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Determines whether the mouse wheel zoom in paperspace viewports is controlled by specific zoom scales or independent of viewport scales (legacy behavior)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-73EB72D3-3C77-471B-AED7-EE1629180E9B" :bricscad NIL)
 )
 
 (
@@ -359,9 +597,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Annotative drawing: Creates an annotative block when this drawing is inserted into another drawing. Note: The ANNOTATIVEDWG system variable becomes read-only if the drawing contains annotative entities"
+  :summary "Specifies whether or not the drawing will behave as an annotative block when inserted into another drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/annotativedwg-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1720C9E3-B398-42FB-A5CA-6C983399FB04" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/annotativedwg-system-variable")
 )
 
 (
@@ -410,14 +648,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Entity snap aperture box: Displays the Entity Snap aperture box, at the cursor, during a pick action. Entity snaps are activated when the aperture box passes over an entity. See also the APERTURE system variable."
+  :summary "Turns the display of the AutoSnap aperture box on or off."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/apbox-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A13A75DC-5D0F-4730-834C-4AA078077B12" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/apbox-system-variable")
 )
 
 (
   :name "APERTURE"
-  :type :short
+  :type :integer
   :default 10
   :read-only NIL
   :range (1 50)
@@ -426,16 +664,67 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the size of the object target box."
+  :coupled ("osnap")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2AA8CF8E-267F-4BD6-80CD-0E7C48B8A9F1" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/aperture-system-variable")
+)
+
+(
+  :name "APPAUTOLOAD"
+  :type :integer
+  :default 14
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
   :divergence NIL
-  :summary "Entity snap sensitivity: Controls the Aperture Box size, in pixels. Entity snaps are activated when the aperture box passes over an entity. To display the aperture box switch on the APBOX system variable. Values between 1 and 50 are accepted."
+  :summary "Controls when plug-in applications are loaded."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/aperture-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-33E75B9A-93AC-4FBF-B941-0F99A6AC3617" :bricscad NIL)
+)
+
+(
+  :name "APPLYGLOBALOPACITIES"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Applies transparency settings to all palettes."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AE962D09-C241-4212-9916-D1EE5BA7BCE1" :bricscad NIL)
+)
+
+(
+  :name "APSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Block Authoring Palettes window in the Block Editor is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1F6ECE63-71DC-4EBF-8E49-2C50100632C0" :bricscad NIL)
 )
 
 (
   :name "AREA"
   :type :real
-  :default (:unknown)
+  :default 0.0000
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -444,9 +733,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Area: The last calculated area by the AREA, LIST or DBLIST commands."
+  :summary "Stores the last area computed by the AREA and MEASUREGEOM commands."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/area-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CD078D73-FE99-49A0-8FFA-0D2FFA906167" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/area-system-variable")
 )
 
 (
@@ -455,7 +744,7 @@
   :default -1
   :read-only NIL
   :range NIL
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad nil :bricscad "V20+")
@@ -495,9 +784,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Associative arrays: Creates new arrays as associative arrays."
+  :summary "Sets the default behavior of new arrays to be associative or nonassociative."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/arrayassociativity-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-298A0544-E6C3-496F-9FA1-12AEC2FF5647" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/arrayassociativity-system-variable")
 )
 
 (
@@ -512,14 +801,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Array edit state: Displays if an associative array's source entity is currently being edited."
+  :summary "Indicates whether the drawing is in the array editing state, which is activated while editing an associative array's source objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/arrayeditstate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E71DAD51-8377-4B32-B33D-095E45672F18" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/arrayeditstate-system-variable")
 )
 
 (
   :name "ARRAYTYPE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range NIL
@@ -528,10 +817,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Array type: Controls the default associative array type. See also the ARRAYASSOCIATIVITY system variable."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the default array type."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/arraytype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ED05306A-0D24-4FE7-9B50-1207BCA2B4B8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/arraytype-system-variable")
+)
+
+(
+  :name "ASSISTANTSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Autodesk Assistant palette is open, closed or hidden."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9F26CB82-3F66-4116-90F9-810ACFE6A613" :bricscad NIL)
 )
 
 (
@@ -546,9 +852,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Attribute dialog: Shows a dialog box for attribute values for the INSERT command."
+  :summary "Controls whether the INSERT command uses a dialog box for attribute value entry."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/attdia-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DD7AE7D3-D9D7-49E7-948E-079D8451FFA2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/attdia-system-variable")
 )
 
 (
@@ -569,8 +875,25 @@
 )
 
 (
+  :name "ATTIPE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls which Text Formatting toolbar is displayed with the in-place editor for modifying multiline attributes."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1DD42986-CA88-424A-BCC8-6C4DD64488C5" :bricscad NIL)
+)
+
+(
   :name "ATTMODE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range NIL
@@ -579,10 +902,27 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Attribute display mode: Controls the display of attributes. Note: If the ATTMODE variable is set to 2, all attributes display, including Hidden attributes."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls display of attributes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/attmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D6DE0459-AE5C-4FFF-9E1C-2468D532C49D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/attmode-system-variable")
+)
+
+(
+  :name "ATTMULTI"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether multiline attributes can be created."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9386111C-705B-4B4D-B7F9-36C38F67DB84" :bricscad NIL)
 )
 
 (
@@ -614,9 +954,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Insertion default settings: Controls attribute settings for a block inserted with the INSERT command. If off, uses default values. If on, uses a prompt."
+  :summary "Controls whether INSERT uses default attribute settings during insertion of blocks."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/attreq-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7A7229F8-C99D-42C5-8784-4231767611F8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/attreq-system-variable")
 )
 
 (
@@ -631,15 +971,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Audit control: Creates an audit report (ADT) file when the AUDIT command is used. When you turn on the AUDITCTL settings variable, AUDIT creates an ASCII file describing problems and the action taken. This report, with the file extension ADT, is placed in the same directory as the current drawing."
+  :summary "Controls whether AUDIT creates an audit report (ADT) file."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/auditctl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-05A7363C-4A43-4984-8262-DA7BEE7B860C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/auditctl-system-variable")
 )
 
 (
   :name "AUDITERRORCOUNT"
   :type :short
-  :default (:unknown)
+  :default (:session)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -650,12 +990,12 @@
   :divergence NIL
   :summary "Audit Error Count: The number of errors found in the last audit (AUDIT command)."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/auditerrorcount-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/auditerrorcount-system-variable")
 )
 
 (
   :name "AUNITS"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range NIL
@@ -664,27 +1004,27 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Angular unit type: Controls the unit type for angles."
-  :coupled ("angtos" "getangle" "getorient")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/aunits-system-variable")
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets units for angles."
+  :coupled ("angtof" "angtos" "getangle" "getorient")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C7C0F6A5-7982-43DB-97F9-5B9B0044E9FA" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/aunits-system-variable")
 )
 
 (
   :name "AUPREC"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range NIL
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Angular unit precision: Controls the number of decimal places for angular units."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the display precision for angular units and coordinates."
   :coupled ("angtos" "getangle" "getorient")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/auprec-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EE1ED20C-1096-4299-820F-83F1BC9B96F3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/auprec-system-variable")
 )
 
 (
@@ -701,7 +1041,7 @@
   :divergence NIL
   :summary "Auto complete delay: Controls the delay before features display at the Command line. See also the AUTOCOMPLETEMODE system variable. Values between 0.0 and 10.0 are accepted."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/autocompletedelay-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/autocompletedelay-system-variable")
 )
 
 (
@@ -718,7 +1058,24 @@
   :divergence NIL
   :summary "Auto complete mode: Controls the types features shown at the Command line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/autocompletemode-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/autocompletemode-system-variable")
+)
+
+(
+  :name "AUTODWFPUBLISH"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether DWF (Design Web Format) files are created automatically when you save or close drawing (DWG) files."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-67B17228-BFB3-4223-BF64-EE09FF2A4C57" :bricscad NIL)
 )
 
 (
@@ -736,6 +1093,23 @@
   :summary "Automatic connection: Controls automatic creation of connections for the BIMLINEARSOLID and BIMAPPLYPROFILE commands. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/automaticconnection-system-variable")
+)
+
+(
+  :name "AUTOMATICPUB"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether electronic files (DWF/PDF) are created automatically when you save or close drawing (DWG) files."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-04E06B5A-D6BA-41A9-B5C8-BF3DC6BE9C83" :bricscad NIL)
 )
 
 (
@@ -770,6 +1144,23 @@
   :summary "Automatic tees: Controls the automatic creation of T type connections during the BIMFLOWCONNECT command. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/automatictees-system-variable")
+)
+
+(
+  :name "AUTOPLACEMENT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether placement suggestions are displayed as you insert a block."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-84265932-8B02-4740-A178-EF1BBD7CB01F" :bricscad NIL)
 )
 
 (
@@ -808,8 +1199,8 @@
 
 (
   :name "AUTOSNAP"
-  :type :short
-  :default 127
+  :type :integer
+  :default 63
   :read-only NIL
   :range (0 127)
   :bitcoded T
@@ -817,10 +1208,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "AutoSnap: Toggles polar and entity snap tracking and controls the display of a snap marker, tooltips and magnet."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 63, BricsCAD 127"
+  :summary "Controls the display of the AutoSnap marker, tooltip, and magnet."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/autosnap-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BE7947EB-2A08-4406-A169-4C5E125B1F4D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/autosnap-system-variable")
 )
 
 (
@@ -837,7 +1228,7 @@
   :divergence NIL
   :summary "Auto tracking vector color: Controls the color of polar/snap tracking markers."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/autotrackingveccolor-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/a/autotrackingveccolor-system-variable")
 )
 
 (
@@ -859,7 +1250,7 @@
 
 (
   :name "BACKGROUNDPLOT"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 3)
@@ -868,33 +1259,67 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Background plotting: Controls if background plotting is enabled for plot and/or publish actions."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether background plotting is turned on or off for plotting and publishing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/backgroundplot-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-713029B7-B5AC-4860-BE2E-74878D418EA4" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/backgroundplot-system-variable")
 )
 
 (
   :name "BACKZ"
   :type :real
-  :default 0.0
-  :read-only NIL
+  :default 0.0000
+  :read-only T
   :range NIL
   :bitcoded NIL
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Back clipping plane offset: The value of the CLipping option of the DVIEW command."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0; read-only AutoCAD True, BricsCAD False"
+  :summary "Stores the back clipping plane offset from the target plane for the current viewport, in drawing units."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/backz-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EC6CF0EF-05A7-4D12-9437-46360B2BBF62" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/backz-system-variable")
+)
+
+(
+  :name "BACTIONBARMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the action bars or the legacy action objects are displayed in the Block Editor."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4E589CD2-EB52-4CF6-949F-4789C53F6286" :bricscad NIL)
+)
+
+(
+  :name "BACTIONCOLOR"
+  :type :string
+  :default "7"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the text color of actions in the Block Editor."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7BEFF137-53F2-4D69-A19B-63A68EE4A54E" :bricscad NIL)
 )
 
 (
   :name "BASEFILE"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -911,7 +1336,7 @@
 (
   :name "BCFSOURCEURL"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -923,6 +1348,57 @@
   :summary "BCF source url: The address (URL) of the BCF source. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/bcfsourceurl-system-variable")
+)
+
+(
+  :name "BCONSTATUSMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Turns the constraint display status on and off and controls the shading of objects based on their constraint level."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-30193F93-378C-4A90-91E0-4737A772330C" :bricscad NIL)
+)
+
+(
+  :name "BCONVERTLAYER"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the object layer in the block definition will become Layer 0 after objects are converted into blocks."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-63A8986F-1FCC-4480-947B-E576260FC4D4" :bricscad NIL)
+)
+
+(
+  :name "BDEPENDENCYHIGHLIGHT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether or not dependent objects are dependency highlighted when a parameter, action, or grip is selected in the Block Editor."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6F4561D1-9A00-4C57-9D14-959A4B11F6AB" :bricscad NIL)
 )
 
 (
@@ -940,6 +1416,57 @@
   :summary "Associative identifiers in BEDIT: Controls if additional service data is generated during the BEDIT command. This enables the automatic re-association of constraints and dimensions attached to the references of the block, including references in other documents. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/beditassocmode-system-variable")
+)
+
+(
+  :name "BGCOREPUBLISH"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether background publishing uses a single or multiple cores."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CEA83608-0AC0-4188-B413-DE586EBB103C" :bricscad NIL)
+)
+
+(
+  :name "BGRIPOBJCOLOR"
+  :type :string
+  :default "141"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color of grips in the Block Editor."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-929B1BF9-B156-438C-A609-83B7FC0385FD" :bricscad NIL)
+)
+
+(
+  :name "BGRIPOBJSIZE"
+  :type :integer
+  :default 8
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the display size of custom grips in the Block Editor relative to the screen display."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1DF5F69B-ADF3-4936-ADCF-D2A841FF9019" :bricscad NIL)
 )
 
 (
@@ -1013,7 +1540,7 @@
 (
   :name "BIMPROFILESTANDARDS"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1039,9 +1566,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Xref bind type: Controls how XRefs names are handled when XRefs are bound or edited in place. If on, uses insert-like behavior. If off, uses traditional bind behavior."
+  :summary "Specifies the default or controls the naming behavior to be applied to \"named objects\" in an xref when a bind or an edit-in-place operation is performed on it."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/bindtype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1B410F79-266A-4D64-BEA6-87191A0B0D30" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/bindtype-system-variable")
 )
 
 (
@@ -1084,7 +1611,7 @@
   :default 0
   :read-only NIL
   :range NIL
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
@@ -1092,7 +1619,24 @@
   :divergence NIL
   :summary "Blip mode: Determines whether or not marker blips are displayed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/blipmode-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/blipmode-system-variable")
+)
+
+(
+  :name "BLOCKCREATEMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the behavior for selected objects after creating blocks with the BLOCK and -BLOCK commands. The objects are either deleted, retained, or replaced with an instance of the block."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-284CAB90-961D-4A2C-8BE4-A44ED750884C" :bricscad NIL)
 )
 
 (
@@ -1107,26 +1651,43 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Block editor lock: Disables the Block Editor (BEdit mode). Blocks cannot be edited."
+  :summary "Disallows opening of the Block Editor and editing of dynamic block definitions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/blockeditlock-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BBBAEABC-E8D3-4E32-8D03-81067ADF4AD0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/blockeditlock-system-variable")
 )
 
 (
   :name "BLOCKEDITOR"
-  :type :string
-  :default (:unknown)
+  :type :integer
+  :default 0
   :read-only T
   :range NIL
   :bitcoded NIL
-  :scope :drawing
+  :scope :session
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Block editor: Shows if the Block Editor (BEdit mode) is open or not."
+  :summary "Indicates whether or not the Block Editor is open."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/blockeditor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-171545A1-72C9-4BD0-97CC-BC06C694C3E9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/blockeditor-system-variable")
+)
+
+(
+  :name "BLOCKEXCLUDECOLOR"
+  :type :integer
+  :default 7
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color highlighting for identified instances that should not be converted into blocks."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2226EB5E-5283-4EB4-B2F2-67D22C3D74B4" :bricscad NIL)
 )
 
 (
@@ -1164,6 +1725,23 @@
 )
 
 (
+  :name "BLOCKINCLUDECOLOR"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color highlighting for identified instances that can be converted into blocks."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-247FC996-9F06-4B95-B884-DC189C66527F" :bricscad NIL)
+)
+
+(
   :name "BLOCKLEVELOFDETAIL"
   :type :short
   :default 1
@@ -1181,9 +1759,77 @@
 )
 
 (
+  :name "BLOCKMRULIST"
+  :type :integer
+  :default 50
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the number of most recently used blocks displayed in the Recent tab of the Blocks palette."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DDBD0D1B-F4DB-4E4A-8A38-016A2CBE5A20" :bricscad NIL)
+)
+
+(
+  :name "BLOCKNAVIGATE"
+  :type :string
+  :default ""
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the folder, file, and blocks that are displayed in the Libraries tab of the Blocks palette."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-44E6D5B6-5C89-422B-AA74-08780DF15E71" :bricscad NIL)
+)
+
+(
+  :name "BLOCKREDEFINEMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether a dialog box or a prompt on the command line displays when inserting a block from the Blocks palette with the same name as an existing block definition."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-15A13868-7582-4CCD-A8FC-9AF2D05E689C" :bricscad NIL)
+)
+
+(
+  :name "BLOCKSDATACOLLECTION"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the content data used when working with smart blocks is shared to the data collection service."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5AD60349-4CA6-4E2C-982E-8DAEF5E9FF53" :bricscad NIL)
+)
+
+(
   :name "BLOCKSPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1195,6 +1841,91 @@
   :summary "Blocks path: Specifies the file path used for the fifth folder on the left side of the Select Drawing File dialog box, opened with the INSERT command when the Browse option is selected. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/blockspath-system-variable")
+)
+
+(
+  :name "BLOCKSRECENTFOLDER"
+  :type :string
+  :default (:host-specific)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the path where the recently inserted or created blocks are stored."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2B47D65C-B88A-42C6-BE79-590901360A5D" :bricscad NIL)
+)
+
+(
+  :name "BLOCKSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Reports whether the Blocks palette is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-585DDD87-F28A-4150-A883-1A92C4604CAA" :bricscad NIL)
+)
+
+(
+  :name "BLOCKSYNCFOLDER"
+  :type :string
+  :default (:host-specific)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the path where the recent and favorite blocks are stored."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B03DC983-2680-4D73-B246-780990CBF4F3" :bricscad NIL)
+)
+
+(
+  :name "BLOCKTARGETCOLOR"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color highlighting for the specified instance from which the new block definition is created."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-175D4755-223D-410A-B58E-71DE9243D43A" :bricscad NIL)
+)
+
+(
+  :name "BLOCKTESTWINDOW"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether or not a test block window is current."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-25FB9865-B874-4E34-9BE9-DD50B1BFAB22" :bricscad NIL)
 )
 
 (
@@ -1234,7 +1965,7 @@
 (
   :name "BMFORMTEMPLATEPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1453,6 +2184,91 @@
 )
 
 (
+  :name "BPARAMETERCOLOR"
+  :type :string
+  :default "170"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color of parameters in the Block Editor."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0385868B-AEF9-47B9-A52E-58D5B9C3837F" :bricscad NIL)
+)
+
+(
+  :name "BPARAMETERFONT"
+  :type :string
+  :default "Simplex.shx"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the font used for parameters and actions in the Block Editor."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8613E9B0-A4D9-4EF8-B047-2513F86BB937" :bricscad NIL)
+)
+
+(
+  :name "BPARAMETERSIZE"
+  :type :integer
+  :default 12
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the size of parameter text and features in the Block Editor relative to the screen display."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BAD1002D-57F9-46C7-B990-5CDDA96C12CB" :bricscad NIL)
+)
+
+(
+  :name "BPTEXTHORIZONTAL"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Forces the text displayed for action parameters and constraint parameters in the Block Editor to be horizontal."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3F1EAACA-CB50-4D3E-946C-A84D00F1FB2E" :bricscad NIL)
+)
+
+(
+  :name "BSEARCHINCLUDEEXISTINGBLOCKS"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether existing block instances are selected by BSEARCH command by default. Users can still make adjustments to the selection during the review process."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1BC7085A-B6E2-4131-858A-A1BBF399FC0E" :bricscad NIL)
+)
+
+(
   :name "BSYSLIBCOPYOVERWRITE"
   :type :short
   :default 0
@@ -1470,8 +2286,25 @@
 )
 
 (
+  :name "BTMARKDISPLAY"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether or not value set markers are displayed for dynamic block references."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AB938681-7796-49D7-94A5-DAEA81C552C1" :bricscad NIL)
+)
+
+(
   :name "BVMODE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -1480,10 +2313,10 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Block Visibility Mode: Controls how hidden entities are displayed in Block Editor ."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls how objects that are made invisible for the current visibility state are displayed in the Block Editor."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/bvmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BF628BE6-7100-4606-9185-44007503E8DE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/b/bvmode-system-variable")
 )
 
 (
@@ -1504,6 +2337,57 @@
 )
 
 (
+  :name "CACHEMAXFILES"
+  :type :integer
+  :default 256
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the upper-limit to the number of drawing file entries that can be kept in the product graphics cache."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7494F1CE-253B-42AC-BD26-10FB9E8FE77B" :bricscad NIL)
+)
+
+(
+  :name "CACHEMAXTOTALSIZE"
+  :type :integer
+  :default 1024
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the upper-limit in megabytes (Mbs) for all drawing file entries in the product graphics cache."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F3B22467-BC93-4D91-AC10-E93EAB157F85" :bricscad NIL)
+)
+
+(
+  :name "CALCINPUT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether mathematical expressions and global constants are evaluated in text and numeric entry boxes of windows and dialog boxes."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2CF672E7-C8FF-404A-8D86-17010ED52BEF" :bricscad NIL)
+)
+
+(
   :name "CAMERADISPLAY"
   :type :integer
   :default 0
@@ -1515,15 +2399,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Camera display: Displays a visual representation of a camera for all camera locations."
+  :summary "Turns the display of camera objects on or off."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cameradisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A3A09659-03D1-4A2C-97DE-DF7352824989" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cameradisplay-system-variable")
 )
 
 (
   :name "CAMERAHEIGHT"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1531,10 +2415,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Camera height: Controls the default height, in drawing units, for new cameras."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Specifies the default height for new camera objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cameraheight-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C2CF584A-5C0A-4436-A6ED-ABF6F0FE569A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cameraheight-system-variable")
 )
 
 (
@@ -1549,15 +2433,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Annotation scale name: Controls the name of the current annotation scale for the current space."
+  :summary "Sets the name of the current annotation scale for the current space."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cannoscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C7111BEE-76AA-481D-AC51-8600A31FA23A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cannoscale-system-variable")
 )
 
 (
   :name "CANNOSCALEVALUE"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -1565,16 +2449,67 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Annotation scale value: Displays the value of the current annotation scale."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Displays the value of the current annotation scale."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cannoscalevalue-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9584CD21-91CA-470A-8CE1-9FEC04BDD11E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cannoscalevalue-system-variable")
+)
+
+(
+  :name "CAPTURETHUMBNAILS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies if and when thumbnails are captured for the Rewind tool."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CA64DFE3-6EAD-4F92-A3C9-0B374AF892A3" :bricscad NIL)
+)
+
+(
+  :name "CBARTRANSPARENCY"
+  :type :integer
+  :default 50
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the transparency of the constraint bars."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3E0C6CFC-B222-467F-95C4-EFEBF7496BB6" :bricscad NIL)
+)
+
+(
+  :name "CCONSTRAINTFORM"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether annotational or dynamic constraints are applied to objects."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-48517518-17D8-496D-AAA0-BE84DD5F5008" :bricscad NIL)
 )
 
 (
   :name "CDATE"
   :type :real
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -1583,15 +2518,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Calendar date: Shows the current date and time, in decimal format."
+  :summary "Stores the current date and time in coded decimal format."
   :coupled ("menucmd")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cdate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-764D9293-3F87-4E63-802E-8B45F1B76F92" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cdate-system-variable")
 )
 
 (
   :name "CECOLOR"
   :type :string
-  :default "ByLayer"
+  :default "BYLAYER"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1600,15 +2535,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Entity color: Sets the color for new entities."
+  :summary "Sets the color of new objects as you create them."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cecolor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-703858E3-9038-406A-B499-90A0C05BECBF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cecolor-system-variable")
 )
 
 (
   :name "CELTSCALE"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1616,16 +2551,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Entity linetype scale: Sets the current entity linetype scale multiplier."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Sets the current object linetype scaling factor."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/celtscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ECE175AB-AB7B-4DEC-9CEC-D5D67AF9310B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/celtscale-system-variable")
 )
 
 (
   :name "CELTYPE"
   :type :string
-  :default "ByLayer"
+  :default "BYLAYER"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1634,14 +2569,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Entity linetype: Sets the linetype for new entities."
+  :summary "Sets the linetype of new objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/celtype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-28460EAB-7005-4E82-A97C-47A728F420E5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/celtype-system-variable")
 )
 
 (
   :name "CELWEIGHT"
-  :type :short
+  :type :integer
   :default -1
   :read-only NIL
   :range (-3 211)
@@ -1650,16 +2585,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Entity lineweight: Sets the lineweight of new entities."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the lineweight of new objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/celweight-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E1B15CA7-C45D-4845-B1A6-2520F6F911F3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/celweight-system-variable")
 )
 
 (
   :name "CENTERCROSSGAP"
   :type :string
-  :default "0.05x"
+  :default "\"0.05x\""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1667,16 +2602,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Center mark cross gap: Controls the gap between the center mark and its centerlines."
+  :divergence "default AutoCAD \"0.05x\", BricsCAD 0.05x"
+  :summary "Determines the gap between the center mark and its centerlines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centercrossgap-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AA5B90C5-AD48-4032-BD7A-39044E26B395" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centercrossgap-system-variable")
 )
 
 (
   :name "CENTERCROSSSIZE"
   :type :string
-  :default "0.1x"
+  :default "\"0.1x\""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1684,16 +2619,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Center mark cross size: Controls the size of an associative center mark."
+  :divergence "default AutoCAD \"0.1x\", BricsCAD 0.1x"
+  :summary "Determines the size of the associative center mark."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centercrosssize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AB005660-A8D7-41AC-85FE-CC5C39B2E61E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centercrosssize-system-variable")
 )
 
 (
   :name "CENTEREXE"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1701,16 +2636,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Centerline extension length: Controls the extension length of a centerline."
+  :divergence "default AutoCAD 0.1200 (imperial) or 3.5000 (metric), BricsCAD 0.12: If MEASUREMENT=0 and INSUNITS=inches 3.5: If MEASUREMENT=1 and INSUNITS=millimeters"
+  :summary "Controls the length of the centerline extensions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centerexe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4BCE09E0-6733-401D-8719-7CE603F878B1" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centerexe-system-variable")
 )
 
 (
   :name "CENTERLAYER"
   :type :string
-  :default "."
+  :default "\"use current\""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1718,16 +2653,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Default layer for center mark or centerline: Controls a default layer for new centermarks or centerlines."
+  :divergence "default AutoCAD \"use current\", BricsCAD ."
+  :summary "Specifies a default layer for new center marks or centerlines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centerlayer-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BAD8055E-71F4-4377-9E31-9E0DDBBAE9ED" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centerlayer-system-variable")
 )
 
 (
   :name "CENTERLTSCALE"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1735,16 +2670,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Linetype scale for center mark or centerline: Controls the linetype scale used to create center marks and centerlines."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Sets the linetype scale used by center marks and centerlines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centerltscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5C5FD35B-9B78-4C17-865E-B25687BBE121" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centerltscale-system-variable")
 )
 
 (
   :name "CENTERLTYPE"
   :type :string
-  :default "CENTER2"
+  :default "\"CENTER2\""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1752,16 +2687,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Center mark/centerline linetype: Controls the linetype used by center marks and centerlines."
+  :divergence "default AutoCAD \"CENTER2\", BricsCAD CENTER2"
+  :summary "Specifies the linetype used by center marks and centerlines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centerltype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D1BE48F5-2689-4C14-B7F8-917A3AA71246" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centerltype-system-variable")
 )
 
 (
   :name "CENTERLTYPEFILE"
   :type :string
-  :default "Default in imperial unit drawings: default.lin . Default in metric unit drawings: iso.lin ."
+  :default "\"acad.lin\""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1769,10 +2704,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Linetype file for center mark or centerline: Controls the linetype file used to create center marks and centerlines."
+  :divergence "default AutoCAD \"acad.lin\", BricsCAD Default in imperial unit drawings: default.lin . Default in metric unit drawings: iso.lin ."
+  :summary "Specifies the loaded linetype library file used to create center marks and centerlines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centerltypefile-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2E0C4EC9-141B-4091-A7A2-05B9A01D1E98" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centerltypefile-system-variable")
 )
 
 (
@@ -1787,15 +2722,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Automatic extension for center mark or centerline: Automatically extends centerlines for new center marks and centerlines."
+  :summary "Determines whether centerlines extend automatically from new center marks."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centermarkexe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B5FD3049-94D2-4527-97A4-46F9BABE7EB2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/centermarkexe-system-variable")
+)
+
+(
+  :name "CENTERMT"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls how grips stretch multiline text that is centered horizontally."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9046FDEF-20E6-4A78-935F-399C97BBAF50" :bricscad NIL)
 )
 
 (
   :name "CETRANSPARENCY"
-  :type :string
-  :default "ByLayer"
+  :type :integer
+  :default -1
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1803,16 +2755,33 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Transparency: Sets the transparency for new entities."
+  :divergence "type AutoCAD Integer, BricsCAD String; default AutoCAD -1, BricsCAD ByLayer"
+  :summary "Sets the transparency level for new objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cetransparency-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-058580C9-43DE-4770-93C4-3DE1AB2F5287" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cetransparency-system-variable")
+)
+
+(
+  :name "CGEOCS"
+  :type :string
+  :default ""
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores the name of the GIS coordinate system assigned to the drawing file."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2CB959D6-CDE3-47B6-B06B-BCA32EF8F371" :bricscad NIL)
 )
 
 (
   :name "CHAMFERA"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1820,16 +2789,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Chamfer first distance: Controls the first chamfer distance when the CHAMMODE system variable is Distance-Distance."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the first chamfer distance when CHAMMODE is set to 0."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/chamfera-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E2E34687-6BFF-481A-9732-885651AA44CF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/chamfera-system-variable")
 )
 
 (
   :name "CHAMFERB"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1837,16 +2806,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Chamfer second distance: Controls the second chamfer distance when the CHAMMODE system variable is Distance-Distance."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the second chamfer distance when CHAMMODE is set to 0."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/chamferb-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-53D438C7-3179-4971-BC39-E0F878FD18CF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/chamferb-system-variable")
 )
 
 (
   :name "CHAMFERC"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1854,16 +2823,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Chamfer length: Controls the chamfer length when the CHAMMODE system variable is Length-Angle."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the chamfer length when CHAMMODE is set to 1."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/chamferc-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FFFD13C0-3C7F-4865-B783-46E3BC652AC9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/chamferc-system-variable")
 )
 
 (
   :name "CHAMFERD"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1871,33 +2840,33 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Chamfer angle: Controls the chamfer angle when the CHAMMODE system variable is Length-Angle."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the chamfer angle when CHAMMODE is set to 1."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/chamferd-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-19EB0506-005C-491A-B2E6-AF12890A3786" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/chamferd-system-variable")
 )
 
 (
   :name "CHAMMODE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :session
+  :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Chamfer mode: Controls the default chamfer creation method."
+  :divergence "type AutoCAD Integer, BricsCAD Short; saved-in AutoCAD Not-saved, BricsCAD Registry"
+  :summary "Sets the input method for CHAMFER."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/chammode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0FFBF218-FED2-485D-A332-19F406228123" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/chammode-system-variable")
 )
 
 (
   :name "CHECKDWLPRESENCE"
   :type :integer
-  :default (:unknown)
+  :default (:host-specific)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1914,7 +2883,7 @@
 (
   :name "CIRCLERAD"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1922,16 +2891,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Circle radius: Controls the default circle radius. A value of zero means no default."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the default circle radius."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/circlerad-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4C17F0AB-E726-4242-8060-0577C8F657BF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/circlerad-system-variable")
 )
 
 (
   :name "CIRCULARARROWHEADLENGTH"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1948,7 +2917,7 @@
 (
   :name "CIRCULARARROWHEADWIDTH"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1965,7 +2934,7 @@
 (
   :name "CIRCULARARROWLEADERRADIUS"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1982,7 +2951,7 @@
 (
   :name "CIRCULARARROWLEADERROTATION"
   :type :real
-  :default 90.0d0
+  :default 90.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -1999,7 +2968,7 @@
 (
   :name "CIRCULARARROWTHICKNESS"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -2025,9 +2994,26 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Current layer: Sets the layer for new entities."
+  :summary "Sets the current layer."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/clayer-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C4C02A34-3F38-41D1-945A-AEC4BB24926B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/clayer-system-variable")
+)
+
+(
+  :name "CLAYOUT"
+  :type :string
+  :default (:host-specific)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the current layout."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0C492884-3B3F-4C35-8BAE-8233342A9203" :bricscad NIL)
 )
 
 (
@@ -2059,9 +3045,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Clean screen state: Indicates if clean screen state is active. Use the CLEANSCREENON and CLEANSCREENOFF commands. Activating the clean screen state makes the drawing area larger by hiding elements of the user interface."
+  :summary "Indicates whether the clean screen state is on or off."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cleanscreenstate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ADC0D08A-3E48-404A-B0B1-75E479182FF3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cleanscreenstate-system-variable")
 )
 
 (
@@ -2070,7 +3056,7 @@
   :default 4
   :read-only NIL
   :range NIL
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -2100,8 +3086,8 @@
 
 (
   :name "CLIPROMPTLINES"
-  :type :short
-  :default 4
+  :type :integer
+  :default 3
   :read-only NIL
   :range (0 64)
   :bitcoded NIL
@@ -2109,10 +3095,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Prompt Lines: Controls the maximum number of floating lines of text momentarily displayed above the Command line. Applies only if the Command line is hidden, or floating with the CMDLINEUSEMINIFRAME system variable set to on (1). Values between 0 and 64 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 3, BricsCAD 4"
+  :summary "Sets how many temporary prompt lines for a single command are displayed above the command window."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/clipromptlines-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8B14D930-2B19-497D-B61E-EFD95296221C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/clipromptlines-system-variable")
+)
+
+(
+  :name "CLIPROMPTUPDATE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the command line displays the messages and prompts generated while an AutoLISP or script file is being executed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CBC7C354-C006-42FA-997D-A6603CA27FAD" :bricscad NIL)
 )
 
 (
@@ -2127,9 +3130,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Command line state: Command line status."
+  :summary "Indicates whether the command line is open or closed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/clistate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F08EAB93-CDB8-4843-B501-1B85B4390074" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/clistate-system-variable")
 )
 
 (
@@ -2305,7 +3308,7 @@
 (
   :name "CMATERIAL"
   :type :string
-  :default "ByLayer"
+  :default "BYLAYER"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -2314,15 +3317,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Current material: Controls the default render material for new entities."
+  :summary "Sets the material of new objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmaterial-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-28B84E0C-4C55-442B-A09C-7B71682481F3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmaterial-system-variable")
 )
 
 (
   :name "CMDACTIVE"
-  :type :short
-  :default 1
+  :type :integer
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded T
@@ -2330,10 +3333,10 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Active command: Indicates the type of the current command."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdactive-system-variable")
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Indicates whether an ordinary command, transparent command, script, or dialog box is active."
+  :coupled ("command" "vl-cmdf")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-18B2E090-6C94-4C24-A70A-F2D6BDD5569C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdactive-system-variable")
 )
 
 (
@@ -2345,12 +3348,12 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad nil :bricscad "V20+")
-  :vendor :bricscad
+  :versions (:autocad "all" :bricscad "V20+")
+  :vendor :both
   :divergence NIL
-  :summary "Command dialogs: Controls if dialog boxes are shown for commands. BricsCAD only"
+  :summary "Controls the display of the In-Place Text Editor for the DIMEDIT and QLEADER commands, and the display of certain dialog boxes in AutoCAD-based products."
   :coupled ()
-  :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmddia-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CFB4A601-A0BF-49F0-856B-EEE1543A7E03" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmddia-system-variable")
 )
 
 (
@@ -2365,9 +3368,26 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Command echo: Displays prompts and input during a LISP 'command' function."
-  :coupled ("command" "vl-cmdf")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdecho-system-variable")
+  :summary "Controls whether prompts and input are echoed during the AutoLISP command function."
+  :coupled ("command" "vl-cmdf" "xdsize")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E7599129-5A3B-4121-A0C3-A625CA96E55B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdecho-system-variable")
+)
+
+(
+  :name "CMDINPUTHISTORYMAX"
+  :type :integer
+  :default 20
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum number of previous input values that are stored for a prompt in a command."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F3888541-C058-4C29-91C8-AB43261823BD" :bricscad NIL)
 )
 
 (
@@ -2662,7 +3682,7 @@
 (
   :name "CMDNAMES"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -2671,9 +3691,43 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Active Command Name: The names of any active or transparent commands."
+  :summary "Displays the names of the active and transparent commands."
+  :coupled ("command" "vl-cmdf")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-422CB04D-A597-472F-B13B-72498DB8ECA3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdnames-system-variable")
+)
+
+(
+  :name "CMFADECOLOR"
+  :type :integer
+  :default 60
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the amount of black blended on all attached coordination models."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmdnames-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D03CE30E-E28B-4C90-9F9C-4F8FA50401AE" :bricscad NIL)
+)
+
+(
+  :name "CMFADEOPACITY"
+  :type :integer
+  :default 40
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the amount of dimming through transparency for all attached coordination models."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-33A5D12A-4E35-425E-9725-3387A8515111" :bricscad NIL)
 )
 
 (
@@ -2688,9 +3742,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Multileader style: Controls the multileader style for entities created with the MLEADER command."
+  :summary "Sets the name of the current multileader style."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmleaderstyle-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E9D5F495-4442-4F34-A23E-5811DF53E9EE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmleaderstyle-system-variable")
 )
 
 (
@@ -2707,13 +3761,13 @@
   :divergence NIL
   :summary "Multiline justification: Controls the justification of multilines relative to the cursor, for the MLINE command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmljust-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmljust-system-variable")
 )
 
 (
   :name "CMLSCALE"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -2724,7 +3778,7 @@
   :divergence NIL
   :summary "Multiline scale: Controls the overall distance between lines created with the MLINE command. A negative value mirrors the offset lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmlscale-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmlscale-system-variable")
 )
 
 (
@@ -2741,7 +3795,24 @@
   :divergence NIL
   :summary "Multiline style: Controls the multiline style for entities created with the MLINE command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmlstyle-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmlstyle-system-variable")
+)
+
+(
+  :name "CMOSNAP"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Determines whether object snapping is active for geometry in coordination models that are attached to the drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-02732412-4940-46C0-9840-30D17FD384BF" :bricscad NIL)
 )
 
 (
@@ -2860,13 +3931,13 @@
   :divergence NIL
   :summary "Log control - DWGCOMPARE: Toggles the creation of a log report (cmplog) for the DWGCOMPARE command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmplog-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cmplog-system-variable")
 )
 
 (
   :name "COLORBOOKPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -2899,7 +3970,7 @@
 
 (
   :name "COLORTHEME"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -2908,10 +3979,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "UI color theme: Applies a dark or light color theme to the user interface."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the color theme of the ribbon, palettes, and several other interface elements to dark or light."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/colortheme-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-64D9B2CD-E6C6-423B-8AA9-A876CF9502C0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/colortheme-system-variable")
 )
 
 (
@@ -3002,7 +4073,7 @@
 (
   :name "COMMANDASSIST"
   :type :integer
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -3014,6 +4085,57 @@
   :summary "AI Predict Command line: Controls the use of personalized, AI command suggestions. Only possible if Application Data collection is enabled in the DATACOLLECTIONOPTIONS system variable. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/commandassist-system-variable")
+)
+
+(
+  :name "COMMANDMACROSSTATE"
+  :type :integer
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Command Macros palette is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E66D6378-4751-4DAC-8DEE-3E0B658810B5" :bricscad NIL)
+)
+
+(
+  :name "COMMANDPREVIEW"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether a preview of the possible outcome of certain commands is displayed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2B245436-029A-4E14-92C2-0ED4F4F1362E" :bricscad NIL)
+)
+
+(
+  :name "COMMENTHIGHLIGHT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of markup assist boundaries for comments attached to PDF markups."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1409E1EB-D265-4FD4-94FA-452E9B75CBF2" :bricscad NIL)
 )
 
 (
@@ -3036,7 +4158,7 @@
 (
   :name "COMMUNICATORPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -3051,6 +4173,261 @@
 )
 
 (
+  :name "COMPARECOLOR1"
+  :type :integer
+  :default 82
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color of the objects that only exist in the first drawing in the comparison drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EE825A2E-F54B-4653-9AE0-DDA7AD4A04CA" :bricscad NIL)
+)
+
+(
+  :name "COMPARECOLOR2"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color of the objects that only exist in the second drawing in the comparison result drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C8F5443E-1D02-41A7-8948-0A3EA23CEFB4" :bricscad NIL)
+)
+
+(
+  :name "COMPARECOLORCOMMON"
+  :type :integer
+  :default 253
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color of the objects that are identical in the two drawings being compared."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-57BFAA05-BA15-4E17-976B-A40A96A31FBB" :bricscad NIL)
+)
+
+(
+  :name "COMPAREFRONT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the default display order of overlapping objects in the comparison drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A0F50F24-2D9F-4B18-897F-492A0C6F16F2" :bricscad NIL)
+)
+
+(
+  :name "COMPAREHATCH"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether hatch objects are included in the drawing comparison."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BBB5E4A0-B607-4898-9A6B-A65C51551EE5" :bricscad NIL)
+)
+
+(
+  :name "COMPAREPROPS"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether a change in an object's property is identified as a change between two drawings revisions."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FC52193A-3801-42D1-B5C3-873B192B36B2" :bricscad NIL)
+)
+
+(
+  :name "COMPARERCMARGIN"
+  :type :integer
+  :default 5
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the offset distance between the boundary of a change set and the rectangle/polygonal revision cloud in the comparison drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7A230058-048B-4EE6-949D-105AF6AC8E73" :bricscad NIL)
+)
+
+(
+  :name "COMPARERCSHAPE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether nearby individual changes are merged as a single large rectangle or a series of smaller rectangles in the compare result drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D1560319-05D9-4556-876B-A59D9E1419B9" :bricscad NIL)
+)
+
+(
+  :name "COMPARESHOW1"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays the objects that exist only in the first drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6DCC6EB9-F301-4854-BAFD-B1E553C7BC63" :bricscad NIL)
+)
+
+(
+  :name "COMPARESHOW2"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays the objects that exist only in the second drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8E3C5248-A2AE-4C26-A8A3-FCC9E1A846EF" :bricscad NIL)
+)
+
+(
+  :name "COMPARESHOWCOMMON"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays the objects that are identical in both the drawings that are being compared."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-07FE3435-EC0F-4473-AF79-5D1E5A7B9DAE" :bricscad NIL)
+)
+
+(
+  :name "COMPARESHOWCONTEXT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the visibility of objects that are not used in the xref comparison."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C4B684AD-633B-4498-9402-172424D3A2A1" :bricscad NIL)
+)
+
+(
+  :name "COMPARESHOWRC"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of revision cloud around the differences (change set) in the comparison drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2F394248-AE3F-41AD-A45D-7CCDC4EFE3D0" :bricscad NIL)
+)
+
+(
+  :name "COMPARETEXT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether text objects are included in the drawing comparison."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1BE58261-FA5F-4914-BAC6-C1DF7E3D1E9C" :bricscad NIL)
+)
+
+(
+  :name "COMPARETOLERANCE"
+  :type :integer
+  :default 6
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the tolerance used when comparing two drawing files. Objects are considered identical if they are below or equal to a specified decimal point value."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3131F7C8-7199-4EC5-9892-88C2D2A86F78" :bricscad NIL)
+)
+
+(
   :name "COMPASS"
   :type :integer
   :default 0
@@ -3062,20 +4439,37 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Compass: Toggles the display of the 3D compass on/off in the current viewport."
+  :summary "Controls whether the 3D compass is on or off in the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/compass-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5D0E105E-ECA0-4BF2-B0AD-492BA214CB85" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/compass-system-variable")
+)
+
+(
+  :name "COMPLEXLTPREVIEW"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether a preview of the complex linetype is displayed during interactive operations."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-58DC9873-E9F7-43C6-A2A6-1F040B6280D2" :bricscad NIL)
 )
 
 (
   :name "COMPONENTSCONFIG"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -3087,7 +4481,7 @@
 (
   :name "COMPONENTSPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -3103,19 +4497,87 @@
 
 (
   :name "CONSTRAINTBARDISPLAY"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 3)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Constraint Display: Controls when constraints are shown."
+  :divergence "type AutoCAD Bitcode, BricsCAD Short"
+  :summary "Controls the display of constraints bars for subsequently applied geometric constraints, and the display of hidden constraints for selected objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/constraintbardisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B9994A28-0C01-4364-A336-A1D1AD1AD886" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/constraintbardisplay-system-variable")
+)
+
+(
+  :name "CONSTRAINTBARMODE"
+  :type :integer
+  :default 4095
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of geometric constraints on constraint bars."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6C6BEE02-35E8-4D0D-920E-E72B4E5BA2DD" :bricscad NIL)
+)
+
+(
+  :name "CONSTRAINTINFER"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the geometric constraints are inferred while creating and editing geometry."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-71EC58F4-BBAD-444E-AF4D-ABDF6B038141" :bricscad NIL)
+)
+
+(
+  :name "CONSTRAINTNAMEFORMAT"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the text format for dimensional constraints."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DF4DF224-9C8F-436B-9CDD-B45F126F69FA" :bricscad NIL)
+)
+
+(
+  :name "CONSTRAINTSOLVEMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls constraint behavior when applying or editing constraints."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-897F4D0C-3090-4DE4-8A47-76C803BCE682" :bricscad NIL)
 )
 
 (
@@ -3172,7 +4634,7 @@
 (
   :name "CONVERTTHMAX"
   :type :real
-  :default 2.0d0
+  :default 2.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -3205,7 +4667,7 @@
 
 (
   :name "COORDS"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 3)
@@ -3214,10 +4676,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Coordinates: Controls the format and update frequency of the coordinate field in the Status bar."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether the cursor position on the status bar is updated continuously or at specific times only. It also controls the format in which the coordinates are displayed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/coords-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-91D3C93C-9C89-4397-B855-92AFD5228422" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/coords-system-variable")
 )
 
 (
@@ -3239,7 +4701,7 @@
 
 (
   :name "COPYMODE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -3248,16 +4710,135 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Copy mode: Controls if the COPY command creates a single copy or multiple copies, by default."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether the COPY command repeats automatically."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/copymode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BB3CED8E-4FA7-492A-8229-77A9021F67D7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/copymode-system-variable")
+)
+
+(
+  :name "COUNTCHECK"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the types of errors to check in the count."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-115D0192-FD3A-4420-B52D-1E8351D115F5" :bricscad NIL)
+)
+
+(
+  :name "COUNTCOLOR"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the highlighting color on objects in a count."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4711DC76-B422-4618-A2FA-3AACE7A1F37D" :bricscad NIL)
+)
+
+(
+  :name "COUNTERRORCOLOR"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the highlighting color on objects that can cause potential errors in a count."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4A8A439A-6BDF-4DB1-A804-E265A65C81E1" :bricscad NIL)
+)
+
+(
+  :name "COUNTERRORNUM"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays the number errors in the current count."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7900B554-FB77-4A84-9D4D-1D3D0CC37C19" :bricscad NIL)
+)
+
+(
+  :name "COUNTNUMBER"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays the number of the current count."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-74B02A60-8EA0-4B49-ACA0-71EB1EF692D2" :bricscad NIL)
+)
+
+(
+  :name "COUNTPALETTESTATE"
+  :type :integer
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Reports whether the Count palette is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AE8057DA-6293-4948-88D1-16DF9B09FC2A" :bricscad NIL)
+)
+
+(
+  :name "COUNTSERVICE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the background indexing of the count."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-273E2620-8D3C-4C9C-91E9-4FE4E081FB55" :bricscad NIL)
 )
 
 (
   :name "CPLOTSTYLE"
   :type :string
-  :default (:unknown)
+  :default "ByColor"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -3266,15 +4847,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Current plot style: Controls the plot style for new entities. In color-dependent mode drawings this is \"BYCOLOR\" and is read-only. In named-plot-style mode drawings, the options: \"BYLAYER\" (default), \"BYBLOCK\", \"NORMAL\" and \"USER DEFINED\", this can be changed. See also the PSTYLEMODE system variable. Use the CONVERTPSTYLES command to convert the current drawing to use named or color-dependent plot styles. Note: To convert the current drawing to use named or color-dependent..."
+  :summary "Controls the current plot style for new objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cplotstyle-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7CBC3F05-F15B-4BF1-84A7-16CE634BF6B6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cplotstyle-system-variable")
 )
 
 (
   :name "CPROFILE"
   :type :string
-  :default "Default"
+  :default "<<Unnamed Profile>>"
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -3282,10 +4863,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Current profile: The name of the current user profile."
+  :divergence "default AutoCAD <<Unnamed Profile>>, BricsCAD Default"
+  :summary "Displays the name of the current profile."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cprofile-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-07A23914-0704-4C4F-B484-1BB6C965BAA3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cprofile-system-variable")
 )
 
 (
@@ -3359,7 +4940,7 @@
 (
   :name "CROSSHAIRDRAWMODE"
   :type :short
-  :default 3
+  :default (:host-specific)
   :read-only NIL
   :range (0 3)
   :bitcoded NIL
@@ -3375,8 +4956,8 @@
 
 (
   :name "CROSSINGAREACOLOR"
-  :type :short
-  :default 91
+  :type :integer
+  :default 100
   :read-only NIL
   :range (1 255)
   :bitcoded NIL
@@ -3384,10 +4965,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Crossing area color: Controls the color for the crossing selection areas (right-left). Note: In effect only when SELECTIONAREA setting is on."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 100, BricsCAD 91"
+  :summary "Controls the color of the selection area during crossing selection."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/crossingareacolor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-64DE9794-60FC-45E6-B117-F32BB4EADC94" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/crossingareacolor-system-variable")
 )
 
 (
@@ -3402,9 +4983,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Current tab: The name of the current tab, model or layout."
+  :summary "Determines whether the drawing area displays the Model tab or a specified layout tab."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/ctab-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-20529853-0C88-4417-8D8C-9783E9789BBC" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/ctab-system-variable")
 )
 
 (
@@ -3419,9 +5000,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Current table style: Sets the table style for new table entities."
+  :summary "Sets the name of the current table style."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/ctablestyle-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-674CB618-DEFC-42BB-8125-0508A331B94D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/ctablestyle-system-variable")
 )
 
 (
@@ -3444,18 +5025,18 @@
 (
   :name "CTRLMBUTTON"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
+  :scope :session
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
   :summary "Middle Button Click: The CTRLMBUTTON system variable turns On or Off the Temporary tracking points entity snap when the middle mouse button (mouse wheel) is used during a command. If CTRLMBUTTON is set to 1 for ON , pressing the middle mouse button during a command runs the TK transparent shortcut and prompts you in the Command line to specify the temporary tracking points. This is the default option. If CTRLMBUTTON is set to 0 for OFf , the system variable turns Off the T..."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/ctrlmbutton-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/ctrlmbutton-system-variable")
 )
 
 (
@@ -3476,25 +5057,76 @@
 )
 
 (
-  :name "CURSORMODE"
-  :type :string
-  :default (:unknown)
+  :name "CULLINGOBJ"
+  :type :integer
+  :default 1
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether 3D subobjects that are hidden from view can be highlighted or selected."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-590C8657-F0DE-4014-B921-FFCFF8C389DE" :bricscad NIL)
+)
+
+(
+  :name "CULLINGOBJSELECTION"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether 3D objects that are hidden from view can be highlighted or selected."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3B35DE27-EC50-4290-ACF8-ABC5FB25EBBC" :bricscad NIL)
+)
+
+(
+  :name "CURSORBADGE"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Determines whether certain cursor badges are displayed in the drawing area."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-61152026-7B55-42F1-80F6-4EF228EA0BA7" :bricscad NIL)
+)
+
+(
+  :name "CURSORMODE"
+  :type :string
+  :default (:session)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
   :summary "Crosshair displaying mode: Controls how the crosshair is displayed. Values 0 and 1 are accepted."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cursormode-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cursormode-system-variable")
 )
 
 (
   :name "CURSORSIZE"
-  :type :short
+  :type :integer
   :default 5
   :read-only NIL
   :range (1 100)
@@ -3503,10 +5135,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Crosshair size: Controls the crosshair size, as a percentage of the screen size."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Determines the size of the crosshairs as a percentage of the screen size."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cursorsize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-06BFA068-F97A-453F-8403-75AA778E7C35" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cursorsize-system-variable")
+)
+
+(
+  :name "CURSORTYPE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Determines the cursor displayed by your pointing device."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-17BAD632-92A4-4CCC-AF91-71ADB8C51FFD" :bricscad NIL)
 )
 
 (
@@ -3529,7 +5178,7 @@
 (
   :name "CVANGLESAMPLINGINTERVAL"
   :type :real
-  :default 5.0d0
+  :default 5.0
   :read-only NIL
   :range (0 90)
   :bitcoded NIL
@@ -3665,7 +5314,7 @@
 (
   :name "CVERSIONCONTROLPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -3702,7 +5351,7 @@
   :default 2
   :read-only NIL
   :range (0 8)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
@@ -3711,6 +5360,23 @@
   :summary "Precision: Controls the number of decimal places displayed for grade units BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cvgradeunitprec-system-variable")
+)
+
+(
+  :name "CVIEWDETAILSTYLE"
+  :type :string
+  :default (:drawing)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the name of the current detail view style. The current detail view style controls the appearance of all new model documentation detail views, detail boundaries and leader lines you create."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A4691398-49AD-4CBF-A37E-3893F748775F" :bricscad NIL)
 )
 
 (
@@ -3732,7 +5398,7 @@
 
 (
   :name "CVPORT"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (1 NIL)
@@ -3741,10 +5407,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Current viewport: Changes the identification number of the current viewport on three conditions: The identification number is an active viewport. Cursor movement in that viewport is not locked by a command in progress. Tablet mode is off."
-  :coupled ("vports" "setview")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cvport-system-variable")
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Displays the identification number of the current viewport."
+  :coupled ("setvar" "setview" "vports")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5FAAE9D9-31BB-4C8A-BA84-808610B59EB9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/c/cvport-system-variable")
 )
 
 (
@@ -3770,7 +5436,7 @@
   :default 1
   :read-only NIL
   :range (0 8)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
@@ -3787,7 +5453,7 @@
   :default 3
   :read-only NIL
   :range (0 5)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
@@ -3804,7 +5470,7 @@
   :default 2
   :read-only NIL
   :range (0 8)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
@@ -3835,7 +5501,7 @@
 (
   :name "DATACOLLECTIONENABLED"
   :type :integer
-  :default (:unknown)
+  :default (:session)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -3852,7 +5518,7 @@
 (
   :name "DATACOLLECTIONLOGINTYPE"
   :type :short
-  :default (:unknown)
+  :default (:registry)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -3885,7 +5551,7 @@
 
 (
   :name "DATALINKNOTIFY"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -3894,16 +5560,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Data link Notifications: Controls data link notifications."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the notification for updated or missing data links."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/datalinknotify-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DF138807-A321-4609-91A6-72DDDD10EF43" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/datalinknotify-system-variable")
 )
 
 (
   :name "DATE"
   :type :real
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -3912,9 +5578,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Current date: Shows the current date and time in Julian Day format."
+  :summary "Stores the current date and time in Modified Julian Date format."
   :coupled ("menucmd")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/date-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CBB24068-1654-4753-BE2E-1D0CE9700411" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/date-system-variable")
 )
 
 (
@@ -3931,13 +5597,13 @@
   :divergence NIL
   :summary "DbConnect state: Shows if the dbConnect Manager is active or not."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dbcstate-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dbcstate-system-variable")
 )
 
 (
   :name "DBLCLKEDIT"
   :type :integer
-  :default (:unknown)
+  :default 1
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -3946,15 +5612,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Double click editing: Enables Block Editor (BEdit mode) and Reference Editor (RefEdit mode) on double click of Blocks and XRefs."
+  :summary "Controls the double click editing behavior in the drawing area."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dblclkedit-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0A1763AF-D682-4776-99BA-E64BC2B0D286" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dblclkedit-system-variable")
 )
 
 (
   :name "DBMOD"
-  :type :short
-  :default (:unknown)
+  :type :integer
+  :default 0
   :read-only T
   :range NIL
   :bitcoded T
@@ -3962,16 +5628,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Modification status: The status of drawing modifications."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dbmod-system-variable")
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Indicates the drawing modification status."
+  :coupled ("acad-pop-dbmod" "acad-push-dbmod")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E255E808-2D48-4BDE-A760-FFEA28E5A86F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dbmod-system-variable")
 )
 
 (
   :name "DCTCUST"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -3980,15 +5646,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Custom spelling dictionary: The file path and file name of the current, custom spelling dictionary. During a spelling check, the SPELL command matches the words in the drawing or the current selection set to the words in the current main dictionary and the current custom dictionary. Custom dictionaries are used for discipline-specific words, such as medical or mechanical."
+  :summary "Displays the path and file name of the current custom spelling dictionary."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dctcust-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-68D78C7A-4C80-4932-A014-B1D6A4FB4FF6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dctcust-system-variable")
 )
 
 (
   :name "DCTMAIN"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -3997,15 +5663,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Main spelling dictionary: The file name of the current, main spelling dictionary. Stored in the support folder. Note: Keywords can be used to set this variable."
+  :summary "Displays the three letter keyword for the current main spelling dictionary."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dctmain-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E16B1AF6-1907-43AA-B295-40071E3469E2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dctmain-system-variable")
 )
 
 (
   :name "DEFAULTBSYSLIBIMPERIAL"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4022,7 +5688,7 @@
 (
   :name "DEFAULTBSYSLIBMETRIC"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4037,9 +5703,26 @@
 )
 
 (
-  :name "DEFAULTLIGHTING"
+  :name "DEFAULTGIZMO"
   :type :integer
   :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the 3D Move, 3D Rotate, or 3D Scale gizmo as the default during subobject selection."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C80894A1-5A23-4CAF-83B1-435C3A5D290F" :bricscad NIL)
+)
+
+(
+  :name "DEFAULTLIGHTING"
+  :type :integer
+  :default 1
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4047,10 +5730,27 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Default lighting: Controls if default lighting overrides other lights in the drawing. Default lighting is a distant light that follows the view direction, can be set per viewport."
+  :divergence "default AutoCAD 1, BricsCAD 0"
+  :summary "Turns on and off default lighting in place of other lighting."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/defaultlighting-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C1503769-205F-4D58-99A9-5FE7FE3BD8BC" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/defaultlighting-system-variable")
+)
+
+(
+  :name "DEFAULTLIGHTINGTYPE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the type of default lighting, old or new."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A3815F4D-2097-4BC5-B026-AB4AF6526088" :bricscad NIL)
 )
 
 (
@@ -4073,7 +5773,7 @@
 (
   :name "DEFAULTNEWSHEETTEMPLATE"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4090,7 +5790,7 @@
 (
   :name "DEFAULTPLOTSTYLETABLE"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4107,7 +5807,7 @@
 (
   :name "DEFAULTSPACEHEIGHT"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4124,11 +5824,11 @@
 (
   :name "DEFAULTSTORYNAMINGSCHEME"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
+  :scope :session
   :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
@@ -4260,7 +5960,7 @@
 (
   :name "DEFLPLSTYLE"
   :type :string
-  :default (:unknown)
+  :default "Normal"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4269,15 +5969,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Default layer plot style: Controls the default plot style for layer 0. \"BYCOLOR\" in color-dependent mode drawings, read-only. \"NORMAL\" in named-plot-style mode drawings, can be changed. See also the PSTYLEMODE system variable. Note: To convert the current drawing to use named or color-dependent plot styles, use CONVERTPSTYLES"
+  :summary "Specifies the default plot style for all layers in a drawing when opening a drawing that was created in a release prior to AutoCAD 2000, or for Layer 0 when creating a new drawing from scratch without using a drawing template."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/deflplstyle-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ED42103C-2A6F-4098-A489-D3EB303F17C5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/deflplstyle-system-variable")
 )
 
 (
   :name "DEFPLSTYLE"
   :type :string
-  :default (:unknown)
+  :default "ByLayer"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4286,9 +5986,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Default entity plot style: Controls the default plot style for new entities. \"BYCOLOR\" in color-dependent mode drawings, read-only. \"NORMAL\" in named-plot-style mode drawings, can be changed. See also the PSTYLEMODE system variable. Use the CONVERTPSTYLES command to convert the current drawing to use named or color-dependent plot styles."
+  :summary "Specifies the default plot style for new objects in a drawing when opening a drawing that was created in a release prior to AutoCAD 2000, or when creating a new drawing from scratch without using a drawing template."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/defplstyle-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CAEBD2CD-DA0D-4C91-AB53-BCBFF7FA3D22" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/defplstyle-system-variable")
 )
 
 (
@@ -4299,7 +5999,7 @@
   :range NIL
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -4310,8 +6010,8 @@
 
 (
   :name "DELOBJ"
-  :type :short
-  :default 1
+  :type :integer
+  :default 3
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4319,15 +6019,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Delete source entity: Controls if source entities, used to create 3D entities (with commands such as EXTRUDE, REVOLVE and LOFT) are retained or deleted."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 3, BricsCAD 1"
+  :summary "Controls whether geometry used to create other objects is retained or deleted."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/delobj-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CB64587F-611E-441E-AB07-14B415BF535F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/delobj-system-variable")
 )
 
 (
   :name "DEMANDLOAD"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 3)
@@ -4336,16 +6036,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Demand load: Controls how the program handles custom entities created by third-party applications."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies if and when to demand-load certain applications."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/demandload-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D83F2DEA-CB76-4B3C-99A4-88D4904DB3E5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/demandload-system-variable")
 )
 
 (
   :name "DETAILSPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4378,8 +6078,8 @@
 
 (
   :name "DGNFRAME"
-  :type :short
-  :default 2
+  :type :integer
+  :default 0
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
@@ -4387,10 +6087,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "DGN frame: Controls the visibility of DGN frames, if the FRAME system variable is set to 'Use individual system variables' (3)."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 0, BricsCAD 2"
+  :summary "Determines whether DGN underlay frames are visible or plotted in the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dgnframe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A311139A-E89C-4F44-B6E9-C41A25E54CB5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dgnframe-system-variable")
 )
 
 (
@@ -4683,6 +6383,40 @@
 )
 
 (
+  :name "DGNIMPORTMAX"
+  :type :integer
+  :default 10000000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum number of elements that are translated when importing a DGN file."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-41C26D69-E74B-4920-9814-C734E96D7838" :bricscad NIL)
+)
+
+(
+  :name "DGNIMPORTMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the default behavior of the DGNIMPORT command."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6BC7D42E-8073-409F-8544-FA709593EC3C" :bricscad NIL)
+)
+
+(
   :name "DGNIMPRECOMPUTEDIMENSIONSAFTERIMPORT"
   :type :integer
   :default 0
@@ -4702,7 +6436,7 @@
 (
   :name "DGNIMPSYMBOLRESOURCEFILES"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4734,6 +6468,23 @@
 )
 
 (
+  :name "DGNMAPPINGPATH"
+  :type :string
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the location of the dgnsetups.ini file where DGN mapping setups are stored."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-256656FF-5248-4DEB-806F-BDCAB78A188F" :bricscad NIL)
+)
+
+(
   :name "DGNOSNAP"
   :type :integer
   :default 1
@@ -4745,15 +6496,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "DGN entity snap: Enables entity snap for DGN underlay files."
+  :summary "Determines whether object snapping is active for geometry in DGN underlays that are attached to the drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dgnosnap-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9C2BF2F7-D0BF-4188-828D-9683B1AB38A3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dgnosnap-system-variable")
 )
 
 (
   :name "DIASTAT"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -4762,14 +6513,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Dialog state: Shows how the most recent dialog box was exited."
+  :summary "Stores the exit method of the most recently used dialog box."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/diastat-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1E85A76A-9E15-425B-B912-BDCE22C3D164" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/diastat-system-variable")
 )
 
 (
   :name "DIMADEC"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (-1 8)
@@ -4778,10 +6529,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim Angle Precision: Controls the number of decimal places for angular dimensions. A value of -1 uses the DIMDEC system variable."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the number of precision places displayed in angular dimensions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimadec-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E5C2F9AA-5017-4111-A485-E0456225D691" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimadec-system-variable")
 )
 
 (
@@ -4796,15 +6547,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Alt units: Enables alternate units in dimensions."
+  :summary "Controls the display of alternate units in dimensions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimalt-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D3B737AB-53B7-431E-A794-746DD2EB6209" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimalt-system-variable")
 )
 
 (
   :name "DIMALTD"
-  :type :short
-  :default 2
+  :type :integer
+  :default (:drawing)
   :read-only NIL
   :range (0 8)
   :bitcoded NIL
@@ -4812,16 +6563,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Alt precision: Controls the number of decimal places for alternate dimension units."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 2 (imperial) or 3 (metric), BricsCAD 2 - If MEASUREMENT=0 and INSUNITS=inches 3 - If MEASUREMENT=1 and INSUNITS=milimeters"
+  :summary "Controls the number of decimal places in alternate units."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaltd-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DE3D35C1-C4AB-4A11-9F3A-6E5CF6EE9160" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaltd-system-variable")
 )
 
 (
   :name "DIMALTF"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4829,16 +6580,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Alt multiplier: Controls the conversion of alternate units. See also the DIMALT system variable. Multiples the primary unit to give alternate units. If one drawing unit equals 1 inch and the value is set to 25.4, alternate linear dimensions are expressed in mm."
+  :divergence "default AutoCAD 25.4000 (imperial) or 0.0394 (metric), BricsCAD 25.4 - If MEASUREMENT=0 and INSUNITS=inches 0.0394 - If MEASUREMENT=1 and INSUNITS=milimeters"
+  :summary "Controls the multiplier for alternate units."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaltf-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4BB25870-8BFF-478D-8C04-88457311AAF2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaltf-system-variable")
 )
 
 (
   :name "DIMALTRND"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4846,16 +6597,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Alt roundoff: Controls the roundoff for alternate units."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Rounds off the alternate dimension units."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaltrnd-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B67093DA-6B0D-4E32-8A33-6298A770CAAF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaltrnd-system-variable")
 )
 
 (
   :name "DIMALTTD"
-  :type :short
-  :default 3
+  :type :integer
+  :default (:drawing)
   :read-only NIL
   :range (0 8)
   :bitcoded NIL
@@ -4863,10 +6614,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Alt tolerance precision: Controls the tolerance precision in the alternate dimension units."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 2 (imperial) or 3 (metric), BricsCAD 3 - If MEASUREMENT=1 and INSUNITS= inches 2 - If MEASUREMENT=0 and INSUNITS=millimeters"
+  :summary "Sets the number of decimal places for the tolerance values in the alternate units of a dimension."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimalttd-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4C0568B5-2655-4906-8BAC-3CA273007825" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimalttd-system-variable")
 )
 
 (
@@ -4881,31 +6632,31 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Alt tolerance suppress zeros: Controls the suppression of zeros in tolerance values."
+  :summary "Controls suppression of zeros in tolerance values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimalttz-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-846F1DD5-C6B0-4088-BD5D-51D5E62345E2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimalttz-system-variable")
 )
 
 (
   :name "DIMALTU"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (1 8)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Alt unit type: Controls the alternate unit type for linear dimensions."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the units format for alternate units of all dimension substyles except Angular."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaltu-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3A2EA9D7-30C7-4C89-A09F-DD2AB74B9D13" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaltu-system-variable")
 )
 
 (
   :name "DIMALTZ"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 12)
@@ -4914,16 +6665,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Alt suppress zeros: Suppresses leading and/or trailing zeros for alternate unit dimension."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the suppression of zeros for alternate unit dimension values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaltz-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4EAEEC60-4A34-4C5E-BFA4-AEFA8EEB4FB6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaltz-system-variable")
 )
 
 (
   :name "DIMANNO"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -4932,15 +6683,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Style is annotative: Indicates if the current dimension style is annotative."
+  :summary "Indicates whether or not the current dimension style is annotative."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimanno-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CAFC7569-18A5-4D13-92AC-6434038F052F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimanno-system-variable")
 )
 
 (
   :name "DIMAPOST"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -4949,14 +6700,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Alt units prefix/suffix: Controls the prefix and/or suffix that appears in the alternate dimension text, does not apply to angular dimensions. See also the Drawing Explorer > Dimension Styles (DIMSTYLE command). Set to '' to turn off, or use the suffix string 'prefix[]suffix'. Insert a single linefeed with '\\X' (often when alternate units are active)."
+  :summary "Specifies a text prefix or suffix (or both) to the alternate dimension measurement for all types of dimensions except angular."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimapost-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AEA9448D-CC01-404B-AFA0-055B9C2F21EE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimapost-system-variable")
 )
 
 (
   :name "DIMARCSYM"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 2)
@@ -4965,10 +6716,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Arc symbol: Controls the display of arc symbols, in arc length dimensions."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls display of the arc symbol in an arc length dimension."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimarcsym-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1B843AB0-7976-4DD9-9464-6B0A71A34D81" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimarcsym-system-variable")
 )
 
 (
@@ -4985,12 +6736,12 @@
   :divergence NIL
   :summary "Associativity (obsolete): Replaced by DIMASSOC. Has no effect except to preserve the integrity of scripts."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaso-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaso-system-variable")
 )
 
 (
   :name "DIMASSOC"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -4999,16 +6750,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Associativity: Controls the associativity of dimension entities or if exploded dimensions are created."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the associativity of dimension objects and whether dimensions are exploded."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimassoc-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D77085A3-6E4C-4C18-AD70-21F54ED72492" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimassoc-system-variable")
 )
 
 (
   :name "DIMASZ"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5016,15 +6767,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Arrow size: Controls the size of dimension and leader line arrowheads."
+  :divergence "default AutoCAD 0.1800 (imperial) or 2.5000 (metric), BricsCAD 0.18 - If MEASUREMENT=0 and INSUNITS=inches 2.5 - If MEASUREMENT=1 and INSUNITS=millimeters"
+  :summary "Controls the size of dimension line and leader line arrowheads. Also controls the size of hook lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimasz-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-43E31690-BA17-4AD6-82D1-E7809BD1298A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimasz-system-variable")
 )
 
 (
   :name "DIMATFIT"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 3)
@@ -5033,15 +6784,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Arrow and text fit: Controls how dimension text and arrows are arranged when there is insufficient space between the extension lines. When the DIMTMOVE system variable is set to 1, a leader is added if the dimension text is placed outside."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Determines how dimension text and arrows are arranged when space is not sufficient to place both within the extension lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimatfit-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2F8FA7E7-C79F-40EA-A416-C4B02D09F310" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimatfit-system-variable")
 )
 
 (
   :name "DIMAUNIT"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 3)
@@ -5050,15 +6801,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim angle units: Controls the angular dimension unit type."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the units format for angular dimensions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaunit-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-30F44A49-4250-42D1-AEF2-5E2914ADB02B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimaunit-system-variable")
 )
 
 (
   :name "DIMAZIN"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 3)
@@ -5067,16 +6818,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Suppress angle zeros: Suppresses leading and/or trailing zeros for angular dimensions."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Suppresses zeros for angular dimensions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimazin-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-69E9BFD3-06A4-468D-88F0-7C9741407194" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimazin-system-variable")
 )
 
 (
   :name "DIMBLK"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5085,15 +6836,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Arrow: The name of the block displayed at the ends of dimension and leader lines, when the DIMSAH system variable is set to Set by DIMBLK . The block name can be either a standard name or refer to a user-defined arrowhead block."
+  :summary "Sets the arrowhead block displayed at the ends of dimension lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimblk-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6E09DCCA-313F-4FF4-BB1B-F41B512B9CC9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimblk-system-variable")
 )
 
 (
   :name "DIMBLK1"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5102,15 +6853,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Arrow 1: The name of the block displayed at the first end of a dimension line, when the DIMSAH system variable is set to Set by DIMBLK1 and DIMBLK2 ."
+  :summary "Sets the arrowhead for the first end of the dimension line when DIMSAH is on."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimblk1-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9DCC9697-9B2C-4EF7-9728-FE047DE760B3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimblk1-system-variable")
 )
 
 (
   :name "DIMBLK2"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5119,15 +6870,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Arrow 2: The name of the block displayed at the second end of a dimension line, when the DIMSAH system variable is set to Set by DIMBLK1 and DIMBLK2 ."
+  :summary "Sets the arrowhead for the second end of the dimension line when DIMSAH is on."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimblk2-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E81E370B-55A6-49C5-A280-5F54EAF8308B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimblk2-system-variable")
 )
 
 (
   :name "DIMCEN"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5135,15 +6886,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Center mark: Controls if and how center marks and centerlines of circles and arcs are drawn with the DIMCENTER, DIMDIAMETER and DIMRADIUS commands. A value of zero means no center mark. Negative numbers mean a line. Positive numbers mean a mark."
+  :divergence "default AutoCAD 0.0900 (imperial) or 2.5000 (metric), BricsCAD 0.09 - If MEASUREMENT=0 and INSUNITS=inches 2.5 - If MEASUREMENT=1 and INSUNITS=milimeters"
+  :summary "Controls drawing of circle or arc center marks and centerlines by the DIMCENTER, DIMDIAMETER, and DIMRADIUS commands."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimcen-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-19D6EC14-F800-48FC-B459-28E5E7F81DBB" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimcen-system-variable")
 )
 
 (
   :name "DIMCLRD"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 256)
@@ -5152,15 +6903,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim line color: The color of dimension lines, arrowheads and dimension leader lines."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Assigns colors to dimension lines, arrowheads, and dimension leader lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimclrd-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D229D47D-CFF5-461B-BB6F-96A6077D8A81" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimclrd-system-variable")
 )
 
 (
   :name "DIMCLRE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 256)
@@ -5169,15 +6920,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Ext line color: Controls the color for dimension extension lines."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Assigns colors to extension lines, center marks, and centerlines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimclre-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9A0E97A2-79E8-49BD-8BE6-88BD802452B0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimclre-system-variable")
 )
 
 (
   :name "DIMCLRT"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 256)
@@ -5186,15 +6937,32 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text color: Controls the default dimension text color."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Assigns colors to dimension text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimclrt-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-58388D9A-F3E9-442D-8739-816BDE1DD07E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimclrt-system-variable")
+)
+
+(
+  :name "DIMCONSTRAINTICON"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of the lock icon for dimensional constraints."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7CB0F797-4469-48B9-910E-62CEE723411B" :bricscad NIL)
 )
 
 (
   :name "DIMCONTINUEMODE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range NIL
@@ -5203,16 +6971,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim continue mode: Controls if dimension styles and layers are inherited from the starting dimension, for continued or baseline dimension."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Determines whether the dimension style and layer of a continued or baseline dimension is inherited from the dimension that is being continued."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimcontinuemode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2424CA1C-B005-449B-A61A-C4F2D38C4E66" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimcontinuemode-system-variable")
 )
 
 (
   :name "DIMDEC"
-  :type :short
-  :default 4
+  :type :integer
+  :default (:drawing)
   :read-only NIL
   :range (0 8)
   :bitcoded NIL
@@ -5220,16 +6988,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim precision: Controls the number of decimal places for primary dimension units. Values between 0 and 8 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 4 (imperial) or 2 (metric), BricsCAD 4"
+  :summary "Sets the number of decimal places displayed for the primary units of a dimension."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimdec-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8F311450-A848-4682-81A5-D0EC6E3499C9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimdec-system-variable")
 )
 
 (
   :name "DIMDLE"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5237,16 +7005,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim line ext: Controls the length of dimension lines beyond the extension lines, when obliques or architectural ticks are drawn instead of arrowheads."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the distance the dimension line extends beyond the extension line when oblique strokes are drawn instead of arrowheads."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimdle-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C66183C7-D872-41F2-8815-D7479F2A87F6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimdle-system-variable")
 )
 
 (
   :name "DIMDLI"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5254,16 +7022,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim baseline spacing: Controls the spacing between baselines dimension lines."
+  :divergence "default AutoCAD 0.3800 (imperial) or 3.7500 (metric), BricsCAD 0.38 - If MEASUREMENT=0 and INSUNITS=inches 3.75 - If MEASUREMENT=1 and INSUNITS=millimeters"
+  :summary "Controls the spacing of the dimension lines in baseline dimensions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimdli-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D2D1AF3D-004B-4C47-BABE-22B7327EE128" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimdli-system-variable")
 )
 
 (
   :name "DIMDSEP"
   :type :string
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5272,15 +7040,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Decimal separator: Sets the decimal separator character. You can set a single character to use as the decimal separator for dimensions in decimal format."
+  :summary "Specifies a single-character decimal separator to use when creating dimensions whose unit format is decimal."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimdsep-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0CDD6AA6-CDD8-4C9D-A270-A3DA00DCE63E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimdsep-system-variable")
 )
 
 (
   :name "DIMEXE"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5288,16 +7056,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Ext line ext: Controls the extension of dimension extension lines beyond the dimension line."
+  :divergence "default AutoCAD 0.1800 (imperial) or 1.2500 (metric), BricsCAD 0.18 - If MEASUREMENT=0 and INSUNITS=inches 1.25 - If MEASUREMENT=1 and INSUNITS=millimeters"
+  :summary "Specifies how far to extend the extension line beyond the dimension line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimexe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-508D4589-3C3E-4B5E-BA2C-539809197A71" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimexe-system-variable")
 )
 
 (
   :name "DIMEXO"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5305,10 +7073,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Ext line offset: Controls the offset of dimension extension lines from their origin points."
+  :divergence "default AutoCAD 0.0625 (imperial) or 0.6250 (metric), BricsCAD 0.0625 - If MEASUREMENT=0 and INSUNITS=inches 0.625 - If MEASUREMENT=1 and INSUNITS=millimeters"
+  :summary "Specifies how far extension lines are offset from origin points."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimexo-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5CF50ABD-1F77-4609-BEB5-A129BF7DD746" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimexo-system-variable")
 )
 
 (
@@ -5325,12 +7093,12 @@
   :divergence NIL
   :summary "Dim fit (obsolete): Replaced by DIMATFIT and DIMTMOVE."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimfit-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimfit-system-variable")
 )
 
 (
   :name "DIMFRAC"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 2)
@@ -5339,16 +7107,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Fractional type: Controls the fraction format for Architectural or Fractional linear dimensions. See also the DIMLUNIT system variable."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the fraction format when DIMLUNIT is set to 4 (Architectural) or 5 (Fractional)."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimfrac-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6A35A398-ED55-4EC3-88F2-23F6FBADF1BE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimfrac-system-variable")
 )
 
 (
   :name "DIMFXL"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5356,10 +7124,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Ext line fixed length: Controls the length of extension lines, if the DIMFXLON system variable is on (1)."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Sets the total length of the extension lines starting from the dimension line toward the dimension origin."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimfxl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CC0F54D4-688B-4A14-9926-9840BCB30FCA" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimfxl-system-variable")
 )
 
 (
@@ -5374,15 +7142,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Ext line fixed: Fixes the length of extension lines on dimensions."
+  :summary "Controls whether extension lines are set to a fixed length."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimfxlon-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D0E2EA4A-4CA2-4286-9439-55A19726C166" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimfxlon-system-variable")
 )
 
 (
   :name "DIMGAP"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5390,10 +7158,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text offset: Controls the offset distance around dimension text, and the distance between annotations and hook lines created with the LEADER command. See the DIMTAD system variable. Negative numbers mean draws a box around the dimension or annotation text."
+  :divergence "default AutoCAD 0.0900 (imperial) or 0.6250 (metric), BricsCAD 0.09 - If MEASUREMENT=0 and INSUNITS=inches 0.625 - If MEASUREMENT=1 and INSUNITS=millimeters"
+  :summary "Sets the distance around the dimension text when the dimension line breaks to accommodate dimension text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimgap-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EB367187-A5D6-404A-8121-A6D1D25B626A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimgap-system-variable")
 )
 
 (
@@ -5407,15 +7175,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Jogged angle: Controls the angle of oblique dimension line segments, in jogged radius dimensions. Note: Jogged radius dimensions are often created when the center point is located off the page."
+  :divergence "default AutoCAD 45, BricsCAD 45.0"
+  :summary "Determines the angle of the transverse segment of the dimension line in a jogged radius dimension."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimjogang-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9C23D722-0792-4585-A40A-B8E3A191999A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimjogang-system-variable")
 )
 
 (
   :name "DIMJUST"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 4)
@@ -5424,16 +7192,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text Position Horizontal: Controls the horizontal position of dimension text."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the horizontal positioning of dimension text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimjust-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C67348A9-2260-4135-A7FF-FE0B45211CB0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimjust-system-variable")
 )
 
 (
   :name "DIMLAYER"
   :type :string
-  :default "."
+  :default "use current"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5441,16 +7209,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Default layer for new dimensions: The default layer for new dimensions."
+  :divergence "default AutoCAD use current, BricsCAD ."
+  :summary "Specifies a default layer for new dimensions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlayer-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-88E56602-EADC-4C68-93B4-93E7623BEB6B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlayer-system-variable")
 )
 
 (
   :name "DIMLDRBLK"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5459,15 +7227,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Leader arrow: Controls the arrowhead block for leaders."
+  :summary "Specifies the arrow type for leaders."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimldrblk-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B4374832-C2B4-4555-900C-693625AC58DE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimldrblk-system-variable")
 )
 
 (
   :name "DIMLFAC"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5475,10 +7243,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim Scale Linear: Controls the scale multiplier for linear dimensions, including radius, diameter and ordinate dimensions. Linear dimensions are multiplied by DIMLFAC. Positive values mean that it is used for model space and paper space. Negative values mean paper space only."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Sets a scale factor for linear dimension measurements."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlfac-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B6063785-B199-4A9A-8BD7-2108EB0AB7ED" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlfac-system-variable")
 )
 
 (
@@ -5493,15 +7261,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Tolerance method: Generates dimension limits as the default text for dimensions. If On, switches DIMTOL Off."
+  :summary "Generates dimension limits as the default text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlim-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-271D1152-D76D-4FD1-B91B-50F8671012A4" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlim-system-variable")
 )
 
 (
   :name "DIMLTEX1"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5510,15 +7278,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Ext line 1 linetype: Controls the linetype for the first extension line of a dimension."
+  :summary "Sets the linetype of the first extension line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimltex1-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-535BAECA-312A-4841-A064-4FDB3469AAD0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimltex1-system-variable")
 )
 
 (
   :name "DIMLTEX2"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5527,15 +7295,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Ext line 2 linetype: Controls the linetype for the second extension line of a dimension."
+  :summary "Sets the linetype of the second extension line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimltex2-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E2101E66-6741-40BF-B62D-E8201F51BA7F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimltex2-system-variable")
 )
 
 (
   :name "DIMLTYPE"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5544,32 +7312,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Dim line linetype: Controls the linetype for dimension lines."
+  :summary "Sets the linetype of the dimension line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimltype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-08054AEC-6DB4-4E69-B992-C6D8FC0021EC" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimltype-system-variable")
 )
 
 (
   :name "DIMLUNIT"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (1 6)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim units: Controls the primary unit type for linear dimensions."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets units for all dimension types except Angular."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlunit-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2ECDF7CF-6EEA-4174-B50C-8630D5002C20" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlunit-system-variable")
 )
 
 (
   :name "DIMLWD"
-  :type :short
-  :default (:unknown)
+  :type :integer
+  :default -2
   :read-only NIL
   :range (-3 211)
   :bitcoded NIL
@@ -5577,16 +7345,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim line LW: Controls the lineweight of dimension lines."
+  :divergence "type AutoCAD Enum, BricsCAD Short; default AutoCAD -2, BricsCAD Bylayer"
+  :summary "Assigns lineweight to dimension lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlwd-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8EE72FFB-3EE7-4F10-83EC-45565F1CBCCE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlwd-system-variable")
 )
 
 (
   :name "DIMLWE"
-  :type :short
-  :default (:unknown)
+  :type :integer
+  :default -2
   :read-only NIL
   :range (-3 211)
   :bitcoded NIL
@@ -5594,10 +7362,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Ext line LW: Controls the lineweight of dimension extension lines."
+  :divergence "type AutoCAD Enum, BricsCAD Short; default AutoCAD -2, BricsCAD Bylayer"
+  :summary "Assigns lineweight to extension lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlwe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-21DF5F82-4F3A-4F93-8FD6-89A942799468" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimlwe-system-variable")
 )
 
 (
@@ -5618,9 +7386,26 @@
 )
 
 (
+  :name "DIMPICKBOX"
+  :type :integer
+  :default 5
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the object selection target height, in pixels, within the DIM command."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E5C8EBE2-6B96-46C8-9D24-23A713A1E6B0" :bricscad NIL)
+)
+
+(
   :name "DIMPOST"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5629,15 +7414,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Dim prefix/suffix: Controls the prefix and/or suffix added to dimension text. See also the Drawing Explorer > Dimension Styles (DIMSTYLE command). Set to '' to turn off, or use the suffix string 'prefix[]suffix'. Insert a single linefeed with '\\X' when alternate units are active."
+  :summary "Specifies a text prefix or suffix (or both) to the dimension measurement."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimpost-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-79CCF9B1-BE33-4158-891C-50E4BF795D8E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimpost-system-variable")
 )
 
 (
   :name "DIMRND"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5645,10 +7430,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim round: Controls the roundoff rules for linear dimensions. Note: It does not effect angular dimensions. A value of 0.1 rounds to the nearest 0.1 unit, a value of 1 rounds to the nearest whole number. The number of decimal places is limited by the DIMDEC system variable."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Rounds all dimensioning distances to the specified value."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimrnd-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-215CF615-1AA7-45E5-9D0F-CF9693ABCCB9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimrnd-system-variable")
 )
 
 (
@@ -5663,15 +7448,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Arrowheads: Controls how dimension line arrowhead blocks are set."
+  :summary "Controls the display of dimension line arrowhead blocks."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimsah-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1B912FA4-3D88-42BC-93B4-D329DB5DBF1F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimsah-system-variable")
 )
 
 (
   :name "DIMSCALE"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range (0 NIL)
   :bitcoded NIL
@@ -5679,10 +7464,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim scale overall: Applies a scale multiplier to dimension variables that specify the size of the components of dimension entities, such as text height, distance or offsets. Note: It does not affect measured lengths, coordinates, or angles."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Sets the overall scale factor applied to dimensioning variables that specify sizes, distances, or offsets."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AEA309F0-B831-4432-8085-FB6CD49CDC78" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimscale-system-variable")
 )
 
 (
@@ -5697,9 +7482,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Dim line 1: Suppresses the first part of dimension lines - from the first extension line to the text origin."
+  :summary "Controls suppression of the first dimension line and arrowhead."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimsd1-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B476440D-0BCB-4691-81BA-1B0DC945BE99" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimsd1-system-variable")
 )
 
 (
@@ -5714,9 +7499,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Dim line 2: Suppresses the second part of dimension lines - from the text origin to the second extension line."
+  :summary "Controls suppression of the second dimension line and arrowhead."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimsd2-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B55002A4-AF9F-41D0-A8B4-EDB8BB078662" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimsd2-system-variable")
 )
 
 (
@@ -5731,9 +7516,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Ext line 1: Suppresses the first extension line of a dimension."
+  :summary "Suppresses display of the first extension line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimse1-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-491A0E6F-0387-4169-BCB9-40F2432C0B99" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimse1-system-variable")
 )
 
 (
@@ -5748,9 +7533,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Ext line 2: Suppresses the second extension line of a dimension."
+  :summary "Suppresses display of the second extension line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimse2-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A2711B05-7F7E-472C-B53E-03B1F168FFEB" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimse2-system-variable")
 )
 
 (
@@ -5767,7 +7552,7 @@
   :divergence NIL
   :summary "Dimension show (Obsolete): Has no effect except to preserve the integrity of scripts. Controls the redefinition of dimension entities while dragging."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimsho-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimsho-system-variable")
 )
 
 (
@@ -5782,15 +7567,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Dim line inside: Suppresses arrowheads outside extension lines if there is insufficient room inside the extension lines and if the DIMTIX system variable is on (1)."
+  :summary "Suppresses arrowheads if not enough space is available inside the extension lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimsoxd-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-79F0441D-60E2-49AE-80F1-093A5BB588E2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimsoxd-system-variable")
 )
 
 (
   :name "DIMSTYLE"
   :type :string
-  :default "Standard"
+  :default (:drawing)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -5798,16 +7583,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dimension style: The current dimension style."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimstyle-system-variable")
+  :divergence "default AutoCAD Standard (imperial) or ISO-25 (metric), BricsCAD Standard"
+  :summary "Displays the unit type (imperial/standard or ISO-25/metric) used by dimensions in the drawing."
+  :coupled ("tblnext")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-98D575CA-C7FE-4442-83F3-C2BFD7D9A112" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimstyle-system-variable")
 )
 
 (
   :name "DIMTAD"
-  :type :short
-  :default 0
+  :type :integer
+  :default (:drawing)
   :read-only NIL
   :range (0 4)
   :bitcoded T
@@ -5815,16 +7600,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text Position Vert: Controls the vertical position of text in relation to dimension lines. The position above dimension line is set by the DIMGAP system variable. The Above dimension line option does not apply if the DIMTIH system variable is set to Horizontal and the dimension line is not horizontal."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 0 (imperial) or 1 (metric), BricsCAD 0"
+  :summary "Controls the vertical position of text in relation to the dimension line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtad-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-60D1241D-CEA7-4493-BD6A-4EF433F3C946" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtad-system-variable")
 )
 
 (
   :name "DIMTDEC"
-  :type :short
-  :default 4
+  :type :integer
+  :default (:drawing)
   :read-only NIL
   :range (0 8)
   :bitcoded NIL
@@ -5832,16 +7617,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Tolerance precision: Controls the number of decimal places for tolerance values in the primary dimension units."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 4 (imperial) or 2 (metric), BricsCAD 4"
+  :summary "Sets the number of decimal places to display in tolerance values for the primary units in a dimension."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtdec-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-49EAC810-F707-464B-852D-F0B8D5BC3588" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtdec-system-variable")
 )
 
 (
   :name "DIMTFAC"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5849,15 +7634,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Tolerance text height: Controls the scale multiplier used to calculate the text height for dimension fractions and tolerances, relative to the dimension text height, set with the DIMTXT system variable. Only applies if the DIMLUNIT system variable is set to Fractional (5)."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Specifies a scale factor for the text height of fractions and tolerance values relative to the dimension text height, as set by DIMTXT."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtfac-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0D3CBEEB-CF89-4979-BE42-A123357188DE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtfac-system-variable")
 )
 
 (
   :name "DIMTFILL"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 2)
@@ -5866,15 +7651,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text fill: Controls the dimension text background."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the background of dimension text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtfill-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4E38E29F-DE85-4791-A2E7-4DC22842B1B4" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtfill-system-variable")
 )
 
 (
   :name "DIMTFILLCLR"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 256)
@@ -5883,16 +7668,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text fill color: Controls dimension text background color, when the DIMTFILL system variable is set to 2."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the color for the text background in dimensions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtfillclr-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FF6E5A28-35F0-4998-BC72-9EFD4EACCE18" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtfillclr-system-variable")
 )
 
 (
   :name "DIMTIH"
   :type :integer
-  :default 1
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5900,10 +7685,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text inside align: Controls the dimension text position on dimensions. Note: It does not apply to ordinate dimensions."
+  :divergence "default AutoCAD 1 (imperial) or 0 (metric), BricsCAD 1"
+  :summary "Controls the position of dimension text inside the extension lines for all dimension types except Ordinate."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtih-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-60CFA531-80FD-45EF-B529-F4FAF5C758B3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtih-system-variable")
 )
 
 (
@@ -5918,15 +7703,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Text inside: Draws dimension text between extension lines, even if there is insufficient room. Note: It does not apply to radius and diameter dimensions."
+  :summary "Draws text between extension lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtix-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A553FB59-8741-4500-A7ED-15B02A1F3470" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtix-system-variable")
 )
 
 (
   :name "DIMTM"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5934,15 +7719,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Tolerance limit lower: Controls the minimum (lower) tolerance limit for dimension text when the DIMTOL or DIMLIM system variable is on."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the minimum (or lower) tolerance limit for dimension text when DIMTOL or DIMLIM is on."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtm-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E2AAD7FB-C563-42A8-B7B4-3A3EC8AA8C68" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtm-system-variable")
 )
 
 (
   :name "DIMTMOVE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 2)
@@ -5951,16 +7736,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text movement: Controls how dimension text moves."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets dimension text movement rules."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtmove-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-10475059-6A2E-40B2-AF30-E92F104E9C03" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtmove-system-variable")
 )
 
 (
   :name "DIMTOFL"
   :type :integer
-  :default 0
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5968,16 +7753,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim line forced: Forces a dimension line to be drawn between dimension extension lines, even when text is placed outside."
+  :divergence "default AutoCAD 0 (imperial) or 1 (metric), BricsCAD Off"
+  :summary "Controls whether a dimension line is drawn between the extension lines even when the text is placed outside."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtofl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-40D7439D-C805-4373-879A-E19ACE97FE54" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtofl-system-variable")
 )
 
 (
   :name "DIMTOH"
   :type :integer
-  :default 1
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -5985,10 +7770,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text outside align: Places dimension text outside extension lines horizontally."
+  :divergence "default AutoCAD 1 (imperial) or 0 (metric), BricsCAD 1"
+  :summary "Controls the position of dimension text outside the extension lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtoh-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-71B03AC9-ADC1-4859-A9CD-85247BACABBE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtoh-system-variable")
 )
 
 (
@@ -5997,21 +7782,21 @@
   :default 0
   :read-only NIL
   :range NIL
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Tolerance display: Adds tolerances to dimension text."
+  :summary "Appends tolerances to dimension text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtol-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1FA5DC50-8D40-49A5-9A79-08A4E01D6178" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtol-system-variable")
 )
 
 (
   :name "DIMTOLJ"
-  :type :short
-  :default 1
+  :type :integer
+  :default (:drawing)
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
@@ -6019,16 +7804,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Tolerance pos vert: Controls the vertical position for tolerance values relative to the primary dimension text."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1 (imperial) or 0 (metric), BricsCAD 1"
+  :summary "Sets the vertical justification for tolerance values relative to the nominal dimension text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtolj-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CF5FAF97-2718-4253-8B4C-9D6D7EB75C59" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtolj-system-variable")
 )
 
 (
   :name "DIMTP"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -6036,16 +7821,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Tolerance limit upper: Controls the maximum (upper) tolerance limit for dimension text when the DIMTOL or DIMLIM system variable is on."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the maximum (or upper) tolerance limit for dimension text when DIMTOL or DIMLIM is on."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtp-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-635300D6-9738-44C4-A0B6-176F194533B3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtp-system-variable")
 )
 
 (
   :name "DIMTSZ"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -6053,16 +7838,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dim tick size: Controls the size of tick marks drawn instead of arrowheads for linear, radius and diameter dimensions. If the value is zero, arrowheads are drawn."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Specifies the size of oblique strokes drawn instead of arrowheads for linear, radius, and diameter dimensioning."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtsz-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D225D167-A66B-4617-BC59-C1385069D152" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtsz-system-variable")
 )
 
 (
   :name "DIMTVP"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -6070,10 +7855,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text offset vertical: Controls the vertical position of dimension above or below the dimension line. Acts as a multiplier of the DIMTXT system variable, when the DIMTAD system variable is set to Centered between extension lines . A value of 1.0 is equivalent to setting the DIMTAD system variable to on (1)."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Controls the vertical position of dimension text above or below the dimension line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtvp-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-248E5BFA-F355-4369-A889-291D77070B26" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtvp-system-variable")
 )
 
 (
@@ -6088,15 +7873,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Text style: Controls the default dimension text style."
+  :summary "Specifies the text style of the dimension."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtxsty-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2B91DF02-DF27-447D-A395-054814B1F305" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtxsty-system-variable")
 )
 
 (
   :name "DIMTXT"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -6104,10 +7889,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text height: Controls the default dimension text height, if the text style set in the DIMTXSTY system variable has no fixed height."
+  :divergence "default AutoCAD 0.1800 (imperial) or 2.5000 (metric), BricsCAD 0.18 - If MEASUREMENT=0 and INSUNITS=inches 2.5 - If MEASUREMENT=1 and INSUNITS=millimeters"
+  :summary "Specifies the height of dimension text, unless the current text style has a fixed height."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtxt-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A17A69D7-25EF-4F57-B4EB-D53A56AB909C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtxt-system-variable")
 )
 
 (
@@ -6122,15 +7907,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Text direction: Controls the dimension text direction."
+  :summary "Specifies the reading direction of the dimension text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtxtdirection-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-06B9BE91-A2E9-45CB-9B3D-7D5BDD238F5B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtxtdirection-system-variable")
+)
+
+(
+  :name "DIMTXTRULER"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of the ruler when editing a dimension text."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-985FDB67-F6AD-448F-9B48-08FD3D093C8B" :bricscad NIL)
 )
 
 (
   :name "DIMTZIN"
-  :type :short
-  :default 0
+  :type :integer
+  :default (:drawing)
   :read-only NIL
   :range (0 15)
   :bitcoded T
@@ -6138,10 +7940,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Tolerance suppress zeros: Controls the suppression of zeros in tolerance values."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 0 (imperial) or 8 (metric), BricsCAD 0"
+  :summary "Controls the suppression of zeros in tolerance values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtzin-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-944FA6CB-1394-4523-9620-6B1350F0C40E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimtzin-system-variable")
 )
 
 (
@@ -6150,7 +7952,7 @@
   :default 2
   :read-only NIL
   :range (1 8)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
@@ -6158,7 +7960,7 @@
   :divergence NIL
   :summary "Dim unit type (obsolete): Replaced by DIMLUNIT and DIMFRAC system variables."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimunit-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimunit-system-variable")
 )
 
 (
@@ -6173,15 +7975,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Place text manually: Toggles the placement of dimension text during dimension creation."
+  :summary "Controls options for user-positioned text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimupt-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4B271261-0596-48DE-BA45-0AB0C7379FA4" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimupt-system-variable")
 )
 
 (
   :name "DIMZIN"
-  :type :short
-  :default 0
+  :type :integer
+  :default (:drawing)
   :read-only NIL
   :range (0 15)
   :bitcoded T
@@ -6189,10 +7991,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Suppress dim zeros: Suppresses leading and/or trailing zeros for primary units."
-  :coupled ("rtos")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimzin-system-variable")
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 0 (imperial) or 8 (metric), BricsCAD 0"
+  :summary "Controls the suppression of zeros in the primary unit value."
+  :coupled ("angtos" "rtos")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A1860981-FE1C-4947-927B-7CD6B8CEF8EE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dimzin-system-variable")
 )
 
 (
@@ -6226,7 +8028,7 @@
   :divergence NIL
   :summary "Display axes: Controls the display of MEP element axes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/displayaxesformep-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/displayaxesformep-system-variable")
 )
 
 (
@@ -6362,13 +8164,30 @@
   :divergence NIL
   :summary "Display silhouette curves: Displays silhouette curves on solid entities in Wireframe modes (2D and 3D). Note: To view changes on existing entities, perform a REGEN."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dispsilh-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dispsilh-system-variable")
+)
+
+(
+  :name "DISPSILHBLOCKS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of 3D solid silhouettes in blocks in the 2D Wireframe visual style."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9E293ED4-1C00-4EF1-BD1D-338D2FEEC01B" :bricscad NIL)
 )
 
 (
   :name "DISTANCE"
   :type :real
-  :default (:unknown)
+  :default 0.0000
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -6377,9 +8196,366 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Distance: The last calculated distance of the DIST command."
+  :summary "Stores the distance computed by the DIST command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/distance-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F55E2C37-515A-4560-B3BC-C2EE09A7F60D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/distance-system-variable")
+)
+
+(
+  :name "DIVMESHBOXHEIGHT"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions for the height of a mesh box along the Z axis."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-849A6E04-CA82-43E7-B54C-2D2ECFE6EA6B" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHBOXLENGTH"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions for the length of a mesh box along the X axis."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9984F329-8A90-44F0-A7E9-94C888E892E0" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHBOXWIDTH"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions for the width of a mesh box along the Y axis."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-238AECE7-5A2D-48A1-9B06-998FDA45DA0F" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHCONEAXIS"
+  :type :integer
+  :default 8
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions around the perimeter of the mesh cone base."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FAEDC53C-13ED-4524-990F-844AAAF2E981" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHCONEBASE"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions between the perimeter and the center point of the mesh cone base."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-55066131-D355-443E-AFDD-8804588F89A3" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHCONEHEIGHT"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions between the base and the point or top of the mesh cone."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-189C8C70-D652-46F5-B366-BAEE69FD5C27" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHCYLAXIS"
+  :type :integer
+  :default 8
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions around the perimeter of the mesh cylinder base."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2752144D-579F-4B33-B6A1-CDCE49E9A626" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHCYLBASE"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of radial subdivisions from the center of the mesh cylinder base to its perimeter."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D3643D94-F3CA-4A57-B08C-C4037089A518" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHCYLHEIGHT"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions between the base and the top of the mesh cylinder."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4CDA31C3-8D16-44A1-8DAE-4C0523D441A2" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHPYRBASE"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of radial subdivisions between the center of the mesh pyramid base and its perimeter."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6933B00B-1646-4A40-BFBB-EFEA4F47AB24" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHPYRHEIGHT"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions between the base and the top of the mesh pyramid."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-94594A60-4CD0-4C72-9607-10EFEBF1A58B" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHPYRLENGTH"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions along each dimension of a mesh pyramid base."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6E36079B-3895-4F58-85F3-26E469FAB9AA" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHSPHEREAXIS"
+  :type :integer
+  :default 12
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of radial subdivisions around the axis endpoint of the mesh sphere."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-10B0A4DB-B7DE-4396-A00C-25BAE411C0EF" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHSPHEREHEIGHT"
+  :type :integer
+  :default 6
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions between the two axis endpoints of the mesh sphere."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2AAE7B03-092A-4B63-90E5-E1ACFB38DCD6" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHTORUSPATH"
+  :type :integer
+  :default 8
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions in the path that is swept by the profile of a mesh torus."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6EAE939E-9300-41B8-AE69-9F37FB09FBE0" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHTORUSSECTION"
+  :type :integer
+  :default 8
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions in the profile that sweeps the path of a mesh torus."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FEC2887D-0C6B-47AB-8915-B1138D0B9863" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHWEDGEBASE"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions between the midpoint of the perimeter of triangular dimension of the mesh wedge."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9D3DFF3B-0301-484D-9473-299911CAFB37" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHWEDGEHEIGHT"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions for the height of the mesh wedge along the Z axis."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D3C66A72-C32E-400D-8F2D-37D61A91CE4D" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHWEDGELENGTH"
+  :type :integer
+  :default 4
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions for the length of a mesh wedge along the X axis."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-053FEEB7-D24F-49A0-B2DD-2E0DC3BE514B" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHWEDGESLOPE"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions in the slope that extends from the apex of the wedge to the edge of the base."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-27AAE7EA-D887-4FFA-A46C-F2682D1C1753" :bricscad NIL)
+)
+
+(
+  :name "DIVMESHWEDGEWIDTH"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of subdivisions for the width of the mesh wedge along the Y axis."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7ACF07B3-EC83-4BDD-B159-E18C224B069E" :bricscad NIL)
 )
 
 (
@@ -6390,7 +8566,7 @@
   :range (0 3)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -6441,7 +8617,7 @@
   :range (0 1)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -6473,7 +8649,7 @@
   :default 1
   :read-only NIL
   :range (1 14)
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -6504,7 +8680,7 @@
 (
   :name "DONUTID"
   :type :real
-  :default 0.5
+  :default 0.5000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -6512,16 +8688,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Donut inside diameter: The default inside diameter for the DONUT command."
+  :divergence "default AutoCAD 0.5000, BricsCAD 0.5"
+  :summary "Sets the default for the inside diameter of a donut."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/donutid-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E464A318-DDF6-4017-BE03-1366361C9623" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/donutid-system-variable")
 )
 
 (
   :name "DONUTOD"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -6529,15 +8705,15 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Donut outside diameter: The default outside diameter for the DONUT command."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Sets the default for the outside diameter of a donut."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/donutod-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B3C626A7-3401-43B5-8ACF-2BF3445A6C75" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/donutod-system-variable")
 )
 
 (
   :name "DRAGMODE"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -6546,10 +8722,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Entity drag mode: Controls if a preview displays during the MOVE and COPY commands."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the way dragged objects are displayed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dragmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0690A755-3B81-44E7-9AB2-5DFED263642F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dragmode-system-variable")
 )
 
 (
@@ -6577,7 +8753,7 @@
   :range NIL
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -6639,7 +8815,24 @@
 
 (
   :name "DRAGP1"
-  :type :short
+  :type :integer
+  :default 5000
+  :read-only NIL
+  :range (0 32767)
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad "V20+")
+  :vendor :both
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 5000, BricsCAD 10"
+  :summary "When hardware acceleration is used, controls how many vectors the system draws when you drag objects within a 2D viewport before it checks for a new input sample from the mouse."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E2A80E69-A30A-439C-B909-E5CAA3E220F2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dragp1-system-variable")
+)
+
+(
+  :name "DRAGP2"
+  :type :integer
   :default 10
   :read-only NIL
   :range (0 32767)
@@ -6648,27 +8841,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Regen-drag rate: Controls the regen-drag input sampling rate."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 10, BricsCAD 25"
+  :summary "When software acceleration is used, controls how many vectors the system draws when you drag objects within a 2D viewport before it checks for a new input sample from the mouse."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dragp1-system-variable")
-)
-
-(
-  :name "DRAGP2"
-  :type :short
-  :default 25
-  :read-only NIL
-  :range (0 32767)
-  :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
-  :versions (:autocad "all" :bricscad "V20+")
-  :vendor :both
-  :divergence NIL
-  :summary "Fast-drag rate: Controls the fast-drag input sampling rate."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dragp2-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5A74FD9B-CEFD-4D3A-B2D0-E868CF8CE1F7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dragp2-system-variable")
 )
 
 (
@@ -6689,9 +8865,26 @@
 )
 
 (
+  :name "DRAGVS"
+  :type :string
+  :default ""
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the visual style that is displayed while creating 3D solid and mesh primitives and extruded solids, surfaces, and meshes."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EEB66098-82FA-4E58-8251-0879FB983228" :bricscad NIL)
+)
+
+(
   :name "DRAWINGPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -6793,7 +8986,7 @@
 (
   :name "DRAWINGVIEWPRESETSCALE"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -6855,12 +9048,12 @@
   :divergence NIL
   :summary "Quality of drawing views: Controls the quality of views created with the VIEWBASE command. Turn off to significantly reduce the time needed to generate drawing views. Views with draft-quality geometry are created, it is not possible to put annotations on the edges of entities in these views. However, they look very similar to a precise (high-quality) drawing view and you can use them to quickly create layouts."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/drawingviewquality-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/drawingviewquality-system-variable")
 )
 
 (
   :name "DRAWORDERCTL"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 3)
@@ -6869,10 +9062,27 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Draworder control: Controls draw order functionality. Limits the draw order, use if some editing operations take slightly longer."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the default display behavior of overlapping objects when they are created or edited."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/draworderctl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-85D5C950-1323-4A62-BC35-2CDA7F1C6A50" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/draworderctl-system-variable")
+)
+
+(
+  :name "DRSTATE"
+  :type :integer
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Drawing Recovery Manager window is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CFD2DAD1-88A5-47F4-8A19-B379A53A78FB" :bricscad NIL)
 )
 
 (
@@ -6894,7 +9104,7 @@
 
 (
   :name "DWFFRAME"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -6903,10 +9113,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "DWF frame: Controls the visibility of DWF or DWFx underlay frames, if the FRAME system variable is set to Use individual system variables (3)."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Determines whether DWF or DWFx underlay frames are visible or plotted in the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwfframe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-67366D5F-0B39-4159-B762-D369EC765486" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwfframe-system-variable")
 )
 
 (
@@ -6921,9 +9131,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "DWF entity snap: Enables entity snap for DWF underlay files."
+  :summary "Determines whether object snapping is active for geometry in DWF or DWFx underlays that are attached to the drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwfosnap-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C3059786-E3F3-47B0-8B54-F93E15A84120" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwfosnap-system-variable")
 )
 
 (
@@ -6932,7 +9142,7 @@
   :default 2
   :read-only NIL
   :range (1 10)
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -6945,8 +9155,8 @@
 
 (
   :name "DWGCHECK"
-  :type :short
-  :default 0
+  :type :integer
+  :default 1
   :read-only NIL
   :range (0 3)
   :bitcoded NIL
@@ -6954,27 +9164,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Drawing check: Executes an automatic data integrity check when a drawing is opened."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, BricsCAD 0"
+  :summary "Checks drawings for potential problems when opening them."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwgcheck-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-91E890BF-AEBD-4BCE-9663-1AFD595AA5E4" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwgcheck-system-variable")
 )
 
 (
   :name "DWGCODEPAGE"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
-  :scope :drawing
-  :saved-in :drawing
+  :scope :session
+  :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Drawing codepage: Displays the drawing code page, same as the SYSCODEPAGE system variable."
+  :divergence "saved-in AutoCAD Not-saved, BricsCAD Drawing"
+  :summary "Stores the same value as SYSCODEPAGE (for compatibility reasons)."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwgcodepage-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2DD5A705-BD1E-4398-8C1C-17C8B139E66B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwgcodepage-system-variable")
 )
 
 (
@@ -6997,7 +9207,7 @@
 (
   :name "DWGNAME"
   :type :string
-  :default (:unknown)
+  :default "Drawing1.dwg"
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -7006,15 +9216,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Drawing name: The name of the current drawing."
+  :summary "Stores the name of the current drawing."
   :coupled ("findfile")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwgname-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A89861EF-5F4F-46C6-A1DB-9D985A3858C9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwgname-system-variable")
 )
 
 (
   :name "DWGPREFIX"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -7023,15 +9233,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Drawing prefix: The folder path of the current drawing."
+  :summary "Stores the drive and folder path for the current drawing."
   :coupled ("findfile")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwgprefix-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-479EAE14-5A70-4FDD-8ACD-D75E5548386B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwgprefix-system-variable")
 )
 
 (
   :name "DWGTITLED"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -7040,14 +9250,31 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Drawing titled: Shows if the current drawing has been named."
+  :summary "Indicates whether the current drawing has been named."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwgtitled-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1CA841EC-0313-4A34-8829-0CC0B5FB6FEE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dwgtitled-system-variable")
+)
+
+(
+  :name "DX12FRAMERATEUNLIMITED"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Enables variable sync monitor optimization."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9B7C2155-4F2C-4732-A8CB-FA295865151C" :bricscad NIL)
 )
 
 (
   :name "DXEVAL"
-  :type :short
+  :type :integer
   :default 12
   :read-only NIL
   :range (0 511)
@@ -7056,10 +9283,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Data extraction update mode: Controls the notification for data extraction tables."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls when data extraction tables are compared against the data source, and if the data is not current, displays an update notification."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dxeval-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E8649154-1088-4C93-B4C6-03D0ED7B05E1" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dxeval-system-variable")
 )
 
 (
@@ -7091,14 +9318,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Dynamic Constraint Mode: Displays hidden dimensional constraints when constrained entities are selected."
+  :summary "Displays hidden dimensional constraints when constrained objects are selected."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dynconstraintmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C05FEE39-20AC-4EC8-9BFE-D9DD67A1A3F2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dynconstraintmode-system-variable")
 )
 
 (
   :name "DYNDIGRIP"
-  :type :short
+  :type :integer
   :default 31
   :read-only NIL
   :range (0 31)
@@ -7107,10 +9334,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Show dynamic dimensions: Controls which dynamic dimensions are shown."
+  :divergence "type AutoCAD Bitcode, BricsCAD Short"
+  :summary "Controls which dynamic dimensions are displayed during grip stretch editing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dyndigrip-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1EB33CCE-EF2C-4334-A90D-F8D5DAC9B0FA" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dyndigrip-system-variable")
 )
 
 (
@@ -7200,7 +9427,7 @@
 
 (
   :name "DYNDIVIS"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 2)
@@ -7209,10 +9436,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dynamic dimension visibility: Controls which dynamic dimensions are displayed when grips are moved."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls how many dynamic dimensions are displayed during grip stretch editing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dyndivis-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C2BB4EEB-D3FC-40AC-B479-A6E001E90947" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dyndivis-system-variable")
+)
+
+(
+  :name "DYNINFOTIPS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether tips are displayed for using Shift and Ctrl when editing with grips."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2C36CFFB-EFED-4CD3-BE59-700B63DCC908" :bricscad NIL)
 )
 
 (
@@ -7234,7 +9478,7 @@
 
 (
   :name "DYNMODE"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (-31 31)
@@ -7243,15 +9487,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dynamic input mode: Toggles dynamic input features on/off."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Turns Dynamic Input features on and off."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dynmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1ED138FF-2679-45C4-9C2C-332A821C9D12" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dynmode-system-variable")
 )
 
 (
   :name "DYNPICOORDS"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -7260,10 +9504,78 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Default mode for dynamic coordinates input: The default mode for coordinate entry, during dynamic input."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether pointer input uses relative or absolute format for coordinates."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dynpicoords-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-87D649DF-8474-4F55-806E-604906030B36" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/d/dynpicoords-system-variable")
+)
+
+(
+  :name "DYNPIFORMAT"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether pointer input uses polar or Cartesian format for coordinates."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-03D36D36-D734-43C3-BA4D-EA68C573F73C" :bricscad NIL)
+)
+
+(
+  :name "DYNPIVIS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls when pointer input is displayed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A5EBB25D-E626-4B4D-AD5B-0DEE467D70A7" :bricscad NIL)
+)
+
+(
+  :name "DYNPROMPT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls display of prompts in Dynamic Input tooltips."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FA6A4CC1-DF9D-452C-93EA-48FFD0E08E1C" :bricscad NIL)
+)
+
+(
+  :name "DYNTOOLTIPS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls which tooltips are affected by tooltip appearance settings."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-52163CC6-858B-4656-82D1-372D09E3F7DC" :bricscad NIL)
 )
 
 (
@@ -7278,15 +9590,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Edge mode: Controls how cutting and boundary edges are checked with the TRIM and EXTEND commands, with or without extension."
+  :summary "Controls how the TRIM and EXTEND commands determine cutting and boundary edges."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/edgemode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ED7D2A22-0C65-49C3-A58E-D10A3BECBE57" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/edgemode-system-variable")
 )
 
 (
   :name "ELEVATION"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -7294,10 +9606,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Elevation: The elevation (Z-axis) for new entities, relative to the current UCS."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Stores the current elevation of new objects relative to the current UCS."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/elevation-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E0FE35FA-841A-40D0-8282-1639F9A47107" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/elevation-system-variable")
 )
 
 (
@@ -7369,8 +9681,59 @@
 )
 
 (
+  :name "ENABLESYNCPDF"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether AutoCAD embeds source drawing information for drawings saved to Autodesk Docs when they are plotted or published using one of the AutoCAD PDF plotter configurations."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-62EC1D00-E9EB-48F3-9E78-8F5F38949121" :bricscad NIL)
+)
+
+(
+  :name "ENTERPRISEMENU"
+  :type :string
+  :default "\".\""
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores the enterprise customization file name (if defined), including the path for the file name."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CB1CCB15-55E9-437E-995B-6727DEA772B5" :bricscad NIL)
+)
+
+(
+  :name "ERHIGHLIGHT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether reference names or reference objects are highlighted when their counterparts are selected in the External References palette or in the drawing window."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-773FCCAE-703F-45B0-9645-F4530D76A0C9" :bricscad NIL)
+)
+
+(
   :name "ERRNO"
-  :type :short
+  :type :integer
   :default 0
   :read-only T
   :range NIL
@@ -7379,10 +9742,27 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Displays the number of the appropriate error code when an AutoLISP function call causes an error that the product detects."
+  :coupled ("entget" "entmake" "entmod" "entsel" "findfile" "load" "nentsel" "open" "read-line" "ssget" "ssname" "tablet" "write-line" "xdsize")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-08E19480-F87B-46E9-9C37-64693F95F680" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/errno-system-variable")
+)
+
+(
+  :name "ERSTATE"
+  :type :integer
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
   :divergence NIL
-  :summary "Error number: Reports the error type of a LISP program."
-  :coupled ("open" "read-line" "write-line" "load" "findfile" "entget" "entmod" "entmake" "ssget" "ssname" "nentsel" "entsel")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/errno-system-variable")
+  :summary "Indicates whether the External References palette is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-57CCC897-AD15-4579-9751-C1299B2F6616" :bricscad NIL)
 )
 
 (
@@ -7421,19 +9801,19 @@
 
 (
   :name "EXPERT"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 5)
-  :bitcoded NIL
+  :bitcoded T
   :scope :session
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Expert: Controls the display of certain prompts. If prompts are suppressed, continues as though y(es) was entered. Can affect scripts, menu macros, LISP and command functions."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether certain prompts are issued."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/expert-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-28C09385-C00B-48F6-9765-7CB178CDD891" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/expert-system-variable")
 )
 
 (
@@ -7524,18 +9904,18 @@
 (
   :name "EXPLMODE"
   :type :integer
-  :default (:unknown)
+  :default 1
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :session
+  :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Explode mode: Enables the EXPLODE command on nonuniformly scaled (NUS) blocks."
+  :divergence "saved-in AutoCAD Not-saved, BricsCAD Registry"
+  :summary "Controls whether the EXPLODE command supports nonuniformly scaled (NUS) blocks."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/explmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-113BD30D-2F46-4E23-9B49-034AB50064A7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/explmode-system-variable")
 )
 
 (
@@ -7552,7 +9932,7 @@
   :divergence NIL
   :summary "3D PDF writer: Controls the writer used to save 3D PDF files."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/export3dpdfwriter-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/export3dpdfwriter-system-variable")
 )
 
 (
@@ -7569,7 +9949,7 @@
   :divergence NIL
   :summary "ASAT/ASAB writer: Controls the writer used to save ASAT/ASAB files. The internal ASAT/ASAB writer used if the Communicator for BricsCAD is not installed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportacisassemblywriter-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportacisassemblywriter-system-variable")
 )
 
 (
@@ -7578,7 +9958,7 @@
   :default 0
   :read-only NIL
   :range (0 19)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad nil :bricscad "V20+")
@@ -7595,7 +9975,7 @@
   :default 0
   :read-only NIL
   :range (0 6)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
@@ -7603,7 +9983,7 @@
   :divergence NIL
   :summary "CATIA V4 export format version: Controls CATIA V4 file version to export to."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportcatiav4formatversion-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportcatiav4formatversion-system-variable")
 )
 
 (
@@ -7612,7 +9992,7 @@
   :default 0
   :read-only NIL
   :range (0 21)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad nil :bricscad "V20+")
@@ -7621,6 +10001,23 @@
   :summary "CATIA V5 export format version: Controls CATIA V5 file version to export to. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportcatiav5formatversion-system-variable")
+)
+
+(
+  :name "EXPORTEPLOTFORMAT"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the default electronic file output displayed on the ribbon: PDF, DWF, or DWFx."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0E4D7F85-B1A8-4009-8A93-DEF613459E8A" :bricscad NIL)
 )
 
 (
@@ -7637,7 +10034,7 @@
   :divergence NIL
   :summary "Export Geometry Flags: Controls how geometry representations in IGES and STEP formats are exported."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportgeometryflags-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportgeometryflags-system-variable")
 )
 
 (
@@ -7654,12 +10051,12 @@
   :divergence NIL
   :summary "Hidden parts: Controls how hidden parts are exported. Entities can be invisible because of: The result of the HIDEOBJECTS command. Sitting on a hidden layer. Owned by an invisible component."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exporthiddenparts-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exporthiddenparts-system-variable")
 )
 
 (
   :name "EXPORTMODELSPACE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 2)
@@ -7668,15 +10065,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Export model space: Controls what part of model space to export to DWF, DWFx or PDF."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies what part of the drawing to export to a DWF, DWFx, or PDF file from Model space"
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportmodelspace-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-22F2A97C-50BE-4F08-A95A-FD872FB782DD" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportmodelspace-system-variable")
 )
 
 (
   :name "EXPORTPAGESETUP"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -7685,15 +10082,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Export page setup: Toggles the page setup for DWF, DWFx or PDF export."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies whether to export to a DWF, DWFx, or PDF file with the current page setup."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportpagesetup-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FED55746-EB0A-460F-979C-8CA7A1B5EE0A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportpagesetup-system-variable")
 )
 
 (
   :name "EXPORTPAPERSPACE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -7702,10 +10099,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Export paper space: Controls which layout(s) to export to DWF, DWFx or PDF, from paper space."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies what part of the drawing to export to a DWF, DWFx, or PDF file from paper space."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportpaperspace-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AEAB3971-DC03-4591-A06A-13E08CD1E1B9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportpaperspace-system-variable")
 )
 
 (
@@ -7714,7 +10111,7 @@
   :default 0
   :read-only NIL
   :range (0 27)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad nil :bricscad "V20+")
@@ -7739,7 +10136,7 @@
   :divergence NIL
   :summary "Product structure: Controls if a product structure is exported."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportproductstructure-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportproductstructure-system-variable")
 )
 
 (
@@ -7756,7 +10153,7 @@
   :divergence NIL
   :summary "STEP export format version: Controls the STEP file version to export to."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportstepformatversion-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportstepformatversion-system-variable")
 )
 
 (
@@ -7765,7 +10162,7 @@
   :default 0
   :read-only NIL
   :range (0 16)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
@@ -7773,13 +10170,47 @@
   :divergence NIL
   :summary "XCGM export format version: Controls the XCGM file version to export to."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportxcgmformatversion-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/exportxcgmformatversion-system-variable")
+)
+
+(
+  :name "EXPVALUE"
+  :type :real
+  :default 8.8000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the exposure value to apply during rendering."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-73E2447B-E96C-41F2-9544-87636DF4C1C8" :bricscad NIL)
+)
+
+(
+  :name "EXPWHITEBALANCE"
+  :type :real
+  :default 6500.0000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the Kelvin color temperature (white balance) value to apply during rendering."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A75505CC-0C15-4F3E-A085-26894BC81AF9" :bricscad NIL)
 )
 
 (
   :name "EXTMAX"
   :type :point3d
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -7788,15 +10219,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Extents maximum: The drawing extents' upper-right coordinate. It increases as new entities are created outside the existing extents."
+  :summary "Stores the upper-right point of the drawing extents."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/extmax-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B3926CFA-DE74-4661-A9A5-2738A1FD937B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/extmax-system-variable")
 )
 
 (
   :name "EXTMIN"
   :type :point3d
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -7805,9 +10236,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Extents minimum: The drawing extents' lower-left coordinates."
+  :summary "Stores the lower-left point of the drawing extents."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/extmin-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F37FCEB8-FD86-4E8A-9DB3-A5163B2C0AE0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/extmin-system-variable")
 )
 
 (
@@ -7822,20 +10253,20 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Extend names: Controls the maximum characters for the names of named entities (for example: linetypes and layers) saved in symbol tables."
+  :summary "Controls the characters accepted for the names of blocks, dimension styles, layers, and other named objects."
   :coupled ("snvalid")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/extnames-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8EC065EC-D551-4E02-9C5A-A33D1DB80B05" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/e/extnames-system-variable")
 )
 
 (
   :name "EXTRUDEINSIDE"
   :type :short
-  :default 0
+  :default (:preference)
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -7847,12 +10278,12 @@
 (
   :name "EXTRUDEOUTSIDE"
   :type :short
-  :default 0
+  :default (:preference)
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -7862,8 +10293,144 @@
 )
 
 (
+  :name "FACETERDEVNORMAL"
+  :type :real
+  :default 40.0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum angle between the surface normal and contiguous mesh faces."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9F2A2095-1932-474F-9293-66CEAE30D937" :bricscad NIL)
+)
+
+(
+  :name "FACETERDEVSURFACE"
+  :type :real
+  :default 0.0010
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets how closely the converted mesh object adheres to the original shape of the solid or surface."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B4C38DEE-5182-4526-8990-0F65BBFFFA60" :bricscad NIL)
+)
+
+(
+  :name "FACETERMAXEDGELENGTH"
+  :type :real
+  :default 0.0000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum length of edges for mesh objects that are created by conversion from solids and surfaces."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CC40F1DC-C470-4D48-A801-B13F71EBA37A" :bricscad NIL)
+)
+
+(
+  :name "FACETERMAXGRID"
+  :type :integer
+  :default 4096
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets an internal parameter that affects the maximum number of U and V grid lines when converting objects into mesh objects using the MESHSMOOTH command."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6716223B-E1C5-4B05-8F3B-ECF29D750BE5" :bricscad NIL)
+)
+
+(
+  :name "FACETERMESHTYPE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the type of mesh to be created."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4074743F-42EC-4FDB-819F-667DBF2D6058" :bricscad NIL)
+)
+
+(
+  :name "FACETERMINVGRID"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets an internal parameter that affects the minimum number of V grid lines when converting objects into mesh objects using the MESHSMOOTH command."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F4C4CF36-3960-4EDE-BF89-1684D6ED8F14" :bricscad NIL)
+)
+
+(
+  :name "FACETERPRIMITIVEMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies whether smoothness settings for objects that are converted to mesh are derived from the Mesh Tessellation Options or the Mesh Primitive Options dialog box."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EECD5E4D-17BD-4085-A592-D3484BDDBBC3" :bricscad NIL)
+)
+
+(
+  :name "FACETERSMOOTHLEV"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the default level of smoothness for objects that are converted to mesh."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E0A0EC48-AAC9-474D-8117-F90804C925AF" :bricscad NIL)
+)
+
+(
   :name "FACETRATIO"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -7872,16 +10439,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Faceting aspect ratio: Controls the aspect ratio of faceting for cylindrical and conic ACIS solids."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the aspect ratio of faceting for cylindrical and conic solids."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/facetratio-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-526C0511-E66E-43DD-86A9-4118F1154B97" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/facetratio-system-variable")
 )
 
 (
   :name "FACETRES"
   :type :real
-  :default 0.5
+  :default 0.5000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -7889,10 +10456,27 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Facet resolution: Controls the smoothness of shaded, rendered and hidden line views. Values between 0.01 and 10.0 are accepted. Large values can have a significant impact on memory usage and performance."
+  :divergence "default AutoCAD 0.5000, BricsCAD 0.5"
+  :summary "Adjusts the smoothness of shaded and rendered objects, rendered shadows, and objects with hidden lines removed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/facetres-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2DF46705-EE9E-409F-86B5-ED391CE207DC" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/facetres-system-variable")
+)
+
+(
+  :name "FASTSHADEDMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies whether the cross platform 3D graphics system is turned on or off."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-81A94EE2-017F-406C-90BB-8E004157DA33" :bricscad NIL)
 )
 
 (
@@ -8000,7 +10584,7 @@
 (
   :name "FBXEXPORTTEXTURESPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -8043,14 +10627,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Field display: Applies a gray fill behind field text."
+  :summary "Controls whether fields are displayed with a gray background."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fielddisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-99DB691B-9E11-4BD5-AFFE-BC1312F3281A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fielddisplay-system-variable")
 )
 
 (
   :name "FIELDEVAL"
-  :type :short
+  :type :integer
   :default 31
   :read-only NIL
   :range (0 31)
@@ -8059,10 +10643,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Field update mode: Controls the way fields are updated."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls how fields are updated."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fieldeval-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EF5D2DDE-A170-4BB4-8F76-7F3FAFE30E56" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fieldeval-system-variable")
 )
 
 (
@@ -8077,15 +10661,83 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "File dialog: Toggles the display of file dialog boxes. If off, enter a tilde (~) to bring up the file dialog. This also works for LISP functions and command fields in tool definitions."
+  :summary "Suppresses display of file navigation dialog boxes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/filedia-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-99736BD7-E60E-4F4A-83F7-436B6F9C67A1" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/filedia-system-variable")
+)
+
+(
+  :name "FILETABPREVIEW"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the type of preview when you hover over a drawing file tab."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BE2D28F6-C85C-4EA1-9D39-478C27200EE2" :bricscad NIL)
+)
+
+(
+  :name "FILETABSTATE"
+  :type :integer
+  :default 1
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates the display status of the file tabs at the top of the drawing area."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3C8E04C4-D464-4615-A9FB-68FB28487723" :bricscad NIL)
+)
+
+(
+  :name "FILETABTHUMBHOVER"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies whether the corresponding model or layout loads in the drawing window when you hover over a file tab thumbnail."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-15DD5C80-C8C8-4750-87C0-0C67A975FB79" :bricscad NIL)
+)
+
+(
+  :name "FILLETPOLYARC"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Determines the fillet behavior for polylines that include arcs, either current or legacy."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DD802826-BEE4-4B85-9B76-E9A3FBD02E24" :bricscad NIL)
 )
 
 (
   :name "FILLETRAD"
   :type :real
-  :default (:unknown)
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -8093,10 +10745,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Fillet radius: The last radius used with the FILLET command."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/filletrad-system-variable")
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.5 - If MEASUREMENT=0 and INSUNITS=inches 10.0 - If MEASUREMENT=1 and INSUNITS=millimeters"
+  :summary "Stores the current fillet radius for 2D objects."
+  :coupled ("getvar" "setvar")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BA2DD5FF-B663-48DB-95A8-6DEAFCEDDBF5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/filletrad-system-variable")
 )
 
 (
@@ -8136,7 +10788,7 @@
 (
   :name "FILLETWELDINGZSIZE"
   :type :real
-  :default 5.0d0
+  :default 5.0
   :read-only NIL
   :range (0 50)
   :bitcoded NIL
@@ -8153,7 +10805,7 @@
 (
   :name "FILLMODE"
   :type :integer
-  :default (:unknown)
+  :default 1
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -8162,9 +10814,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Fill mode: Shows fills for multilines, traces, solids, hatches (includes solid-fill), and wide polylines. A REGEN is required. If off, all filled entities display and print as outlines, this will also reduce the time it takes to display or print a drawing."
+  :summary "Specifies whether hatches and fills, 2D solids, and wide polylines are filled in."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fillmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FC385D70-45AA-4B9A-848A-CA3906C36124" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fillmode-system-variable")
 )
 
 (
@@ -8173,7 +10825,7 @@
   :default 0
   :read-only NIL
   :range (0 255)
-  :bitcoded T
+  :bitcoded NIL
   :scope :registry
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
@@ -8181,7 +10833,7 @@
   :divergence NIL
   :summary "FitLine FitArc mode: The FITLINEFITARCMODE system variable sets the values for the options Use entire drawing , Fit in 3d , and Delete original entities after fitting , that are used by the FITLINE and FITARC commands. The value is stored as a bit code using the sum of the values of all selected options. Note: This system variable is only available at the Command line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fitlinefitarcmode-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fitlinefitarcmode-system-variable")
 )
 
 (
@@ -8247,15 +10899,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Alternate font: The substitute font used when a text font cannot be found."
+  :summary "Specifies the alternate font to be used when the specified font file cannot be located."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fontalt-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-858A8D84-5104-4A35-9C82-2094DF6F411D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fontalt-system-variable")
 )
 
 (
   :name "FONTMAP"
   :type :string
-  :default "default.fmp"
+  :default "acad.fmp (AutoCAD) or acadlt.fmp (AutoCAD LT)"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -8263,15 +10915,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Font mapping file: The font mapping file for existing fonts."
+  :divergence "default AutoCAD acad.fmp (AutoCAD) or acadlt.fmp (AutoCAD LT), BricsCAD default.fmp"
+  :summary "Specifies the font mapping file to be used for substituting fonts."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fontmap-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FC45A5DC-31F5-4725-A482-C95769273C1C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fontmap-system-variable")
 )
 
 (
   :name "FRAME"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 3)
@@ -8280,10 +10932,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Frame: Controls the visibility of frames for XRefs, images and underlays. Overrides the IMAGEFRAME, DWFFRAME, PDFFRAME, DGNFRAME, and XCLIPFRAME system variables."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the display of frames for all images, map images, underlays, clipped xrefs, and wipeout objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/frame-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-29BD70BB-07BF-41A2-8C2F-AD41C9402486" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/frame-system-variable")
 )
 
 (
@@ -8298,32 +10950,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Frame selection: Controls if the hidden frame of an image, underlay, clipped XRefs, or wipeout can be selected."
+  :summary "Controls whether the hidden frame of an image, underlay, clipped xref, or wipeout can be selected."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/frameselection-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4DD5058A-4194-4568-A03E-81CE9BC9C018" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/frameselection-system-variable")
 )
 
 (
   :name "FRONTZ"
   :type :real
-  :default 0.0
-  :read-only NIL
+  :default 0.0000
+  :read-only T
   :range NIL
   :bitcoded NIL
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Front clipping plane offset: Displays the CLipping option of the DVIEW command."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0; read-only AutoCAD True, BricsCAD False"
+  :summary "Stores the front clipping plane offset from the target plane for the current viewport, in drawing units."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/frontz-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7B68318D-2060-44B2-BD7C-300AC62F8E21" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/frontz-system-variable")
 )
 
 (
   :name "FULLOPEN"
   :type :short
-  :default (:unknown)
+  :default (:session)
   :read-only T
   :range (0 1)
   :bitcoded NIL
@@ -8334,7 +10986,41 @@
   :divergence NIL
   :summary "Full open: Indicates the state of the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fullopen-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/f/fullopen-system-variable")
+)
+
+(
+  :name "FULLPLOTPATH"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the full path of the drawing file is sent to the plot spooler."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-92D38169-B19C-4073-AF31-9007B78EC768" :bricscad NIL)
+)
+
+(
+  :name "GALLERYVIEW"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the type of preview in the ribbon drop-down galleries."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4CBCF6FC-F4E8-4B91-A951-76EFDA32C4E7" :bricscad NIL)
 )
 
 (
@@ -8357,12 +11043,12 @@
 (
   :name "GENERATEASSOCATTRS"
   :type :integer
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -8374,12 +11060,12 @@
 (
   :name "GENERATEASSOCVIEWS"
   :type :integer
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -8391,11 +11077,11 @@
 (
   :name "GEOCSMAPPRIORITY"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
+  :scope :session
   :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
@@ -8407,19 +11093,53 @@
 
 (
   :name "GEOLATLONGFORMAT"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
-  :scope :drawing
-  :saved-in :drawing
+  :scope :registry
+  :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Geographic latitude/longitude format: Controls the format of geographical latitude and longitude values."
+  :divergence "type AutoCAD Integer, BricsCAD Short; saved-in AutoCAD Registry, BricsCAD Drawing"
+  :summary "Controls the format of the latitude and longitude values in the Geographic Location dialog box and the status bar."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/geolatlongformat-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-17D1BEB2-6A2D-4EFC-B63D-920FDA84CEAC" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/geolatlongformat-system-variable")
+)
+
+(
+  :name "GEOLOCATEMODE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates if position tracking is on or off."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E3BAE34E-E50B-46D0-9DF0-CE2377F908A6" :bricscad NIL)
+)
+
+(
+  :name "GEOMAPMODE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the style of the online map used in the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D7C64582-431C-4C5E-B544-0F5DE532B7A4" :bricscad NIL)
 )
 
 (
@@ -8434,9 +11154,26 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Geographic marker visibility: Controls the visibility of the geographic marker."
+  :summary "Controls the visibility of geographic markers."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/geomarkervisibility-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-24FF3B38-8A3E-428E-8AD4-E1182149489A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/geomarkervisibility-system-variable")
+)
+
+(
+  :name "GEOMARKPOSITIONSIZE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the scale factor to use for point objects and multiline text objects when creating position markers."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B119B38F-A03C-456C-A379-F66D0640DAEC" :bricscad NIL)
 )
 
 (
@@ -8484,16 +11221,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Gradient fill angle: Controls the default gradient fill angle."
+  :divergence "default AutoCAD 0, BricsCAD 0.0"
+  :summary "Specifies the angle of a gradient fill."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfang-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4364D9A4-1132-464F-BD45-F5F5E3E32F02" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfang-system-variable")
 )
 
 (
   :name "GFCLR1"
   :type :string
-  :default "5"
+  :default "\"Blue\""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -8501,16 +11238,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Gradient fill primary color: Controls the default first color of a gradient fill."
+  :divergence "default AutoCAD \"Blue\", BricsCAD 5"
+  :summary "Specifies the color for a one-color gradient fill or the first color for a two-color gradient fill."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfclr1-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1DB58F66-D25B-49B6-9A84-7992B19EB89A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfclr1-system-variable")
 )
 
 (
   :name "GFCLR2"
   :type :string
-  :default "7"
+  :default "\"Yellow\""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -8518,16 +11255,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Gradient fill secondary color: Controls the default second color of a gradient fill."
+  :divergence "default AutoCAD \"Yellow\", BricsCAD 7"
+  :summary "Specifies the second color for a two-color gradient fill."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfclr2-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-60D22A1A-EF08-41F0-B76A-5793B2D7EAC9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfclr2-system-variable")
 )
 
 (
   :name "GFCLRLUM"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -8535,10 +11272,10 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Gradient fill tint level: Controls the default tint intensity in a one-color gradient fill."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Controls the tint or shade level in a one-color gradient fill."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfclrlum-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-874583B9-80E7-49F7-ABB9-CC549726E9C0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfclrlum-system-variable")
 )
 
 (
@@ -8553,26 +11290,26 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Number of colors for a gradient fill: Controls the default number of colors for a gradient fill."
+  :summary "Specifies whether a gradient fill uses one color or two colors."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfclrstate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7FF6A82D-6970-4916-9FBB-2AB782ABA987" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfclrstate-system-variable")
 )
 
 (
   :name "GFNAME"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (1 9)
-  :bitcoded NIL
+  :bitcoded T
   :scope :session
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Gradient fill name: Controls the pattern of a gradient fill."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the pattern of a gradient fill."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfname-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5B251F13-2A65-4116-9D58-0971CF8834EA" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfname-system-variable")
 )
 
 (
@@ -8587,9 +11324,26 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Gradient fill shift: Controls if a gradient fill pattern is centered or is shifted up and to the left."
+  :summary "Specifies whether the pattern in a gradient fill is centered or is shifted up and to the left."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfshift-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3E52C558-97E8-4BB9-A4BE-4305F83BB894" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gfshift-system-variable")
+)
+
+(
+  :name "GLOBALOPACITY"
+  :type :integer
+  :default 100
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls transparency level for all palettes."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-27CA16ED-30EC-4C5F-AC35-1D39CE34BB93" :bricscad NIL)
 )
 
 (
@@ -8696,8 +11450,8 @@
 
 (
   :name "GRIDDISPLAY"
-  :type :short
-  :default 2
+  :type :integer
+  :default 3
   :read-only NIL
   :range (0 15)
   :bitcoded T
@@ -8705,15 +11459,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Grid display: Controls how the grid is displayed."
+  :divergence "type AutoCAD Bitcode, BricsCAD Short; default AutoCAD 3, BricsCAD 2"
+  :summary "Controls the display behavior and display limits of the grid."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/griddisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4D6AC943-FC9C-4CB8-A4E6-AD7313BF9C3A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/griddisplay-system-variable")
 )
 
 (
   :name "GRIDMAJOR"
-  :type :short
+  :type :integer
   :default 5
   :read-only NIL
   :range (1 100)
@@ -8722,16 +11476,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Grid major: Controls the frequency of major versus minor grid lines. Values between 1 and 100 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the frequency of major grid lines compared to minor grid lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gridmajor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-94C8162E-B852-469D-B434-5BB822B0215C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gridmajor-system-variable")
 )
 
 (
   :name "GRIDMAJORCOLOR"
   :type :short
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range (1 255)
   :bitcoded NIL
@@ -8765,7 +11519,7 @@
 (
   :name "GRIDMODE"
   :type :integer
-  :default 0
+  :default 1
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -8773,15 +11527,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Grid mode: Turns the grid on."
+  :divergence "default AutoCAD 1, BricsCAD Off"
+  :summary "Specifies whether the grid is turned on or off."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gridmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EB16BD83-E8A5-41D7-95DD-E8FE8028B8FD" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gridmode-system-variable")
 )
 
 (
   :name "GRIDSTYLE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 7)
@@ -8790,16 +11544,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Grid style: Controls if the grid is displayed as dots or lines."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether the grid displays as dots or lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gridstyle-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-30FC52C7-A734-43EE-A08D-96717A4B4959" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gridstyle-system-variable")
 )
 
 (
   :name "GRIDUNIT"
   :type :point
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -8807,10 +11561,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Grid unit: Controls the X and Y grid spacing for the current viewport."
+  :divergence "default AutoCAD 0.5000,0.5000 (imperial) or 10,10 (metric), BricsCAD 0.5,0.5 - If MEASUREMENT=0 and INSUNITS=inches 10.0,10.0 - If MEASUREMENT=1 and INSUNITS=millimeters"
+  :summary "Specifies the grid spacing (X and Y) for the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gridunit-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6E37252F-77E5-4266-8759-AAD5E5577F1C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gridunit-system-variable")
 )
 
 (
@@ -8842,9 +11596,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Grips in blocks: Displays grips on entities inside a block, when a block is selected. The insertion point of the block is displayed regardless of this setting."
+  :summary "Controls the display of grips in blocks."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gripblock-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-325AE351-DEC3-41E9-BC9D-22A08D805261" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gripblock-system-variable")
 )
 
 (
@@ -8861,12 +11615,29 @@
   :divergence NIL
   :summary "Grip color: Controls the color of unselected grips."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gripcolor-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gripcolor-system-variable")
+)
+
+(
+  :name "GRIPCONTOUR"
+  :type :integer
+  :default 251
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the color of the grip outline."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2523202B-F6EB-4AA6-AF05-2E3931C4C12D" :bricscad NIL)
 )
 
 (
   :name "GRIPDYNCOLOR"
-  :type :short
+  :type :integer
   :default 140
   :read-only NIL
   :range (1 255)
@@ -8875,16 +11646,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Dynamic grip color: Controls the color of custom grips for dynamic blocks."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the color of custom grips for dynamic blocks."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gripdyncolor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1BA695E9-20BB-4BBA-A307-A51F6A4046AE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gripdyncolor-system-variable")
 )
 
 (
   :name "GRIPHOT"
-  :type :short
-  :default 240
+  :type :integer
+  :default 12
   :read-only NIL
   :range (1 255)
   :bitcoded NIL
@@ -8892,16 +11663,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Selected grip color: Controls the color of selected grips."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 12, BricsCAD 240"
+  :summary "Controls the color of selected grips."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/griphot-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-96ABB239-7C6F-431B-BB37-672123472EC8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/griphot-system-variable")
 )
 
 (
   :name "GRIPHOVER"
-  :type :short
-  :default 150
+  :type :integer
+  :default 11
   :read-only NIL
   :range (1 255)
   :bitcoded NIL
@@ -8909,15 +11680,32 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hover grip color: Controls the color of an unselected grip, when the cursor hovers over it."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 11, BricsCAD 150"
+  :summary "Controls the fill color of an unselected grip when the cursor pauses over it."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/griphover-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9CC870B5-A4B9-41E3-9B0B-B9566530587B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/griphover-system-variable")
+)
+
+(
+  :name "GRIPMULTIFUNCTIONAL"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the access methods for multifunctional grip options."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A88576CB-7CDD-4DC4-819C-EA0F892E72CB" :bricscad NIL)
 )
 
 (
   :name "GRIPOBJLIMIT"
-  :type :short
+  :type :integer
   :default 100
   :read-only NIL
   :range (0 32767)
@@ -8926,15 +11714,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Grip entity limit: Sets the maximum number of grips to display for a selection. Values between 0 and 32767 are accepted. The display of grips is suppressed if the number of selected entities exceeds the value of this system variable. If set to 0, grips are always displayed."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Suppresses the display of grips when the selection set includes more than the specified number of objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gripobjlimit-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-705F3A42-4A2F-4B5C-A2A6-0CF8949B8ED5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gripobjlimit-system-variable")
 )
 
 (
   :name "GRIPS"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range NIL
@@ -8943,16 +11731,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Grips: Controls how grips display when entities are selected."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the display of grips on selected objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/grips-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-97AD30F3-A1A3-4027-91B7-49008841A447" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/grips-system-variable")
 )
 
 (
   :name "GRIPSIZE"
-  :type :short
-  :default 4
+  :type :integer
+  :default 5
   :read-only NIL
   :range (1 255)
   :bitcoded NIL
@@ -8960,10 +11748,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Grip size: Controls the grip display size, in pixels. Values between 1 and 255 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 5, BricsCAD 4"
+  :summary "Sets the size of the grip box, in device independent pixels."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gripsize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5F355F5F-0DDE-49B4-B253-C6BA717BAF8B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/gripsize-system-variable")
+)
+
+(
+  :name "GRIPSUBOBJMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether grips are automatically made hot when subobjects are selected."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1F18AF4A-7124-49CD-96D0-53E740434ABF" :bricscad NIL)
 )
 
 (
@@ -8978,9 +11783,26 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Grip tips: Controls if grip tips display when the cursor hovers over grips on custom entities or dynamic blocks that support grip tips (Not yet supported)."
+  :summary "Controls the display of grip tips when the cursor hovers over grips on dynamic blocks and custom objects that support grip tips."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/griptips-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8ADD9045-DD1B-416E-92E4-839C6FADC109" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/g/griptips-system-variable")
+)
+
+(
+  :name "GROUPDISPLAYMODE"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls how grips are displayed when group selection is turned on and an object in a group is selected."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1EDF8F98-A769-415C-9FF3-B8C304369094" :bricscad NIL)
 )
 
 (
@@ -9018,8 +11840,59 @@
 )
 
 (
+  :name "GTAUTO"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether 3D gizmos are automatically displayed when you select objects before you start a command in a viewport with a 3D visual style."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-77234824-1143-4D37-A4AD-6EBFB37E291B" :bricscad NIL)
+)
+
+(
+  :name "GTDEFAULT"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the 3D Move, 3D Rotate, or 3D Scale operation starts automatically when you start the MOVE, ROTATE, or SCALE command in a viewport with a 3D visual style."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C419D5E0-FAD3-414E-9554-EE5DAD2EDB64" :bricscad NIL)
+)
+
+(
+  :name "GTLOCATION"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the initial location of the 3D Move, 3D Rotate, or 3D Scale gizmo when you select objects before you start a command in a viewport with a 3D visual style."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-83583225-CD2E-426A-8E87-3FFC9DEA4D1A" :bricscad NIL)
+)
+
+(
   :name "HALOGAP"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 100)
@@ -9028,10 +11901,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Halo gap: Controls the value of the gap displayed if an entity is hidden by another entity. Applies to 2D views only. Specified as a percent of one drawing unit, independent of the zoom level."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies a gap to be displayed where an object is hidden by another object."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/halogap-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-323A9B4D-2B53-4E3D-83AA-2A14AC9CA10C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/halogap-system-variable")
 )
 
 (
@@ -9048,7 +11921,7 @@
   :divergence NIL
   :summary "Publish Handles: Shows if entity handles can be accessed by applications or not."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/handles-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/handles-system-variable")
 )
 
 (
@@ -9069,6 +11942,23 @@
 )
 
 (
+  :name "HELPPREFIX"
+  :type :string
+  :default (:host-specific)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the file path for the Help system."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-07966A0F-F2F4-4465-B921-92FECAEBE540" :bricscad NIL)
+)
+
+(
   :name "HIDEPRECISION"
   :type :short
   :default 0
@@ -9082,7 +11972,7 @@
   :divergence NIL
   :summary "Hide and shade precision: Controls the accuracy of hides and shades. If on, uses double precision, more memory is needed, which might affect performance."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hideprecision-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hideprecision-system-variable")
 )
 
 (
@@ -9099,12 +11989,12 @@
   :divergence NIL
   :summary "Hide system printers: Hides system printers."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hidesystemprinters-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hidesystemprinters-system-variable")
 )
 
 (
   :name "HIDETEXT"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -9113,10 +12003,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hide text on HIDE: Controls if text can be hidden with the HIDE command."
+  :divergence "type AutoCAD Switch, BricsCAD Short"
+  :summary "Specifies whether text objects created by the TEXT or MTEXT command are processed during a HIDE command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hidetext-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C30AB91D-D9B6-4762-A6F4-AF3DA50459EF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hidetext-system-variable")
 )
 
 (
@@ -9133,7 +12023,7 @@
   :divergence NIL
   :summary "Hide xref scales: Hides XRefs scales."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hidexrefscales-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hidexrefscales-system-variable")
 )
 
 (
@@ -9148,9 +12038,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Highlight: Highlights entities when they are selected. Note: Does not affect entities selected with grips."
+  :summary "Controls object highlighting; does not affect objects selected with grips."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/highlight-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A0543122-803C-4692-9EEB-090483C4025C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/highlight-system-variable")
 )
 
 (
@@ -9235,7 +12125,7 @@
   :divergence NIL
   :summary "Ground horizon: Controls the color of the ground horizon."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_groundhorizon-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_groundhorizon-system-variable")
 )
 
 (
@@ -9252,7 +12142,7 @@
   :divergence NIL
   :summary "Ground origin: Controls the color of the ground."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_groundorigin-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_groundorigin-system-variable")
 )
 
 (
@@ -9269,7 +12159,7 @@
   :divergence NIL
   :summary "Sky high: Controls the color of the higher regions of the sky."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_skyhigh-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_skyhigh-system-variable")
 )
 
 (
@@ -9286,7 +12176,7 @@
   :divergence NIL
   :summary "Sky horizon: Controls the color at the lowest part of the sky at the horizon. This effect can be very subtle. This color is also used as the color of the \"sky\" when the camera is below the \"earth\"."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_skyhorizon-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_skyhorizon-system-variable")
 )
 
 (
@@ -9303,7 +12193,7 @@
   :divergence NIL
   :summary "Sky low: Controls the color of the lower regions of the sky."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_skylow-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/horizonbkg_skylow-system-variable")
 )
 
 (
@@ -9326,7 +12216,7 @@
 (
   :name "HPANG"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9334,10 +12224,10 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern angle: The hatch pattern angle."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the default angle for new hatch patterns in this session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpang-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5D218A6C-F3AE-419A-8F0C-0AD704E9CDE9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpang-system-variable")
 )
 
 (
@@ -9352,9 +12242,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Hatch pattern annotative: Controls if new hatch patterns are created as annotative hatch patterns."
+  :summary "Controls whether new hatch patterns are annotative in this session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpannotative-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D5AAA8E4-D02D-43FA-B999-57E795CC15F5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpannotative-system-variable")
 )
 
 (
@@ -9369,15 +12259,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Hatch pattern associativity: Controls if new hatch patterns and gradient fills are associative. Associative hatches and gradient fills are updated automatically when their boundaries change."
+  :summary "Controls whether hatches and fills are associative."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpassoc-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4875C3C9-77E8-49F9-8E91-C89084C76733" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpassoc-system-variable")
 )
 
 (
   :name "HPBACKGROUNDCOLOR"
   :type :string
-  :default "."
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9385,15 +12275,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch background default color: The default hatch background color. Enter '.' for none."
+  :divergence "default AutoCAD None, BricsCAD ."
+  :summary "Sets the default background color for new hatch patterns in the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpbackgroundcolor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-19FA19F4-A8FA-4F6C-BC09-CB0B34E7D571" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpbackgroundcolor-system-variable")
 )
 
 (
   :name "HPBOUND"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -9402,15 +12292,15 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern boundary: Controls the entity type created by the BHATCH and BOUNDARY commands."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the object type created by HATCH and BOUNDARY in this session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpbound-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1300471B-7F23-4D0B-AC7F-C72AC47D824E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpbound-system-variable")
 )
 
 (
   :name "HPBOUNDRETAIN"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -9419,16 +12309,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern boundary retain: Creates boundary entities for hatches and gradient fills."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether boundary objects are created for new hatches and fills in this session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpboundretain-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2B931D42-4FFA-44A5-8E87-27254BF68A12" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpboundretain-system-variable")
 )
 
 (
   :name "HPCOLOR"
   :type :string
-  :default "."
+  :default "use current"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9436,10 +12326,27 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch default color: Controls the default hatch foreground color. Enter '.' to use the current color, defined by the CECOLOR system variables."
+  :divergence "default AutoCAD use current, BricsCAD ."
+  :summary "Sets the default color for new hatches in the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpcolor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C5ACE97D-E19F-4F81-B3DA-0F86A688C414" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpcolor-system-variable")
+)
+
+(
+  :name "HPDLGMODE"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of the Hatch and Gradient dialog box and the Hatch Edit dialog box."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8C19FED5-6024-40A8-AEBD-2AA1C57240B3" :bricscad NIL)
 )
 
 (
@@ -9449,19 +12356,36 @@
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
-  :saved-in :drawing
+  :scope :session
+  :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern doubling: Controls user-defined hatch pattern crosshatching. If on, creates a cross hatch. If off, creates a single hatch."
+  :divergence "saved-in AutoCAD Not-saved, BricsCAD Drawing"
+  :summary "Controls whether hatch patterns are doubled for user-defined patterns in this session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpdouble-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-691E7B7D-28DD-46A0-980D-82FFC0CC0B32" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpdouble-system-variable")
+)
+
+(
+  :name "HPDRAWMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the drawing mode used when defining new boundaries to hatch or fill."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B23CFA6A-88E4-4446-B003-BE4A6D766B48" :bricscad NIL)
 )
 
 (
   :name "HPDRAWORDER"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 4)
@@ -9470,16 +12394,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern draw order: Controls the draw order of hatches and gradient fills, defined by the Draw order setting in the Hatch and Gradient dialog box."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the default draw order of new hatches and fills in this session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpdraworder-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-50DE5CC8-9857-46F1-9374-9F1DA3760DC3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpdraworder-system-variable")
 )
 
 (
   :name "HPGAPTOL"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range (0 NIL)
   :bitcoded NIL
@@ -9487,16 +12411,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern gap tolerance: Controls the tolerance for a boundary created with the BHATCH or BOUNDARY commands. When zoomed in closely, boundary detection will fail. When zoomed so the contour 'looks' closed, the boundary is detectable. Values between 0.0 and 500.0 are accepted."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Specifies the maximum gaps between a set of objects that almost enclose an area to still be treated as a closed hatch boundary."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpgaptol-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E58FDE75-CDB6-4625-83A8-D0BA4CF6A96A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpgaptol-system-variable")
 )
 
 (
   :name "HPISLANDDETECTION"
-  :type :short
-  :default 0
+  :type :integer
+  :default 1
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
@@ -9504,16 +12428,33 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern island detection: Controls hatch creation when islands are within a hatch boundary."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, BricsCAD 0"
+  :summary "Controls how islands within new hatch boundaries are treated in this session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpislanddetection-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3B578500-B1F3-450E-8C1B-5DEE394B2A27" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpislanddetection-system-variable")
+)
+
+(
+  :name "HPISLANDDETECTIONMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether islands within new hatches and fills are detected in this session."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1595FDAF-AE59-475B-A8DA-D7D754C16501" :bricscad NIL)
 )
 
 (
   :name "HPLAYER"
   :type :string
-  :default "<Use Current>"
+  :default "use current"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9521,16 +12462,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Default layer for new hatches: The default layer for new hatches."
+  :divergence "default AutoCAD use current, BricsCAD <Use Current>"
+  :summary "Specifies a default layer for new hatches and fills in the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hplayer-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8B64F625-7DD2-4264-8E59-3936F0992070" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hplayer-system-variable")
 )
 
 (
   :name "HPLINETYPE"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9539,15 +12480,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Hatch pattern linetype: Applies non-continuous linetypes to hatch entities (decreases performance). When turned off, lines in the hatch pattern display as continuous, even if a non-continuous linetype is applied to the hatch entity. When turned on, lines in the hatch pattern display with the linetype that’s applied to the hatch entity. This is not recommended because it can impact performance. Instead, you can choose a hatch pattern that is predefined with a non-continuous..."
+  :summary "Controls how non-continuous linetypes are displayed in hatch patterns."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hplinetype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-10E0E411-38C4-4BCE-B9AA-0E03B772DFB2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hplinetype-system-variable")
 )
 
 (
   :name "HPMAXAREAS"
-  :type :short
-  :default 0
+  :type :integer
+  :default 100
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
@@ -9555,10 +12496,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Fill mode for sparse hatches: Converts sparse hatches to fills."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 100, BricsCAD 0"
+  :summary "Sets the maximum number of \"enclosed areas\" that a single hatch object can have and still automatically switch between solid and pattern hatches during zoom operations."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpmaxareas-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-407E5F77-E823-4998-AD10-BEE5F2422AB4" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpmaxareas-system-variable")
 )
 
 (
@@ -9579,9 +12520,26 @@
 )
 
 (
+  :name "HPMAXLINES"
+  :type :integer
+  :default 100000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum number of hatch lines that are generated in a hatch operation."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0DE22398-D77D-40C6-83CA-06A24581539A" :bricscad NIL)
+)
+
+(
   :name "HPNAME"
   :type :string
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9590,15 +12548,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Hatch pattern name: The default hatch pattern name."
+  :summary "Sets the default hatch pattern name in this session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpname-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C562EB1D-239D-4AFC-BC77-48F174834EE5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpname-system-variable")
 )
 
 (
   :name "HPOBJWARNING"
   :type :integer
-  :default 10000
+  :default 100000
   :read-only NIL
   :range (1 100000000)
   :bitcoded NIL
@@ -9606,16 +12564,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern entity warning: Controls how many hatch boundary entities can be selected before a warning message appears. Values between 1 and 100,000,000 are accepted."
+  :divergence "default AutoCAD 100000, BricsCAD 10000"
+  :summary "Sets the number of hatch boundary objects that can be selected before displaying a warning message."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpobjwarning-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FB17EB18-FD84-4CD0-950A-2040CC1D1F86" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpobjwarning-system-variable")
 )
 
 (
   :name "HPORIGIN"
   :type :point
-  :default (0 0)
+  :default (0.0000 0.0000)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9623,16 +12581,118 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern origin: Stores the origin point for new hatches, relative to the current UCS."
+  :divergence "default AutoCAD 0.0000,0.0000, BricsCAD 0,0"
+  :summary "Sets the hatch origin point for new hatch patterns relative to the current user coordinate system in the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hporigin-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-38993CD0-3F26-400C-BCAF-F82057A059DD" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hporigin-system-variable")
+)
+
+(
+  :name "HPORIGINMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls how the default hatch origin point is determined."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-471B755D-69F9-467B-BE6F-103106C1B03A" :bricscad NIL)
+)
+
+(
+  :name "HPPATHALIGNMENT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the alignment of new drawn paths to be hatched or filled."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A1AAAF13-E0F8-4516-BADA-C46282E430AF" :bricscad NIL)
+)
+
+(
+  :name "HPPATHWIDTH"
+  :type :real
+  :default 0.2500
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the width of new drawn paths to be hatched or filled."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FC906EBC-B990-45B6-8ADE-F1896D47676B" :bricscad NIL)
+)
+
+(
+  :name "HPPICKMODE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates the current method for specifying hatch areas."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-060C1F46-2DCF-40BD-84DB-00C6A1907683" :bricscad NIL)
+)
+
+(
+  :name "HPQUICKPREVIEW"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether a hatch preview is displayed when specifying a hatch area."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-55E323D8-5BC3-407E-A57C-B18273325604" :bricscad NIL)
+)
+
+(
+  :name "HPQUICKPREVTIMEOUT"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum time for a hatch preview to generate before the preview is automatically cancelled."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4AB77E71-3EA7-41E7-AE43-EFE547149D4C" :bricscad NIL)
 )
 
 (
   :name "HPSCALE"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9640,16 +12700,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern scale: The default hatch pattern scale."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Sets the default scale factor for new hatch patterns in this session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B002D6D9-7CF2-43B7-B78F-10BEA710C430" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpscale-system-variable")
 )
 
 (
   :name "HPSEPARATE"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9658,15 +12718,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Hatch pattern separate: Controls if separate hatches or a single hatch is created when several hatch boundaries are selected, during the HATCH command."
+  :summary "Controls whether a single hatch object or separate hatch objects are created when operating on several closed boundaries."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpseparate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-82537D46-06CD-4A2B-9148-1475A3599B12" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpseparate-system-variable")
 )
 
 (
   :name "HPSPACE"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9674,16 +12734,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Hatch pattern spacing: Controls the hatch pattern line spacing for user-defined hatch patterns."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Sets the default line spacing for new user-defined hatch patterns in this session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpspace-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E7F89BD7-6591-442E-A150-B662F2FCFBFF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hpspace-system-variable")
 )
 
 (
   :name "HPTRANSPARENCY"
   :type :string
-  :default "."
+  :default "use current"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9691,16 +12751,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Default transparency for new hatches: The default transparency for new hatches, as a percentage. Values accepted: ByLayer, ByBlock, '.' (use current), 0 (fully opaque), and 90 (maximum transparency)."
+  :divergence "default AutoCAD use current, BricsCAD ."
+  :summary "Sets the default transparency for new hatches and fills in the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hptransparency-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C12451CF-470A-48B2-83A7-92BC0E873936" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hptransparency-system-variable")
 )
 
 (
   :name "HYPERLINKBASE"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -9709,9 +12769,26 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Hyperlink base: The file path for relative hyperlinks in the drawing."
+  :summary "Specifies the path used for all relative hyperlinks in the drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hyperlinkbase-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-94331F93-45DF-4181-8232-37AA29A30EB9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/h/hyperlinkbase-system-variable")
+)
+
+(
+  :name "IBLENVIRONMENT"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Enables image-based lighting and specifies the current image map."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-253F5660-ABC3-4277-8F7C-71D42021AA4F" :bricscad NIL)
 )
 
 (
@@ -9847,7 +12924,7 @@
   :divergence NIL
   :summary "Export mapping file path: Exports file paths during IFC export."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/ifcexportmappingpath-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/ifcexportmappingpath-system-variable")
 )
 
 (
@@ -9972,11 +13049,11 @@
 (
   :name "IFCSETTINGSCONFIG"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
+  :scope :session
   :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
@@ -10000,7 +13077,24 @@
   :divergence NIL
   :summary "Tessellate complex curves and surfaces: Tessellates BSpline curves and surfaces in IFC4 and IFC4.1 during IFC export. Note: BSpline curves are not supported by some software products in IFC import."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/ifctesselatebsplinecurvesandsurfaces-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/ifctesselatebsplinecurvesandsurfaces-system-variable")
+)
+
+(
+  :name "IMAGEASYNC"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether images are asynchronous loaded in the background during the opening of a drawing file."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8F52FCC9-C2A9-4E2A-9DE3-1ADB19FEAED7" :bricscad NIL)
 )
 
 (
@@ -10056,7 +13150,7 @@
 
 (
   :name "IMAGEFRAME"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 2)
@@ -10065,10 +13159,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Image frame: Controls the visibility of image frames, if the FRAME system variable is set to Use individual system variables (3)."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether image and map image frames are displayed and plotted."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/imageframe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D736B7E4-92C8-41DF-899D-622DB58D09F3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/imageframe-system-variable")
 )
 
 (
@@ -10083,9 +13177,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Image highlight: Controls how an image is highlighted when selected. If on, highlights the whole image. If off, highlights the border only."
+  :summary "Controls whether the entire raster image or only the raster image frame is highlighted."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/imagehlt-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E0D9C807-B49F-4104-8062-3E5B9CB2B49A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/imagehlt-system-variable")
 )
 
 (
@@ -10103,6 +13197,23 @@
   :summary "Image notify: Displays a warning, when a drawing is opened, if there are missing raster images. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/imagenotify-system-variable")
+)
+
+(
+  :name "IMPLIEDFACE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the detection of implied faces."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5E3787E6-A696-49E3-BE86-CED3ADB472AA" :bricscad NIL)
 )
 
 (
@@ -10170,13 +13281,13 @@
   :divergence NIL
   :summary "Translate colors: Controls how colors are converted during import."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/importcolors-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/importcolors-system-variable")
 )
 
 (
   :name "IMPORTCREOALTERNATESEARCHPATHS"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10193,7 +13304,7 @@
 (
   :name "IMPORTCREOCONFIGURATION"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10238,7 +13349,7 @@
   :divergence NIL
   :summary "Hidden parts: Controls how hidden parts are imported."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/importhiddenparts-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/importhiddenparts-system-variable")
 )
 
 (
@@ -10278,7 +13389,7 @@
 (
   :name "IMPORTINVENTORALTERNATESEARCHPATHS"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10323,13 +13434,13 @@
   :divergence NIL
   :summary "Import representation: Controls the data to import during a JT import. Note: This option is only taken into account when import in background is enabled."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/importjtrepresentation-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/importjtrepresentation-system-variable")
 )
 
 (
   :name "IMPORTNXALTERNATESEARCHPATHS"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10346,7 +13457,7 @@
 (
   :name "IMPORTNXCONFIGURATION"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10448,7 +13559,7 @@
 (
   :name "IMPORTSOLIDEDGEALTERNATESEARCHPATHS"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10482,7 +13593,7 @@
 (
   :name "IMPORTSOLIDWORKSALTERNATESEARCHPATHS"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10499,7 +13610,7 @@
 (
   :name "IMPORTSOLIDWORKSCONFIGURATION"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10527,7 +13638,7 @@
   :divergence NIL
   :summary "Import representation: Controls the data imported during a SolidWorks® import. Preview graphics are only imported and shown if the COMMUNICATORBACKGROUNDMODE system variable is on."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/importsolidworksrepresentation-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/importsolidworksrepresentation-system-variable")
 )
 
 (
@@ -10617,7 +13728,7 @@
 
 (
   :name "INDEXCTL"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 3)
@@ -10626,16 +13737,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Index control: Controls if layer and/or spatial indexes are created and saved."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether layer and spatial indexes are created and saved in drawing files."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/indexctl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-78E98530-C455-43AA-8DB8-33EE3EAB85C4" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/indexctl-system-variable")
 )
 
 (
   :name "INETLOCATION"
   :type :string
-  :default "\"http://www.bricsys.com\""
+  :default "https://www.autodesk.com/autocad (AutoCAD), https://www.autodesk.com/acltuser (AutoCAD LT)"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10643,16 +13754,50 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Internet location: The default website for the BROWSER command."
+  :divergence "default AutoCAD https://www.autodesk.com/autocad (AutoCAD), https://www.autodesk.com/acltuser (AutoCAD LT), BricsCAD \"http://www.bricsys.com\""
+  :summary "Stores the Internet location used by the BROWSER command and the Browse the Web dialog box."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/inetlocation-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-419EE66C-FDFE-4747-BACA-31525420015C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/inetlocation-system-variable")
+)
+
+(
+  :name "INPUTHISTORYMODE"
+  :type :integer
+  :default 15
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the content and location of the user input history."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1906269A-8E27-4E0C-A61A-69A2C2CD8733" :bricscad NIL)
+)
+
+(
+  :name "INPUTSEARCHDELAY"
+  :type :integer
+  :default 300
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of milliseconds to delay before the command line suggestion list is displayed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-86E5D67B-E33C-4A05-8CB9-1F5F208C9B3E" :bricscad NIL)
 )
 
 (
   :name "INSBASE"
   :type :point3d
-  :default (0 0 0)
+  :default (0.0000 0.0000 0.0000)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10660,78 +13805,78 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Insertion base point: The drawing's insertion point, used when the drawing is inserted into other drawings as a block. Set by the BASE command, and expressed as a UCS coordinate for the current space."
+  :divergence "default AutoCAD 0.0000,0.0000,0.0000, BricsCAD 0,0,0"
+  :summary "Stores the insertion base point set by BASE, which gets expressed as a UCS coordinate for the current space."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/insbase-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B0A82E39-CB83-484E-95CB-B35D8114B947" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/insbase-system-variable")
 )
 
 (
   :name "INSNAME"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
-  :saved-in :drawing
+  :scope :session
+  :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Insertion name: Stores the default block name for the INSERT command."
+  :divergence "saved-in AutoCAD Not-saved, BricsCAD Drawing"
+  :summary "Sets a default block name for the INSERT command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/insname-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1654B78D-A11A-44D6-9790-28C756929EFB" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/insname-system-variable")
 )
 
 (
   :name "INSUNITS"
-  :type :short
-  :default 1
+  :type :integer
+  :default (:drawing)
   :read-only NIL
   :range (0 24)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Insertion units: Controls the unit used to scale blocks, images or XRefs, when they are inserted into a drawing. When both the INSUNITS and PROPUNITS system variables are on, length, area, volume and/or inertia properties are formatted with their respective unit(s). Note: It does not convert current drawing units. See also the LUNITS and MEASUREMENT system variables"
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1 (imperial) or 4 (metric), BricsCAD 1"
+  :summary "Specifies a drawing-units value for automatic scaling of blocks, images, or xrefs when inserted or attached to a drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/insunits-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A58A87BB-482B-4042-A00A-EEF55A2B4FD8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/insunits-system-variable")
 )
 
 (
   :name "INSUNITSDEFSOURCE"
-  :type :short
-  :default 0
+  :type :integer
+  :default 1
   :read-only NIL
   :range (0 24)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Insertion units default source: Controls the source content units value. Note: If INSUNITS in the source drawing is Unspecified , INSUNITSDEFSOURCE is used instead."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, BricsCAD 0"
+  :summary "Sets source content units value when INSUNITS is set to 0."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/insunitsdefsource-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4C21BD16-8C17-4469-A91C-F7CC105B770F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/insunitsdefsource-system-variable")
 )
 
 (
   :name "INSUNITSDEFTARGET"
-  :type :short
-  :default 0
+  :type :integer
+  :default 1
   :read-only NIL
   :range (0 24)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Insertion units default target: Controls the target drawing units value, if the INSUNITS system variable is zero. Values between 0 and 20 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, BricsCAD 0"
+  :summary "Sets target drawing units value when INSUNITS is set to 0."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/insunitsdeftarget-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5E9D42F6-CAE4-49BD-8850-E665455EF5CB" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/insunitsdeftarget-system-variable")
 )
 
 (
@@ -10752,9 +13897,26 @@
 )
 
 (
+  :name "INTELLIGENTUPDATE"
+  :type :integer
+  :default 20
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the graphics refresh rate."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D7F47EA2-4156-45F4-9A83-D96C8E7D22F6" :bricscad NIL)
+)
+
+(
   :name "INTERFERECOLOR"
   :type :string
-  :default "ByLayer"
+  :default "1"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10762,10 +13924,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Interference color: Controls the color of interference entities."
+  :divergence "default AutoCAD 1, BricsCAD ByLayer"
+  :summary "Sets the color for interference objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/interferecolor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A4EE21EE-4F2B-4E2C-8715-6EAB714C56F8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/interferecolor-system-variable")
 )
 
 (
@@ -10805,7 +13967,7 @@
 (
   :name "INTERFEREOBJVS"
   :type :string
-  :default (:unknown)
+  :default "Realistic"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10814,15 +13976,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Interference entity visual style: Controls the interference entity visual style."
+  :summary "Sets the visual style for interference objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/interfereobjvs-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C50BF4CF-4D5E-4820-8AFF-8D0673BD3692" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/interfereobjvs-system-variable")
 )
 
 (
   :name "INTERFEREVPVS"
   :type :string
-  :default (:unknown)
+  :default "Wireframe"
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10831,15 +13993,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Interference viewport visual style: Controls the interference checking visual style for the viewport."
+  :summary "Specifies the visual style for the viewport during interference checking."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/interferevpvs-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F056B9DB-BE98-4993-9ECD-1953C09A846A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/interferevpvs-system-variable")
 )
 
 (
   :name "INTERIORELEVATIONMINLENGTH"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10856,7 +14018,7 @@
 (
   :name "INTERIORELEVATIONOFFSET"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -10873,12 +14035,12 @@
 (
   :name "INTERSECTEDENTITIES"
   :type :short
-  :default 0
+  :default (:preference)
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -10889,7 +14051,7 @@
 
 (
   :name "INTERSECTIONCOLOR"
-  :type :short
+  :type :integer
   :default 257
   :read-only NIL
   :range (0 257)
@@ -10898,10 +14060,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Intersection color: Controls the polyline color at the intersection of 3D surfaces in 2D Wireframe views, if INTERSECTIONDISPLAY is on (Not yet supported)."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the color of polylines at the intersection of 3D surfaces when the visual style is set to 2D Wireframe."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/intersectioncolor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7BF2966C-118B-4AAF-82E5-83A773E1ABEB" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/intersectioncolor-system-variable")
 )
 
 (
@@ -10916,9 +14078,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Intersection display: Toggles the display of polylines at the intersection of 3D surfaces in 2D Wireframe views (Not yet supported)."
+  :summary "Controls the display of the intersections of 3D solids and surfaces when the visual style is set to 2D Wireframe and a HIDE is performed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/intersectiondisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E0A00845-398B-484B-9F47-105A6F2BFFD7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/intersectiondisplay-system-variable")
 )
 
 (
@@ -10933,14 +14095,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Incremental save backup: Creates backup files (BAK) for active drawings. If off, improves the speed of incremental saves, especially for large drawings."
+  :summary "Controls whether BAK files are created when drawing files are saved."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/isavebak-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-25AF36C1-CA4A-4C1C-8D93-1C4F436C6C25" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/isavebak-system-variable")
 )
 
 (
   :name "ISAVEPERCENT"
-  :type :short
+  :type :integer
   :default 50
   :read-only NIL
   :range (0 100)
@@ -10949,15 +14111,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Save percent: Controls the \"wasted space\" allowed for QUICKSAVE actions, before a full save is executed,as a percentage. Values between 0 and 100 are accepted. A value of zero means Each save is a full save."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the amount of space allocated in DWG files for incremental saves, which affects the number of quick save operations that can be performed before a full save is required."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/isavepercent-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-469DFA87-1986-4BDA-918B-1E3F9D6FCDC2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/isavepercent-system-variable")
 )
 
 (
   :name "ISOLINES"
-  :type :short
+  :type :integer
   :default 4
   :read-only NIL
   :range (0 2047)
@@ -10966,10 +14128,44 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Isolines: Controls the number of isolines (contour lines) per curved surface. Values between 0 and 2047 are accepted. Note: To view changes on existing entities, perform a REGEN."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the number of contour lines displayed on the curved surfaces of 3D solids."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/isolines-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-64DC6A85-C9FA-4808-83AD-7F0705296A65" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/i/isolines-system-variable")
+)
+
+(
+  :name "JIGZOOMMAX"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the maximum percentage of the view dimensions that the block extents must fit when being inserted."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D3FE6B77-601C-430A-998B-16FAAA96A61E" :bricscad NIL)
+)
+
+(
+  :name "JIGZOOMMIN"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the minimum percentage of the view dimensions that the block extents must fit when being inserted."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-31EA623B-8681-4BF7-B715-AB88F12D8761" :bricscad NIL)
 )
 
 (
@@ -10990,9 +14186,26 @@
 )
 
 (
+  :name "LARGEOBJECTSUPPORT"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the size limit for large objects when you open and save drawings."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DF5416D3-FB6F-4022-A448-62144907CE2D" :bricscad NIL)
+)
+
+(
   :name "LASTANGLE"
   :type :real
-  :default (:unknown)
+  :default 0.0000
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -11001,15 +14214,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Last angle: The end angle of the last arc drawn."
+  :summary "Stores the angle of the ending tangent of the last arc, line, or polyline entered relative to the XY plane of the current UCS."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lastangle-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FBD5ACF2-BEB9-4159-8F76-AE464DE2DF6F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lastangle-system-variable")
 )
 
 (
   :name "LASTPOINT"
   :type :point3d
-  :default (:unknown)
+  :default (0.0000 0.0000 0.0000)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11018,15 +14231,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Last point: The coordinates of the last point entered - the value used by the '@' symbol in the Command line. Note: Expressed as a UCS coordinate for the current space; referenced by the at symbol (@) during keyboard entry."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lastpoint-system-variable")
+  :summary "Stores the last point specified, expressed as UCS coordinates for the current space."
+  :coupled ("getpoint")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4EE5F6EA-B8D1-4DD0-8D5D-B7FA2AD3A3D0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lastpoint-system-variable")
 )
 
 (
   :name "LASTPROMPT"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -11037,13 +14250,13 @@
   :divergence NIL
   :summary "Last prompt: The last string in Command line."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lastprompt-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lastprompt-system-variable")
 )
 
 (
   :name "LATITUDE"
   :type :real
-  :default 37.795
+  :default 37.7950
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11051,10 +14264,78 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Latitude: Controls the latitude of the current drawing, in decimal format. Values between -90.0 and 90.0 are accepted. Positive values represent north latitudes."
+  :divergence "default AutoCAD 37.7950, BricsCAD 37.795"
+  :summary "Specifies the latitude of the geographic marker."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/latitude-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BBA986D3-9BA8-4160-9471-55DAC9EDCA70" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/latitude-system-variable")
+)
+
+(
+  :name "LAYERDLGMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the legacy or the current Layer Properties Manager is opened."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E3DD4E11-E47D-4ABA-8D6C-F61D2E16532F" :bricscad NIL)
+)
+
+(
+  :name "LAYEREVAL"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies whether the layer list is evaluated for new layers when added to the drawing or to attached xrefs."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-42F44696-D045-4468-ADEB-E18AEFBA77BF" :bricscad NIL)
+)
+
+(
+  :name "LAYEREVALCTL"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the Unreconciled New Layer filter list in the Layer Properties Manager, which is evaluated for new layers."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4EE593AE-BBD3-43B3-8F31-1896399A55E0" :bricscad NIL)
+)
+
+(
+  :name "LAYERFILTERALERT"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Deletes excess layer filters to improve performance."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7787698E-ADFF-46D1-B096-944103AC90A5" :bricscad NIL)
 )
 
 (
@@ -11075,9 +14356,60 @@
 )
 
 (
+  :name "LAYERMANAGERSTATE"
+  :type :integer
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Layer Properties Manager is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2269B3A5-18DA-4A35-A013-F2EC4D238393" :bricscad NIL)
+)
+
+(
+  :name "LAYERNOTIFY"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies when an alert displays when unreconciled new layers are found."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FCE244C3-F642-4EF5-912E-C099EFF9C050" :bricscad NIL)
+)
+
+(
+  :name "LAYEROVERRIDEHIGHLIGHT"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Toggles the visibility of the background color highlighting for layers that have overrides."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-38E6B19F-A322-4051-8DA0-DB7A9FC2CE7E" :bricscad NIL)
+)
+
+(
   :name "LAYERPMODE"
   :type :integer
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11087,13 +14419,13 @@
   :vendor :both
   :divergence NIL
   :summary "Layer previous mode: Tracks layer settings modification and enables the LAYERP command."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/layerpmode-system-variable")
+  :coupled ("acet-layerp-mark" "acet-layerp-mode")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/layerpmode-system-variable")
 )
 
 (
   :name "LAYLOCKFADECTL"
-  :type :short
+  :type :integer
   :default 50
   :read-only NIL
   :range (-90 90)
@@ -11102,15 +14434,32 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Locked layer fade control: Controls the fade level for entities on locked layers to contrast them with entities on unlocked layers and reduces the visual complexity of a drawing. Entities on locked layers are still visible for reference and for object snapping. Values between -90 and 90 are accepted. Negative values disable fading."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the amount of fading for objects on locked layers."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/laylockfadectl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-753F2A76-E248-483F-9F55-CCF613B12C31" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/laylockfadectl-system-variable")
+)
+
+(
+  :name "LAYOUTCREATEVIEWPORT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether a viewport is created automatically on each new layout added to a drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-799745E4-9804-41A7-BC48-E67CF2615111" :bricscad NIL)
 )
 
 (
   :name "LAYOUTREGENCTL"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -11119,10 +14468,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Layout regeneration control: Controls how the display of the Model and layout tabs is updated. If performance is poor in general or when switching between tabs. Setting LAYOUTREGENCTL to 1 or 0 might improve performance."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies how the display list is updated in the Model tab and layout tabs."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/layoutregenctl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A4FB9763-625A-4C4F-B948-100BE5566694" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/layoutregenctl-system-variable")
 )
 
 (
@@ -11137,9 +14486,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Layout and model tabs: Controls the display of layout and model tabs."
+  :summary "Toggles the visibility of the Model and Layout tabs."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/layouttab-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C340CB7C-F65B-4603-B8F6-9B1C6B5B5E2A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/layouttab-system-variable")
 )
 
 (
@@ -11149,14 +14498,31 @@
   :read-only T
   :range NIL
   :bitcoded NIL
-  :scope :session
-  :saved-in :session
+  :scope :registry
+  :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Legacy code search mode: Enables unsafe search for executable code in drawing folders."
+  :divergence "default AutoCAD 0, may be locked by a CAD administrator, BricsCAD Off; read-only AutoCAD False, BricsCAD True; saved-in AutoCAD Registry, BricsCAD Not saved"
+  :summary "Controls whether searching for executable files includes the folder from which the program is started."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/legacycodesearch-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1E582989-79A5-4B88-A9C2-8826E3FF9430" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/legacycodesearch-system-variable")
+)
+
+(
+  :name "LEGACYCTRLPICK"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the Ctrl key behavior for selection cycling and subobject selection."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7FD66320-FC7D-4855-886A-C4BF7B3F1C03" :bricscad NIL)
 )
 
 (
@@ -11179,7 +14545,7 @@
 (
   :name "LENSLENGTH"
   :type :real
-  :default 50.0
+  :default 50.0000
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -11187,10 +14553,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Lens length: Displays the current viewport's lens length, in millimeters, used for perspective mode."
+  :divergence "default AutoCAD 50.0000, BricsCAD 50.0; read-only AutoCAD False, BricsCAD True"
+  :summary "Stores the length of the lens in millimeters used in perspective viewing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lenslength-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-78DABC95-C744-4DC2-8A19-4A66711D537C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lenslength-system-variable")
 )
 
 (
@@ -11256,14 +14622,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Light display: Displays a visual representation of lights for all light locations."
+  :summary "Turns on and off the display of light glyphs."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lightglyphdisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D1EA6DB1-C013-4066-9F5A-425AA5833F2B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lightglyphdisplay-system-variable")
 )
 
 (
   :name "LIGHTINGUNITS"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -11272,10 +14638,27 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Lighting units: Controls the light units type."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the lighting units for the drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lightingunits-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B127602F-B213-4F13-83BB-A84031576023" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lightingunits-system-variable")
+)
+
+(
+  :name "LIGHTSINBLOCKS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether lights contained in blocks are used when rendering."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5A21C492-C983-466B-BC6E-02177810722D" :bricscad NIL)
 )
 
 (
@@ -11307,15 +14690,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Limits check: Prevent the creation of entities outside the drawing limits."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/limcheck-system-variable")
+  :summary "Controls whether you can create objects outside the grid limits."
+  :coupled ("initget")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-84DE5754-71A8-4CA7-91C4-05E0463D2BAB" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/limcheck-system-variable")
 )
 
 (
   :name "LIMMAX"
   :type :point
-  :default (12 9)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11323,16 +14706,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Limits maximum: The upper-right corner of the drawing limits, expressed in world coordinates."
+  :divergence "default AutoCAD 12.0000,9.0000 (imperial) or 420.0000,297.0000 (metric), BricsCAD 12,9"
+  :summary "Stores the upper-right grid limits for the current space, expressed in world coordinates."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/limmax-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CB4FA7B5-7041-481F-858C-C9BFE4AAC660" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/limmax-system-variable")
 )
 
 (
   :name "LIMMIN"
   :type :point
-  :default (0 0)
+  :default (0.0000 0.0000)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11340,16 +14723,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Limits minimum: The lower-left corner of the drawing limits, expressed in world coordinates."
+  :divergence "default AutoCAD 0.0000,0.0000, BricsCAD 0,0"
+  :summary "Stores the lower-left grid limits for the current space, expressed in world coordinates."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/limmin-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1F2F481D-D130-4ED9-8590-7910F6F7F2D9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/limmin-system-variable")
 )
 
 (
   :name "LINEARARROWHEADLENGTH"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11366,7 +14749,7 @@
 (
   :name "LINEARARROWHEADWIDTH"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11383,7 +14766,7 @@
 (
   :name "LINEARARROWTHICKNESS"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11411,7 +14794,7 @@
   :divergence NIL
   :summary "Linear brightness (deprecated): Controls the intensity of lights, can be specified per viewport. Values between -10 and 10 are accepted. A value of zero means no scaling. Smaller values decrease light intensity and bigger values increase light intensity. This setting can be specified per viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/linearbrightness-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/linearbrightness-system-variable")
 )
 
 (
@@ -11428,7 +14811,41 @@
   :divergence NIL
   :summary "Linear contrast (deprecated): Controls ambient light intensity. Only effects materials with a non-black ambient color, can be set per viewport. Values between -10 and 10 are accepted. A value of -10 means maximum ambient light. A value of 10 means no ambient light. This setting only has effect on materials that have a non-black ambient color. This setting can be specified per viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/linearcontrast-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/linearcontrast-system-variable")
+)
+
+(
+  :name "LINEFADING"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether line displays are faded when hardware acceleration is on and you have exceeded the line density limits."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7AA085DB-2F0C-43B6-933A-DB8170E20F58" :bricscad NIL)
+)
+
+(
+  :name "LINEFADINGLEVEL"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "When hardware acceleration is on, controls the intensity of the line fading effect."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-87F4D6AF-1BB3-4C4C-B86C-4E44E31A8A13" :bricscad NIL)
 )
 
 (
@@ -11462,7 +14879,7 @@
   :divergence NIL
   :summary "LISP init: Controls if LISP variables and functions are preserved between drawings."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lispinit-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lispinit-system-variable")
 )
 
 (
@@ -11474,12 +14891,12 @@
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "2021+" :bricscad nil)
+  :versions (:autocad "all" :bricscad nil)
   :vendor :autocad
-  :divergence "BricsCAD has no LISPSYS sysvar; engine selection happens differently."
-  :summary "Selects the AutoLISP engine (legacy vs. modern). Read by load and open to choose the loader and source-file encoding."
-  :coupled ("load" "open")
-  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-09E1B7E9-D8E5-4E1B-B30F-2EAE5DAC8FC8" :bricscad NIL)
+  :divergence NIL
+  :summary "Controls the default AutoLISP development environment and, on AutoCAD for Windows only, the behavior of the VLISP command."
+  :coupled ("ascii" "chr" "load" "open" "read-char" "read-line" "strlen" "substr" "vl-directory-files" "vl-file-copy" "vl-file-delete" "vl-file-directory-p" "vl-file-rename" "vl-file-size" "vl-file-systime")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1853092D-6E6D-4A06-8956-AD2C3DF203A3" :bricscad NIL)
 )
 
 (
@@ -11502,7 +14919,7 @@
 (
   :name "LOCALE"
   :type :string
-  :default "\"en_US\""
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -11511,15 +14928,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Locale: The ISO language code of this version of the program."
+  :summary "Displays a code that indicates the current language."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/locale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FC7C9C59-4335-4511-8804-36E1724534CC" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/locale-system-variable")
 )
 
 (
   :name "LOCALROOTPREFIX"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -11528,14 +14945,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Local root prefix: The path of the folder, where local files for the current user, such as templates, were installed. The Template and Textures folders are in this location, and you can add any customizable files that you do not want to roam on the network. See ROAMABLEROOTPREFIX for the location of the roamable files."
+  :summary "Stores the full path to the root folder where local customizable files were installed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/localrootprefix-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B91E3446-3DA2-49E6-A312-701104E2F829" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/localrootprefix-system-variable")
 )
 
 (
   :name "LOCKUI"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (-7 7)
@@ -11544,10 +14961,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Lock user interface elements: Locks interface elements and prevents repositioning. Windows and Linux: hold the Ctrl key to override. macOS: hold the Cmd key to override."
+  :divergence "type AutoCAD Bitcode, BricsCAD Short"
+  :summary "Locks the location and size of toolbars panels, and dockable windows such as DesignCenter and the Properties palette."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lockui-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-19C5EEB0-D2DD-4726-89A7-3D346B513715" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lockui-system-variable")
 )
 
 (
@@ -11561,10 +14978,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Loft angle 1: Sets the angle at the first cross-section, for the LOFT command, modifies the loft shape. Works only if the LOFTNORMALS system variable is set to Surface uses draft angle and magnitude . Values between 0.0 and 360.0 are accepted."
+  :divergence "default AutoCAD 90, BricsCAD 90.0"
+  :summary "Sets the draft angle through the first cross section in a loft operation."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftang1-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AF30562B-CAF3-480C-A470-316E995AA084" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftang1-system-variable")
 )
 
 (
@@ -11578,16 +14995,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Loft angle 2: Sets the angle at the last cross-section, for the LOFT command, modifies the loft shape. Works only if the LOFTNORMALS system variable is set to Surface uses draft angle and magnitude . Values between 0.0 and 360.0 are accepted."
+  :divergence "default AutoCAD 90, BricsCAD 90.0"
+  :summary "Sets the draft angle through the last cross section in a loft operation."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftang2-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4947343A-BC69-4DB5-A1E9-F80F52996DC9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftang2-system-variable")
 )
 
 (
   :name "LOFTMAG1"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11595,16 +15012,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Loft magnitude 1: Sets the relative distance of the surface from the cross section in the direction of the LOFTANG1 system variable, before the surface starts to bend towards the next section. Works only if the LOFTNORMALS system variable is set to Surface uses draft angle and magnitude ."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the magnitude of the draft angle through the first cross section in a loft operation."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftmag1-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BC5CCAED-A9E9-4D3B-BCC7-242A31D9E777" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftmag1-system-variable")
 )
 
 (
   :name "LOFTMAG2"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11612,32 +15029,32 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Loft magnitude 2: Sets the relative distance of the surface from the cross section in the direction of the LOFTANG2 system variable, before the surface starts to bend towards the next section. Works only if the LOFTNORMALS system variable is set to Surface uses draft angle and magnitude ."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the magnitude of the draft angle through the last cross section in a loft operation."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftmag2-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-128216DE-135C-4135-9787-3386CBFE4B56" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftmag2-system-variable")
 )
 
 (
   :name "LOFTNORMALS"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 6)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Loft normals: Controls the behavior of surfaces and solids created with the LOFT command as they pass through a cross section."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the normals of a lofted object where it passes through cross sections."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftnormals-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1176E493-3EF5-4FE0-9199-F6EEC132E362" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftnormals-system-variable")
 )
 
 (
   :name "LOFTPARAM"
-  :type :short
+  :type :integer
   :default 7
   :read-only NIL
   :range (0 15)
@@ -11646,10 +15063,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Loft param: Controls the shape of surfaces and solids created with the LOFT command."
+  :divergence "type AutoCAD Bitcode, BricsCAD Short"
+  :summary "Controls the shape of lofted solids and surfaces."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftparam-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D2666F77-526D-4A38-BE6F-4E7CD99EF1F7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loftparam-system-variable")
 )
 
 (
@@ -11664,32 +15081,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Log file mode: Maintains a logfile. A logfile contains each executed command. These logfiles are saved in the folder specified by the LOGFILEPATH system variable."
+  :summary "Specifies whether the contents of the command history are written to a log file."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/logfilemode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C0C25385-F210-4834-B7D4-B29C2592D36A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/logfilemode-system-variable")
 )
 
 (
   :name "LOGFILENAME"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
-  :scope :session
-  :saved-in :session
+  :scope :drawing
+  :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Log file name: The name of the log file. See also the LOGFILEMODE system variable."
+  :divergence "saved-in AutoCAD Drawing, BricsCAD Not saved"
+  :summary "Specifies the path and name of the command history log file for the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/logfilename-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-38D94E23-56D3-4B41-8684-200150A2DDA7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/logfilename-system-variable")
 )
 
 (
   :name "LOGFILEPATH"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11698,15 +15115,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Log file path: The file path used for the log file."
+  :summary "Specifies the path for the command history log files for all drawings in a session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/logfilepath-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0E2D4DF2-4C26-48AC-ACBC-819E3C46CE59" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/logfilepath-system-variable")
 )
 
 (
   :name "LOGGEDINSTATUS"
   :type :integer
-  :default (:unknown)
+  :default (:registry)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -11723,7 +15140,7 @@
 (
   :name "LOGINNAME"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -11732,15 +15149,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Login name: Shows the Windows login name, saved to the file properties statistics of the drawing."
+  :summary "Displays the current user's login name and is saved with the file properties statistics of DWG and related files."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loginname-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-81446F4E-F6DC-442A-9889-EE777D3D49B9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/loginname-system-variable")
 )
 
 (
   :name "LONGITUDE"
   :type :real
-  :default -122.394
+  :default -122.3940
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11748,10 +15165,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Longitude: Controls the longitude of the drawing, in decimal format. Values between -180.0 and 180.0 are accepted. Positive values represent east longitudes."
+  :divergence "default AutoCAD -122.3940, BricsCAD -122.394"
+  :summary "Specifies the longitude of the geographic marker."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/longitude-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C745C49D-3646-4C3E-B32E-7AC0F89E854E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/longitude-system-variable")
 )
 
 (
@@ -11791,7 +15208,7 @@
 (
   :name "LOOKFROMZOOMEXTENTS"
   :type :integer
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11817,15 +15234,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Linetype gap selection: Makes it possible to snap to gaps on non-continuous linetypes."
+  :summary "Controls whether you can select or snap to the gaps on objects defined with non-continuous linetype."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/ltgapselection-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C3816CB5-ED9D-4F7B-8F1A-C974E17D0FF7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/ltgapselection-system-variable")
 )
 
 (
   :name "LTSCALE"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11833,15 +15250,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Linetype scale: Sets the default linetype scale multiplier."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Sets the global linetype scale factor."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/ltscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-88787AE5-957B-483C-9EEF-51564114181F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/ltscale-system-variable")
 )
 
 (
   :name "LUNITS"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (1 5)
@@ -11850,32 +15267,32 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Linear unit type: Controls the unit type for lengths."
-  :coupled ("rtos" "distance" "getdist" "getreal")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lunits-system-variable")
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the linear units format for creating objects."
+  :coupled ("distance" "distof" "getdist" "getreal" "rtos")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D7C80D1F-B1C0-44A9-898E-B3100FF391CB" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lunits-system-variable")
 )
 
 (
   :name "LUPREC"
-  :type :short
+  :type :integer
   :default 4
   :read-only NIL
   :range (0 8)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Linear unit precision: Controls the number of decimal places displayed for linear units. See also the MEASUREMENT and INSUINTS system variables."
-  :coupled ("rtos" "distance" "getdist")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/luprec-system-variable")
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the display precision for linear units and coordinates."
+  :coupled ("distance" "getdist" "rtos")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5FFF39D6-EFC7-49F5-B56A-6023EB5C0DE7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/luprec-system-variable")
 )
 
 (
   :name "LWDEFAULT"
-  :type :short
+  :type :integer
   :default 25
   :read-only NIL
   :range (0 211)
@@ -11884,16 +15301,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Default lineweight: Controls the default lineweight, in hundredths of millimeters."
+  :divergence "type AutoCAD Enum, BricsCAD Short"
+  :summary "Sets the value for the default lineweight."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lwdefault-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-969FE4A6-C30D-44DE-AFD4-A81B53F175F6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lwdefault-system-variable")
 )
 
 (
   :name "LWDISPLAY"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -11902,9 +15319,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Lineweight display: Displays lineweights."
+  :summary "Controls whether the lineweights of objects are displayed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lwdisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-18CA6E8F-0008-402E-9F6B-2F9ED8A0A7DD" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lwdisplay-system-variable")
 )
 
 (
@@ -11926,7 +15343,7 @@
 
 (
   :name "LWUNITS"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -11935,10 +15352,44 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Lineweight units: Controls the lineweight display unit."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether lineweight units are displayed in inches or in millimeters."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lwunits-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-60AD1B40-39E8-4918-B93D-647CBA439E30" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/l/lwunits-system-variable")
+)
+
+(
+  :name "MACROINSIGHTSSUPPORT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether macro insights can be received based on the command sequences you execute."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D1780F08-853C-4AAF-BD71-D0E27C3E8018" :bricscad NIL)
+)
+
+(
+  :name "MACRONOTIFY"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the notification for macro insights."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4AA4D305-A5CC-4A56-B188-BF114A0E9C91" :bricscad NIL)
 )
 
 (
@@ -12029,7 +15480,7 @@
 (
   :name "MANIPULATORSIZE"
   :type :real
-  :default 1.0d0
+  :default 1.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12044,12 +15495,80 @@
 )
 
 (
+  :name "MARKUPASSISTMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether identified markups are highlighted."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7C483FAC-793E-422F-B500-4D6F7AE96A89" :bricscad NIL)
+)
+
+(
+  :name "MARKUPPAPERDISPLAY"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the level of transparency when a digital markup is active."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9F391B6F-5065-40C3-AF02-5E252F9FD807" :bricscad NIL)
+)
+
+(
+  :name "MARKUPPAPERTRANSPARENCY"
+  :type :integer
+  :default 90
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the level of transparency of the markup drawing background image when a digital markup is active."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-49945E9C-9B38-42DD-9197-B3561CB1C945" :bricscad NIL)
+)
+
+(
+  :name "MARKUPSELECTIONMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Enables selection using boundary markup assist boxes as criteria."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ACCD06B0-30FD-4901-987A-38E3F89AC838" :bricscad NIL)
+)
+
+(
   :name "MASSPREC"
   :type :short
   :default -1
   :read-only NIL
   :range (-1 8)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad nil :bricscad "V20+")
@@ -12066,7 +15585,7 @@
   :default 2
   :read-only NIL
   :range NIL
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -12095,8 +15614,42 @@
 )
 
 (
+  :name "MATBROWSERSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Materials Browser is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EE82A39A-90F8-46F7-87FC-4AF9E9AEB833" :bricscad NIL)
+)
+
+(
+  :name "MATEDITORSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Materials Editor is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-38D9209A-0682-44F3-B065-1EB70D7B1B5F" :bricscad NIL)
+)
+
+(
   :name "MAXACTVP"
-  :type :short
+  :type :integer
   :default 64
   :read-only NIL
   :range NIL
@@ -12105,10 +15658,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Maximum active viewports: Controls the maximum number of viewports that can be active simultaneously in a layout. Has no effect on the number of viewports that are plotted."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the maximum number of viewports that can be active at one time on a layout."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/maxactvp-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-86846A4D-4E21-4E62-A710-E7B55243452D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/maxactvp-system-variable")
 )
 
 (
@@ -12129,9 +15682,26 @@
 )
 
 (
+  :name "MAXINTERSECTIONCURVEPOINTS"
+  :type :integer
+  :default 300
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the upper limit of the number of control points or vertices that splines and polylines can include in the intersection calculations."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DEFF9536-EAB5-42F4-B61B-4EB36BFD685F" :bricscad NIL)
+)
+
+(
   :name "MAXSORT"
-  :type :short
-  :default 200
+  :type :integer
+  :default 1000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12139,10 +15709,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Maximum sort: Controls the maximum number of symbol, file and/or block names sorted by commands that list. If the number of items exceeds this value, the items are not sorted into alphabetical order. Values between 0 and 200 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1000, BricsCAD 200"
+  :summary "Sets the maximum number of items such as file names, layer names, and block names that are sorted alphabetically in dialog boxes, drop-down lists, and palettes."
   :coupled ("acad_strlsort")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/maxsort-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7AD30968-4982-4E1C-9847-69A5EAEB7C63" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/maxsort-system-variable")
 )
 
 (
@@ -12181,7 +15751,7 @@
 
 (
   :name "MBUTTONPAN"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -12190,16 +15760,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Middle button pan: Controls how the middle mouse button/wheel responds."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the behavior of the third button or wheel on the pointing device."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mbuttonpan-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-07122CB7-EC98-4D5F-B3BE-16EA6FB54CED" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mbuttonpan-system-variable")
 )
 
 (
   :name "MEASUREINIT"
-  :type :short
-  :default 1
+  :type :integer
+  :default (:host-specific)
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
@@ -12207,16 +15777,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Measurement initial: Controls drawing units as Imperial or Metric for new drawings Also controls the hatch pattern and linetype files used: ANSI for Imperial and ISO for Metric units."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether a drawing you start from scratch uses imperial or metric default settings."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/measureinit-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5F81863D-FAA6-4837-9071-F91C3E1A1E26" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/measureinit-system-variable")
 )
 
 (
   :name "MEASUREMENT"
-  :type :short
-  :default 1
+  :type :integer
+  :default (:drawing)
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
@@ -12224,10 +15794,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Measurement: Controls the current drawing units as Imperial or Metric, also controls if ANSI or ISO hatch pattern and linetype files are used. See also the LUNITS and INSUNITS system variables."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 0 (imperial) or 1 (metric), BricsCAD 1"
+  :summary "Controls whether the current drawing uses imperial or metric hatch pattern and linetype files."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/measurement-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1D074C55-0B63-482E-8A37-A52AC0C7C8FE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/measurement-system-variable")
 )
 
 (
@@ -12301,18 +15871,18 @@
 (
   :name "MENUBAR"
   :type :integer
-  :default 1
+  :default 0
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
-  :scope :session
-  :saved-in :workspace
+  :scope :registry
+  :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Menu bar: Displays the Menu bar."
+  :divergence "default AutoCAD 0, BricsCAD On; saved-in AutoCAD Registry, BricsCAD Workspace"
+  :summary "Controls the display of the menu bar."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/menubar-except-os-x-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-27FE369A-FBB3-4559-9093-F572EE00AD6C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/menubar-except-os-x-system-variable")
 )
 
 (
@@ -12329,12 +15899,12 @@
   :divergence NIL
   :summary "Menu control: Controls if the screen menu switches pages in response to keyboard command entry."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/menuctl-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/menuctl-system-variable")
 )
 
 (
   :name "MENUECHO"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 15)
@@ -12343,16 +15913,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Menu echo: Controls menu echo and prompt control."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets menu echo and prompt control bits."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/menuecho-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B28F3542-B21B-45BF-987E-63303EE18170" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/menuecho-system-variable")
 )
 
 (
   :name "MENUNAME"
   :type :string
-  :default (:unknown)
+  :default "customization_file_name"
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -12361,14 +15931,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Menu name: The file path for the menu file."
+  :summary "Stores the customization file name, including the path for the file name."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/menuname-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9F0A50EB-0A85-473E-9AF5-184B25B81D40" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/menuname-system-variable")
 )
 
 (
   :name "MESHTYPE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -12377,16 +15947,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Mesh type: Controls the type of mesh that is created by REVSURF, TABSURF, RULESURF and EDGESURF commands (Not yet supported)."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the type of mesh that is created by REVSURF, TABSURF, RULESURF and EDGESURF."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/meshtype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BC7C217E-CBA1-43AF-8688-81204DFDCDEB" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/meshtype-system-variable")
 )
 
 (
   :name "MIDDLECLICKCLOSE"
   :type :integer
-  :default (:unknown)
+  :default 1
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12403,7 +15973,7 @@
 (
   :name "MILLISECS"
   :type :integer
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -12412,9 +15982,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Milliseconds: Counts the number of milliseconds that have passed since system startup."
+  :summary "Stores the number of milliseconds that have elapsed since the system was started."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/millisecs-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C89F7375-E923-489C-B59F-A145270D6007" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/millisecs-system-variable")
 )
 
 (
@@ -12429,32 +15999,49 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Mirror hatch patterns: Controls if hatch patterns are mirrored by the MIRROR command."
+  :summary "Controls how MIRROR reflects hatch patterns."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mirrhatch-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-427D4868-B3BF-48F1-8BB8-04FE1B3976D4" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mirrhatch-system-variable")
 )
 
 (
   :name "MIRRTEXT"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only NIL
   :range NIL
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Mirror text: Controls if text is mirrored by the MIRROR command."
+  :summary "Controls how MIRROR reflects text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mirrtext-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D55D2D18-B26E-4525-B5E4-03A2A07FB5F6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mirrtext-system-variable")
+)
+
+(
+  :name "MLEADERLAYER"
+  :type :string
+  :default "use current"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies a default layer for new multileaders."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1A3337E5-3C1E-446C-9EED-91B3931EE2B0" :bricscad NIL)
 )
 
 (
   :name "MLEADERSCALE"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12462,16 +16049,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Multileader scale: Controls the width scale for entities created with the MLEADER command. Note: The scale must have a positive value."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Sets the overall scale factor applied to multileader objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mleaderscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-79E3F4C9-2F20-4DE0-8966-E4636ACF6E68" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mleaderscale-system-variable")
 )
 
 (
   :name "MODEMACRO"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12480,14 +16067,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Mode macro: Displays a text string on the status line, such as the name of the current drawing,time/date stamp or special modes. Used to help debug Diesel programs."
+  :summary "Displays a text string on the status line, such as the name of the current drawing, time/date stamp, or special modes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/modemacro-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3637B188-6520-4BCB-B40F-1E0428AE34AD" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/modemacro-system-variable")
 )
 
 (
   :name "MSLTSCALE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -12496,16 +16083,33 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Model space linetype scale: Controls the linetype annotation scale behavior, in model space. Note: When changing MSLTSCALE, REGEN or REGENALL is needed to update the display."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Scales linetypes displayed on the model tab by the annotation scale."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/msltscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-023B046C-56EA-463C-A867-DF713666A69E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/msltscale-system-variable")
+)
+
+(
+  :name "MSMSTATE"
+  :type :integer
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Markup Set Manager is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-71C7F558-EDEE-4890-94F7-05F2C3CC83C0" :bricscad NIL)
 )
 
 (
   :name "MSOLESCALE"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12513,66 +16117,32 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Model space OLE scale: Controls the size of an OLE (Object Linking & Embedding) entity, that contains text, when pasted into model space. Entities already placed in the drawing are not affected. If set to zero, uses the DIMSCALE system variable."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Controls the size of an OLE object with text that is pasted into model space."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/msolescale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EB73E96B-3B3B-49DC-AE73-1DF7F9EE2CEE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/msolescale-system-variable")
+)
+
+(
+  :name "MTEXTAUTOSTACK"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls autostacking for the MTEXT command."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B8FD8188-880B-4F95-BF74-D3D67B6F46D2" :bricscad NIL)
 )
 
 (
   :name "MTEXTCOLUMN"
-  :type :short
-  :default 0
-  :read-only NIL
-  :range (0 2)
-  :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
-  :versions (:autocad "all" :bricscad "V20+")
-  :vendor :both
-  :divergence NIL
-  :summary "Multiline text column setting: Controls the default column property for multi-line text."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtextcolumn-system-variable")
-)
-
-(
-  :name "MTEXTDETECTSPACE"
   :type :integer
-  :default (:unknown)
-  :read-only NIL
-  :range NIL
-  :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
-  :versions (:autocad "all" :bricscad "V20+")
-  :vendor :both
-  :divergence NIL
-  :summary "Space detection for creating lists in mtext editor: Creates formatted list items, when the space bar is pressed after a letter, number or symbol, in mtext editor mode."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtextdetectspace-system-variable")
-)
-
-(
-  :name "MTEXTED"
-  :type :string
-  :default (:unknown)
-  :read-only NIL
-  :range NIL
-  :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
-  :versions (:autocad "all" :bricscad "V20+")
-  :vendor :both
-  :divergence NIL
-  :summary "Multiline text editor: Controls the text editors to use for multiline text entities."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtexted-system-variable")
-)
-
-(
-  :name "MTEXTFIXED"
-  :type :short
   :default 2
   :read-only NIL
   :range (0 2)
@@ -12581,16 +16151,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Multiline text fixed: Controls whether the application zooms, rotates and/or pans the view to fit the multiline text to be edited."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 2, BricsCAD 0"
+  :summary "Sets the default column setting for an mtext object."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtextfixed-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-188C7F13-7046-436E-9F4E-6E05984456E8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtextcolumn-system-variable")
 )
 
 (
-  :name "MTEXTTOOLBAR"
+  :name "MTEXTDETECTSPACE"
   :type :integer
-  :default (:unknown)
+  :default 1
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12599,9 +16169,77 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "MText Formatting toolbar: Controls if the formatting toolbar is displayed when multiline text is edited."
+  :summary "Controls whether the keyboard spacebar is used to create list items in the MTEXT command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtexttoolbar-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CDEA90C9-66CB-4F23-9FB6-5BD7F49796C2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtextdetectspace-system-variable")
+)
+
+(
+  :name "MTEXTED"
+  :type :string
+  :default "\"Internal\""
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad "V20+")
+  :vendor :both
+  :divergence NIL
+  :summary "Sets the application for editing multiline text objects."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C7CF957C-3A44-4667-8ABE-22CAFDF99145" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtexted-system-variable")
+)
+
+(
+  :name "MTEXTEDENCODING"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the expected encoding to use when reading the output from an external editor while editing MText."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ACA606FE-B114-4106-B054-2B9CC7B3B6A7" :bricscad NIL)
+)
+
+(
+  :name "MTEXTFIXED"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range (0 2)
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad "V20+")
+  :vendor :both
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the display size and orientation behavior of the In-Place Text Editor for multiline text."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-614588C8-2375-4D1B-A645-A9376D170B02" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtextfixed-system-variable")
+)
+
+(
+  :name "MTEXTTOOLBAR"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad "V20+")
+  :vendor :both
+  :divergence "saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Controls the display of the Text Formatting toolbar."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D920DB3C-8BF6-4219-B9E8-782D93785821" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtexttoolbar-system-variable")
 )
 
 (
@@ -12618,13 +16256,30 @@
   :divergence NIL
   :summary "Multi-Threading Flags: Bit flags for parallel processing of display and loading."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtflags-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mtflags-system-variable")
+)
+
+(
+  :name "MTJIGSTRING"
+  :type :string
+  :default "\"abc\""
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the content of the sample text displayed at the cursor location when the MTEXT command is started."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A4497DDB-EAC9-4DFD-837D-19B85C6426C1" :bricscad NIL)
 )
 
 (
   :name "MULTISELECTANGULARTOLERANCE"
   :type :real
-  :default 3.0d0
+  :default 3.0
   :read-only NIL
   :range (0 90)
   :bitcoded NIL
@@ -12639,9 +16294,26 @@
 )
 
 (
+  :name "MVIEWPREVIEW"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the preview behavior when inserting a named or new layout viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2CA0AB1A-D237-4C8D-A9A7-C23D8339102A" :bricscad NIL)
+)
+
+(
   :name "MYDOCUMENTSPREFIX"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -12650,15 +16322,117 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "MyDocuments root prefix: The path of the user documents folder."
+  :summary "Stores the full path to the My Documents folder for the user currently logged on."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mydocumentsprefix-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BB7A683E-4CBE-4FE6-8C0B-431A0CCD91A6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/m/mydocumentsprefix-system-variable")
+)
+
+(
+  :name "NAVBARDISPLAY"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of the navigation bar in all viewports."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-96CA70D4-A86A-4BEE-BBB3-BFF1C28799A2" :bricscad NIL)
+)
+
+(
+  :name "NAVSWHEELMODE"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the current mode of the SteeringWheel."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BF597215-83F8-42B0-95B5-3A6D588B6BA7" :bricscad NIL)
+)
+
+(
+  :name "NAVSWHEELOPACITYBIG"
+  :type :integer
+  :default 50
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the opacity of the big SteeringWheels."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E2B522DD-4DA7-40BF-A078-C6C6E4E726BF" :bricscad NIL)
+)
+
+(
+  :name "NAVSWHEELOPACITYMINI"
+  :type :integer
+  :default 50
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the opacity of the mini SteeringWheels."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ECB4FE77-CB72-4D88-9BB5-110A63B2AA86" :bricscad NIL)
+)
+
+(
+  :name "NAVSWHEELSIZEBIG"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the size of the big SteeringWheels."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DD21EA8A-6893-4883-95E8-380E78C7ED7F" :bricscad NIL)
+)
+
+(
+  :name "NAVSWHEELSIZEMINI"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the size of the mini SteeringWheels."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-95FBFDE3-9A89-4A24-A2A3-91A9416A3498" :bricscad NIL)
 )
 
 (
   :name "NAVVCUBEDISPLAY"
-  :type :short
-  :default 1
+  :type :integer
+  :default 3
   :read-only NIL
   :range (0 3)
   :bitcoded NIL
@@ -12666,15 +16440,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "LookFrom display: Toggles the LookFrom control on/off. The LookFrom is the navigation control, by default this appears in the top-right corner."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 3, BricsCAD On"
+  :summary "Controls the display of the ViewCube tool in the current visual style and the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/navvcubedisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0D362177-000F-4722-83D8-0B808F4A4C97" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/navvcubedisplay-system-variable")
 )
 
 (
   :name "NAVVCUBELOCATION"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 3)
@@ -12683,15 +16457,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "LookFrom location: Controls the location of the LookFrom control."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Identifies the corner in a viewport where the ViewCube tool is displayed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/navvcubelocation-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-37832360-B7F4-4C03-8FDD-54C21D2383E2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/navvcubelocation-system-variable")
 )
 
 (
   :name "NAVVCUBEOPACITY"
-  :type :short
+  :type :integer
   :default 50
   :read-only NIL
   :range (0 100)
@@ -12700,16 +16474,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "LookFrom opacity: Controls the opacity of the LookFrom control while inactive."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the opacity of the ViewCube tool when inactive."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/navvcubeopacity-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-629F5CDF-9266-4614-AC67-A022181CFF1B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/navvcubeopacity-system-variable")
 )
 
 (
   :name "NAVVCUBEORIENT"
-  :type :short
-  :default 0
+  :type :integer
+  :default 1
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
@@ -12717,10 +16491,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "LookFrom orientation: Controls if the LookFrom control reflects the current WCS (World Coordinate System) or UCS (User Coordinate System)."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, BricsCAD 0"
+  :summary "Controls whether the ViewCube tool reflects the current UCS or WCS."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/navvcubeorient-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-34A9363D-2578-4CBF-B9CC-3B4452DE8FB3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/navvcubeorient-system-variable")
+)
+
+(
+  :name "NAVVCUBESIZE"
+  :type :integer
+  :default 4
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the size of the ViewCube tool."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-775F24B6-7044-43DF-8967-A5C6EE930758" :bricscad NIL)
 )
 
 (
@@ -12754,13 +16545,13 @@
   :divergence NIL
   :summary "No muttering: Suppresses text in the Command line. When on, the Command line will stop prompting all the options and actions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/nomutt-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/nomutt-system-variable")
 )
 
 (
   :name "NORTHDIRECTION"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12768,32 +16559,32 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "North direction: Controls the angle of the sun, from north, in the context of the world coordinate system (WCS)."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Specifies the angle between the Y axis of WCS and the grid north."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/northdirection-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ABD3783D-4D11-40B0-9499-4FC7F42E155D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/n/northdirection-system-variable")
 )
 
 (
   :name "OBJECTISOLATIONMODE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 3)
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :preference
+  :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Object Isolation Mode: Controls if entities hidden with HIDEOBJECTS or ISOLATEOBJECTS commands remain hidden after a drawing is saved, closed and reopened."
+  :divergence "type AutoCAD Integer, BricsCAD Short; saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Controls whether hidden objects remain hidden between drawing sessions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/objectisolationmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B4ED98BE-62D0-4982-82A2-87B744C56F99" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/objectisolationmode-system-variable")
 )
 
 (
   :name "OBSCUREDCOLOR"
-  :type :short
+  :type :integer
   :default 257
   :read-only NIL
   :range (0 257)
@@ -12802,33 +16593,33 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Obscured color: Controls the color of obscured lines. Visible only if the OBSCUREDLTYPE system variable is in use."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the color of obscured lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/obscuredcolor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-31495F30-D8DA-4A33-BAF0-730A5DD90890" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/obscuredcolor-system-variable")
 )
 
 (
   :name "OBSCUREDLTYPE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 11)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Obscured linetype: Controls the linetype of obscured lines. Unlike regular linetypes, obscured linetypes are zoom level independent."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the linetype of obscured lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/obscuredltype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-072B3C99-2B93-49C4-8B92-FBDD05BC2399" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/obscuredltype-system-variable")
 )
 
 (
   :name "OFFSETDIST"
   :type :real
-  :default (:unknown)
+  :default -1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12837,15 +16628,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Offset distance: Stores the last distance used for the OFFSET command."
+  :summary "Sets the default offset distance."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/offsetdist-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4296AA53-76EF-4BDA-8B73-1AF08EA0B523" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/offsetdist-system-variable")
 )
 
 (
   :name "OFFSETERASE"
   :type :integer
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12856,7 +16647,7 @@
   :divergence NIL
   :summary "Offset erase: Erases the source entity for the OFFSET command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/offseterase-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/offseterase-system-variable")
 )
 
 (
@@ -12873,12 +16664,12 @@
   :divergence NIL
   :summary "Offset gap type: Controls how possible gaps, in parallel copies of closed polylines, are filled."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/offsetgaptype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/offsetgaptype-system-variable")
 )
 
 (
   :name "OLEFRAME"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -12887,15 +16678,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "OLE frame: Controls the display of a frame around an OLE object, if the FRAME system variable is set to Use individual system variables (3)."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether a frame is displayed and plotted on all OLE objects in the drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/oleframe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-24F7D9D4-0E89-49AA-BDB9-DB4644DAA3A3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/oleframe-system-variable")
 )
 
 (
   :name "OLEHIDE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 3)
@@ -12904,15 +16695,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "OLE hide: Controls the visibility of OLE objects for both screen display and plotting."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the display and plotting of OLE objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/olehide-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5C49940E-532B-4FDF-8EC4-D75C9779A8B8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/olehide-system-variable")
 )
 
 (
   :name "OLEQUALITY"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 3)
@@ -12921,16 +16712,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "OLE quality: Controls the default plot quality of OLE entities. When set to Automatically Select (3), the quality level is assigned automatically depending on the entity type (for example, photographs are set to High )."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the default plot quality for all OLE objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/olequality-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1366AB24-F08B-40F9-9EFC-05BED0A1767C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/olequality-system-variable")
 )
 
 (
   :name "OLESTARTUP"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -12939,15 +16730,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "OLE startup: Loads the OLE entity source when plotting."
+  :summary "Controls whether the source application of an embedded OLE object loads when plotting."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/olestartup-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AD39941E-879B-4DA0-BF34-04C8AAE6BD43" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/olestartup-system-variable")
 )
 
 (
   :name "OPMSTATE"
-  :type :short
-  :default 1
+  :type :integer
+  :default 0
   :read-only T
   :range (0 1)
   :bitcoded NIL
@@ -12955,15 +16746,15 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Properties panel state: Properties panel status."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 0, BricsCAD 1"
+  :summary "Indicates whether the Properties palette is open, closed, or hidden."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/opmstate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-757527A0-4FD6-464B-A91D-1618E71E09FE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/opmstate-system-variable")
 )
 
 (
   :name "ORBITAUTOTARGET"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -12972,10 +16763,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Orbit Auto Target: Controls the behavior of the RTROT command."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls how the target point is acquired for the 3DORBIT command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/orbitautotarget-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4E7E1156-CADF-410C-BDD0-C209FDD8953E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/orbitautotarget-system-variable")
 )
 
 (
@@ -12990,15 +16781,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Orthogonal mode: Constrains cursor movement perpendicularly. When on the cursor can only move horizontally or vertically, relative to the current UCS and grid rotation angle. See also the SNAPANG system variable."
+  :summary "Constrains cursor movement to the perpendicular."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/orthomode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CF142B68-675B-452F-B3A8-7831DDB71BD0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/orthomode-system-variable")
 )
 
 (
   :name "OSMODE"
-  :type :short
-  :default 4135
+  :type :integer
+  :default 4133
   :read-only NIL
   :range (0 32767)
   :bitcoded T
@@ -13006,15 +16797,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Entity snap mode: Controls the 2D entity snap types."
+  :divergence "type AutoCAD Bitcode, BricsCAD Short; default AutoCAD 4133, BricsCAD 4135"
+  :summary "Sets running object snaps."
   :coupled ("osnap")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/osmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DD9B3216-A533-4D47-95D8-7585F738FD75" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/osmode-system-variable")
 )
 
 (
   :name "OSNAPCOORD"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -13023,10 +16814,44 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Entity snap coordinates: Controls if entity snaps override manually entered coordinates."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether coordinates entered on the command line will override running object snaps."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/osnapcoord-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-94994960-5E62-4044-BEF7-9CF91667F641" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/osnapcoord-system-variable")
+)
+
+(
+  :name "OSNAPNODELEGACY"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the Node object snap can be used to snap to multiline text objects."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BF86DE5F-49D6-481D-BE1E-09A89F0F3DD2" :bricscad NIL)
+)
+
+(
+  :name "OSNAPOVERRIDE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Prevents overrides to default object snap settings."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F3B84568-4B41-427C-8B9F-FE4C1E547D9D" :bricscad NIL)
 )
 
 (
@@ -13041,14 +16866,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Ignore entity snap elevation: Overrides the Z coordinate of an entity snap with the current ELEVATION system variable value."
+  :summary "Controls whether object snaps are automatically projected onto a plane parallel to the XY plane of the current UCS at the current elevation."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/osnapz-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5A49F08E-C0FD-4B38-9253-BC60197E1A60" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/osnapz-system-variable")
 )
 
 (
   :name "OSOPTIONS"
-  :type :short
+  :type :integer
   :default 7
   :read-only NIL
   :range (0 15)
@@ -13057,10 +16882,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Entity snap options: Suppresses entity snaps on certain entity types."
+  :divergence "type AutoCAD Bitcode, BricsCAD Short"
+  :summary "Controls whether objects snaps are suppressed on hatch objects, geometry with negative Z values when using dynamic UCS, or dimension extension lines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/osoptions-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0D05BECE-0DC3-454D-999A-208C6DBC3C3E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/osoptions-system-variable")
 )
 
 (
@@ -13078,6 +16903,23 @@
   :summary "Duplicate Entities Layer: The layer that entities are moved to during the OVERKILL command - the Move duplicates to Duplicate Entities layer option. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/o/overkilllayer-system-variable")
+)
+
+(
+  :name "PALETTEOPAQUE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether palettes can be made transparent."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-32C9D125-6D80-4C1B-A51D-3F48854BD1E4" :bricscad NIL)
 )
 
 (
@@ -13105,7 +16947,7 @@
   :range (0 2)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -13126,15 +16968,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Paper update: Controls paper size adaption when printers are switched in the Print dialog box. If Off: does not update the paper size, preserving the paper size currently selected. If the printer has no close match, the size will be displayed as Previous paper size . On print, your confirmation is required before substitution with default values. If On: updates the paper size, using the default paper size of the selected printer."
+  :summary "Controls the display of a warning dialog box when attempting to print a layout with a paper size different from the paper size specified by the default for the plotter configuration file."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/paperupdate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-35A66DE6-B442-43E3-B62C-BF204D45EC0E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/paperupdate-system-variable")
 )
 
 (
   :name "PARAMETERCOPYMODE"
-  :type :short
-  :default 3
+  :type :integer
+  :default 1
   :read-only NIL
   :range (0 4)
   :bitcoded T
@@ -13142,10 +16984,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Parameter copy mode: Controls how constraints and related parameters are copied with the COPY command."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, BricsCAD 3"
+  :summary "Controls how constraints and referenced user parameters are handled when constrained objects are copied between drawings, Model space and layouts, and block definitions."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/parametercopymode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-003EF122-5624-4CBA-A925-9D9B756C1490" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/parametercopymode-system-variable")
 )
 
 (
@@ -13166,9 +17008,26 @@
 )
 
 (
+  :name "PARAMETERSSTATUS"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Parameters Manager is displayed or hidden."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6F68AA1F-4273-48D5-A688-B8E2C9D5C11D" :bricscad NIL)
+)
+
+(
   :name "PARAMETRICBLOCKS2DPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -13200,6 +17059,23 @@
 )
 
 (
+  :name "PASTESPECMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the cell formatting of Microsoft Excel data when using PASTESPEC command with the AutoCAD Entities option."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BBFB5A36-686D-4BAF-8AF3-B06BE9AFED56" :bricscad NIL)
+)
+
+(
   :name "PBLOCKREFERENCEOPERATIONSVISUALIZATION"
   :type :integer
   :default 0
@@ -13214,6 +17090,23 @@
   :summary "Visualize parametric operations on block references: Enables the visualization of the parametric operations' information when hovering the cursor over parametric block references. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pblockreferenceoperationsvisualization-system-variable")
+)
+
+(
+  :name "PCMSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Point Cloud Manager is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BD650D0C-95CA-4168-9594-0A251190C710" :bricscad NIL)
 )
 
 (
@@ -13236,7 +17129,7 @@
 (
   :name "PDFCACHE"
   :type :short
-  :default 2
+  :default (:host-specific)
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
@@ -13303,7 +17196,7 @@
 
 (
   :name "PDFFRAME"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 2)
@@ -13312,10 +17205,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "PDF frame: Controls the visibility of PDF underlay frames, if the FRAME system variable is set to Use individual system variables (3)."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Determines whether the PDF underlay frame is visible."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdfframe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9FC48ACE-3962-4977-B2BB-CD90984E91D6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdfframe-system-variable")
 )
 
 (
@@ -13455,9 +17348,26 @@
 )
 
 (
+  :name "PDFIMPORTFILTER"
+  :type :integer
+  :default 8
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls what types of data are imported from a PDF file and converted to AutoCAD objects."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-79A946C3-7E9C-4E7F-B175-23CC55978028" :bricscad NIL)
+)
+
+(
   :name "PDFIMPORTIMAGEPATH"
   :type :string
-  :default "PDF Images"
+  :default "\"PDF Images\""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -13465,16 +17375,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Raster Images Folder: The file path used to save images, during PDF import, absolute or relative. If relative, the PDF image path is relative to the folder of the current drawing file. If empty, the folder of the current drawing is used, if the drawing has not yet been saved the images will be saved in the same folder as the imported PDF."
+  :divergence "default AutoCAD \"PDF Images\", BricsCAD PDF Images"
+  :summary "Specifies the folder where referenced image files are extracted and saved when importing PDF files."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdfimportimagepath-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4DB80DEB-CDE2-430B-9D5E-7A3828BC7832" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdfimportimagepath-system-variable")
 )
 
 (
   :name "PDFIMPORTJOINLINEANDARCSEGMENTS"
   :type :integer
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -13486,6 +17396,23 @@
   :summary "Join line and arc segments: Joins continuous segments into a polyline, where possible, during PDF import. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdfimportjoinlineandarcsegments-system-variable")
+)
+
+(
+  :name "PDFIMPORTLAYERS"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls what layers are assigned to objects imported from PDF files."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F5A62383-B2F2-4003-8BE2-5E3E5419593D" :bricscad NIL)
 )
 
 (
@@ -13506,9 +17433,26 @@
 )
 
 (
+  :name "PDFIMPORTMODE"
+  :type :integer
+  :default 6
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the default processing when importing objects from a PDF file."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-669F39FF-972F-4C24-8841-E42185A44843" :bricscad NIL)
+)
+
+(
   :name "PDFIMPORTRASTERIMAGES"
   :type :integer
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -13746,11 +17690,11 @@
 (
   :name "PDFOPENINVIEWER"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
+  :scope :session
   :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
@@ -13772,9 +17716,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "PDF entity snap: Enables entity snap for PDF underlay files."
+  :summary "Determines whether object snapping is active for geometry in PDF underlays that are attached to the drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdfosnap-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9E9F06D1-115B-4966-ABE8-F129AFDB36FB" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdfosnap-system-variable")
 )
 
 (
@@ -13914,6 +17858,57 @@
 )
 
 (
+  :name "PDFSHX"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether text objects using SHX fonts are stored in PDF files as comments or hidden text when you export a drawing as a PDF file."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-56EA988C-A1DA-4E85-8765-B3F31A01AB02" :bricscad NIL)
+)
+
+(
+  :name "PDFSHXBESTFONT"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "When converting imported PDF geometry to text, controls whether the PDFSHXTEXT command uses the best matching font or uses the first selected font that exceeds the recognition threshold."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5734B0FD-1813-4926-BFCD-47CDF24FFAEC" :bricscad NIL)
+)
+
+(
+  :name "PDFSHXLAYER"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls what layer is assigned to newly created text objects when converting SHX geometry to text objects."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E2F6E9D6-8696-42D8-8DE4-8D82FB1F4C81" :bricscad NIL)
+)
+
+(
   :name "PDFSHXTEXTASGEOMETRY"
   :type :integer
   :default 0
@@ -13928,6 +17923,23 @@
   :summary "PDF SHX text as geometry: Converts SHX font text to geometry for PDF exports. This might be necessary if the receiving party does not have the same SHX fonts on their computer. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdfshxtextasgeometry-system-variable")
+)
+
+(
+  :name "PDFSHXTHRESHOLD"
+  :type :integer
+  :default 95
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the percentage of the selected geometry that must match a font before the geometry is converted to text objects."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C9A0DC3C-7906-45A2-9997-ECEC9CFA2758" :bricscad NIL)
 )
 
 (
@@ -14017,7 +18029,7 @@
 
 (
   :name "PDMODE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 100)
@@ -14026,16 +18038,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Point display mode: Controls the display style for point entities."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls how point objects are displayed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-82F9BB52-D026-4D6A-ABA6-BF29641F459B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdmode-system-variable")
 )
 
 (
   :name "PDSIZE"
   :type :real
-  :default 0.0d0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14043,10 +18055,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Point display size: Controls the display size for point entities."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0"
+  :summary "Sets the display size for point objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdsize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-826CA91D-704B-400B-B784-7FCC9619AFB9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pdsize-system-variable")
 )
 
 (
@@ -14061,9 +18073,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Polyline edit accept: Displays a warning, when non-polylines are selected during the PEDIT command. When suppressed, the selected entity is automatically converted to a polyline."
+  :summary "Automatically converts selected objects into polylines without a prompt when using PEDIT."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/peditaccept-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ED35EB02-53AD-4725-97DD-346C7E01974D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/peditaccept-system-variable")
 )
 
 (
@@ -14078,15 +18090,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Polyline ellipse: Controls the entity type created with the ELLIPSE command."
+  :summary "Controls the ellipse type created with ELLIPSE."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pellipse-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A1C64346-BBFC-4FE9-B346-BCD121BEFA0A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pellipse-system-variable")
 )
 
 (
   :name "PERIMETER"
   :type :real
-  :default (:unknown)
+  :default 0.0000
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -14095,26 +18107,43 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Last perimeter: The last perimeter calculated by the AREA, LIST, or DBLIST commands."
+  :summary "Stores the last perimeter value computed by the AREA, DBLIST, LIST, and MEASUREGEOM commands."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/perimeter-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A4F61BB1-2B36-41FE-8B67-FDABB2F62814" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/perimeter-system-variable")
 )
 
 (
   :name "PERSPECTIVE"
   :type :integer
-  :default 0
+  :default (:host-specific)
   :read-only NIL
   :range NIL
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Perspective: Turns on perspective view for the current viewport."
+  :summary "Specifies whether the current viewport displays a perspective view."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/perspective-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-37819B48-C614-40B8-9004-A0D862B90BAC" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/perspective-system-variable")
+)
+
+(
+  :name "PERSPECTIVECLIP"
+  :type :real
+  :default 5.0000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Determines the location of eyepoint clipping."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0854F8E9-AB7B-44F5-8B4D-0215922A77B6" :bricscad NIL)
 )
 
 (
@@ -14131,29 +18160,29 @@
   :divergence NIL
   :summary "Polyface mesh maximum vertices: The maximum number of vertices for each face."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pfacevmax-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pfacevmax-system-variable")
 )
 
 (
   :name "PICKADD"
   :type :integer
-  :default 1
+  :default 2
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :preference
+  :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Pick add: Controls how the Shift key selects entities."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickadd-system-variable")
+  :divergence "default AutoCAD 2, BricsCAD On; saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Controls whether subsequent selections replace the current selection set or add to it."
+  :coupled ("command")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-47C2A568-30EE-4F07-916F-884CDE25CBCA" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickadd-system-variable")
 )
 
 (
   :name "PICKAUTO"
-  :type :short
+  :type :integer
   :default 5
   :read-only NIL
   :range (-7 7)
@@ -14162,16 +18191,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Selection window behavior: Controls the selection behavior - window and lasso - used to select multiple entities at the same time. See also the PICKDRAG system variable."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickauto-system-variable")
+  :divergence "type AutoCAD Bitcode, BricsCAD Short"
+  :summary "Controls automatic windowing for object selection."
+  :coupled ("command")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7BAAA374-8409-4296-B520-C5355941C836" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickauto-system-variable")
 )
 
 (
   :name "PICKBOX"
-  :type :short
-  :default 4
+  :type :integer
+  :default 3
   :read-only NIL
   :range (0 50)
   :bitcoded NIL
@@ -14179,16 +18208,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Pick box: Controls the selection area size around the cursor, in pixels. Values between 0 and 50 are accepted. Note: If you select an entity by clicking, the Pick Box must touch or overlap the entity."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 3, BricsCAD 4"
+  :summary "Sets the object selection target height, in device independent pixels."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickbox-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-363698CF-C3DC-4770-81EF-CB09D86B3D3A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickbox-system-variable")
 )
 
 (
   :name "PICKDRAG"
   :type :integer
-  :default 0
+  :default 2
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14196,10 +18225,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Pick drag: Controls the window selection behavior used to select multiple entities at the same time. See also the PICKAUTO system variable."
+  :divergence "default AutoCAD 2, BricsCAD 0"
+  :summary "Controls the method of drawing a selection window."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickdrag-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-46CBF4EF-E210-447D-AE6E-793249551640" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickdrag-system-variable")
 )
 
 (
@@ -14214,14 +18243,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Pick first: Makes it possible to select entities first, then issue a command."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickfirst-system-variable")
+  :summary "Controls whether you can select objects before you start a command."
+  :coupled ("ssget")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-258E01D5-83E8-40EB-9662-78C626A60844" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickfirst-system-variable")
 )
 
 (
   :name "PICKSTYLE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 3)
@@ -14230,10 +18259,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Pick style: Controls the selection of groups and associative hatches. Use Ctrl+H to toggle this system variable."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the use of group selection and associative hatch selection."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickstyle-except-os-x-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0F1D2321-E474-48AA-9179-98F17CCCA239" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pickstyle-except-os-x-system-variable")
 )
 
 (
@@ -14254,12 +18283,29 @@
 )
 
 (
+  :name "PLACEMENTSWITCH"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether placement suggestions are displayed by default as you insert a block."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F1EDAE78-D9F6-48B3-AD0F-8503CD3FED02" :bricscad NIL)
+)
+
+(
   :name "PLACESBARFOLDER1"
   :type :short
   :default 0
   :read-only NIL
   :range (0 5)
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -14276,7 +18322,7 @@
   :default 1
   :read-only NIL
   :range (0 5)
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -14293,7 +18339,7 @@
   :default 3
   :read-only NIL
   :range (0 5)
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -14310,7 +18356,7 @@
   :default 5
   :read-only NIL
   :range (0 5)
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -14324,7 +18370,7 @@
 (
   :name "PLATFORM"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -14335,7 +18381,7 @@
   :divergence NIL
   :summary "Platform: Displays the current Operating System version."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/platform-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/platform-system-variable")
 )
 
 (
@@ -14357,7 +18403,7 @@
 
 (
   :name "PLINECONVERTMODE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -14366,10 +18412,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Polyline convert mode: Controls how splines are converted to polylines."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the fit method used when converting splines to polylines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plineconvertmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AB5B75E5-2302-454E-B4D5-5C0DBD7EF1F6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plineconvertmode-system-variable")
+)
+
+(
+  :name "PLINEGCENMAX"
+  :type :integer
+  :default 50000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum number of segments that a polyline can have for the application to calculate the geometric center."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-98FF3F46-C887-461C-AF0C-A3E6EB0C73A9" :bricscad NIL)
 )
 
 (
@@ -14384,32 +18447,49 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Polyline generation: Controls how linetype patterns are generated around 2D polyline vertices. Linetypes are normally generated from vertex to vertex (0). Polylines of which the vertices are very close together might be rendered as a continuous line, if the linetype pattern does not fit between two subsequent vertices. When set to 1, the linetype is drawn from one end of the polyline to the other end, instead of from vertex to vertex."
+  :summary "Controls how linetype patterns generate around the vertices of a 2D polyline when it is drawn."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plinegen-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-352844E4-FBEA-44E0-B8F3-41C4187AD9C7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plinegen-system-variable")
+)
+
+(
+  :name "PLINEREVERSEWIDTHS"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the appearance of a polyline when its direction is reversed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9E0951E0-1917-4309-85C6-96A9ACFC04CF" :bricscad NIL)
 )
 
 (
   :name "PLINETYPE"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Polyline type: Controls how polylines are created with the PLINE command and if old-format polylines are converted. It saves disk space and memory by using the optimized format."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies whether optimized lightweight 2D polylines are used."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plinetype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F6027128-2707-4BBE-A0A4-C757435D4874" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plinetype-system-variable")
 )
 
 (
   :name "PLINEWID"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14417,16 +18497,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Polyline width: The default width for new polyline."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Stores the default polyline width."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plinewid-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-35EEB892-15C9-442F-847D-2F4DC52E9690" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plinewid-system-variable")
 )
 
 (
   :name "PLOTCFGPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14443,7 +18523,7 @@
 (
   :name "PLOTID"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14454,13 +18534,30 @@
   :divergence NIL
   :summary "Plot id (Obsolete): Obsolete, has no effect except to preserve the integrity of old scripts and LISP routines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plotid-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plotid-system-variable")
+)
+
+(
+  :name "PLOTOFFSET"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the plot offset is relative to the printable area or to the edge of the paper."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6890E492-8774-4DFA-B808-9E179431E84B" :bricscad NIL)
 )
 
 (
   :name "PLOTOUTPUTPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14475,9 +18572,26 @@
 )
 
 (
+  :name "PLOTROTMODE"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the orientation of plots."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B376D968-4346-4D7E-9AE5-3888317B5730" :bricscad NIL)
+)
+
+(
   :name "PLOTSTYLEPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14494,7 +18608,7 @@
 (
   :name "PLOTTER"
   :type :short
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14505,24 +18619,24 @@
   :divergence NIL
   :summary "Plotter (Obsolete): Has no effect except to preserve the integrity of older scripts and LISP routines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plotter-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plotter-system-variable")
 )
 
 (
   :name "PLOTTRANSPARENCYOVERRIDE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :preference
+  :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Plot transparency override: Controls if transparencies are enabled for print."
+  :divergence "type AutoCAD Integer, BricsCAD Short; saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Controls whether object transparency is plotted."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plottransparencyoverride-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-38F03A2C-6D36-4AD9-BBE0-9CA574BEF218" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plottransparencyoverride-system-variable")
 )
 
 (
@@ -14537,26 +18651,26 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Plot quiet: Controls if optional dialog boxes and nonfatal errors display during batch plot or when a script is run."
+  :summary "Controls the display of optional plot-related dialog boxes and nonfatal errors for scripts."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plquiet-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2CB8CDA5-CDD7-472D-8F34-EB7C23B8CAFE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/plquiet-system-variable")
 )
 
 (
   :name "POINTCLOUD2DVSDISPLAY"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :preference
+  :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Toggle show/hide bounding box in 2d wireframe mode: Controls the display of a bounding box and warning message when the 2D Wireframe visual style is active and there are point clouds in the drawing. Point clouds are not displayed when the 2D Wireframe visual style is active."
+  :divergence "type AutoCAD Integer, BricsCAD Short; saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Toggles the display of the bounding box and text message when viewing a point cloud in the 2D Wireframe visual style."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pointcloud2dvsdisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-78A7FF41-2B0F-4141-AFB4-D5283EEB6567" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pointcloud2dvsdisplay-system-variable")
 )
 
 (
@@ -14577,20 +18691,37 @@
 )
 
 (
+  :name "POINTCLOUDAUTOUPDATE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Applies only to legacy (pre-2015) point cloud objects. Controls whether a point cloud is regenerated automatically after manipulation, panning, zooming, or orbiting."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8DEF25C6-2F91-4BD1-AC92-B0ABBA291467" :bricscad NIL)
+)
+
+(
   :name "POINTCLOUDBOUNDARY"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :preference
+  :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Show/hide point cloud extent boundary: Controls how the point cloud boundary is displayed."
+  :divergence "type AutoCAD Integer, BricsCAD Short; saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Controls whether the point cloud bounding box is displayed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pointcloudboundary-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1ECCB280-F235-44AF-B3C8-D422BCC65A3B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pointcloudboundary-system-variable")
 )
 
 (
@@ -14608,6 +18739,57 @@
   :summary "Disk cache folder: The file path(s) used to store point cloud cache files. Separate file paths with semicolons (;). Note: Multiple paths are supported. The first one is used for adding new cached or preprocessed data. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pointcloudcachefolder-system-variable")
+)
+
+(
+  :name "POINTCLOUDCACHESIZE"
+  :type :integer
+  :default 512
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies amount of memory reserved to display point clouds."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FA022633-3BB5-4881-9ED1-A514F685186C" :bricscad NIL)
+)
+
+(
+  :name "POINTCLOUDCLIPFRAME"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether clipping boundaries on legacy point clouds are visible on screen and in printouts."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8929B8C8-16A1-4868-B618-3AAB4802577B" :bricscad NIL)
+)
+
+(
+  :name "POINTCLOUDDENSITY"
+  :type :integer
+  :default 15
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Applies only to legacy (pre-2015) point cloud objects. Controls the percentage of points displayed for all legacy point clouds in the drawing view."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FFC9C797-7822-4BB9-BDCE-369F2BBF8C65" :bricscad NIL)
 )
 
 (
@@ -14630,11 +18812,11 @@
 (
   :name "POINTCLOUDEYEDOMELIGHTING"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
+  :scope :session
   :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
@@ -14647,11 +18829,11 @@
 (
   :name "POINTCLOUDGAPFILLING"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
+  :scope :session
   :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
@@ -14696,6 +18878,74 @@
 )
 
 (
+  :name "POINTCLOUDLIGHTING"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the way lighting effects are displayed for a point cloud."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BA365059-760E-497B-91E7-4A972C174B4E" :bricscad NIL)
+)
+
+(
+  :name "POINTCLOUDLIGHTSOURCE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Determines light source for point clouds when lighting is turned on."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-851A2F59-ED92-408D-A5B4-C63DB5657BB3" :bricscad NIL)
+)
+
+(
+  :name "POINTCLOUDLOCK"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether an attached point cloud can be manipulated, moved, cropped, or rotated."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-91368F24-0E98-424D-9C5C-804FCDA9F576" :bricscad NIL)
+)
+
+(
+  :name "POINTCLOUDLOD"
+  :type :integer
+  :default 10
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the level of detail of display for point clouds."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-028E3724-7D1F-420E-B87A-CE0C9578290E" :bricscad NIL)
+)
+
+(
   :name "POINTCLOUDNORMALS"
   :type :integer
   :default 1
@@ -14714,7 +18964,7 @@
 
 (
   :name "POINTCLOUDPOINTMAX"
-  :type :short
+  :type :integer
   :default 10
   :read-only NIL
   :range (1 50)
@@ -14723,15 +18973,32 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Maximum number of points displayed on screen (in millions): Maximum number of points displayed per point cloud. This is independent of the number of points in the dataset. Note: Values between 1 and 50 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 10,000,000, BricsCAD 10"
+  :summary "Sets the maximum number of points that can be displayed for all point clouds attached to the drawing. Does not affect legacy (pre-2015) point clouds."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pointcloudpointmax-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A08F0428-3EF8-4102-A553-76AC2C097BA0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pointcloudpointmax-system-variable")
+)
+
+(
+  :name "POINTCLOUDPOINTMAXLEGACY"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Applies only to legacy (pre-2015) point clouds. Sets the maximum number of points that can be displayed for all legacy point clouds attached to the drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6566E365-5D79-4AEB-9358-3DD3D2568593" :bricscad NIL)
 )
 
 (
   :name "POINTCLOUDPOINTSIZE"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (1 10)
@@ -14740,16 +19007,67 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Point size: Point cloud point display size, in pixels. Values between 1 and 10 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the size of the points for new point cloud objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pointcloudpointsize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E8168DCB-5B66-434B-8DAE-5A08DAE0B2E7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pointcloudpointsize-system-variable")
+)
+
+(
+  :name "POINTCLOUDRTDENSITY"
+  :type :integer
+  :default 5
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Improves performance by reducing the number of points displayed while zooming, panning, or orbiting."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AD344DE9-D747-4EFD-83B0-872CB299566A" :bricscad NIL)
+)
+
+(
+  :name "POINTCLOUDSHADING"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies whether the brightness of the points in the point cloud are diffuse or specular."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-35D73259-12DD-461B-946C-41CAABD68E71" :bricscad NIL)
+)
+
+(
+  :name "POINTCLOUDVISRETAIN"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether a legacy drawing (created in AutoCAD 2014) retains the on or off status of individual scans (RCS files) and regions referenced by an attached point cloud project file (RCP file)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B393B848-FCB4-45A6-83D7-280DAFFD501E" :bricscad NIL)
 )
 
 (
   :name "POLARADDANG"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14758,9 +19076,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Polar add angles: Contains a list of custom polar snap angles, if the POLARMODE system variable is set to Use additional polar tracking angles . Up to 10 angles, up to 25 characters each, separated with semicolons (;). Requires POLARMODE flag 0x04 to be set ( Use additional polar tracking angles ). The AUNITS system variable sets the format for display of angles. Unlike POLARANG, POLARADDANG angles do not result in multiples of their values."
+  :summary "Stores additional angles for polar tracking and polar snap."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polaraddang-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-73162BAB-C98D-4159-A653-E4C7D4CB38C3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polaraddang-system-variable")
 )
 
 (
@@ -14774,16 +19092,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Polar angle: Controls the polar angle increments, in degrees."
+  :divergence "default AutoCAD 90, BricsCAD 90.0"
+  :summary "Sets the polar angle increment."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polarang-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0CF67F9E-F953-43D6-9227-0D56E0E693ED" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polarang-system-variable")
 )
 
 (
   :name "POLARDIST"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14791,16 +19109,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Polar distance: Controls the snap increment for polar snap (if the SNAPTYPE system variable is set to Polar snap )."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the snap increment when the SNAPTYPE is set to 1 (PolarSnap)."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polardist-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2CE7AC0B-D502-49F1-8C51-A67AA3E4BB15" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polardist-system-variable")
 )
 
 (
   :name "POLARMODE"
-  :type :short
-  :default 1
+  :type :integer
+  :default 0
   :read-only NIL
   :range (0 15)
   :bitcoded T
@@ -14808,10 +19126,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Polar mode: Controls entity snap tracking and polar snap tracking."
+  :divergence "type AutoCAD Bitcode, BricsCAD Short; default AutoCAD 0, BricsCAD 1"
+  :summary "Controls settings for polar and object snap tracking."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polarmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D91628CC-9975-4DBF-8D02-10B23A6F3ED5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polarmode-system-variable")
 )
 
 (
@@ -14828,7 +19146,7 @@
   :divergence NIL
   :summary "Polygon sides: The number of sides last used with the POLYGON command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polysides-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/polysides-system-variable")
 )
 
 (
@@ -14861,8 +19179,25 @@
   :vendor :both
   :divergence NIL
   :summary "Popups: Shows the status of the currently configured display driver."
+  :coupled ("initget")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/popups-system-variable")
+)
+
+(
+  :name "PREVIEWCREATIONTRANSPARENCY"
+  :type :integer
+  :default 60
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the transparency of the preview generated while using SURFBLEND, SURFPATCH, SURFFILLET, FILLETEDGE, CHAMFEREDGE, and LOFT."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/popups-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B9CB868C-B9BE-45CB-9DCC-DCBCBBC38C6B" :bricscad NIL)
 )
 
 (
@@ -14896,12 +19231,12 @@
   :divergence NIL
   :summary "Selection preview effect: Controls how a selection preview is displayed (Not yet supported)."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/previeweffect-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/previeweffect-system-variable")
 )
 
 (
   :name "PREVIEWFILTER"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 63)
@@ -14910,15 +19245,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Selection filter: Controls the entity types that can not be selected."
+  :divergence "type AutoCAD Bitcode, BricsCAD Short"
+  :summary "Excludes specified object types from selection previewing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/previewfilter-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9B75C028-6429-4FC0-9EC6-72C21E29A5D8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/previewfilter-system-variable")
 )
 
 (
   :name "PREVIEWTYPE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -14927,16 +19262,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Preview type: Controls which view is used for drawing preview thumbnails (Not yet supported)."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the view to use for the drawing thumbnail preview."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/previewtype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1A22B0E0-1EC1-4DAA-8933-10FCE4215BC0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/previewtype-system-variable")
 )
 
 (
   :name "PREVIEWWNDINOPENDLG"
   :type :integer
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -14998,7 +19333,7 @@
   :divergence NIL
   :summary "Product: Displays the product name."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/product-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/product-system-variable")
 )
 
 (
@@ -15049,22 +19384,22 @@
   :divergence NIL
   :summary "Program: Displays the program name."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/program-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/program-system-variable")
 )
 
 (
   :name "PROJECTAWARE"
   :type :integer
-  :default (:drawing)
-  :read-only NIL
-  :range (0 1)
+  :default 0
+  :read-only T
+  :range NIL
   :bitcoded NIL
-  :scope :drawing
-  :saved-in :drawing
-  :versions (:autocad "2026+" :bricscad nil)
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
   :vendor :autocad
-  :divergence "BricsCAD has no PROJECTAWARE sysvar (no Autodesk Docs project model)."
-  :summary "Informs the user or developer of the project path state of the current drawing in Autodesk Docs Connected Support Files."
+  :divergence NIL
+  :summary "Informs the user or developer of the project path state of the current drawing."
   :coupled ()
   :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AE3E169F-556E-41A5-A9D8-7A97A797B0ED" :bricscad NIL)
 )
@@ -15083,7 +19418,7 @@
   :divergence NIL
   :summary "Drawing view projection type: Switches between first and third angle projection types. These angle projections are a way to represent 3D entities in 2D drawing views. These projection types will show the same views but the difference between the two types is the position of these views (top, right, left, bottom). See Generated drawing views to learn more about it."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/projectiontype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/projectiontype-system-variable")
 )
 
 (
@@ -15106,7 +19441,7 @@
 (
   :name "PROJECTNAME"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15115,15 +19450,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Project name: The project name of the current drawing. Project names help to keep track of Xrefs and images easier by assigning additional support paths specific to the project only."
+  :summary "Assigns a project name to the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/projectname-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BBE6FA4B-800E-4D7D-9D59-EDA24829C5E9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/projectname-system-variable")
 )
 
 (
   :name "PROJECTSEARCHPATHS"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15139,7 +19474,7 @@
 
 (
   :name "PROJMODE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 2)
@@ -15148,10 +19483,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Projection mode: Controls the projection mode for the TRIM and EXTEND commands. If the cutting entity is not in the same plane as the entity you want to TRIM/EXTEND, this system variable defines how the intersection is to be calculated."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the current Projection mode for trimming or extending."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/projmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8735A062-2688-44A7-809A-9883761533F9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/projmode-system-variable")
 )
 
 (
@@ -15160,7 +19495,7 @@
   :default 0
   :read-only NIL
   :range (0 5)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad nil :bricscad "V20+")
@@ -15268,9 +19603,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Property Preview: Shows property changes, on hover of combo box list values, in Properties panel, for selected entities."
+  :summary "Controls whether you can preview the changes to currently selected objects when you roll over drop-down lists and galleries that control properties."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/propertypreview-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CBD0C401-9805-450A-855C-9FBDE6D6FA74" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/propertypreview-system-variable")
 )
 
 (
@@ -15310,35 +19645,35 @@
 (
   :name "PROPOBJLIMIT"
   :type :integer
-  :default 1000
+  :default 25000
   :read-only NIL
   :range NIL
-  :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
-  :versions (:autocad "all" :bricscad "V20+")
-  :vendor :both
-  :divergence NIL
-  :summary "Properties entity limit: Controls the limit of entities displayed in the Properties panel to improve performance. Values between 0 and 100000 are accepted. A value of 0 turns off the limitation."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/propobjlimit-system-variable")
-)
-
-(
-  :name "PROPPREVTIMEOUT"
-  :type :short
-  :default 1
-  :read-only NIL
-  :range (1 5)
   :bitcoded NIL
   :scope :preference
   :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Property Preview Timeout: Controls the delay before hover properties display, in seconds. Values between 1 and 5 are accepted."
+  :divergence "default AutoCAD 25000, BricsCAD 1000; saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Limits the number of objects that can be changed at one time with the Properties and Quick Properties palettes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/propprevtimeout-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6170C0EC-0910-46A6-81DF-DE0A888573A0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/propobjlimit-system-variable")
+)
+
+(
+  :name "PROPPREVTIMEOUT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range (1 5)
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad "V20+")
+  :vendor :both
+  :divergence "type AutoCAD Integer, BricsCAD Short; saved-in AutoCAD Registry, BricsCAD Preference"
+  :summary "Sets the maximum amount of time available for generating a property preview."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-77232DE3-0C5D-4FDD-9CCE-CFD2C1DE0AEC" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/propprevtimeout-system-variable")
 )
 
 (
@@ -15372,7 +19707,7 @@
   :divergence NIL
   :summary "Proxy graphics: Saves images of proxy entities to the drawing. If switched off, a bounding box displays instead."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/proxygraphics-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/proxygraphics-system-variable")
 )
 
 (
@@ -15387,9 +19722,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Proxy notice: Displays a notice when you open a drawing containing custom entities created by an application that is not present."
+  :summary "Displays a notice when a proxy is created."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/proxynotice-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A1A272D8-F3E3-4B84-AF23-1AFEF732DA03" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/proxynotice-system-variable")
 )
 
 (
@@ -15412,7 +19747,7 @@
 (
   :name "PROXYSERVERHTTP"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15429,7 +19764,7 @@
 (
   :name "PROXYSERVERHTTPPORT"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15446,7 +19781,7 @@
 (
   :name "PROXYSERVERHTTPS"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15463,7 +19798,7 @@
 (
   :name "PROXYSERVERHTTPSPORT"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15480,7 +19815,7 @@
 (
   :name "PROXYSERVERPASSWORD"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15497,7 +19832,7 @@
 (
   :name "PROXYSERVERUSER"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15513,7 +19848,7 @@
 
 (
   :name "PROXYSHOW"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 2)
@@ -15522,10 +19857,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Proxy show: Controls how proxy entities display in a drawing."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the display of proxy objects in a drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/proxyshow-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E0F980FF-53A5-4094-B259-B1143F8C9B89" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/proxyshow-system-variable")
 )
 
 (
@@ -15542,30 +19877,30 @@
   :divergence NIL
   :summary "Proxy web search: Toggles the check for entity enablers."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/proxywebsearch-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/proxywebsearch-system-variable")
 )
 
 (
   :name "PSLTSCALE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Paper space linetype scale: Controls the linetype scaling in paper space. If Viewport scaling governs linetype scaling is active, the length of the dashes is based on paper space drawing units - linetypes display identically, in all viewports, even if scaled differently. A REGEN is required."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the linetype scaling of objects displayed in paper space viewports."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/psltscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-23EA4D64-AE7D-41E5-A8D0-20F060313D62" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/psltscale-system-variable")
 )
 
 (
   :name "PSOLHEIGHT"
   :type :real
-  :default 80.0
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15573,16 +19908,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Polysolid height: Controls the default height, in drawing units, for the POLYSOLID command."
+  :divergence "default AutoCAD 4.0000 (imperial) or 80.0000 (metric), BricsCAD 80.0"
+  :summary "Controls the default height for a swept solid object created with the POLYSOLID command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/psolheight-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B3DA9FC6-E829-4BEC-BC06-BA19E0BF2971" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/psolheight-system-variable")
 )
 
 (
   :name "PSOLWIDTH"
   :type :real
-  :default 5.0
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15590,15 +19925,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Polysolid width: Controls the default width, in drawing units, for the POLYSOLID command."
+  :divergence "default AutoCAD 0.2500 (imperial) or 5.0000 (metric), BricsCAD 5.0"
+  :summary "Controls the default width for a swept solid object created with the POLYSOLID command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/psolwidth-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BD9FB9E1-A005-4DBB-8FC2-68B461E99540" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/psolwidth-system-variable")
 )
 
 (
   :name "PSTYLEMODE"
-  :type :short
+  :type :integer
   :default 1
   :read-only T
   :range (0 1)
@@ -15607,15 +19942,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Plot style mode: The plot style mode of the current drawing. To convert the current drawing to use named or color-dependent plot styles, use CONVERTPSTYLES."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Indicates whether the current drawing is in a Color-Dependent or Named Plot Style mode."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pstylemode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2D0D1C41-60E6-4FD0-AB63-28475EE82633" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pstylemode-system-variable")
 )
 
 (
   :name "PSTYLEPOLICY"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -15624,16 +19959,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Plot style policy: Controls if the color of an entity is associated with its plot style. Note: If PSTYLEPOLICY is 0, the plot style for new entities is set to the default defined in DEFPLSTYLE and the plot style for new layers is set to the default defined in DEFLPLSTYLE."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the plot style mode, Color-Dependent or Named, that is used when opening a drawing that was created in a release prior to AutoCAD 2000 or when creating a new drawing from scratch without using a drawing template."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pstylepolicy-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-58BCFAF5-68B6-4931-84DE-7EE2270EBC4C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pstylepolicy-system-variable")
 )
 
 (
   :name "PSVPSCALE"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15641,10 +19976,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Paper space viewport scale: Controls the scale multiplier for new viewports created with the VPORTS command. Note: The view scale multiplier is defined by comparing the ratio of units in paper space to the units in newly created model space viewports. The view scale multiplier you set is used with the VPORTS command. A value of 0 means the scale multiplier is Scaled to Fit."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the view scale factor for all newly created viewports."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/psvpscale-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0EE6B130-9ACC-4E5E-98E9-28D1E00BAE89" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/psvpscale-system-variable")
 )
 
 (
@@ -15654,37 +19989,54 @@
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :preference
+  :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Publish all sheets: Controls how layouts are loaded to the Publish dialog box. If on, loads all layouts from all active drawings. If off, loads only the layouts from the current drawing."
+  :divergence "saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Specifies whether to load the contents of the active document or of all open documents in the Publish dialog box."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/publishallsheets-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F58625D9-66FC-479F-9198-88509538DD92" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/publishallsheets-system-variable")
 )
 
 (
   :name "PUBLISHCOLLATE"
   :type :integer
-  :default 0
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad "V20+")
+  :vendor :both
+  :divergence "default AutoCAD 1, BricsCAD Off; saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Controls whether plotting a sheet set, multi-sheet plot file, or plot spool file can be interrupted by other plot jobs."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2369EDF8-FC5E-4DB9-8DBA-E1997C31BDED" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/publishcollate-system-variable")
+)
+
+(
+  :name "PUBLISHHATCH"
+  :type :integer
+  :default 1
   :read-only NIL
   :range NIL
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad "V20+")
-  :vendor :both
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
   :divergence NIL
-  :summary "Collate published sheets: Combines published sheets with equal output configurations into single multi-page plot job."
+  :summary "Controls whether hatch patterns published to DWF or DWFx format are treated as a single object."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/publishcollate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A53DA0BB-9CFB-44ED-AF17-026C70C42F8E" :bricscad NIL)
 )
 
 (
   :name "PUCSBASE"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -15692,10 +20044,27 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Paper space UCS base: The name of the UCS that controls the orthographic UCS in paper space."
+  :divergence "read-only AutoCAD False, BricsCAD True"
+  :summary "Stores the name of the UCS that defines the origin and orientation of orthographic UCS settings in paper space only."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pucsbase-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1A64F4F1-3A28-4630-B0E0-D83DDB877E51" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/p/pucsbase-system-variable")
+)
+
+(
+  :name "PUSHTODOCSSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Push to Autodesk Docs palette is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F3015AE5-134F-43E2-A8D3-F5BF3FE75AA6" :bricscad NIL)
 )
 
 (
@@ -15712,13 +20081,64 @@
   :divergence NIL
   :summary "Quality Assurance flags: Internal system variable with flags for Quality Assurance and testing. Note: This is subject to change, and not intended for regular use. Some of these options could have unpredictable or unwanted side-effects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/q/qaflags-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/q/qaflags-system-variable")
+)
+
+(
+  :name "QCSTATE"
+  :type :integer
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the QuickCalc calculator is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F24C70AE-EE5D-4672-8766-C9DDC4DA99CA" :bricscad NIL)
+)
+
+(
+  :name "QPLOCATION"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the location for the Quick Properties palette."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9536F299-E9E4-4418-B809-5AF5AFA5DF7C" :bricscad NIL)
+)
+
+(
+  :name "QPMODE"
+  :type :integer
+  :default -1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the Quick Properties palette is displayed when objects are selected."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1803CDBC-C0C9-4AB9-B76B-FF6AB214D97B" :bricscad NIL)
 )
 
 (
   :name "QTEXTMODE"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -15727,9 +20147,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Quick text mode: Controls how text entities are displayed. When On: this turns on quick text mode, rendering all text – text, mtext, attributes, dimension text, and so on—as rectangles. When Off (0): this turns off quick text mode, returning text to its normal display. This is useful when drawings contain much text, thereby slowing down the display of the drawing, but you still need to see the location of the text. The rectangles display the color of the text as well. Note..."
+  :summary "Controls how text is displayed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/q/qtextmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-95370B7F-B389-4026-94B7-7E869BF2AAB6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/q/qtextmode-system-variable")
 )
 
 (
@@ -15859,7 +20279,7 @@
   :range NIL
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -15954,6 +20374,40 @@
 )
 
 (
+  :name "QVDRAWINGPIN"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the default display state of preview images of drawings."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B0DE7734-6ACB-4897-ABD2-7A8D2BD84BE5" :bricscad NIL)
+)
+
+(
+  :name "QVLAYOUTPIN"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the default display state of preview images of model space and layouts in a drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2E54A1E5-5C85-4487-9D23-781845BF4EA2" :bricscad NIL)
+)
+
+(
   :name "R12SAVEACCURACY"
   :type :short
   :default 8
@@ -15988,6 +20442,40 @@
 )
 
 (
+  :name "RASTERDPI"
+  :type :integer
+  :default 300
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls paper size and plot scaling when switching between dimensional and dimensionless output devices."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-804EEB78-7F41-4E49-B121-D9966571B8D3" :bricscad NIL)
+)
+
+(
+  :name "RASTERPERCENT"
+  :type :integer
+  :default 20
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum percentage of available virtual memory that is allowed for printing each raster image or OLE object."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B091EC10-7E05-4D8E-8B70-89CDAC03F917" :bricscad NIL)
+)
+
+(
   :name "RASTERPREVIEW"
   :type :integer
   :default 1
@@ -15999,9 +20487,26 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Raster preview: Controls if preview image is saved with the drawing. This image is displayed by file managers and other programs."
+  :summary "Controls whether thumbnail preview images are created and saved with the drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rasterpreview-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-81E53976-3950-4849-A287-56C4E878E9F6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rasterpreview-system-variable")
+)
+
+(
+  :name "RASTERTHRESHOLD"
+  :type :integer
+  :default 20
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies a threshold in megabytes for each raster image or OLE object when printing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-64A75B2B-7131-4CBA-876D-3BE232C51014" :bricscad NIL)
 )
 
 (
@@ -16035,7 +20540,143 @@
   :divergence NIL
   :summary "Real world scale: Renders materials with units set to real-world scale."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/realworldscale-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/realworldscale-system-variable")
+)
+
+(
+  :name "REBUILD2DCV"
+  :type :integer
+  :default 6
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of control vertices when rebuilding a spline."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FA242EB3-5D28-4837-9D95-7BFB763608BB" :bricscad NIL)
+)
+
+(
+  :name "REBUILD2DDEGREE"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the global degree when rebuilding a spline."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BCCE2600-0834-4976-AD1D-FA4AA8E42B11" :bricscad NIL)
+)
+
+(
+  :name "REBUILD2DOPTION"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether to delete the original curve when rebuilding a spline."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8FB89BB1-0294-4B8E-8E50-F7149A19ECF9" :bricscad NIL)
+)
+
+(
+  :name "REBUILDDEGREEU"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the degree in the U direction when rebuilding a NURBS surface."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-07B3C262-27CF-4FB1-9A98-84532C484844" :bricscad NIL)
+)
+
+(
+  :name "REBUILDDEGREEV"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the degree in the V direction when rebuilding a NURBS surface."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-89D61BC8-ABB1-4FB7-8EDD-0A6E786FA110" :bricscad NIL)
+)
+
+(
+  :name "REBUILDOPTIONS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls deletion and trimming options when rebuilding a NURBS surface."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C6C258F8-7039-4107-9C7B-C8D34D785530" :bricscad NIL)
+)
+
+(
+  :name "REBUILDU"
+  :type :integer
+  :default 6
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of grid lines in the U direction when rebuilding a NURBS surface."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B1689C60-6FE1-4804-8091-8E072573C749" :bricscad NIL)
+)
+
+(
+  :name "REBUILDV"
+  :type :integer
+  :default 6
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of grid lines in the V direction when rebuilding a NURBS surface."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5362ECDA-B3F2-43D2-9C13-5A5E32529C16" :bricscad NIL)
 )
 
 (
@@ -16058,7 +20699,7 @@
 (
   :name "RECENTPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -16070,6 +20711,40 @@
   :summary "Recent path: Most recently used file path. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/recentpath-system-variable")
+)
+
+(
+  :name "RECOVERAUTO"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of recovery notifications before or after opening a damaged drawing file."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-18E43007-8DE9-4C6D-AE55-13FF0AF492C3" :bricscad NIL)
+)
+
+(
+  :name "RECOVERYMODE"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether drawing recovery information is recorded after a system failure."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-00A79CD6-938C-45B4-A380-A2BFD993D758" :bricscad NIL)
 )
 
 (
@@ -16177,7 +20852,7 @@
 (
   :name "REDHILITEFULL_FACE_COLOR"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -16534,7 +21209,7 @@
 (
   :name "REFEDITNAME"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -16543,14 +21218,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Refedit name: The name of the XRef currently being edited."
+  :summary "Displays the name of the reference being edited."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/refeditname-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5B6E3917-5EA0-49A1-869E-2C4E18FCDA50" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/refeditname-system-variable")
 )
 
 (
   :name "REFPATHTYPE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range NIL
@@ -16559,10 +21234,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Default path type of reference files: Controls if reference files are attached using full, relative or no paths, when they are attached for the first time."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether reference files are attached using full, relative or no paths when they are first attached to a host drawing file."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/refpathtype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CCC90130-7575-4901-8905-FBB4553DAA3F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/refpathtype-system-variable")
 )
 
 (
@@ -16579,7 +21254,7 @@
   :divergence NIL
   :summary "Regeneration mode: Toggles automatic regeneration on/off. See also the REGENAUTO command. BricsCAD will regenerate the display automatically when REGENMODE is On, but in a few cases a forced regeneration of the drawing might be necessary. This is done by the REGEN command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/regenmode-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/regenmode-system-variable")
 )
 
 (
@@ -16601,7 +21276,7 @@
 
 (
   :name "REMEMBERFOLDERS"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -16610,10 +21285,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Remember folders: The file path used for the standard file selection dialog boxes. When 0: When you start the program by double-clicking a shortcut icon, if a Start In path is specified for the icon, that path is used as the default for all standard file selection dialog boxes. When 1: The default path in each standard file selection dialog box is the last path used in that dialog box. The Start In folder specified for the shortcut icon is not used."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the default path displayed in standard file selection dialog boxes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rememberfolders-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6CA42228-7F27-4217-8F70-F1C2AF644740" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rememberfolders-system-variable")
 )
 
 (
@@ -16631,6 +21306,57 @@
   :summary "Render Composition Material: Renders the materials of compositions and their plies. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rendercompositionmaterial-system-variable")
+)
+
+(
+  :name "RENDERENVSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Render Environment & Exposure palette is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5D9DFD5E-48B3-4E6C-9093-D165D3D7E4E4" :bricscad NIL)
+)
+
+(
+  :name "RENDERLEVEL"
+  :type :integer
+  :default 5
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the number of levels, or iterations, the render engine performs to create a rendered image."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3D5F8F27-B3EC-4C6B-85EC-F48B4A2F1058" :bricscad NIL)
+)
+
+(
+  :name "RENDERLIGHTCALC"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the rendering accuracy of lights and materials."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3BD25283-4012-4FC1-8109-467D3B47EE95" :bricscad NIL)
 )
 
 (
@@ -16653,7 +21379,7 @@
 (
   :name "RENDERMATERIALSPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -16665,6 +21391,74 @@
   :summary "Render materials directory path: The file path(s) for user created render material files. Separate file paths with semicolons (;). BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rendermaterialspath-system-variable")
+)
+
+(
+  :name "RENDERPREFSSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Render Presets Manager palette is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D711D9BD-DDB1-469A-82F1-422AF4F3E34C" :bricscad NIL)
+)
+
+(
+  :name "RENDERTARGET"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the rendering duration type to be used by the render engine."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DC957D23-78D4-43DE-ACB6-087D301412AD" :bricscad NIL)
+)
+
+(
+  :name "RENDERTIME"
+  :type :integer
+  :default 10
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the number of minutes that the render engine uses to iteratively refine a rendered image."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B851E102-BCF5-48B1-B89E-B7BF52D14B2C" :bricscad NIL)
+)
+
+(
+  :name "RENDERUSERLIGHTS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether to override the setting for viewport lighting during rendering."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B7931F8F-E34C-42F6-8D41-DBA71707AB87" :bricscad NIL)
 )
 
 (
@@ -16685,6 +21479,23 @@
 )
 
 (
+  :name "REPORTERROR"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether an error report can be sent to Autodesk if the program closes unexpectedly."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-509A2E92-C0B6-477C-B1B4-2D66CEB45E13" :bricscad NIL)
+)
+
+(
   :name "REPORTPANELMODE"
   :type :short
   :default 2
@@ -16692,7 +21503,7 @@
   :range (0 2)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -16715,13 +21526,13 @@
   :divergence NIL
   :summary "Restore Connections: Restores structural connections after commands."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/restoreconnections-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/restoreconnections-system-variable")
 )
 
 (
   :name "RESTORELOSTFOCUS"
   :type :integer
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -16732,7 +21543,7 @@
   :divergence NIL
   :summary "Restore lost focus (Linux): Controls lost focus recovery. Dependent on the window manager, focus may be lost by when short-lived windows like Quad and rollover tips are used."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/restorelostfocus-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/restorelostfocus-system-variable")
 )
 
 (
@@ -16749,7 +21560,24 @@
   :divergence NIL
   :summary "Retained Graphics: Toggles the use of retained graphics. Retained graphics can improve the performance of certain operations, for example, rotating and panning the camera."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/retainedgraphics-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/retainedgraphics-system-variable")
+)
+
+(
+  :name "REVCLOUDAPPROXARCLEN"
+  :type :real
+  :default 0.0000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores the current approximate arc length for revision clouds."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EA1AE5FF-6DE4-49D2-A422-10294CF8FACB" :bricscad NIL)
 )
 
 (
@@ -16766,12 +21594,29 @@
   :divergence NIL
   :summary "Revision cloud default arc style: Controls the default arc style for revision clouds."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/revcloudarcstyle-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/revcloudarcstyle-system-variable")
+)
+
+(
+  :name "REVCLOUDARCVARIANCE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether revcloud arcs are created with varying or generally uniform chord lengths."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-970AE162-B9A6-4CB6-A227-EBBCBD04271E" :bricscad NIL)
 )
 
 (
   :name "REVCLOUDCREATEMODE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 2)
@@ -16780,10 +21625,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Revision cloud creation mode: Controls the default revision cloud creation mode."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the default input for creation of revision clouds."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/revcloudcreatemode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5D91AC1F-7F44-412A-8BFE-E9152EC5AF4F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/revcloudcreatemode-system-variable")
 )
 
 (
@@ -16798,15 +21643,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Revision cloud grips: Uses custom grips for revision clouds."
+  :summary "Controls the number of grips displayed on a revision cloud."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/revcloudgrips-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7790D277-F11B-4AA3-BC97-40DF1C27CC7F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/revcloudgrips-system-variable")
+)
+
+(
+  :name "REVCLOUDLAYER"
+  :type :string
+  :default "\"use current\""
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies a default layer for new revision clouds."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-44C31427-9C3D-4189-9B87-11EB00A9B2F4" :bricscad NIL)
 )
 
 (
   :name "REVCLOUDMAXARCLENGTH"
   :type :real
-  :default 0.375
+  :default 0.5000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -16814,16 +21676,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Revision cloud default maximum arc length: Controls the default maximum arc length for revision clouds. The maximum arc length is multiplied by the value of the DIMSCALE system variable."
+  :divergence "default AutoCAD 0.5000, BricsCAD 0.375"
+  :summary "Obsolete. Stores the maximum arc length for revision clouds."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/revcloudmaxarclength-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-56124BAB-004C-4623-89F8-F2C243F4FC3F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/revcloudmaxarclength-system-variable")
 )
 
 (
   :name "REVCLOUDMINARCLENGTH"
   :type :real
-  :default 0.375
+  :default 0.5000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -16831,10 +21693,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Revision cloud default minimum arc length: Controls the default minimum arc length for revision clouds. The minimum arc length is multiplied by the value of the DIMSCALE system variable."
+  :divergence "default AutoCAD 0.5000, BricsCAD 0.375"
+  :summary "Obsolete. Stores the minimum arc length for revision clouds."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/revcloudminarclength-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-57E15E3C-5121-4DB5-8AE4-7B9A38D06568" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/revcloudminarclength-system-variable")
+)
+
+(
+  :name "REVCLOUDSCALEMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the scaling of arc lengths during the creation of new revision clouds based on the current value of the DIMSCALE system variable."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-61211E9D-DA8A-45ED-B3F3-E9EAB3DD1565" :bricscad NIL)
 )
 
 (
@@ -16851,7 +21730,7 @@
   :divergence NIL
   :summary "Reinitialize Aliases: Reinitializes the digitizer, digitizer port and/or reloads PGP file (command aliases)."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/re_init-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/re_init-system-variable")
 )
 
 (
@@ -16872,9 +21751,43 @@
 )
 
 (
+  :name "RIBBONBGLOAD"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether ribbon tabs are loaded into memory by a background process during idle processor time."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-01B38117-5C2C-48C5-99DD-8E6606BC62A1" :bricscad NIL)
+)
+
+(
+  :name "RIBBONCONTEXTSELLIM"
+  :type :integer
+  :default 2500
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Limits the number of objects that can be changed at one time with the ribbon property controls or a contextual tab."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-74184BF4-B6C5-4409-B38E-62743B219ABC" :bricscad NIL)
+)
+
+(
   :name "RIBBONDOCKEDHEIGHT"
-  :type :short
-  :default 0
+  :type :integer
+  :default 100
   :read-only NIL
   :range (0 500)
   :bitcoded NIL
@@ -16882,10 +21795,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Ribbon docked height: Controls the height of the Ribbon. Values between 0 and 500 are accepted. Values lower than the current Ribbon content will be disregarded. A value of 0 means Automatic height. Note: Values below 124 are effective only in certain circumstances."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 100, BricsCAD 0"
+  :summary "Determines whether the horizontally docked ribbon is set to the height of the current tab or a predetermined height."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/ribbondockedheight-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-66301197-1C8B-4A0E-B919-813DAA2456C2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/ribbondockedheight-system-variable")
+)
+
+(
+  :name "RIBBONICONRESIZE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether to resize icons on the ribbon to standard sizes."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-23B10250-AEDD-4010-837C-3320FA00B381" :bricscad NIL)
 )
 
 (
@@ -16896,13 +21826,30 @@
   :range (0 50)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
   :summary "Panel margin: The size, in pixels, of the blank space at the Ribbon panel edges. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/ribbonpanelmargin-system-variable")
+)
+
+(
+  :name "RIBBONSELECTMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Determines whether a pickfirst selection set remains selected after a ribbon contextual tab is invoked and the command is completed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EAADC5BE-E317-4068-980E-715741EF9E20" :bricscad NIL)
 )
 
 (
@@ -16936,13 +21883,13 @@
   :divergence NIL
   :summary "Ribbon state: Indicates if the Ribbon is on. The ribbon can be closed with the RIBBONCLOSE command and can be displayed with the RIBBON command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/ribbonstate-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/ribbonstate-system-variable")
 )
 
 (
   :name "ROAMABLEROOTPREFIX"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -16953,12 +21900,12 @@
   :divergence NIL
   :summary "Roamable root prefix: The path of the root folder where roamable files for the current user such as menus and plotstyles, were installed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/roamablerootprefix-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/roamablerootprefix-system-variable")
 )
 
 (
   :name "ROLLOVEROPACITY"
-  :type :short
+  :type :integer
   :default 100
   :read-only NIL
   :range (10 100)
@@ -16967,10 +21914,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Rollover opacity: Controls the opacity of the Quad. Values between 10 and 100 are accepted. A value of 10 means maximum transparency. A value of 100 means full opacity."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the transparency of a palette while the cursor moves over the palette."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rolloveropacity-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E0A6843B-1C07-4D59-8142-B72CC87791FF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rolloveropacity-system-variable")
 )
 
 (
@@ -16987,7 +21934,7 @@
   :divergence NIL
   :summary "Rollover parameters: Show block parameters in the rollover tips."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rolloverparams-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rolloverparams-system-variable")
 )
 
 (
@@ -17009,7 +21956,7 @@
 
 (
   :name "ROLLOVERTIPS"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range NIL
@@ -17018,16 +21965,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Rollover tips: Display entity properties in Quad, either on hover or on demand from Quad titlebar. Note: When the SELECTIONPREVIEW system variable is Off, the ROLLOVERTIPS system variable is ignored, and entity properties are not displayed when you hover the cursor over entities."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the display of rollover tooltips when the cursor hovers over an object."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rollovertips-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-22E75D39-E601-41BD-935C-B359345DC47E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rollovertips-system-variable")
 )
 
 (
   :name "RTDISPLAY"
-  :type :short
-  :default 0
+  :type :integer
+  :default 1
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
@@ -17035,10 +21982,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Realtime display: Controls how raster images and OLE entities display during ZOOM or PAN action."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, BricsCAD 0"
+  :summary "Controls the display of raster images and OLE objects during Realtime ZOOM or PAN."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rtdisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BA3CD3F0-A5A3-421A-92EC-C02317F9BE4A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rtdisplay-system-variable")
 )
 
 (
@@ -17059,9 +22006,26 @@
 )
 
 (
+  :name "RTREGENAUTO"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls automatic regeneration in real-time panning and zooming operations."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9B52A286-BFCD-47B7-9FAC-197BBDB246D8" :bricscad NIL)
+)
+
+(
   :name "RTROTATIONSPEEDFACTOR"
   :type :real
-  :default 1.0d0
+  :default 1.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -17123,7 +22087,7 @@
   :divergence NIL
   :summary "Rubbersheet gesture activation sensibility: Controls the sensitivity of gestures. Values of 0 to 10 are accepted."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rubbersheetsensibility-for-os-x-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rubbersheetsensibility-for-os-x-system-variable")
 )
 
 (
@@ -17140,7 +22104,7 @@
   :divergence NIL
   :summary "Rubbersheet Touchpad: Enable simultaneous zoom/rotate/pan with dual finger movements on the touchpad."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rubbersheet-for-os-x-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rubbersheet-for-os-x-system-variable")
 )
 
 (
@@ -17157,7 +22121,7 @@
   :divergence NIL
   :summary "Ruler display: Shows a ruler during Manipulator operations."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rulerdisplay-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rulerdisplay-system-variable")
 )
 
 (
@@ -17174,7 +22138,7 @@
   :divergence NIL
   :summary "Ruler Text Color: Controls the text color of the Manipulator ruler. Applies only if the RULERDISPLAY system variable is on (1)."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rulertextcolor-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/r/rulertextcolor-system-variable")
 )
 
 (
@@ -17183,7 +22147,7 @@
   :default 5
   :read-only NIL
   :range (0 5)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad nil :bricscad "V20+")
@@ -17240,9 +22204,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Safe mode: Indicates if executable code can be loaded and executed in the current session. Starting in a clean environment can help to eliminate potential causes of a crash."
+  :summary "Indicates whether executable code can be loaded and executed in the current session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/safemode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-23D32BD8-2F94-4463-9618-055CA798D465" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/safemode-system-variable")
 )
 
 (
@@ -17274,32 +22238,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Save fidelity: Controls if this drawing is saved with visual fidelity."
+  :summary "Controls the visual fidelity for annotative objects in AutoCAD 2007 and earlier."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/savefidelity-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0D4C8D4B-6A37-4D74-BEE4-E00459B4F1ED" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/savefidelity-system-variable")
 )
 
 (
   :name "SAVEFILE"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
-  :scope :session
-  :saved-in :session
+  :scope :registry
+  :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Save file name: The current automatic save file name."
+  :divergence "saved-in AutoCAD Registry, BricsCAD Not saved"
+  :summary "Stores the current automatic save file name."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/savefile-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2C7A305A-951E-49F3-9804-4C9CD23270E5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/savefile-system-variable")
 )
 
 (
   :name "SAVEFILEPATH"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -17308,9 +22272,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Save file path: The file path where automatic saves and temporary files are stored."
+  :summary "Specifies the path to the folder for all automatic save files for the current session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/savefilepath-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-62A5D248-65DB-46DA-8A45-89DFB6C78C88" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/savefilepath-system-variable")
 )
 
 (
@@ -17319,7 +22283,7 @@
   :default 1
   :read-only NIL
   :range (1 39)
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -17350,7 +22314,7 @@
 (
   :name "SAVENAME"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -17359,9 +22323,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Saved drawing name: The file name and folder path of the current drawing."
+  :summary "Displays the file name and folder path of the most recently saved drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/savename-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EBBA5CBE-4B68-4150-BE22-5A7DC3810A48" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/savename-system-variable")
 )
 
 (
@@ -17400,8 +22364,8 @@
 
 (
   :name "SAVETIME"
-  :type :short
-  :default 20
+  :type :integer
+  :default 10
   :read-only NIL
   :range (0 240)
   :bitcoded NIL
@@ -17409,16 +22373,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Save time interval: Controls the interval for automatic saves, in minutes. Values between 0 and 240 are accepted. If set to zero, automatic saves are turned off."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 10, BricsCAD 20"
+  :summary "Sets the automatic save interval, which is measured in minutes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/savetime-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AE54276F-ACF1-41A1-87EC-56E297CDB067" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/savetime-system-variable")
 )
 
 (
   :name "SCREENBOXES"
   :type :short
-  :default (:unknown)
+  :default (:session)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -17428,14 +22392,14 @@
   :vendor :both
   :divergence NIL
   :summary "Screen menu boxes: Contains the number of boxes displayed in the screen menu. If the screen menu is turned off, the value is zero."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/screenboxes-system-variable")
+  :coupled ("grtext")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/screenboxes-system-variable")
 )
 
 (
   :name "SCREENMODE"
   :type :short
-  :default (:unknown)
+  :default (:session)
   :read-only T
   :range (0 3)
   :bitcoded NIL
@@ -17446,13 +22410,13 @@
   :divergence NIL
   :summary "Screen mode: Stores the graphic/text state of the program display."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/screenmode-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/screenmode-system-variable")
 )
 
 (
   :name "SCREENSIZE"
   :type :point
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -17461,9 +22425,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Screen size: The size of the current viewport, in pixels (width x height)."
+  :summary "Stores current viewport size in pixels (X and Y)."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/screensize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D2744552-5213-4E20-9D6B-169D7ECE2696" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/screensize-system-variable")
 )
 
 (
@@ -17497,7 +22461,24 @@
   :divergence NIL
   :summary "Single-document interface (Windows): Controls if a drawing is opened in a new application instance or an existing instance. Partially implemented: SDI variable controls double-click behavior for drawings, but it is still possible to open multiple documents in each application instance. Note: SDI setting 2 and 3 are not saved. If SDI is set to 3, the program switches it back to 1 when the application that doesn't support multiple drawings is unloaded."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sdi-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sdi-system-variable")
+)
+
+(
+  :name "SECTIONOFFSETINC"
+  :type :real
+  :default 6.0000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the distance by which the section object moves when clicking on the control to offset the section plane."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DDA60D8B-1C5C-443E-8D29-CC720A235B1B" :bricscad NIL)
 )
 
 (
@@ -17537,7 +22518,7 @@
 (
   :name "SECTIONSETTINGSSEARCHPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -17586,20 +22567,54 @@
 )
 
 (
+  :name "SECTIONTHICKNESSINC"
+  :type :real
+  :default 1.0000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the number of points by which the section slice thickness control increases or decreases."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E93EA846-7CAC-48FA-A2BE-BA361FC3519F" :bricscad NIL)
+)
+
+(
   :name "SECURELOAD"
-  :type :short
-  :default 0
+  :type :integer
+  :default 1
   :read-only T
   :range (0 2)
   :bitcoded NIL
-  :scope :session
-  :saved-in :session
+  :scope :registry
+  :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, may be locked by the CAD administrator, BricsCAD 0; read-only AutoCAD False, BricsCAD True; saved-in AutoCAD Registry, BricsCAD Not saved"
+  :summary "Controls whether executable files are restricted to being loaded from trusted folders only"
+  :coupled ("arxload" "autoarxload" "autoload" "findtrustedfile" "load" "open" "vl-vbaload")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-541566C6-2738-49DD-87C3-C1490E924A02" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/secureload-system-variable")
+)
+
+(
+  :name "SECUREREMOTEACCESS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
   :divergence NIL
-  :summary "Executable file security policy: The security policy used to load executable files."
-  :coupled ("load" "open" "findtrustedfile")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/secureload-system-variable")
+  :summary "Controls whether ObjectARX programs are restricted from accessing internet locations or remote servers."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B76972C0-FB74-4E1E-AEA0-427B7B6FEEFB" :bricscad NIL)
 )
 
 (
@@ -17614,9 +22629,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Show all annotation scales on selection: Displays an annotated entity, in all scales, on selection."
+  :summary "Controls whether alternate scale representations are temporarily displayed in a dimmed state when an annotative object is selected."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectionannodisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-022C086E-E1E2-4FB2-A7B3-4272EC810FA9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectionannodisplay-system-variable")
 )
 
 (
@@ -17631,14 +22646,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Selection area: Controls the display of selection area effects."
+  :summary "Controls the display of effects for selection areas."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectionarea-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-78E758D3-4953-44DB-BC11-D11BF9718C7E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectionarea-system-variable")
 )
 
 (
   :name "SELECTIONAREAOPACITY"
-  :type :short
+  :type :integer
   :default 25
   :read-only NIL
   :range (0 100)
@@ -17647,27 +22662,61 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Selection area opacity: Controls the transparency of the selection area. Applies only when SELECTIONAREA setting is on. Values between 0 and 100 are accepted. A value of zero means Fully Transparent. A value of 100 means fully opaque."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the transparency of the selection area during window and crossing selection."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectionareaopacity-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-02C900C5-D8AA-4E2F-BC28-4FE194031711" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectionareaopacity-system-variable")
 )
 
 (
   :name "SELECTIONCYCLING"
-  :type :string
-  :default (:unknown)
+  :type :integer
+  :default 0
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :drawing
-  :saved-in :session
+  :scope :registry
+  :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Selection cycling: Controls the display options associated with overlapping objects and selection cycling. Note: When the SELECTIONPREVIEW system variable is Off, the SELECTIONCYCLING system variable is ignored, and no badge or selection dialog box is displayed when you hover the cursor over entities."
+  :summary "Controls the display options associated with overlapping objects and selection cycling."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectioncycling-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-08FA6975-49A7-4029-A3F3-ABDA3B2A7122" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectioncycling-system-variable")
+)
+
+(
+  :name "SELECTIONEFFECT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the visual effect used when objects are selected."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E3D7841C-87EB-4F5C-86C7-213FF9469BA8" :bricscad NIL)
+)
+
+(
+  :name "SELECTIONEFFECTCOLOR"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color of the glowing highlighting effect on object selection."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CBB90ED0-9C2C-401A-B849-0EAD4E15DC7E" :bricscad NIL)
 )
 
 (
@@ -17688,42 +22737,76 @@
 )
 
 (
-  :name "SELECTIONPREVIEW"
-  :type :short
-  :default 3
+  :name "SELECTIONOFFSCREEN"
+  :type :integer
+  :default 1
   :read-only NIL
-  :range (0 3)
+  :range NIL
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad "all" :bricscad "V20+")
-  :vendor :both
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
   :divergence NIL
-  :summary "Selection preview display: Controls the rules used to highlight entities when the pickbox cursor hovers over an entity. Note: When the SELECTIONPREVIEW system variable is Off: The Display the Quad when the cursor hovers on an entity option of the QUADDISPLAY system variable is ignored and the Quad is not displayed. The ROLLOVERTIPS system variable is ignored and entity properties are not displayed (the Quad is not displayed). The SELECTIONCYCLING system variable is ignored..."
+  :summary "Controls the selection of objects that are off-screen."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectionpreview-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2609B540-EF39-45B5-8682-FEC7F16B77DE" :bricscad NIL)
 )
 
 (
-  :name "SELECTSIMILARMODE"
-  :type :short
-  :default 130
+  :name "SELECTIONPREVIEW"
+  :type :integer
+  :default 3
   :read-only NIL
-  :range (0 255)
+  :range (0 3)
   :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Match options for SELECTSIMILAR: Controls which properties must match for the SELECTSIMILAR command. For this command to operate as intended, at least one property must be turned on. When all properties are turned off, this command selects only the entity(ies) you pick at the Select entities prompt."
+  :divergence "type AutoCAD Bitcode, BricsCAD Short"
+  :summary "Controls the display of selection previewing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectsimilarmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-77B3B59F-95E5-4F8A-85E2-D9411D712AF0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectionpreview-system-variable")
+)
+
+(
+  :name "SELECTIONPREVIEWLIMIT"
+  :type :integer
+  :default 20000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Limits the number of objects that can display preview highlighting during a window or crossing selection."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9CDDA4F9-5B88-428F-B0C8-345E9A9DC4F1" :bricscad NIL)
+)
+
+(
+  :name "SELECTSIMILARMODE"
+  :type :integer
+  :default 130
+  :read-only NIL
+  :range (0 255)
+  :bitcoded T
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad "V20+")
+  :vendor :both
+  :divergence "type AutoCAD Bitcode, BricsCAD Short; saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Controls which properties must match for an object of the same type to be selected with SELECTSIMILAR."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B5E03A31-ADA0-4374-B75E-0F3D26F4EB49" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/selectsimilarmode-system-variable")
 )
 
 (
   :name "SETBYLAYERMODE"
-  :type :short
+  :type :integer
   :default 255
   :read-only NIL
   :range (0 255)
@@ -17732,15 +22815,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Set by layer mode: Controls which layer properties are applied with the SETBYLAYER command."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls which properties are selected for the SETBYLAYER command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/setbylayermode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7A27C789-A03B-4EBE-869D-2E429CF928C1" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/setbylayermode-system-variable")
 )
 
 (
   :name "SHADEDGE"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 3)
@@ -17749,15 +22832,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Shading edges: Controls how faces and edges display in rendered views."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the shading of edges."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/shadedge-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C2F44CA9-913D-4C23-88DF-1FFF728369D7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/shadedge-system-variable")
 )
 
 (
   :name "SHADEDIF"
-  :type :short
+  :type :integer
   :default 70
   :read-only NIL
   :range (0 100)
@@ -17766,10 +22849,61 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Shading diffusion: Controls the ratio of diffuse reflective light to ambient light as a percentage of diffuse reflective light when the SHADEDGE system variable is set to 0 or 1."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the ratio of diffuse reflective light to ambient light."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/shadedif-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B74E8745-6155-40DE-8CC1-E765573BCBAD" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/shadedif-system-variable")
+)
+
+(
+  :name "SHAREDVIEWSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Shared Views palette is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A37BCDB4-90A9-434A-8FD8-ABEF0921F3FD" :bricscad NIL)
+)
+
+(
+  :name "SHAREVIEWPROPERTIES"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether drawing properties are included with shared views."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CA6EAAAA-041C-448C-8F1C-74AB0CA8136C" :bricscad NIL)
+)
+
+(
+  :name "SHAREVIEWTYPE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether a shared view is created from the current view, model space or a layout, or created from the entire drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-934B71E1-4494-46F3-92B3-A265D90D4FFA" :bricscad NIL)
 )
 
 (
@@ -17778,7 +22912,7 @@
   :default 1
   :read-only NIL
   :range (1 8)
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -17809,7 +22943,7 @@
 (
   :name "SHEETSETTEMPLATEPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -17820,12 +22954,12 @@
   :divergence NIL
   :summary "Sheet Set template path: The file path for the Sheet Set Templates folder. The default path is: \\Users\\%username%\\AppData\\Local\\Bricsys\\BricsCAD\\ V26 x64\\en_US\\Templates ."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sheetsettemplatepath-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sheetsettemplatepath-system-variable")
 )
 
 (
   :name "SHORTCUTMENU"
-  :type :short
+  :type :integer
   :default 11
   :read-only NIL
   :range (0 63)
@@ -17834,10 +22968,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Shortcut menus: Controls the status of the DEFAULT, EDIT and COMMAND (right-click) context menus."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/shortcutmenu-system-variable")
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether Default, Edit, and Command mode shortcut menus are available in the drawing area."
+  :coupled ("grread")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-27079CDD-85E0-4883-A961-82C8FC5C7F46" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/shortcutmenu-system-variable")
 )
 
 (
@@ -17852,9 +22986,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Shortcut menu duration: Controls the delay between right-click and the appearance of the (right-click) context menu, in milliseconds. Values between 100 and 10,000 are accepted."
+  :summary "Specifies how long the right button on a pointing device must be pressed to display a shortcut menu in the drawing area."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/shortcutmenuduration-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1F0CD64B-A9EC-437A-9EC3-E475D7A83DBA" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/shortcutmenuduration-system-variable")
 )
 
 (
@@ -17888,7 +23022,24 @@
   :divergence NIL
   :summary "Display full path in title: Displays the full path of a drawing in the title bar. If off, displays only the file name."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/showfullpathintitle-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/showfullpathintitle-system-variable")
+)
+
+(
+  :name "SHOWHIST"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the Show History property for solids in a drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-06B7570B-3FDD-40B4-84A6-B9C15549702E" :bricscad NIL)
 )
 
 (
@@ -17920,9 +23071,43 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Layer Usage: Shows information about layer usage in the Layers panel. In the column Current , the Layer Usage icons indicate when viewport settings for the current layout and paper space viewport are different from model space settings: : Current layer with viewport overrides. : Layer with viewport overrides. : Empty layer with viewport overrides."
+  :summary "Displays icons in the Layer Properties Manager to indicate whether layers are in use."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/showlayerusage-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-21FA88A5-6769-4CCF-B252-C059CBDDFFBA" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/showlayerusage-system-variable")
+)
+
+(
+  :name "SHOWNEWSTATE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether highlighting new features in updates is active."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C5FF63F2-4636-45C9-9F05-958E0F6CB9F6" :bricscad NIL)
+)
+
+(
+  :name "SHOWPALETTESTATE"
+  :type :integer
+  :default 1
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether palettes are hidden by the HIDEPALETTES command or restored by the SHOWPALETTES command."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5E311DF3-340C-4405-B1CD-973950AAE071" :bricscad NIL)
 )
 
 (
@@ -18013,7 +23198,7 @@
 (
   :name "SHPNAME"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -18024,7 +23209,7 @@
   :divergence NIL
   :summary "Shape name: The default shape name according to naming conventions. '.' means no default. Note: Shapes are an early version of blocks that were efficient, but difficult to code. Shapes are rarely used anymore."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/shpname-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/shpname-system-variable")
 )
 
 (
@@ -18039,9 +23224,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Signature warning: Controls the Signature dialog behavior, when a drawing with a signature is opened."
+  :summary "Controls whether a warning is presented when a file with an attached digital signature is opened."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sigwarn-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0AEC6815-83E1-4852-9519-E9757DCF7AF5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sigwarn-system-variable")
 )
 
 (
@@ -18109,7 +23294,7 @@
   :divergence NIL
   :summary "Sketch increment: The length of segments created with the SKETCH command, in drawings units."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sketchinc-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sketchinc-system-variable")
 )
 
 (
@@ -18126,12 +23311,12 @@
   :divergence NIL
   :summary "Sketch poly: Controls the entity type created with the SKETCH command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/skpoly-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/skpoly-system-variable")
 )
 
 (
   :name "SKYSTATUS"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 2)
@@ -18140,16 +23325,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Sky status: Controls if sky illumination is computed at render time (Not yet supported)."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Determines if the sky illumination is computed at render time."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/skystatus-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-786A9AC3-F222-4B19-B73B-3027D5BF7FBE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/skystatus-system-variable")
 )
 
 (
   :name "SMASSEMBLYEXPORTMODE"
   :type :short
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -18744,7 +23929,7 @@
 (
   :name "SMCONVERTMAXIMALBEVELANGLE"
   :type :real
-  :default 80.0d0
+  :default 80.0
   :read-only NIL
   :range (0 90)
   :bitcoded NIL
@@ -18761,7 +23946,7 @@
 (
   :name "SMCONVERTMINIMALBEVELANGLE"
   :type :real
-  :default 10.0d0
+  :default 10.0
   :read-only NIL
   :range (0 90)
   :bitcoded NIL
@@ -18982,7 +24167,7 @@
 (
   :name "SMDEFAULTBENDRADIUSVALUE"
   :type :real
-  :default 1.0d0
+  :default 1.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19010,7 +24195,7 @@
   :divergence NIL
   :summary "Bend relief type: Controls if the SMDEFAULTBENDRELIEFWIDTHVALUE system variable is a ratio to the thickness or an absolute value."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaultbendreliefwidthtype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaultbendreliefwidthtype-system-variable")
 )
 
 (
@@ -19078,7 +24263,7 @@
   :divergence NIL
   :summary "Miter extension type: Controls if the SMDEFAULTFLANGESPLITEXTENSIONVALUE system variable is a ratio to the thickness or an absolute value."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaultflangesplitextensiontype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaultflangesplitextensiontype-system-variable")
 )
 
 (
@@ -19138,7 +24323,7 @@
   :default 4
   :read-only NIL
   :range NIL
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad nil :bricscad "V20+")
@@ -19169,7 +24354,7 @@
 (
   :name "SMDEFAULTGUSSETDEPTHVALUE"
   :type :real
-  :default 8.0d0
+  :default 8.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19203,7 +24388,7 @@
 (
   :name "SMDEFAULTGUSSETFILLETRADIUSVALUE"
   :type :real
-  :default 1.0d0
+  :default 1.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19254,7 +24439,7 @@
 (
   :name "SMDEFAULTGUSSETWIDTHVALUE"
   :type :real
-  :default 6.0d0
+  :default 6.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19322,7 +24507,7 @@
 (
   :name "SMDEFAULTJOGANGLEVALUE"
   :type :real
-  :default 45.0d0
+  :default 45.0
   :read-only NIL
   :range (0 180)
   :bitcoded NIL
@@ -19503,7 +24688,7 @@
   :divergence NIL
   :summary "Relief extension type: Controls if the SMDEFAULTRELIEFEXTENSIONTYPE system variable is a ratio to the thickness or an absolute value."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaultreliefextensiontype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaultreliefextensiontype-system-variable")
 )
 
 (
@@ -19543,7 +24728,7 @@
 (
   :name "SMDEFAULTRIBFILLETRADIUSVALUE"
   :type :real
-  :default 5.0d0
+  :default 5.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19577,7 +24762,7 @@
 (
   :name "SMDEFAULTRIBPROFILERADIUSVALUE"
   :type :real
-  :default 2.0d0
+  :default 2.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19611,7 +24796,7 @@
 (
   :name "SMDEFAULTRIBROUNDRADIUSVALUE"
   :type :real
-  :default 1.0d0
+  :default 1.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19628,7 +24813,7 @@
 (
   :name "SMDEFAULTSHARPBENDRADIUSLIMITRATIO"
   :type :real
-  :default 5.0d0
+  :default 5.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19656,7 +24841,7 @@
   :divergence NIL
   :summary "Tab chamfer distance type: Controls if the SMDEFAULTTABCHAMFERDISTANCEVALUE system variable is a ratio to the thickness or an absolute value."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttabchamferdistancetype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttabchamferdistancetype-system-variable")
 )
 
 (
@@ -19690,7 +24875,7 @@
   :divergence NIL
   :summary "Tab clearance type: Controls if the SMDEFAULTTABCLEARANCEVALUE system variable is a ratio to the thickness or an absolute value."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttabclearancetype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttabclearancetype-system-variable")
 )
 
 (
@@ -19724,13 +24909,13 @@
   :divergence NIL
   :summary "Tab distance type: Controls if the SMDEFAULTTABDISTANCEVALUE system variable is a ratio to the thickness or an absolute value."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttabdistancetype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttabdistancetype-system-variable")
 )
 
 (
   :name "SMDEFAULTTABDISTANCEVALUE"
   :type :real
-  :default 20.0d0
+  :default 20.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19775,7 +24960,7 @@
   :divergence NIL
   :summary "Tab fillet radius type: Controls if the SMDEFAULTTABFILLETRADIUSVALUE system variable is a ratio to the thickness or an absolute value."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttabfilletradiustype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttabfilletradiustype-system-variable")
 )
 
 (
@@ -19809,13 +24994,13 @@
   :divergence NIL
   :summary "Tab height type: Controls if the SMDEFAULTTABHEIGHTVALUE system variable is a ratio to the thickness or an absolute value."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttabheighttype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttabheighttype-system-variable")
 )
 
 (
   :name "SMDEFAULTTABHEIGHTVALUE"
   :type :real
-  :default 1.0d0
+  :default 1.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19843,13 +25028,13 @@
   :divergence NIL
   :summary "Tab length type: Controls if the SMDEFAULTTABLENGTHTYPE system variable is a ratio to the thickness or an absolute value."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttablengthtype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smdefaulttablengthtype-system-variable")
 )
 
 (
   :name "SMDEFAULTTABLENGTHVALUE"
   :type :real
-  :default 4.0d0
+  :default 4.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19883,7 +25068,7 @@
 (
   :name "SMDEFAULTTHICKNESS"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19900,7 +25085,7 @@
 (
   :name "SMEXPORTOSMAPPROXIMATIONACCURACY"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -19917,7 +25102,7 @@
 (
   :name "SMEXPORTOSMMINIMALEDGELENGTH"
   :type :real
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -20069,19 +25254,70 @@
 
 (
   :name "SMOOTHMESHCONVERT"
-  :type :short
-  :default 2
+  :type :integer
+  :default 0
   :read-only NIL
   :range (1 3)
   :bitcoded NIL
-  :scope :session
-  :saved-in :session
+  :scope :registry
+  :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Mesh conversion mode: Controls the conversion mode of meshes to 3D solids or surfaces, with the CONVTOSOLID or CONVTOSURFACE commands."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 0, BricsCAD 2; saved-in AutoCAD Registry, BricsCAD Not saved"
+  :summary "Controls whether mesh objects that you convert to 3D solids or surfaces are smoothed or faceted, and whether their faces are merged."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smoothmeshconvert-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9357E7C2-B5C5-4CFF-9E9D-9B865FE31131" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smoothmeshconvert-system-variable")
+)
+
+(
+  :name "SMOOTHMESHGRID"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum level of smoothness at which the underlying mesh facet grid is displayed on 3D mesh objects."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B8DB646D-5A7D-4EFD-8355-B5DF97FFF5E9" :bricscad NIL)
+)
+
+(
+  :name "SMOOTHMESHMAXFACE"
+  :type :integer
+  :default 1000000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum number of faces permitted for mesh objects."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C586972B-8A74-46FB-AD4D-0708605D0ED1" :bricscad NIL)
+)
+
+(
+  :name "SMOOTHMESHMAXLEV"
+  :type :integer
+  :default 4
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the maximum smoothness level for mesh objects."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-70592674-3BBF-45FF-8E4C-DAEFD78D1812" :bricscad NIL)
 )
 
 (
@@ -20268,7 +25504,7 @@
   :divergence NIL
   :summary "Lineweight of the rolled edge down layer: Controls the lineweight of the 'Rolled Edge Down' layer, created by the SMUNFOLD and SMEXPORT2D commands."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smrollededgelinesdownlayerlineweight-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smrollededgelinesdownlayerlineweight-system-variable")
 )
 
 (
@@ -20319,7 +25555,7 @@
   :divergence NIL
   :summary "Lineweight of the rolled edge up layer: Controls the lineweight of the 'Rolled Edge Up' layer, created by the SMUNFOLD and SMEXPORT2D commands."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smrollededgelinesuplayerlineweight-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/smrollededgelinesuplayerlineweight-system-variable")
 )
 
 (
@@ -20410,7 +25646,7 @@
 (
   :name "SMTARGETCAM"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -20444,7 +25680,7 @@
 (
   :name "SNAPANG"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -20452,16 +25688,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Snap angle: Controls the rotation of snap, the grid, and the crosshair, for the current viewport, relative to the current UCS."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the snap and grid rotation angle for the current viewport relative to the current UCS."
   :coupled ("setvar")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapang-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7C4EAEAE-3738-4E51-AC9B-B16B5A2CDB3B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapang-system-variable")
 )
 
 (
   :name "SNAPBASE"
   :type :point
-  :default (0 0)
+  :default (0.0000 0.0000)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -20469,27 +25705,44 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Snap base: Controls the origin point of snap and the grid, in the current viewport, relative to the current UCS."
+  :divergence "default AutoCAD 0.0000,0.0000, BricsCAD 0,0"
+  :summary "Sets the snap and grid origin point for the current viewport relative to the current UCS."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapbase-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-484B0F6E-4EB0-4B83-9C95-16F5CCE8F3E2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapbase-system-variable")
+)
+
+(
+  :name "SNAPGRIDLEGACY"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the cursor snaps to the snap grid only when an operation is in progress."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4ED2C55C-B432-4AEF-A8E8-FBD3F6A7A689" :bricscad NIL)
 )
 
 (
   :name "SNAPISOPAIR"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 2)
-  :bitcoded T
+  :bitcoded NIL
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Snap isometric pair: Controls the current viewport's isometric plane (left, top or right), if the SNAPSTYL system variable is set to isometric . Press F5 function key to set the appropriate drawing plane: Left , Top or Right ."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the isometric plane for the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapisopair-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-10E95216-5E3C-45F2-A6B9-79E7660A1F60" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapisopair-system-variable")
 )
 
 (
@@ -20555,14 +25808,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Snap mode: Toggles snap On or Off for the current viewport."
+  :summary "Turns the Snap mode on and off in the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D6B961E9-1D95-458E-BEA1-C9997789EDC2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapmode-system-variable")
 )
 
 (
   :name "SNAPSTYL"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -20571,16 +25824,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Snap style: Controls the snap style for the current viewport - rectangular or isometric."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the grid and grid snap to rectangular or isometric for the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapstyl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E04B7A7B-8232-44C3-BD74-20BCFEC07C2E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapstyl-system-variable")
 )
 
 (
   :name "SNAPTYPE"
-  :type :short
-  :default 2
+  :type :integer
+  :default 0
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
@@ -20588,16 +25841,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Snap type: Controls the snap type for the current viewport. For Adaptive Grid Snap , see also the ADAPTIVEGRIDSTEPSIZE system variable."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 0, BricsCAD 2"
+  :summary "Sets the type of snap, rectangular or polar, for the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snaptype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2BC423FB-0BCD-4086-91F6-BE00F695FCB6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snaptype-system-variable")
 )
 
 (
   :name "SNAPUNIT"
   :type :point
-  :default (:unknown)
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -20605,10 +25858,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Snap unit: Controls the current viewport's snap spacing. Adjusts itself automatically to reflect the isometric snap, if SNAPSTYL is set to Isometric snap (1). Note: There is no snap in the Z direction."
+  :divergence "default AutoCAD 0.5000,0.5000 (imperial) or 10.0000,10.0000 (metric), BricsCAD 0.5,0.5 - If MEASUREMENT=0 and INSUNITS=inches 10.0,10.0 - If MEASUREMENT=1 and INSUNITS=millimeters"
+  :summary "Sets the snap spacing for the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapunit-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1E54C26E-F08A-4648-87D0-62217BD6AE58" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/snapunit-system-variable")
 )
 
 (
@@ -20623,14 +25876,31 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Solid check: Toggles the 3D solid validation for the current application session."
+  :summary "Turns 3D solid validation on and off for the current session."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/solidcheck-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-28A6E37C-17A0-432E-88E9-7A7A7ABDE75D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/solidcheck-system-variable")
+)
+
+(
+  :name "SOLIDHIST"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether new composite solids retain a history of their original components."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-956A861D-00ED-48E9-88D6-8D67C2E2AD21" :bricscad NIL)
 )
 
 (
   :name "SORTENTS"
-  :type :short
+  :type :integer
   :default 127
   :read-only NIL
   :range (0 127)
@@ -20639,10 +25909,27 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Sort entities: Controls the entity display sort order."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls object sorting in support of draw order for several operations."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sortents-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-56B7D915-515B-4A9C-BCB5-EF2D43C05FE5" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sortents-system-variable")
+)
+
+(
+  :name "SORTORDER"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies whether the layer list is ordered using a natural sort order or ASCII values."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0CF4F029-C5C0-4B79-BEE8-0B0EE7068FF3" :bricscad NIL)
 )
 
 (
@@ -20660,6 +25947,23 @@
   :summary "Adjust mode: Controls the adjustment mode used for triangle smoothing. Ignored if FACETRES is used. Adjust mode identifies which facet nodes are to be adjusted (smoothed) to other than their initial grid positions. Note: Spa is short for Spatial, the maker of ACIS. BricsCAD only"
   :coupled ()
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/spaadjustmode-system-variable")
+)
+
+(
+  :name "SPACESWITCH"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether model space can be accessed by double-clicking in a layout viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-02F517B0-441C-439A-9406-A251465E1992" :bricscad NIL)
 )
 
 (
@@ -20821,7 +26125,7 @@
   :default 1
   :read-only NIL
   :range (0 5)
-  :bitcoded NIL
+  :bitcoded T
   :scope :preference
   :saved-in :preference
   :versions (:autocad nil :bricscad "V20+")
@@ -20850,12 +26154,29 @@
 )
 
 (
+  :name "SPLDEGREE"
+  :type :integer
+  :default 3
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores the last-used degree setting for splines and sets the default degree setting for the SPLINE command when specifying control vertices."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-40B00336-C1EB-47A4-8773-FFB22B8C931C" :bricscad NIL)
+)
+
+(
   :name "SPLFRAME"
   :type :integer
   :default 0
   :read-only NIL
   :range NIL
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
@@ -20863,12 +26184,12 @@
   :divergence NIL
   :summary "Spline frame: Displays control polygons for splines and spline-fit polylines."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/splframe-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/splframe-system-variable")
 )
 
 (
   :name "SPLINESEGS"
-  :type :short
+  :type :integer
   :default 8
   :read-only NIL
   :range (-32768 32767)
@@ -20877,10 +26198,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Spline segments: Controls how many line segments are generated when a spline is converted to a polyline with the PEDIT command. Values between -32768 and 32767 are accepted. For negative values, a fit-type curve is applied, composed of arc-segments, yields a smoother curve, but it takes longer to generate."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the number of line segments to be generated for each spline-fit polyline generated by the Spline option of the PEDIT command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/splinesegs-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-938743E7-E438-4E93-9A9B-1514E0BADB47" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/splinesegs-system-variable")
 )
 
 (
@@ -20897,13 +26218,64 @@
   :divergence NIL
   :summary "Spline type: Controls the curve type generated by the Spline option of the PEDIT command: Quadratic B-spline or Cubic B-spline."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/splinetype-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/splinetype-system-variable")
+)
+
+(
+  :name "SPLKNOTS"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores the default knot option for the SPLINE command when specifying fit points."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-134FD0A1-4396-4748-9FF4-C82B7BC24E28" :bricscad NIL)
+)
+
+(
+  :name "SPLMETHOD"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores whether the default method used for the SPLINE command is fit points or control vertices."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-300EB1EF-E101-421C-A8B8-6D91E2873787" :bricscad NIL)
+)
+
+(
+  :name "SPLPERIODIC"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether closed splines and NURBS surfaces are generated with periodic properties to maintain the smoothest continuity at the closure point or seam."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-60D7953C-E22D-4CF3-B779-F776592A5F23" :bricscad NIL)
 )
 
 (
   :name "SRCHPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -20913,14 +26285,14 @@
   :vendor :bricscad
   :divergence NIL
   :summary "Support file search path: The file path for text fonts, customization files, plugins, drawings to insert, linetypes, and hatch patterns, not in the current folder. Separate file paths with semicolons (;). BricsCAD only"
-  :coupled ("findfile" "load" "acet-pref-supportpath-list")
+  :coupled ("acet-pref-supportpath-list" "findfile" "load")
   :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/srchpath-system-variable")
 )
 
 (
   :name "SSFOUND"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -20929,9 +26301,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Sheet Set found: Displays the sheet set file name and path that is associated with the current drawing file."
+  :summary "Displays the sheet set path and file name if a search for a sheet set is successful."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/ssfound-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3B03977F-A9AF-496B-A7B3-E8BE5CF301C1" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/ssfound-system-variable")
 )
 
 (
@@ -20941,14 +26313,14 @@
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :preference
+  :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Sheet Set locate: Opens any associated sheets sets when a drawing is opened."
+  :divergence "saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Controls whether the sheet set associated with a drawing is located and opened when the drawing is opened."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sslocate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F7010346-F114-42AA-9892-0D376ECE177A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/sslocate-system-variable")
 )
 
 (
@@ -20958,20 +26330,37 @@
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :session
-  :saved-in :workspace
+  :scope :preference
+  :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Sheet Set manager auto open: Opens Sheet Set panel automatically when a drawing is opened that is associated with a Sheet Set. The SSMAUTOOPEN and SSLOCATE system variables must both be switched on to display the Sheet Set automatically."
+  :divergence "saved-in AutoCAD User-settings, BricsCAD Workspace"
+  :summary "Controls the display behavior of the Sheet Set Manager when a drawing associated with a sheet is opened."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/ssmautoopen-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-81EC988C-AAEA-4CC8-ADC5-D636CE82F677" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/ssmautoopen-system-variable")
+)
+
+(
+  :name "SSMOPENMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies how the Sheet Set Manager opens DST files stored in the cloud."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-83A84C48-0B71-4CC4-B3F8-A7E49032076E" :bricscad NIL)
 )
 
 (
   :name "SSMPOLLTIME"
-  :type :short
-  :default 15
+  :type :integer
+  :default 60
   :read-only NIL
   :range (10 600)
   :bitcoded NIL
@@ -20979,15 +26368,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Sheet Set manager poll time: Controls the time interval between automatic refreshes of the status data in a Sheet Set. The SSMSHEETSTATUS system variable must be set to 2 for the timer to operate. Values between 10 and 600 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 60, BricsCAD 15"
+  :summary "Controls the time interval between automatic refreshes of the status data in a sheet set."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/ssmpolltime-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C60211DB-5323-4C06-87B5-3461DBB14712" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/ssmpolltime-system-variable")
 )
 
 (
   :name "SSMSHEETSTATUS"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -20996,16 +26385,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Sheet Set manager status: Controls how the status data in a Sheet Set is refreshed."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls how the status data in a sheet set is refreshed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/ssmsheetstatus-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-437E22BB-DAAE-42A7-8C7D-51B69DC4D60F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/ssmsheetstatus-system-variable")
 )
 
 (
   :name "SSMSTATE"
-  :type :short
-  :default 0
+  :type :integer
+  :default (:host-specific)
   :read-only T
   :range (0 1)
   :bitcoded NIL
@@ -21013,10 +26402,10 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Sheet Set manager state: Controls if the Sheet Set Manager is active or not."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Indicates whether the Sheet Set Manager window is open or closed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/ssmstate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D097B7BC-5CAC-4667-965A-4A4273355F87" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/ssmstate-system-variable")
 )
 
 (
@@ -21027,7 +26416,7 @@
   :range (0 2)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -21073,7 +26462,7 @@
 (
   :name "STAMPFOOTER"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21124,7 +26513,7 @@
 (
   :name "STAMPHEADER"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21203,29 +26592,63 @@
   :divergence NIL
   :summary "Standards validation options: Options to control the standards check procedure."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/standardsoptions-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/standardsoptions-system-variable")
 )
 
 (
   :name "STANDARDSVIOLATION"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range NIL
   :bitcoded NIL
   :scope :registry
   :saved-in :registry
-  :versions (:autocad nil :bricscad "V20+")
-  :vendor :bricscad
-  :divergence NIL
-  :summary "Standards Violation Notification: Controls how a user is notified of standards violations. BricsCAD only"
+  :versions (:autocad "all" :bricscad "V20+")
+  :vendor :both
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies whether a user is notified of standards violations in the current drawing when a nonstandard object is created or modified."
   :coupled ()
-  :source (:autocad NIL :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/standardsviolation-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-EBF93B97-2455-41B0-B9EA-578BBE552BC1" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/standardsviolation-system-variable")
+)
+
+(
+  :name "STARTINFOLDER"
+  :type :string
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores the drive and folder path from where the product was started."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-73220E57-FC53-432F-B81B-020D8CBD8A70" :bricscad NIL)
+)
+
+(
+  :name "STARTMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of the Start tab."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-143F3607-7D7F-4CC9-9BE4-2A221DF2D776" :bricscad NIL)
 )
 
 (
   :name "STARTUP"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 4)
@@ -21234,10 +26657,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Startup: Controls the display of the Create New Drawing and Startup dialog boxes."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/startup-system-variable")
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls what is displayed when the application is started, or when a new drawing is opened."
+  :coupled ("command" "defun-q" "defun-q-list-ref" "defun-q-list-set" "vl-symbol-name")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-941B7406-2342-47EA-9881-BAFF3A554310" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/startup-system-variable")
 )
 
 (
@@ -21252,15 +26675,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Status bar: Controls the display of the Status bar. Note: The only reason to turn off the status bar is to gain a bit more drawing area. It is far more useful to leave it on"
+  :summary "Controls the display of the status bar."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/statusbar-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-96BA1B54-760A-4B99-8D48-A87EC98BA2EF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/statusbar-system-variable")
 )
 
 (
   :name "STEPSIZE"
   :type :real
-  :default 2.0
+  :default 6.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21268,16 +26691,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Step size: Controls the size of each step, in drawing units, when in walk or fly mode."
+  :divergence "default AutoCAD 6.0000, BricsCAD 2.0"
+  :summary "Specifies the size of each step when in walk or fly mode, in drawing units."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/stepsize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C181AF04-E45C-4468-B924-3FB4CA858664" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/stepsize-system-variable")
 )
 
 (
   :name "STEPSPERSEC"
   :type :real
-  :default 24.0
+  :default 2.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21285,10 +26708,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Steps per second: Controls the number of steps per second, when in walk or fly mode. Values between 1.0 and 30.0 are accepted."
+  :divergence "default AutoCAD 2.0000, BricsCAD 24.0"
+  :summary "Specifies the number of steps taken per second when you are in walk or fly mode."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/stepspersec-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1E187D94-7EF8-4494-A3E0-8BA3E613DCCF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/stepspersec-system-variable")
 )
 
 (
@@ -21333,7 +26756,7 @@
   :range NIL
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -21343,8 +26766,178 @@
 )
 
 (
+  :name "STUDENTDRAWING"
+  :type :integer
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Reports whether the current drawing was saved with an Autodesk Student Version product."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A6E37575-FA05-4192-BE84-F19F8C0CE56A" :bricscad NIL)
+)
+
+(
+  :name "STYLUSFORCETHRESHOLD"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "For those using a stylus for input, controls the force threshold which means the intensity needed to press the stylus for it to be considered a click or selection."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-53A75210-CFDD-4B65-A96C-915957A0073C" :bricscad NIL)
+)
+
+(
+  :name "SUBOBJSELECTIONMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Filters whether faces, edges, vertices or solid history subobjects are highlighted when you roll over them."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7C4F6525-41DD-48A2-AE7C-45663EDD6122" :bricscad NIL)
+)
+
+(
+  :name "SUNPROPERTIESSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Sun Properties window is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-74E01ADA-420C-45F6-809F-71BDD4A4730E" :bricscad NIL)
+)
+
+(
+  :name "SUNSTATUS"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Turns on and off the lighting effects of the sun in the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F0A4FE6A-90B7-48FD-A713-05536469E1C3" :bricscad NIL)
+)
+
+(
+  :name "SUPPRESSALERTS"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls alerts about potential data loss when opening and saving newer drawings in older versions of the product."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7B418167-5674-4BDD-9876-E9D1643DA920" :bricscad NIL)
+)
+
+(
+  :name "SURFACEASSOCIATIVITY"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether surfaces maintain a relationship with the objects from which they were created."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-85627C06-46E2-4F94-B26D-37690199F350" :bricscad NIL)
+)
+
+(
+  :name "SURFACEASSOCIATIVITYDRAG"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the dragging preview behavior of associative surfaces."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-413FBF23-068B-4981-93A3-66C03D7E0BDF" :bricscad NIL)
+)
+
+(
+  :name "SURFACEAUTOTRIM"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether surfaces are automatically trimmed when you project geometry onto them."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-03223908-0EF5-40FB-BD34-F8EA3D03B1F8" :bricscad NIL)
+)
+
+(
+  :name "SURFACEMODELINGMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether surfaces are created as procedural surfaces or NURBS surfaces."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C1317119-856E-4FE4-ACC5-6CA20311EAE9" :bricscad NIL)
+)
+
+(
   :name "SURFTAB1"
-  :type :short
+  :type :integer
   :default 6
   :read-only NIL
   :range NIL
@@ -21353,10 +26946,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Surface tabulation 1: Controls the number of tabulations to be created for RULESURF and TABSURF commands. Also controls the mesh density in the M direction for REVSURF and EDGESURF commands. When extruding entities with arc segments: the SURFTAB1 system variable divides them in a number of equal length intervals. When revolving entities: the SURFTAB1 variable controls the number of segments of the revolution surface."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the number of tabulations to be generated for the RULESURF and TABSURF commands."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/surftab1-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8AC3C392-FCE4-432E-844F-183B3BD21303" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/surftab1-system-variable")
 )
 
 (
@@ -21373,12 +26966,12 @@
   :divergence NIL
   :summary "Surface tabulation 2: Controls the mesh density in the N direction for REVSURF and EDGESURF commands. The SURFTAB2 variable controls the number of segments of each arc segment in the revolved entity."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/surftab2-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/surftab2-system-variable")
 )
 
 (
   :name "SURFTYPE"
-  :type :short
+  :type :integer
   :default 6
   :read-only NIL
   :range (5 8)
@@ -21387,15 +26980,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Surface-fitting type: Controls the surface-fitting type used with the Desmooth option of the PEDIT command."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the type of surface-fitting to be performed by the Smooth option of the PEDIT command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/surftype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C925860D-5C50-485D-8940-69902CE53211" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/surftype-system-variable")
 )
 
 (
   :name "SURFU"
-  :type :short
+  :type :integer
   :default 6
   :read-only NIL
   :range NIL
@@ -21404,15 +26997,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Surface U: Controls the surface density in the M direction and the U isolines density on surface entities for the Smooth option of the PEDIT command."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the surface density for PEDIT Smooth in the M direction and the U isolines density on surface objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/surfu-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-651DFAD4-8A22-4C48-9DD5-E5751BDBE055" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/surfu-system-variable")
 )
 
 (
   :name "SURFV"
-  :type :short
+  :type :integer
   :default 6
   :read-only NIL
   :range NIL
@@ -21421,10 +27014,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Surface V: Controls the surface density in the N direction and the V isolines density on surface entities for the Smooth option of the PEDIT command."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the surface density for PEDIT Smooth in the N direction and the V isolines density on surface objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/surfv-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-13E30946-F85A-4E74-8B2D-5A627C21093E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/surfv-system-variable")
 )
 
 (
@@ -21498,7 +27091,7 @@
 (
   :name "SVGIMAGEBASE"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21515,7 +27108,7 @@
 (
   :name "SVGIMAGEURL"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21617,7 +27210,7 @@
 (
   :name "SYSCODEPAGE"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -21626,9 +27219,43 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "System code page: Displays the system code page, determined by the operating system."
+  :summary "Indicates the system code page, which is determined by the operating system."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/syscodepage-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CBFE553B-A277-4417-810D-CE7BDB50CAC1" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/s/syscodepage-system-variable")
+)
+
+(
+  :name "SYSFLOATING"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the dock state of the drawing file tabs."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E90A61DB-71FB-4B5F-96B3-223526F26189" :bricscad NIL)
+)
+
+(
+  :name "SYSMON"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the defined system variable list is monitored."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4C530D78-D0EF-4FEF-ADC1-295A36655067" :bricscad NIL)
 )
 
 (
@@ -21649,9 +27276,60 @@
 )
 
 (
+  :name "TABLEINDICATOR"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of row numbers and column letters when the In-Place Text Editor is open for editing a table cell."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3D0A98BA-D143-4EE0-8B80-8F3BAC45C5E1" :bricscad NIL)
+)
+
+(
+  :name "TABLELAYER"
+  :type :string
+  :default "\"use current\""
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies a default layer for new tables."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2AFAC9CE-AA64-4534-AA52-FB111828A463" :bricscad NIL)
+)
+
+(
+  :name "TABLETOOLBAR"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of the Table toolbar."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A8503DAF-9024-4F29-85DC-BF2E7D1E1CE7" :bricscad NIL)
+)
+
+(
   :name "TABMODE"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21660,9 +27338,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Tablet mode: Allows the use of a tablet. Use the TABLET command to configure the tablet."
-  :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tabmode-system-variable")
+  :summary "Controls the use of a tablet input device."
+  :coupled ("tablet")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D8E7DF14-67C2-484F-94CF-267E54C9AAB4" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tabmode-system-variable")
 )
 
 (
@@ -21702,7 +27380,7 @@
 (
   :name "TANGENTLENGTHVALUE"
   :type :real
-  :default 0.0d0
+  :default 0.0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21719,7 +27397,7 @@
 (
   :name "TARGET"
   :type :point3d
-  :default (:unknown)
+  :default (0.0000 0.0000 0.0000)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -21728,15 +27406,49 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Target: The coordinates for perspective projection of the current viewport."
+  :summary "Stores the UCS coordinates of the target point for a perspective projection in the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/target-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0649E4B8-B11A-411E-96CE-125BEBEB5B42" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/target-system-variable")
+)
+
+(
+  :name "TBCUSTOMIZE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether tool palette groups can be customized."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CADCBAD6-A9BD-40DB-B81A-B280E88368BD" :bricscad NIL)
+)
+
+(
+  :name "TBSHOWSHORTCUTS"
+  :type :string
+  :default "YES"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies whether shortcuts that use the Ctrl and Alt keys are displayed in the tooltips on toolbars."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-540E7411-1048-48EF-B08A-2F9433BC28A7" :bricscad NIL)
 )
 
 (
   :name "TDCREATE"
   :type :real
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -21745,15 +27457,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Time/Date create: The time and date the drawing was created, in Julian Day format."
+  :summary "Stores the local time and date the drawing was created."
   :coupled ("menucmd")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tdcreate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E29DC24D-4899-4D45-A104-50703E451684" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tdcreate-system-variable")
 )
 
 (
   :name "TDINDWG"
   :type :real
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -21762,15 +27474,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Time/Date in drawing: The total current drawing edit time, in days. Format: >number of days<.>decimal fraction of a day<"
+  :summary "Stores the total editing time, which is the total elapsed time between saves of the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tdindwg-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6C01D280-2906-469B-B087-49594C2FA66B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tdindwg-system-variable")
 )
 
 (
   :name "TDUCREATE"
   :type :real
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -21779,15 +27491,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Time/Date universal create: The universal time and date the drawing was created, Julian Day format."
+  :summary "Stores the universal time and date that the drawing was created."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tducreate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7AFCF83F-5400-4617-8268-A717283A73E8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tducreate-system-variable")
 )
 
 (
   :name "TDUPDATE"
   :type :real
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -21796,15 +27508,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Time/Date update: The local time and date, the drawing was last saved or updated, in Julian Day format."
+  :summary "Stores the local time and date of the last update/save."
   :coupled ("menucmd")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tdupdate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CABE62CF-8DFD-416E-AEE9-A6F33EEEE657" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tdupdate-system-variable")
 )
 
 (
   :name "TDUSRTIMER"
   :type :real
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -21813,15 +27525,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Time/Date user timer: The user-elapsed timer value. Start, stop and reset the timer with the TIME command."
+  :summary "Stores the user-elapsed timer."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tdusrtimer-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A842406A-BBE8-4A99-8B1A-101AEAB587B6" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tdusrtimer-system-variable")
 )
 
 (
   :name "TDUUPDATE"
   :type :real
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -21830,9 +27542,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Time/Date universal update: The universal time and date the drawing was last saved or updated - in Julian Day format."
+  :summary "Stores the universal time and date of the last update or save."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tduupdate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-426F2C95-E860-49ED-ADFA-6F1BF0649A72" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tduupdate-system-variable")
 )
 
 (
@@ -21872,7 +27584,7 @@
 (
   :name "TEMPLATEPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21887,9 +27599,26 @@
 )
 
 (
+  :name "TEMPOVERRIDES"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Turns temporary override keys on and off for drawing aids."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-77C5E101-5641-4630-AB50-6D97A6FD8D24" :bricscad NIL)
+)
+
+(
   :name "TEMPPREFIX"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21900,13 +27629,64 @@
   :divergence NIL
   :summary "Temporary prefix: The folder name for temporary files."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tempprefix-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tempprefix-system-variable")
+)
+
+(
+  :name "TEXTALIGNMODE"
+  :type :integer
+  :default 9
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores the alignment option for aligned text."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-70F10F5E-941B-4762-9B05-5C71C77E35E9" :bricscad NIL)
+)
+
+(
+  :name "TEXTALIGNSPACING"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores the spacing option for aligned text."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9C29D04E-B40F-4A46-9247-8C78892DCFCF" :bricscad NIL)
+)
+
+(
+  :name "TEXTALLCAPS"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Converts all new text created by TEXT or MTEXT commands to uppercase."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D823CFFB-9425-46EB-8820-21E5FDAD5F09" :bricscad NIL)
 )
 
 (
   :name "TEXTANGLE"
   :type :real
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -21921,8 +27701,25 @@
 )
 
 (
+  :name "TEXTAUTOCORRECTCAPS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Corrects common text errors that result from accidentally leaving the Caps Lock turned on."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-210BC01B-059E-45AE-A361-AEFC4EBCE4A0" :bricscad NIL)
+)
+
+(
   :name "TEXTED"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -21931,15 +27728,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text editor for single line text entities: Controls the editor type used for single line text entities."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the user interface displayed for creating and editing single-line text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/texted-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CFBB7AF6-884C-4CC8-93E3-A0CE29B4B1C3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/texted-system-variable")
 )
 
 (
   :name "TEXTEDITMODE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 2)
@@ -21948,10 +27745,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text edit mode: Controls if DDEDIT command automatically repeats entity selections or not."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether the TEXTEDIT command repeats automatically."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/texteditmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-79B69E1A-1E1C-476B-8DC1-9D255114518D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/texteditmode-system-variable")
 )
 
 (
@@ -21968,12 +27765,12 @@
   :divergence NIL
   :summary "Text evaluation: Controls the interpretation of Command line text strings. When the TEXTEVAL system variable is set to 1, this command evaluates LISP expressions: Text: (* pi 2) The result of the equation (pi x 2) is placed as text: 6.283185"
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/texteval-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/texteval-system-variable")
 )
 
 (
   :name "TEXTFILL"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -21982,15 +27779,83 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text fill: Controls if TrueType fonts are filled or outlined for renders and the PSOUT command."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether TrueType fonts are filled-in for plotting."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/textfill-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8E1786B0-D31D-4A61-8A84-78E7BE34867B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/textfill-system-variable")
+)
+
+(
+  :name "TEXTGAPSELECTION"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether you can select text or mtext objects within the gaps or spaces between the characters."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-59559068-1D64-4A93-AF27-116A8CC81664" :bricscad NIL)
+)
+
+(
+  :name "TEXTJUSTIFY"
+  :type :string
+  :default "Left"
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays the default justification used by the TEXT command to create single-line text."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-223C6FB9-B498-4BA9-8710-E1CB4889B8FC" :bricscad NIL)
+)
+
+(
+  :name "TEXTLAYER"
+  :type :string
+  :default "use current"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies a default layer for new text and multiline text objects in the current drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0D66E6E5-AF29-470C-B530-60FC3312DD06" :bricscad NIL)
+)
+
+(
+  :name "TEXTOUTPUTFILEFORMAT"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Provides Unicode options for log files."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CC7EF29A-17E3-4752-AAC9-E1A5671EC738" :bricscad NIL)
 )
 
 (
   :name "TEXTQLTY"
-  :type :short
+  :type :integer
   :default 50
   :read-only NIL
   :range (0 100)
@@ -21999,16 +27864,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text quality (Mac & Linux): Controls the smoothness of TrueType fonts for plot and render. Values between 0 and 100 are accepted. A value of zero means no smoothing. A value of 100 is maximum smoothing."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the resolution of TrueType text for plotting and rendering."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/textqlty-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1B6FA34A-99DC-4666-8ECD-D9B2BBEDEEAF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/textqlty-system-variable")
 )
 
 (
   :name "TEXTSIZE"
   :type :real
-  :default 2.5
+  :default (:drawing)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -22016,10 +27881,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text size: The default height for new text entities, has no effect if the current text style has a fixed height."
+  :divergence "default AutoCAD 0.2000 (imperial) or 2.5000 (metric), BricsCAD 2.5"
+  :summary "Sets the default text height when creating new text objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/textsize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DD548317-95BA-4AEA-B54D-0D917F10D3C1" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/textsize-system-variable")
 )
 
 (
@@ -22034,15 +27899,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Text style: The current text style."
+  :summary "Sets the name of the current text style."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/textstyle-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4F5D952E-63B6-4965-A050-84AEF2273B25" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/textstyle-system-variable")
+)
+
+(
+  :name "TEXTTOATTRIBUTE"
+  :type :string
+  :default "1"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "In the BSEARCH command, if text objects are selected, controls whether text variations will be searched for conversion into block attributes."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7654D6E4-C18B-4003-8EC9-6A49768D96DF" :bricscad NIL)
 )
 
 (
   :name "TEXTUREMAPPATH"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -22059,7 +27941,7 @@
 (
   :name "THICKNESS"
   :type :real
-  :default 0.0
+  :default 0.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -22067,10 +27949,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Thickness: The default thickness for 2D entities."
+  :divergence "default AutoCAD 0.0000, BricsCAD 0.0"
+  :summary "Sets the default 3D thickness property when creating 2D geometric objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/thickness-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-525A7B6F-414C-4EF7-A208-B79D9524DB66" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/thickness-system-variable")
 )
 
 (
@@ -22091,25 +27973,59 @@
 )
 
 (
+  :name "THUMBSAVE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether thumbnail preview images are saved within the drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E6BA0E3A-7F9A-4C94-BF85-284309263ED0" :bricscad NIL)
+)
+
+(
   :name "THUMBSIZE"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 8)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Thumbnail preview image size: Controls the maximum generated size for thumbnail previews, in pixels."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the display resolution in pixels for all thumbnail preview images."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/thumbsize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E295F164-A540-4B4A-9844-6159CC91BF89" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/thumbsize-system-variable")
+)
+
+(
+  :name "THUMBSIZE2D"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies whether the size of 2D wireframe thumbnail preview is controlled by THUMBSIZE sysvar. If turned off, previews of drawings using the 2D wireframe visual styles are set to a display resolution of 256 x 256 pixels."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-96AD0C40-535F-46E2-AF88-089AD9299C0B" :bricscad NIL)
 )
 
 (
   :name "TILEMODE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range NIL
@@ -22118,10 +28034,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Tile mode: Switches the active tab, model or paper space."
-  :coupled ("vports" "setview")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tilemode-system-variable")
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Determines whether the Model tab or the most-recently accessed named layout tab is active."
+  :coupled ("setview" "vports")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-02F55DD8-1EB1-493C-929D-A7CFDE55C348" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tilemode-system-variable")
 )
 
 (
@@ -22138,12 +28054,12 @@
   :divergence NIL
   :summary "Tile mode light synch: Synchronizes lighting in all model space viewports (Internal use only)."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tilemodelightsynch-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tilemodelightsynch-system-variable")
 )
 
 (
   :name "TIMEZONE"
-  :type :short
+  :type :integer
   :default -8000
   :read-only NIL
   :range (-12000 13000)
@@ -22152,10 +28068,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Timezone: Controls the time zone for the sun. Note: Setting a geographic location also controls the time zone."
+  :divergence "type AutoCAD Enum, BricsCAD Short"
+  :summary "Sets the time zone for the sun in the drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/timezone-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E3E3BE84-74E4-40E5-9F44-AFBA6C3C7FEC" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/timezone-system-variable")
 )
 
 (
@@ -22166,7 +28082,7 @@
   :range (0 63)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -22183,7 +28099,7 @@
   :range (0 2)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -22200,7 +28116,7 @@
   :range (0 15)
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -22212,7 +28128,7 @@
 (
   :name "TOOLPALETTEPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -22223,7 +28139,7 @@
   :divergence NIL
   :summary "Tool palettes path: Specify the path(s) to the Tool Palettes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/toolpalettepath-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/toolpalettepath-system-variable")
 )
 
 (
@@ -22244,6 +28160,23 @@
 )
 
 (
+  :name "TOOLTIPMERGE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Combines drafting tooltips into a single tooltip."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FEC23FB6-F1C3-40BC-B85A-3B585FD56180" :bricscad NIL)
+)
+
+(
   :name "TOOLTIPS"
   :type :integer
   :default 1
@@ -22255,15 +28188,49 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Tooltips: Toggles the display of tooltips for toolbars, the Ribbon, the Quad and the Properties."
+  :summary "Controls the display of tooltips on the ribbon, toolbars, and other user interface elements."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tooltips-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FF7CD25B-9C88-402B-B581-7EA3A1D53407" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tooltips-system-variable")
+)
+
+(
+  :name "TOOLTIPTRANSPARENCY"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the transparency for drafting tooltips."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-26024442-3F76-4C24-BBC4-E1CB5D4A5E06" :bricscad NIL)
+)
+
+(
+  :name "TOUCHMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "For those using a touch-enabled screen or interface, controls the display of the Touch panel on the ribbon."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7C9B1395-2191-4F6C-8655-0F7ED79DEC37" :bricscad NIL)
 )
 
 (
   :name "TPSTATE"
-  :type :short
-  :default 0
+  :type :integer
+  :default (:host-specific)
   :read-only T
   :range (0 1)
   :bitcoded NIL
@@ -22271,10 +28238,163 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Tool Palettes Panel state: The status of the Tool Palettes panel."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Indicates whether the Tool Palettes window is open or closed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tpstate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B0ED5827-EB20-42CF-9CD7-7CB5B891A651" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tpstate-system-variable")
+)
+
+(
+  :name "TRACECURRENT"
+  :type :string
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays the name of the active trace when TRACEMODE=1 or 2."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E1AB2A1C-672A-4946-A21B-4B9C341E8F20" :bricscad NIL)
+)
+
+(
+  :name "TRACEDISPLAYMODE"
+  :type :integer
+  :default 2
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the tracing paper effect is displayed (front) or not (back) while a trace is active."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BE8D20A7-4F37-4272-8B0D-B9ACBD0EDA83" :bricscad NIL)
+)
+
+(
+  :name "TRACEFADECTL"
+  :type :integer
+  :default 40
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the amount of fading when TRACEMODE is active. The setting affects only the objects not being edited - the host drawing geometry or Trace geometry."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-03F37CD9-53F6-4A93-87B2-868BA11D217B" :bricscad NIL)
+)
+
+(
+  :name "TRACEMARKUPFADECTL"
+  :type :integer
+  :default 85
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the transparency of faded markups. The lower the number, the more visible the markup is."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4A3C5739-32D4-4C46-B718-4E5F0FE0CA1E" :bricscad NIL)
+)
+
+(
+  :name "TRACEMODE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether Trace is active and which mode is current - editing or viewing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B026D045-3154-4989-9711-B31159CCF5AB" :bricscad NIL)
+)
+
+(
+  :name "TRACEOSNAP"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether object snaps apply to trace geometry while viewing a trace."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4B220A84-9185-4213-9C07-EE36E0411546" :bricscad NIL)
+)
+
+(
+  :name "TRACEPALETTESTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Reports whether the Traces palette is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-017F3481-442D-410A-8BB7-5A79195327B0" :bricscad NIL)
+)
+
+(
+  :name "TRACEPAPERCTL"
+  :type :integer
+  :default 20
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the opaqueness of the tracing paper effect."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B2D2101F-F8E4-468A-9FAE-DC7BBE909985" :bricscad NIL)
+)
+
+(
+  :name "TRACEVPSUPPORT"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether markup assist boxes are actionable within a currently active model space viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5AEC6D3B-597A-41CD-A654-3A078F729FDD" :bricscad NIL)
 )
 
 (
@@ -22291,12 +28411,12 @@
   :divergence NIL
   :summary "Trace width: Controls the default width for new traces, for the TRACE command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tracewid-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tracewid-system-variable")
 )
 
 (
   :name "TRACKPATH"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 3)
@@ -22305,10 +28425,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Track path: Controls the display of polar and entity snap tracking paths."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the display of polar and object snap tracking alignment paths."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trackpath-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6BF0703C-28B2-4591-8337-34B8C20443F2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trackpath-system-variable")
 )
 
 (
@@ -22323,9 +28443,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Transparency display: Displays transparencies."
+  :summary "Controls whether the transparency property assigned to individual objects or bylayer is visible or suppressed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/transparencydisplay-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0908F1AC-D122-4B3D-A17C-8705D03A0D0C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/transparencydisplay-system-variable")
 )
 
 (
@@ -22340,9 +28460,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Tray icons: Toggles the display of the notification icons in the Status bar."
+  :summary "Controls whether a tray is displayed on the status bar."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trayicons-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-15781673-1E08-4A81-9E12-4787B80AA9C2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trayicons-system-variable")
 )
 
 (
@@ -22357,14 +28477,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Tray notify: Toggles the display of notification balloons."
+  :summary "Controls whether service notifications are displayed in the status bar tray."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/traynotify-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A04959FC-2592-4A48-B82B-82A43CF14986" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/traynotify-system-variable")
 )
 
 (
   :name "TRAYTIMEOUT"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 60)
@@ -22373,15 +28493,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Tray timeout: Controls the display time for service notifications, in seconds. Applies only if the TRAYNOTIFY system variable is on. Values between 0 and 60 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the length of time in seconds that service notifications are displayed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/traytimeout-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E9E9A296-E43D-486F-AD5D-4814C5453B7F" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/traytimeout-system-variable")
 )
 
 (
   :name "TREEDEPTH"
-  :type :short
+  :type :integer
   :default 3020
   :read-only NIL
   :range NIL
@@ -22390,10 +28510,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Tree depth: Controls the maximum number of times an index can be divided into branches. A value of zero suppresses the spatial index entirely, entities are always processed in database order. Positive numbers turn on spatial indexing, an integer, five digits maximum, the first three digits refer to model space, the remaining digits refer to paper space. For negative numbers Z coordinate is ignored in model space, recommended for 2D drawings."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Specifies the maximum depth, that is, the number of times the tree-structured spatial index can divide into branches."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/treedepth-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BDC94EB9-20E9-4C97-BD8B-DB2530CB968D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/treedepth-system-variable")
 )
 
 (
@@ -22408,9 +28528,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Tree maximum: Limits the use of memory, limits the number of nodes in the spatial index (oct-tree) when a drawing is regenerated. By imposing a fixed limit with TREEMAX, you can load drawings created on systems with more memory than your system and with a larger TREEDEPTH than your system can handle. These drawings, if left unchecked, have an oct-tree large enough to eventually consume more memory than is available to your computer. TREEMAX also provides a safeguard agains..."
+  :summary "Limits memory consumption during drawing regeneration by limiting the number of nodes in the spatial index (oct-tree)."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/treemax-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B55FB419-48CC-44B9-8CB9-B9BFA8699EF7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/treemax-system-variable")
 )
 
 (
@@ -22425,9 +28545,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "TRIM and EXTEND to hatches: Controls whether hatch patterns are considered when trimming and extending in Quick mode."
+  :summary "Controls whether trimming and extending to hatches with Quick mode is limited to the edges of the hatches or includes the objects within hatch patterns."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trimedges-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6C0E9377-9DA8-4681-A880-FCCB1EF96E14" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trimedges-system-variable")
 )
 
 (
@@ -22442,9 +28562,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "TRIM and EXTEND mode: Controls how TRIM and EXTEND commands use streamlined inputs."
+  :summary "Controls whether the TRIM and EXTEND commands use streamlined inputs."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trimextendmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-52B3803E-FADC-4D7B-9BF2-A176C7FB7535" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trimextendmode-system-variable")
 )
 
 (
@@ -22459,32 +28579,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Trim mode: Controls if the length of selected entities or polyline segments for chamfers and fillets are adjusted (trimmed or lengthened)."
+  :summary "Controls whether selected edges for chamfers and fillets are trimmed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trimmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3D639DCE-5A01-4C07-899D-0595F8DDEBF7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trimmode-system-variable")
 )
 
 (
   :name "TRUSTEDPATHS"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
-  :scope :session
-  :saved-in :session
+  :scope :registry
+  :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Trusted executable file locations: File path(s) to use to load executable files. Separate file paths with semicolons (;)"
-  :coupled ("load" "open" "findtrustedfile")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trustedpaths-system-variable")
+  :divergence "read-only AutoCAD False, BricsCAD True; saved-in AutoCAD Registry, BricsCAD Not saved"
+  :summary "Specifies which folders have permission to load and execute files that contain code."
+  :coupled ("arxload" "autoarxload" "autoload" "findtrustedfile" "load" "open" "vl-vbaload")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2FB4611D-F141-48D5-9B6E-460EB59351AF" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/trustedpaths-system-variable")
 )
 
 (
   :name "TSPACEFAC"
   :type :real
-  :default 1.0
+  :default 1.0000
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -22492,15 +28612,15 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text space factor: Controls the line spacing distance of multiline text, measured as a multiplier of text height. Values between 0.25 and 4.0 are accepted."
+  :divergence "default AutoCAD 1.0000, BricsCAD 1.0"
+  :summary "Controls the multiline text line-spacing distance measured as a factor of text height."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tspacefac-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FA849C58-5C2B-433A-8A9A-F884847D1712" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tspacefac-system-variable")
 )
 
 (
   :name "TSPACETYPE"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (1 2)
@@ -22509,16 +28629,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text space type: Controls the type of line spacing used for multiline text. At least: adjusts line spacing based on the tallest character(s) in a line Exactly: uses the specified line spacing, regardless of individual character sizes Note: The mtexts created with the MLEADER command are also influenced by this system variable's value."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the type of line spacing used in multiline text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tspacetype-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D3A5D0FF-1550-4D32-BA8E-857D72918F4C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tspacetype-system-variable")
 )
 
 (
   :name "TSTACKALIGN"
-  :type :short
-  :default 2
+  :type :integer
+  :default 1
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
@@ -22526,15 +28646,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text stack align: Controls the vertical alignment of stacked text."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, BricsCAD 2"
+  :summary "Controls the vertical alignment of stacked text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tstackalign-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3E60C538-D2B3-42E6-ABCE-752C29521946" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tstackalign-system-variable")
 )
 
 (
   :name "TSTACKSIZE"
-  :type :short
+  :type :integer
   :default 70
   :read-only NIL
   :range (25 125)
@@ -22543,10 +28663,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Text stack size: Controls the stacked text height, as a percentage, relative to the height of the selected text. Values between 25 and 125 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the percentage of stacked text fraction height relative to selected text's current height."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tstacksize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-CDF1EF21-29DB-429F-BB7F-7DE9A6E37625" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/tstacksize-system-variable")
 )
 
 (
@@ -22563,7 +28683,7 @@
   :divergence NIL
   :summary "TrueType Text displaying mode: Controls if TrueType text is drawn as vectorized graphics or as text."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/ttfastext-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/t/ttfastext-system-variable")
 )
 
 (
@@ -22584,9 +28704,60 @@
 )
 
 (
+  :name "UCS2DDISPLAYSETTING"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays the UCS icon when the 2D Wireframe visual style is current."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-37436D1D-0662-4016-8964-DCF09E356B5D" :bricscad NIL)
+)
+
+(
+  :name "UCS3DPARADISPLAYSETTING"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays the UCS icon when perspective view is off and a 3D visual style is current."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3F1B8B77-8C1B-4EAF-8D03-DBDE5AA067BA" :bricscad NIL)
+)
+
+(
+  :name "UCS3DPERPDISPLAYSETTING"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays the UCS icon when perspective view is on and a 3D visual style is current."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-37A7B259-98D6-4838-9704-CFD0F2CBB10A" :bricscad NIL)
+)
+
+(
   :name "UCSAXISANG"
-  :type :real
-  :default 90.0d0
+  :type :integer
+  :default 90
   :read-only NIL
   :range (5 180)
   :bitcoded NIL
@@ -22594,16 +28765,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "UCS axis angle: Controls the default rotation angle around the X, Y, or Z axis, for the UCS command. Values between 5 and 180 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Real"
+  :summary "Stores the default angle when rotating the UCS around one of its axes using the X, Y, or Z option of the UCS command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsaxisang-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C370B5F1-9A62-4394-9973-939BD2071904" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsaxisang-system-variable")
 )
 
 (
   :name "UCSBASE"
   :type :string
-  :default "WORLD"
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -22611,15 +28782,15 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "UCS base: The name of the UCS that defines the orthographic UCS."
+  :divergence "default AutoCAD \"\", BricsCAD WORLD"
+  :summary "Stores the name of the UCS that defines the origin and orientation of orthographic UCS settings."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsbase-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-1ACE78C5-459C-4BC1-85DA-18FC9C5FD572" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsbase-system-variable")
 )
 
 (
   :name "UCSDETECT"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (-3 3)
@@ -22628,10 +28799,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "UCS detect: Controls the dynamic UCS behavior. Dynamic UCS is a temporary UCS that activates automatically when the cursor hovers over a face, region or 2D entity. A negative value is the same as 0, but helps in storing the earlier value."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls whether dynamic UCS acquisition is active when creating objects involving 3D planar surfaces."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsdetect-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7BFB1FF9-3498-47DE-A0DA-E0A860B62210" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsdetect-system-variable")
 )
 
 (
@@ -22646,14 +28817,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "UCS follow: Controls if a plan view (a top view zoomed to extents) is generated automatically whenever the UCS changes. If on, turn off the UCSDETECT system variable."
+  :summary "Generates a plan view whenever you change from one UCS to another."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsfollow-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C07B8F08-8854-4A84-94A6-98C5B9A2522A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsfollow-system-variable")
 )
 
 (
   :name "UCSICON"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 3)
@@ -22662,10 +28833,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "UCS icon: Controls the display and position of the UCS icon for the current viewport."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the visibility and placement of the UCS icon."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsicon-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BCC7DA63-7F74-4F61-8605-E36A010FD33A" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsicon-system-variable")
 )
 
 (
@@ -22688,7 +28859,7 @@
 (
   :name "UCSNAME"
   :type :string
-  :default (:unknown)
+  :default (:drawing)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -22697,15 +28868,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "UCS name: The name of the UCS for the current viewport, in the current workspace."
+  :summary "Stores the name of the current user coordinate system for the current viewport in the current space."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsname-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7F43D2F1-8AE0-4089-80B1-26EA037B0709" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsname-system-variable")
 )
 
 (
   :name "UCSORG"
   :type :point3d
-  :default (0 0 0)
+  :default (0.0000 0.0000 0.0000)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -22713,16 +28884,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "UCS origin: The current coordinate system's origin point for the current viewport."
+  :divergence "default AutoCAD 0.0000,0.0000,0.0000, BricsCAD 0,0,0"
+  :summary "Stores the origin point of the current user coordinate system for the current viewport in the current space."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsorg-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E74F3E89-C887-44EE-9369-F0ED67607169" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsorg-system-variable")
 )
 
 (
   :name "UCSORTHO"
   :type :integer
-  :default 0
+  :default 1
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -22730,10 +28901,27 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "UCS orthographic: Sets the UCS to follow the current view, automatically switches the drawing plane to match the current view plane. Only works if an orthographic view is selected with the -VIEW command or the LookFrom widget. Does not work if the NAVVCUBEORIENT system variable is set to UCS."
+  :divergence "default AutoCAD 1, BricsCAD Off"
+  :summary "Determines whether the XY plane of the UCS is automatically aligned with the plane of the current view when an orthographic view is restored."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsortho-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A8E18ED4-F2FA-4D8D-9FEA-7F19DA3D3B43" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsortho-system-variable")
+)
+
+(
+  :name "UCSSELECTMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the UCS icon can be selected and manipulated with grips."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5AEDA561-BE5F-42E0-9A49-0894CCFBE020" :bricscad NIL)
 )
 
 (
@@ -22748,9 +28936,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "UCS view: Controls if the current UCS is saved with a named view."
+  :summary "Determines whether the current UCS is saved with a named view."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsview-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-37336AF7-160A-4A87-9688-46DE8929975C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsview-system-variable")
 )
 
 (
@@ -22765,15 +28953,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "UCS viewports: Controls if the UCS in all viewports is fixed, or changes to reflect the currently active viewport's UCS."
+  :summary "Determines whether the UCSs in other viewports are dependent or independent of the UCS of the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsvp-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F71044DB-48DE-4D02-89E4-B1C2BC4C64A0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsvp-system-variable")
 )
 
 (
   :name "UCSXDIR"
   :type :point3d
-  :default (1 0 0)
+  :default (1.0000 0.0000 0.0000)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -22781,16 +28969,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "UCS X direction: The X direction for the current viewport."
+  :divergence "default AutoCAD 1.0000,0.0000,0.0000, BricsCAD 1,0,0"
+  :summary "Stores the X direction of the current UCS for the current viewport in the current space."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsxdir-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F2A48D4C-47E8-4147-8580-C604351A8D27" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsxdir-system-variable")
 )
 
 (
   :name "UCSYDIR"
   :type :point3d
-  :default (0 1 0)
+  :default (0.0000 1.0000 0.0000)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -22798,16 +28986,16 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "UCS Y direction: The Y direction for the current viewport."
+  :divergence "default AutoCAD 0.0000,1.0000,0.0000, BricsCAD 0,1,0"
+  :summary "Stores the Y direction of the current UCS for the current viewport in the current space."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsydir-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F2E99479-FC68-4460-BE1F-68383AC1BE98" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/ucsydir-system-variable")
 )
 
 (
   :name "UNDOCTL"
-  :type :short
-  :default 5
+  :type :integer
+  :default 53
   :read-only T
   :range NIL
   :bitcoded T
@@ -22815,16 +29003,16 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Undo control: Controls the behavior of the UNDO command."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 53, BricsCAD 5"
+  :summary "Displays the options used in the UNDO command."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/undoctl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A28ACE3A-D8BB-4933-8FFC-3AF0F7BA0330" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/undoctl-system-variable")
 )
 
 (
   :name "UNDOMARKS"
-  :type :short
-  :default (:unknown)
+  :type :integer
+  :default 0
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -22832,10 +29020,10 @@
   :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Undo marks: Shows the current number of marks placed in the Undo control using the MARK option. The MARK and BACK options are not available if a group is currently active."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Displays the number of marks placed in the UNDO control stream."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/undomarks-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6F47FEE0-823D-4C0A-AAA4-DA11215BCDD3" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/undomarks-system-variable")
 )
 
 (
@@ -22846,7 +29034,7 @@
   :range NIL
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -22868,8 +29056,42 @@
   :vendor :both
   :divergence NIL
   :summary "Unit mode: Controls how Imperial units are displayed."
-  :coupled ("rtos" "angtos")
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/unitmode-system-variable")
+  :coupled ("angtos" "rtos")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/unitmode-system-variable")
+)
+
+(
+  :name "UOSNAP"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Determines whether object snaps are available for geometry in DWF, DWFx, PDF, and DGN underlays."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4D95FB38-58B7-4F32-9F29-FC7EA49EB4E2" :bricscad NIL)
+)
+
+(
+  :name "UPDATETHUMBNAIL"
+  :type :integer
+  :default 15
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls updating of the thumbnail previews for views and layouts."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8DEFD44A-66B1-479E-9FBC-8ECADA03EFAC" :bricscad NIL)
 )
 
 (
@@ -22920,7 +29142,7 @@
   :divergence NIL
   :summary "User integer 1: First of 5 variables that can be used to store integer values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/useri1-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/useri1-system-variable")
 )
 
 (
@@ -22937,7 +29159,7 @@
   :divergence NIL
   :summary "User integer 2: Second of 5 variables that can be used to store integer values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/useri2-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/useri2-system-variable")
 )
 
 (
@@ -22954,7 +29176,7 @@
   :divergence NIL
   :summary "User integer 3: Third of 5 variables that can be used to store integer values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/useri3-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/useri3-system-variable")
 )
 
 (
@@ -22971,7 +29193,7 @@
   :divergence NIL
   :summary "User integer 4: Fourth of 5 variables that can be used to store integer values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/useri4-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/useri4-system-variable")
 )
 
 (
@@ -22988,7 +29210,7 @@
   :divergence NIL
   :summary "User integer 5: Fifth of 5 variables that can be used to store integer values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/useri5-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/useri5-system-variable")
 )
 
 (
@@ -23005,7 +29227,7 @@
   :divergence NIL
   :summary "User real 1: First of 5 variables that can be used to store real numerical values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/userr1-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/userr1-system-variable")
 )
 
 (
@@ -23022,7 +29244,7 @@
   :divergence NIL
   :summary "User real 2: Second of 5 variables that can be used to store real numerical values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/userr2-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/userr2-system-variable")
 )
 
 (
@@ -23039,7 +29261,7 @@
   :divergence NIL
   :summary "User real 3: Third of 5 variables that can be used to store real numerical values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/userr3-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/userr3-system-variable")
 )
 
 (
@@ -23056,7 +29278,7 @@
   :divergence NIL
   :summary "User real 4: Fourth of 5 variables that can be used to store real numerical values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/userr4-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/userr4-system-variable")
 )
 
 (
@@ -23073,13 +29295,13 @@
   :divergence NIL
   :summary "User real 5: Fifth of 5 variables that can be used to store real numerical values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/userr5-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/userr5-system-variable")
 )
 
 (
   :name "USERS1"
   :type :string
-  :default (:unknown)
+  :default ""
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23088,15 +29310,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "User string 1: First of 5 variables that can be used to store string values."
+  :summary "Provides storage and retrieval of text string data."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/users1-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-47739A56-E39C-476E-A430-1B10509A1B43" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/users1-system-variable")
 )
 
 (
   :name "USERS2"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23107,13 +29329,13 @@
   :divergence NIL
   :summary "User string 2: Second of 5 variables that can be used to store string values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/users2-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/users2-system-variable")
 )
 
 (
   :name "USERS3"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23124,13 +29346,13 @@
   :divergence NIL
   :summary "User string 3: Third of 5 variables that can be used to store string values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/users3-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/users3-system-variable")
 )
 
 (
   :name "USERS4"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23141,13 +29363,13 @@
   :divergence NIL
   :summary "User string 4: Fourth of 5 variables that can be used to store string values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/users4-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/users4-system-variable")
 )
 
 (
   :name "USERS5"
   :type :string
-  :default (:unknown)
+  :default (:session)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23158,7 +29380,7 @@
   :divergence NIL
   :summary "User string 5: Fifth of 5 variables that can be used to store string values."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/users5-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/u/users5-system-variable")
 )
 
 (
@@ -23232,7 +29454,7 @@
 (
   :name "VERSIONCONTROLCONFIGPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23249,7 +29471,7 @@
 (
   :name "VERSIONCONTROLDOWNLOADPATH"
   :type :string
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23266,7 +29488,7 @@
 (
   :name "VERSIONCUSTOMIZABLEFILES"
   :type :string
-  :default (:unknown)
+  :default (:preference)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -23277,13 +29499,30 @@
   :divergence NIL
   :summary "Version customizable files: Shows the current version of the CUI and PGP files."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/versioncustomizablefiles-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/versioncustomizablefiles-system-variable")
+)
+
+(
+  :name "VIEWBACKSTATUS"
+  :type :integer
+  :default (:host-specific)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores whether a previous view is available for the VIEWBACK command."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-11389AEA-E166-4DE5-8D32-EB764B951510" :bricscad NIL)
 )
 
 (
   :name "VIEWCTR"
   :type :point3d
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -23292,15 +29531,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "View center: The coordinates for the center point of the current viewport."
+  :summary "Stores the center of the view in the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewctr-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6F641FE3-8F12-491A-905B-A097D5B9718B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewctr-system-variable")
 )
 
 (
   :name "VIEWDIR"
   :type :point3d
-  :default (:unknown)
+  :default (0.0000 0.0000 1.0000)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -23309,15 +29548,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "View direction: Displays the view direction of the current viewport."
+  :summary "Stores the viewing direction in the current viewport, expressed in UCS coordinates."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewdir-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-30ED47BF-A7B7-4331-B1AF-976FCCD0FBCB" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewdir-system-variable")
+)
+
+(
+  :name "VIEWFWDSTATUS"
+  :type :integer
+  :default (:host-specific)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores whether a previous view is available for the VIEWFORWARD command."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-44A2ECBF-067F-46A8-852D-4A2E3F44130F" :bricscad NIL)
 )
 
 (
   :name "VIEWMODE"
-  :type :short
-  :default (:unknown)
+  :type :integer
+  :default 0
   :read-only T
   :range (0 31)
   :bitcoded T
@@ -23325,16 +29581,33 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "View mode: The current viewport's View mode. If off, the front clipping plane passes through the camera point (vectors behind the camera are not displayed) unless front-clipping is off. If Front clip not at eye is on, the FRONTZ system variable controls the front clipping plane."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Stores the view settings for the current viewport."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewmode-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-01F9D6D3-0A43-4BCB-AA5C-65459D4BBC78" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewmode-system-variable")
+)
+
+(
+  :name "VIEWPORTLAYER"
+  :type :string
+  :default "\"use current\""
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies a default layer for new viewports."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0A44A8C4-298A-4C94-B1EE-14FD6EDDC3E4" :bricscad NIL)
 )
 
 (
   :name "VIEWSIZE"
   :type :real
-  :default 0.0
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -23343,15 +29616,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "View size: The height of the current viewport."
+  :summary "Stores the height of the view displayed in the current viewport, measured in drawing units."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewsize-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-31B50CD0-4943-4E9B-8735-C15CB3C4268C" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewsize-system-variable")
+)
+
+(
+  :name "VIEWSKETCHMODE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the system is in symbol sketch mode or not."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A5053CC6-8B1B-4CE5-A0DD-5DC3CF0CAB23" :bricscad NIL)
 )
 
 (
   :name "VIEWTWIST"
   :type :real
-  :default (:unknown)
+  :default 0.0000
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -23360,9 +29650,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "View twist: The view twist angle relative to the WCS for the current viewport."
+  :summary "Stores the view rotation angle for the current viewport measured relative to the WCS."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewtwist-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5357731F-8FC6-4413-A7B2-3E152CD3127B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewtwist-system-variable")
 )
 
 (
@@ -23377,26 +29667,43 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Automatically update drawing views: Turns on automatic updates to drawing views (in paper space) when the source model changes. When turned off, the VIEWUPDATE command manually updates the drawing views created by VIEWBASE and VIEWSECTION commands. This only works in paper space."
+  :summary "Controls whether model documentation drawing views are updated automatically when the source model changes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewupdateauto-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7300BF21-512A-44F5-9F81-20B63FD21110" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/viewupdateauto-system-variable")
 )
 
 (
   :name "VISRETAIN"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
-  :bitcoded NIL
+  :bitcoded T
   :scope :drawing
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Visibility retain: Controls the visibility, color, linetype and lineweight of an XRef, and if path changes to nested XRefs are saved. If the PSTYLEPOLICY system variable is off (0), also controls the plotstyles of XRef-dependent layers. If Off (0): Changes made to XRefs-dependent layers in the current drawing are valid in the current session only and are not saved with the drawing. When the current drawing is reopened, the layer table is reloaded from the reference drawing..."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the properties of xref-dependent layers."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/visretain-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-897B1672-4E09-42E0-B857-A9D1F96ED671" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/visretain-system-variable")
+)
+
+(
+  :name "VISRETAINMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded T
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the behavior of the VISRETAIN system variable when it's set to 1."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-46480687-6DFF-499E-B7C0-E741AEA11D00" :bricscad NIL)
 )
 
 (
@@ -23405,7 +29712,7 @@
   :default -1
   :read-only NIL
   :range (-1 8)
-  :bitcoded NIL
+  :bitcoded T
   :scope :registry
   :saved-in :registry
   :versions (:autocad nil :bricscad "V20+")
@@ -23434,6 +29741,57 @@
 )
 
 (
+  :name "VPCONTROL"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the options for viewports, views, and visual styles are displayed in the upper-left corner of every viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-61017FE1-B409-4DCA-948F-4B09903992C7" :bricscad NIL)
+)
+
+(
+  :name "VPLAYEROVERRIDES"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates if there are any layers with viewport (VP) property overrides for the current layout viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-40CDDEA9-37A5-4530-9BCF-42CF746FB173" :bricscad NIL)
+)
+
+(
+  :name "VPLAYEROVERRIDESMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether layer property overrides for layout viewports are displayed and plotted."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C70C14C3-7BF1-4199-BFD4-7AF172E344CB" :bricscad NIL)
+)
+
+(
   :name "VPMAXIMIZEDSTATE"
   :type :integer
   :default 0
@@ -23445,9 +29803,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Viewport maximized: Displays a value to indicate if the viewport is maximized. Note: You cannot plot or publish when the viewport is maximized. This system variable is available only at the Command line."
+  :summary "Indicates whether the viewport is maximized or not."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vpmaximizedstate-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BB58132B-1CF7-439D-B409-7EB1885E6CB8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vpmaximizedstate-system-variable")
 )
 
 (
@@ -23462,15 +29820,457 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Rotate view: Rotates a view with the viewport, in paper space."
+  :summary "Controls whether the view within a viewport is rotated with the viewport when the viewport is rotated."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vprotateassoc-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D44A1A81-CE0A-49BC-BF34-42A0BF9E847B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vprotateassoc-system-variable")
+)
+
+(
+  :name "VSACURVATUREHIGH"
+  :type :real
+  :default 1.0000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the value at which a surface displays as green during curvature analysis (ANALYSISCURVATURE)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E6C0D685-A93F-4DEB-A78D-4C22B2BA1735" :bricscad NIL)
+)
+
+(
+  :name "VSACURVATURELOW"
+  :type :real
+  :default -1.0000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the value at which a surface displays as blue during curvature analysis (ANALYSISCURVATURE)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-E8717E47-F1FA-4300-AD5D-01653BAB0A4A" :bricscad NIL)
+)
+
+(
+  :name "VSACURVATURETYPE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls which type of curvature analysis is used with the (ANALYSISCURVATURE)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4246C216-CCEB-4077-8359-4201760A1C44" :bricscad NIL)
+)
+
+(
+  :name "VSADRAFTANGLEHIGH"
+  :type :real
+  :default 3.0000
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the value at which a model displays as green during draft analysis (ANALYSISDRAFT)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C770ECF0-1C41-4D13-B848-60FAB95740BF" :bricscad NIL)
+)
+
+(
+  :name "VSAZEBRACOLOR1"
+  :type :string
+  :default "RGB:255,255,255"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the first color of the zebra stripes displayed during zebra analysis (ANALYSISZEBRA)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-12BD473D-92DF-4754-998F-4FF2CABC3C74" :bricscad NIL)
+)
+
+(
+  :name "VSAZEBRACOLOR2"
+  :type :string
+  :default "RGB:0,0,0"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the second (contrasting) color of the zebra stripes displayed during zebra analysis (ANALYSISZEBRA)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4B3BF9D7-C002-42FC-9748-F31DB1D65B31" :bricscad NIL)
+)
+
+(
+  :name "VSAZEBRADIRECTION"
+  :type :integer
+  :default 90
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether zebra stripes display horizontally, vertically, or at an angle during zebra analysis (ANALYSISBRA)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A4DFC27E-5533-4096-AFA6-8C76CCB8271F" :bricscad NIL)
+)
+
+(
+  :name "VSAZEBRASIZE"
+  :type :integer
+  :default 45
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the width of the zebra stripes displayed during zebra analysis (ANALYSISZEBRA)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C08DB688-221E-42EF-8A12-B2A62EF938C3" :bricscad NIL)
+)
+
+(
+  :name "VSAZEBRATYPE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the type of zebra display when using zebra analysis (ANALYSISZEBRA)."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-20469CB5-5D3A-494F-906A-7251930B7621" :bricscad NIL)
+)
+
+(
+  :name "VSBACKGROUNDS"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether backgrounds are displayed in the visual style applied to the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5294FB47-1581-4DE3-BE51-21CE7493E573" :bricscad NIL)
+)
+
+(
+  :name "VSEDGECOLOR"
+  :type :string
+  :default "BYENTITY"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color of edges in the visual style in the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-7BCDF702-521E-4B3F-BFD5-1F20B2519247" :bricscad NIL)
+)
+
+(
+  :name "VSEDGEJITTER"
+  :type :integer
+  :default -2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Makes the edges on objects appear with several linear strokes, as though they were sketched with a pencil."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-16BCE894-58CB-4644-B5CD-CAF34EA3B968" :bricscad NIL)
+)
+
+(
+  :name "VSEDGELEX"
+  :type :integer
+  :default -6
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the number of pixels that lines and edges appear to extend beyond their endpoints for a hand-drawn effect."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-416A46CB-4045-44ED-BFCD-310E614402A6" :bricscad NIL)
+)
+
+(
+  :name "VSEDGES"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the types of edges that are displayed in the viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AEA68A47-48B7-412E-B2C5-9AA21EE4A669" :bricscad NIL)
+)
+
+(
+  :name "VSEDGESMOOTH"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the angle at which crease edges are displayed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-00E8DD9B-D7E4-4720-84BE-3E3554424F11" :bricscad NIL)
+)
+
+(
+  :name "VSFACECOLORMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls how the color of faces is calculated."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8DAF78F6-5088-4D86-B858-759BB7674570" :bricscad NIL)
+)
+
+(
+  :name "VSFACEHIGHLIGHT"
+  :type :integer
+  :default -30
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of specular highlights on faces without materials in the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-94547162-5EF4-4435-BCFC-4E165A302BEC" :bricscad NIL)
+)
+
+(
+  :name "VSFACEOPACITY"
+  :type :integer
+  :default -60
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Turns on and off a preset level of transparency for 3D objects."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-BCBB0B39-1527-4C11-A02F-911E2C04BF2F" :bricscad NIL)
+)
+
+(
+  :name "VSFACESTYLE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls how faces, solid-fill hatches, and gradients are displayed in the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-26F78CF6-8164-480B-B39C-52216E5B1B88" :bricscad NIL)
+)
+
+(
+  :name "VSHALOGAP"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the halo gap in the visual style applied to the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-A6242C38-7507-4216-AE95-2784EE1870A4" :bricscad NIL)
+)
+
+(
+  :name "VSINTERSECTIONCOLOR"
+  :type :integer
+  :default 7
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color of the intersections of independent 3D solids, surfaces, and meshes for a visual style."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-510292F6-EB7F-4167-AF7D-2087F39DEF47" :bricscad NIL)
+)
+
+(
+  :name "VSINTERSECTIONEDGES"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of the intersections of independent 3D solids, surfaces, and meshes for a visual style."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-02F8B554-D1DD-437B-8AA3-64575B88BC1F" :bricscad NIL)
+)
+
+(
+  :name "VSINTERSECTIONLTYPE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the linetype of the intersections of independent 3D solids, surfaces, and meshes for a visual style."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0321160F-7487-4573-999D-1FDEAF00D6F6" :bricscad NIL)
+)
+
+(
+  :name "VSISOONTOP"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Displays isolines on top of shaded objects in the visual style applied to the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9143D739-0D86-48BE-9F7E-AE3B4CACE050" :bricscad NIL)
+)
+
+(
+  :name "VSLIGHTINGQUALITY"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the lighting quality in the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6E3771E8-7D64-4B8B-BD57-20FCD3B465D8" :bricscad NIL)
+)
+
+(
+  :name "VSMATERIALMODE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the display of materials in the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-06C459DA-3D4B-4796-89B4-4521795DC7CE" :bricscad NIL)
 )
 
 (
   :name "VSMAX"
   :type :point3d
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -23479,15 +30279,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Virtual screen maximum: The current viewport's upper-right corner coordinates."
+  :summary "Stores the upper-right corner of the current viewport's virtual screen."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vsmax-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-676295A1-1CEC-4CA6-BCAA-65779EEC5B5D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vsmax-system-variable")
 )
 
 (
   :name "VSMIN"
   :type :point3d
-  :default (:unknown)
+  :default (:host-specific)
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -23496,14 +30296,150 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Virtual screen minimum: The current viewport's lower-left corner coordinates."
+  :summary "Stores the lower-left corner of the current viewport's virtual screen."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vsmin-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-3C57A560-FCBB-4564-96E8-C28E5DFFF593" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vsmin-system-variable")
+)
+
+(
+  :name "VSMONOCOLOR"
+  :type :string
+  :default "RGB:255,255,255"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the color for monochrome and tint display of faces in the visual style applied to the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-96A9A82E-6ED7-4009-9EBC-1C95FF709DED" :bricscad NIL)
+)
+
+(
+  :name "VSOCCLUDEDCOLOR"
+  :type :string
+  :default "ByEntity"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the color of hidden lines displayed for a visual style."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D5AC4805-9F95-4E93-A3CE-6A1ABAE75C4A" :bricscad NIL)
+)
+
+(
+  :name "VSOCCLUDEDEDGES"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether hidden edges are displayed for a visual style."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-FB755451-C5C6-454E-B9E6-50B638EF9650" :bricscad NIL)
+)
+
+(
+  :name "VSOCCLUDEDLTYPE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the linetype of hidden lines displayed for a visual style."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-27853A50-8881-457D-BB18-F30BBA1CDB8C" :bricscad NIL)
+)
+
+(
+  :name "VSSHADOWS"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether a visual style displays shadows."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5582A510-88D3-4113-8886-A27DD0C95F1F" :bricscad NIL)
+)
+
+(
+  :name "VSSILHEDGES"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls display of silhouette edges of solid objects in the visual style applied to the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-F5E3C87D-F43B-42D7-BF2B-AC7239906F20" :bricscad NIL)
+)
+
+(
+  :name "VSSILHWIDTH"
+  :type :integer
+  :default 5
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the width in pixels of silhouette edges in the current viewport."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6673EBEC-B829-402C-A868-849985B46771" :bricscad NIL)
+)
+
+(
+  :name "VSSTATE"
+  :type :integer
+  :default 0
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :session
+  :saved-in :session
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Indicates whether the Visual Styles window is open or closed."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C49FC69B-185B-4B9B-8FEC-0F0886FA5730" :bricscad NIL)
 )
 
 (
   :name "VTDURATION"
-  :type :short
+  :type :integer
   :default 750
   :read-only NIL
   :range (0 5000)
@@ -23512,15 +30448,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "View transition duration: Controls the duration of animated view transitions in milliseconds. Values between 0 and 5000 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the duration of a smooth view transition, in milliseconds."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vtduration-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6D9BC830-B194-4B07-91F5-9F9B359CF870" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vtduration-system-variable")
 )
 
 (
   :name "VTENABLE"
-  :type :short
+  :type :integer
   :default 3
   :read-only NIL
   :range (0 7)
@@ -23529,15 +30465,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Enable view transitions: Enables animation transitions during pan, zoom and rotation view actions in model space. See also, the VTFPS system variable."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls when smooth view transitions are used."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vtenable-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D0AF2638-DE82-4CB2-A7D8-C771EB5CDD6D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vtenable-system-variable")
 )
 
 (
   :name "VTFPS"
-  :type :short
+  :type :integer
   :default 7
   :read-only NIL
   :range (1 30)
@@ -23546,10 +30482,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "View transition minimum FPS: Controls the minimum FPS required to enable animated view transitions. Values between 1 and 30 are accepted. The default value is 7, which means that the redraw time should take less than 143 (=1000/7) milliseconds. If the computer is not capable to redraw the view fast enough, no animation will be available."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Sets the minimum speed of a smooth view transition, in frames per second."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vtfps-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2E80345C-4F20-4C50-A7EC-0E361A388B68" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/v/vtfps-system-variable")
 )
 
 (
@@ -23570,9 +30506,26 @@
 )
 
 (
-  :name "WHIPARC"
-  :type :short
+  :name "WBLOCKCREATEMODE"
+  :type :integer
   :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :preference
+  :saved-in :preference
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the behavior for selected objects after saving the blocks as a file with the WBLOCK and -WBLOCK commands."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9A839134-A53C-4B84-A96C-FB12B411C649" :bricscad NIL)
+)
+
+(
+  :name "WHIPARC"
+  :type :integer
+  :default 0
   :read-only NIL
   :range (0 1)
   :bitcoded NIL
@@ -23580,16 +30533,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Whip arcs: Controls if circles and circular arcs display as true (smooth) circles or as a series of angular lines."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 0, BricsCAD 1"
+  :summary "Controls how circles and arcs are displayed."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/whiparc-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DFB5E247-3ADF-4F73-9DE3-E6EA4D2F4AAA" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/whiparc-system-variable")
 )
 
 (
   :name "WHIPTHREAD"
-  :type :short
-  :default 0
+  :type :integer
+  :default 1
   :read-only NIL
   :range (0 3)
   :bitcoded NIL
@@ -23597,15 +30550,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Whip thread: Controls if the REGEN and REDRAW commands use multithreading, if the machine has multiple processors (Not yet supported). When multithreaded processing is used for redraw operations (value 2 or 3), the order of entities specified with the DRAWORDER command is not guaranteed to be preserved for display but is preserved for plotting."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, BricsCAD 0"
+  :summary "Controls whether to use an additional processor to improve the speed of certain operations such as those that regenerate the drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/whipthread-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DF14446D-1EB4-44DF-859C-01977F6C4CD0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/whipthread-system-variable")
 )
 
 (
   :name "WINDOWAREACOLOR"
-  :type :short
+  :type :integer
   :default 150
   :read-only NIL
   :range (1 255)
@@ -23614,15 +30567,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Window area color: Controls the color for window selection areas (left-right). It has effect only when SELECTIONAREA system variable is on."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the color of the transparent selection area during window selection."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/windowareacolor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-67BDB659-F4F4-407F-9746-3861C4CD92A2" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/windowareacolor-system-variable")
 )
 
 (
   :name "WIPEOUTFRAME"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 2)
@@ -23631,10 +30584,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Wipeout frame: Controls the display of frames for wipeout entities, if the FRAME system variable is set to Use individual system variables (3)."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the display of frames for wipeout objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/wipeoutframe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-AF1A9E90-35FB-4A49-AA39-E3456B4F264D" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/wipeoutframe-system-variable")
 )
 
 (
@@ -23644,14 +30597,14 @@
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :session
+  :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Windows Meta File background: Controls how the background of a WMF (Windows Meta File) or Copy Clip is created and displayed in other applications."
+  :divergence "saved-in AutoCAD Not-saved, BricsCAD Registry"
+  :summary "Controls the background display when objects are inserted in Windows metafile (WMF) format."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/wmfbkgnd-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-51DB9284-EAF6-478E-8A3F-2A18E7A9263B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/wmfbkgnd-system-variable")
 )
 
 (
@@ -23661,14 +30614,14 @@
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :session
+  :saved-in :session
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Windows Meta File foreground: Controls how the foreground of a WMF (Windows Meta File) or Copy Clip is created and displayed in other applications. WMFFOREGND applies only when WMFBKGND is set to 0."
+  :divergence "saved-in AutoCAD Not-saved, BricsCAD Registry"
+  :summary "Controls the assignment of the foreground color when objects are inserted in Windows metafile (WMF) format."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/wmfforegnd-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-485219AF-71F4-4E7A-B5FD-BE53E358AC54" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/wmfforegnd-system-variable")
 )
 
 (
@@ -23713,7 +30666,7 @@
   :range NIL
   :bitcoded NIL
   :scope :session
-  :saved-in :workspace
+  :saved-in :session
   :versions (:autocad nil :bricscad "V20+")
   :vendor :bricscad
   :divergence NIL
@@ -23725,7 +30678,7 @@
 (
   :name "WNDLTEXT"
   :type :short
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23742,7 +30695,7 @@
 (
   :name "WNDPMAIN"
   :type :point
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23759,7 +30712,7 @@
 (
   :name "WNDPTEXT"
   :type :point
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23776,7 +30729,7 @@
 (
   :name "WNDSMAIN"
   :type :point
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23793,7 +30746,7 @@
 (
   :name "WNDSTEXT"
   :type :point
-  :default (:unknown)
+  :default (:registry)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23808,9 +30761,43 @@
 )
 
 (
+  :name "WORKINGFOLDER"
+  :type :string
+  :default (:host-specific)
+  :read-only T
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Stores the drive and folder path of the operating system's working folder for the process, which can be of interest to developers."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-45D59F0E-2F4A-4C97-A013-76E8A12D2408" :bricscad NIL)
+)
+
+(
+  :name "WORKSPACELABEL"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether to display the name of the current workspace in the status bar."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5B1F561B-E8ED-4868-A267-1411279A95F5" :bricscad NIL)
+)
+
+(
   :name "WORLDUCS"
   :type :integer
-  :default (:unknown)
+  :default 1
   :read-only T
   :range NIL
   :bitcoded NIL
@@ -23819,14 +30806,14 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "World UCS: Displays if the UCS matches the WCS or not."
+  :summary "Indicates whether the UCS is coincident with the WCS."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/worlducs-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2513B817-8652-49C9-87CE-9F44166F4453" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/worlducs-system-variable")
 )
 
 (
   :name "WORLDVIEW"
-  :type :short
+  :type :integer
   :default 1
   :read-only NIL
   :range (0 1)
@@ -23835,10 +30822,10 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "World view: Controls if the DVIEW or VPOINT commands change the current UCS to the WCS."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Determines whether input to the DVIEW and VPOINT commands is relative to the WCS (default) or the current UCS."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/worldview-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-10E07536-F859-4253-B393-44DAF3E41D26" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/worldview-system-variable")
 )
 
 (
@@ -23853,9 +30840,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "Write status: The state of the open drawing - read-only or writable. Used in LISP to determine the write status of drawing."
+  :summary "Indicates whether a drawing file is read-only or can be revised."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/writestat-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-508C22CF-FDDC-4D42-83CB-D604067BA57E" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/writestat-system-variable")
 )
 
 (
@@ -23872,29 +30859,29 @@
   :divergence NIL
   :summary "Workspace autosave: Automatically saves workspace changes."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/wsautosave-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/wsautosave-system-variable")
 )
 
 (
   :name "WSCURRENT"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only NIL
   :range NIL
   :bitcoded NIL
-  :scope :registry
-  :saved-in :registry
+  :scope :preference
+  :saved-in :preference
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Current workspace: The name of the current workspace."
+  :divergence "saved-in AutoCAD User-settings, BricsCAD Registry"
+  :summary "Displays the current workspace name at the Command prompt and sets a specified workspace to be the current one."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/wscurrent-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-0A4B4485-22CC-478E-B641-2F445E4A45FD" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/w/wscurrent-system-variable")
 )
 
 (
   :name "XCLIPFRAME"
-  :type :short
+  :type :integer
   :default 2
   :read-only NIL
   :range (0 2)
@@ -23903,16 +30890,84 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Xref clipping frame: Controls the display of XRef and Block Reference clipping boundaries, if the FRAME system variable is set to Use individual system variables (3)."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Determines whether xref clipping boundaries are visible or plotted in the current drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xclipframe-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-DA921BBF-A545-4144-A63D-D866772C3759" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xclipframe-system-variable")
+)
+
+(
+  :name "XCOMPAREBAKPATH"
+  :type :string
+  :default (:host-specific)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies the path where the backup xref file is stored."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5108FF7E-4174-47FB-B0F1-0596D322B8A5" :bricscad NIL)
+)
+
+(
+  :name "XCOMPAREBAKSIZE"
+  :type :integer
+  :default 500
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Sets the size of the folder where the backup xref file is stored."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-4296DD7A-054A-4B21-B578-42944D85ED7E" :bricscad NIL)
+)
+
+(
+  :name "XCOMPARECOLORMODE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Switches the visual effect of objects in the host drawing during an xref comparison."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ADA1FB54-19CF-40C1-984F-B90B950B8525" :bricscad NIL)
+)
+
+(
+  :name "XCOMPAREENABLE"
+  :type :integer
+  :default 1
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Enables the comparison between an xref and the referenced drawing file."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-180ADA2F-3061-4505-965D-D1FD38F8795C" :bricscad NIL)
 )
 
 (
   :name "XDWGFADECTL"
-  :type :short
-  :default 70
+  :type :integer
+  :default 50
   :read-only NIL
   :range (-90 90)
   :bitcoded NIL
@@ -23920,10 +30975,10 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "XRef database fade control: Controls the transparency for XRefs. Values between -90 and 90 are accepted. Negative values disable fading."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 50, BricsCAD 70"
+  :summary "Controls the dimming for all DWG xref objects."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xdwgfadectl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D9B77309-E28A-4018-BE4A-92AEA550940B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xdwgfadectl-system-variable")
 )
 
 (
@@ -23938,15 +30993,15 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "XRef editable: Allows in-place editing on the current drawing, if it is referenced in another drawing."
+  :summary "Controls whether the current drawing can be edited in-place when being referenced by another drawing."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xedit-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-5DA336A1-59BE-4E1E-899C-9349724414E0" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xedit-system-variable")
 )
 
 (
   :name "XFADECTL"
-  :type :short
-  :default 50
+  :type :integer
+  :default 70
   :read-only NIL
   :range (0 90)
   :bitcoded NIL
@@ -23954,16 +31009,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Reference editing fade control: Controls the transparency for XRefs during edit mode. This system variable affects only the entities that are not being edited in the reference. Values between 0 and 90 are accepted. A value of zero means fully opaque. A value of 90 means maximum transparency."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 70, BricsCAD 50"
+  :summary "Controls the amount of fading within a reference being edited in place. This setting affects only the objects that are not being edited in the reference."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xfadectl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8B353FAC-0AC4-43AC-8E80-18999A4A7AA1" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xfadectl-system-variable")
 )
 
 (
   :name "XLOADCTL"
-  :type :short
-  :default 1
+  :type :integer
+  :default 2
   :read-only NIL
   :range (0 2)
   :bitcoded NIL
@@ -23971,16 +31026,16 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "XRef load control: Controls XRef demand loading and if a copy or the original drawing is opened (Not yet supported)."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 2, BricsCAD 1"
+  :summary "Turns xref demand-loading on and off, and controls whether it opens the referenced drawing or a copy."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xloadctl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-C89AD1A8-458B-4F51-B651-7C9A754EBF05" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xloadctl-system-variable")
 )
 
 (
   :name "XLOADPATH"
   :type :string
-  :default (:unknown)
+  :default (:host-specific)
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -23989,9 +31044,9 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "XRef load path: Controls a path to store temporary copies of demand-loaded XRefs. See also the XREFCTL system variable."
+  :summary "Creates a path for storing temporary copies of demand-loaded xref files."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xloadpath-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-9A1DE628-0C3C-498A-A301-93E514E49FD8" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xloadpath-system-variable")
 )
 
 (
@@ -24008,13 +31063,13 @@
   :divergence NIL
   :summary "Xnotify time: Controls how often the program checks for modified XRefs, images and PDF documents, in minutes. This is if XREFNOTIFY, IMAGENOTIFY and/or PDFNOTIFY is ON. Values between 0 and 10,080 are accepted."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xnotifytime-system-variable")
+  :source (:autocad "AutoCAD 2026 ENU per-sysvar page (name match; GUID not yet captured)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xnotifytime-system-variable")
 )
 
 (
   :name "XREFCTL"
   :type :integer
-  :default (:unknown)
+  :default 0
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -24023,15 +31078,32 @@
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
   :divergence NIL
-  :summary "XRef control: Creates XRef log files (XLG)."
+  :summary "Controls whether external reference log (XLG) files are created."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xrefctl-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-566A2A7D-26C6-4192-A932-94EA0F6FE22B" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xrefctl-system-variable")
+)
+
+(
+  :name "XREFLAYER"
+  :type :string
+  :default "use current"
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :drawing
+  :saved-in :drawing
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Specifies a default layer for a new xref."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ACEE7EBF-68C5-4E02-B043-90F5B4156239" :bricscad NIL)
 )
 
 (
   :name "XREFNOTIFY"
   :type :integer
-  :default 1
+  :default 2
   :read-only NIL
   :range NIL
   :bitcoded NIL
@@ -24039,15 +31111,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "XRef notify: Displays a warning, when a drawing is opened, if there are missing XRefs."
+  :divergence "default AutoCAD 2, BricsCAD On"
+  :summary "Controls the notification for updated or missing xrefs."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xrefnotify-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-D97BECAD-2380-4CA3-896C-A6896BE112F7" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xrefnotify-system-variable")
 )
 
 (
   :name "XREFOVERRIDE"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range (0 1)
@@ -24056,16 +31128,50 @@
   :saved-in :drawing
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "XRef override: Controls the display of entity visual properties (such as color, linetype, lineweight, transparency, or plot style) on referenced layers. If 0: When the properties of the entities on the XREF drawing are set to ByLayer, any changes to the xref layer properties are displayed in the current drawing. If 1: When the properties of the entities on the XREF drawing are not set to ByLayer, entities on xref layers are treated as if their properties are set to ByLayer..."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Controls the display of object properties on referenced layers."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xrefoverride-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-131E3BBB-A28A-40BC-BDC5-A4486C1E2DBE" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/x/xrefoverride-system-variable")
+)
+
+(
+  :name "XREFREGAPPCTL"
+  :type :integer
+  :default 2
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls whether the registered application (RegApp) records stored in an xref being loaded are copied to the host drawing."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-71F86DA9-D519-418A-B8F6-8A6A5D920EF9" :bricscad NIL)
+)
+
+(
+  :name "XREFTYPE"
+  :type :integer
+  :default 0
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the default reference type when attaching or overlaying an external reference."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-8BDF8BEE-0207-413F-96D9-5B067DAF6E60" :bricscad NIL)
 )
 
 (
   :name "ZOOMFACTOR"
-  :type :short
-  :default 40
+  :type :integer
+  :default 60
   :read-only NIL
   :range (3 100)
   :bitcoded NIL
@@ -24073,15 +31179,15 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Zoom factor: Controls the incremental zoom change with respect to the mouse-wheel. When zooming in, the incremental step decreases gradually allowing to focus on a particularly detail easily. Values between 3 and 100 are accepted."
+  :divergence "type AutoCAD Integer, BricsCAD Short; default AutoCAD 60, BricsCAD 40"
+  :summary "Controls how much the magnification changes when the mouse wheel moves forward or backward."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/z/zoomfactor-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-6A77AD55-6035-42FF-8FB1-FB0D8EFE1278" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/z/zoomfactor-system-variable")
 )
 
 (
   :name "ZOOMWHEEL"
-  :type :short
+  :type :integer
   :default 0
   :read-only NIL
   :range NIL
@@ -24090,9 +31196,26 @@
   :saved-in :registry
   :versions (:autocad "all" :bricscad "V20+")
   :vendor :both
-  :divergence NIL
-  :summary "Mouse wheel zoom direction: Toggles the mouse wheel zoom direction."
+  :divergence "type AutoCAD Integer, BricsCAD Short"
+  :summary "Toggles the direction of transparent zoom operations when you scroll the middle mouse wheel."
   :coupled ()
-  :source (:autocad "AutoCAD 2026: per-sysvar GUID on help.autodesk.com (cross-checked via name)" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/z/zoomwheel-system-variable")
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-94E589B5-E9B2-4E88-9525-EC802BDEE9E9" :bricscad "https://help.bricsys.com/en-us/document/system-variable-reference/z/zoomwheel-system-variable")
+)
+
+(
+  :name "_TOOLPALETTEPATH"
+  :type :string
+  :default (:host-specific)
+  :read-only NIL
+  :range NIL
+  :bitcoded NIL
+  :scope :registry
+  :saved-in :registry
+  :versions (:autocad "all" :bricscad nil)
+  :vendor :autocad
+  :divergence NIL
+  :summary "Controls the path(s) that are used for the Tool Palette Windows."
+  :coupled ()
+  :source (:autocad "https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-B34933CD-B0F1-4D6C-8D22-B7754B409A62" :bricscad NIL)
 )
 

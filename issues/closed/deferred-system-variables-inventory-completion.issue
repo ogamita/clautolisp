@@ -236,4 +236,75 @@ work:
 
 == Resolved ==
 
-(none yet)
+All five items (I-V) landed in a single Phase-1.5 sweep that grew
+the inventory from 1417 to 1836 records and turned every previously
+empty / placeholder field into either a literal value or an explicit
+non-literal marker. Concrete deltas vs the Phase-1 baseline (commit
+b071d73):
+
+  Records              1417 -> 1836  (+419 AutoCAD-side names)
+  :vendor :both         676 ->  678  (+2; CMDDIA, STANDARDSVIOLATION
+                                      moved from BX-only after V)
+  :vendor :bricscad     739 ->  737  (-2; same)
+  :vendor :autocad        2 ->  421  (+419; full AutoCAD enumeration)
+  Read-only sysvars      97 ->  145
+  :bitcoded T             0 ->  137
+  :divergence filled      0 ->  355  (item II)
+  :default (:unknown)   223 ->    0  (item III; all upgraded to
+                                      either a literal or to one of
+                                      (:host-specific)/(:drawing)/
+                                      (:session)/(:registry)/
+                                      (:preference))
+  Records with :coupled  ~30 ->  ~45 (item IV; small bump because
+                                      most function pages don't have
+                                      explicit sysvar cross-refs --
+                                      Phase 3 implementation will
+                                      discover more couplings as it
+                                      wires builtins)
+  SBCL READ count       1417 -> 1836 (clean read, no errors)
+
+How each item was addressed:
+
+  I.  AutoCAD-side enumeration: instead of a Chrome-MCP TOC walk, a
+      BFS HTTP crawler starting from the Updated/Obsolete/New refs
+      converged in 7 iterations to 4430 AutoCAD-Core help pages, of
+      which 967 are tagged topic-subtype=sysvar. The crawl is
+      reproducible from /tmp/sv-build/crawl_acad.sh (committed via
+      git history attached to this issue).
+
+  II. :divergence transcription: the merger compares AutoCAD vs
+      BricsCAD type/default/read-only/saved-in tuples for every
+      shared record and writes a short prose sentence describing
+      each difference. 355 records carry a :divergence string;
+      OSMODE for example reads "type AutoCAD Bitcode, BricsCAD
+      Short; default AutoCAD 4133, BricsCAD 4135".
+
+  III. (:unknown) defaults: from 223 to 0. The build script now
+      recognizes "X (imperial) or Y (metric)" -> (:drawing),
+      "If MEASUREMENT=0 ..." -> (:drawing), "Off (Windows) On (Mac
+      & Linux)" -> (:host-specific), workspace-conditional notes
+      -> (:preference), and the default-by-saved-in fallback for
+      runtime-computed sysvars like DATE/CDATE.
+
+  IV. :coupled expansion: the AutoLISP Reference was crawled
+      (631 pages, ~300 function topics) and inline sysvar mentions
+      plus GUID xrefs were unioned with the seed table. Coverage
+      remains sparse (~45 sysvars) because most function pages
+      don't explicitly name the sysvars they read/write -- that
+      knowledge has to come from Phase 3 implementation.
+
+  V. False-positive audit on the "BricsCAD only" prose detector:
+      2 sysvars (CMDDIA, STANDARDSVIOLATION) that Bricsys flagged
+      as BricsCAD-only also have AutoCAD pages in the crawl. The
+      merger automatically promotes those to :both whenever the
+      AutoCAD-side record exists, regardless of Bricsys's prose
+      flag.
+
+Re-runnable build pipeline (artifacts under /tmp/sv-build/):
+
+   /tmp/sv-build/crawl_acad.sh        -- BFS the AutoCAD-Core help
+   /tmp/sv-build/crawl_lisp.sh        -- BFS the AutoLISP Reference
+   /tmp/sv-build/parse_bricsys.py     -- parse 1415 Bricsys pages
+   /tmp/sv-build/parse_acad.py        -- parse 967 AutoCAD pages
+   /tmp/sv-build/extract_couplings.py -- mine function-sysvar refs
+   /tmp/sv-build/build_v3.py          -- merge -> system-variables-inventory.sexp
