@@ -480,14 +480,21 @@
       (if (/= form-text "")
         (progn
           (autolisp-source-scan-text form-text)
-          (autolisp-source-raise resolved
-                                 (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
-                                   "unexpected end of file while reading string"
-                                   "unexpected end of file while reading form")
-                                 line-no
-                                 1
-                                 form-start-line
-                                 (autolisp-source-leading-defun-name form-text))))
+          ;; A non-empty form-text whose scan state is 'empty contains
+          ;; only whitespace and/or comments — not an unclosed form.
+          ;; That happens whenever the source file's last non-blank
+          ;; line is a comment. Treat it as benign EOF (the comment
+          ;; is silently discarded, just like comments encountered
+          ;; mid-file) rather than raising "unexpected end of file".
+          (if (/= *AUTOLISP_SOURCE_SCAN_STATE* 'empty)
+            (autolisp-source-raise resolved
+                                   (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
+                                     "unexpected end of file while reading string"
+                                     "unexpected end of file while reading form")
+                                   line-no
+                                   1
+                                   form-start-line
+                                   (autolisp-source-leading-defun-name form-text)))))
       ;; The documented LOAD contract is to return the loaded filename on
       ;; success, not the last evaluated form.
       (setq result resolved)
