@@ -1,0 +1,219 @@
+Thread explicit set-autolisp-errno calls through every failing
+IO / entity / selection builtin.
+
+Status: open
+Baseline: claude/system-variables @ f4d5503
+Parent : issues/open/system-variables.issue (Phase 3, item 3)
+Spec   : autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+         §15 *Errors and Recovery* + §16 ~System Variable Entry: ERRNO~
+
+== Context ==
+
+Phase 3 (commit f4d5503) put the ERRNO bridge in place: ~(getvar
+"ERRNO")~ now reads the live runtime-session slot via
+~clautolisp.autolisp-runtime:autolisp-errno~, and the
+SET-AUTOLISP-ERRNO helper has been in the runtime since long
+before this work started.
+
+What is NOT done -- and what this follow-up addresses -- is the
+per-builtin wiring: Autodesk's reference documents many file IO,
+entity, and selection builtins as "returns nil and sets ERRNO" on
+failure, but our implementations of those builtins currently return
+nil without touching ERRNO. The bridge means a user-level
+~(getvar "ERRNO")~ *can* observe an ERRNO value, but in practice
+the value never changes because nothing sets it.
+
+Concretely, ~clautolisp/autolisp-builtins-core/source/api.lisp~
+references ~set-autolisp-errno~ in 5 places today (all inside
+~builtin-vl-catch-all-apply~). Every other failure path that should
+set ERRNO simply returns nil.
+
+== Scope ==
+
+The list below names every builtin whose vendor documentation
+states "returns nil and sets ERRNO" or an equivalent phrase. Each
+needs:
+
+  1. The matching SET-AUTOLISP-ERRNO call at the failure site.
+  2. A SET-AUTOLISP-ERRNO 0 call on the success path (Autodesk
+     docs are explicit that ERRNO is reset on a successful call).
+  3. A unit test asserting both the nil return AND the ERRNO
+     value after the failure, plus the ERRNO=0 reset after a
+     subsequent success.
+
+The ERRNO code table the spec implies (sources cited inline; the
+full mapping must be validated against AutoCAD 2026 ENU before it
+lands):
+
+  ERRNO=0  No error / reset on success.
+  ERRNO=1  Misc. error / invalid argument.
+  ERRNO=2  Invalid filename / file not found.
+  ERRNO=3  File-system error (open failed, write failed).
+  ERRNO=4  Attempted file write in read-mode handle.
+  ERRNO=5  Bad / out-of-range integer argument.
+  ERRNO=6  Bad / out-of-range real argument.
+  ERRNO=7  Bad / out-of-range string argument.
+  ERRNO=8  Reserved.
+  ERRNO=9  Invalid list / dotted-pair structure.
+  ERRNO=10 Invalid point (not a 2- or 3-list of reals).
+  ERRNO=11 Invalid entity name (ENTGET/ENTMOD/ENTDEL etc.).
+  ERRNO=12 Operation on deleted entity.
+  ERRNO=13 Attempt to mutate a closed selection set.
+  ERRNO=14 Invalid selection-set object.
+  ERRNO=51 Bad symbol-table name passed to TBLSEARCH / TBLNEXT.
+  ERRNO=52 XDATA / regapp problem.
+  ERRNO=60 Bad XDSIZE list shape.
+
+Verify the table against
+  https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-ERRNO
+(GUID covered by autolisp-spec inventory; see the per-sysvar
+:source field for ERRNO -- AutoCAD URL has the canonical list).
+
+== Builtins to wire ==
+
+Grouped by category. Codes are the ones from the table above; if
+a category has a single applicable code it's noted in parentheses.
+
+=== File / IO (codes 2, 3, 4) ===
+
+  open                       (cannot open / file in wrong mode)
+  close                      (already-closed file)
+  read-line                  (read past EOF on closed stream)
+  read-char                  (read past EOF / closed stream)
+  write-line                 (write to read-mode handle)
+  write-char                 (write to read-mode handle)
+  findfile                   (file not found -> 2)
+  findtrustedfile            (file not found OR not trusted -> 2)
+  load                       (file not found / parse error -> 2/3)
+  vl-file-copy               (source missing / dest unwritable)
+  vl-file-delete             (file missing -> 2)
+  vl-file-rename             (source missing / dest exists)
+  vl-file-size               (file missing -> 2)
+  vl-file-systime            (file missing -> 2)
+  vl-file-directory-p        (path missing -> 2)
+  vl-directory-files         (directory missing -> 2)
+  vl-filename-mktemp         (cannot create temp -> 3)
+  vl-mkdir                   (mkdir failed -> 3)
+
+=== Entity access (codes 11, 12) ===
+
+  entget                     (invalid / deleted ename)
+  entmod                     (invalid ename or DXF list)
+  entmake / entmakex         (bad DXF list -> 9; invalid ename -> 11)
+  entdel                     (already deleted -> 12; missing -> 11)
+  entupd                     (missing -> 11)
+  entlast                    (no entities -> nil with ERRNO=0)
+  entnext                    (last entity -> nil with ERRNO=0)
+  handent                    (bad handle string -> 11)
+  nentsel / nentselp         (selection canceled -> 0; missing -> 11)
+  entsel                     (selection canceled -> 0)
+  acdimenableupdate          (no AcDim) -- verify on docs
+
+=== Selection sets (codes 13, 14) ===
+
+  ssget                      (filter rejects / no selection -> 0)
+  ssadd                      (bad ename -> 11; bad sset -> 14)
+  ssdel                      (member missing -> 11; bad sset -> 14)
+  ssname                     (out-of-range -> 5; bad sset -> 14)
+  sslength                   (bad sset -> 14)
+  ssmemb                     (bad sset -> 14)
+  ssgetfirst / sssetfirst    (bad sset -> 14)
+
+=== Symbol tables & dictionaries (codes 51, 52) ===
+
+  tblsearch / tblnext / tblobjname  (bad kind/name -> 51)
+  namedobjdict               (no docroot -> 11)
+  dictsearch / dictnext / dictadd / dictremove / dictrename
+                             (bad dict ename -> 11; bad name -> 51)
+
+=== XDATA / regapp (codes 52, 60) ===
+
+  xdsize                     (bad list / unregistered app -> 52/60)
+  xdroom                     (bad ename / unregistered app -> 11/52)
+  regapp                     (already registered -> 0; bad name -> 7)
+
+== Method ==
+
+1. For each builtin in the list, locate its DEFUN in
+   ~clautolisp/autolisp-builtins-core/source/api.lisp~ (or its
+   companion files where extracted -- ~file-io.lisp~,
+   ~entity-api.lisp~, etc.).
+
+2. Wrap the failure path so it does:
+
+     (clautolisp.autolisp-runtime:set-autolisp-errno N)
+     nil
+
+   instead of bare ~nil~. Where the failure path is implicit
+   (the function falls through to a HANDLER-CASE on an
+   underlying CL error), wire SET-AUTOLISP-ERRNO inside that
+   handler.
+
+3. Add the matching successful-call reset:
+
+     (clautolisp.autolisp-runtime:set-autolisp-errno 0)
+     <return-value>
+
+   in the body of each builtin's success path. (Per Autodesk
+   docs ERRNO is reset on any successful AutoLISP call --
+   verify this is uniform.)
+
+4. Cross-link the wiring to the inventory: in each affected
+   builtin's docstring or comment, cite the inventory record
+   it implements (e.g. ~;;; Inventory: ERRNO -- AutoCAD 2026
+   GUID-...~).
+
+5. Conformance tests live in
+   ~clautolisp/autolisp-builtins-core/tests/~ (currently ~900
+   checks). Add per-builtin failure-and-success ERRNO checks
+   beside the existing return-value tests; the shape is:
+
+     (test builtin-NAME-sets-errno-2-on-missing-file
+       (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+       (is (null (builtin-findfile (make-autolisp-string "/no/such"))))
+       (is (eql 2 (clautolisp.autolisp-runtime:autolisp-errno))))
+
+== Acceptance criteria ==
+
+  - [ ] The ERRNO code table above is verified against AutoCAD
+        2026 ENU and BricsCAD V25 docs (per-sysvar :source URLs
+        in the inventory) and committed as a normative table in
+        autolisp-spec §15 ~Errors and Recovery~.
+  - [ ] Every builtin in the scope list above sets ERRNO on
+        failure and resets it on success.
+  - [ ] Every builtin in the scope list has a paired
+        failure-and-success ERRNO test.
+  - [ ] ~grep -c 'set-autolisp-errno'~ in
+        autolisp-builtins-core/source/api.lisp rises from 5
+        (Phase 3 baseline) to roughly the count of builtins in
+        scope * 2 (one set + one reset per builtin).
+  - [ ] The full conformance-test bundle (autolisp-test) is
+        green.
+
+== Risks / open questions ==
+
+  - The ERRNO code values are partly conventional and Autodesk's
+    own reference is incomplete. Some codes will need direct
+    probing against AutoCAD 2026 / BricsCAD V25 to confirm.
+    BricsCAD ships its own subset of ERRNO codes; divergences
+    must land in the inventory's ~:divergence~ field for ERRNO.
+  - On successful calls, AutoCAD may or may not reset ERRNO --
+    confirm against the live products before committing the
+    "reset on success" branch. If reset behaviour varies by
+    builtin, the spec must say so.
+  - ~set-autolisp-errno~ requires an evaluation context to be
+    bound. Some builtins are called outside an explicit context
+    (REPL toplevel, etc.) -- the helper must no-op cleanly in
+    that case.
+
+== Out of scope ==
+
+  - Live AutoCAD / BricsCAD backends (Phase 16) will need their
+    own ERRNO mapping from engine error codes to our normative
+    table. That's a Phase-16 concern, not this issue's.
+  - DIESEL / menucmd error handling is not part of ERRNO; it
+    has its own error-code path.
+
+== Resolved ==
+
+(none yet)
