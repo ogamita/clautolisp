@@ -89,10 +89,11 @@
   :serial t
   :components
   ((:file "source/backend-cad-common")
-   ;; The CAD-side runtime is a data file consumed at run time (the
-   ;; backend stages it into the workdir). Declaring it static-file
-   ;; keeps `make install` / `asdf:require-system` aware of it for
-   ;; packaging and survives executable image dumps.
+   ;; The CAD-side runtime + bootstrap helpers are data files consumed
+   ;; at run time (the backend stages them into the workdir). Declaring
+   ;; them static-file keeps `make install` / `asdf:require-system`
+   ;; aware of them for packaging and survives executable image dumps.
+   (:static-file "source/runtime/autolisp-bootstrap.lsp")
    (:static-file "source/runtime/autolisp-remote-io.lsp")))
 
 (asdf:defsystem "autolisp-front-end/backend-bricscad"

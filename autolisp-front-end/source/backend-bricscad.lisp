@@ -66,6 +66,7 @@
                 #:vbs-escape
                 #:applescript-escape
                 #:discover-runtime-lsp
+                #:discover-bootstrap-lsp
                 #:drive-protocol-actions)
   (:import-from #:alfe.logging
                 #:log-debug
@@ -508,12 +509,17 @@ future ticket."
              ready-timeout wait-for-ready)
   (handler-case
       (let* ((runtime-source (discover-runtime-lsp))
+             (bootstrap-source (discover-bootstrap-lsp))
              (protocol (alfe.protocol.file:init-session
                         workdir
-                        :runtime-lsp-source runtime-source))
+                        :runtime-lsp-source runtime-source
+                        :bootstrap-lsp-source bootstrap-source))
              (staged-runtime
                (when runtime-source
                  (alfe.protocol.file:stage-runtime-lsp protocol)))
+             (staged-bootstrap
+               (when bootstrap-source
+                 (alfe.protocol.file:stage-bootstrap-lsp protocol)))
              (run-common
                (alfe.protocol.file:emit-run-common-lsp
                 protocol
@@ -525,6 +531,14 @@ future ticket."
                                   (alfe.cli:cli-options-verbosity cli-options)))
                 :cli-options cli-options
                 :version-text version-text)))
+        (cond
+          (staged-bootstrap
+           (log-debug "backend BRICSCAD: staged bootstrap -> ~A" staged-bootstrap))
+          (bootstrap-source
+           (log-warn "backend BRICSCAD: bootstrap source ~A resolved but staging returned NIL"
+                     bootstrap-source))
+          (t
+           (log-warn "backend BRICSCAD: no bootstrap LSP found; set $ALFE_BOOTSTRAP_LSP or install autolisp-bootstrap.lsp")))
         (cond
           (staged-runtime
            (log-debug "backend BRICSCAD: staged runtime -> ~A" staged-runtime))

@@ -59,6 +59,8 @@
            #:protocol-session-runtime-info-path
            #:protocol-session-runtime-lsp-source
            #:protocol-session-runtime-lsp-staged
+           #:protocol-session-bootstrap-lsp-source
+           #:protocol-session-bootstrap-lsp-staged
            #:protocol-session-debug-log-path
            #:protocol-session-stdout-offset
            #:protocol-session-stderr-offset
@@ -67,6 +69,7 @@
            #:init-session
            #:reset-session
            #:stage-runtime-lsp
+           #:stage-bootstrap-lsp
            #:emit-run-common-lsp
            ;; atomic writes
            #:write-atomic-file
@@ -158,6 +161,11 @@ and DRAIN-STDERR so successive reads see only the new bytes."
   ;; provides it later" (Phase 3 wires this up; tests pass NIL).
   (runtime-lsp-source     nil :type (or null pathname string))
   (runtime-lsp-staged     nil :type (or null pathname))
+  ;; Same pair for autolisp-bootstrap.lsp — the ~67 autolisp-* helper
+  ;; defuns that the runtime's server loop calls into. Staged before
+  ;; the runtime so its (load) order in run-common.lsp matches.
+  (bootstrap-lsp-source   nil :type (or null pathname string))
+  (bootstrap-lsp-staged   nil :type (or null pathname))
   ;; Path of the CAD-side debug log (workdir/logs/debug.log). The
   ;; emitted run-common.lsp writes one line per bootstrap milestone
   ;; here (gated on *AUTOLISP_DEBUG*); DRAIN-DEBUG-LOG / the polling
@@ -170,7 +178,7 @@ and DRAIN-STDERR so successive reads see only the new bytes."
 
 ;;; --- INIT-SESSION --------------------------------------------------
 
-(defun init-session (workdir &key runtime-lsp-source)
+(defun init-session (workdir &key runtime-lsp-source bootstrap-lsp-source)
   "Build a fresh PROTOCOL-SESSION under WORKDIR. Creates
 WORKDIR/protocol/ with the spec's slot inventory, publishes the
 initial `BOOTING` line to status.txt via the atomic-publish
@@ -180,7 +188,8 @@ the slot's contract). Returns the session.
 RUNTIME-LSP-SOURCE, when provided, is the absolute path of the
 upstream autolisp-remote-io.lsp the caller wants staged under
 WORKDIR/runtime/; pass NIL when staging is the caller's job
-(tests do this)."
+(tests do this). BOOTSTRAP-LSP-SOURCE is the analogous knob for the
+bootstrap helper file (autolisp-bootstrap.lsp)."
   (let* ((workdir (uiop:ensure-directory-pathname workdir))
          (protocol-dir (ensure-subdir workdir "protocol"))
          ;; Mirror the path emit-run-common-lsp computes for the CAD-
@@ -203,6 +212,7 @@ WORKDIR/runtime/; pass NIL when staging is the caller's job
                    :runtime-info-path (merge-pathnames "runtime-info.txt"
                                                        protocol-dir)
                    :runtime-lsp-source runtime-lsp-source
+                   :bootstrap-lsp-source bootstrap-lsp-source
                    :debug-log-path debug-log-path)))
     (ensure-directories-exist protocol-dir)
     ;; Pre-create the empty output streams so the CAD-side runtime's
@@ -899,12 +909,11 @@ Returns the path of the emitted file."
                                 (third version))))
             ;; --- CAD-side debug logging helper -----------------------
             ;; A tiny self-contained logger that writes one line per
-            ;; bootstrap milestone into *AUTOLISP_DEBUGFILE*. The legacy
-            ;; bash wrapper had ~78 helper defuns including a logger;
-            ;; we don't (yet) — see deferred-autolisp-runtime-helpers.
-            ;; In the meantime this minimal logger gives the user a
-            ;; window into the CAD-side bootstrap without needing the
-            ;; full helper set.
+            ;; bootstrap milestone into *AUTOLISP_DEBUGFILE*. Defined
+            ;; here BEFORE the bootstrap helpers (which define their
+            ;; own autolisp-log-* helpers writing to other channels)
+            ;; so we have visibility even if the bootstrap load itself
+            ;; explodes.
             ;;
             ;; The logger no-ops when *AUTOLISP_DEBUG* is nil so a
             ;; non-debug run leaves no trace. Each write opens + closes
@@ -921,6 +930,25 @@ Returns the path of the emitted file."
           (setq f (open path \"a\"))~%~
           (if f (progn (write-line (strcat \"[CAD] \" msg) f) (close f))))))))~%~
 (alfe-debug-log \"run-common.lsp evaluated; about to bootstrap runtime\")~%")
+            ;; --- Source the CAD-side bootstrap helpers FIRST ---
+            ;; autolisp-bootstrap.lsp defines the ~67 autolisp-* helper
+            ;; functions (autolisp-eval-request-form, autolisp-log-err,
+            ;; autolisp-set-status, …) that the runtime's server loop
+            ;; calls into. Must be loaded BEFORE the runtime so the
+            ;; loop's first eval doesn't hit an undefined function.
+            (when (protocol-session-bootstrap-lsp-staged session)
+              (let ((bootstrap-path (stringify-path
+                                     (protocol-session-bootstrap-lsp-staged
+                                      session))))
+                (format out
+                        "~%(alfe-debug-log (strcat \"loading bootstrap: \" ~S))~%~
+(setq *ALFE-BOOTSTRAP-LOAD-RESULT*~%  ~
+  (vl-catch-all-apply 'load (list ~S)))~%~
+(if (vl-catch-all-error-p *ALFE-BOOTSTRAP-LOAD-RESULT*)~%  ~
+  (alfe-debug-log (strcat \"bootstrap LOAD failed: \"~%    ~
+    (vl-catch-all-error-message *ALFE-BOOTSTRAP-LOAD-RESULT*)))~%  ~
+  (alfe-debug-log \"bootstrap LOAD succeeded\"))~%"
+                        bootstrap-path bootstrap-path)))
             ;; --- Source the CAD-side runtime ---
             ;; When the runtime has been staged, instruct the CAD to
             ;; LOAD it so the *AUTOLISP_PROTOCOL_* helpers exist before
@@ -952,8 +980,7 @@ Returns the path of the emitted file."
                ;; rather than crashing BricsCAD silently. We also
                ;; surface the caught error to *AUTOLISP_DEBUGFILE* —
                ;; that's the single most-useful diagnostic when the
-               ;; runtime references undefined helpers (the current
-               ;; deferred-autolisp-runtime-helpers gap).
+               ;; runtime references undefined helpers.
                (format out
                        "~%(alfe-debug-log \"entering autolisp-protocol-server-loop\")~%~
 (setq *AUTOLISP-PROTOCOL-LOOP-RESULT*~%  ~
@@ -990,4 +1017,22 @@ runtime is reused as-is, never patched."
              (target (merge-pathnames "autolisp-remote-io.lsp" runtime-dir)))
         (uiop:copy-file source target)
         (setf (protocol-session-runtime-lsp-staged session) target)
+        target))))
+
+(defun stage-bootstrap-lsp (session)
+  "Copy the upstream autolisp-bootstrap.lsp file (whose source path
+SESSION's BOOTSTRAP-LSP-SOURCE slot holds) into WORKDIR/runtime/ so
+the CAD can LOAD it before the runtime. Returns the staged absolute
+pathname, or NIL when no source was provided.
+
+Like STAGE-RUNTIME-LSP, the staging is a verbatim file copy: both
+.lsp files live in source/runtime/ next to this code and are reused
+exactly as-checked-in."
+  (let ((source (protocol-session-bootstrap-lsp-source session)))
+    (when source
+      (let* ((runtime-dir (ensure-subdir (protocol-session-workdir session)
+                                         "runtime"))
+             (target (merge-pathnames "autolisp-bootstrap.lsp" runtime-dir)))
+        (uiop:copy-file source target)
+        (setf (protocol-session-bootstrap-lsp-staged session) target)
         target))))
