@@ -252,16 +252,39 @@ matching encoding hint."
 ;;; --- CLI integration -----------------------------------------------
 
 (test cli-run-clautolisp-x-plus-1-2-prints-three
-  "End-to-end: alfe -x '(+ 1 2)' against the real clautolisp backend
-(now that Phase 1 has landed) prints \"3\" on stdout and exits 0.
-Mirrors the headline acceptance criterion from the issue."
+  "End-to-end: alfe -x '(print (+ 1 2))' against the real clautolisp
+backend prints \"3\" on stdout and exits 0.
+
+Per the alfe spec (\"Action output semantics\"), `-x EXPR' does NOT
+auto-print the value — the user must (print …) explicitly. So the
+headline acceptance criterion is now `-x '(print (+ 1 2))' → 3' (was
+`-x '(+ 1 2)' → 3' in versions before the spec clarification).
+
+`--no-init' is needed to avoid the user's ~/.autolisp init file
+which on the test host triggers an unrelated alref.lsp encoding
+error; the test wants to exercise the action plan in isolation."
   (let* ((stdout (make-string-output-stream))
          (exit-code
            (let ((*standard-output* stdout))
-             (alfe.cli:run '("--clautolisp" "-x" "(+ 1 2)")
+             (alfe.cli:run '("--no-init" "--clautolisp"
+                             "-x" "(print (+ 1 2))")
                            :version "0.0.2"))))
     (is (= 0 exit-code))
     (is (search "3" (get-output-stream-string stdout)))))
+
+(test cli-run-clautolisp-x-bare-expr-does-not-auto-print
+  "Companion to cli-run-clautolisp-x-plus-1-2-prints-three: a bare
+`-x EXPR' without an explicit (print …) MUST NOT auto-print the
+value. alfe does not echo eval-result-value at end-of-plan — that
+behaviour is reserved for the interactive REPL."
+  (let* ((stdout (make-string-output-stream))
+         (exit-code
+           (let ((*standard-output* stdout))
+             (alfe.cli:run '("--no-init" "--clautolisp"
+                             "-x" "(+ 1 2)")
+                           :version "0.0.2"))))
+    (is (= 0 exit-code))
+    (is (not (search "3" (get-output-stream-string stdout))))))
 
 ;;; --- subprocess variant (conditional) -------------------------------
 

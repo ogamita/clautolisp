@@ -825,19 +825,26 @@ engine."
              ;; stdout.txt back from disk *after* the engine wrote it)
              ;; are responsible for replaying their own capture to the
              ;; live streams from inside EVAL-PLAN.
-             ;; Print the final value when an :eval action drove the plan
-             ;; and produced one — matches the spec's "alfe -x '(+ 1 2)'
-             ;; prints 3" contract, and aligns with the legacy bash
-             ;; wrapper's batch-printing behaviour. We skip the print
-             ;; under --quiet so scripts that just want exit codes can
-             ;; opt out, and skip it for interactive mode (the REPL
-             ;; already prints its own values).
-             (let ((value (eval-result-value result)))
-               (when (and value
-                          (eq (eval-result-status result) :success)
-                          (last-action-prints-value-p plan)
-                          (not (eq :warn (cli-options-verbosity options))))
-                 (format *standard-output* "~A~%" value)))
+             ;;
+             ;; We intentionally do NOT auto-print EVAL-RESULT-VALUE
+             ;; here. Per the alfe spec ("Action output semantics"),
+             ;; `-x EXPR' / `-l FILE' / `--main FN' are not REPL
+             ;; steps — they are batch evaluations whose value is
+             ;; discarded unless the user wrote an explicit
+             ;; (print …) / (princ …) / (prin1 …). That makes alfe
+             ;; behave identically across all three backends (the CAD
+             ;; backends never had auto-print) and matches AutoLISP's
+             ;; convention where only the top-level REPL prints
+             ;; values automatically.
+             ;;
+             ;; Earlier alfe versions did auto-print the value for the
+             ;; clautolisp backend ("alfe -x '(+ 1 2)' → 3"); that was
+             ;; surprising both because it diverged from the CAD
+             ;; backends and because it produced double output when
+             ;; the user's expression already printed (e.g.
+             ;; "(princ \"hi\")" yielded "hi\"hi\""). The auto-print
+             ;; is removed; users who want the value back must wrap
+             ;; with (print …).
              (finish-output)
              (finish-output *error-output*)
              (let ((exit-code (ecase (eval-result-status result)
@@ -853,11 +860,3 @@ engine."
       (ignore-errors (cleanup-workdir backend workdir
                                       :keep-p (cli-options-keep-workdir-p options))))))
 
-(defun last-action-prints-value-p (plan)
-  "True iff the plan's last value-producing action is one whose
-result should be printed on the way out — i.e. an :eval or :main,
-but not :load (loads are run for side effects)."
-  (let ((value-action (find-if (lambda (a)
-                                 (member (action-kind a) '(:eval :main)))
-                               (reverse plan))))
-    (not (null value-action))))

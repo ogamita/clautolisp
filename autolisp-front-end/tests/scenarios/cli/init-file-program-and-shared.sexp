@@ -6,7 +6,7 @@ the lookup list, so the program-specific ~/.alfe.lsp slot (loaded
 later) wins. This matches the conventional Unix layering:
 more-specific overrides less-specific."
  :classification :clautolisp-only
- :argv ("--clautolisp" "-x" "init-marker")
+ :argv ("--clautolisp" "-x" "(print init-marker)")
  :setup-files
    ((".alfe.lsp"     "(setq init-marker \"from-alfe-rc\")
 ")

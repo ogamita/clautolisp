@@ -81,6 +81,39 @@ others: =alfe --clautolisp= does not create a =protocol/=
 subdirectory, does not emit a CAD-side =run-common.lsp=, does not
 wait for textual statuses.
 
+** Action output semantics
+
+=-x EXPR= (a.k.a. =--eval=) and =-l FILE= are NOT
+read-eval-/print/-loop steps: the value an action produces is *not*
+emitted to =alfe='s =stdout= automatically. The user must request
+visible output by calling a printing primitive — =(print …)=,
+=(princ …)=, =(prin1 …)=, or any AutoLISP construct that writes to
+=stdout=. This mirrors the AutoLISP convention where the engine's
+top-level REPL is the only context that prints values without an
+explicit call.
+
+| Invocation                                | Output on =stdout=                |
+|-------------------------------------------+-----------------------------------|
+| =alfe -x '(list 1 2)'=                    | (nothing — the list is discarded) |
+| =alfe -x '(print (list 1 2))'=            | =(1 2)=                           |
+| =alfe -x '(princ "hello")'=               | =hello=                           |
+| =alfe -l file-that-prints.lsp=            | whatever =file-that-prints.lsp= prints |
+| =alfe --interactive=                      | full REPL — values auto-printed   |
+
+This rule is *backend-uniform*: it holds for =--clautolisp= (in-
+process and subprocess), =--bricscad=, and =--autocad=. On the CAD
+backends the user-visible printers (=print=/=princ=/=prin1=) are
+the bootstrap-installed shadows that route their output through
+=*AUTOLISP-PROTOCOL-STDOUTFILE*= so =alfe= picks it up at end-of-
+plan; on the clautolisp backend they go through the host's
+=*standard-output*=. The convention itself — "value of =-x= is not
+printed unless the user printed it" — is identical.
+
+The only context in which values are auto-printed is the
+=--interactive= REPL: there, each top-level form's value is read,
+evaluated, and printed (read-eval-print loop). =-x= and =-l= remain
+silent-by-default even alongside =--interactive=.
+
 ** Practical consequences
 
 - User code written once for =alfe= runs on all three backends;
