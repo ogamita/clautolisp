@@ -80,6 +80,7 @@
   :components
   ((:file "autolisp-mock-host/source/package")
    (:file "autolisp-mock-host/source/model")
+   (:file "autolisp-mock-host/source/sysvar-catalogue")
    (:file "autolisp-mock-host/source/sysvars")
    (:file "autolisp-mock-host/source/api")
    (:file "autolisp-mock-host/source/entity-api")
@@ -260,6 +261,7 @@
    (:file "autolisp-mock-host/tests/prompt-tests")
    (:file "autolisp-mock-host/tests/vlax-tests")
    (:file "autolisp-mock-host/tests/reactor-tests")
+   (:file "autolisp-mock-host/tests/sysvar-catalogue-tests")
    (:file "autolisp-mock-host/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

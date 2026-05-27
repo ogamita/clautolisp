@@ -75,11 +75,21 @@ vlax-release-object."
 (defstruct sysvar-cell
   "Single AutoLISP system variable. KIND is one of :integer,
 :short, :real, :string, :point, :symbol — used by the mock
-implementation of getvar / setvar to validate type coercions."
-  (name        "" :type string)
-  (kind        :integer :type keyword)
-  (value       nil)
-  (read-only-p nil :type boolean))
+implementation of getvar / setvar to validate type coercions.
+
+HOST-DERIVED-P is T when the cell's initial value was sourced from
+a non-literal default marker in the inventory ((:host-specific) /
+(:drawing) / (:session) / (:registry) / (:preference) / (:unknown)).
+A host-derived cell still holds a kind-appropriate stand-in value
+so GETVAR returns the right AutoLISP type, but conformance tests
+must not assert a specific value against it: the vendor docs
+state the value is computed from host / drawing / session / user
+context rather than fixed."
+  (name           "" :type string)
+  (kind           :integer :type keyword)
+  (value          nil)
+  (read-only-p    nil :type boolean)
+  (host-derived-p nil :type boolean))
 
 ;;; --- MockHost ---------------------------------------------------
 
