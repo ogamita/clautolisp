@@ -95,6 +95,10 @@
    #:sysvar-cell-kind
    #:sysvar-cell-value
    #:sysvar-cell-read-only-p
+   #:sysvar-cell-host-derived-p
+   ;; Generated full catalogue (1836 entries from
+   ;; autolisp-spec/documentation/system-variables-inventory.sexp).
+   #:*full-sysvar-catalogue*
    ;; MockHost accessors
    #:mock-host-entities
    #:mock-host-picksets

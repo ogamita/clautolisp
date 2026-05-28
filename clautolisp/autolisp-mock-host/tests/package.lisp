@@ -69,6 +69,8 @@
                 #:sysvar-cell-kind
                 #:sysvar-cell-value
                 #:sysvar-cell-read-only-p
+                #:sysvar-cell-host-derived-p
+                #:*full-sysvar-catalogue*
                 #:mock-host-entities
                 #:mock-host-picksets
                 #:mock-host-tables

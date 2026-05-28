@@ -65,7 +65,8 @@ from."
   (list :name (sysvar-cell-name cell)
         :kind (sysvar-cell-kind cell)
         :value (sysvar-cell-value cell)
-        :read-only-p (sysvar-cell-read-only-p cell)))
+        :read-only-p (sysvar-cell-read-only-p cell)
+        :host-derived-p (sysvar-cell-host-derived-p cell)))
 
 (defun mock-host-snapshot (mock)
   "Return a serialisable snapshot of MOCK's host-visible state. The
@@ -146,9 +147,10 @@ are cleared first."
   (dolist (pair (getf snapshot :sysvars))
     (let* ((plist (cdr pair))
            (cell  (make-sysvar-cell
-                   :name        (getf plist :name)
-                   :kind        (getf plist :kind)
-                   :value       (getf plist :value)
-                   :read-only-p (getf plist :read-only-p))))
+                   :name           (getf plist :name)
+                   :kind           (getf plist :kind)
+                   :value          (getf plist :value)
+                   :read-only-p    (getf plist :read-only-p)
+                   :host-derived-p (getf plist :host-derived-p))))
       (setf (gethash (sysvar-cell-name cell) (mock-host-sysvars mock)) cell)))
   mock)

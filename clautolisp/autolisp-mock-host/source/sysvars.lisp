@@ -70,16 +70,40 @@ tables so tblsearch / tblnext have a sensible baseline."
     ("PLATFORM"  :string "Mock CAD" t)
     ("LISPSYS"   :integer 1 nil)))
 
-(defun populate-default-sysvars (mock)
-  "Pre-populate MOCK's sysvar table with the conservative subset."
-  (let ((table (mock-host-sysvars mock)))
-    (dolist (spec *default-sysvars* mock)
-      (destructuring-bind (name kind default read-only-p) spec
+(defun populate-default-sysvars (mock &key (catalogue :full))
+  "Pre-populate MOCK's sysvar table.
+
+CATALOGUE selects the table installed:
+
+  :FULL (default) installs the 1836-entry catalogue generated from
+    autolisp-spec/documentation/system-variables-inventory.sexp
+    (see sysvar-catalogue.lisp). This mirrors what AutoCAD 2026 ENU
+    and BricsCAD V25 document and is what production callers want.
+
+  :SEED installs only the small *DEFAULT-SYSVARS* list above (the
+    legacy ~30-entry stand-in). Useful for low-overhead test
+    fixtures that need a deterministic, hand-curated subset.
+
+In both modes the entries are five-tuples
+  (NAME KIND DEFAULT READ-ONLY-P [HOST-DERIVED-P])
+with HOST-DERIVED-P defaulting to NIL for the :SEED list."
+  (let ((table (mock-host-sysvars mock))
+        (entries (ecase catalogue
+                   (:full *full-sysvar-catalogue*)
+                   (:seed *default-sysvars*))))
+    (dolist (spec entries mock)
+      ;; Tolerate both the 4-tuple (legacy) and 5-tuple (full) shapes.
+      (let* ((name        (first spec))
+             (kind        (second spec))
+             (default     (third spec))
+             (read-only-p (fourth spec))
+             (host-derived-p (and (cdr (cdddr spec)) (fifth spec))))
         (setf (gethash name table)
               (make-sysvar-cell :name name
                                 :kind kind
                                 :value default
-                                :read-only-p read-only-p))))))
+                                :read-only-p read-only-p
+                                :host-derived-p host-derived-p))))))
 
 ;;; --- Convenience accessors -------------------------------------
 
