@@ -262,6 +262,61 @@ full file contents."
             (is (string= (format nil "delta~%") batch2))))
       (delete-workdir workdir))))
 
+(test protocol-drain-debug-log-incremental
+  "DRAIN-DEBUG-LOG behaves like DRAIN-STDOUT but reads from the CAD-
+side debug log (workdir/logs/debug.log). Returns \"\" when the file is
+absent (the runtime hasn't published anything yet), the new bytes once
+the file appears, and \"\" again on a no-change drain. The session's
+DEBUG-LOG-PATH is set by INIT-SESSION even though the file isn't
+created eagerly."
+  (let ((workdir (make-test-workdir "drain-debug")))
+    (unwind-protect
+        (let* ((session (alfe.protocol.file:init-session workdir))
+               (path (alfe.protocol.file:protocol-session-debug-log-path session)))
+          (is (not (null path)))
+          ;; File does not exist yet — drain is a cheap no-op.
+          (is (string= "" (alfe.protocol.file:drain-debug-log session)))
+          ;; Create the file with two lines.
+          (ensure-directories-exist path)
+          (with-open-file (out path :direction :output :if-exists :supersede
+                                    :if-does-not-exist :create
+                                    :external-format :utf-8)
+            (format out "[CAD] hello~%[CAD] entering loop~%"))
+          (let ((batch (alfe.protocol.file:drain-debug-log session)))
+            (is (search "[CAD] hello" batch))
+            (is (search "[CAD] entering loop" batch)))
+          ;; No new bytes: empty drain.
+          (is (string= "" (alfe.protocol.file:drain-debug-log session)))
+          ;; Append a third line; drain returns only that.
+          (with-open-file (out path :direction :output :if-exists :append
+                                    :external-format :utf-8)
+            (format out "[CAD] crash~%"))
+          (let ((batch (alfe.protocol.file:drain-debug-log session)))
+            (is (search "[CAD] crash" batch))
+            (is (not (search "[CAD] hello" batch)))))
+      (delete-workdir workdir))))
+
+(test protocol-stream-debug-log-to-logger-counts-lines
+  "STREAM-DEBUG-LOG-TO-LOGGER drains and returns the number of non-
+empty lines surfaced through the alfe logger. The actual log emission
+is exercised in practice by the polling helpers."
+  (let ((workdir (make-test-workdir "stream-debug")))
+    (unwind-protect
+        (let* ((session (alfe.protocol.file:init-session workdir))
+               (path (alfe.protocol.file:protocol-session-debug-log-path session)))
+          ;; Nothing on disk: 0 lines streamed.
+          (is (zerop (alfe.protocol.file:stream-debug-log-to-logger session)))
+          ;; Write three CAD lines.
+          (ensure-directories-exist path)
+          (with-open-file (out path :direction :output :if-exists :supersede
+                                    :if-does-not-exist :create
+                                    :external-format :utf-8)
+            (format out "[CAD] one~%[CAD] two~%[CAD] three~%"))
+          (is (= 3 (alfe.protocol.file:stream-debug-log-to-logger session)))
+          ;; Second call streams 0 (offset advanced past the previous tail).
+          (is (zerop (alfe.protocol.file:stream-debug-log-to-logger session))))
+      (delete-workdir workdir))))
+
 (test protocol-drain-stdout-survives-utf8
   "A drain that lands across multi-byte boundaries does not split a
 character (the runtime appends line-at-a-time, so this is structurally
@@ -399,6 +454,96 @@ work without us forking the runtime."
             (is (search "*AUTOLISP_DEBUG*" content))
             (is (search "*AUTOLISP_RUNCOMMON_VERSION*" content))))
       (delete-workdir workdir))))
+
+(test protocol-stage-bootstrap-lsp-copies-into-runtime-subdir
+  "STAGE-BOOTSTRAP-LSP copies the BOOTSTRAP-LSP-SOURCE file to
+workdir/runtime/autolisp-bootstrap.lsp and records the staged path
+on the session, mirroring STAGE-RUNTIME-LSP. With no source set the
+function is a no-op."
+  (let ((workdir (make-test-workdir "stage-bootstrap")))
+    (unwind-protect
+        (let ((src (merge-pathnames "fake-bootstrap.lsp" workdir)))
+          ;; Create a fake source file we can stage.
+          (with-open-file (out src :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create
+                                   :external-format :utf-8)
+            (format out ";; fake bootstrap~%(setq fake-bootstrap-loaded t)~%"))
+          ;; Without :bootstrap-lsp-source the stage is a no-op.
+          (let ((session (alfe.protocol.file:init-session workdir)))
+            (is (null (alfe.protocol.file:stage-bootstrap-lsp session)))
+            (is (null (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
+                       session))))
+          ;; With the source set it copies + records.
+          (let* ((session (alfe.protocol.file:init-session
+                          workdir :bootstrap-lsp-source src))
+                 (staged (alfe.protocol.file:stage-bootstrap-lsp session)))
+            (is (not (null staged)))
+            (is (probe-file staged))
+            (is (search "autolisp-bootstrap.lsp" (namestring staged)))
+            (is (eq staged
+                    (alfe.protocol.file:protocol-session-bootstrap-lsp-staged
+                     session)))
+            ;; Content should round-trip verbatim.
+            (let ((content (alfe.protocol.file:read-file-as-string staged)))
+              (is (search "fake-bootstrap-loaded" content)))))
+      (delete-workdir workdir))))
+
+(test protocol-emit-run-common-lsp-loads-bootstrap-before-runtime
+  "When both autolisp-bootstrap.lsp and autolisp-remote-io.lsp are
+staged, the emitted run-common.lsp issues a (load ...) for the
+bootstrap *before* the runtime — order matters because the runtime's
+server loop calls into helpers defined in the bootstrap."
+  (let ((workdir (make-test-workdir "emit-load-order")))
+    (unwind-protect
+        (let* ((bootstrap-src (merge-pathnames "fake-bootstrap.lsp" workdir))
+               (runtime-src   (merge-pathnames "fake-runtime.lsp" workdir)))
+          (with-open-file (out bootstrap-src :direction :output
+                                             :if-exists :supersede
+                                             :if-does-not-exist :create
+                                             :external-format :utf-8)
+            (write-string ";; fake bootstrap" out))
+          (with-open-file (out runtime-src :direction :output
+                                           :if-exists :supersede
+                                           :if-does-not-exist :create
+                                           :external-format :utf-8)
+            (write-string ";; fake runtime" out))
+          (let* ((session (alfe.protocol.file:init-session
+                          workdir
+                          :bootstrap-lsp-source bootstrap-src
+                          :runtime-lsp-source runtime-src)))
+            (alfe.protocol.file:stage-bootstrap-lsp session)
+            (alfe.protocol.file:stage-runtime-lsp session)
+            (let* ((path (alfe.protocol.file:emit-run-common-lsp session))
+                   (content (alfe.protocol.file:read-file-as-string path))
+                   ;; Search for the LOAD invocations specifically — the
+                   ;; runtime path also appears earlier in the file as
+                   ;; the value of the *AUTOLISP-PROTOCOL-RUNTIMEFILE*
+                   ;; setq, so a plain filename search would find that
+                   ;; first.
+                   (bootstrap-load-pos
+                    (search "loading bootstrap:" content))
+                   (runtime-load-pos
+                    (search "loading runtime:" content)))
+              (is (integerp bootstrap-load-pos))
+              (is (integerp runtime-load-pos))
+              ;; Bootstrap must load BEFORE the runtime.
+              (is (< bootstrap-load-pos runtime-load-pos))
+              ;; And the server-loop call follows both.
+              (let ((loop-pos (search "(vl-catch-all-apply 'autolisp-protocol-server-loop"
+                                      content)))
+                (is (integerp loop-pos))
+                (is (< runtime-load-pos loop-pos))))))
+      (delete-workdir workdir))))
+
+(test cad-common-discover-bootstrap-lsp-finds-vendored
+  "DISCOVER-BOOTSTRAP-LSP resolves the in-tree autolisp-bootstrap.lsp
+via ASDF's system registry. When the vendored copy isn't on disk (a
+stripped install) the test exits cleanly without an assertion — FiveAM
+counts that as a pass."
+  (let ((path (alfe.backend.cad-common:discover-bootstrap-lsp)))
+    (when path
+      (is (not (null (probe-file path))))
+      (is (integerp (search "autolisp-bootstrap.lsp" path))))))
 
 ;;; --- heartbeat -----------------------------------------------------
 

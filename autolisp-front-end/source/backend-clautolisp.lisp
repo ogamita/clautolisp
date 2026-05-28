@@ -88,6 +88,9 @@
                 #:*null-host*)
   (:import-from #:clautolisp.autolisp-mock-host
                 #:make-mock-host)
+  (:import-from #:alfe.logging
+                #:log-debug
+                #:log-verbose)
   (:export #:clautolisp-backend
            #:make-clautolisp-backend
            #:clautolisp-backend-variant
@@ -764,12 +767,14 @@ subprocess variant."
          (captured-stdout (make-string-output-stream))
          (captured-stderr (make-string-output-stream))
          (status :success))
+    (log-debug "backend CLAUTOLISP (subprocess): launching: ~{~A~^ ~}" argv)
     (handler-case
         (multiple-value-bind (stdout stderr exit-code)
             (uiop:run-program argv
                               :output :string
                               :error-output :string
                               :ignore-error-status t)
+          (log-verbose "backend CLAUTOLISP (subprocess): exit ~A" exit-code)
           (write-string stdout captured-stdout)
           (write-string stderr captured-stderr)
           ;; Echo live, same contract as the direct variant.

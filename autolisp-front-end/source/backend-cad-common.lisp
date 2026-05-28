@@ -15,6 +15,9 @@
                 #:backend-eval-error)
   (:import-from #:alfe.backend
                 #:make-eval-result)
+  (:import-from #:alfe.logging
+                #:log-debug
+                #:log-verbose)
   (:export ;; OS detection
            #:host-os
            #:macos-p
@@ -25,6 +28,9 @@
            #:first-existing
            #:vbs-escape
            #:applescript-escape
+           ;; runtime LSP discovery
+           #:discover-runtime-lsp
+           #:discover-bootstrap-lsp
            ;; protocol-driven eval-plan
            #:drive-protocol-actions))
 
@@ -93,6 +99,107 @@ quote both have to be escaped."
                (#\" (write-string "\\\"" out))
                (t   (write-char ch out))))))
 
+;;; --- runtime LSP discovery ---------------------------------------
+;;;
+;;; The CAD-side bootstrap involves two .lsp files, loaded in order:
+;;;
+;;;   1. autolisp-bootstrap.lsp  — the ~67 autolisp-* helper defuns
+;;;                                 (autolisp-eval-request-form,
+;;;                                  autolisp-log-err, autolisp-set-
+;;;                                  status, …) ported verbatim from
+;;;                                 the legacy bash wrapper.
+;;;   2. autolisp-remote-io.lsp  — the file-IPC server loop, which
+;;;                                 calls into the helpers from (1).
+;;;
+;;; Both files are shared by every CAD backend, both ship vendored
+;;; under source/runtime/, and users can override their location via
+;;; $ALFE_BOOTSTRAP_LSP / $ALFE_RUNTIME_LSP for advanced setups (e.g.
+;;; a system-wide /opt/local/share/alfe/runtime/ install).
+
+(defun %vendored-asset-pathname (basename)
+  "Resolve a vendored runtime asset by BASENAME (e.g.
+\"autolisp-remote-io.lsp\", \"autolisp-bootstrap.lsp\") under
+source/runtime/ next to this code. Returns NIL if the asset isn't on
+disk. ASDF's system registry is the source of truth so the answer
+survives fasl caching and frozen executable builds — *load-pathname*
+alone would point at the cached .fasl, not the source tree."
+  (let ((candidate
+          (ignore-errors
+           (asdf:system-relative-pathname
+            "autolisp-front-end/backend-cad-common"
+            (concatenate 'string "source/runtime/" basename)))))
+    (when (and candidate (probe-file candidate))
+      (namestring (truename candidate)))))
+
+(defparameter *runtime-lsp-fallback-paths*
+  '("/opt/local/share/alfe/runtime/autolisp-remote-io.lsp"
+    "/usr/local/share/alfe/runtime/autolisp-remote-io.lsp"
+    "/usr/share/alfe/runtime/autolisp-remote-io.lsp"
+    "~/works/sncf-reseau/src/outils-autolisp/autolisp-script/runtime/autolisp-remote-io.lsp")
+  "Fallback locations consulted when $ALFE_RUNTIME_LSP is unset and
+the vendored copy is missing. The last entry points at the legacy
+SNCF tree so developers with that checkout keep working without
+configuration.")
+
+(defparameter *bootstrap-lsp-fallback-paths*
+  '("/opt/local/share/alfe/runtime/autolisp-bootstrap.lsp"
+    "/usr/local/share/alfe/runtime/autolisp-bootstrap.lsp"
+    "/usr/share/alfe/runtime/autolisp-bootstrap.lsp")
+  "Fallback locations for autolisp-bootstrap.lsp when $ALFE_BOOTSTRAP_LSP
+is unset and the vendored copy is missing. The legacy SNCF tree does
+NOT ship this file standalone — the bash wrapper inlines its content
+into the generated run-common.lsp at run time — so there is no
+SNCF-tree fallback here (only the vendored copy + install prefixes).")
+
+(defun %resolve-asset (env-name vendored-fn fallback-paths)
+  "Return the first asset path found by: env var ENV-NAME, the
+vendored copy via VENDORED-FN, then the FALLBACK-PATHS list. Each
+candidate is PROBE-FILE-checked; the empty-string env value is
+treated as unset. Returns NIL when no candidate exists."
+  (let ((env (uiop:getenv env-name))
+        (vendored (funcall vendored-fn)))
+    (cond
+      ((and env (plusp (length env)) (probe-file env))
+       (namestring (truename env)))
+      (vendored vendored)
+      (t
+       (first-existing
+        (mapcar (lambda (p) (uiop:native-namestring p))
+                fallback-paths))))))
+
+(defun discover-runtime-lsp ()
+  "Resolve the CAD-side runtime LSP path. Order of precedence:
+
+  1. $ALFE_RUNTIME_LSP (when the file exists)
+  2. The vendored copy under source/runtime/ next to this code
+  3. Built-in fallback search list (/opt/local/share/alfe/runtime/, …)
+
+Returns an absolute namestring, or NIL when no copy is found — in
+which case the caller leaves the runtime unstaged and run-common.lsp
+will not LOAD it (the historical broken behavior)."
+  (%resolve-asset "ALFE_RUNTIME_LSP"
+                  (lambda () (%vendored-asset-pathname
+                              "autolisp-remote-io.lsp"))
+                  *runtime-lsp-fallback-paths*))
+
+(defun discover-bootstrap-lsp ()
+  "Resolve the CAD-side bootstrap LSP path (autolisp-bootstrap.lsp),
+which defines the autolisp-* helpers that the runtime's server loop
+calls. Order of precedence matches DISCOVER-RUNTIME-LSP:
+
+  1. $ALFE_BOOTSTRAP_LSP (when the file exists)
+  2. The vendored copy under source/runtime/ next to this code
+  3. Built-in fallback search list (/opt/local/share/alfe/runtime/, …)
+
+Returns an absolute namestring, or NIL when no copy is found. When NIL
+the caller leaves the bootstrap unstaged and the runtime's server loop
+will fail at the first eval (autolisp-eval-request-form undefined) —
+the deferred-autolisp-runtime-helpers symptom this asset closes."
+  (%resolve-asset "ALFE_BOOTSTRAP_LSP"
+                  (lambda () (%vendored-asset-pathname
+                              "autolisp-bootstrap.lsp"))
+                  *bootstrap-lsp-fallback-paths*))
+
 ;;; --- protocol-driven eval-plan ------------------------------------
 
 (defun drive-protocol-actions (protocol-session plan
@@ -140,8 +247,13 @@ the OK/FAIL/QUIT suffix."
 the runtime to acknowledge DONE."
            (alfe.protocol.file:send-stdin protocol-session form-text)
            (wait-done)))
+      (log-verbose "cad-common: driving ~D action~:P (request-timeout ~A s)"
+                   (length plan) request-timeout)
       (dolist (action plan)
         (unless (eq status :success) (return))
+        (log-debug "cad-common: action ~A payload ~S"
+                   (alfe.backend:action-kind action)
+                   (alfe.backend:action-payload action))
         (case (alfe.backend:action-kind action)
           (:load
            (let ((path (getf (alfe.backend:action-payload action) :path)))

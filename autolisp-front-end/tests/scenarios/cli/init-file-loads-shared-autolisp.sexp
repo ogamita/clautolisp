@@ -4,7 +4,7 @@ the user's -x action. The runner sandboxes $HOME to the scenario's
 workdir so .autolisp.lsp is created relative to the sandboxed
 home, not the test host's real $HOME."
  :classification :clautolisp-only
- :argv ("--clautolisp" "-x" "init-marker")
+ :argv ("--clautolisp" "-x" "(print init-marker)")
  :setup-files
    ((".autolisp.lsp" "(setq init-marker \"shared-init-ran\")
 "))

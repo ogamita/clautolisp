@@ -59,7 +59,10 @@
                 #:cli-usage-error
                 #:exit-code-for-condition)
   (:import-from #:alfe.logging
-                #:set-level)
+                #:set-level
+                #:log-debug
+                #:log-verbose
+                #:log-info)
   (:import-from #:clautolisp.autolisp-init-files
                 #:*default-alfe-stems*
                 #:find-init-files
@@ -252,6 +255,10 @@ Diagnostics:
   -v, --verbose          Verbose progress.
   -q, --quiet            Suppress non-error output.
   -d, --debug            Debug traces (implies --verbose).
+                         The three flags compose additively and are
+                         commutative: among --quiet/--verbose/--debug,
+                         the most verbose request wins regardless of
+                         CLI argument order.
 
 Informational:
   -h, --help             Show this help and exit.
@@ -535,6 +542,11 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
                        ;; backend below.
                        (when (find :clautolisp (list-backends))
                          :clautolisp))))
+    (log-debug "resolve-backend: selected ~S (source: ~A)"
+               selected
+               (cond ((cli-options-backend options) "explicit flag")
+                     ((env-default :override)        "$ALFE_BACKEND_OVERRIDE")
+                     (t                               "default :clautolisp")))
     (when selected
       (let ((backend (find-backend selected)))
         (unless backend
@@ -551,6 +563,7 @@ conformance scenarios under tests/scenarios/{bricscad,cli}/."
                      (member variant '(:subprocess :direct)))
             (when (find-symbol "MAKE-CLAUTOLISP-BACKEND"
                                '#:alfe.backend.clautolisp)
+              (log-debug "resolve-backend: clautolisp variant = ~S" variant)
               (setf backend
                     (funcall (find-symbol "MAKE-CLAUTOLISP-BACKEND"
                                           '#:alfe.backend.clautolisp)
@@ -696,6 +709,22 @@ The handler chain matches alfe-cli.issue's exit-code table:
            0)
           (t
            (set-level (cli-options-verbosity options))
+           ;; Once the log level is set, dump the resolved option
+           ;; surface at :debug so a `--debug` run shows what the
+           ;; parser decided. Mirrors the bash autolisp script's
+           ;; startup "[DEBUG] OS=…" dump.
+           (log-debug "cli: version ~A" (or version "0.0.0"))
+           (log-debug "cli: backend ~S, dialect ~S, host ~S, mode ~S"
+                      (cli-options-backend options)
+                      (cli-options-dialect options)
+                      (cli-options-host options)
+                      (cli-options-mode options))
+           (log-debug "cli: load-encoding ~S, io-encoding ~S, no-color-p ~A"
+                      (cli-options-load-encoding options)
+                      (cli-options-io-encoding options)
+                      (cli-options-no-color-p options))
+           (log-debug "cli: actions = ~D"
+                      (length (cli-options-actions options)))
            ;; Colour policy is computed once, against *standard-output*
            ;; as it stood when the CLI started, and bound for the
            ;; duration of the run. The binding covers both the
@@ -758,7 +787,11 @@ The handler chain matches alfe-cli.issue's exit-code table:
 VERSION-TEXT propagates the alfe version string from RUN so backends
 can publish it as the *AUTOLISP-VERSION* global of their hosted
 engine."
-  (let* ((workdir (prepare-workdir backend
+  (log-verbose "cli: load-encoding ~S, io-encoding ~S"
+               (cli-options-load-encoding options)
+               (cli-options-io-encoding options))
+  (let* ((started-at (get-internal-real-time))
+         (workdir (prepare-workdir backend
                                    (cli-options-workdir options)))
          (session (start-engine backend workdir
                                 :dialect (cli-options-dialect options)
@@ -775,46 +808,55 @@ engine."
                                 :cli-options options
                                 :version-text version-text)))
     (unwind-protect
-         (let* ((plan (effective-plan options))
-                (result (eval-plan session plan)))
-           ;; The backend contract is: EVAL-PLAN writes live output
-           ;; to *STANDARD-OUTPUT* / *ERROR-OUTPUT* during the call,
-           ;; AND captures a copy in EVAL-RESULT-{OUTPUT,ERROR-OUTPUT}
-           ;; for tests and diagnostics. We do not re-echo the capture
-           ;; here — doing so would double-print everything the backend
-           ;; already wrote to the live streams. Backends that genuinely
-           ;; capture-only (e.g. the file-IPC drivers, which read
-           ;; stdout.txt back from disk *after* the engine wrote it)
-           ;; are responsible for replaying their own capture to the
-           ;; live streams from inside EVAL-PLAN.
-           ;; Print the final value when an :eval action drove the plan
-           ;; and produced one — matches the spec's "alfe -x '(+ 1 2)'
-           ;; prints 3" contract, and aligns with the legacy bash
-           ;; wrapper's batch-printing behaviour. We skip the print
-           ;; under --quiet so scripts that just want exit codes can
-           ;; opt out, and skip it for interactive mode (the REPL
-           ;; already prints its own values).
-           (let ((value (eval-result-value result)))
-             (when (and value
-                        (eq (eval-result-status result) :success)
-                        (last-action-prints-value-p plan)
-                        (not (eq :warn (cli-options-verbosity options))))
-               (format *standard-output* "~A~%" value)))
-           (finish-output)
-           (finish-output *error-output*)
-           (ecase (eval-result-status result)
-             (:success  0)
-             (:failed   1)
-             (:aborted  1)))
+         (let* ((plan (effective-plan options)))
+           (log-verbose "cli: resolved plan with ~D action~:P" (length plan))
+           (loop for action in plan
+                 for i from 1
+                 do (log-verbose "cli: plan[~D] = ~A"
+                                 i (render-action action)))
+           (let ((result (eval-plan session plan)))
+             ;; The backend contract is: EVAL-PLAN writes live output
+             ;; to *STANDARD-OUTPUT* / *ERROR-OUTPUT* during the call,
+             ;; AND captures a copy in EVAL-RESULT-{OUTPUT,ERROR-OUTPUT}
+             ;; for tests and diagnostics. We do not re-echo the capture
+             ;; here — doing so would double-print everything the backend
+             ;; already wrote to the live streams. Backends that genuinely
+             ;; capture-only (e.g. the file-IPC drivers, which read
+             ;; stdout.txt back from disk *after* the engine wrote it)
+             ;; are responsible for replaying their own capture to the
+             ;; live streams from inside EVAL-PLAN.
+             ;;
+             ;; We intentionally do NOT auto-print EVAL-RESULT-VALUE
+             ;; here. Per the alfe spec ("Action output semantics"),
+             ;; `-x EXPR' / `-l FILE' / `--main FN' are not REPL
+             ;; steps — they are batch evaluations whose value is
+             ;; discarded unless the user wrote an explicit
+             ;; (print …) / (princ …) / (prin1 …). That makes alfe
+             ;; behave identically across all three backends (the CAD
+             ;; backends never had auto-print) and matches AutoLISP's
+             ;; convention where only the top-level REPL prints
+             ;; values automatically.
+             ;;
+             ;; Earlier alfe versions did auto-print the value for the
+             ;; clautolisp backend ("alfe -x '(+ 1 2)' → 3"); that was
+             ;; surprising both because it diverged from the CAD
+             ;; backends and because it produced double output when
+             ;; the user's expression already printed (e.g.
+             ;; "(princ \"hi\")" yielded "hi\"hi\""). The auto-print
+             ;; is removed; users who want the value back must wrap
+             ;; with (print …).
+             (finish-output)
+             (finish-output *error-output*)
+             (let ((exit-code (ecase (eval-result-status result)
+                                (:success  0)
+                                (:failed   1)
+                                (:aborted  1)))
+                   (elapsed (/ (float (- (get-internal-real-time) started-at))
+                               internal-time-units-per-second)))
+               (log-verbose "cli: plan finished status=~S exit=~D elapsed=~,2Fs"
+                            (eval-result-status result) exit-code elapsed)
+               exit-code)))
       (ignore-errors (shutdown session :reason :cli-exit))
       (ignore-errors (cleanup-workdir backend workdir
                                       :keep-p (cli-options-keep-workdir-p options))))))
 
-(defun last-action-prints-value-p (plan)
-  "True iff the plan's last value-producing action is one whose
-result should be printed on the way out — i.e. an :eval or :main,
-but not :load (loads are run for side effects)."
-  (let ((value-action (find-if (lambda (a)
-                                 (member (action-kind a) '(:eval :main)))
-                               (reverse plan))))
-    (not (null value-action))))

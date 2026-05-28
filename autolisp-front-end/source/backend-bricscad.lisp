@@ -65,7 +65,14 @@
                 #:first-existing
                 #:vbs-escape
                 #:applescript-escape
+                #:discover-runtime-lsp
+                #:discover-bootstrap-lsp
                 #:drive-protocol-actions)
+  (:import-from #:alfe.logging
+                #:log-debug
+                #:log-verbose
+                #:log-info
+                #:log-warn)
   (:export #:bricscad-backend
            #:make-bricscad-backend
            #:bricscad-backend-variant
@@ -496,62 +503,116 @@ future ticket."
   ;; dialect lives inside the CAD engine and is not swappable from
   ;; outside. HOST is meaningful only to clautolisp.
   (declare (ignore host mock-input dialect load-encoding io-encoding))
+  (log-verbose "backend BRICSCAD: starting engine (mode ~A)" mode)
+  (log-debug "backend BRICSCAD: workdir = ~A" workdir)
+  (log-debug "backend BRICSCAD: ready-timeout = ~A s; wait-for-ready = ~A"
+             ready-timeout wait-for-ready)
   (handler-case
-      (let* ((protocol (alfe.protocol.file:init-session workdir))
+      (let* ((runtime-source (discover-runtime-lsp))
+             (bootstrap-source (discover-bootstrap-lsp))
+             (protocol (alfe.protocol.file:init-session
+                        workdir
+                        :runtime-lsp-source runtime-source
+                        :bootstrap-lsp-source bootstrap-source))
+             (staged-runtime
+               (when runtime-source
+                 (alfe.protocol.file:stage-runtime-lsp protocol)))
+             (staged-bootstrap
+               (when bootstrap-source
+                 (alfe.protocol.file:stage-bootstrap-lsp protocol)))
              (run-common
                (alfe.protocol.file:emit-run-common-lsp
                 protocol
                 :bootstrap-phase bootstrap-phase
                 :use-remote-protocol-p t
                 :quit-on-finish-p (not interactive-p)
+                :debug-p (and cli-options
+                              (eq :debug
+                                  (alfe.cli:cli-options-verbosity cli-options)))
                 :cli-options cli-options
                 :version-text version-text)))
+        (cond
+          (staged-bootstrap
+           (log-debug "backend BRICSCAD: staged bootstrap -> ~A" staged-bootstrap))
+          (bootstrap-source
+           (log-warn "backend BRICSCAD: bootstrap source ~A resolved but staging returned NIL"
+                     bootstrap-source))
+          (t
+           (log-warn "backend BRICSCAD: no bootstrap LSP found; set $ALFE_BOOTSTRAP_LSP or install autolisp-bootstrap.lsp")))
+        (cond
+          (staged-runtime
+           (log-debug "backend BRICSCAD: staged runtime -> ~A" staged-runtime))
+          (runtime-source
+           (log-warn "backend BRICSCAD: runtime source ~A resolved but staging returned NIL"
+                     runtime-source))
+          (t
+           (log-warn "backend BRICSCAD: no runtime LSP found; set $ALFE_RUNTIME_LSP or install autolisp-remote-io.lsp")))
+        (log-debug "backend BRICSCAD: emitted run-common.lsp -> ~A" run-common)
+        (log-debug "backend BRICSCAD: protocol status file -> ~A"
+                   (alfe.protocol.file:protocol-session-status-path protocol))
         ;; Emit the engine-side launcher in the right shape.
         (let ((variant (choose-effective-mode backend mode)))
+          (log-verbose "backend BRICSCAD: effective mode = ~A" variant)
           (case variant
             (:batch
-             (emit-run-scr workdir run-common))
+             (let ((scr (emit-run-scr workdir run-common
+                                      :quit-on-finish-p (not interactive-p))))
+               (log-debug "backend BRICSCAD: wrote run.scr (quit-on-finish-p ~A) -> ~A"
+                          (not interactive-p) scr)))
             (:automation
              (cond
                ((windows-p)
-                (emit-bridge-vbs
-                 (merge-pathnames "bridge-bricscad.vbs" workdir)
-                 :runtime-load-path run-common
-                 :status-path (alfe.protocol.file:protocol-session-status-path protocol)
-                 :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
-                 :com-mode    (or (uiop:getenv "BRICSCAD_COM_MODE") "auto")))
+                (let ((vbs (merge-pathnames "bridge-bricscad.vbs" workdir)))
+                  (emit-bridge-vbs
+                   vbs
+                   :runtime-load-path run-common
+                   :status-path (alfe.protocol.file:protocol-session-status-path protocol)
+                   :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
+                   :com-mode    (or (uiop:getenv "BRICSCAD_COM_MODE") "auto"))
+                  (log-debug "backend BRICSCAD: wrote bridge-bricscad.vbs -> ~A" vbs)))
                ((macos-p)
-                (emit-launcher-applescript
-                 (merge-pathnames "launcher.applescript" workdir)
-                 :runtime-load-path run-common)))))
+                (let ((apl (merge-pathnames "launcher.applescript" workdir)))
+                  (emit-launcher-applescript apl :runtime-load-path run-common)
+                  (log-debug "backend BRICSCAD: wrote launcher.applescript -> ~A" apl))))))
           (let ((argv (build-launch-argv backend protocol :mode mode))
                 (session (%make-bricscad-session
                           :backend backend
                           :workdir workdir
                           :protocol-session protocol
                           :variant variant)))
+            (log-verbose "backend BRICSCAD: launching: ~{~A~^ ~}" argv)
             (let ((process-info
                     (when launcher
                       (funcall launcher argv
                                :input :stream
                                :output :stream
                                :error-output :stream))))
+              (when process-info
+                (log-debug "backend BRICSCAD: spawned, process-info-pid = ~A"
+                           (ignore-errors (uiop:process-info-pid process-info))))
               (setf (bricscad-session-process-info session) process-info))
             (when wait-for-ready
+              (log-verbose "backend BRICSCAD: waiting for READY (timeout ~A s)"
+                           ready-timeout)
               (multiple-value-bind (ok elapsed last)
                   (alfe.protocol.file:wait-for-status-prefix
                    protocol "READY" :timeout ready-timeout)
-                (declare (ignore elapsed))
-                (unless ok
-                  (error 'backend-bootstrap-error
-                         :backend :bricscad
-                         :code :ready-timeout
-                         :message
-                         (format nil
-                                 "BricsCAD did not reach READY within ~A s (last status: ~S)."
-                                 ready-timeout last)
-                         :details (list :workdir workdir
-                                        :last-status last)))))
+                (cond
+                  (ok
+                   (log-verbose "backend BRICSCAD: READY after ~,2F s (status ~S)"
+                                elapsed last))
+                  (t
+                   (log-warn "backend BRICSCAD: READY timeout after ~,2F s; last status = ~S"
+                             elapsed last)
+                   (error 'backend-bootstrap-error
+                          :backend :bricscad
+                          :code :ready-timeout
+                          :message
+                          (format nil
+                                  "BricsCAD did not reach READY within ~A s (last status: ~S)."
+                                  ready-timeout last)
+                          :details (list :workdir workdir
+                                         :last-status last))))))
             (session-state-set session :ready)
             session)))
     (alfe.error:backend-error (probe)

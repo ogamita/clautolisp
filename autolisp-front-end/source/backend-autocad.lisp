@@ -57,7 +57,13 @@
                 #:env-binary
                 #:first-existing
                 #:vbs-escape
+                #:discover-runtime-lsp
+                #:discover-bootstrap-lsp
                 #:drive-protocol-actions)
+  (:import-from #:alfe.logging
+                #:log-debug
+                #:log-verbose
+                #:log-warn)
   (:export #:autocad-backend
            #:make-autocad-backend
            #:autocad-backend-executable-path
@@ -392,54 +398,105 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
   ;; LOAD-ENCODING accepted but ignored: the AutoCAD-resident
   ;; AutoLISP runtime owns the source-file encoding policy.
   (declare (ignore dialect host mock-input load-encoding io-encoding))
+  (log-verbose "backend AUTOCAD: starting engine (mode ~A)" mode)
+  (log-debug "backend AUTOCAD: workdir = ~A" workdir)
+  (log-debug "backend AUTOCAD: dwg = ~A; ready-timeout = ~A s; wait-for-ready = ~A"
+             dwg ready-timeout wait-for-ready)
   (handler-case
-      (let* ((protocol (alfe.protocol.file:init-session workdir))
+      (let* ((runtime-source (discover-runtime-lsp))
+             (bootstrap-source (discover-bootstrap-lsp))
+             (protocol (alfe.protocol.file:init-session
+                        workdir
+                        :runtime-lsp-source runtime-source
+                        :bootstrap-lsp-source bootstrap-source))
+             (staged-runtime
+               (when runtime-source
+                 (alfe.protocol.file:stage-runtime-lsp protocol)))
+             (staged-bootstrap
+               (when bootstrap-source
+                 (alfe.protocol.file:stage-bootstrap-lsp protocol)))
              (run-common
                (alfe.protocol.file:emit-run-common-lsp
                 protocol
                 :bootstrap-phase bootstrap-phase
                 :use-remote-protocol-p t
                 :quit-on-finish-p (not interactive-p)
+                :debug-p (and cli-options
+                              (eq :debug
+                                  (alfe.cli:cli-options-verbosity cli-options)))
                 :cli-options cli-options
                 :version-text version-text))
              (variant (choose-effective-mode backend mode)))
+        (cond
+          (staged-bootstrap
+           (log-debug "backend AUTOCAD: staged bootstrap -> ~A" staged-bootstrap))
+          (bootstrap-source
+           (log-warn "backend AUTOCAD: bootstrap source ~A resolved but staging returned NIL"
+                     bootstrap-source))
+          (t
+           (log-warn "backend AUTOCAD: no bootstrap LSP found; set $ALFE_BOOTSTRAP_LSP or install autolisp-bootstrap.lsp")))
+        (cond
+          (staged-runtime
+           (log-debug "backend AUTOCAD: staged runtime -> ~A" staged-runtime))
+          (runtime-source
+           (log-warn "backend AUTOCAD: runtime source ~A resolved but staging returned NIL"
+                     runtime-source))
+          (t
+           (log-warn "backend AUTOCAD: no runtime LSP found; set $ALFE_RUNTIME_LSP or install autolisp-remote-io.lsp")))
+        (log-debug "backend AUTOCAD: emitted run-common.lsp -> ~A" run-common)
+        (log-verbose "backend AUTOCAD: effective mode = ~A" variant)
         (case variant
           (:automation
-           (emit-bridge-vbs
-            (merge-pathnames "bridge-autocad.vbs" workdir)
-            :runtime-load-path run-common
-            :status-path (alfe.protocol.file:protocol-session-status-path protocol)
-            :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
-            :com-mode    (or (uiop:getenv "AUTOCAD_COM_MODE") "auto")))
+           (let ((vbs (merge-pathnames "bridge-autocad.vbs" workdir)))
+             (emit-bridge-vbs
+              vbs
+              :runtime-load-path run-common
+              :status-path (alfe.protocol.file:protocol-session-status-path protocol)
+              :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
+              :com-mode    (or (uiop:getenv "AUTOCAD_COM_MODE") "auto"))
+             (log-debug "backend AUTOCAD: wrote bridge-autocad.vbs -> ~A" vbs)))
           (:batch
-           (emit-batch-scr
-            (merge-pathnames "run.scr" workdir) run-common)))
+           (let ((scr (merge-pathnames "run.scr" workdir)))
+             (emit-batch-scr scr run-common)
+             (log-debug "backend AUTOCAD: wrote run.scr -> ~A" scr))))
         (let* ((argv (build-launch-argv backend protocol :mode mode :dwg dwg))
                (session (%make-autocad-session
                          :backend backend
                          :workdir workdir
                          :protocol-session protocol
                          :variant variant))
+               (_ (log-verbose "backend AUTOCAD: launching: ~{~A~^ ~}" argv))
                (process-info
                  (when launcher
                    (funcall launcher argv
                             :input :stream
                             :output :stream
                             :error-output :stream))))
+          (declare (ignore _))
+          (when process-info
+            (log-debug "backend AUTOCAD: spawned, process-info-pid = ~A"
+                       (ignore-errors (uiop:process-info-pid process-info))))
           (setf (autocad-session-process-info session) process-info)
           (when wait-for-ready
+            (log-verbose "backend AUTOCAD: waiting for READY (timeout ~A s)"
+                         ready-timeout)
             (multiple-value-bind (ok elapsed last)
                 (alfe.protocol.file:wait-for-status-prefix
                  protocol "READY" :timeout ready-timeout)
-              (declare (ignore elapsed))
-              (unless ok
-                (error 'backend-bootstrap-error
-                       :backend :autocad
-                       :code :ready-timeout
-                       :message
-                       (format nil "AutoCAD did not reach READY within ~A s (last: ~S)."
-                               ready-timeout last)
-                       :details (list :workdir workdir :last-status last)))))
+              (cond
+                (ok
+                 (log-verbose "backend AUTOCAD: READY after ~,2F s (status ~S)"
+                              elapsed last))
+                (t
+                 (log-warn "backend AUTOCAD: READY timeout after ~,2F s; last status = ~S"
+                           elapsed last)
+                 (error 'backend-bootstrap-error
+                        :backend :autocad
+                        :code :ready-timeout
+                        :message
+                        (format nil "AutoCAD did not reach READY within ~A s (last: ~S)."
+                                ready-timeout last)
+                        :details (list :workdir workdir :last-status last))))))
           (session-state-set session :ready)
           session))
     (alfe.error:backend-error (probe)

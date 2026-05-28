@@ -1,0 +1,162 @@
+# Deferred: port the legacy autolisp-* runtime helpers so CAD eval round-trips
+
+Status: closed (resolved 2026-05-27 on branch impl-bootstrap-helpers, alfe 1.0.14)
+Reported against: alfe (master @ fix-bricscad-bootstrap-exit, 1.0.11)
+Reported by: discovered 2026-05-27 while fixing
+  `issues/closed/bug-bricscad-bootstrap-exits.issue`.
+
+## Resolution (2026-05-27)
+
+Strategy 1 from the "Decision needed" section landed:
+
+  * `autolisp-bootstrap.lsp` (888 lines, 67 `(defun autolisp-…)` blocks
+    plus a handful of supporting top-level `setq`s) is now vendored at
+    `autolisp-front-end/source/runtime/autolisp-bootstrap.lsp`,
+    extracted verbatim from a working SNCF-tree `run-common.lsp`
+    sample (the bash wrapper's heredoc-emitted helpers). Declared
+    `:static-file` in the `backend-cad-common` ASDF system so it
+    ships with installers + executable image dumps alongside
+    `autolisp-remote-io.lsp`.
+
+  * `alfe.backend.cad-common` gained `discover-bootstrap-lsp`,
+    mirroring `discover-runtime-lsp` (env-var `$ALFE_BOOTSTRAP_LSP`
+    → vendored → fallback list `/opt/local/share/alfe/runtime/`, …).
+    The two discoverers share a parameterised `%resolve-asset`
+    helper to keep the precedence rules in lockstep.
+
+  * `protocol-session` gained `bootstrap-lsp-source` /
+    `bootstrap-lsp-staged` slots; `init-session` accepts
+    `:bootstrap-lsp-source` and a new exported `stage-bootstrap-lsp`
+    copies the file into `workdir/runtime/autolisp-bootstrap.lsp`.
+
+  * `emit-run-common-lsp` now emits a `(load <bootstrap>)` block
+    immediately after the CAD-side debug logger and *before* the
+    runtime `(load …)`, wrapped in `vl-catch-all-apply` with debug-log
+    breadcrumbs. Order matters: the runtime's server loop calls into
+    helpers defined in the bootstrap, so the bootstrap must land
+    first.
+
+  * Both bricscad and autocad `start-engine` now discover + stage the
+    bootstrap alongside the runtime; the discovery + staging both log
+    at `--debug`.
+
+Bumped alfe 1.0.13 → 1.0.14.
+
+## Acceptance check
+
+The acceptance criteria from below now have a path through the code:
+
+  * `alfe --bricscad --mode batch -x '(+ 1 2)'` — bootstrap defines
+    `autolisp-eval-request-form`, `autolisp-log-err`,
+    `autolisp-set-status`, the entire `autolisp-source-load-*`
+    chain. The next BricsCAD smoke test should walk
+    READY 0 → RUNNING 1 → DONE 1 OK and print `3`.
+
+  * No new helpers referenced in `autolisp-remote-io.lsp` that aren't
+    either defined in the staged bootstrap or in vanilla AutoLISP —
+    `grep autolisp-` against the loop body and cross-checking against
+    the bootstrap defun set confirms this.
+
+End-to-end confirmation against a live BricsCAD V26 is the
+acceptance step the user will run next.
+
+## Confirmation (2026-05-27, alfe 1.0.12)
+
+The prediction in "## Symptom" below was confirmed end-to-end on
+BricsCAD V26 / macOS. With the CAD-side debug logger added in
+alfe 1.0.12, a `--debug --bricscad --mode batch -i` run produced
+exactly the diagnostic the prediction described — the loop entered,
+`READY 0` was published, the first form was received and triggered
+`RUNNING 1`, then `(autolisp-log-err ...)` failed with:
+
+    [CAD] server-loop CAUGHT error: no function definition <AUTOLISP-LOG-ERR> ; expected FUNCTION at [eval]
+
+So the loop unwinds without ever publishing `DONE N`, alfe waits the
+full request-timeout, and the run exits :ABORTED. This issue therefore
+remains the next blocker on the BricsCAD acceptance criteria.
+
+## Problem
+
+The vendored CAD runtime (`autolisp-front-end/source/runtime/autolisp-remote-io.lsp`,
+copied verbatim from the SNCF tree) defines `autolisp-protocol-server-loop`
+but that function references a handful of helpers that vanilla AutoLISP
+does not provide:
+
+    autolisp-eval-request-form         ; the actual evaluator
+    autolisp-log-err                   ; structured error log
+    autolisp-set-status                ; integer exit-code publisher
+    autolisp-effective-error-message   ; vl-catch-all message massager
+    autolisp-quit-signal-p             ; quit-signal classifier
+    autolisp-clear-last-error-context  ; per-request reset
+
+…plus the globals `*AUTOLISP_QUIT_REQUESTED*` and `*AUTOLISP_QUIT_SIGNAL*`.
+
+In the legacy `outils-autolisp/autolisp-script/autolisp` bash wrapper these
+were materialised by ~78 `defun` blocks emitted directly into
+`run-common.lsp` (see e.g.
+`~/works/sncf-reseau/src/outils-autolisp/autolisp-script/.autolisp-runs/autolisp.bNOVhN/run-common.lsp`).
+The alfe `emit-run-common-lsp` only emits `setq` globals; the helpers are
+missing.
+
+## Symptom
+
+After landing the bug-bricscad-bootstrap-exits fix, the bricscad backend
+correctly:
+
+  * stages the runtime,
+  * loads it,
+  * publishes `READY 0`,
+
+so alfe's poll loop matches and the immediate "exits immediately" bug is
+gone. But the first user form sent through `stdin.txt` triggers
+`autolisp-eval-request-form` lookup (fails, caught by `vl-catch-all-apply`),
+which then calls `autolisp-log-err` bare — that's *not* wrapped, so the
+server loop unwinds with an unhandled error. The whole loop is wrapped in
+`(vl-catch-all-apply 'autolisp-protocol-server-loop nil)` so BricsCAD
+doesn't crash, but no `DONE N OK` is ever published and no value reaches
+alfe. The headline acceptance criterion of the parent ticket —
+`alfe --bricscad --mode batch -x '(+ 1 2)'` prints `3` — therefore still
+fails.
+
+## Decision needed
+
+Three viable strategies, listed cheapest-first:
+
+  1. **Vendor the helpers next to the runtime.**  Copy the 78 `defun`
+     blocks out of the legacy bash wrapper into a sibling file under
+     `autolisp-front-end/source/runtime/` (e.g.
+     `autolisp-bootstrap.lsp`), stage it alongside the runtime, and
+     have `emit-run-common-lsp` emit a `(load …)` for it *before* the
+     runtime load.
+
+  2. **Emit the helpers from `emit-run-common-lsp`.**  Materialise each
+     helper as a Common-Lisp string template and write it into
+     run-common.lsp directly. Heavier on the Lisp side but keeps the
+     vendored .lsp tree small.
+
+  3. **Trim the runtime to what's self-sufficient.**  Rewrite
+     `autolisp-protocol-server-loop` to depend only on primitives
+     vanilla AutoLISP provides. This is the deepest change but yields
+     the leanest runtime.
+
+Strategy 1 is the suggested default — it matches the convention the
+parent fix established (vendor + stage), and the bash wrapper's helper
+defuns are already a known-good source.
+
+## Acceptance
+
+  * `alfe --bricscad --mode batch -x '(+ 1 2)'` prints `3` on stdout.
+  * `alfe --bricscad --mode batch -i` accepts forms typed via the
+    file-IPC stdin path and prints their results.
+  * No new helpers are referenced inside
+    `autolisp-front-end/source/runtime/autolisp-remote-io.lsp` that are
+    not either defined in the alfe-staged scaffolding or in vanilla
+    AutoLISP / VLISP. (Grep test.)
+
+## See also
+
+  * `issues/closed/bug-bricscad-bootstrap-exits.issue` — the parent
+    bug whose fix landed defects 1–3 and surfaced this gap.
+  * `~/works/sncf-reseau/src/outils-autolisp/autolisp-script/autolisp`
+    lines containing `defun autolisp-` — the canonical source of the
+    helper bodies.
