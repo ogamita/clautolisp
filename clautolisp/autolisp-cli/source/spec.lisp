@@ -25,6 +25,51 @@
   (takes-arg-p nil :type boolean)
   (handler nil :type (or null function)))
 
+(defparameter *verbosity-rank*
+  '((:debug   . 0)
+    (:verbose . 1)
+    (:info    . 2)
+    (:warn    . 3))
+  "Rank table used by RAISE-VERBOSITY: lower rank = more verbose. The
+order mirrors alfe.logging's *level-order* (most-verbose-first) so a
+:debug request always wins over a :warn (--quiet) request regardless
+of CLI argument order. :error is intentionally absent — there is no
+flag that requests \"error-only\" output.")
+
+(defun %verbosity-rank (level)
+  (or (cdr (assoc level *verbosity-rank*))
+      (error "Unknown verbosity level ~S (expected one of ~S)."
+             level (mapcar #'car *verbosity-rank*))))
+
+(defun raise-verbosity (opts requested)
+  "Update OPTS's verbosity for a freshly-seen --quiet / --verbose /
+--debug flag.
+
+Rules, designed to be commutative across flag order:
+  1. The default :INFO (no verbosity flag yet seen) gets overridden by
+     the first flag, whatever it is — so `--quiet` alone yields :WARN
+     and `--verbose` alone yields :VERBOSE, matching the documented
+     single-flag semantics.
+  2. Once a non-default level is in place, subsequent flags can only
+     RAISE verbosity (move toward :DEBUG). So `--quiet --debug` and
+     `--debug --quiet` both land on :DEBUG; `--quiet --verbose` and
+     `--verbose --quiet` both land on :VERBOSE.
+
+The rationale is that across multiple flags the user's combined intent
+is \"show me at least this much detail\" — order-of-appearance must not
+suppress output a user explicitly asked for."
+  (let ((current (cli-options-verbosity opts)))
+    (cond
+      ;; First flag overrides the :INFO default outright.
+      ((eq current :info)
+       (setf (cli-options-verbosity opts) requested))
+      ;; Subsequent flags only raise verbosity (lower rank = more
+      ;; verbose). Never downgrade away from what an earlier flag
+      ;; requested.
+      ((< (%verbosity-rank requested)
+          (%verbosity-rank current))
+       (setf (cli-options-verbosity opts) requested)))))
+
 (defun %make-common-option-specs ()
   "Build the common-option-specs list once at load time. Returned as
 a fresh list so callers can DESTRUCTIVELY extend it with tool-specific
@@ -53,21 +98,29 @@ specs without mutating the shared template."
                (setf (cli-options-list-encodings-p opts) t)))
 
    ;; --- verbosity -------------------------------------------------
+   ;; The three verbosity flags compose ADDITIVELY: each handler raises
+   ;; the level toward the most verbose of (current, requested) and
+   ;; never downgrades. So `--debug --verbose`, `--verbose --debug`,
+   ;; and even `--quiet --debug` all land on :DEBUG; `--quiet` alone
+   ;; (or with no other verbosity flag) yields :WARN. Rationale: the
+   ;; user's intent across multiple flags is "show me at least this
+   ;; much detail" — order-of-appearance shouldn't suppress output a
+   ;; user explicitly asked for.
    (make-option-spec
     :longs '("--quiet") :shorts '("-q") :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value name))
-               (setf (cli-options-verbosity opts) :warn)))
+               (raise-verbosity opts :warn)))
    (make-option-spec
     :longs '("--verbose") :shorts '("-v") :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value name))
-               (setf (cli-options-verbosity opts) :verbose)))
+               (raise-verbosity opts :verbose)))
    (make-option-spec
     :longs '("--debug") :shorts '("-d") :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value name))
-               (setf (cli-options-verbosity opts) :debug)))
+               (raise-verbosity opts :debug)))
 
    ;; --- dialect ---------------------------------------------------
    (make-option-spec

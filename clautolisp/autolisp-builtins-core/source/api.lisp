@@ -1,5 +1,13 @@
 (in-package #:clautolisp.autolisp-builtins-core)
 
+;; SB-POSIX is a contrib package: it does not exist until required.
+;; BUILTIN-GETPID below reads `sb-posix:getpid`, so the package must
+;; exist at compile time (the reader interns the symbol) — load it
+;; here, before any later form references it, rather than relying on
+;; some other system having required it incidentally first.
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  #+sbcl (require :sb-posix))
+
 (defparameter *core-builtin-names*
   '("TYPE" "NULL" "NOT" "ATOM" "VL-SYMBOLP" "VL-SYMBOL-NAME" "VL-SYMBOL-VALUE"
     "VL-BB-REF" "VL-BB-SET" "VL-PROPAGATE" "VL-DOC-REF" "VL-DOC-SET"

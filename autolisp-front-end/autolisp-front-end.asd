@@ -88,7 +88,13 @@
                "autolisp-front-end/file-protocol")
   :serial t
   :components
-  ((:file "source/backend-cad-common")))
+  ((:file "source/backend-cad-common")
+   ;; The CAD-side runtime + bootstrap helpers are data files consumed
+   ;; at run time (the backend stages them into the workdir). Declaring
+   ;; them static-file keeps `make install` / `asdf:require-system`
+   ;; aware of them for packaging and survives executable image dumps.
+   (:static-file "source/runtime/autolisp-bootstrap.lsp")
+   (:static-file "source/runtime/autolisp-remote-io.lsp")))
 
 (asdf:defsystem "autolisp-front-end/backend-bricscad"
   :description "alfe backend driving BricsCAD via the file-IPC protocol."

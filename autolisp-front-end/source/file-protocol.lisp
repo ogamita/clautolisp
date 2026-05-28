@@ -40,6 +40,9 @@
   (:import-from #:clautolisp.autolisp-runtime
                 #:derive-reader-options-for-dialect
                 #:read-runtime-from-string)
+  (:import-from #:alfe.logging
+                #:log-debug
+                #:log-verbose)
   (:export ;; session struct + accessors
            #:protocol-session
            #:make-protocol-session
@@ -56,12 +59,17 @@
            #:protocol-session-runtime-info-path
            #:protocol-session-runtime-lsp-source
            #:protocol-session-runtime-lsp-staged
+           #:protocol-session-bootstrap-lsp-source
+           #:protocol-session-bootstrap-lsp-staged
+           #:protocol-session-debug-log-path
            #:protocol-session-stdout-offset
            #:protocol-session-stderr-offset
+           #:protocol-session-debug-log-offset
            ;; lifecycle
            #:init-session
            #:reset-session
            #:stage-runtime-lsp
+           #:stage-bootstrap-lsp
            #:emit-run-common-lsp
            ;; atomic writes
            #:write-atomic-file
@@ -82,6 +90,8 @@
            ;; output draining
            #:drain-stdout
            #:drain-stderr
+           #:drain-debug-log
+           #:stream-debug-log-to-logger
            ;; line-to-form reader
            #:read-balanced-form-from-lines
            ;; control commands
@@ -151,12 +161,24 @@ and DRAIN-STDERR so successive reads see only the new bytes."
   ;; provides it later" (Phase 3 wires this up; tests pass NIL).
   (runtime-lsp-source     nil :type (or null pathname string))
   (runtime-lsp-staged     nil :type (or null pathname))
+  ;; Same pair for autolisp-bootstrap.lsp — the ~67 autolisp-* helper
+  ;; defuns that the runtime's server loop calls into. Staged before
+  ;; the runtime so its (load) order in run-common.lsp matches.
+  (bootstrap-lsp-source   nil :type (or null pathname string))
+  (bootstrap-lsp-staged   nil :type (or null pathname))
+  ;; Path of the CAD-side debug log (workdir/logs/debug.log). The
+  ;; emitted run-common.lsp writes one line per bootstrap milestone
+  ;; here (gated on *AUTOLISP_DEBUG*); DRAIN-DEBUG-LOG / the polling
+  ;; helpers stream those lines back to the alfe logger so the user
+  ;; sees them under --debug without having to read the workdir.
+  (debug-log-path         nil :type (or null pathname))
   (stdout-offset            0 :type unsigned-byte)
-  (stderr-offset            0 :type unsigned-byte))
+  (stderr-offset            0 :type unsigned-byte)
+  (debug-log-offset         0 :type unsigned-byte))
 
 ;;; --- INIT-SESSION --------------------------------------------------
 
-(defun init-session (workdir &key runtime-lsp-source)
+(defun init-session (workdir &key runtime-lsp-source bootstrap-lsp-source)
   "Build a fresh PROTOCOL-SESSION under WORKDIR. Creates
 WORKDIR/protocol/ with the spec's slot inventory, publishes the
 initial `BOOTING` line to status.txt via the atomic-publish
@@ -166,9 +188,16 @@ the slot's contract). Returns the session.
 RUNTIME-LSP-SOURCE, when provided, is the absolute path of the
 upstream autolisp-remote-io.lsp the caller wants staged under
 WORKDIR/runtime/; pass NIL when staging is the caller's job
-(tests do this)."
+(tests do this). BOOTSTRAP-LSP-SOURCE is the analogous knob for the
+bootstrap helper file (autolisp-bootstrap.lsp)."
   (let* ((workdir (uiop:ensure-directory-pathname workdir))
          (protocol-dir (ensure-subdir workdir "protocol"))
+         ;; Mirror the path emit-run-common-lsp computes for the CAD-
+         ;; side debug log: workdir/logs/debug.log. We DON'T eagerly
+         ;; create logs/ here — the emitter does that at run-common
+         ;; emission time — but tracking the path lets the polling
+         ;; helpers tail the file as soon as it appears on disk.
+         (debug-log-path (merge-pathnames "logs/debug.log" workdir))
          (session (%make-protocol-session
                    :workdir workdir
                    :protocol-dir protocol-dir
@@ -182,7 +211,9 @@ WORKDIR/runtime/; pass NIL when staging is the caller's job
                                                       protocol-dir)
                    :runtime-info-path (merge-pathnames "runtime-info.txt"
                                                        protocol-dir)
-                   :runtime-lsp-source runtime-lsp-source)))
+                   :runtime-lsp-source runtime-lsp-source
+                   :bootstrap-lsp-source bootstrap-lsp-source
+                   :debug-log-path debug-log-path)))
     (ensure-directories-exist protocol-dir)
     ;; Pre-create the empty output streams so the CAD-side runtime's
     ;; first append doesn't have to race a missing file. The
@@ -362,15 +393,22 @@ helpers. The interval doubles each iteration up to *poll-max-ms*.")
   "Poll status.txt until its current line is STRING= to EXPECTED, or
 TIMEOUT seconds have passed. Returns (values matched-p elapsed
 last-status). Used for terminal transitions whose target is known
-exactly (`BOOTING` → `STOPPED`, etc.)."
+exactly (`BOOTING` → `STOPPED`, etc.).
+
+On every tick we also drain workdir/logs/debug.log into the alfe
+logger so any CAD-side debug lines surface in near-real time under
+--debug; no-ops cheaply when the file is absent or empty."
   (let ((start (universal-time-now))
         (interval-ms *poll-initial-ms*)
         (last-seen nil))
     (loop
+      (stream-debug-log-to-logger session)
       (setf last-seen (read-current-status session))
       (when (and last-seen (string= last-seen expected))
+        (stream-debug-log-to-logger session) ; final tail
         (return (values t (seconds-elapsed-since start) last-seen)))
       (when (>= (seconds-elapsed-since start) timeout)
+        (stream-debug-log-to-logger session) ; final tail
         (return (values nil (seconds-elapsed-since start) last-seen)))
       (sleep-ms interval-ms)
       (setf interval-ms (min *poll-max-ms* (* 2 interval-ms))))))
@@ -385,15 +423,40 @@ suffix carries a request-counter we don't pin a priori."
 (defun wait-for-status-prefix (session prefix &key (timeout 10))
   "Like WAIT-FOR-STATUS but matches by prefix — the spec's status
 table has parameterised states (`READY N`, `RUNNING N`, `DONE N OK`)
-whose counter is set by the runtime."
+whose counter is set by the runtime.
+
+On every tick we also stream any new CAD-side debug-log lines through
+the alfe logger (see STREAM-DEBUG-LOG-TO-LOGGER) so under --debug the
+user sees the remote bootstrap progress as it happens. We also drain
+once more before each return so the *final* state of the log (a crash
+message, the last `runtime LOAD succeeded` line, etc.) is surfaced
+before the helper hands control back."
+  (log-debug "protocol: wait-for-status-prefix ~S (timeout ~A s)"
+             prefix timeout)
   (let ((start (universal-time-now))
         (interval-ms *poll-initial-ms*)
-        (last-seen nil))
+        (last-seen nil)
+        (prev-status nil))
     (loop
+      (stream-debug-log-to-logger session)
       (setf last-seen (read-current-status session))
+      ;; Log on CHANGE only — the polling loop runs many times,
+      ;; we don't want to flood the debug stream with identical
+      ;; status reads. Matches the bash-script
+      ;; `wait_for_status` pattern.
+      (when (and last-seen (not (equal last-seen prev-status)))
+        (log-debug "protocol: status now ~S (elapsed ~,2F s)"
+                   last-seen (seconds-elapsed-since start))
+        (setf prev-status last-seen))
       (when (and last-seen (starts-with-p last-seen prefix))
+        (log-debug "protocol: matched ~S after ~,2F s"
+                   prefix (seconds-elapsed-since start))
+        (stream-debug-log-to-logger session) ; final tail
         (return (values t (seconds-elapsed-since start) last-seen)))
       (when (>= (seconds-elapsed-since start) timeout)
+        (log-debug "protocol: timeout after ~,2F s (last status ~S)"
+                   (seconds-elapsed-since start) last-seen)
+        (stream-debug-log-to-logger session) ; final tail
         (return (values nil (seconds-elapsed-since start) last-seen)))
       (sleep-ms interval-ms)
       (setf interval-ms (min *poll-max-ms* (* 2 interval-ms))))))
@@ -451,6 +514,46 @@ DRAIN-STDOUT call. Advances SESSION's offset."
      (if new-value
          (setf (protocol-session-stderr-offset session) new-value)
          (protocol-session-stderr-offset session)))))
+
+(defun drain-debug-log (session)
+  "Read any new bytes from the CAD-side debug log (workdir/logs/debug.log)
+since the previous call, and return them as a string. Empty string when
+the file doesn't exist yet (the CAD hasn't published anything) or when
+nothing new has been appended since the last drain. Advances the
+SESSION's DEBUG-LOG-OFFSET as a side-effect.
+
+The log is populated by the CAD-side ALFE-DEBUG-LOG helper that
+EMIT-RUN-COMMON-LSP wires up; that helper no-ops when *AUTOLISP_DEBUG*
+is nil, so under non-debug runs this drain consistently returns the
+empty string and does no useful work — cheap enough to call on every
+status-poll tick."
+  (drain-channel
+   (protocol-session-debug-log-path session)
+   (lambda (&optional new-value)
+     (if new-value
+         (setf (protocol-session-debug-log-offset session) new-value)
+         (protocol-session-debug-log-offset session)))))
+
+(defun stream-debug-log-to-logger (session)
+  "Drain any new lines from the CAD-side debug log and emit each one
+through alfe.logging:log-debug so the user sees them under --debug
+without having to inspect the workdir. Returns the number of lines
+emitted (0 when the log is empty / not present, so the caller can
+gate on it for a heartbeat-style status line).
+
+Called from the protocol-polling helpers (WAIT-FOR-STATUS / WAIT-FOR-
+STATUS-PREFIX) on every tick, so the CAD's bootstrap milestones
+appear in alfe's output in near-real time. The CAD-side ALFE-DEBUG-LOG
+helper writes one line per milestone (prefixed `[CAD] `), and this
+function emits each verbatim so the source is unambiguous."
+  (let* ((chunk (drain-debug-log session))
+         (count 0))
+    (when (plusp (length chunk))
+      (dolist (line (uiop:split-string chunk :separator '(#\Newline)))
+        (when (plusp (length line))
+          (log-debug "~A" line)
+          (incf count))))
+    count))
 
 ;;; --- line-to-form reader ------------------------------------------
 
@@ -804,16 +907,120 @@ Returns the path of the emitted file."
                                 (first version)
                                 (second version)
                                 (third version))))
+            ;; --- CAD-side debug logging helper -----------------------
+            ;; A tiny self-contained logger that writes one line per
+            ;; bootstrap milestone into *AUTOLISP_DEBUGFILE*. Defined
+            ;; here BEFORE the bootstrap helpers (which define their
+            ;; own autolisp-log-* helpers writing to other channels)
+            ;; so we have visibility even if the bootstrap load itself
+            ;; explodes.
+            ;;
+            ;; The logger no-ops when *AUTOLISP_DEBUG* is nil so a
+            ;; non-debug run leaves no trace. Each write opens + closes
+            ;; the file so a crash mid-bootstrap still leaves a
+            ;; diagnosable tail on disk.
+            (format out "~%~
+;;; --- CAD-side debug logger (gated on *AUTOLISP_DEBUG*) ---~%~
+(defun alfe-debug-log (msg / f path)~%~
+  (if *AUTOLISP_DEBUG*~%~
+    (progn~%~
+      (setq path *AUTOLISP_DEBUGFILE*)~%~
+      (if (and path (/= path \"\"))~%~
+        (progn~%~
+          (setq f (open path \"a\"))~%~
+          (if f (progn (write-line (strcat \"[CAD] \" msg) f) (close f))))))))~%~
+(alfe-debug-log \"run-common.lsp evaluated; about to bootstrap runtime\")~%")
+            ;; --- Source the CAD-side bootstrap helpers FIRST ---
+            ;; autolisp-bootstrap.lsp defines the ~67 autolisp-* helper
+            ;; functions (autolisp-eval-request-form, autolisp-log-err,
+            ;; autolisp-set-status, …) that the runtime's server loop
+            ;; calls into. Must be loaded BEFORE the runtime so the
+            ;; loop's first eval doesn't hit an undefined function.
+            (when (protocol-session-bootstrap-lsp-staged session)
+              (let ((bootstrap-path (stringify-path
+                                     (protocol-session-bootstrap-lsp-staged
+                                      session))))
+                (format out
+                        "~%(alfe-debug-log (strcat \"loading bootstrap: \" ~S))~%~
+(setq *ALFE-BOOTSTRAP-LOAD-RESULT*~%  ~
+  (vl-catch-all-apply 'load (list ~S)))~%~
+(if (vl-catch-all-error-p *ALFE-BOOTSTRAP-LOAD-RESULT*)~%  ~
+  (alfe-debug-log (strcat \"bootstrap LOAD failed: \"~%    ~
+    (vl-catch-all-error-message *ALFE-BOOTSTRAP-LOAD-RESULT*)))~%  ~
+  (alfe-debug-log \"bootstrap LOAD succeeded\"))~%"
+                        bootstrap-path bootstrap-path)))
             ;; --- Source the CAD-side runtime ---
             ;; When the runtime has been staged, instruct the CAD to
             ;; LOAD it so the *AUTOLISP_PROTOCOL_* helpers exist before
-            ;; user code runs. The CAD backend is responsible for
+            ;; user code runs, then enter the server loop at top level
+            ;; so BricsCAD's SCR / accoreconsole doesn't fall through
+            ;; to EOF and exit. The CAD backend is responsible for
             ;; sourcing run-common.lsp itself (usually via a one-line
             ;; SCR script).
-            (when (protocol-session-runtime-lsp-staged session)
-              (format out "~%(load ~S)~%"
-                      (stringify-path
-                       (protocol-session-runtime-lsp-staged session)))))))
+            (cond
+              ((protocol-session-runtime-lsp-staged session)
+               (let ((runtime-path (stringify-path
+                                    (protocol-session-runtime-lsp-staged
+                                     session))))
+                 (format out
+                         "~%(alfe-debug-log (strcat \"loading runtime: \" ~S))~%~
+(setq *ALFE-RUNTIME-LOAD-RESULT*~%  ~
+  (vl-catch-all-apply 'load (list ~S)))~%~
+(if (vl-catch-all-error-p *ALFE-RUNTIME-LOAD-RESULT*)~%  ~
+  (alfe-debug-log (strcat \"runtime LOAD failed: \"~%    ~
+    (vl-catch-all-error-message *ALFE-RUNTIME-LOAD-RESULT*)))~%  ~
+  (alfe-debug-log \"runtime LOAD succeeded\"))~%"
+                         runtime-path runtime-path))
+               ;; --- Bridge bootstrap I/O channels onto the file-IPC ---
+               ;; The bootstrap's print/princ/prin1 shadows call into
+               ;; autolisp-emit-user-line / autolisp-emit-user-out,
+               ;; which (a) write to *AUTOLISP_OUTFILE* — not the
+               ;; protocol stdout slot alfe drains — and (b) no-op
+               ;; whenever *AUTOLISP_CAPTURE_STDOUT* is nil. That
+               ;; flag is only flipped on inside autolisp-source-
+               ;; load-core-impl, never around protocol-driven evals,
+               ;; so every (print …) / (princ …) issued via -x / -e
+               ;; vanished silently.
+               ;;
+               ;; Redefine the emitters here so they write straight to
+               ;; *AUTOLISP_PROTOCOL_STDOUTFILE* and ignore the
+               ;; capture flag. Same trick for autolisp-log-err →
+               ;; *AUTOLISP_PROTOCOL_STDERRFILE*, so eval errors land
+               ;; in alfe's stderr channel.
+               (format out "~%~
+;;; --- alfe: bridge bootstrap I/O channels onto the file-IPC ---~%~
+(defun autolisp-emit-user-line (text)~%~
+  (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE* text)~%~
+  text)~%~
+(defun autolisp-emit-user-out (obj)~%~
+  (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE*~%~
+                       (autolisp-stdout-text obj))~%~
+  obj)~%~
+(defun autolisp-log-err (text)~%~
+  (autolisp-write-line *AUTOLISP_PROTOCOL_STDERRFILE* text))~%~
+(setq *AUTOLISP_CAPTURE_STDOUT* T)~%~
+(alfe-debug-log \"I/O bridged onto protocol/stdout.txt and protocol/stderr.txt\")~%")
+               ;; Drive the server loop. The runtime defines the
+               ;; function but does not call it at top level; the
+               ;; legacy bash wrapper emitted an autolisp-main-entry
+               ;; tail that we replicate here in a leaner form.
+               ;; vl-catch-all-apply contains any bootstrap error so a
+               ;; misconfigured runtime publishes a FAILED status
+               ;; rather than crashing BricsCAD silently. We also
+               ;; surface the caught error to *AUTOLISP_DEBUGFILE* —
+               ;; that's the single most-useful diagnostic when the
+               ;; runtime references undefined helpers.
+               (format out
+                       "~%(alfe-debug-log \"entering autolisp-protocol-server-loop\")~%~
+(setq *AUTOLISP-PROTOCOL-LOOP-RESULT*~%  ~
+  (vl-catch-all-apply 'autolisp-protocol-server-loop nil))~%~
+(if (vl-catch-all-error-p *AUTOLISP-PROTOCOL-LOOP-RESULT*)~%  ~
+  (alfe-debug-log (strcat \"server-loop CAUGHT error: \"~%    ~
+    (vl-catch-all-error-message *AUTOLISP-PROTOCOL-LOOP-RESULT*)))~%  ~
+  (alfe-debug-log \"server-loop returned normally\"))~%"))
+              (t
+               (format out
+                       "~%(alfe-debug-log \"WARNING: runtime LSP was not staged; no server loop will run\")~%"))))))
     (with-open-file (out path :direction :output
                               :if-exists :supersede
                               :if-does-not-exist :create
@@ -839,4 +1046,22 @@ runtime is reused as-is, never patched."
              (target (merge-pathnames "autolisp-remote-io.lsp" runtime-dir)))
         (uiop:copy-file source target)
         (setf (protocol-session-runtime-lsp-staged session) target)
+        target))))
+
+(defun stage-bootstrap-lsp (session)
+  "Copy the upstream autolisp-bootstrap.lsp file (whose source path
+SESSION's BOOTSTRAP-LSP-SOURCE slot holds) into WORKDIR/runtime/ so
+the CAD can LOAD it before the runtime. Returns the staged absolute
+pathname, or NIL when no source was provided.
+
+Like STAGE-RUNTIME-LSP, the staging is a verbatim file copy: both
+.lsp files live in source/runtime/ next to this code and are reused
+exactly as-checked-in."
+  (let ((source (protocol-session-bootstrap-lsp-source session)))
+    (when source
+      (let* ((runtime-dir (ensure-subdir (protocol-session-workdir session)
+                                         "runtime"))
+             (target (merge-pathnames "autolisp-bootstrap.lsp" runtime-dir)))
+        (uiop:copy-file source target)
+        (setf (protocol-session-bootstrap-lsp-staged session) target)
         target))))
