@@ -85,14 +85,40 @@ autolisp-string wrapper, others are returned as-is."
      (clautolisp.autolisp-runtime:make-autolisp-string raw))
     (t raw)))
 
+;;; --- ERRNO bridge -------------------------------------------------
+;;;
+;;; ERRNO is a documented AutoLISP sysvar (autolisp-spec §16:9354)
+;;; that file/IO/entity/selection builtins set when they return
+;;; nil-on-failure. The authoritative value lives on the runtime
+;;; session (slot AUTOLISP-RUNTIME:RUNTIME-SESSION-ERRNO, accessed
+;;; via AUTOLISP-ERRNO / SET-AUTOLISP-ERRNO). The MockHost catalogue
+;;; carries an ERRNO cell only so that snapshot/restore round-trips
+;;; cleanly; the cell value is not the truth.
+;;;
+;;; (getvar "ERRNO") therefore reads the session value, and
+;;; (setvar "ERRNO" v) writes it. The mock cell's value is updated
+;;; on every read/write so it stays in sync for the next snapshot.
+
+(defun errno-name-p (string)
+  (and (stringp string)
+       (string-equal string "ERRNO")))
+
 ;;; --- Method definitions ------------------------------------------
 
 (defmethod host-getvar ((host mock-host) name)
   (let* ((string (ensure-sysvar-name name 'getvar))
          (cell (mock-host-sysvar host string)))
-    (and cell
-         (present-sysvar-value (sysvar-cell-kind cell)
-                               (sysvar-cell-value cell)))))
+    (cond
+      ;; Unknown name -> nil (§16 normative rule on unknown names).
+      ((null cell) nil)
+      ;; ERRNO is sourced from the live runtime session.
+      ((errno-name-p string)
+       (let ((v (clautolisp.autolisp-runtime:autolisp-errno)))
+         (setf (sysvar-cell-value cell) v)
+         v))
+      (t
+       (present-sysvar-value (sysvar-cell-kind cell)
+                             (sysvar-cell-value cell))))))
 
 (defmethod host-setvar ((host mock-host) name value)
   (let* ((string (ensure-sysvar-name name 'setvar))

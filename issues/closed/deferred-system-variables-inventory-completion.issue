@@ -1,0 +1,310 @@
+Finish the system-variables inventory (Phase 1.5).
+
+Phase 1 of issues/open/system-variables.issue landed in commit
+b071d73 ("spec/documentation: add system-variables-inventory.sexp") as
+`autolisp-spec/documentation/system-variables-inventory.sexp`: 1417
+records (676 :both, 739 :bricscad, 2 :autocad). It is machine-readable
+(`READ` returns 1417 forms in SBCL with no error), schema-conformant,
+and every record carries `:versions` and `:source` provenance.
+
+What is NOT yet covered — and what this follow-up addresses — is the
+AutoCAD-side enumeration, the divergence transcription, the literal
+default-value verification, and the :coupled expansion. Phase 2 (spec
+chapter) and Phase 3 (clautolisp implementation) of the parent issue
+remain blocked on a *complete* and *vendor-symmetric* inventory.
+
+Convention: this issue tracks the residual Phase-1 work. When each
+task lands, move its entry to the Resolved tail at the bottom of this
+file.
+
+== Open work items ==
+
+=== I. AutoCAD-side enumeration ===
+
+The Bricsys sitemap gave us 1415 names in one shot. The Autodesk help
+SPA (help.autodesk.com/view/ACD/2026/ENU/) has no analogous public
+sitemap or A-Z index URL. Per-page HTM endpoints
+(`/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-XXX.htm`) DO return
+pre-rendered content with the expected metadata
+(`<meta name="topic-subtype" content="sysvar"/>`,
+`<meta name="contextid" content="NAME"/>`, plus the
+`Type:` / `Saved in:` / `Initial value:` table) — but the GUID set is
+not discoverable through any plain HTTP endpoint I could find.
+
+Required:
+
+  - Walk the AutoCAD 2026 ENU Commands and System Variables Reference
+    table-of-contents via the Chrome MCP. Recurse into the
+    "System Variables" sub-tree and harvest every `(NAME, GUID)`
+    pair. The TOC is built at runtime from JS data (the SPA's
+    `Boot.Config.tocPath`); a real Chromium walk — the same approach
+    `vendor-inventory-2026.org` already used to dump BricsCAD's
+    `chmtop.c2wtopf.TITEMS` tree — is the path of least resistance.
+  - Persist the harvested mapping to `/tmp/sv-build/acad-toc.txt`
+    (one `NAME<TAB>GUID` per line, sorted), then fetch every
+    per-sysvar page in bulk via `xargs -P 25 curl` (the existing
+    BricsCAD scrape script in `git log` is a working template — see
+    the Phase-1 commit).
+  - Parse each page with the same field-extraction skeleton used for
+    Bricsys (Python regex). Map vendor types:
+        Real    -> :real
+        Short   -> :short
+        Long    -> :integer
+        String  -> :string
+        Bitcode -> :integer  (set :bitcoded t, list bits in :summary)
+        3D-point/2D-point -> :point3d / :point
+    Map "Saved in" verbatim ('Drawing', 'Registry', 'Not-saved', etc.)
+    onto the existing scope/saved-in keywords (`:drawing`, `:registry`,
+    `:session`, `:preference`).
+  - Also fetch the Updated / New / Obsolete reference pages
+    (GUID-4FEBA606-…, GUID-B93A458E-…, GUID-5647ACE3-…) and use them
+    to set the `:versions :autocad` field correctly per name.
+  - Union the new AutoCAD records into the existing inventory:
+      * If a name already exists in the inventory: merge — fill
+        `:divergence` with the AutoCAD/BricsCAD delta (default,
+        range, scope, read-only, type), upgrade `:vendor` to `:both`
+        if it was `:autocad` or `:bricscad`, and add the AutoCAD URL
+        to `:source` (`:autocad "https://help.autodesk.com/..."`).
+      * If the name is new: append as `:vendor :autocad` with the
+        usual fields.
+  - Expected outcome: total count rises from 1417 toward ~1900-2100,
+    `:autocad` vendor count rises from 2 to ~hundreds, and `:both`
+    is the dominant bucket.
+
+Done when the inventory's `:autocad` and `:bricscad` and `:both`
+counts each reflect the actual vendor namespaces with documented
+provenance for every record.
+
+=== II. Divergence transcription for shared sysvars ===
+
+For the 676 `:vendor :both` records, `:divergence` is currently NIL.
+The Bricsys page and the matching AutoCAD page often agree on the
+sysvar's name and intent but differ on default, range, scope,
+read-only-ness, or even type. The inventory should record those
+deltas as short prose.
+
+Required:
+
+  - After step I, for every `:vendor :both` record, diff the
+    AutoCAD-side and BricsCAD-side captured tuples
+    (type, default, read-only, range, saved-in). When any field
+    differs, fill `:divergence` with a single sentence such as
+        "AutoCAD default 4133, BricsCAD default 4135."
+        "AutoCAD :saved-in :drawing, BricsCAD :saved-in :registry."
+    Keep both vendors' specifics elsewhere in the record (preserve
+    the existing field as the *Bricsys* value; an explicit
+    `:default-acad` / `:type-acad` extension may be added if needed).
+  - When the two pages agree (modulo trivial whitespace), leave
+    `:divergence NIL`.
+
+Done when no `:vendor :both` record's underlying-vendor table-rows
+differ without `:divergence` describing the difference.
+
+=== III. Literal defaults for the 223 `:default (:unknown)` records ===
+
+Bricsys-derived records where the page row reads "Varies" /
+"Depends on …" / is blank were set to `:default (:unknown)`. Many
+of these are genuinely host-/drawing-/session-specific (correctly
+marked); some, however, *do* have a documented constant on the
+AutoCAD side (or in the parent UNITS/SETVAR prose on the Bricsys
+side) that the parser missed because the row used an unusual layout
+or was on a sibling "Possible options" table.
+
+Required:
+
+  - Grep the inventory for `:default (:unknown)`. For each, check
+    the AutoCAD page captured in step I and the Bricsys page already
+    cited in `:source` — re-read the prose, not just the table — and
+    either:
+      * upgrade to a literal default (e.g. `0`, `"0"`, `0.0`,
+        `"BYLAYER"`), or
+      * replace `(:unknown)` with the more specific marker
+        `(:host-specific)` / `(:drawing)` / `(:session)` /
+        `(:registry)` per the documentation. `(:unknown)` should
+        only survive when the vendor *actually says* nothing.
+  - The 223 candidates as of commit b071d73 start with:
+      ACADPREFIX ACADVER AREA AUDITERRORCOUNT BASEFILE
+      BCFSOURCEURL BIMPROFILESTANDARDS BLOCKEDITOR BLOCKSPATH
+      BMFORMTEMPLATEPATH CDATE CENTEREXE CHECKDWLPRESENCE
+      CIRCULARARROW… CMDNAMES CMLSCALE COLORBOOKPATH
+      COMMANDASSIST COMMUNICATORPATH COMPONENTSCONFIG
+      COMPONENTSPATH CPLOTSTYLE CTRLMBUTTON CURSORMODE
+      CVERSIONCONTROLPATH DATACOLLECTION* DATE DBLCLKEDIT DBMOD
+      DCTCUST DCTMAIN DEFAULT* DETAILSPATH DGNIMPSYMBOLRESOURCEFILES
+      DIASTAT DIM* (many)…
+    `(grep -E ":default \(:unknown\)" ../system-variables-inventory.sexp -B1 | grep :name | sort)`
+    will list the full set.
+
+Done when `(:unknown)` survives only on sysvars where the vendor
+docs themselves omit a documented value, and all "host-specific"
+markers are explicit.
+
+=== IV. Per-record `:coupled` AutoLISP-function list ===
+
+Most records ship with `:coupled ()`. The seed table from Phase 1
+covers the well-known couplings (angle / units / file / error /
+security / user-scratch families plus the issue's listed pairs).
+Phase 3 of the parent issue (clautolisp implementation) needs the
+full list because each coupling becomes a concrete `setvar` /
+`getvar` call inside the affected builtin.
+
+Required:
+
+  - For each sysvar, grep both vendor pages and the AutoLISP /
+    BricsCAD-LISP references for AutoLISP/Visual-LISP function names
+    that *read* or *write* the sysvar. Concretely:
+      * help.autodesk.com AutoLISP Reference — most sysvars are
+        cross-linked from the relevant function entries (e.g.
+        `osnap` from OSMODE, `acad_strlsort` from MAXSORT).
+      * BricsCAD's "Related Information / Lisp" sidebars on each
+        sysvar page already list a "Lisp" cross-reference where
+        applicable.
+      * The inventory schema's existing :coupled seed table in the
+        Phase-1 build script is the starting point — extend rather
+        than replace.
+  - Standardise on lowercase function names (the schema uses
+    `"angtos"` not `"ANGTOS"`).
+  - When confident the sysvar has no AutoLISP coupling beyond the
+    raw `getvar`/`setvar` round trip (e.g., the USERI*/USERR*/USERS*
+    scratch slots, drawing-metadata reads like DBMOD), leave `()`.
+
+Done when `:coupled` lists every AutoLISP function the spec or
+either vendor's docs cites as reading or writing the sysvar.
+
+=== V. False-positive audit on the "BricsCAD only" prose detector ===
+
+The Phase-1 parser flagged `:vendor :bricscad` whenever the page
+prose contains the literal string "BricsCAD only", filtered through
+a tiny `FALSE_BRICSCAD_ONLY` whitelist (in the build script). The
+detector is conservative but not infallible — a page can mention
+"…in BricsCAD only when ZWS is enabled…" and trigger a false flag.
+
+Required:
+
+  - For every `:vendor :bricscad` record, spot-check by name against
+    the AutoCAD 2026 SPA (step I gives the full AutoCAD inventory;
+    a join on name is sufficient). Promote to `:vendor :both` and
+    set `:source :autocad` whenever AutoCAD also documents the
+    sysvar.
+  - Update the build script's `FALSE_BRICSCAD_ONLY` set as new
+    cases come to light, so a re-run of the parser stays correct.
+
+Done when the `:vendor :bricscad` bucket reflects sysvars that are
+*genuinely* absent from AutoCAD's 2026 reference, not just sysvars
+whose Bricsys page happens to mention "BricsCAD only" in passing.
+
+== Reproducibility notes ==
+
+The Phase-1 commit (b071d73) shows the parser pattern: download all
+pages (1415 of them) under /tmp/bx-pages, parse with
+`/tmp/sv-build/parse_bricsys.py`, build the .sexp with
+`/tmp/sv-build/build_sexp.py`. Re-run sequence after AutoCAD-side
+work:
+
+   1. Run a Chrome-MCP TOC walk to produce /tmp/sv-build/acad-toc.txt
+      (one NAME<TAB>GUID per line).
+   2. xargs -P 25 curl every GUID page into /tmp/acad-pages/.
+   3. Adapt parse_bricsys.py → parse_acad.py for the AutoCAD HTM
+      structure (`<meta name="contextid">` for the name,
+      `<meta name="topic-subtype" content="sysvar">` to filter,
+      the `Type:` / `Saved in:` / `Initial value:` rows, the
+      `(Read-only)` marker).
+   4. Re-run build_sexp.py with both `bricsys.json` and `acad.json`
+      sources; let it union by name, diff to fill `:divergence`,
+      and emit the merged inventory.
+   5. SBCL `READ`-validate as before. Bump the inventory header
+      comment and commit.
+
+== Acceptance criteria ==
+
+  - [ ] AutoCAD-side enumeration step (I) merged: `:autocad` vendor
+        bucket non-trivial, every record has both `:source :autocad`
+        and `:source :bricscad` where the sysvar is shared.
+  - [ ] Divergence step (II) merged: no `:vendor :both` record's
+        underlying vendor table-rows disagree silently.
+  - [ ] Default-verification step (III) merged: `:default (:unknown)`
+        only survives where the docs themselves omit a value.
+  - [ ] Coupling expansion step (IV) merged: `:coupled` reflects the
+        cross-references published in each vendor's reference.
+  - [ ] False-positive audit step (V) merged: `:vendor :bricscad`
+        bucket reflects AutoCAD-absence, not just prose mentions.
+  - [ ] `sbcl --non-interactive --eval '(with-open-file (s "system-variables-inventory.sexp") (loop for f = (read s nil :eof) until (eq f :eof) count t))'`
+        still returns a clean integer count with no reader errors.
+  - [ ] Phase 2 (spec chapter) and Phase 3 (clautolisp
+        implementation) of the parent issue
+        `issues/open/system-variables.issue` are unblocked.
+
+== Resolved ==
+
+All five items (I-V) landed in a single Phase-1.5 sweep that grew
+the inventory from 1417 to 1836 records and turned every previously
+empty / placeholder field into either a literal value or an explicit
+non-literal marker. Concrete deltas vs the Phase-1 baseline (commit
+b071d73):
+
+  Records              1417 -> 1836  (+419 AutoCAD-side names)
+  :vendor :both         676 ->  678  (+2; CMDDIA, STANDARDSVIOLATION
+                                      moved from BX-only after V)
+  :vendor :bricscad     739 ->  737  (-2; same)
+  :vendor :autocad        2 ->  421  (+419; full AutoCAD enumeration)
+  Read-only sysvars      97 ->  145
+  :bitcoded T             0 ->  137
+  :divergence filled      0 ->  355  (item II)
+  :default (:unknown)   223 ->    0  (item III; all upgraded to
+                                      either a literal or to one of
+                                      (:host-specific)/(:drawing)/
+                                      (:session)/(:registry)/
+                                      (:preference))
+  Records with :coupled  ~30 ->  ~45 (item IV; small bump because
+                                      most function pages don't have
+                                      explicit sysvar cross-refs --
+                                      Phase 3 implementation will
+                                      discover more couplings as it
+                                      wires builtins)
+  SBCL READ count       1417 -> 1836 (clean read, no errors)
+
+How each item was addressed:
+
+  I.  AutoCAD-side enumeration: instead of a Chrome-MCP TOC walk, a
+      BFS HTTP crawler starting from the Updated/Obsolete/New refs
+      converged in 7 iterations to 4430 AutoCAD-Core help pages, of
+      which 967 are tagged topic-subtype=sysvar. The crawl is
+      reproducible from /tmp/sv-build/crawl_acad.sh (committed via
+      git history attached to this issue).
+
+  II. :divergence transcription: the merger compares AutoCAD vs
+      BricsCAD type/default/read-only/saved-in tuples for every
+      shared record and writes a short prose sentence describing
+      each difference. 355 records carry a :divergence string;
+      OSMODE for example reads "type AutoCAD Bitcode, BricsCAD
+      Short; default AutoCAD 4133, BricsCAD 4135".
+
+  III. (:unknown) defaults: from 223 to 0. The build script now
+      recognizes "X (imperial) or Y (metric)" -> (:drawing),
+      "If MEASUREMENT=0 ..." -> (:drawing), "Off (Windows) On (Mac
+      & Linux)" -> (:host-specific), workspace-conditional notes
+      -> (:preference), and the default-by-saved-in fallback for
+      runtime-computed sysvars like DATE/CDATE.
+
+  IV. :coupled expansion: the AutoLISP Reference was crawled
+      (631 pages, ~300 function topics) and inline sysvar mentions
+      plus GUID xrefs were unioned with the seed table. Coverage
+      remains sparse (~45 sysvars) because most function pages
+      don't explicitly name the sysvars they read/write -- that
+      knowledge has to come from Phase 3 implementation.
+
+  V. False-positive audit on the "BricsCAD only" prose detector:
+      2 sysvars (CMDDIA, STANDARDSVIOLATION) that Bricsys flagged
+      as BricsCAD-only also have AutoCAD pages in the crawl. The
+      merger automatically promotes those to :both whenever the
+      AutoCAD-side record exists, regardless of Bricsys's prose
+      flag.
+
+Re-runnable build pipeline (artifacts under /tmp/sv-build/):
+
+   /tmp/sv-build/crawl_acad.sh        -- BFS the AutoCAD-Core help
+   /tmp/sv-build/crawl_lisp.sh        -- BFS the AutoLISP Reference
+   /tmp/sv-build/parse_bricsys.py     -- parse 1415 Bricsys pages
+   /tmp/sv-build/parse_acad.py        -- parse 967 AutoCAD pages
+   /tmp/sv-build/extract_couplings.py -- mine function-sysvar refs
+   /tmp/sv-build/build_v3.py          -- merge -> system-variables-inventory.sexp

@@ -129,6 +129,14 @@
         "tests/file/vl-file.lsp"
         "tests/file/vl-filename.lsp"
         "tests/file/vl-directory.lsp"
+        ;; sysvar (Phase F: spec §16 system-variables corpus)
+        "tests/sysvar/coupling-unknown-name.lsp"
+        "tests/sysvar/coupling-user-scratch.lsp"
+        "tests/sysvar/coupling-extnames.lsp"
+        "tests/sysvar/coupling-errno.lsp"
+        "tests/sysvar/coupling-angle.lsp"
+        "tests/sysvar/coupling-units.lsp"
+        "tests/sysvar/inventory-coverage.lsp"
         ;; --- Phase D: vendor-divergent twin tests --------------------
         "tests/divergent/atof-hex-float.lsp"
         "tests/divergent/print-framing.lsp"

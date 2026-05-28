@@ -1,0 +1,74 @@
+autolisp-test harness: matrix/recap/sexp-report fail with
+"FOREACH list argument must evaluate to a proper list, got T".
+
+Observed during the Phase-4 conformance run (commit
+<to be filled in by the Phase-4 commit>) and confirmed against
+the pre-Phase-4 baseline (658 tests on master): the post-run
+aggregation steps abort with
+
+    [autolisp-test] matrix raised: FOREACH list argument must evaluate to a proper list, got T.
+    [autolisp-test] write-sexp-report raised: FOREACH list argument must evaluate to a proper list, got T.
+    [autolisp-test] print-recap raised: LENGTH expects a proper list, got T.
+
+The test bodies themselves still execute -- `[autolisp-test]
+running NNN tests on clautolisp 0.x` is printed before the
+matrix step -- but the on-disk report.sexp ends up empty
+(0 bytes) and the human-readable recap never lands on stdout.
+
+Reproduction
+------------
+
+    cd autolisp-test
+    make test-asdf-sbcl 2>&1 | grep -E 'matrix|recap|raised|running'
+
+Expected: a non-zero number of passes / fails / skips.
+
+Actual:
+
+    [autolisp-test] running 3905 tests on clautolisp 0.x
+    [autolisp-test] matrix raised: FOREACH list argument must evaluate to a proper list, got T.
+    [autolisp-test] write-sexp-report raised: FOREACH list argument must evaluate to a proper list, got T.
+    [autolisp-test] print-recap raised: LENGTH expects a proper list, got T.
+
+Hypothesis
+----------
+
+One of the matrix-building paths in
+autolisp-test/harness/profiles.lsp:67ff
+ends up calling ~foreach~ with a non-list. Candidate sites:
+
+  - profiles.lsp:93 `(foreach tag (cdr (assoc 'runtimes descriptor)))`
+    -- if some descriptor build path stored T (not a list)
+    against the `'runtimes` key, `(cdr 'T)` is invalid in
+    AutoLISP.
+  - profiles.lsp:39 `(foreach entry entries)` -- but `entries`
+    is `*autolisp-tests*` which is a proper list.
+  - profiles.lsp:25, 43 `(foreach r results)` -- `results` is
+    the return value of autolisp-test-run-many, which builds
+    `acc` as a list and returns `(reverse acc)`.
+
+The fact that LENGTH gives the same complaint in
+print-recap (~harness/report.lsp:251~) suggests the upstream
+~matrix~ value passed into print-recap is itself T (because
+the guarded matrix step returned the catcher's error sentinel
+rather than nil).
+
+Scope
+-----
+
+This is a harness bug, not a Phase-4 regression: the same error
+fires on a stripped-down loader that contains only the original
+658 baseline tests. Phase-4 adds ~3247 new tests on top of that
+baseline; all of them run, but none of them appear in the (empty)
+report file.
+
+Acceptance
+----------
+
+- ~make test-asdf-sbcl~ emits a non-zero summary line covering
+  every entry in *autolisp-test-files*.
+- The on-disk ~report.sexp~ is non-empty and parses as a single
+  CL form.
+- ~print-recap~ no longer raises.
+- A regression test for the matrix function with an empty
+  ~runtimes~ list lands alongside the fix.

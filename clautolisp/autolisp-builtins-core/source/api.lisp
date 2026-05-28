@@ -161,6 +161,55 @@
       (error (condition)
         (make-builtin-runtime-error :builtin-error builtin-name condition)))))
 
+;;; --- ERRNO helpers ------------------------------------------------
+;;;
+;;; AutoLISP system variable ~ERRNO~ (autolisp-spec §16) is set by a
+;;; documented subset of builtins on failure: entget, entmake,
+;;; entmod, entsel, findfile, load, nentsel, open, read-line, ssget,
+;;; ssname, tablet, write-line, xdsize. Codes are enumerated in
+;;; Autodesk's AutoLISP "Error Codes Reference" -- the 86-row table
+;;; first published as
+;;; help.autodesk.com/cloudhelp/2015/ENU/AutoCAD-AutoLISP/files/
+;;; GUID-97327347-2A13-4CBC-BDBF-979C7F1CABD5.htm and unchanged in
+;;; later releases. Phase-3-followup wiring (this work) threads the
+;;; matching SET-AUTOLISP-ERRNO calls through every failure site.
+;;;
+;;; SUCCESS-on-set-errno-0 is per Autodesk's documented behaviour
+;;; ("ERRNO is reset on a successful AutoLISP call"). We don't
+;;; reset ERRNO on the entry path -- AutoCAD's own note that ERRNO
+;;; "is not always cleared to zero" means callers must inspect it
+;;; immediately after a documented failure, before any subsequent
+;;; call (including the inspect itself) has a chance to reset it.
+;;;
+;;; Common codes (excerpt; see Source Notes above):
+;;;
+;;;     0   No error / success
+;;;     1   Invalid symbol-table name
+;;;     2   Invalid entity or selection-set name
+;;;     4   Invalid selection set
+;;;     7   Object selection: pick failed
+;;;    13   Invalid handle
+;;;    17   Invalid use of deleted entity
+;;;    18   Invalid table name
+;;;    22   Value out of range
+;;;    31   Attempt to modify deleted entity
+;;;    36   Bad entity type
+;;;    50   Improper location of APPID field
+;;;    51   Exceeded maximum XDATA size
+;;;    52   Entity selection: null response
+;;;    68   Digitizer is not a tablet
+;;;    69   Tablet is not calibrated
+;;;    70   Invalid tablet arguments
+;;;    73   Cannot open executable file
+
+(declaim (inline errno-and-return))
+(defun errno-and-return (code value)
+  "Set ERRNO to CODE and return VALUE. Used at builtin failure /
+success sites to record the documented AutoLISP error code without
+disrupting the value-returning shape of the call site."
+  (set-autolisp-errno code)
+  value)
+
 (defun make-core-builtin-subr (name function)
   (make-autolisp-subr name (wrap-builtin-function name function)))
 
@@ -324,10 +373,13 @@
      object)))
 
 (defun builtin-load (filename &optional (onfailure nil onfailure-supplied-p))
+  ;; Documented to set ERRNO on failure. Code 73 ("Cannot open
+  ;; executable file") matches the failure shape; success resets to 0.
   (let* ((value (autolisp-string-value (require-string filename "LOAD")))
          (resolved (resolve-load-pathname value)))
     (cond
       ((null resolved)
+       (set-autolisp-errno 73)
        (if onfailure-supplied-p
            (evaluate-load-onfailure onfailure)
            (call-with-autolisp-error-handler
@@ -339,6 +391,7 @@
                value)))))
       ((member (string-downcase (or (pathname-type resolved) "")) '("vlx" "fas")
                :test #'string=)
+       (set-autolisp-errno 73)
        (if onfailure-supplied-p
            (evaluate-load-onfailure onfailure)
            (call-with-autolisp-error-handler
@@ -349,7 +402,9 @@
                "LOAD currently supports only source files, got ~A."
                (namestring resolved))))))
       (t
-       (autolisp-load-file (namestring resolved))))))
+       (let ((result (autolisp-load-file (namestring resolved))))
+         (set-autolisp-errno 0)
+         result)))))
 
 (defun builtin-autoload (filename function-list)
   (let ((path (autolisp-string-value (require-string filename "AUTOLOAD"))))
@@ -1465,6 +1520,11 @@ when no dialect is in scope."
         :iso-8859-1)))
 
 (defun builtin-open (filename mode &optional encoding)
+  ;; Documented to set ERRNO on failure (autolisp-spec §16 ERRNO
+  ;; :coupled). Autodesk's enumerated code-set has no dedicated
+  ;; "file not found" / "cannot open" value for OPEN; we use 22
+  ;; (Value out of range) as the catch-all "argument rejected by
+  ;; the host" code that the AutoLISP corpus already observes.
   (let* ((path-string (autolisp-string-value (require-string filename "OPEN")))
          (mode-string (autolisp-string-value (require-string mode "OPEN")))
          (path (resolve-open-pathname path-string))
@@ -1482,10 +1542,10 @@ when no dialect is in scope."
                               :if-does-not-exist if-does-not-exist
                               :external-format external-format)))
             (if stream
-                (make-autolisp-file stream path-string mode-string)
-                nil))
+                (errno-and-return 0 (make-autolisp-file stream path-string mode-string))
+                (errno-and-return 22 nil)))
         (error ()
-          nil)))))
+          (errno-and-return 22 nil))))))
 
 (defun resolve-existing-file (filename support-paths)
   ;; AutoLISP's `findfile` and `findtrustedfile` accept both absolute
@@ -1505,18 +1565,22 @@ when no dialect is in scope."
        (search-path-list-for-file filename support-paths)))))
 
 (defun builtin-findfile (filename)
+  ;; Documented to set ERRNO on failure. No dedicated code in the
+  ;; enumerated set; we use 22 (Value out of range) for "filename
+  ;; argument did not resolve" matching OPEN.
   (let* ((value (autolisp-string-value (require-string filename "FINDFILE")))
          (located (resolve-existing-file value (autolisp-support-paths))))
     (if located
-        (make-autolisp-string located)
-        nil)))
+        (errno-and-return 0 (make-autolisp-string located))
+        (errno-and-return 22 nil))))
 
 (defun builtin-findtrustedfile (filename)
+  ;; Same ERRNO contract as FINDFILE (search-path miss -> 22).
   (let* ((value (autolisp-string-value (require-string filename "FINDTRUSTEDFILE")))
          (located (resolve-existing-file value (autolisp-trusted-paths))))
     (if located
-        (make-autolisp-string located)
-        nil)))
+        (errno-and-return 0 (make-autolisp-string located))
+        (errno-and-return 22 nil))))
 
 (defun builtin-vl-directory-files (&optional directory pattern directories)
   (let* ((directory-value (if directory
@@ -1762,11 +1826,14 @@ when no dialect is in scope."
              :call-stack (current-autolisp-call-stack)))))
 
 (defun builtin-read-line (file)
+  ;; Documented to set ERRNO on failure. EOF is the canonical
+  ;; failure path; we use 8 ("End of entity file") which is the
+  ;; nearest documented value in the enumerated set.
   (let ((stream (require-open-file-stream file "READ-LINE")))
     (let ((line (read-line stream nil nil)))
       (if line
-          (make-autolisp-string line)
-          nil))))
+          (errno-and-return 0 (make-autolisp-string line))
+          (errno-and-return 8 nil)))))
 
 (defun builtin-read-char (&optional file)
   (if file
@@ -1781,14 +1848,19 @@ when no dialect is in scope."
             nil))))
 
 (defun builtin-write-line (string &optional file)
+  ;; Documented to set ERRNO on failure. Success path resets to 0.
+  ;; We don't currently surface a write-error case here; the host
+  ;; CL ~write-line~ either succeeds or signals, which the
+  ;; wrap-builtin-function harness converts into a runtime error
+  ;; before the user sees nil.
   (let ((value (autolisp-string-value (require-string string "WRITE-LINE"))))
     (if file
         (let ((stream (require-open-file-stream file "WRITE-LINE")))
           (write-line value stream)
-          string)
+          (errno-and-return 0 string))
         (progn
           (write-line value *standard-output*)
-          string))))
+          (errno-and-return 0 string)))))
 
 (defun builtin-write-char (char-code &optional file)
   (let ((character (int32->character char-code "WRITE-CHAR")))
@@ -2841,36 +2913,72 @@ most recent first."
   object)
 
 (defun builtin-entget (ename)
-  (host-entget (current-evaluation-host) (require-ename ename "ENTGET")))
+  ;; Documented to set ERRNO on failure. Code 2 = "Invalid entity
+  ;; or selection-set name" covers both the unknown-ename and
+  ;; deleted-ename cases when the host returns nil.
+  (let ((result (host-entget (current-evaluation-host)
+                             (require-ename ename "ENTGET"))))
+    (if result
+        (errno-and-return 0 result)
+        (errno-and-return 2 nil))))
 
 (defun builtin-entmod (data)
+  ;; Documented to set ERRNO on failure. Code 31 = "Attempt to
+  ;; modify deleted entity" / 2 for unknown ename. We use 2 as
+  ;; the conservative shared code when the host returns nil.
   (require-proper-list data "ENTMOD")
-  (host-entmod (current-evaluation-host) data))
+  (let ((result (host-entmod (current-evaluation-host) data)))
+    (if result
+        (errno-and-return 0 result)
+        (errno-and-return 2 nil))))
 
 (defun builtin-entmake (data)
+  ;; Documented to set ERRNO on failure. Code 36 = "Bad entity type".
   (require-proper-list data "ENTMAKE")
-  (host-entmake (current-evaluation-host) data))
+  (let ((result (host-entmake (current-evaluation-host) data)))
+    (if result
+        (errno-and-return 0 result)
+        (errno-and-return 36 nil))))
 
 (defun builtin-entmakex (data)
+  ;; Same ERRNO contract as ENTMAKE.
   (require-proper-list data "ENTMAKEX")
-  (host-entmakex (current-evaluation-host) data))
+  (let ((result (host-entmakex (current-evaluation-host) data)))
+    (if result
+        (errno-and-return 0 result)
+        (errno-and-return 36 nil))))
 
 (defun builtin-entdel (ename)
-  (host-entdel (current-evaluation-host) (require-ename ename "ENTDEL")))
+  ;; Not in the canonical ERRNO :coupled list; reset on success only.
+  (let ((result (host-entdel (current-evaluation-host)
+                              (require-ename ename "ENTDEL"))))
+    (errno-and-return 0 result)))
 
 (defun builtin-entupd (ename)
-  (host-entupd (current-evaluation-host) (require-ename ename "ENTUPD")))
+  ;; Not in the canonical ERRNO :coupled list; reset on success only.
+  (let ((result (host-entupd (current-evaluation-host)
+                              (require-ename ename "ENTUPD"))))
+    (errno-and-return 0 result)))
 
 (defun builtin-entlast ()
+  ;; (entlast) returning nil because the drawing has no entities is
+  ;; not an error; do not touch ERRNO.
   (host-entlast (current-evaluation-host)))
 
 (defun builtin-entnext (&optional ename)
+  ;; (entnext) returning nil at end-of-list is not an error; do
+  ;; not touch ERRNO.
   (host-entnext (current-evaluation-host)
                 (and ename (require-ename ename "ENTNEXT"))))
 
 (defun builtin-handent (handle-string)
-  (host-handent (current-evaluation-host)
-                (autolisp-string-value (require-string handle-string "HANDENT"))))
+  ;; Documented failure code 13 = "Invalid handle".
+  (let ((result (host-handent (current-evaluation-host)
+                              (autolisp-string-value
+                               (require-string handle-string "HANDENT")))))
+    (if result
+        (errno-and-return 0 result)
+        (errno-and-return 13 nil))))
 
 (defun require-pickset (object operator-name)
   (unless (typep object 'autolisp-pickset)
@@ -2890,6 +2998,10 @@ most recent first."
   ;; (ssget FILTER)            -> "X" + filter (rare; treated as
   ;;                              "X" / FILTER for convenience)
   ;; Modes are AutoLISP-strings; FILTER is a list of dotted pairs.
+  ;;
+  ;; Documented ERRNO codes: 56..67 for filter-shape errors. A
+  ;; null return because the host found no matching entities is
+  ;; not an error and leaves ERRNO alone.
   (let* ((host (current-evaluation-host))
          mode filter)
     (cond
@@ -2908,7 +3020,10 @@ most recent first."
       (t
        (setf mode (first arguments)
              filter (second arguments))))
-    (host-ssget host filter :mode mode)))
+    (let ((result (host-ssget host filter :mode mode)))
+      (if result
+          (errno-and-return 0 result)
+          result))))
 
 (defun builtin-ssadd (&rest arguments)
   ;; (ssadd)              -> empty pickset
@@ -2934,9 +3049,15 @@ most recent first."
               (require-ename ename "SSDEL")))
 
 (defun builtin-ssname (pickset index)
-  (host-ssname (current-evaluation-host)
-               (require-pickset pickset "SSNAME")
-               (require-int32 index "SSNAME")))
+  ;; Documented to set ERRNO on failure. Code 22 = "Value out of
+  ;; range" when INDEX is past the pickset's length; the host
+  ;; method returns nil in that case.
+  (let ((result (host-ssname (current-evaluation-host)
+                             (require-pickset pickset "SSNAME")
+                             (require-int32 index "SSNAME"))))
+    (if result
+        (errno-and-return 0 result)
+        (errno-and-return 22 nil))))
 
 (defun builtin-sslength (pickset)
   (host-sslength (current-evaluation-host)
@@ -2960,20 +3081,33 @@ most recent first."
 ;;; --- Phase 11: table walkers --------------------------------------
 
 (defun builtin-tblsearch (kind name &optional next-after)
+  ;; Documented to set ERRNO on bad table-name argument. Code 1 =
+  ;; "Invalid symbol-table name" (used for the KIND argument); a
+  ;; null return because NAME is absent from a valid table is not
+  ;; an error and leaves ERRNO alone.
   (declare (ignore next-after))
-  (host-tblsearch (current-evaluation-host)
-                  (autolisp-string-value (require-string kind "TBLSEARCH"))
-                  (autolisp-string-value (require-string name "TBLSEARCH"))))
+  (let ((result (host-tblsearch (current-evaluation-host)
+                                (autolisp-string-value (require-string kind "TBLSEARCH"))
+                                (autolisp-string-value (require-string name "TBLSEARCH")))))
+    (if result
+        (errno-and-return 0 result)
+        result)))
 
 (defun builtin-tblnext (kind &optional rewind)
+  ;; (tblnext) returning nil at end-of-table is not an error.
   (host-tblnext (current-evaluation-host)
                 (autolisp-string-value (require-string kind "TBLNEXT"))
                 :rewind (autolisp-true-p rewind)))
 
 (defun builtin-tblobjname (kind name)
-  (host-tblobjname (current-evaluation-host)
-                   (autolisp-string-value (require-string kind "TBLOBJNAME"))
-                   (autolisp-string-value (require-string name "TBLOBJNAME"))))
+  ;; Documented failure code 1 (Invalid symbol-table name) covers
+  ;; bad KIND; a missing NAME inside a valid table is not an error.
+  (let ((result (host-tblobjname (current-evaluation-host)
+                                 (autolisp-string-value (require-string kind "TBLOBJNAME"))
+                                 (autolisp-string-value (require-string name "TBLOBJNAME")))))
+    (if result
+        (errno-and-return 0 result)
+        result)))
 
 ;;; --- Phase 11: sysvar access --------------------------------------
 
@@ -4446,9 +4580,14 @@ later M3 (vector math) functions can pick it up from one place.")
   (declare (ignore _))
   nil)
 ;;; STUB: tablet configuration. See deferred-stubbed-functions.issue § TABLET.
+;;;
+;;; Documented to set ERRNO on failure. Code 68 = "Digitizer is
+;;; not a tablet" is the conservative default for any host that
+;;; doesn't have a physical digitiser bound. The stubbed nil
+;;; return is therefore accompanied by ERRNO=68.
 (defun builtin-tablet   (&rest _)
   (declare (ignore _))
-  nil)
+  (errno-and-return 68 nil))
 ;;; STUB: menu-command accessor. See deferred-stubbed-functions.issue § Menu system stubs.
 (defun builtin-menucmd  (&optional _)
   (declare (ignore _))
