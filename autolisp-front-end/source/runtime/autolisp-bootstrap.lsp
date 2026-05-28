@@ -481,11 +481,18 @@
         (progn
           (autolisp-source-scan-text form-text)
           ;; A non-empty form-text whose scan state is 'empty contains
-          ;; only whitespace and/or comments — not an unclosed form.
+          ;; only whitespace and/or comments -- not an unclosed form.
           ;; That happens whenever the source file's last non-blank
           ;; line is a comment. Treat it as benign EOF (the comment
           ;; is silently discarded, just like comments encountered
           ;; mid-file) rather than raising "unexpected end of file".
+          ;; Keep this file ASCII-only: every byte > 127 has caused a
+          ;; BricsCAD / clautolisp LOAD failure ("ASCII stream decoding
+          ;; error on octet sequence #(226)") -- the em-dash that used
+          ;; to live in this comment was exactly such a byte. Until
+          ;; the LOAD path reliably picks UTF-8 from
+          ;; *AUTOLISP-FILE-ENCODING*, the vendored runtime+bootstrap
+          ;; stay pure ASCII.
           (if (/= *AUTOLISP_SOURCE_SCAN_STATE* 'empty)
             (autolisp-source-raise resolved
                                    (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)
