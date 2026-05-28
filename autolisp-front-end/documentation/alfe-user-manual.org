@@ -232,7 +232,9 @@ state:
 
 | Variable                       | Meaning                                                |
 |--------------------------------+--------------------------------------------------------|
-| =*AUTOLISP-BACKEND*=           | =:clautolisp= / =:bricscad= / =:autocad= / =:echo=.    |
+| =*AUTOLISP-FRONTEND*=          | =ALFE= when alfe is the entry point, =CLAUTOLISP= when clautolisp is invoked directly. |
+| =*AUTOLISP-BACKEND*=           | The engine running user code: =CLAUTOLISP= / =BRICSCAD= / =AUTOCAD=. |
+| =*AUTOLISP-HELP*=              | The --help banner of the front-end as a string.        |
 | =*AUTOLISP-DIALECT*=           | =:strict= / =:autocad-2026= / =:bricscad-v26= / =:clautolisp=. |
 | =*AUTOLISP-HOST*=              | =:mock= / =:null= / a CAD-specific keyword.            |
 | =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (never nil).               |

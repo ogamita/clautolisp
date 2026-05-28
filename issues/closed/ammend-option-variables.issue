@@ -1,0 +1,45 @@
+RESOLVED — alfe 1.0.21 / clautolisp 1.0.78.
+
+(1) *AUTOLISP-BACKEND* now publishes the engine identity, not the
+    tool. Values: CLAUTOLISP / BRICSCAD / AUTOCAD. Set by each alfe
+    backend at its install-transmit-variables / run-common.lsp
+    emission site (backend-clautolisp.lisp passes "CLAUTOLISP",
+    backend-bricscad.lisp "BRICSCAD", backend-autocad.lisp
+    "AUTOCAD" via :backend-name on emit-run-common-lsp).
+
+(2) *AUTOLISP-FRONTEND* added (clautolisp.autolisp-cli:cli-options->
+    transmit-bindings :frontend KEY). ALFE when alfe is the entry
+    point, CLAUTOLISP when clautolisp is invoked directly. User
+    code branches on this to detect the CLI surface.
+
+(3) *AUTOLISP-HELP* is populated under alfe. cli-options-transmit-
+    bindings-for-alfe gained a :usage-text keyword; backend-
+    clautolisp.lisp passes (alfe.cli:usage-string). The run-
+    common.lsp emitter still skips it (file-size concern for the
+    CAD-side bootstrap) but the in-process clautolisp engine now
+    holds the alfe --help banner.
+
+Verified live:
+  clautolisp --no-init -x '(princ *AUTOLISP-FRONTEND*) (princ *AUTOLISP-BACKEND*) (strlen *AUTOLISP-HELP*)'
+  ->  FRONTEND=CLAUTOLISP BACKEND=CLAUTOLISP HELP-LEN=3817
+  alfe --no-init --clautolisp -x '(...same...)'
+  ->  FRONTEND=ALFE BACKEND=CLAUTOLISP HELP-LEN=2888
+
+Test suites unchanged: clautolisp 100% pass; alfe Pass:312 / Fail:1
+(same one pre-existing CAD-protocol environment failure as
+baseline).
+
+Documentation updated in both user manuals.
+
+---
+
+Original report:
+
+alfe binds *AUTOLISP-BACKEND* to ALFE. Nope, the backend is one of clautolisp, bricscad, autocad.
+alfe = AutoLisp FRONT-END.
+
+Let's add a variable *AUTOLISP-FRONTEND* bound to ALFE when alfe is
+running, and bound to CLAUTOLISP when clautolisp is running.
+
+alfe binds *AUTOLISP-HELP* to NIL instead of binding it to its --help output.
+clautolisp does *AUTOLISP-HELP* correctly.

@@ -760,7 +760,8 @@ are rendered bare (`(…)`) to avoid double-quoting."
              (mapcar #'%render-autolisp-literal-element value)))
     (t (format nil "~S" value))))
 
-(defun emit-cli-transmit-bindings (stream cli-options version-text emit-var)
+(defun emit-cli-transmit-bindings (stream cli-options version-text emit-var
+                                   &key (backend-name "CLAUTOLISP"))
   "Walk ALFE.CLI:CLI-OPTIONS-TRANSMIT-BINDINGS-FOR-ALFE on
 CLI-OPTIONS (the alfe-side action-object → cons translation
 wrapper) and emit a setq form per binding via EMIT-VAR (which
@@ -769,11 +770,16 @@ the dynamically-scoped *AUTOLISP-INTERACTIVE* / *AUTOLISP-LOAD-
 PATHNAME* / *AUTOLISP-EXPRESSION* — those are set per-action by
 the runtime, not statically at run-common emission. The HELP
 string is omitted by default to keep run-common.lsp small; user
-code that needs it can re-derive it from --help on demand."
+code that needs it can re-derive it from --help on demand.
+
+BACKEND-NAME is the engine identity emitted as *AUTOLISP-BACKEND*
+on the CAD-side runtime: \"BRICSCAD\" for the bricscad backend,
+\"AUTOCAD\" for the autocad backend. *AUTOLISP-FRONTEND* always
+emits as ALFE here — only alfe ships run-common.lsp."
   (declare (ignore stream))
   (let* ((bindings (alfe.cli:cli-options-transmit-bindings-for-alfe
                     cli-options
-                    :backend "ALFE"
+                    :backend backend-name
                     :version-text version-text))
          (skip '("*AUTOLISP-INTERACTIVE*"
                  "*AUTOLISP-LOAD-PATHNAME*"
@@ -804,7 +810,8 @@ code that needs it can re-derive it from --help on demand."
                                  (invocation-dir (uiop:getcwd))
                                  (log-name "autolisp-session.log")
                                  cli-options
-                                 version-text)
+                                 version-text
+                                 (backend-name "CLAUTOLISP"))
   "Write the run-common.lsp init script the CAD-side runtime sources
 at startup. Substitutes the spec's placeholders with absolute paths
 drawn from SESSION; the remaining knobs (BOOTSTRAP-PHASE, DEBUG-P,
@@ -851,7 +858,8 @@ Returns the path of the emitted file."
               (when cli-options
                 (emit-cli-transmit-bindings out cli-options
                                             (or version-text "0.0.0")
-                                            #'emit-var))
+                                            #'emit-var
+                                            :backend-name backend-name))
               (flet ((emit-path (hyphen underscore path)
                        (emit-var hyphen underscore
                                  (format nil "~S" (stringify-path path)))))

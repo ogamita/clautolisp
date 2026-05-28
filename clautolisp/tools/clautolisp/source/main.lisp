@@ -549,6 +549,7 @@ machinery, not user intent)."
              (bindings (clautolisp.autolisp-cli:cli-options->transmit-bindings
                         cli-options
                         :backend "CLAUTOLISP"
+                        :frontend "CLAUTOLISP"
                         :usage-text (usage-string)
                         :version-text *version*)))
         (clautolisp.autolisp-cli:install-transmit-variables context bindings)

@@ -530,7 +530,8 @@ future ticket."
                               (eq :debug
                                   (alfe.cli:cli-options-verbosity cli-options)))
                 :cli-options cli-options
-                :version-text version-text)))
+                :version-text version-text
+                :backend-name "BRICSCAD")))
         (cond
           (staged-bootstrap
            (log-debug "backend BRICSCAD: staged bootstrap -> ~A" staged-bootstrap))

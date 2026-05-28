@@ -401,8 +401,11 @@ SHUTDOWN."
            (set-runtime-session-host session-handle host-instance)
            (install-core-builtins)
            ;; Install the *AUTOLISP-…* globals derived from alfe's
-           ;; CLI options, with backend = "ALFE" (the running
-           ;; front-end's identity, not the in-process engine).
+           ;; CLI options. The in-process engine IS the clautolisp
+           ;; runtime, so *AUTOLISP-BACKEND* = CLAUTOLISP. alfe is
+           ;; the driving front-end, so *AUTOLISP-FRONTEND* = ALFE
+           ;; (set by the wrapper's default). *AUTOLISP-HELP* gets
+           ;; alfe's --help banner so user code can redisplay it.
            ;; Variables visible to user code as if clautolisp had
            ;; been invoked directly, plus alfe-specific slots like
            ;; *AUTOLISP-MODE* / *AUTOLISP-DRAWING* / etc.
@@ -411,7 +414,8 @@ SHUTDOWN."
               context
               (alfe.cli:cli-options-transmit-bindings-for-alfe
                cli-options
-               :backend "ALFE"
+               :backend "CLAUTOLISP"
+               :usage-text (alfe.cli:usage-string)
                :version-text (or version-text "0.0.0"))))
            ;; Effective default source-file encoding precedence:
            ;;   `-e ENC' (LOAD-ENCODING) > LC_ALL/LC_CTYPE/LANG > NIL.

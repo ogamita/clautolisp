@@ -425,7 +425,8 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
                               (eq :debug
                                   (alfe.cli:cli-options-verbosity cli-options)))
                 :cli-options cli-options
-                :version-text version-text))
+                :version-text version-text
+                :backend-name "AUTOCAD"))
              (variant (choose-effective-mode backend mode)))
         (cond
           (staged-bootstrap
