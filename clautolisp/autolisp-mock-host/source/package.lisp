@@ -36,6 +36,7 @@
                 #:host-dictrename
                 #:host-getvar
                 #:host-setvar
+                #:host-sysvar-names
                 #:host-command
                 #:host-prompt
                 #:host-initget

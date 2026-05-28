@@ -3120,6 +3120,35 @@ most recent first."
                (autolisp-string-value (require-string name "SETVAR"))
                value))
 
+;;; --- clautolisp extensions (clal-*) -------------------------------
+;;;
+;;; The CLAL-* prefix marks functions that are NOT documented by
+;;; either Autodesk or Bricsys; they are clautolisp-specific helpers
+;;; that improve REPL ergonomics without entering the host-namespace
+;;; that vendor code might reserve. See autolisp-spec §16 ~clautolisp
+;;; Extensions~ for the normative entries.
+
+(defun substring-match-ci-p (needle haystack)
+  "True iff NEEDLE occurs in HAYSTACK, case-insensitively."
+  (search needle haystack :test #'char-equal))
+
+(defun builtin-clal-sysvar-list ()
+  "Return the sorted list of sysvar-name strings known to the host."
+  (mapcar #'make-autolisp-string
+          (host-sysvar-names (current-evaluation-host))))
+
+(defun builtin-clal-sysvar-apropos (pattern)
+  "Return the subset of (clal-sysvar-list) whose names contain
+PATTERN as a case-insensitive substring. PATTERN is an AutoLISP
+string; the comparison is case-insensitive so (clal-sysvar-apropos
+\"ang\") and (clal-sysvar-apropos \"ANG\") return the same list."
+  (let* ((needle (autolisp-string-value (require-string pattern "CLAL-SYSVAR-APROPOS")))
+         (all    (host-sysvar-names (current-evaluation-host))))
+    (mapcar #'make-autolisp-string
+            (remove-if-not (lambda (name)
+                             (substring-match-ci-p needle name))
+                           all))))
+
 ;;; --- Phase 12: headless interaction channel -----------------------
 
 (defun optional-prompt-string (prompt operator-name)
@@ -6050,6 +6079,10 @@ backed persistent upgrade path.")
    (make-core-builtin-subr "TBLOBJNAME" #'builtin-tblobjname)
    (make-core-builtin-subr "GETVAR"     #'builtin-getvar)
    (make-core-builtin-subr "SETVAR"     #'builtin-setvar)
+   ;; clautolisp extensions (CLAL-*): not documented by Autodesk or
+   ;; Bricsys; see autolisp-spec §16 ~clautolisp Extensions~.
+   (make-core-builtin-subr "CLAL-SYSVAR-LIST"    #'builtin-clal-sysvar-list)
+   (make-core-builtin-subr "CLAL-SYSVAR-APROPOS" #'builtin-clal-sysvar-apropos)
    ;; Phase 12 — headless interaction channel (PROMPT is registered
    ;; once already as a *standard-output* writer; we keep that)
    (make-core-builtin-subr "INITGET"    #'builtin-initget)

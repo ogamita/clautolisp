@@ -120,6 +120,17 @@ autolisp-string wrapper, others are returned as-is."
        (present-sysvar-value (sysvar-cell-kind cell)
                              (sysvar-cell-value cell))))))
 
+(defmethod host-sysvar-names ((host mock-host))
+  "Return the upper-cased names of every sysvar known to HOST,
+sorted lexicographically. Used by the CLAL-SYSVAR-LIST and
+CLAL-SYSVAR-APROPOS clautolisp extensions."
+  (let ((names '()))
+    (maphash (lambda (k v)
+               (declare (ignore v))
+               (push k names))
+             (mock-host-sysvars host))
+    (sort names #'string<)))
+
 (defmethod host-setvar ((host mock-host) name value)
   (let* ((string (ensure-sysvar-name name 'setvar))
          (cell (mock-host-sysvar host string)))
