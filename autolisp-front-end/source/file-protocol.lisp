@@ -831,7 +831,12 @@ Returns the path of the emitted file."
          (renderfile (merge-pathnames "render.txt" workdir))
          (lines
           (with-output-to-string (out)
-            (format out ";;; alfe — generated run-common.lsp~%")
+            ;; ASCII-only header: the CAD-side LOAD path defaults to
+            ;; the ASCII external-format on some BricsCAD / clautolisp
+            ;; configurations, and any non-ASCII byte in run-common.lsp
+            ;; aborts the load before alfe-debug-log can fire. The
+            ;; vendored runtime+bootstrap follow the same rule.
+            (format out ";;; alfe -- generated run-common.lsp~%")
             (format out ";;; This file is regenerated on every alfe invocation.~%")
             (format out ";;; Do not edit by hand.~%~%")
             ;; --- Injected globals (hyphen + underscore variants) ---
