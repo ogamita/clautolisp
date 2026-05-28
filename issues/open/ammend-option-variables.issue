@@ -1,8 +1,0 @@
-alfe binds *AUTOLISP-BACKEND* to ALFE. Nope, the backend is one of clautolisp, bricscad, autocad.
-alfe = AutoLisp FRONT-END.
-
-Let's add a variable *AUTOLISP-FRONTEND* bound to ALFE when alfe is
-running, and bound to CLAUTOLISP when clautolisp is running.
-
-alfe binds *AUTOLISP-HELP* to NIL instead of binding it to its --help output.
-clautolisp does *AUTOLISP-HELP* correctly.

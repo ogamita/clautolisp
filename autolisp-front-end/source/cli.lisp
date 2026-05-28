@@ -147,6 +147,7 @@
            #:cli-options-positional
            ;; usage + version (so the executable's main can re-use)
            #:print-usage
+           #:usage-string
            #:print-version
            ;; env-var resolution helpers, exported for tests
            #:env-default
@@ -270,6 +271,14 @@ Informational:
 (defun print-usage (&optional (stream *standard-output*))
   (write-string *usage-banner* stream)
   (finish-output stream))
+
+(defun usage-string ()
+  "Return the --help banner as a string. Used to populate the
+*AUTOLISP-HELP* AutoLISP global via the transmit-options pipeline,
+so user code can call (princ *AUTOLISP-HELP*) to redisplay the
+front-end's --help text."
+  (with-output-to-string (s)
+    (print-usage s)))
 
 (defun print-version (version-string &optional (stream *standard-output*))
   (format stream "~&alfe ~A~%" version-string)
@@ -478,16 +487,28 @@ slot in the shared parser's cons format so the runtime installer
     (:main        (cons :main (action-payload action)))
     (:quit        (cons :quit t))))
 
-(defun cli-options-transmit-bindings-for-alfe (options &key backend version-text)
+(defun cli-options-transmit-bindings-for-alfe (options
+                                               &key backend
+                                                    (frontend "ALFE")
+                                                    usage-text
+                                                    version-text)
   "Wrap CLI-OPTIONS->TRANSMIT-BINDINGS so alfe's action-object
 actions slot is rendered as the cons format the shared installer
-expects. Returns the ((NAME-STRING VALUE) …) bindings list."
+expects. Returns the ((NAME-STRING VALUE) …) bindings list.
+
+BACKEND is the engine identity (\"CLAUTOLISP\" / \"BRICSCAD\" /
+\"AUTOCAD\") — what *AUTOLISP-BACKEND* will hold on the remote side.
+FRONTEND is the tool identity (\"ALFE\") — what *AUTOLISP-FRONTEND*
+will hold; alfe is the front-end driving the engine, so we default
+it here. USAGE-TEXT becomes *AUTOLISP-HELP*."
   (let ((normalised (copy-cli-options options)))
     (setf (cli-options-actions normalised)
           (mapcar #'%action-object-to-cons (cli-options-actions options)))
     (clautolisp.autolisp-cli:cli-options->transmit-bindings
      normalised
      :backend backend
+     :frontend frontend
+     :usage-text usage-text
      :version-text version-text)))
 
 ;; STARTS-WITH-DOUBLE-DASH-P, SPLIT-LONG-OPTION, POP-REQUIRED,

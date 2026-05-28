@@ -240,7 +240,11 @@ See ~issues/closed/transmit-options.issue~ for the full design and
 the alfe-side counterpart.
 
 ** Static — bound once, before the first user action
-- ~*AUTOLISP-BACKEND*~          :: The symbol ~CLAUTOLISP~.
+- ~*AUTOLISP-FRONTEND*~         :: The symbol ~CLAUTOLISP~ — clautolisp
+                                   was the entry point. (Under alfe
+                                   this is ~ALFE~.)
+- ~*AUTOLISP-BACKEND*~          :: The symbol ~CLAUTOLISP~ — the
+                                   engine running this code.
 - ~*AUTOLISP-DIALECT*~          :: The active dialect's canonical
                                    name as a symbol — ~STRICT~,
                                    ~AUTOCAD-2026~, ~BRICSCAD-V26~.

@@ -63,12 +63,26 @@ plain CL cons chain."
 
 (defun cli-options->transmit-bindings (options
                                        &key (backend "CLAUTOLISP")
+                                            (frontend "CLAUTOLISP")
                                             usage-text version-text)
   "Return the ((NAME-STRING VALUE) …) list of *AUTOLISP-…* bindings
-implied by OPTIONS. BACKEND is the tool-identity string published as
-*AUTOLISP-BACKEND* (\"CLAUTOLISP\" or \"ALFE\"). USAGE-TEXT is the
---help string published as *AUTOLISP-HELP*; pass nil to publish nil.
-VERSION-TEXT becomes *AUTOLISP-VERSION* — required.
+implied by OPTIONS.
+
+BACKEND is the *engine* identity published as *AUTOLISP-BACKEND* —
+the AutoLISP runtime actually doing the work. One of \"CLAUTOLISP\",
+\"BRICSCAD\", \"AUTOCAD\". When the clautolisp tool runs directly,
+backend = \"CLAUTOLISP\"; when alfe drives an engine, backend is the
+selected backend (clautolisp / bricscad / autocad).
+
+FRONTEND is the *tool* identity published as *AUTOLISP-FRONTEND* —
+the user-facing executable. \"CLAUTOLISP\" when clautolisp is the
+entry point, \"ALFE\" when alfe is. User code branches on this to
+detect which CLI surface it runs under, independently of which
+engine answers.
+
+USAGE-TEXT is the --help string published as *AUTOLISP-HELP*; pass
+nil to publish nil. VERSION-TEXT becomes *AUTOLISP-VERSION* —
+required.
 
 *AUTOLISP-VERSION* is the FIRST entry per transmit-options.issue's
 remote table convention, so a downstream emit-as-setq-list run-
@@ -80,6 +94,7 @@ derived value."
    ;; remote-forwarding table.
    (list "*AUTOLISP-VERSION*"
          (make-autolisp-string (or version-text "0.0.0")))
+   (list "*AUTOLISP-FRONTEND*"           (intern-autolisp-symbol frontend))
    (list "*AUTOLISP-BACKEND*"            (intern-autolisp-symbol backend))
    (list "*AUTOLISP-DIALECT*"
          (dialect-name-symbol-keyword (cli-options-dialect options)))
