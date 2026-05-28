@@ -150,6 +150,7 @@
                 #:host-tblobjname
                 #:host-getvar
                 #:host-setvar
+                #:host-sysvar-names
                 #:host-prompt
                 #:host-initget
                 #:host-getstring

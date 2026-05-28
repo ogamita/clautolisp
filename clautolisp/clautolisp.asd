@@ -318,6 +318,7 @@
    (:file "autolisp-builtins-core/tests/test-harness")
    (:file "autolisp-builtins-core/tests/builtin-tests")
    (:file "autolisp-builtins-core/tests/errno-coupling-tests")
+   (:file "autolisp-builtins-core/tests/clal-extensions-tests")
    (:file "autolisp-builtins-core/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

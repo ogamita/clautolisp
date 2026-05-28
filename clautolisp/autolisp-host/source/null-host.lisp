@@ -142,6 +142,9 @@ backend share this instance.")
   (declare (ignore name value))
   (signal-host-not-supported host 'setvar))
 
+(defmethod host-sysvar-names ((host null-host))
+  (signal-host-not-supported host 'sysvar-names))
+
 ;; Command dispatch
 (defmethod host-command ((host null-host) arguments)
   (declare (ignore arguments))

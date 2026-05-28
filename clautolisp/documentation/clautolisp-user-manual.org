@@ -496,6 +496,69 @@ before calling it:
     nil)
 #+END_SRC
 
+** The ~CLAL-~ namespace (clautolisp-only helpers)
+The four other sub-sections above (~Cxxxr~ accessors, ~ERROR~,
+~LCM~/~LOGXOR~, ~VL-BT~/~VL-CATCH-ALL-ERROR-STACK~) cover
+extensions that complete an established AutoCAD/BricsCAD idiom
+without inventing a new one. From clautolisp 1.0.76 onward, a
+second class of extensions ships under a reserved ~CLAL-~ prefix:
+helpers that have *no* vendor counterpart and that we want to make
+trivially distinguishable from any future Autodesk- or Bricsys-
+documented name. Code that calls one of these functions is
+explicitly opting into the clautolisp dialect.
+
+The probing convention for portable code:
+
+#+BEGIN_SRC autolisp
+(if (boundp 'clal-sysvar-list)
+    (clal-sysvar-list)
+    ;; vendor fallback -- there isn't one; either accept that the
+    ;; query is unavailable or fall back to the SETVAR command.
+    nil)
+#+END_SRC
+
+*** ~CLAL-SYSVAR-LIST~ -- list every sysvar known to the host
+~(clal-sysvar-list)~ returns a list of strings: the sysvar names
+the active host (mock or live) reports, sorted in case-sensitive
+ASCII order. On a default ~MockHost~ the list has 1836 entries --
+the same universe as the autolisp-spec §16 *System Variables*
+catalogue.
+
+#+BEGIN_SRC autolisp
+$ clautolisp -x "(length (clal-sysvar-list))"
+1836
+
+$ clautolisp -x "(car (clal-sysvar-list))"
+"3DCONVERSIONMODE"
+#+END_SRC
+
+*** ~CLAL-SYSVAR-APROPOS~ -- substring search over sysvar names
+~(clal-sysvar-apropos PATTERN)~ returns the subset of
+~(clal-sysvar-list)~ whose names contain ~PATTERN~ as a
+case-insensitive substring. Useful at the REPL when you remember
+"there's something with ~ANG~ in it" but not the exact name.
+
+#+BEGIN_SRC autolisp
+$ clautolisp -x "(clal-sysvar-apropos \"ANG\")"
+("ANGBASE" "ANGDIR" "INPUTHISTORYMODE" ...)
+
+$ clautolisp -x "(clal-sysvar-apropos \"ang\")"     ;; case-insensitive
+("ANGBASE" "ANGDIR" "INPUTHISTORYMODE" ...)
+
+$ clautolisp -x "(clal-sysvar-apropos \"ERRNO\")"
+("ERRNO")
+
+$ clautolisp -x "(length (clal-sysvar-apropos \"\"))"   ;; empty -> all
+1836
+#+END_SRC
+
+A non-string PATTERN raises ~:invalid-argument~. A pattern that
+matches nothing returns ~nil~.
+
+The full normative entries for both functions live in
+~autolisp-spec~ §16 *clautolisp Extensions*; this section is a
+quick-reference summary.
+
 ** Source
 The implementation of every operator listed above lives in:
 

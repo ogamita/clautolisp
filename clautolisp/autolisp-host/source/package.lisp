@@ -44,6 +44,7 @@
    ;; --- System variables -----------------------------------------
    #:host-getvar
    #:host-setvar
+   #:host-sysvar-names
    ;; --- Command dispatch -----------------------------------------
    #:host-command
    ;; --- Interactive prompts (autolisp-spec ch.18) ---------------

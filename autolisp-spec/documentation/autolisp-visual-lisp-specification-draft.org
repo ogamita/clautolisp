@@ -2,7 +2,7 @@
 #+SUBTITLE: HyperSpec-Style Draft Reference for clautolisp
 #+AUTHOR: Codex
 #+OPTIONS: toc:4 num:t
-#+VERSION: 0.9.1
+#+VERSION: 0.9.2
 #+LICENSE: CC-BY-SA
 
 * 1 Introduction
@@ -11,7 +11,7 @@ This document is a HyperSpec-style reference specification for the AutoLISP / Vi
 
 The short name of this document is *AutoLISP Spec*.
 
-The current document version is *0.9.1*.
+The current document version is *0.9.2*.
 
 Any modification of this document must increment its version number.
 
@@ -10003,6 +10003,169 @@ Draws transient graphics; nothing is committed to the drawing database.
 *** Source Notes
 - [grvecs (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-44B8C277-4140-4F4C-ACF2-3332CC463021.htm)
 - Status: documented (Phase 3 body fill).
+
+#+LATEX: \newpage
+
+
+** clautolisp Extensions
+*** Overview
+This sub-tree documents host-interaction helpers that are *not*
+present in either AutoCAD or BricsCAD. They are clautolisp-specific
+additions that improve interactive AutoLISP development without
+colliding with the vendor namespace. To make the distinction
+obvious at every call site, the entries use a reserved ~CLAL-~
+prefix; no Autodesk- or Bricsys-documented identifier has ever
+used that prefix.
+
+A clautolisp-only program that calls a ~CLAL-~ function will not
+run unchanged on AutoCAD or BricsCAD: ~(boundp 'clal-sysvar-list)~
+returns ~nil~ there. Portable code that wants to ride the
+extension when available should probe with ~boundp~ before calling:
+
+#+begin_example
+(if (boundp 'clal-sysvar-list)
+    (clal-sysvar-list)
+    ;; vendor fallback — there isn't one; either accept that the
+    ;; query is unavailable or shell out to the SETVAR command.
+    nil)
+#+end_example
+
+*** Source Notes
+- These functions are defined by clautolisp; there is no Autodesk
+  or Bricsys reference page.
+- The source of truth is the entries below, the spec-level
+  inventory at ~autolisp-spec/documentation/system-variables-
+  inventory.sexp~, and the host-side implementation under
+  ~clautolisp/autolisp-builtins-core/source/api.lisp~.
+
+#+LATEX: \newpage
+
+** Function Entry: CLAL-SYSVAR-LIST
+*** Name
+~clal-sysvar-list~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-sysvar-list)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Return the list of sysvar-name strings known to the current host,
+sorted lexicographically (case-sensitive ASCII order). The names
+are upper-cased and ready to pass to ~getvar~ / ~setvar~.
+
+On a default ~MockHost~ the list has 1836 entries -- the same
+universe as the §16 ~System Variables~ catalogue. A live AutoCAD
+or BricsCAD backend would return whatever its engine reports.
+
+*** Return Values
+A proper list of AutoLISP strings. Empty list ~nil~ if the host
+defines no sysvars.
+
+*** Side Effects
+None.
+
+*** Affected By
+- The selected host backend (NullHost / MockHost / LiveHost).
+- The mock-host catalogue (see §16 ~System Variables~).
+
+*** Exceptional Situations
+Raises ~:host-not-supported~ when the active backend has not
+specialised ~host-sysvar-names~ (e.g. the bare NullHost).
+
+*** Examples
+#+begin_example
+;; Count the sysvars the host knows.
+(length (clal-sysvar-list))
+=> 1836
+
+;; First few entries.
+(mapcar 'identity (cdddr (cdddr (cdddr (clal-sysvar-list)))))
+=> ("ACADPREFIX" "ACADVER" ... )
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since
+  clautolisp 1.0.76.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see this chapter's Overview for the
+  rationale and probing convention.
+
+#+LATEX: \newpage
+
+** Function Entry: CLAL-SYSVAR-APROPOS
+*** Name
+~clal-sysvar-apropos~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-sysvar-apropos pattern)
+#+end_example
+
+*** Arguments and Values
+- ~pattern~ -- string. Compared case-insensitively against every
+  sysvar name in ~(clal-sysvar-list)~. The empty string matches
+  every entry; a string that matches no entry returns ~nil~.
+
+*** Description
+Return the subset of ~(clal-sysvar-list)~ whose names contain
+~pattern~ as a (case-insensitive) substring. Useful at the REPL
+for discovery: ~(clal-sysvar-apropos "ANG")~ surfaces ANGBASE,
+ANGDIR, and the snap/orient angle family.
+
+*** Return Values
+A proper list of AutoLISP strings -- a (possibly empty) subset of
+~(clal-sysvar-list)~, in the same lexicographic order.
+
+*** Side Effects
+None.
+
+*** Affected By
+- Same as ~clal-sysvar-list~.
+
+*** Exceptional Situations
+- ~:invalid-argument~ when ~pattern~ is not a string.
+- ~:host-not-supported~ when the host backend has not specialised
+  ~host-sysvar-names~ (e.g. NullHost).
+
+*** Examples
+#+begin_example
+(clal-sysvar-apropos "ANG")
+=> ("ANGBASE" "ANGDIR")
+
+(clal-sysvar-apropos "ang")            ; case-insensitive
+=> ("ANGBASE" "ANGDIR")
+
+(clal-sysvar-apropos "ERRNO")
+=> ("ERRNO")
+
+(clal-sysvar-apropos "DEFINITELY-NOT-A-SUBSTRING")
+=> nil
+
+(length (clal-sysvar-apropos ""))      ; empty pattern -> all
+=> 1836
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since
+  clautolisp 1.0.76.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see this chapter's Overview.
 
 #+LATEX: \newpage
 
