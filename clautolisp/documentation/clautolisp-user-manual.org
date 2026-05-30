@@ -402,6 +402,22 @@ Currently wired:
   ~enc-lispsys-out-of-range~ regardless of dialect (the spec mandates
   the domain). The write proceeds — matching the vendor "permissive
   but warn" behaviour.
+- ~OPEN~ with an encoding the active host can't natively express
+  (e.g. ~"UTF-16-LE"~ under ~--autocad~) emits
+  ~enc-unsupported-target~. Informational; the runtime still
+  attempts the open.
+- ~OPEN~ in WRITE direction with ~"ANSI"~ / ~"MBCS"~ emits
+  ~enc-host-dependent~ (info-level): output resolves through
+  the host's SYSCODEPAGE at I/O time and isn't portable across
+  hosts. Reading under those encodings is silent.
+- The internal SET-DRAWING-CODEPAGE wrapper (CL-level; hook for
+  future drawing-load paths) emits ~enc-codepage-mismatch~ when
+  the incoming DWGCODEPAGE canonical form differs from
+  SYSCODEPAGE — catches the "Czech-authored drawing on a French
+  host" failure mode before string decode time.
+- ~%CANONICAL-CODEPAGE-STRING~ emits ~enc-unknown-codepage~ when
+  asked to canonicalise a spelling not in the known table (typos,
+  unsupported vendor aliases). The raw value passes through.
 
 The full set of codes, the per-dialect dispatch table, and the
 roadmap for the remaining hooks (~OPEN~, BricsCAD ~,ccs=~ parsing,
