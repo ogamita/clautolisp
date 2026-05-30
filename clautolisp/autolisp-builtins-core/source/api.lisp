@@ -372,11 +372,66 @@ disrupting the value-returning shape of the call site."
     (t
      object)))
 
-(defun builtin-load (filename &optional (onfailure nil onfailure-supplied-p))
+(defun %coerce-encoding-designator (object operator-name)
+  "Coerce a string-designator (autolisp-string or autolisp-symbol) to
+its underlying CL string for encoding-API consumers. Returns nil
+when OBJECT is nil. Signals :invalid-string-argument on anything
+else."
+  (cond
+    ((null object) nil)
+    ((typep object 'autolisp-string) (autolisp-string-value object))
+    ((typep object 'autolisp-symbol) (autolisp-symbol-name object))
+    (t
+     (signal-builtin-argument-error
+      :invalid-string-argument
+      operator-name
+      "~A expects a string designator (string or symbol) for the encoding argument, got ~S."
+      operator-name
+      object))))
+
+(defun %resolve-load-external-format (encoding-string operator-name)
+  "Map ENCODING-STRING (a CL string from %COERCE-ENCODING-DESIGNATOR)
+to the CL external-format keyword PARSE-LOCALE-ENCODING-STRING
+recognises. Unknown but syntactically-plausible names pass through
+upcased; a nil ENCODING-STRING returns nil so the load path falls
+back to the documented precedence chain. Signals
+:invalid-encoding-argument on a value the resolver can't accept."
+  (cond
+    ((null encoding-string) nil)
+    (t
+     (let ((kw (clautolisp.autolisp-runtime:parse-locale-encoding-string
+                encoding-string)))
+       (unless kw
+         (signal-builtin-argument-error
+          :invalid-encoding-argument
+          operator-name
+          "~A: encoding ~S is not a recognised encoding name."
+          operator-name
+          encoding-string))
+       kw))))
+
+(defun builtin-load (filename
+                     &optional (onfailure nil onfailure-supplied-p)
+                               (encoding nil encoding-supplied-p))
   ;; Documented to set ERRNO on failure. Code 73 ("Cannot open
   ;; executable file") matches the failure shape; success resets to 0.
+  ;;
+  ;; ENCODING is the clautolisp-only third positional argument
+  ;; specified in issues/open/encoding-dispatch.issue. A string
+  ;; designator (string or symbol) per the spec's "string-designator"
+  ;; type. When supplied, it overrides *AUTOLISP-FILE-ENCODING* for
+  ;; this single LOAD call.
+  ;;
+  ;; Under --strict / --autocad / --bricscad this form is a foreign-
+  ;; dialect spelling; the value is still honoured at runtime (so
+  ;; user code stays runnable across dialects) but Phase 4 will
+  ;; surface an enc-foreign-dialect diagnostic at this call site.
   (let* ((value (autolisp-string-value (require-string filename "LOAD")))
-         (resolved (resolve-load-pathname value)))
+         (resolved (resolve-load-pathname value))
+         (encoding-string (and encoding-supplied-p
+                               (%coerce-encoding-designator encoding "LOAD")))
+         (encoding-kw (and encoding-supplied-p
+                           (%resolve-load-external-format encoding-string "LOAD"))))
     (cond
       ((null resolved)
        (set-autolisp-errno 73)
@@ -402,7 +457,10 @@ disrupting the value-returning shape of the call site."
                "LOAD currently supports only source files, got ~A."
                (namestring resolved))))))
       (t
-       (let ((result (autolisp-load-file (namestring resolved))))
+       (let ((result (if encoding-kw
+                         (autolisp-load-file (namestring resolved)
+                                             :external-format encoding-kw)
+                         (autolisp-load-file (namestring resolved)))))
          (set-autolisp-errno 0)
          result)))))
 
