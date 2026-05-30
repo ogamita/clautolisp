@@ -4254,6 +4254,26 @@ This suggests that:
 - BricsCAD should not be modeled purely as a pre-Unicode AutoLISP environment,
 - text and encoding behavior must remain part of the dialect/environment profile.
 
+*** clautolisp dispatch for ~LISPSYS~
+clautolisp accepts ~(getvar "LISPSYS")~ and ~(setvar "LISPSYS" n)~
+under every dialect — extensions are always available, the dialect
+controls diagnostic emission. Per encoding-dispatch.issue:
+
+| Dialect          | ~GETVAR~ / ~SETVAR~ on ~LISPSYS~ |
+|------------------+----------------------------------|
+| ~--autocad-2026~ | silent (native dialect)          |
+| ~--strict~       | ~enc-extension-used~             |
+| ~--bricscad-v26~ | ~enc-foreign-dialect~ / bricscad |
+| ~--clautolisp~   | ~enc-foreign-dialect~ / clautolisp |
+
+Additionally, ~(setvar "LISPSYS" n)~ with ~n \notin {0,1,2}~ emits
+~enc-lispsys-out-of-range~ under all dialects; the write itself
+still proceeds (matching the vendor 'permissive but warn'
+behaviour). The diagnostics are advisory — user code that calls
+~LISPSYS~ keeps running under every dialect; only the diagnosis
+varies. See the encoding-dispatch.issue 'Diagnostics' section for
+the full enc-* code table.
+
 ** Representation-Level Notes
 At the observable language level, the following can be said:
 

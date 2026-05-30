@@ -3206,14 +3206,64 @@ most recent first."
 
 ;;; --- Phase 11: sysvar access --------------------------------------
 
+(defun %dispatch-lispsys-foreign-dialect-diagnostic (operator-name)
+  "Emit enc-foreign-dialect when user code touches LISPSYS under a
+dialect that does not own it. LISPSYS is AutoCAD-only (introduced
+2021); BricsCAD does not expose it. clautolisp warns to flag
+non-portable code, but still permits the access — encoding-dispatch.
+issue, section 'Per-dialect behavior / --strict / --bricscad /
+--clautolisp', and the user's answer to the LISPSYS open question
+('warn loudly, do not forbid')."
+  (let* ((dialect (current-evaluation-dialect))
+         (name (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+    (case name
+      ((:autocad-2026)
+       nil) ; native; silent.
+      ((:strict)
+       (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+        :enc-extension-used
+        "~A on LISPSYS: AutoCAD-only sysvar, foreign to --strict."
+        operator-name))
+      ((:bricscad-v26 :clautolisp)
+       (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+        :enc-foreign-dialect
+        "~A on LISPSYS: AutoCAD-only sysvar, foreign to --~(~A~)."
+        operator-name
+        (case name
+          (:bricscad-v26 "bricscad")
+          (:clautolisp   "clautolisp")
+          (t name))))
+      (t nil))))
+
+(defun %validate-lispsys-value (raw-value)
+  "Enforce LISPSYS's documented {0,1,2} domain. RAW-VALUE is the
+post-coerce-sysvar-value integer the host would otherwise store.
+Out-of-range values emit enc-lispsys-out-of-range; the write itself
+still proceeds (the runtime stays a faithful mock of the vendor
+behaviour, which silently accepts out-of-range writes on some
+builds) so user code stays runnable."
+  (when (and (integerp raw-value)
+             (not (member raw-value '(0 1 2))))
+    (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+     :enc-lispsys-out-of-range
+     "(setvar \"LISPSYS\" ~A): valid values are 0 (legacy MBCS), 1, or 2 (Unicode)."
+     raw-value)))
+
+(defun %lispsys-name-p (string)
+  (and (stringp string) (string-equal string "LISPSYS")))
+
 (defun builtin-getvar (name)
-  (host-getvar (current-evaluation-host)
-               (autolisp-string-value (require-string name "GETVAR"))))
+  (let ((string (autolisp-string-value (require-string name "GETVAR"))))
+    (when (%lispsys-name-p string)
+      (%dispatch-lispsys-foreign-dialect-diagnostic "GETVAR"))
+    (host-getvar (current-evaluation-host) string)))
 
 (defun builtin-setvar (name value)
-  (host-setvar (current-evaluation-host)
-               (autolisp-string-value (require-string name "SETVAR"))
-               value))
+  (let ((string (autolisp-string-value (require-string name "SETVAR"))))
+    (when (%lispsys-name-p string)
+      (%dispatch-lispsys-foreign-dialect-diagnostic "SETVAR")
+      (%validate-lispsys-value value))
+    (host-setvar (current-evaluation-host) string value)))
 
 ;;; --- clautolisp extensions (clal-*) -------------------------------
 ;;;
