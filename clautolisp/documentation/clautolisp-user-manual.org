@@ -405,6 +405,27 @@ the per-file pragma mechanism described below).
   dialect's portability rules. The runtime still honours each
   encoding form; only the diagnostic is suppressed.
 
+*Static encoding-extension linter*:
+
+~(clal-lint-encoding-extensions FORM)~ walks FORM recursively
+and emits the same enc-* diagnostics the runtime would, without
+actually evaluating any call. Useful for catching dead-code
+encoding extensions before they ship — pipe a file's parsed
+form-tree through the lint at compile time:
+
+#+BEGIN_SRC autolisp
+;; Hypothetical CI gate:
+(clal-lint-encoding-extensions
+  (read-from-string-or-something-like-it
+   (slurp "lib/encoding-aware.lsp")))
+;; -> [enc-extension-used] LOAD's positional [encoding] argument...
+;;    [enc-foreign-dialect] OPEN CCS-SUFFIX ...
+#+END_SRC
+
+The lint shares SIGNAL-ENCODING-DIAGNOSTIC with the runtime
+emitters, so dialect / pragma / --lax gates apply identically.
+Returns ~T~ when the walk completes.
+
 Currently wired:
 
 - ~LOAD~ with the positional ~[encoding]~ argument under

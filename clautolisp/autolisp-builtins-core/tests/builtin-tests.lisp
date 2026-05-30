@@ -3983,3 +3983,93 @@ attempts the I/O."
                    :setup-fn #'%install-mock-host-and-core)))
       (is (listp result))
       (is (= 2 (length result))))))
+
+;;;; ----- clal-lint-encoding-extensions (Phase 11) -------------------
+;;;;
+;;;; Static encoding-extension scanner. Walks a parsed form-tree and
+;;;; emits the same enc-* diagnostics the runtime would. Routes
+;;;; through SIGNAL-ENCODING-DIAGNOSTIC so dialect / pragma / lax
+;;;; gates apply uniformly.
+;;;;
+;;;; Recognised forms:
+;;;;   (load FILE [ONFAILURE [ENCODING]])
+;;;;   (open FILE MODE [ENCODING])      ; both AutoCAD literal and
+;;;;                                    ; clautolisp positional sets
+;;;;   (open FILE "...,ccs=ENC")        ; BricsCAD form
+;;;;   (getvar "LISPSYS") / (setvar "LISPSYS" ...)
+
+(test clal-lint-detects-load-encoding-under-strict
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(load \"foo.lsp\" nil \"UTF-8\"))"
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "[enc-extension-used]" diagnostics))))
+
+(test clal-lint-detects-open-positional-under-autocad
+  ;; "UTF-8" is clautolisp vocabulary, foreign to AutoCAD's "utf8".
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(open \"f.txt\" \"w\" \"UTF-8\"))"
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "clautolisp-positional" diagnostics))))
+
+(test clal-lint-detects-ccs-suffix-under-clautolisp
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(open \"f.txt\" \"w,ccs=UTF-8\"))"
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "bricscad-ccs" diagnostics))))
+
+(test clal-lint-detects-lispsys-getvar-under-bricscad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(getvar \"LISPSYS\"))"
+       :dialect :bricscad-v26)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))))
+
+(test clal-lint-walks-nested-forms
+  ;; Scanner is recursive — encoding form buried in a let still
+  ;; gets caught.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions
+          '(progn
+             (defun load-it ()
+               (load \"foo.lsp\" nil \"UTF-8\"))))"
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "[enc-extension-used]" diagnostics))))
+
+(test clal-lint-silent-for-clean-forms
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(+ 1 2 (* 3 4)))"
+       :dialect :strict)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test clal-lint-respects-lax-dialect
+  ;; --lax silences the diagnostics even from the static lint —
+  ;; SIGNAL-ENCODING-DIAGNOSTIC has one chokepoint for everything.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(load \"foo.lsp\" nil \"UTF-8\"))"
+       :dialect :lax)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test clal-lint-returns-t
+  (let ((result (run-autolisp-string
+                 "(clal-lint-encoding-extensions '(+ 1 2))"
+                 :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                           :clautolisp)
+                 :setup-fn #'%install-mock-host-and-core)))
+    ;; The literal AutoLISP T symbol is the conventional return.
+    (is (not (null result)))
+    (is (typep result 'clautolisp.autolisp-runtime:autolisp-symbol))))
