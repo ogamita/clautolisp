@@ -91,8 +91,9 @@
 
 (defun keyword->dialect (dialect-keyword)
   "Map a parser dialect keyword (:strict / :autocad-2026 /
-:bricscad-v26 / :clautolisp) to clautolisp's dialect descriptor.
-The descriptor carries the reader-level knobs the runtime uses."
+:bricscad-v26 / :clautolisp / :lax) to clautolisp's dialect
+descriptor. The descriptor carries the reader-level knobs the
+runtime uses."
   (ecase (or dialect-keyword :strict)
     (:strict        (autolisp-dialect-strict))
     (:autocad-2026  (autolisp-dialect-autocad-2026))
@@ -104,7 +105,11 @@ The descriptor carries the reader-level knobs the runtime uses."
     ;; It defaults to UTF-8 for source/file encoding, matching
     ;; modern AutoCAD 2025+ / BricsCAD V26 baselines rather than
     ;; the strict-dialect ISO-8859-1 ANSI/MBCS legacy default.
-    (:clautolisp    (autolisp-dialect-clautolisp))))
+    (:clautolisp    (autolisp-dialect-clautolisp))
+    ;; The lax dialect silences every encoding-dispatch diagnostic
+    ;; (encoding-dispatch.issue 'Dialect matrix / --lax'). Other
+    ;; reader / runtime knobs mirror clautolisp.
+    (:lax           (autolisp-dialect-lax))))
 
 (defun keyword->host (host-keyword)
   "Map :mock / :null to a HAL backend instance. Defaults to the

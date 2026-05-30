@@ -101,11 +101,18 @@ permissive parsing, and the runtime knobs documented in
 ~autolisp-spec~. The default is the conservative ~strict~ profile.
 
 - ~--dialect NAME~       :: Select the named dialect. NAME is one of
-                            ~strict~, ~autocad-2026~, ~bricscad-v26~.
+                            ~strict~, ~autocad-2026~, ~bricscad-v26~,
+                            ~clautolisp~, ~lax~.
 - ~--strict~             :: Equivalent to ~--dialect strict~.
 - ~--autocad~            :: Equivalent to ~--dialect autocad-2026~.
 - ~--bricscad~           :: Equivalent to ~--dialect bricscad-v26~.
 - ~--clautolisp~         :: Equivalent to ~--dialect clautolisp~.
+- ~--lax~                :: Equivalent to ~--dialect lax~. Silences
+                            every encoding-dispatch diagnostic
+                            globally; useful when consuming code from
+                            multiple vendors. The runtime still
+                            honours each form; only the diagnostic
+                            is suppressed.
 
 The ~clautolisp~ dialect includes `clautolisp extensions`
 (eg. variadic functions).
@@ -374,7 +381,29 @@ tests via the CL parameter
 ~clautolisp.autolisp-runtime:*enc-diagnostic-stream*~; emission is
 silenced entirely by binding
 ~*enc-diagnostic-suppress-p*~ non-nil (the runtime side-door for
-the eventual per-file pragma mechanism).
+the per-file pragma mechanism described below).
+
+*Two user-facing suppression knobs:*
+
+- *Per-code pragma.* Inside a source file:
+
+  #+BEGIN_SRC autolisp
+  (clal-suppress-enc-diagnostic 'enc-extension-used 'enc-foreign-dialect)
+  ;; remainder of the file emits nothing for the two listed codes
+  #+END_SRC
+
+  Re-enable via ~(clal-enable-enc-diagnostic 'enc-extension-used)~
+  or, without arguments, ~(clal-enable-enc-diagnostic)~ to clear
+  the entire suppression set. Code names accept either a string
+  (~"enc-extension-used"~) or a symbol (~'enc-extension-used~);
+  the leading ~enc-~ is optional.
+
+- *--lax dialect.* Run clautolisp with ~--lax~ (or
+  ~--dialect lax~) to silence *every* encoding diagnostic
+  globally for the session. Useful when consuming code from
+  multiple vendors and you don't want to commit to one
+  dialect's portability rules. The runtime still honours each
+  encoding form; only the diagnostic is suppressed.
 
 Currently wired:
 

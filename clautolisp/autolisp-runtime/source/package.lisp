@@ -248,6 +248,7 @@
    ;; Encoding-dispatch diagnostics (encoding-dispatch.issue Phase 4).
    #:*enc-diagnostic-stream*
    #:*enc-diagnostic-suppress-p*
+   #:*enc-diagnostic-suppress-codes*
    #:*enc-diagnostic-codes*
    #:signal-encoding-diagnostic
    #:call-with-suppressed-encoding-diagnostics

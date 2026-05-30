@@ -3873,3 +3873,113 @@ attempts the I/O."
        :dialect :clautolisp)
     (declare (ignore result))
     (is (search "[enc-unsupported-target]" diagnostics))))
+
+;;;; ----- --lax dialect (Phase 10 item 12) ---------------------------
+;;;;
+;;;; --lax silences every encoding-dispatch diagnostic uniformly.
+;;;; The runtime still honours each form; only the diagnostics are
+;;;; suppressed.
+
+(test load-encoding-diagnostic-silent-under-lax
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (format nil "(load ~S nil \"ISO-8859-1\") msg" (namestring path))
+         :dialect :lax)
+      (is (typep result 'autolisp-string))
+      (is (string= "" diagnostics)
+          "Expected no diagnostic under --lax; got: ~S" diagnostics))))
+
+(test open-encoding-diagnostic-silent-under-lax
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\" \"UTF-16-LE\"")
+       :dialect :lax)
+    (declare (ignore result))
+    (is (string= "" diagnostics)
+        "All open diagnostics must be silent under --lax; got: ~S" diagnostics)))
+
+(test lispsys-diagnostic-silent-under-lax
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(setvar \"LISPSYS\" 99)"
+       :dialect :lax)
+    (declare (ignore result))
+    (is (string= "" diagnostics)
+        "LISPSYS out-of-range diagnostic must be silent under --lax; got: ~S"
+        diagnostics)))
+
+;;;; ----- Per-code pragma suppression (Phase 10 item 5) --------------
+;;;;
+;;;; clal-suppress-enc-diagnostic adds codes to a runtime
+;;;; suppression list; clal-enable-enc-diagnostic removes them.
+;;;; Codes are string designators (string or symbol).
+
+(test clal-suppress-enc-diagnostic-by-symbol
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* '()))
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         "(progn (clal-suppress-enc-diagnostic 'enc-extension-used)
+                 (getvar \"LISPSYS\"))"
+         :dialect :strict)
+      (declare (ignore result))
+      (is (string= "" diagnostics)
+          "Suppressed enc-extension-used should not appear; got: ~S" diagnostics))))
+
+(test clal-suppress-enc-diagnostic-by-string
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* '()))
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         "(progn (clal-suppress-enc-diagnostic \"enc-extension-used\")
+                 (getvar \"LISPSYS\"))"
+         :dialect :strict)
+      (declare (ignore result))
+      (is (string= "" diagnostics)))))
+
+(test clal-suppress-enc-diagnostic-rejects-unknown-code
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* '())
+        (signalled-p nil))
+    (handler-case
+        (run-autolisp-string
+         "(clal-suppress-enc-diagnostic 'enc-typo-not-a-code)"
+         :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp)
+         :setup-fn #'%install-mock-host-and-core)
+      (autolisp-runtime-error (c)
+        (declare (ignore c))
+        (setf signalled-p t)))
+    (is (eq signalled-p t))))
+
+(test clal-enable-enc-diagnostic-removes-suppression
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* '()))
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         "(progn (clal-suppress-enc-diagnostic 'enc-extension-used)
+                 (clal-enable-enc-diagnostic 'enc-extension-used)
+                 (getvar \"LISPSYS\"))"
+         :dialect :strict)
+      (declare (ignore result))
+      (is (search "[enc-extension-used]" diagnostics)
+          "After re-enabling the code, the diagnostic should reappear"))))
+
+(test clal-enable-enc-diagnostic-no-arg-clears-all
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes*
+         '(:enc-extension-used :enc-foreign-dialect)))
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         "(progn (clal-enable-enc-diagnostic) (getvar \"LISPSYS\"))"
+         :dialect :strict)
+      (declare (ignore result))
+      (is (search "[enc-extension-used]" diagnostics)
+          "Bare clal-enable-enc-diagnostic should remove every entry"))))
+
+(test clal-suppress-enc-diagnostic-returns-current-list
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* '()))
+    (let ((result (run-autolisp-string
+                   "(clal-suppress-enc-diagnostic 'enc-extension-used 'enc-foreign-dialect)"
+                   :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                             :clautolisp)
+                   :setup-fn #'%install-mock-host-and-core)))
+      (is (listp result))
+      (is (= 2 (length result))))))
