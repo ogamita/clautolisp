@@ -3337,3 +3337,121 @@ single character. Used by the Phase-3 LOAD-encoding tests."
                    :setup-fn #'install-core-into)))
       (is (typep result 'autolisp-string))
       (is (= 1 (length (autolisp-string-value result)))))))
+
+;;;; ----- enc-* diagnostics: per-dialect dispatch (Phase 4) -----------
+;;;;
+;;;; The runtime always honours LOAD's third positional [encoding]
+;;;; argument; the diagnostic varies by dialect.
+;;;;
+;;;; --clautolisp        silent (native form)
+;;;; --strict            enc-extension-used
+;;;; --autocad-2026      enc-foreign-dialect
+;;;; --bricscad-v26      enc-foreign-dialect
+;;;;
+;;;; The fixture captures *enc-diagnostic-stream* output, so the
+;;;; tests don't have to read real *error-output*.
+
+(defun %capture-enc-diagnostics (form-source &key dialect)
+  "Evaluate FORM-SOURCE through RUN-AUTOLISP-STRING under DIALECT,
+returning (values RESULT DIAGNOSTIC-OUTPUT) where DIAGNOSTIC-OUTPUT
+is the string written by SIGNAL-ENCODING-DIAGNOSTIC. DIALECT is a
+keyword (:strict / :clautolisp / :autocad-2026 / :bricscad-v26)
+which we resolve to the named-dialect descriptor."
+  (let* ((sink (make-string-output-stream))
+         (dialect-struct
+          (or (clautolisp.autolisp-reader:find-autolisp-dialect dialect)
+              (error "Unknown dialect keyword ~S" dialect))))
+    (let* ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* sink)
+           (result (run-autolisp-string
+                    form-source
+                    :dialect dialect-struct
+                    :setup-fn #'install-core-into)))
+      (values result (get-output-stream-string sink)))))
+
+(test load-encoding-diagnostic-silent-under-clautolisp
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (format nil "(load ~S nil \"ISO-8859-1\") msg" (namestring path))
+         :dialect :clautolisp)
+      (is (typep result 'autolisp-string))
+      (is (string= "" diagnostics)
+          "Expected no diagnostic under --clautolisp; got: ~S" diagnostics))))
+
+(test load-encoding-diagnostic-enc-extension-used-under-strict
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (format nil "(load ~S nil \"ISO-8859-1\") msg" (namestring path))
+         :dialect :strict)
+      (is (typep result 'autolisp-string))
+      (is (search "[enc-extension-used]" diagnostics)
+          "Expected [enc-extension-used] diagnostic under --strict; got: ~S"
+          diagnostics))))
+
+(test load-encoding-diagnostic-enc-foreign-dialect-under-autocad
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (format nil "(load ~S nil \"ISO-8859-1\") msg" (namestring path))
+         :dialect :autocad-2026)
+      (is (typep result 'autolisp-string))
+      (is (search "[enc-foreign-dialect]" diagnostics))
+      (is (search "--autocad" diagnostics)
+          "Expected --autocad sub-tag in foreign-dialect diagnostic; got: ~S"
+          diagnostics))))
+
+(test load-encoding-diagnostic-enc-foreign-dialect-under-bricscad
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (format nil "(load ~S nil \"ISO-8859-1\") msg" (namestring path))
+         :dialect :bricscad-v26)
+      (is (typep result 'autolisp-string))
+      (is (search "[enc-foreign-dialect]" diagnostics))
+      (is (search "--bricscad" diagnostics)))))
+
+(test load-encoding-diagnostic-suppressed-when-encoding-omitted
+  ;; LOAD without the third arg must NOT emit any encoding diagnostic
+  ;; regardless of dialect.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (dolist (d '(:strict :clautolisp :autocad-2026 :bricscad-v26))
+      (multiple-value-bind (result diagnostics)
+          (%capture-enc-diagnostics
+           (format nil "(setq *autolisp-file-encoding* \"ISO-8859-1\")
+                       (load ~S) msg"
+                   (namestring path))
+           :dialect d)
+        (declare (ignore result))
+        (is (string= "" diagnostics)
+            "Bare LOAD must not emit enc-* under ~A; got: ~S" d diagnostics)))))
+
+(test signal-encoding-diagnostic-rejects-unknown-code
+  ;; Closed-set check: passing a non-listed code is a programmer error,
+  ;; not a user-visible diagnostic.
+  (let ((signalled-p nil))
+    (handler-case
+        (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+         :enc-typo-not-in-the-list "oops")
+      (error (c)
+        (declare (ignore c))
+        (setf signalled-p t)))
+    (is (eq signalled-p t))))
+
+(test signal-encoding-diagnostic-suppress-flag-silences-output
+  (let ((sink (make-string-output-stream)))
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* sink)
+          (clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+      (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+       :enc-extension-used "should not appear"))
+    (is (string= "" (get-output-stream-string sink)))))
