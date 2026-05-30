@@ -28,9 +28,17 @@ additionally requires transport work that the current alfe file-IPC does
 not satisfy (see §1.3). Building in-image first de-risks everything the
 remote phase reuses.
 
-The *compiler two-bodies discipline* (parent §5) is deferred behind the
-interpreter path (parent §13 "v1 interpreter only"): the interpreter
-=*debug-mode*= variant (parent §11.3) is the v1 instrumentation mechanism.
+The *two-bodies discipline* (parent §5, Raskin) is pulled forward into the
+*interpreter* rather than deferred to the compiler. Instead of the parent's
+§11.3 "single AST gated by a =*debug-mode*= flag in the evaluator" variant
+(rejected: it pays a per-sub-form flag check even for code nobody is
+debugging), each instrumentable =autolisp-usubr= carries *two bodies*: the
+plain =body= (always) and an =instrumented-body= (only when instrumented).
+The ordinary body has *no* poll-point nodes, so un-debugged execution costs
+zero --- not even a flag check. See §3a for the mechanism. The /compiler/
+two-bodies variant (parent §5.1, emitting CL) stays deferred to Phase 8;
+this interpreter scheme is its AST-level analog, which makes that later
+migration conceptually smaller.
 
 * 1. Current-codebase findings (what we build on, what is missing)
 
@@ -121,8 +129,51 @@ the =clautolisp.ui.tui= abstraction).
 Each phase lists deliverables, the spec sections it satisfies, and an
 acceptance check. Phases are serial except where noted; UIs (Phase 5--7)
 can proceed in parallel once Phase 5's protocol exists. Every code-bearing
-phase bumps =*version*= in =tools/clautolisp/source/version.lisp= and adds
-FiveAM tests in the matching =.../tests= system.
+phase adds FiveAM tests in the matching =.../tests= system and bumps the
+version. *Version policy:* the debugger is a significant feature addition
+to clautolisp /and/ alfe, so the series starts at *1.1.0* (a minor bump
+from the current 1.0.x) and climbs from there. Bump
+=tools/clautolisp/source/version.lisp= and, for alfe-touching work (Phase
+9 and the Emacs-RPC shim), =autolisp-front-end/tools/alfe/source/version.lisp=.
+
+** 3a. The interpreter two-bodies mechanism  (§5 pulled forward; supersedes §11.3)
+:PROPERTIES: :CUSTOM_ID: two-bodies-interp :END:
+
+This refines how Phases 0--1 instrument interpreted code, replacing the
+parent §11.3 evaluator-flag variant.
+
+- *Two bodies per usubr.* =autolisp-usubr= gains an =instrumented-body=
+  slot (and a =debug-metadata= slot). =body= (the plain AST) is always
+  present; =instrumented-body= exists only for functions that have been
+  instrumented. Builtin =autolisp-subr=s are opaque CL and are never
+  instrumented --- they are stepped /over/, consistent with §6 and the
+  opaque-code limits.
+- *The instrumented body is woven AST, not a flag.* An instrumentation
+  pass produces =instrumented-body= as a *copy* of =body= with poll-point
+  nodes spliced in around every sub-form ---
+  =(%poll k :before) … (%poll k :after)= --- plus function enter/exit
+  nodes (parent §5.3 shape), where =%poll= is a debug special operator
+  registered in =*special-operator-dispatch*=. The ordinary =body= has no
+  =%poll= nodes, so un-debugged evaluation costs *zero* (no per-form flag
+  check). The cheap fast path (debug-flag → Bloom → exact lookup, parent
+  §11.1) lives *inside* =%poll='s routine. This pass is folded into the
+  Phase-0 form-id traversal --- no separate walk.
+- *Propagation (the Fjeld half), decided at the apply boundary.* While an
+  instrumented body runs, a dynamic =*debugging*= indicator is true. At
+  each function /application/, =call-autolisp-function-in-context= picks
+  the callee's =instrumented-body= if it exists and =*debugging*= is set,
+  else the plain =body= (graceful fallback = step-over for
+  un-instrumented callees, matching the remote =REQ-LOAD2= rule). The
+  indicator is consulted only at *call sites* (rare) --- not at every
+  sub-form as §11.3 would --- and, unlike baking =bar/debug= into the
+  caller at instrument time, it stays correct under REPL redefinition
+  (the interpreter resolves callees late, by symbol).
+- *Why not §11.3.* The flag variant pays a branch at every sub-form of
+  every function evaluated in a debugged dynamic extent, even functions
+  nobody is debugging, and has no real "ordinary vs debug body"
+  distinction. The two-bodies scheme gives genuine omnipresence-by-entry,
+  zero overhead outside the instrumented sub-graph, and a smaller eventual
+  jump to the Phase-8 compiler (same discipline, AST→CL).
 
 ** Phase 0 --- Source map and protocol skeleton  (§3, §4, §7, §8)
 :PROPERTIES: :CUSTOM_ID: phase0 :END:
@@ -136,11 +187,11 @@ FiveAM tests in the matching =.../tests= system.
   vectors, and an =EQ= side-table from runtime compound forms to form-ids.
   This *closes the §1.2 gap.* Keep the non-debug lowering path unchanged
   for production speed.
-- *0.3 =function-debug-metadata=* (parent §7) attached to each
-  =autolisp-usubr= (new slot, or weak hash keyed by the usubr):
-  source-position, form-id→position, form-id→kind, poll-point-count,
-  bound-names (formals + =/=-locals in binding order), parent-form-map,
-  source-text.
+- *0.3 =function-debug-metadata=* (parent §7) stored in a new
+  =debug-metadata= slot on =autolisp-usubr= (alongside the new
+  =instrumented-body= slot, §3a): source-position, form-id→position,
+  form-id→kind, poll-point-count, bound-names (formals + =/=-locals in
+  binding order), parent-form-map, source-text.
 - *0.4 =clautolisp.debug= skeleton:* =*protocol-version*=,
   =thread-debug-info= (debug-flag, breakpoint-table, 1024-bit summary,
   inbound/outbound queues, current-pp, status; parent §8.1),
@@ -152,10 +203,12 @@ form pulled mid-evaluation; metadata round-trips for a sample =defun=.
 ** Phase 1 --- Interpreter instrumentation, poll points, breakpoints  (§5.3, §6, §11, §12)
 :PROPERTIES: :CUSTOM_ID: phase1 :END:
 
-- *1.1 =*debug-mode*= dispatch* in =autolisp-eval=: when set for the
-  application thread, wrap each sub-form's evaluation with =poll-point k
-  :before= / =:after= (parent §11.3), and wrap =usubr= body with
-  function-entry/exit poll points (parent §5.3).
+- *1.1 Instrumentation pass + two-body dispatch* (§3a). Build
+  =instrumented-body= by weaving =%poll= nodes (before/after each sub-form,
+  plus function enter/exit) into a copy of =body=; register the =%poll=
+  debug special operator. Make =call-autolisp-function-in-context= select
+  =instrumented-body= vs =body= at the apply boundary via =*debugging*=
+  (§3a). This replaces the parent §11.3 evaluator-flag variant.
 - *1.2 =poll-point=* with the parent §11.1 hot path: debug-flag fast path
   → 1024-bit Bloom test (§11.2) → exact breakpoint lookup → =handle-breakpoint=.
   Allocation-free hot path.

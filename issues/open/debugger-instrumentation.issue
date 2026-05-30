@@ -9,21 +9,32 @@ See also:
 Context
 -------
 
-With the form-id source map in place (Phase 0), the v1 instrumentation is
-the interpreter `*debug-mode*` variant (spec §11.3, §13): we do NOT need the
-compiler two-bodies discipline yet. Debugged code is the slow path by
-definition, so the per-form flag check is acceptable; the Bloom filter keeps
-non-breakpoint poll points cheap (spec §11.2).
+With the form-id source map in place (Phase 0), v1 instrumentation pulls the
+spec §5 two-bodies (Raskin) discipline forward INTO the interpreter rather
+than using the §11.3 evaluator-flag variant. Each instrumentable
+`autolisp-usubr` carries two bodies: the plain `body` (always) and an
+`instrumented-body` (only when instrumented). The ordinary body has no
+poll-point nodes, so un-debugged execution costs zero — not even a per-form
+flag check. See the plan's §3a for the full rationale and the comparison
+with §11.3. The compiler emitting two CL bodies (§5.1) stays deferred to
+Phase 8; this is its AST-level analog.
 
 Scope / deliverables
 --------------------
 
 1. New system `clautolisp/autolisp-debug` (depends on bordeaux-threads).
 
-2. `*debug-mode*` dispatch in `autolisp-eval`: when set on the application
-   thread, wrap each sub-form's evaluation with `poll-point k :before` /
-   `:after` (spec §11.3), and wrap each `autolisp-usubr` body with
-   function-entry / function-exit poll points (spec §5.3).
+2. Instrumentation pass + two-body dispatch (plan §3a):
+   - Add `instrumented-body` (+ `debug-metadata`) slots to `autolisp-usubr`.
+   - Weave `%poll k :before` / `:after` nodes around every sub-form and
+     function enter/exit nodes (spec §5.3 shape) into a COPY of `body`,
+     producing `instrumented-body`; `%poll` is a debug special operator.
+     Builtin `autolisp-subr`s are opaque — never instrumented (stepped over).
+   - At the apply boundary, `call-autolisp-function-in-context` selects
+     `instrumented-body` vs `body` via a dynamic `*debugging*` indicator
+     (Fjeld propagation, robust to REPL redefinition; checked at call sites
+     only, not per sub-form). Un-instrumented callees fall back to `body`
+     (= step-over, matching the remote REQ-LOAD2 rule).
 
 3. `poll-point` hot path (spec §11.1): debug-flag fast path -> 1024-bit
    Bloom test -> exact breakpoint lookup -> `handle-breakpoint`. Hot path
