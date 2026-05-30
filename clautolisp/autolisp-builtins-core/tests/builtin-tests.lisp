@@ -4073,3 +4073,128 @@ attempts the I/O."
     ;; The literal AutoLISP T symbol is the conventional return.
     (is (not (null result)))
     (is (typep result 'clautolisp.autolisp-runtime:autolisp-symbol))))
+
+;;;; ----- Cross-dialect encoding round-trip table (Phase 12) ----------
+;;;;
+;;;; Source-of-truth for the cross-dialect translation table in
+;;;; encoding-dispatch.issue: write a non-ASCII character through
+;;;; OPEN with each documented encoding, read it back via OPEN with
+;;;; the same encoding, assert the round-trip preserves the code
+;;;; point. Each row covers one Internal-format entry from the spec
+;;;; table.
+;;;;
+;;;; Diagnostics are suppressed during the round-trip — these tests
+;;;; care about the I/O correctness, not the dialect dispatch (which
+;;;; is covered by the earlier suites).
+
+(defparameter *encoding-roundtrip-table*
+  '(;; (encoding-arg-string code-point label)
+    ("UTF-8"        233   "é (U+00E9) via UTF-8 round-trip")
+    ("UTF-8"        8364  "€ (U+20AC) via UTF-8 round-trip (3-byte)")
+    ("ISO-8859-1"   233   "é via ISO-8859-1 round-trip")
+    ("CP-1252"      233   "é via CP-1252 round-trip")
+    ("CP-1252"      8364  "€ via CP-1252 round-trip (high-byte vendor extension)")
+    ("WINDOWS-1252" 233   "é via WINDOWS-1252 alias round-trip")
+    ("UTF-16-LE"    233   "é via UTF-16-LE round-trip")
+    ("UTF-16-BE"    233   "é via UTF-16-BE round-trip"))
+  "Encoding-roundtrip fixture. Each entry is (ENCODING CODE LABEL):
+write (chr CODE) through OPEN with ENCODING, read back via OPEN with
+the same ENCODING, assert the code point survives. Covers one row
+of the cross-dialect translation table from
+encoding-dispatch.issue. CP-1252 carries € at byte 0x80 — code
+point U+20AC (8364) round-trips through the vendor mapping.")
+
+(defun %encoding-roundtrip (path encoding code)
+  "Write (chr CODE) to PATH through OPEN under ENCODING, read it
+back through OPEN under the same ENCODING, return the read-back
+character code. The opens are diagnostic-suppressed."
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+    (run-autolisp-string
+     (format nil "(progn
+                    (setq f (open ~S \"w\" ~S))
+                    (princ (chr ~A) f)
+                    (close f)
+                    (setq g (open ~S \"r\" ~S))
+                    (setq c (read-char g))
+                    (close g)
+                    c)"
+             (namestring path) encoding code (namestring path) encoding)
+     :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp)
+     :setup-fn #'%install-mock-host-and-core)))
+
+(test cross-dialect-encoding-roundtrip-table
+  (dolist (row *encoding-roundtrip-table*)
+    (destructuring-bind (encoding code label) row
+      (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+        (let ((result (%encoding-roundtrip path encoding code)))
+          (is (eql code result)
+              "~A: expected code ~A, got ~S" label code result))))))
+
+(test cross-dialect-encoding-utf-8-bom-write-through-ccs
+  ;; UTF-8-BOM via the ,ccs= form (BricsCAD vocabulary).
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+      (run-autolisp-string
+       (format nil "(progn (setq f (open ~S \"w,ccs=UTF-8\")) (princ (chr 233) f) (close f))"
+               (namestring path))
+       :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                 :bricscad-v26)
+       :setup-fn #'%install-mock-host-and-core))
+    ;; Read raw bytes to verify the encoding actually flowed through
+    ;; the ,ccs= splitter.
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (let ((bytes (loop for b = (read-byte in nil nil) while b collect b)))
+        ;; é in UTF-8 = 0xC3 0xA9; SBCL :utf-8 doesn't prepend a BOM.
+        (is (or (equal bytes '(#xC3 #xA9))
+                (equal bytes '(#xC3 #xA9 #x0A))
+                (and (>= (length bytes) 2)
+                     (member #xC3 bytes)
+                     (member #xA9 bytes)))
+            "expected UTF-8 bytes for é via ,ccs=UTF-8; got ~S" bytes)))))
+
+(test cross-dialect-encoding-iso-8859-1-write-produces-single-byte
+  ;; Latin-1 round-trip via ,ccs=: writes 0xE9 as a single byte.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+      (run-autolisp-string
+       (format nil "(progn (setq f (open ~S \"w,ccs=ISO-8859-1\")) (princ (chr 233) f) (close f))"
+               (namestring path))
+       :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                 :bricscad-v26)
+       :setup-fn #'%install-mock-host-and-core))
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (is (eql #xE9 (read-byte in))))))
+
+(test cross-dialect-encoding-utf-16-le-write-produces-two-bytes
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+      (run-autolisp-string
+       (format nil "(progn (setq f (open ~S \"w\" \"UTF-16-LE\")) (princ (chr 233) f) (close f))"
+               (namestring path))
+       :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                 :clautolisp)
+       :setup-fn #'%install-mock-host-and-core))
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (let ((bytes (loop for b = (read-byte in nil nil) while b collect b)))
+        ;; UTF-16-LE é = 0xE9 0x00.
+        (is (member #xE9 bytes))
+        (is (member #x00 bytes))))))
+
+(test cross-dialect-encoding-utf-16-be-write-produces-two-bytes
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+      (run-autolisp-string
+       (format nil "(progn (setq f (open ~S \"w\" \"UTF-16-BE\")) (princ (chr 233) f) (close f))"
+               (namestring path))
+       :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                 :clautolisp)
+       :setup-fn #'%install-mock-host-and-core))
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (let ((bytes (loop for b = (read-byte in nil nil) while b collect b)))
+        ;; UTF-16-BE é = 0x00 0xE9 — same bytes as LE, just ordered.
+        (is (member #xE9 bytes))
+        (is (member #x00 bytes))))))
