@@ -100,6 +100,7 @@ not implement OPERATION."
 ;; System variables
 (defgeneric host-getvar (host name)                   (:documentation "Return the value of the named system variable."))
 (defgeneric host-setvar (host name value)             (:documentation "Set the named system variable to VALUE; returns VALUE."))
+(defgeneric host-set-derived-sysvar (host name value) (:documentation "Set a host-derived system variable, bypassing the cell's read-only flag. Used at launch time to populate SYSCODEPAGE / DWGCODEPAGE from the locale-resolved encoding; user code still sees a normal read-only sysvar through host-getvar / host-setvar afterwards. NAME must already exist in the catalogue — this never creates new sysvars."))
 (defgeneric host-sysvar-names (host)                  (:documentation "Return a list of upcased system-variable name strings known to HOST. Live backends ask the engine; mock-host returns the keys of its sysvar table. Used by the CLAL-SYSVAR-LIST / CLAL-SYSVAR-APROPOS clautolisp extensions."))
 
 ;; Command dispatch
@@ -174,6 +175,7 @@ not implement OPERATION."
 (defmethod host-dictrename   ((host host) dict old new)   (declare (ignore dict old new)) (signal-host-not-supported host 'dictrename))
 (defmethod host-getvar ((host host) name)                 (declare (ignore name)) (signal-host-not-supported host 'getvar))
 (defmethod host-setvar ((host host) name value)           (declare (ignore name value)) (signal-host-not-supported host 'setvar))
+(defmethod host-set-derived-sysvar ((host host) name value) (declare (ignore name value)) (signal-host-not-supported host 'set-derived-sysvar))
 (defmethod host-sysvar-names ((host host))                (signal-host-not-supported host 'sysvar-names))
 (defmethod host-command ((host host) arguments)           (declare (ignore arguments)) (signal-host-not-supported host 'command))
 (defmethod host-prompt    ((host host) string)            (declare (ignore string)) (signal-host-not-supported host 'prompt))

@@ -120,6 +120,9 @@
 (defun autolisp-dialect-clautolisp ()
   (symbol-value 'clautolisp.autolisp-reader.internal::*autolisp-dialect-clautolisp*))
 
+(defun autolisp-dialect-lax ()
+  (symbol-value 'clautolisp.autolisp-reader.internal::*autolisp-dialect-lax*))
+
 (defun reader-options-token-mode (options)
   (clautolisp.autolisp-reader.internal::reader-options-token-mode options))
 

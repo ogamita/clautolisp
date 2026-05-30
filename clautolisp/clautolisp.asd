@@ -167,7 +167,8 @@
   :description "Shared CLI option parser + *AUTOLISP-…* variable installer for clautolisp and alfe."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-runtime")
+  :depends-on ("clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-host")
   :serial t
   :components
   ((:file "autolisp-cli/source/package")

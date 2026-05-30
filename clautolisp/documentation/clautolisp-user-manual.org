@@ -101,11 +101,18 @@ permissive parsing, and the runtime knobs documented in
 ~autolisp-spec~. The default is the conservative ~strict~ profile.
 
 - ~--dialect NAME~       :: Select the named dialect. NAME is one of
-                            ~strict~, ~autocad-2026~, ~bricscad-v26~.
+                            ~strict~, ~autocad-2026~, ~bricscad-v26~,
+                            ~clautolisp~, ~lax~.
 - ~--strict~             :: Equivalent to ~--dialect strict~.
 - ~--autocad~            :: Equivalent to ~--dialect autocad-2026~.
 - ~--bricscad~           :: Equivalent to ~--dialect bricscad-v26~.
 - ~--clautolisp~         :: Equivalent to ~--dialect clautolisp~.
+- ~--lax~                :: Equivalent to ~--dialect lax~. Silences
+                            every encoding-dispatch diagnostic
+                            globally; useful when consuming code from
+                            multiple vendors. The runtime still
+                            honours each form; only the diagnostic
+                            is suppressed.
 
 The ~clautolisp~ dialect includes `clautolisp extensions`
 (eg. variadic functions).
@@ -348,6 +355,125 @@ closes.
 The exact set of error codes lives in the runtime; see
 ~autolisp-runtime/source/api.lisp~ for the canonical mapping.
 
+** Encoding-dispatch diagnostics (~enc-*~)
+Each dialect dispatches a distinct diagnostic when user code uses an
+encoding-related extension that belongs to a different dialect. The
+diagnostics are *advisory*: the runtime always honours the form so
+user code stays runnable across dialects; the diagnostic just
+surfaces the portability concern.
+
+Eight codes, all prefixed ~enc-~:
+
+| Code                        | When                                             |
+|-----------------------------+--------------------------------------------------|
+| ~enc-foreign-dialect~       | a form belonging to a non-selected dialect       |
+| ~enc-extension-used~        | ~--strict~ only: any encoding extension          |
+| ~enc-unsupported-target~    | selected encoding has no host expression         |
+| ~enc-invalid-value~         | bad encoding name string                         |
+| ~enc-lispsys-out-of-range~  | ~(setvar "LISPSYS" n)~ with ~n \notin {0,1,2}~   |
+| ~enc-codepage-mismatch~     | ~DWGCODEPAGE~ differs from ~SYSCODEPAGE~         |
+| ~enc-unknown-codepage~      | unknown ~SYSCODEPAGE~ string                     |
+| ~enc-host-dependent~        | ~"ANSI"~ used in a write context (info)          |
+
+Diagnostics print to standard error as
+~[enc-<code>] <message>~. The output stream is overridable for
+tests via the CL parameter
+~clautolisp.autolisp-runtime:*enc-diagnostic-stream*~; emission is
+silenced entirely by binding
+~*enc-diagnostic-suppress-p*~ non-nil (the runtime side-door for
+the per-file pragma mechanism described below).
+
+*Two user-facing suppression knobs:*
+
+- *Per-code pragma.* Inside a source file:
+
+  #+BEGIN_SRC autolisp
+  (clal-suppress-enc-diagnostic 'enc-extension-used 'enc-foreign-dialect)
+  ;; remainder of the file emits nothing for the two listed codes
+  #+END_SRC
+
+  Re-enable via ~(clal-enable-enc-diagnostic 'enc-extension-used)~
+  or, without arguments, ~(clal-enable-enc-diagnostic)~ to clear
+  the entire suppression set. Code names accept either a string
+  (~"enc-extension-used"~) or a symbol (~'enc-extension-used~);
+  the leading ~enc-~ is optional.
+
+- *--lax dialect.* Run clautolisp with ~--lax~ (or
+  ~--dialect lax~) to silence *every* encoding diagnostic
+  globally for the session. Useful when consuming code from
+  multiple vendors and you don't want to commit to one
+  dialect's portability rules. The runtime still honours each
+  encoding form; only the diagnostic is suppressed.
+
+*Static encoding-extension linter*:
+
+~(clal-lint-encoding-extensions FORM)~ walks FORM recursively
+and emits the same enc-* diagnostics the runtime would, without
+actually evaluating any call. Useful for catching dead-code
+encoding extensions before they ship — pipe a file's parsed
+form-tree through the lint at compile time:
+
+#+BEGIN_SRC autolisp
+;; Hypothetical CI gate:
+(clal-lint-encoding-extensions
+  (read-from-string-or-something-like-it
+   (slurp "lib/encoding-aware.lsp")))
+;; -> [enc-extension-used] LOAD's positional [encoding] argument...
+;;    [enc-foreign-dialect] OPEN CCS-SUFFIX ...
+#+END_SRC
+
+The lint shares SIGNAL-ENCODING-DIAGNOSTIC with the runtime
+emitters, so dialect / pragma / --lax gates apply identically.
+Returns ~T~ when the walk completes.
+
+Currently wired:
+
+- ~LOAD~ with the positional ~[encoding]~ argument under
+  ~--strict~ (~enc-extension-used~), ~--autocad~ /
+  ~--bricscad~ (~enc-foreign-dialect~), silent under
+  ~--clautolisp~.
+- ~OPEN~ encoding forms, all three routed:
+  - positional ~"utf8"~ / ~"utf8-bom"~ — native under
+    ~--autocad~; foreign under ~--bricscad~ / ~--clautolisp~;
+    extension-used under ~--strict~.
+  - positional ~"UTF-8"~ / ~"UTF-8-BOM"~ / ~"CP-NNNN"~ / … —
+    native under ~--clautolisp~; foreign under ~--autocad~ /
+    ~--bricscad~; extension-used under ~--strict~.
+  - ~,ccs=ENC~ mode-suffix — native under ~--bricscad~;
+    foreign under ~--autocad~ / ~--clautolisp~; extension-used
+    under ~--strict~. The suffix is stripped from the
+    mode-string before CL ~OPEN~ sees it.
+- ~GETVAR~ / ~SETVAR~ on ~LISPSYS~ under every dialect except
+  ~--autocad~ (the native dialect of ~LISPSYS~):
+  - ~--strict~ -> ~enc-extension-used~.
+  - ~--bricscad~ / ~--clautolisp~ -> ~enc-foreign-dialect~ with
+    the dialect sub-tag.
+- ~SETVAR "LISPSYS" <n>~ with ~n \notin {0,1,2}~ emits
+  ~enc-lispsys-out-of-range~ regardless of dialect (the spec mandates
+  the domain). The write proceeds — matching the vendor "permissive
+  but warn" behaviour.
+- ~OPEN~ with an encoding the active host can't natively express
+  (e.g. ~"UTF-16-LE"~ under ~--autocad~) emits
+  ~enc-unsupported-target~. Informational; the runtime still
+  attempts the open.
+- ~OPEN~ in WRITE direction with ~"ANSI"~ / ~"MBCS"~ emits
+  ~enc-host-dependent~ (info-level): output resolves through
+  the host's SYSCODEPAGE at I/O time and isn't portable across
+  hosts. Reading under those encodings is silent.
+- The internal SET-DRAWING-CODEPAGE wrapper (CL-level; hook for
+  future drawing-load paths) emits ~enc-codepage-mismatch~ when
+  the incoming DWGCODEPAGE canonical form differs from
+  SYSCODEPAGE — catches the "Czech-authored drawing on a French
+  host" failure mode before string decode time.
+- ~%CANONICAL-CODEPAGE-STRING~ emits ~enc-unknown-codepage~ when
+  asked to canonicalise a spelling not in the known table (typos,
+  unsupported vendor aliases). The raw value passes through.
+
+The full set of codes, the per-dialect dispatch table, and the
+roadmap for the remaining hooks (~OPEN~, BricsCAD ~,ccs=~ parsing,
+~DWGCODEPAGE~ mismatch detection at drawing-load time) is in
+~issues/open/encoding-dispatch.issue~.
+
 * Examples
 #+BEGIN_EXAMPLE
 # Print a literal symbol.
@@ -559,7 +685,68 @@ $ clautolisp -x "(length (clal-sysvar-apropos \"\"))"   ;; empty -> all
 A non-string PATTERN raises ~:invalid-argument~. A pattern that
 matches nothing returns ~nil~.
 
-The full normative entries for both functions live in
+*** ~CLAL-SYSTEM-CODEPAGE~ -- canonical SYSCODEPAGE
+~(clal-system-codepage)~ wraps ~(getvar "SYSCODEPAGE")~ and returns
+the canonical clautolisp codepage spelling. Vendor
+~"ANSI_NNNN"~ and clautolisp ~"WINDOWS-NNNN"~ inputs both fold
+onto ~"CP-NNNN"~; Unicode names (~"UTF-8"~, ~"ISO-8859-1"~,
+~"US-ASCII"~) pass through; the pre-Phase-1 empty placeholder
+becomes ~"ANSI"~.
+
+#+BEGIN_SRC autolisp
+LC_ALL=fr_FR.WINDOWS-1252 clautolisp -x "(clal-system-codepage)"
+"CP-1252"
+
+LC_ALL=en_US.UTF-8 clautolisp -x "(clal-system-codepage)"
+"UTF-8"
+#+END_SRC
+
+*** ~CLAL-DRAWING-CODEPAGE~ -- canonical DWGCODEPAGE
+~(clal-drawing-codepage)~ is the same canonicalisation applied to
+~(getvar "DWGCODEPAGE")~. At launch ~DWGCODEPAGE~ defaults to
+~SYSCODEPAGE~; loading a drawing that carries its own codepage
+overrides it.
+
+*** ~CLAL-CODEPAGE-MISMATCH-P~ -- defensive comparison
+~(clal-codepage-mismatch-p)~ returns ~T~ when the canonical
+~SYSCODEPAGE~ and ~DWGCODEPAGE~ differ, ~nil~ otherwise. Cheap
+defensive check before loading drawing-authored text: a mismatch
+means strings authored under one ANSI codepage may garble when
+interpreted under another.
+
+The comparison runs on the canonicalised form, so
+~"ANSI_1252"~ vs ~"WINDOWS-1252"~ correctly registers as no
+mismatch.
+
+*** ~CLAL-FILE-ENCODING~ -- BOM-sniffing file-encoding probe
+~(clal-file-encoding PATH)~ opens ~PATH~, reads the first four
+bytes, and returns the canonical clautolisp encoding implied by
+the byte-order mark:
+
+| BOM bytes      | Returned string |
+|----------------+-----------------|
+| ~EF BB BF~     | ~"UTF-8-BOM"~   |
+| ~FF FE~        | ~"UTF-16-LE"~   |
+| ~FE FF~        | ~"UTF-16-BE"~   |
+| ~FF FE 00 00~  | ~"UTF-32-LE"~   |
+| ~00 00 FE FF~  | ~"UTF-32-BE"~   |
+| no BOM         | ~"ANSI"~        |
+
+(UTF-32-LE / UTF-16-LE share the same two leading bytes;
+~CLAL-FILE-ENCODING~ checks UTF-32 first so the two-byte UTF-16
+prefix doesn't mask a four-byte UTF-32 BOM.)
+
+Mirrors BricsCAD's ~VLE-FILE-ENCODING~ but preserves the
+UTF-8-BOM / plain-UTF-8 distinction the BricsCAD function flattens.
+A nonexistent ~PATH~ returns ~nil~ and sets ~ERRNO~ 73, matching
+~LOAD~'s missing-file behaviour.
+
+#+BEGIN_SRC autolisp
+$ clautolisp -x "(clal-file-encoding \"~/.autolisp\")"
+"ANSI"
+#+END_SRC
+
+The full normative entries for these functions live in
 ~autolisp-spec~ §16 *clautolisp Extensions*; this section is a
 quick-reference summary.
 
@@ -580,6 +767,10 @@ The implementation of every operator listed above lives in:
 - ~../../autolisp-spec/~      — AutoLISP / Visual LISP language reference,
                                 including dialect divergences and the
                                 normative source for builtin semantics.
+- ~encoding-migration.org~    — Vendor-to-clautolisp migration notes for
+                                file-encoding extensions (AutoCAD
+                                ~LISPSYS~ / third-arg ~open~, BricsCAD
+                                ~,ccs=~ / ~vle-file-encoding~).
 - ~PLAN.md~                    — Implementation roadmap and per-phase
                                 completion notes.
 - ~clautolisp/autolisp-reader/~      — Reader subsystem (lexer, parser,

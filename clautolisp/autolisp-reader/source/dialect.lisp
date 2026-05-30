@@ -153,11 +153,35 @@
    :default-source-encoding :utf-8
    :default-file-encoding   :utf-8))
 
+(defparameter *autolisp-dialect-lax*
+  ;; The lax dialect accepts every vendor's encoding extensions
+  ;; without raising the diagnostic the strict / per-vendor dialects
+  ;; would: the spec describes it as the catch-all for downstream
+  ;; tools that consume code from multiple vendors and don't want to
+  ;; commit to one. See encoding-dispatch.issue, section 'Per-dialect
+  ;; behavior / --lax'.
+  ;;
+  ;; Other dialect knobs (token-mode, extended-string-escapes-p, …)
+  ;; mirror the clautolisp dialect: lax only relaxes the encoding-
+  ;; diagnostic gate, not the rest of the reader / runtime surface.
+  (make-autolisp-dialect
+   :name :lax
+   :token-mode :strict
+   :extended-string-escapes-p nil
+   :warn-on-integer-overflow-p nil
+   :canonical-case :upcase
+   :hex-float-atof-p nil
+   :open-ccs-mode-p t
+   :unbound-variable-mode :silent-nil
+   :default-source-encoding :utf-8
+   :default-file-encoding   :utf-8))
+
 (defparameter *autolisp-named-dialects*
   (list (cons :strict *autolisp-dialect-strict*)
         (cons :autocad-2026 *autolisp-dialect-autocad-2026*)
         (cons :bricscad-v26 *autolisp-dialect-bricscad-v26*)
-        (cons :clautolisp *autolisp-dialect-clautolisp*)))
+        (cons :clautolisp *autolisp-dialect-clautolisp*)
+        (cons :lax *autolisp-dialect-lax*)))
 
 (defun find-autolisp-dialect (name)
   "Return the canonical dialect descriptor named NAME, or nil."

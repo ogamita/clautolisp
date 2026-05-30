@@ -2052,3 +2052,88 @@ SETUP-FN behaves as for `run-autolisp-file`."
       (call-with-autolisp-error-handler
        (lambda () (autolisp-eval-progn forms context))
        context))))
+
+;;; --- Encoding-dispatch diagnostics (Phase 4 of encoding-dispatch.issue) -
+
+(defparameter *enc-diagnostic-stream* nil
+  "Stream that encoding-dispatch diagnostics are written to.
+NIL means SIGNAL-ENCODING-DIAGNOSTIC falls back to *error-output*
+at call time. Tests rebind this to a string stream to assert on
+diagnostic output without printing to the real stderr.")
+
+(defparameter *enc-diagnostic-suppress-p* nil
+  "When true, SIGNAL-ENCODING-DIAGNOSTIC is a no-op. Used by tests
+that exercise the runtime path but don't want the diagnostic to
+print, and by the per-file pragma mechanism documented in
+encoding-dispatch.issue.")
+
+(defparameter *enc-diagnostic-suppress-codes* '()
+  "Per-code suppression set. SIGNAL-ENCODING-DIAGNOSTIC skips
+emission when its CODE argument is a member. Updated by the
+CLAL-SUPPRESS-ENC-DIAGNOSTIC / CLAL-ENABLE-ENC-DIAGNOSTIC builtins
+(encoding-dispatch.issue Phase 10 'per-file pragma' surface) and
+by tests that need to silence a specific code while keeping the
+rest of the stream observable.")
+
+(defparameter *enc-diagnostic-codes*
+  '(:enc-foreign-dialect       ; spelling belongs to a non-selected dialect
+    :enc-extension-used        ; --strict only: any encoding extension used
+    :enc-unsupported-target    ; selected encoding cannot be expressed on host
+    :enc-invalid-value         ; bad encoding name string
+    :enc-lispsys-out-of-range  ; (setvar "LISPSYS" n) with n not in {0,1,2}
+    :enc-codepage-mismatch     ; DWGCODEPAGE differs from SYSCODEPAGE
+    :enc-unknown-codepage      ; SYSCODEPAGE string clautolisp cannot map
+    :enc-host-dependent)       ; info-level: "ANSI" used in a write context
+  "Closed set of diagnostic codes SIGNAL-ENCODING-DIAGNOSTIC accepts.
+See issues/open/encoding-dispatch.issue under 'Diagnostics' for the
+authoritative descriptions.")
+
+(defun %enc-dialect-is-lax-p ()
+  "True when the current evaluation context's dialect is :lax.
+Consulted by SIGNAL-ENCODING-DIAGNOSTIC to silence every encoding
+diagnostic uniformly under --lax (encoding-dispatch.issue 'Dialect
+matrix / --lax')."
+  (let ((dialect (ignore-errors (current-evaluation-dialect))))
+    (and dialect
+         (eq :lax
+             (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))))
+
+(defun signal-encoding-diagnostic (code format-control &rest format-args)
+  "Emit an encoding-dispatch diagnostic with CODE (a keyword from
+*ENC-DIAGNOSTIC-CODES*). Writes \"[enc-CODE] message\\n\" to
+*ENC-DIAGNOSTIC-STREAM* (default *error-output*).
+
+Three suppression gates, evaluated in order:
+
+  1. *ENC-DIAGNOSTIC-SUPPRESS-P* — global silencer (tests, pragma
+     'suppress all').
+  2. CODE in *ENC-DIAGNOSTIC-SUPPRESS-CODES* — per-code pragma.
+  3. The active dialect is :lax — the spec's catch-all 'accept
+     everything quietly' mode.
+
+The diagnostic is NEVER a runtime error — execution continues. The
+caller has already decided that the form is honoured (so user code
+stays runnable across dialects) and only the diagnosis is being
+surfaced. Phase-4 surface; a structured diagnostic registry can
+replace the textual stream in a later phase without changing the
+call-site signature."
+  (unless (member code *enc-diagnostic-codes*)
+    (error "Unknown encoding-diagnostic code ~S; expected one of ~S."
+           code *enc-diagnostic-codes*))
+  (unless (or *enc-diagnostic-suppress-p*
+              (member code *enc-diagnostic-suppress-codes*)
+              (%enc-dialect-is-lax-p))
+    (let ((stream (or *enc-diagnostic-stream* *error-output*))
+          (code-name (string-downcase (symbol-name code))))
+      (fresh-line stream)
+      (format stream "[~A] " code-name)
+      (apply #'format stream format-control format-args)
+      (terpri stream)
+      (force-output stream))))
+
+(defun call-with-suppressed-encoding-diagnostics (thunk)
+  "Run THUNK with encoding-dispatch diagnostics suppressed.
+Convenience for tests that exercise an encoding-dispatch code path
+without printing to *error-output*."
+  (let ((*enc-diagnostic-suppress-p* t))
+    (funcall thunk)))

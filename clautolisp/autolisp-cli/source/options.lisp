@@ -100,6 +100,7 @@
         ((string-equal value "autocad-2026")  :autocad-2026)
         ((string-equal value "bricscad-v26")  :bricscad-v26)
         ((string-equal value "clautolisp")    :clautolisp)
+        ((string-equal value "lax")           :lax)
         (t (error 'cli-usage-error
                   :option option
                   :message (format nil "Unknown dialect ~S" value)))))
