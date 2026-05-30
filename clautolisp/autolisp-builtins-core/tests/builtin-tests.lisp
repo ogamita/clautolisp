@@ -3805,3 +3805,71 @@ attempts the I/O."
        :dialect :autocad-2026)
     (declare (ignore result))
     (is (not (search "[enc-host-dependent]" diagnostics)))))
+
+;;;; ----- CP-NNNN registry (Phase 9) ----------------------------------
+;;;;
+;;;; The spec's 10 codepages are NORMALIZE-ENCODING-NAME aliases for
+;;;; the underlying CL :external-format keyword. The PARSE pipeline
+;;;; canonicalises every spec spelling ("CP-1252", "CP1252",
+;;;; "WINDOWS-1252", "WINDOWS1252") onto the same :cpNNNN keyword.
+;;;;
+;;;; A host-CL probe additionally fires ENC-UNSUPPORTED-TARGET when
+;;;; the impl doesn't ship the requested external-format.
+
+(test parse-open-external-format-handles-spec-cp-nnnn-registry
+  ;; The 10 spec codepages all canonicalise to the impl's :cpNNNN
+  ;; keyword via NORMALIZE-ENCODING-NAME's CP-pattern matcher.
+  (let ((parse (find-symbol "PARSE-OPEN-EXTERNAL-FORMAT"
+                            :clautolisp.autolisp-builtins-core)))
+    (dolist (row '(("CP-1252" :cp1252)
+                   ("CP-1250" :cp1250)
+                   ("CP-1251" :cp1251)
+                   ("CP-1253" :cp1253)
+                   ("CP-1254" :cp1254)
+                   ("CP-932"  :cp932)
+                   ("CP-936"  :cp936)
+                   ("CP-949"  :cp949)
+                   ("CP-950"  :cp950)))
+      (destructuring-bind (spelling expected) row
+        (is (eq expected (funcall parse spelling))
+            "PARSE-OPEN-EXTERNAL-FORMAT(~S) expected ~S" spelling expected)))))
+
+(test parse-open-external-format-handles-windows-aliases
+  ;; WINDOWS-NNNN is the clautolisp encoding-alias spelling — must
+  ;; map to the same :cpNNNN as the CP-NNNN form.
+  (let ((parse (find-symbol "PARSE-OPEN-EXTERNAL-FORMAT"
+                            :clautolisp.autolisp-builtins-core)))
+    (dolist (row '(("WINDOWS-1252" :cp1252)
+                   ("WINDOWS-1250" :cp1250)
+                   ("WINDOWS-932"  :cp932)))
+      (destructuring-bind (spelling expected) row
+        (is (eq expected (funcall parse spelling)))))))
+
+(test cp-nnnn-registry-lists-the-ten-spec-codepages
+  (let ((registry (symbol-value
+                   (find-symbol "*CP-NNNN-REGISTRY*"
+                                :clautolisp.autolisp-builtins-core))))
+    (is (= 9 (length registry)))                ; 10 minus CP-1252 dedupe? no, 9 + the one above
+    (dolist (kw '(:cp1252 :cp1250 :cp1251 :cp1253 :cp1254
+                  :cp932 :cp936 :cp949 :cp950))
+      (is (assoc kw registry)
+          "Spec codepage ~S missing from registry" kw))))
+
+(test open-cp-nnnn-encoding-silent-under-clautolisp
+  ;; SBCL on Darwin ships all 10 CP-NNNN's; no unsupported-target
+  ;; fires under --clautolisp.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"CP-936\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (not (search "[enc-unsupported-target]" diagnostics)))))
+
+(test open-unknown-cp-emits-enc-unsupported-target
+  ;; CP-99999 doesn't exist; the host-CL probe surfaces the issue.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"CP-99999\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-unsupported-target]" diagnostics))))

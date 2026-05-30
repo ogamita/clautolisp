@@ -1157,9 +1157,57 @@ compatible :external-format keyword."
            (string= canonical "8859.1"))
        :iso-8859-1)
       ((string= canonical "WINDOWS1252") :cp1252)
-      ((string= canonical "CP1252")   :cp1252)
+      ;; Spec's CP-NNNN registry (encoding-dispatch.issue Phase 9):
+      ;; CP-1252 (already above) plus the nine additional spec
+      ;; codepages. Strip the optional dash and intern as :cpNNNN
+      ;; which both SBCL and CCL accept as a built-in external-format
+      ;; (probed live; all ten are available on SBCL 2.6.3+).
+      ((and (>= (length canonical) 4)
+            (string= "CP" canonical :end2 2)
+            (every #'digit-char-p (subseq canonical 2)))
+       (intern (concatenate 'string "CP" (subseq canonical 2))
+               "KEYWORD"))
+      ;; WINDOWS-NNNN → :cpNNNN (clautolisp canonical encoding-alias
+      ;; spelling).
+      ((and (>= (length canonical) 7)
+            (string= "WINDOWS" canonical :end2 7)
+            (every #'digit-char-p (subseq canonical 7)))
+       (intern (concatenate 'string "CP" (subseq canonical 7))
+               "KEYWORD"))
       ;; Anything else: keywordise. SBCL / CCL accept many aliases.
       (t (intern canonical "KEYWORD")))))
+
+(defparameter *cp-nnnn-registry*
+  '((:cp1252 . "Western European")
+    (:cp1250 . "Central European")
+    (:cp1251 . "Cyrillic")
+    (:cp1253 . "Greek")
+    (:cp1254 . "Turkish")
+    (:cp932  . "Japanese (Shift-JIS, DBCS)")
+    (:cp936  . "Simplified Chinese (GBK, DBCS)")
+    (:cp949  . "Korean (EUC-KR, DBCS)")
+    (:cp950  . "Traditional Chinese (Big5, DBCS)"))
+  "The ten CP-NNNN code pages the spec's encoding registry promises
+to support. Each entry is (CL-KEYWORD . DESCRIPTION). The keyword is
+what NORMALIZE-ENCODING-NAME emits and what the underlying CL OPEN
+accepts as :external-format. See encoding-dispatch.issue, section
+'Code pages: the ANSI row, expanded'.")
+
+(defun %host-cl-supports-encoding-p (keyword)
+  "True when the running CL implementation accepts KEYWORD as an
+:external-format value. SBCL and CCL expose introspectable
+registries; on other impls we conservatively return T (let the CL
+OPEN surface its own error if the keyword turns out not to work).
+
+Used by %CHECK-OPEN-ENCODING-SUPPORTED to surface
+ENC-UNSUPPORTED-TARGET when user code requests a CP-NNNN the host
+doesn't ship — e.g. CP-936 on a stripped-down SBCL build."
+  #+sbcl
+  (not (null (ignore-errors (sb-impl::get-external-format keyword))))
+  #+ccl
+  (not (null (ignore-errors (ccl:lookup-character-encoding keyword))))
+  #-(or sbcl ccl)
+  t)
 
 (defun parse-open-external-format (string)
   "Decode the third argument of (open path mode ENCODING). Accepted
@@ -1671,21 +1719,37 @@ ENC-UNSUPPORTED-TARGET under --autocad."
                 (string-equal "CP-" encoding-string :end2 3)))))
 
 (defun %check-open-encoding-supported (encoding-string operator-name)
-  "Emit ENC-UNSUPPORTED-TARGET when the active dialect's host can't
-honour ENCODING-STRING (e.g. UTF-16 under --autocad: the AutoCAD
-runtime simply does not provide a UTF-16 reader). Informational —
-the runtime still attempts the open; downstream errors are the
-user's signal that the encoding is actually wrong."
+  "Emit ENC-UNSUPPORTED-TARGET when:
+
+- The active dialect's vendor runtime can't natively express
+  ENCODING-STRING (e.g. UTF-16 under --autocad: the AutoCAD runtime
+  simply does not provide a UTF-16 reader), or
+- The host CL implementation does not ship the corresponding
+  external-format (e.g. CP-936 on a stripped SBCL build).
+
+Informational — the runtime still attempts the open; downstream
+errors are the user's signal that the encoding is actually wrong."
   (when encoding-string
     (let* ((dialect (current-evaluation-dialect))
            (name (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
-      (case name
-        (:autocad-2026
-         (unless (%autocad-supports-encoding-p encoding-string)
-           (clautolisp.autolisp-runtime:signal-encoding-diagnostic
-            :enc-unsupported-target
-            "~A: encoding ~S has no AutoCAD-native expression (UTF-16 / UTF-32 are not in scope)."
-            operator-name encoding-string)))))))
+      ;; Dialect-level check: AutoCAD doesn't express UTF-16 / UTF-32.
+      (when (and (eq name :autocad-2026)
+                 (not (%autocad-supports-encoding-p encoding-string)))
+        (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+         :enc-unsupported-target
+         "~A: encoding ~S has no AutoCAD-native expression (UTF-16 / UTF-32 are not in scope)."
+         operator-name encoding-string))
+      ;; Host-CL probe: catches CP-NNNN values the impl doesn't ship.
+      (let* ((kw (handler-case
+                     (parse-open-external-format encoding-string)
+                   (error () nil))))
+        (when (and kw
+                   (keywordp kw)
+                   (not (%host-cl-supports-encoding-p kw)))
+          (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+           :enc-unsupported-target
+           "~A: encoding ~S (~S) is not available on the running CL implementation."
+           operator-name encoding-string kw))))))
 
 (defun %check-open-host-dependent-write (encoding-string direction operator-name)
   "Emit ENC-HOST-DEPENDENT (info-level) when ENCODING-STRING resolves
