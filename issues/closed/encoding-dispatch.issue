@@ -1,5 +1,39 @@
 # Specify and implement dialect-aware file-encoding behavior for `load` and `open`
 
+RESOLVED — shipped on master at commits `4b8470e..8579be4` (alfe
+1.0.20 / clautolisp 1.0.77 -> alfe 1.0.37 / clautolisp 1.0.94),
+across 13 phases on branch `encoding-dispatch`:
+
+  Phase 1  - populate SYSCODEPAGE / DWGCODEPAGE at launch
+  Phase 2  - clal- codepage helpers (system / drawing / mismatch-p)
+  Phase 3  - LOAD positional [encoding] argument
+  Phase 4  - enc-* diagnostic codes + per-dialect dispatch
+  Phase 5  - clal-file-encoding (BOM-sniff probe)
+  Phase 6  - LISPSYS dispatch + {0,1,2} validation
+  Phase 7  - OPEN per-dialect dispatch + ,ccs= parse + utf8 literal
+  Phase 8  - enc-codepage-mismatch / -unsupported-target /
+             -host-dependent / -unknown-codepage
+  Phase 9  - CP-NNNN registry (10 codepages) + host-CL probe
+  Phase 10 - --lax dialect + clal-suppress-enc-diagnostic pragma
+  Phase 11 - clal-lint-encoding-extensions static walker
+  Phase 12 - cross-dialect round-trip table
+  Phase 13 - vendor migration notes doc
+
+Plus the two follow-ups after the merge to master:
+
+  - transmit: don't pin *AUTOLISP-FILE-ENCODING* to US-ASCII in
+    the degenerate launch case (decoupled from SYSCODEPAGE; empty
+    string is the documented sentinel)
+  - docs: spec / clautolisp user manual / alfe user manual now
+    record the degenerate-case contract
+
+Test suites end-state: clautolisp 100% green (autolisp-builtins-
+core 948 -> 1106, mock-host 220 -> 227); alfe 313/313 (previously
+312/313 — pre-existing failure was the same root cause cleared
+up by the US-ASCII decoupling).
+
+CI: both GitHub Actions and GitLab CI green on master.
+
 ## Summary
 
 Both AutoCAD and BricsCAD extended AutoLISP's `open` (and, in AutoCAD's
