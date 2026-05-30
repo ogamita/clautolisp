@@ -39,6 +39,7 @@
                 #:host-tblobjname
                 #:host-getvar
                 #:host-setvar
+                #:host-set-derived-sysvar
                 #:host-grdraw
                 #:host-prompt
                 #:host-vlax-create-object

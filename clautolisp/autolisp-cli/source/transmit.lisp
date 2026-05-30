@@ -161,15 +161,53 @@ derived value."
    (list "*AUTOLISP-HELP*"
          (autolisp-string-or-nil (or usage-text "")))))
 
+(defun %autolisp-string->plain (value)
+  "If VALUE is an autolisp-string, return its underlying CL string;
+otherwise nil. Helper used during install-transmit-variables to
+mirror selected bindings into host-side sysvars."
+  (when (and value
+             (typep value 'clautolisp.autolisp-runtime:autolisp-string))
+    (clautolisp.autolisp-runtime:autolisp-string-value value)))
+
+(defun apply-launch-codepage-to-sysvars (context encoding-string)
+  "Push the launch-resolved file encoding into the host's SYSCODEPAGE
+and DWGCODEPAGE system variables. Both are documented as read-only,
+so this goes through HOST-SET-DERIVED-SYSVAR which bypasses the
+cell's read-only flag for the launch-time init step.
+
+Without this, SYSCODEPAGE / DWGCODEPAGE return the catalogue's \"\"
+placeholder — the bug spelled out at the top of
+issues/open/encoding-dispatch.issue.
+
+DWGCODEPAGE defaults to SYSCODEPAGE; when a drawing is later loaded
+that carries its own codepage, the host backend overrides
+DWGCODEPAGE via HOST-SET-DERIVED-SYSVAR again."
+  (when (and context encoding-string (plusp (length encoding-string)))
+    (let ((host
+           (clautolisp.autolisp-runtime:current-evaluation-host context)))
+      (when host
+        (clautolisp.autolisp-host:host-set-derived-sysvar
+         host "SYSCODEPAGE" encoding-string)
+        (clautolisp.autolisp-host:host-set-derived-sysvar
+         host "DWGCODEPAGE" encoding-string)))))
+
 (defun install-transmit-variables (context bindings)
   "Intern each binding's name as an AutoLISP symbol and set it to
 the binding's value in CONTEXT. Called once, before the first user
 action runs (init files included), so init files can branch on
-the values."
+the values.
+
+Side effect: when the *AUTOLISP-FILE-ENCODING* binding is seen, the
+same value is also pushed into the host's SYSCODEPAGE and
+DWGCODEPAGE sysvars via APPLY-LAUNCH-CODEPAGE-TO-SYSVARS, fixing the
+historical empty-string default for those sysvars."
   (dolist (binding bindings)
     (let ((name (first binding))
           (value (second binding)))
-      (set-variable (intern-autolisp-symbol name) value context))))
+      (set-variable (intern-autolisp-symbol name) value context)
+      (when (string= name "*AUTOLISP-FILE-ENCODING*")
+        (apply-launch-codepage-to-sysvars
+         context (%autolisp-string->plain value))))))
 
 (defun call-with-dynamic-transmit-binding (context name value thunk)
   "Set the *AUTOLISP-…* variable NAME to VALUE for the duration of

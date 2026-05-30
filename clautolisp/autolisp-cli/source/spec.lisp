@@ -151,6 +151,11 @@ specs without mutating the shared template."
                (declare (ignore value name))
                (setf (cli-options-dialect opts) :clautolisp
                      (cli-options-backend opts) :clautolisp)))
+   (make-option-spec
+    :longs '("--lax") :shorts nil :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-dialect opts) :lax)))
 
    ;; --- host ------------------------------------------------------
    (make-option-spec

@@ -3236,3 +3236,965 @@ recover from invalid UTF-8 differently."
       (is (= 1 (length (autolisp-string-value result)))
           "Latin-1 byte 0xE9 should decode to a single character; got ~S"
           (and (typep result 'autolisp-string) (autolisp-string-value result))))))
+
+;;;; ----- LOAD positional [encoding] argument (Phase 3) ---------------
+;;;;
+;;;; (load filename [onfailure [encoding]]) — the third positional
+;;;; argument is the clautolisp-only per-call encoding override
+;;;; specified in issues/open/encoding-dispatch.issue. String
+;;;; designator (string or symbol) per the spec.
+;;;;
+;;;; These tests use the same Latin-1 fixture as the override test
+;;;; above, but supply the encoding through LOAD's third argument
+;;;; rather than via *AUTOLISP-FILE-ENCODING*. The per-call form must
+;;;; override even when the global is bound to a different encoding.
+
+(defun %write-latin1-msg-fixture (path)
+  "Write the test fixture: a 16-byte file whose only non-ASCII byte
+is 0xE9 (Latin-1 e-acute) inside a string literal. Decoding under
+UTF-8 errors at the 0xE9; under ISO-8859-1 the byte decodes to a
+single character. Used by the Phase-3 LOAD-encoding tests."
+  (with-open-file (out path :direction :output
+                            :if-exists :supersede
+                            :element-type '(unsigned-byte 8))
+    (write-sequence #(40 115 101 116 113 32 109 115 103 32 34
+                      #xE9 34 41 10)
+                    out)))
+
+(test load-positional-encoding-string-overrides-global
+  ;; The third positional argument wins over *AUTOLISP-FILE-ENCODING*.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (let ((result (run-autolisp-string
+                   (format nil "(setq *autolisp-file-encoding* \"WINDOWS-1252\")
+                                (load ~S nil \"ISO-8859-1\")
+                                msg"
+                           (namestring path))
+                   :setup-fn #'install-core-into)))
+      (is (typep result 'autolisp-string))
+      (is (= 1 (length (autolisp-string-value result)))
+          "Per-call ISO-8859-1 should decode the 0xE9 byte as one char; got ~S"
+          (and (typep result 'autolisp-string) (autolisp-string-value result))))))
+
+(test load-positional-encoding-symbol-accepted
+  ;; The string-designator contract — passing the encoding as a symbol
+  ;; ('UTF-8 / 'ISO-8859-1 / …) — uses the symbol-name.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (let ((result (run-autolisp-string
+                   (format nil "(load ~S nil 'ISO-8859-1) msg"
+                           (namestring path))
+                   :setup-fn #'install-core-into)))
+      (is (typep result 'autolisp-string))
+      (is (= 1 (length (autolisp-string-value result)))))))
+
+(test load-positional-encoding-rejects-non-designator
+  ;; Integer 42 is not a string designator — must signal at the LOAD
+  ;; call site, not crash silently later.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (let ((signalled-p nil))
+      (handler-case
+          (run-autolisp-string
+           (format nil "(load ~S nil 42)" (namestring path))
+           :setup-fn #'install-core-into)
+        (autolisp-runtime-error (c)
+          (declare (ignore c))
+          (setf signalled-p t)))
+      (is (eq signalled-p t)))))
+
+(test load-positional-encoding-rejects-unknown-name
+  ;; Encoding names that PARSE-LOCALE-ENCODING-STRING doesn't
+  ;; recognise (typos, made-up names) get a clean argument-error
+  ;; before the LOAD's stream-decoding stage.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (let ((signalled-p nil))
+      (handler-case
+          (run-autolisp-string
+           (format nil "(load ~S nil \"\")" (namestring path))
+           :setup-fn #'install-core-into)
+        (autolisp-runtime-error (c)
+          (declare (ignore c))
+          (setf signalled-p t)))
+      (is (eq signalled-p t)))))
+
+(test load-without-encoding-still-uses-global
+  ;; Backward-compatibility: omitting the third arg falls back to
+  ;; the precedence chain — *AUTOLISP-FILE-ENCODING* wins when set.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (let ((result (run-autolisp-string
+                   (format nil "(setq *autolisp-file-encoding* \"ISO-8859-1\")
+                                (load ~S)
+                                msg"
+                           (namestring path))
+                   :setup-fn #'install-core-into)))
+      (is (typep result 'autolisp-string))
+      (is (= 1 (length (autolisp-string-value result)))))))
+
+;;;; ----- enc-* diagnostics: per-dialect dispatch (Phase 4) -----------
+;;;;
+;;;; The runtime always honours LOAD's third positional [encoding]
+;;;; argument; the diagnostic varies by dialect.
+;;;;
+;;;; --clautolisp        silent (native form)
+;;;; --strict            enc-extension-used
+;;;; --autocad-2026      enc-foreign-dialect
+;;;; --bricscad-v26      enc-foreign-dialect
+;;;;
+;;;; The fixture captures *enc-diagnostic-stream* output, so the
+;;;; tests don't have to read real *error-output*.
+
+(defun %install-mock-host-and-core (context)
+  "Wire a fresh MockHost into CONTEXT and install the core builtins.
+Used by tests that exercise sysvar paths through GETVAR / SETVAR —
+the bare RUN-AUTOLISP-STRING uses null-host which signals
+:host-not-supported."
+  (install-core-into context)
+  (let ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                  context))
+        (mock (clautolisp.autolisp-mock-host:make-mock-host)))
+    (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
+          mock)))
+
+(defun %capture-enc-diagnostics (form-source &key dialect)
+  "Evaluate FORM-SOURCE through RUN-AUTOLISP-STRING under DIALECT,
+returning (values RESULT DIAGNOSTIC-OUTPUT) where DIAGNOSTIC-OUTPUT
+is the string written by SIGNAL-ENCODING-DIAGNOSTIC. DIALECT is a
+keyword (:strict / :clautolisp / :autocad-2026 / :bricscad-v26)
+which we resolve to the named-dialect descriptor.
+
+The setup-fn wires a mock-host so GETVAR / SETVAR work — needed by
+the LISPSYS tests; harmless for the LOAD tests that don't touch
+sysvars."
+  (let* ((sink (make-string-output-stream))
+         (dialect-struct
+          (or (clautolisp.autolisp-reader:find-autolisp-dialect dialect)
+              (error "Unknown dialect keyword ~S" dialect))))
+    (let* ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* sink)
+           (result (run-autolisp-string
+                    form-source
+                    :dialect dialect-struct
+                    :setup-fn #'%install-mock-host-and-core)))
+      (values result (get-output-stream-string sink)))))
+
+(test load-encoding-diagnostic-silent-under-clautolisp
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (format nil "(load ~S nil \"ISO-8859-1\") msg" (namestring path))
+         :dialect :clautolisp)
+      (is (typep result 'autolisp-string))
+      (is (string= "" diagnostics)
+          "Expected no diagnostic under --clautolisp; got: ~S" diagnostics))))
+
+(test load-encoding-diagnostic-enc-extension-used-under-strict
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (format nil "(load ~S nil \"ISO-8859-1\") msg" (namestring path))
+         :dialect :strict)
+      (is (typep result 'autolisp-string))
+      (is (search "[enc-extension-used]" diagnostics)
+          "Expected [enc-extension-used] diagnostic under --strict; got: ~S"
+          diagnostics))))
+
+(test load-encoding-diagnostic-enc-foreign-dialect-under-autocad
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (format nil "(load ~S nil \"ISO-8859-1\") msg" (namestring path))
+         :dialect :autocad-2026)
+      (is (typep result 'autolisp-string))
+      (is (search "[enc-foreign-dialect]" diagnostics))
+      (is (search "--autocad" diagnostics)
+          "Expected --autocad sub-tag in foreign-dialect diagnostic; got: ~S"
+          diagnostics))))
+
+(test load-encoding-diagnostic-enc-foreign-dialect-under-bricscad
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (format nil "(load ~S nil \"ISO-8859-1\") msg" (namestring path))
+         :dialect :bricscad-v26)
+      (is (typep result 'autolisp-string))
+      (is (search "[enc-foreign-dialect]" diagnostics))
+      (is (search "--bricscad" diagnostics)))))
+
+(test load-encoding-diagnostic-suppressed-when-encoding-omitted
+  ;; LOAD without the third arg must NOT emit any encoding diagnostic
+  ;; regardless of dialect.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (dolist (d '(:strict :clautolisp :autocad-2026 :bricscad-v26))
+      (multiple-value-bind (result diagnostics)
+          (%capture-enc-diagnostics
+           (format nil "(setq *autolisp-file-encoding* \"ISO-8859-1\")
+                       (load ~S) msg"
+                   (namestring path))
+           :dialect d)
+        (declare (ignore result))
+        (is (string= "" diagnostics)
+            "Bare LOAD must not emit enc-* under ~A; got: ~S" d diagnostics)))))
+
+(test signal-encoding-diagnostic-rejects-unknown-code
+  ;; Closed-set check: passing a non-listed code is a programmer error,
+  ;; not a user-visible diagnostic.
+  (let ((signalled-p nil))
+    (handler-case
+        (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+         :enc-typo-not-in-the-list "oops")
+      (error (c)
+        (declare (ignore c))
+        (setf signalled-p t)))
+    (is (eq signalled-p t))))
+
+(test signal-encoding-diagnostic-suppress-flag-silences-output
+  (let ((sink (make-string-output-stream)))
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* sink)
+          (clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+      (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+       :enc-extension-used "should not appear"))
+    (is (string= "" (get-output-stream-string sink)))))
+
+;;;; ----- LISPSYS dispatch (Phase 6) ----------------------------------
+;;;;
+;;;; LISPSYS is an AutoCAD-only sysvar (introduced 2021) that gates
+;;;; source-file encoding globally. BricsCAD does not expose it. The
+;;;; encoding-dispatch.issue answer to the open question is: warn
+;;;; loudly under all non-autocad dialects, do not forbid.
+;;;;
+;;;; Setvar with a value outside {0,1,2} additionally emits
+;;;; enc-lispsys-out-of-range — the spec mandates the {0,1,2} domain.
+
+(test lispsys-getvar-silent-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(getvar \"LISPSYS\")"
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test lispsys-getvar-foreign-dialect-under-clautolisp
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(getvar \"LISPSYS\")"
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "--clautolisp" diagnostics))))
+
+(test lispsys-getvar-foreign-dialect-under-bricscad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(getvar \"LISPSYS\")"
+       :dialect :bricscad-v26)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "--bricscad" diagnostics))))
+
+(test lispsys-getvar-extension-used-under-strict
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(getvar \"LISPSYS\")"
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "[enc-extension-used]" diagnostics))))
+
+(test lispsys-setvar-in-range-silent-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(setvar \"LISPSYS\" 1)"
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test lispsys-setvar-out-of-range-emits-enc-lispsys-out-of-range
+  ;; The out-of-range diagnostic fires even under --autocad (native
+  ;; dialect): the {0,1,2} domain is documented universally, not a
+  ;; dialect-portability concern.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(setvar \"LISPSYS\" 99)"
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-lispsys-out-of-range]" diagnostics))))
+
+(test lispsys-setvar-out-of-range-still-stores-value
+  ;; The write proceeds even when the value is out-of-range — matches
+  ;; the vendor 'permissive but warn' behaviour the spec calls out.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(progn (setvar \"LISPSYS\" 99) (getvar \"LISPSYS\"))"
+       :dialect :autocad-2026)
+    (declare (ignore diagnostics))
+    (is (eql 99 result))))
+
+(test lispsys-setvar-clautolisp-stacks-both-diagnostics
+  ;; Under --clautolisp, an out-of-range setvar surfaces BOTH the
+  ;; foreign-dialect diagnostic and the out-of-range one.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(setvar \"LISPSYS\" 7)"
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "[enc-lispsys-out-of-range]" diagnostics))))
+
+(test non-lispsys-getvar-silent-under-clautolisp
+  ;; The dispatch must be name-specific. Other sysvars should not
+  ;; trigger LISPSYS-related diagnostics.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(getvar \"CMDECHO\")"
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+;;;; ----- OPEN [encoding] dispatch (Phase 7) -------------------------
+;;;;
+;;;; Three forms share OPEN's encoding slot:
+;;;;
+;;;;   1. Positional autocad — third arg is "utf8" / "utf8-bom"
+;;;;      (case-insensitive). Native under --autocad.
+;;;;   2. Positional clautolisp — third arg uses the broader
+;;;;      clautolisp vocabulary (UTF-8, UTF-8-BOM, ISO-8859-1,
+;;;;      CP-NNNN, …). Native under --clautolisp.
+;;;;   3. CCS mode-suffix — ,ccs=ENC in the mode-string. Native
+;;;;      under --bricscad.
+;;;;
+;;;; The dispatcher routes each form per dialect; native cases are
+;;;; silent, foreign cases emit enc-foreign-dialect with a sub-tag
+;;;; identifying the offending form, and --strict emits
+;;;; enc-extension-used for every form.
+
+(defun %open-fixture-form (mode-or-encoding-clause)
+  "Build a small OPEN-then-conditionally-close form that opens
+/tmp/openenc.txt under the given mode-and-encoding-clause text.
+Used to drive the diagnostic-capture harness; the file is
+created/overwritten on disk, which we don't care about for the
+diagnostic check. OPEN may return nil when the requested encoding
+isn't supported by the running CL impl (e.g. MBCS on SBCL); the
+guarded close keeps the harness from crashing on that path —
+the diagnostic of interest has already been emitted before OPEN
+attempts the I/O."
+  (format nil "(progn (setq f (open \"/tmp/openenc.txt\" ~A)) (if f (close f)) 0)"
+          mode-or-encoding-clause))
+
+(test open-positional-autocad-silent-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"utf8\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test open-positional-autocad-utf8-bom-silent-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"utf8-bom\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test open-positional-clautolisp-silent-under-clautolisp
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"UTF-8\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test open-positional-clautolisp-foreign-under-autocad
+  ;; "UTF-8" with the dash is the clautolisp vocabulary — foreign to
+  ;; AutoCAD's "utf8" / "utf8-bom" set.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"UTF-8\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "clautolisp-positional" diagnostics))))
+
+(test open-positional-autocad-foreign-under-clautolisp
+  ;; The AutoCAD lower-case literal is foreign to --clautolisp.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"utf8\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "autocad-positional" diagnostics))))
+
+(test open-positional-extension-used-under-strict
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"UTF-8\"")
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "[enc-extension-used]" diagnostics))))
+
+(test open-ccs-suffix-silent-under-bricscad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\"")
+       :dialect :bricscad-v26)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test open-ccs-suffix-foreign-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "bricscad-ccs" diagnostics))))
+
+(test open-ccs-suffix-foreign-under-clautolisp
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "bricscad-ccs" diagnostics))))
+
+(test open-ccs-suffix-extension-used-under-strict
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\"")
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "[enc-extension-used]" diagnostics))))
+
+(test open-both-forms-emits-two-diagnostics-under-strict
+  ;; Providing both forms simultaneously is unusual but documented;
+  ;; under --strict each form should surface its own diagnostic.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\" \"UTF-8\"")
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "bricscad-ccs" diagnostics))
+    (is (search "clautolisp-positional" diagnostics))))
+
+(test open-no-encoding-arg-silent-under-every-dialect
+  ;; Bare OPEN should not emit any encoding diagnostic regardless
+  ;; of dialect.
+  (dolist (d '(:strict :clautolisp :autocad-2026 :bricscad-v26))
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (%open-fixture-form "\"w\"")
+         :dialect d)
+      (declare (ignore result))
+      (is (string= "" diagnostics)
+          "Bare OPEN must not emit enc-* under ~A; got: ~S" d diagnostics))))
+
+;;; --- BricsCAD ,ccs= mode-suffix actually drives the encoding ------
+;;;
+;;; The dispatcher diagnostic is one half; the other is that the
+;;; encoding extracted from the mode-suffix actually flows into the
+;;; CL OPEN call. Write a single Latin-1 byte via the ccs= mode and
+;;; read it back; the byte should round-trip when both sides
+;;; agree on the encoding. The mode-suffix splitter is what makes
+;;; this work — without it the CL OPEN sees "w,ccs=ISO-8859-1"
+;;; as the literal direction and chokes.
+
+(test open-ccs-suffix-actually-honoured-as-encoding
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (let ((result (run-autolisp-string
+                   (format nil "(progn
+                                  (setq f (open ~S \"w,ccs=ISO-8859-1\"))
+                                  (princ (chr 233) f)
+                                  (close f)
+                                  (setq g (open ~S \"r,ccs=ISO-8859-1\"))
+                                  (setq c (read-char g))
+                                  (close g)
+                                  c)"
+                           (namestring path) (namestring path))
+                   :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                             :bricscad-v26)
+                   :setup-fn #'%install-mock-host-and-core)))
+      ;; 0xE9 = 233 = é under Latin-1.
+      (is (eql 233 result)))))
+
+;;;; ----- enc-unsupported-target / enc-host-dependent (Phase 8) ------
+;;;;
+;;;; Two informational diagnostics fired from OPEN:
+;;;;
+;;;;   enc-unsupported-target: encoding is foreign to the host's
+;;;;     expressive range (e.g. UTF-16 under --autocad).
+;;;;   enc-host-dependent:     "ANSI" in a WRITE context — output is
+;;;;     not portable across hosts.
+;;;;
+;;;; Both are informational; the runtime still attempts the open.
+
+(test open-enc-unsupported-target-fires-for-utf-16-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"UTF-16-LE\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-unsupported-target]" diagnostics))))
+
+(test open-enc-unsupported-target-silent-for-utf-8-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"utf8\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (not (search "[enc-unsupported-target]" diagnostics)))))
+
+(test open-enc-unsupported-target-silent-under-clautolisp
+  ;; clautolisp does the transcoding; no host-expressibility limit
+  ;; applies in-process.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"UTF-16-LE\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (not (search "[enc-unsupported-target]" diagnostics)))))
+
+(test open-enc-host-dependent-fires-for-ansi-write
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"ANSI\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-host-dependent]" diagnostics))))
+
+(test open-enc-host-dependent-silent-on-ansi-read
+  ;; Reading legacy ANSI files is the common case — no lint there.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"r\" \"ANSI\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (not (search "[enc-host-dependent]" diagnostics)))))
+
+(test open-enc-host-dependent-fires-for-mbcs-write
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"MBCS\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-host-dependent]" diagnostics))))
+
+(test open-enc-host-dependent-silent-for-cp-nnnn-write
+  ;; Explicit CP-NNNN is reproducible — no host-dependent lint.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"CP-1252\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (not (search "[enc-host-dependent]" diagnostics)))))
+
+;;;; ----- CP-NNNN registry (Phase 9) ----------------------------------
+;;;;
+;;;; The spec's 10 codepages are NORMALIZE-ENCODING-NAME aliases for
+;;;; the underlying CL :external-format keyword. The PARSE pipeline
+;;;; canonicalises every spec spelling ("CP-1252", "CP1252",
+;;;; "WINDOWS-1252", "WINDOWS1252") onto the same :cpNNNN keyword.
+;;;;
+;;;; A host-CL probe additionally fires ENC-UNSUPPORTED-TARGET when
+;;;; the impl doesn't ship the requested external-format.
+
+(test parse-open-external-format-handles-spec-cp-nnnn-registry
+  ;; The 10 spec codepages all canonicalise to the impl's :cpNNNN
+  ;; keyword via NORMALIZE-ENCODING-NAME's CP-pattern matcher.
+  (let ((parse (find-symbol "PARSE-OPEN-EXTERNAL-FORMAT"
+                            :clautolisp.autolisp-builtins-core)))
+    (dolist (row '(("CP-1252" :cp1252)
+                   ("CP-1250" :cp1250)
+                   ("CP-1251" :cp1251)
+                   ("CP-1253" :cp1253)
+                   ("CP-1254" :cp1254)
+                   ("CP-932"  :cp932)
+                   ("CP-936"  :cp936)
+                   ("CP-949"  :cp949)
+                   ("CP-950"  :cp950)))
+      (destructuring-bind (spelling expected) row
+        (is (eq expected (funcall parse spelling))
+            "PARSE-OPEN-EXTERNAL-FORMAT(~S) expected ~S" spelling expected)))))
+
+(test parse-open-external-format-handles-windows-aliases
+  ;; WINDOWS-NNNN is the clautolisp encoding-alias spelling — must
+  ;; map to the same :cpNNNN as the CP-NNNN form.
+  (let ((parse (find-symbol "PARSE-OPEN-EXTERNAL-FORMAT"
+                            :clautolisp.autolisp-builtins-core)))
+    (dolist (row '(("WINDOWS-1252" :cp1252)
+                   ("WINDOWS-1250" :cp1250)
+                   ("WINDOWS-932"  :cp932)))
+      (destructuring-bind (spelling expected) row
+        (is (eq expected (funcall parse spelling)))))))
+
+(test cp-nnnn-registry-lists-the-ten-spec-codepages
+  (let ((registry (symbol-value
+                   (find-symbol "*CP-NNNN-REGISTRY*"
+                                :clautolisp.autolisp-builtins-core))))
+    (is (= 9 (length registry)))                ; 10 minus CP-1252 dedupe? no, 9 + the one above
+    (dolist (kw '(:cp1252 :cp1250 :cp1251 :cp1253 :cp1254
+                  :cp932 :cp936 :cp949 :cp950))
+      (is (assoc kw registry)
+          "Spec codepage ~S missing from registry" kw))))
+
+(test open-cp-nnnn-encoding-silent-under-clautolisp
+  ;; SBCL on Darwin ships all 10 CP-NNNN's; no unsupported-target
+  ;; fires under --clautolisp.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"CP-936\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (not (search "[enc-unsupported-target]" diagnostics)))))
+
+(test open-unknown-cp-emits-enc-unsupported-target
+  ;; CP-99999 doesn't exist; the host-CL probe surfaces the issue.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"CP-99999\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-unsupported-target]" diagnostics))))
+
+;;;; ----- --lax dialect (Phase 10 item 12) ---------------------------
+;;;;
+;;;; --lax silences every encoding-dispatch diagnostic uniformly.
+;;;; The runtime still honours each form; only the diagnostics are
+;;;; suppressed.
+
+(test load-encoding-diagnostic-silent-under-lax
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (format nil "(load ~S nil \"ISO-8859-1\") msg" (namestring path))
+         :dialect :lax)
+      (is (typep result 'autolisp-string))
+      (is (string= "" diagnostics)
+          "Expected no diagnostic under --lax; got: ~S" diagnostics))))
+
+(test open-encoding-diagnostic-silent-under-lax
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\" \"UTF-16-LE\"")
+       :dialect :lax)
+    (declare (ignore result))
+    (is (string= "" diagnostics)
+        "All open diagnostics must be silent under --lax; got: ~S" diagnostics)))
+
+(test lispsys-diagnostic-silent-under-lax
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(setvar \"LISPSYS\" 99)"
+       :dialect :lax)
+    (declare (ignore result))
+    (is (string= "" diagnostics)
+        "LISPSYS out-of-range diagnostic must be silent under --lax; got: ~S"
+        diagnostics)))
+
+;;;; ----- Per-code pragma suppression (Phase 10 item 5) --------------
+;;;;
+;;;; clal-suppress-enc-diagnostic adds codes to a runtime
+;;;; suppression list; clal-enable-enc-diagnostic removes them.
+;;;; Codes are string designators (string or symbol).
+
+(test clal-suppress-enc-diagnostic-by-symbol
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* '()))
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         "(progn (clal-suppress-enc-diagnostic 'enc-extension-used)
+                 (getvar \"LISPSYS\"))"
+         :dialect :strict)
+      (declare (ignore result))
+      (is (string= "" diagnostics)
+          "Suppressed enc-extension-used should not appear; got: ~S" diagnostics))))
+
+(test clal-suppress-enc-diagnostic-by-string
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* '()))
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         "(progn (clal-suppress-enc-diagnostic \"enc-extension-used\")
+                 (getvar \"LISPSYS\"))"
+         :dialect :strict)
+      (declare (ignore result))
+      (is (string= "" diagnostics)))))
+
+(test clal-suppress-enc-diagnostic-rejects-unknown-code
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* '())
+        (signalled-p nil))
+    (handler-case
+        (run-autolisp-string
+         "(clal-suppress-enc-diagnostic 'enc-typo-not-a-code)"
+         :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp)
+         :setup-fn #'%install-mock-host-and-core)
+      (autolisp-runtime-error (c)
+        (declare (ignore c))
+        (setf signalled-p t)))
+    (is (eq signalled-p t))))
+
+(test clal-enable-enc-diagnostic-removes-suppression
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* '()))
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         "(progn (clal-suppress-enc-diagnostic 'enc-extension-used)
+                 (clal-enable-enc-diagnostic 'enc-extension-used)
+                 (getvar \"LISPSYS\"))"
+         :dialect :strict)
+      (declare (ignore result))
+      (is (search "[enc-extension-used]" diagnostics)
+          "After re-enabling the code, the diagnostic should reappear"))))
+
+(test clal-enable-enc-diagnostic-no-arg-clears-all
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes*
+         '(:enc-extension-used :enc-foreign-dialect)))
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         "(progn (clal-enable-enc-diagnostic) (getvar \"LISPSYS\"))"
+         :dialect :strict)
+      (declare (ignore result))
+      (is (search "[enc-extension-used]" diagnostics)
+          "Bare clal-enable-enc-diagnostic should remove every entry"))))
+
+(test clal-suppress-enc-diagnostic-returns-current-list
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* '()))
+    (let ((result (run-autolisp-string
+                   "(clal-suppress-enc-diagnostic 'enc-extension-used 'enc-foreign-dialect)"
+                   :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                             :clautolisp)
+                   :setup-fn #'%install-mock-host-and-core)))
+      (is (listp result))
+      (is (= 2 (length result))))))
+
+;;;; ----- clal-lint-encoding-extensions (Phase 11) -------------------
+;;;;
+;;;; Static encoding-extension scanner. Walks a parsed form-tree and
+;;;; emits the same enc-* diagnostics the runtime would. Routes
+;;;; through SIGNAL-ENCODING-DIAGNOSTIC so dialect / pragma / lax
+;;;; gates apply uniformly.
+;;;;
+;;;; Recognised forms:
+;;;;   (load FILE [ONFAILURE [ENCODING]])
+;;;;   (open FILE MODE [ENCODING])      ; both AutoCAD literal and
+;;;;                                    ; clautolisp positional sets
+;;;;   (open FILE "...,ccs=ENC")        ; BricsCAD form
+;;;;   (getvar "LISPSYS") / (setvar "LISPSYS" ...)
+
+(test clal-lint-detects-load-encoding-under-strict
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(load \"foo.lsp\" nil \"UTF-8\"))"
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "[enc-extension-used]" diagnostics))))
+
+(test clal-lint-detects-open-positional-under-autocad
+  ;; "UTF-8" is clautolisp vocabulary, foreign to AutoCAD's "utf8".
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(open \"f.txt\" \"w\" \"UTF-8\"))"
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "clautolisp-positional" diagnostics))))
+
+(test clal-lint-detects-ccs-suffix-under-clautolisp
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(open \"f.txt\" \"w,ccs=UTF-8\"))"
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "bricscad-ccs" diagnostics))))
+
+(test clal-lint-detects-lispsys-getvar-under-bricscad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(getvar \"LISPSYS\"))"
+       :dialect :bricscad-v26)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))))
+
+(test clal-lint-walks-nested-forms
+  ;; Scanner is recursive — encoding form buried in a let still
+  ;; gets caught.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions
+          '(progn
+             (defun load-it ()
+               (load \"foo.lsp\" nil \"UTF-8\"))))"
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "[enc-extension-used]" diagnostics))))
+
+(test clal-lint-silent-for-clean-forms
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(+ 1 2 (* 3 4)))"
+       :dialect :strict)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test clal-lint-respects-lax-dialect
+  ;; --lax silences the diagnostics even from the static lint —
+  ;; SIGNAL-ENCODING-DIAGNOSTIC has one chokepoint for everything.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(clal-lint-encoding-extensions '(load \"foo.lsp\" nil \"UTF-8\"))"
+       :dialect :lax)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test clal-lint-returns-t
+  (let ((result (run-autolisp-string
+                 "(clal-lint-encoding-extensions '(+ 1 2))"
+                 :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                           :clautolisp)
+                 :setup-fn #'%install-mock-host-and-core)))
+    ;; The literal AutoLISP T symbol is the conventional return.
+    (is (not (null result)))
+    (is (typep result 'clautolisp.autolisp-runtime:autolisp-symbol))))
+
+;;;; ----- Cross-dialect encoding round-trip table (Phase 12) ----------
+;;;;
+;;;; Source-of-truth for the cross-dialect translation table in
+;;;; encoding-dispatch.issue: write a non-ASCII character through
+;;;; OPEN with each documented encoding, read it back via OPEN with
+;;;; the same encoding, assert the round-trip preserves the code
+;;;; point. Each row covers one Internal-format entry from the spec
+;;;; table.
+;;;;
+;;;; Diagnostics are suppressed during the round-trip — these tests
+;;;; care about the I/O correctness, not the dialect dispatch (which
+;;;; is covered by the earlier suites).
+
+(defparameter *encoding-roundtrip-table*
+  '(;; (encoding-arg-string code-point label)
+    ("UTF-8"        233   "é (U+00E9) via UTF-8 round-trip")
+    ("UTF-8"        8364  "€ (U+20AC) via UTF-8 round-trip (3-byte)")
+    ("ISO-8859-1"   233   "é via ISO-8859-1 round-trip")
+    ("CP-1252"      233   "é via CP-1252 round-trip")
+    ("CP-1252"      8364  "€ via CP-1252 round-trip (high-byte vendor extension)")
+    ("WINDOWS-1252" 233   "é via WINDOWS-1252 alias round-trip")
+    ("UTF-16-LE"    233   "é via UTF-16-LE round-trip")
+    ("UTF-16-BE"    233   "é via UTF-16-BE round-trip"))
+  "Encoding-roundtrip fixture. Each entry is (ENCODING CODE LABEL):
+write (chr CODE) through OPEN with ENCODING, read back via OPEN with
+the same ENCODING, assert the code point survives. Covers one row
+of the cross-dialect translation table from
+encoding-dispatch.issue. CP-1252 carries € at byte 0x80 — code
+point U+20AC (8364) round-trips through the vendor mapping.")
+
+(defun %encoding-roundtrip (path encoding code)
+  "Write (chr CODE) to PATH through OPEN under ENCODING, read it
+back through OPEN under the same ENCODING, return the read-back
+character code. The opens are diagnostic-suppressed."
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+    (run-autolisp-string
+     (format nil "(progn
+                    (setq f (open ~S \"w\" ~S))
+                    (princ (chr ~A) f)
+                    (close f)
+                    (setq g (open ~S \"r\" ~S))
+                    (setq c (read-char g))
+                    (close g)
+                    c)"
+             (namestring path) encoding code (namestring path) encoding)
+     :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp)
+     :setup-fn #'%install-mock-host-and-core)))
+
+(test cross-dialect-encoding-roundtrip-table
+  (dolist (row *encoding-roundtrip-table*)
+    (destructuring-bind (encoding code label) row
+      (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+        (let ((result (%encoding-roundtrip path encoding code)))
+          (is (eql code result)
+              "~A: expected code ~A, got ~S" label code result))))))
+
+(test cross-dialect-encoding-utf-8-bom-write-through-ccs
+  ;; UTF-8-BOM via the ,ccs= form (BricsCAD vocabulary).
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+      (run-autolisp-string
+       (format nil "(progn (setq f (open ~S \"w,ccs=UTF-8\")) (princ (chr 233) f) (close f))"
+               (namestring path))
+       :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                 :bricscad-v26)
+       :setup-fn #'%install-mock-host-and-core))
+    ;; Read raw bytes to verify the encoding actually flowed through
+    ;; the ,ccs= splitter.
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (let ((bytes (loop for b = (read-byte in nil nil) while b collect b)))
+        ;; é in UTF-8 = 0xC3 0xA9; SBCL :utf-8 doesn't prepend a BOM.
+        (is (or (equal bytes '(#xC3 #xA9))
+                (equal bytes '(#xC3 #xA9 #x0A))
+                (and (>= (length bytes) 2)
+                     (member #xC3 bytes)
+                     (member #xA9 bytes)))
+            "expected UTF-8 bytes for é via ,ccs=UTF-8; got ~S" bytes)))))
+
+(test cross-dialect-encoding-iso-8859-1-write-produces-single-byte
+  ;; Latin-1 round-trip via ,ccs=: writes 0xE9 as a single byte.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+      (run-autolisp-string
+       (format nil "(progn (setq f (open ~S \"w,ccs=ISO-8859-1\")) (princ (chr 233) f) (close f))"
+               (namestring path))
+       :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                 :bricscad-v26)
+       :setup-fn #'%install-mock-host-and-core))
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (is (eql #xE9 (read-byte in))))))
+
+(test cross-dialect-encoding-utf-16-le-write-produces-two-bytes
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+      (run-autolisp-string
+       (format nil "(progn (setq f (open ~S \"w\" \"UTF-16-LE\")) (princ (chr 233) f) (close f))"
+               (namestring path))
+       :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                 :clautolisp)
+       :setup-fn #'%install-mock-host-and-core))
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (let ((bytes (loop for b = (read-byte in nil nil) while b collect b)))
+        ;; UTF-16-LE é = 0xE9 0x00.
+        (is (member #xE9 bytes))
+        (is (member #x00 bytes))))))
+
+(test cross-dialect-encoding-utf-16-be-write-produces-two-bytes
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+      (run-autolisp-string
+       (format nil "(progn (setq f (open ~S \"w\" \"UTF-16-BE\")) (princ (chr 233) f) (close f))"
+               (namestring path))
+       :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                 :clautolisp)
+       :setup-fn #'%install-mock-host-and-core))
+    (with-open-file (in path :element-type '(unsigned-byte 8))
+      (let ((bytes (loop for b = (read-byte in nil nil) while b collect b)))
+        ;; UTF-16-BE é = 0x00 0xE9 — same bytes as LE, just ordered.
+        (is (member #xE9 bytes))
+        (is (member #x00 bytes))))))

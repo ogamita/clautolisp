@@ -4254,6 +4254,26 @@ This suggests that:
 - BricsCAD should not be modeled purely as a pre-Unicode AutoLISP environment,
 - text and encoding behavior must remain part of the dialect/environment profile.
 
+*** clautolisp dispatch for ~LISPSYS~
+clautolisp accepts ~(getvar "LISPSYS")~ and ~(setvar "LISPSYS" n)~
+under every dialect — extensions are always available, the dialect
+controls diagnostic emission. Per encoding-dispatch.issue:
+
+| Dialect          | ~GETVAR~ / ~SETVAR~ on ~LISPSYS~ |
+|------------------+----------------------------------|
+| ~--autocad-2026~ | silent (native dialect)          |
+| ~--strict~       | ~enc-extension-used~             |
+| ~--bricscad-v26~ | ~enc-foreign-dialect~ / bricscad |
+| ~--clautolisp~   | ~enc-foreign-dialect~ / clautolisp |
+
+Additionally, ~(setvar "LISPSYS" n)~ with ~n \notin {0,1,2}~ emits
+~enc-lispsys-out-of-range~ under all dialects; the write itself
+still proceeds (matching the vendor 'permissive but warn'
+behaviour). The diagnostics are advisory — user code that calls
+~LISPSYS~ keeps running under every dialect; only the diagnosis
+varies. See the encoding-dispatch.issue 'Diagnostics' section for
+the full enc-* code table.
+
 ** Representation-Level Notes
 At the observable language level, the following can be said:
 
@@ -10166,6 +10186,301 @@ None.
 
 *** Source Notes
 - clautolisp-only extension; see this chapter's Overview.
+
+#+LATEX: \newpage
+
+** Function Entry: CLAL-SYSTEM-CODEPAGE
+*** Name
+~clal-system-codepage~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-system-codepage)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Return the canonical clautolisp codepage spelling for the host's
+~SYSCODEPAGE~ system variable. Wraps ~(getvar "SYSCODEPAGE")~ and
+canonicalises the raw value:
+
+| Raw sysvar value | Canonical return string |
+|------------------+-------------------------|
+| ~"ANSI_NNNN"~    | ~"CP-NNNN"~             |
+| ~"WINDOWS-NNNN"~ | ~"CP-NNNN"~             |
+| ~"CPNNNN"~       | ~"CP-NNNN"~             |
+| ~"CP-NNNN"~      | ~"CP-NNNN"~ (unchanged) |
+| ~"UTF-8"~        | ~"UTF-8"~               |
+| ~"ISO-8859-1"~   | ~"ISO-8859-1"~          |
+| ~"US-ASCII"~     | ~"US-ASCII"~            |
+| ~""~ (empty)     | ~"ANSI"~                |
+| anything else    | unchanged               |
+
+clautolisp's launch wiring populates ~SYSCODEPAGE~ from
+~LC_ALL / LANG / LC_CTYPE / -e~ at startup (see
+issues/closed/encoding-dispatch.issue), so a Western-European
+~en_US.UTF-8~ session reports ~"UTF-8"~; a French
+~fr_FR.WINDOWS-1252~ session reports ~"CP-1252"~. On a live
+BricsCAD bridge, ~SYSCODEPAGE~ arrives in vendor format
+(~"ANSI_1252"~) and folds onto the same canonical answer
+clautolisp would produce in-process.
+
+*** Return Values
+A non-empty AutoLISP string.
+
+*** Side Effects
+None.
+
+*** Affected By
+- ~(getvar "SYSCODEPAGE")~ on the active host.
+- The launch-time locale chain (clautolisp only).
+
+*** Exceptional Situations
+~:host-not-supported~ when the active host backend does not
+implement ~host-getvar~.
+
+*** Examples
+#+begin_example
+;; UTF-8 locale.
+(clal-system-codepage) => "UTF-8"
+
+;; fr_FR.WINDOWS-1252 locale (clautolisp folds to "CP-1252").
+(clal-system-codepage) => "CP-1252"
+
+;; Vendor-side bridge (alfe + BricsCAD).
+(clal-system-codepage) => "CP-1252"
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since
+  clautolisp 1.0.80.
+- AutoCAD: NOT present (~SYSCODEPAGE~ is, but the canonicalising
+  wrapper is clautolisp-only).
+- BricsCAD: NOT present (same).
+
+*** Source Notes
+- clautolisp-only extension. See encoding-dispatch.issue for the
+  canonicalisation table and the full launch-resolution chain.
+
+#+LATEX: \newpage
+
+** Function Entry: CLAL-DRAWING-CODEPAGE
+*** Name
+~clal-drawing-codepage~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-drawing-codepage)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Return the canonical clautolisp codepage spelling for the host's
+~DWGCODEPAGE~ system variable, using the same canonicalisation
+table as ~clal-system-codepage~. ~DWGCODEPAGE~ records the
+codepage the current drawing was authored under; without a loaded
+drawing it defaults to ~SYSCODEPAGE~.
+
+The function exists separately from ~clal-system-codepage~ so
+user code can compare the two (typically through
+~clal-codepage-mismatch-p~) and warn before consuming drawing-
+authored text whose interpretation depends on the codepage.
+
+*** Return Values
+A non-empty AutoLISP string.
+
+*** Side Effects
+None.
+
+*** Affected By
+- ~(getvar "DWGCODEPAGE")~ on the active host.
+- The most-recently-loaded drawing's encoding header.
+
+*** Exceptional Situations
+~:host-not-supported~ when the active host backend does not
+implement ~host-getvar~.
+
+*** Examples
+#+begin_example
+;; No drawing loaded; defaults to SYSCODEPAGE.
+(clal-drawing-codepage) => "UTF-8"
+
+;; After loading a drawing authored under a Czech Windows machine.
+(clal-drawing-codepage) => "CP-1250"
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since
+  clautolisp 1.0.80.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension.
+
+#+LATEX: \newpage
+
+** Function Entry: CLAL-CODEPAGE-MISMATCH-P
+*** Name
+~clal-codepage-mismatch-p~
+
+*** Class
+clautolisp Extension Predicate
+
+*** Syntax
+#+begin_example
+(clal-codepage-mismatch-p)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Return ~T~ when the canonical ~DWGCODEPAGE~ differs from the
+canonical ~SYSCODEPAGE~, ~nil~ otherwise. Cheap defensive check
+before consuming drawing-authored text: a mismatch means strings
+authored under one ANSI codepage may garble when interpreted
+under another (the classic "Czech-authored drawing read on a
+French machine" failure mode).
+
+The comparison runs on the canonicalised form, so
+~"ANSI_1252"~ vs ~"WINDOWS-1252"~ correctly registers as no
+mismatch.
+
+*** Return Values
+~T~ or ~nil~.
+
+*** Side Effects
+None.
+
+*** Affected By
+- Same as ~clal-system-codepage~ and ~clal-drawing-codepage~.
+
+*** Exceptional Situations
+~:host-not-supported~ when ~host-getvar~ is unimplemented.
+
+*** Examples
+#+begin_example
+;; Same codepage on both sides.
+(clal-codepage-mismatch-p) => nil
+
+;; CP-1250 drawing on a CP-1252 host.
+(clal-codepage-mismatch-p) => T
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since
+  clautolisp 1.0.80.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension.
+
+#+LATEX: \newpage
+
+** Function Entry: CLAL-FILE-ENCODING
+*** Name
+~clal-file-encoding~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-file-encoding path)
+#+end_example
+
+*** Arguments and Values
+- ~path~ -- AutoLISP string. Filename to sniff; resolved against the
+  AutoLISP search path the same way ~LOAD~ would. Need not be a
+  ~.lsp~ source file; any file is accepted.
+
+*** Description
+Open ~path~, read up to the first four bytes, and return the
+canonical clautolisp encoding implied by the byte-order mark:
+
+| BOM bytes      | Returned string |
+|----------------+-----------------|
+| ~EF BB BF~     | ~"UTF-8-BOM"~   |
+| ~FF FE~        | ~"UTF-16-LE"~   |
+| ~FE FF~        | ~"UTF-16-BE"~   |
+| ~FF FE 00 00~  | ~"UTF-32-LE"~   |
+| ~00 00 FE FF~  | ~"UTF-32-BE"~   |
+| no BOM         | ~"ANSI"~        |
+
+UTF-32-LE and UTF-16-LE share their first two bytes; the sniffer
+checks UTF-32 first so the two-byte UTF-16 prefix doesn't mask a
+four-byte UTF-32 BOM.
+
+~clal-file-encoding~ is the clautolisp counterpart to BricsCAD's
+~vle-file-encoding~. Differences:
+
+- Returns canonical clautolisp strings (e.g. ~"UTF-16-LE"~) rather
+  than vendor strings (~"UTF-16LE"~).
+- Preserves the UTF-8-BOM / plain-UTF-8 distinction. BricsCAD
+  reports plain ~"UTF-8"~ in both cases; clautolisp reports
+  ~"UTF-8-BOM"~ when the marker is present, letting user code
+  decide between rewriting the BOM and dropping it.
+- Returns ~"ANSI"~ rather than the bare empty string when no BOM
+  is detected — the file might be ANSI, UTF-8 without BOM, or
+  something else; without a marker the encoding is undetermined
+  and falls back to the host code page.
+
+*** Return Values
+- AutoLISP string when the file exists and is readable.
+- ~nil~ when the file cannot be resolved; also sets ~ERRNO~ to
+  ~73~ (same convention as ~LOAD~'s missing-file path).
+
+*** Side Effects
+- Opens ~path~ for reading and immediately closes it.
+- Sets ~ERRNO~ to ~73~ on resolution failure, ~0~ on success.
+
+*** Affected By
+- The AutoLISP search-path used by ~LOAD~.
+
+*** Exceptional Situations
+- Returns ~nil~ rather than signalling for the common "file not
+  found" case; user code can chain ~clal-file-encoding~ into a
+  presence check.
+
+*** Examples
+#+begin_example
+;; UTF-8 source with a BOM.
+(clal-file-encoding "lib/with-bom.lsp")
+=> "UTF-8-BOM"
+
+;; BOMless source (could be anything from US-ASCII to ANSI to
+;; UTF-8-without-BOM; we don't speculate).
+(clal-file-encoding "lib/plain.lsp")
+=> "ANSI"
+
+;; Nonexistent path -> nil + ERRNO 73.
+(clal-file-encoding "/no/such/file") => nil
+(getvar "ERRNO")                     => 73
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since
+  clautolisp 1.0.83.
+- AutoCAD: NOT present.
+- BricsCAD: ~vle-file-encoding~ is the analogue but does not
+  preserve the UTF-8-BOM distinction and uses vendor strings.
+
+*** Source Notes
+- clautolisp-only extension. See encoding-dispatch.issue for the
+  cross-dialect translation table this helper's vocabulary
+  matches.
 
 #+LATEX: \newpage
 
