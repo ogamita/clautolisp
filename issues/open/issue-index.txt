@@ -14,7 +14,19 @@ system-variables.issues
 source-aware-defun-documentation.issue
 source-aware-defun-documentation.lsp
 
-clautolisp-debugger.issue
+clautolisp-debugger.issue  -- parent tracking issue; see the plan in
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org
+  Phase issues (in order):
+    debugger-source-map.issue            (Phase 0)
+    debugger-instrumentation.issue       (Phase 1)
+    debugger-snapshot-stepping.issue     (Phase 2)
+    debugger-error-integration.issue     (Phase 3)
+    debugger-inspector.issue             (Phase 4)
+    debugger-ui-protocol-and-dumb.issue  (Phase 5)
+    debugger-ui-ncurses.issue            (Phase 6)
+    debugger-ui-emacs-aldb.issue         (Phase 7)
+    deferred-debugger-compiler-two-bodies.issue  (Phase 8, deferred)
+    deferred-debugger-remote-cad.issue           (Phase 9, deferred)
 
 
 

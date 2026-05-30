@@ -1,0 +1,47 @@
+debugger-error-integration — Phase 3: *error* interception + vl-catch-all-apply
+================================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 3)
+  clautolisp/documentation/clautolisp-debugger-spec.org (§10)
+  issues/open/debugger-snapshot-stepping.issue (prerequisite — Phase 2)
+
+Context
+-------
+
+AutoLISP has no condition system — only the `*error*` function-valued global
+and vl-catch-all-apply / vl-catch-all-error-p / vl-catch-all-error-message.
+The runtime already signals a structured `autolisp-runtime-error` (code /
+message / details / call-stack, api.lisp:87) and tracks per-session `errno`
+(api.lisp:456). This phase wires those error paths into the debugger.
+
+NOTE: verify at kickoff whether a `*error*`-handler hook already exists in
+the runtime; if not, adding it is part of this phase.
+
+Scope / deliverables
+--------------------
+
+1. `*error*` interception (spec §10.1): on the uncaught-error path, build a
+   snapshot at the error point, send `:unhandled-error`, block on inbound.
+   Resolutions:
+   - :continue-with-error  — invoke the user's real `*error*` (default).
+   - :continue-with-return — supply a value for the erroring form; offered
+     ONLY for form-internal errors (e.g. (/ 1 0)), never host primitives.
+   - :abort — unwind cleanly, restoring system variables.
+   Show the user's `*error*` handler as a frame so it can be stepped into.
+
+2. vl-catch-all-apply (spec §10.2): record each catch as a frame in the
+   per-thread `catch-stack`; with "break on caught error" enabled (default
+   off) send `:caught-error` before the AutoLISP error object is returned.
+
+3. No restarts surfaced in the AutoLISP-facing UI (spec §10.3); the CL
+   condition system is used internally only.
+
+Acceptance
+----------
+
+- (/ 1 0) breaks into the debugger with the erroring form highlighted;
+  :abort restores sysvars; :continue-with-return supplies a value.
+- A vl-catch-all-apply frame appears in the snapshot's catch-stack; break-on-
+  caught fires when enabled.
+- FiveAM tests; `*version*` bumped.

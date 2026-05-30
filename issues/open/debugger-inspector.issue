@@ -1,0 +1,50 @@
+debugger-inspector — Phase 4: the inspector (pages, accessors, path, workspace)
+================================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 4)
+  clautolisp/documentation/clautolisp-debugger-spec.org (Part IV: §14–§16)
+  issues/open/debugger-snapshot-stepping.issue (uses snapshot values)
+
+Context
+-------
+
+The inspector is a SEPARATE library from the debugger (the debugger uses it
+to display values, but it is also usable from any REPL, attached or not). It
+is a generic value browser that tracks the ORIGIN of the inspected value and
+the NAVIGATION PATH from origin to the current value, so the user can
+reconstruct accessor expressions or save references.
+
+Scope / deliverables
+--------------------
+
+1. New system `clautolisp/autolisp-inspect`, package `clautolisp.inspect`:
+   - `(inspect value &key into origin) -> inspector-session`.
+   - `inspector-session` ops: current, history, page, origin, down, up, eval,
+     path-expression, bind (spec §14).
+
+2. `inspect-page-for` generic (spec §15) + per-type methods and accessors for
+   every AutoLISP type: numbers, strings (`(substr _ n 1)`), symbols, cons /
+   list (`(car _)`, `(cdr _)`, `(nth n _)`), ename (`(cdr (assoc g (entget _)))`),
+   selection set (`(ssname _ n)`), VLA object (`(vla-get-prop _)`), file
+   descriptor (read-only), hash table. Each component: label, preview,
+   accessor S-expr, value. Non-AutoLISP-expressible accessors marked :opaque.
+
+3. Path-expression composition (spec §15.2): fold the accessor chain from
+   origin; return (values partial :partial) when an :opaque step is crossed.
+
+4. Workspace `$N` (spec §16.2): per-session numbered slots `$1..$N` + `$0`
+   alias, in a debugger-private namespace that never touches AutoLISP's symbol
+   table; resolved by the debugger eval layer only.
+
+5. `session-bind target` (spec §16.1): :workspace (default) / :global SYMBOL /
+   :frame FRAME SYMBOL / :setq SYMBOL, with frame-aware semantics and the
+   §16.1 restriction (no NEW frame-local binding mid-execution).
+
+Acceptance
+----------
+
+- Inspect an ename, descend into DXF group 10, copy path
+  `(cdr (assoc 10 (entget EN)))`, bind to `$4`, then eval `(distance $4 $5)`.
+- :opaque descent yields a partial path + offers a workspace binding.
+- FiveAM tests; `*version*` bumped.

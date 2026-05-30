@@ -1,0 +1,40 @@
+deferred-debugger-compiler-two-bodies — Phase 8: compiler two-bodies discipline
+================================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 8)
+  clautolisp/documentation/clautolisp-debugger-spec.org (§5, §13)
+
+DEFERRED — gated on the clautolisp compiler-to-CL, which does not yet exist.
+
+Context
+-------
+
+clautolisp is currently an interpreter, so the v1 debugger uses the
+`*debug-mode*` interpreter instrumentation variant (spec §11.3, §13 "v1").
+The full two-bodies discipline (Raskin) with call-site entry-point dispatch
+(Fjeld) becomes available only when the compiler-to-CL lands. The debug
+protocol (Part III) and all three UIs are UNCHANGED across the migration
+(spec §13), so this is purely an instrumentation-backend swap.
+
+Scope (when unblocked)
+----------------------
+
+- Emit two CL bodies per AutoLISP defun: `foo/ordinary` (optimised, no poll
+  points) and `foo/debug` (instrumented), behind a function-entries vector
+  (spec §5.1).
+- Disable across-poll-point optimisations in the debug body (spec §5.2): no
+  CSE / dead-code elim of sub-form results / LICM / TCO / type-inference
+  propagation across poll points.
+- Call-site dispatch: ordinary code calls ordinary entry points, debug code
+  calls debug entry points; debugging-ness propagates down the call chain
+  (spec §5). Emit `function-debug-metadata` from the compiler (spec §7).
+- Keep the interpreter available as a fallback (low optimisation /
+  macroexpansion debugging).
+
+Acceptance (when unblocked)
+---------------------------
+
+- Production (ordinary) code pays zero instrumentation cost; entering a debug
+  entry point keeps the whole call chain instrumented; same UI behaviour as
+  the interpreter path.

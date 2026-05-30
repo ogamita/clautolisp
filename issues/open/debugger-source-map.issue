@@ -1,0 +1,58 @@
+debugger-source-map — Phase 0: source positions through lowering + debug metadata
+==================================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 0, §1.2)
+  clautolisp/documentation/clautolisp-debugger-spec.org (§3, §4, §7, §8.1)
+  issues/open/clautolisp-debugger.issue (parent tracking issue)
+
+Context
+-------
+
+The reader already attaches a `source-span` to every parsed object
+(autolisp-reader/source/model.lisp:3 and the per-object `-span` slots).
+But `reader-object->runtime-value` (autolisp-runtime/source/api.lisp:1097)
+lowers those position-bearing reader objects to BARE runtime values: a
+`cons-object` becomes a plain CL list, an `integer-object` becomes a bare
+integer, etc. The evaluator (`autolisp-eval`, api.lisp:1793) runs on the
+stripped values, so NO source position survives into evaluation today.
+
+The whole debugger (breakpoints, stepping, snapshots) depends on resolving
+an executing form to its source position. This is the critical path: it
+must land first and be solid.
+
+Scope / deliverables
+--------------------
+
+1. New system `clautolisp/autolisp-source-map`, package `clautolisp.source`:
+   - `source-position` = (start . end) of (file line column); EQUAL-comparable
+     and printable (spec §3.5).
+   - `(position-of object) -> source-position | NIL` and
+     `(lines-of file) -> simple-vector of strings` (spec §3.4).
+
+2. Form-id lowering. Extend the reader->runtime lowering (without disturbing
+   the existing fast non-debug path) so that, per top-level / defun form, it:
+   - assigns dense contiguous form-ids,
+   - builds `form-id -> source-position`, `form-id -> kind`
+     (:before-form/:after-form/:function-entry/:function-exit),
+     and `parent-form-map` vectors,
+   - records an EQ side-table from runtime COMPOUND forms to form-ids
+     (fresh conses are EQ-unique; atoms resolve via the per-function table).
+
+3. `function-debug-metadata` (spec §7) attached to each `autolisp-usubr`
+   (new slot, or weak hash keyed by the usubr object): source-position,
+   form-id->position, form-id->kind, poll-point-count, bound-names (formals +
+   /-locals in binding order), parent-form-map, source-text.
+
+4. `clautolisp.debug` skeleton: `*protocol-version*`, `thread-debug-info`
+   (debug-flag, breakpoint-table, 1024-bit summary bits, inbound/outbound
+   queues, current-pp, status; spec §8.1) and `*thread-debug-info-table*`.
+
+Acceptance
+----------
+
+- `(clautolisp.source:position-of form)` returns the correct (file line col)
+  for a form captured mid-evaluation.
+- `function-debug-metadata` round-trips for a representative `defun` (nested
+  if/while/foreach, /-locals).
+- FiveAM tests in a new `.../tests` system; `*version*` bumped.

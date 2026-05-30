@@ -1,0 +1,47 @@
+debugger-snapshot-stepping — Phase 2: snapshot, live environment, stepping
+==========================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 2)
+  clautolisp/documentation/clautolisp-debugger-spec.org (§6, §9)
+  issues/open/debugger-instrumentation.issue (prerequisite — Phase 1)
+
+Context
+-------
+
+At a `:hit` the debugger needs the AutoLISP-level view of program state, not
+the host's. The runtime already has the raw material: `*autolisp-call-stack*`
+((kind . form) frames, api.lisp:76), the `dynamic-frame` binding stack of
+hash tables (model.lisp:66), per-symbol `binding-cell` (model.lisp:25), and
+`autolisp-usubr` for user functions (model.lisp:153). This phase maps that
+onto the spec's snapshot / stack-frame / binding-entry model.
+
+Scope / deliverables
+--------------------
+
+1. Snapshot producer (spec §9.2): function, form-id, source-position,
+   call-stack, binding-stack, visible-names, globals-touched, catch-stack.
+   - `stack-frame` (spec §9.3): function, form-id, source-position,
+     bindings-introduced ((symbol . old-value-or-:unbound) in binding order).
+   - `binding-entry` (spec §9.4): symbol, value, introducing frame.
+   - `visible-names` by innermost-first walk; `binding-stack` unflattened so
+     shadowed bindings remain reachable.
+
+2. Frame navigation + writes:
+   - `with-frame-bindings` (spec §9.3) — eval in an outer frame's binding view.
+   - `cmd-set-variable` / write any binding-entry incl. a currently-shadowed
+     one (spec §9.4); `coerce-from-cl` value validation (spec §9.5).
+
+3. Stepping as volatile breakpoints (spec §6): in / out / over / call /
+   finish using `parent-form-map` and the function-entry/exit poll points;
+   `poll-point-at source-position` for "advance to point" (spec §17.3).
+   All volatile breakpoints cleared on the first hit (spec §6).
+
+Acceptance
+----------
+
+- Step over / in / out across a recursive defun lands on the right poll points.
+- Inspect ALL bindings of a shadowed name; rewrite a shadowed entry and see
+  it become visible after the shadowing frame returns.
+- `cmd-set-variable` on the innermost binding behaves like setq at the point.
+- FiveAM tests; `*version*` bumped.

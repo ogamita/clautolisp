@@ -1,0 +1,47 @@
+debugger-ui-protocol-and-dumb — Phase 5: UI protocol + dumb-terminal UI
+=======================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 5)
+  clautolisp/documentation/clautolisp-debugger-spec.org (§17, §18, §21–§24, §26)
+  issues/open/debugger-inspector.issue, debugger-snapshot-stepping.issue
+
+Context
+-------
+
+The debugger is UI-agnostic; UIs are interchangeable CLOS classes
+implementing a fixed protocol. The dumb-terminal UI is the lowest common
+denominator (serial line, M-x shell, CI) AND the bring-up UI used to
+validate every engine phase. "If a feature can't be expressed here, it
+probably shouldn't be a core debugger feature" (spec §18.3).
+
+Scope / deliverables
+--------------------
+
+1. New system `clautolisp/autolisp-debug-ui`, package `clautolisp.debug.ui`:
+   - Debugger->UI notifications: ui-attached/detached, ui-thread-hit,
+     ui-thread-unhandled-error, ui-thread-caught-error, ui-thread-resumed,
+     ui-thread-exited, ui-breakpoint-added/removed, ui-show-source,
+     ui-show-message (spec §17.1). Default method NIL.
+   - UI->debugger commands: cmd-continue, cmd-step {in,out,over,call,finish},
+     cmd-advance, cmd-set/remove/list-breakpoint, cmd-select-frame, cmd-eval,
+     cmd-set-variable, cmd-inspect, cmd-inspector-{descend,up,bind,
+     path-expression}, cmd-workspace-{list,clear}, cmd-disable-thread-debug,
+     cmd-attach-thread (spec §17.2).
+   - Session lifecycle: start-session / with-session / attach-thread /
+     multiple threads / teardown (spec §21–§24); `*protocol-version*` check
+     at attach (spec §27).
+
+2. New system `clautolisp/autolisp-debug-ui-dumb`, package `clautolisp.ui.dumb`
+   (spec §18): line-by-line tagged output, DBG> sub-REPL with single-letter
+   commands (c/s/i/o/f/n/b/B/p/e/l/t/q/h), bare `(form)` = eval-in-frame,
+   numeric repeat args; numbered source listing with `>>` current marker;
+   inspector in dumb terminal (spec §18.2) with descend/up/eval/copy-path/bind.
+
+Acceptance
+----------
+
+- Full break -> inspect -> step -> continue session over plain stdin/stdout,
+  usable in CI and over a pipe.
+- Conformance per spec §26 MUST items satisfied.
+- FiveAM tests; `*version*` bumped.

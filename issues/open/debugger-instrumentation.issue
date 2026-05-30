@@ -1,0 +1,48 @@
+debugger-instrumentation — Phase 1: poll points, breakpoints, two-thread pause
+===============================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 1)
+  clautolisp/documentation/clautolisp-debugger-spec.org (§5.3, §6, §11, §12)
+  issues/open/debugger-source-map.issue (prerequisite — Phase 0)
+
+Context
+-------
+
+With the form-id source map in place (Phase 0), the v1 instrumentation is
+the interpreter `*debug-mode*` variant (spec §11.3, §13): we do NOT need the
+compiler two-bodies discipline yet. Debugged code is the slow path by
+definition, so the per-form flag check is acceptable; the Bloom filter keeps
+non-breakpoint poll points cheap (spec §11.2).
+
+Scope / deliverables
+--------------------
+
+1. New system `clautolisp/autolisp-debug` (depends on bordeaux-threads).
+
+2. `*debug-mode*` dispatch in `autolisp-eval`: when set on the application
+   thread, wrap each sub-form's evaluation with `poll-point k :before` /
+   `:after` (spec §11.3), and wrap each `autolisp-usubr` body with
+   function-entry / function-exit poll points (spec §5.3).
+
+3. `poll-point` hot path (spec §11.1): debug-flag fast path -> 1024-bit
+   Bloom test -> exact breakpoint lookup -> `handle-breakpoint`. Hot path
+   must be allocation-free; combine (function, form-id) into a fixnum hash
+   inline or use a two-level table.
+
+4. Breakpoint API (spec §12): `add-breakpoint` / `remove-breakpoint` /
+   `list-breakpoints`; steady vs volatile; set Bloom bit on add, lazy
+   rebuild on shrink (false positives tolerated, false negatives not).
+
+5. Two-thread pause (spec §8.2/§8.3): application thread enqueues `:hit` on
+   its outbound queue and blocks on its inbound queue; the debugger thread
+   drives it; `:continue` resumes. bordeaux-threads blocking queue + semaphore.
+
+Acceptance
+----------
+
+- A steady breakpoint set on a form in a loaded .lsp stops execution at that
+  form; `:continue` resumes; a second hit works.
+- Bloom filter demonstrably skips the overwhelming majority of non-breakpoint
+  poll points (microbenchmark or counter).
+- FiveAM tests; `*version*` bumped.
