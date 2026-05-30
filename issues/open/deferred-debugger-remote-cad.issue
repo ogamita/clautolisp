@@ -19,6 +19,20 @@ signatures do not change). The single overturned tenet is "same image, no
 wire" — debugger<->application becomes a wire protocol, and the parent's
 "synchronous, message-free inspection" (§8.3) becomes RPC (addendum §0.1).
 
+INSTRUMENTATION BOUNDARY (addendum R-II.2b / R-X.1b): only code loaded
+THROUGH alfe/clautolisp is debuggable. Code the CAD loads itself (ACADDOC.lsp,
+APPLOAD / Startup Suite, autoload, VLX/FAS, S::STARTUP, native (load ...))
+never passed through alfe's instrumenter, so it has no ~dbg body, no form-id
+table, no poll points — the debugger can only step OVER it. REQ-LOAD1: to
+debug FOO the programmer must (re)load its source via autolisp-compile[-file],
+which installs FOO~dbg under the public name FOO, shadowing the native
+definition for the session. REQ-LOAD2: debugging-ness propagates only across
+the alfe-instrumented sub-graph; calls to non-alfe-loaded callees fall back to
+the native body and are stepped over. The UI SHOULD mark uninstrumented
+frames/functions (step-in degrades to step-over) so the programmer knows to
+re-load that source through alfe. Only defun-q natives are re-instrumentable
+without their source (best-effort fallback).
+
 TRANSPORT BLOCKER: alfe<->CAD today is file-IPC (atomic writes + status
 polling, file-protocol.lisp) — batch/poll oriented, NOT readable
 mid-evaluation, so it FAILS REQ-T1. Live breakpoints/stepping need a new

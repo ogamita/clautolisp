@@ -204,6 +204,54 @@ if it was defined with =defun-q= (Visual LISP's =defun-q=/=defun-q-list-ref=/
 =defun= does not). Since alfe normally has the source, this is a fallback path
 only. Verify the =defun-q-list-*= accessor names per product/version.
 
+** R-II.2b The instrumentation boundary: only alfe-loaded code is debuggable
+  :PROPERTIES:
+  :CUSTOM_ID: instr-boundary
+  :END:
+
+A foundational consequence of [[#instrument]] (all source-to-instrumented
+transformation happens in alfe; the backend never parses user source): *a
+function is debuggable only if alfe produced its =~dbg= body.* In a real CAD
+deployment, *most* code reaching the engine was loaded by the CAD itself ---
+=ACADDOC.lsp= / =on_doc_load=, =APPLOAD= and the Startup Suite, =(autoload …)=
+and =(autoarxload …)=, =VLX/FAS= bundles, partial CUIx LISP, =S::STARTUP=,
+=(load …)= calls inside already-running native code. None of it passed through
+alfe's reader/instrumenter, so none of it has =~ord=/=~dbg= bodies, no
+function-id, no form-id table, and no =aldbg:pp= poll points. The debugger
+*cannot* set source breakpoints, step, or build a shadow frame inside such a
+function; it can only step /over/ it (it is on the same footing as a built-in
+=SUBR=, R-X.1), and observe it post-mortem if it errors under an instrumented
+caller.
+
+Therefore, *normatively*:
+
+- =REQ-LOAD1:= To debug a function =FOO=, the programmer *MUST* (re)load its
+  defining source *through alfe/clautolisp* (=autolisp-compile=/
+  =autolisp-compile-file=, R-II.5) during --- or before --- the debug session.
+  alfe then instruments it and installs =FOO~dbg= under the public name =FOO=
+  (R-II.2 /Activation/), *shadowing* any natively-loaded definition for the
+  duration of the session.
+- =REQ-LOAD2:= Because instrumented =FOO~dbg= calls are rewritten to call the
+  =~dbg= bodies of its callees (Fjeld propagation, R-II.2), a callee =BAR= that
+  was *not* loaded through alfe has no =BAR~dbg=; the rewrite *MUST* fall back
+  to the public =BAR= (the native body) and the debugger steps /over/ it.
+  Debugging-ness therefore propagates only across the sub-graph of functions
+  alfe has instrumented; it stops at the boundary of natively-loaded code.
+- The UI *SHOULD* make this boundary visible: mark frames/functions with no
+  alfe-side debug metadata as /uninstrumented/ (no breakpoints settable, step-in
+  degrades to step-over), so the programmer knows to re-load that source through
+  alfe if they want to step into it.
+- The =defun-q= capture path (R-II.2 above) is the *only* exception, and a
+  best-effort fallback: a natively-loaded =defun-q= function's list body can be
+  recovered and re-instrumented without its original source file. Plain
+  =defun=/compiled/=VLX= bodies cannot, and stay uninstrumented.
+
+This is the remote-deployment analog of the parent's omnipresence caveat: in
+the parent spec /everything/ clautolisp evaluates is instrumentable because
+clautolisp is the evaluator; here the evaluator is the foreign CAD engine, so
+"omnipresence" holds only over the code alfe shipped. The teardown step (R-VI
+§24) restores the native definitions by swapping the public names back.
+
 ** R-II.3 Optimisations disabled in the debug body (§5.2), AutoLISP form
 
 §5.2's list maps cleanly: keep each instrumented sub-form's result live until its
@@ -646,6 +694,13 @@ via =*protocol-version*= capability flags (§27).
    methods, and =FAS=/=VLX= without source cannot be given debug bodies; the
    debugger steps /over/ them. Wrap them in =vl-catch-all-apply= for break-on-
    error context only.
+1b. *Only alfe-loaded code is debuggable* ([[#instr-boundary]]). Code the CAD
+   loaded itself (=ACADDOC.lsp=, =APPLOAD=/Startup Suite, =autoload=, =VLX/FAS=,
+   =S::STARTUP=, native =(load …)=) was never instrumented; to debug a function
+   the programmer MUST re-load its source through alfe (=REQ-LOAD1=), which then
+   shadows the native definition under the public name for the session.
+   Debugging-ness propagates only across the alfe-instrumented sub-graph
+   (=REQ-LOAD2=); it stops at the boundary of natively-loaded callees.
 2. *Cooperative interruption only.* A running program is stoppable only at a poll
    point; =:interrupt= sets a flag honoured at the next =aldbg:pp=. To keep tight
    loops interruptible, the instrumenter SHOULD place a poll point at each
