@@ -3,6 +3,7 @@
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader"
+               "clautolisp/autolisp-source-map"
                "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-mock-host"
@@ -10,7 +11,8 @@
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-file-compat"
-               "clautolisp/autolisp-init-files")
+               "clautolisp/autolisp-init-files"
+               "clautolisp/autolisp-debug")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
   :perform (asdf:test-op (op system)
@@ -37,11 +39,26 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/autolisp-source-map"
+  :description "Source-position map carrying reader positions into the runtime (debugger §3)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-reader")
+  :serial t
+  :components
+  ((:file "autolisp-source-map/source/package")
+   (:file "autolisp-source-map/source/source-map"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-source-map/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
 (asdf:defsystem "clautolisp/autolisp-runtime"
   :description "Core AutoLISP runtime object model for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-reader" "uiop")
+  :depends-on ("clautolisp/autolisp-reader" "clautolisp/autolisp-source-map" "uiop")
   :serial t
   :components
   ((:file "autolisp-runtime/source/package")
@@ -372,18 +389,77 @@
                          (uiop:symbol-call :clautolisp.autolisp-init-files.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-debug"
+  :description "Clautolisp debugger engine: instrumentation, poll points, breakpoints (debugger Phase 1)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-source-map"
+               "bordeaux-threads")
+  :serial t
+  :components
+  ((:file "autolisp-debug/source/package")
+   (:file "autolisp-debug/source/metadata")
+   (:file "autolisp-debug/source/breakpoints")
+   (:file "autolisp-debug/source/poll")
+   (:file "autolisp-debug/source/instrument")
+   (:file "autolisp-debug/source/session"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-debug/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-source-map/tests"
+  :description "FiveAM tests for clautolisp.source."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-source-map" "clautolisp/autolisp-runtime" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-source-map/tests/package")
+   (:file "autolisp-source-map/tests/source-map-tests")
+   (:file "autolisp-source-map/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.source.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/autolisp-debug/tests"
+  :description "FiveAM tests for the clautolisp debugger engine."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-debug"
+               "clautolisp/autolisp-source-map"
+               "clautolisp/autolisp-runtime"
+               "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-debug/tests/package")
+   (:file "autolisp-debug/tests/test-harness")
+   (:file "autolisp-debug/tests/instrument-tests")
+   (:file "autolisp-debug/tests/breakpoint-tests")
+   (:file "autolisp-debug/tests/session-tests")
+   (:file "autolisp-debug/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.debug.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/tests"
   :description "Aggregate tests for the clautolisp subproject."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-reader/tests"
+               "clautolisp/autolisp-source-map/tests"
                "clautolisp/autolisp-runtime/tests"
                "clautolisp/autolisp-host/tests"
                "clautolisp/autolisp-mock-host/tests"
                "clautolisp/autolisp-dcl/tests"
                "clautolisp/autolisp-builtins-core/tests"
                "clautolisp/autolisp-file-compat/tests"
-               "clautolisp/autolisp-init-files/tests")
+               "clautolisp/autolisp-init-files/tests"
+               "clautolisp/autolisp-debug/tests")
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (progn
@@ -402,4 +478,8 @@
                            (uiop:symbol-call :clautolisp.autolisp-file-compat.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-init-files.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.source.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.debug.tests
                                              :run-all-tests))))
