@@ -348,6 +348,55 @@ closes.
 The exact set of error codes lives in the runtime; see
 ~autolisp-runtime/source/api.lisp~ for the canonical mapping.
 
+** Encoding-dispatch diagnostics (~enc-*~)
+Each dialect dispatches a distinct diagnostic when user code uses an
+encoding-related extension that belongs to a different dialect. The
+diagnostics are *advisory*: the runtime always honours the form so
+user code stays runnable across dialects; the diagnostic just
+surfaces the portability concern.
+
+Eight codes, all prefixed ~enc-~:
+
+| Code                        | When                                             |
+|-----------------------------+--------------------------------------------------|
+| ~enc-foreign-dialect~       | a form belonging to a non-selected dialect       |
+| ~enc-extension-used~        | ~--strict~ only: any encoding extension          |
+| ~enc-unsupported-target~    | selected encoding has no host expression         |
+| ~enc-invalid-value~         | bad encoding name string                         |
+| ~enc-lispsys-out-of-range~  | ~(setvar "LISPSYS" n)~ with ~n \notin {0,1,2}~   |
+| ~enc-codepage-mismatch~     | ~DWGCODEPAGE~ differs from ~SYSCODEPAGE~         |
+| ~enc-unknown-codepage~      | unknown ~SYSCODEPAGE~ string                     |
+| ~enc-host-dependent~        | ~"ANSI"~ used in a write context (info)          |
+
+Diagnostics print to standard error as
+~[enc-<code>] <message>~. The output stream is overridable for
+tests via the CL parameter
+~clautolisp.autolisp-runtime:*enc-diagnostic-stream*~; emission is
+silenced entirely by binding
+~*enc-diagnostic-suppress-p*~ non-nil (the runtime side-door for
+the eventual per-file pragma mechanism).
+
+Currently wired:
+
+- ~LOAD~ with the positional ~[encoding]~ argument under
+  ~--strict~ (~enc-extension-used~), ~--autocad~ /
+  ~--bricscad~ (~enc-foreign-dialect~), silent under
+  ~--clautolisp~.
+- ~GETVAR~ / ~SETVAR~ on ~LISPSYS~ under every dialect except
+  ~--autocad~ (the native dialect of ~LISPSYS~):
+  - ~--strict~ -> ~enc-extension-used~.
+  - ~--bricscad~ / ~--clautolisp~ -> ~enc-foreign-dialect~ with
+    the dialect sub-tag.
+- ~SETVAR "LISPSYS" <n>~ with ~n \notin {0,1,2}~ emits
+  ~enc-lispsys-out-of-range~ regardless of dialect (the spec mandates
+  the domain). The write proceeds — matching the vendor "permissive
+  but warn" behaviour.
+
+The full set of codes, the per-dialect dispatch table, and the
+roadmap for the remaining hooks (~OPEN~, BricsCAD ~,ccs=~ parsing,
+~DWGCODEPAGE~ mismatch detection at drawing-load time) is in
+~issues/open/encoding-dispatch.issue~.
+
 * Examples
 #+BEGIN_EXAMPLE
 # Print a literal symbol.

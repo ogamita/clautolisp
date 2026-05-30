@@ -3351,12 +3351,28 @@ single character. Used by the Phase-3 LOAD-encoding tests."
 ;;;; The fixture captures *enc-diagnostic-stream* output, so the
 ;;;; tests don't have to read real *error-output*.
 
+(defun %install-mock-host-and-core (context)
+  "Wire a fresh MockHost into CONTEXT and install the core builtins.
+Used by tests that exercise sysvar paths through GETVAR / SETVAR —
+the bare RUN-AUTOLISP-STRING uses null-host which signals
+:host-not-supported."
+  (install-core-into context)
+  (let ((session (clautolisp.autolisp-runtime:evaluation-context-session
+                  context))
+        (mock (clautolisp.autolisp-mock-host:make-mock-host)))
+    (setf (clautolisp.autolisp-runtime.internal::runtime-session-host session)
+          mock)))
+
 (defun %capture-enc-diagnostics (form-source &key dialect)
   "Evaluate FORM-SOURCE through RUN-AUTOLISP-STRING under DIALECT,
 returning (values RESULT DIAGNOSTIC-OUTPUT) where DIAGNOSTIC-OUTPUT
 is the string written by SIGNAL-ENCODING-DIAGNOSTIC. DIALECT is a
 keyword (:strict / :clautolisp / :autocad-2026 / :bricscad-v26)
-which we resolve to the named-dialect descriptor."
+which we resolve to the named-dialect descriptor.
+
+The setup-fn wires a mock-host so GETVAR / SETVAR work — needed by
+the LISPSYS tests; harmless for the LOAD tests that don't touch
+sysvars."
   (let* ((sink (make-string-output-stream))
          (dialect-struct
           (or (clautolisp.autolisp-reader:find-autolisp-dialect dialect)
@@ -3365,7 +3381,7 @@ which we resolve to the named-dialect descriptor."
            (result (run-autolisp-string
                     form-source
                     :dialect dialect-struct
-                    :setup-fn #'install-core-into)))
+                    :setup-fn #'%install-mock-host-and-core)))
       (values result (get-output-stream-string sink)))))
 
 (test load-encoding-diagnostic-silent-under-clautolisp
@@ -3455,3 +3471,97 @@ which we resolve to the named-dialect descriptor."
       (clautolisp.autolisp-runtime:signal-encoding-diagnostic
        :enc-extension-used "should not appear"))
     (is (string= "" (get-output-stream-string sink)))))
+
+;;;; ----- LISPSYS dispatch (Phase 6) ----------------------------------
+;;;;
+;;;; LISPSYS is an AutoCAD-only sysvar (introduced 2021) that gates
+;;;; source-file encoding globally. BricsCAD does not expose it. The
+;;;; encoding-dispatch.issue answer to the open question is: warn
+;;;; loudly under all non-autocad dialects, do not forbid.
+;;;;
+;;;; Setvar with a value outside {0,1,2} additionally emits
+;;;; enc-lispsys-out-of-range — the spec mandates the {0,1,2} domain.
+
+(test lispsys-getvar-silent-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(getvar \"LISPSYS\")"
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test lispsys-getvar-foreign-dialect-under-clautolisp
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(getvar \"LISPSYS\")"
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "--clautolisp" diagnostics))))
+
+(test lispsys-getvar-foreign-dialect-under-bricscad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(getvar \"LISPSYS\")"
+       :dialect :bricscad-v26)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "--bricscad" diagnostics))))
+
+(test lispsys-getvar-extension-used-under-strict
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(getvar \"LISPSYS\")"
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "[enc-extension-used]" diagnostics))))
+
+(test lispsys-setvar-in-range-silent-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(setvar \"LISPSYS\" 1)"
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test lispsys-setvar-out-of-range-emits-enc-lispsys-out-of-range
+  ;; The out-of-range diagnostic fires even under --autocad (native
+  ;; dialect): the {0,1,2} domain is documented universally, not a
+  ;; dialect-portability concern.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(setvar \"LISPSYS\" 99)"
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-lispsys-out-of-range]" diagnostics))))
+
+(test lispsys-setvar-out-of-range-still-stores-value
+  ;; The write proceeds even when the value is out-of-range — matches
+  ;; the vendor 'permissive but warn' behaviour the spec calls out.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(progn (setvar \"LISPSYS\" 99) (getvar \"LISPSYS\"))"
+       :dialect :autocad-2026)
+    (declare (ignore diagnostics))
+    (is (eql 99 result))))
+
+(test lispsys-setvar-clautolisp-stacks-both-diagnostics
+  ;; Under --clautolisp, an out-of-range setvar surfaces BOTH the
+  ;; foreign-dialect diagnostic and the out-of-range one.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(setvar \"LISPSYS\" 7)"
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "[enc-lispsys-out-of-range]" diagnostics))))
+
+(test non-lispsys-getvar-silent-under-clautolisp
+  ;; The dispatch must be name-specific. Other sysvars should not
+  ;; trigger LISPSYS-related diagnostics.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       "(getvar \"CMDECHO\")"
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
