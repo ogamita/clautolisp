@@ -1,0 +1,54 @@
+deferred-debugger-remote-cad — Phase 9: remote native-AutoLISP backend (alfe)
+=============================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 9, §1.3)
+  clautolisp/documentation/clautolisp-debugger-remote-cad-spec.org (the addendum)
+  autolisp-front-end/source/file-protocol.lisp (current alfe<->CAD transport)
+
+DEFERRED — runs after the in-image debugger (Phases 0–7) and is gated on a
+transport that satisfies REQ-T1.
+
+Context
+-------
+
+The addendum re-targets the APPLICATION side of the Part-III contract to
+native AutoLISP inside BricsCAD/AutoCAD, driven over a wire from alfe. The
+debugger library, inspector, and three UIs are reused UNCHANGED (the §12/§17
+signatures do not change). The single overturned tenet is "same image, no
+wire" — debugger<->application becomes a wire protocol, and the parent's
+"synchronous, message-free inspection" (§8.3) becomes RPC (addendum §0.1).
+
+TRANSPORT BLOCKER: alfe<->CAD today is file-IPC (atomic writes + status
+polling, file-protocol.lisp) — batch/poll oriented, NOT readable
+mid-evaluation, so it FAILS REQ-T1. Live breakpoints/stepping need a new
+synchronous control channel (socket/pipe); otherwise only POST-MORTEM mode
+(break-on-error + reconstructed backtrace) is conformant and MUST be
+advertised via `*protocol-version*` capability flags (addendum R-VIII §11).
+Open question R-XII.3 to reconcile with the user/author.
+
+Scope (addendum R-XI phasing)
+-----------------------------
+
+1. Transport + framing (REQ-T1..T3, P1..P3): prove a pause nests inside an
+   in-flight :eval and one :eval-in-frame round-trips; reuse the §20.1
+   S-expr RPC shape. Decide socket vs post-mortem for v1.
+2. `aldbg:` AutoLISP runtime on the backend: *debug-flag*, breakpoint table,
+   Bloom bits, aldbg:pp, aldbg:enter/exit, pause loop (R-III.1–R-III.3).
+3. `clautolisp.debug.remote` + instrumenter retargeted to emit ~ord/~dbg
+   AutoLISP bodies with source-level Fjeld propagation;
+   autolisp-compile[-file]; all §7 metadata stays in alfe (R-II).
+4. Breakpoints / stepping / backtrace / innermost eval end-to-end (R-IX "Full").
+5. Inspector over the wire: proxies + backend accessor evaluation (R-IV).
+6. Error integration: *error*, vl-catch-all, ERRNO, continue-with-return for
+   instrumented forms (R-III.7).
+7. "Partial" rows + hardening: shadowed-binding read/write, outer-frame eval,
+   conditions (set-time $N snapshot), tracing, cooperative interrupt,
+   reactor reentrancy, command-input, namespaces, BricsCAD/AutoCAD shim.
+
+Acceptance (when unblocked)
+---------------------------
+
+- A parent-conformant UI drives a live (or post-mortem, per transport) debug
+  session against AutoLISP running in a real CAD engine; the R-IX fidelity
+  matrix rows marked Full are achieved for the chosen transport tier.

@@ -1,0 +1,42 @@
+debugger-ui-ncurses — Phase 6: ncurses UI (cl-charms / PDCurses)
+================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 6)
+  clautolisp/documentation/clautolisp-debugger-spec.org (§19)
+  issues/open/debugger-ui-protocol-and-dumb.issue (prerequisite — Phase 5)
+
+Context
+-------
+
+The ncurses UI is Strandh's four-pane layout in a terminal. It is a
+refinement of the dumb-terminal UI against the same `clautolisp.debug.ui`
+protocol; no new debugger-engine capability is required.
+
+Scope / deliverables
+--------------------
+
+1. New system `clautolisp/autolisp-debug-ui-tui`, package `clautolisp.ui.tui`:
+   a thin abstraction layer wrapping cl-charms (Unix) and PDCurses-via-CFFI
+   (Windows), selected per platform (spec §19.3). 8-colour fallback; mouse
+   optional; key-only navigation MUST be complete.
+
+2. Four-pane layout (spec §19.1): stack (top-left), source (top-right),
+   interactor/commands (bottom-left), repl/eval-in-frame (bottom-right).
+   Source pane shows poll-point (blue) / breakpoint (red) / current (yellow)
+   markers; click or `b`-then-Enter toggles a breakpoint. Configurable layout.
+
+3. Inspector pane (spec §19.2): replaces the source pane (push/pop); header
+   shows origin + path, footer lists actions; Enter descends, Backspace
+   ascends, p copies path (OSC 52 where supported), b binds, e -> repl, q closes.
+
+4. Event loop in the UI thread ONLY; debugger-thread notifications funnelled
+   through a queue and dispatched on refresh — no curses call off the UI thread.
+
+Acceptance
+----------
+
+- Keyboard-only break/step/inspect session in a real terminal; 8-colour mode;
+  marker colours correct; inspector pane push/pop works.
+- New cl-charms dependency wired into the system.
+- FiveAM tests where feasible (logic layer); `*version*` bumped.

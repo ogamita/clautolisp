@@ -1,0 +1,41 @@
+debugger-ui-emacs-aldb — Phase 7: Emacs UI (aldb, SLDB-modelled)
+================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phase 7)
+  clautolisp/documentation/clautolisp-debugger-spec.org (§20)
+  issues/open/debugger-ui-protocol-and-dumb.issue (prerequisite — Phase 5)
+
+Context
+-------
+
+The Emacs UI exposes the debugger over a small RPC to an Emacs minor mode,
+modelled on SLDB (named `aldb`, as SLIME's debugger is `sldb`). The aim is
+parity with SLDB's interactive feel, not its protocol. A feature missing in
+the dumb terminal is missing here too (spec §20.4).
+
+Scope / deliverables
+--------------------
+
+1. RPC (spec §20.1): line-oriented S-expression messages read with `read`;
+   `(<message-tag> <args>...)`. No length prefixes / encoding negotiation /
+   Bencode. This same S-expr shape is later reused by the remote-CAD channel.
+   New system `clautolisp/autolisp-debug-ui-emacs` for the CL-side shim
+   (translates `cmd-*` <-> RPC, surfaces `ui-*` as RPC events).
+
+2. Emacs `clautolisp-debug-mode` / `aldb` (elisp, shipped under the project's
+   emacs/ or tools/ tree): buffers `*clautolisp-debug*`, `*clautolisp-bindings*`,
+   `*clautolisp-stack*`, `*clautolisp-inspect*`, `*clautolisp-workspace*`, and
+   source-buffer overlays at poll points / breakpoints / current form
+   (spec §20.2).
+
+3. Keybindings (spec §20.3): c/s/i/o/f/SPC/RET/e/v/b/C-c C-b/d/q mirroring
+   SLDB; inspector-buffer bindings RET/TAB/S-TAB/DEL/p/b/B/M-RET/e/v/q
+   (spec §20.2), incl. `$path` and "Copy to REPL" (M-RET) idiom.
+
+Acceptance
+----------
+
+- SLDB-parity feel for break/step/inspect from Emacs against an in-image
+  session; source overlays placed from debug metadata; workspace buffer works.
+- `*version*` bumped (CL side); elisp linted/byte-compiled clean.
