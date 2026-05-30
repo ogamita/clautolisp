@@ -3320,6 +3320,97 @@ under another."
                (%host-sysvar-string host "DWGCODEPAGE"))))
     (if (string= sys dwg) nil (intern-autolisp-symbol "T"))))
 
+(defun %sniff-file-bom (path)
+  "Read the first four bytes of PATH (silently truncating to fewer
+when the file is shorter) and return the canonical clautolisp
+encoding name corresponding to the leading byte-order mark, or
+nil when no BOM is found. Used by BUILTIN-CLAL-FILE-ENCODING.
+
+Recognised BOMs (encoding-dispatch.issue cross-dialect table):
+
+  FF FE 00 00          -> \"UTF-32-LE\"   (checked before UTF-16 LE)
+  00 00 FE FF          -> \"UTF-32-BE\"
+  FF FE                -> \"UTF-16-LE\"
+  FE FF                -> \"UTF-16-BE\"
+  EF BB BF             -> \"UTF-8-BOM\"
+
+Note the UTF-32 LE / UTF-16 LE prefix ambiguity: UTF-32-LE starts
+with the same two bytes as UTF-16-LE, distinguished only by the
+following 00 00. Test UTF-32 first."
+  (handler-case
+      (with-open-file (in path :direction :input
+                               :element-type '(unsigned-byte 8)
+                               :if-does-not-exist nil)
+        (when in
+          (let ((header (make-array 4 :element-type '(unsigned-byte 8)
+                                      :initial-element 0))
+                (read-count 0))
+            (setf read-count (read-sequence header in))
+            (cond
+              ;; UTF-32-LE: FF FE 00 00 — checked first because it
+              ;; subsumes UTF-16-LE's two-byte prefix.
+              ((and (>= read-count 4)
+                    (= (aref header 0) #xFF)
+                    (= (aref header 1) #xFE)
+                    (= (aref header 2) #x00)
+                    (= (aref header 3) #x00))
+               "UTF-32-LE")
+              ;; UTF-32-BE: 00 00 FE FF.
+              ((and (>= read-count 4)
+                    (= (aref header 0) #x00)
+                    (= (aref header 1) #x00)
+                    (= (aref header 2) #xFE)
+                    (= (aref header 3) #xFF))
+               "UTF-32-BE")
+              ;; UTF-16-LE: FF FE (after UTF-32-LE eliminated).
+              ((and (>= read-count 2)
+                    (= (aref header 0) #xFF)
+                    (= (aref header 1) #xFE))
+               "UTF-16-LE")
+              ;; UTF-16-BE: FE FF.
+              ((and (>= read-count 2)
+                    (= (aref header 0) #xFE)
+                    (= (aref header 1) #xFF))
+               "UTF-16-BE")
+              ;; UTF-8 BOM: EF BB BF.
+              ((and (>= read-count 3)
+                    (= (aref header 0) #xEF)
+                    (= (aref header 1) #xBB)
+                    (= (aref header 2) #xBF))
+               "UTF-8-BOM")
+              (t nil)))))
+    (error () nil)))
+
+(defun builtin-clal-file-encoding (filename)
+  "Sniff FILENAME for a byte-order mark and return the canonical
+clautolisp encoding name as a string. Mirrors BricsCAD's
+VLE-FILE-ENCODING but uses the clautolisp vocabulary (UTF-8-BOM,
+UTF-16-LE, UTF-16-BE, UTF-32-LE, UTF-32-BE).
+
+Returns \"ANSI\" when no BOM is detected — the file might be
+UTF-8-without-BOM, ANSI, or anything else; without a marker the
+encoding is undetermined and falls back to the host code page.
+Returns nil-equivalent (\"\" wrapped as autolisp-string is the
+caller-visible nil substitute) when the file does not exist or is
+unreadable; the runtime's standard file-error handling surfaces
+the underlying signal.
+
+The clautolisp-only piece (compared with VLE-FILE-ENCODING) is the
+UTF-8-BOM distinction: BricsCAD reports plain \"UTF-8\" for both
+the BOM and no-BOM cases. The helper preserves the distinction so
+user code can choose between rewriting the BOM and dropping it."
+  (let* ((path-string (autolisp-string-value
+                       (require-string filename "CLAL-FILE-ENCODING")))
+         (resolved (resolve-load-pathname path-string)))
+    (cond
+      ((null resolved)
+       (set-autolisp-errno 73)
+       nil)
+      (t
+       (let ((sniffed (%sniff-file-bom (namestring resolved))))
+         (set-autolisp-errno 0)
+         (make-autolisp-string (or sniffed "ANSI")))))))
+
 ;;; --- Phase 12: headless interaction channel -----------------------
 
 (defun optional-prompt-string (prompt operator-name)
@@ -6257,6 +6348,7 @@ backed persistent upgrade path.")
    (make-core-builtin-subr "CLAL-SYSTEM-CODEPAGE"     #'builtin-clal-system-codepage)
    (make-core-builtin-subr "CLAL-DRAWING-CODEPAGE"    #'builtin-clal-drawing-codepage)
    (make-core-builtin-subr "CLAL-CODEPAGE-MISMATCH-P" #'builtin-clal-codepage-mismatch-p)
+   (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
    ;; Phase 12 — headless interaction channel (PROMPT is registered
    ;; once already as a *standard-output* writer; we keep that)
    (make-core-builtin-subr "INITGET"    #'builtin-initget)
