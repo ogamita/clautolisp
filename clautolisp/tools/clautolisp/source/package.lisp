@@ -11,6 +11,7 @@
                 #:autolisp-dialect-autocad-2026
                 #:autolisp-dialect-bricscad-v26
                 #:autolisp-dialect-clautolisp
+                #:autolisp-dialect-lax
                 #:diagnostic
                 #:diagnostic-code
                 #:diagnostic-message

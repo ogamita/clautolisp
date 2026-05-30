@@ -3742,6 +3742,80 @@ following 00 00. Test UTF-32 first."
               (t nil)))))
     (error () nil)))
 
+(defun %coerce-enc-code-designator (value operator-name)
+  "Coerce VALUE to one of *ENC-DIAGNOSTIC-CODES*. Accepts an
+autolisp-string or autolisp-symbol (string designator); the name
+is upcased, ensured to begin with `ENC-', and interned in the
+KEYWORD package. Signals :invalid-enc-code-argument for unknown
+codes."
+  (let* ((raw (cond
+                ((typep value 'autolisp-string) (autolisp-string-value value))
+                ((typep value 'autolisp-symbol) (autolisp-symbol-name value))
+                (t
+                 (signal-builtin-argument-error
+                  :invalid-string-argument
+                  operator-name
+                  "~A expects an encoding-diagnostic code as a symbol or string, got ~S."
+                  operator-name value))))
+         (upcased (string-upcase raw))
+         (prefixed (if (and (>= (length upcased) 4)
+                            (string= "ENC-" upcased :end2 4))
+                       upcased
+                       (concatenate 'string "ENC-" upcased)))
+         (keyword (intern prefixed "KEYWORD")))
+    (unless (member keyword clautolisp.autolisp-runtime:*enc-diagnostic-codes*)
+      (signal-builtin-argument-error
+       :invalid-enc-code-argument
+       operator-name
+       "~A: ~S is not a recognised encoding-diagnostic code (expected one of ~{~A~^, ~})."
+       operator-name raw
+       (mapcar #'symbol-name clautolisp.autolisp-runtime:*enc-diagnostic-codes*)))
+    keyword))
+
+(defun builtin-clal-suppress-enc-diagnostic (&rest codes)
+  "Add each CODE in CODES to the active per-code suppression list.
+CODES are string designators (autolisp-string or autolisp-symbol);
+each is canonicalised to a :enc-NAME keyword. Subsequent
+SIGNAL-ENCODING-DIAGNOSTIC calls with a matching code emit
+nothing.
+
+Returns the (possibly truncated) list of currently-suppressed
+codes as a list of AutoLISP strings.
+
+Pragma usage at the top of a source file:
+
+  (clal-suppress-enc-diagnostic 'enc-extension-used 'enc-foreign-dialect)
+
+The suppression is dynamically scoped to the running AutoLISP
+session — it persists across LOAD / OPEN until the user calls
+CLAL-ENABLE-ENC-DIAGNOSTIC."
+  (dolist (code codes)
+    (let ((keyword (%coerce-enc-code-designator
+                    code "CLAL-SUPPRESS-ENC-DIAGNOSTIC")))
+      (pushnew keyword clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes*)))
+  (mapcar (lambda (kw)
+            (make-autolisp-string (string-downcase (symbol-name kw))))
+          clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes*))
+
+(defun builtin-clal-enable-enc-diagnostic (&rest codes)
+  "Undo CLAL-SUPPRESS-ENC-DIAGNOSTIC for each CODE in CODES.
+Returns the (possibly empty) list of currently-suppressed codes
+as a list of AutoLISP strings. Called with no arguments, removes
+EVERY code from the suppression list (re-enable everything)."
+  (cond
+    ((null codes)
+     (setf clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes* nil))
+    (t
+     (dolist (code codes)
+       (let ((keyword (%coerce-enc-code-designator
+                       code "CLAL-ENABLE-ENC-DIAGNOSTIC")))
+         (setf clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes*
+               (remove keyword
+                       clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes*))))))
+  (mapcar (lambda (kw)
+            (make-autolisp-string (string-downcase (symbol-name kw))))
+          clautolisp.autolisp-runtime:*enc-diagnostic-suppress-codes*))
+
 (defun builtin-clal-file-encoding (filename)
   "Sniff FILENAME for a byte-order mark and return the canonical
 clautolisp encoding name as a string. Mirrors BricsCAD's
@@ -6710,6 +6784,8 @@ backed persistent upgrade path.")
    (make-core-builtin-subr "CLAL-DRAWING-CODEPAGE"    #'builtin-clal-drawing-codepage)
    (make-core-builtin-subr "CLAL-CODEPAGE-MISMATCH-P" #'builtin-clal-codepage-mismatch-p)
    (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
+   (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)
+   (make-core-builtin-subr "CLAL-ENABLE-ENC-DIAGNOSTIC"   #'builtin-clal-enable-enc-diagnostic)
    ;; Phase 12 — headless interaction channel (PROMPT is registered
    ;; once already as a *standard-output* writer; we keep that)
    (make-core-builtin-subr "INITGET"    #'builtin-initget)
