@@ -3236,3 +3236,104 @@ recover from invalid UTF-8 differently."
       (is (= 1 (length (autolisp-string-value result)))
           "Latin-1 byte 0xE9 should decode to a single character; got ~S"
           (and (typep result 'autolisp-string) (autolisp-string-value result))))))
+
+;;;; ----- LOAD positional [encoding] argument (Phase 3) ---------------
+;;;;
+;;;; (load filename [onfailure [encoding]]) — the third positional
+;;;; argument is the clautolisp-only per-call encoding override
+;;;; specified in issues/open/encoding-dispatch.issue. String
+;;;; designator (string or symbol) per the spec.
+;;;;
+;;;; These tests use the same Latin-1 fixture as the override test
+;;;; above, but supply the encoding through LOAD's third argument
+;;;; rather than via *AUTOLISP-FILE-ENCODING*. The per-call form must
+;;;; override even when the global is bound to a different encoding.
+
+(defun %write-latin1-msg-fixture (path)
+  "Write the test fixture: a 16-byte file whose only non-ASCII byte
+is 0xE9 (Latin-1 e-acute) inside a string literal. Decoding under
+UTF-8 errors at the 0xE9; under ISO-8859-1 the byte decodes to a
+single character. Used by the Phase-3 LOAD-encoding tests."
+  (with-open-file (out path :direction :output
+                            :if-exists :supersede
+                            :element-type '(unsigned-byte 8))
+    (write-sequence #(40 115 101 116 113 32 109 115 103 32 34
+                      #xE9 34 41 10)
+                    out)))
+
+(test load-positional-encoding-string-overrides-global
+  ;; The third positional argument wins over *AUTOLISP-FILE-ENCODING*.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (let ((result (run-autolisp-string
+                   (format nil "(setq *autolisp-file-encoding* \"WINDOWS-1252\")
+                                (load ~S nil \"ISO-8859-1\")
+                                msg"
+                           (namestring path))
+                   :setup-fn #'install-core-into)))
+      (is (typep result 'autolisp-string))
+      (is (= 1 (length (autolisp-string-value result)))
+          "Per-call ISO-8859-1 should decode the 0xE9 byte as one char; got ~S"
+          (and (typep result 'autolisp-string) (autolisp-string-value result))))))
+
+(test load-positional-encoding-symbol-accepted
+  ;; The string-designator contract — passing the encoding as a symbol
+  ;; ('UTF-8 / 'ISO-8859-1 / …) — uses the symbol-name.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (let ((result (run-autolisp-string
+                   (format nil "(load ~S nil 'ISO-8859-1) msg"
+                           (namestring path))
+                   :setup-fn #'install-core-into)))
+      (is (typep result 'autolisp-string))
+      (is (= 1 (length (autolisp-string-value result)))))))
+
+(test load-positional-encoding-rejects-non-designator
+  ;; Integer 42 is not a string designator — must signal at the LOAD
+  ;; call site, not crash silently later.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (let ((signalled-p nil))
+      (handler-case
+          (run-autolisp-string
+           (format nil "(load ~S nil 42)" (namestring path))
+           :setup-fn #'install-core-into)
+        (autolisp-runtime-error (c)
+          (declare (ignore c))
+          (setf signalled-p t)))
+      (is (eq signalled-p t)))))
+
+(test load-positional-encoding-rejects-unknown-name
+  ;; Encoding names that PARSE-LOCALE-ENCODING-STRING doesn't
+  ;; recognise (typos, made-up names) get a clean argument-error
+  ;; before the LOAD's stream-decoding stage.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (let ((signalled-p nil))
+      (handler-case
+          (run-autolisp-string
+           (format nil "(load ~S nil \"\")" (namestring path))
+           :setup-fn #'install-core-into)
+        (autolisp-runtime-error (c)
+          (declare (ignore c))
+          (setf signalled-p t)))
+      (is (eq signalled-p t)))))
+
+(test load-without-encoding-still-uses-global
+  ;; Backward-compatibility: omitting the third arg falls back to
+  ;; the precedence chain — *AUTOLISP-FILE-ENCODING* wins when set.
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "lsp" :keep nil)
+    (%write-latin1-msg-fixture path)
+    (let ((result (run-autolisp-string
+                   (format nil "(setq *autolisp-file-encoding* \"ISO-8859-1\")
+                                (load ~S)
+                                msg"
+                           (namestring path))
+                   :setup-fn #'install-core-into)))
+      (is (typep result 'autolisp-string))
+      (is (= 1 (length (autolisp-string-value result)))))))
