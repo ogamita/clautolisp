@@ -3565,3 +3565,167 @@ sysvars."
        :dialect :clautolisp)
     (declare (ignore result))
     (is (string= "" diagnostics))))
+
+;;;; ----- OPEN [encoding] dispatch (Phase 7) -------------------------
+;;;;
+;;;; Three forms share OPEN's encoding slot:
+;;;;
+;;;;   1. Positional autocad — third arg is "utf8" / "utf8-bom"
+;;;;      (case-insensitive). Native under --autocad.
+;;;;   2. Positional clautolisp — third arg uses the broader
+;;;;      clautolisp vocabulary (UTF-8, UTF-8-BOM, ISO-8859-1,
+;;;;      CP-NNNN, …). Native under --clautolisp.
+;;;;   3. CCS mode-suffix — ,ccs=ENC in the mode-string. Native
+;;;;      under --bricscad.
+;;;;
+;;;; The dispatcher routes each form per dialect; native cases are
+;;;; silent, foreign cases emit enc-foreign-dialect with a sub-tag
+;;;; identifying the offending form, and --strict emits
+;;;; enc-extension-used for every form.
+
+(defun %open-fixture-form (mode-or-encoding-clause)
+  "Build a small OPEN-then-close form that opens /tmp/openenc.txt
+under the given mode-and-encoding-clause text. Used to drive the
+diagnostic-capture harness; the file is created/overwritten on
+disk, which we don't care about for the diagnostic check."
+  (format nil "(progn (close (open \"/tmp/openenc.txt\" ~A)) 0)"
+          mode-or-encoding-clause))
+
+(test open-positional-autocad-silent-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"utf8\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test open-positional-autocad-utf8-bom-silent-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"utf8-bom\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test open-positional-clautolisp-silent-under-clautolisp
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"UTF-8\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test open-positional-clautolisp-foreign-under-autocad
+  ;; "UTF-8" with the dash is the clautolisp vocabulary — foreign to
+  ;; AutoCAD's "utf8" / "utf8-bom" set.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"UTF-8\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "clautolisp-positional" diagnostics))))
+
+(test open-positional-autocad-foreign-under-clautolisp
+  ;; The AutoCAD lower-case literal is foreign to --clautolisp.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"utf8\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "autocad-positional" diagnostics))))
+
+(test open-positional-extension-used-under-strict
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"UTF-8\"")
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "[enc-extension-used]" diagnostics))))
+
+(test open-ccs-suffix-silent-under-bricscad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\"")
+       :dialect :bricscad-v26)
+    (declare (ignore result))
+    (is (string= "" diagnostics))))
+
+(test open-ccs-suffix-foreign-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "bricscad-ccs" diagnostics))))
+
+(test open-ccs-suffix-foreign-under-clautolisp
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (search "[enc-foreign-dialect]" diagnostics))
+    (is (search "bricscad-ccs" diagnostics))))
+
+(test open-ccs-suffix-extension-used-under-strict
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\"")
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "[enc-extension-used]" diagnostics))))
+
+(test open-both-forms-emits-two-diagnostics-under-strict
+  ;; Providing both forms simultaneously is unusual but documented;
+  ;; under --strict each form should surface its own diagnostic.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w,ccs=UTF-8\" \"UTF-8\"")
+       :dialect :strict)
+    (declare (ignore result))
+    (is (search "bricscad-ccs" diagnostics))
+    (is (search "clautolisp-positional" diagnostics))))
+
+(test open-no-encoding-arg-silent-under-every-dialect
+  ;; Bare OPEN should not emit any encoding diagnostic regardless
+  ;; of dialect.
+  (dolist (d '(:strict :clautolisp :autocad-2026 :bricscad-v26))
+    (multiple-value-bind (result diagnostics)
+        (%capture-enc-diagnostics
+         (%open-fixture-form "\"w\"")
+         :dialect d)
+      (declare (ignore result))
+      (is (string= "" diagnostics)
+          "Bare OPEN must not emit enc-* under ~A; got: ~S" d diagnostics))))
+
+;;; --- BricsCAD ,ccs= mode-suffix actually drives the encoding ------
+;;;
+;;; The dispatcher diagnostic is one half; the other is that the
+;;; encoding extracted from the mode-suffix actually flows into the
+;;; CL OPEN call. Write a single Latin-1 byte via the ccs= mode and
+;;; read it back; the byte should round-trip when both sides
+;;; agree on the encoding. The mode-suffix splitter is what makes
+;;; this work — without it the CL OPEN sees "w,ccs=ISO-8859-1"
+;;; as the literal direction and chokes.
+
+(test open-ccs-suffix-actually-honoured-as-encoding
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (let ((result (run-autolisp-string
+                   (format nil "(progn
+                                  (setq f (open ~S \"w,ccs=ISO-8859-1\"))
+                                  (princ (chr 233) f)
+                                  (close f)
+                                  (setq g (open ~S \"r,ccs=ISO-8859-1\"))
+                                  (setq c (read-char g))
+                                  (close g)
+                                  c)"
+                           (namestring path) (namestring path))
+                   :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                             :bricscad-v26)
+                   :setup-fn #'%install-mock-host-and-core)))
+      ;; 0xE9 = 233 = é under Latin-1.
+      (is (eql 233 result)))))

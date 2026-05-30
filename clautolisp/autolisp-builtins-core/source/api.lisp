@@ -1614,33 +1614,157 @@ when no dialect is in scope."
               dialect))
         :iso-8859-1)))
 
+(defun %split-bricscad-mode-suffix (mode-string)
+  "Parse BricsCAD's `,ccs=ENC' mode-suffix syntax from a MODE
+argument to OPEN. Returns (values BASE-MODE CCS-ENCODING-STRING)
+where:
+
+- BASE-MODE is the mode-string with the `,ccs=' segment stripped
+  (e.g. \"r,ccs=UTF-8\" -> \"r\").
+- CCS-ENCODING-STRING is the encoding name from the suffix as a
+  CL string, or nil when no suffix is present.
+
+The BricsCAD spec accepts only `,ccs=ENC' at the tail (after the
+mode letter), not arbitrary parameter ordering, so we look at the
+last comma. encoding-dispatch.issue, section 'Per-dialect behavior
+/ --bricscad'."
+  (let ((comma-pos (position #\, mode-string :from-end t)))
+    ;; COND truth-tests only consume the primary value, so a `(values
+    ;; ... ...)` inside a cond clause would silently drop the
+    ;; secondary value. Use a nested IF that returns the VALUES form
+    ;; in tail position from the outer DEFUN so multiple-value-bind
+    ;; in the caller sees both values.
+    (if comma-pos
+        (let ((tail (subseq mode-string (1+ comma-pos))))
+          (if (and (>= (length tail) 4)
+                   (string-equal "ccs=" tail :end2 4))
+              (values (subseq mode-string 0 comma-pos)
+                      (subseq tail 4))
+              (values mode-string nil)))
+        (values mode-string nil))))
+
+(defun %autocad-encoding-literal-p (s)
+  "True when S is one of the AutoCAD 2021+ third-argument literals
+\"utf8\" or \"utf8-bom\" (case-insensitive). Used by the dispatcher
+to route a positional encoding to the AutoCAD native form rather
+than the clautolisp form when running under --autocad."
+  (and (stringp s)
+       (or (string-equal s "utf8")
+           (string-equal s "utf8-bom"))))
+
+(defun %dispatch-open-encoding-diagnostic (form value-string)
+  "Emit the encoding-dispatch.issue diagnostic appropriate for an
+OPEN call using FORM, where FORM is one of:
+
+  :positional-autocad    third arg is \"utf8\" / \"utf8-bom\"
+  :positional-clautolisp third arg is the broader clautolisp set
+  :ccs-suffix            mode-string carries \",ccs=ENC\"
+
+Per-dialect dispatch matrix (encoding-dispatch.issue, section
+'Dialect matrix'):
+
+| Dialect    | positional-autocad | positional-clautolisp | ccs-suffix |
+|------------+---------------------+-----------------------+------------|
+| --autocad  | accept              | foreign-dialect       | foreign    |
+| --bricscad | foreign-dialect     | foreign-dialect       | accept     |
+| --clautolisp | foreign-dialect   | accept                | foreign    |
+| --strict   | extension-used      | extension-used        | extension  |
+"
+  (let* ((dialect (current-evaluation-dialect))
+         (name (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+    (flet ((foreign (sub-tag)
+             (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+              :enc-foreign-dialect
+              "OPEN ~A (~S) is a ~A extension; foreign to --~(~A~)."
+              form value-string sub-tag
+              (case name
+                (:autocad-2026 "autocad")
+                (:bricscad-v26 "bricscad")
+                (:clautolisp   "clautolisp")
+                (t name))))
+           (extension (sub-tag)
+             (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+              :enc-extension-used
+              "OPEN ~A (~S) is a ~A extension; --strict reports every encoding extension."
+              form value-string sub-tag)))
+      (case name
+        (:autocad-2026
+         (case form
+           (:positional-autocad    nil)
+           (:positional-clautolisp (foreign "clautolisp-positional"))
+           (:ccs-suffix            (foreign "bricscad-ccs"))))
+        (:bricscad-v26
+         (case form
+           (:positional-autocad    (foreign "autocad-positional"))
+           (:positional-clautolisp (foreign "clautolisp-positional"))
+           (:ccs-suffix            nil)))
+        (:clautolisp
+         (case form
+           (:positional-autocad    (foreign "autocad-positional"))
+           (:positional-clautolisp nil)
+           (:ccs-suffix            (foreign "bricscad-ccs"))))
+        (:strict
+         (case form
+           (:positional-autocad    (extension "autocad-positional"))
+           (:positional-clautolisp (extension "clautolisp-positional"))
+           (:ccs-suffix            (extension "bricscad-ccs"))))
+        (t nil)))))
+
 (defun builtin-open (filename mode &optional encoding)
   ;; Documented to set ERRNO on failure (autolisp-spec §16 ERRNO
   ;; :coupled). Autodesk's enumerated code-set has no dedicated
   ;; "file not found" / "cannot open" value for OPEN; we use 22
   ;; (Value out of range) as the catch-all "argument rejected by
   ;; the host" code that the AutoLISP corpus already observes.
+  ;;
+  ;; Three sources of encoding selection, in precedence order:
+  ;;   1. The third positional ENCODING argument (clautolisp /
+  ;;      AutoCAD form).
+  ;;   2. The BricsCAD ,ccs=ENC mode-suffix.
+  ;;   3. The dialect default.
+  ;; A diagnostic is emitted for each foreign-dialect form via
+  ;; %DISPATCH-OPEN-ENCODING-DIAGNOSTIC; the runtime still honours
+  ;; the encoding (user code stays runnable across dialects).
   (let* ((path-string (autolisp-string-value (require-string filename "OPEN")))
-         (mode-string (autolisp-string-value (require-string mode "OPEN")))
+         (raw-mode-string (autolisp-string-value (require-string mode "OPEN")))
          (path (resolve-open-pathname path-string))
-         (external-format (cond
-                            ((null encoding) (open-default-external-format))
-                            (t (parse-open-external-format
-                                (autolisp-string-value
-                                 (require-string encoding "OPEN")))))))
-    (multiple-value-bind (direction if-exists if-does-not-exist)
-        (open-direction-and-options mode-string)
-      (handler-case
-          (let ((stream (open path
-                              :direction direction
-                              :if-exists if-exists
-                              :if-does-not-exist if-does-not-exist
-                              :external-format external-format)))
-            (if stream
-                (errno-and-return 0 (make-autolisp-file stream path-string mode-string))
-                (errno-and-return 22 nil)))
-        (error ()
-          (errno-and-return 22 nil))))))
+         (encoding-string (when encoding
+                            (autolisp-string-value
+                             (require-string encoding "OPEN"))))
+         (external-format nil))
+    (multiple-value-bind (mode-string ccs-encoding-string)
+        (%split-bricscad-mode-suffix raw-mode-string)
+      (when ccs-encoding-string
+        (%dispatch-open-encoding-diagnostic :ccs-suffix ccs-encoding-string))
+      (when encoding-string
+        (%dispatch-open-encoding-diagnostic
+         (if (%autocad-encoding-literal-p encoding-string)
+             :positional-autocad
+             :positional-clautolisp)
+         encoding-string))
+      (setf external-format
+            (cond
+              ;; Positional wins over CCS when both supplied — more
+              ;; explicit form. Document for users via the
+              ;; foreign-dialect diagnostic the ccs= already emitted.
+              (encoding-string
+               (parse-open-external-format encoding-string))
+              (ccs-encoding-string
+               (parse-open-external-format ccs-encoding-string))
+              (t (open-default-external-format))))
+      (multiple-value-bind (direction if-exists if-does-not-exist)
+          (open-direction-and-options mode-string)
+        (handler-case
+            (let ((stream (open path
+                                :direction direction
+                                :if-exists if-exists
+                                :if-does-not-exist if-does-not-exist
+                                :external-format external-format)))
+              (if stream
+                  (errno-and-return 0 (make-autolisp-file stream path-string raw-mode-string))
+                  (errno-and-return 22 nil)))
+          (error ()
+            (errno-and-return 22 nil)))))))
 
 (defun resolve-existing-file (filename support-paths)
   ;; AutoLISP's `findfile` and `findtrustedfile` accept both absolute

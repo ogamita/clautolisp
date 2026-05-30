@@ -382,6 +382,17 @@ Currently wired:
   ~--strict~ (~enc-extension-used~), ~--autocad~ /
   ~--bricscad~ (~enc-foreign-dialect~), silent under
   ~--clautolisp~.
+- ~OPEN~ encoding forms, all three routed:
+  - positional ~"utf8"~ / ~"utf8-bom"~ — native under
+    ~--autocad~; foreign under ~--bricscad~ / ~--clautolisp~;
+    extension-used under ~--strict~.
+  - positional ~"UTF-8"~ / ~"UTF-8-BOM"~ / ~"CP-NNNN"~ / … —
+    native under ~--clautolisp~; foreign under ~--autocad~ /
+    ~--bricscad~; extension-used under ~--strict~.
+  - ~,ccs=ENC~ mode-suffix — native under ~--bricscad~;
+    foreign under ~--autocad~ / ~--clautolisp~; extension-used
+    under ~--strict~. The suffix is stripped from the
+    mode-string before CL ~OPEN~ sees it.
 - ~GETVAR~ / ~SETVAR~ on ~LISPSYS~ under every dialect except
   ~--autocad~ (the native dialect of ~LISPSYS~):
   - ~--strict~ -> ~enc-extension-used~.
