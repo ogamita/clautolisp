@@ -3149,6 +3149,82 @@ string; the comparison is case-insensitive so (clal-sysvar-apropos
                              (substring-match-ci-p needle name))
                            all))))
 
+(defun %canonical-codepage-string (raw)
+  "Map a SYSCODEPAGE / DWGCODEPAGE-form string to the clautolisp
+canonical form (`CP-NNNN' / `UTF-8' / `ISO-8859-1' / `US-ASCII' /
+`ANSI'). Vendor strings (`ANSI_1252', `WINDOWS-1252', `CP1252')
+collapse onto `CP-1252'; encoding names already in canonical form
+pass through unchanged; the empty string maps to `ANSI' to
+preserve the \"host-dependent\" placeholder semantics. See
+issues/open/encoding-dispatch.issue, section `Code pages: the
+ANSI row, expanded'."
+  (cond
+    ((null raw) "ANSI")
+    ((zerop (length raw)) "ANSI")
+    ;; Already in clautolisp canonical form.
+    ((and (>= (length raw) 3)
+          (string-equal "CP-" raw :end2 3))
+     raw)
+    ;; Vendor "ANSI_NNNN" → "CP-NNNN".
+    ((and (>= (length raw) 5)
+          (string-equal "ANSI_" raw :end2 5))
+     (concatenate 'string "CP-" (subseq raw 5)))
+    ;; clautolisp canonical encoding name "WINDOWS-NNNN" → "CP-NNNN".
+    ((and (>= (length raw) 8)
+          (string-equal "WINDOWS-" raw :end2 8))
+     (concatenate 'string "CP-" (subseq raw 8)))
+    ;; Bare "CPNNNN" (no hyphen) → "CP-NNNN".
+    ((and (>= (length raw) 3)
+          (string-equal "CP" raw :end2 2)
+          (every #'digit-char-p (subseq raw 2)))
+     (concatenate 'string "CP-" (subseq raw 2)))
+    ;; Unicode / ASCII / other already-canonical names — pass through.
+    (t raw)))
+
+(defun %host-sysvar-string (host name)
+  "Fetch a string-valued sysvar from HOST and return it as a CL
+string (unwrapping the autolisp-string wrapper applied by
+present-sysvar-value). Returns nil when the sysvar is absent or
+its value is not a string."
+  (let ((raw (host-getvar host name)))
+    (cond
+      ((null raw) nil)
+      ((typep raw 'autolisp-string) (autolisp-string-value raw))
+      ((stringp raw) raw)
+      (t nil))))
+
+(defun builtin-clal-system-codepage ()
+  "Wrap (getvar \"SYSCODEPAGE\") and return the canonical clautolisp
+codepage spelling (`CP-1252', `UTF-8', `ANSI', …). The raw sysvar
+may carry the vendor `ANSI_1252' form on a CAD-process bridge or
+the clautolisp `WINDOWS-1252' / `UTF-8' form when the in-process
+engine is running; both collapse onto the same canonical answer."
+  (let ((host (current-evaluation-host)))
+    (make-autolisp-string
+     (%canonical-codepage-string (%host-sysvar-string host "SYSCODEPAGE")))))
+
+(defun builtin-clal-drawing-codepage ()
+  "Wrap (getvar \"DWGCODEPAGE\") and return the canonical clautolisp
+codepage spelling, same vocabulary as CLAL-SYSTEM-CODEPAGE.
+Defaults to SYSCODEPAGE when no drawing has been loaded — the
+catalogue-time default the launch wiring writes through."
+  (let ((host (current-evaluation-host)))
+    (make-autolisp-string
+     (%canonical-codepage-string (%host-sysvar-string host "DWGCODEPAGE")))))
+
+(defun builtin-clal-codepage-mismatch-p ()
+  "Return T when the canonical DWGCODEPAGE differs from the
+canonical SYSCODEPAGE, nil otherwise. Cheap defensive check
+before loading drawing-authored text: a mismatch means strings
+authored under one ANSI codepage may garble when interpreted
+under another."
+  (let* ((host (current-evaluation-host))
+         (sys (%canonical-codepage-string
+               (%host-sysvar-string host "SYSCODEPAGE")))
+         (dwg (%canonical-codepage-string
+               (%host-sysvar-string host "DWGCODEPAGE"))))
+    (if (string= sys dwg) nil (intern-autolisp-symbol "T"))))
+
 ;;; --- Phase 12: headless interaction channel -----------------------
 
 (defun optional-prompt-string (prompt operator-name)
@@ -6083,6 +6159,9 @@ backed persistent upgrade path.")
    ;; Bricsys; see autolisp-spec §16 ~clautolisp Extensions~.
    (make-core-builtin-subr "CLAL-SYSVAR-LIST"    #'builtin-clal-sysvar-list)
    (make-core-builtin-subr "CLAL-SYSVAR-APROPOS" #'builtin-clal-sysvar-apropos)
+   (make-core-builtin-subr "CLAL-SYSTEM-CODEPAGE"     #'builtin-clal-system-codepage)
+   (make-core-builtin-subr "CLAL-DRAWING-CODEPAGE"    #'builtin-clal-drawing-codepage)
+   (make-core-builtin-subr "CLAL-CODEPAGE-MISMATCH-P" #'builtin-clal-codepage-mismatch-p)
    ;; Phase 12 — headless interaction channel (PROMPT is registered
    ;; once already as a *standard-output* writer; we keep that)
    (make-core-builtin-subr "INITGET"    #'builtin-initget)
