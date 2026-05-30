@@ -3772,6 +3772,91 @@ codes."
        (mapcar #'symbol-name clautolisp.autolisp-runtime:*enc-diagnostic-codes*)))
     keyword))
 
+(defun %lint-form-name-p (form name)
+  "True when FORM is a call to NAME (an upper-case string).
+Accepts FORM as a CL cons cell whose CAR is an autolisp-symbol
+with SYMBOL-NAME matching NAME case-insensitively."
+  (and (consp form)
+       (typep (car form) 'autolisp-symbol)
+       (string-equal name (autolisp-symbol-name (car form)))))
+
+(defun %lint-string-literal-value (form)
+  "Return the underlying CL string when FORM is a literal
+autolisp-string; nil otherwise. Used by the linter to read off
+encoding-name literals in OPEN / LOAD calls."
+  (when (typep form 'autolisp-string)
+    (autolisp-string-value form)))
+
+(defun %lint-one-form (form)
+  "Inspect a single AutoLISP form for encoding extensions and
+emit the matching enc-* diagnostic via SIGNAL-ENCODING-DIAGNOSTIC
+(which already respects the dialect / pragma / lax gates). Used
+by BUILTIN-CLAL-LINT-ENCODING-EXTENSIONS to walk a form-tree.
+
+Recognised forms:
+- (load FILE [ONFAILURE [ENCODING]])
+- (open FILE MODE [ENCODING]) — both AutoCAD literal vocab and
+  clautolisp's broader set.
+- (open FILE MODE,ccs=ENC ...) — BricsCAD form, mode-string contains
+  the ,ccs= suffix.
+- (getvar \"LISPSYS\") / (setvar \"LISPSYS\" ...) — LISPSYS access."
+  (cond
+    ;; (load filename [onfailure [encoding]])
+    ((and (%lint-form-name-p form "LOAD")
+          (>= (length form) 4))
+     (let ((encoding (%lint-string-literal-value (fourth form))))
+       (when encoding
+         (%dispatch-load-encoding-diagnostic encoding))))
+    ;; (open filename mode [encoding])
+    ((and (%lint-form-name-p form "OPEN")
+          (>= (length form) 3))
+     (let ((mode (%lint-string-literal-value (third form)))
+           (encoding (and (>= (length form) 4)
+                          (%lint-string-literal-value (fourth form)))))
+       (when mode
+         (multiple-value-bind (base ccs) (%split-bricscad-mode-suffix mode)
+           (declare (ignore base))
+           (when ccs
+             (%dispatch-open-encoding-diagnostic :ccs-suffix ccs))))
+       (when encoding
+         (%dispatch-open-encoding-diagnostic
+          (if (%autocad-encoding-literal-p encoding)
+              :positional-autocad
+              :positional-clautolisp)
+          encoding))))
+    ;; (getvar "LISPSYS") / (setvar "LISPSYS" ...)
+    ((or (%lint-form-name-p form "GETVAR")
+         (%lint-form-name-p form "SETVAR"))
+     (let ((name (%lint-string-literal-value (second form))))
+       (when (%lispsys-name-p name)
+         (%dispatch-lispsys-foreign-dialect-diagnostic
+          (autolisp-symbol-name (car form))))))))
+
+(defun %lint-form-tree (form)
+  "Walk FORM recursively, calling %LINT-ONE-FORM on each cons.
+Atoms are skipped."
+  (when (consp form)
+    (%lint-one-form form)
+    (dolist (sub form)
+      (%lint-form-tree sub))))
+
+(defun builtin-clal-lint-encoding-extensions (form)
+  "Walk FORM (a parsed AutoLISP s-expression) and emit
+encoding-dispatch diagnostics for every encoding-extension call
+site found. The dialect / pragma / --lax gates apply normally; a
+clean form-tree emits nothing.
+
+Recognised: (load … encoding), (open … encoding), (open … ',ccs=…'),
+(getvar / setvar \"LISPSYS\"). User code can pipe a file's parsed
+form-tree through this builtin before evaluation to catch
+encoding-extension uses statically.
+
+Returns T (matches the AutoLISP convention that mutators / linters
+return T on completion); the diagnostics are the user-visible
+output."
+  (%lint-form-tree form)
+  (intern-autolisp-symbol "T"))
+
 (defun builtin-clal-suppress-enc-diagnostic (&rest codes)
   "Add each CODE in CODES to the active per-code suppression list.
 CODES are string designators (autolisp-string or autolisp-symbol);
@@ -6786,6 +6871,7 @@ backed persistent upgrade path.")
    (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
    (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)
    (make-core-builtin-subr "CLAL-ENABLE-ENC-DIAGNOSTIC"   #'builtin-clal-enable-enc-diagnostic)
+   (make-core-builtin-subr "CLAL-LINT-ENCODING-EXTENSIONS" #'builtin-clal-lint-encoding-extensions)
    ;; Phase 12 — headless interaction channel (PROMPT is registered
    ;; once already as a *standard-output* writer; we keep that)
    (make-core-builtin-subr "INITGET"    #'builtin-initget)
