@@ -767,6 +767,10 @@ The implementation of every operator listed above lives in:
 - ~../../autolisp-spec/~      — AutoLISP / Visual LISP language reference,
                                 including dialect divergences and the
                                 normative source for builtin semantics.
+- ~encoding-migration.org~    — Vendor-to-clautolisp migration notes for
+                                file-encoding extensions (AutoCAD
+                                ~LISPSYS~ / third-arg ~open~, BricsCAD
+                                ~,ccs=~ / ~vle-file-encoding~).
 - ~PLAN.md~                    — Implementation roadmap and per-phase
                                 completion notes.
 - ~clautolisp/autolisp-reader/~      — Reader subsystem (lexer, parser,
