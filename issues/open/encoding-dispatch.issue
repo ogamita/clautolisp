@@ -58,6 +58,50 @@ To summarize formally, the file encoding is stored in two places:
 
 (or-else LC_ALL LANG LC_CTYPE (-e option)) --> SYSCODEPAGE (RO) --> *AUTOLISP-FILE-ENCODING* (RW)
 
+### Degenerate launch case: -e absent, locale unset
+
+The launch chain may produce no value at all — `-e` not given AND
+all of `LC_ALL` / `LANG` / `LC_CTYPE` either unset or empty. The
+two slots diverge in that case:
+
+  - **`SYSCODEPAGE`** (and `DWGCODEPAGE`, which defaults to it)
+    falls back to `"US-ASCII"`. This is the safest 7-bit assumption
+    a vendor-compatible host sysvar can carry; user code that
+    branches on `(getvar "SYSCODEPAGE")` gets a non-empty
+    deterministic value.
+
+  - **`*AUTOLISP-FILE-ENCODING*`** falls back to the **empty
+    string `""`**. The global is a bound, non-nil
+    autolisp-string, but the empty value is a sentinel meaning
+    "no preference; LOAD/OPEN should consult the next tier."
+    `LOOKUP-AUTOLISP-FILE-ENCODING` (the runtime helper that wires
+    the global into the LOAD precedence chain) returns `NIL` on
+    empty, which is the same answer as "global unbound" — so the
+    chain falls through to the session-default-source-encoding,
+    then to the dialect default (UTF-8 under `--clautolisp` /
+    `--autocad-2026` / `--bricscad-v26`, ISO-8859-1 under
+    `--strict`).
+
+The reason for the asymmetry: pinning `*AUTOLISP-FILE-ENCODING*`
+to `"US-ASCII"` in the degenerate case (which the first
+implementation did) would make every source-file `LOAD` strict
+ASCII regardless of dialect, and the first non-ASCII byte in any
+init file raises a stream decoding error. An ISO-8859-1 fallback
+would avoid the crash (every byte 0x00..0xFF is a valid
+ISO-8859-1 character) but silently mojibake UTF-8 multi-byte
+sequences into pairs of Latin-1 characters. The empty-string
+sentinel cleanly hands the decision back to the dialect, which
+already declares what encoding the language's source files use.
+
+User-observable effect from AutoLISP under the degenerate case:
+
+```lisp
+*AUTOLISP-FILE-ENCODING*           ; => ""  (bound, non-nil)
+(strlen *AUTOLISP-FILE-ENCODING*)  ; => 0
+(getvar "SYSCODEPAGE")             ; => "US-ASCII"
+;; LOAD uses the dialect default (UTF-8 under --clautolisp).
+```
+
 Then the API of OPEN and LOAD depend on the dialect.
 
 Reminder: running in a dialect doesn't prevent the other forms, it

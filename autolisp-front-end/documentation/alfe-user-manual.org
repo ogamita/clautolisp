@@ -237,8 +237,8 @@ state:
 | =*AUTOLISP-HELP*=              | The --help banner of the front-end as a string.        |
 | =*AUTOLISP-DIALECT*=           | =:strict= / =:autocad-2026= / =:bricscad-v26= / =:clautolisp=. |
 | =*AUTOLISP-HOST*=              | =:mock= / =:null= / a CAD-specific keyword.            |
-| =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (never nil).               |
-| =*AUTOLISP-TERMINAL-ENCODING*= | Active terminal encoding (never nil).                  |
+| =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (always a string). Empty string =""= means "no preference; fall through to the dialect default" — the documented degenerate case when neither =-e= nor any =LC_*= env var resolves an encoding. |
+| =*AUTOLISP-TERMINAL-ENCODING*= | Active terminal encoding (always a string, never empty — falls back to =US-ASCII= in the degenerate case). |
 | =*AUTOLISP-VERSION*=           | Version string of the running engine.                  |
 | =*AUTOLISP-LOAD-PATHNAME*=     | Set by =LOAD= during evaluation of the loaded file.    |
 | =*AUTOLISP-EXPRESSION*=        | Set during evaluation of a =-x= expression.            |
