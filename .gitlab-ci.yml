@@ -114,8 +114,14 @@ test:alfe:spec-coverage:
 
 # Mirror of the GitHub `alfe-binary` job: build alfe-sbcl, assert
 # its --version matches the source-declared version, smoke-test the
-# headline `--clautolisp -x '(+ 1 2)'` invocation, and publish the
-# binary as a GitLab artifact for downstream consumers.
+# headline `--clautolisp -x '(princ (+ 1 2))'` invocation, and
+# publish the binary as a GitLab artifact for downstream consumers.
+#
+# NOTE: alfe -x does NOT auto-print its expression value (see
+# issues/closed/doc-x-output-semantics.issue) — the smoke test
+# wraps in (princ ...) explicitly. The --no-init flag suppresses
+# user / system init-file output so the captured stdout is just
+# the (princ) value.
 build:alfe:sbcl:
   stage: test
   script:
@@ -128,7 +134,8 @@ build:alfe:sbcl:
       echo "actual:   $actual"
       [ "$actual" = "alfe $declared" ]
     - |
-      output=$(autolisp-front-end/tools/alfe/bin/alfe-sbcl --clautolisp -x '(+ 1 2)')
+      output=$(autolisp-front-end/tools/alfe/bin/alfe-sbcl \
+                 --no-init --clautolisp -x '(princ (+ 1 2))')
       echo "output: $output"
       [ "$output" = "3" ]
   artifacts:
