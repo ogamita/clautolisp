@@ -158,3 +158,47 @@
     (mock-host-restore mock snap)
     (let ((cell (mock-host-sysvar mock "ACADPREFIX")))
       (is (sysvar-cell-host-derived-p cell)))))
+
+;;; --- host-set-derived-sysvar bypasses read-only -------------------
+;;;
+;;; SYSCODEPAGE and DWGCODEPAGE are documented read-only sysvars, so
+;;; HOST-SETVAR refuses to mutate them — correct for user code. The
+;;; launch-time wiring (transmit.lisp:apply-launch-codepage-to-sysvars)
+;;; needs to push the locale-resolved encoding past that gate; that's
+;;; what HOST-SET-DERIVED-SYSVAR is for. These tests cover the contract
+;;; in isolation.
+
+(test host-set-derived-sysvar-mutates-read-only-cell
+  (let ((mock (make-mock-host)))
+    ;; baseline: SYSCODEPAGE installs from the catalogue at "" and the
+    ;; cell is read-only
+    (let ((cell (mock-host-sysvar mock "SYSCODEPAGE")))
+      (is (string= "" (sysvar-cell-value cell)))
+      (is (sysvar-cell-read-only-p cell)))
+    ;; bypass succeeds — inspect the underlying cell rather than
+    ;; host-getvar (which wraps the value in autolisp-string and is
+    ;; not a string-designator).
+    (host-set-derived-sysvar mock "SYSCODEPAGE" "UTF-8")
+    (is (string= "UTF-8" (sysvar-cell-value (mock-host-sysvar mock "SYSCODEPAGE"))))
+    ;; the cell remains read-only — only host-side init can mutate
+    (let ((cell (mock-host-sysvar mock "SYSCODEPAGE")))
+      (is (sysvar-cell-read-only-p cell)))))
+
+(test host-set-derived-sysvar-respects-host-setvar-readonly
+  ;; The bypass must not weaken the user-facing host-setvar gate.
+  (let ((mock (make-mock-host)))
+    (host-set-derived-sysvar mock "SYSCODEPAGE" "UTF-8")
+    (handler-case
+        (progn
+          (host-setvar mock "SYSCODEPAGE" "ISO-8859-1")
+          (is nil "host-setvar on read-only SYSCODEPAGE should have signalled"))
+      (autolisp-runtime-error (c)
+        (is (eq :sysvar-read-only (autolisp-runtime-error-code c)))))))
+
+(test host-set-derived-sysvar-no-ops-on-unknown-name
+  ;; Launch wiring fires unconditionally; absent SYSCODEPAGE in a
+  ;; stripped catalogue we want a silent no-op, not a signal.
+  (let ((mock (make-instance 'mock-host)))
+    (populate-default-sysvars mock :catalogue :seed)
+    (is (null (mock-host-sysvar mock "SYSCODEPAGE")))
+    (is (null (host-set-derived-sysvar mock "SYSCODEPAGE" "UTF-8")))))

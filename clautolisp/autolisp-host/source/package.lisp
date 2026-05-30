@@ -44,6 +44,7 @@
    ;; --- System variables -----------------------------------------
    #:host-getvar
    #:host-setvar
+   #:host-set-derived-sysvar
    #:host-sysvar-names
    ;; --- Command dispatch -----------------------------------------
    #:host-command
