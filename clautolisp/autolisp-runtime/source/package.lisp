@@ -245,6 +245,12 @@
    #:locale-default-source-encoding
    #:parse-posix-locale
    #:parse-locale-encoding-string
+   ;; Encoding-dispatch diagnostics (encoding-dispatch.issue Phase 4).
+   #:*enc-diagnostic-stream*
+   #:*enc-diagnostic-suppress-p*
+   #:*enc-diagnostic-codes*
+   #:signal-encoding-diagnostic
+   #:call-with-suppressed-encoding-diagnostics
    ;; Terminal colour-output policy. *COLOR-OUTPUT* is the single
    ;; switch the AUTOLISP-SYMBOL PRINT-OBJECT method consults; the
    ;; CLI calls RESOLVE-COLOR-POLICY at startup, binds the result

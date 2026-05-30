@@ -410,6 +410,40 @@ back to the documented precedence chain. Signals
           encoding-string))
        kw))))
 
+(defun %dispatch-load-encoding-diagnostic (encoding-string)
+  "Emit the encoding-dispatch.issue diagnostic appropriate for the
+running dialect when LOAD is called with the clautolisp-native
+positional [encoding] argument:
+
+- :clautolisp        accept silently.
+- :strict            enc-extension-used (every extension is reported).
+- :autocad-2026      enc-foreign-dialect / clautolisp (foreign form).
+- :bricscad-v26      enc-foreign-dialect / clautolisp (foreign form).
+- anything else      silent (forward-compatible :lax / unknown dialects).
+
+The form is ALWAYS honoured at runtime regardless of dialect; only
+the diagnostic varies. encoding-dispatch.issue, section 'Per-dialect
+behavior'."
+  (let* ((dialect (current-evaluation-dialect))
+         (name (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+    (case name
+      ((:strict)
+       (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+        :enc-extension-used
+        "LOAD's positional [encoding] argument (~S) is a clautolisp extension; ~
+--strict reports every encoding extension."
+        encoding-string))
+      ((:autocad-2026 :bricscad-v26)
+       (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+        :enc-foreign-dialect
+        "LOAD's positional [encoding] argument (~S) is a clautolisp ~
+extension; --~(~A~) has no per-call encoding control on LOAD."
+        encoding-string (case name
+                          (:autocad-2026 "autocad")
+                          (:bricscad-v26 "bricscad")
+                          (t name))))
+      (t nil))))
+
 (defun builtin-load (filename
                      &optional (onfailure nil onfailure-supplied-p)
                                (encoding nil encoding-supplied-p))
@@ -423,15 +457,18 @@ back to the documented precedence chain. Signals
   ;; this single LOAD call.
   ;;
   ;; Under --strict / --autocad / --bricscad this form is a foreign-
-  ;; dialect spelling; the value is still honoured at runtime (so
-  ;; user code stays runnable across dialects) but Phase 4 will
-  ;; surface an enc-foreign-dialect diagnostic at this call site.
+  ;; dialect spelling; the runtime still honours the encoding (so
+  ;; user code stays runnable across dialects) but an enc-* diagnostic
+  ;; is emitted at this call site via
+  ;; %DISPATCH-LOAD-ENCODING-DIAGNOSTIC.
   (let* ((value (autolisp-string-value (require-string filename "LOAD")))
          (resolved (resolve-load-pathname value))
          (encoding-string (and encoding-supplied-p
                                (%coerce-encoding-designator encoding "LOAD")))
          (encoding-kw (and encoding-supplied-p
                            (%resolve-load-external-format encoding-string "LOAD"))))
+    (when encoding-supplied-p
+      (%dispatch-load-encoding-diagnostic encoding-string))
     (cond
       ((null resolved)
        (set-autolisp-errno 73)
