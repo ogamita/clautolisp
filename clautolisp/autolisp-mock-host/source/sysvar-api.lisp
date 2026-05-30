@@ -157,3 +157,18 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
          (clautolisp.autolisp-runtime:signal-document-event
           document :sysvar :vlr-sysvarchanged (list rendered-name))
          (present-sysvar-value (sysvar-cell-kind cell) coerced))))))
+
+(defmethod host-set-derived-sysvar ((host mock-host) name value)
+  "Launch-time bypass of the cell's read-only flag for host-derived
+sysvars (SYSCODEPAGE, DWGCODEPAGE, …). The catalogue marks these as
+read-only because user code must not setvar them at runtime, but the
+HAL itself populates them once at session start. NAME must already
+exist; the function silently no-ops on unknown sysvars so transmit-
+side callers don't need to know which catalogue is installed."
+  (let* ((string (ensure-sysvar-name name 'set-derived-sysvar))
+         (cell (mock-host-sysvar host string)))
+    (when cell
+      (let ((coerced (coerce-sysvar-value
+                      (sysvar-cell-kind cell) value string)))
+        (setf (sysvar-cell-value cell) coerced)
+        coerced))))

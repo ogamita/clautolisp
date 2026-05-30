@@ -142,6 +142,13 @@ backend share this instance.")
   (declare (ignore name value))
   (signal-host-not-supported host 'setvar))
 
+(defmethod host-set-derived-sysvar ((host null-host) name value)
+  ;; Silent no-op rather than signalling: the launch-time wiring
+  ;; calls this unconditionally; null-host has no sysvar table
+  ;; to update and that's fine.
+  (declare (ignore name value))
+  nil)
+
 (defmethod host-sysvar-names ((host null-host))
   (signal-host-not-supported host 'sysvar-names))
 
