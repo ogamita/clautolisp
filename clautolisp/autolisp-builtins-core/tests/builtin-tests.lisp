@@ -3584,11 +3584,16 @@ sysvars."
 ;;;; enc-extension-used for every form.
 
 (defun %open-fixture-form (mode-or-encoding-clause)
-  "Build a small OPEN-then-close form that opens /tmp/openenc.txt
-under the given mode-and-encoding-clause text. Used to drive the
-diagnostic-capture harness; the file is created/overwritten on
-disk, which we don't care about for the diagnostic check."
-  (format nil "(progn (close (open \"/tmp/openenc.txt\" ~A)) 0)"
+  "Build a small OPEN-then-conditionally-close form that opens
+/tmp/openenc.txt under the given mode-and-encoding-clause text.
+Used to drive the diagnostic-capture harness; the file is
+created/overwritten on disk, which we don't care about for the
+diagnostic check. OPEN may return nil when the requested encoding
+isn't supported by the running CL impl (e.g. MBCS on SBCL); the
+guarded close keeps the harness from crashing on that path —
+the diagnostic of interest has already been emitted before OPEN
+attempts the I/O."
+  (format nil "(progn (setq f (open \"/tmp/openenc.txt\" ~A)) (if f (close f)) 0)"
           mode-or-encoding-clause))
 
 (test open-positional-autocad-silent-under-autocad
@@ -3729,3 +3734,74 @@ disk, which we don't care about for the diagnostic check."
                    :setup-fn #'%install-mock-host-and-core)))
       ;; 0xE9 = 233 = é under Latin-1.
       (is (eql 233 result)))))
+
+;;;; ----- enc-unsupported-target / enc-host-dependent (Phase 8) ------
+;;;;
+;;;; Two informational diagnostics fired from OPEN:
+;;;;
+;;;;   enc-unsupported-target: encoding is foreign to the host's
+;;;;     expressive range (e.g. UTF-16 under --autocad).
+;;;;   enc-host-dependent:     "ANSI" in a WRITE context — output is
+;;;;     not portable across hosts.
+;;;;
+;;;; Both are informational; the runtime still attempts the open.
+
+(test open-enc-unsupported-target-fires-for-utf-16-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"UTF-16-LE\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-unsupported-target]" diagnostics))))
+
+(test open-enc-unsupported-target-silent-for-utf-8-under-autocad
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"utf8\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (not (search "[enc-unsupported-target]" diagnostics)))))
+
+(test open-enc-unsupported-target-silent-under-clautolisp
+  ;; clautolisp does the transcoding; no host-expressibility limit
+  ;; applies in-process.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"UTF-16-LE\"")
+       :dialect :clautolisp)
+    (declare (ignore result))
+    (is (not (search "[enc-unsupported-target]" diagnostics)))))
+
+(test open-enc-host-dependent-fires-for-ansi-write
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"ANSI\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-host-dependent]" diagnostics))))
+
+(test open-enc-host-dependent-silent-on-ansi-read
+  ;; Reading legacy ANSI files is the common case — no lint there.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"r\" \"ANSI\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (not (search "[enc-host-dependent]" diagnostics)))))
+
+(test open-enc-host-dependent-fires-for-mbcs-write
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"MBCS\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (search "[enc-host-dependent]" diagnostics))))
+
+(test open-enc-host-dependent-silent-for-cp-nnnn-write
+  ;; Explicit CP-NNNN is reproducible — no host-dependent lint.
+  (multiple-value-bind (result diagnostics)
+      (%capture-enc-diagnostics
+       (%open-fixture-form "\"w\" \"CP-1252\"")
+       :dialect :autocad-2026)
+    (declare (ignore result))
+    (is (not (search "[enc-host-dependent]" diagnostics)))))

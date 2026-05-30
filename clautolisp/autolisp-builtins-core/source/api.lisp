@@ -1652,6 +1652,56 @@ than the clautolisp form when running under --autocad."
        (or (string-equal s "utf8")
            (string-equal s "utf8-bom"))))
 
+(defun %autocad-supports-encoding-p (encoding-string)
+  "True when AutoCAD can natively express ENCODING-STRING (a
+clautolisp-canonical or AutoCAD-literal name). AutoCAD's third-arg
+OPEN extension supports UTF-8 only; UTF-16 / UTF-32 are not
+expressible. Used by %CHECK-OPEN-ENCODING-SUPPORTED to fire
+ENC-UNSUPPORTED-TARGET under --autocad."
+  (and (stringp encoding-string)
+       (or (string-equal encoding-string "utf8")
+           (string-equal encoding-string "utf8-bom")
+           (string-equal encoding-string "UTF-8")
+           (string-equal encoding-string "UTF-8-BOM")
+           (string-equal encoding-string "ANSI")
+           (string-equal encoding-string "MBCS")
+           (string-equal encoding-string "US-ASCII")
+           (string-equal encoding-string "ASCII")
+           (and (>= (length encoding-string) 3)
+                (string-equal "CP-" encoding-string :end2 3)))))
+
+(defun %check-open-encoding-supported (encoding-string operator-name)
+  "Emit ENC-UNSUPPORTED-TARGET when the active dialect's host can't
+honour ENCODING-STRING (e.g. UTF-16 under --autocad: the AutoCAD
+runtime simply does not provide a UTF-16 reader). Informational —
+the runtime still attempts the open; downstream errors are the
+user's signal that the encoding is actually wrong."
+  (when encoding-string
+    (let* ((dialect (current-evaluation-dialect))
+           (name (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+      (case name
+        (:autocad-2026
+         (unless (%autocad-supports-encoding-p encoding-string)
+           (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+            :enc-unsupported-target
+            "~A: encoding ~S has no AutoCAD-native expression (UTF-16 / UTF-32 are not in scope)."
+            operator-name encoding-string)))))))
+
+(defun %check-open-host-dependent-write (encoding-string direction operator-name)
+  "Emit ENC-HOST-DEPENDENT (info-level) when ENCODING-STRING resolves
+to ANSI in a write context. ANSI's actual byte mapping depends on
+the host's SYSCODEPAGE, so writing under ANSI yields output that
+varies host-to-host — non-reproducible. Reading is fine; only
+write triggers the lint."
+  (when (and encoding-string
+             (eq direction :output)
+             (or (string-equal encoding-string "ANSI")
+                 (string-equal encoding-string "MBCS")))
+    (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+     :enc-host-dependent
+     "~A: writing under ~S resolves to the host's SYSCODEPAGE at I/O time; output is not portable across hosts. Use ~S or an explicit CP-NNNN for reproducibility."
+     operator-name encoding-string "CP-1252")))
+
 (defun %dispatch-open-encoding-diagnostic (form value-string)
   "Emit the encoding-dispatch.issue diagnostic appropriate for an
 OPEN call using FORM, where FORM is one of:
@@ -1742,6 +1792,12 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
              :positional-autocad
              :positional-clautolisp)
          encoding-string))
+      ;; ENC-UNSUPPORTED-TARGET — encoding is foreign to the host's
+      ;; expressive range (e.g. UTF-16 under --autocad).
+      (let ((effective-encoding-string
+             (or encoding-string ccs-encoding-string)))
+        (when effective-encoding-string
+          (%check-open-encoding-supported effective-encoding-string "OPEN")))
       (setf external-format
             (cond
               ;; Positional wins over CCS when both supplied — more
@@ -1754,6 +1810,13 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
               (t (open-default-external-format))))
       (multiple-value-bind (direction if-exists if-does-not-exist)
           (open-direction-and-options mode-string)
+        ;; ENC-HOST-DEPENDENT — writing under ANSI / MBCS yields
+        ;; host-dependent output. Read paths are silent.
+        (let ((effective-encoding-string
+               (or encoding-string ccs-encoding-string)))
+          (when effective-encoding-string
+            (%check-open-host-dependent-write
+             effective-encoding-string direction "OPEN")))
         (handler-case
             (let ((stream (open path
                                 :direction direction
@@ -3418,14 +3481,42 @@ string; the comparison is case-insensitive so (clal-sysvar-apropos
                              (substring-match-ci-p needle name))
                            all))))
 
+(defun %codepage-canonical-known-p (raw)
+  "True when RAW is a codepage / encoding spelling clautolisp can map
+to its canonical form (CP-NNNN / Unicode / ANSI). Used to gate
+ENC-UNKNOWN-CODEPAGE emission so we don't fire on every pass-through
+of an already-known UTF-* / ISO-* / etc. spelling."
+  (or (null raw)
+      (zerop (length raw))
+      (and (>= (length raw) 3) (string-equal "CP-" raw :end2 3))
+      (and (>= (length raw) 5) (string-equal "ANSI_" raw :end2 5))
+      (and (>= (length raw) 8) (string-equal "WINDOWS-" raw :end2 8))
+      (and (>= (length raw) 3)
+           (string-equal "CP" raw :end2 2)
+           (every #'digit-char-p (subseq raw 2)))
+      (string-equal raw "ANSI")
+      (string-equal raw "MBCS")
+      (string-equal raw "US-ASCII")
+      (string-equal raw "ASCII")
+      (and (>= (length raw) 4) (string-equal "UTF-" raw :end2 4))
+      (and (>= (length raw) 4) (string-equal "UTF8" raw :end2 4))
+      (and (>= (length raw) 4) (string-equal "ISO-" raw :end2 4))))
+
 (defun %canonical-codepage-string (raw)
   "Map a SYSCODEPAGE / DWGCODEPAGE-form string to the clautolisp
 canonical form (`CP-NNNN' / `UTF-8' / `ISO-8859-1' / `US-ASCII' /
 `ANSI'). Vendor strings (`ANSI_1252', `WINDOWS-1252', `CP1252')
 collapse onto `CP-1252'; encoding names already in canonical form
 pass through unchanged; the empty string maps to `ANSI' to
-preserve the \"host-dependent\" placeholder semantics. See
-issues/open/encoding-dispatch.issue, section `Code pages: the
+preserve the \"host-dependent\" placeholder semantics.
+
+Emits ENC-UNKNOWN-CODEPAGE for spellings clautolisp does not
+recognise (typos, vendor-specific aliases not in the table). The
+helper still returns the input string so downstream code keeps
+working — the diagnostic is purely informational, matching the
+fall-back behaviour the spec mandates.
+
+See issues/open/encoding-dispatch.issue, section `Code pages: the
 ANSI row, expanded'."
   (cond
     ((null raw) "ANSI")
@@ -3448,7 +3539,13 @@ ANSI row, expanded'."
           (every #'digit-char-p (subseq raw 2)))
      (concatenate 'string "CP-" (subseq raw 2)))
     ;; Unicode / ASCII / other already-canonical names — pass through.
-    (t raw)))
+    (t
+     (unless (%codepage-canonical-known-p raw)
+       (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+        :enc-unknown-codepage
+        "Codepage ~S is not recognised by clautolisp; falling back to it as-is."
+        raw))
+     raw)))
 
 (defun %host-sysvar-string (host name)
   "Fetch a string-valued sysvar from HOST and return it as a CL
@@ -3493,6 +3590,32 @@ under another."
          (dwg (%canonical-codepage-string
                (%host-sysvar-string host "DWGCODEPAGE"))))
     (if (string= sys dwg) nil (intern-autolisp-symbol "T"))))
+
+(defun set-drawing-codepage (new-codepage-value)
+  "Update the host's DWGCODEPAGE sysvar AND emit
+ENC-CODEPAGE-MISMATCH when the canonicalised new value differs
+from the current SYSCODEPAGE. Intended hook for drawing-load
+paths: when the runtime reads a DWG codepage header it calls
+through here so user code that loaded a Czech-authored drawing
+on a French host sees the diagnostic at load time, not at
+text-decode time.
+
+The plain HOST-SET-DERIVED-SYSVAR bypass remains the right entry
+point for launch-time DWGCODEPAGE seeding (which always matches
+SYSCODEPAGE) — only the drawing-side update routes through here.
+NEW-CODEPAGE-VALUE is a CL string."
+  (let* ((host (current-evaluation-host))
+         (sys-raw (%host-sysvar-string host "SYSCODEPAGE"))
+         (sys-canonical (%canonical-codepage-string sys-raw))
+         (new-canonical (%canonical-codepage-string new-codepage-value)))
+    (unless (string= sys-canonical new-canonical)
+      (clautolisp.autolisp-runtime:signal-encoding-diagnostic
+       :enc-codepage-mismatch
+       "DWGCODEPAGE (~S) differs from SYSCODEPAGE (~S); strings authored under the drawing's codepage may garble when interpreted under the host's."
+       new-canonical sys-canonical))
+    (clautolisp.autolisp-host:host-set-derived-sysvar
+     host "DWGCODEPAGE" new-codepage-value)
+    new-canonical))
 
 (defun %sniff-file-bom (path)
   "Read the first four bytes of PATH (silently truncating to fewer

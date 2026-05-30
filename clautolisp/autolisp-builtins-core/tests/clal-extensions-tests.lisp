@@ -234,3 +234,76 @@ CLAL-FILE-ENCODING reports for that file."
   (uiop:with-temporary-file (:pathname p :type "txt" :keep nil)
     (is (string= "UTF-16-LE"
                  (%fixture-encoding-string p #(#xFF #xFE))))))
+
+;;; --- enc-codepage-mismatch (Phase 8 item 4) -----------------------
+;;;
+;;; set-drawing-codepage is the hook drawing-load code paths call when
+;;; the runtime reads a DWG codepage header. Diagnostic fires when the
+;;; canonical form differs from SYSCODEPAGE — covers the classic
+;;; "Czech-authored drawing on a French host" mistake.
+
+(defun %install-codepages-and-capture-mismatch (sys-codepage dwg-codepage)
+  "Set SYSCODEPAGE via the launch bypass, then call set-drawing-codepage
+with DWG-CODEPAGE and return the captured enc-* diagnostic string."
+  (setup-mock-host-context)
+  (let ((host (clautolisp.autolisp-runtime:current-evaluation-host))
+        (sink (make-string-output-stream)))
+    (clautolisp.autolisp-host:host-set-derived-sysvar host "SYSCODEPAGE" sys-codepage)
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* sink))
+      (clautolisp.autolisp-builtins-core::set-drawing-codepage dwg-codepage))
+    (get-output-stream-string sink)))
+
+(test enc-codepage-mismatch-emitted-when-different
+  (let ((diagnostics (%install-codepages-and-capture-mismatch "ANSI_1252" "ANSI_1250")))
+    (is (search "[enc-codepage-mismatch]" diagnostics))
+    (is (search "CP-1250" diagnostics))
+    (is (search "CP-1252" diagnostics))))
+
+(test enc-codepage-mismatch-silent-when-same
+  (let ((diagnostics (%install-codepages-and-capture-mismatch "ANSI_1252" "ANSI_1252")))
+    (is (string= "" diagnostics))))
+
+(test enc-codepage-mismatch-silent-across-equivalent-spellings
+  ;; "ANSI_1252" and "WINDOWS-1252" canonicalise to the same CP-1252
+  ;; — the wrapper compares canonical forms, so no mismatch fires.
+  (let ((diagnostics (%install-codepages-and-capture-mismatch "ANSI_1252" "WINDOWS-1252")))
+    (is (string= "" diagnostics))))
+
+(test set-drawing-codepage-actually-updates-the-sysvar
+  (setup-mock-host-context)
+  (let* ((host (clautolisp.autolisp-runtime:current-evaluation-host))
+         (clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+    (clautolisp.autolisp-host:host-set-derived-sysvar host "SYSCODEPAGE" "ANSI_1252")
+    (clautolisp.autolisp-builtins-core::set-drawing-codepage "ANSI_1250")
+    (is (string= "ANSI_1250"
+                 (clautolisp.autolisp-mock-host::sysvar-cell-value
+                  (clautolisp.autolisp-mock-host:mock-host-sysvar host "DWGCODEPAGE"))))))
+
+;;; --- enc-unknown-codepage (Phase 8 item 10) ------------------------
+
+(defun %capture-canonical-codepage-diagnostics (raw)
+  (let ((sink (make-string-output-stream)))
+    (let ((clautolisp.autolisp-runtime:*enc-diagnostic-stream* sink))
+      (clautolisp.autolisp-builtins-core::%canonical-codepage-string raw))
+    (get-output-stream-string sink)))
+
+(test enc-unknown-codepage-silent-for-known-spellings
+  (dolist (known '("UTF-8" "UTF-16-LE" "UTF-16-BE" "ISO-8859-1"
+                    "US-ASCII" "ANSI" "MBCS" "CP-1252" "CP1252"
+                    "ANSI_1252" "WINDOWS-1252" ""))
+    (is (string= "" (%capture-canonical-codepage-diagnostics known))
+        "Known codepage spelling ~S unexpectedly raised enc-unknown-codepage" known)))
+
+(test enc-unknown-codepage-emitted-for-typo
+  (let ((diagnostics
+         (%capture-canonical-codepage-diagnostics "NOT-AN-ENCODING-NAME")))
+    (is (search "[enc-unknown-codepage]" diagnostics))))
+
+(test enc-unknown-codepage-passes-input-through-unchanged
+  ;; The diagnostic is informational; the canonicaliser returns the
+  ;; raw string so downstream code keeps working.
+  (let ((clautolisp.autolisp-runtime:*enc-diagnostic-suppress-p* t))
+    (is (string=
+         "GARBAGE-ENCODING"
+         (clautolisp.autolisp-builtins-core::%canonical-codepage-string
+          "GARBAGE-ENCODING")))))
