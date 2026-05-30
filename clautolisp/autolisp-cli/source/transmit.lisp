@@ -114,14 +114,22 @@ derived value."
    (list "*AUTOLISP-TRACE*"
          (autolisp-bool (cli-options-trace-p options)))
    ;; *AUTOLISP-FILE-ENCODING* and *AUTOLISP-TERMINAL-ENCODING*
-   ;; are never NIL — encoding.issue rule. RESOLVE-EFFECTIVE-
-   ;; ENCODING applies the documented three-tier fallback:
-   ;;   1. explicit -e / -E (already canonicalised at parse time)
-   ;;   2. host locale (LC_ALL > LANG > LC_CTYPE)
-   ;;   3. "US-ASCII"
+   ;; are never NIL — encoding.issue rule. The two-tier resolve
+   ;; consults explicit -e/-E then the host locale. The launch-
+   ;; chain spec answer ("US-ASCII when nothing resolves") applies
+   ;; to *SYSCODEPAGE* — not to *AUTOLISP-FILE-ENCODING*. Pinning
+   ;; *AUTOLISP-FILE-ENCODING* to "US-ASCII" in the no-locale case
+   ;; would break LOAD of init files with non-ASCII bytes (e.g.
+   ;; UTF-8 content under a runner with LC_ALL unset). The empty-
+   ;; string degenerate value lets LOOKUP-AUTOLISP-FILE-ENCODING
+   ;; fall through to the dialect default — the 1.0.72 precedence
+   ;; chain's documented intent.
    (list "*AUTOLISP-FILE-ENCODING*"
          (make-autolisp-string
-          (resolve-effective-encoding (cli-options-load-encoding options))))
+          (or (and (cli-options-load-encoding options)
+                   (canonical-encoding-name (cli-options-load-encoding options)))
+              (resolve-locale-encoding-name)
+              "")))
    (list "*AUTOLISP-TERMINAL-ENCODING*"
          (make-autolisp-string
           (resolve-effective-encoding (cli-options-io-encoding options))))
@@ -177,19 +185,30 @@ cell's read-only flag for the launch-time init step.
 
 Without this, SYSCODEPAGE / DWGCODEPAGE return the catalogue's \"\"
 placeholder — the bug spelled out at the top of
-issues/open/encoding-dispatch.issue.
+issues/closed/encoding-dispatch.issue.
+
+ENCODING-STRING is the value bound to *AUTOLISP-FILE-ENCODING*. An
+empty value (the degenerate launch-chain fallback when -e is
+absent and the locale env vars are all unset) maps to the spec's
+US-ASCII placeholder for SYSCODEPAGE/DWGCODEPAGE — the global
+itself stays empty so LOAD's precedence chain can fall through to
+the dialect default rather than pinning every source-file LOAD to
+strict ASCII.
 
 DWGCODEPAGE defaults to SYSCODEPAGE; when a drawing is later loaded
 that carries its own codepage, the host backend overrides
 DWGCODEPAGE via HOST-SET-DERIVED-SYSVAR again."
-  (when (and context encoding-string (plusp (length encoding-string)))
-    (let ((host
-           (clautolisp.autolisp-runtime:current-evaluation-host context)))
+  (when context
+    (let* ((effective (if (and encoding-string (plusp (length encoding-string)))
+                          encoding-string
+                          "US-ASCII"))
+           (host
+            (clautolisp.autolisp-runtime:current-evaluation-host context)))
       (when host
         (clautolisp.autolisp-host:host-set-derived-sysvar
-         host "SYSCODEPAGE" encoding-string)
+         host "SYSCODEPAGE" effective)
         (clautolisp.autolisp-host:host-set-derived-sysvar
-         host "DWGCODEPAGE" encoding-string)))))
+         host "DWGCODEPAGE" effective)))))
 
 (defun install-transmit-variables (context bindings)
   "Intern each binding's name as an AutoLISP symbol and set it to

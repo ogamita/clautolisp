@@ -202,15 +202,22 @@ jobs:
             exit 1
           }
 
-      - name: Smoke-test alfe --clautolisp -x '(+ 1 2)'
+      - name: Smoke-test alfe --clautolisp -x '(princ (+ 1 2))'
         # The headline V1 acceptance criterion. Worth keeping as a
         # post-build assertion: if this regresses, every other CI
         # check could pass while real users see breakage.
+        #
+        # NOTE: alfe -x does NOT auto-print its expression value
+        # (see issues/closed/doc-x-output-semantics.issue) — the
+        # smoke test wraps in (princ ...) explicitly. The
+        # --no-init flag suppresses ~/.autolisp / system init-file
+        # output so the captured stdout is just the (princ) value.
         run: |
-          output=$(./autolisp-front-end/tools/alfe/bin/alfe-sbcl --clautolisp -x '(+ 1 2)')
+          output=$(./autolisp-front-end/tools/alfe/bin/alfe-sbcl \
+                     --no-init --clautolisp -x '(princ (+ 1 2))')
           echo "output: $output"
           [ "$output" = "3" ] || {
-            echo "Headline acceptance failed: alfe --clautolisp -x '(+ 1 2)' produced '$output' (expected '3')." >&2
+            echo "Headline acceptance failed: alfe --clautolisp -x '(princ (+ 1 2))' produced '$output' (expected '3')." >&2
             exit 1
           }
 
