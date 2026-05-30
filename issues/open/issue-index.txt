@@ -7,8 +7,6 @@ missing-functions.issue -- remains to implement some groups.
 
 ---
 
-bug-no-debug-no-verbose.issue
-ammend-option-variables.issue
 encoding-dispatch.issue
 test-file-encodings.issue
 
