@@ -232,6 +232,55 @@ no probing:
                              match what you actually emit. Same ENC
                              vocabulary as ~-e~.
 
+*** Launch-chain resolution and the degenerate case
+At startup the runtime resolves the file encoding via
+~or-else(LC_ALL, LANG, LC_CTYPE, -e flag)~ and pushes the result
+into two slots: ~SYSCODEPAGE~ (read-only host sysvar) and
+~*AUTOLISP-FILE-ENCODING*~ (read-write global the user may
+~setq~ at the REPL or in init files).
+
+When ~-e~ is absent AND all three locale env vars are unset or
+empty (the *degenerate case* — common in CI containers and
+freshly-provisioned cloud hosts), the two slots diverge:
+
+- ~SYSCODEPAGE~ / ~DWGCODEPAGE~ -> ~"US-ASCII"~. The safest 7-bit
+  assumption a vendor-compatible host sysvar can carry. User code
+  that branches on ~(getvar "SYSCODEPAGE")~ gets a non-empty
+  deterministic value.
+
+- ~*AUTOLISP-FILE-ENCODING*~ -> ~""~ (the **empty string**). The
+  global is bound to a non-nil autolisp-string, but the empty
+  value is a sentinel meaning "no preference — LOAD/OPEN should
+  consult the dialect default." The runtime's
+  ~LOOKUP-AUTOLISP-FILE-ENCODING~ helper treats empty the same
+  way it treats an unbound global, so the LOAD precedence chain
+  falls through to the dialect default:
+  ~--clautolisp~ / ~--autocad-2026~ / ~--bricscad-v26~ -> UTF-8;
+  ~--strict~ -> ISO-8859-1.
+
+Observable from AutoLISP under the degenerate case:
+
+#+BEGIN_SRC autolisp
+*AUTOLISP-FILE-ENCODING*           ; => ""           (bound, non-nil)
+(strlen *AUTOLISP-FILE-ENCODING*)  ; => 0
+(getvar "SYSCODEPAGE")             ; => "US-ASCII"
+(load "lib/has-utf8-bytes")        ; loaded with UTF-8 under --clautolisp
+#+END_SRC
+
+Why the asymmetry: pinning ~*AUTOLISP-FILE-ENCODING*~ to
+~"US-ASCII"~ in the degenerate case would make every source-file
+~load~ strict ASCII regardless of dialect, and the first
+non-ASCII byte in any init file raises a stream decoding error.
+A 1-to-1 8-bit fallback (~ISO-8859-1~) would avoid the crash —
+every byte is a valid ISO-8859-1 character — but at the cost of
+silently mojibake'ing UTF-8 multi-byte sequences into pairs of
+Latin-1 characters. The empty-string sentinel cleanly hands the
+decision back to the dialect, which already declares what
+encoding its source files use.
+
+The full design rationale is in
+~issues/open/encoding-dispatch.issue~ §"Degenerate launch case."
+
 ** Informational
 - ~--version~            :: Print =clautolisp <version>= on standard
                             output and exit 0. The version is the
@@ -262,10 +311,30 @@ the alfe-side counterpart.
 - ~*AUTOLISP-GUI-COMMAND*~      :: Subprocess renderer command
                                    passed to ~--gui~, or nil.
 - ~*AUTOLISP-TRACE*~            :: T when ~--trace~ was on at startup.
-- ~*AUTOLISP-FILE-ENCODING*~    :: Value passed to ~-e ENC~ as a
-                                   string, or nil.
-- ~*AUTOLISP-TERMINAL-ENCODING*~ :: Value passed to ~-E ENC~ as a
-                                    string, or nil.
+- ~*AUTOLISP-FILE-ENCODING*~    :: Always a string (never nil).
+                                   Resolved at launch from
+                                   ~-e ENC~ (explicit), then the
+                                   POSIX locale chain
+                                   (~LC_ALL~ > ~LANG~ >
+                                   ~LC_CTYPE~), falling back to
+                                   the empty string ~""~ when
+                                   nothing resolves. The empty
+                                   value is a sentinel — LOAD /
+                                   OPEN treat it as "no preference"
+                                   and fall through to the dialect
+                                   default (UTF-8 for non-strict
+                                   dialects, ISO-8859-1 for
+                                   ~--strict~). See "Launch-chain
+                                   resolution and the degenerate
+                                   case" under *Options*.
+- ~*AUTOLISP-TERMINAL-ENCODING*~ :: Always a string. Same
+                                    resolution chain as
+                                    ~*AUTOLISP-FILE-ENCODING*~,
+                                    but falls back to ~"US-ASCII"~
+                                    rather than the empty string —
+                                    terminal IO does not have a
+                                    "dialect default" to fall
+                                    through to.
 - ~*AUTOLISP-NO-INIT*~          :: T when ~-norc~ / ~--no-init~ was
                                    passed, or the env-var override
                                    suppressed init files.
