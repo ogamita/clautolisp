@@ -279,7 +279,7 @@ decision back to the dialect, which already declares what
 encoding its source files use.
 
 The full design rationale is in
-~issues/open/encoding-dispatch.issue~ §"Degenerate launch case."
+~issues/closed/encoding-dispatch.issue~ §"Degenerate launch case."
 
 ** Informational
 - ~--version~            :: Print =clautolisp <version>= on standard
@@ -541,7 +541,7 @@ Currently wired:
 The full set of codes, the per-dialect dispatch table, and the
 roadmap for the remaining hooks (~OPEN~, BricsCAD ~,ccs=~ parsing,
 ~DWGCODEPAGE~ mismatch detection at drawing-load time) is in
-~issues/open/encoding-dispatch.issue~.
+~issues/closed/encoding-dispatch.issue~.
 
 * Examples
 #+BEGIN_EXAMPLE

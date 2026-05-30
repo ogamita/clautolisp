@@ -2085,7 +2085,7 @@ rest of the stream observable.")
     :enc-unknown-codepage      ; SYSCODEPAGE string clautolisp cannot map
     :enc-host-dependent)       ; info-level: "ANSI" used in a write context
   "Closed set of diagnostic codes SIGNAL-ENCODING-DIAGNOSTIC accepts.
-See issues/open/encoding-dispatch.issue under 'Diagnostics' for the
+See issues/closed/encoding-dispatch.issue under 'Diagnostics' for the
 authoritative descriptions.")
 
 (defun %enc-dialect-is-lax-p ()

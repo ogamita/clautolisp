@@ -7,7 +7,6 @@ missing-functions.issue -- remains to implement some groups.
 
 ---
 
-encoding-dispatch.issue
 test-file-encodings.issue
 
 system-variables.issues

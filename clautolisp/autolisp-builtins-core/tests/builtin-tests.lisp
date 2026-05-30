@@ -3241,7 +3241,7 @@ recover from invalid UTF-8 differently."
 ;;;;
 ;;;; (load filename [onfailure [encoding]]) — the third positional
 ;;;; argument is the clautolisp-only per-call encoding override
-;;;; specified in issues/open/encoding-dispatch.issue. String
+;;;; specified in issues/closed/encoding-dispatch.issue. String
 ;;;; designator (string or symbol) per the spec.
 ;;;;
 ;;;; These tests use the same Latin-1 fixture as the override test

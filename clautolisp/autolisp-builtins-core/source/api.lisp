@@ -451,7 +451,7 @@ extension; --~(~A~) has no per-call encoding control on LOAD."
   ;; executable file") matches the failure shape; success resets to 0.
   ;;
   ;; ENCODING is the clautolisp-only third positional argument
-  ;; specified in issues/open/encoding-dispatch.issue. A string
+  ;; specified in issues/closed/encoding-dispatch.issue. A string
   ;; designator (string or symbol) per the spec's "string-designator"
   ;; type. When supplied, it overrides *AUTOLISP-FILE-ENCODING* for
   ;; this single LOAD call.
@@ -3580,7 +3580,7 @@ helper still returns the input string so downstream code keeps
 working — the diagnostic is purely informational, matching the
 fall-back behaviour the spec mandates.
 
-See issues/open/encoding-dispatch.issue, section `Code pages: the
+See issues/closed/encoding-dispatch.issue, section `Code pages: the
 ANSI row, expanded'."
   (cond
     ((null raw) "ANSI")
