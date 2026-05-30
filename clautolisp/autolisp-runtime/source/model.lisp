@@ -154,7 +154,18 @@
   (name "" :type string)
   (lambda-list '() :type list)
   (body '() :type list)
-  environment)
+  environment
+  ;; Debugger support (clautolisp-debugger plan §3a, the interpreter
+  ;; two-bodies discipline). INSTRUMENTED-BODY, when non-nil, is a
+  ;; copy of BODY with %CLAL-POLL poll-point nodes woven in; the
+  ;; evaluator runs it instead of BODY when *DEBUGGING* is set (see
+  ;; call-autolisp-function-in-context). DEBUG-METADATA holds the
+  ;; clautolisp.debug:function-debug-metadata record produced by the
+  ;; instrumenter (form-id ↔ source position, kinds, parent map,
+  ;; bound-names, function-id). Both default to NIL; an
+  ;; un-instrumented function carries zero debug overhead.
+  (instrumented-body nil :type list)
+  (debug-metadata nil))
 
 (defstruct autolisp-catch-all-error
   (message "" :type string)

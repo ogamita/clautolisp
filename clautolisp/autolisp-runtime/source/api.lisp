@@ -1050,6 +1050,20 @@ when it actually invokes the binding."
 (defun autolisp-usubr-environment (object)
   (clautolisp.autolisp-runtime.internal::autolisp-usubr-environment object))
 
+(defun autolisp-usubr-instrumented-body (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumented-body object))
+
+(defun (setf autolisp-usubr-instrumented-body) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-instrumented-body object)
+        value))
+
+(defun autolisp-usubr-debug-metadata (object)
+  (clautolisp.autolisp-runtime.internal::autolisp-usubr-debug-metadata object))
+
+(defun (setf autolisp-usubr-debug-metadata) (value object)
+  (setf (clautolisp.autolisp-runtime.internal::autolisp-usubr-debug-metadata object)
+        value))
+
 (defun make-autolisp-catch-all-error (message condition)
   (clautolisp.autolisp-runtime.internal::make-autolisp-catch-all-error
    :message message
@@ -1088,6 +1102,17 @@ error wraps a non-autolisp-runtime condition."
 (defun make-autolisp-variant (&key value)
   (clautolisp.autolisp-runtime.internal::make-autolisp-variant :value value))
 
+(defparameter *debugging* nil
+  "When non-nil on the executing thread, USUBR calls run their
+INSTRUMENTED-BODY (the woven %CLAL-POLL form tree) instead of the
+plain BODY, and the choice propagates down the call chain through
+call-autolisp-function-in-context — the interpreter analog of
+Fjeld's debugging entry points (clautolisp-debugger plan §3a). A
+function with no instrumented body falls back to its plain body and
+*DEBUGGING* is cleared for that subtree, so debugging-ness flows only
+across the instrumented call sub-graph. NIL by default: with no debug
+session active every call runs the plain body at full speed.")
+
 (defun append-proper-and-tail (elements tail)
   (if (null elements)
       tail
@@ -1095,6 +1120,12 @@ error wraps a non-autolisp-runtime condition."
             (append-proper-and-tail (rest elements) tail))))
 
 (defun reader-object->runtime-value (object)
+  ;; When clautolisp.source:*track-source-positions* is set (a debug
+  ;; load), every compound form's runtime cons is recorded against the
+  ;; reader span it came from, so clautolisp.source:position-of can map
+  ;; an executing form back to (file line column). Atoms lower to bare
+  ;; CL values that cannot carry a position; the debugger resolves their
+  ;; positions through the enclosing form's per-function form-id table.
   (typecase object
     (symbol-object
      (intern-autolisp-symbol (symbol-object-canonical-name object)
@@ -1107,16 +1138,22 @@ error wraps a non-autolisp-runtime condition."
     (real-object
      (real-object-value object))
     (cons-object
-     (let ((elements (mapcar #'reader-object->runtime-value
-                             (cons-object-elements object))))
-       (if (cons-object-dotted-p object)
-           (append-proper-and-tail
-            elements
-            (reader-object->runtime-value (cons-object-tail object)))
-           elements)))
+     (let* ((elements (mapcar #'reader-object->runtime-value
+                              (cons-object-elements object)))
+            (result (if (cons-object-dotted-p object)
+                        (append-proper-and-tail
+                         elements
+                         (reader-object->runtime-value (cons-object-tail object)))
+                        elements)))
+       (when (and clautolisp.source:*track-source-positions* (consp result))
+         (clautolisp.source:note-position result (cons-object-span object)))
+       result))
     (quote-object
-     (list (intern-autolisp-symbol "QUOTE")
-           (reader-object->runtime-value (quote-object-object object))))
+     (let ((result (list (intern-autolisp-symbol "QUOTE")
+                         (reader-object->runtime-value (quote-object-object object)))))
+       (when clautolisp.source:*track-source-positions*
+         (clautolisp.source:note-position result (quote-object-span object)))
+       result))
     (t
      (signal-autolisp-runtime-error
       :reader-handoff-error
@@ -1425,16 +1462,28 @@ flag only."
                                            :condition condition)
                             :call-stack (current-autolisp-call-stack))))))
               ((typep function 'autolisp-usubr)
-               (let ((*autolisp-call-stack*
-                      (cons (cons :usubr
-                                  (cons (or (autolisp-usubr-name function) "<lambda>")
-                                        arguments))
-                            *autolisp-call-stack*)))
-                 (unwind-protect
-                      (progn
-                        (bind-usubr-frame function arguments context)
-                        (autolisp-eval-progn (autolisp-usubr-body function) context))
-                   (pop-dynamic-frame context))))
+               ;; Two-bodies dispatch (clautolisp-debugger plan §3a):
+               ;; while *DEBUGGING* is set, enter the woven
+               ;; INSTRUMENTED-BODY if the callee has one and keep
+               ;; *DEBUGGING* set so the choice propagates to its
+               ;; callees; otherwise run the plain BODY and clear
+               ;; *DEBUGGING* for that subtree (Fjeld propagation). With
+               ;; no debug session active both are NIL and this reduces
+               ;; to the original plain-body path at no cost.
+               (let* ((instrumented (and *debugging*
+                                         (autolisp-usubr-instrumented-body function)))
+                      (selected-body (or instrumented (autolisp-usubr-body function))))
+                 (let ((*autolisp-call-stack*
+                        (cons (cons :usubr
+                                    (cons (or (autolisp-usubr-name function) "<lambda>")
+                                          arguments))
+                              *autolisp-call-stack*))
+                       (*debugging* (and instrumented t)))
+                   (unwind-protect
+                        (progn
+                          (bind-usubr-frame function arguments context)
+                          (autolisp-eval-progn selected-body context))
+                     (pop-dynamic-frame context)))))
               (t
                (signal-autolisp-runtime-error
                 :invalid-function-object
@@ -1775,6 +1824,34 @@ flag only."
   (cdr (assoc (special-operator-name operator)
               *special-operator-dispatch*
               :test #'string=)))
+
+(defun register-special-operator (name function)
+  "Install FUNCTION as the handler for the special operator named NAME
+(an upper-case string). The handler receives the operator's unevaluated
+ARGUMENTS and the evaluation CONTEXT, exactly like the built-in
+eval-*-form handlers. Used by the debugger to register its private
+%CLAL-POLL poll-point operator without the runtime depending on the
+debug system. Re-registering a name replaces the previous handler."
+  (let ((entry (assoc name *special-operator-dispatch* :test #'string=)))
+    (if entry
+        (setf (cdr entry) function)
+        (push (cons name function) *special-operator-dispatch*)))
+  name)
+
+(defun unregister-special-operator (name)
+  "Remove a special operator previously installed by
+register-special-operator. Returns T if an entry was removed."
+  (let ((present (assoc name *special-operator-dispatch* :test #'string=)))
+    (setf *special-operator-dispatch*
+          (remove name *special-operator-dispatch*
+                  :key #'car :test #'string=))
+    (and present t)))
+
+(defun known-special-operator-p (name)
+  "True iff NAME (an upper-case string) names a special operator in the
+dispatch table. The debugger's instrumenter uses this to decide which
+forms have unevaluated operands it must not instrument (spec §5.3)."
+  (and (assoc name *special-operator-dispatch* :test #'string=) t))
 
 (defun eval-special-operator (operator arguments context)
   (let ((function (special-operator-function operator)))

@@ -5,6 +5,8 @@
                 #:cons-object-dotted-p
                 #:cons-object-elements
                 #:cons-object-tail
+                #:cons-object-span
+                #:quote-object-span
                 #:integer-object
                 #:integer-object-value
                 #:quote-object
@@ -89,6 +91,8 @@
    #:autolisp-usubr-lambda-list
    #:autolisp-usubr-body
    #:autolisp-usubr-environment
+   #:autolisp-usubr-instrumented-body
+   #:autolisp-usubr-debug-metadata
    #:autolisp-catch-all-error
    #:make-autolisp-catch-all-error
    #:autolisp-catch-all-error-message
@@ -151,6 +155,12 @@
    #:bind-dynamic-variable
    #:autolisp-eval
    #:autolisp-eval-progn
+   ;; Debugger integration (clautolisp-debugger).
+   #:*debugging*
+   #:register-special-operator
+   #:unregister-special-operator
+   #:known-special-operator-p
+   #:split-usubr-lambda-list
    #:autolisp-current-directory
    #:set-autolisp-current-directory
    #:autolisp-support-paths
