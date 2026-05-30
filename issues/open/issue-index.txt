@@ -29,7 +29,6 @@ deferred-spec-research.issue
 deferred-stubbed-functions.issue
 
 
-
 variadic-functions.issue
 
 opendcl.plan
