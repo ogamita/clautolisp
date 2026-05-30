@@ -559,7 +559,68 @@ $ clautolisp -x "(length (clal-sysvar-apropos \"\"))"   ;; empty -> all
 A non-string PATTERN raises ~:invalid-argument~. A pattern that
 matches nothing returns ~nil~.
 
-The full normative entries for both functions live in
+*** ~CLAL-SYSTEM-CODEPAGE~ -- canonical SYSCODEPAGE
+~(clal-system-codepage)~ wraps ~(getvar "SYSCODEPAGE")~ and returns
+the canonical clautolisp codepage spelling. Vendor
+~"ANSI_NNNN"~ and clautolisp ~"WINDOWS-NNNN"~ inputs both fold
+onto ~"CP-NNNN"~; Unicode names (~"UTF-8"~, ~"ISO-8859-1"~,
+~"US-ASCII"~) pass through; the pre-Phase-1 empty placeholder
+becomes ~"ANSI"~.
+
+#+BEGIN_SRC autolisp
+LC_ALL=fr_FR.WINDOWS-1252 clautolisp -x "(clal-system-codepage)"
+"CP-1252"
+
+LC_ALL=en_US.UTF-8 clautolisp -x "(clal-system-codepage)"
+"UTF-8"
+#+END_SRC
+
+*** ~CLAL-DRAWING-CODEPAGE~ -- canonical DWGCODEPAGE
+~(clal-drawing-codepage)~ is the same canonicalisation applied to
+~(getvar "DWGCODEPAGE")~. At launch ~DWGCODEPAGE~ defaults to
+~SYSCODEPAGE~; loading a drawing that carries its own codepage
+overrides it.
+
+*** ~CLAL-CODEPAGE-MISMATCH-P~ -- defensive comparison
+~(clal-codepage-mismatch-p)~ returns ~T~ when the canonical
+~SYSCODEPAGE~ and ~DWGCODEPAGE~ differ, ~nil~ otherwise. Cheap
+defensive check before loading drawing-authored text: a mismatch
+means strings authored under one ANSI codepage may garble when
+interpreted under another.
+
+The comparison runs on the canonicalised form, so
+~"ANSI_1252"~ vs ~"WINDOWS-1252"~ correctly registers as no
+mismatch.
+
+*** ~CLAL-FILE-ENCODING~ -- BOM-sniffing file-encoding probe
+~(clal-file-encoding PATH)~ opens ~PATH~, reads the first four
+bytes, and returns the canonical clautolisp encoding implied by
+the byte-order mark:
+
+| BOM bytes      | Returned string |
+|----------------+-----------------|
+| ~EF BB BF~     | ~"UTF-8-BOM"~   |
+| ~FF FE~        | ~"UTF-16-LE"~   |
+| ~FE FF~        | ~"UTF-16-BE"~   |
+| ~FF FE 00 00~  | ~"UTF-32-LE"~   |
+| ~00 00 FE FF~  | ~"UTF-32-BE"~   |
+| no BOM         | ~"ANSI"~        |
+
+(UTF-32-LE / UTF-16-LE share the same two leading bytes;
+~CLAL-FILE-ENCODING~ checks UTF-32 first so the two-byte UTF-16
+prefix doesn't mask a four-byte UTF-32 BOM.)
+
+Mirrors BricsCAD's ~VLE-FILE-ENCODING~ but preserves the
+UTF-8-BOM / plain-UTF-8 distinction the BricsCAD function flattens.
+A nonexistent ~PATH~ returns ~nil~ and sets ~ERRNO~ 73, matching
+~LOAD~'s missing-file behaviour.
+
+#+BEGIN_SRC autolisp
+$ clautolisp -x "(clal-file-encoding \"~/.autolisp\")"
+"ANSI"
+#+END_SRC
+
+The full normative entries for these functions live in
 ~autolisp-spec~ §16 *clautolisp Extensions*; this section is a
 quick-reference summary.
 

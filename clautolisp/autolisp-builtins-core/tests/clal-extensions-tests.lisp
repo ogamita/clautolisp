@@ -160,3 +160,77 @@ host's SYSCODEPAGE / DWGCODEPAGE cells via the launch-time bypass."
   ;; different spellings — must NOT register as a mismatch.
   (%install-codepages "ANSI_1252" "WINDOWS-1252")
   (is (null (clautolisp.autolisp-builtins-core::builtin-clal-codepage-mismatch-p))))
+
+;;; --- clal-file-encoding (BOM sniff, Phase 5) ----------------------
+;;;
+;;; (clal-file-encoding PATH) opens the file, reads the first 4 bytes,
+;;; and reports the canonical clautolisp encoding implied by the BOM
+;;; (or "ANSI" when no BOM is present). Encoding-dispatch issue's
+;;; cross-dialect translation table is the source of truth for the
+;;; vocabulary; this test grid covers every row that produces a BOM.
+
+(defun %write-bytes (path bytes)
+  "Write the unsigned-byte-8 vector BYTES to PATH, overwriting."
+  (with-open-file (out path :direction :output
+                            :if-exists :supersede
+                            :element-type '(unsigned-byte 8))
+    (write-sequence bytes out)))
+
+(defun %fixture-encoding-string (sniff-path bom-bytes)
+  "Write BOM-BYTES to SNIFF-PATH then return the encoding string
+CLAL-FILE-ENCODING reports for that file."
+  (%write-bytes sniff-path (coerce bom-bytes '(vector (unsigned-byte 8))))
+  (setup-mock-host-context)
+  (clautolisp.autolisp-runtime:autolisp-string-value
+   (clautolisp.autolisp-builtins-core::builtin-clal-file-encoding
+    (clautolisp.autolisp-runtime:make-autolisp-string (namestring sniff-path)))))
+
+(test clal-file-encoding-no-bom-reports-ansi
+  (uiop:with-temporary-file (:pathname p :type "txt" :keep nil)
+    (is (string= "ANSI"
+                 (%fixture-encoding-string p #(72 73 10))))))   ; "HI\n"
+
+(test clal-file-encoding-utf-8-bom-detected
+  (uiop:with-temporary-file (:pathname p :type "txt" :keep nil)
+    (is (string= "UTF-8-BOM"
+                 (%fixture-encoding-string p #(#xEF #xBB #xBF 72))))))
+
+(test clal-file-encoding-utf-16-le-bom-detected
+  (uiop:with-temporary-file (:pathname p :type "txt" :keep nil)
+    (is (string= "UTF-16-LE"
+                 (%fixture-encoding-string p #(#xFF #xFE 72 0))))))
+
+(test clal-file-encoding-utf-16-be-bom-detected
+  (uiop:with-temporary-file (:pathname p :type "txt" :keep nil)
+    (is (string= "UTF-16-BE"
+                 (%fixture-encoding-string p #(#xFE #xFF 0 72))))))
+
+(test clal-file-encoding-utf-32-le-bom-detected
+  ;; FF FE 00 00 — distinguishes from UTF-16-LE only by the 00 00.
+  ;; The sniffer must check UTF-32 before UTF-16 to avoid the prefix
+  ;; collision.
+  (uiop:with-temporary-file (:pathname p :type "txt" :keep nil)
+    (is (string= "UTF-32-LE"
+                 (%fixture-encoding-string p #(#xFF #xFE 0 0 72 0 0 0))))))
+
+(test clal-file-encoding-utf-32-be-bom-detected
+  (uiop:with-temporary-file (:pathname p :type "txt" :keep nil)
+    (is (string= "UTF-32-BE"
+                 (%fixture-encoding-string p #(0 0 #xFE #xFF 0 0 0 72))))))
+
+(test clal-file-encoding-missing-file-returns-nil
+  ;; Resolution failure returns AutoLISP nil and sets ERRNO 73, matching
+  ;; LOAD's missing-file behaviour. Don't open a fixture; pick a path
+  ;; that demonstrably doesn't exist.
+  (setup-mock-host-context)
+  (let ((result (clautolisp.autolisp-builtins-core::builtin-clal-file-encoding
+                 (clautolisp.autolisp-runtime:make-autolisp-string
+                  "/this/path/definitely/does/not/exist/0xDEADBEEF.txt"))))
+    (is (null result))))
+
+(test clal-file-encoding-partial-prefix-not-mistaken-for-utf-32-le
+  ;; A file containing only FF FE (no following 00 00) is UTF-16-LE,
+  ;; NOT UTF-32-LE. Regression check on the ambiguity guard.
+  (uiop:with-temporary-file (:pathname p :type "txt" :keep nil)
+    (is (string= "UTF-16-LE"
+                 (%fixture-encoding-string p #(#xFF #xFE))))))
