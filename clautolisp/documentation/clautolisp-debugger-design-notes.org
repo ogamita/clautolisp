@@ -459,3 +459,92 @@ the engine's =session-snapshot=/=session-inspector= (debugger-session accessors)
 and the inspector's =session-*= live in different packages and don't collide
 because the UI protocol package deliberately does not re-export the inspector's
 =session-*= symbols it imported for internal use.
+
+* DN-7. ncurses UI: a curses-free screen abstraction, tested via a mock grid
+  :PROPERTIES:
+  :CUSTOM_ID: dn-ncurses
+  :END:
+
+/Phase 6 (spec §19)./ The four-pane ncurses UI must run on a real terminal yet
+be unit-testable headlessly. The spec anticipates this with §19.3's
+=clautolisp.ui.tui= abstraction. The split:
+
+- *=clautolisp.ui.tui=* --- a tiny screen protocol (=tui-start/stop/size/clear/
+  put/refresh/read-key=), a pane/layout model (=four-pane-layout=, =draw-box=,
+  =pane-put-line=), and a *mock-screen* backend recording a character grid +
+  per-cell attribute and replaying a scripted key queue. *No curses
+  dependency*, so it is in the aggregate and CI.
+- *=clautolisp.ui.ncurses=* --- the §19 four-pane UI (stack TL, source TR,
+  interactor BL, repl BR) implementing =clautolisp.debug.ui= *entirely against
+  the abstraction* --- it never calls curses. =ui-await-command= is a
+  key-driven event loop; output also accrues into UI slots (=message=,
+  =repl-lines=, =selected-frame=) so tests assert on state, not only the grid.
+  Driven through the mock screen, the suite covers continue/step, frame
+  navigation, breakpoint toggle at the cursor line, eval into the repl, the
+  inspector pane, abort, and EOF --- all headless.
+- *=clautolisp/autolisp-debug-ui-tui-charms=* --- the real cl-charms backend,
+  in a *separate .asd outside clautolisp.asd* and deliberately *not in the
+  aggregate or its tests*: it needs cl-charms/libncurses and a real terminal.
+  It implements the same screen protocol, so the UI and every test are
+  identical whether the backend is the mock or charms.
+
+** Source markers without curses
+
+The source pane colours each line via the abstraction's ATTR keyword (:yellow
+current, :red breakpointed poll-point line, :blue plain poll-point line,
+§19.1). The mock records the attr per cell, so a test asserts e.g. "the =>>=
+column on the current line is :yellow" --- colour verified with zero terminal.
+
+** Package note
+
+=clautolisp.ui.tui= and =clautolisp.debug.ui= both export =PANE=, so the
+ncurses package =:use=s =clautolisp.debug.ui= but selectively =:import-from=s
+the tui symbols it needs rather than =:use=ing both (which would clash). It
+also shadow-imports =clautolisp.inspect:inspect= over =cl:inspect=.
+
+** Deferred
+
+PDCurses/Windows backend (same protocol, future sibling); live mouse and
+resize beyond the =:resize= key (key-only navigation is complete per §19.3).
+
+* DN-8. Inspector path composition must not use CL:SUBST (shared structure → cycles)
+  :PROPERTIES:
+  :CUSTOM_ID: dn-subst
+  :END:
+
+/Phase 6 bug, fixing Phase 4./ =session-path-expression= (§15.2) and the
+ename/pickset accessor evaluation originally folded accessors with
+=(subst expr '_ accessor :test #'eq)=. CL:SUBST is permitted to *share
+structure with its TREE argument*, and because every page-built accessor embeds
+the *same interned placeholder symbol* =_=, that sharing spliced the
+accumulating expression into shared accessor structure and produced a
+*circular* path expression (printing as =#1=(CDR (CAR #1#))=) plus a spurious
+=:partial=. The Phase-4 cons test missed it because its particular descents
+happened not to alias; the ncurses inspector-pane test (descend then read the
+path) surfaced it.
+
+Fix: a dedicated =substitute-placeholder= that *always conses fresh structure*
+on the spine and matches the placeholder by NAME (=placeholder-p=), so the
+result can never alias the accessor or the expression. Both
+=session-path-expression= and =%eval-accessor= use it; CL:SUBST is no longer
+used for path composition. Lesson: never compose reusable templates that share
+a sentinel symbol with CL:SUBST --- substitute with explicit fresh consing.
+
+* DN-9. Abort works from any stop, not only an error stop
+  :PROPERTIES:
+  :CUSTOM_ID: dn-abort-any
+  :END:
+
+/Phase 6 bug, fixing Phase 3./ The =:abort= resume directive was honoured only
+on the §10.1 error path (=apply-error-directive= threw =clal-abort=); the
+normal-stop path (=apply-resume-directive=, for breakpoint and step stops) let
+=:abort= fall through to a no-op, so pressing =q=/=a= at an ordinary breakpoint
+silently *continued* instead of aborting. The ncurses =abort-key-aborts= test
+surfaced it (result =7=, not =:aborted=).
+
+Fix: =apply-resume-directive= now also handles =:abort= by clearing any pending
+step and =(throw 'clal-abort :aborted)= — the same catch
+=call-with-error-integration= already establishes around all debugged
+execution. So a user can abort from *any* stop (breakpoint, step, or error),
+which is what every UI's =q=/=a= key implies. The dumb-UI and engine suites
+confirm no regression.

@@ -80,10 +80,16 @@ debugged thread has armed a step or set a breakpoint covering this point
       (apply-resume-directive ti (funcall *debug-hit-handler* hit)))))
 
 (defun apply-resume-directive (ti directive)
-  "Interpret the handler's return value, arming the next stop."
+  "Interpret the handler's return value, arming the next stop. :ABORT
+unwinds the whole evaluation to the session's CLAL-ABORT catch (the same
+mechanism the error path uses, §10.1) — so the user can abort from ANY
+stop, not just an error stop."
   (cond
     ((null directive) nil)
     ((eq directive :continue) nil)
+    ((eq directive :abort)
+     (clear-step-request ti)
+     (throw 'clal-abort :aborted))
     ((and (consp directive) (eq (first directive) :step))
      (request-step ti (or (second directive) :into)))
     ((and (consp directive) (eq (first directive) :advance))

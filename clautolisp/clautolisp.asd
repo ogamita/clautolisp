@@ -15,7 +15,9 @@
                "clautolisp/autolisp-debug"
                "clautolisp/autolisp-inspect"
                "clautolisp/autolisp-debug-ui"
-               "clautolisp/autolisp-debug-ui-dumb")
+               "clautolisp/autolisp-debug-ui-dumb"
+               "clautolisp/autolisp-debug-ui-tui"
+               "clautolisp/autolisp-debug-ui-ncurses")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
   :perform (asdf:test-op (op system)
@@ -537,6 +539,53 @@
                          (uiop:symbol-call :clautolisp.debug.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-debug-ui-tui"
+  :description "Thin terminal-UI abstraction + mock backend for the ncurses debugger UI (debugger §19.3)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ()
+  :serial t
+  :components
+  ((:file "autolisp-debug-ui-tui/source/package")
+   (:file "autolisp-debug-ui-tui/source/tui"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-debug-ui-ncurses/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-debug-ui-ncurses"
+  :description "Four-pane ncurses debugger UI on the tui abstraction (debugger §19)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-debug-ui"
+               "clautolisp/autolisp-debug-ui-tui")
+  :serial t
+  :components
+  ((:file "autolisp-debug-ui-ncurses/source/package")
+   (:file "autolisp-debug-ui-ncurses/source/ncurses-ui"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-debug-ui-ncurses/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-debug-ui-ncurses/tests"
+  :description "FiveAM tests for the tui abstraction + ncurses UI (via the mock screen)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-debug-ui-ncurses" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-debug-ui-ncurses/tests/package")
+   (:file "autolisp-debug-ui-ncurses/tests/tui-tests")
+   (:file "autolisp-debug-ui-ncurses/tests/ncurses-tests")
+   (:file "autolisp-debug-ui-ncurses/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.ui.ncurses.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/tests"
   :description "Aggregate tests for the clautolisp subproject."
   :author "Codex"
@@ -552,7 +601,8 @@
                "clautolisp/autolisp-init-files/tests"
                "clautolisp/autolisp-debug/tests"
                "clautolisp/autolisp-inspect/tests"
-               "clautolisp/autolisp-debug-ui-dumb/tests")
+               "clautolisp/autolisp-debug-ui-dumb/tests"
+               "clautolisp/autolisp-debug-ui-ncurses/tests")
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (progn
@@ -579,4 +629,6 @@
                            (uiop:symbol-call :clautolisp.inspect.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.ui.dumb.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.ui.ncurses.tests
                                              :run-all-tests))))
