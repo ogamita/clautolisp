@@ -1,0 +1,194 @@
+;;;; clautolisp/autolisp-debug-ui-dumb/tests/dumb-ui-tests.lisp
+
+(in-package #:clautolisp.ui.dumb.tests)
+
+(in-suite dumb-ui-suite)
+
+(test continue-resumes-and-reports-hit
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3)
+                                     :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "Hit breakpoint"))
+      (is (contains output "FROB"))
+      (is (contains output "X = 7")))))     ; visible binding printed
+
+(test source-listing-marks-current-line
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    ;; write the source file so lines-of can read it
+    (with-open-file (out "frob.lsp" :direction :output :if-exists :supersede)
+      (write-string +frob-source+ out))
+    (unwind-protect
+         (progn
+           (clautolisp.debug:add-breakpoint
+            ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
+           (multiple-value-bind (result output)
+               (run-ui (format nil "l~%c~%") :context context :thread-info ti
+                       :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                          (list (rt-sym "FROB") 7) context)))
+             (declare (ignore result))
+             (is (contains output ">>"))         ; current-line marker
+             (is (contains output "(setq z (id x))"))))
+      (ignore-errors (delete-file "frob.lsp")))))
+
+(defparameter +two-source+
+  ;; two compound statements so step-over has a next statement to land on:
+  ;; 1: (defun id (a) a)
+  ;; 2: (defun two (x / z)
+  ;; 3:   (setq z (id x))    form 1 = setq, form 2 = (id x)
+  ;; 4:   (id z))            form 3 = (id z)
+  (format nil "(defun id (a) a)~%(defun two (x / z)~%  (setq z (id x))~%  (id z))"))
+
+(test step-over-advances-statement
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    ;; break at the setq statement (form-id 1); 's' (step over the (id x)
+    ;; call) then 'c'. Step over must land on the next statement (id z).
+    (clautolisp.debug:add-breakpoint ti two 1 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "s~%c~%") :context context :thread-info ti
+                :thunk (lambda ()
+                         (clautolisp.autolisp-runtime:autolisp-eval
+                          (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      ;; two stops shown: the breakpoint then the step
+      (is (contains output "Hit breakpoint"))
+      (is (contains output "Step")))))
+
+(test eval-command-prints-variable
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3)
+                                     :when :before)
+    ;; 'e X' evaluates X in-frame (= 7), prints it, then continue
+    (multiple-value-bind (result output)
+        (run-ui (format nil "e X~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))
+      (is (contains output (format nil "DBG> 7"))))))
+
+(test eval-paren-form-prints-value
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3)
+                                     :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "(setq x 99)~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      ;; (setq x 99) in-frame, then continue: frob returns z = (id x) = 99
+      (is (eql 99 result))
+      (is (contains output "99")))))
+
+(test set-breakpoint-by-line-command
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    ;; break at TWO entry; 'B 4' sets a breakpoint at line 4 = (id z) (a
+    ;; compound form with a poll point), then 'c' hits it, 'c' finishes.
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "B 4~%c~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "breakpoint #"))     ; confirmation of the set
+      (is (contains output "set at line 4"))
+      ;; the by-line breakpoint actually fired: a hit reported at line 4
+      (is (contains output "line 4")))))
+
+(test abort-from-error-stop
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    (multiple-value-bind (result output)
+        (run-ui (format nil "a~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "BOOM")) context)))
+      (is (eq :aborted result))
+      (is (contains output "Error")))))
+
+(test return-value-from-error-stop
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    (multiple-value-bind (result output)
+        (run-ui (format nil "r 42~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "BOOM")) context)))
+      (declare (ignore output))
+      (is (eql 42 result)))))
+
+(test inspector-navigation-and-path
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context
+                                     (format nil "(defun id (a) a)~%(defun frob (x / z)~%  (setq z (id x))~%  z)")
+                                     "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.autolisp-runtime:set-variable
+     (rt-sym "L") (first (clautolisp.autolisp-runtime:read-runtime-from-string "(10 20)")) context)
+    (clautolisp.debug:add-breakpoint ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
+    (multiple-value-bind (result output)
+        ;; x L : inspect global L; d 0 : descend into car; p : path; q ; c
+        (run-ui (format nil "x L~%d 0~%p~%q~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      (is (contains output "INSPECT>"))
+      (is (contains output "car"))
+      (is (contains output "(CAR L)")))))      ; composed path expression
+
+(test help-and-unknown-command
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "h~%zzz~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      (is (contains output "commands:"))
+      (is (contains output "unknown command")))))
+
+(test eof-on-input-continues
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    ;; empty input → EOF at the prompt → continue (CI/pipe safety, §18)
+    (multiple-value-bind (result output)
+        (run-ui "" :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore output))
+      (is (eql 7 result)))))
+
+;;; --- small helper --------------------------------------------------
+
+(defun count-substring (string sub)
+  (loop with len = (length sub)
+        for start = 0 then (+ pos len)
+        for pos = (search sub string :start2 start)
+        while pos count 1))
