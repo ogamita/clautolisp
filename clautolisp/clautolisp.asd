@@ -404,6 +404,7 @@
    (:file "autolisp-debug/source/snapshot")
    (:file "autolisp-debug/source/stepping")
    (:file "autolisp-debug/source/poll")
+   (:file "autolisp-debug/source/error")
    (:file "autolisp-debug/source/instrument")
    (:file "autolisp-debug/source/session"))
   :in-order-to ((asdf:test-op
@@ -434,6 +435,7 @@
   :depends-on ("clautolisp/autolisp-debug"
                "clautolisp/autolisp-source-map"
                "clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-builtins-core"
                "fiveam")
   :serial t
   :components
@@ -443,6 +445,7 @@
    (:file "autolisp-debug/tests/breakpoint-tests")
    (:file "autolisp-debug/tests/snapshot-tests")
    (:file "autolisp-debug/tests/stepping-tests")
+   (:file "autolisp-debug/tests/error-tests")
    (:file "autolisp-debug/tests/session-tests")
    (:file "autolisp-debug/tests/run"))
   :perform (asdf:test-op (op system)

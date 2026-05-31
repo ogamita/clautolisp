@@ -113,7 +113,11 @@ and TI's shadow call stack."
      :source-position (and metadata (form-id-position metadata form-id))
      :call-stack (mapcar #'debug-frame->stack-frame (thread-debug-info-call-stack ti))
      :binding-stack binding-stack
-     :visible-names (visible-names-from binding-stack))))
+     :visible-names (visible-names-from binding-stack)
+     ;; spec §10.2: active vl-catch-all-apply frames (the builtin maintains
+     ;; the runtime stack). globals-touched (§9.6) stays empty until its
+     ;; lazy capture lands.
+     :catch-stack (copy-list *autolisp-catch-stack*))))
 
 ;;; --- binding queries + writes (spec §9.4, §9.5) --------------------
 

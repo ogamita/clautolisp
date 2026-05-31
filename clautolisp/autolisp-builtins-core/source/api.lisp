@@ -526,10 +526,17 @@ extension; --~(~A~) has no per-call encoding control on LOAD."
 
 (defun builtin-vl-catch-all-apply (function-designator arg-list)
   (require-proper-list arg-list "VL-CATCH-ALL-APPLY")
+  (let* ((function (resolve-autolisp-function-designator function-designator))
+         ;; Record this catch on the per-thread catch stack so the
+         ;; debugger's snapshot can show it (spec §10.2). The binding pops
+         ;; automatically when the apply returns or unwinds. ARG-LIST is
+         ;; already the CL list of runtime arguments.
+         (clautolisp.autolisp-runtime:*autolisp-catch-stack*
+           (cons (clautolisp.autolisp-runtime:make-catch-frame
+                  :function function :arguments arg-list)
+                 clautolisp.autolisp-runtime:*autolisp-catch-stack*)))
   (handler-case
-      (let ((result (apply #'call-autolisp-function
-                           (resolve-autolisp-function-designator function-designator)
-                           arg-list)))
+      (let ((result (apply #'call-autolisp-function function arg-list)))
         (set-autolisp-errno 0)
         result)
     (autolisp-termination (condition)
@@ -558,6 +565,9 @@ extension; --~(~A~) has no per-call encoding control on LOAD."
         (otherwise
          (error condition))))
     (autolisp-runtime-error (condition)
+      ;; Break-on-caught (spec §10.2): off unless the debugger armed the hook.
+      (when clautolisp.autolisp-runtime:*autolisp-caught-error-hook*
+        (funcall clautolisp.autolisp-runtime:*autolisp-caught-error-hook* condition))
       (set-autolisp-errno
        (autolisp-runtime-error-errno condition))
       (make-autolisp-catch-all-error
@@ -567,7 +577,7 @@ extension; --~(~A~) has no per-call encoding control on LOAD."
       (set-autolisp-errno 1)
       (make-autolisp-catch-all-error
        (princ-to-string condition)
-       condition))))
+       condition)))))
 
 (defun builtin-vl-catch-all-error-p (object)
   (if (typep object 'autolisp-catch-all-error)

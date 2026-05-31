@@ -29,7 +29,15 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:dynamic-frame-binding-value
                 #:set-dynamic-frame-binding-value
                 #:lookup-variable
-                #:set-variable)
+                #:set-variable
+                #:autolisp-runtime-error
+                #:autolisp-runtime-error-message
+                #:autolisp-runtime-error-code
+                #:autolisp-errno
+                #:catch-frame-function
+                #:catch-frame-arguments
+                #:*autolisp-catch-stack*
+                #:*autolisp-caught-error-hook*)
   (:import-from #:clautolisp.source
                 #:position-of
                 #:source-position
@@ -103,7 +111,15 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:hit-source-position
    #:hit-snapshot
    #:hit-stop-reason
+   #:hit-condition
+   #:hit-error-message
+   #:hit-errno
    #:*debug-hit-handler*
+   ;; error integration (spec §10)
+   #:debug-handle-error
+   #:abort-thread
+   #:return-thread
+   #:*break-on-caught-error*
    ;; snapshot + environment (spec §9)
    #:snapshot
    #:snapshot-p
