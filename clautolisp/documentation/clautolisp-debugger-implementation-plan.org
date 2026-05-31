@@ -158,22 +158,28 @@ parent §11.3 evaluator-flag variant.
   check). The cheap fast path (debug-flag → Bloom → exact lookup, parent
   §11.1) lives *inside* =%poll='s routine. This pass is folded into the
   Phase-0 form-id traversal --- no separate walk.
-- *Propagation (the Fjeld half), decided at the apply boundary.* While an
-  instrumented body runs, a dynamic =*debugging*= indicator is true. At
-  each function /application/, =call-autolisp-function-in-context= picks
-  the callee's =instrumented-body= if it exists and =*debugging*= is set,
-  else the plain =body= (graceful fallback = step-over for
-  un-instrumented callees, matching the remote =REQ-LOAD2= rule). The
-  indicator is consulted only at *call sites* (rare) --- not at every
-  sub-form as §11.3 would --- and, unlike baking =bar/debug= into the
-  caller at instrument time, it stays correct under REPL redefinition
-  (the interpreter resolves callees late, by symbol).
+- *Body selection at the apply boundary (per function; see DN-2).* A
+  dynamic =*debugging*= indicator means "a debug session is active on this
+  thread." At each function /application/,
+  =call-autolisp-function-in-context= picks the callee's
+  =instrumented-body= if =*debugging*= is set and the callee has one, else
+  the plain =body=. /Originally this also propagated debugging-ness along
+  the call chain (clearing =*debugging*= inside un-instrumented bodies);
+  design note DN-2 removed that./ Selection is now *per function*:
+  =*debugging*= is set once by the session entry and not rebound per call,
+  so an instrumented function is debugged wherever it is called from ---
+  including through an un-instrumented library function, a HOF, or a
+  builtin --- while an un-instrumented function always runs plain. This is
+  the interpreter twin of the remote public-name swap (R-II.2) and is
+  consulted only at call sites; it stays correct under REPL redefinition
+  (callees resolve late, by symbol).
 - *Why not §11.3.* The flag variant pays a branch at every sub-form of
   every function evaluated in a debugged dynamic extent, even functions
   nobody is debugging, and has no real "ordinary vs debug body"
-  distinction. The two-bodies scheme gives genuine omnipresence-by-entry,
-  zero overhead outside the instrumented sub-graph, and a smaller eventual
-  jump to the Phase-8 compiler (same discipline, AST→CL).
+  distinction. The two-bodies scheme runs poll points only inside
+  instrumented bodies, gives zero overhead for un-instrumented functions
+  (no poll nodes at all), and is a smaller eventual jump to the Phase-8
+  compiler (same discipline, AST→CL).
 
 ** Phase 0 --- Source map and protocol skeleton  (§3, §4, §7, §8)
 :PROPERTIES: :CUSTOM_ID: phase0 :END:

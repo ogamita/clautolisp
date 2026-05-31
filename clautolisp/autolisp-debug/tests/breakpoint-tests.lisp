@@ -103,9 +103,9 @@ hit. Returns (values result hits-in-order)."
         (is (eql 7 result))
         (is (= 1 (length hits)))))))
 
-(test debugging-propagates-into-instrumented-callee
+(test debugging-reaches-instrumented-callee-from-instrumented-caller
   ;; A breakpoint at ID's entry fires when FROB (which calls ID) runs
-  ;; under debugging — Fjeld propagation across the instrumented graph.
+  ;; under debugging — both are instrumented.
   (let* ((context (fresh-context))
          (metas (define-and-instrument context +frob-source+ "FROB" "ID"))
          (id-meta (second metas))
@@ -115,6 +115,24 @@ hit. Returns (values result hits-in-order)."
       (is (eql 7 result))
       (is (= 1 (length hits)))
       (is (= (fid-of id-meta) (clautolisp.debug:hit-fid (first hits)))))))
+
+(test instrumented-callee-debugged-through-uninstrumented-caller
+  ;; DN-2: an instrumented function is debugged wherever it is called
+  ;; from — including through an UNinstrumented caller (e.g. a library
+  ;; function with no source). Here CALLER is loaded but NOT instrumented
+  ;; and INNER is instrumented; a breakpoint in INNER must still fire.
+  (let* ((context (fresh-context))
+         (source (format nil "(defun inner (a) a)~%(defun caller (x) (inner x))")))
+    ;; instrument ONLY inner; caller stays uninstrumented (no source / library)
+    (load-tracked context source)
+    (let* ((inner-meta (clautolisp.debug:instrument-usubr (usubr-named context "INNER")))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+      (is (not (clautolisp.debug:instrumentedp (usubr-named context "CALLER"))))
+      (clautolisp.debug:add-breakpoint ti (fid-of inner-meta) 0 :when :before) ; INNER entry
+      (multiple-value-bind (result hits) (run-collecting context ti "CALLER" 42)
+        (is (eql 42 result))
+        (is (= 1 (length hits)))                       ; fired despite uninstrumented CALLER
+        (is (= (fid-of inner-meta) (clautolisp.debug:hit-fid (first hits))))))))
 
 (test trace-action-runs-and-continues-without-stopping
   (let* ((context (fresh-context))

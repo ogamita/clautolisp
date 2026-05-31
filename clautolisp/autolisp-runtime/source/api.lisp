@@ -1103,15 +1103,17 @@ error wraps a non-autolisp-runtime condition."
   (clautolisp.autolisp-runtime.internal::make-autolisp-variant :value value))
 
 (defparameter *debugging* nil
-  "When non-nil on the executing thread, USUBR calls run their
-INSTRUMENTED-BODY (the woven %CLAL-POLL form tree) instead of the
-plain BODY, and the choice propagates down the call chain through
-call-autolisp-function-in-context — the interpreter analog of
-Fjeld's debugging entry points (clautolisp-debugger plan §3a). A
-function with no instrumented body falls back to its plain body and
-*DEBUGGING* is cleared for that subtree, so debugging-ness flows only
-across the instrumented call sub-graph. NIL by default: with no debug
-session active every call runs the plain body at full speed.")
+  "Non-nil iff a debug session is active on the executing thread. It is
+set once by the debugger's session entry and is NOT rebound per call.
+While it is set, a USUBR call runs the function's INSTRUMENTED-BODY (the
+woven %CLAL-POLL form tree) if the function HAS one, otherwise its plain
+BODY (clautolisp-debugger plan §3a, revised by design note DN-2). Body
+choice is therefore per function, not propagated along the call path: an
+instrumented function is debugged wherever it is called from — including
+through an uninstrumented library function, a higher-order function, or a
+builtin — while an uninstrumented function always runs plain. NIL by
+default: with no session active every call runs the plain body at full
+speed.")
 
 (defun append-proper-and-tail (elements tail)
   (if (null elements)
@@ -1462,23 +1464,27 @@ flag only."
                                            :condition condition)
                             :call-stack (current-autolisp-call-stack))))))
               ((typep function 'autolisp-usubr)
-               ;; Two-bodies dispatch (clautolisp-debugger plan §3a):
-               ;; while *DEBUGGING* is set, enter the woven
-               ;; INSTRUMENTED-BODY if the callee has one and keep
-               ;; *DEBUGGING* set so the choice propagates to its
-               ;; callees; otherwise run the plain BODY and clear
-               ;; *DEBUGGING* for that subtree (Fjeld propagation). With
-               ;; no debug session active both are NIL and this reduces
-               ;; to the original plain-body path at no cost.
-               (let* ((instrumented (and *debugging*
-                                         (autolisp-usubr-instrumented-body function)))
-                      (selected-body (or instrumented (autolisp-usubr-body function))))
+               ;; Two-bodies dispatch (clautolisp-debugger plan §3a,
+               ;; revised by design note DN-2): while a debug session is
+               ;; active on this thread (*DEBUGGING*), a function that HAS
+               ;; an instrumented body runs it; otherwise it runs its
+               ;; plain body. Selection is PER FUNCTION, not propagated
+               ;; along the call path: *DEBUGGING* is NOT rebound here, so
+               ;; an instrumented function is debugged wherever it is
+               ;; called from — including through an uninstrumented
+               ;; library function, a higher-order function, or a builtin
+               ;; — and an uninstrumented function always runs plain. With
+               ;; no session active *DEBUGGING* is NIL and this reduces to
+               ;; the original plain-body path at no cost.
+               (let ((selected-body
+                       (if (and *debugging* (autolisp-usubr-instrumented-body function))
+                           (autolisp-usubr-instrumented-body function)
+                           (autolisp-usubr-body function))))
                  (let ((*autolisp-call-stack*
                         (cons (cons :usubr
                                     (cons (or (autolisp-usubr-name function) "<lambda>")
                                           arguments))
-                              *autolisp-call-stack*))
-                       (*debugging* (and instrumented t)))
+                              *autolisp-call-stack*)))
                    (unwind-protect
                         (progn
                           (bind-usubr-frame function arguments context)

@@ -114,3 +114,97 @@ matches the spec §5.3 shape literally. So the two mechanisms are not
 competitors: the special operator serves *interpreted* bodies, a CL macro
 serves *compiled* bodies — two backends of the same instrumentation, exactly as
 the interpreter-now / compiler-later split (plan §3a, spec §13) intends.
+
+* DN-2. Two-body selection is per-function, not propagated along the call path
+  :PROPERTIES:
+  :CUSTOM_ID: dn-no-propagation
+  :END:
+
+/Phase 1, revising the original §3a propagation rule./ The first cut of the
+two-bodies dispatch (=call-autolisp-function-in-context=) propagated
+debugging-ness down the call chain: entering an /instrumented/ body kept
+=*debugging*= set; entering an /uninstrumented/ body cleared it for that
+subtree, so debugging-ness flowed only across the instrumented call sub-graph
+(the interpreter analog of Fjeld's debug entry points).
+
+** The flaw
+
+With *selective* instrumentation, that rule is too restrictive. Consider an
+uninstrumented function =G= (a library function you have no source for, or a
+higher-order function) that calls =S=, one of /your/ functions that you /do/
+want to debug. Under propagation, entering =G= cleared =*debugging*=, so the
+call =G → S= ran =S='s plain body and breakpoints in =S= went silent. The only
+remedy was to instrument =G= too — impossible without its source.
+
+Nuance on which intermediaries broke it (others are transparent):
+
+| Intermediary between you and S | =*debugging*= through it | S debugged? |
+|--------------------------------+--------------------------+-------------|
+| SUBR / builtin (mapcar, apply) | passed through unchanged | yes         |
+| instrumented usubr             | stays set                | yes         |
+| *uninstrumented usubr*         | *cleared*                | *no*  ← bug |
+
+** Why propagation was the wrong import
+
+Strict Fjeld propagation belongs to the *compiler* model (spec §5), where
+/every/ function has both an ordinary and a debug body, so propagation is the
+only way to choose which runs. But:
+
+- The spec's *interpreter* variant (§11.3, §13 v1) is just a per-thread
+  =*debug-mode*= flag — no propagation.
+- The *remote* model installs =S~dbg= under the public name =S= (R-II.2), so an
+  instrumented function is reached in its debug form *even when called by
+  native/library code*; uninstrumented callees (REQ-LOAD2) simply run native.
+
+So propagation made the interpreter *more* restrictive than both the spec's
+interpreter variant and the remote backend. It was the wrong half of the
+compiler design to pull forward.
+
+** Decision
+
+Body selection is *per function*, gated only by whether a debug session is
+active on this thread:
+
+#+begin_src common-lisp
+(if (and *debugging* (autolisp-usubr-instrumented-body function))
+    (autolisp-usubr-instrumented-body function)   ; instrumented ⇒ debug it
+    (autolisp-usubr-body function))                ; else run plain
+#+end_src
+
+=*debugging*= is set once by the session entry (=call-with-debugging= /
+=run-debugged-thread=) and is *no longer rebound per call*. It means simply
+"a debug session is active on this thread"; it is the runtime-side twin of the
+debugger's per-thread =debug-flag= (the runtime cannot see =clautolisp.debug=,
+so it carries its own session flag, and the session entry sets both).
+
+** Consequences
+
+- *Instrument exactly what you want to debug; it is debugged wherever it is
+  called from* — your code, an uninstrumented library =G=, a HOF, or a builtin.
+  This is the interpreter twin of the remote public-name swap.
+- *Uninstrumented functions always run plain* — zero overhead, no poll points,
+  not stoppable (instrument them, with source, to debug into them).
+- Per-thread isolation (spec §23) is preserved: =*debugging*= is bound per
+  debugged thread, so other threads (and the debugger thread running, say, the
+  printer) still run plain bodies — no global-breakpoint deadlock.
+- Locked in by the test
+  =instrumented-callee-debugged-through-uninstrumented-caller=.
+
+** Trade-off given up (and the recovery)
+
+Propagation had one side benefit: "debug =S= /only/ when reached through
+instrumented code", letting you keep =S= un-debugged on a hot path =P= while
+debugging it via =F=. Per-function selection cannot express that by choice of
+/what to instrument/ alone — an instrumented =S= stops on every path. Recover
+call-context sensitivity with a *conditional breakpoint* (the condition
+inspects the caller / a variable), which is the right tool for it anyway. If a
+project ever needs the old behaviour wholesale, a per-session
+=propagate-debugging-p= flag (default off) could re-enable it; not added
+preemptively.
+
+** Compiler path (Phase 8)
+
+Unchanged from DN-1's note: the compiler still emits two CL bodies, but the
+"which body runs" decision should likewise be driven by whether a function was
+compiled-for-debug and a session is active, installed the remote way (debug
+body under the public name), rather than by call-path propagation.
