@@ -44,6 +44,15 @@ so a stuck debugged thread can't hang a caller (tests) forever."
   (volatile '() :type list)
   (current-pp nil)
   (status :running)
+  ;; Stepping + backtrace state (spec §6, §9), maintained by eval-poll-form
+  ;; while a session is active on this thread:
+  ;;  - poll-depth: form-nesting depth (incf at each :before, decf at :after)
+  ;;  - call-stack: shadow stack of debug-frame, innermost first, pushed at
+  ;;    each function-entry poll point (form-id 0)
+  ;;  - step-request: a pending step (or NIL); see stepping.lisp
+  (poll-depth 0 :type fixnum)
+  (call-stack '() :type list)
+  (step-request nil)
   ;; two-thread pause channels (spec §8): debugger→app and app→debugger
   (inbound nil)
   (outbound nil)

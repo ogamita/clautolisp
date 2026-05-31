@@ -14,16 +14,27 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:autolisp-usubr-debug-metadata
                 #:autolisp-symbol
                 #:autolisp-symbol-name
+                #:autolisp-string
+                #:make-autolisp-string
                 #:intern-autolisp-symbol
                 #:split-usubr-lambda-list
                 #:register-special-operator
                 #:known-special-operator-p
                 #:autolisp-eval
-                #:*debugging*)
+                #:*debugging*
+                #:current-evaluation-context
+                #:evaluation-context-dynamic-frame
+                #:dynamic-frame-parent
+                #:dynamic-frame-symbols
+                #:dynamic-frame-binding-value
+                #:set-dynamic-frame-binding-value
+                #:lookup-variable
+                #:set-variable)
   (:import-from #:clautolisp.source
                 #:position-of
                 #:source-position
                 #:source-position-p
+                #:source-position-equal
                 #:source-position-start-line
                 #:source-position-end-line)
   (:export
@@ -90,7 +101,45 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:hit-when
    #:hit-metadata
    #:hit-source-position
+   #:hit-snapshot
+   #:hit-stop-reason
    #:*debug-hit-handler*
+   ;; snapshot + environment (spec §9)
+   #:snapshot
+   #:snapshot-p
+   #:snapshot-thread
+   #:snapshot-function-name
+   #:snapshot-fid
+   #:snapshot-form-id
+   #:snapshot-when
+   #:snapshot-source-position
+   #:snapshot-call-stack
+   #:snapshot-binding-stack
+   #:snapshot-visible-names
+   #:snapshot-globals-touched
+   #:snapshot-catch-stack
+   #:stack-frame
+   #:stack-frame-function-name
+   #:stack-frame-fid
+   #:stack-frame-form-id
+   #:stack-frame-source-position
+   #:stack-frame-bindings-introduced
+   #:binding-entry
+   #:binding-entry-symbol
+   #:binding-entry-value
+   #:binding-entry-frame
+   #:binding-entry-shadowed-p
+   #:bindings-of-name
+   #:visible-value
+   #:set-binding-entry
+   #:set-visible-variable
+   #:coerce-from-cl
+   #:eval-in-frame
+   ;; stepping (spec §6)
+   #:request-step
+   #:advance-to-point
+   #:poll-point-at
+   #:step-thread
    ;; session / entry (spec §8 / §21)
    #:call-with-debugging
    #:with-debugging

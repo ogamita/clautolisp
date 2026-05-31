@@ -208,3 +208,65 @@ Unchanged from DN-1's note: the compiler still emits two CL bodies, but the
 "which body runs" decision should likewise be driven by whether a function was
 compiled-for-debug and a session is active, installed the remote way (debug
 body under the public name), rather than by call-path propagation.
+
+* DN-3. Phase-2 stepping is depth-based; precise stop points
+  :PROPERTIES:
+  :CUSTOM_ID: dn-stepping
+  :END:
+
+/Phase 2./ Stepping (spec §6) is implemented as the degenerate volatile
+breakpoint: a pending /step request/ that the poll-point routine tests against
+two nesting depths that =eval-poll-form= maintains while a session is active on
+the thread (kept balanced on non-local exit by =unwind-protect=):
+
+- *poll-depth* — form nesting: +1 at each form's =:before=, −1 at its =:after=.
+- *call-stack* — function nesting: a shadow frame pushed at each function-entry
+  poll point (form-id 0) and popped at its exit. Its length is the call depth;
+  it also backs the snapshot's =call-stack= (§9.3).
+
+Why depths and not =parent-form-map=: poll points are already perfectly nested
+(every =%CLAL-POLL= brackets a form, and a called function's poll points nest
+inside the call form's =:before=/=:after=), so a single integer captures
+"am I inside the thing I'm stepping over." =parent-form-map= remains in the
+metadata for future use (e.g. structural "step to end of enclosing form") but
+is not needed for in/over/out.
+
+** Semantics (depths captured when the step is armed: D0F form, D0C call)
+
+- *step into* — stop at the next form beginning (=:before=, any depth):
+  descend into the first sub-form, or into a called function's entry. If the
+  called function is /uninstrumented/ it has no poll points, so "into"
+  naturally degrades to "over" it.
+- *step over* — stop at the next =:before= with poll-depth ≤ D0F (skipping the
+  current form's sub-forms and any function it calls), or as soon as the
+  current function returns (call-depth < D0C).
+- *step out / finish* — run until the current function returns (call-depth <
+  D0C).
+
+** A non-obvious but correct stop point
+
+*Step out lands on the call form's =:after=, not the next statement's
+=:before=.* Stepping out of =ID= called from =(setq z (id x))= stops at the
+=:after= poll point of the =(id x)= form in the caller — i.e. /just after the
+call returns/, value in hand — which is the natural "I'm back in the caller"
+point. The next statement's =:before= is a /further/ step. Likewise, atom
+statements/operands carry no poll point (only compound forms are wrapped), so
+"the next statement" is only a stop point when that statement is itself a
+compound form. Tests pin these exact stop points so the semantics can't drift
+silently.
+
+** Re-entrancy of eval-in-frame
+
+=eval-in-frame= (and any debugger-side evaluation) runs with =*debugging*=
+rebound to NIL, so it selects plain bodies and cannot re-enter the debugger
+through its own poll points (the analog of the host debugger running with
+debugging off). Phase 2 supports the innermost frame; outer-frame evaluation
+(=with-frame-bindings=, §9.3) is deferred (the spec rates it Partial/risky even
+remotely).
+
+** Deferred to Phase 3 (slots present, empty)
+
+The snapshot carries =globals-touched= (§9.6, needs instrumented global
+read/write capture) and =catch-stack= (§10.2, needs =vl-catch-all-apply=
+integration) as empty lists in Phase 2; they are populated when the §10 error
+integration lands.
