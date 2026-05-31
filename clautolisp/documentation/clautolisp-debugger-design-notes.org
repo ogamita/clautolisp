@@ -1,0 +1,116 @@
+#+TITLE: clautolisp Debugger — Design Notes
+#+AUTHOR: Codex
+#+OPTIONS: toc:3 num:t
+#+TEXINFO_FILENAME: clautolisp-debugger-design-notes.info
+#+TEXINFO_DIR_CATEGORY: clautolisp
+#+TEXINFO_DIR_TITLE: clautolisp-debugger-design: (clautolisp-debugger-design-notes).
+#+TEXINFO_DIR_DESC: Clautolisp debugger design decisions and rationale.
+
+* Purpose
+
+This document records the *design decisions* taken while implementing the
+clautolisp debugger — the rationale and the alternatives considered — so the
+choices are not re-litigated from scratch later. It complements:
+
+- =clautolisp-debugger-spec.org= — the normative in-image debugger spec.
+- =clautolisp-debugger-remote-cad-spec.org= — the remote-CAD addendum.
+- =clautolisp-debugger-implementation-plan.org= — the phased plan (§3a is the
+  interpreter two-bodies mechanism these notes elaborate).
+
+Each entry is dated by the phase that introduced it and is written as a small
+ADR (context → decision → consequences).
+
+* DN-1. Poll points: =%CLAL-POLL= as a special operator (not a macro)
+  :PROPERTIES:
+  :CUSTOM_ID: dn-poll-operator
+  :END:
+
+/Phase 1./ The instrumenter weaves a poll-point node around every evaluated
+compound form: =(%CLAL-POLL fid k inner)=. At evaluation it must fire
+=poll-point :before=, evaluate =inner= once, fire =poll-point :after=, and
+return =inner='s value. The question was how to realise that node.
+
+** Architectural constraints
+
+- clautolisp is a *tree-walking interpreter with no macro-expansion phase*.
+  AutoLISP has no =defmacro=; =clautolisp.autolisp-runtime::*special-operator-dispatch*=
+  is the *only* special-form mechanism, and there is no =macroexpand= step.
+- A poll-point wrapper must (1) take =fid=/=k= as *literals*, (2) evaluate
+  =inner= *exactly once* in the right dynamic context, and (3) *return*
+  =inner='s value, bracketed by the before/after calls.
+- Decisive: a *SUBR (function) receives evaluated arguments*
+  (=call-autolisp-function-in-context= maps =autolisp-eval= over the args
+  before applying), so an ordinary function *cannot* receive an unevaluated
+  =inner=. Only a special operator — or a compile-time rewrite — can.
+
+** Decision
+
+Register =%CLAL-POLL= as a *special operator* in the interpreter's dispatch
+table (via the runtime's =register-special-operator=), with a handler that
+does =poll(before); v = (autolisp-eval inner); poll(after); v=. The woven body
+stays plain AutoLISP data run by the *same* evaluator.
+
+** Why not a macro (in the interpreter)
+
+"Macro" has no native meaning in this interpreter; the only macro-like option
+is *instrument-time expansion into ordinary AutoLISP forms*. That is strictly
+worse here:
+
+- There is no clean AutoLISP form that calls back into the host =poll-point=,
+  evaluates =inner= once, /and/ returns its value. =(progn (before) inner
+  (after))= discards =inner='s value; fixing it needs a =setq= temp — which
+  *pollutes the dynamic binding stack* (the snapshot/inspector would show a
+  fake variable, it can collide with user names, and it mutates a frame).
+- The thunk alternative — wrap =inner= in a =lambda= and =funcall= it from a
+  SUBR — *allocates a closure on the hot path* (against the allocation-free
+  poll-path goal), adds a call frame, and the lambda body would itself need
+  re-instrumentation guards.
+- A macro that merely expands back into a special operator buys nothing.
+
+** Consequences
+
+Accepted:
+
+- *Pros.* Fits the existing evaluator with no change to the hot =autolisp-eval=
+  loop; unevaluated operands + single evaluation + value return come for free;
+  one representation (the instrumented body is plain AutoLISP data); all policy
+  (volatile clearing, conditions, trace actions, =current-pp=) lives in one
+  handler; trivially recognised as a leaf on re-instrumentation via
+  =known-special-operator-p=.
+- *Cons (accepted as minor).* =%CLAL-POLL= is a global, user-visible operator
+  (the =%=/=clal-= naming discourages misuse); =special-operator-function= does
+  an =assoc=/=string== over the dispatch list for *every* cons operator
+  everywhere, and the entry is =push='d to the front, so every other special-op
+  lookup does one extra failed compare first — left as is (see below); each
+  poll point pays one extra =autolisp-eval= dispatch and pushes a noise
+  =(:eval . (%CLAL-POLL …))= frame onto =*autolisp-call-stack*= that the
+  Phase-2 snapshot must filter.
+
+Considered and deferred:
+
+- *=append= vs =push=.* Appending the entry to the tail of
+  =*special-operator-dispatch*= would avoid taxing common-operator lookups.
+  Decision: *leave it as =push=* — the cost is negligible and not worth the
+  churn until profiling says otherwise.
+- *Dedicated AST struct node* (instead of a symbol-headed list). Pros: not a
+  user-visible symbol, no collision, faster =typecase= dispatch. Cons: forces a
+  change to the core =autolisp-eval= loop and the instrumented body would no
+  longer be plain AutoLISP data — exactly what the special-operator approach
+  avoids. Revisit only if frame-noise or dispatch cost shows up in profiling.
+
+** The compiler path is different (Phase 8)
+
+This decision is scoped to the *interpreter*. When the Phase-8 compiler emits
+*CL* bodies, the idiomatic and best realisation is a *CL macro*:
+
+#+begin_src common-lisp
+(defmacro %clal-poll (fid k inner)
+  `(progn (poll-point ,fid ,k :before)
+          (multiple-value-prog1 ,inner (poll-point ,fid ,k :after))))
+#+end_src
+
+It expands inline, leaves no runtime operator, costs nothing at run time, and
+matches the spec §5.3 shape literally. So the two mechanisms are not
+competitors: the special operator serves *interpreted* bodies, a CL macro
+serves *compiled* bodies — two backends of the same instrumentation, exactly as
+the interpreter-now / compiler-later split (plan §3a, spec §13) intends.
