@@ -13,7 +13,9 @@
                "clautolisp/autolisp-file-compat"
                "clautolisp/autolisp-init-files"
                "clautolisp/autolisp-debug"
-               "clautolisp/autolisp-inspect")
+               "clautolisp/autolisp-inspect"
+               "clautolisp/autolisp-debug-ui"
+               "clautolisp/autolisp-debug-ui-dumb")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
   :perform (asdf:test-op (op system)
@@ -446,6 +448,55 @@
                          (uiop:symbol-call :clautolisp.inspect.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-debug-ui"
+  :description "Debugger UI protocol + session lifecycle (debugger §17, §21–§24)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime"
+               "clautolisp/autolisp-debug"
+               "clautolisp/autolisp-inspect"
+               "clautolisp/autolisp-source-map")
+  :serial t
+  :components
+  ((:file "autolisp-debug-ui/source/package")
+   (:file "autolisp-debug-ui/source/protocol")
+   (:file "autolisp-debug-ui/source/session"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-debug-ui-dumb/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-debug-ui-dumb"
+  :description "Dumb-terminal debugger UI (debugger §18)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-debug-ui")
+  :serial t
+  :components
+  ((:file "autolisp-debug-ui-dumb/source/package")
+   (:file "autolisp-debug-ui-dumb/source/dumb-ui"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-debug-ui-dumb/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-debug-ui-dumb/tests"
+  :description "FiveAM tests for the dumb-terminal debugger UI + UI protocol."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-debug-ui-dumb" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-debug-ui-dumb/tests/package")
+   (:file "autolisp-debug-ui-dumb/tests/dumb-ui-tests")
+   (:file "autolisp-debug-ui-dumb/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.ui.dumb.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/autolisp-source-map/tests"
   :description "FiveAM tests for clautolisp.source."
   :author "Codex"
@@ -500,7 +551,8 @@
                "clautolisp/autolisp-file-compat/tests"
                "clautolisp/autolisp-init-files/tests"
                "clautolisp/autolisp-debug/tests"
-               "clautolisp/autolisp-inspect/tests")
+               "clautolisp/autolisp-inspect/tests"
+               "clautolisp/autolisp-debug-ui-dumb/tests")
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (progn
@@ -525,4 +577,6 @@
                            (uiop:symbol-call :clautolisp.debug.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.inspect.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.ui.dumb.tests
                                              :run-all-tests))))

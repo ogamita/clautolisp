@@ -396,3 +396,66 @@ needs no knowledge of debug snapshot frames — the debugger wires its
 - VLA-object property enumeration needs ActiveX; the page shows a preview and
   defers descent to the REPL (=(vla-get-PROP _)=). Hash-table pages are not
   provided (no core AutoLISP hash type).
+
+* DN-6. UI protocol: synchronous directive-returning command loop for in-image UIs
+  :PROPERTIES:
+  :CUSTOM_ID: dn-ui-protocol
+  :END:
+
+/Phase 5 (spec §17, §18, §21–§24)./ The debugger is UI-agnostic: a UI is a CLOS
+object implementing =ui-*= notifications (NIL-default generics, so a UI
+implements only what it needs, §17.1) plus one value-returning generic,
+=ui-await-command=, which drives the UI's command loop and returns a *resume
+directive*. The engine's existing =*debug-hit-handler*= boundary (Phase 1) is
+exactly where a session plugs in: =call-with-session= binds it to a closure
+that records the snapshot, fires the right notification, runs
+=ui-await-command=, and returns its directive.
+
+** Why synchronous (not the two-thread queue) for terminal UIs
+
+The parent spec frames §8 around a two-thread pause (app thread blocks on a
+queue; debugger thread drives). That path already exists (=run-debugged-thread=
+/ =continue-thread= / =step-thread=, Phase 1–3) and is what the *Emacs* UI will
+use over its RPC. But for in-image terminal UIs (dumb, ncurses) the UI runs *in
+the application thread itself*, inside =*debug-hit-handler*=: =ui-await-command=
+reads commands and returns a directive that the engine applies in place. This is
+simpler, needs no second thread, and is what §17.2's "ordinary CL calls — the UI
+is in-image for terminal UIs" describes. The two models share the same directive
+vocabulary (=:continue= | =(:step KIND)= | =(:advance …)= | =:abort= |
+=(:continue-with-return V)=), so the engine is identical underneath; only who
+calls =ui-await-command= (the app thread vs an RPC worker) differs.
+
+** cmd-* return directives; the loop decides when to resume
+
+Each =cmd-*= that resumes (=cmd-continue=, =cmd-step=, =cmd-abort=, =cmd-return=,
+=cmd-advance=) *returns* the directive; non-resuming commands (set a breakpoint,
+eval, inspect, print) return NIL and the dumb UI's loop keeps reading. So the
+loop is just "read a line → dispatch → if it returned a directive, resume." This
+keeps the resume decision in one place and makes the command set trivially
+extensible.
+
+** The inspector is wired in, not duplicated
+
+=cmd-inspect= opens a =clautolisp.inspect= session sharing the *debugger
+workspace* (so =$N= persists across stop points, §16.2) and installs the
+=:frame= binding writer (DN-5's pluggable =bind-frame-fn=) that maps to
+=set-binding-entry= on the snapshot — the one place the inspector needs
+debugger-specific behaviour, supplied from outside so the inspector library
+stays debugger-free.
+
+** Streams are injected; EOF means continue
+
+The dumb UI (§18) reads/writes injectable streams (default
+=*standard-input*=/=*standard-output*=), so the whole UI is testable over string
+streams — the suite drives full break→inspect→step→continue sessions and asserts
+on captured output. EOF at the prompt returns =:continue= (so a debugger left in
+a pipe or CI run never blocks, §18.3).
+
+** Package note
+
+The dumb UI =:use=s =clautolisp.debug.ui= and selectively imports the inspector
+=session-*= it calls directly (=session-page=/=session-origin=/=session-eval=);
+the engine's =session-snapshot=/=session-inspector= (debugger-session accessors)
+and the inspector's =session-*= live in different packages and don't collide
+because the UI protocol package deliberately does not re-export the inspector's
+=session-*= symbols it imported for internal use.
