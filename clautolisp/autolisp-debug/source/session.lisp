@@ -66,3 +66,8 @@ dynamic bindings)."
 (defun continue-thread (ti)
   "Resume a TI paused at a hit (spec §8.3 :continue)."
   (bq-push (thread-debug-info-inbound ti) :continue))
+
+(defun step-thread (ti kind)
+  "Resume a paused TI with a single step of KIND (:into|:over|:out|:finish,
+spec §6); the application stops again at the stepped-to poll point."
+  (bq-push (thread-debug-info-inbound ti) (list :step kind)))

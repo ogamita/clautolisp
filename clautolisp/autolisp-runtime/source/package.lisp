@@ -153,6 +153,10 @@
    #:push-dynamic-frame
    #:pop-dynamic-frame
    #:bind-dynamic-variable
+   #:dynamic-frame-parent
+   #:dynamic-frame-symbols
+   #:dynamic-frame-binding-value
+   #:set-dynamic-frame-binding-value
    #:autolisp-eval
    #:autolisp-eval-progn
    ;; Debugger integration (clautolisp-debugger).

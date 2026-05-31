@@ -803,6 +803,49 @@ profiles between subordinate evaluations within a single session."
         when binding
           do (return binding)))
 
+;;; --- Dynamic-frame introspection for the debugger (spec §9) --------
+;;
+;; The debugger walks the dynamic-frame chain to build the binding stack
+;; (§9.4) and reads/writes individual frames' bindings — including a
+;; currently-shadowed one — without going through ordinary lookup. These
+;; thin accessors expose just what it needs, keeping it off the runtime's
+;; internal package.
+
+(defun dynamic-frame-parent (frame)
+  "The frame FRAME shadows, or NIL."
+  (clautolisp.autolisp-runtime.internal::dynamic-frame-parent frame))
+
+(defun dynamic-frame-symbols (frame)
+  "List of AutoLISP symbols bound *directly* in FRAME (not its parents),
+i.e. the shadowings this frame introduced."
+  (loop for symbol being the hash-keys
+          of (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame)
+        collect symbol))
+
+(defun dynamic-frame-binding-value (frame symbol)
+  "Read SYMBOL's binding in FRAME only. Returns (values value bound-p);
+bound-p is NIL when FRAME has no binding for SYMBOL."
+  (let ((binding (gethash symbol
+                          (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))))
+    (if binding
+        (values (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding)
+                (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding))
+        (values nil nil))))
+
+(defun set-dynamic-frame-binding-value (frame symbol value)
+  "Write SYMBOL's binding in FRAME only (the debugger's shadowed-binding
+write, §9.4). Signals if FRAME has no binding for SYMBOL — the debugger
+must not create a new frame-local binding mid-execution (§16.1)."
+  (let ((binding (gethash symbol
+                          (clautolisp.autolisp-runtime.internal::dynamic-frame-bindings frame))))
+    (unless binding
+      (signal-autolisp-runtime-error
+       :no-such-frame-binding
+       "Frame has no binding for ~A to write." symbol))
+    (setf (clautolisp.autolisp-runtime.internal::dynamic-binding-value binding) value
+          (clautolisp.autolisp-runtime.internal::dynamic-binding-bound-p binding) t)
+    value))
+
 ;;; --- Lisp-1 binding lookup and update ------------------------------
 ;;
 ;; AutoLISP is Lisp-1 (autolisp-spec, chapter 7): the same per-symbol
