@@ -335,3 +335,64 @@ on =clautolisp.debug=. The catch-stack/hook variables live in
   has already unwound the deep frames). Capturing the deep stack would require
   converting =vl-catch-all-apply= to =HANDLER-BIND=; deferred as not worth the
   churn for v1.
+
+* DN-5. The inspector is a runtime-only library; values computed in CL, accessors are data
+  :PROPERTIES:
+  :CUSTOM_ID: dn-inspector
+  :END:
+
+/Phase 4 (spec Part IV)./ The inspector (=clautolisp.inspect=) is "a separate
+library from the debugger" (§14): the debugger /uses/ it, so =clautolisp.debug=
+must be able to depend on it — which means the inspector must NOT depend on the
+debugger (no cycle). It therefore depends on the *runtime only*.
+
+** Two-level value access: compute in CL, keep accessors as data
+
+Each page component carries an *accessor* — an AutoLISP S-expression template
+with the free placeholder =_= (e.g. =(cdr (assoc 10 (entget _)))=). Crucially:
+
+- the component's *value* is, where possible, computed *directly in CL* — a
+  runtime cons is a CL cons, so =car=/=cdr=/=nth= need no evaluator; string
+  chars, a symbol's value/function (via lookup) likewise. So inspecting
+  numbers / strings / symbols / lists needs *no builtins and no host*.
+- the *accessor* is kept purely as *data*, used only to compose the path
+  expression (§15.2). Descent uses the already-computed component value, never
+  re-evaluation. So navigation and path composition are evaluator-free too.
+
+Only the host-dependent types (=ename=, =pickset=) must evaluate their accessor
+(=(entget _)=, =(ssname _ n)=) to enumerate components; they do so via
+=autolisp-eval= in the session's context and *degrade gracefully* (a single
+=:unrealized= component) when no host is present. This is why the test suite can
+cover the ename group-code path — it stubs =ENTGET= as a user function
+returning a canned DXF list, with no host at all.
+
+** Path expressions by substitution (§15.2)
+
+=session-path-expression= folds the history's accessor chain from the origin,
+=(subst expr '_ accessor)= at each step (the placeholder =_= is the interned
+AutoLISP symbol "_", matched by =EQ=). An =:opaque= step (a value with no
+AutoLISP-expressible accessor) stops the fold and returns =(values partial
+:partial)=. Opaque components stay *descendable* (you can still look), per §15.1.
+
+** Workspace and the name resolution boundary (§16.2)
+
+=$N= slots and the =$0=/=*= aliases live in the inspector's own =workspace=,
+resolved *inspector-side* by =session-eval= (which binds them in a temporary
+dynamic frame, with =*debugging*= off so the eval can't re-enter the debugger)
+— never by the AutoLISP evaluator, so they never intrude on the AutoLISP symbol
+table. =session-bind= destinations: =:workspace= is pure inspector state;
+=:global=/=:setq= write the runtime namespace/binding; =:frame= is delegated to
+a *pluggable writer* the debugger installs (=bind-frame-fn=), so the inspector
+needs no knowledge of debug snapshot frames — the debugger wires its
+=set-binding-entry= in when it opens an inspector on a binding (§16.1).
+
+** Note
+
+=clautolisp.inspect= shadows =cl:inspect= (it defines its own =inspect=, the
+§14 session entry).
+
+** Deferred
+
+- VLA-object property enumeration needs ActiveX; the page shows a preview and
+  defers descent to the REPL (=(vla-get-PROP _)=). Hash-table pages are not
+  provided (no core AutoLISP hash type).

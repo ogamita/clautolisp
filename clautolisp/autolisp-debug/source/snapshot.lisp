@@ -142,7 +142,7 @@ becomes an autolisp-string. Signals on a clearly non-AutoLISP value."
     (null value)
     ((signed-byte 32) value)
     (double-float value)
-    (string (make-autolisp-string :value value))
+    (string (make-autolisp-string value))
     (cons value)
     (t (if (clautolisp.autolisp-runtime:runtime-value-p value)
            value

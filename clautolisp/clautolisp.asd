@@ -12,7 +12,8 @@
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-file-compat"
                "clautolisp/autolisp-init-files"
-               "clautolisp/autolisp-debug")
+               "clautolisp/autolisp-debug"
+               "clautolisp/autolisp-inspect")
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/tests")))
   :perform (asdf:test-op (op system)
@@ -413,6 +414,38 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/autolisp-inspect"
+  :description "AutoLISP value inspector (debugger Part IV): pages, accessors, navigation, path expressions, workspace."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "autolisp-inspect/source/package")
+   (:file "autolisp-inspect/source/workspace")
+   (:file "autolisp-inspect/source/page")
+   (:file "autolisp-inspect/source/session"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-inspect/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-inspect/tests"
+  :description "FiveAM tests for the clautolisp inspector."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-inspect" "clautolisp/autolisp-runtime" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-inspect/tests/package")
+   (:file "autolisp-inspect/tests/inspect-tests")
+   (:file "autolisp-inspect/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.inspect.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/autolisp-source-map/tests"
   :description "FiveAM tests for clautolisp.source."
   :author "Codex"
@@ -466,7 +499,8 @@
                "clautolisp/autolisp-builtins-core/tests"
                "clautolisp/autolisp-file-compat/tests"
                "clautolisp/autolisp-init-files/tests"
-               "clautolisp/autolisp-debug/tests")
+               "clautolisp/autolisp-debug/tests"
+               "clautolisp/autolisp-inspect/tests")
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (progn
@@ -489,4 +523,6 @@
                            (uiop:symbol-call :clautolisp.source.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.debug.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.inspect.tests
                                              :run-all-tests))))
