@@ -99,7 +99,11 @@ each step). If a step's accessor is :opaque, return (values partial
         (when (eq accessor :opaque)
           (setf (inspector-session-path session) expr)
           (return-from session-path-expression (values expr :partial)))
-        (setf expr (subst expr (%ph) accessor :test #'eq))))
+        ;; Fold EXPR into this step's accessor with SUBSTITUTE-PLACEHOLDER
+        ;; (fresh consing), never CL:SUBST: page accessors share the one
+        ;; interned `_` symbol, and SUBST's structure sharing would splice
+        ;; EXPR into shared structure and build a CIRCULAR path (DN-8).
+        (setf expr (substitute-placeholder expr accessor))))
     (setf (inspector-session-path session) expr)
     expr))
 

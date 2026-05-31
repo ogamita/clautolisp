@@ -46,12 +46,32 @@ the runtime's print-object methods), truncated to LIMIT."
                           :value value
                           :descendable-p descendable))
 
+(defun placeholder-p (object)
+  "True iff OBJECT is the accessor placeholder symbol `_` (matched by
+NAME, not identity, so it is robust across symbol-table resets)."
+  (and (typep object 'autolisp-symbol)
+       (string= "_" (autolisp-symbol-name object))))
+
+(defun substitute-placeholder (replacement template)
+  "Return a FRESH copy of TEMPLATE with every placeholder `_` replaced by
+REPLACEMENT. Unlike CL:SUBST (which may share structure with its TREE
+argument, and — because page-built accessors share the one interned `_`
+symbol — can splice REPLACEMENT into shared structure and build a circular
+result), this always conses new spine, so the result can never alias
+TEMPLATE or REPLACEMENT."
+  (cond
+    ((placeholder-p template) replacement)
+    ((consp template)
+     (cons (substitute-placeholder replacement (car template))
+           (substitute-placeholder replacement (cdr template))))
+    (t template)))
+
 (defun %eval-accessor (template value context)
   "Evaluate TEMPLATE with `_` replaced by VALUE embedded literally;
 returns (values result ok-p), ok-p NIL when the evaluation errors (e.g.
 no host for ENTGET)."
   (handler-case
-      (values (autolisp-eval (subst value (%ph) template :test #'eq) context) t)
+      (values (autolisp-eval (substitute-placeholder value template) context) t)
     (error () (values nil nil))))
 
 (defun runtime-list-elements (value &optional (limit 256))
