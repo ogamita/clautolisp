@@ -1158,6 +1158,28 @@ builtin — while an uninstrumented function always runs plain. NIL by
 default: with no session active every call runs the plain body at full
 speed.")
 
+;;; --- vl-catch-all-apply integration for the debugger (spec §10.2) ---
+;;
+;; A frame describing an active vl-catch-all-apply, recorded on
+;; *autolisp-catch-stack* while the applied function runs so the debugger
+;; snapshot can show the catch context (§9.2 catch-stack). The
+;; vl-catch-all-apply builtin maintains the stack; the debugger reads it.
+
+(defstruct catch-frame
+  function
+  (arguments '() :type list))
+
+(defparameter *autolisp-catch-stack* '()
+  "Active vl-catch-all-apply frames on the current thread, innermost
+first (spec §10.2). Bound/pushed by the vl-catch-all-apply builtin; read
+by the debugger's snapshot. NIL when no catch is active.")
+
+(defparameter *autolisp-caught-error-hook* nil
+  "When non-nil, a function the vl-catch-all-apply builtin calls with the
+caught autolisp-runtime-error BEFORE returning the AutoLISP error object
+(spec §10.2 'break on caught error'). The debugger installs this only when
+break-on-caught is enabled; NIL by default (off).")
+
 (defun append-proper-and-tail (elements tail)
   (if (null elements)
       tail

@@ -165,6 +165,12 @@
    #:unregister-special-operator
    #:known-special-operator-p
    #:split-usubr-lambda-list
+   #:catch-frame
+   #:make-catch-frame
+   #:catch-frame-function
+   #:catch-frame-arguments
+   #:*autolisp-catch-stack*
+   #:*autolisp-caught-error-hook*
    #:autolisp-current-directory
    #:set-autolisp-current-directory
    #:autolisp-support-paths

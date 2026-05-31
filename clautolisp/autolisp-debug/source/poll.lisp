@@ -12,10 +12,14 @@
   (fid 0 :type fixnum)
   (form-id 0 :type fixnum)
   (when :before :type keyword)
-  (stop-reason :breakpoint :type keyword)   ; :breakpoint | :step
+  (stop-reason :breakpoint :type keyword)   ; :breakpoint | :step | :unhandled-error | :caught-error
   metadata
   source-position
-  snapshot)
+  snapshot
+  ;; populated for error stops (spec §10)
+  condition
+  error-message
+  errno)
 
 (defparameter *debug-hit-handler*
   (lambda (hit) (declare (ignore hit)) :continue)
@@ -102,14 +106,18 @@ debugged thread has armed a step or set a breakpoint covering this point
     (let ((ti *thread-debug-info*))
       (if (and ti (thread-debug-info-debug-flag ti))
           ;; debugged thread: maintain depths + shadow stack, kept balanced
-          ;; on non-local exit by unwind-protect.
+          ;; on non-local exit by unwind-protect. The CLAL-POLL-RETURN
+          ;; restart lets the debugger's *error* handler supply a value for
+          ;; the innermost instrumented form (continue-with-return, §10.1).
           (progn
             (debug-poll-enter ti fid form-id context)
             (unwind-protect
-                 (progn
-                   (poll-point fid form-id :before)
-                   (prog1 (autolisp-eval inner context)
-                     (poll-point fid form-id :after)))
+                 (restart-case
+                     (progn
+                       (poll-point fid form-id :before)
+                       (prog1 (autolisp-eval inner context)
+                         (poll-point fid form-id :after)))
+                   (clal-poll-return (value) value))
               (debug-poll-exit ti form-id)))
           ;; not a debugged thread (e.g. eval-in-frame with *debugging*
           ;; rebound, or a stray woven form): just evaluate.

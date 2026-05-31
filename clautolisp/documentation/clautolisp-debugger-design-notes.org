@@ -270,3 +270,68 @@ The snapshot carries =globals-touched= (§9.6, needs instrumented global
 read/write capture) and =catch-stack= (§10.2, needs =vl-catch-all-apply=
 integration) as empty lists in Phase 2; they are populated when the §10 error
 integration lands.
+
+* DN-4. Error integration via HANDLER-BIND; the unhandled/caught split is free
+  :PROPERTIES:
+  :CUSTOM_ID: dn-errors
+  :END:
+
+/Phase 3 (spec §10)./ An AutoLISP error in clautolisp is a CL
+=autolisp-runtime-error= raised by =signal-autolisp-runtime-error=. The
+debugger must stop /at the error point with the live stack intact/, so it
+intercepts with =HANDLER-BIND= (whose handler runs before the stack unwinds),
+not =HANDLER-CASE= (which unwinds first). =debug-handle-error= builds the
+snapshot from =current-pp= (the innermost poll point = the erroring form),
+dispatches it to =*debug-hit-handler*=, and performs the §10.1 resolution.
+
+** The §10.1 / §10.2 split falls out of handler ordering — for free
+
+=vl-catch-all-apply= already wraps its applied function in a =HANDLER-CASE= for
+=autolisp-runtime-error=. The session's =HANDLER-BIND= is established /outside/
+the application (hence outside any =vl-catch-all-apply= within it). CL runs
+handlers innermost-first, and a =HANDLER-CASE= handler transfers control the
+moment it runs. So:
+
+- error inside a =vl-catch-all-apply= → the inner =HANDLER-CASE= fires first and
+  transfers control; the session =HANDLER-BIND= never runs ⇒ /caught/ (§10.2).
+- error not inside any =vl-catch-all-apply= → only the session =HANDLER-BIND=
+  applies ⇒ /unhandled/ (§10.1).
+
+No bookkeeping distinguishes them; the condition system does.
+
+** Resolutions (§10.1)
+
+- *continue-with-error* (default; also =:continue= / NIL) — the handler returns
+  normally, /declining/, so the condition keeps propagating to the user's
+  =*error*= exactly as without the debugger
+  (=call-with-autolisp-error-handler= → the =*ERROR*= function).
+- *abort* — =(throw 'clal-abort :aborted)= to a =CATCH= the session
+  establishes; =call-with-debugging= returns =:aborted=, the threaded run
+  reports =(:aborted)=. (Restoring system variables is the user =*error*='s
+  job; the debugger's abort does not attempt it.)
+- *continue-with-return VALUE* — each poll point's form evaluation is wrapped in
+  a =CLAL-POLL-RETURN= restart; the handler =invoke-restart='s the innermost
+  one, so the *innermost instrumented form enclosing the error* returns VALUE.
+  Safe only for form-internal errors; with no enclosing instrumented form there
+  is no restart and we decline.
+
+** §10.2 catch frames and break-on-caught
+
+The =vl-catch-all-apply= builtin binds a runtime =*autolisp-catch-stack*= (list
+of =catch-frame=) around the applied function, so any snapshot taken inside the
+catch shows it (§9.2 =catch-stack=). The builtin also calls a runtime hook
+=*autolisp-caught-error-hook*= when set; the session installs it only under
+=:break-on-caught= (default off). Same inversion as =%CLAL-POLL= (DN-1): the
+runtime/builtins expose a hook, the debug system fills it — so
+=autolisp-builtins-core= (which owns =vl-catch-all-apply=) needs no dependency
+on =clautolisp.debug=. The catch-stack/hook variables live in
+=clautolisp.autolisp-runtime= for exactly that reason.
+
+** Deferred
+
+- =globals-touched= (§9.6) still empty — needs instrumented global read/write
+  capture; folds in with a later pass.
+- The break-on-caught snapshot is taken at the catch point (the =HANDLER-CASE=
+  has already unwound the deep frames). Capturing the deep stack would require
+  converting =vl-catch-all-apply= to =HANDLER-BIND=; deferred as not worth the
+  churn for v1.
