@@ -548,3 +548,52 @@ step and =(throw 'clal-abort :aborted)= — the same catch
 execution. So a user can abort from *any* stop (breakpoint, step, or error),
 which is what every UI's =q=/=a= key implies. The dumb-UI and engine suites
 confirm no regression.
+
+* DN-10. The Emacs UI is an S-expression RPC shim; the wire is data, not code
+  :PROPERTIES:
+  :CUSTOM_ID: dn-emacs
+  :END:
+
+/Phase 7 (spec §20)./ The Emacs UI (=aldb=) splits cleanly in two:
+
+- *=clautolisp.ui.emacs= (CL)* — a thin shim implementing the
+  =clautolisp.debug.ui= protocol by writing each notification as ONE readable
+  S-expression per line to an OUTPUT stream and reading command forms back from
+  an INPUT stream (§20.1: line-oriented sexps, no length prefixes, no encoding
+  negotiation). Both streams are injectable, so the whole shim is unit-tested
+  *headlessly over string streams* — 27 checks covering attach/version, the
+  serialized hit snapshot, eval, step, abort, set-breakpoint+list, select-frame,
+  inspector descend/path, continue-with-return on an error, and EOF.
+- *=aldb.el= (Emacs)* — the SLDB-modelled minor mode (§20.2 buffers, §20.3
+  keybindings) that reads those forms with =read= and writes commands back. It
+  is shipped under the system's =emacs/= dir and *byte-compiles clean* under
+  Emacs 30, but is NOT in the CL aggregate (it has no CL test surface — its
+  contract is the wire, which the shim tests pin).
+
+** Everything on the wire is data
+
+A subtle but load-bearing rule: the shim never sends a form the Emacs side
+would *evaluate as code*. Values, bindings, paths, and previews are sent as
+*strings* (=preview=), positions/frames/pages as plain tagged lists of
+strings+integers (=snapshot->wire=, =page->wire=). The only place user text
+becomes code is inside the CL side, where =:eval=/=:inspect=/=:return= command
+arguments are read with the AutoLISP reader and evaluated in the snapshot
+(via the existing =cmd-eval=). So a malicious or malformed value preview can
+never execute in Emacs, and the transport stays a dumb pipe — which is what lets
+it ride any existing CL↔Emacs channel (a swank socket, an inferior-lisp pipe;
+§20.1 leaves the transport to the user).
+
+** Reuse of the engine; no new debugger surface
+
+=aldb= adds zero capability to the engine: every command maps to an existing
+=cmd-*= (§17.2), and the resume directives are the same =:continue= /
+=(:step …)= / =:abort= / =(:continue-with-return …)= the dumb and ncurses UIs
+return. Notably it inherits DN-9 (abort from any stop) for free. "A feature
+missing in the dumb terminal is missing in Emacs" (§20.4) holds by construction.
+
+** Transport pluggability
+
+=aldb-connect= takes a live process and wires a process-filter that buffers
+partial output and dispatches each complete top-level form. The CL shim is
+transport-agnostic too (just two streams). Neither side mandates sockets vs
+pipes vs a reused swank connection (§20.1).
