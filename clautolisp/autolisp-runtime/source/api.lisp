@@ -1095,6 +1095,28 @@ error wraps a non-autolisp-runtime condition."
             (append-proper-and-tail (rest elements) tail))))
 
 (defun reader-object->runtime-value (object)
+  ;; CAUTION (DEBUGGER): every branch below intentionally drops the
+  ;; reader-object's source span. The runtime-value type is positional-
+  ;; info-free: strings carry only their value, integers/reals only
+  ;; their value, symbol-objects only their canonical name, cons-
+  ;; objects only their element/tail structure, and quote-objects only
+  ;; the quoted form. When the debugger branch lands, the runtime
+  ;; *will* need source positions threaded through somehow — either
+  ;; via a parallel span side-table keyed by object identity, or by
+  ;; rewriting this function to wrap each value in a span-bearing
+  ;; envelope (autolisp-symbol/+span, autolisp-string/+span, …).
+  ;;
+  ;; The NIL normalisation in the SYMBOL-OBJECT branch is consistent
+  ;; with that future direction: CL nil is a singleton with no
+  ;; meaningful source position (it appears from a hundred call sites
+  ;; — literal `nil`, literal `()`, function returns, default arg
+  ;; values, …), so attaching a span to "an occurrence of `'NIL` in
+  ;; source" would invent information that's not really there. If
+  ;; the debugger ever wants to highlight the textual `NIL` token at
+  ;; its source position, the attack point is a span side-table
+  ;; populated BEFORE this function runs (walk reader-objects, key by
+  ;; their identity, keep the spans), not a different normalisation
+  ;; here.
   (typecase object
     (symbol-object
      ;; AutoLISP defines nil as the symbol named NIL — by definition
@@ -1103,6 +1125,11 @@ error wraps a non-autolisp-runtime condition."
      ;; proper-list predicates, REVERSE / LENGTH / MAPCAR / etc.
      ;; see the canonical empty-list terminator instead of an
      ;; autolisp-symbol struct that happens to print as "nil".
+     ;;
+     ;; T is intentionally NOT normalised the same way: (a b c . T)
+     ;; is a legitimate improper list (T is just a symbol, not a
+     ;; list terminator), so collapsing source-level 'T to CL t
+     ;; would change observable list shape, not just print form.
      (let ((name (symbol-object-canonical-name object)))
        (cond
          ((string-equal name "NIL")
