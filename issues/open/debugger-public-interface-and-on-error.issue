@@ -1,0 +1,234 @@
+debugger-public-interface-and-on-error — AutoLISP-facing debugger API + --on-error CLI option (+ aldb connection options)
+=========================================================================================================================
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-spec.org (§10 *error*, §18 dumb UI, §20 emacs UI, §21 start-session)
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phases 3, 5, 7)
+  clautolisp/documentation/clautolisp-debugger-design-notes.org (DN-9 abort-from-any-stop, DN-10 aldb RPC)
+  issues/open/clautolisp-debugger.issue (parent)
+  clautolisp/autolisp-cli/source/spec.lisp (*common-option-specs*; the shared CLI surface)
+  clautolisp/autolisp-builtins-core/source/api.lisp (builtin registry; *error*/vl-catch-all live here)
+
+Context — what exists today
+---------------------------
+
+The debugger engine (Phases 0–3), inspector (4), and three UIs (5–7) are
+implemented and tested, BUT none of it is reachable yet from:
+
+  (a) an AutoLISP program — there is NO clal-* function that enters the
+      debugger. `grep clal-(invoke|debug|break)` finds nothing; the
+      `clautolisp.debug` system is not referenced by autolisp-builtins-core
+      at all.
+  (b) the clautolisp / alfe command line — no --on-error; the only related
+      flag is verbosity. NOTE: `--debug` / `-d` ALREADY EXISTS as a
+      *verbosity* level (spec.lisp ~line 120, sets verbosity to :DEBUG). It
+      must NOT be repurposed for the debugger — see naming below.
+
+So a user who loads a buggy .lsp through clautolisp/alfe currently has no way
+to (i) ask for the debugger on error, or (ii) drop into the debugger from
+their own code. This issue specifies both, plus the options aldb needs.
+
+This is a SPECIFICATION issue. Implementation lands after, gated on the engine
+already merged on the `debugger` branch.
+
+----------------------------------------------------------------------
+Part A — AutoLISP-facing debugger API (new clal-* builtins)
+----------------------------------------------------------------------
+
+These are the user-callable entry points, registered in autolisp-builtins-core
+(prefix `clal-` per the project naming convention). They are clautolisp
+EXTENSIONS, not Autodesk AutoLISP — document them as such and keep them inert
+(or graceful no-ops) when no debug session is possible.
+
+A.1  (clal-invoke-debugger [message])
+     Enter the debugger NOW at the current poll point, as if a breakpoint
+     had fired here (a programmatic break, the analog of CL INVOKE-DEBUGGER /
+     SLIME's `break`). MESSAGE (optional string) is shown as the stop reason.
+     - Requires an active session on this thread (started via the CLI
+       --on-error debug, or clal-debug-session below). If none is active,
+       behaviour follows *the current --on-error policy* (quit/ignore/print)
+       — i.e. it degrades to "signal an error" when there is no debugger to
+       enter, so a program shipped with clal-invoke-debugger left in it does
+       not hard-fail in production.
+     - Returns nil on resume (continue), or whatever the resume directive
+       yields (e.g. a continue-with-return value).
+     Implementation: it is a new stop-reason :user-break delivered through the
+     same *debug-hit-handler* path (poll.lisp). The instrumenter must ensure
+     the call site is a poll point so current-pp / the snapshot are accurate.
+
+A.2  (clal-break [test [message]])
+     Conditional programmatic break: enter the debugger only if TEST is
+     non-nil (TEST is an already-evaluated value, AutoLISP having no special
+     forms for users). Sugar over clal-invoke-debugger; returns TEST.
+     (Name chosen over a bare `break` to avoid colliding with any product
+     BREAK and to keep the clal- namespace.)
+
+A.3  (clal-debug-session)  /  (clal-end-debug-session)
+     Start (resp. end) a debugger session bound to the current thread from
+     within AutoLISP, so a script can arm debugging around a region without a
+     CLI flag. clal-debug-session starts a dumb-terminal session on the
+     controlling tty (the only UI guaranteed available from inside a running
+     program); returns T on success, nil if no tty / already in a session.
+     clal-end-debug-session tears it down (spec §24). These wrap
+     clautolisp.debug.ui:start-session / the session teardown.
+
+A.4  (clal-trace fn ...)  /  (clal-untrace fn ...)
+     NOTE: TRACE / UNTRACE special operators already exist (api.lisp
+     *special-operator-dispatch*) and print enter/exit lines. Decide whether
+     to (a) leave those as the lightweight tracer and add clal-trace as the
+     debugger-backed trace point (spec §6.4 tagged breakpoint, no app-side
+     printing), or (b) unify. RECOMMEND (a): keep TRACE as-is; add
+     `clal-trace-break fn` that installs a debugger trace point on FN's entry
+     poll point. Flag for the author to confirm.
+
+A.5  Inspector entry: (clal-inspect value)
+     Open the inspector on VALUE from AutoLISP (clautolisp.inspect:inspect),
+     into the dumb-terminal sink by default, or the active session's UI if one
+     is attached. Returns VALUE (so it is transparent in expression position).
+
+Open questions (Part A)
+  - Should clal-invoke-debugger with no active session START one (dumb, on the
+    tty) instead of degrading to the --on-error policy? Proposed: only if a
+    tty is present AND --on-error is not `quit`/`ignore`; otherwise degrade.
+  - Naming: clal-invoke-debugger vs clal-break vs clal-debugger. Proposed set
+    above; confirm.
+
+----------------------------------------------------------------------
+Part B — CLI option: --on-error quit|debug|ignore
+----------------------------------------------------------------------
+
+A new SHARED option (goes in *common-option-specs*, used by both clautolisp
+and alfe), controlling what happens when an uncaught AutoLISP error reaches
+top level (the §10.1 unhandled-error path).
+
+B.1  Values
+     --on-error quit    (DEFAULT)  Run the user's *error* if any, print the
+                                   error, and exit non-zero. This is today's
+                                   behaviour, made explicit.
+     --on-error debug              Start a dumb-terminal debugger session
+                                   (clautolisp.ui.dumb) and stop at the error
+                                   point, so the user can inspect/step/abort
+                                   (spec §10.1, §18). On a non-tty / batch
+                                   input the debugger reads commands from
+                                   stdin and writes to stdout (the dumb UI is
+                                   built exactly for this); EOF ⇒ continue
+                                   ⇒ falls back to quit semantics.
+     --on-error ignore             Continue past the error where the engine
+                                   can (continue-with-error: run the user's
+                                   *error*, then keep going to the next form /
+                                   action). Where continuation is impossible,
+                                   degrade to quit.
+
+B.2  Interaction with --silent / --quiet (-q)
+     There is no --silent today; --quiet (-q) sets verbosity to :WARN.
+     Specify a verbosity gate on the error BANNER (not on the debugger):
+       - WITHOUT --quiet:  quit and ignore PRINT the error message (to
+                           stderr) before quitting / continuing.
+       - WITH --quiet:     quit and ignore print NOTHING (silent); quit still
+                           exits non-zero, ignore still continues silently.
+       - `debug` ignores the quiet gate for its own prompts (you asked for a
+         debugger; you get its I/O) but still suppresses the standalone
+         banner under --quiet.
+     If a dedicated --silent is wanted as a stronger form of --quiet, specify
+     it here too; otherwise reuse --quiet. RECOMMEND reusing --quiet.
+
+B.3  Naming / collision
+     Use the long option --on-error with a single string argument
+     (:takes-arg-p t), validated at parse time to one of quit|debug|ignore
+     (a cli-usage-error on a typo, matching the -e encoding precedent). Do
+     NOT overload the existing --debug/-d verbosity flag. Store on a new
+     cli-options slot `on-error` (keyword :quit|:debug|:ignore, default :quit)
+     and mirror it to an *AUTOLISP-ON-ERROR* transmit variable if useful to
+     backends/init files (cf. the *AUTOLISP-* convention).
+
+B.4  Wiring
+     The top-level run loop (run-autolisp-file / run-autolisp-string, and
+     alfe's equivalent) consults on-error:
+       :quit   → existing call-with-autolisp-error-handler path.
+       :debug  → wrap the run in clautolisp.debug.ui:with-session (:ui
+                 :terminal :break-on-caught nil), so the §10.1 HANDLER-BIND
+                 fires the dumb UI at the error point.
+       :ignore → install an *error* path that, after the user *error*,
+                 resumes the next action instead of exiting.
+
+----------------------------------------------------------------------
+Part C — aldb (Emacs) connection options
+----------------------------------------------------------------------
+
+To use the Emacs UI (Phase 7, clautolisp.ui.emacs / aldb.el), the process
+must expose the line-oriented S-expr RPC channel (§20.1, DN-10) on something
+Emacs can connect to. Specify options (shared, or clautolisp-specific — the
+RPC is the same for alfe):
+
+C.1  --on-error debug-emacs   (or: --debugger emacs)
+     Like --on-error debug but starts an :emacs session instead of :terminal.
+     Requires a channel (C.2). Without a channel configured, error out at
+     parse time with a clear message.
+
+C.2  Channel options (pick one transport; the shim is transport-agnostic):
+     --aldb-listen [HOST:]PORT
+         Open a TCP listener; the debugger's emacs-ui input/output are bound
+         to the accepted socket stream. Emacs `M-x aldb-connect` to it. If
+         PORT is 0, pick a free port and PRINT the chosen port (so a wrapper
+         can read it).
+     --aldb-stdio
+         Use the process's own stdin/stdout as the RPC channel (for an
+         inferior-lisp-style connection where Emacs drives the process). In
+         this mode the normal REPL/banner I/O must move off stdio or be
+         framed, since stdio becomes the RPC — specify the interaction with
+         --interactive (mutually exclusive: error if both).
+     --aldb-swank
+         (Optional, deferred.) Reuse an existing SLIME swank connection if one
+         is present (spec §20.1 allows this). Likely a separate follow-up.
+
+C.3  Defaults / safety
+     - aldb options imply --on-error debug-emacs unless --on-error says
+       otherwise; a bare --aldb-listen PORT with no error is still useful
+       (Emacs can attach and set breakpoints before running). Decide whether
+       --aldb-listen alone also starts a session immediately or only arms one.
+     - A listener binds to 127.0.0.1 by default (no remote exposure); an
+       explicit HOST is required to bind elsewhere, and should warn.
+     - Store channel config on cli-options slots; alfe and clautolisp share
+       the parsing (the RPC shim is identical).
+
+Open questions (Part C)
+  - --debugger emacs|terminal as a UI selector orthogonal to --on-error, vs
+    folding emacs into --on-error values? RECOMMEND a separate --debugger
+    UI selector (terminal default | ncurses | emacs) + --on-error policy;
+    they compose: `--on-error debug --debugger ncurses`. This is cleaner than
+    a debug-emacs value and also exposes the ncurses UI from the CLI.
+  - Should aldb options live in *common-option-specs* (shared) or be
+    clautolisp/alfe tool-specific? The RPC is shared, so shared is fine;
+    confirm.
+
+----------------------------------------------------------------------
+Deliverables when this is implemented
+----------------------------------------------------------------------
+
+1. clal-* builtins (Part A) in autolisp-builtins-core, with the engine wired
+   in (a new :user-break stop reason in clautolisp.debug). Builtins-core gains
+   a dependency on clautolisp.debug + clautolisp.debug.ui (or an injected hook
+   to avoid the dependency, mirroring the DN-1/DN-4 inversion — PREFER the
+   hook so builtins-core stays UI-free).
+2. --on-error (Part B) + --debugger UI selector (Part C) in
+   autolisp-cli/source/spec.lisp (*common-option-specs*), new cli-options
+   slots, --help text, and parse-time validation; wired into the run loops of
+   tools/clautolisp/source/main.lisp and the alfe entry point.
+3. aldb channel options (Part C) + the listener/stdio plumbing binding the
+   emacs-ui streams.
+4. Tests: CLI parse tests for the new options (incl. validation errors and
+   the --quiet gate); an end-to-end --on-error debug test driving the dumb UI
+   over piped stdin/stdout; a clal-invoke-debugger test through the engine.
+5. Docs: clautolisp-user-manual + the debugger spec's §10/§18/§20 cross-refs;
+   man pages; a DN entry for the builtins-core/debug dependency-inversion
+   decision. Version bump per policy (feature ⇒ ≥ 1.2.0 given the new
+   user-facing surface; confirm with the version convention).
+
+Naming decisions to confirm with the author (summary)
+-----------------------------------------------------
+  - clal-invoke-debugger / clal-break / clal-debug-session / clal-inspect set.
+  - --on-error quit|debug|ignore (default quit); reuse --quiet for silence.
+  - --debugger terminal|ncurses|emacs as an orthogonal UI selector (preferred)
+    vs an --on-error debug-emacs value.
+  - --aldb-listen / --aldb-stdio transport; 127.0.0.1 default bind.
+  - Keep TRACE special operator; add a debugger-backed trace point separately.
