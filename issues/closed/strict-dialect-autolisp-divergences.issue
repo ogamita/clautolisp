@@ -1,6 +1,48 @@
 strict-dialect-autolisp-divergences — strict dialect diverges from AutoCAD/BricsCAD AutoLISP
 ============================================================================================
 
+RESOLVED — shipped at clautolisp 1.0.99 → 1.0.100 / alfe 1.0.42 →
+1.0.43. The three divergences were independent and each fixed in
+the same commit. The fixes apply universally across every dialect
+(strict, autocad-2026, bricscad-v26, clautolisp), not just strict,
+because the vendor surface is shared.
+
+  § 1. Float printer
+       autolisp-value->string (clautolisp/autolisp-builtins-core/
+       source/api.lisp ~L2372) now binds *read-default-float-format*
+       to double-float so SBCL/CCL elide the redundant marker. Output
+       matches vendor:
+         (vl-princ-to-string 3.14)   => "3.14"
+         (vl-prin1-to-string 42.0)   => "42.0"
+         (vl-princ-to-string 1.0e20) => "1.0e20"  ; "e", never "d"
+
+  § 2. Relational operators
+       numeric-order-p (~L2537) now folds a non-numeric argument
+       (nil OR any non-number) to nil rather than signalling. The
+       SCHMS+ scanner idiom works:
+         (while (<= 48 (car chars) 57) ...)
+       Vacuous calls ((<=), (<= 5)) still return T; all-numeric
+       ordered/unordered cases unchanged.
+
+  § 3. SUBSTR length 0
+       builtin-substr (~L1453) now treats length 0 as valid (returns
+       the empty string), error only on strictly negative:
+         (substr "abcde" 3 0)  => ""
+         (substr "abcde" 3 -1) => :invalid-substr-length
+
+Three regression tests added in
+clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp:
+  - float-printer-omits-double-float-marker
+  - numeric-order-folds-nil-to-nil
+  - substr-zero-length-returns-empty-string
+
+Test sweep: clautolisp 100% (autolisp-builtins-core 1121 -> 1141);
+alfe 313/313.
+
+The original report follows.
+
+---
+
 Reported from: SCHMS+ unit-test suite (sncf-reseau/src/schms,
 tests/test-unitaire.lsp) run through `alfe --clautolisp --host mock
 --dialect strict`.
