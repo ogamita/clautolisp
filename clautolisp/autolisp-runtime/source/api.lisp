@@ -1097,8 +1097,18 @@ error wraps a non-autolisp-runtime condition."
 (defun reader-object->runtime-value (object)
   (typecase object
     (symbol-object
-     (intern-autolisp-symbol (symbol-object-canonical-name object)
-                             :original-name (symbol-object-canonical-name object)))
+     ;; AutoLISP defines nil as the symbol named NIL — by definition
+     ;; (a b c . nil) is identical to (a b c). Normalising the
+     ;; reader-time symbol NIL to CL nil here means downstream
+     ;; proper-list predicates, REVERSE / LENGTH / MAPCAR / etc.
+     ;; see the canonical empty-list terminator instead of an
+     ;; autolisp-symbol struct that happens to print as "nil".
+     (let ((name (symbol-object-canonical-name object)))
+       (cond
+         ((string-equal name "NIL")
+          nil)
+         (t
+          (intern-autolisp-symbol name :original-name name)))))
     (string-object
      (clautolisp.autolisp-runtime.internal::make-autolisp-string
       :value (string-object-value object)))
