@@ -390,6 +390,60 @@
     (is (null (call-autolisp-function nth-fn 9 '(10 20 30 40))))
     (is (equal '(3 2 1) (call-autolisp-function reverse-fn '(1 2 3))))))
 
+(test source-tail-nil-is-proper-list
+  ;; Regression: (a b c . NIL) and (a b c) are the same list — nil is
+  ;; the symbol NIL by definition (autolisp-spec ch. 5). The reader
+  ;; used to surface the explicit `. NIL' tail as an autolisp-symbol
+  ;; struct named NIL distinct from CL nil, so proper-list-requiring
+  ;; builtins (REVERSE, LENGTH, MAPCAR, MEMBER, …) raised
+  ;; :invalid-proper-list-argument on the dotted form. The reader-
+  ;; object normalisation maps that symbol to CL nil at the boundary.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((value (clautolisp.autolisp-runtime:autolisp-read-from-string
+                "(a b c . NIL)"))
+        (reverse-fn (autolisp-symbol-function (find-autolisp-symbol "REVERSE")))
+        (length-fn (autolisp-symbol-function (find-autolisp-symbol "LENGTH"))))
+    ;; Sanity check: the read value is a proper list at the CL level.
+    (is (= 3 (length value))
+        "(a b c . NIL) reads as a proper 3-element list")
+    (is (every (lambda (x)
+                 (typep x 'clautolisp.autolisp-runtime:autolisp-symbol))
+               value)
+        "elements are runtime autolisp-symbol structs")
+    ;; The bug: REVERSE / LENGTH on the dotted form.
+    (let ((reversed (call-autolisp-function reverse-fn value)))
+      (is (= 3 (length reversed))
+          "REVERSE on (a b c . NIL) returns a 3-element list"))
+    (is (= 3 (call-autolisp-function length-fn value))
+        "LENGTH on (a b c . NIL) returns 3")))
+
+(test quoted-nil-symbol-normalises-to-cl-nil
+  ;; Companion regression: source-level 'NIL must round-trip to the
+  ;; same value as plain nil. (eq 'NIL nil) -> T; (null 'NIL) -> T.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((quoted-nil (clautolisp.autolisp-runtime:autolisp-read-from-string "NIL"))
+        (lowercase  (clautolisp.autolisp-runtime:autolisp-read-from-string "nil")))
+    (is (null quoted-nil)
+        "the source token NIL reads as CL nil")
+    (is (null lowercase)
+        "the source token nil reads as CL nil")))
+
+(test reverse-empty-list-cases
+  ;; (reverse '()) and (reverse nil) both yield nil — both spellings
+  ;; of the empty list flow through to the same value.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((reverse-fn (autolisp-symbol-function (find-autolisp-symbol "REVERSE")))
+        (empty-list (clautolisp.autolisp-runtime:autolisp-read-from-string "()")))
+    (is (null empty-list)
+        "() reads as CL nil")
+    (is (null (call-autolisp-function reverse-fn empty-list))
+        "(reverse '()) -> nil")
+    (is (null (call-autolisp-function reverse-fn nil))
+        "(reverse nil) -> nil")))
+
 (test builtin-assoc
   (reset-autolisp-symbol-table)
   (install-core-builtins)
