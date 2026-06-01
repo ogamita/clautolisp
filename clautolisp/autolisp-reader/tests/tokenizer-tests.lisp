@@ -41,6 +41,33 @@ comment |;"
     (is (eq :symbol (token-kind strict-token)))
     (is (eq :real (token-kind lax-token)))))
 
+(test strict-real-accepts-dot-with-digits-on-either-side
+  ;; Regression for issues/closed/strict-dialect-autolisp-divergences
+  ;; § 4: vendor AutoCAD / BricsCAD read "42.", "5.", and ".5" as
+  ;; reals (42.0, 5.0, 0.5) even under the strict acceptor. The
+  ;; previous strict-real-lexeme-p required digits on BOTH sides of
+  ;; the dot, which contradicted vendor behaviour and broke a SCHMS+
+  ;; literal `(PARMI 42.)' that read as a symbol.
+  (dolist (case '(("42."  42.0d0)
+                  ("5."   5.0d0)
+                  (".5"   0.5d0)
+                  ("-42." -42.0d0)
+                  ("+.5"  0.5d0)
+                  ("-5."  -5.0d0)
+                  ("1.e3" 1000.0d0)
+                  (".5e2" 50.0d0)))
+    (destructuring-bind (lexeme expected) case
+      (let* ((result (tokenize-string lexeme))
+             (token (first (read-result-objects result))))
+        (is (eq :real (token-kind token))
+            "~S should tokenize as :real, got ~S"
+            lexeme (token-kind token))
+        (is (eql expected
+                 (clautolisp.autolisp-reader:token-value token))
+            "~S parses to ~S (got ~S)"
+            lexeme expected
+            (clautolisp.autolisp-reader:token-value token))))))
+
 (test integer-overflow-tokenization
   (let* ((result (tokenize-string "2147483648"
                                   :warn-on-integer-overflow-p t))

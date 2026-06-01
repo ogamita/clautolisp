@@ -4700,7 +4700,7 @@ The Phase-5 vendor citations below define the documented surface. Several lexica
 - Acceptance of hexadecimal floating syntax (`0x1p4`).
 - Trailing-junk strictness.
 
-For ~clautolisp~ the chosen lex model is: skip leading whitespace, accept optional sign, accept the longest prefix matching `digits ('.' digits?)? (('e'|'E') [+-]? digits)?`, no locale sensitivity (decimal-point only), no hexadecimal floating syntax. The probe suite in [[file:../sources/probe-atof.lsp][~probe-atof.lsp~]] records the AutoCAD / BricsCAD product behaviour when run via [[file:../scripts/run-probes.sh][~scripts/run-probes.sh~]].
+For ~clautolisp~ the chosen lex model is: skip leading whitespace, accept optional sign, accept the longest prefix matching `(digits '.' digits?) | (digits? '.' digits) | digits` followed by an optional exponent `(('e'|'E') [+-]? digits)`, no locale sensitivity (decimal-point only), no hexadecimal floating syntax. At least one digit must appear on *some* side of the dot — vendor AutoLISP reads `42.` as `42.0`, `5.` as `5.0`, and `.5` as `0.5`, distinct from CL's reading of `42.` as the integer 42. The probe suite in [[file:../sources/probe-atof.lsp][~probe-atof.lsp~]] records the AutoCAD / BricsCAD product behaviour when run via [[file:../scripts/run-probes.sh][~scripts/run-probes.sh~]].
 
 *** Tested Behaviour (BricsCAD V26 / macOS, 2026-04-26)
 Probe results from `results/bricscad/macos/20260426T122808Z/results.sexp`:

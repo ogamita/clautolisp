@@ -1,43 +1,55 @@
 strict-dialect-autolisp-divergences — strict dialect diverges from AutoCAD/BricsCAD AutoLISP
 ============================================================================================
 
-RESOLVED — shipped at clautolisp 1.0.99 → 1.0.100 / alfe 1.0.42 →
-1.0.43. The three divergences were independent and each fixed in
-the same commit. The fixes apply universally across every dialect
-(strict, autocad-2026, bricscad-v26, clautolisp), not just strict,
-because the vendor surface is shared.
+RESOLVED — four divergences shipped, all applying universally
+across every dialect (strict, autocad-2026, bricscad-v26,
+clautolisp) since the vendor surface is shared.
 
-  § 1. Float printer
+  § 1. Float printer (clautolisp 1.0.99 -> 1.0.100)
        autolisp-value->string (clautolisp/autolisp-builtins-core/
-       source/api.lisp ~L2372) now binds *read-default-float-format*
-       to double-float so SBCL/CCL elide the redundant marker. Output
-       matches vendor:
+       source/api.lisp ~L2372) binds *read-default-float-format*
+       to double-float so SBCL/CCL elide the redundant marker:
          (vl-princ-to-string 3.14)   => "3.14"
          (vl-prin1-to-string 42.0)   => "42.0"
          (vl-princ-to-string 1.0e20) => "1.0e20"  ; "e", never "d"
 
-  § 2. Relational operators
-       numeric-order-p (~L2537) now folds a non-numeric argument
-       (nil OR any non-number) to nil rather than signalling. The
+  § 2. Relational operators (same version)
+       numeric-order-p (~L2537) folds a non-numeric argument
+       (nil or any non-number) to nil rather than signalling. The
        SCHMS+ scanner idiom works:
          (while (<= 48 (car chars) 57) ...)
-       Vacuous calls ((<=), (<= 5)) still return T; all-numeric
+       Vacuous calls ((<=), (<= 5)) still T; all-numeric
        ordered/unordered cases unchanged.
 
-  § 3. SUBSTR length 0
-       builtin-substr (~L1453) now treats length 0 as valid (returns
-       the empty string), error only on strictly negative:
+  § 3. SUBSTR length 0 (same version)
+       builtin-substr (~L1453) treats length 0 as valid (returns
+       the empty string), errors only on strictly negative:
          (substr "abcde" 3 0)  => ""
          (substr "abcde" 3 -1) => :invalid-substr-length
 
-Three regression tests added in
-clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp:
+  § 4. Reader real-literal short forms (clautolisp 1.0.101 -> 1.0.102)
+       strict-real-lexeme-p (clautolisp/autolisp-reader/source/
+       tokenizer.lisp ~L45) now requires digits on EITHER side of
+       the dot, not both. Vendor reads "42." as 42.0, "5." as 5.0,
+       and ".5" as 0.5 — CL reads "42." as the integer 42; the
+       AutoLISP dialect overrides that:
+         (read "42.") => 42.0    (was the symbol |42.|)
+         (read "5.")  => 5.0     (was the symbol |5.|)
+         (read ".5")  => 0.5     (was the symbol |.5|)
+       The spec's chosen-lex-model paragraph (~L4703) is updated
+       to document the OR rule explicitly.
+
+Regression tests:
+- clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp
   - float-printer-omits-double-float-marker
   - numeric-order-folds-nil-to-nil
   - substr-zero-length-returns-empty-string
+- clautolisp/autolisp-reader/tests/tokenizer-tests.lisp
+  - strict-real-accepts-dot-with-digits-on-either-side
 
-Test sweep: clautolisp 100% (autolisp-builtins-core 1121 -> 1141);
-alfe 313/313.
+Test sweep: clautolisp 100% (autolisp-builtins-core 1121 -> 1141,
+autolisp-reader 76 -> 77 with the new dot-real test); alfe
+313/313.
 
 The original report follows.
 
@@ -81,14 +93,24 @@ affected.
 
 Why it matters: AutoLISP reals are IEEE doubles but print as
 `3.14`, `42.0`, `1.0e20` (note: `e`, never `d`). SCHMS+ builds
-human-facing strings from reals via the value printer, so the
-marker leaks into UI/description text. Observed in SCHMS+ as:
+human-facing strings from reals via the value printer. The
+description builder (src-vlx/validation.lsp, description_valeur) is:
+
+    (defun description_valeur (valeur)
+      (if (numberp valeur)
+        (vl-string-translate "." "," (vl-princ-to-string valeur))
+        (strcat "<<" (vl-princ-to-string valeur) ">>")))
+
+i.e. the French comma is an explicit `(vl-string-translate "." ",")`
+applied on top of `(vl-princ-to-string valeur)` -- it is NOT a
+locale/rtos effect (the suite host is en_EN). SCHMS+ therefore
+depends on `(vl-princ-to-string <real>)` yielding plain AutoLISP
+decimal syntax. Observed:
 
     expected "au moins 3,14"   actual "au moins 3,14d0"
-    expected "egale a 42,0"    actual "egale a <<42.>>"
 
-(the comma is SCHMS+ localisation applied on top of the printed
-real; the `d0` / odd `42.` form is the clautolisp artifact).
+(=> vl-princ-to-string gave "3.14d0", the translate only swapped
+the dot, leaving the `d0`).
 
 Expected: the float printer should emit AutoLISP float syntax
 (no `d0`; use `e` for the exponent if any), so that
@@ -147,6 +169,37 @@ Surfaces as 2 ERRORs (`validation/pk+pm_de_plus`,
 
 Note: a negative length is a genuine error; this report is only
 about length exactly 0, which AutoLISP treats as the empty string.
+
+--------------------------------------------------------------------
+4. Reader rejects real literals with no digit on one side of the dot
+--------------------------------------------------------------------
+
+The reader reads AutoLISP real literals of the forms `42.`, `3.`
+(trailing dot, no fractional digit) and `.5` (leading dot, no
+integer part) as SYMBOLS instead of reals. They are valid AutoLISP
+reals (42.0, 3.0, 0.5).
+
+Repro (alfe --clautolisp --host mock --dialect strict -norc):
+
+    (type (read "42.")) => SYM   (numberp (read "42.")) => nil   ; expect REAL / T (42.0)
+    (type (read "3."))  => SYM   (numberp (read "3."))  => nil   ; expect REAL / T (3.0)
+    (type (read ".5"))  => SYM   (numberp (read ".5"))  => nil   ; expect REAL / T (0.5)
+    (type (read "42.0"))=> REAL  (numberp (read "42.0"))=> T     ; OK
+
+In Common Lisp `42.` is the integer 42, so a CL reader would not
+produce a real here; the AutoLISP dialect must read these three
+forms as reals.
+
+Affected SCHMS+ code: the literal `(PARMI 42.)` in
+src-vlx/test-validation.lsp. Because `42.` reads as a non-number,
+description_valeur (see #1) takes its non-number branch and yields
+`<<42.>>` instead of `42,0`:
+
+    expected "egale a 42,0"   actual "egale a <<42.>>"
+
+This is the root cause of the `<<42.>>` form mentioned in passing
+elsewhere; it is a reader divergence, distinct from the printer
+issue in #1.
 
 Notes
 -----
