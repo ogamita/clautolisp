@@ -1,0 +1,114 @@
+strict-dialect-autolisp-divergences — strict dialect diverges from AutoCAD/BricsCAD AutoLISP
+============================================================================================
+
+Reported from: SCHMS+ unit-test suite (sncf-reseau/src/schms,
+tests/test-unitaire.lsp) run through `alfe --clautolisp --host mock
+--dialect strict`.
+alfe version: 1.0.42.
+
+Context
+-------
+
+The SCHMS+ production unit suite (177 tests) is being run on
+clautolisp via alfe to validate the strict dialect against the
+behaviour the same code shows under AutoCAD 2022+ and BricsCAD V25,
+where the suite passes. With alfe 1.0.42 the suite now runs to
+completion (after the `(quit)`/`vl-catch-all-apply` fix). Of the
+remaining failures, three are dialect-semantics divergences: the
+strict dialect behaves differently from the AutoLISP these sources
+target. Each is reduced to a minimal repro below.
+
+These are independent; numbering is just for reference.
+
+--------------------------------------------------------------------
+1. Float printing leaks the Common-Lisp double-float marker "d0"
+--------------------------------------------------------------------
+
+The value/print path renders a real with the CL double-float
+exponent marker `d0`, where AutoLISP renders a plain decimal.
+
+Repro (alfe --clautolisp --host mock --dialect strict -norc):
+
+    (vl-princ-to-string 3.14)    => "3.14d0"     expected "3.14"
+    (vl-prin1-to-string 42.0)    => "42.0d0"     expected "42.0"
+    (vl-princ-to-string 42.0)    => "42.0d0"     expected "42.0"
+
+`(rtos 3.14 2 2)` is correct ("3.14"); only the generic value
+printer (princ/prin1/print and their vl-*-to-string forms) is
+affected.
+
+Why it matters: AutoLISP reals are IEEE doubles but print as
+`3.14`, `42.0`, `1.0e20` (note: `e`, never `d`). SCHMS+ builds
+human-facing strings from reals via the value printer, so the
+marker leaks into UI/description text. Observed in SCHMS+ as:
+
+    expected "au moins 3,14"   actual "au moins 3,14d0"
+    expected "egale a 42,0"    actual "egale a <<42.>>"
+
+(the comma is SCHMS+ localisation applied on top of the printed
+real; the `d0` / odd `42.` form is the clautolisp artifact).
+
+Expected: the float printer should emit AutoLISP float syntax
+(no `d0`; use `e` for the exponent if any), so that
+`(vl-princ-to-string 3.14)` => "3.14" and `(vl-princ-to-string
+42.0)` => "42.0".
+
+--------------------------------------------------------------------
+2. Relational operators raise on a NIL argument instead of folding
+--------------------------------------------------------------------
+
+The comparison operators signal a hard error when an argument is
+nil, where AutoCAD/BricsCAD AutoLISP return nil. SCHMS+ relies on
+this as a loop-guard idiom: scan a char-code list with
+`(while (<= 48 (car chars) 57) ...)`, where `(car chars)` becomes
+nil at end of list and the comparison is expected to yield nil and
+stop the loop.
+
+Repro (alfe --clautolisp --host mock --dialect strict -norc):
+
+    (car nil)                 => nil          (correct)
+    (<= 48 (car nil) 57)      => runtime error:
+        INVALID-NUMBER-ARGUMENT: <= expects a number, got NIL.
+
+Expected (AutoCAD/BricsCAD): `(<= 48 nil 57)` => nil (the suite
+relies on this; it passes under both CADs). Same idiom is used
+with `<`, `>`, `>=` in the numeric validators.
+
+Affected SCHMS+ code: src-vlx/validation.lsp, validateur_reel /
+validateur_naturel / validateur_entier (the
+`(while (<= 48 (car chars) 57) ...)` scanners). Surfaces as 6
+ERRORs in the `validation.lsp` suite
+(real / min / max / liste validators).
+
+Please confirm the exact AutoCAD/BricsCAD behaviour and decide
+whether strict should fold a nil/non-numeric argument to nil for
+the relational operators (matching the CAD behaviour the suite
+depends on).
+
+--------------------------------------------------------------------
+3. (substr s start 0) errors instead of returning the empty string
+--------------------------------------------------------------------
+
+A zero length passed to substr raises, where AutoLISP returns "".
+
+Repro (alfe --clautolisp --host mock --dialect strict -norc):
+
+    (substr "abcde" 3 0)      => runtime error:
+        INVALID-SUBSTR-LENGTH: SUBSTR length must be positive, got 0.
+
+Expected (AutoCAD/BricsCAD): `(substr "abcde" 3 0)` => "".
+
+Affected SCHMS+ code: the PK+PM validator and
+cont_num/schms_separer pass a computed length of 0 to substr.
+Surfaces as 2 ERRORs (`validation/pk+pm_de_plus`,
+`cont_num/schms_separer/cas-standards`).
+
+Note: a negative length is a genuine error; this report is only
+about length exactly 0, which AutoLISP treats as the empty string.
+
+Notes
+-----
+
+All repros are single -x expressions; no SCHMS+ sources are needed
+to reproduce 1-3. The remaining suite failure not listed here is a
+genuine test bug on the SCHMS+ side and is being fixed there.
