@@ -430,6 +430,38 @@
     (is (null lowercase)
         "the source token nil reads as CL nil")))
 
+(test vl-catch-all-apply-traps-nested-quit-from-thunk
+  ;; Regression for the test-unitaire.lsp pattern: t:fail does (quit)
+  ;; from inside the thunk t:run-test wraps in
+  ;;   (vl-catch-all-apply 't:call-thunk …).
+  ;; The catch must convert (quit) to a catch-all error so the wrapper
+  ;; sees the failure and continues the run, rather than the process
+  ;; terminating on the first failing assertion.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((apply-fn (autolisp-symbol-function
+                    (find-autolisp-symbol "VL-CATCH-ALL-APPLY")))
+         (error-p-fn (autolisp-symbol-function
+                      (find-autolisp-symbol "VL-CATCH-ALL-ERROR-P")))
+         ;; Build a thunk that calls (quit) — mimics the t:fail path
+         ;; that prints a diagnostic then jumps out.
+         (thunk (clautolisp.autolisp-runtime:make-autolisp-subr
+                 "T-FAIL-MIMIC"
+                 (lambda ()
+                   (call-autolisp-function
+                    (autolisp-symbol-function
+                     (find-autolisp-symbol "QUIT"))))))
+         (result (call-autolisp-function apply-fn thunk nil)))
+    (is (string= "T"
+                 (autolisp-symbol-name
+                  (call-autolisp-function error-p-fn result)))
+        "thunk-internal (quit) surfaces as catch-all error")
+    ;; Outer code can now decide what to do — most importantly,
+    ;; control resumes after the catch rather than abnormally
+    ;; terminating.
+    (is (not (null result))
+        "control returned past the vl-catch-all-apply")))
+
 (test reverse-empty-list-cases
   ;; (reverse '()) and (reverse nil) both yield nil — both spellings
   ;; of the empty list flow through to the same value.
@@ -751,16 +783,38 @@
       (is (string= "T"
                    (autolisp-symbol-name
                     (call-autolisp-function error-p-fn failure)))))
-    (set-autolisp-errno 7)
-    (handler-case
-        (progn
-          (call-autolisp-function apply-fn
-                                  (intern-autolisp-symbol "EXIT")
-                                  nil)
-          (is nil))
-      (autolisp-termination (condition)
-        (is (eq :exit (autolisp-termination-kind condition)))
-        (is (= 7 (autolisp-errno)))))
+    ;; (exit) and (quit) are catchable by VL-CATCH-ALL-APPLY on the
+    ;; vendor surfaces; clautolisp matches. The previous expectation
+    ;; (let autolisp-termination propagate past the catch) was a bug
+    ;; against AutoCAD / BricsCAD documentation — test frameworks
+    ;; like test-unitaire.lsp's t:fail use (quit) as a non-local
+    ;; exit inside a (vl-catch-all-apply 't:call-thunk …) and expect
+    ;; it to surface as a catch-all error, not tear down the process.
+    (let ((trapped (call-autolisp-function apply-fn
+                                           (intern-autolisp-symbol "EXIT")
+                                           nil)))
+      (is (string= "T"
+                   (autolisp-symbol-name
+                    (call-autolisp-function error-p-fn trapped)))
+          "VL-CATCH-ALL-APPLY of EXIT returns a catch-all error")
+      (is (= 1 (autolisp-errno))
+          "trapped (exit) sets ERRNO 1")
+      (let ((message (call-autolisp-function message-fn trapped)))
+        (is (typep message 'autolisp-string))
+        (is (string= "quit / exit abort"
+                     (autolisp-string-value message))
+            "trapped (exit) carries the vendor canonical message")))
+    (let ((trapped (call-autolisp-function apply-fn
+                                           (intern-autolisp-symbol "QUIT")
+                                           nil)))
+      (is (string= "T"
+                   (autolisp-symbol-name
+                    (call-autolisp-function error-p-fn trapped)))
+          "VL-CATCH-ALL-APPLY of QUIT returns a catch-all error")
+      (let ((message (call-autolisp-function message-fn trapped)))
+        (is (string= "quit / exit abort"
+                     (autolisp-string-value message))
+            "trapped (quit) carries the same vendor canonical message")))
     (let ((value (call-autolisp-function
                   apply-fn
                   (intern-autolisp-symbol "VL-EXIT-WITH-VALUE")
