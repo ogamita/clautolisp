@@ -27,8 +27,9 @@ clautolisp-debugger.issue  -- parent tracking issue; see the plan in
     debugger-ui-emacs-aldb.issue         (Phase 7)
     deferred-debugger-compiler-two-bodies.issue  (Phase 8, deferred)
     deferred-debugger-remote-cad.issue           (Phase 9, deferred)
-  Follow-up (user-facing surface, spec issue):
+  Follow-up (user-facing surface, spec issues):
     debugger-public-interface-and-on-error.issue  (clal-* API + --on-error + aldb conn)
+    salve-environment.issue                        (SALVE: SLIME-like Emacs env; aldb ⊂ salve)
 
 
 
