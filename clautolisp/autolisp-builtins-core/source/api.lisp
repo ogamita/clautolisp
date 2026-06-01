@@ -1460,11 +1460,17 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
        "SUBSTR"
        "SUBSTR expects a positive 1-based start index, got ~S."
        start))
-    (when (and length (<= (require-int32 length "SUBSTR") 0))
+    (when (and length (< (require-int32 length "SUBSTR") 0))
+      ;; AutoLISP allows length 0 — returns the empty string —
+      ;; matching vendor AutoCAD / BricsCAD behaviour. Only a
+      ;; strictly negative length is an error. SCHMS+'s PK+PM
+      ;; validator and cont_num/schms_separer pass a computed
+      ;; length of 0 to substr; see
+      ;; issues/closed/strict-dialect-autolisp-divergences.issue §3.
       (signal-builtin-argument-error
        :invalid-substr-length
        "SUBSTR"
-       "SUBSTR length must be positive, got ~S."
+       "SUBSTR length must be non-negative, got ~S."
        length))
     (let ((start-index (1- start-value)))
       (if (>= start-index (length value))
@@ -2380,7 +2386,13 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
     ((integerp object)
      (format nil "~D" object))
     ((floatp object)
-     (princ-to-string object))
+     ;; AutoLISP reals print without the CL double-float marker
+     ;; ("3.14", not "3.14d0"; "1.0e20", not "1.0d20"). Binding
+     ;; *read-default-float-format* to double-float tells SBCL/CCL
+     ;; the marker is redundant and they elide it — same printed
+     ;; form vendor AutoLISP emits.
+     (let ((*read-default-float-format* 'double-float))
+       (princ-to-string object)))
     ((typep object 'autolisp-string)
      (if princp
          (autolisp-string-value object)
@@ -2545,15 +2557,28 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
   object)
 
 (defun numeric-order-p (arguments predicate operator-name)
-  (dolist (argument arguments)
-    (require-number argument operator-name))
-  (if (or (null arguments)
-          (null (rest arguments))
-          (loop for (left right) on arguments
-                while right
-                always (funcall predicate left right)))
-      (intern-autolisp-symbol "T")
-      nil))
+  (declare (ignore operator-name))
+  ;; AutoLISP semantics (AutoCAD / BricsCAD): the relational
+  ;; operators <, <=, >, >= fold a non-numeric argument (including
+  ;; nil) to nil rather than signalling a type error. Loop-guard
+  ;; idioms depend on it:
+  ;;   (while (<= 48 (car chars) 57) ...)
+  ;; where (car chars) becomes nil at end of list and the
+  ;; comparison must yield nil to stop the loop. SCHMS+'s numeric
+  ;; validators (validateur_reel / _naturel / _entier) rely on
+  ;; exactly this shape — see
+  ;; issues/closed/strict-dialect-autolisp-divergences.issue §2.
+  (cond
+    ((null arguments)
+     (intern-autolisp-symbol "T"))
+    ((not (every #'numberp arguments))
+     nil)
+    ((or (null (rest arguments))
+         (loop for (left right) on arguments
+               while right
+               always (funcall predicate left right)))
+     (intern-autolisp-symbol "T"))
+    (t nil)))
 
 (defun builtin-< (&rest arguments)
   (numeric-order-p arguments #'< "<"))
