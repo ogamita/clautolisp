@@ -133,8 +133,17 @@ phase adds FiveAM tests in the matching =.../tests= system and bumps the
 version. *Version policy:* the debugger is a significant feature addition
 to clautolisp /and/ alfe, so the series starts at *1.1.0* (a minor bump
 from the current 1.0.x) and climbs from there. Bump
-=tools/clautolisp/source/version.lisp= and, for alfe-touching work (Phase
-9 and the Emacs-RPC shim), =autolisp-front-end/tools/alfe/source/version.lisp=.
+=tools/clautolisp/source/version.lisp= and
+=autolisp-front-end/tools/alfe/source/version.lisp=.
+
+/Both/ version files move into the 1.1 series on this branch, even though
+the bulk of the per-change DEVELOP bumps so far are clautolisp's. alfe is
+pinned at *1.1.0* as its 1.1-series starting point; its DEVELOP counter
+only climbs once alfe /source/ actually changes on this branch (Phase 9 —
+the remote-CAD backend — and any alfe-side wiring of the Emacs RPC). Until
+then alfe stays at 1.1.0, which is also already ahead of master's 1.0.x,
+so the merge-back convention (new = 0.0.1 + max(ours, theirs)) keeps the
+debugger branch ahead regardless of how master's alfe climbs within 1.0.x.
 
 ** 3a. The interpreter two-bodies mechanism  (§5 pulled forward; supersedes §11.3)
 :PROPERTIES: :CUSTOM_ID: two-bodies-interp :END:
