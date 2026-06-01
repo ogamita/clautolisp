@@ -4306,3 +4306,103 @@ character code. The opens are diagnostic-suppressed."
         ;; UTF-16-BE é = 0x00 0xE9 — same bytes as LE, just ordered.
         (is (member #xE9 bytes))
         (is (member #x00 bytes))))))
+
+;;;; ====================================================================
+;;;; Strict-dialect divergences (issues/closed/strict-dialect-autolisp-
+;;;; divergences.issue)
+;;;;
+;;;; Three independent AutoLISP semantics where clautolisp diverged from
+;;;; AutoCAD / BricsCAD; each surfaced in the SCHMS+ unit-test suite.
+
+;;; § 1. Float printing must not leak the CL double-float marker.
+
+(test float-printer-omits-double-float-marker
+  ;; AutoLISP reals print as "3.14", "42.0", "1.0e20" — never with the
+  ;; CL "d0" / "d20" exponent marker. clautolisp.autolisp-value->string
+  ;; binds *read-default-float-format* to double-float so SBCL elides
+  ;; the marker.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((princ-fn (autolisp-symbol-function
+                   (find-autolisp-symbol "VL-PRINC-TO-STRING")))
+        (prin1-fn (autolisp-symbol-function
+                   (find-autolisp-symbol "VL-PRIN1-TO-STRING"))))
+    (flet ((to-string (fn value)
+             (autolisp-string-value (call-autolisp-function fn value))))
+      (is (string= "3.14" (to-string princ-fn 3.14d0)))
+      (is (string= "42.0" (to-string princ-fn 42.0d0)))
+      (is (string= "3.14" (to-string prin1-fn 3.14d0)))
+      (is (string= "42.0" (to-string prin1-fn 42.0d0)))
+      ;; Scientific notation uses "e", never "d".
+      (let ((rendered (to-string princ-fn 1.0d20)))
+        (is (search "e" rendered)
+            "scientific notation uses e marker, got ~S" rendered)
+        (is (null (search "d" rendered))
+            "scientific notation must NOT use d marker, got ~S" rendered)))))
+
+;;; § 2. Relational operators fold non-numeric arguments to nil.
+
+(test numeric-order-folds-nil-to-nil
+  ;; (<= 48 nil 57) and friends return nil rather than signalling.
+  ;; AutoLISP loop-guard idiom:
+  ;;   (while (<= 48 (car chars) 57) ...)
+  ;; depends on it — (car chars) becomes nil at end of list and the
+  ;; comparison must yield nil to break the while.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((lt   (autolisp-symbol-function (find-autolisp-symbol "<")))
+        (le   (autolisp-symbol-function (find-autolisp-symbol "<=")))
+        (gt   (autolisp-symbol-function (find-autolisp-symbol ">")))
+        (ge   (autolisp-symbol-function (find-autolisp-symbol ">="))))
+    ;; The vendor-canonical SCHMS+ idiom: middle arg nil -> nil.
+    (is (null (call-autolisp-function le 48 nil 57)))
+    (is (null (call-autolisp-function lt 48 nil 57)))
+    ;; First / last position also nil.
+    (is (null (call-autolisp-function le nil 1)))
+    (is (null (call-autolisp-function ge 1 nil)))
+    ;; Non-nil non-numeric (a symbol) also folds to nil.
+    (is (null (call-autolisp-function lt 1 (intern-autolisp-symbol "FOO"))))
+    ;; All-numeric ordered still T.
+    (is (string= "T"
+                 (autolisp-symbol-name
+                  (call-autolisp-function le 1 2 3))))
+    (is (string= "T"
+                 (autolisp-symbol-name
+                  (call-autolisp-function gt 3 2 1))))
+    ;; All-numeric unordered still nil.
+    (is (null (call-autolisp-function le 2 1)))
+    ;; Vacuous calls (0 or 1 argument) still T.
+    (is (string= "T"
+                 (autolisp-symbol-name
+                  (call-autolisp-function le))))
+    (is (string= "T"
+                 (autolisp-symbol-name
+                  (call-autolisp-function le 5))))))
+
+;;; § 3. (substr s start 0) returns the empty string.
+
+(test substr-zero-length-returns-empty-string
+  ;; AutoLISP accepts length 0 — returns "". Only a strictly
+  ;; negative length is a type error.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((substr-fn (autolisp-symbol-function (find-autolisp-symbol "SUBSTR"))))
+    (let ((result (call-autolisp-function substr-fn
+                                          (make-autolisp-string "abcde")
+                                          3 0)))
+      (is (typep result 'autolisp-string))
+      (is (string= "" (autolisp-string-value result))))
+    ;; Larger length still works as before.
+    (let ((result (call-autolisp-function substr-fn
+                                          (make-autolisp-string "abcde")
+                                          2 3)))
+      (is (string= "bcd" (autolisp-string-value result))))
+    ;; Negative length still signals.
+    (handler-case
+        (progn
+          (call-autolisp-function substr-fn
+                                  (make-autolisp-string "abcde")
+                                  3 -1)
+          (is nil "negative length should have signalled"))
+      (autolisp-runtime-error (c)
+        (is (eq :invalid-substr-length (autolisp-runtime-error-code c)))))))
