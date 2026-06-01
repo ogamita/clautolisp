@@ -1187,16 +1187,52 @@ break-on-caught is enabled; NIL by default (off).")
             (append-proper-and-tail (rest elements) tail))))
 
 (defun reader-object->runtime-value (object)
-  ;; When clautolisp.source:*track-source-positions* is set (a debug
-  ;; load), every compound form's runtime cons is recorded against the
-  ;; reader span it came from, so clautolisp.source:position-of can map
-  ;; an executing form back to (file line column). Atoms lower to bare
-  ;; CL values that cannot carry a position; the debugger resolves their
-  ;; positions through the enclosing form's per-function form-id table.
+  ;; CAUTION (DEBUGGER): every branch below intentionally drops the
+  ;; reader-object's source span. The runtime-value type is positional-
+  ;; info-free: strings carry only their value, integers/reals only
+  ;; their value, symbol-objects only their canonical name, cons-
+  ;; objects only their element/tail structure, and quote-objects only
+  ;; the quoted form.
+  ;;
+  ;; The debugger work (clautolisp-debugger) took exactly the side-table
+  ;; route this caution predicted: source positions are NOT threaded
+  ;; into the runtime values here. Instead, when
+  ;; clautolisp.source:*track-source-positions* is set (a debug load),
+  ;; the COMPOUND-form branches below record each freshly-consed runtime
+  ;; cons against the reader span it came from, in the EQ-keyed parallel
+  ;; side-table clautolisp.source:*source-position-table* (see the
+  ;; CONS-OBJECT and QUOTE-OBJECT branches). clautolisp.source:position-of
+  ;; then maps an executing compound form back to (file line column).
+  ;; Atoms stay bare (a fixnum / interned symbol cannot be EQ-keyed
+  ;; uniquely), so the debugger resolves an atom's position through its
+  ;; enclosing form's per-function form-id table, not through this
+  ;; function. The NORMALISATION below is the right place; the SPAN
+  ;; capture is a side effect layered on top, never a different lowering.
+  ;;
+  ;; The NIL normalisation in the SYMBOL-OBJECT branch is consistent
+  ;; with that side-table direction: CL nil is a singleton with no
+  ;; meaningful source position (it appears from a hundred call sites
+  ;; — literal `nil`, literal `()`, function returns, default arg
+  ;; values, …), so it is never span-keyed; only compound conses are.
   (typecase object
     (symbol-object
-     (intern-autolisp-symbol (symbol-object-canonical-name object)
-                             :original-name (symbol-object-canonical-name object)))
+     ;; AutoLISP defines nil as the symbol named NIL — by definition
+     ;; (a b c . nil) is identical to (a b c). Normalising the
+     ;; reader-time symbol NIL to CL nil here means downstream
+     ;; proper-list predicates, REVERSE / LENGTH / MAPCAR / etc.
+     ;; see the canonical empty-list terminator instead of an
+     ;; autolisp-symbol struct that happens to print as "nil".
+     ;;
+     ;; T is intentionally NOT normalised the same way: (a b c . T)
+     ;; is a legitimate improper list (T is just a symbol, not a
+     ;; list terminator), so collapsing source-level 'T to CL t
+     ;; would change observable list shape, not just print form.
+     (let ((name (symbol-object-canonical-name object)))
+       (cond
+         ((string-equal name "NIL")
+          nil)
+         (t
+          (intern-autolisp-symbol name :original-name name)))))
     (string-object
      (clautolisp.autolisp-runtime.internal::make-autolisp-string
       :value (string-object-value object)))
