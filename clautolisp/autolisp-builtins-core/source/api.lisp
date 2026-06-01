@@ -533,9 +533,29 @@ extension; --~(~A~) has no per-call encoding control on LOAD."
         (set-autolisp-errno 0)
         result)
     (autolisp-termination (condition)
-      ;; (exit), (quit) -- these stop the whole evaluation context
-      ;; and are documented as not catchable by vl-catch-all-apply.
-      (error condition))
+      ;; (exit) and (quit) are catchable by VL-CATCH-ALL-APPLY on
+      ;; AutoCAD and BricsCAD: the vendor implementations signal a
+      ;; normal error with message "quit / exit abort" that flows
+      ;; through ordinary error handlers. Test frameworks (e.g.
+      ;; test-unitaire.lsp's t:fail / t:throw / t:run-test path)
+      ;; rely on this — wrapping the test in VL-CATCH-ALL-APPLY and
+      ;; expecting a thrown (quit) to surface as a catch-all error
+      ;; rather than tear down the process.
+      ;;
+      ;; When no VL-CATCH-ALL-APPLY is on the stack, the condition
+      ;; still propagates past the runtime's top-level handler in
+      ;; clautolisp/tools/clautolisp/source/main.lisp (and the
+      ;; equivalent in alfe), which exits the process cleanly —
+      ;; matching the vendor "exits when not trapped" surface.
+      (set-autolisp-errno 1)
+      (make-autolisp-catch-all-error
+       ;; Vendor canonical message ("quit / exit abort") is the same
+       ;; regardless of whether the source called (exit) or (quit) —
+       ;; the runtime distinguishes them via the :kind slot on the
+       ;; underlying condition for code that inspects the catch-all
+       ;; error stack via VL-CATCH-ALL-ERROR-STACK.
+       "quit / exit abort"
+       condition))
     (autolisp-namespace-exit (condition)
       ;; vl-exit-with-error / vl-exit-with-value are documented as
       ;; catchable: they leave the dynamic extent of the apply with
