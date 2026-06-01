@@ -43,6 +43,13 @@
                always (digit-char-10-p (char lexeme index))))))
 
 (defun strict-real-lexeme-p (lexeme)
+  ;; AutoLISP real literals accept "42.", "5.", and ".5" — at least
+  ;; one digit on *some* side of the dot is enough. Vendor AutoCAD
+  ;; and BricsCAD both read all three as reals (42.0, 5.0, 0.5).
+  ;; Common Lisp differs (CL reads "42." as the integer 42) — the
+  ;; AutoLISP dialect overrides that here; the spec's clautolisp
+  ;; lex model under "atof" already documents the OR rule, and the
+  ;; lax acceptor below uses the same one.
   (let* ((length (length lexeme))
          (start (if (and (> length 0)
                          (member (char lexeme 0) '(#\+ #\-)))
@@ -52,8 +59,8 @@
          (exp-pos (or (position #\e lexeme) (position #\E lexeme)))
          (fraction-end (or exp-pos length)))
     (and dot-pos
-         (> dot-pos start)
-         (> fraction-end (1+ dot-pos))
+         (or (> dot-pos start)
+             (> fraction-end (1+ dot-pos)))
          (or (null exp-pos) (< dot-pos exp-pos))
          (loop for index from start below dot-pos
                always (digit-char-10-p (char lexeme index)))
