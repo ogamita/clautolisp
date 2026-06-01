@@ -4810,6 +4810,22 @@ This function is part of the language/host formatting boundary, not purely a gen
   - `5` fractional
 - If `mode` and `precision` are omitted, Autodesk documents that `rtos` uses the current `LUNITS` and `LUPREC` settings.
 - Autodesk documents that the resulting string is affected by `UNITMODE` for engineering, architectural, and fractional output, and by `DIMZIN` for zero suppression.
+- **Locale insensitivity (normative).** `rtos` always uses `.` as
+  the decimal separator regardless of the host's `LC_NUMERIC` /
+  `LANG` / `LC_ALL` environment, regardless of the OS-level
+  locale, and regardless of the `DIMDSEP` system variable.
+  `DIMDSEP` controls only the dimension-text renderer
+  (see § /System Variable Entry: DIMDSEP/), not the AutoLISP
+  numeric printer. The complementary `(atof)` rejects locale-
+  comma input the same way — see the
+  `(atof "3,5") -> 3.0` probe in § /atof/. clautolisp matches
+  this contract end-to-end: the value printer
+  (`autolisp-value->string`, princ / prin1 / vl-*-to-string)
+  is also locale-insensitive — `(vl-princ-to-string 3.14)` is
+  `"3.14"` on every locale, every host. User code that wants a
+  comma-separator UI does the substitution itself; the AutoLISP
+  runtime stays in `.`-land so that
+  `(atof (rtos n))` round-trips on every machine.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
