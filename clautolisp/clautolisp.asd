@@ -586,6 +586,36 @@
                          (uiop:symbol-call :clautolisp.ui.ncurses.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-debug-ui-emacs"
+  :description "Emacs (aldb) debugger UI: S-expression RPC shim implementing the UI protocol (debugger §20)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-debug-ui")
+  :serial t
+  :components
+  ((:file "autolisp-debug-ui-emacs/source/package")
+   (:file "autolisp-debug-ui-emacs/source/emacs-ui"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-debug-ui-emacs/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-debug-ui-emacs/tests"
+  :description "FiveAM tests for the Emacs (aldb) RPC shim, over string streams."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-debug-ui-emacs" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-debug-ui-emacs/tests/package")
+   (:file "autolisp-debug-ui-emacs/tests/emacs-ui-tests")
+   (:file "autolisp-debug-ui-emacs/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.ui.emacs.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/tests"
   :description "Aggregate tests for the clautolisp subproject."
   :author "Codex"
@@ -602,7 +632,8 @@
                "clautolisp/autolisp-debug/tests"
                "clautolisp/autolisp-inspect/tests"
                "clautolisp/autolisp-debug-ui-dumb/tests"
-               "clautolisp/autolisp-debug-ui-ncurses/tests")
+               "clautolisp/autolisp-debug-ui-ncurses/tests"
+               "clautolisp/autolisp-debug-ui-emacs/tests")
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (progn
@@ -631,4 +662,6 @@
                            (uiop:symbol-call :clautolisp.ui.dumb.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.ui.ncurses.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.ui.emacs.tests
                                              :run-all-tests))))
