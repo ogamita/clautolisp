@@ -1,0 +1,225 @@
+salve-environment — SALVE: Superior AutoLisp Versatile Environment (a SLIME-like Emacs frontend)
+===============================================================================================
+
+Status: SPECIFICATION (draft for review; no implementation until approved).
+
+See also:
+  clautolisp/documentation/clautolisp-debugger-spec.org (§17 UI protocol, §20 emacs/aldb, §20.1 RPC)
+  clautolisp/documentation/clautolisp-debugger-remote-cad-spec.org (R-III wire protocol, R-XII open questions)
+  clautolisp/documentation/clautolisp-debugger-design-notes.org (DN-10 aldb RPC: wire is data, not code)
+  issues/open/debugger-public-interface-and-on-error.issue (the clal-* API + --on-error + aldb conn; SALVE builds on its connection options)
+  issues/open/clautolisp-debugger.issue (parent debugger work, Phases 0–7 done)
+  clautolisp/autolisp-debug-ui-emacs/ (the aldb shim + aldb.el — SALVE's debugger half)
+
+The idea in one sentence
+------------------------
+
+SALVE is to clautolisp/alfe what SLIME is to a Common Lisp: an Emacs
+front-end driving a "superior" AutoLISP process (clautolisp in-image, or
+alfe as a gateway to a real CAD) over an S-expression RPC, with a REPL,
+load/eval, arglist/completion, jump-to-definition, compiler/reader
+diagnostics — and the debugger (aldb) embedded as its SLDB.
+
+  aldb  ⊂  SALVE        (as  sldb ⊂ slime)
+
+The crucial observation: we already built the HARD half. The §20.1 /
+DN-10 line-oriented S-expr RPC, the snapshot/inspector serialization, and
+aldb.el's process-filter dispatch loop are exactly the swank-style spine a
+SLIME-like environment needs. SALVE generalizes that one channel from
+"debugger control" to "full interaction".
+
+Why a new protocol, not swank compatibility
+-------------------------------------------
+
+We deliberately do NOT aim for wire-level swank compatibility, for the
+SAME reason the debugger spec refused to reuse the host CL debugger
+(§1.3, §10.3): swank/SLDB assume CL's condition system, restarts, and
+INVOKE-DEBUGGER, which AutoLISP DOES NOT HAVE. aldb exists precisely
+because of that impedance mismatch. Forcing swank at the protocol level
+would reopen it.
+
+Decision: a clean SALVE protocol that is a strict SUPERSET of the aldb
+wire (DN-10: everything sent to Emacs is DATA, never code; user text
+becomes code only on the CL/backend side via the AutoLISP reader). The
+Emacs side, salve.el, MODELS slime.el's UX (familiar keybindings, a
+comint REPL, an inspector buffer, SLDB-style debugger) so SLIME users feel
+at home — without the semantic lie that AutoLISP is CL.
+
+----------------------------------------------------------------------
+Architecture — two topologies, one protocol
+----------------------------------------------------------------------
+
+Topology 1 — clautolisp as inferior-lisp (in-image; available NOW)
+
+    Emacs  <--SALVE RPC-->  clautolisp
+                              (evaluates AutoLISP in-process; MockHost/
+                               NullHost; debugger in-image, Phases 0–7)
+
+  Everything in Phases 0–7 applies unchanged. This is the MVP target.
+
+Topology 2 — alfe as inferior-lisp AND CAD gateway (your idea)
+
+    Emacs  <--SALVE RPC-->  alfe  <--CAD wire-->  native AutoLISP in CAD
+                            (reader + instrumenter + debugger library +
+                             inspector live in alfe; the CAD executes the
+                             instrumented code — the remote-CAD addendum)
+
+  alfe is ALREADY the CAD gateway; SALVE adds a swank-like server facing
+  Emacs while alfe keeps speaking its CAD protocol on the other side.
+  This is the Emacs face of the remote-CAD addendum (Phase 9).
+
+Both topologies speak the SAME SALVE protocol; salve.el does not care which
+backend it is attached to (mirrors §17's UI-agnostic design and DN-10's
+transport-agnosticism).
+
+----------------------------------------------------------------------
+The SALVE protocol (superset of the aldb wire, §20.1 / DN-10)
+----------------------------------------------------------------------
+
+Same transport discipline as aldb: line-oriented readable S-expressions,
+no length prefixes / encoding negotiation; transport pluggable (TCP
+listener, stdio, or a reused channel). Same data-not-code rule: previews,
+bindings, arglists, completions, definition locations are sent as
+strings / tagged lists of strings+integers; only :eval / :load / :inspect
+arguments are read as AutoLISP source on the backend.
+
+Request/response is correlated by an id (like R-III.5 REQ-P2), since SALVE
+is request-driven from Emacs (unlike aldb, which is event-driven at a
+stop). Async events (debugger stop, output, diagnostics) carry no id.
+
+  Emacs -> backend (requests, each with a correlation id):
+    (:eval id FORM-STRING [package/namespace])    evaluate, reply :value/:error
+    (:load id PATH)                                 load a file, reply notes
+    (:compile id PATH | :string STRING)             reader/compile diagnostics
+    (:arglist id NAME)                              lambda-list of NAME
+    (:completions id PREFIX)                        symbol completions
+    (:definition id NAME)                           source location(s) of NAME
+    (:describe id NAME)                             value/function/plist summary
+    (:interrupt id)                                 cooperative interrupt (R-X.2)
+    (:inspect id FORM-STRING)                       open inspector (reuses Part IV)
+    (:debugger-command id COMMAND)                  forward an aldb command
+    ... plus every aldb command (the debugger sub-protocol, unchanged)
+
+  backend -> Emacs (replies + async events):
+    (:return id RESULT-PREVIEW)                     eval/load/etc result
+    (:error id MESSAGE)                             request-level error
+    (:arglist id LAMBDA-LIST-STRING)
+    (:completions id (NAME ...))
+    (:definition id ((FILE LINE COL) ...))
+    (:diagnostics id ((SEVERITY MESSAGE (FILE LINE COL)) ...))
+    (:output TEXT)                                  princ/prompt output (async)
+    ... plus every aldb notification (:breakpoint-hit, :inspect-page, …)
+
+Data we ALREADY have to back these (little new infrastructure):
+  - arglist:      autolisp-usubr lambda-list (already stored).
+  - completions:  the runtime symbol table (already exists).
+  - definition:   source positions per defun (source-map + Phase-0/§7
+                  function-debug-metadata; already produced under tracking).
+  - diagnostics:  the reader already emits diagnostics carrying source
+                  spans (read-result diagnostics).
+  - inspect:      clautolisp.inspect (Phase 4), already on the aldb wire.
+  - eval/load:    autolisp-eval / load (already exist; --interactive proves
+                  the REPL path).
+  - debugger:     aldb (Phase 7), embedded verbatim.
+
+So most of SALVE is wiring existing capabilities onto the generalized
+channel, not new engine work.
+
+----------------------------------------------------------------------
+Emacs side: salve.el (models slime.el)
+----------------------------------------------------------------------
+
+  - salve-mode REPL buffer (comint-based): eval region/defun/buffer,
+    history, output stream from :output.
+  - salve-arglist in the echo area (eldoc-style) from :arglist.
+  - completion-at-point from :completions.
+  - M-. / M-, jump-to-definition + back, from :definition.
+  - compilation/reader diagnostics as overlays / a *salve-notes* buffer,
+    from :diagnostics (reusing the source-span info).
+  - the inspector buffer and the debugger: aldb.el embedded as SALVE's
+    SLDB (its buffers/keys already exist, Phase 7).
+  - connection: salve-connect (reuse aldb-connect's transport plumbing);
+    M-x salve to start clautolisp/alfe as an inferior process and attach.
+
+aldb.el becomes a component loaded by salve.el (or salve.el requires it),
+exactly as slime.el contains sldb.el.
+
+----------------------------------------------------------------------
+Packaging / naming
+----------------------------------------------------------------------
+
+  - CL server: clautolisp.salve — the swank-like server, a SUPERSET of the
+    clautolisp.ui.emacs (aldb) shim; ideally aldb's emacs-ui is refactored
+    to be the debugger slice of the SALVE server rather than a parallel
+    shim. Shared system loaded by BOTH clautolisp and alfe (both want to be
+    inferior-lisp).
+  - Emacs: salve.el (with aldb.el embedded as its SLDB).
+  - Name: SALVE = Superior AutoLisp Versatile Environment (also Latin
+    "salve" = hello; and a nod to SLIME). aldb ⊂ salve as sldb ⊂ slime.
+  - Connection options: build on the aldb --aldb-listen/--aldb-stdio
+    transport from debugger-public-interface-and-on-error.issue Part C;
+    likely rename/generalize to --salve-listen/--salve-stdio (or keep aldb
+    names and have SALVE subsume them). Confirm.
+
+----------------------------------------------------------------------
+Hard constraint / honest blocker
+----------------------------------------------------------------------
+
+Topology 1 (clautolisp in-image): EVERYTHING is feasible now.
+
+Topology 2 (alfe -> CAD): eval / load / arglist / completion / definition /
+diagnostics / inspect-of-serializable are feasible now over alfe's existing
+channel. BUT live stepping/breakpoints in the CAD are GATED ON REQ-T1 (the
+addendum's synchronous mid-evaluation channel): the current alfe<->CAD
+file-IPC is batch/poll and not readable mid-evaluation. Until REQ-T1 is
+met, Topology-2 debugging is POST-MORTEM only (break-on-error +
+reconstructed backtrace), advertised via the protocol-version capability
+flags (R-VIII §11). Live debug is the same blocker as Phase 9.
+
+----------------------------------------------------------------------
+Phasing (proposed; gated on review)
+----------------------------------------------------------------------
+
+  S1  Generalize the aldb wire into the SALVE protocol (correlation ids,
+      :output, the request/reply envelope); refactor clautolisp.ui.emacs
+      into clautolisp.salve with aldb as its debugger slice. Headless tests
+      over string streams, as the aldb shim already does.
+  S2  REPL + :eval + :output + :load on the wire; salve.el comint REPL +
+      salve-connect. (Topology 1.)
+  S3  :arglist, :completions, :definition, :diagnostics (all from existing
+      data: lambda-lists, symbol table, source-map, reader diagnostics).
+  S4  Embed aldb.el into salve.el as SLDB; inspector buffer.
+  S5  Topology 2: run the SALVE server inside alfe as the inferior-lisp,
+      bridging to the CAD; eval/load/etc. live, debugging post-mortem.
+  S6  (Deferred, = Phase 9 REQ-T1) live stepping/breakpoints in the CAD.
+
+----------------------------------------------------------------------
+Open questions (to reconcile during review)
+----------------------------------------------------------------------
+
+  1. "Which REPL am I typing in?" (addendum R-XII.1, now user-visible).
+     For Topology 2, RECOMMEND: the REPL IS the CAD's evaluator; alfe is
+     pure transport + instrumenter + debugger host. Confirm — a split
+     evaluator (alfe evaluates non-CAD forms locally, forwards CAD
+     primitives) would complicate the snapshot/binding model.
+  2. swank coexistence: should SALVE optionally ride an existing swank
+     socket (§20.1 allows it) so a user already running SLIME reuses the
+     connection? Probably a later add; the clean SALVE protocol stands alone.
+  3. Protocol relationship to aldb: refactor aldb's shim INTO the SALVE
+     server (preferred — one channel), or keep aldb standalone and have
+     SALVE embed it? RECOMMEND refactor: aldb becomes the debugger messages
+     of the one SALVE protocol.
+  4. Naming of connection options (--salve-* vs reuse --aldb-*).
+  5. Scope of "versatile": do we include project/load-system management,
+     or keep SALVE to interaction (eval/debug/inspect/navigate) and leave
+     project management to a clautolisp-mode major mode (separate spec, as
+     §20.4 already scopes out for aldb)? RECOMMEND keep SALVE to
+     interaction; clautolisp-mode is a separate concern.
+  6. Multiple connections / multiple CAD documents (one SALVE server,
+     several backend sessions) — mirror §23 / addendum R-VI (per-document
+     sessions). Likely later.
+
+This issue is intentionally a design sketch. It does not commit to an
+implementation until reviewed alongside
+debugger-public-interface-and-on-error.issue, whose Part C connection
+options SALVE extends.
