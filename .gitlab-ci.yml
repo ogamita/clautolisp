@@ -46,14 +46,33 @@ build:clautolisp-ci-image:
         --push \
         .
 
+# The clautolisp/autolisp-debug subsystem depends on bordeaux-threads
+# (added in the debugger merge). The Docker image's Quicklisp install
+# fetches it on demand but the SBCL run that follows must run *with*
+# the install dir on its load path. Pre-warm it here so make
+# test-sbcl's --non-interactive run finds it without a recursive
+# quickload prompt.
+.pre-warm-quicklisp-sbcl: &pre-warm-quicklisp-sbcl
+  - sbcl --noinform --no-userinit --non-interactive
+         --load /root/quicklisp/setup.lisp
+         --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)'
+
+.pre-warm-quicklisp-ccl: &pre-warm-quicklisp-ccl
+  - ccl --no-init -b
+        -e '(load "/root/quicklisp/setup.lisp")'
+        -e '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)'
+        -e '(ccl:quit)'
+
 test:clautolisp:sbcl:
   stage: test
   script:
+    - *pre-warm-quicklisp-sbcl
     - make -C clautolisp test-sbcl
 
 test:clautolisp:ccl:
   stage: test
   script:
+    - *pre-warm-quicklisp-ccl
     - make -C clautolisp test-ccl
 
 test:clautolisp:file-compat:sbcl:
