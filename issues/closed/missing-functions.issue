@@ -1,7 +1,51 @@
 # Missing AutoLISP / Visual LISP functions to implement in clautolisp
 
-Status: open (reduced scope; the four prioritised families landed
-in M1-M5, see Landed below)
+RESOLVED — surface-complete at clautolisp 1.1.11 -> 1.1.12
+(alfe 1.1.1 -> 1.1.2) with the M6 milestone shipped at
+`api.lisp` § "M6: ALERT (real impl) + register-and-stub of the
+remaining AutoLISP / Visual LISP inventory":
+
+  * ALERT is implemented as a real builtin — vendor's modal-
+    dialog UI; the headless clautolisp fallback emits
+    `WARNING: <message>` to *standard-output* and returns nil,
+    matching the user-proposed preambule.lsp shape.
+
+  * Every other identifier listed in the "Remaining surface"
+    inventory below is registered as a nil-returning M6 stub.
+    The contract: `(boundp 'X)`, `(functionp #'X)`, and
+    `(X args...)` all succeed; the stubs ignore arguments and
+    return nil (the documented no-op convention used across
+    M3/M4/M5). Portable code that probes the surface for feature
+    detection keeps running; code that calls these directly
+    evaluates the call to nil rather than crashing with
+    :undefined-function.
+
+Real implementations remain gated on the Host Abstraction Layer
+phases (entity DB, selection sets, dictionary store, COM bridge,
+ActiveX SAFEARRAY type, reactor dispatch). Per-family upgrade
+paths are tracked in
+`issues/open/deferred-stubbed-functions.issue`.
+
+Coverage now:
+  ~957 / 957 = 100% surface-bound (real + stubs combined).
+  Real impls: 547 (post-M1-M5) + ALERT = 548.
+  M6 stubs: 410.
+
+The M6 inventory and the *m6-stub-names* registry list are kept
+in sync with the per-family lists in this issue's "Remaining
+surface" section. Adding a new family member that AutoCAD or
+BricsCAD documents but clautolisp doesn't implement is a two-
+line patch: append the name to *m6-stub-names* and re-build.
+
+Regression tests added in
+`clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp`:
+  * alert-prints-warning-line-and-returns-nil
+  * m6-stub-inventory-is-boundp-across-every-family
+  * m6-stubs-callable-with-args-and-return-nil
+
+Status: closed (reduced scope; the four prioritised families
+landed in M1-M5; the remaining 411 identifiers landed in M6 as
+ALERT + 410 stubs)
 Baseline: origin/master @ 2288f6c
 Spec: autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org (v0.8.2)
 

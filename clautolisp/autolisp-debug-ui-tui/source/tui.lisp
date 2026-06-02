@@ -67,7 +67,7 @@
 (defun pane-clear (screen pane)
   "Blank PANE's interior."
   (dotimes (line (pane-interior-height pane))
-    (pane-put-line screen pane "")))
+    (pane-put-line screen pane line "")))
 
 (defun truncate-string (string width)
   (cond ((<= width 0) "")

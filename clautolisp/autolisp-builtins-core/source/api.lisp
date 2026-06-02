@@ -6812,8 +6812,248 @@ backed persistent upgrade path.")
 
 ;;; --- end M5 -------------------------------------------------------
 
+;;; ====================================================================
+;;; M6: ALERT (real impl) + register-and-stub of the remaining
+;;; AutoLISP / Visual LISP inventory.
+;;;
+;;; Resolves issues/closed/missing-functions.issue. After M1-M5, ~411
+;;; documented operators were still not bound to anything. M6 closes
+;;; the gap surface-level:
+;;;
+;;;   * ALERT lands as a real builtin. Vendor docs document it as a
+;;;     modal-dialog UI; clautolisp is headless so the in-process
+;;;     fallback the user proposed (princ "WARNING: " + message +
+;;;     newline) ships as the default behaviour.
+;;;
+;;;   * Every other family-listed identifier is registered as a
+;;;     nil-returning stub. The point is to make
+;;;     (boundp 'X), (functionp #'X), and (X args...) all not signal
+;;;     :undefined-function — portable code that probes the surface
+;;;     for feature detection keeps running, and rather than crashing
+;;;     mid-script on an unknown call, the call evaluates to nil
+;;;     (the documented "no-op stub" convention used throughout M3/
+;;;     M4/M5).
+;;;
+;;; Real implementations are gated on the Host Abstraction Layer
+;;; phases (entity DB, selection sets, dictionary store, COM bridge,
+;;; ActiveX SAFEARRAY type, reactor dispatch) and tracked per-family
+;;; in issues/open/deferred-stubbed-functions.issue.
+;;;
+;;; Families covered (count from the missing-functions.issue inventory):
+;;;   ACET::* internal (8)
+;;;   ACET-* (258)
+;;;   VLAX-* (46)
+;;;   VLA-* (2)
+;;;   VLR-* (4)
+;;;   DOS_* (22)
+;;;   LAYERSTATE-* / VL-LAYERSTATES-* (24)
+;;;   ARX* (5)
+;;;   ACAD* (7)
+;;;   Entity / selection-set / table / dictionary database (14)
+;;;   DCL dialogs / tiles (3)
+;;;   GR* graphics primitives (7)
+;;;   GET* / INITGET interactive prompts (6, including ALERT)
+
+(defun builtin-alert (message)
+  "(ALERT message) — surface MESSAGE to the user. AutoCAD / BricsCAD
+ship a modal dialog with an OK button; clautolisp is headless, so
+the in-process implementation emits a single-line
+`WARNING: MESSAGE' to *standard-output*. Returns nil. Real
+dialog-bridging upgrade tracked in
+issues/open/deferred-stubbed-functions.issue § ALERT."
+  (let ((text (autolisp-string-value (require-string message "ALERT"))))
+    (princ "WARNING: ")
+    (princ text)
+    (terpri)
+    nil))
+
+(defun %builtin-m6-stub (&rest arguments)
+  "Generic nil-returning stub the M6 inventory installs under every
+documented-but-unimplemented operator. The function ignores its
+arguments and returns nil. Per-family upgrade paths are tracked in
+issues/open/deferred-stubbed-functions.issue."
+  (declare (ignore arguments))
+  nil)
+
+(defun make-m6-stub-subr (name)
+  "Build an autolisp-subr that registers NAME as a nil-returning
+stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
+  (make-autolisp-subr name #'%builtin-m6-stub))
+
+(defparameter *m6-stub-names*
+  ;; The 411-item inventory from issues/closed/missing-functions.issue.
+  ;; ALERT is intentionally NOT in this list — it has a real impl
+  ;; above. Each line below is one family from the inventory.
+  '(;; ACET::* internal (8)
+    "ACET::ACOS" "ACET::ARC-POINT-LIST" "ACET::EXPANDFN" "ACET::FILETYPE"
+    "ACET::NAMEONLY" "ACET::NORMALIZE-FILENAME" "ACET::PATHONLY"
+    "ACET::PL-POINT-LIST"
+    ;; ACET-* (258)
+    "ACET-ACAD-REFRESH" "ACET-ALERT" "ACET-ANGLE-EQUAL" "ACET-ANGLE-FORMAT"
+    "ACET-ANNOTATION-SS" "ACET-APPID-DELETE" "ACET-ARXLOAD-OR-BUST"
+    "ACET-ATT-SUBSCRIPT-DUPLICATES" "ACET-AUTOLOAD" "ACET-AUTOLOAD2"
+    "ACET-AUTOLOADARX" "ACET-BLINK-AND-SHOW-OBJECT" "ACET-BLK-MATCH"
+    "ACET-BLKTBL-MATCH" "ACET-BLOCK-MAKE-ANON" "ACET-BLOCK-PURGE"
+    "ACET-BS-STRIP" "ACET-CALC-BITLIST" "ACET-CALC-ROUND" "ACET-CALC-TAN"
+    "ACET-CLEAR-TEMP-GRAPHICS" "ACET-CMD-EXIT" "ACET-COPYM"
+    "ACET-COPYTOLAYER" "ACET-CURRENTVIEWPORT-ENAME" "ACET-DCL-LIST-MAKE"
+    "ACET-DICT-ENAME" "ACET-DICT-NAME-LIST" "ACET-DTOR" "ACET-DXF"
+    "ACET-ELIST-ADD-DEFAULTS" "ACET-ENT-CURVEPOINTS" "ACET-ENT-GEOMEXTENTS"
+    "ACET-ERROR-INIT" "ACET-ERROR-RESTORE" "ACET-EXPLODE" "ACET-FILE-ATTR"
+    "ACET-FILE-BACKUP" "ACET-FILE-BACKUP-DELETE" "ACET-FILE-CHDIR"
+    "ACET-FILE-COPY" "ACET-FILE-CWD" "ACET-FILE-DIR" "ACET-FILE-FIND"
+    "ACET-FILE-FIND-FONT" "ACET-FILE-FIND-IMAGE" "ACET-FILE-FIND-ON-PATH"
+    "ACET-FILE-MKDIR" "ACET-FILE-MOVE" "ACET-FILE-OPEN"
+    "ACET-FILE-READDIALOG" "ACET-FILE-REMOVE" "ACET-FILE-RMDIR"
+    "ACET-FILE-WRITEDIALOG" "ACET-FILENAME-ASSOCIATED-APP"
+    "ACET-FILENAME-DIRECTORY" "ACET-FILENAME-EXT-REMOVE"
+    "ACET-FILENAME-EXTENSION" "ACET-FILENAME-PATH-REMOVE"
+    "ACET-FILENAME-SUPPORTPATH-REMOVE" "ACET-FILENAME-VALID"
+    "ACET-FSCREEN-TOGGLE" "ACET-GENERAL-PROPS-GET"
+    "ACET-GENERAL-PROPS-GET-PAIRS" "ACET-GENERAL-PROPS-SET"
+    "ACET-GENERAL-PROPS-SET-PAIRS" "ACET-GEOM-ANGLE-TRANS"
+    "ACET-GEOM-ARBITRARY-X" "ACET-GEOM-ARC-3P-D-ANGLE"
+    "ACET-GEOM-ARC-BULGE" "ACET-GEOM-ARC-CENTER" "ACET-GEOM-ARC-D-ANGLE"
+    "ACET-GEOM-CALC-ARC-ERROR" "ACET-GEOM-CROSS-PRODUCT"
+    "ACET-GEOM-DELTA-VECTOR" "ACET-GEOM-IMAGE-BOUNDS"
+    "ACET-GEOM-INTERSECTWITH" "ACET-GEOM-IS-ARC" "ACET-GEOM-LIST-EXTENTS"
+    "ACET-GEOM-M-TRANS" "ACET-GEOM-MID-POINT" "ACET-GEOM-MIDPOINT"
+    "ACET-GEOM-OBJECT-END-POINTS" "ACET-GEOM-OBJECT-FUZ"
+    "ACET-GEOM-OBJECT-NORMAL-VECTOR" "ACET-GEOM-OBJECT-POINT-LIST"
+    "ACET-GEOM-OBJECT-Z-AXIS" "ACET-GEOM-PIXEL-UNIT"
+    "ACET-GEOM-PLINE-ARC-INFO" "ACET-GEOM-POINT-INSIDE"
+    "ACET-GEOM-POINT-ROTATE" "ACET-GEOM-POINT-SCALE"
+    "ACET-GEOM-RECT-POINTS" "ACET-GEOM-SELF-INTERSECT"
+    "ACET-GEOM-SS-EXTENTS" "ACET-GEOM-TEXTBOX" "ACET-GEOM-UNIT-VECTOR"
+    "ACET-GEOM-VECTOR-ADD" "ACET-GEOM-VECTOR-D-ANGLE"
+    "ACET-GEOM-VECTOR-PARALLEL" "ACET-GEOM-VECTOR-SCALE"
+    "ACET-GEOM-VECTOR-SIDE" "ACET-GEOM-VERTEX-LIST"
+    "ACET-GEOM-VIEW-POINTS" "ACET-GEOM-Z-AXIS"
+    "ACET-GEOM-ZOOM-FOR-SELECT" "ACET-GET-ATT" "ACET-GET-WINFONT-PATH"
+    "ACET-GETVAR" "ACET-GROUP-MAKE-ANON" "ACET-GROUPS-SEL"
+    "ACET-GROUPS-UNSEL" "ACET-HELP" "ACET-HELP-TRAP" "ACET-INI-GET"
+    "ACET-INI-SET" "ACET-INIT-FAS-LIB" "ACET-INSERT-ATTRIB-GET"
+    "ACET-INSERT-ATTRIB-MOD" "ACET-INSERT-ATTRIB-SET"
+    "ACET-LAYER-LOCKED" "ACET-LAYER-OFF" "ACET-LAYER-UNLOCK-ALL"
+    "ACET-LAYERP-MARK" "ACET-LAYERP-MODE" "ACET-LAYTRANS"
+    "ACET-LIST-ASSOC-APPEND" "ACET-LIST-ASSOC-PUT"
+    "ACET-LIST-ASSOC-REMOVE" "ACET-LIST-GROUP-BY-ASSOC"
+    "ACET-LIST-IS-DOTTED-PAIR" "ACET-LIST-ISORT" "ACET-LIST-M-ASSOC"
+    "ACET-LIST-PUT-NTH" "ACET-LIST-REMOVE-ADJACENT-DUPS"
+    "ACET-LIST-REMOVE-DUPLICATE-POINTS" "ACET-LIST-REMOVE-DUPLICATES"
+    "ACET-LIST-REMOVE-NTH" "ACET-LIST-SPLIT" "ACET-LIST-TO-SS"
+    "ACET-LOAD-EXPRESSTOOLS" "ACET-LWPLINE-MAKE" "ACET-MOD-ATT"
+    "ACET-MS-TO-PS" "ACET-PLINE-IS-2D" "ACET-PLINE-SEGMENT-LIST"
+    "ACET-PLINE-SEGMENT-LIST-APPLY" "ACET-PLINES-EXPLODE"
+    "ACET-PLINES-REBUILD" "ACET-POINT-FLAT" "ACET-PREF-SUPPORTPATH-LIST"
+    "ACET-PS-TO-MS" "ACET-REG-DEL" "ACET-REG-GET"
+    "ACET-REG-MACHINE-PRODKEY" "ACET-REG-PRODKEY" "ACET-REG-PUT"
+    "ACET-REG-USER-PRODKEY" "ACET-ROTATE-TEXT" "ACET-RTOD"
+    "ACET-SAFE-COMMAND" "ACET-SET-CMDECHO" "ACET-SETVAR"
+    "ACET-SHX-LOADED" "ACET-SHX-RELOAD" "ACET-SPINNER"
+    "ACET-SS-ANNOTATION-FILTER" "ACET-SS-CLEAR-PREV"
+    "ACET-SS-DRAG-MOVE" "ACET-SS-DRAG-ROTATE" "ACET-SS-DRAG-SCALE"
+    "ACET-SS-ENTDEL" "ACET-SS-FILTER" "ACET-SS-FILTER-CURRENT-UCS"
+    "ACET-SS-FLT-CSPACE" "ACET-SS-INTERSECTION" "ACET-SS-MOD"
+    "ACET-SS-NEW" "ACET-SS-REDRAW" "ACET-SS-REMOVE"
+    "ACET-SS-REMOVE-DUPS" "ACET-SS-SCALE-TO-FIT" "ACET-SS-SORT"
+    "ACET-SS-SSGET-FILTER" "ACET-SS-TO-LIST" "ACET-SS-UNION"
+    "ACET-SS-VISIBLE" "ACET-SS-ZOOM-EXTENTS" "ACET-STR-COLLATE"
+    "ACET-STR-EQUAL" "ACET-STR-ESC-WILDCARDS" "ACET-STR-FIND"
+    "ACET-STR-FORMAT" "ACET-STR-LR-TRIM" "ACET-STR-M-FIND"
+    "ACET-STR-REPLACE" "ACET-STR-SPACE-TRIM" "ACET-STR-TO-LIST"
+    "ACET-STR-WCMATCH" "ACET-SYS-BEEP" "ACET-SYS-COMMAND"
+    "ACET-SYS-CONTROL-DOWN" "ACET-SYS-FOREGROUND" "ACET-SYS-KEYSTATE"
+    "ACET-SYS-LASTERR" "ACET-SYS-LMOUSE-DOWN" "ACET-SYS-MMOUSE-DOWN"
+    "ACET-SYS-PROCID" "ACET-SYS-RMOUSE-DOWN" "ACET-SYS-SHIFT-DOWN"
+    "ACET-SYS-SLEEP" "ACET-SYS-SPAWN" "ACET-SYS-TERM"
+    "ACET-SYS-WAIT" "ACET-SYSVAR-RESTORE" "ACET-SYSVAR-SET"
+    "ACET-TABLE-NAME-LIST" "ACET-TABLE-PURGE" "ACET-TBL-MATCH"
+    "ACET-TEMP-SEGMENT" "ACET-TEXT2MTEXT" "ACET-TJUST"
+    "ACET-TJUST-KEYWORD" "ACET-UCS-CMD" "ACET-UCS-GET"
+    "ACET-UCS-SET" "ACET-UCS-SET-Z" "ACET-UCS-TO-OBJECT"
+    "ACET-UI-ENTSEL" "ACET-UI-FENCE-SELECT" "ACET-UI-GET-LONG-NAME"
+    "ACET-UI-GETCORNER" "ACET-UI-GETFILE" "ACET-UI-M-GET-NAMES"
+    "ACET-UI-MESSAGE" "ACET-UI-PICKDIR" "ACET-UI-POLYGON-SELECT"
+    "ACET-UI-PROGRESS" "ACET-UI-PROGRESS-DONE"
+    "ACET-UI-PROGRESS-INIT" "ACET-UI-PROGRESS-SAFE"
+    "ACET-UI-SINGLE-SELECT" "ACET-UI-STATUS" "ACET-UI-TABLE-NAME-GET"
+    "ACET-UI-TABLE-NAME-GET-CMD" "ACET-UI-TABLE-NAME-GET-DLG"
+    "ACET-UI-TXTED" "ACET-UNDO-BEGIN" "ACET-UNDO-END" "ACET-UTIL-VER"
+    "ACET-VAR-GETVAR" "ACET-VAR-SETVAR"
+    "ACET-VIEWPORT-FROZEN-LAYER-LIST" "ACET-VIEWPORT-LOCK-SET"
+    "ACET-VIEWPORT-NEXT-PICKABLE" "ACET-WMFIN" "ACET-XDATA-GET"
+    "ACET-XDATA-SET"
+    ;; VLAX-* (46)
+    "VLAX-2D-POINT" "VLAX-3D-POINT" "VLAX-ADD-CMD"
+    "VLAX-CURVE-GETAREA" "VLAX-CURVE-GETCLOSESTPOINTTO"
+    "VLAX-CURVE-GETCLOSESTPOINTTOPROJECTION"
+    "VLAX-CURVE-GETDISTATPARAM" "VLAX-CURVE-GETDISTATPOINT"
+    "VLAX-CURVE-GETENDPARAM" "VLAX-CURVE-GETENDPOINT"
+    "VLAX-CURVE-GETFIRSTDERIV" "VLAX-CURVE-GETPARAMATDIST"
+    "VLAX-CURVE-GETPARAMATPOINT" "VLAX-CURVE-GETPERIMETER"
+    "VLAX-CURVE-GETPOINTATDIST" "VLAX-CURVE-GETPOINTATPARAM"
+    "VLAX-CURVE-GETSECONDDERIV" "VLAX-CURVE-GETSTARTPARAM"
+    "VLAX-CURVE-GETSTARTPOINT" "VLAX-CURVE-ISCLOSED"
+    "VLAX-CURVE-ISPERIODIC" "VLAX-CURVE-ISPLANAR"
+    "VLAX-DUMP-OBJECT" "VLAX-ENAME->VLA-OBJECT" "VLAX-ERASED-P"
+    "VLAX-FOR" "VLAX-GET-ACAD-OBJECT" "VLAX-IMPORT-TYPE-LIBRARY"
+    "VLAX-LDATA-DELETE" "VLAX-LDATA-GET" "VLAX-LDATA-LIST"
+    "VLAX-LDATA-PUT" "VLAX-LDATA-TEST" "VLAX-MACHINE-PRODUCT-KEY"
+    "VLAX-MAP-COLLECTION" "VLAX-PRODUCT-KEY" "VLAX-QUEUEEXPR"
+    "VLAX-READ-ENABLED-P" "VLAX-REMOVE-CMD"
+    "VLAX-SAFEARRAY-GET-DIM" "VLAX-SAFEARRAY-VALUE" "VLAX-TMATRIX"
+    "VLAX-TYPEINFO-AVAILABLE-P" "VLAX-USER-PRODUCT-KEY"
+    "VLAX-VLA-OBJECT->ENAME" "VLAX-WRITE-ENABLED-P"
+    ;; VLA-* (2)
+    "VLA-COLLECTION->LIST" "VLA-POSTCOMMAND"
+    ;; VLR-* (4)
+    "VLR-BEEP-REACTION" "VLR-DOCUMENT" "VLR-REACTION-NAME"
+    "VLR-REACTION-NAMES"
+    ;; DOS_* (22)
+    "DOS_ACITORGB" "DOS_COMMAND" "DOS_COPY" "DOS_DELTREE" "DOS_DIR"
+    "DOS_DIRP" "DOS_DIRTREE" "DOS_ENCRYPT" "DOS_ENCRYPT_V25"
+    "DOS_FILEEX" "DOS_GETDIR" "DOS_GETFILEM" "DOS_GUIDGEN"
+    "DOS_HLSTORGB" "DOS_MKDIR" "DOS_POPUPMENU" "DOS_RGBTOACI"
+    "DOS_RGBTOHLS" "DOS_STRTOKENS" "DOS_STRTRIM" "DOS_STRTRIMLEFT"
+    "DOS_STRTRIMRIGHT"
+    ;; LAYERSTATE-* / VL-LAYERSTATES-* (24)
+    "LAYERSTATE-ADDLAYERS" "LAYERSTATE-COMPARE" "LAYERSTATE-DELETE"
+    "LAYERSTATE-EXPORT" "LAYERSTATE-GETLASTRESTORED"
+    "LAYERSTATE-GETLAYERS" "LAYERSTATE-GETNAMES" "LAYERSTATE-HAS"
+    "LAYERSTATE-IMPORT" "LAYERSTATE-IMPORTFROMDB"
+    "LAYERSTATE-REMOVELAYERS" "LAYERSTATE-RENAME"
+    "LAYERSTATE-RESTORE" "LAYERSTATE-SAVE"
+    "VL-LAYERSTATES-DELETE" "VL-LAYERSTATES-GETDESCRIPTION"
+    "VL-LAYERSTATES-GETPROPERTYMASK" "VL-LAYERSTATES-HAS"
+    "VL-LAYERSTATES-LIST" "VL-LAYERSTATES-RENAME"
+    "VL-LAYERSTATES-RESTORE" "VL-LAYERSTATES-SAVE"
+    "VL-LAYERSTATES-SETDESCRIPTION" "VL-LAYERSTATES-SETPROPERTYMASK"
+    ;; ARX* (5)
+    "ARX" "ARXLOAD" "ARXUNLOAD" "AUTOARXLOAD" "VL-ARX-IMPORT"
+    ;; ACAD* (7)
+    "ACAD-POP-DBMOD" "ACAD-PUSH-DBMOD" "ACAD_COLORDLG"
+    "ACAD_HELPDLG" "ACAD_STRLSORT" "ACAD_TRUECOLORCLI"
+    "ACAD_TRUECOLORDLG"
+    ;; Entity / selection-set / table / dictionary database (14)
+    "DICTADD" "DICTNEXT" "DICTOBJNAME" "DICTREMOVE" "DICTRENAME"
+    "DICTSEARCH" "ENTSEL" "NAMEDOBJDICT" "NENTSEL" "NENTSELP"
+    "REGAPP" "SSNAMEX" "XDROOM" "XDSIZE"
+    ;; DCL dialogs / tiles (3)
+    "GET_ATTR" "INIT_DIALOG" "REDRAW_DIALOG"
+    ;; Graphics primitives (GR*) (7)
+    "GRARC" "GRCLEAR" "GRDRAW" "GRFILL" "GRREAD" "GRTEXT" "GRVECS"
+    ;; Interactive prompts (GET*/INITGET) (5) — ALERT is the real
+    ;; impl above and is NOT in this list. GETPROPERTYVALUE landed in
+    ;; M2-M5 per the issue text and is excluded here.
+    "GETCNAME" "GETFILED" "GET_DISKSERIALID"
+    "INITCOMMANDVERSION" "OSNAP")
+  "Names registered as nil-returning M6 stubs. See *m6-stub-names*'s
+docstring above the def for the upgrade-path reference.")
+
 (defun core-builtins ()
-  (list
+  (append
+   (list
    (make-core-builtin-subr "TYPE" #'autolisp-type)
    (make-core-builtin-subr "NULL" #'autolisp-null)
    (make-core-builtin-subr "NOT" #'autolisp-not)
@@ -7426,7 +7666,14 @@ backed persistent upgrade path.")
    (make-core-builtin-subr "VL-VPLAYER-SET-TRUECOLOR"    #'builtin-vl-vplayer-set-truecolor)
    ;; misc geometry-coupled
    (make-core-builtin-subr "VL-VECTOR-PROJECT-POINTTOENTITY"
-                           #'builtin-vl-vector-project-pointtoentity)))
+                           #'builtin-vl-vector-project-pointtoentity)
+   ;; --- M6: ALERT real, individual + bulk stubs through APPEND ----
+   ;; See the M6 block comment above *m6-stub-names* for the contract
+   ;; and the upgrade-path reference. ALERT is the real impl; the
+   ;; rest of the M6 inventory is spliced in below via the APPEND
+   ;; the defun opens with.
+   (make-core-builtin-subr "ALERT" #'builtin-alert))
+   (mapcar #'make-m6-stub-subr *m6-stub-names*)))
 
 (defun find-core-builtin (name)
   (find name (core-builtins)
