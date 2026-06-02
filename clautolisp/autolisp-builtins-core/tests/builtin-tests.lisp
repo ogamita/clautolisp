@@ -4291,6 +4291,98 @@ character code. The opens are diagnostic-suppressed."
         (is (member #xE9 bytes))
         (is (member #x00 bytes))))))
 
+;;;; ====================================================================
+;;;; M6 — ALERT real impl + 410 register-and-stub coverage
+;;;;
+;;;; Resolves issues/closed/missing-functions.issue. ALERT is the
+;;;; only real implementation; everything else listed in the issue's
+;;;; remaining-surface inventory ships as a nil-returning stub so
+;;;; portable code keeps running.
+
+(test alert-prints-warning-line-and-returns-nil
+  ;; ALERT: documented as a modal-dialog UI on vendor; headless
+  ;; clautolisp emits a single "WARNING: <message>" line to stdout
+  ;; and returns nil. The user-reported fallback spec exactly.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((alert-fn (autolisp-symbol-function (find-autolisp-symbol "ALERT")))
+         (captured (with-output-to-string (*standard-output*)
+                     (let ((result (call-autolisp-function
+                                    alert-fn
+                                    (make-autolisp-string "Disk full"))))
+                       (is (null result)
+                           "(ALERT msg) returns nil")))))
+    (is (search "WARNING: " captured)
+        "ALERT emits the WARNING: prefix; got ~S" captured)
+    (is (search "Disk full" captured)
+        "ALERT emits the message body; got ~S" captured)
+    ;; Trailing newline so output composes cleanly.
+    (is (or (char= #\Newline (char captured (1- (length captured))))
+            (search (format nil "~%") captured))
+        "ALERT emits a trailing newline; got ~S" captured)))
+
+(test m6-stub-inventory-is-boundp-across-every-family
+  ;; Spot-check one representative per family of the M6 inventory.
+  ;; Verifies each name is bound to a callable autolisp-subr so user
+  ;; code that probes `(boundp 'X)` for feature detection or calls
+  ;; the stub directly doesn't crash with :undefined-function.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (dolist (name '(;; ACET::* internal
+                  "ACET::ACOS"
+                  ;; ACET-* (255 of 258, sampling)
+                  "ACET-STR-FORMAT" "ACET-RTOD" "ACET-LIST-SPLIT"
+                  ;; VLAX-*
+                  "VLAX-CURVE-GETAREA"
+                  ;; VLA-*
+                  "VLA-POSTCOMMAND"
+                  ;; VLR-*
+                  "VLR-DOCUMENT"
+                  ;; DOS_*
+                  "DOS_STRTRIM"
+                  ;; LAYERSTATE-* / VL-LAYERSTATES-*
+                  "LAYERSTATE-SAVE" "VL-LAYERSTATES-LIST"
+                  ;; ARX*
+                  "ARXLOAD"
+                  ;; ACAD*
+                  "ACAD_HELPDLG"
+                  ;; Entity / selset / table / dict
+                  "DICTADD" "ENTSEL"
+                  ;; DCL
+                  "INIT_DIALOG"
+                  ;; GR*
+                  "GRDRAW"
+                  ;; GET* / INITGET
+                  "OSNAP" "GETFILED"))
+    (let ((symbol (find-autolisp-symbol name)))
+      (is (not (null symbol))
+          "~A is interned" name)
+      (is (clautolisp.autolisp-runtime:autolisp-boundp symbol)
+          "~A is boundp T" name)
+      (let ((fn (autolisp-symbol-function symbol)))
+        (is (typep fn 'clautolisp.autolisp-runtime:autolisp-subr)
+            "~A is bound to an autolisp-subr; got ~S" name fn)))))
+
+(test m6-stubs-callable-with-args-and-return-nil
+  ;; Stubs accept any number of arguments and return nil (the
+  ;; documented no-op convention from the M3/M4/M5 sections).
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (dolist (probe '(("ACET-STR-FORMAT" "%d" 42)
+                   ("VLAX-CURVE-GETAREA" "ent")
+                   ("DOS_STRTRIM" "  hi  ")
+                   ("OSNAP" "1.0,2.0" "_END")
+                   ("GRARC")))
+    (let* ((name (first probe))
+           (args (rest probe))
+           (fn (autolisp-symbol-function (find-autolisp-symbol name)))
+           (al-args (mapcar (lambda (a)
+                              (if (stringp a) (make-autolisp-string a) a))
+                            args))
+           (result (apply #'call-autolisp-function fn al-args)))
+      (is (null result)
+          "(~A ~{~S~^ ~}) returns nil; got ~S" name args result))))
+
 (test cross-dialect-encoding-utf-16-be-write-produces-two-bytes
   (reset-autolisp-symbol-table)
   (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
