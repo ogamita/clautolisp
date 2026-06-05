@@ -1,0 +1,245 @@
+Currently trying out alfe with --bricscad --mode batch on macOS.
+
+Here are a few issues with it which need to be corrected soon:
+
+1. --interactive is not implemented. Please implement it. It should use the same protocol mechanisms as -x or -l.
+
+
+2. -x output is not transmitted to alfe (no trace in workdir), and printed by alfe.
+   (the expected alref.lsp message comes from .autolisp).
+
+3. -x errors are not reported.
+
+
+18:26[pjb@thalassa org.xquartz:0 pjb 33Gi]$ alfe --bricscad --mode batch --interactive
+alfe: alfe CAD backend error (phase EVAL): Interactive mode against a CAD backend is not implemented in V1; use --clautolisp -i for an interactive REPL. [INTERACTIVE-NOT-IMPLEMENTED]
+
+~
+18:27[pjb@thalassa org.xquartz:0 pjb 33Gi]$ alfe --bricscad --mode batch -l  "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/map-drawing.lsp" -l  "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/dxf-filter.lsp" -x "(map-drawing 'PATH (function print))"
+alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+
+Here we would have expected an error since map-drawing takes 3 arguments.
+
+
+~
+18:28[pjb@thalassa org.xquartz:0 pjb 33Gi]$ alfe --bricscad --mode batch -l  "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/map-drawing.lsp" -l  "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/dxf-filter.lsp" -x '(map-drawing (quote PATH) (function print) "~/works/sncf-reseau/dwg/")'
+alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+
+
+Output?
+
+
+~
+18:29[pjb@thalassa org.xquartz:0 pjb 33Gi]$ alfe --debug --bricscad --mode batch -l  "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/map-drawing.lsp" -l  "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/dxf-filter.lsp" -x '(map-drawing (quote PATH) (function print) "~/works/sncf-reseau/dwg/")'
+alfe[debug]: cli: version 1.1.3
+alfe[debug]: cli: backend :BRICSCAD, dialect :BRICSCAD-V26, host :MOCK, mode :BATCH
+alfe[debug]: cli: load-encoding NIL, io-encoding NIL, no-color-p NIL
+alfe[debug]: cli: actions = 3
+alfe[debug]: resolve-backend: selected :BRICSCAD (source: explicit flag)
+alfe[verbose]: cli: load-encoding NIL, io-encoding NIL
+alfe[verbose]: backend BRICSCAD: starting engine (mode AUTO)
+alfe[debug]: backend BRICSCAD: workdir = /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75794-25f79e/
+alfe[debug]: backend BRICSCAD: ready-timeout = 30 s; wait-for-ready = T
+alfe[debug]: backend BRICSCAD: staged bootstrap -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75794-25f79e/runtime/autolisp-bootstrap.lsp
+alfe[debug]: backend BRICSCAD: staged runtime -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75794-25f79e/runtime/autolisp-remote-io.lsp
+alfe[debug]: backend BRICSCAD: emitted run-common.lsp -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75794-25f79e/run-common.lsp
+alfe[debug]: backend BRICSCAD: protocol status file -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75794-25f79e/protocol/status.txt
+alfe[verbose]: backend BRICSCAD: effective mode = BATCH
+alfe[debug]: backend BRICSCAD: wrote run.scr (quit-on-finish-p T) -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75794-25f79e/run.scr
+alfe[verbose]: backend BRICSCAD: launching: /Applications/BricsCAD V26.app/Contents/MacOS/bricscad /Users/pjb/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-mm.dwt -B /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75794-25f79e/run.scr
+alfe[debug]: backend BRICSCAD: spawned, process-info-pid = 75795
+alfe[verbose]: backend BRICSCAD: waiting for READY (timeout 30 s)
+alfe[debug]: protocol: wait-for-status-prefix "READY" (timeout 30 s)
+alfe[debug]: protocol: status now "BOOTING" (elapsed 0.00 s)
+alfe[debug]: [CAD] run-common.lsp evaluated; about to bootstrap runtime
+alfe[debug]: [CAD] loading bootstrap: /private/var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75794-25f79e/runtime/autolisp-bootstrap.lsp
+alfe[debug]: [CAD] bootstrap LOAD succeeded
+alfe[debug]: [CAD] loading runtime: /private/var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75794-25f79e/runtime/autolisp-remote-io.lsp
+alfe[debug]: [CAD] runtime LOAD succeeded
+alfe[debug]: [CAD] I/O bridged onto protocol/stdout.txt and protocol/stderr.txt
+alfe[debug]: [CAD] entering autolisp-protocol-server-loop
+alfe[debug]: protocol: status now "READY 0" (elapsed 11.38 s)
+alfe[debug]: protocol: matched "READY" after 11.38 s
+alfe[verbose]: backend BRICSCAD: READY after 11.38 s (status "READY 0")
+alfe[verbose]: cli: resolved plan with 5 actions
+alfe[verbose]: cli: plan[1] = load "/Users/pjb/.autolisp"
+alfe[verbose]: cli: plan[2] = load "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/map-drawing.lsp"
+alfe[verbose]: cli: plan[3] = load "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/dxf-filter.lsp"
+alfe[verbose]: cli: plan[4] = eval "(map-drawing (quote PATH) (function print) \"~/works/sncf-reseau/dwg/\")"
+alfe[verbose]: cli: plan[5] = quit
+alfe[verbose]: cad-common: driving 5 actions (request-timeout 30 s)
+alfe[debug]: cad-common: action LOAD payload (:PATH "/Users/pjb/.autolisp"
+                                              :ENCODING NIL)
+alfe[debug]: protocol: wait-for-status-prefix "DONE" (timeout 30 s)
+alfe[debug]: protocol: status now "READY 0" (elapsed 0.00 s)
+alfe[debug]: protocol: status now "DONE 1 OK" (elapsed 0.06 s)
+alfe[debug]: protocol: matched "DONE" after 0.06 s
+alfe[debug]: cad-common: action LOAD payload (:PATH
+                                              "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/map-drawing.lsp"
+                                              :ENCODING NIL)
+alfe[debug]: protocol: wait-for-status-prefix "DONE" (timeout 30 s)
+alfe[debug]: protocol: status now "DONE 1 OK" (elapsed 0.00 s)
+alfe[debug]: protocol: matched "DONE" after 0.00 s
+alfe[debug]: cad-common: action LOAD payload (:PATH
+                                              "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/dxf-filter.lsp"
+                                              :ENCODING NIL)
+alfe[debug]: protocol: wait-for-status-prefix "DONE" (timeout 30 s)
+alfe[debug]: protocol: status now "RUNNING 2" (elapsed 0.00 s)
+alfe[debug]: protocol: status now "RUNNING 3" (elapsed 0.16 s)
+alfe[debug]: protocol: status now "DONE 3 OK" (elapsed 0.37 s)
+alfe[debug]: protocol: matched "DONE" after 0.37 s
+alfe[debug]: cad-common: action EVAL payload "(map-drawing (quote PATH) (function print) \"~/works/sncf-reseau/dwg/\")"
+alfe[debug]: protocol: wait-for-status-prefix "DONE" (timeout 30 s)
+alfe[debug]: protocol: status now "DONE 3 OK" (elapsed 0.00 s)
+alfe[debug]: protocol: matched "DONE" after 0.00 s
+alfe[debug]: cad-common: action QUIT payload NIL
+alfe[debug]: [CAD] server-loop returned normally
+alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+
+
+
+
+alfe[verbose]: cli: plan finished status=:SUCCESS exit=0 elapsed=11.95s
+
+~
+18:30[pjb@thalassa org.xquartz:0 pjb 33Gi]$ alfe --keep-workdir --debug --bricscad --mode batch -l  "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/map-drawing.lsp" -l  "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/dxf-filter.lsp" -x '(map-drawing (quote PATH) (function print) "~/works/sncf-reseau/dwg/")'
+alfe[debug]: cli: version 1.1.3
+alfe[debug]: cli: backend :BRICSCAD, dialect :BRICSCAD-V26, host :MOCK, mode :BATCH
+alfe[debug]: cli: load-encoding NIL, io-encoding NIL, no-color-p NIL
+alfe[debug]: cli: actions = 3
+alfe[debug]: resolve-backend: selected :BRICSCAD (source: explicit flag)
+alfe[verbose]: cli: load-encoding NIL, io-encoding NIL
+alfe[verbose]: backend BRICSCAD: starting engine (mode AUTO)
+alfe[debug]: backend BRICSCAD: workdir = /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/
+alfe[debug]: backend BRICSCAD: ready-timeout = 30 s; wait-for-ready = T
+alfe[debug]: backend BRICSCAD: staged bootstrap -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/runtime/autolisp-bootstrap.lsp
+alfe[debug]: backend BRICSCAD: staged runtime -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/runtime/autolisp-remote-io.lsp
+alfe[debug]: backend BRICSCAD: emitted run-common.lsp -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/run-common.lsp
+alfe[debug]: backend BRICSCAD: protocol status file -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/protocol/status.txt
+alfe[verbose]: backend BRICSCAD: effective mode = BATCH
+alfe[debug]: backend BRICSCAD: wrote run.scr (quit-on-finish-p T) -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/run.scr
+alfe[verbose]: backend BRICSCAD: launching: /Applications/BricsCAD V26.app/Contents/MacOS/bricscad /Users/pjb/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-mm.dwt -B /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/run.scr
+alfe[debug]: backend BRICSCAD: spawned, process-info-pid = 75834
+alfe[verbose]: backend BRICSCAD: waiting for READY (timeout 30 s)
+alfe[debug]: protocol: wait-for-status-prefix "READY" (timeout 30 s)
+alfe[debug]: protocol: status now "BOOTING" (elapsed 0.00 s)
+alfe[debug]: [CAD] run-common.lsp evaluated; about to bootstrap runtime
+alfe[debug]: [CAD] loading bootstrap: /private/var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/runtime/autolisp-bootstrap.lsp
+alfe[debug]: [CAD] bootstrap LOAD succeeded
+alfe[debug]: [CAD] loading runtime: /private/var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/runtime/autolisp-remote-io.lsp
+alfe[debug]: [CAD] runtime LOAD succeeded
+alfe[debug]: [CAD] I/O bridged onto protocol/stdout.txt and protocol/stderr.txt
+alfe[debug]: [CAD] entering autolisp-protocol-server-loop
+alfe[debug]: protocol: status now "READY 0" (elapsed 11.37 s)
+alfe[debug]: protocol: matched "READY" after 11.37 s
+alfe[verbose]: backend BRICSCAD: READY after 11.37 s (status "READY 0")
+alfe[verbose]: cli: resolved plan with 5 actions
+alfe[verbose]: cli: plan[1] = load "/Users/pjb/.autolisp"
+alfe[verbose]: cli: plan[2] = load "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/map-drawing.lsp"
+alfe[verbose]: cli: plan[3] = load "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/dxf-filter.lsp"
+alfe[verbose]: cli: plan[4] = eval "(map-drawing (quote PATH) (function print) \"~/works/sncf-reseau/dwg/\")"
+alfe[verbose]: cli: plan[5] = quit
+alfe[verbose]: cad-common: driving 5 actions (request-timeout 30 s)
+alfe[debug]: cad-common: action LOAD payload (:PATH "/Users/pjb/.autolisp"
+                                              :ENCODING NIL)
+alfe[debug]: protocol: wait-for-status-prefix "DONE" (timeout 30 s)
+alfe[debug]: protocol: status now "READY 0" (elapsed 0.00 s)
+alfe[debug]: protocol: status now "DONE 1 OK" (elapsed 0.06 s)
+alfe[debug]: protocol: matched "DONE" after 0.06 s
+alfe[debug]: cad-common: action LOAD payload (:PATH
+                                              "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/map-drawing.lsp"
+                                              :ENCODING NIL)
+alfe[debug]: protocol: wait-for-status-prefix "DONE" (timeout 30 s)
+alfe[debug]: protocol: status now "DONE 1 OK" (elapsed 0.00 s)
+alfe[debug]: protocol: matched "DONE" after 0.00 s
+alfe[debug]: cad-common: action LOAD payload (:PATH
+                                              "~/works/sncf-reseau/src/schms--pjb-outils-cad/dev/lisp/dxf-filter.lsp"
+                                              :ENCODING NIL)
+alfe[debug]: protocol: wait-for-status-prefix "DONE" (timeout 30 s)
+alfe[debug]: protocol: status now "RUNNING 2" (elapsed 0.00 s)
+alfe[debug]: protocol: status now "RUNNING 3" (elapsed 0.16 s)
+alfe[debug]: protocol: status now "DONE 3 OK" (elapsed 0.37 s)
+alfe[debug]: protocol: matched "DONE" after 0.37 s
+alfe[debug]: cad-common: action EVAL payload "(map-drawing (quote PATH) (function print) \"~/works/sncf-reseau/dwg/\")"
+alfe[debug]: protocol: wait-for-status-prefix "DONE" (timeout 30 s)
+alfe[debug]: protocol: status now "DONE 3 OK" (elapsed 0.00 s)
+alfe[debug]: protocol: matched "DONE" after 0.00 s
+alfe[debug]: cad-common: action QUIT payload NIL
+alfe[debug]: [CAD] server-loop returned normally
+alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+
+
+
+
+alfe[verbose]: cli: plan finished status=:SUCCESS exit=0 elapsed=11.94s
+
+~
+18:30[pjb@thalassa org.xquartz:0 pjb 33Gi]$ alfe --version
+alfe 1.1.3
+
+~
+18:30[pjb@thalassa org.xquartz:0 pjb 33Gi]$ ls /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/
+./  ../  errors.txt  logs/  output.txt	protocol/  run-common.lsp  run.scr  runtime/  status.txt
+
+~
+18:30[pjb@thalassa org.xquartz:0 pjb 33Gi]$ ls -l /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/output.txt
+-rw-r--r-- 1 pjb staff 0 Jun  5 18:30 /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/output.txt
+
+~
+18:31[pjb@thalassa org.xquartz:0 pjb 33Gi]$ ls -l /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/logs/
+total 4
+drwxr-xr-x  3 pjb staff  96 Jun  5 18:30 ./
+drwxr-xr-x 10 pjb staff 320 Jun  5 18:30 ../
+-rw-r--r--  1 pjb staff 545 Jun  5 18:30 debug.log
+
+~
+18:31[pjb@thalassa org.xquartz:0 pjb 33Gi]$ ls -l /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/logs/debug.log
+-rw-r--r-- 1 pjb staff 545 Jun  5 18:30 /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/logs/debug.log
+
+~
+18:31[pjb@thalassa org.xquartz:0 pjb 33Gi]$ cat /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/logs/debug.log
+[CAD] run-common.lsp evaluated; about to bootstrap runtime
+[CAD] loading bootstrap: /private/var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/runtime/autolisp-bootstrap.lsp
+[CAD] bootstrap LOAD succeeded
+[CAD] loading runtime: /private/var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/runtime/autolisp-remote-io.lsp
+[CAD] runtime LOAD succeeded
+[CAD] I/O bridged onto protocol/stdout.txt and protocol/stderr.txt
+[CAD] entering autolisp-protocol-server-loop
+[CAD] server-loop returned normally
+
+~
+18:31[pjb@thalassa org.xquartz:0 pjb 33Gi]$ ls -l /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/
+total 24
+drwxr-xr-x    10 pjb staff    320 Jun  5 18:30 ./
+drwx------ 16005 pjb staff 512160 Jun  5 18:31 ../
+-rw-r--r--     1 pjb staff     74 Jun  5 18:30 errors.txt
+drwxr-xr-x     3 pjb staff     96 Jun  5 18:30 logs/
+-rw-r--r--     1 pjb staff      0 Jun  5 18:30 output.txt
+drwxr-xr-x     8 pjb staff    256 Jun  5 18:30 protocol/
+-rw-r--r--     1 pjb staff   9846 Jun  5 18:30 run-common.lsp
+-rw-r--r--     1 pjb staff    130 Jun  5 18:30 run.scr
+drwxr-xr-x     4 pjb staff    128 Jun  5 18:30 runtime/
+-rw-r--r--     1 pjb staff      2 Jun  5 18:30 status.txt
+
+~
+18:31[pjb@thalassa org.xquartz:0 pjb 33Gi]$ ls -l /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/protocol/
+total 20
+drwxr-xr-x  8 pjb staff 256 Jun  5 18:30 ./
+drwxr-xr-x 10 pjb staff 320 Jun  5 18:30 ../
+-rw-r--r--  1 pjb staff   9 Jun  5 18:30 control.txt
+-rw-r--r--  1 pjb staff  17 Jun  5 18:30 heartbeat.txt
+-rw-r--r--  1 pjb staff  32 Jun  5 18:30 runtime-info.txt
+-rw-r--r--  1 pjb staff   8 Jun  5 18:30 status.txt
+-rw-r--r--  1 pjb staff   0 Jun  5 18:30 stderr.txt
+-rw-r--r--  1 pjb staff  81 Jun  5 18:30 stdout.txt
+
+~
+18:31[pjb@thalassa org.xquartz:0 pjb 33Gi]$ cat /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-75833-25f79e/protocol/stdout.txt
+alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+
+
+
+
+
+~
+18:31[pjb@thalassa org.xquartz:0 pjb 33Gi]$ 
