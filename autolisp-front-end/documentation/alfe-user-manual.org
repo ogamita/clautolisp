@@ -190,6 +190,27 @@ helper in your init file:
 alfe -l ~/.autolisp -x "(ep (quote (list 1 2 3)))"
 #+end_src
 
+** Interactive REPL on CAD backends
+
+=alfe --interactive --bricscad= (and =--autocad=) drops into a live
+REPL backed by the same file-IPC protocol the batch =-x= / =-l=
+actions use. Practical points:
+
+- The prompt is =alfe>= (or =    >= for continuation lines when the
+  form isn't balanced yet). Multi-line forms are accepted — the
+  reader waits for a balanced parenthesis count before forwarding.
+- Each form is sent through =protocol/stdin.txt=; output is drained
+  live to your terminal as the CAD prints (no end-of-plan buffering).
+- Errors do not exit the REPL: a failed eval surfaces its message on
+  =stderr=, the prompt comes back, the runtime stays in its read-eval
+  loop.
+- Exit with any of: Ctrl-D (EOF), an empty line that equals =:quit=,
+  =:q=, =:exit=, =(quit)=, =(exit)=, or by queuing a =--quit= action.
+
+You can mix =-l= / =-x= with =--interactive= in one invocation: the
+batch actions run first, then control hands off to the REPL with the
+same shared evaluation context.
+
 * Encoding
 
 | Option   | Effect                                                              |

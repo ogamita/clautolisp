@@ -104,8 +104,10 @@ This rule is *backend-uniform*: it holds for =--clautolisp= (in-
 process and subprocess), =--bricscad=, and =--autocad=. On the CAD
 backends the user-visible printers (=print=/=princ=/=prin1=) are
 the bootstrap-installed shadows that route their output through
-=*AUTOLISP-PROTOCOL-STDOUTFILE*= so =alfe= picks it up at end-of-
-plan; on the clautolisp backend they go through the host's
+=*AUTOLISP-PROTOCOL-STDOUTFILE*= so =alfe= picks it up *live*, as
+each action completes (the protocol driver drains stdout.txt +
+stderr.txt after every counter-aware =DONE N= match — see "Protocol
+driver" below); on the clautolisp backend they go through the host's
 =*standard-output*=. The convention itself — "value of =-x= is not
 printed unless the user printed it" — is identical.
 
@@ -113,6 +115,32 @@ The only context in which values are auto-printed is the
 =--interactive= REPL: there, each top-level form's value is read,
 evaluated, and printed (read-eval-print loop). =-x= and =-l= remain
 silent-by-default even alongside =--interactive=.
+
+*** =--interactive= on CAD backends
+
+=alfe --interactive --bricscad= (and =--autocad=) is implemented
+since alfe 1.0.X (after =alfe-bricscad-backend.issue=). The CLI
+drops into a balanced-form reader on =*standard-input*= and forwards
+every balanced form through the same file-IPC protocol the
+=-x= / =-l= actions use:
+
+1. =alfe> = prompt is issued; continuation lines use =    > =.
+2. The reader accumulates lines until the form is parser-balanced
+   (same parser the protocol's =read-balanced-form-from-lines= uses).
+3. The balanced form is written into =protocol/stdin.txt=.
+4. =alfe= waits for the runtime's =DONE N= where =N= is the next
+   request counter (seeded from the runtime's =READY M= at hand-off).
+5. Output is drained and echoed live to the terminal.
+6. =DONE N FAIL= surfaces the error on =*error-output*= but the
+   loop keeps going — the runtime stays in its read-eval cycle.
+7. The loop exits on EOF (Ctrl-D), an empty line that matches
+   =:quit= / =:q= / =:exit= / =(quit)= / =(exit)=, or a =:quit=
+   action queued in the same =alfe= invocation.
+
+The same drive-protocol-actions loop is reused; only its
+=input-stream= source changes, so the counter accounting, the
+stdout/stderr streaming, and the failure recovery story are all
+identical to batch =-x=.
 
 ** Practical consequences
 
