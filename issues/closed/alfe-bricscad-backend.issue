@@ -1,14 +1,67 @@
 Currently trying out alfe with --bricscad --mode batch on macOS.
 
-Here are a few issues with it which need to be corrected soon:
+Status: closed (resolved on branch fix-cad-eval-and-interactive, alfe 1.1.4).
 
-1. --interactive is not implemented. Please implement it. It should use the same protocol mechanisms as -x or -l.
+## Resolution
 
+All three reported issues land in one drive-protocol-actions rewrite
+under autolisp-front-end/source/backend-cad-common.lisp:
 
-2. -x output is not transmitted to alfe (no trace in workdir), and printed by alfe.
-   (the expected alref.lsp message comes from .autolisp).
+### 1. --interactive is not implemented
 
-3. -x errors are not reported.
+DRIVE-PROTOCOL-ACTIONS's :interactive handler used to signal
+INTERACTIVE-NOT-IMPLEMENTED. It now opens a balanced-form REPL on
+*standard-input*, forwards every form through the same file-IPC
+protocol the -x / -l actions use, drains output live, and exits
+on EOF or the :quit/:q/:exit/(quit)/(exit) tokens.
+
+Both new keyword args (`:input-stream`, `:output-stream`,
+`:error-stream`) let tests drive the REPL in-process via string
+streams; the CLI defaults pass the live terminal streams.
+
+### 2. -x output is not transmitted
+
+Root cause: DRIVE-PROTOCOL-ACTIONS's wait-done was matching the
+generic "DONE" prefix. After action 1 publishes "DONE 1 OK", the
+status stays at "DONE 1 OK" until the runtime reads stdin.txt for
+action 2 (~100 ms yield interval). Alfe's send-action sent action 2
+to stdin.txt and immediately polled status -- saw the stale
+"DONE 1 OK" -- considered action 2 done. Same for actions 3..N.
+The runtime *did* eventually pick up and evaluate the queued
+stdin payloads (the cycle still walked RUNNING N -> DONE N OK)
+but by then alfe had already QUIT-ed and the workdir was about to
+be torn down. Output from every action past the first was lost.
+
+Fix: wait for "DONE <counter>" specifically, where <counter> is
+locally incremented and seeded from the runtime's READY N. The
+new test cad-drive-protocol-actions-three-evals-counter-aware fires
+three :eval actions and asserts all three echoes survive — would
+have failed on the old code.
+
+Also: stdout.txt + stderr.txt are now drained after every counter-
+matched DONE (not deferred to end-of-plan), and echoed live to
+*standard-output* / *error-output*, so long-running actions
+surface output as it happens.
+
+### 3. -x errors are not reported
+
+Same root cause as (2): the runtime *does* publish "DONE N FAIL"
+on errors (autolisp-protocol-write-stderr writes the message into
+protocol/stderr.txt via the bootstrap-installed I/O bridge), but
+alfe never waited long enough to see the new status or drain the
+new bytes. With the counter-aware wait + per-action live drain,
+errors surface on *error-output* and the plan's eval-result-status
+goes :failed.
+
+The map-drawing arity-mismatch in the reporter's trace will now
+surface in stderr as
+  ERROR protocol request N: ... <arity / undefined-function ...>
+
+Bumps alfe 1.1.3 -> 1.1.4. Two new FiveAM tests pin the contract.
+
+## Original report
+
+---
 
 
 18:26[pjb@thalassa org.xquartz:0 pjb 33Gi]$ alfe --bricscad --mode batch --interactive

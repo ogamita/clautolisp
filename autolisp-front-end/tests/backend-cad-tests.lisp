@@ -370,6 +370,89 @@ session would walk."
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
+(test cad-drive-protocol-actions-three-evals-counter-aware
+  "Regression: DRIVE-PROTOCOL-ACTIONS must wait for `DONE N' where N
+is the *next* request counter, not the generic `DONE' prefix. The
+old code matched the previous action's stale `DONE N-1 OK' the very
+tick after send-stdin returned, dropping every action past the
+first one and silently skipping their output + errors.
+
+This test fires three :eval actions; without the counter fix, the
+mock's echo of actions 2 and 3 never reaches eval-result-output
+because alfe believes them finished before the mock has even read
+stdin.txt for them."
+  (let ((workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-cad-three-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist workdir)
+          (let* ((protocol (alfe.protocol.file:init-session workdir))
+                 (cad (spawn-mock-cad-runtime protocol :cycles 3))
+                 (plan (list (alfe.backend:action-eval "(princ 1)")
+                             (alfe.backend:action-eval "(princ 2)")
+                             (alfe.backend:action-eval "(princ 3)")
+                             (alfe.backend:action-quit)))
+                 (result
+                   (progn (alfe.protocol.file:wait-for-status-prefix
+                           protocol "READY" :timeout 2)
+                          (let ((*standard-output* (make-string-output-stream))
+                                (*error-output*    (make-string-output-stream)))
+                            (alfe.backend.cad-common:drive-protocol-actions
+                             protocol plan)))))
+            (is (eq :success (alfe.backend:eval-result-status result)))
+            (let ((stdout (alfe.backend:eval-result-output result)))
+              ;; All three actions must show up in the echo capture.
+              (is (search "(princ 1)" stdout))
+              (is (search "(princ 2)" stdout))
+              (is (search "(princ 3)" stdout)))
+            (bordeaux-threads:join-thread cad)))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))
+
+(test cad-drive-protocol-actions-interactive-loop-roundtrips
+  "DRIVE-PROTOCOL-ACTIONS on an :interactive action reads lines from
+INPUT-STREAM, sends each balanced form through the protocol, drains
+output live to OUTPUT-STREAM, and exits cleanly on EOF. We drive
+both the input and the live streams via string streams so the test
+runs in-process against the mock CAD; the :interactive action is
+followed by an explicit :quit so the loop unwinds and STOP-PED is
+published."
+  (let ((workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-cad-repl-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist workdir)
+          (let* ((protocol (alfe.protocol.file:init-session workdir))
+                 (cad (spawn-mock-cad-runtime protocol :cycles 2))
+                 (plan (list (alfe.backend:action-interactive)
+                             (alfe.backend:action-quit)))
+                 (input-text (format nil "(+ 1 2)~%(+ 3 4)~%"))
+                 (output-stream (make-string-output-stream))
+                 (error-stream  (make-string-output-stream))
+                 (result
+                   (progn (alfe.protocol.file:wait-for-status-prefix
+                           protocol "READY" :timeout 2)
+                          (alfe.backend.cad-common:drive-protocol-actions
+                           protocol plan
+                           :input-stream (make-string-input-stream input-text)
+                           :output-stream output-stream
+                           :error-stream  error-stream))))
+            ;; Both lines we typed should have been echoed by the
+            ;; mock through stdout.txt -> alfe drain -> output-stream.
+            (let ((live (get-output-stream-string output-stream)))
+              (is (search "(+ 1 2)" live))
+              (is (search "(+ 3 4)" live))
+              ;; A primary prompt was issued before the first form.
+              (is (search "alfe>" live)))
+            (is (eq :success (alfe.backend:eval-result-status result)))
+            (bordeaux-threads:join-thread cad)))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))
+
 (test bricscad-start-engine-with-mock-launcher
   "START-ENGINE composes the launch artefacts and waits for READY 0;
 we substitute a thread-based mock for the real bricscad binary via

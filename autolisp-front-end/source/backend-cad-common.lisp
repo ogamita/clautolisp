@@ -202,10 +202,32 @@ the deferred-autolisp-runtime-helpers symptom this asset closes."
 
 ;;; --- protocol-driven eval-plan ------------------------------------
 
+(defparameter *interactive-prompt-primary*    "alfe> "
+  "Prompt issued before reading a fresh top-level form in the
+CAD-backed interactive REPL.")
+
+(defparameter *interactive-prompt-continuation* "    > "
+  "Continuation prompt issued when the form on the wire is not yet
+balanced and the user must keep typing.")
+
+(defparameter *interactive-quit-tokens*
+  '(":quit" ":q" ":exit" "(quit)" "(exit)")
+  "Lines (after trimming) that terminate the CAD-backed interactive
+REPL on the alfe side without bothering to send another request.
+Anything else is forwarded to the runtime verbatim. Note that the
+runtime *itself* still honours (quit)/(exit) — sending those forms
+through stdin.txt drives the same code path as :quit control; this
+list is just a UX convenience so users can type the familiar tokens
+and have the loop terminate cleanly without waiting for the runtime
+round-trip.")
+
 (defun drive-protocol-actions (protocol-session plan
                                &key
                                  (request-timeout 30)
-                                 (shutdown-timeout 10))
+                                 (shutdown-timeout 10)
+                                 (input-stream  *standard-input*)
+                                 (output-stream *standard-output*)
+                                 (error-stream  *error-output*))
   "Drive a PLAN of actions through a connected PROTOCOL-SESSION,
 waiting for each transition to land. The CAD-side runtime is
 expected to walk READY N → RUNNING N → DONE N {OK,FAIL,QUIT} per
@@ -216,39 +238,110 @@ Returns an EVAL-RESULT with:
             :failed on any `DONE N FAIL`,
             :aborted on a timeout.
   - output / error-output: the drained stdout.txt / stderr.txt
-    captures (incremental — only the bytes published while the plan
-    ran).
+    captures (the full per-plan transcript — alfe writes them live
+    to OUTPUT-STREAM / ERROR-STREAM as each action completes, and
+    keeps a copy for the EVAL-RESULT).
 
-The CAD's REPL prints its values via the shadowed print/princ/prin1
-helpers that route into stdout.txt; alfe's CLI re-emits the captured
-text live in run-plan."
-  (let ((status :success)
-        (captured-stdout (make-string-output-stream))
-        (captured-stderr (make-string-output-stream)))
+Each round-trip waits for a *counter-specific* `DONE N` — generic
+`DONE` would match the previous action's stale status the very tick
+after send-stdin returns, dropping the new eval's output and any
+error message before they could be drained. The counter is seeded
+from the runtime's `READY N` (whatever the CAD published when it
+became ready) and incremented locally on each send.
+
+INPUT-STREAM/OUTPUT-STREAM/ERROR-STREAM are wired through to the
+:interactive REPL loop; the CLI passes the live terminal streams,
+tests can pass string streams to drive the REPL in-process."
+  (let* ((status :success)
+         (captured-stdout (make-string-output-stream))
+         (captured-stderr (make-string-output-stream))
+         ;; The runtime publishes "READY N" at startup and then walks
+         ;; N+1 on each request. We initialise from the currently-
+         ;; observed status (typically "READY 0") so the first
+         ;; send-action waits for "DONE 1".
+         (request-counter (or (parse-trailing-positive-integer
+                               (alfe.protocol.file:read-current-status
+                                protocol-session))
+                              0)))
     (labels
-        ((wait-done ()
-           "Wait for the next DONE N status; sets STATUS based on
-the OK/FAIL/QUIT suffix."
-           (multiple-value-bind (matched elapsed last)
-               (alfe.protocol.file:wait-for-status-prefix
-                protocol-session
-                alfe.protocol.file:+status-done-prefix+
-                :timeout request-timeout)
-             (declare (ignore elapsed))
-             (cond
-               ((not matched)
-                (setf status :aborted)
-                nil)
-               ((search " FAIL" last) (setf status :failed))
-               ((search " QUIT" last) nil)
-               (t nil))))
+        ((drain-live ()
+           "Drain stdout.txt + stderr.txt, append to the capture
+streams, and echo to the live OUTPUT-STREAM / ERROR-STREAM so the
+user sees CAD output AS each action completes (not deferred to
+end-of-plan)."
+           (let ((out (alfe.protocol.file:drain-stdout protocol-session))
+                 (err (alfe.protocol.file:drain-stderr protocol-session)))
+             (when (plusp (length out))
+               (write-string out captured-stdout)
+               (write-string out output-stream)
+               (finish-output output-stream))
+             (when (plusp (length err))
+               (write-string err captured-stderr)
+               (write-string err error-stream)
+               (finish-output error-stream))))
+         (wait-done ()
+           "Wait for the runtime to publish `DONE <request-counter>'.
+Sets STATUS based on the OK / FAIL / QUIT suffix. Drains stdout +
+stderr right after the match so output reaches alfe before the
+next round-trip starts."
+           (incf request-counter)
+           (let ((target (format nil "~A ~D"
+                                 alfe.protocol.file:+status-done-prefix+
+                                 request-counter)))
+             (multiple-value-bind (matched elapsed last)
+                 (alfe.protocol.file:wait-for-status-prefix
+                  protocol-session target
+                  :timeout request-timeout)
+               (declare (ignore elapsed))
+               (drain-live)
+               (cond
+                 ((not matched)
+                  (setf status :aborted)
+                  nil)
+                 ((search " FAIL" last) (setf status :failed))
+                 ((search " QUIT" last) nil)
+                 (t nil)))))
          (send-action (form-text)
-           "Atomically publish FORM-TEXT into stdin.txt and wait for
-the runtime to acknowledge DONE."
+           "Atomically publish FORM-TEXT into stdin.txt, then wait
+for the runtime to acknowledge `DONE <next-counter>'."
            (alfe.protocol.file:send-stdin protocol-session form-text)
-           (wait-done)))
+           (wait-done))
+         (interactive-loop ()
+           "Read balanced forms from INPUT-STREAM, forward each to
+the runtime via send-action, drain output, repeat until EOF or the
+user types a quit token. Survives runtime errors: a `DONE N FAIL'
+shows the error on stderr and the prompt comes back."
+           (loop
+             (drain-live)
+             (write-string *interactive-prompt-primary* output-stream)
+             (finish-output output-stream)
+             (multiple-value-bind (text eof-p)
+                 (alfe.protocol.file:read-balanced-form-from-lines
+                  (lambda () (read-line input-stream nil nil))
+                  :source-name "<alfe-repl>")
+               (cond
+                 (eof-p
+                  (terpri output-stream)
+                  (return))
+                 ((or (null text) (zerop (length text)))
+                  ;; Blank input — just re-prompt.
+                  nil)
+                 ((member (string-trim '(#\Space #\Tab #\Newline #\Return)
+                                       text)
+                          *interactive-quit-tokens* :test #'string-equal)
+                  (return))
+                 (t
+                  (send-action text)
+                  ;; A FAILED action in the REPL is recoverable: the
+                  ;; runtime stays in the read loop, we surfaced the
+                  ;; stderr via drain-live, just reset our local
+                  ;; status so the next form gets a clean wait-done.
+                  (when (eq status :failed)
+                    (setf status :success))))))))
       (log-verbose "cad-common: driving ~D action~:P (request-timeout ~A s)"
                    (length plan) request-timeout)
+      (log-debug "cad-common: starting from request-counter ~D"
+                 request-counter)
       (dolist (action plan)
         (unless (eq status :success) (return))
         (log-debug "cad-common: action ~A payload ~S"
@@ -263,16 +356,17 @@ the runtime to acknowledge DONE."
           (:main
            (send-action (format nil "(~A)" (alfe.backend:action-payload action))))
           (:interactive
-           ;; The CAD-side runtime already presents an interactive
-           ;; REPL by reading lines from stdin.txt; alfe just needs
-           ;; to forward terminal input. For Phase 3 we surface a
-           ;; clear "interactive mode requires terminal forwarding"
-           ;; message and stop — the legacy bash wrapper has a
-           ;; line-pump that Phase 3.1 can port later.
-           (error 'backend-eval-error
-                  :backend :cad
-                  :code :interactive-not-implemented
-                  :message "Interactive mode against a CAD backend is not implemented in V1; use --clautolisp -i for an interactive REPL."))
+           ;; The CAD-side runtime is already a read-eval loop on
+           ;; stdin.txt; alfe just forwards the terminal. We surface
+           ;; a one-line banner so the user knows they've crossed
+           ;; into the live REPL, then turn the file-IPC loop into
+           ;; an interactive one. Exiting the loop falls through to
+           ;; the next action in the plan (typically :quit).
+           (format output-stream
+                   "alfe REPL on CAD backend. Type ~A or end-of-file (Ctrl-D) to exit.~%"
+                   (car *interactive-quit-tokens*))
+           (finish-output output-stream)
+           (interactive-loop))
           (:quit
            (alfe.protocol.file:send-control protocol-session :shutdown)
            (multiple-value-bind (matched elapsed last)
@@ -281,24 +375,34 @@ the runtime to acknowledge DONE."
                 alfe.protocol.file:+status-stopped+
                 :timeout shutdown-timeout)
              (declare (ignore elapsed last))
+             (drain-live)
              (unless matched
                (setf status :aborted)))))))
-    ;; Drain whatever the runtime published during the run.
-    (write-string
-     (alfe.protocol.file:drain-stdout protocol-session) captured-stdout)
-    (write-string
-     (alfe.protocol.file:drain-stderr protocol-session) captured-stderr)
-    (let ((stdout-text (get-output-stream-string captured-stdout))
-          (stderr-text (get-output-stream-string captured-stderr)))
-      ;; Echo live to the CLI streams so the user sees what the CAD
-      ;; printed. Mirrors the contract the in-process clautolisp
-      ;; backend follows.
-      (when (plusp (length stdout-text))
-        (write-string stdout-text *standard-output*))
-      (when (plusp (length stderr-text))
-        (write-string stderr-text *error-output*))
-      (make-eval-result
-       :status status
-       :value nil       ; CAD backends don't surface a typed value
-       :output stdout-text
-       :error-output stderr-text))))
+    ;; Final drain — catches anything published between the last
+    ;; wait-done's drain-live and now (e.g. a buffered newline).
+    (let ((out (alfe.protocol.file:drain-stdout protocol-session))
+          (err (alfe.protocol.file:drain-stderr protocol-session)))
+      (when (plusp (length out))
+        (write-string out captured-stdout)
+        (write-string out output-stream))
+      (when (plusp (length err))
+        (write-string err captured-stderr)
+        (write-string err error-stream)))
+    (finish-output output-stream)
+    (finish-output error-stream)
+    (make-eval-result
+     :status status
+     :value nil       ; CAD backends don't surface a typed value
+     :output (get-output-stream-string captured-stdout)
+     :error-output (get-output-stream-string captured-stderr))))
+
+(defun parse-trailing-positive-integer (string)
+  "If STRING looks like `<word> <integer> ...' (e.g. \"READY 0\",
+\"DONE 7 OK\"), return the integer. NIL when STRING is NIL or has no
+integer in the second token slot. Used to seed the request-counter
+in drive-protocol-actions from whatever READY N the runtime has
+already published when we begin driving."
+  (when (and string (plusp (length string)))
+    (let* ((parts (uiop:split-string string :separator '(#\Space #\Tab))))
+      (when (>= (length parts) 2)
+        (ignore-errors (parse-integer (second parts)))))))
