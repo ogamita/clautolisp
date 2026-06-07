@@ -294,7 +294,7 @@
               (setq rc (autolisp-protocol-result-code result))
               (autolisp-set-status rc)
               (autolisp-protocol-set-status
-                (strcat "DONE " (itoa req-id) " OK")))))))))
+                (strcat "DONE " (itoa req-id) " OK"))))))))
   (autolisp-protocol-set-status "STOPPED")
   (princ ""))
 
