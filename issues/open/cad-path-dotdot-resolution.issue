@@ -51,3 +51,34 @@ Notes
 Worked around on the SCHMS+ side by constructing clean paths (no `..`),
 so this is not blocking the harness — filing per the CAD/clautolisp
 parity rule.
+
+
+==> . and .. are standard POSIX directory entries. The semantic is clear
+    (POSIX walks the physical directories).
+    Note: in Common Lisp, there's the distinction between :up and :back
+    https://www.lispworks.com/documentation/HyperSpec/Body/19_bbdc.htm
+
+    if .. is considered as UP (this is the POSIX definition)
+    then in /a/b/c/../d/e/f
+         we go to /a/b/c/
+         then we go up one level to a directory which
+              depends on whether c was a symbolic link!
+         then we go forward down d/e/f
+              It could be /a/b/d/e/f if c was a normal directory,
+              or eg. /x/y/d/e/f if c was a symbolic link to /x/y/q
+
+   if .. is considered as BACK
+   then it's a mere syntactic rewriting of the path:
+                       /a/b/c/../d/e/f
+     is rewritten as   /a/b/d/e/f
+     there's no consideration on c, it could even not exist.
+
+   clautolisp must implement the UP semantics of POSIX path.
+
+   This should be documented, and the fact that bricscad produces
+   different results must be documented too.
+
+   And a test for autocad must be scheduled.
+
+   When paths containing /../ are encountered in non --clautolisp or
+   --lax dialects, must be flagged (a warning issued).
