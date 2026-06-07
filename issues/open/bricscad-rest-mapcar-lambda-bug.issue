@@ -1,0 +1,152 @@
+title: BricsCAD V26: `mapcar' inside a `(&rest args)' defun fails on
+       the trailing element with `bad argument type <N>; expected <CONS>'
+status: open
+type: bug
+filed: 2026-06-07
+component: BricsCAD V26 (upstream, vendor bug — file with Bricsys)
+related: bricscad-undocumented-clisms.issue (umbrella)
+         variadic-functions.issue (clautolisp's &rest impl)
+
+== reproduction ==
+
+Inside alfe --interactive against BricsCAD V26 (alfe 1.1.9,
+clautolisp 1.1.16):
+
+    alfe> (defun foo (&rest args)
+            (list 'args '= args 'of-type (type args) (type-of args)))
+    FOO
+    alfe> (foo 1 2 3)
+    (ARGS = (1 2 3) OF-TYPE LIST <CONS>)
+
+So `&rest args' binds `args' to a PROPER LIST `(1 2 3)' — type
+LIST, type-of CONS. Good. Now add a mapcar over a fresh lambda:
+
+    alfe> (defun foo (&rest args)
+            (list 'args '= args 'of-type (type args) (type-of args)
+                  (mapcar (lambda (x) (cons x x)) args)))
+    FOO
+    alfe> (foo 1 2 3)
+    ERROR protocol request 13: bad argument type <1> ; expected <CONS> at [car]
+
+`(mapcar (lambda (x) (cons x x)) args)' with `args = (1 2 3)' should
+return `((1 . 1) (2 . 2) (3 . 3))'. Instead BricsCAD signals "bad
+argument type <1>; expected <CONS> at [car]" — i.e. somewhere
+inside `mapcar' the runtime called `(car 1)' and 1 is not a cons.
+
+== why this looks like a BricsCAD bug ==
+
+1. The first defun proves `args' IS a well-formed proper list:
+   `(type args) → LIST', `(type-of args) → CONS', and printing the
+   list inside `(list … args …)' shows it embedded as `(1 2 3)' — NOT
+   `((1 2 3))', NOT `(1 . 2)', NOT `(1 2 3 . X)'. There is no
+   structural surprise on the `args' side.
+
+2. The second defun differs only in the trailing `(mapcar …)' call.
+   The body of the lambda passed to mapcar is `(cons x x)' — `cons'
+   is a builder, it never calls `car'. So `car' is NOT being called
+   from the user's code.
+
+3. `mapcar' is the only place left that could be calling `car'. The
+   error message — "at [car]" — points to BricsCAD's internal car
+   call inside its mapcar walker.
+
+4. A correct mapcar walker, given the proper list `args = (1 2 3)',
+   only ever calls `(car (1 2 3))', `(car (2 3))', `(car (3))' —
+   each of those returns an integer cleanly. It never calls
+   `(car 1)' / `(car 2)' / `(car 3)' on the bare integers, because
+   that would require treating each element as its own list.
+
+5. The simplest hypothesis that fits: BricsCAD's mapcar is
+   internally implemented with its own `&rest' parameter for the
+   multiple-lists form `(mapcar fn list1 list2 …)' (the documented
+   shape), and the runtime — when iterating the rest-parameter's
+   elements to support that variadic — somewhere does `(car LIST_i)'
+   to peel one element from each list. When the OUTER defun's
+   `&rest args' is the source of `args' and `args' is passed to
+   `mapcar' as the sole list argument, the mapcar's internal
+   `lists' variable picks up `(args)' — one list. So far so good.
+   But then internally `(mapcar 'car lists)' or its equivalent walks
+   `(args)' and at some point, instead of getting `(1 2 3)' as the
+   single sublist, it gets `1' / `2' / `3' — one of the elements of
+   args, NOT args itself.
+
+   That can happen if the value coming out of the outer `&rest'
+   binding is "spliced" by BricsCAD when re-used as an argument.
+   I.e. the bug is in the interaction between two `&rest's: the
+   user's outer defun and mapcar's implementation. The outer one's
+   binding leaks the spliced shape into the inner one.
+
+6. A cheaper test the user (or anyone with a BricsCAD console) can
+   run to confirm:
+
+       (defun foo (&rest args)
+         (princ "(car args) = ") (princ (car args)) (terpri)
+         (princ "(cdr args) = ") (princ (cdr args)) (terpri)
+         (princ "(length args) = ") (princ (length args)) (terpri)
+         (princ "mapcar id  = ")
+         (princ (mapcar (function identity) args)) (terpri))
+       (foo 1 2 3)
+
+   If `(car args)' shows `1', `(cdr args)' shows `(2 3)', `(length
+   args)' shows `3', then `args' really is the proper list (1 2 3)
+   and the mapcar diagnostic confirms the same bug pattern.
+
+   Then try the SAME mapcar with a LITERAL list that did NOT come
+   from `&rest':
+
+       (mapcar (function (lambda (x) (cons x x))) '(1 2 3))
+
+   If this works (returns ((1 . 1) (2 . 2) (3 . 3))), the bug is
+   definitively localised to the `&rest' / mapcar interaction, not
+   to mapcar in general.
+
+   Then probe what happens when args is COPIED before mapcar:
+
+       (defun foo (&rest args / xs)
+         (setq xs args)
+         (mapcar (function (lambda (x) (cons x x))) xs))
+       (foo 1 2 3)
+
+   If `xs' works and `args' doesn't, BricsCAD's `&rest' binding
+   produces a value that has the right printed shape but is
+   internally distinguishable — a "rest-tag" of some kind that
+   leaks through value-level operations only via certain code
+   paths.
+
+== what's NOT it ==
+
+  - Not a `cons' bug: `cons' doesn't call `car'; that the error is
+    at [car] rules cons out.
+  - Not a `lambda' / closure bug per se: the inner lambda body
+    `(cons x x)' makes no reference to `args', so even a buggy
+    closure capture wouldn't reach `car'.
+  - Not a print/protocol artefact: the FIRST defun prints args
+    correctly through the same protocol, so the protocol is fine.
+  - Not a clautolisp issue: clautolisp's mapcar handles this
+    case cleanly (see the smoke run in this issue's repro
+    section — the bug surfaces ONLY in BricsCAD). clautolisp's
+    `&rest' (just landed in 1.1.16) returns a vanilla CL list, and
+    `mapcar' on it does exactly what you'd expect.
+
+== suggested filing ==
+
+This should be filed with Bricsys support as a defect against
+BricsCAD V26's mapcar + `&rest' interaction. The clautolisp project
+cannot work around it on the BricsCAD side; the user's options are:
+
+  - rewrite the offending defun without `&rest' (use positional
+    parameters or a plain list argument),
+  - copy `args' to a local before mapcar:
+      (defun foo (&rest args / xs)
+        (setq xs args)
+        (mapcar (function (lambda (x) (cons x x))) xs)),
+  - or use clautolisp (not BricsCAD) for code that needs both
+    `&rest' and mapcar.
+
+== scope ==
+
+This issue ONLY tracks the BricsCAD upstream bug. clautolisp's own
+implementation is correct (see the variadic-functions.issue closure)
+and is not affected. The umbrella issue
+`bricscad-undocumented-clisms.issue' lists this in its observation
+section.

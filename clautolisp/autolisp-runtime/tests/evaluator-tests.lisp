@@ -307,8 +307,105 @@ it would be naming a local). The check fires when FOO is called."
 the defun path through the shared usubr machinery."
   (reset-autolisp-symbol-table)
   (is (equal '(2 3 4)
-             (run-autolisp-string
-              "((lambda (a & rest) rest) 1 2 3 4)"))))
+             (let ((*error-output* (make-string-output-stream)))
+               (run-autolisp-string
+                "((lambda (a & rest) rest) 1 2 3 4)")))))
+
+(test defun-and-rest-spelling-is-accepted-as-alias-for-ampersand
+  "Per the 2026-06-07 user clarification (issues/open/
+bricscad-undocumented-clisms.issue): BricsCAD V26 uses `&REST'
+(the Common Lisp spelling), not the bare `&'. clautolisp accepts
+BOTH spellings as synonyms; the recogniser is case-insensitive."
+  (reset-autolisp-symbol-table)
+  (is (equal '(2 3 4)
+             (let ((*error-output* (make-string-output-stream)))
+               (run-autolisp-string
+                "(defun foo (a &rest args) args) (foo 1 2 3 4)"))))
+  (reset-autolisp-symbol-table)
+  ;; Case-insensitive: `&REST', `&Rest', `&rest' all match. We use
+  ;; integers in the trailing args because EQUAL of AutoLISP-symbol
+  ;; objects against CL-symbol literals returns NIL even when the
+  ;; printed names line up — integers compare numerically and let
+  ;; this test stay focused on the lambda-list-parser behavior.
+  (is (equal '(10 20 30)
+             (let ((*error-output* (make-string-output-stream)))
+               (run-autolisp-string
+                "(defun foo (a &Rest tail) tail) (foo 7 10 20 30)")))))
+
+;;; --- Dialect-aware warning for the variadic separator ---
+
+(defun %run-under-dialect (dialect-name source)
+  "Run SOURCE under the dialect named DIALECT-NAME, capturing
+*error-output*. Returns (values RESULT DIAGNOSTIC-STRING).
+RUN-AUTOLISP-STRING ignores the default context and builds a
+fresh session from its `:dialect' keyword, so we pass the
+descriptor through that path rather than mutating an existing
+session."
+  (let ((*error-output* (make-string-output-stream))
+        (dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                  dialect-name)))
+    (values (run-autolisp-string source :dialect dialect)
+            (get-output-stream-string *error-output*))))
+
+(test variadic-warning-silent-under-clautolisp-dialect
+  "Under --dialect clautolisp, both `&' and `&REST' are accepted
+silently — both are blessed by the spec extension and using either
+is portable across clautolisp installs."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :clautolisp
+                          "(defun f (a & r) r)
+                           (defun g (a &rest r) r)
+                           (g 1 2 3)")
+    (declare (ignore result))
+    (is (null (search "lambda-list-extension" diag))
+        "Expected no warning under :clautolisp; got: ~S" diag)))
+
+(test variadic-warning-bricscad-silent-for-rest-warns-for-ampersand
+  "Under --dialect bricscad-v26: `&REST' is silent (BricsCAD's
+native undocumented spelling), `&' warns (BricsCAD does not
+accept the bare ampersand)."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :bricscad-v26
+                          "(defun g (a &rest r) r) (g 1 2 3)")
+    (declare (ignore result))
+    (is (null (search "lambda-list-extension" diag))
+        "&REST should be silent under :bricscad-v26; got: ~S" diag))
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :bricscad-v26
+                          "(defun f (a & r) r) (f 1 2 3)")
+    (declare (ignore result))
+    (is (search "[lambda-list-extension]" diag)
+        "& should warn under :bricscad-v26; got: ~S" diag)
+    (is (search "`&'" diag)
+        "warning should mention `&' specifically; got: ~S" diag)))
+
+(test variadic-warning-strict-warns-for-both-spellings
+  "Under --dialect strict (and any non-clautolisp / non-bricscad
+dialect), BOTH spellings warn — they are non-portable across
+vendors and the strict dialect surfaces every such departure."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :strict
+                          "(defun f (a & r) r)
+                           (defun g (a &rest r) r)")
+    (declare (ignore result))
+    (is (search "`&'" diag) "Expected `&' warning; got: ~S" diag)
+    (is (search "`&REST'" diag) "Expected `&REST' warning; got: ~S" diag)))
+
+(test variadic-warning-autocad-warns-for-both-spellings
+  "Under --dialect autocad-2026, same behavior as strict: both
+spellings warn, because neither is part of the Autodesk public
+AutoLISP reference."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :autocad-2026
+                          "(defun g (a &rest r) r)")
+    (declare (ignore result))
+    (is (search "`&REST'" diag)
+        "&REST should warn under :autocad-2026; got: ~S" diag)))
 
 (test eval-set-form-with-quoted-symbol
   "(set 'foo 99) binds FOO to 99 and returns 99 — the canonical

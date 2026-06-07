@@ -1402,20 +1402,69 @@ break-on-caught is enabled; NIL by default (off).")
        (string= "/" (autolisp-symbol-name symbol))))
 
 (defun autolisp-ampersand-symbol-p (symbol)
-  "T iff SYMBOL is the AutoLISP `&' separator that introduces a
-rest-parameter in a defun/lambda lambda-list.
-
-`&' is the clautolisp spelling of the variadic separator proposed
-in `issues/open/variadic-functions.issue'. BricsCAD V26 ships an
-undocumented `&rest' equivalent (confirmed by Bricsys support);
-this single-character form is the one the issue spec'd before that
-confirmation, so we accept it here. The exact-symbol match (`&'
-alone, not e.g. `&body' or `&optional') is deliberate: we do NOT
-implement a Common Lisp lambda-list parser, only the
-minimum (`required* [\"&\" rest] [\"/\" locals*]') the AutoLISP
-extension calls for."
+  "T iff SYMBOL is the AutoLISP rest-parameter separator — either
+the bare `&' (clautolisp's original spelling proposed in
+`issues/open/variadic-functions.issue') or `&REST' (BricsCAD V26's
+spelling, confirmed by Bricsys support and observed in the user's
+own `(defun foo (&rest args) …)' transcripts). Match is
+case-insensitive on the symbol name only; we do NOT implement a
+full Common Lisp lambda-list parser — `&body', `&optional', `&key'
+remain unsupported."
   (and (typep symbol 'autolisp-symbol)
-       (string= "&" (autolisp-symbol-name symbol))))
+       (let ((name (string-upcase (autolisp-symbol-name symbol))))
+         (or (string= "&" name)
+             (string= "&REST" name)))))
+
+(defun autolisp-ampersand-spelling (symbol)
+  "Return :ampersand if SYMBOL is `&', :and-rest if it is `&REST'
+(any case). Returns NIL when SYMBOL is not a recognised
+rest-separator. Used by the dialect-warning path to format the
+exact spelling the user wrote."
+  (when (typep symbol 'autolisp-symbol)
+    (let ((name (string-upcase (autolisp-symbol-name symbol))))
+      (cond
+        ((string= "&" name)     :ampersand)
+        ((string= "&REST" name) :and-rest)
+        (t nil)))))
+
+(defun emit-lambda-list-extension-warning (spelling who)
+  "When a defun/lambda lambda-list uses a rest-parameter separator,
+emit a `[lambda-list-extension]' warning unless the current
+dialect explicitly accepts that spelling.
+
+Per `issues/open/bricscad-undocumented-clisms.issue' and the user's
+2026-06-07 ruling:
+
+  - :clautolisp dialect — silent for both `&' and `&REST' (both
+    are blessed by the spec extension).
+  - :bricscad-v26 dialect — silent for `&REST' (BricsCAD's native
+    undocumented form), warns for `&' (clautolisp's spelling that
+    BricsCAD does NOT accept).
+  - :strict, :autocad-2026, :lax — warn for both spellings (they
+    are non-portable across vendors).
+
+The warning is informational only — the function is defined as
+usual and runs normally. WHO is a short string identifying the
+caller (e.g. \"DEFUN\" or \"LAMBDA\") for the diagnostic prefix."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (silent-p
+           (case name
+             ((:clautolisp) t)
+             ((:bricscad-v26) (eq spelling :and-rest))
+             (t nil))))
+    (unless silent-p
+      (let ((token (case spelling
+                     (:ampersand "&")
+                     (:and-rest  "&REST")
+                     (t "<rest-separator>"))))
+        (format *error-output*
+                "~&[lambda-list-extension] ~A: `~A' is a clautolisp ~
+variadic-function extension; --dialect ~(~A~) flags it as ~
+non-portable. Use --dialect clautolisp to silence, or rewrite ~
+without a rest parameter.~%"
+                who token (or name "default"))))))
 
 (defun split-usubr-lambda-list (lambda-list)
   "Walk LAMBDA-LIST and split it into the three positional groups
@@ -1892,12 +1941,25 @@ flag only."
                                 nil))))
         (pop-dynamic-frame context)))))
 
+(defun maybe-warn-about-rest-separator (lambda-list who)
+  "Walk LAMBDA-LIST, find the rest-separator if any, and emit a
+dialect-aware warning via `emit-lambda-list-extension-warning'.
+A no-op when LAMBDA-LIST has no separator or is malformed (the
+malformed cases surface at call-time via `bind-usubr-frame')."
+  (when (listp lambda-list)
+    (dolist (element lambda-list)
+      (let ((spelling (autolisp-ampersand-spelling element)))
+        (when spelling
+          (emit-lambda-list-extension-warning spelling who)
+          (return))))))
+
 (defun eval-lambda-form (arguments context)
   (unless (>= (length arguments) 2)
     (signal-autolisp-runtime-error
      :wrong-number-of-arguments
      "LAMBDA expects a lambda list and at least one body form, got ~D arguments."
      (length arguments)))
+  (maybe-warn-about-rest-separator (first arguments) "LAMBDA")
   (make-autolisp-usubr "LAMBDA"
                        (first arguments)
                        (rest arguments)
@@ -1957,6 +2019,7 @@ flag only."
        :invalid-defun-name
        "DEFUN-Q name must be an AutoLISP symbol, got ~S."
        name))
+    (maybe-warn-about-rest-separator lambda-list "DEFUN-Q")
     (let ((function (make-autolisp-usubr (autolisp-symbol-name name)
                                          lambda-list
                                          body
@@ -1980,6 +2043,7 @@ flag only."
        :invalid-defun-name
        "DEFUN name must be an AutoLISP symbol, got ~S."
        name))
+    (maybe-warn-about-rest-separator lambda-list "DEFUN")
     (let ((function (make-autolisp-usubr (autolisp-symbol-name name)
                                          lambda-list
                                          body
