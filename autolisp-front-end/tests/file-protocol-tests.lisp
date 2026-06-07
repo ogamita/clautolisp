@@ -493,11 +493,13 @@ walk-rewriting normalize approach with a native-arity shadow that
 preserves the user's reader-built cons cells — same fix scope as
 1.1.10, but at the source rather than papering over normalize.
 
-The shadows must use `(& args)' (clautolisp's spelling) so they
-work on the mock-host and AutoCAD-like hosts; BricsCAD V26
-canonicalises both `&' and `&REST' through the same parser path
-(per Bricsys support confirmation). Either spelling reaches the
-defun-time validator."
+The shadows use `(&rest args)' — BricsCAD V26's native spelling
+(confirmed by Bricsys support). The bare `&' is a clautolisp-only
+extension; the emitted run-common.lsp runs inside the CAD's own
+runtime, so the BricsCAD spelling is what reaches its defun
+parser. clautolisp's parser accepts both spellings as synonyms
+(alfe 1.1.17), so the emitted file also loads correctly under
+the mock-host used by the test suite."
   ;; The bridge block (which carries the variadic shadows) is
   ;; emitted only when BOTH the bootstrap and the runtime LSP are
   ;; staged — emit-run-common-lsp gates the bridge inside the
@@ -533,10 +535,10 @@ defun-time validator."
               (is (search "(defun alfe-host-supports-rest-p" content))
               (is (search "__alfe-amp-rest-probe" content))
               ;; The variadic shadows installed under the YES branch.
-              (is (search "(defun princ (& args)" content))
-              (is (search "(defun print (& args)" content))
-              (is (search "(defun prin1 (& args)" content))
-              (is (search "(defun prompt (& args)" content))
+              (is (search "(defun princ (&rest args)" content))
+              (is (search "(defun print (&rest args)" content))
+              (is (search "(defun prin1 (&rest args)" content))
+              (is (search "(defun prompt (&rest args)" content))
               ;; The no-op normalize override that's the whole
               ;; point — with variadic shadows in place, walking
               ;; the form is unnecessary. Identity-fn preserves
