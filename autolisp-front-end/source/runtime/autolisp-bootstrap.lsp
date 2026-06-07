@@ -419,14 +419,47 @@
               (setq found (findfile (strcat home (substr path 2) ".lsp")))))))))
   found)
 
-(defun autolisp-source-load-core-impl (path has-onfailure onfailure / resolved f line line-no form-text form-start-line result form-read defun-name eval-result capture-old)
+;; Run the loaded-file's read+eval loop. Extracted from
+;; `autolisp-source-load-core-impl' so the outer function can wrap
+;; this body in a `vl-catch-all-apply' and reliably restore
+;; *AUTOLISP-LOAD-PATHNAME* on the way out, even when the loaded
+;; file errors part-way through. See
+;; `issues/closed/autolisp-load-pathname.issue'.
+(defun autolisp-source-load-run-body (resolved /)
+  (setq *AUTOLISP_LOAD_STACK* (cons resolved *AUTOLISP_LOAD_STACK*))
+  (autolisp-source-load-run-body-impl resolved))
+
+(defun autolisp-source-load-core-impl (path has-onfailure onfailure / resolved prev-load-pathname catch-result)
   (setq resolved (autolisp-source-resolve-load-path path))
   (if (not resolved)
     (if has-onfailure
       (autolisp-source-load-failure onfailure)
       (error (strcat "LOAD failed: \"" path "\"")))
     (progn
-      (setq *AUTOLISP_LOAD_STACK* (cons resolved *AUTOLISP_LOAD_STACK*))
+      ;; Bind *AUTOLISP-LOAD-PATHNAME* (both hyphen and underscore
+      ;; spellings, per the project's convention) to the absolute
+      ;; resolved pathname. autolisp-source-resolve-load-path delegates
+      ;; to `findfile' which returns the absolute path for any matched
+      ;; candidate, so `resolved' is already absolute. We save the
+      ;; prior value and restore it on the way out (or clear to nil at
+      ;; top level), so nested loads compose correctly and an error
+      ;; in the loaded file doesn't leak a stale value back to the
+      ;; caller. See `issues/closed/autolisp-load-pathname.issue'.
+      (setq prev-load-pathname
+        (if (boundp '*AUTOLISP-LOAD-PATHNAME*) *AUTOLISP-LOAD-PATHNAME* nil))
+      (setq *AUTOLISP-LOAD-PATHNAME* resolved)
+      (setq *AUTOLISP_LOAD_PATHNAME* resolved)
+      (setq catch-result
+        (vl-catch-all-apply 'autolisp-source-load-run-body
+                            (list resolved)))
+      (setq *AUTOLISP-LOAD-PATHNAME* prev-load-pathname)
+      (setq *AUTOLISP_LOAD_PATHNAME* prev-load-pathname)
+      (if (vl-catch-all-error-p catch-result)
+        (error (vl-catch-all-error-message catch-result))
+        catch-result))))
+
+(defun autolisp-source-load-run-body-impl (resolved / f line line-no form-text form-start-line result form-read defun-name eval-result capture-old)
+  (progn
       (setq f (open resolved "r"))
       (if (not f)
         (autolisp-source-raise resolved "unable to open source file" nil nil nil nil))
@@ -525,7 +558,7 @@
       ;; success, not the last evaluated form.
       (setq result resolved)
       (autolisp-source-pop-stack)
-      result)))
+      result))
 
 (defun autolisp-source-load (path /)
   (autolisp-source-load-core-impl path nil nil))
