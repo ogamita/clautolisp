@@ -1076,16 +1076,43 @@ Returns the path of the emitted file."
       (write-line (strcat \"VERBOSE=\" (if *AUTOLISP-VERBOSE* \"1\" \"0\")) f)~%~
       (close f))))~%~
 ;; Wrap autolisp-eval-request-form so the publish fires after every~%~
-;; protocol-driven evaluation. The inner body re-implements the~%~
-;; bootstrap definition verbatim (AutoLISP has no first-class function~%~
-;; cell to indirect through cleanly, so we inline the original three~%~
-;; lines). Keep this in sync with autolisp-bootstrap.lsp's definition.~%~
-(defun autolisp-eval-request-form (form / r)~%~
+;; protocol-driven evaluation. For non-LOAD forms, we no longer call~%~
+;; `(eval form)' inline — BricsCAD V26 mis-dispatches embedded~%~
+;; `(lambda …)' inside the eval'd form when eval is called from a~%~
+;; defun (mapcar treats the lambda as a literal cons and signals~%~
+;; `bad argument type <1>; expected <CONS> at [car]'). Instead we~%~
+;; stringify the form, write it to a temp .lsp file and call the~%~
+;; native `load' (BricsCAD's, not the runtime's source-load helper).~%~
+;; That routes the form through the host's normal reader-compiler~%~
+;; pipeline — the same one the raw command-line REPL goes through —~%~
+;; so embedded lambdas get their read-time compilation hints.~%~
+;;~%~
+;; See issues/closed/bricscad-rest-mapcar-lambda-bug.issue for the~%~
+;; full diagnosis. Performance: per-request file write + load adds~%~
+;; a few ms on SSDs, well below the human perception threshold for~%~
+;; a typed-form REPL turn.~%~
+(defun autolisp-eval-request-form (form / r path text f)~%~
   (setq form (autolisp-normalize-princ-call form))~%~
-  (setq r~%~
-    (if (autolisp-load-form-p form)~%~
-      (autolisp-eval-load-form form)~%~
-      (eval form)))~%~
+  (cond~%~
+    ((autolisp-load-form-p form)~%~
+      (setq r (autolisp-eval-load-form form)))~%~
+    (T~%~
+      (setq path (strcat *AUTOLISP_PROTOCOL_DIR* \"alfe-eval.lsp\"))~%~
+      (setq text (autolisp-readable-text form))~%~
+      (setq f (open path \"w\"))~%~
+      (if f~%~
+        (progn~%~
+          ;; Wrap in a setq so we can recover the form's value after~%~
+          ;; load returns. *AUTOLISP-EVAL-RESULT* is reset before~%~
+          ;; load so a failed/aborted load yields nil rather than a~%~
+          ;; stale previous turn's value.~%~
+          (write-line~%~
+            (strcat \"(setq *AUTOLISP-EVAL-RESULT* \" text \")\") f)~%~
+          (close f)~%~
+          (setq *AUTOLISP-EVAL-RESULT* nil)~%~
+          (vl-catch-all-apply 'load (list path))~%~
+          (setq r *AUTOLISP-EVAL-RESULT*))~%~
+        (setq r nil))))~%~
   (alfe-publish-runtime-flags)~%~
   r)~%~
 ;;; --- alfe: explicit control sentinels via protocol/stdout.txt ---~%~
