@@ -1115,6 +1115,88 @@ Returns the path of the emitted file."
   (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE*~%~
                        (strcat \"[ALFE-CONTROL] VERBOSE=\" (if on \"1\" \"0\")))~%~
   on)~%~
+;;; --- alfe: variadic shadows when the host supports `&rest' ---~%~
+;; The bootstrap installs 1-arg-only shadows for princ/print/prin1/~%~
+;; prompt and a walk-rewriting `autolisp-normalize-princ-call' that~%~
+;; rewrites empty `(princ)' to `(autolisp-princ-newline)' before~%~
+;; eval. The walk was made cons-identity-preserving in alfe 1.1.10~%~
+;; (see issues/closed/bricscad-rest-mapcar-lambda-bug.issue), but~%~
+;; even the cheap pre-walk costs cycles per request.~%~
+;;~%~
+;; When the host's `defun' supports `&rest' (BricsCAD V26 confirmed~%~
+;; by Bricsys; AutoCAD versions vary), we can do better: install~%~
+;; VARIADIC shadows that natively accept 0, 1, or 2 args, and make~%~
+;; normalize a hard no-op. The user's form goes through eval with~%~
+;; the reader's cons cells fully intact, no walk required.~%~
+;;~%~
+;; The probe defines a throwaway function and calls it; we install~%~
+;; the variadic shadows only if both the defun AND the call succeed~%~
+;; (some hosts accept `&rest' at defun-time but mishandle the bound~%~
+;; rest-arg, which the call-time check catches).~%~
+(defun alfe-host-supports-rest-p (/ probe call-result)~%~
+  (setq probe~%~
+    (vl-catch-all-apply~%~
+      'eval~%~
+      (list '(defun __alfe-amp-rest-probe (&rest x) x))))~%~
+  (if (vl-catch-all-error-p probe)~%~
+    nil~%~
+    (progn~%~
+      (setq call-result~%~
+        (vl-catch-all-apply '__alfe-amp-rest-probe (list 1 2 3)))~%~
+      (and (not (vl-catch-all-error-p call-result))~%~
+           (listp call-result)~%~
+           (= 3 (length call-result))))))~%~
+(if (alfe-host-supports-rest-p)~%~
+  (progn~%~
+    (alfe-debug-log~%~
+      \"host supports &rest; installing variadic shadows + no-op normalize\")~%~
+    ;; (princ)            -> newline (alias for autolisp-princ-newline).~%~
+    ;; (princ obj)        -> write obj to protocol stdout, return obj.~%~
+    ;; (princ obj filedes)-> filedes silently dropped (alfe protocol~%~
+    ;;                       captures everything to protocol/stdout.txt;~%~
+    ;;                       routing per-call to an arbitrary handle is~%~
+    ;;                       out of scope for the bridge).~%~
+    (defun princ (& args)~%~
+      (cond~%~
+        ((null args)~%~
+          (autolisp-princ-newline))~%~
+        (T~%~
+          (autolisp-emit-user-line (autolisp-str (car args)))~%~
+          (car args))))~%~
+    ;; (print obj) writes a leading newline before obj — matches the~%~
+    ;; documented AutoLISP semantics. (print) with no args degrades~%~
+    ;; to a bare newline.~%~
+    (defun print (& args)~%~
+      (cond~%~
+        ((null args)~%~
+          (autolisp-princ-newline))~%~
+        (T~%~
+          (autolisp-princ-newline)~%~
+          (autolisp-emit-user-out (car args)))))~%~
+    (defun prin1 (& args)~%~
+      (cond~%~
+        ((null args)~%~
+          (autolisp-emit-user-out nil))~%~
+        (T~%~
+          (autolisp-emit-user-out (car args)))))~%~
+    (defun prompt (& args)~%~
+      (cond~%~
+        ((null args) nil)~%~
+        (T~%~
+          (if (car args)~%~
+            (progn~%~
+              (autolisp-emit-user-line (autolisp-str (car args)))~%~
+              (car args))~%~
+            (car args)))))~%~
+    ;; With variadic shadows in place, every documented (princ)~%~
+    ;; arity is honoured natively — no source-form rewrite is~%~
+    ;; needed. Replace normalize with the identity function so~%~
+    ;; the user's form goes through eval with its original~%~
+    ;; reader-built cons cells intact (which BricsCAD's mapcar~%~
+    ;; relies on to recognise embedded lambdas as functions).~%~
+    (defun autolisp-normalize-princ-call (form) form))~%~
+  (alfe-debug-log~%~
+    \"host lacks &rest; keeping bootstrap 1-arg shadows + walk-rewriting normalize\"))~%~
 ;; Publish once at startup so alfe sees the initial values even~%~
 ;; before the first request lands.~%~
 (alfe-publish-runtime-flags)~%~

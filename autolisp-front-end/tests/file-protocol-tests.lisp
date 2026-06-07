@@ -485,6 +485,68 @@ work without us forking the runtime."
             (is (search "*AUTOLISP_RUNCOMMON_VERSION*" content))))
       (delete-workdir workdir))))
 
+(test protocol-emit-run-common-lsp-installs-variadic-shadows
+  "The emitted run-common.lsp contains the alfe-host-supports-rest-p
+probe and the variadic shadow definitions for princ/print/prin1/
+prompt that fire when the probe succeeds. This replaces the
+walk-rewriting normalize approach with a native-arity shadow that
+preserves the user's reader-built cons cells — same fix scope as
+1.1.10, but at the source rather than papering over normalize.
+
+The shadows must use `(& args)' (clautolisp's spelling) so they
+work on the mock-host and AutoCAD-like hosts; BricsCAD V26
+canonicalises both `&' and `&REST' through the same parser path
+(per Bricsys support confirmation). Either spelling reaches the
+defun-time validator."
+  ;; The bridge block (which carries the variadic shadows) is
+  ;; emitted only when BOTH the bootstrap and the runtime LSP are
+  ;; staged — emit-run-common-lsp gates the bridge inside the
+  ;; runtime-staged branch (so a session that intentionally
+  ;; doesn't load the protocol runtime, e.g. an ad-hoc script run,
+  ;; doesn't get the bridge either). Stage both before checking.
+  (let* ((workdir (make-test-workdir "emit-variadic"))
+         (fake-boot (merge-pathnames "fake-bootstrap.lsp" workdir))
+         (fake-rt   (merge-pathnames "fake-runtime.lsp" workdir)))
+    (unwind-protect
+        (progn
+          (with-open-file (out fake-boot :direction :output
+                                         :if-exists :supersede
+                                         :if-does-not-exist :create
+                                         :external-format :utf-8)
+            (format out ";; fake bootstrap~%(setq fake-boot t)~%"))
+          (with-open-file (out fake-rt :direction :output
+                                       :if-exists :supersede
+                                       :if-does-not-exist :create
+                                       :external-format :utf-8)
+            (format out ";; fake runtime~%(setq fake-rt t)~%"))
+          (let* ((session (alfe.protocol.file:init-session
+                           workdir
+                           :bootstrap-lsp-source fake-boot
+                           :runtime-lsp-source fake-rt))
+                 (_ (alfe.protocol.file:stage-bootstrap-lsp session))
+                 (__ (alfe.protocol.file:stage-runtime-lsp session))
+                 (path (alfe.protocol.file:emit-run-common-lsp session)))
+            (declare (ignore _ __))
+            (is (probe-file path))
+            (let ((content (alfe.protocol.file:read-file-as-string path)))
+              ;; The host-capability probe.
+              (is (search "(defun alfe-host-supports-rest-p" content))
+              (is (search "__alfe-amp-rest-probe" content))
+              ;; The variadic shadows installed under the YES branch.
+              (is (search "(defun princ (& args)" content))
+              (is (search "(defun print (& args)" content))
+              (is (search "(defun prin1 (& args)" content))
+              (is (search "(defun prompt (& args)" content))
+              ;; The no-op normalize override that's the whole
+              ;; point — with variadic shadows in place, walking
+              ;; the form is unnecessary. Identity-fn preserves
+              ;; cons-cell identity.
+              (is (search "(defun autolisp-normalize-princ-call (form) form)"
+                          content))
+              ;; The fallback debug log for hosts that lack &rest.
+              (is (search "host lacks &rest" content)))))
+      (delete-workdir workdir))))
+
 (test protocol-stage-bootstrap-lsp-copies-into-runtime-subdir
   "STAGE-BOOTSTRAP-LSP copies the BOOTSTRAP-LSP-SOURCE file to
 workdir/runtime/autolisp-bootstrap.lsp and records the staged path
