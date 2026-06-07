@@ -279,11 +279,41 @@ end-of-plan)."
                (write-string err captured-stderr)
                (write-string err error-stream)
                (finish-output error-stream))))
+         (sync-verbosity-from-runtime ()
+           "Re-read protocol/runtime-flags.txt and, if the CAD-side
+runtime has toggled *AUTOLISP-DEBUG* / *AUTOLISP-VERBOSE*, mirror
+the change into alfe.logging's *current-level* so the alfe-side
+trace lines respect the runtime-side switch regardless of what the
+--debug / --verbose CLI flag was at startup.
+
+The mapping is `most-specific-wins': DEBUG=1 -> :DEBUG;
+VERBOSE=1 -> :VERBOSE; both NIL -> :INFO. We never drop below
+:INFO from here -- the CLI's --quiet (which sets :WARN) still
+wins because runtime-flags only carries DEBUG/VERBOSE."
+           (let ((flags (alfe.protocol.file:read-runtime-flags
+                         protocol-session)))
+             (when flags
+               (let ((desired
+                       (cond
+                         ((getf flags :debug)   :debug)
+                         ((getf flags :verbose) :verbose)
+                         (t                     :info))))
+                 (unless (eq desired alfe.logging:*current-level*)
+                   ;; Only ever transition between debug/verbose/info
+                   ;; based on the runtime flags; if the CLI elected
+                   ;; :warn (--quiet alone) we leave that alone, the
+                   ;; user opted out of debug/verbose chatter at the
+                   ;; process level.
+                   (unless (eq alfe.logging:*current-level* :warn)
+                     (alfe.logging:set-level desired)))))))
          (wait-done ()
            "Wait for the runtime to publish `DONE <request-counter>'.
 Sets STATUS based on the OK / FAIL / QUIT suffix. Drains stdout +
 stderr right after the match so output reaches alfe before the
-next round-trip starts."
+next round-trip starts. After draining we also mirror the current
+runtime-side verbosity flags into alfe.logging so toggles a REPL
+user makes via (setq *autolisp-debug* …) take effect on the next
+trace line."
            (incf request-counter)
            (let ((target (format nil "~A ~D"
                                  alfe.protocol.file:+status-done-prefix+
@@ -294,6 +324,7 @@ next round-trip starts."
                   :timeout request-timeout)
                (declare (ignore elapsed))
                (drain-live)
+               (sync-verbosity-from-runtime)
                (cond
                  ((not matched)
                   (setf status :aborted)

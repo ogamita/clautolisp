@@ -7,6 +7,59 @@ it should be taken into account immediately:
 
 Similarly for *autolisp-verbose*, etc.
 
+Status: closed (resolved on branch fix-dynamic-debug-toggle, alfe 1.1.7).
+
+## Resolution
+
+The CAD-side state is now mirrored back to alfe through a new
+protocol slot `protocol/runtime-flags.txt' (one `KEY=VALUE' line
+per flag). The run-common.lsp wrapper installs an
+`alfe-publish-runtime-flags' helper and redefines
+`autolisp-eval-request-form' to call it after every protocol
+evaluation (the inner body re-implements the bootstrap definition
+verbatim — AutoLISP has no first-class function cell we can
+indirect through cleanly, so we inline the original three lines;
+keep this in sync with autolisp-bootstrap.lsp).
+
+Alfe-side, `drive-protocol-actions' adds a `sync-verbosity-from-
+runtime' step that runs right after each `wait-done' drain. It
+reads the flag file via the new exported `read-runtime-flags' and
+calls `alfe.logging:set-level' to match:
+
+  DEBUG=1  -> :debug
+  VERBOSE=1 -> :verbose
+  both 0   -> :info
+
+`--quiet' (which sets :warn at the CLI) is left alone — once the
+user opted out of progress chatter at the process level the
+runtime flag does not override that.
+
+So `(setq *autolisp-debug* nil)' at the REPL now silences alfe's
+own `alfe[debug]: …' lines immediately (next round-trip), and
+`(setq *autolisp-debug* t)' resumes them, regardless of whether
+the CLI started with `--debug'.
+
+Spec / runtime side:
+  - `+protocol-files+' gains `:runtime-flags' (`runtime-flags.txt').
+  - `protocol-session' gains `runtime-flags-path' slot.
+  - `read-runtime-flags' exported helper.
+  - Run-common.lsp emit declares `*AUTOLISP-PROTOCOL-FLAGSFILE*'
+    (and the underscore variant) in the protocol-global block, then
+    publishes once at bridge-install time so alfe sees the initial
+    flag values before the first request.
+
+New FiveAM regression test
+`cad-drive-protocol-actions-mirrors-runtime-debug-flag' pins the
+sync: it pre-installs DEBUG=0 in the flag file, drives a plan with
+alfe.logging at :DEBUG, and asserts the level drops to :INFO after
+the wait-done sync.
+
+Bumps alfe 1.1.6 -> 1.1.7. Test suite: 322 pass / 0 fail.
+
+## Original report
+
+---
+
 
 13:51[pjb@thalassa org.xquartz:0 clautolisp 32Gi]$ alfe --debug --bricscad --mode batch -i
 alfe[debug]: cli: version 1.1.5
