@@ -331,7 +331,18 @@ shows the error on stderr and the prompt comes back."
                           *interactive-quit-tokens* :test #'string-equal)
                   (return))
                  (t
-                  (send-action text)
+                  ;; In a REPL we want to *see* the value the user just
+                  ;; typed -- (+ 1 2) should echo 3 on the next line.
+                  ;; The protocol only relays printer output (see the
+                  ;; alfe spec's "Action output semantics" section),
+                  ;; so wrap each form with (print …) on its way to the
+                  ;; runtime. The bootstrap's `print' shadow routes the
+                  ;; emitted text through *AUTOLISP_PROTOCOL_STDOUTFILE*,
+                  ;; which the next drain-live picks up and writes to
+                  ;; OUTPUT-STREAM. -x and -l, which are batch and do
+                  ;; NOT auto-print, are unaffected -- they take the
+                  ;; :load / :eval branches above and bypass this wrap.
+                  (send-action (format nil "(print ~A)" text))
                   ;; A FAILED action in the REPL is recoverable: the
                   ;; runtime stays in the read loop, we surfaced the
                   ;; stderr via drain-live, just reset our local

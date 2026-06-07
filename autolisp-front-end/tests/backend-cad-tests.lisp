@@ -443,9 +443,14 @@ published."
                            :error-stream  error-stream))))
             ;; Both lines we typed should have been echoed by the
             ;; mock through stdout.txt -> alfe drain -> output-stream.
+            ;; alfe wraps each interactive form in (print …) so the
+            ;; runtime emits the value back to stdout.txt; the mock
+            ;; echoes the wrapped text so the assertion is on the
+            ;; wrapped form ("(print (+ 1 2))" rather than the bare
+            ;; "(+ 1 2)").
             (let ((live (get-output-stream-string output-stream)))
-              (is (search "(+ 1 2)" live))
-              (is (search "(+ 3 4)" live))
+              (is (search "(print (+ 1 2))" live))
+              (is (search "(print (+ 3 4))" live))
               ;; A primary prompt was issued before the first form.
               (is (search "alfe>" live)))
             (is (eq :success (alfe.backend:eval-result-status result)))
