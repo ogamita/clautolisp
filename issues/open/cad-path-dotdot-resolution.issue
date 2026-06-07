@@ -1,0 +1,53 @@
+cad-path-dotdot-resolution — open/findfile/load and ".." segments differ (BricsCAD vs clautolisp)
+=================================================================================================
+
+Reported from: porting the SCHMS+ test harness
+(sncf-reseau/src/schms, tests/test-unitaire.lsp) to `alfe --bricscad
+--mode batch`. alfe 1.1.16, BricsCAD V26, macOS.
+
+Summary
+-------
+
+A path containing `..` segments (e.g.
+`/…/schms/tests/../../outils-autolisp/autolisp-test/test-framework.lsp`)
+is resolved by clautolisp's file primitives but NOT by BricsCAD's:
+
+- clautolisp: `open`/`findfile`/`load` collapse `..` and reach the file.
+- BricsCAD: the same path fails (file treated as not found).
+
+Evidence
+--------
+
+The harness originally built such paths
+(`(strcat *tu:repo-dir* "/../outils-autolisp/…")`). On clautolisp the
+whole SCHMS+ suite runs (177 OK). On BricsCAD the framework `load`
+fails. Rewriting the harness to emit CLEAN absolute paths (no `..`)
+makes BricsCAD's `open` succeed:
+
+    ;; BricsCAD, clean absolute path -> OK
+    (open "/Users/.../src/outils-autolisp/autolisp-test/test-framework.lsp" "r")  => <file>
+
+Repro to confirm (needs an EXISTING file reached via "..")
+----------------------------------------------------------
+
+    ;; with <F> = an existing file, <D> its directory:
+    (open "<D>/x/../<basename F>" "r")
+    ;; clautolisp: returns a file handle
+    ;; BricsCAD:   expected nil  (please confirm)
+
+(The first quick check used a non-existent target, so it was
+inconclusive — hence "please confirm".)
+
+Expected
+--------
+
+For parity, BricsCAD-backed `open`/`findfile`/`load` should resolve
+`..` (and `.`) segments like clautolisp, OR this divergence should be
+documented so callers normalize paths first.
+
+Notes
+-----
+
+Worked around on the SCHMS+ side by constructing clean paths (no `..`),
+so this is not blocking the harness — filing per the CAD/clautolisp
+parity rule.

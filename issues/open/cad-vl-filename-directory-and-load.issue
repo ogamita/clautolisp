@@ -1,0 +1,62 @@
+cad-vl-filename-directory-and-load — harness framework load fails on BricsCAD (path derivation)
+===============================================================================================
+
+Reported from: SCHMS+ test harness (sncf-reseau/src/schms,
+tests/test-unitaire.lsp) via `alfe --bricscad --mode batch`.
+alfe 1.1.16, BricsCAD V26, macOS.
+
+Summary
+-------
+
+The harness derives its own directory from `*tu:self-override*` and
+from there computes the test-framework path. This works on clautolisp
+(suite runs, 177 OK) but on BricsCAD `*tu:test-framework*` ends up NIL,
+so `(load *tu:test-framework*)` fails:
+
+    ERROR ... while loading .../tests/test-unitaire.lsp
+      (form at line N): bad argument type <*TU:TEST-FRAMEWORK*>
+      ; expected <STRING> at [findfile]
+
+i.e. the value passed to `load`/`findfile` is nil — the framework path
+the harness computed could not be opened on BricsCAD.
+
+What the diagnostics show (in isolation, on BricsCAD)
+-----------------------------------------------------
+
+These all behave like clautolisp, which makes the failure puzzling:
+
+    (vl-filename-directory "/a/b/c")                         => "/a/b"   (parity OK)
+    (open "<clean abs path to test-framework.lsp>" "r")     => <file>   (OK)
+
+So neither `vl-filename-directory` on a directory argument nor `open`
+of the clean absolute path misbehaves on its own — yet the harness,
+which composes exactly those operations, yields a nil framework path
+on BricsCAD only.
+
+Suspected
+---------
+
+A residual path-derivation divergence between BricsCAD and clautolisp:
+either `vl-filename-directory` differs for some argument shape the
+harness actually produces (trailing separator, extension-less last
+component, deep path), or the composed path differs subtly (separator,
+double slash) so `open` returns nil. Needs the computed value printed
+under the live BricsCAD run to pin down:
+
+    ;; add to the harness or run after load:
+    (princ (strcat "repo=[" *tu:repo-dir* "] fw=[" (vl-prin1-to-string *tu:test-framework*) "]\n"))
+
+Why it matters
+--------------
+
+It blocks running the existing AutoLISP unit suite under BricsCAD via
+alfe (it already passes under clautolisp). Same harness, same inputs,
+divergent result — so it points at a BricsCAD-vs-clautolisp file/path
+behavior difference.
+
+Related
+-------
+
+See cad-path-dotdot-resolution.issue (BricsCAD does not resolve ".."
+segments) — the harness now emits clean paths to avoid that, but the
+framework path still does not resolve here.
