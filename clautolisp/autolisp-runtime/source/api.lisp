@@ -1440,8 +1440,13 @@ Per `issues/open/bricscad-undocumented-clisms.issue' and the user's
   - :bricscad-v26 dialect — silent for `&REST' (BricsCAD's native
     undocumented form), warns for `&' (clautolisp's spelling that
     BricsCAD does NOT accept).
-  - :strict, :autocad-2026, :lax — warn for both spellings (they
-    are non-portable across vendors).
+  - :lax dialect — silent for everything. `--lax' is the catch-all
+    `accept every vendor's extensions without complaining' mode;
+    extending that contract to lambda-list extensions matches the
+    same dialect's behavior on encoding diagnostics
+    (see `%enc-dialect-is-lax-p').
+  - :strict, :autocad-2026 — warn for both spellings (they are
+    non-portable across vendors).
 
 The warning is informational only — the function is defined as
 usual and runs normally. WHO is a short string identifying the
@@ -1451,7 +1456,7 @@ caller (e.g. \"DEFUN\" or \"LAMBDA\") for the diagnostic prefix."
                     (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
          (silent-p
            (case name
-             ((:clautolisp) t)
+             ((:clautolisp :lax) t)
              ((:bricscad-v26) (eq spelling :and-rest))
              (t nil))))
     (unless silent-p
