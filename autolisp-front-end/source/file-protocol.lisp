@@ -1156,7 +1156,7 @@ Returns the path of the emitted file."
     ;;                       captures everything to protocol/stdout.txt;~%~
     ;;                       routing per-call to an arbitrary handle is~%~
     ;;                       out of scope for the bridge).~%~
-    (defun princ (& args)~%~
+    (defun princ (&rest args)~%~
       (cond~%~
         ((null args)~%~
           (autolisp-princ-newline))~%~
@@ -1166,20 +1166,20 @@ Returns the path of the emitted file."
     ;; (print obj) writes a leading newline before obj — matches the~%~
     ;; documented AutoLISP semantics. (print) with no args degrades~%~
     ;; to a bare newline.~%~
-    (defun print (& args)~%~
+    (defun print (&rest args)~%~
       (cond~%~
         ((null args)~%~
           (autolisp-princ-newline))~%~
         (T~%~
           (autolisp-princ-newline)~%~
           (autolisp-emit-user-out (car args)))))~%~
-    (defun prin1 (& args)~%~
+    (defun prin1 (&rest args)~%~
       (cond~%~
         ((null args)~%~
           (autolisp-emit-user-out nil))~%~
         (T~%~
           (autolisp-emit-user-out (car args)))))~%~
-    (defun prompt (& args)~%~
+    (defun prompt (&rest args)~%~
       (cond~%~
         ((null args) nil)~%~
         (T~%~
