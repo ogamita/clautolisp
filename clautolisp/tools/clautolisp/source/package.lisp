@@ -35,6 +35,7 @@
                 #:call-with-autolisp-error-handler
                 #:derive-reader-options-for-dialect
                 #:intern-autolisp-symbol
+                #:lookup-variable
                 #:make-autolisp-string
                 #:make-default-runtime-context
                 #:read-runtime-from-string

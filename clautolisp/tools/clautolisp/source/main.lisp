@@ -400,10 +400,99 @@ exactly what they are typing into."
         (when knobs
           (format t "  (~{~A~^, ~})~%" knobs))))))
 
+;;; --- REPL history variables --------------------------------------------
+;;;
+;;; CL's REPL maintains - / + ++ +++ / * ** *** / / // ///. AutoLISP is a
+;;; Lisp-1, so we can't clobber the names of the +, -, * and / functions
+;;; — instead we use the colon-prefixed family :- :+ :++ :+++ :* :** :***
+;;; :/ :// :///. AutoLISP's reader treats `:foo' as a plain identifier
+;;; (not a self-binding keyword), so `(setq :- something)' is well-formed
+;;; and `:-' at the prompt evaluates to whatever was last stored.
+;;;
+;;; These are REPL-only — they are never bound by source-file LOADs or
+;;; -x actions. The repl-loop below rotates them around each iteration.
+
+(defparameter *repl-form-history-symbols*
+  '(":-" ":+" ":++" ":+++")
+  "Form-history slots in oldest-to-newest order. `:-' is the form being
+read this turn; `:+' is last turn's form; `:++' the one before; `:+++'
+the one before that.")
+
+(defparameter *repl-result-history-symbols*
+  '(":*" ":**" ":***")
+  "Result-history slots, newest first. `:*' is the previous result,
+`:**' the one before, `:***' the one before that.")
+
+(defparameter *repl-list-result-history-symbols*
+  '(":/" "://" ":///")
+  "List-of-result history. `:/' is `(list :*)' (a one-element list for
+single-value evals — AutoLISP has no multiple values, so the wrap is
+trivial; the slot exists for parity with CL where `/' / `//' / `///'
+hold the whole multiple-value tuple).")
+
+(defun %repl-intern (name)
+  (intern-autolisp-symbol name))
+
+(defun %repl-init-history (context)
+  "Initialise every REPL history slot to nil up-front so that the first
+time the user references one (before any turn has shifted a value in)
+it evaluates to nil rather than signalling unbound-variable."
+  (dolist (name (append *repl-form-history-symbols*
+                        *repl-result-history-symbols*
+                        *repl-list-result-history-symbols*))
+    (set-variable (%repl-intern name) nil context)))
+
+(defun %repl-bind-dash (form context)
+  "Bind `:-' to the form about to be evaluated, BEFORE eval. The user
+can legitimately reference `:-' from inside their form (e.g. to
+inspect what they typed via `(print :-)'), and the end-of-turn rotate
+needs `:-' to hold the just-evaluated form so that `:+ <- :-' lands
+the right value."
+  (set-variable (%repl-intern (first *repl-form-history-symbols*))
+                form context))
+
+(defun %repl-rotate-history (result context)
+  "Called after a successful turn (with `:-' already holding the
+just-evaluated form). Shifts the form and result histories one slot
+older — `:+++' <- `:++' <- `:+' <- `:-' and `:***' <- `:**' <- `:*'
+<- result — then refreshes the list-of-result slots `:/' / `://' /
+`:///' so each holds `(list <its matching * slot>)'.
+
+The colon-prefixed slot names are wired in the *repl-*-history-symbols
+parameters; this helper just walks the shift mechanically. The pair
+walk goes oldest-receiver-first so each slot reads its predecessor
+*before* that predecessor itself gets overwritten on the next pair."
+  (let* ((forms      (mapcar #'%repl-intern *repl-form-history-symbols*))
+         (results    (mapcar #'%repl-intern *repl-result-history-symbols*))
+         (list-slots (mapcar #'%repl-intern *repl-list-result-history-symbols*)))
+    ;; Form history: oldest (:+++) <- previous (:++); :++ <- :+; :+ <- :-
+    ;; (`:-' already holds this turn's form per %repl-bind-dash, so the
+    ;; last pair `:+ <- :-' is exactly what we want).
+    (loop for (target source) on (reverse forms) by #'cdr
+          while source
+          do (set-variable target
+                           (nth-value 0 (lookup-variable source context))
+                           context))
+    ;; Result history: :*** <- :**; :** <- :*; :* <- result.
+    (loop for (target source) on (reverse results) by #'cdr
+          while source
+          do (set-variable target
+                           (nth-value 0 (lookup-variable source context))
+                           context))
+    (set-variable (first results) result context)
+    ;; List-of-result slots: :/ <- (list :*); :// <- (list :**); etc.
+    (loop for list-slot in list-slots
+          for result-slot in results
+          do (set-variable list-slot
+                           (list (nth-value 0 (lookup-variable result-slot
+                                                                context)))
+                           context))))
+
 (defun repl-loop (dialect context &key quiet-p mock-input gui trace-p)
   (unless quiet-p
     (emit-repl-banner dialect context
                       :mock-input mock-input :gui gui :trace-p trace-p))
+  (%repl-init-history context)
   (loop
     (multiple-value-bind (source eofp)
         (read-balanced-source-from-stream
@@ -415,10 +504,22 @@ exactly what they are typing into."
           (let* ((options (derive-reader-options-for-dialect
                            dialect :source-name "<repl>"))
                  (forms (read-runtime-from-string source :options options))
-                 (result (call-with-autolisp-error-handler
-                          (lambda () (autolisp-eval-progn forms context))
-                          context)))
-            (format t "~A~%" (autolisp-value->string result nil)))
+                 ;; A turn evaluates the *last* form of the typed
+                 ;; sequence as the canonical "form being evaluated"
+                 ;; for the :- / :+ / :++ history. If the user typed
+                 ;; just one form (the common case) this is exactly
+                 ;; that form; multi-form turns get their final form
+                 ;; recorded — same convention as SLIME / Allegro's
+                 ;; repl bookkeeping.
+                 (this-form (car (last forms))))
+            ;; Bind :- BEFORE eval so the user's form can reference
+            ;; what they just typed via (print :-), etc.
+            (%repl-bind-dash this-form context)
+            (let ((result (call-with-autolisp-error-handler
+                           (lambda () (autolisp-eval-progn forms context))
+                           context)))
+              (format t "~A~%" (autolisp-value->string result nil))
+              (%repl-rotate-history result context)))
         (simple-error (condition)
           (let ((diagnostic (simple-error-diagnostic condition)))
             (if diagnostic
