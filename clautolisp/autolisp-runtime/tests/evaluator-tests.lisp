@@ -395,6 +395,22 @@ vendors and the strict dialect surfaces every such departure."
     (is (search "`&'" diag) "Expected `&' warning; got: ~S" diag)
     (is (search "`&REST'" diag) "Expected `&REST' warning; got: ~S" diag)))
 
+(test variadic-warning-silent-under-lax-dialect
+  "Under --dialect lax, NOTHING warns — `--lax' is the catch-all
+`accept every vendor's extensions without complaining' mode, by
+spec parallel with how the encoding-diagnostic gate already
+silences itself under :lax (`%enc-dialect-is-lax-p'). Both `&'
+and `&REST' are accepted silently."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :lax
+                          "(defun f (a & r) r)
+                           (defun g (a &rest r) r)
+                           (g 1 2 3)")
+    (declare (ignore result))
+    (is (null (search "lambda-list-extension" diag))
+        "Expected no warning under :lax; got: ~S" diag)))
+
 (test variadic-warning-autocad-warns-for-both-spellings
   "Under --dialect autocad-2026, same behavior as strict: both
 spellings warn, because neither is part of the Autodesk public
