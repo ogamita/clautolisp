@@ -42,7 +42,7 @@ Example:
 princ has no mandatory parameters, only optional parameters.
 
 <pre>
-(defun funcall (fun & arguments) 
+(defun funcall (fun & arguments)
   (apply fun arguments))
 
 (setq original-princ (function princ))
@@ -60,14 +60,72 @@ princ has no mandatory parameters, only optional parameters.
 
 This extension is materialised in the defun operator, so the defun
 special operator section of the autolisp-spec will have to be
-augmented by an extension subsection to describe it. Currently, only
-clautolisp implements this extension (when not in --strict mode).
-
-A feature request has been posted at Bricsys support, while AutoDesk
-prevents us to post such a feature request for lack of priviledges.
+augmented by an extension subsection to describe it.
 
 
+== Status (2026-06-07) ==
+
+Implemented in clautolisp 1.1.16 (commit on branch
+`variadic-amp', branch merged to master via FF). See
+`clautolisp/autolisp-runtime/source/api.lisp':
+
+  - `autolisp-ampersand-symbol-p' recogniser
+  - `split-usubr-lambda-list' now returns three values:
+    `(required, rest-param, locals)'.
+  - `bind-usubr-frame' relaxes the strict-equal arity check to
+    `>=' when REST-PARAM is present, gathers the excess into a
+    list, and binds it. When the rest slot is absent the legacy
+    strict-equal arity check still fires byte-for-byte.
+
+Diagnostics surface at CALL time (matching the usual AutoLISP
+late-binding error model):
+
+  :wrong-number-of-arguments  — fewer args than required formals.
+  :invalid-rest-parameter     — `& ' followed by ≠ 1 symbol, or
+                                `& ' appearing after `/' (which
+                                would name a local instead).
+
+The debugger metadata pipeline (`autolisp-debug/source/instrument.lisp')
+was extended to include REST-PARAM in `bound-names' so the inspector
+shows it between the required formals and the /-locals — in the same
+order `bind-usubr-frame' binds them.
+
+Tests (clautolisp/autolisp-runtime/tests/evaluator-tests.lisp):
+
+  defun-ampersand-rest-binds-list-of-extra-args
+  defun-ampersand-rest-exact-arity-rest-is-nil
+  defun-ampersand-rest-combined-with-slash-locals
+  defun-ampersand-arity-shortfall-signals
+  defun-ampersand-zero-rest-symbols-signals
+  defun-ampersand-multiple-rest-symbols-signals
+  defun-ampersand-after-slash-signals
+  lambda-ampersand-rest-binds-list-of-extra-args
 
 
+== Status of the cross-vendor feature request ==
 
+A feature request had been posted at Bricsys support, while AutoDesk
+prevents us from posting such a feature request for lack of
+privileges.
 
+Bricsys support has CONFIRMED that BricsCAD V26 already implements
+`&rest' as an undocumented extension. We have NOT yet probed the
+exact spelling BricsCAD accepts (`&rest' keyword vs bare `&'
+symbol) — that's tracked in
+`issues/open/bricscad-undocumented-clisms.issue', along with a
+broader inventory of CL constructs BricsCAD silently accepts
+(`setf', `let', `let*' have been observed).
+
+Strict-mode warning: this is still pending. The clautolisp
+`--strict' / dialect-bricscad reader currently accepts `&' without
+emitting a diagnostic. The right move is:
+
+  - clautolisp default dialect: accept silently (matches the
+    extension's purpose).
+  - dialect bricscad: accept and emit a warning that this is an
+    undocumented BricsCAD extension (so users are aware).
+  - dialect strict / autodesk: reject at defun-time with
+    :strict-lambda-list-extension.
+
+Tracking the dialect-warning piece in the umbrella issue
+`bricscad-undocumented-clisms.issue'.

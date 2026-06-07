@@ -219,6 +219,97 @@ than (EXPECTED …)."
 
 ;;;; ----- M1 special operators: SET, TRACE, UNTRACE -----
 
+;;; --- Variadic functions via `&' (issues/open/variadic-functions.issue) ---
+
+(test defun-ampersand-rest-binds-list-of-extra-args
+  "(defun foo (a & rest) ...) binds REST to the list of arguments
+beyond the required formals. The test uses bare references (no
+CONS / LIST builtins — autolisp-runtime tests run without
+builtins-core loaded) and checks the value REST takes on at the
+call site."
+  (reset-autolisp-symbol-table)
+  ;; REST captures (2 3 4) when there is one required formal.
+  (is (equal '(2 3 4)
+             (run-autolisp-string
+              "(defun foo (a & rest) rest) (foo 1 2 3 4)")))
+  (reset-autolisp-symbol-table)
+  ;; Zero-required case: REST collects everything.
+  (is (equal '(10 20 30 40)
+             (run-autolisp-string
+              "(defun zero (& args) args) (zero 10 20 30 40)"))))
+
+(test defun-ampersand-rest-exact-arity-rest-is-nil
+  "When the caller supplies EXACTLY the number of required arguments,
+REST binds to NIL (the empty list) — mirrors the (princ) /
+(princ x) shape the extension was designed to support."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string
+             "(defun bar (a & rest) rest) (bar 1)"))))
+
+(test defun-ampersand-rest-combined-with-slash-locals
+  "(/ locals*) still apply after the `&'-rest slot; locals are
+initialised to NIL just like in a plain defun. The body sets the
+local then returns REST so we can verify both slots survived
+binding."
+  (reset-autolisp-symbol-table)
+  (is (equal '(3 4 5)
+             (run-autolisp-string
+              "(defun bar (a b & rest / x) (setq x rest) x) (bar 1 2 3 4 5)"))))
+
+(test defun-ampersand-arity-shortfall-signals
+  "Fewer arguments than REQUIRED still signals :wrong-number-of-arguments
+when `&' is present. The diagnostic detail (the `at least N' phrasing)
+isn't inspected here — only the error code is part of the contract."
+  (reset-autolisp-symbol-table)
+  (let (signalled-code)
+    (handler-case
+        (run-autolisp-string "(defun foo (a b & rest) a) (foo 1)")
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :wrong-number-of-arguments signalled-code))))
+
+(test defun-ampersand-zero-rest-symbols-signals
+  "(defun foo (a & ) …) is malformed: nothing names the rest-parameter.
+The diagnostic surfaces the first time FOO is called."
+  (reset-autolisp-symbol-table)
+  (let (signalled-code)
+    (handler-case
+        (run-autolisp-string "(defun foo (a & ) a) (foo 1)")
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :invalid-rest-parameter signalled-code))))
+
+(test defun-ampersand-multiple-rest-symbols-signals
+  "(defun foo (a & x y) …) — more than one symbol after `&' is
+malformed (CL's `&body' / `&optional' are NOT mimicked here; the
+extension is deliberately a single-symbol slot)."
+  (reset-autolisp-symbol-table)
+  (let (signalled-code)
+    (handler-case
+        (run-autolisp-string "(defun foo (a & x y) a) (foo 1 2 3)")
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :invalid-rest-parameter signalled-code))))
+
+(test defun-ampersand-after-slash-signals
+  "(defun foo (a / locals & x) …) — `&' must precede `/' (otherwise
+it would be naming a local). The check fires when FOO is called."
+  (reset-autolisp-symbol-table)
+  (let (signalled-code)
+    (handler-case
+        (run-autolisp-string "(defun foo (a / locals & x) a) (foo 1)")
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :invalid-rest-parameter signalled-code))))
+
+(test lambda-ampersand-rest-binds-list-of-extra-args
+  "The same `&'-rest extension fires in anonymous LAMBDAs, mirroring
+the defun path through the shared usubr machinery."
+  (reset-autolisp-symbol-table)
+  (is (equal '(2 3 4)
+             (run-autolisp-string
+              "((lambda (a & rest) rest) 1 2 3 4)"))))
+
 (test eval-set-form-with-quoted-symbol
   "(set 'foo 99) binds FOO to 99 and returns 99 — the canonical
 SET shape (Autodesk reference)."
