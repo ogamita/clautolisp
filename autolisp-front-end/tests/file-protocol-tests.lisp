@@ -66,6 +66,36 @@ status.txt opens with `BOOTING`."
                        (alfe.protocol.file:read-current-status session))))
       (delete-workdir workdir))))
 
+;;; --- vendored runtime LSP integrity ---------------------------------
+
+(defun %count-chars (path char)
+  (let ((count 0))
+    (with-open-file (in path :element-type 'character
+                             :external-format :utf-8)
+      (loop for ch = (read-char in nil :eof)
+            until (eq ch :eof)
+            when (eql ch char) do (incf count)))
+    count))
+
+(test vendored-runtime-lsp-paren-balance
+  "The vendored autolisp-remote-io.lsp + autolisp-bootstrap.lsp are
+loaded verbatim into the CAD; an unmatched paren in either file
+makes BricsCAD's LOAD bail out with `extra right parenthesis on
+input' or `unexpected end of input', cascading into
+`server-loop CAUGHT error' at the protocol level. A previous edit
+to the runtime's success branch (DONE N OK fix) shipped with an
+extra trailing `)' and broke the production run; this test pins the
+invariant so it doesn't happen again."
+  (dolist (basename '("autolisp-remote-io.lsp" "autolisp-bootstrap.lsp"))
+    (let* ((path (asdf:system-relative-pathname
+                  "autolisp-front-end/backend-cad-common"
+                  (concatenate 'string "source/runtime/" basename)))
+           (opens (%count-chars path #\())
+           (closes (%count-chars path #\))))
+      (is (= opens closes)
+          "vendored ~A: ~D opens vs ~D closes (delta ~D)"
+          basename opens closes (- opens closes)))))
+
 ;;; --- atomic write --------------------------------------------------
 
 (test protocol-write-atomic-file-roundtrips
