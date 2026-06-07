@@ -20,12 +20,28 @@ appear in any of the vendor docs the autolisp-spec project has
 catalogued (see `autolisp-spec/documentation/autolisp-reference-notes.org'
 and `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org').
 
-Confirmed by Bricsys support so far:
+Confirmed by Bricsys support + user repro on 2026-06-07:
 
   - `&rest' in defun / lambda lambda-lists. The autolisp-spec
     project's `variadic-functions.issue' originally proposed the
-    bare `&' separator (no `rest' keyword); BricsCAD's flavor
-    needs probing to confirm which spelling (or both) it accepts.
+    bare `&' separator (no `rest' keyword); BricsCAD V26 uses the
+    Common Lisp spelling `&REST' (case-insensitive, like every
+    AutoLISP symbol). User confirmed with a session transcript:
+
+        alfe> (defun foo (&rest args)
+                (list 'args '= args 'of-type (type args) (type-of args)))
+        FOO
+        alfe> (foo 1 2 3)
+        (ARGS = (1 2 3) OF-TYPE LIST <CONS>)
+
+    The bare `&' (clautolisp's original spelling) is NOT accepted
+    by BricsCAD.
+
+    Known BricsCAD bug surfacing this construct:
+    `bricscad-rest-mapcar-lambda-bug.issue' files a defect where
+    `(mapcar fn args)' inside a `(&rest args)' defun mishandles the
+    last element of `args' as a bare value `(car 1)' — a vendor-
+    side defect, not a clautolisp issue.
 
 Observed by user, not yet probed against a fresh BricsCAD session:
 

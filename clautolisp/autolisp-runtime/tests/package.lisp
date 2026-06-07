@@ -73,6 +73,7 @@
                 #:run-autolisp-file
                 #:run-autolisp-string
                 #:runtime-session-dialect
+                #:set-runtime-session-dialect
                 #:current-evaluation-dialect
                 #:reader-object->runtime-value
                 #:reset-autolisp-symbol-table
