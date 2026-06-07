@@ -187,7 +187,7 @@ variables at the time actions and =MAIN= are executed:
 | =*AUTOLISP-QUIT-ON-FINISH*=           | =T= if the runtime must shut the CAD engine down at the end, =nil= otherwise.                     |
 | =*AUTOLISP-BOOTSTRAP-PHASE*=          | Effective bootstrap phase (=marker= / =core= / =log= / =full=).                                   |
 | =*AUTOLISP-INVOCATION-DIR*=           | Absolute path of the current directory at wrapper invocation time.                                |
-| =*AUTOLISP-DEBUG*=                    | =T= if =--debug= is active, =nil= otherwise.                                                      |
+| =*AUTOLISP-DEBUG*=                    | =T= if =--debug= is active, =nil= otherwise. *Read freely; mutate via =(alfe-set-debugging …)= — see helpers below.* |
 | =*AUTOLISP-DEBUGFILE*=                | Path to =debug.log=.                                                                              |
 | =*AUTOLISP-USE-REMOTE-PROTOCOL*=      | =1= if the remote REPL protocol is active, =0= otherwise.                                         |
 | =*AUTOLISP-PROTOCOL-DIR*=             | Path to the =protocol/= subdirectory.                                                             |
@@ -213,6 +213,15 @@ variables at the time actions and =MAIN= are executed:
 | =(autolisp-exit)=                 | Alias of =(exit)=: leave the REPL without killing the engine.                         |
 | =(quit)=                          | Request engine shutdown; raises the =*AUTOLISP-QUIT-SIGNAL*= signal.                  |
 | =(autolisp-runtime-debug msg)=    | Emit a line into =debug.log= when =*AUTOLISP-DEBUG*= is =T=.                          |
+| =(alfe-set-debugging T-or-nil)=   | Toggle =*AUTOLISP-DEBUG*= on the CAD side AND fire the =[ALFE-CONTROL] DEBUG=…= sentinel so alfe drops its own =alfe[debug]:= log lines synchronously. Returns its argument. *Always prefer this over a raw =(setq *AUTOLISP-DEBUG* …)=*: a bare setq updates only the CAD-side global; alfe's =*current-level*= stays at whatever the CLI flag set, so the user still sees =alfe[debug]:= chatter for the rest of the session. =(alfe-set-debugging …)= keeps the two halves in sync. |
+| =(alfe-set-verbose T-or-nil)=     | Same shape as =alfe-set-debugging= but for =*AUTOLISP-VERBOSE*= and =alfe[verbose]:= lines. |
+
+The same lockstep applies to =*AUTOLISP-VERBOSE*= — read it freely,
+mutate it via =(alfe-set-verbose …)=. The polling fallback
+(=protocol/runtime-flags.txt=, re-published after every eval) will
+eventually catch a bare =(setq *AUTOLISP-DEBUG* nil)= on the next
+round-trip, but the explicit setter is race-free and is the
+documented entry point.
 
 ** Minimal example
 
