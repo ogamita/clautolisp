@@ -1,0 +1,120 @@
+title: BricsCAD V26: inventory of undocumented Common Lisp constructs
+status: open
+type: enhancement + spec
+filed: 2026-06-07
+component: autolisp-spec :: vendor-conformance + clautolisp dialect
+        warnings
+related: variadic-functions.issue (the `&'-rest case, now
+         implemented in clautolisp 1.1.16 as a non-strict
+         extension)
+         deferred-bricscad-setq-nil-returns-2.issue (the trigger
+         that surfaced this whole inventory: the `2' was actually
+         from `setf' the user typed instead of `setq', and `setf'
+         turned out to be one of the undocumented constructs)
+
+== Summary ==
+
+BricsCAD V26 silently accepts several Common Lisp constructs that
+do NOT appear in Autodesk's public AutoLISP reference and do NOT
+appear in any of the vendor docs the autolisp-spec project has
+catalogued (see `autolisp-spec/documentation/autolisp-reference-notes.org'
+and `autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org').
+
+Confirmed by Bricsys support so far:
+
+  - `&rest' in defun / lambda lambda-lists. The autolisp-spec
+    project's `variadic-functions.issue' originally proposed the
+    bare `&' separator (no `rest' keyword); BricsCAD's flavor
+    needs probing to confirm which spelling (or both) it accepts.
+
+Observed by user, not yet probed against a fresh BricsCAD session:
+
+  - `setf' — returns `2' on `(setf *sym* nil)' (this is what
+    surfaced the issue; user initially mis-read the displayed `2'
+    as a bug in `setq', see the related issue above).
+  - `let' — generalised CL let with parallel bindings.
+  - `let*' — CL let* with sequential bindings.
+
+The above three need vendor-confirmation probes before we can
+treat them as load-bearing extensions.
+
+== Why this matters ==
+
+Users writing AutoLISP that's intended to be portable across
+vendors will hit silent BricsCAD-only behavior. Today the spec
+draft and the reader/runtime dialect framework have no way to
+flag uses of these constructs — they neither warn nor error, they
+just work on BricsCAD and break on AutoCAD.
+
+In the other direction, clautolisp aims to be a faithful AutoLISP
+host: if BricsCAD accepts a construct, clautolisp should too (at
+least under `--dialect bricscad'). The variadic-functions.issue
+just landed the first piece (`&'-rest); the other three are
+candidates for follow-up.
+
+== Plan ==
+
+1. Probe inventory. Write probes under
+   `autolisp-spec/sources/probe-bricscad-extensions.lsp' that run
+   in a BricsCAD console and report exactly what each construct
+   does:
+
+     (princ "1. setq returns ")  (princ (setq foo 99))   (terpri)
+     (princ "2. setf returns ")  (princ (setf foo nil))  (terpri)
+     (princ "3. let returns  ")  (princ (let ((x 1) (y 2)) (+ x y))) (terpri)
+     (princ "4. let* returns ")  (princ (let* ((x 1) (y (+ x 1))) y)) (terpri)
+     (princ "5. &rest binds  ")  (princ ((lambda (a &rest r) r) 1 2 3 4)) (terpri)
+     (princ "6. & binds     ")  (princ ((lambda (a & r) r) 1 2 3 4)) (terpri)
+
+   Gather one run's transcript into
+   `autolisp-spec/results/bricscad/macos/<TIMESTAMP>-undocumented-clisms/'
+   the way other probe runs already organise themselves.
+
+2. Spec page. Add
+   `autolisp-spec/documentation/bricscad-undocumented-extensions.org'
+   listing each construct with: vendor-confirmation evidence
+   (Bricsys ticket id, probe transcript date), observed semantics,
+   recommendation (portability hazard | clautolisp-implementable
+   | clautolisp-shouldn't-implement).
+
+3. clautolisp implementations.
+
+   a. `&'-rest in defun/lambda. DONE (1.1.16, variadic-functions.issue).
+   b. `setf' — value semantics: which places does BricsCAD's
+      `setf' actually support, and how does it differ from `setq'
+      on symbol places? Probe before implementing. If symbol-only,
+      it's essentially an alias for `setq' and can be implemented
+      trivially.
+   c. `let' / `let*' — these are NICE additions but require
+      careful lambda-list / dynamic-frame design. Implement only
+      after the probes confirm BricsCAD's exact semantics
+      (parallel vs sequential binding, scope of the let body,
+      interaction with `/'-locals).
+
+4. Dialect warnings. Under `--dialect bricscad' (the lax-but-vendor-
+   faithful target), each of these constructs should still be
+   accepted but emit `[ext-bricscad-undocumented] LET/LET*/SETF/&'
+   diagnostics so users writing portable code are alerted. Under
+   `--dialect autodesk' or `--dialect strict' they should error
+   with `:strict-lambda-list-extension' / `:undocumented-construct'
+   so portable-code scanners flag them.
+
+== Notes ==
+
+- The autolisp-spec draft (`autolisp-visual-lisp-specification-draft.org')
+  was searched on 2026-06-07 for `&rest', `setf', `let' (sole-symbol),
+  `variadic'. NONE appear. The reference-notes file lists only
+  Autodesk URLs; we have no offline copy of the Autodesk PDF to
+  search.
+
+- Bricsys support is the ONLY confirming source for `&rest' so
+  far. That confirmation is what unblocked the clautolisp
+  implementation in variadic-functions.issue. We should re-engage
+  Bricsys support with a single ticket listing setf/let/let* and
+  ask whether each is officially supported, officially
+  deprecated, or officially undocumented-but-stable.
+
+- This issue is intentionally an UMBRELLA: the actual code
+  changes will land in per-construct branches/commits; this file
+  tracks the meta-decision (which constructs to chase, in what
+  order) and the documentation rollout.

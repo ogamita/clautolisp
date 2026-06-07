@@ -131,10 +131,18 @@ USUBR's body conses must have been recorded by a tracked load
                (progn-symbol (intern-autolisp-symbol "PROGN"))
                (body-progn (cons progn-symbol statements))
                (instrumented-body (list (wrap-poll state entry-id body-progn)))
-               (bound-names (multiple-value-bind (required locals)
+               (bound-names (multiple-value-bind (required rest-param locals)
                                 (split-usubr-lambda-list
                                  (autolisp-usubr-lambda-list usubr))
-                              (append required locals)))
+                              ;; Variadic functions: REST-PARAM (the
+                              ;; symbol after `&') participates in the
+                              ;; debugger's bound-names list right between
+                              ;; the required formals and the /-locals,
+                              ;; mirroring the order the runtime binds
+                              ;; them in `bind-usubr-frame'.
+                              (append required
+                                      (when rest-param (list rest-param))
+                                      locals)))
                (metadata
                  (make-function-debug-metadata
                   :function-id fid

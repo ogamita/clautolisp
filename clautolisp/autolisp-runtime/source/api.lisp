@@ -1401,34 +1401,113 @@ break-on-caught is enabled; NIL by default (off).")
   (and (typep symbol 'autolisp-symbol)
        (string= "/" (autolisp-symbol-name symbol))))
 
+(defun autolisp-ampersand-symbol-p (symbol)
+  "T iff SYMBOL is the AutoLISP `&' separator that introduces a
+rest-parameter in a defun/lambda lambda-list.
+
+`&' is the clautolisp spelling of the variadic separator proposed
+in `issues/open/variadic-functions.issue'. BricsCAD V26 ships an
+undocumented `&rest' equivalent (confirmed by Bricsys support);
+this single-character form is the one the issue spec'd before that
+confirmation, so we accept it here. The exact-symbol match (`&'
+alone, not e.g. `&body' or `&optional') is deliberate: we do NOT
+implement a Common Lisp lambda-list parser, only the
+minimum (`required* [\"&\" rest] [\"/\" locals*]') the AutoLISP
+extension calls for."
+  (and (typep symbol 'autolisp-symbol)
+       (string= "&" (autolisp-symbol-name symbol))))
+
 (defun split-usubr-lambda-list (lambda-list)
+  "Walk LAMBDA-LIST and split it into the three positional groups
+clautolisp's `defun' / `lambda' recognises:
+
+  required* [`&' rest-param] [`/' locals*]
+
+Return three values: REQUIRED (list of symbols), REST-PARAM (the
+single symbol after `&', or NIL when no `&' is present), LOCALS
+(list of symbols after `/').
+
+Errors signalled:
+  :invalid-lambda-list  — LAMBDA-LIST is not a proper list.
+  :invalid-rest-parameter — `&' is present but the following slot
+    is missing, is not a single symbol, or there is more than one
+    symbol between `&' and `/'.
+
+The `/'-locals slot stays exactly as before for back-compat with
+every existing AutoLISP defun."
   (unless (listp lambda-list)
     (signal-autolisp-runtime-error
      :invalid-lambda-list
      "AutoLISP function lambda list must be a proper list, got ~S."
      lambda-list))
-  (let ((position (position-if #'autolisp-slash-symbol-p lambda-list)))
-    (values (if position
-                (subseq lambda-list 0 position)
-                lambda-list)
-            (if position
-                (subseq lambda-list (1+ position))
-                '()))))
+  (let* ((amp-pos   (position-if #'autolisp-ampersand-symbol-p lambda-list))
+         (slash-pos (position-if #'autolisp-slash-symbol-p lambda-list)))
+    (when (and amp-pos slash-pos (>= amp-pos slash-pos))
+      ;; `&' appearing AFTER `/' is meaningless: it would name a
+      ;; local. Refuse it explicitly so users hit a clean error
+      ;; rather than a silent mis-bind.
+      (signal-autolisp-runtime-error
+       :invalid-rest-parameter
+       "AutoLISP lambda list: `&' must precede `/', got ~S."
+       lambda-list))
+    (let* ((required (subseq lambda-list 0 (or amp-pos slash-pos
+                                               (length lambda-list))))
+           (rest-end (or slash-pos (length lambda-list)))
+           (rest-slice (when amp-pos
+                         (subseq lambda-list (1+ amp-pos) rest-end)))
+           (locals (if slash-pos
+                       (subseq lambda-list (1+ slash-pos))
+                       '())))
+      (when amp-pos
+        (unless (= 1 (length rest-slice))
+          (signal-autolisp-runtime-error
+           :invalid-rest-parameter
+           "AutoLISP lambda list: `&' must be followed by exactly one symbol, got ~S."
+           rest-slice))
+        (unless (typep (first rest-slice) 'autolisp-symbol)
+          (signal-autolisp-runtime-error
+           :invalid-rest-parameter
+           "AutoLISP lambda list: rest-parameter after `&' must be a symbol, got ~S."
+           (first rest-slice))))
+      (values required
+              (when amp-pos (first rest-slice))
+              locals))))
 
 (defun bind-usubr-frame (function arguments context)
-  (multiple-value-bind (required locals)
+  (multiple-value-bind (required rest-param locals)
       (split-usubr-lambda-list (autolisp-usubr-lambda-list function))
-    (unless (= (length required) (length arguments))
-      (signal-autolisp-runtime-error
-       :wrong-number-of-arguments
-       "AutoLISP function ~A expects ~D arguments, got ~D."
-       (autolisp-usubr-name function)
-       (length required)
-       (length arguments)))
+    (let ((req-count (length required))
+          (arg-count (length arguments)))
+      (cond
+        (rest-param
+         ;; Variadic: at least REQ-COUNT arguments are needed, no
+         ;; upper bound. Excess arguments gather into REST-PARAM as
+         ;; a proper list (NIL when there are exactly REQ-COUNT
+         ;; arguments, matching `(princ)' / `(princ x)' / `(princ x
+         ;; fh)' behavior the extension was designed to emulate).
+         (when (< arg-count req-count)
+           (signal-autolisp-runtime-error
+            :wrong-number-of-arguments
+            "AutoLISP function ~A expects at least ~D arguments, got ~D."
+            (autolisp-usubr-name function)
+            req-count
+            arg-count)))
+        (t
+         (unless (= req-count arg-count)
+           (signal-autolisp-runtime-error
+            :wrong-number-of-arguments
+            "AutoLISP function ~A expects ~D arguments, got ~D."
+            (autolisp-usubr-name function)
+            req-count
+            arg-count)))))
     (push-dynamic-frame context)
     (loop for symbol in required
           for value in arguments
           do (bind-dynamic-variable symbol value context))
+    (when rest-param
+      (bind-dynamic-variable rest-param
+                             (subseq arguments (length required))
+                             context))
     (dolist (symbol locals)
       (bind-dynamic-variable symbol nil context))))
 
