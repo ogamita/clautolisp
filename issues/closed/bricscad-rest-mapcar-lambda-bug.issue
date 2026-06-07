@@ -1,3 +1,52 @@
+title: alfe: mapcar of an inline lambda fails after the print-wrap
+       re-cons via autolisp-normalize-princ-call
+status: closed (alfe 1.1.10, see resolution block at top)
+type: bug
+filed: 2026-06-07
+closed: 2026-06-07
+component: autolisp-front-end :: runtime/autolisp-bootstrap.lsp
+related: bricscad-undocumented-clisms.issue (umbrella — entry
+         for this issue updated to point at the alfe-side fix)
+         variadic-functions.issue (clautolisp's &rest impl, NOT
+         the cause — initial diagnosis was wrong)
+
+== resolution (2026-06-07, alfe 1.1.10) ==
+
+The initial filing (preserved below for the historical record)
+mis-diagnosed this as a BricsCAD `&rest'/mapcar interaction bug.
+The user's clean repro on the same day proved the form
+
+  : (mapcar (lambda (x) (cons x x)) '(1 2 3))
+  ((1 . 1) (2 . 2) (3 . 3))
+
+works in raw BricsCAD V26 — the failure ONLY happens when the
+form goes through alfe's interactive REPL.
+
+Root cause: `autolisp-normalize-princ-call' in the vendored
+autolisp-bootstrap.lsp recursively rebuilt every cons cell in the
+form (stopping only at QUOTE / FUNCTION) even when there was no
+empty `(princ)' to rewrite. Under BricsCAD V26 the reader appears
+to attach per-cell metadata at read time that mapcar consults to
+recognise an embedded `(lambda …)' as a function literal; rebuilt
+cons cells lack that metadata, so mapcar mis-dispatched and
+ended up calling `(car 1)' on what should have been the
+iteration's current sublist.
+
+Fix: made `autolisp-normalize-princ-call' cons-identity-preserving.
+A cheap no-cons pre-walker (`autolisp-form-contains-empty-princ-p')
+checks whether the form actually needs the `(princ)' rewrite; if
+not, the form is returned verbatim and BricsCAD's reader metadata
+stays intact. When the rewrite IS needed (rare), the legacy
+rebuild path runs.
+
+The original report below is preserved unchanged. Its `suggested
+filing' block — telling the user to engage Bricsys support — is
+WRONG and should be ignored; the bug is in alfe, not BricsCAD.
+
+----
+
+(original report, kept for the record:)
+
 title: BricsCAD V26: `mapcar' inside a `(&rest args)' defun fails on
        the trailing element with `bad argument type <N>; expected <CONS>'
 status: open

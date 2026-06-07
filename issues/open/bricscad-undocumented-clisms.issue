@@ -37,11 +37,15 @@ Confirmed by Bricsys support + user repro on 2026-06-07:
     The bare `&' (clautolisp's original spelling) is NOT accepted
     by BricsCAD.
 
-    Known BricsCAD bug surfacing this construct:
-    `bricscad-rest-mapcar-lambda-bug.issue' files a defect where
-    `(mapcar fn args)' inside a `(&rest args)' defun mishandles the
-    last element of `args' as a bare value `(car 1)' — a vendor-
-    side defect, not a clautolisp issue.
+    Earlier vendor-bug suspicion FALSE-FLAGGED + RESOLVED:
+    `issues/closed/bricscad-rest-mapcar-lambda-bug.issue' was
+    initially filed against BricsCAD as a `&rest'/mapcar interaction
+    defect. User's clean repro then proved the failing form runs
+    cleanly in raw BricsCAD V26; the bug was actually on alfe's
+    side, in autolisp-bootstrap.lsp's `autolisp-normalize-princ-call'
+    unconditionally re-consing every cell of the user's form. Fixed
+    in alfe 1.1.10 by making normalize cons-identity-preserving
+    when there's no `(princ)' to rewrite.
 
 Observed by user, not yet probed against a fresh BricsCAD session:
 

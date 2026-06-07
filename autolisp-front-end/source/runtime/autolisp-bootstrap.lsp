@@ -524,7 +524,38 @@
        (= (type (car form)) 'SYM)
        (= (strcase (vl-symbol-name (car form))) "LOAD")))
 
-(defun autolisp-normalize-princ-call (form / head)
+;; Cheap-walk pre-check: T iff FORM contains an empty `(princ)' that
+;; needs the legacy rewrite to `(autolisp-princ-newline)'. Walks the
+;; tree without consing.  Stops at QUOTE / FUNCTION exactly like the
+;; rewriter does, so quoted data doesn't trigger a false positive.
+(defun autolisp-form-contains-empty-princ-p (form / head)
+  (cond
+    ((atom form) nil)
+    ((not (listp form)) nil)
+    ((null form) nil)
+    (T
+      (setq head (car form))
+      (cond
+        ((and (= (type head) 'SYM)
+              (= (strcase (vl-symbol-name head)) "PRINC")
+              (= (length form) 1))
+          T)
+        ((and (= (type head) 'SYM)
+              (or (= (strcase (vl-symbol-name head)) "QUOTE")
+                  (= (strcase (vl-symbol-name head)) "FUNCTION")))
+          nil)
+        (T
+          (cond
+            ((autolisp-form-contains-empty-princ-p (car form)) T)
+            ((autolisp-form-contains-empty-princ-p (cdr form)) T)
+            (T nil)))))))
+
+;; The actual rewriter — only called from `autolisp-normalize-princ-call'
+;; when the pre-check confirmed there IS at least one empty `(princ)' to
+;; replace. Rebuilds cons cells (necessary to inject the rewrite); see
+;; the comment on autolisp-normalize-princ-call about why we don't want
+;; this to run otherwise.
+(defun autolisp-normalize-princ-call-impl (form / head)
   (cond
     ((atom form)
      form)
@@ -542,9 +573,33 @@
              (= (length form) 1))
         (list 'autolisp-princ-newline))
        (T
-        (cons head (mapcar 'autolisp-normalize-princ-call (cdr form))))))
+        (cons head (mapcar 'autolisp-normalize-princ-call-impl (cdr form))))))
     (T
      form)))
+
+;; Rewrite bare `(princ)' calls (with no arguments) into
+;; `(autolisp-princ-newline)' so the bootstrap-shadowed 1-arg `princ'
+;; doesn't trip an arity error.
+;;
+;; CONS-IDENTITY-PRESERVING: when the form contains no empty `(princ)',
+;; we return FORM untouched. The previous version recursively rebuilt
+;; every cons cell unconditionally; under BricsCAD V26 that destroyed
+;; the read-time per-cell metadata that the runtime's `mapcar' walker
+;; consults to recognise an embedded `(lambda …)' as a function
+;; literal — and so a form like
+;;   (mapcar (lambda (x) (cons x x)) '(1 2 3))
+;; came out of `(eval form)' fine on the raw command line but failed
+;; with `bad argument type <1>; expected <CONS> at [car]' when sent
+;; through the alfe protocol bridge (which had wrapped the form in
+;; `(print …)' and re-cons'd it via normalize before eval'ing). The
+;; cheap pre-check avoids the rebuild entirely for the 99% common case
+;; — any user form that doesn't literally contain `(princ)' passes
+;; through with the reader's cons-cell identity intact, and BricsCAD's
+;; mapcar happily walks the lambda.
+(defun autolisp-normalize-princ-call (form)
+  (if (autolisp-form-contains-empty-princ-p form)
+    (autolisp-normalize-princ-call-impl form)
+    form))
 
 (defun autolisp-eval-load-form (form)
   (cond
