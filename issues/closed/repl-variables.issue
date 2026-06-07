@@ -1,0 +1,103 @@
+clautolisp extension
+--------------------
+
+Status: closed (implemented on branch add-repl-history-variables,
+clautolisp 1.1.15).
+
+## Resolution
+
+clautolisp's REPL (clautolisp/tools/clautolisp/source/main.lisp,
+`repl-loop') now maintains the colon-prefixed history variables
+documented below:
+
+  :-              form being evaluated (bound BEFORE eval so the
+                  user can reference it from inside their form)
+  :+ :++ :+++     last three form histories
+  :* :** :***     last three result histories
+  :/ :// :///     `(list :*)' / `(list :**)' / `(list :***)'
+
+All ten slots are initialised to nil up-front (via
+`%repl-init-history') so a reference before the first turn returns
+nil instead of an unbound-symbol error. After each successful turn
+the histories rotate by one (oldest receiver first so each slot
+reads its predecessor's pre-rotation value), then the list-of-result
+slots refresh to wrap each `*' slot in a one-element list.
+
+Failed evals do NOT rotate — the next attempt re-binds `:-' and
+runs through the rotation only if it succeeds, so the histories stay
+consistent across reader/runtime errors.
+
+These ten slots are REPL-only by design: nothing in source-file
+LOAD or `-x' / `-l' batch actions touches them. The internal helpers
+(`%repl-init-history' / `%repl-bind-dash' / `%repl-rotate-history'
+plus the `*repl-{form,result,list-result}-history-symbols*'
+parameters) live in tools/clautolisp/source/main.lisp.
+
+Smoke (clautolisp --quiet --no-init, multi-turn REPL):
+
+  _$ (+ 1 2)
+  3
+  _$ :+               ; previous form
+  (+ 1 2)
+  _$ :*               ; previous result
+  3
+  _$ :/               ; (list :*)
+  (3)
+
+`lookup-variable' was added to the tools/clautolisp/source/package.lisp
+imports so the rotate helper can read each slot's pre-rotation value.
+
+Bumps clautolisp 1.1.14 -> 1.1.15.
+
+## Original report
+
+---
+
+In Common-Lisp we have REPL variables:
+
+    * ** ***
+    + ++ +++
+    / // ///  
+    -
+
+In Autolisp, since we're lisp-1 we cannot clobber * + / and -.
+
+Let's call them, with short aliases:
+
+| alias | description                                         |
+|-------+-----------------------------------------------------|
+| :-    | Bound to the form being evaluated.                  |
+|       |                                                     |
+| :+    | Bound to the last form evaluated.                   |
+| :++   | Bound to the previous to last form evaluated.       |
+| :+++  | Bound to the form before the previous to last.      |
+|       |                                                     |
+| :*    | The result of the last form.                        |
+| :**   | The result of the previous to last form.            |
+| :***  | The result of the form before the previous to last. |
+|       |                                                     |
+| :/    | (list :*)                                           |
+| ://   | (list :**)                                          |
+| :///  | (list :***)                                         |
+
+
+#+begin_src lisp
+  ;; mini REPL:
+  (while (not quit)
+    (princ "> ")
+    (setq :- (read)
+          result (eval :-)
+          :+++ :++
+          :++ :+
+          :+ :-
+          :*** :**
+          :** :* 
+          :* result
+          :/// (list :***)
+          :// (list ://)
+          :/ (list :/))
+    (print :*))
+#+end_src
+
+These variables are to be used exclusively at the REPL, never in source files.
+Their initial value is nil.
