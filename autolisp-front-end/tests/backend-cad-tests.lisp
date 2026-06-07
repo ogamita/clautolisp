@@ -458,6 +458,52 @@ published."
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
+(test cad-drive-protocol-actions-mirrors-runtime-debug-flag
+  "After each wait-done, drive-protocol-actions reads
+protocol/runtime-flags.txt and updates alfe.logging:*current-level*
+so a (setq *autolisp-debug* nil) the user types at the REPL takes
+effect on alfe's own trace output too -- not just on the [CAD]
+debug.log channel."
+  (let ((workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-cad-flags-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist workdir)
+          (let* ((protocol (alfe.protocol.file:init-session workdir))
+                 (cad (spawn-mock-cad-runtime protocol :cycles 1))
+                 (plan (list (alfe.backend:action-eval "(princ 1)")
+                             (alfe.backend:action-quit)))
+                 ;; Pre-populate runtime-flags.txt with DEBUG=0 so the
+                 ;; sync-from-runtime call after wait-done sees a
+                 ;; concrete value. (In a live run the CAD-side
+                 ;; alfe-publish-runtime-flags writes this; the mock
+                 ;; CAD doesn't, so we install the file by hand.)
+                 (flags-path (alfe.protocol.file:protocol-session-runtime-flags-path
+                              protocol)))
+            (with-open-file (out flags-path :direction :output
+                                            :if-does-not-exist :create
+                                            :if-exists :supersede
+                                            :external-format :utf-8)
+              (format out "DEBUG=0~%VERBOSE=0~%"))
+            ;; Start alfe in :debug, then drive the plan; the runtime
+            ;; flag says debug should be off, so the level must come
+            ;; back to :info.
+            (let ((alfe.logging:*current-level* :debug))
+              (progn (alfe.protocol.file:wait-for-status-prefix
+                      protocol "READY" :timeout 2)
+                     (let ((*standard-output* (make-string-output-stream))
+                           (*error-output*    (make-string-output-stream)))
+                       (alfe.backend.cad-common:drive-protocol-actions
+                        protocol plan)))
+              (is (eq :info alfe.logging:*current-level*)
+                  "Runtime DEBUG=0 should have dragged alfe down to :info; current is ~S"
+                  alfe.logging:*current-level*))
+            (bordeaux-threads:join-thread cad)))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))
+
 (test bricscad-start-engine-with-mock-launcher
   "START-ENGINE composes the launch artefacts and waits for READY 0;
 we substitute a thread-based mock for the real bricscad binary via

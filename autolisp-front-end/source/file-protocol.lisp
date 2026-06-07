@@ -57,6 +57,7 @@
            #:protocol-session-heartbeat-path
            #:protocol-session-read-buffer-path
            #:protocol-session-runtime-info-path
+           #:protocol-session-runtime-flags-path
            #:protocol-session-runtime-lsp-source
            #:protocol-session-runtime-lsp-staged
            #:protocol-session-bootstrap-lsp-source
@@ -98,7 +99,8 @@
            #:send-stdin
            #:send-control
            ;; heartbeat
-           #:read-heartbeat))
+           #:read-heartbeat
+           #:read-runtime-flags))
 
 (in-package #:alfe.protocol.file)
 
@@ -131,11 +133,18 @@
     (:control        . "control.txt")
     (:heartbeat      . "heartbeat.txt")
     (:read-buffer    . "read-buffer.lsp")
-    (:runtime-info   . "runtime-info.txt"))
+    (:runtime-info   . "runtime-info.txt")
+    (:runtime-flags  . "runtime-flags.txt"))
   "Alist mapping logical slot keyword to relative basename under the
 session's protocol/ directory. Used by INIT-SESSION when building a
 fresh session struct and by tests that want to assert the layout
-matches the spec.")
+matches the spec.
+
+`:runtime-flags' is the side channel the CAD-side eval wrapper
+republishes after every protocol request -- it carries the current
+values of `*AUTOLISP-DEBUG*' / `*AUTOLISP-VERBOSE*' so the alfe-side
+logger can mirror toggles a REPL user makes via `setq', regardless
+of what the CLI flag was at startup.")
 
 ;;; --- session struct ------------------------------------------------
 
@@ -156,6 +165,11 @@ and DRAIN-STDERR so successive reads see only the new bytes."
   (heartbeat-path         nil :type (or null pathname))
   (read-buffer-path       nil :type (or null pathname))
   (runtime-info-path      nil :type (or null pathname))
+  ;; Republished after every eval by the run-common.lsp wrapper --
+  ;; carries the live values of *AUTOLISP-DEBUG* / *AUTOLISP-VERBOSE*
+  ;; so the alfe-side logger can mirror toggles a REPL user makes
+  ;; via (setq *autolisp-debug* …) regardless of the CLI flag.
+  (runtime-flags-path     nil :type (or null pathname))
   ;; The path to the source autolisp-remote-io.lsp the caller wants
   ;; us to stage into WORKDIR/runtime/. NIL means "the CAD backend
   ;; provides it later" (Phase 3 wires this up; tests pass NIL).
@@ -211,6 +225,8 @@ bootstrap helper file (autolisp-bootstrap.lsp)."
                                                       protocol-dir)
                    :runtime-info-path (merge-pathnames "runtime-info.txt"
                                                        protocol-dir)
+                   :runtime-flags-path (merge-pathnames "runtime-flags.txt"
+                                                        protocol-dir)
                    :runtime-lsp-source runtime-lsp-source
                    :bootstrap-lsp-source bootstrap-lsp-source
                    :debug-log-path debug-log-path)))
@@ -680,6 +696,39 @@ optional."
     (and (plusp (length text))
          (last-non-empty-line text))))
 
+(defun read-runtime-flags (session)
+  "Return a property list of the current values of the CAD-side
+runtime flags as last republished by the run-common.lsp eval
+wrapper. The file is laid out one `KEY=VALUE' line per flag; we
+parse the documented keys (DEBUG, VERBOSE) into the keyword plist
+keys :DEBUG and :VERBOSE with T / NIL values.
+
+Returns NIL when the file does not exist yet (the CAD hasn't gone
+through its first eval) or when the parse comes up empty -- callers
+should treat NIL as `no new information' and keep the alfe-side
+verbosity at whatever it currently is."
+  (let ((text (read-file-as-string
+               (protocol-session-runtime-flags-path session)))
+        (plist nil))
+    (when (plusp (length text))
+      (dolist (line (uiop:split-string text :separator '(#\Newline)))
+        (let ((eq-pos (position #\= line)))
+          (when eq-pos
+            (let* ((raw-key (string-trim '(#\Space #\Tab #\Return)
+                                         (subseq line 0 eq-pos)))
+                   (raw-val (string-trim '(#\Space #\Tab #\Return)
+                                         (subseq line (1+ eq-pos))))
+                   (key (intern (string-upcase raw-key) :keyword))
+                   (val (cond
+                          ((string= raw-val "1") t)
+                          ((string-equal raw-val "T") t)
+                          ((zerop (length raw-val)) nil)
+                          ((string= raw-val "0") nil)
+                          ((string-equal raw-val "NIL") nil)
+                          (t raw-val))))
+              (setf (getf plist key) val))))))
+    plist))
+
 ;;; --- run-common.lsp emitter ---------------------------------------
 ;;;
 ;;; This emitter materialises the run-common.lsp template documented
@@ -887,6 +936,8 @@ Returns the path of the emitted file."
                            (protocol-session-read-buffer-path session))
                 (emit-path "*AUTOLISP-PROTOCOL-INFOFILE*"      "*AUTOLISP_PROTOCOL_INFOFILE*"
                            (protocol-session-runtime-info-path session))
+                (emit-path "*AUTOLISP-PROTOCOL-FLAGSFILE*"     "*AUTOLISP_PROTOCOL_FLAGSFILE*"
+                           (protocol-session-runtime-flags-path session))
                 (emit-path "*AUTOLISP-PROTOCOL-RUNTIMEFILE*"   "*AUTOLISP_PROTOCOL_RUNTIMEFILE*"
                            (protocol-session-runtime-lsp-staged session))
                 (emit-path "*AUTOLISP-DEBUGFILE*"              "*AUTOLISP_DEBUGFILE*"            debug-file))
@@ -1012,6 +1063,34 @@ Returns the path of the emitted file."
 (defun autolisp-log-err (text)~%~
   (autolisp-write-line *AUTOLISP_PROTOCOL_STDERRFILE* text))~%~
 (setq *AUTOLISP_CAPTURE_STDOUT* T)~%~
+;;; --- alfe: publish current verbosity flags after every eval ---~%~
+;; alfe-publish-runtime-flags rewrites protocol/runtime-flags.txt in~%~
+;; truncate mode so the alfe-side logger can mirror runtime-side~%~
+;; (setq *autolisp-debug* …) toggles between requests, independent~%~
+;; of whatever the CLI flag was at startup.~%~
+(defun alfe-publish-runtime-flags (/ f)~%~
+  (setq f (open *AUTOLISP_PROTOCOL_FLAGSFILE* \"w\"))~%~
+  (if f~%~
+    (progn~%~
+      (write-line (strcat \"DEBUG=\" (if *AUTOLISP-DEBUG* \"1\" \"0\")) f)~%~
+      (write-line (strcat \"VERBOSE=\" (if *AUTOLISP-VERBOSE* \"1\" \"0\")) f)~%~
+      (close f))))~%~
+;; Wrap autolisp-eval-request-form so the publish fires after every~%~
+;; protocol-driven evaluation. The inner body re-implements the~%~
+;; bootstrap definition verbatim (AutoLISP has no first-class function~%~
+;; cell to indirect through cleanly, so we inline the original three~%~
+;; lines). Keep this in sync with autolisp-bootstrap.lsp's definition.~%~
+(defun autolisp-eval-request-form (form / r)~%~
+  (setq form (autolisp-normalize-princ-call form))~%~
+  (setq r~%~
+    (if (autolisp-load-form-p form)~%~
+      (autolisp-eval-load-form form)~%~
+      (eval form)))~%~
+  (alfe-publish-runtime-flags)~%~
+  r)~%~
+;; Publish once at startup so alfe sees the initial values even~%~
+;; before the first request lands.~%~
+(alfe-publish-runtime-flags)~%~
 (alfe-debug-log \"I/O bridged onto protocol/stdout.txt and protocol/stderr.txt\")~%")
                ;; Drive the server loop. The runtime defines the
                ;; function but does not call it at top level; the
