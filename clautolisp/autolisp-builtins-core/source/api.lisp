@@ -494,12 +494,38 @@ extension; --~(~A~) has no per-call encoding control on LOAD."
                "LOAD currently supports only source files, got ~A."
                (namestring resolved))))))
       (t
-       (let ((result (if encoding-kw
-                         (autolisp-load-file (namestring resolved)
-                                             :external-format encoding-kw)
-                         (autolisp-load-file (namestring resolved)))))
-         (set-autolisp-errno 0)
-         result)))))
+       ;; Bind *AUTOLISP-LOAD-PATHNAME* to the ABSOLUTE pathname of the
+       ;; file being loaded, restoring the prior value (or nil at top
+       ;; level) on the way out. UNWIND-PROTECT covers both normal and
+       ;; non-local exits so a failed load doesn't leave a stale value
+       ;; behind. See issues/closed/autolisp-load-pathname.issue.
+       (let* ((load-pathname-sym
+               (clautolisp.autolisp-runtime:intern-autolisp-symbol
+                "*AUTOLISP-LOAD-PATHNAME*"))
+              (prior-value
+               (multiple-value-bind (v boundp)
+                   (clautolisp.autolisp-runtime:lookup-variable
+                    load-pathname-sym)
+                 (and boundp v)))
+              (absolute
+               (or (ignore-errors (truename resolved)) resolved))
+              (absolute-as-autolisp
+               (clautolisp.autolisp-runtime:make-autolisp-string
+                (namestring absolute))))
+         (unwind-protect
+              (progn
+                (clautolisp.autolisp-runtime:set-variable
+                 load-pathname-sym absolute-as-autolisp)
+                (let ((result (if encoding-kw
+                                  (autolisp-load-file
+                                   (namestring resolved)
+                                   :external-format encoding-kw)
+                                  (autolisp-load-file
+                                   (namestring resolved)))))
+                  (set-autolisp-errno 0)
+                  result))
+           (clautolisp.autolisp-runtime:set-variable
+            load-pathname-sym prior-value)))))))
 
 (defun builtin-autoload (filename function-list)
   (let ((path (autolisp-string-value (require-string filename "AUTOLOAD"))))

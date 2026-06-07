@@ -1,6 +1,51 @@
 autolisp-load-pathname — populate *AUTOLISP-LOAD-PATHNAME* in the engine during load
 ====================================================================================
 
+Status: closed (clautolisp 1.1.19 / alfe 1.1.16, see resolution
+block at the top of the body)
+
+Resolution (2026-06-07)
+-----------------------
+
+Two coordinated fixes; the absolute pathname is bound in both:
+
+1. clautolisp engine — `clautolisp/autolisp-builtins-core/source/api.lisp` ::
+   `builtin-load` now wraps the load body in an `UNWIND-PROTECT` that
+   binds `*AUTOLISP-LOAD-PATHNAME*` to the file's truename for the
+   duration, restoring the prior value (or NIL at top level) on the
+   way out — even when the loaded file errors. The autolisp-string
+   value is constructed from `(namestring (truename resolved))`, so
+   relative arguments resolve to absolute and `..`-containing paths
+   are normalised.
+
+2. BricsCAD / AutoCAD runtime — `autolisp-front-end/source/runtime/autolisp-bootstrap.lsp` ::
+   `autolisp-source-load-core-impl` is refactored: the body is
+   extracted into `autolisp-source-load-run-body` (which now also
+   manages `*AUTOLISP_LOAD_STACK*`), and the outer function
+   captures the prior `*AUTOLISP-LOAD-PATHNAME*`, sets the new
+   value (the absolute path that `findfile` produced via
+   `autolisp-source-resolve-load-path`), invokes the body via
+   `vl-catch-all-apply`, and restores the prior value before
+   returning. Both hyphen (`*AUTOLISP-LOAD-PATHNAME*`) and
+   underscore (`*AUTOLISP_LOAD_PATHNAME*`) spellings are bound,
+   mirroring the rest of the project's convention. User-typed
+   `(load "foo.lsp")` reaches this path via the bootstrap's
+   `autolisp-load-form-p` dispatch.
+
+Regression test — `clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp` ::
+`builtin-load-binds-autolisp-load-pathname` writes a temp file
+that captures `*AUTOLISP-LOAD-PATHNAME*` into a global at load
+time, then asserts the captured value is the file's truename and
+that the variable returns to NIL after the load completes.
+
+The bootstrap's paren-balance regression test
+(`vendored-runtime-lsp-paren-balance` in
+`autolisp-front-end/tests/file-protocol-tests.lisp`) covers the
+refactor (1265 / 1265 chars).
+
+----
+
+
 Reported from: SCHMS+ test harness (sncf-reseau/src/schms,
 tests/test-unitaire.lsp) run through alfe.
 Observed on: alfe 1.1.14 (both --clautolisp and --bricscad backends).

@@ -664,6 +664,48 @@
       (is (typep (second result) 'autolisp-symbol))
       (is (string= "FOO" (autolisp-symbol-name (second result)))))))
 
+(test builtin-load-binds-autolisp-load-pathname
+  "While builtin-load is processing a file, *AUTOLISP-LOAD-PATHNAME*
+is bound to the absolute pathname of that file; on return the
+prior value (or nil at top level) is restored, even if the
+loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((load-fn (autolisp-symbol-function (find-autolisp-symbol "LOAD")))
+         (recorded-symbol (intern-autolisp-symbol "RECORDED"))
+         (lp-symbol (intern-autolisp-symbol "*AUTOLISP-LOAD-PATHNAME*"))
+         (path (merge-pathnames
+                (format nil "lp-test-~36R.lsp" (random (expt 36 6)))
+                (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (stream path :direction :output
+                                        :if-exists :supersede
+                                        :if-does-not-exist :create)
+             ;; Capture *AUTOLISP-LOAD-PATHNAME* into the global
+             ;; RECORDED while inside the load, so the test can
+             ;; assert the binding was live.
+             (write-line "(setq recorded *AUTOLISP-LOAD-PATHNAME*)" stream))
+           ;; Top-level: pathname is nil before load.
+           (is (null (autolisp-symbol-value lp-symbol)))
+           ;; Load the file; inside it, RECORDED captures the binding.
+           (call-autolisp-function load-fn
+                                   (make-autolisp-string (namestring path)))
+           ;; The captured value is an autolisp-string holding the
+           ;; truename of PATH.
+           (let ((recorded (autolisp-symbol-value recorded-symbol)))
+             (is (typep recorded 'autolisp-string)
+                 "RECORDED should hold an autolisp-string; got ~S" recorded)
+             (let ((recorded-string (autolisp-string-value recorded))
+                   (expected (namestring (truename path))))
+               (is (string= recorded-string expected)
+                   "Expected the file's truename ~S; got ~S"
+                   expected recorded-string)))
+           ;; After load returns, the global is back to nil
+           ;; (we entered at top level so the prior value was nil).
+           (is (null (autolisp-symbol-value lp-symbol))))
+      (when (probe-file path) (delete-file path)))))
+
 (test builtin-load-and-error-hooks
   (reset-autolisp-symbol-table)
   (install-core-builtins)
