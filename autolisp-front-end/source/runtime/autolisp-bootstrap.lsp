@@ -133,13 +133,24 @@
     (setq idx (+ idx 1)))
   acc)
 
-(defun autolisp-readable-text (obj / acc first tail)
+(defun autolisp-readable-text (obj / acc first tail rest)
   (cond
     ((null obj)
      "nil")
     ((= (type obj) 'STR)
      (strcat "\"" (autolisp-escape-string obj) "\""))
     ((listp obj)
+     ;; Walk the list with an improper-tail guard. A proper list
+     ;; ends with NIL, terminator stays a plain closing paren; a
+     ;; dotted pair like `[1 . 2]' or improper tail like
+     ;; `[1 2 . 3]' ends with a non-NIL non-cons, and we emit a
+     ;; ` . X' before the closing paren so the rendered text is
+     ;; read-equal to the original. Without this guard the loop
+     ;; tried CAR on a tail integer and signalled `bad argument
+     ;; type', which became user-visible after alfe 1.1.13 routed
+     ;; eval through the file-load path -- mapcar+lambda bodies
+     ;; returning cons cells via cons of two atoms produce dotted
+     ;; pairs that the printer crashed on.
      (setq acc "(")
      (setq first T)
      (setq tail obj)
@@ -148,7 +159,15 @@
          (setq first nil)
          (setq acc (strcat acc " ")))
        (setq acc (strcat acc (autolisp-readable-text (car tail))))
-       (setq tail (cdr tail)))
+       (setq rest (cdr tail))
+       (cond
+         ((null rest)
+           (setq tail nil))
+         ((listp rest)
+           (setq tail rest))
+         (T
+           (setq acc (strcat acc " . " (autolisp-readable-text rest)))
+           (setq tail nil))))
      (strcat acc ")"))
     (T
      (autolisp-render obj))))
