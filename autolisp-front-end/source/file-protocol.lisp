@@ -1088,6 +1088,33 @@ Returns the path of the emitted file."
       (eval form)))~%~
   (alfe-publish-runtime-flags)~%~
   r)~%~
+;;; --- alfe: explicit control sentinels via protocol/stdout.txt ---~%~
+;; The polling mirror above (runtime-flags.txt) re-publishes after~%~
+;; every eval and works for the (setq *autolisp-debug* …) case, but~%~
+;; in BricsCAD batch -B mode it can race the alfe-side wait-done~%~
+;; drain (the runtime publishes the file only AFTER the DONE status,~%~
+;; on some configurations alfe sees DONE first and drains an empty~%~
+;; flag file). The explicit form below sidesteps the race: the user~%~
+;; calls (alfe-set-debugging T-or-NIL); we set the CAD-side global~%~
+;; AND fire a sentinel line through *AUTOLISP_PROTOCOL_STDOUTFILE*~%~
+;; that alfe parses inline, swallowing the line (it never reaches~%~
+;; the terminal) and applying the control immediately.~%~
+;;~%~
+;; The sentinel format is `[ALFE-CONTROL] KEY=VALUE'. Currently~%~
+;; supported keys: DEBUG (1|0). New keys can be added without~%~
+;; touching alfe by piping further lines through the same channel.~%~
+(defun alfe-set-debugging (on / )~%~
+  (setq *AUTOLISP-DEBUG* on)~%~
+  (setq *AUTOLISP_DEBUG* on)~%~
+  (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE*~%~
+                       (strcat \"[ALFE-CONTROL] DEBUG=\" (if on \"1\" \"0\")))~%~
+  on)~%~
+(defun alfe-set-verbose (on / )~%~
+  (setq *AUTOLISP-VERBOSE* on)~%~
+  (setq *AUTOLISP_VERBOSE* on)~%~
+  (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE*~%~
+                       (strcat \"[ALFE-CONTROL] VERBOSE=\" (if on \"1\" \"0\")))~%~
+  on)~%~
 ;; Publish once at startup so alfe sees the initial values even~%~
 ;; before the first request lands.~%~
 (alfe-publish-runtime-flags)~%~

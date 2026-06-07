@@ -264,17 +264,97 @@ tests can pass string streams to drive the REPL in-process."
                                 protocol-session))
                               0)))
     (labels
-        ((drain-live ()
+        ((apply-alfe-control (key value)
+           "Apply one parsed `[ALFE-CONTROL] KEY=VALUE' sentinel."
+           (cond
+             ((string-equal key "DEBUG")
+              (let ((on (or (string= value "1")
+                            (string-equal value "T"))))
+                (alfe.logging:set-level (if on :debug :info))))
+             ((string-equal key "VERBOSE")
+              (let ((on (or (string= value "1")
+                            (string-equal value "T"))))
+                ;; Don't downgrade from :debug -- VERBOSE=0 means
+                ;; "stop verbose chatter", but if debug is also on
+                ;; we want to stay at :debug.
+                (cond
+                  (on
+                   (unless (eq alfe.logging:*current-level* :debug)
+                     (alfe.logging:set-level :verbose)))
+                  (t
+                   (when (eq alfe.logging:*current-level* :verbose)
+                     (alfe.logging:set-level :info))))))
+             (t
+              ;; Unknown control key. Log under :debug so the user can
+              ;; diagnose typos, but don't fail the drain.
+              (alfe.logging:log-debug
+               "cad-common: unknown ALFE-CONTROL key ~S (value ~S)"
+               key value))))
+         (filter-alfe-control-lines (raw)
+           "Walk RAW, identify any `[ALFE-CONTROL] KEY=VALUE' lines,
+apply them as side effects, and return the chunk with those lines
+stripped out. Non-sentinel lines pass through verbatim so the
+terminal sees only what the user printed.
+
+The sentinel format is one line per command:
+  `[ALFE-CONTROL] KEY=VALUE'
+Trailing newlines are preserved on non-sentinel lines so the caller
+can write the result straight to OUTPUT-STREAM."
+           (let ((accum (make-string-output-stream))
+                 (start 0)
+                 (sentinel "[ALFE-CONTROL] ")
+                 (len (length raw)))
+             (loop
+               (let ((eol (position #\Newline raw :start start)))
+                 (let* ((line-end (or eol len))
+                        (line (subseq raw start line-end))
+                        (trimmed (string-left-trim '(#\Space #\Tab) line)))
+                   (cond
+                     ((and (>= (length trimmed) (length sentinel))
+                           (string= sentinel trimmed
+                                    :end2 (length sentinel)))
+                      ;; Sentinel hit -- parse + apply, don't echo.
+                      (let* ((rest (subseq trimmed (length sentinel)))
+                             (eq-pos (position #\= rest)))
+                        (when eq-pos
+                          (apply-alfe-control
+                           (string-trim '(#\Space #\Tab)
+                                        (subseq rest 0 eq-pos))
+                           (string-trim '(#\Space #\Tab #\Return)
+                                        (subseq rest (1+ eq-pos)))))))
+                     (t
+                      ;; Non-sentinel: copy through, preserving the
+                      ;; newline if there was one.
+                      (write-string line accum)
+                      (when eol
+                        (write-char #\Newline accum))))
+                   (if eol
+                       (setf start (1+ eol))
+                       (return)))))
+             (get-output-stream-string accum)))
+         (drain-live ()
            "Drain stdout.txt + stderr.txt, append to the capture
 streams, and echo to the live OUTPUT-STREAM / ERROR-STREAM so the
 user sees CAD output AS each action completes (not deferred to
-end-of-plan)."
+end-of-plan).
+
+`[ALFE-CONTROL] KEY=VALUE' lines in stdout are intercepted here
+(see filter-alfe-control-lines): they apply control side effects
+inline -- chiefly toggling alfe.logging:*current-level* -- and are
+stripped before the chunk reaches the terminal. Stderr is passed
+through verbatim."
            (let ((out (alfe.protocol.file:drain-stdout protocol-session))
                  (err (alfe.protocol.file:drain-stderr protocol-session)))
              (when (plusp (length out))
-               (write-string out captured-stdout)
-               (write-string out output-stream)
-               (finish-output output-stream))
+               (let ((visible (filter-alfe-control-lines out)))
+                 ;; Capture the full text (including sentinels) for
+                 ;; the eval-result -- tests + diagnostics may want
+                 ;; the unfiltered trace. The live stream only sees
+                 ;; the filtered text.
+                 (write-string out captured-stdout)
+                 (when (plusp (length visible))
+                   (write-string visible output-stream)
+                   (finish-output output-stream))))
              (when (plusp (length err))
                (write-string err captured-stderr)
                (write-string err error-stream)

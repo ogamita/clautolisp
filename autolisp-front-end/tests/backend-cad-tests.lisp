@@ -504,6 +504,66 @@ debug.log channel."
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
+(test cad-drive-protocol-actions-applies-alfe-control-sentinel
+  "When the CAD-side runtime fires `[ALFE-CONTROL] DEBUG=0' through
+protocol/stdout.txt, drive-protocol-actions
+  (1) applies the control side effect (drops *current-level* :debug
+      back to :info), and
+  (2) strips the sentinel line so it never reaches the live output
+      stream the user sees -- only the user's own prints do.
+
+This is the explicit channel that backs the runtime-side
+(alfe-set-debugging nil|t) function: by using an in-line
+synchronous sentinel rather than the polling runtime-flags.txt
+mirror, the control fires the instant the CAD evaluates the form
+(no race with DONE-status timing)."
+  (let ((workdir (uiop:ensure-directory-pathname
+                  (merge-pathnames
+                   (format nil "alfe-test-cad-sentinel-~D/" (random 999999))
+                   (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist workdir)
+          (let* ((protocol (alfe.protocol.file:init-session workdir))
+                 (stdout (alfe.protocol.file:protocol-session-stdout-path
+                          protocol))
+                 (cad (spawn-mock-cad-runtime protocol :cycles 1
+                                              :echo-stdin-p nil))
+                 (plan (list (alfe.backend:action-eval
+                              "(alfe-set-debugging nil)")
+                             (alfe.backend:action-quit))))
+            ;; Pre-stage the response stdout the mock CAD would write
+            ;; if it ran the real runtime: the visible value `nil'
+            ;; AND the control sentinel.
+            (with-open-file (out stdout :direction :output
+                                        :if-does-not-exist :create
+                                        :if-exists :supersede
+                                        :external-format :utf-8)
+              (format out "[ALFE-CONTROL] DEBUG=0~%nil~%"))
+            (let ((alfe.logging:*current-level* :debug)
+                  (output-stream (make-string-output-stream)))
+              (alfe.protocol.file:wait-for-status-prefix
+               protocol "READY" :timeout 2)
+              (let ((*error-output* (make-string-output-stream)))
+                (alfe.backend.cad-common:drive-protocol-actions
+                 protocol plan :output-stream output-stream))
+              ;; The control sentinel dropped us to :info.
+              (is (eq :info alfe.logging:*current-level*)
+                  "Sentinel DEBUG=0 should have dropped current level to :info; got ~S"
+                  alfe.logging:*current-level*)
+              ;; The output the user saw must contain "nil" but
+              ;; must NOT contain the sentinel.
+              (let ((shown (get-output-stream-string output-stream)))
+                (is (search "nil" shown)
+                    "User-visible output should contain `nil'; got ~S"
+                    shown)
+                (is (null (search "[ALFE-CONTROL]" shown))
+                    "User-visible output must NOT echo the sentinel; got ~S"
+                    shown)))
+            (bordeaux-threads:join-thread cad)))
+      (uiop:delete-directory-tree workdir :validate t
+                                          :if-does-not-exist :ignore))))
+
 (test bricscad-start-engine-with-mock-launcher
   "START-ENGINE composes the launch artefacts and waits for READY 0;
 we substitute a thread-based mock for the real bricscad binary via
