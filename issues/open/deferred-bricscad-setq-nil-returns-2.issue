@@ -1,0 +1,84 @@
+title: BricsCAD: `(print (setq *sym* nil))` displays `2` instead of `nil`
+status: open
+type: bug
+filed: 2026-06-07
+component: autolisp-front-end :: backend-bricscad
+severity: low (cosmetic, surfaced only inside alfe --interactive)
+related: alfe-bricscad-dynamic-debug.issue (closed via the
+         alfe-set-debugging sentinel-based redesign that sidesteps
+         this specifically)
+
+== summary ==
+
+Inside alfe's --interactive REPL against BricsCAD V26, typing
+
+    alfe> (setq *autolisp-debug* nil)
+
+displays `2` instead of `nil`. The interactive-loop wraps the
+user-typed form in `(print …)` before sending it down the protocol,
+so the value the user sees is print's output, which should be the
+form's return value. Both clautolisp and a smoke run of the same
+wrapped form return nil cleanly:
+
+    $ printf '(setq *autolisp-debug* T)\n(print (setq *autolisp-debug* nil))\n' \
+      | clautolisp-sbcl --quiet --no-init
+    _$ T
+    _$
+    nil nil
+    _$
+
+BricsCAD specifically renders `2`. Repro is independent of the
+alfe-side print wrap (the same `(setq x nil)` typed inside a raw
+BricsCAD command line also seems to produce `2`).
+
+== suspected root cause ==
+
+Almost certainly a BricsCAD V26 quirk where `(setq SYM val)' returns
+the COUNT of bindings made (1) plus something, or the next free
+slot in some internal table -- the `2' is too consistent to be
+random. We have not found documentation confirming this.
+
+Possibly relevant: in some AutoLISP dialects the value of a
+`*name*'-shaped symbol is treated as a system parameter, and `setq'
+on such a symbol triggers an internal callback whose return value
+shadows the expected last-value-assigned. Worth checking with
+ordinary symbols (`(setq foo nil)') vs starred ones to confirm.
+
+== why this is now LOW severity ==
+
+The 1.1.8 redesign added an explicit
+  (alfe-set-debugging T-or-NIL)
+function on the CAD side which:
+
+  - sets *AUTOLISP-DEBUG* and *AUTOLISP_DEBUG* itself
+  - fires a `[ALFE-CONTROL] DEBUG=…' sentinel through
+    protocol/stdout.txt that alfe filters + applies inline
+  - returns its argument unconditionally
+
+so users no longer NEED `(setq *autolisp-debug* nil)' to toggle the
+flag -- they can use `(alfe-set-debugging nil)' which returns nil
+deterministically. The setq path still works for the side effect
+(the flags-mirror picks it up after the next eval), the only
+oddity is the displayed return value.
+
+== suggested investigation ==
+
+  1. From a raw BricsCAD command line (not through alfe), evaluate:
+       (setq foo nil)        ;; ordinary symbol
+       (setq *bar* nil)      ;; starred symbol
+       (setq *AUTOLISP-DEBUG* nil)
+       (setq *AUTOLISP-DEBUG* T)
+     and note each return.
+  2. If only *AUTOLISP-DEBUG* misbehaves, suspect that the bootstrap
+     or runtime installed something on it (a watcher, an after-set
+     hook); search autolisp-bootstrap.lsp / autolisp-remote-io.lsp
+     for `*AUTOLISP-DEBUG*' references.
+  3. If ALL setq calls return 2, file an upstream BricsCAD issue.
+
+== severity rationale ==
+
+Cosmetic. Does not affect correctness of the program (the variable
+IS set), does not affect the debug-toggling flow (use
+alfe-set-debugging instead), does not regress any existing
+behaviour. Defer until a real BricsCAD-side reproduction confirms
+whether it's our doing or theirs.
