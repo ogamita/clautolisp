@@ -283,11 +283,18 @@
                 (autolisp-protocol-set-status
                   (strcat "DONE " (itoa req-id) " FAIL"))))
             (progn
+              ;; *AUTOLISP_STATUSFILE* still records the form value as
+              ;; the legacy numeric exit code (batch scripts on the
+              ;; SNCF tree consume that channel). The protocol DONE
+              ;; status however is OK/FAIL/QUIT based on EVAL outcome,
+              ;; NOT on the form's return value: every successful
+              ;; evaluation -- including (+ 1 2) returning 3 -- must
+              ;; land on `DONE N OK', otherwise the alfe-side REPL
+              ;; sees every scalar value as a failure.
               (setq rc (autolisp-protocol-result-code result))
               (autolisp-set-status rc)
               (autolisp-protocol-set-status
-                (strcat "DONE " (itoa req-id)
-                        (if (= rc 0) " OK" " FAIL")))))))))
+                (strcat "DONE " (itoa req-id) " OK")))))))))
   (autolisp-protocol-set-status "STOPPED")
   (princ ""))
 

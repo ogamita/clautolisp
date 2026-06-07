@@ -1,13 +1,51 @@
 The alfe RELP should Print the resut of eval even with a CAD backendA:
 
-14:00[pjb@thalassa org.xquartz:0 clautolisp 32Gi]$ alfe
-alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
-alfe> (+ 1 2)
-3
-alfe> (quit)
+Status: closed (resolved on branch fix-cad-repl-print-and-done-ok,
+alfe 1.1.6).
 
-With: alfe --debug --bricscad --mode batch -i
-printing of the results doesn't occur.
+## Resolution
+
+Two coupled fixes land together since the symptoms in the report
+come from one bug each:
+
+### 1. alfe REPL on CAD now auto-prints eval values
+
+cad-common's interactive-loop wraps every user-typed form with
+`(print …)` before sending. The bootstrap's `print` shadow routes
+through `autolisp-emit-user-out` -> `*AUTOLISP_PROTOCOL_STDOUTFILE*`,
+which the existing drain-live picks up after each DONE and writes
+to `output-stream`. So:
+
+    alfe> (+ 1 2)
+    3
+    alfe>
+
+`-x` and `-l` (the :load / :eval action branches above
+:interactive in the dispatch) take a different code path and are
+NOT wrapped -- they remain silent-by-default per the alfe spec's
+"Action output semantics" section.
+
+### 2. DONE N OK regardless of return value
+
+The reporter's `(+ 1 2)` produced "DONE 2 FAIL". Root cause: the
+runtime's server loop was deciding the OK/FAIL suffix on the
+*result code* derived from the form value (3), not on the *eval
+outcome* (success). Any scalar non-zero return tripped FAIL.
+
+Fixed in autolisp-front-end/source/runtime/autolisp-remote-io.lsp:
+every successful eval lands on `DONE N OK` regardless of the form's
+return value. `*AUTOLISP_STATUSFILE*` still records the numeric
+exit code for legacy batch scripts that consume it -- the change
+is scoped to the protocol DONE line.
+
+Updated test:
+cad-drive-protocol-actions-interactive-loop-roundtrips now asserts
+the wrapped form ("(print (+ 1 2))") lands in the live output
+stream rather than the bare form.
+
+## Original report
+
+---
 
 
 13:51[pjb@thalassa org.xquartz:0 clautolisp 32Gi]$ alfe --debug --bricscad --mode batch -i
