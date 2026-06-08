@@ -1,0 +1,3 @@
+[submodule "clautolisp/third-party/libredwg"]
+	path = clautolisp/third-party/libredwg
+	url = https://github.com/LibreDWG/libredwg.git
