@@ -118,6 +118,12 @@ from the mock-host package before the Phase-17a extraction.")
    #:map-table-records
    #:find-table-record
    #:table-record-dxf
+   ;; Block definitions.
+   #:drawing-blocks
+   #:add-block
+   #:find-block
+   #:map-blocks
+   #:block-entities
    ;; Dictionary introspection / mutation.
    #:drawing-dictionary
    #:dictionary-get

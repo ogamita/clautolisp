@@ -101,6 +101,78 @@
     (is (not (null (find-entity restored "10"))))     ; first entity
     (is (not (null (find-entity restored "11"))))))    ; second entity
 
+;;; --- BLOCKS round-trip -------------------------------------------
+
+(defun build-drawing-with-block ()
+  (let ((d (make-drawing :version :ac1027)))
+    (add-block d "MYBLOCK"
+               '((0 . "BLOCK") (2 . "MYBLOCK") (70 . 0)
+                 (10 0.0d0 0.0d0 0.0d0)))
+    ;; one entity owned by the block, one in model space
+    (add-entity d '((0 . "LINE") (8 . "0") (10 0.0d0 0.0d0 0.0d0)
+                    (11 1.0d0 1.0d0 0.0d0))
+                :block "MYBLOCK")
+    (add-entity d '((0 . "CIRCLE") (8 . "0") (10 5.0d0 5.0d0 0.0d0)
+                    (40 . 1.0d0)))
+    d))
+
+(test dxf-round-trip-preserves-blocks-and-ownership
+  (let* ((original (build-drawing-with-block))
+         (text (with-output-to-string (s)
+                 (dxf-write-drawing-to-stream original s)))
+         (restored (with-input-from-string (s text)
+                     (dxf-read-drawing-from-stream s))))
+    ;; The block definition survives.
+    (is (not (null (find-block restored "MYBLOCK"))))
+    (is (string= "MYBLOCK" (cdr (assoc 2 (find-block restored "MYBLOCK")))))
+    ;; Exactly one entity is owned by the block; it is a LINE.
+    (let ((owned (block-entities restored "MYBLOCK")))
+      (is (= 1 (length owned)))
+      (is (eq :line (entity-kind (first owned))))
+      (is (string-equal "MYBLOCK" (entity-handle-block (first owned)))))
+    ;; The model-space CIRCLE has no block owner.
+    (is (= 2 (drawing-entity-count restored)))
+    (let ((circle (find-if (lambda (e) (eq :circle (entity-kind e)))
+                           (let (acc) (map-entities (lambda (e) (push e acc)) restored)
+                                (nreverse acc)))))
+      (is (not (null circle)))
+      (is (null (entity-handle-block circle))))))
+
+;;; --- OBJECTS (named-object dictionary) round-trip ----------------
+
+(test dxf-round-trip-preserves-named-object-dictionary
+  (let* ((original (make-drawing))
+         (nod (drawing-dictionary original)))
+    (dictionary-put nod "ACAD_GROUP" "2F")
+    (dictionary-put nod "ACAD_LAYOUT" "1C")
+    (let* ((text (with-output-to-string (s)
+                   (dxf-write-drawing-to-stream original s)))
+           (restored (with-input-from-string (s text)
+                       (dxf-read-drawing-from-stream s)))
+           (rnod (drawing-dictionary restored)))
+      (is (string= "2F" (dictionary-get rnod "ACAD_GROUP")))
+      (is (string= "1C" (dictionary-get rnod "ACAD_LAYOUT"))))))
+
+(test dxf-reads-blocks-and-objects-from-literal
+  (let* ((dxf (format nil "~{~A~%~}"
+                      '("0" "SECTION" "2" "BLOCKS"
+                        "0" "BLOCK" "5" "30" "2" "FRAME" "70" "0"
+                        "10" "0.0" "20" "0.0" "30" "0.0"
+                        "0" "LINE" "5" "31" "8" "0"
+                        "10" "0.0" "20" "0.0" "30" "0.0"
+                        "11" "1.0" "21" "0.0" "31" "0.0"
+                        "0" "ENDBLK"
+                        "0" "ENDSEC"
+                        "0" "SECTION" "2" "OBJECTS"
+                        "0" "DICTIONARY" "5" "C"
+                        "3" "ACAD_MLINESTYLE" "350" "17"
+                        "0" "ENDSEC"
+                        "0" "EOF")))
+         (d (with-input-from-string (s dxf) (dxf-read-drawing-from-stream s))))
+    (is (not (null (find-block d "FRAME"))))
+    (is (= 1 (length (block-entities d "FRAME"))))
+    (is (string= "17" (dictionary-get (drawing-dictionary d) "ACAD_MLINESTYLE")))))
+
 ;;; --- Dispatch integration (probe + read/write via the registry) --
 
 (test dxf-registered-on-the-format-dispatch

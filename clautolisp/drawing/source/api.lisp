@@ -104,6 +104,9 @@ does not affect the original."
     (setf (drawing-named-object-dictionary new)
           (%copy-dictionary-tree (drawing-named-object-dictionary drawing)))
     (setf (drawing-classes new) (copy-tree (drawing-classes drawing)))
+    (maphash (lambda (name header)
+               (setf (gethash name (drawing-blocks new)) (copy-tree header)))
+             (drawing-blocks drawing))
     new))
 
 ;;; --- Entity introspection ---------------------------------------
@@ -251,23 +254,52 @@ is a host-layer concern."
          :format-control "entity data requires a (0 . \"TYPE\") marker, got ~S"
          :format-arguments (list data)))
 
-(defun add-entity (drawing dxf &key handle)
+(defun add-entity (drawing dxf &key handle block)
   "Add an entity from the DXF group-code list DXF to DRAWING. HANDLE,
 if supplied (a loader preserving file handles), fixes the handle;
-otherwise a fresh one is allocated. DXF must carry a (0 . \"TYPE\")
-marker. Any caller-supplied -1 / 5 pairs are stripped; (5 . hex) is
-injected. The drawing's seed is kept strictly greater than every used
-handle. Returns the new ENTITY-HANDLE."
+otherwise a fresh one is allocated. BLOCK, if supplied, is the name of
+the block definition that owns the entity (NIL = model space). DXF must
+carry a (0 . \"TYPE\") marker. Any caller-supplied -1 / 5 pairs are
+stripped; (5 . hex) is injected. The drawing's seed is kept strictly
+greater than every used handle. Returns the new ENTITY-HANDLE."
   (let* ((kind (%entity-kind-from-data dxf))
          (int  (if handle (handle->integer handle) (allocate-handle drawing)))
          (key  (format nil "~X" int))
          (data (cons (cons 5 key) (%strip-codes dxf '(-1 5))))
-         (entity (make-entity-handle :id key :kind kind :data data)))
+         (entity (make-entity-handle :id key :kind kind :data data :block block)))
     (when (>= int (drawing-handle-seed drawing))
       (setf (drawing-handle-seed drawing) (1+ int)))
     (setf (gethash key (drawing-entities drawing)) entity)
     (push key (drawing-creation-order drawing))
     entity))
+
+;;; --- Block definitions ------------------------------------------
+
+(defun add-block (drawing name header-data)
+  "Register a block definition named NAME whose BLOCK header is the
+group-code list HEADER-DATA. The block's entities are ordinary
+entities added with :block NAME. Returns HEADER-DATA."
+  (setf (gethash name (drawing-blocks drawing)) header-data))
+
+(defun find-block (drawing name)
+  "The BLOCK-header group-code list of the block named NAME, or NIL."
+  (gethash name (drawing-blocks drawing)))
+
+(defun map-blocks (function drawing)
+  "Call FUNCTION with (NAME HEADER-DATA) for each block definition.
+Returns NIL."
+  (maphash function (drawing-blocks drawing))
+  nil)
+
+(defun block-entities (drawing name)
+  "The entities owned by block NAME, in creation order (oldest first)."
+  (let ((result '()))
+    (map-entities (lambda (e)
+                    (when (and (entity-handle-block e)
+                               (string-equal (entity-handle-block e) name))
+                      (push e result)))
+                  drawing)
+    (nreverse result)))
 
 (defun modify-entity (drawing handle dxf)
   "Replace the stored data of HANDLE with DXF, preserving the handle

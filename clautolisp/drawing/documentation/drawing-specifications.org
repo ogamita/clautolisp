@@ -11,9 +11,13 @@ covered by ~clautolisp/drawing/tests~ (independent of AutoLISP and
 MockHost). All the [REVIEW-1..7] decisions recorded inline have been
 applied. The ASCII DXF codec (Phase 17c) is implemented in
 ~drawing/source/dxf.lisp~ and registered for ~:dxf-ascii~, so
-~read-drawing~ / ~write-drawing~ round-trip HEADER / TABLES / ENTITIES
-(BLOCKS and OBJECTS are skipped on read and not yet emitted; binary
-DXF and DWG come in 17e). DWG still signals ~drawing-format-error~.
+~read-drawing~ / ~write-drawing~ round-trip HEADER, TABLES, BLOCKS
+(block definitions + owned entities), ENTITIES (model space), and
+OBJECTS (the root named-object dictionary). Block ownership is carried
+by ~entity-handle-block~ and a per-drawing ~drawing-blocks~ map
+(name -> BLOCK header). Deferred: binary DXF, sub-dictionary nesting /
+xrecords in OBJECTS, and DWG (17e) — DWG still signals
+~drawing-format-error~.
 
 MockHost's *entity* surface now delegates to this API: ~host-entget~
 / ~entmod~ / ~entmake~ / ~entdel~ / ~entlast~ / ~entnext~ / ~handent~

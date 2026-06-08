@@ -1084,7 +1084,7 @@ mutation (~add-entity~, ~modify-entity~, ~delete-entity~,
 ~set-sysvar~, table/dict mutators). Ships its own
 ~documentation/*-specifications.org~ like every component.
 
-*** Phase 17c — DXF codec [PARTIAL — ASCII HEADER/TABLES/ENTITIES]
+*** Phase 17c — DXF codec [DONE — ASCII; binary DXF deferred]
 *Goal:* first real persistence. ~clautolisp.drawing.dxf~, pure
 CL, no external deps; ASCII (and binary) DXF <-> ~drawing~,
 section by section. SCHMS-family drawings are ordinary DXF/DWG
@@ -1093,10 +1093,13 @@ DXF covers them. Acceptance: load -> dump -> load round-trip
 fidelity tests; snapshot tests reuse the Phase-10 machinery.
 *Status:* ASCII DXF reader/writer implemented in
 ~drawing/source/dxf.lisp~, registered for ~:dxf-ascii~, with
-group-code value typing and point coalescing/expansion. HEADER
-(incl. ~$HANDSEED~ / ~$ACADVER~), TABLES and ENTITIES round-trip
-(tested in ~drawing/tests/dxf-tests.lisp~). *Remaining:* BLOCKS and
-OBJECTS sections (skipped on read, not emitted), and binary DXF.
+group-code value typing and point coalescing/expansion. Round-trips
+HEADER (incl. ~$HANDSEED~ / ~$ACADVER~), TABLES, BLOCKS (block
+definitions + owned entities via ENTITY-HANDLE-BLOCK), ENTITIES
+(model space), and OBJECTS (the root named-object dictionary's
+handle entries). Tested in ~drawing/tests/dxf-tests.lisp~.
+*Remaining:* binary DXF; and deep OBJECTS fidelity — sub-dictionary
+nesting and xrecords / arbitrary non-graphical object types.
 
 *** Phase 17d — CL tooling (proof of the API)
 *Goal:* prove Layer 1 is sufficient without AutoLISP. CLI tools
