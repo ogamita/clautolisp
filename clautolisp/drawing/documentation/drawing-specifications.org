@@ -9,10 +9,11 @@ this CL API have both landed. The API described below is implemented
 in ~clautolisp/drawing/source/{api,persistence,conditions}.lisp~ and
 covered by ~clautolisp/drawing/tests~ (independent of AutoLISP and
 MockHost). All the [REVIEW-1..7] decisions recorded inline have been
-applied. The codecs behind ~read-drawing~ / ~write-drawing~ are not
-yet present — DXF arrives in 17c, DWG in 17e; until then those two
-functions signal ~drawing-format-error~ for any real file format, and
-the dispatch is exercised through a stub codec in the tests.
+applied. The ASCII DXF codec (Phase 17c) is implemented in
+~drawing/source/dxf.lisp~ and registered for ~:dxf-ascii~, so
+~read-drawing~ / ~write-drawing~ round-trip HEADER / TABLES / ENTITIES
+(BLOCKS and OBJECTS are skipped on read and not yet emitted; binary
+DXF and DWG come in 17e). DWG still signals ~drawing-format-error~.
 
 MockHost's *entity* surface now delegates to this API: ~host-entget~
 / ~entmod~ / ~entmake~ / ~entdel~ / ~entlast~ / ~entnext~ / ~handent~

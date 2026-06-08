@@ -105,7 +105,8 @@
    (:file "drawing/source/model")
    (:file "drawing/source/conditions")
    (:file "drawing/source/api")
-   (:file "drawing/source/persistence"))
+   (:file "drawing/source/persistence")
+   (:file "drawing/source/dxf"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/drawing/tests")))
   :perform (asdf:test-op (op system)
@@ -300,6 +301,7 @@
    (:file "drawing/tests/test-harness")
    (:file "drawing/tests/api-tests")
    (:file "drawing/tests/persistence-tests")
+   (:file "drawing/tests/dxf-tests")
    (:file "drawing/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
