@@ -20,8 +20,15 @@ by ~entity-handle-block~ and a per-drawing ~drawing-blocks~ map
 defaults to ASCII, ~:format :dxf-binary~ writes binary. OBJECTS
 round-trips the named-object dictionary tree (with sub-dictionary
 nesting) and xrecords / other non-graphical objects (the latter held in
-~drawing-objects~, reachable via ~find-object~). Deferred: DWG (17e) —
-DWG still signals ~drawing-format-error~.
+~drawing-objects~, reachable via ~find-object~).
+
+DWG (Phase 17e) is handled by the *optional* ~clautolisp/drawing-dwg~
+system, which links the vendored, self-built GNU libredwg via a thin
+CFFI'd C shim and registers the ~:dwg~ codec (DWG<->DXF in-process,
+reusing this DXF codec). Until that system is loaded — and it is not
+part of the core aggregate — ~:dwg~ signals ~drawing-format-error~.
+File DXF I/O uses ISO-8859-1 (the DXF codepage tradition; byte-exact
+and never raises a decoding error on real-world / libredwg output).
 
 MockHost's *entity* surface now delegates to this API: ~host-entget~
 / ~entmod~ / ~entmake~ / ~entdel~ / ~entlast~ / ~entnext~ / ~handent~

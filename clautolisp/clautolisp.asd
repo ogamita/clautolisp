@@ -113,6 +113,38 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/drawing-dwg"
+  :description "DWG codec backed by the vendored libredwg via a CFFI'd C shim (Phase 17e). Optional: NOT part of the core clautolisp aggregate; requires the libredwg shim built (make build-libredwg) and CFFI."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/drawing" "cffi" "uiop")
+  :serial t
+  :components
+  ((:file "drawing-dwg/source/package")
+   (:file "drawing-dwg/source/bindings")
+   (:file "drawing-dwg/source/codec"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/drawing-dwg/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/drawing-dwg/tests"
+  :description "Tests for the clautolisp DWG codec (libredwg)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/drawing-dwg" "fiveam")
+  :serial t
+  :components
+  ((:file "drawing-dwg/tests/package")
+   (:file "drawing-dwg/tests/test-harness")
+   (:file "drawing-dwg/tests/dwg-tests")
+   (:file "drawing-dwg/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.drawing.dwg.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/autolisp-mock-host"
   :description "In-memory deterministic CAD-database backend (MockHost) for clautolisp."
   :author "Codex"

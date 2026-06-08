@@ -137,3 +137,8 @@ bin/
 documentation/*.info
 **/documentation/*.info
 **/documentation/*.texi
+
+# Phase 17e: vendored libredwg build artifacts + CFFI shim binary
+clautolisp/third-party/libredwg/build/
+clautolisp/drawing-dwg/source/clal_dwg.dylib
+clautolisp/drawing-dwg/source/clal_dwg.so

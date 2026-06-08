@@ -641,6 +641,13 @@ DRAWING. Consumes and ignores the 22-byte sentinel."
 
 ;;; --- Codec registration -----------------------------------------
 
+;;; ASCII DXF is a codepage-based text format (ANSI_xxxx, with \U+
+;;; escapes for out-of-codepage characters), not UTF-8. ISO-8859-1 maps
+;;; every byte 1:1, so it never raises a decoding error on real-world
+;;; DXF (e.g. libredwg's output) and preserves bytes for round-trip.
+;;; (Honouring $DWGCODEPAGE precisely is a future refinement.)
+(defparameter +dxf-external-format+ :iso-8859-1)
+
 (defun dxf-read-drawing (source)
   "Read SOURCE as DXF, auto-detecting ASCII vs binary by its sentinel.
 Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set)."
@@ -649,7 +656,7 @@ Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set)."
                        (dxf-read-binary-drawing-from-stream s))))
         (setf (drawing-format drawing) :dxf-binary)
         drawing)
-      (let ((drawing (with-open-file (s source :external-format :utf-8)
+      (let ((drawing (with-open-file (s source :external-format +dxf-external-format+)
                        (dxf-read-drawing-from-stream s))))
         (setf (drawing-format drawing) :dxf-ascii)
         drawing)))
@@ -659,7 +666,7 @@ Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set)."
   (with-open-file (stream destination :direction :output
                                       :if-exists :supersede
                                       :if-does-not-exist :create
-                                      :external-format :utf-8)
+                                      :external-format +dxf-external-format+)
     (dxf-write-drawing-to-stream drawing stream)))
 
 (defun dxf-write-binary-drawing (drawing destination &key version)

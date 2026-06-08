@@ -109,6 +109,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
 .PHONY: all test test-sbcl test-ccl build build-sbcl build-ccl probe-check \
+        build-libredwg \
         build-read-autolisp-sbcl build-read-autolisp-ccl \
         build-clautolisp-sbcl build-clautolisp-ccl \
         run-file-compat run-file-compat-sbcl run-file-compat-ccl \
@@ -169,6 +170,9 @@ build-ccl:  ## Strictly build the CCL clautolisp + read-autolisp images (errors 
 	fi
 	$(MAKE) build-read-autolisp-ccl
 	$(MAKE) build-clautolisp-ccl
+
+build-libredwg:  ## Build the vendored libredwg submodule + the CFFI shim for the optional DWG codec (Phase 17e). Requires cmake + a C compiler.
+	drawing-dwg/build-libredwg.sh
 
 test: test-sbcl
 
