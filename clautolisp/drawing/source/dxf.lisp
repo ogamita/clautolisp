@@ -271,10 +271,11 @@ and other object types are not yet modelled (a documented limitation)."
                  (setf pending-key nil))))))
         (return)))))
 
-(defun dxf-read-drawing-from-stream (stream)
-  "Parse an ASCII DXF STREAM into a fresh DRAWING."
+(defun dxf-build-drawing (typed-pairs)
+  "Build a DRAWING from a flat list of (CODE . TYPED-VALUE) pairs,
+whatever tokeniser (ASCII or binary) produced them."
   (let ((drawing (make-drawing))
-        (sections (dxf-section-bodies (dxf-read-typed-pairs stream))))
+        (sections (dxf-section-bodies typed-pairs)))
     (flet ((section (name) (cdr (assoc name sections :test #'string-equal))))
       (let ((b (section "HEADER")))   (when b (dxf-load-header   drawing b)))
       (let ((b (section "TABLES")))   (when b (dxf-load-tables   drawing b)))
@@ -283,14 +284,24 @@ and other object types are not yet modelled (a documented limitation)."
       (let ((b (section "OBJECTS")))  (when b (dxf-load-objects  drawing b))))
     drawing))
 
-;;; --- Writer -----------------------------------------------------
+(defun dxf-read-drawing-from-stream (stream)
+  "Parse an ASCII DXF STREAM into a fresh DRAWING."
+  (dxf-build-drawing (dxf-read-typed-pairs stream)))
 
-(defun dxf-write-pair (stream code value)
-  (format stream "~D~%" code)
-  (ecase (dxf-code-type code)
-    (:string (format stream "~A~%" value))
-    (:integer (format stream "~D~%" value))
-    (:double (format stream "~A~%" (dxf-format-double value)))))
+;;; --- Writer: pluggable pair emitter -----------------------------
+;;;
+;;; The structural writers below emit *every* group pair — including
+;;; the (0 . "SECTION") / (2 . name) markers — through DXF-EMIT, which
+;;; dispatches to the format-specific emitter bound in *DXF-EMIT-PAIR*.
+;;; ASCII and binary therefore share all of the section / table / block
+;;; / entity / object structure; only the per-pair encoding differs.
+
+(defvar *dxf-out* nil  "Stream the current writer emits to.")
+(defvar *dxf-emit-pair* nil  "Function (stream code value) for one pair.")
+
+(declaim (inline dxf-emit))
+(defun dxf-emit (code value)
+  (funcall *dxf-emit-pair* *dxf-out* code value))
 
 (defun dxf-format-double (x)
   "Print a double in DXF's plain decimal style (fixed-point, no
@@ -298,45 +309,33 @@ exponent marker)."
   (let ((*read-default-float-format* 'double-float))
     (format nil "~F" (coerce x 'double-float))))
 
-(defun dxf-write-data-pair (stream pair)
-  "Write one entget-style PAIR, expanding a point value into its
-X/Y/Z group codes."
+(defun dxf-ascii-emit-pair (stream code value)
+  (format stream "~D~%" code)
+  (ecase (dxf-code-type code)
+    (:string  (format stream "~A~%" value))
+    (:integer (format stream "~D~%" value))
+    (:double  (format stream "~A~%" (dxf-format-double value)))))
+
+(defun dxf-write-data-pair (pair)
+  "Emit one entget-style PAIR, expanding a point value into its X/Y/Z
+group codes."
   (let ((code (car pair)) (value (cdr pair)))
     (if (and (dxf-x-coordinate-code-p code)
              (consp value) (every #'numberp value))
         (loop for component in value
               for sub from code by 10
-              do (format stream "~D~%~A~%" sub (dxf-format-double component)))
-        (dxf-write-pair stream code value))))
+              do (dxf-emit sub (coerce component 'double-float)))
+        (dxf-emit code value))))
 
-(defun dxf-write-object (stream pairs)
+(defun dxf-write-object (pairs)
   (dolist (pair pairs)
-    (when (consp pair) (dxf-write-data-pair stream pair))))
+    (when (consp pair) (dxf-write-data-pair pair))))
 
-(defun dxf-write-section (stream name body-thunk)
-  (format stream "0~%SECTION~%2~%~A~%" name)
+(defun dxf-write-section (name body-thunk)
+  (dxf-emit 0 "SECTION")
+  (dxf-emit 2 name)
   (funcall body-thunk)
-  (format stream "0~%ENDSEC~%"))
-
-(defun dxf-write-header (stream drawing)
-  (dxf-write-section
-   stream "HEADER"
-   (lambda ()
-     (format stream "9~%$ACADVER~%1~%~A~%"
-             (or (and (drawing-version drawing)
-                      (string-upcase (symbol-name (drawing-version drawing))))
-                 "AC1027"))
-     (format stream "9~%$HANDSEED~%5~%~X~%" (drawing-handle-seed drawing))
-     (map-variables
-      (lambda (cell)
-        (let* ((name (sysvar-cell-name cell))
-               (value (sysvar-cell-value cell)))
-          (unless (string-equal name "HANDSEED")
-            (format stream "9~%$~A~%" name)
-            (dxf-write-data-pair
-             stream (cons (dxf-header-value-code (sysvar-cell-kind cell) value)
-                          value)))))
-      drawing))))
+  (dxf-emit 0 "ENDSEC"))
 
 (defun dxf-header-value-code (kind value)
   "Choose a DXF group code to carry a header variable of KIND."
@@ -348,19 +347,40 @@ X/Y/Z group codes."
     (:point 10)
     (t (if (consp value) 10 (if (integerp value) 70 (if (stringp value) 1 40))))))
 
-(defun dxf-write-tables (stream drawing)
+(defun dxf-write-header (drawing)
   (dxf-write-section
-   stream "TABLES"
+   "HEADER"
+   (lambda ()
+     (dxf-emit 9 "$ACADVER")
+     (dxf-emit 1 (or (and (drawing-version drawing)
+                          (string-upcase (symbol-name (drawing-version drawing))))
+                     "AC1027"))
+     (dxf-emit 9 "$HANDSEED")
+     (dxf-emit 5 (format nil "~X" (drawing-handle-seed drawing)))
+     (map-variables
+      (lambda (cell)
+        (let ((name (sysvar-cell-name cell))
+              (value (sysvar-cell-value cell)))
+          (unless (string-equal name "HANDSEED")
+            (dxf-emit 9 (format nil "$~A" name))
+            (dxf-write-data-pair
+             (cons (dxf-header-value-code (sysvar-cell-kind cell) value) value)))))
+      drawing))))
+
+(defun dxf-write-tables (drawing)
+  (dxf-write-section
+   "TABLES"
    (lambda ()
      (maphash
       (lambda (kind table)
-        (format stream "0~%TABLE~%2~%~A~%70~%~D~%"
-                (dxf-table-name kind) (hash-table-count table))
+        (dxf-emit 0 "TABLE")
+        (dxf-emit 2 (dxf-table-name kind))
+        (dxf-emit 70 (hash-table-count table))
         (maphash (lambda (name record)
                    (declare (ignore name))
-                   (dxf-write-object stream (symbol-table-record-data record)))
+                   (dxf-write-object (symbol-table-record-data record)))
                  table)
-        (format stream "0~%ENDTAB~%"))
+        (dxf-emit 0 "ENDTAB"))
       (drawing-tables drawing)))))
 
 (defun dxf-ordered-entity-data (data)
@@ -369,64 +389,204 @@ with group code 0, but the drawing stores (5 . handle) first."
   (let ((zero (assoc 0 data)))
     (if zero (cons zero (remove zero data :test #'eq)) data)))
 
-(defun dxf-write-entities (stream drawing)
+(defun dxf-write-entities (drawing)
   "Emit the ENTITIES section: model-space entities only (those with a
 NIL block owner). Block-owned entities are emitted inside BLOCKS."
   (dxf-write-section
-   stream "ENTITIES"
+   "ENTITIES"
    (lambda ()
      (map-entities (lambda (entity)
                      (unless (entity-handle-block entity)
                        (dxf-write-object
-                        stream (dxf-ordered-entity-data (entity-handle-data entity)))))
+                        (dxf-ordered-entity-data (entity-handle-data entity)))))
                    drawing))))
 
-(defun dxf-write-blocks (stream drawing)
+(defun dxf-write-blocks (drawing)
   "Emit the BLOCKS section: each block definition's header, then its
 owned entities, then ENDBLK."
   (dxf-write-section
-   stream "BLOCKS"
+   "BLOCKS"
    (lambda ()
      (map-blocks
       (lambda (name header)
-        (dxf-write-object stream (dxf-ordered-entity-data header))
+        (dxf-write-object (dxf-ordered-entity-data header))
         (dolist (entity (block-entities drawing name))
-          (dxf-write-object
-           stream (dxf-ordered-entity-data (entity-handle-data entity))))
-        (format stream "0~%ENDBLK~%"))
+          (dxf-write-object (dxf-ordered-entity-data (entity-handle-data entity))))
+        (dxf-emit 0 "ENDBLK"))
       drawing))))
 
-(defun dxf-write-objects (stream drawing)
-  "Emit the OBJECTS section when the named-object dictionary is
-non-empty: a single DICTIONARY carrying the (3 key)(350 handle) entries
-whose value is a handle string."
+(defun dxf-write-dictionary (dict)
+  "Emit a DICTIONARY object: its (3 key)(350 handle) string entries."
+  (dxf-emit 0 "DICTIONARY")
+  (map-dictionary
+   (lambda (key value)
+     (when (stringp value)
+       (dxf-emit 3 key)
+       (dxf-emit 350 value)))
+   dict))
+
+(defun dxf-write-objects (drawing)
+  "Emit the OBJECTS section as the named-object dictionary tree."
   (let ((nod (drawing-named-object-dictionary drawing)))
     (when (plusp (hash-table-count (dictionary-entries nod)))
-      (dxf-write-section
-       stream "OBJECTS"
-       (lambda ()
-         (format stream "0~%DICTIONARY~%")
-         (map-dictionary
-          (lambda (key value)
-            (when (stringp value)
-              (format stream "3~%~A~%350~%~A~%" key value)))
-          nod))))))
+      (dxf-write-section "OBJECTS" (lambda () (dxf-write-dictionary nod))))))
+
+(defun dxf-write-drawing-body (drawing)
+  (dxf-write-header drawing)
+  (dxf-write-tables drawing)
+  (dxf-write-blocks drawing)
+  (dxf-write-entities drawing)
+  (dxf-write-objects drawing)
+  (dxf-emit 0 "EOF"))
 
 (defun dxf-write-drawing-to-stream (drawing stream)
-  (dxf-write-header stream drawing)
-  (dxf-write-tables stream drawing)
-  (dxf-write-blocks stream drawing)
-  (dxf-write-entities stream drawing)
-  (dxf-write-objects stream drawing)
-  (format stream "0~%EOF~%")
+  "Write DRAWING to a character STREAM as ASCII DXF."
+  (let ((*dxf-out* stream)
+        (*dxf-emit-pair* #'dxf-ascii-emit-pair))
+    (dxf-write-drawing-body drawing))
   drawing)
+
+;;; --- Binary DXF -------------------------------------------------
+;;;
+;;; The R13+ binary DXF variant: a 22-byte sentinel, then group codes
+;;; as 2-byte little-endian shorts and values encoded per the group
+;;; code's type. Reader and writer here are mutually consistent and
+;;; read/write that variant. (Binary extended-data chunks (310/1004)
+;;; and non-ASCII codepage strings are out of scope; strings are
+;;; treated as null-terminated Latin-1.)
+
+(defparameter +dxf-binary-sentinel+ "AutoCAD Binary DXF")
+
+(defun dxf-binary-value-kind (code)
+  "Refine DXF-CODE-TYPE to a binary width: :string, :double, :bool
+(1 byte), :int16, :int32 or :int64."
+  (case (dxf-code-type code)
+    (:string :string)
+    (:double :double)
+    (t (cond
+         ((<= 290 code 299) :bool)
+         ((<= 160 code 169) :int64)
+         ((or (<= 90 code 99) (<= 420 code 429) (<= 440 code 459) (= code 1071))
+          :int32)
+         (t :int16)))))
+
+;; Portable IEEE-754 double <-> 64-bit integer (no external deps;
+;; exact for finite normal/zero values, which is all DXF carries).
+
+(defun double->bits (x)
+  (let ((x (coerce x 'double-float)))
+    (if (zerop x)
+        (if (minusp (float-sign x)) #x8000000000000000 0)
+        (multiple-value-bind (m e s) (integer-decode-float (abs x))
+          (declare (ignore s))
+          (let ((sign (if (minusp x) 1 0))
+                (biased (+ e 1075)))
+            (cond
+              ((>= biased 2047) (logior (ash sign 63) (ash 2047 52)))
+              ((<= biased 0)
+               (logior (ash sign 63) (ldb (byte 52 0) (ash m (1- biased)))))
+              (t (logior (ash sign 63) (ash biased 52) (ldb (byte 52 0) m)))))))))
+
+(defun bits->double (bits)
+  (let ((sign (if (logbitp 63 bits) -1d0 1d0))
+        (exp (ldb (byte 11 52) bits))
+        (frac (ldb (byte 52 0) bits)))
+    (cond
+      ((= exp 2047) (if (zerop frac) (* sign most-positive-double-float) 0d0))
+      ((zerop exp) (* sign (scale-float (coerce frac 'double-float) -1074)))
+      (t (* sign (scale-float (coerce (logior frac (ash 1 52)) 'double-float)
+                              (- exp 1075)))))))
+
+(defun dxf-write-uint (stream value n)
+  (dotimes (i n) (write-byte (ldb (byte 8 (* 8 i)) value) stream)))
+
+(defun dxf-read-uint (stream n)
+  (let ((v 0))
+    (dotimes (i n v)
+      (let ((b (read-byte stream nil :eof)))
+        (when (eq b :eof) (return-from dxf-read-uint nil))
+        (setf v (logior v (ash b (* 8 i))))))))
+
+(defun dxf-sign-extend (v bits)
+  (if (and v (logbitp (1- bits) v)) (- v (ash 1 bits)) v))
+
+(defun dxf-binary-emit-pair (stream code value)
+  (dxf-write-uint stream code 2)
+  (ecase (dxf-binary-value-kind code)
+    (:string (loop for c across (string value)
+                   do (write-byte (logand (char-code c) #xff) stream))
+             (write-byte 0 stream))
+    (:double (dxf-write-uint stream (double->bits value) 8))
+    (:bool   (write-byte (if (and value (not (eql value 0))) 1 0) stream))
+    (:int16  (dxf-write-uint stream (ldb (byte 16 0) value) 2))
+    (:int32  (dxf-write-uint stream (ldb (byte 32 0) value) 4))
+    (:int64  (dxf-write-uint stream (ldb (byte 64 0) value) 8))))
+
+(defun dxf-read-binary-string (stream)
+  (with-output-to-string (s)
+    (loop for b = (read-byte stream nil 0)
+          until (or (null b) (eql b 0))
+          do (write-char (code-char b) s))))
+
+(defun dxf-read-binary-pairs (stream)
+  "Tokenise a binary DXF STREAM (sentinel already consumed) into a list
+of (CODE . TYPED-VALUE) pairs."
+  (let ((pairs '()))
+    (loop
+      (let ((code (dxf-read-uint stream 2)))
+        (when (null code) (return))
+        (let ((value
+               (ecase (dxf-binary-value-kind code)
+                 (:string (dxf-read-binary-string stream))
+                 (:double (bits->double (dxf-read-uint stream 8)))
+                 (:bool   (read-byte stream nil 0))
+                 (:int16  (dxf-sign-extend (dxf-read-uint stream 2) 16))
+                 (:int32  (dxf-sign-extend (dxf-read-uint stream 4) 32))
+                 (:int64  (dxf-sign-extend (dxf-read-uint stream 8) 64)))))
+          (unless (= code 999) (push (cons code value) pairs))
+          (when (and (= code 0) (stringp value) (string-equal value "EOF"))
+            (return)))))
+    (nreverse pairs)))
+
+(defun dxf-write-binary-drawing-to-stream (drawing stream)
+  "Write DRAWING to a byte STREAM as R13+ binary DXF."
+  (loop for c across +dxf-binary-sentinel+ do (write-byte (char-code c) stream))
+  (write-byte 13 stream) (write-byte 10 stream)   ; CR LF
+  (write-byte 26 stream) (write-byte 0 stream)    ; SUB NUL
+  (let ((*dxf-out* stream)
+        (*dxf-emit-pair* #'dxf-binary-emit-pair))
+    (dxf-write-drawing-body drawing))
+  drawing)
+
+(defun dxf-read-binary-drawing-from-stream (stream)
+  "Parse a binary DXF byte STREAM (positioned at the start) into a
+DRAWING. Consumes and ignores the 22-byte sentinel."
+  (dotimes (i 22) (read-byte stream nil :eof))
+  (dxf-build-drawing (dxf-read-binary-pairs stream)))
+
+(defun dxf-binary-file-p (source)
+  "True if the file SOURCE begins with the binary DXF sentinel."
+  (and (probe-file source)
+       (with-open-file (s source :element-type '(unsigned-byte 8))
+         (let* ((len (length +dxf-binary-sentinel+))
+                (buf (make-array len :element-type '(unsigned-byte 8))))
+           (and (= len (read-sequence buf s))
+                (string= +dxf-binary-sentinel+ (map 'string #'code-char buf)))))))
 
 ;;; --- Codec registration -----------------------------------------
 
 (defun dxf-read-drawing (source)
-  (with-open-file (stream source :direction :input
-                                 :external-format :utf-8)
-    (dxf-read-drawing-from-stream stream)))
+  "Read SOURCE as DXF, auto-detecting ASCII vs binary by its sentinel.
+Sets DRAWING-FORMAT precisely (READ-DRAWING leaves it as set)."
+  (if (dxf-binary-file-p source)
+      (let ((drawing (with-open-file (s source :element-type '(unsigned-byte 8))
+                       (dxf-read-binary-drawing-from-stream s))))
+        (setf (drawing-format drawing) :dxf-binary)
+        drawing)
+      (let ((drawing (with-open-file (s source :external-format :utf-8)
+                       (dxf-read-drawing-from-stream s))))
+        (setf (drawing-format drawing) :dxf-ascii)
+        drawing)))
 
 (defun dxf-write-drawing (drawing destination &key version)
   (declare (ignore version))
@@ -436,6 +596,18 @@ whose value is a handle string."
                                       :external-format :utf-8)
     (dxf-write-drawing-to-stream drawing stream)))
 
+(defun dxf-write-binary-drawing (drawing destination &key version)
+  (declare (ignore version))
+  (with-open-file (stream destination :direction :output
+                                      :if-exists :supersede
+                                      :if-does-not-exist :create
+                                      :element-type '(unsigned-byte 8))
+    (dxf-write-binary-drawing-to-stream drawing stream)))
+
 (register-drawing-codec :dxf-ascii
                         :reader #'dxf-read-drawing
                         :writer #'dxf-write-drawing)
+
+(register-drawing-codec :dxf-binary
+                        :reader #'dxf-read-drawing
+                        :writer #'dxf-write-binary-drawing)

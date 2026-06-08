@@ -173,6 +173,48 @@
     (is (= 1 (length (block-entities d "FRAME"))))
     (is (string= "17" (dictionary-get (drawing-dictionary d) "ACAD_MLINESTYLE")))))
 
+;;; --- Binary DXF --------------------------------------------------
+
+(test dxf-double-bit-codec-round-trips
+  (dolist (x '(0.0d0 1.0d0 -1.0d0 2.5d0 0.5d0 100.0d0
+               3.141592653589793d0 1234.5d0 1.0d300 -1.0d-300))
+    (is (= x (bits->double (double->bits x))))))
+
+(test dxf-binary-round-trip-via-file
+  (uiop:with-temporary-file (:pathname p :type "dxf")
+    (let ((original (build-drawing-with-block)))
+      (write-drawing original p :format :dxf-binary)
+      ;; The file is binary (begins with the sentinel) and reads back
+      ;; with its format detected.
+      (is (dxf-binary-file-p p))
+      (let ((restored (read-drawing p)))
+        (is (eq :dxf-binary (drawing-format restored)))
+        (is (= (drawing-entity-count original) (drawing-entity-count restored)))
+        (is (= (drawing-handle-seed original) (drawing-handle-seed restored)))
+        (is (not (null (find-block restored "MYBLOCK"))))
+        (is (= 1 (length (block-entities restored "MYBLOCK"))))
+        ;; Entity data (incl. doubles and points) round-trips exactly.
+        (let ((o '()) (r '()))
+          (map-entities (lambda (e) (push (entity-dxf e) o)) original)
+          (map-entities (lambda (e) (push (entity-dxf e) r)) restored)
+          (is (equalp (nreverse o) (nreverse r))))))))
+
+(test dxf-ascii-and-binary-agree-on-content
+  (uiop:with-temporary-file (:pathname pa :type "dxf")
+    (uiop:with-temporary-file (:pathname pb :type "dxf")
+      (let ((d (build-sample-drawing)))
+        (write-drawing d pa :format :dxf-ascii)
+        (write-drawing d pb :format :dxf-binary)
+        (is (not (dxf-binary-file-p pa)))
+        (is (dxf-binary-file-p pb))
+        (let ((from-ascii (read-drawing pa))
+              (from-binary (read-drawing pb))
+              (entities (lambda (dr)
+                          (let (acc) (map-entities (lambda (e) (push (entity-dxf e) acc)) dr)
+                               (nreverse acc)))))
+          (is (equalp (funcall entities from-ascii)
+                      (funcall entities from-binary))))))))
+
 ;;; --- Dispatch integration (probe + read/write via the registry) --
 
 (test dxf-registered-on-the-format-dispatch
