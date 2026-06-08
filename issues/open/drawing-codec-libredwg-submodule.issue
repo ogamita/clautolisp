@@ -19,33 +19,50 @@ DXF lands first (Phase 17c) because it is documented, pure-CL, and
 maps almost 1:1 onto the group-code lists already stored. This
 issue is only the DWG step on top of it.
 
-Decisions to make
------------------
+Decisions (made 2026-06)
+------------------------
 
-  1. **Integration mechanism.** Land one of:
-       a. git submodule + CFFI bindings to libredwg's C API,
-          mapping its object model onto `clautolisp.drawing`.
-       b. shell-out to libredwg's `dwgread` / `dwg2dxf` /
-          `dwgwrite`, reusing the Phase-17c DXF path as the
-          interchange.
-     Recommendation: ship (b) first as bring-up (zero FFI risk,
-     immediate DWG read via dwg2dxf -> DXF reader), then promote
-     hot paths to (a) for write fidelity and speed. The CL API
-     surface (read-drawing / write-drawing) is identical either
-     way, so the choice is internal.
+  1. **Integration mechanism: vendored git submodule + CFFI.**
+     libredwg is vendored as a git submodule pinned to a chosen
+     release, *built by us* from source, and linked via CFFI. We do
+     NOT depend on a package-manager build of libredwg: we want to
+     pin the exact release, carry a maintenance branch if we hit
+     bugs, and control building/packaging. (The shell-out-to-CLI
+     path was considered and rejected for the production codec.)
+     - Submodule: ~clautolisp/third-party/libredwg~, pinned at tag
+       **0.13.3** (commit 443163b…).
+     - Build *toolchain* (autoconf/automake/libtool) is a generic
+       developer prerequisite, NOT the dependency — it may come from
+       any package manager; only libredwg itself is vendored.
 
-  2. **Submodule placement + build.** Where the submodule lives,
-     how the Makefile / ASDF build finds the built library, and
-     how CI (.gitlab-ci.yml, GitHub lanes) gets libredwg available
-     (vendored build vs distro package).
+  2. **Submodule placement + build.** Submodule under
+     ~clautolisp/third-party/libredwg~. A Makefile target builds it
+     in place (autogen.sh → configure → make) producing the shared
+     library; the optional ~clautolisp/drawing-dwg~ ASDF system
+     loads that library via CFFI and registers the ~:dwg~ codec.
+     The DWG system is *optional* and NOT part of the core
+     ~clautolisp~ aggregate, so the core build/test stays green
+     where libredwg is absent (the drawing layer already signals
+     ~drawing-format-error~ for ~:dwg~ until a codec registers).
+     CI: a dedicated lane builds the submodule then runs the
+     ~clautolisp/drawing-dwg/tests~ system.
 
-  3. **Version coverage.** Which DWG versions we claim to
-     read/write. libredwg's own matrix bounds this; document the
-     claimed subset.
+  3. **CFFI surface (minimal, header-driven).** Rather than bind
+     libredwg's entire Dwg_Data object model, bind the small stable
+     surface needed to bridge to the Phase-17c DXF codec
+     in-process: read a DWG into Dwg_Data and emit DXF (and the
+     reverse), then reuse READ/WRITE-DRAWING's DXF path. Exact
+     entry points to be chosen after reading the vendored headers
+     (dwg.h / dwg_api.h). This keeps the binding small and robust
+     across libredwg versions.
 
-  4. **Licensing.** libredwg is GPL/LGPL — confirm compatibility
-     with clautolisp's licence (COPYING) and whether linking vs
-     shelling-out changes the obligation.
+  4. **Version coverage.** Whatever the pinned libredwg release
+     supports (R13–R2018 per its matrix); documented once bindings
+     land.
+
+  5. **Licensing.** libredwg is GPL-3.0; clautolisp is AGPL-3.0
+     (COPYING) — compatible. Vendoring + linking is fine under the
+     (A)GPL; record this once the build lands.
 
 In scope
 --------
