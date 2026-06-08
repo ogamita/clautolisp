@@ -1887,11 +1887,12 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
              (clautolisp.autolisp-runtime:autolisp-ename-value last-ename)))
         ;; entget against that ename round-trips the data list.
         (is (consp (call-autolisp-function entget-fn last-ename))))
-      ;; handent on the recorded handle string returns an ename.
+      ;; handent on the recorded handle string returns an ename. The
+      ;; host wraps code-5 as an autolisp-string at the boundary
+      ;; (REVIEW-1), so it is already a HANDENT-ready string.
       (let* ((handle-cell (second data))
              (handle (cdr handle-cell)))
-        (is (typep (call-autolisp-function handent-fn
-                                            (make-autolisp-string handle))
+        (is (typep (call-autolisp-function handent-fn handle)
                    'clautolisp.autolisp-runtime:autolisp-ename))
         (is (null (call-autolisp-function handent-fn
                                           (make-autolisp-string "DEADBEEF"))))))))

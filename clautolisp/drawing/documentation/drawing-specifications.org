@@ -14,11 +14,18 @@ yet present — DXF arrives in 17c, DWG in 17e; until then those two
 functions signal ~drawing-format-error~ for any real file format, and
 the dispatch is exercised through a stub codec in the tests.
 
-Still to do (a separate, focused change): wire MockHost's
-entity / table / sysvar surface to *delegate* to this API (the
-"Relationship to the host" section), which also relocates the
-~(-1 . ename)~ injection from stored data into the host boundary per
-[REVIEW-1].
+MockHost's *entity* surface now delegates to this API: ~host-entget~
+/ ~entmod~ / ~entmake~ / ~entdel~ / ~entlast~ / ~entnext~ / ~handent~
+are a thin AutoLISP adapter over ADD-ENTITY / MODIFY-ENTITY /
+FIND-ENTITY / ENTITY-DELETED-STATUS operating on the active drawing.
+The drawing stores pure CL values; the ~(-1 . ename)~ head and the
+autolisp-string wrapping of string values are synthesised at the
+boundary (REVIEW-1). MockHost's table and sysvar surfaces already
+operate on the active drawing's slots (Phase 17a); routing them
+through the higher-level table/variable API functions is optional
+follow-up. Code-aware ename wrapping for non-(-1) reference codes
+(e.g. 330 owner) is a documented limitation: such values round-trip
+as autolisp-strings, matching MockHost's historical behaviour.
 
 See also:
 - ~clautolisp/documentation/implementation-roadmap.org~, Phase 17.

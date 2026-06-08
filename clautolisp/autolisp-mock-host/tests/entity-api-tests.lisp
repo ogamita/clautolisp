@@ -18,11 +18,13 @@
     (let ((head (first data)))
       (is (and (consp head) (eql -1 (car head))))
       (is (typep (cdr head) 'autolisp-ename)))
-    ;; Second entry is the (5 . HANDLE) string.
+    ;; Second entry is the (5 . HANDLE) string. The host wraps string
+    ;; values as autolisp-strings at the boundary (REVIEW-1); the
+    ;; drawing stores a pure CL string.
     (let ((second (second data)))
       (is (and (consp second) (eql 5 (car second))))
-      (is (stringp (cdr second)))
-      (is (string= "10" (cdr second))))
+      (is (typep (cdr second) 'autolisp-string))
+      (is (string= "10" (autolisp-string-value (cdr second)))))
     ;; entlast surfaces the same ename as the entry just made.
     (let ((last-ename (host-entlast mock)))
       (is (typep last-ename 'autolisp-ename))
@@ -34,10 +36,14 @@
          (ename (cdr (first data)))
          (round-trip (host-entget mock ename)))
     (is (consp round-trip))
-    ;; The returned list is the same object the host stored.
-    (is (eq data round-trip))
-    ;; Group code 8 (layer) survives the round trip.
-    (is (string= "0" (cdr (assoc 8 round-trip))))))
+    ;; entget now reconstructs the AutoLISP view at the boundary
+    ;; (REVIEW-1), so it is a fresh list each call — equal in content,
+    ;; not eq, to entmake's return.
+    (is (not (eq data round-trip)))
+    (is (equalp data round-trip))
+    ;; Group code 8 (layer) survives the round trip, wrapped as an
+    ;; autolisp-string.
+    (is (string= "0" (autolisp-string-value (cdr (assoc 8 round-trip)))))))
 
 (test entget-on-deleted-entity-returns-nil
   (let* ((mock (make-mock-host))
@@ -69,7 +75,7 @@
                                (cons 11 '(2.0d0 2.0d0 0.0d0))))))
       (host-entmod mock updated)
       (let ((after (host-entget mock ename)))
-        (is (string= "Mine" (cdr (assoc 8 after))))
+        (is (string= "Mine" (autolisp-string-value (cdr (assoc 8 after)))))
         ;; The host still injected its (-1 . ename) and (5 . handle).
         (is (eql -1 (car (first after))))
         (is (eql 5 (car (second after))))))))
@@ -104,10 +110,10 @@
 (test handent-resolves-known-handle
   (let* ((mock (make-mock-host))
          (data (host-entmake mock (make-line-data)))
-         (handle (cdr (second data)))
+         (handle (cdr (second data)))            ; an autolisp-string now
          (ename (host-handent mock handle)))
     (is (typep ename 'autolisp-ename))
-    (is (string= handle (autolisp-ename-value ename)))
+    (is (string= (autolisp-string-value handle) (autolisp-ename-value ename)))
     (is (null (host-handent mock "DEADBEEF")))))
 
 (test entupd-returns-ename-for-live-entity-and-nil-for-deleted
