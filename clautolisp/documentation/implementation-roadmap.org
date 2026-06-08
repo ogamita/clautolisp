@@ -1050,7 +1050,7 @@ splits into the sub-phases below. Sequence is dependency order;
 17a is the gate (it must leave the existing suite green with no
 AutoLISP-visible change).
 
-*** Phase 17a — Extract the ~drawing~ value object
+*** Phase 17a — Extract the ~drawing~ value object [DONE]
 *Goal:* factor the drawing out of ~mock-host~ into a standalone
 CL value, with no behaviour change.
 
@@ -1070,8 +1070,11 @@ Scope:
 *Acceptance:* the entire existing mock-host + builtins-core suite
 passes unchanged; no AutoLISP-visible behaviour differs.
 
-*** Phase 17b — Public CL drawing API
+*** Phase 17b — Public CL drawing API [DONE]
 *Goal:* the documented, exported contract tools depend on.
+*Status:* implemented in ~drawing/source/{api,persistence,conditions}.lisp~;
+MockHost's entity surface delegates to it (the ~(-1 . ename)~ head and
+autolisp-string wrapping are synthesised at the boundary, REVIEW-1).
 Scope: persistence (~read-drawing~ path->drawing dispatching on
 format; ~write-drawing~ drawing->path ~&key format version~);
 introspection (~map-entities~ / ~do-entities~, ~find-entity~ by
@@ -1081,13 +1084,19 @@ mutation (~add-entity~, ~modify-entity~, ~delete-entity~,
 ~set-sysvar~, table/dict mutators). Ships its own
 ~documentation/*-specifications.org~ like every component.
 
-*** Phase 17c — DXF codec
+*** Phase 17c — DXF codec [PARTIAL — ASCII HEADER/TABLES/ENTITIES]
 *Goal:* first real persistence. ~clautolisp.drawing.dxf~, pure
 CL, no external deps; ASCII (and binary) DXF <-> ~drawing~,
 section by section. SCHMS-family drawings are ordinary DXF/DWG
 with particular entities + xdata — no special format — so full
 DXF covers them. Acceptance: load -> dump -> load round-trip
 fidelity tests; snapshot tests reuse the Phase-10 machinery.
+*Status:* ASCII DXF reader/writer implemented in
+~drawing/source/dxf.lisp~, registered for ~:dxf-ascii~, with
+group-code value typing and point coalescing/expansion. HEADER
+(incl. ~$HANDSEED~ / ~$ACADVER~), TABLES and ENTITIES round-trip
+(tested in ~drawing/tests/dxf-tests.lisp~). *Remaining:* BLOCKS and
+OBJECTS sections (skipped on read, not emitted), and binary DXF.
 
 *** Phase 17d — CL tooling (proof of the API)
 *Goal:* prove Layer 1 is sufficient without AutoLISP. CLI tools

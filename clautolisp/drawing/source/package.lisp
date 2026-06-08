@@ -98,6 +98,12 @@ from the mock-host package before the Phase-17a extraction.")
    #:read-drawing
    #:write-drawing
    #:*drawing-codecs*
+   ;; DXF codec (Phase 17c).
+   #:dxf-read-drawing
+   #:dxf-write-drawing
+   #:dxf-read-drawing-from-stream
+   #:dxf-write-drawing-to-stream
+   #:dxf-code-type
    ;; Entity introspection.
    #:find-entity
    #:map-entities
