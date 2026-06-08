@@ -1,0 +1,71 @@
+drawing-codec-libredwg-submodule — how clautolisp reads/writes DWG
+==================================================================
+
+Parent: drawing-database-api.issue (Phase 17e).
+Depends on: Phase 17b (CL drawing API), Phase 17c (DXF codec).
+
+Context
+-------
+
+The drawing database (drawing-database-api.issue) needs a DWG
+codec. DWG is proprietary, binary, and version-stamped (R12 /
+R2000 / R2004 / R2007 / R2010 / R2013 / R2018 …) with no Autodesk
+specification. Writing one from scratch is out of the question;
+the practical open implementation is GNU libredwg (LGPL), which
+reads and writes DWG, carries an in-memory object model, and ships
+DXF and JSON emitters.
+
+DXF lands first (Phase 17c) because it is documented, pure-CL, and
+maps almost 1:1 onto the group-code lists already stored. This
+issue is only the DWG step on top of it.
+
+Decisions to make
+-----------------
+
+  1. **Integration mechanism.** Land one of:
+       a. git submodule + CFFI bindings to libredwg's C API,
+          mapping its object model onto `clautolisp.drawing`.
+       b. shell-out to libredwg's `dwgread` / `dwg2dxf` /
+          `dwgwrite`, reusing the Phase-17c DXF path as the
+          interchange.
+     Recommendation: ship (b) first as bring-up (zero FFI risk,
+     immediate DWG read via dwg2dxf -> DXF reader), then promote
+     hot paths to (a) for write fidelity and speed. The CL API
+     surface (read-drawing / write-drawing) is identical either
+     way, so the choice is internal.
+
+  2. **Submodule placement + build.** Where the submodule lives,
+     how the Makefile / ASDF build finds the built library, and
+     how CI (.gitlab-ci.yml, GitHub lanes) gets libredwg available
+     (vendored build vs distro package).
+
+  3. **Version coverage.** Which DWG versions we claim to
+     read/write. libredwg's own matrix bounds this; document the
+     claimed subset.
+
+  4. **Licensing.** libredwg is GPL/LGPL — confirm compatibility
+     with clautolisp's licence (COPYING) and whether linking vs
+     shelling-out changes the obligation.
+
+In scope
+--------
+
+  - `clautolisp.drawing.libredwg` implementing read-drawing /
+    write-drawing for DWG behind the format dispatch.
+  - Submodule + build/CI wiring.
+  - Round-trip tests against a DWG fixture corpus (load DWG ->
+    drawing -> write DWG -> reload, compare).
+
+Out of scope
+------------
+
+  - A native-Lisp DWG codec.
+  - DWG versions outside libredwg's supported matrix.
+
+Acceptance criteria
+-------------------
+
+  - `read-drawing "foo.dwg"` and `write-drawing d "foo.dwg"` work
+    for the claimed version subset.
+  - DWG round-trip fidelity tests pass in CI on at least one lane.
+  - The licence note in the issue is resolved and recorded.

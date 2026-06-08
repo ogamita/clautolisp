@@ -1,0 +1,71 @@
+deferred-document-lifecycle-command-semantics — NEW/OPEN/SAVE/CLOSE vs the running routine
+=========================================================================================
+
+Parent: drawing-database-api.issue (Phase 17f).
+Type: CAD-parity decision (per the clautolisp-CAD-parity convention,
+a divergence from BricsCAD/AutoCAD behaviour must be a recorded
+clautolisp issue).
+
+The divergence
+--------------
+
+In real AutoCAD (MDI), each open drawing is a separate *document*
+with its *own AutoLISP namespace* — variables and even loaded code
+differ per drawing. Critically, the document-lifecycle commands
+(NEW, OPEN, CLOSE, and the QUIT family) cannot be driven
+synchronously from inside a running LISP routine and then have the
+routine continue against the new document. The document switch is
+deferred until the routine unwinds; code after `(command "_.OPEN"
+…)` does NOT execute "inside" the newly opened drawing. This is
+precisely why ObjectDBX (out-of-namespace, Phase 17g) and the
+blackboard (Phase 17h) exist.
+
+So this naive idiom does NOT work in AutoCAD and must not appear
+to work in clautolisp:
+
+  (progn
+    (command "_.OPEN" "a.dwg") (do-stuff)   ; still old context / routine ends
+    (command "_.CLOSE")
+    (command "_.OPEN" "b.dwg") (do-stuff))
+
+The decision
+------------
+
+When Phase 17f adds NEW / OPEN / SAVE / SAVEAS / QSAVE / CLOSE to
+`host-command`, pick and document one of:
+
+  A. **Faithful deferral.** Model the AutoCAD semantics: a
+     lifecycle command queues the switch; the current top-level
+     form completes in the old context; the switch takes effect at
+     the next top-level read. Most compatible; most work.
+  B. **Documented divergence.** For a headless CLI it may be
+     acceptable to let OPEN switch the active drawing inline and
+     let the next form see it — but ONLY if we declare this a
+     known divergence from *CAD here and in the user manual, and
+     steer real multi-drawing tools to the CL API / ObjectDBX
+     instead.
+
+Recommendation: (A) for the AutoLISP `command` surface (fidelity
+matters most where programs are portable), while the CL API
+(Phase 17b) and ObjectDBX (17g) give tool authors the clean,
+inline, multi-drawing path that does not pretend to be the editor.
+
+Also settle
+-----------
+
+  - Per-document namespace: does each open drawing get its own
+    symbol environment (faithful), or share one (simpler,
+    divergent)? Tie-in with runtime-session isolation.
+  - What `entget` / `ssget` see after a switch (the active drawing
+    only — never a side/ObjectDBX document).
+  - The "drawing argument" to clautolisp / alfe that names the
+    initial active drawing.
+
+Acceptance criteria
+-------------------
+
+  - The chosen semantics are implemented in `host-command` and
+    asserted by tests (including a test that pins the
+    progn-sandwich behaviour, whichever way we chose).
+  - The behaviour is documented in the user manual and, if it
+    diverges from *CAD, called out explicitly as a divergence.
