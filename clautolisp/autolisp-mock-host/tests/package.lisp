@@ -13,7 +13,10 @@
                 #:autolisp-runtime-error-code
                 #:autolisp-ename
                 #:autolisp-ename-value
-                #:make-autolisp-ename)
+                #:make-autolisp-ename
+                #:autolisp-string
+                #:autolisp-string-value
+                #:make-autolisp-string)
   (:import-from #:clautolisp.autolisp-host
                 #:host
                 #:host-name
