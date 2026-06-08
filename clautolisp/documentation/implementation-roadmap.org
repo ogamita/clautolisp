@@ -1115,11 +1115,25 @@ in pure CL over the public API: ~identify-drawing foo.dwg~
 from entity attributes + drawing metadata) and
 ~extract-schms-data foo.dwg -o foo.json~.
 
-*** Phase 17e — libredwg submodule + DWG codec
-*Goal:* read/write DWG. ~clautolisp.drawing.libredwg~ over
-libredwg as a git submodule (CFFI bindings; shell-out to
-~dwg2dxf~ as the bring-up fallback, reusing the 17c DXF path).
-Decision tracked in
+*** Phase 17e — libredwg submodule + DWG codec [DONE — read; write best-effort]
+*Goal:* read/write DWG via the vendored, self-built GNU libredwg.
+*Status:* libredwg is vendored as a pinned git submodule
+(~clautolisp/third-party/libredwg~ @ 0.13.3), built by us (cmake;
+~make build-libredwg~), and reached in-process through a thin CFFI'd
+C shim (~drawing-dwg/source/clal_dwg.c~) that converts DWG<->DXF —
+the Phase-17c DXF codec is the interchange. The optional
+~clautolisp/drawing-dwg~ ASDF system (NOT in the core aggregate;
+needs CFFI + the built shim) registers the ~:dwg~ codec, so
+~read-drawing~ / ~write-drawing~ handle ~.dwg~ once it is loaded.
+- *Read* (the priority, for 17d): works on real DWGs across versions
+  (R14, 2000, 2010, 2018 fixtures), yielding entities, layers,
+  blocks and the object dictionary. Tested in
+  ~drawing-dwg/tests/dwg-tests.lisp~ against the vendored corpus.
+- *Write*: drawing -> DXF -> libredwg -> DWG. Works when the drawing
+  carries full structure (e.g. one read from a DWG); a sparse,
+  hand-built drawing's DXF is not yet rich enough for libredwg's DXF
+  reader (exact write fidelity / minimal-DXF import is follow-up).
+Decision + build/licence notes:
 ~issues/open/drawing-codec-libredwg-submodule.issue~.
 
 *** Phase 17f — Multi-document host + NEW/OPEN/SAVE/CLOSE
