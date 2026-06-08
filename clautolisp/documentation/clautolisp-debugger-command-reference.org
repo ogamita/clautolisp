@@ -1,0 +1,405 @@
+#+TITLE: aldb Command Reference — synthesised from gdb / lldb, reconciled with the clautolisp debugger
+#+AUTHOR: Draft for review
+#+OPTIONS: toc:3 num:t ^:nil
+#+STARTUP: showall indent
+
+* Purpose and method
+
+This document synthesises the command vocabularies of *gdb* and *lldb*,
+folds them into one conceptual set, and reconciles that set against what
+the clautolisp debugger (=aldb=) actually implements today (Phases 0–7).
+For every concept it states: the aldb command name(s), parameters, a
+description, and the *backing* — one of:
+
+- =[have]=   already wired through the UI protocol (a =cmd-*= in
+  =clautolisp.debug.ui=) and/or an engine entry point.
+- =[engine]= the engine supports it but no UI command is wired yet (a thin
+  command would expose it).
+- =[new]=    a genuinely new command to add (small, in scope).
+- =[n/a]=    a gdb/lldb concept that does not apply to an interpreted
+  AutoLISP debugger; dropped, with the reason.
+
+Naming follows the existing UIs: SLDB-style single letters for the dumb /
+ncurses interactor (spec §18.1, §20.3), with longer =,verb= aliases
+(CLIM-interactor style, §19.1) for discoverability. The Emacs side maps
+these to the §20.1 RPC.
+
+Source vocabularies surveyed:
+- gdb: run/start/continue/next/step/stepi/nexti/finish/until/advance/
+  jump/return/kill; break/tbreak/hbreak/rbreak/watch/rwatch/awatch/catch/
+  condition/ignore/enable/disable/delete/clear/commands/dprintf;
+  backtrace/frame/up/down/info; print/display/x/set var/ptype/whatis/call;
+  list/edit/directory/search; thread/info threads; help/quit/define/shell.
+- lldb (object-verb): process {launch,continue,kill,interrupt,status};
+  thread {step-in,step-over,step-out,step-inst,continue,until,return,
+  backtrace,select,list}; breakpoint {set,list,delete,enable,disable,
+  modify,command add}; watchpoint {set,list,delete}; frame {select,info,
+  variable,up,down}; target {variable,stop-hook}; expression; memory
+  {read,write}; register {read,write}; source list; settings; gui; help.
+
+* The reconciliation at a glance
+
+| gdb / lldb concept                | aldb               | backing |
+|-----------------------------------+--------------------+---------|
+| continue                          | =c= / =,continue=  | have    |
+| step (into)                       | =i= / =,step=      | have    |
+| next (over)                       | =s= =n= / =,next=  | have    |
+| finish / step-out                 | =o= =f= / =,finish=| have    |
+| until / advance LINE              | =a= / =,advance=   | have    |
+| return [VALUE]                    | =r= / =,return=    | have    |
+| run / start / launch              | (session entry)    | partial |
+| kill                              | =q= / =,quit=      | have    |
+| stepi / nexti (instruction)       | —                  | n/a     |
+| jump LINE                         | —                  | n/a     |
+| break LINE / FN                   | =B= / =,break=     | have    |
+| tbreak (temporary)                | =B! = / =,tbreak=  | engine  |
+| condition / ignore                | =,condition=       | engine  |
+| enable / disable                  | =,enable/,disable= | new     |
+| delete / clear                    | =,delete= =d=      | have*   |
+| info breakpoints / list           | =b= / =,breaks=    | have    |
+| commands (bp actions)             | =,bpcmd=           | engine  |
+| dprintf / tracepoint              | =,trace=           | engine  |
+| watch VAR (data breakpoint)       | =,watch=           | new     |
+| hbreak / rbreak                   | —                  | n/a/new |
+| catch (events)                    | =,catch error=     | partial |
+| backtrace                         | =t= / =,bt=        | have    |
+| frame N / up / down               | =,frame= =u= =U=   | have    |
+| info args / locals                | =p= / =,locals=    | have    |
+| print EXPR                        | =p= / =,print=     | have    |
+| eval / call / expression          | =e= / =(form)=     | have    |
+| set var NAME = VALUE              | =,set=             | have    |
+| display / undisplay               | =,display=         | new     |
+| inspect / explore value           | =x= / =,inspect=   | have    |
+| ptype / whatis                    | =,type=            | new     |
+| list / source                     | =l= / =,list=      | have    |
+| edit / directory / search         | —                  | n/a/new |
+| x (examine memory) / registers    | —                  | n/a     |
+| memory read/write                 | —                  | n/a     |
+| thread / info threads             | =,threads= =,thread=| engine |
+| workspace ($N)                    | =,ws= =,bind=      | have    |
+| help / apropos                    | =h= =?= / =,help=  | have    |
+| settings / set option             | =,settings=        | new     |
+| define (user command) / source    | —                  | future  |
+| shell / python / script           | —                  | n/a     |
+
+(* =delete= of a single breakpoint is =cmd-remove-breakpoint=; a
+"delete all" convenience is =[new]=, see below.)
+
+* 1. Execution control (run / step / resume)
+
+** continue
+- aldb: =c=  | =,continue [N]=
+- params: optional N = ignore N-1 subsequent stops of the same kind.
+- desc: resume until the next breakpoint, step landing, or thread exit.
+- backing: =[have]= =cmd-continue=. (N-count is =[new]=, trivial loop.)
+
+** step into
+- aldb: =i=  | =,step [N]=
+- desc: stop at the next form beginning, descending into the first
+  sub-form or into a called *instrumented* function (an un-instrumented
+  callee degrades to step-over — DN-2). N repeats.
+- backing: =[have]= =cmd-step :into=.
+
+** next / step over
+- aldb: =s= or =n=  | =,next [N]=
+- desc: stop at the next form at the same nesting depth, skipping the
+  current form's sub-forms and any function it calls. N repeats.
+- backing: =[have]= =cmd-step :over=.
+
+** finish / step out
+- aldb: =o= (out) and =f= (finish)  | =,finish=
+- desc: run until the current function returns; stop at the call form's
+  =:after= poll point (DN-3). =o= and =f= are the same operation, the body
+  being the enclosing form (spec §6.2 "finish = step out of the body").
+- backing: =[have]= =cmd-step :out= / =:finish=.
+
+** advance / until LINE
+- aldb: =a LINE=  | =,advance LINE=  | =,until LINE=
+- params: LINE in the current function (or =FID FORM-ID= for precision).
+- desc: set a volatile breakpoint at that poll point and continue; it is
+  removed on the first stop (spec §6.2 "advance to point").
+- backing: =[have]= =cmd-advance= (and =poll-point-at= for source→pp).
+
+** return [VALUE]
+- aldb: =r [FORM]=  | =,return [FORM]=
+- params: optional FORM, evaluated in the stop context, becomes the value
+  of the innermost instrumented form.
+- desc: continue-with-return (spec §10.1) — only meaningful where an
+  instrumented form encloses the stop. With no FORM, returns nil.
+- backing: =[have]= =cmd-return=.
+
+** kill / quit
+- aldb: =q=  | =,quit=  | =,kill=
+- desc: abort the whole evaluation (unwinds to the session catch) and
+  detach. Works from *any* stop, not only an error stop (DN-9).
+- backing: =[have]= =cmd-abort=.
+
+** run / start
+- aldb: (no in-session command; the session entry runs the program)
+- desc: gdb's =run= maps to starting a session over a load/eval; aldb has
+  no "rerun" yet. =,start= could re-load + break at the first poll point.
+- backing: =[partial]=. Re-run is =[future]= (needs session re-entry).
+
+** stepi / nexti / jump   =[n/a]=
+- The interpreter has no machine instructions and no arbitrary control
+  transfer; instruction-level stepping is explicitly out of scope
+  (spec §6, Part VIII). Dropped.
+
+* 2. Breakpoints, tracepoints, watchpoints
+
+** break
+- aldb: =B LINE=  | =,break LINE=  | =,break FN [LINE]=
+- params: a source LINE in the current function, or a function name FN
+  (breaks at its entry poll point), optionally a LINE within FN.
+- desc: set a steady breakpoint at the poll point covering LINE
+  (spec §17.3, click/line → poll point via =poll-point-at=).
+- backing: =[have]= =cmd-set-breakpoint-at-line= / =cmd-set-breakpoint=.
+
+** tbreak (temporary)
+- aldb: =,tbreak LINE=  (or =B!=)
+- desc: a one-shot breakpoint — a steady-API breakpoint created volatile
+  (=:steady nil=), removed on first hit.
+- backing: =[engine]= (=add-breakpoint :steady nil=; wire a command).
+
+** condition
+- aldb: =,condition BPID FORM=
+- params: a breakpoint id and an AutoLISP FORM evaluated at the point;
+  the breakpoint fires only if FORM is non-nil. =,condition BPID= with no
+  form clears it.
+- desc: conditional breakpoint (the breakpoint =condition= slot).
+- backing: =[engine]= (the slot exists; =cmd-set-breakpoint :condition=
+  takes it at creation; a post-hoc =,condition= editor is =[new]=).
+
+** ignore COUNT
+- aldb: =,ignore BPID COUNT=
+- desc: skip the next COUNT hits of a breakpoint (a counting condition).
+- backing: =[new]= (a small wrapper building a counting condition).
+
+** enable / disable
+- aldb: =,enable [BPID...]=  | =,disable [BPID...]=
+- desc: temporarily deactivate a breakpoint without deleting it.
+- backing: =[new]= (add an =enabled-p= slot to =breakpoint=; the
+  poll-point exact-lookup already filters by =breakpoint-active-p=, extend
+  it to consult =enabled-p=).
+
+** delete / clear
+- aldb: =,delete [BPID...]=  | =d BPID=  | =,clear LINE=
+- desc: remove one/all breakpoints, or the breakpoint(s) at a line.
+- backing: =[have]= =cmd-remove-breakpoint= per bp; "delete all" /
+  "clear by line" are thin =[new]= conveniences over =clear-breakpoints=.
+
+** info breakpoints / list
+- aldb: =b=  | =,breaks=
+- desc: list breakpoints with id, function, line, when, steady/volatile,
+  condition, hit count.
+- backing: =[have]= =cmd-list-breakpoints=.
+
+** commands (breakpoint actions)
+- aldb: =,bpcmd BPID FORM...=
+- desc: attach forms to run automatically when a breakpoint hits
+  (gdb =commands=). The breakpoint =action= slot is exactly this hook.
+- backing: =[engine]= (=action= slot; wire a command).
+
+** trace / dprintf  (tracepoint)
+- aldb: =,trace FN [FORM]=  | =,untrace FN=
+- params: a function (or poll point) and an optional FORM whose value is
+  printed; default prints the bindings.
+- desc: a tagged breakpoint that runs its action and *transparently
+  continues* — no app-side printing, done by the debugger (spec §6.4).
+  Distinct from the lightweight =TRACE= special operator (DN-4).
+- backing: =[engine]= (=action= + auto-continue; wire =,trace=).
+
+** watch VAR  (data breakpoint)
+- aldb: =,watch SYMBOL [FORM]=
+- params: a variable, optionally a predicate FORM over old/new value.
+- desc: stop when SYMBOL's value changes (or FORM becomes true). In an
+  interpreter without hardware watchpoints, implement as an *instrumented
+  read/write hook* on the binding, or as a condition re-checked at each
+  poll point comparing against the last seen value.
+- backing: =[new]= — a real feature to design (cost: a per-poll-point
+  comparison, like gdb software watchpoints). Worth it; SCHMS+-style
+  debugging wants "why did FOO become 17".
+
+** hbreak / rbreak / catch
+- =hbreak= (hardware breakpoint): =[n/a]= — no hardware notion.
+- =rbreak REGEX= (break on every function matching a regex): =[new]=,
+  feasible (iterate instrumented functions, set entry breakpoints).
+- =catch=: aldb already breaks on errors (§10). =,catch error on|off=
+  toggles break-on-(unhandled) and =,catch caught on|off= toggles
+  break-on-caught (=*break-on-caught-error*=). backing: =[partial]=
+  (engine flag exists; wire the toggle commands).
+
+* 3. Stack and frames
+
+** backtrace
+- aldb: =t=  | =,bt [N]=
+- desc: print the AutoLISP call stack (innermost first), N frames max.
+  Frames are AutoLISP frames only — host =EVAL= frames are filtered
+  (spec §1.3).
+- backing: =[have]= (the snapshot's =call-stack=; dumb UI prints it).
+
+** frame / up / down
+- aldb: =,frame N=  | =u= (up/outer)  | =U= (down/inner)
+- desc: select a frame; subsequent =print=/=eval= run in that frame's
+  binding view (spec §9.3 =with-frame-bindings=; innermost-only today —
+  outer-frame eval is the §9.3 Partial/deferred item).
+- backing: =[have]= =cmd-select-frame= (outer-frame *eval* =[engine]=,
+  partial).
+
+** info args / locals
+- aldb: =p=  (no arg → all visible bindings)  | =,locals=
+- desc: show the variables visible at the stop — the snapshot's
+  =visible-names=, innermost binding per name. =,locals all= could add the
+  shadowed chain (=bindings-of-name=).
+- backing: =[have]=.
+
+* 4. Data: print, eval, set, inspect
+
+** print EXPR
+- aldb: =p NAME=  | =,print FORM=
+- desc: evaluate FORM in the selected frame and show its value
+  (one-line, truncated). =p NAME= is the common case (a variable).
+- backing: =[have]= =cmd-eval= + preview.
+
+** eval / call
+- aldb: =e FORM=  | a bare =(form ...)= line  | =,eval FORM=
+- desc: evaluate an arbitrary AutoLISP form in the stop context, with side
+  effects (=entmod=, =setq=, I/O) the user's responsibility. gdb =call=
+  and =print= collapse into this for a Lisp.
+- backing: =[have]= =cmd-eval=.
+
+** set variable
+- aldb: =,set NAME VALUE=  (or =,set NAME = FORM=)
+- desc: write a variable at the stop — the innermost binding, or the
+  global if unshadowed (spec §9.5). To rewrite a *shadowed* binding, use
+  the inspector's =bind :frame= (§9.4) — a capability gdb/lldb lack.
+- backing: =[have]= =cmd-set-variable= (visible) + =set-binding-entry=
+  (shadowed, via inspector).
+
+** display / undisplay
+- aldb: =,display FORM=  | =,undisplay [N]=
+- desc: auto-print FORM after every stop (gdb =display=).
+- backing: =[new]= (a per-session list re-evaluated in =ui-thread-hit=).
+
+** inspect (explore a value)
+- aldb: =x [FORM]=  | =,inspect [FORM]=
+- desc: open the structured inspector on a value — descend car/cdr/nth,
+  DXF group codes of an ename, ssget members, etc.; copy the path
+  expression; bind to a workspace slot. Far richer than gdb =print=
+  (spec Part IV). Sub-commands inside the inspector: descend N, up, path,
+  bind, eval.
+- backing: =[have]= =cmd-inspect= + =cmd-inspector-descend= / =-up= /
+  =-bind= / =-path-expression=.
+
+** ptype / whatis
+- aldb: =,type FORM=
+- desc: show the AutoLISP type of FORM's value (=type= of: INT, REAL, STR,
+  SYM, LIST, ENAME, PICKSET, FILE, SUBR, USUBR, VLA-OBJECT, …).
+- backing: =[new]= (a one-liner over the runtime's =autolisp-type=).
+
+** x / memory / registers   =[n/a]=
+- No raw memory or registers in an interpreted, tagged-value runtime;
+  =x=, =memory read/write=, =register read/write= are dropped. The
+  inspector is the structured replacement.
+
+* 5. Source
+
+** list
+- aldb: =l [LINE]=  | =,list [LINE]=
+- desc: show source lines around the current stop (or LINE), with the
+  current line marked =>>= and (in ncurses) poll-point/breakpoint
+  colouring. Uses =clautolisp.source:lines-of=.
+- backing: =[have]= (dumb =l=; ncurses source pane; =ui-show-source=).
+
+** edit / directory / search   =[mostly n/a]=
+- =edit= (open $EDITOR at the line): =[n/a]= in-session (the Emacs UI
+  already visits the file; a terminal =,edit= could spawn $EDITOR =[new]=,
+  low priority).
+- =directory= (source search path): =[n/a]= — positions carry absolute
+  file names from the reader.
+- =search REGEX= / =reverse-search=: =[new]=, low priority.
+
+* 6. Threads
+
+** thread / info threads
+- aldb: =,threads=  | =,thread N=
+- desc: list debugged application threads / select one. Breakpoints are
+  per-thread (spec §23); a session may debug several app threads. The
+  default UI shows only the active thread (spec §20.4); switching is a
+  command, not a permanent pane.
+- backing: =[engine]= (=*thread-debug-info-table*= keys threads; wire the
+  list/select commands).
+
+* 7. Workspace ($N) — beyond gdb/lldb
+
+** workspace list / bind / clear
+- aldb: =,ws=  | =,bind $|NAME|! NAME=  | =,ws clear [$N]=
+- desc: the debugger's private numbered slots =$1=, =$2=, … plus =$0= for
+  the inspector's current value (spec §16.2). =,bind $= stashes the
+  inspected value in the next slot; =$N= is then usable in any =eval=.
+  This has no gdb/lldb analog (gdb convenience vars =$1= are the closest)
+  and is one of aldb's distinctive features.
+- backing: =[have]= =cmd-workspace-list= / =cmd-workspace-clear= /
+  =cmd-inspector-bind=.
+
+* 8. Meta
+
+** help / apropos
+- aldb: =h=  =?=  | =,help [COMMAND]=  | =,apropos WORD=
+- desc: list commands / describe one / search command docs.
+- backing: =[have]= (dumb =h=); =,apropos= is =[new]=, trivial.
+
+** settings
+- aldb: =,settings=  | =,set-option NAME VALUE=
+- desc: per-session toggles — source window size, break-on-caught,
+  preview length, colour. gdb =set= / lldb =settings set=.
+- backing: =[new]= (a small per-session options plist).
+
+** define (user commands) / source a command file   =[future]=
+- gdb =define= / lldb command aliases. A macro facility over the existing
+  commands. Out of scope for v1; note for later.
+
+** shell / python / script   =[n/a]=
+- No shell-out or scripting layer in the debugger; the AutoLISP =eval=
+  command IS the scripting surface (it can shell out via AutoLISP I/O if
+  the host allows). Dropped.
+
+* 9. Summary of proposed work
+
+Already usable through the protocol (=[have]=): continue, step in/over/
+out/finish, advance, return, abort/quit, break (line/fn), list
+breakpoints, remove breakpoint, select frame, print/eval, set variable,
+inspect (+ descend/up/path/bind), workspace list/clear, backtrace,
+locals, list source, help.
+
+Thin wiring over existing engine support (=[engine]=, no new engine work):
+tbreak, condition (post-hoc), breakpoint commands (=action=), trace point
+(=action= + auto-continue), catch on/off (=*break-on-caught-error*=),
+thread list/select, outer-frame eval.
+
+Genuinely new (=[new]=, in scope, small→medium):
+- enable/disable (add =enabled-p= to =breakpoint=)
+- ignore COUNT, delete-all / clear-by-line conveniences
+- display / undisplay
+- ptype / whatis (=,type=)
+- settings / set-option, apropos
+- rbreak REGEX
+
+New and worth a design pass (=[new]=, medium):
+- *watch SYMBOL* — software data breakpoint (per-poll-point value compare,
+  or instrumented binding read/write). The highest-value addition: it is
+  the natural answer to "why did this variable change", which the spec's
+  shadowed-binding inspection (§9.4) already half-addresses.
+
+Dropped as not applicable (=[n/a]=): stepi/nexti, jump, hbreak, x/memory/
+registers, directory, shell/python/script. Reason: interpreted,
+tagged-value runtime with no machine model (spec §6, §1.3, Part VIII).
+
+* 10. Note on surfaces
+
+The same command set is exposed three ways (spec §17 keeps UIs
+interchangeable): single letters at the dumb/ncurses interactor, =,verb=
+aliases for discoverability, and the §20.1 RPC tags for Emacs/aldb. None
+of these adds debugger *capability* — every command maps to a =cmd-*= or
+an engine entry point, so "a feature missing in the dumb terminal is
+missing everywhere" (spec §20.4) continues to hold.
