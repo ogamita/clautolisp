@@ -60,8 +60,12 @@ reader, DRAWING-READ-ERROR on a codec parse failure."
     (handler-case
         (let ((drawing (funcall (getf codec :reader) source)))
           (setf (drawing-path drawing) (or (ignore-errors (truename source))
-                                           (pathname source))
-                (drawing-format drawing) fmt)
+                                           (pathname source)))
+          ;; A codec may set DRAWING-FORMAT precisely (e.g. the DXF
+          ;; reader distinguishes :dxf-ascii from :dxf-binary by the
+          ;; file's sentinel); only fall back to the dispatched FMT.
+          (unless (drawing-format drawing)
+            (setf (drawing-format drawing) fmt))
           drawing)
       (drawing-error (c) (error c))
       (error (c)

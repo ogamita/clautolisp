@@ -101,9 +101,16 @@ from the mock-host package before the Phase-17a extraction.")
    ;; DXF codec (Phase 17c).
    #:dxf-read-drawing
    #:dxf-write-drawing
+   #:dxf-write-binary-drawing
    #:dxf-read-drawing-from-stream
    #:dxf-write-drawing-to-stream
+   #:dxf-read-binary-drawing-from-stream
+   #:dxf-write-binary-drawing-to-stream
+   #:dxf-binary-file-p
    #:dxf-code-type
+   #:dxf-binary-value-kind
+   #:double->bits
+   #:bits->double
    ;; Entity introspection.
    #:find-entity
    #:map-entities

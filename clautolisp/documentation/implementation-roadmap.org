@@ -1084,7 +1084,7 @@ mutation (~add-entity~, ~modify-entity~, ~delete-entity~,
 ~set-sysvar~, table/dict mutators). Ships its own
 ~documentation/*-specifications.org~ like every component.
 
-*** Phase 17c — DXF codec [DONE — ASCII; binary DXF deferred]
+*** Phase 17c — DXF codec [DONE — ASCII + binary]
 *Goal:* first real persistence. ~clautolisp.drawing.dxf~, pure
 CL, no external deps; ASCII (and binary) DXF <-> ~drawing~,
 section by section. SCHMS-family drawings are ordinary DXF/DWG
@@ -1097,9 +1097,13 @@ group-code value typing and point coalescing/expansion. Round-trips
 HEADER (incl. ~$HANDSEED~ / ~$ACADVER~), TABLES, BLOCKS (block
 definitions + owned entities via ENTITY-HANDLE-BLOCK), ENTITIES
 (model space), and OBJECTS (the root named-object dictionary's
-handle entries). Tested in ~drawing/tests/dxf-tests.lisp~.
-*Remaining:* binary DXF; and deep OBJECTS fidelity — sub-dictionary
-nesting and xrecords / arbitrary non-graphical object types.
+handle entries). *Binary DXF* (the R13+ variant: 22-byte sentinel,
+2-byte group codes, typed binary values incl. a portable IEEE-754
+double codec) reads and writes through the same structural writers
+via a pluggable pair emitter; ~read-drawing~ auto-detects ASCII vs
+binary by the sentinel. Tested in ~drawing/tests/dxf-tests.lisp~.
+*Remaining:* deep OBJECTS fidelity — sub-dictionary nesting and
+xrecords / arbitrary non-graphical object types.
 
 *** Phase 17d — CL tooling (proof of the API)
 *Goal:* prove Layer 1 is sufficient without AutoLISP. CLI tools
