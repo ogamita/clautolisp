@@ -60,6 +60,14 @@ alfe-plugin-model.issue
 nice-make-output.issue
 ci-github-ccl-lane.issue
 
+
+drawing-database-api.issue  -- parent tracking issue; see the plan in
+  clautolisp/documentation/implementation-roadmap.org
+  "Phase 17 — Drawing Database, Persistence, and Multi-Document" (17a..17h).
+  Break-out issues:
+    drawing-codec-libredwg-submodule.issue              (Phase 17e)
+    deferred-document-lifecycle-command-semantics.issue (Phase 17f, parity)
+
 ---
 
 

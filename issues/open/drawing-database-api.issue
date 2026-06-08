@@ -1,0 +1,145 @@
+drawing-database-api — a first-class CL drawing value, and the four surfaces over it
+====================================================================================
+
+Parent tracking issue. Roadmap: implementation-roadmap.org
+"Phase 17 — Drawing Database, Persistence, and Multi-Document"
+(sub-phases 17a..17h).
+
+Break-out issues:
+  drawing-codec-libredwg-submodule.issue              (Phase 17e decision)
+  deferred-document-lifecycle-command-semantics.issue (Phase 17f parity)
+
+See also:
+  clautolisp/autolisp-mock-host/source/model.lisp  (today's host == one drawing)
+  clautolisp/autolisp-mock-host/source/entity-api.lisp
+  clautolisp/autolisp-host/source/protocol.lisp    (host-command, host-vlax-*)
+  clautolisp/autolisp-mock-host/source/com-progids.lisp (AutoCAD.Document stub)
+
+Context
+-------
+
+clautolisp can run AutoLISP against an in-memory CAD substrate,
+but that substrate is welded to the host. `mock-host` holds the
+entity table, creation-order, symbol tables, named-object
+dictionary and sysvars directly in its own slots — so *the host
+IS a single drawing*. There is no way to:
+
+  - open a drawing from a file (no DXF/DWG codec exists anywhere),
+  - enumerate / introspect / mutate a drawing as plain data,
+  - hold more than one drawing at a time.
+
+The motivating use cases are headless Common-Lisp tools, not
+AutoLISP programs:
+
+  - `identify-drawing foo.dwg` — characterise a drawing as
+    SCHMS / SCHMS+ / SCHME / SCHMIEU / SCHSME+ (and version) from
+    its entity attributes + drawing-wide metadata.
+  - `extract-schms-data foo.dwg -o foo.json` — process a drawing
+    and export its SCHMS+ payload, from a CLI, no GUI boot.
+
+These want a documented CL API; AutoLISP is optional sugar on top.
+
+The four surfaces, and why they are layered (not parallel)
+----------------------------------------------------------
+
+A drawing is reachable four ways. The crucial design call is that
+the Common-Lisp API is the *base*, and the three AutoLISP-facing
+surfaces are veneers over it:
+
+  1. Active-drawing entity API — the documented AutoLISP entity
+     functions (entget / entmod / entmake / ssget / tblsearch /
+     getvar / …). They see only the drawing the running LISP image
+     lives in. After the 17a refactor they run against
+     `(active-drawing host)` with no AutoLISP-visible change.
+
+  2. NEW / OPEN / SAVE / CLOSE — the AutoCAD command system, run
+     through `host-command`. Each command brings its own AutoLISP
+     image/context along. These do NOT resume the calling routine
+     inline (real AutoCAD defers the document switch) — see the
+     break-out parity issue.
+
+  3. COM / ObjectDBX (`AxDbDocument`) — the out-of-namespace,
+     headless way an AutoLISP programmer opens *another* drawing
+     and walks it by COM iteration. Side documents are invisible
+     to entget / ssget.
+
+  4. The Common-Lisp drawing API — create / load / introspect /
+     modify / save / close a drawing and its namespace. Public and
+     formally specified. The implementations of (1), (2) and (3)
+     are all written against it.
+
+Why this isn't already done
+---------------------------
+
+The work was implicit in the host design but never separated out,
+and it carries three real decisions:
+
+  - **Codec.** DWG is proprietary, binary, version-stamped, with
+    no Autodesk spec. DXF is documented and maps ~1:1 onto the
+    group-code lists already stored. So DXF first (no deps), DWG
+    via libredwg later. (Break-out issue.)
+  - **Command semantics.** `(command "_.OPEN" …)` cannot drive the
+    document lifecycle and then continue the routine in real
+    AutoCAD. clautolisp must either model the deferred switch or
+    pick and document a divergence. (Break-out parity issue.)
+  - **Refactor risk.** Pulling the drawing out of `mock-host`
+    touches the whole backend. It is gated on the existing suite
+    staying green (Phase 17a acceptance).
+
+In scope
+--------
+
+  1. Phase 17a — extract a `clautolisp.drawing` value object;
+     rewrite `mock-host` to hold one drawing and delegate. No
+     AutoLISP-visible change; existing suite green is the gate.
+
+  2. Phase 17b — the public, documented, exported CL API:
+     read-drawing / write-drawing; map-entities / do-entities,
+     find-entity, entity-dxf, entity-kind, drawing-sysvar,
+     drawing-tables, table-records, drawing-dictionary;
+     add-entity / modify-entity / delete-entity / set-sysvar and
+     table/dict mutators. Pure CL values — no autolisp-runtime
+     wrapper types leak into this layer.
+
+  3. Phase 17c — `clautolisp.drawing.dxf`: pure-CL DXF reader +
+     writer over the API, with round-trip + snapshot tests.
+
+  4. Phase 17d — the CL tools (identify-drawing,
+     extract-schms-data) as proof the API is self-sufficient.
+
+  5. Phase 17e — libredwg submodule + DWG codec. (Break-out.)
+
+  6. Phase 17f — multi-document host + NEW/OPEN/SAVE/CLOSE +
+     per-document contexts + the drawing argument (clautolisp and
+     alfe). (Parity break-out.)
+
+  7. Phase 17g — ObjectDBX/COM veneer (`AxDbDocument`), side
+     documents invisible to entget/ssget.
+
+  8. Phase 17h — blackboard (vl-bb-set / vl-bb-ref) + global
+     namespace for cross-drawing transport.
+
+Out of scope
+------------
+
+  - A DWG codec written from scratch — we use libredwg.
+  - vl-file-* changes — byte/path level, deliberately separate
+    from the codec; it never parses a drawing.
+  - Concurrent multi-session execution beyond what runtime-session
+    already isolates (tracked under Open Architectural Questions).
+
+Acceptance criteria
+-------------------
+
+  - 17a: full existing suite passes with the drawing extracted;
+    no AutoLISP-visible behaviour differs.
+  - 17b: the CL API is exported and documented in a
+    *-specifications.org, with unit tests independent of any
+    AutoLISP program.
+  - 17c: a fixture drawing round-trips load -> write -> load with
+    entity/table/sysvar fidelity.
+  - 17d: `identify-drawing` classifies a corpus of real
+    SCHMS-family fixtures correctly, driven purely by the CL API.
+  - Conventions: DEVELOP bumped on each source-touching step;
+    AutoLISP-visible extensions take the `clal-` prefix; the
+    NEW/OPEN/CLOSE divergence carries a parity issue.

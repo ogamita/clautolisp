@@ -1012,6 +1012,121 @@ Scope (highly speculative):
 - COM bridge for AutoCAD on Windows.
 - Integration with the existing ~autolisp-spec~ probe harness.
 
+** Phase 17 — Drawing Database, Persistence, and Multi-Document
+*Goal:* make a *drawing* a first-class, file-backed, introspectable
+Common-Lisp value, so clautolisp can load / introspect / mutate /
+save drawings as data — and so the AutoLISP entity API, the
+NEW/OPEN/SAVE/CLOSE command system, and the COM/ObjectDBX surface
+all become thin veneers over one documented CL substrate.
+
+*Motivation.* Today the *host is a single drawing*: ~mock-host~
+holds the entity table, creation-order, symbol tables,
+named-object dictionary and sysvars directly in its own slots
+(~autolisp-mock-host/source/model.lisp~). That is exactly the
+substrate we want, but it is welded to the host and cannot be
+opened from a file, enumerated independently, or held more than
+one at a time. The driving use cases are *headless CL tools* —
+classify a SCHMS / SCHMS+ / SCHME / SCHMIEU / SCHSME+ drawing by
+its entities and metadata, or ~extract-schms-data foo.dwg -o
+foo.json~ — that must run from a CLI with no GUI and without
+imposing AutoLISP on the tool author.
+
+*Key design tenets.*
+- The four surfaces are layered, not parallel. The CL drawing API
+  is the base; the AutoLISP entity API, the host command system,
+  and the COM/ObjectDBX bridge are veneers over it.
+- The CL API speaks pure CL values (no ~autolisp-runtime~ wrapper
+  types). Wrapping into ~autolisp-ename~ / ~autolisp-string~ stays
+  in the host adapter.
+- ~vl-file-*~ (byte/path level) stays explicitly *separate* from
+  the codec — it never parses a drawing.
+- A drawing carries its own AutoLISP image / namespace. Opening a
+  drawing instantiates a context; closing it tears the context
+  down. Cross-drawing data transport is the blackboard
+  (~vl-bb-set~ / ~vl-bb-ref~), modelled last.
+
+This phase tracks in ~issues/open/drawing-database-api.issue~ and
+splits into the sub-phases below. Sequence is dependency order;
+17a is the gate (it must leave the existing suite green with no
+AutoLISP-visible change).
+
+*** Phase 17a — Extract the ~drawing~ value object
+*Goal:* factor the drawing out of ~mock-host~ into a standalone
+CL value, with no behaviour change.
+
+Scope:
+- New ASDF system ~clautolisp/drawing~ (package
+  ~clautolisp.drawing~). A ~drawing~ struct/class holds: sysvar
+  cells, a handle allocator seeded from ~HANDSEED~, the entity
+  table (handle -> DXF group-code list — the representation
+  already used), block records + model/paper-space ownership,
+  symbol tables, named-object dictionary + sub-dictionaries,
+  class-section metadata (for DWG round-trip), and file
+  provenance (path, format, version, codepage).
+- ~mock-host~ rewritten to *hold* one ~drawing~ and delegate
+  ~host-entget~ / ~entmod~ / ~entmake~ / ~tblsearch~ / ~getvar~ /
+  … to ~(active-drawing host)~.
+
+*Acceptance:* the entire existing mock-host + builtins-core suite
+passes unchanged; no AutoLISP-visible behaviour differs.
+
+*** Phase 17b — Public CL drawing API
+*Goal:* the documented, exported contract tools depend on.
+Scope: persistence (~read-drawing~ path->drawing dispatching on
+format; ~write-drawing~ drawing->path ~&key format version~);
+introspection (~map-entities~ / ~do-entities~, ~find-entity~ by
+handle, ~entity-dxf~, ~entity-kind~, ~drawing-sysvar~,
+~drawing-tables~, ~table-records~, ~drawing-dictionary~);
+mutation (~add-entity~, ~modify-entity~, ~delete-entity~,
+~set-sysvar~, table/dict mutators). Ships its own
+~documentation/*-specifications.org~ like every component.
+
+*** Phase 17c — DXF codec
+*Goal:* first real persistence. ~clautolisp.drawing.dxf~, pure
+CL, no external deps; ASCII (and binary) DXF <-> ~drawing~,
+section by section. SCHMS-family drawings are ordinary DXF/DWG
+with particular entities + xdata — no special format — so full
+DXF covers them. Acceptance: load -> dump -> load round-trip
+fidelity tests; snapshot tests reuse the Phase-10 machinery.
+
+*** Phase 17d — CL tooling (proof of the API)
+*Goal:* prove Layer 1 is sufficient without AutoLISP. CLI tools
+in pure CL over the public API: ~identify-drawing foo.dwg~
+(classify SCHMS / SCHMS+ / SCHME / SCHMIEU / SCHSME+ + version
+from entity attributes + drawing metadata) and
+~extract-schms-data foo.dwg -o foo.json~.
+
+*** Phase 17e — libredwg submodule + DWG codec
+*Goal:* read/write DWG. ~clautolisp.drawing.libredwg~ over
+libredwg as a git submodule (CFFI bindings; shell-out to
+~dwg2dxf~ as the bring-up fallback, reusing the 17c DXF path).
+Decision tracked in
+~issues/open/drawing-codec-libredwg-submodule.issue~.
+
+*** Phase 17f — Multi-document host + NEW/OPEN/SAVE/CLOSE
+*Goal:* a host holds a *set* of open drawings + an active
+pointer, each with its own AutoLISP context. ~host-command~
+gains NEW / OPEN / SAVE / SAVEAS / QSAVE / CLOSE, manipulating
+that set. clautolisp (and alfe) gain a *drawing argument* naming
+the initial drawing. These commands must honour real AutoCAD
+semantics — they do *not* resume the calling routine inline;
+divergences are decided and documented in
+~issues/open/deferred-document-lifecycle-command-semantics.issue~.
+
+*** Phase 17g — ObjectDBX / COM veneer
+*Goal:* the out-of-namespace, headless drawing surface AutoLISP
+programmers expect. An ~ObjectDBX.AxDbDocument~ ProgID in
+~com-progids.lisp~ with ~Open~ / ~SaveAs~ / ~Close~ +
+~ModelSpace~ / ~Layers~ collections that iterate a ~drawing~
+through the COM bridge. *Side documents are invisible to
+~entget~ / ~ssget~* — only COM iteration sees them — matching
+real AutoCAD.
+
+*** Phase 17h — Blackboard / cross-document transport
+*Goal:* ~vl-bb-set~ / ~vl-bb-ref~ and the application/global
+namespace, so data crosses open-drawing contexts. Last because
+it depends on 17f's multi-context model.
+
 * Cross-Cutting Concerns
 
 ** Coverage tracking
