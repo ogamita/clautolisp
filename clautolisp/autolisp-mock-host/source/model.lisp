@@ -1,61 +1,30 @@
 (in-package #:clautolisp.autolisp-mock-host)
 
-;;;; MockHost data carriers.
+;;;; MockHost data carriers and the MockHost class.
 ;;;;
-;;;; Phase 9 of the implementation roadmap. The structures defined
-;;;; here mirror the AutoLISP host-visible data model documented in
-;;;; the implementation roadmap ("Data Model — Inferred From the
-;;;; CAD Specifications"): handles to entities, selection sets,
-;;;; symbol-table records, dictionaries, sysvar cells. Every
-;;;; structure is purely data; the host *operations* on these data
-;;;; (entget / ssget / getvar / ...) land in Phase 10.
+;;;; Phase 9 introduced these structures; Phase 17a extracted the
+;;;; *drawing-resident* carriers — ENTITY-HANDLE, SYMBOL-TABLE-RECORD,
+;;;; DICTIONARY, SYSVAR-CELL — and the drawing database itself into
+;;;; clautolisp.drawing. They are imported back here (and re-exported
+;;;; from this package) so older callers and tests are unaffected.
 ;;;;
-;;;; The MockHost class itself is also defined in this file so the
-;;;; sysvar-table and tables-table slots have visible struct types
-;;;; at compile time.
+;;;; What remains in this file are the *session / host* carriers that
+;;;; are not part of a drawing — PICKSET and MOCK-COM-OBJECT — and the
+;;;; MOCK-HOST class. MockHost now holds an ACTIVE-DRAWING and delegates
+;;;; its entity / table / sysvar surface to it; the historical
+;;;; accessors (mock-host-entities, mock-host-tables, mock-host-sysvars,
+;;;; mock-host-creation-order, mock-host-next-handle-counter,
+;;;; mock-host-named-object-dictionary) are preserved below as thin
+;;;; functions that forward to the active drawing.
 
-;;; --- Entity handle ----------------------------------------------
-
-(defstruct entity-handle
-  "Opaque handle for one CAD object. The :data slot holds the
-DXF group-code list as exchanged with AutoLISP via entget /
-entmod (a list of dotted pairs of integer group-codes and values,
-plus the canonical group-0 marker giving the entity kind)."
-  (id        (gensym "ENT-") :type t)
-  (kind      nil :type symbol)
-  (block     nil)
-  (layer     nil)
-  (data      nil :type list)
-  (deleted-p nil :type boolean))
-
-;;; --- Selection set ---------------------------------------------
+;;; --- Selection set (session state) ------------------------------
 
 (defstruct pickset
   "Bag of entity-handles preserving insertion order."
   (id      (gensym "SS-") :type t)
   (members nil :type list))
 
-;;; --- Symbol-table record ---------------------------------------
-
-(defstruct symbol-table-record
-  "Row in one of the named symbol tables: BLOCK, LAYER, LTYPE,
-STYLE, VIEW, UCS, VPORT, DIMSTYLE, APPID."
-  (id   (gensym "TBL-") :type t)
-  (kind nil :type symbol)
-  (name "" :type string)
-  (data nil :type list))
-
-;;; --- Dictionary -------------------------------------------------
-
-(defstruct dictionary
-  "Generic key->object container anchored at the named-object
-dictionary or at any sub-dictionary. The :entries slot maps a
-case-folded string key to an opaque value (an entity handle, an
-xrecord representation, or another dictionary)."
-  (id      (gensym "DICT-") :type t)
-  (entries (make-hash-table :test #'equal)))
-
-;;; --- Sysvar cell -----------------------------------------------
+;;; --- COM object (session state) ---------------------------------
 
 (defstruct mock-com-object
   "In-memory COM-object record for MockHost. PROGID is the
@@ -72,59 +41,19 @@ vlax-release-object."
   (methods     (make-hash-table :test #'equalp))
   (released-p  nil :type boolean))
 
-(defstruct sysvar-cell
-  "Single AutoLISP system variable. KIND is one of :integer,
-:short, :real, :string, :point, :symbol — used by the mock
-implementation of getvar / setvar to validate type coercions.
-
-HOST-DERIVED-P is T when the cell's initial value was sourced from
-a non-literal default marker in the inventory ((:host-specific) /
-(:drawing) / (:session) / (:registry) / (:preference) / (:unknown)).
-A host-derived cell still holds a kind-appropriate stand-in value
-so GETVAR returns the right AutoLISP type, but conformance tests
-must not assert a specific value against it: the vendor docs
-state the value is computed from host / drawing / session / user
-context rather than fixed."
-  (name           "" :type string)
-  (kind           :integer :type keyword)
-  (value          nil)
-  (read-only-p    nil :type boolean)
-  (host-derived-p nil :type boolean))
-
 ;;; --- MockHost ---------------------------------------------------
 
 (defclass mock-host (host)
-  ((entities                 :initform (make-hash-table :test #'equal)
-                             :reader   mock-host-entities
-                             :documentation "Hash-table mapping the
-entity's hex handle string (e.g. \"10\") to its ENTITY-HANDLE.
-The handle string is what AutoLISP user code sees through the
-group-code 5 entry and through HANDENT.")
-   (creation-order           :initform '()
-                             :accessor mock-host-creation-order
-                             :documentation "Reverse-order list of
-handle strings, in the order they were allocated by entmake /
-entmakex. Walked by entlast / entnext.")
-   (next-handle-counter      :initform 16
-                             :accessor mock-host-next-handle-counter
-                             :documentation "Allocator state for
-hex-string handles. The first allocated handle is \"10\" (= 16),
-matching AutoCAD's customary minimum visible handle.")
+  ((active-drawing           :initform (make-drawing :name "Drawing.dwg")
+                             :accessor mock-host-active-drawing
+                             :documentation "The drawing the host's
+AutoLISP entity / table / sysvar surface currently operates on. A
+CLAUTOLISP.DRAWING:DRAWING. Phase 17a holds exactly one; Phase 17f
+will grow a set of open drawings with this as the active pointer.")
    (picksets                 :initform (make-hash-table :test #'eq)
                              :reader   mock-host-picksets)
    (vla-objects              :initform (make-hash-table :test #'eq)
                              :reader   mock-host-vla-objects)
-   (tables                   :initform (make-hash-table :test #'eq)
-                             :reader   mock-host-tables
-                             :documentation "Hash-table mapping a
-table-kind keyword (e.g. :layer) to a hash-table mapping the
-table-record name (case-folded string) to a SYMBOL-TABLE-RECORD.")
-   (named-object-dictionary  :initform (make-dictionary)
-                             :accessor mock-host-named-object-dictionary)
-   (sysvars                  :initform (make-hash-table :test #'equalp)
-                             :reader   mock-host-sysvars
-                             :documentation "Hash-table mapping a
-case-insensitive sysvar name string to a SYSVAR-CELL.")
    (prompt-stream            :initform nil
                              :accessor mock-host-prompt-stream
                              :documentation "Optional input stream
@@ -166,5 +95,47 @@ AutoLISP-visible VLA-object wraps that id.")
 COM-object ids."))
   (:default-initargs :name "mock-host")
   (:documentation "In-memory deterministic CAD-database substitute
-backend for clautolisp. Phase 9 — data structures only; Phase 10
-fills in the entget / ssget / getvar / command surfaces."))
+backend for clautolisp. Holds an active CLAUTOLISP.DRAWING:DRAWING
+(the drawing database) plus the session-level state — picksets,
+COM objects, prompt streams, transient-graphics log, iterators —
+that is not part of a drawing."))
+
+;;; --- Active-drawing delegation ----------------------------------
+;;;
+;;; Before Phase 17a these were slots on MOCK-HOST. They now forward
+;;; to the active drawing so every existing caller (entity-api,
+;;; table-api, sysvar-api, api, and the test suite) keeps working
+;;; unchanged. The names are deliberately preserved.
+
+(defun mock-host-entities (host)
+  "The active drawing's entity table (hex-handle string -> ENTITY-HANDLE)."
+  (drawing-entities (mock-host-active-drawing host)))
+
+(defun mock-host-tables (host)
+  "The active drawing's symbol tables (kind keyword -> name -> record)."
+  (drawing-tables (mock-host-active-drawing host)))
+
+(defun mock-host-sysvars (host)
+  "The active drawing's header variables (name string -> SYSVAR-CELL)."
+  (drawing-header-variables (mock-host-active-drawing host)))
+
+(defun mock-host-creation-order (host)
+  "The active drawing's reverse-order handle list."
+  (drawing-creation-order (mock-host-active-drawing host)))
+
+(defun (setf mock-host-creation-order) (new host)
+  (setf (drawing-creation-order (mock-host-active-drawing host)) new))
+
+(defun mock-host-next-handle-counter (host)
+  "The active drawing's handle allocator state (HANDSEED)."
+  (drawing-handle-seed (mock-host-active-drawing host)))
+
+(defun (setf mock-host-next-handle-counter) (new host)
+  (setf (drawing-handle-seed (mock-host-active-drawing host)) new))
+
+(defun mock-host-named-object-dictionary (host)
+  "The active drawing's root named-object dictionary."
+  (drawing-named-object-dictionary (mock-host-active-drawing host)))
+
+(defun (setf mock-host-named-object-dictionary) (new host)
+  (setf (drawing-named-object-dictionary (mock-host-active-drawing host)) new))

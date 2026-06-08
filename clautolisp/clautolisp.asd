@@ -5,6 +5,7 @@
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-source-map"
                "clautolisp/autolisp-runtime"
+               "clautolisp/drawing"
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-mock-host"
                "clautolisp/autolisp-builtins-core"
@@ -93,11 +94,29 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/drawing"
+  :description "The drawing value object: a first-class, backend-independent CAD drawing database (Phase 17a)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-runtime")
+  :serial t
+  :components
+  ((:file "drawing/source/package")
+   (:file "drawing/source/model"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         ;; Phase 17a: the drawing value object is
+                         ;; exercised through the mock-host suite until
+                         ;; a dedicated clautolisp/drawing/tests lands
+                         ;; with the Phase-17b CL API.
+                         :success))
+
 (asdf:defsystem "clautolisp/autolisp-mock-host"
   :description "In-memory deterministic CAD-database backend (MockHost) for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-host" "clautolisp/autolisp-runtime")
+  :depends-on ("clautolisp/autolisp-host" "clautolisp/autolisp-runtime"
+               "clautolisp/drawing")
   :serial t
   :components
   ((:file "autolisp-mock-host/source/package")

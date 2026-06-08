@@ -1,5 +1,51 @@
 (defpackage #:clautolisp.autolisp-mock-host
   (:use #:cl)
+  (:import-from #:clautolisp.drawing
+                ;; Phase 17a: the drawing value object and its data
+                ;; carriers now live in clautolisp.drawing. MockHost
+                ;; holds a drawing and re-exports these so code/tests
+                ;; that imported the carriers from this package before
+                ;; the extraction keep resolving to the same symbols.
+                #:drawing
+                #:make-drawing
+                #:drawing-p
+                #:drawing-name
+                #:drawing-path
+                #:drawing-format
+                #:drawing-version
+                #:drawing-codepage
+                #:drawing-entities
+                #:drawing-creation-order
+                #:drawing-handle-seed
+                #:drawing-tables
+                #:drawing-named-object-dictionary
+                #:drawing-header-variables
+                #:drawing-classes
+                #:entity-handle
+                #:make-entity-handle
+                #:entity-handle-id
+                #:entity-handle-kind
+                #:entity-handle-block
+                #:entity-handle-layer
+                #:entity-handle-data
+                #:entity-handle-deleted-p
+                #:symbol-table-record
+                #:make-symbol-table-record
+                #:symbol-table-record-id
+                #:symbol-table-record-kind
+                #:symbol-table-record-name
+                #:symbol-table-record-data
+                #:dictionary
+                #:make-dictionary
+                #:dictionary-id
+                #:dictionary-entries
+                #:sysvar-cell
+                #:make-sysvar-cell
+                #:sysvar-cell-name
+                #:sysvar-cell-kind
+                #:sysvar-cell-value
+                #:sysvar-cell-read-only-p
+                #:sysvar-cell-host-derived-p)
   (:import-from #:clautolisp.autolisp-host
                 #:host
                 #:host-name
@@ -68,6 +114,24 @@
    ;; Class hierarchy
    #:mock-host
    #:make-mock-host
+   ;; Drawing value object (re-exported from clautolisp.drawing) +
+   ;; the host's active-drawing accessor.
+   #:drawing
+   #:make-drawing
+   #:drawing-p
+   #:drawing-name
+   #:drawing-path
+   #:drawing-format
+   #:drawing-version
+   #:drawing-codepage
+   #:drawing-entities
+   #:drawing-creation-order
+   #:drawing-handle-seed
+   #:drawing-tables
+   #:drawing-named-object-dictionary
+   #:drawing-header-variables
+   #:drawing-classes
+   #:mock-host-active-drawing
    ;; Data structures
    #:entity-handle
    #:make-entity-handle
