@@ -251,25 +251,53 @@ the entities are added with their :block owner set."
                          :handle (and handle-pair (cdr handle-pair))
                          :block current-block))))))))
 
+(defun dxf-object-handle (obj)
+  (cdr (find 5 obj :key #'car)))
+
+(defun dxf-dictionary-object-p (obj)
+  (and obj (consp (first obj)) (= (car (first obj)) 0)
+       (string-equal (cdr (first obj)) "DICTIONARY")))
+
 (defun dxf-load-objects (drawing body)
-  "Load the named-object dictionary from the OBJECTS section. The first
-DICTIONARY object's entries — (3 . key) followed by (350|360 . handle)
-— populate the root named-object dictionary. Sub-dictionaries, xrecords
-and other object types are not yet modelled (a documented limitation)."
-  (let ((groups (dxf-split-objects (dxf-coalesce-points body) '(0)))
-        (nod (drawing-named-object-dictionary drawing)))
-    (dolist (group groups)
-      (when (and (= (car (first group)) 0)
-                 (string-equal (cdr (first group)) "DICTIONARY"))
-        (let ((pending-key nil))
-          (dolist (pair (rest group))
-            (case (car pair)
-              (3 (setf pending-key (cdr pair)))
-              ((350 360)
-               (when pending-key
-                 (dictionary-put nod pending-key (cdr pair))
-                 (setf pending-key nil))))))
-        (return)))))
+  "Load the OBJECTS section. The root DICTIONARY is rebuilt into the
+drawing's named-object-dictionary tree, following (3 key)(350|360
+handle) links: a link to another DICTIONARY nests a sub-dictionary; a
+link to any other object keeps the handle string. Every non-dictionary
+object (xrecords and the rest) is stored in DRAWING-OBJECTS by handle so
+the section round-trips losslessly."
+  (let* ((objs (dxf-split-objects (dxf-coalesce-points body) '(0)))
+         (by-handle (make-hash-table :test #'equalp))
+         (visited (make-hash-table :test #'equalp))
+         (root nil))
+    (dolist (obj objs)
+      (let ((h (dxf-object-handle obj)))
+        (when h (setf (gethash h by-handle) obj)))
+      (when (and (null root) (dxf-dictionary-object-p obj))
+        (setf root obj)))
+    (labels ((build (obj)
+               (let ((d (make-dictionary)) (pending nil)
+                     (h (dxf-object-handle obj)))
+                 (when h (setf (gethash h visited) t))
+                 (dolist (pair (rest obj))
+                   (case (car pair)
+                     (3 (setf pending (cdr pair)))
+                     ((350 360)
+                      (when pending
+                        (let* ((target-handle (cdr pair))
+                               (target (gethash target-handle by-handle)))
+                          (if (and (dxf-dictionary-object-p target)
+                                   (not (gethash target-handle visited)))
+                              (dictionary-put d pending (build target))
+                              (dictionary-put d pending target-handle)))
+                        (setf pending nil)))))
+                 d)))
+      (when root
+        (setf (drawing-named-object-dictionary drawing) (build root))))
+    ;; Store every non-dictionary object for lossless round-trip.
+    (dolist (obj objs)
+      (let ((h (dxf-object-handle obj)))
+        (when (and h (not (dxf-dictionary-object-p obj)))
+          (add-object drawing h obj))))))
 
 (defun dxf-build-drawing (typed-pairs)
   "Build a DRAWING from a flat list of (CODE . TYPED-VALUE) pairs,
@@ -415,21 +443,59 @@ owned entities, then ENDBLK."
         (dxf-emit 0 "ENDBLK"))
       drawing))))
 
-(defun dxf-write-dictionary (dict)
-  "Emit a DICTIONARY object: its (3 key)(350 handle) string entries."
+(defun dxf-assign-dictionary-handles (root start)
+  "Walk the dictionary tree from ROOT, assigning each dictionary a fresh
+hex handle from a counter starting at START (the drawing's seed; not
+mutated). Returns an EQ hash-table dict -> hex-handle."
+  (let ((handles (make-hash-table :test #'eq))
+        (counter start))
+    (labels ((assign (d)
+               (unless (gethash d handles)
+                 (setf (gethash d handles) (format nil "~X" counter))
+                 (incf counter)
+                 (map-dictionary (lambda (k v)
+                                   (declare (ignore k))
+                                   (when (dictionary-p v) (assign v)))
+                                 d))))
+      (assign root))
+    handles))
+
+(defun dxf-write-dictionary-tree (dict handles)
+  "Emit DICT as a DICTIONARY object (using its assigned handle), then
+recursively its sub-dictionaries. Entry links: a sub-dictionary uses
+its assigned handle; any other value is emitted as its handle string."
   (dxf-emit 0 "DICTIONARY")
+  (dxf-emit 5 (gethash dict handles))
   (map-dictionary
    (lambda (key value)
-     (when (stringp value)
-       (dxf-emit 3 key)
-       (dxf-emit 350 value)))
-   dict))
+     (dxf-emit 3 key)
+     (dxf-emit 350 (cond ((dictionary-p value) (gethash value handles))
+                         ((stringp value) value)
+                         (t (princ-to-string value)))))
+   dict)
+  (map-dictionary (lambda (key value)
+                    (declare (ignore key))
+                    (when (dictionary-p value)
+                      (dxf-write-dictionary-tree value handles)))
+                  dict))
 
 (defun dxf-write-objects (drawing)
-  "Emit the OBJECTS section as the named-object dictionary tree."
-  (let ((nod (drawing-named-object-dictionary drawing)))
-    (when (plusp (hash-table-count (dictionary-entries nod)))
-      (dxf-write-section "OBJECTS" (lambda () (dxf-write-dictionary nod))))))
+  "Emit the OBJECTS section: the named-object dictionary tree (handle
+-linked) followed by the standalone non-graphical objects (xrecords)."
+  (let ((nod (drawing-named-object-dictionary drawing))
+        (objects (drawing-objects drawing)))
+    (when (or (plusp (hash-table-count (dictionary-entries nod)))
+              (plusp (hash-table-count objects)))
+      (dxf-write-section
+       "OBJECTS"
+       (lambda ()
+         (let ((handles (dxf-assign-dictionary-handles
+                         nod (drawing-handle-seed drawing))))
+           (dxf-write-dictionary-tree nod handles))
+         (maphash (lambda (handle obj)
+                    (declare (ignore handle))
+                    (dxf-write-object (dxf-ordered-entity-data obj)))
+                  objects))))))
 
 (defun dxf-write-drawing-body (drawing)
   (dxf-write-header drawing)

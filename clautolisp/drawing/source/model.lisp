@@ -139,7 +139,15 @@ NIL.")
 list (the DXF (0 . \"BLOCK\") (2 . name) (10 base) … pairs). The
 entities a block owns live in the ENTITIES table with their
 ENTITY-HANDLE-BLOCK slot set to the block name; model-space entities
-have a NIL block slot."))
+have a NIL block slot.")
+   (objects :initform (make-hash-table :test #'equalp)
+            :accessor drawing-objects
+            :documentation "Hash-table mapping a hex handle string to a
+non-graphical OBJECTS-section object's group-code list (XRECORD and any
+object type that is not a DICTIONARY). Dictionaries themselves live in
+the named-object-dictionary tree; this table carries everything else so
+the OBJECTS section round-trips losslessly. Dictionary entries that
+point at one of these objects hold its handle string."))
   (:documentation "A first-class CAD drawing database as a pure
 Common-Lisp value. Holds entities, symbol tables, the named-object
 dictionary, header variables, the handle allocator, the class table,

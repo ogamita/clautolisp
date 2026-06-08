@@ -17,9 +17,11 @@ OBJECTS (the root named-object dictionary). Block ownership is carried
 by ~entity-handle-block~ and a per-drawing ~drawing-blocks~ map
 (name -> BLOCK header). Both ASCII and binary (R13+) DXF are supported
 — ~read-drawing~ auto-detects by the file sentinel; ~write-drawing~
-defaults to ASCII, ~:format :dxf-binary~ writes binary. Deferred:
-sub-dictionary nesting / xrecords in OBJECTS, and DWG (17e) — DWG still
-signals ~drawing-format-error~.
+defaults to ASCII, ~:format :dxf-binary~ writes binary. OBJECTS
+round-trips the named-object dictionary tree (with sub-dictionary
+nesting) and xrecords / other non-graphical objects (the latter held in
+~drawing-objects~, reachable via ~find-object~). Deferred: DWG (17e) —
+DWG still signals ~drawing-format-error~.
 
 MockHost's *entity* surface now delegates to this API: ~host-entget~
 / ~entmod~ / ~entmake~ / ~entdel~ / ~entlast~ / ~entnext~ / ~handent~
