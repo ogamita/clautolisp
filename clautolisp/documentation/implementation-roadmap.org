@@ -1108,12 +1108,18 @@ per-drawing ~drawing-objects~ map (handle -> group-code list) and
 reachable via ~find-object~. Tested in ~drawing/tests/dxf-tests.lisp~.
 *Remaining for the codec family:* DWG (17e).
 
-*** Phase 17d — CL tooling (proof of the API)
-*Goal:* prove Layer 1 is sufficient without AutoLISP. CLI tools
-in pure CL over the public API: ~identify-drawing foo.dwg~
-(classify SCHMS / SCHMS+ / SCHME / SCHMIEU / SCHSME+ + version
-from entity attributes + drawing metadata) and
-~extract-schms-data foo.dwg -o foo.json~.
+*** Phase 17d — CL tooling (proof of the API) [DONE — external consumer]
+*Goal:* prove Layer 1 (the CL drawing API) is sufficient on its own,
+without AutoLISP, by building a real tool over it.
+*Status:* satisfied by an *external* consumer, kept out of this repo
+on purpose — clautolisp stays generic and carries no SCHMS / EPURE /
+SNCF specifics. The tool is ~dwg-identifier~ in the ~outils-autolisp~
+repository: a pure-CL program that reads a drawing via
+~clautolisp/drawing~ (+ ~clautolisp/drawing-dwg~ for DWG) and
+classifies the originating application from its APPID table. It loads
+clautolisp via ~asdf:load-asd~ until clautolisp is installed.
+This exercise also drove two generic clautolisp fixes landed here: the
+DXF reader's multiline-string handling and ~.dwt~ probe support.
 
 *** Phase 17e — libredwg submodule + DWG codec [DONE — read; write best-effort]
 *Goal:* read/write DWG via the vendored, self-built GNU libredwg.
