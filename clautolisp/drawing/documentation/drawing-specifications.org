@@ -1,0 +1,247 @@
+#+TITLE: clautolisp.drawing — the CL drawing-database API (Phase 17b)
+#+AUTHOR: clautolisp
+#+OPTIONS: toc:2 num:t
+
+* Status
+
+*DRAFT — for review.* Phase 17a (the ~drawing~ value object) has
+landed and is exercised through the MockHost suite. This document
+specifies the *public Common-Lisp API* of Phase 17b — the functions
+tools and host adapters call to construct, persist, introspect and
+mutate a drawing. The functions below are *not yet implemented*; this
+is the contract to agree on before writing them. Sections flagged
+[REVIEW] are open decisions.
+
+See also:
+- ~clautolisp/documentation/implementation-roadmap.org~, Phase 17.
+- ~issues/open/drawing-database-api.issue~ (parent).
+- ~clautolisp/drawing/source/model.lisp~ (the value object, landed).
+
+* Scope and principles
+
+The ~clautolisp.drawing~ package is the *substrate* under all four
+drawing-facing surfaces (AutoLISP entity API, the NEW/OPEN/SAVE/CLOSE
+command system, COM/ObjectDBX, and this CL API itself). Principles:
+
+1. *Pure Common-Lisp values.* This package never traffics in AutoLISP
+   wrapper types (~autolisp-ename~, ~autolisp-string~, …). A DXF datum
+   is a CL integer, double-float, string, or list thereof. Wrapping
+   and unwrapping is the host adapter's job. (See [REVIEW-1].)
+2. *A drawing is data, not a session.* It owns entities, tables, the
+   named-object dictionary, header variables, the handle allocator,
+   the class table, and file provenance — nothing about prompts,
+   selection sets, COM objects, or the active document. Those are host
+   state.
+3. *Backend-independent.* MockHost holds one or more drawings;
+   LiveHost (Phase 16) may wrap a foreign database behind the same
+   accessors. No function here assumes MockHost.
+4. *No side effects beyond the drawing.* Mutators change the drawing
+   passed in and return a useful value; they never signal document
+   events (that is the host's concern, layered above).
+
+* The value object (landed in 17a)
+
+A ~drawing~ is a CLOS object with these accessors (all exported):
+
+| Accessor                          | Contents                                             |
+|-----------------------------------+------------------------------------------------------|
+| ~drawing-name~                    | drawing name (the DWGNAME the host reports)          |
+| ~drawing-path~                    | source/target pathname, or NIL                       |
+| ~drawing-format~                  | ~:dxf-ascii~ / ~:dxf-binary~ / ~:dwg~ / ~:native~ / NIL |
+| ~drawing-version~                 | format version keyword (e.g. ~:ac1027~) or NIL       |
+| ~drawing-codepage~                | DWGCODEPAGE string or NIL                            |
+| ~drawing-entities~                | hash: hex-handle string → ~entity-handle~            |
+| ~drawing-creation-order~          | reverse-order list of handle strings                 |
+| ~drawing-handle-seed~             | next-handle integer (DXF $HANDSEED)                  |
+| ~drawing-tables~                  | hash: kind keyword → (hash name → ~symbol-table-record~) |
+| ~drawing-named-object-dictionary~ | root ~dictionary~                                    |
+| ~drawing-header-variables~        | hash: name string → ~sysvar-cell~                    |
+| ~drawing-classes~                 | DXF/DWG CLASSES metadata, opaque list                |
+
+Data carriers (also exported, re-exported by MockHost for
+compatibility): ~entity-handle~, ~symbol-table-record~, ~dictionary~,
+~sysvar-cell~ — unchanged from their pre-extraction shape.
+
+* The DXF datum domain [REVIEW-1]
+
+The single most important contract to settle. An entity's content is a
+*DXF group-code list*: a list of dotted pairs ~(code . value)~ where
+~code~ is an integer. Today (inherited verbatim from MockHost) the
+stored list contains two *host-managed* pairs that carry AutoLISP
+wrapper types:
+
+- ~(-1 . <autolisp-ename>)~ — the entity name, an ~autolisp-ename~.
+- ~(5 . "<hex>")~ — the handle string.
+- ~(0 . "TYPE")~ — sometimes an ~autolisp-string~, sometimes a CL string.
+
+That violates principle 1. The proposed canonical form for the
+*drawing* layer:
+
+- The drawing stores *only pure CL values*. Code 5 is the handle
+  string; code 0 is a CL string; references (330 owner, 360, etc.) are
+  handle strings. *No ~(-1 …)~ pair is stored* — the ename is a host
+  notion, synthesised by the adapter from the handle on the way out.
+- The host adapter (~host-entget~) wraps: it adds ~(-1 . ename)~ and
+  may wrap strings as ~autolisp-string~ per dialect; ~host-entmod~ /
+  ~host-entmake~ strip ~-1~ and unwrap before storing.
+
+This moves ~normalize-entity-data~'s ename injection out of the stored
+data and into the MockHost boundary. *Decision needed:* adopt the pure
+form (cleaner, but the adapter does more), or let the drawing keep the
+~-1~/wrapper pairs (less work now, leakier). Recommendation: pure form.
+
+* API — construction
+
+#+begin_src lisp
+(make-drawing &key name path format version codepage handle-seed) ⇒ drawing      ; landed
+(copy-drawing drawing) ⇒ drawing
+#+end_src
+
+- ~make-drawing~ — fresh empty drawing (landed in 17a).
+- ~copy-drawing~ — deep copy of entities/tables/dict/header (for
+  tools that mutate a scratch copy). [REVIEW-2: needed in 17b, or
+  defer?]
+
+* API — persistence
+
+#+begin_src lisp
+(read-drawing  source &key format)            ⇒ drawing
+(write-drawing drawing destination &key format version) ⇒ drawing
+(probe-drawing-format source)                 ⇒ keyword | nil
+#+end_src
+
+- ~read-drawing~ — ~source~ is a pathname/namestring. Format is sniffed
+  from extension then content; ~:format~ overrides. Returns a fresh
+  drawing with ~drawing-path~/~-format~/~-version~/~-codepage~ set, and
+  ~drawing-handle-seed~ taken from the file's HANDSEED. Signals
+  ~drawing-read-error~ (a subtype of ~drawing-error~) on unknown format
+  or parse failure.
+- ~write-drawing~ — serialises ~drawing~ to ~destination~. ~:format~
+  defaults to ~drawing-format~ then the destination extension;
+  ~:version~ defaults to ~drawing-version~ then the codec's newest.
+  Updates the drawing's provenance slots and returns it. Signals
+  ~drawing-write-error~.
+- ~probe-drawing-format~ — non-throwing format sniff; NIL if unknown.
+
+Codecs register against these via an internal dispatch table; 17c adds
+DXF, 17e adds DWG. The API surface does not change when a codec lands.
+
+* API — introspection (read-only)
+
+#+begin_src lisp
+(map-entities function drawing &key include-deleted) ⇒ nil
+(do-entities (var drawing &key include-deleted) &body body)          ; macro
+(drawing-entity-count drawing &key include-deleted)  ⇒ integer
+(find-entity drawing handle &key include-deleted)    ⇒ entity-handle | nil
+(entity-dxf    entity-handle)        ⇒ list           ; the group-code list
+(entity-kind   entity-handle)        ⇒ keyword        ; group-0 kind
+(entity-handle-string entity-handle) ⇒ string         ; the hex handle
+
+(drawing-table       drawing kind)            ⇒ hash-table | nil
+(map-table-records   function drawing kind)   ⇒ nil
+(find-table-record   drawing kind name)       ⇒ symbol-table-record | nil
+(table-record-dxf    symbol-table-record)     ⇒ list
+
+(drawing-dictionary  drawing)                 ⇒ dictionary   ; the root NOD
+(dictionary-get      dictionary key)          ⇒ value | nil
+(map-dictionary      function dictionary)     ⇒ nil
+
+(drawing-variable      drawing name)          ⇒ value | nil
+(drawing-variable-cell drawing name)          ⇒ sysvar-cell | nil
+(map-variables         function drawing)      ⇒ nil
+#+end_src
+
+- ~map-entities~ / ~do-entities~ walk in creation order, skipping
+  deleted entities unless ~:include-deleted~.
+- ~find-entity~ — by hex handle string (exact match). Deleted entities
+  are hidden unless ~:include-deleted~.
+- Lookup folding: table names and header-variable names are
+  case-insensitive; dictionary keys are case-folded strings; handles
+  are matched exactly. [REVIEW-3: confirm handle case rule — DXF
+  handles are uppercase hex; do we fold?]
+
+* API — mutation
+
+#+begin_src lisp
+(allocate-handle  drawing)                    ⇒ string
+(add-entity       drawing dxf &key handle)    ⇒ entity-handle
+(modify-entity    drawing handle dxf)         ⇒ entity-handle | nil
+(delete-entity    drawing handle &key (erased t)) ⇒ boolean   ; toggle when not supplied? see note
+(set-drawing-variable drawing name value &key force) ⇒ value
+(add-table-record    drawing record)          ⇒ symbol-table-record
+(remove-table-record drawing kind name)       ⇒ boolean
+(dictionary-put      dictionary key value)    ⇒ value
+(dictionary-remove   dictionary key)          ⇒ boolean
+#+end_src
+
+- ~allocate-handle~ — returns ~(format nil "~X" handle-seed)~ and bumps
+  the seed. The sole handle source; loaders set the seed first.
+- ~add-entity~ — store ~dxf~ under a fresh handle (or ~:handle~, used by
+  loaders preserving file handles), append to creation order, return
+  the new ~entity-handle~. Injects ~(5 . handle)~; does *not* inject
+  ~(-1 …)~ (see [REVIEW-1]). Requires a ~(0 . "TYPE")~ marker; signals
+  ~drawing-error~ otherwise.
+- ~modify-entity~ — replace the stored data for ~handle~ (preserving the
+  handle), NIL if absent/deleted.
+- ~delete-entity~ — set the erased flag. [REVIEW-4: AutoLISP ~entdel~ is
+  a *toggle*; that toggle is an AutoLISP-surface semantic. Should the
+  CL API expose an explicit ~:erased~ boolean (proposed) and leave the
+  toggle to the host adapter? Recommendation: yes — explicit here.]
+- ~set-drawing-variable~ — set a header variable's value, honouring the
+  cell's read-only flag unless ~:force~ (loaders pass ~:force t~ to set
+  read-only header vars like $HANDSEED-derived state). Returns the
+  value; NIL if the name is unknown (does *not* create cells — that is
+  ~ensure-drawing-variable~, below, if we want it [REVIEW-5]).
+
+* Conditions
+
+#+begin_src lisp
+drawing-error            ; abstract base (subtype of error)
+  drawing-read-error     ; read-drawing: unknown format / parse failure
+  drawing-write-error    ; write-drawing failure
+  drawing-format-error   ; unsupported/unknown format keyword
+#+end_src
+
+These are *CL* conditions, distinct from
+~clautolisp.autolisp-runtime~'s ~autolisp-runtime-error~. The host
+adapter translates a ~drawing-error~ into the appropriate AutoLISP
+runtime error (e.g. when a ~(command "_.OPEN" …)~ fails) at the
+boundary. [REVIEW-6: confirm this split.]
+
+* Relationship to the host / AutoLISP surfaces
+
+- ~host-entget~ ⇒ ~find-entity~ + adapter wrapping (adds ~-1~ ename,
+  dialect string wrapping).
+- ~host-entmake~ ⇒ ~add-entity~ + adapter event signalling.
+- ~host-entmod~ ⇒ ~modify-entity~ + events.
+- ~host-entdel~ ⇒ ~delete-entity~ (the toggle lives in the adapter).
+- ~host-tblsearch~/~-tblnext~/~-tblobjname~ ⇒ ~find-table-record~ /
+  ~map-table-records~ (the ~tblnext~ cursor stays host state).
+- ~host-getvar~/~-setvar~ ⇒ ~drawing-variable~ / ~set-drawing-variable~
+  for *drawing-resident* sysvars; session/registry sysvars are a host
+  overlay [REVIEW-7].
+- ~read-drawing~ / ~write-drawing~ are what the Phase-17f NEW/OPEN/SAVE
+  commands and the Phase-17g ObjectDBX ~Open~/~SaveAs~ call.
+
+* Tooling consumers (Phase 17d), as acceptance
+
+The API is "done" when these two tools are writable against it alone,
+with no AutoLISP and no MockHost:
+
+- ~identify-drawing FILE~ — read, walk entities + header, classify the
+  drawing as SCHMS / SCHMS+ / SCHME / SCHMIEU / SCHSME+ and version.
+- ~extract-schms-data FILE -o OUT.json~ — read, walk, emit JSON.
+
+* Open questions for review (collected)
+
+- [REVIEW-1] Pure-CL DXF datum domain — drop the stored ~(-1 . ename)~
+  and wrapper types, wrap at the host boundary? *(recommend: yes)*
+- [REVIEW-2] Is ~copy-drawing~ in 17b scope or deferred?
+- [REVIEW-3] Handle case-folding rule.
+- [REVIEW-4] ~delete-entity~ explicit boolean vs toggle.
+- [REVIEW-5] Provide ~ensure-drawing-variable~ (create cells) or keep
+  cell creation a loader-internal concern?
+- [REVIEW-6] CL ~drawing-error~ hierarchy distinct from AutoLISP
+  runtime errors, translated at the adapter.
+- [REVIEW-7] Where session/registry (non-drawing) sysvars live once
+  header variables move into the drawing.
