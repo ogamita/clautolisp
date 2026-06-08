@@ -173,6 +173,40 @@
     (is (= 1 (length (block-entities d "FRAME"))))
     (is (string= "17" (dictionary-get (drawing-dictionary d) "ACAD_MLINESTYLE")))))
 
+;;; --- Deep OBJECTS: nested dictionaries + xrecords ----------------
+
+(test dxf-round-trip-preserves-nested-dictionaries
+  (let* ((original (make-drawing))
+         (nod (drawing-dictionary original))
+         (sub (make-dictionary)))
+    (dictionary-put sub "ENTRY1" "A1")
+    (dictionary-put nod "ACAD_GROUP" "2F")    ; plain handle entry
+    (dictionary-put nod "ACAD_LAYOUT" sub)    ; nested sub-dictionary
+    (let* ((text (with-output-to-string (s) (dxf-write-drawing-to-stream original s)))
+           (restored (with-input-from-string (s text) (dxf-read-drawing-from-stream s)))
+           (rnod (drawing-dictionary restored)))
+      (is (string= "2F" (dictionary-get rnod "ACAD_GROUP")))
+      (let ((rsub (dictionary-get rnod "ACAD_LAYOUT")))
+        (is (dictionary-p rsub))
+        (is (string= "A1" (dictionary-get rsub "ENTRY1")))))))
+
+(test dxf-round-trip-preserves-xrecords
+  (let* ((original (make-drawing))
+         (nod (drawing-dictionary original)))
+    (add-object original "1A"
+                '((0 . "XRECORD") (5 . "1A") (100 . "AcDbXrecord")
+                  (1 . "schms-payload") (90 . 42)))
+    (dictionary-put nod "SCHMS_DATA" "1A")
+    (let* ((text (with-output-to-string (s) (dxf-write-drawing-to-stream original s)))
+           (restored (with-input-from-string (s text) (dxf-read-drawing-from-stream s))))
+      ;; The dictionary entry still points at the xrecord's handle.
+      (is (string= "1A" (dictionary-get (drawing-dictionary restored) "SCHMS_DATA")))
+      ;; The xrecord object itself round-trips, retrievable by handle.
+      (let ((xr (find-object restored "1A")))
+        (is (not (null xr)))
+        (is (string= "schms-payload" (cdr (assoc 1 xr))))
+        (is (eql 42 (cdr (assoc 90 xr))))))))
+
 ;;; --- Binary DXF --------------------------------------------------
 
 (test dxf-double-bit-codec-round-trips

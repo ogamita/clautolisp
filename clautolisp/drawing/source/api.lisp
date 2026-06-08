@@ -107,6 +107,9 @@ does not affect the original."
     (maphash (lambda (name header)
                (setf (gethash name (drawing-blocks new)) (copy-tree header)))
              (drawing-blocks drawing))
+    (maphash (lambda (handle obj)
+               (setf (gethash handle (drawing-objects new)) (copy-tree obj)))
+             (drawing-objects drawing))
     new))
 
 ;;; --- Entity introspection ---------------------------------------
@@ -300,6 +303,25 @@ Returns NIL."
                       (push e result)))
                   drawing)
     (nreverse result)))
+
+;;; --- Non-graphical objects (xrecords etc.) ----------------------
+
+(defun add-object (drawing handle object-data)
+  "Register a non-graphical OBJECTS-section object (an xrecord or other
+non-dictionary object) under its hex HANDLE string. OBJECT-DATA is its
+group-code list. Returns OBJECT-DATA."
+  (setf (gethash (handle->key handle) (drawing-objects drawing)) object-data))
+
+(defun find-object (drawing handle)
+  "The group-code list of the non-graphical object stored under HANDLE
+(integer or hex string), or NIL."
+  (gethash (handle->key handle) (drawing-objects drawing)))
+
+(defun map-objects (function drawing)
+  "Call FUNCTION with (HANDLE OBJECT-DATA) for each non-graphical
+object. Returns NIL."
+  (maphash function (drawing-objects drawing))
+  nil)
 
 (defun modify-entity (drawing handle dxf)
   "Replace the stored data of HANDLE with DXF, preserving the handle

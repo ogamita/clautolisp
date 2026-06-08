@@ -131,6 +131,11 @@ from the mock-host package before the Phase-17a extraction.")
    #:find-block
    #:map-blocks
    #:block-entities
+   ;; Non-graphical objects (xrecords etc.).
+   #:drawing-objects
+   #:add-object
+   #:find-object
+   #:map-objects
    ;; Dictionary introspection / mutation.
    #:drawing-dictionary
    #:dictionary-get
