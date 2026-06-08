@@ -39,7 +39,9 @@ arrives with the DXF codec (Phase 17c); for now .dxf maps to
   (let ((type (pathname-type (pathname source))))
     (when type
       (cond ((string-equal type "dxf") :dxf-ascii)
-            ((string-equal type "dwg") :dwg)
+            ((or (string-equal type "dwg")
+                 (string-equal type "dwt")) ; DWT template == DWG format
+             :dwg)
             (t nil)))))
 
 (defun read-drawing (source &key format)

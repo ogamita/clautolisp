@@ -207,6 +207,31 @@
         (is (string= "schms-payload" (cdr (assoc 1 xr))))
         (is (eql 42 (cdr (assoc 90 xr))))))))
 
+;;; --- Robustness: string values with embedded newlines ------------
+
+(test dxf-reads-multiline-string-values
+  ;; Some writers (e.g. libredwg's MTEXT output) emit a string value
+  ;; that spans several physical lines instead of escaping the breaks.
+  ;; The reader must re-join the continuation lines, not mistake them
+  ;; for group codes.
+  (let* ((dxf (format nil "~{~A~%~}"
+                      '("0" "SECTION" "2" "ENTITIES"
+                        "0" "MTEXT" "5" "2A"
+                        "1" "first line"
+                        "second line: reperes 1143, 1149"
+                        "third line"
+                        "8" "0"
+                        "0" "ENDSEC" "0" "EOF")))
+         (d (with-input-from-string (s dxf) (dxf-read-drawing-from-stream s)))
+         (e (first (let (acc) (map-entities (lambda (x) (push x acc)) d) acc)))
+         (text (cdr (assoc 1 (entity-dxf e)))))
+    (is (eq :mtext (entity-kind e)))
+    (is (search "first line" text))
+    (is (search "second line: reperes 1143, 1149" text))
+    (is (search "third line" text))
+    ;; the group code 8 after the multiline value is still parsed
+    (is (string= "0" (cdr (assoc 8 (entity-dxf e)))))))
+
 ;;; --- Binary DXF --------------------------------------------------
 
 (test dxf-double-bit-codec-round-trips

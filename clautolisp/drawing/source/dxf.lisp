@@ -52,19 +52,15 @@ Z is CODE+20)."
 
 ;;; --- Reader: tokeniser ------------------------------------------
 
-(defun dxf-read-pair (stream)
-  "Read one (CODE . RAW-STRING) group pair from STREAM, or :eof. The
-value line is returned verbatim (trimmed); typing happens later."
-  (let ((code-line (read-line stream nil :eof)))
-    (if (eq code-line :eof)
-        :eof
-        (let ((value-line (read-line stream nil :eof)))
-          (when (eq value-line :eof)
-            (error 'drawing-error
-                   :format-control "truncated DXF: group code ~S without a value"
-                   :format-arguments (list code-line)))
-          (let ((code (parse-integer code-line :junk-allowed nil)))
-            (cons code (string-trim '(#\Space #\Tab #\Return) value-line)))))))
+(defun dxf-code-line-p (line)
+  "True if LINE is a bare DXF group code — a trimmed (optionally
+signed) integer. Used to detect when a string value has spilled onto
+following physical lines."
+  (let ((s (string-trim '(#\Space #\Tab #\Return) line)))
+    (and (plusp (length s))
+         (multiple-value-bind (value end)
+             (ignore-errors (parse-integer s :junk-allowed nil))
+           (and value end t)))))
 
 (defun dxf-parse-value (code raw)
   "Convert the RAW string value of group CODE to its typed CL value."
@@ -75,18 +71,43 @@ value line is returned verbatim (trimmed); typing happens later."
                (coerce (read-from-string raw) 'double-float)))))
 
 (defun dxf-read-typed-pairs (stream)
-  "Read STREAM fully into a list of (CODE . TYPED-VALUE) pairs,
-stopping after the terminating (0 . \"EOF\"). Comments (999) are
-dropped."
-  (let ((pairs '()))
-    (loop
-      (let ((pair (dxf-read-pair stream)))
-        (when (eq pair :eof) (return))
-        (let ((code (car pair)))
-          (unless (= code 999)
-            (push (cons code (dxf-parse-value code (cdr pair))) pairs))
-          (when (and (= code 0) (string-equal (cdr pair) "EOF"))
-            (return)))))
+  "Read STREAM fully into a list of (CODE . TYPED-VALUE) pairs, stopping
+after the terminating (0 . \"EOF\"). Comments (999) are dropped.
+
+Robust against string values that contain embedded newlines: some
+writers (e.g. libredwg's DXF output of MTEXT) emit a string value
+spanning several physical lines instead of escaping the breaks. A line
+following a *string* value that is not itself a bare group code is
+treated as a continuation of that value (re-joined with newlines)."
+  (let ((pairs '())
+        (pending nil))                  ; one-line lookahead buffer
+    (flet ((next-line ()
+             (if pending (prog1 pending (setf pending nil))
+                 (read-line stream nil :eof))))
+      (loop
+        (let ((code-line (next-line)))
+          (when (eq code-line :eof) (return))
+          (let ((code (parse-integer code-line :junk-allowed nil))
+                (value-line (next-line)))
+            (when (eq value-line :eof)
+              (error 'drawing-error
+                     :format-control "truncated DXF: group code ~S without a value"
+                     :format-arguments (list code)))
+            (let ((raw (string-right-trim '(#\Return) value-line)))
+              ;; Re-join a string value that spilled onto later lines.
+              (when (eq (dxf-code-type code) :string)
+                (loop for la = (read-line stream nil :eof)
+                      until (eq la :eof)
+                      do (if (dxf-code-line-p la)
+                             (progn (setf pending la) (loop-finish))
+                             (setf raw (concatenate 'string raw
+                                                    (string #\Newline)
+                                                    (string-right-trim '(#\Return) la))))))
+              (let ((value (string-trim '(#\Space #\Tab) raw)))
+                (unless (= code 999)
+                  (push (cons code (dxf-parse-value code value)) pairs))
+                (when (and (= code 0) (string-equal value "EOF"))
+                  (return))))))))
     (nreverse pairs)))
 
 ;;; --- Reader: point coalescing -----------------------------------
