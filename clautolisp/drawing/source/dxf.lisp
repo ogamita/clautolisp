@@ -220,22 +220,67 @@ variable's value group(s)."
                 (make-symbol-table-record
                  :kind current-kind :name rname :data group))))))))))
 
-(defun dxf-load-entities (drawing body)
+(defun dxf-load-entities (drawing body &optional block)
+  "Add the entities in a flat BODY (the ENTITIES section, or the entity
+run inside a block) to DRAWING, owned by BLOCK (NIL = model space)."
   (dolist (entity (dxf-split-objects (dxf-coalesce-points body) '(0)))
     (let ((handle-pair (find 5 entity :key #'car)))
       (add-entity drawing entity
-                  :handle (and handle-pair (cdr handle-pair))))))
+                  :handle (and handle-pair (cdr handle-pair))
+                  :block block))))
+
+(defun dxf-load-blocks (drawing body)
+  "Load BLOCK definitions. The BLOCKS body is a flat run of 0-started
+objects: (0 . \"BLOCK\") header, the block's owned entities, then
+(0 . \"ENDBLK\"), repeating. The header is registered with ADD-BLOCK;
+the entities are added with their :block owner set."
+  (let ((current-block nil))
+    (dolist (group (dxf-split-objects (dxf-coalesce-points body) '(0)))
+      (let* ((head (first group))
+             (tag (and (= (car head) 0) (cdr head))))
+        (cond
+          ((string-equal tag "BLOCK")
+           (let ((name (cdr (find 2 group :key #'car))))
+             (setf current-block name)
+             (when name (add-block drawing name group))))
+          ((string-equal tag "ENDBLK")
+           (setf current-block nil))
+          (current-block
+           (let ((handle-pair (find 5 group :key #'car)))
+             (add-entity drawing group
+                         :handle (and handle-pair (cdr handle-pair))
+                         :block current-block))))))))
+
+(defun dxf-load-objects (drawing body)
+  "Load the named-object dictionary from the OBJECTS section. The first
+DICTIONARY object's entries — (3 . key) followed by (350|360 . handle)
+— populate the root named-object dictionary. Sub-dictionaries, xrecords
+and other object types are not yet modelled (a documented limitation)."
+  (let ((groups (dxf-split-objects (dxf-coalesce-points body) '(0)))
+        (nod (drawing-named-object-dictionary drawing)))
+    (dolist (group groups)
+      (when (and (= (car (first group)) 0)
+                 (string-equal (cdr (first group)) "DICTIONARY"))
+        (let ((pending-key nil))
+          (dolist (pair (rest group))
+            (case (car pair)
+              (3 (setf pending-key (cdr pair)))
+              ((350 360)
+               (when pending-key
+                 (dictionary-put nod pending-key (cdr pair))
+                 (setf pending-key nil))))))
+        (return)))))
 
 (defun dxf-read-drawing-from-stream (stream)
   "Parse an ASCII DXF STREAM into a fresh DRAWING."
   (let ((drawing (make-drawing))
         (sections (dxf-section-bodies (dxf-read-typed-pairs stream))))
-    (let ((header (assoc "HEADER" sections :test #'string-equal)))
-      (when header (dxf-load-header drawing (cdr header))))
-    (let ((tables (assoc "TABLES" sections :test #'string-equal)))
-      (when tables (dxf-load-tables drawing (cdr tables))))
-    (let ((entities (assoc "ENTITIES" sections :test #'string-equal)))
-      (when entities (dxf-load-entities drawing (cdr entities))))
+    (flet ((section (name) (cdr (assoc name sections :test #'string-equal))))
+      (let ((b (section "HEADER")))   (when b (dxf-load-header   drawing b)))
+      (let ((b (section "TABLES")))   (when b (dxf-load-tables   drawing b)))
+      (let ((b (section "BLOCKS")))   (when b (dxf-load-blocks   drawing b)))
+      (let ((b (section "ENTITIES"))) (when b (dxf-load-entities drawing b)))
+      (let ((b (section "OBJECTS")))  (when b (dxf-load-objects  drawing b))))
     drawing))
 
 ;;; --- Writer -----------------------------------------------------
@@ -325,18 +370,54 @@ with group code 0, but the drawing stores (5 . handle) first."
     (if zero (cons zero (remove zero data :test #'eq)) data)))
 
 (defun dxf-write-entities (stream drawing)
+  "Emit the ENTITIES section: model-space entities only (those with a
+NIL block owner). Block-owned entities are emitted inside BLOCKS."
   (dxf-write-section
    stream "ENTITIES"
    (lambda ()
      (map-entities (lambda (entity)
-                     (dxf-write-object
-                      stream (dxf-ordered-entity-data (entity-handle-data entity))))
+                     (unless (entity-handle-block entity)
+                       (dxf-write-object
+                        stream (dxf-ordered-entity-data (entity-handle-data entity)))))
                    drawing))))
+
+(defun dxf-write-blocks (stream drawing)
+  "Emit the BLOCKS section: each block definition's header, then its
+owned entities, then ENDBLK."
+  (dxf-write-section
+   stream "BLOCKS"
+   (lambda ()
+     (map-blocks
+      (lambda (name header)
+        (dxf-write-object stream (dxf-ordered-entity-data header))
+        (dolist (entity (block-entities drawing name))
+          (dxf-write-object
+           stream (dxf-ordered-entity-data (entity-handle-data entity))))
+        (format stream "0~%ENDBLK~%"))
+      drawing))))
+
+(defun dxf-write-objects (stream drawing)
+  "Emit the OBJECTS section when the named-object dictionary is
+non-empty: a single DICTIONARY carrying the (3 key)(350 handle) entries
+whose value is a handle string."
+  (let ((nod (drawing-named-object-dictionary drawing)))
+    (when (plusp (hash-table-count (dictionary-entries nod)))
+      (dxf-write-section
+       stream "OBJECTS"
+       (lambda ()
+         (format stream "0~%DICTIONARY~%")
+         (map-dictionary
+          (lambda (key value)
+            (when (stringp value)
+              (format stream "3~%~A~%350~%~A~%" key value)))
+          nod))))))
 
 (defun dxf-write-drawing-to-stream (drawing stream)
   (dxf-write-header stream drawing)
   (dxf-write-tables stream drawing)
+  (dxf-write-blocks stream drawing)
   (dxf-write-entities stream drawing)
+  (dxf-write-objects stream drawing)
   (format stream "0~%EOF~%")
   drawing)
 

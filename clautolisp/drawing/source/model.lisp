@@ -131,7 +131,15 @@ later phase may overlay them rather than store them here.)")
             :accessor drawing-classes
             :documentation "DXF/DWG CLASSES-section metadata, carried
 opaquely for round-trip fidelity. A list of class descriptors, or
-NIL."))
+NIL.")
+   (blocks :initform (make-hash-table :test #'equalp)
+           :accessor drawing-blocks
+           :documentation "Hash-table mapping a block name
+(case-insensitive string) to its BLOCK-definition header group-code
+list (the DXF (0 . \"BLOCK\") (2 . name) (10 base) … pairs). The
+entities a block owns live in the ENTITIES table with their
+ENTITY-HANDLE-BLOCK slot set to the block name; model-space entities
+have a NIL block slot."))
   (:documentation "A first-class CAD drawing database as a pure
 Common-Lisp value. Holds entities, symbol tables, the named-object
 dictionary, header variables, the handle allocator, the class table,
