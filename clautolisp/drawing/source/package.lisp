@@ -64,4 +64,72 @@ from the mock-host package before the Phase-17a extraction.")
    #:sysvar-cell-kind
    #:sysvar-cell-value
    #:sysvar-cell-read-only-p
-   #:sysvar-cell-host-derived-p))
+   #:sysvar-cell-host-derived-p
+   ;; Carrier predicates.
+   #:entity-handle-p
+   #:symbol-table-record-p
+   #:dictionary-p
+   #:sysvar-cell-p
+   ;; Conditions (Phase 17b).
+   #:drawing-error
+   #:drawing-read-error
+   #:drawing-write-error
+   #:drawing-format-error
+   #:drawing-error-drawing
+   #:drawing-error-handle
+   #:drawing-error-format-control
+   #:drawing-error-format-arguments
+   #:drawing-error-source
+   #:drawing-error-source-format
+   #:drawing-error-cause
+   #:drawing-error-destination
+   #:drawing-error-target-format
+   #:drawing-error-bad-format
+   #:drawing-error-location
+   ;; Construction.
+   #:copy-drawing
+   ;; Handle normalisation.
+   #:handle->integer
+   #:handle->string
+   ;; Persistence.
+   #:register-drawing-codec
+   #:find-drawing-codec
+   #:probe-drawing-format
+   #:read-drawing
+   #:write-drawing
+   #:*drawing-codecs*
+   ;; Entity introspection.
+   #:find-entity
+   #:map-entities
+   #:do-entities
+   #:drawing-entity-count
+   #:entity-dxf
+   #:entity-kind
+   #:entity-handle-string
+   #:entity-handle-integer
+   ;; Symbol-table introspection.
+   #:drawing-table
+   #:map-table-records
+   #:find-table-record
+   #:table-record-dxf
+   ;; Dictionary introspection / mutation.
+   #:drawing-dictionary
+   #:dictionary-get
+   #:map-dictionary
+   #:dictionary-put
+   #:dictionary-remove
+   ;; Header-variable introspection.
+   #:drawing-variable
+   #:drawing-variable-cell
+   #:map-variables
+   ;; Mutation.
+   #:allocate-handle
+   #:add-entity
+   #:modify-entity
+   #:entity-deleted-status
+   #:set-entity-deleted-status
+   #:togglef
+   #:set-drawing-variable
+   #:ensure-drawing-variable
+   #:add-table-record
+   #:remove-table-record))
