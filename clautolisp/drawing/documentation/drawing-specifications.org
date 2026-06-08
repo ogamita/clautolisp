@@ -4,13 +4,21 @@
 
 * Status
 
-*DRAFT — for review.* Phase 17a (the ~drawing~ value object) has
-landed and is exercised through the MockHost suite. This document
-specifies the *public Common-Lisp API* of Phase 17b — the functions
-tools and host adapters call to construct, persist, introspect and
-mutate a drawing. The functions below are *not yet implemented*; this
-is the contract to agree on before writing them. Sections flagged
-[REVIEW] are open decisions.
+*IMPLEMENTED (Phase 17b).* Phase 17a (the ~drawing~ value object) and
+this CL API have both landed. The API described below is implemented
+in ~clautolisp/drawing/source/{api,persistence,conditions}.lisp~ and
+covered by ~clautolisp/drawing/tests~ (independent of AutoLISP and
+MockHost). All the [REVIEW-1..7] decisions recorded inline have been
+applied. The codecs behind ~read-drawing~ / ~write-drawing~ are not
+yet present — DXF arrives in 17c, DWG in 17e; until then those two
+functions signal ~drawing-format-error~ for any real file format, and
+the dispatch is exercised through a stub codec in the tests.
+
+Still to do (a separate, focused change): wire MockHost's
+entity / table / sysvar surface to *delegate* to this API (the
+"Relationship to the host" section), which also relocates the
+~(-1 . ename)~ injection from stored data into the host boundary per
+[REVIEW-1].
 
 See also:
 - ~clautolisp/documentation/implementation-roadmap.org~, Phase 17.
@@ -46,7 +54,7 @@ A ~drawing~ is a CLOS object with these accessors (all exported):
 | Accessor                          | Contents                                             |
 |-----------------------------------+------------------------------------------------------|
 | ~drawing-name~                    | drawing name (the DWGNAME the host reports)          |
-| ~drawing-path~                    | source/target pathname, or NIL                       |
+| ~drawing-path~                    | source/target absolute pathname, or NIL              |
 | ~drawing-format~                  | ~:dxf-ascii~ / ~:dxf-binary~ / ~:dwg~ / ~:native~ / NIL |
 | ~drawing-version~                 | format version keyword (e.g. ~:ac1027~) or NIL       |
 | ~drawing-codepage~                | DWGCODEPAGE string or NIL                            |
@@ -90,6 +98,8 @@ data and into the MockHost boundary. *Decision needed:* adopt the pure
 form (cleaner, but the adapter does more), or let the drawing keep the
 ~-1~/wrapper pairs (less work now, leakier). Recommendation: pure form.
 
+DECISION: adopt the pureform.
+
 * API — construction
 
 #+begin_src lisp
@@ -101,6 +111,8 @@ form (cleaner, but the adapter does more), or let the drawing keep the
 - ~copy-drawing~ — deep copy of entities/tables/dict/header (for
   tools that mutate a scratch copy). [REVIEW-2: needed in 17b, or
   defer?]
+
+REVIEW-2 DECISION: needed in 17b
 
 * API — persistence
 
@@ -114,7 +126,7 @@ form (cleaner, but the adapter does more), or let the drawing keep the
   from extension then content; ~:format~ overrides. Returns a fresh
   drawing with ~drawing-path~/~-format~/~-version~/~-codepage~ set, and
   ~drawing-handle-seed~ taken from the file's HANDSEED. Signals
-  ~drawing-read-error~ (a subtype of ~drawing-error~) on unknown format
+  ~drawing-read-error~ (a condition subclass of ~drawing-error~) on unknown format
   or parse failure.
 - ~write-drawing~ — serialises ~drawing~ to ~destination~. ~:format~
   defaults to ~drawing-format~ then the destination extension;
@@ -160,6 +172,13 @@ DXF, 17e adds DWG. The API surface does not change when a codec lands.
   are matched exactly. [REVIEW-3: confirm handle case rule — DXF
   handles are uppercase hex; do we fold?]
 
+REVIEW-3 DECISION: hexadecimal is only a representation for
+integers. So unless there are other syntactic elements, handles are
+integers. We can pass them as 51254306789, #xbeefea7e5, or "BEEFEA7ER",
+case insensitive. For a low-level API like this I'd favor integer, but
+we can add methods taking strings and parsing them as hexadecimal numbers.
+Note: the use of strings in autolisp is due to their lack of bignums.
+
 * API — mutation
 
 #+begin_src lisp
@@ -173,6 +192,16 @@ DXF, 17e adds DWG. The API surface does not change when a codec lands.
 (dictionary-put      dictionary key value)    ⇒ value
 (dictionary-remove   dictionary key)          ⇒ boolean
 #+end_src
+
+DECISION: I'd rather keep integers for handles. allocate-handle just
+returns (prog1 handle-seed (incf handle-seed)).  Conversion to and
+from strings will be done at the CL <-> autolisp interface.  Of
+course, we need to define where this interface border lies. For
+example, if if it goes thru DXF, and the record 5 contains a string or
+an integer. It looks like it contains a string, so converting the
+integer handle to hexadecimal strings is made by add-entity when it
+injects ~(5 . hex-al-handle)~.  CL functions that take a handle can
+accept both types thru methods or type (or integer string).
 
 - ~allocate-handle~ — returns ~(format nil "~X" handle-seed)~ and bumps
   the seed. The sole handle source; loaders set the seed first.
@@ -193,6 +222,14 @@ DXF, 17e adds DWG. The API surface does not change when a codec lands.
   value; NIL if the name is unknown (does *not* create cells — that is
   ~ensure-drawing-variable~, below, if we want it [REVIEW-5]).
 
+REVIEW-4 DECISION: rename ~delete-entity~ to
+~(set-entity-deleted-status drawing handle deletedp)~
+and ~(entity-deleted-status drawing handle)~ ~->~ ~deletedp~
+(we can also use DEFSETF to be able to write:
+~(setf (entity-deleted-status drawing handle) deletedp)~
+and define a TOGGLEF with DEFINE-MODIFY-MACRO
+~(togglef (entity-deleted-status drawing handle))~
+
 * Conditions
 
 #+begin_src lisp
@@ -208,6 +245,10 @@ adapter translates a ~drawing-error~ into the appropriate AutoLISP
 runtime error (e.g. when a ~(command "_.OPEN" …)~ fails) at the
 boundary. [REVIEW-6: confirm this split.]
 
+REVIEW-6 DECISION: split confirmed.  Also: be sure to have slots in
+those conditions to find easily what drawing, what entity, etc are
+concerned by the error.
+
 * Relationship to the host / AutoLISP surfaces
 
 - ~host-entget~ ⇒ ~find-entity~ + adapter wrapping (adds ~-1~ ename,
@@ -215,9 +256,9 @@ boundary. [REVIEW-6: confirm this split.]
 - ~host-entmake~ ⇒ ~add-entity~ + adapter event signalling.
 - ~host-entmod~ ⇒ ~modify-entity~ + events.
 - ~host-entdel~ ⇒ ~delete-entity~ (the toggle lives in the adapter).
-- ~host-tblsearch~/~-tblnext~/~-tblobjname~ ⇒ ~find-table-record~ /
+- ~host-tblsearch~ / ~-tblnext~ / ~-tblobjname~ ⇒ ~find-table-record~ /
   ~map-table-records~ (the ~tblnext~ cursor stays host state).
-- ~host-getvar~/~-setvar~ ⇒ ~drawing-variable~ / ~set-drawing-variable~
+- ~host-getvar~ / ~-setvar~ ⇒ ~drawing-variable~ / ~set-drawing-variable~
   for *drawing-resident* sysvars; session/registry sysvars are a host
   overlay [REVIEW-7].
 - ~read-drawing~ / ~write-drawing~ are what the Phase-17f NEW/OPEN/SAVE
@@ -232,16 +273,41 @@ with no AutoLISP and no MockHost:
   drawing as SCHMS / SCHMS+ / SCHME / SCHMIEU / SCHSME+ and version.
 - ~extract-schms-data FILE -o OUT.json~ — read, walk, emit JSON.
 
+DECISION: Modulo the fact that to do that, a sizable part of the SCHMS
+application code (written in autolisp) would be needed, so we'd hook
+clautolisp to run it, or have to re-implement it in Common Lisp (which
+would be easier probably). But some more restricted version of these
+tools could do for the validation.
+
+
+
 * Open questions for review (collected)
 
 - [REVIEW-1] Pure-CL DXF datum domain — drop the stored ~(-1 . ename)~
   and wrapper types, wrap at the host boundary? *(recommend: yes)*
+  => yes
+
 - [REVIEW-2] Is ~copy-drawing~ in 17b scope or deferred?
+  => in scope.
+
 - [REVIEW-3] Handle case-folding rule.
+  => favor integer handles. conversion to/from strings is CL-AL boundary
+     (for lack of bignums in AL). (but the boundary may be close).
+
 - [REVIEW-4] ~delete-entity~ explicit boolean vs toggle.
+  => change it to ~set-entity-deleted-status~ / ~entity-deleted-status~
+     and add CL parafernalia (defsetf, define-modify-macro) to make it
+     even nicer to use.
+
 - [REVIEW-5] Provide ~ensure-drawing-variable~ (create cells) or keep
   cell creation a loader-internal concern?
+  => Provide ~ensure-drawing-variable~.
+
 - [REVIEW-6] CL ~drawing-error~ hierarchy distinct from AutoLISP
   runtime errors, translated at the adapter.
+  => definitely, with exhaustive slots.
+
 - [REVIEW-7] Where session/registry (non-drawing) sysvars live once
   header variables move into the drawing.
+  => there are host system variables. So searching for them is at
+     least a 2-level search: drawing orelse host.

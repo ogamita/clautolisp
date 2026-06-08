@@ -102,13 +102,14 @@
   :serial t
   :components
   ((:file "drawing/source/package")
-   (:file "drawing/source/model"))
+   (:file "drawing/source/model")
+   (:file "drawing/source/conditions")
+   (:file "drawing/source/api")
+   (:file "drawing/source/persistence"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/drawing/tests")))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
-                         ;; Phase 17a: the drawing value object is
-                         ;; exercised through the mock-host suite until
-                         ;; a dedicated clautolisp/drawing/tests lands
-                         ;; with the Phase-17b CL API.
                          :success))
 
 (asdf:defsystem "clautolisp/autolisp-mock-host"
@@ -286,6 +287,23 @@
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (uiop:symbol-call :clautolisp.autolisp-host.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/drawing/tests"
+  :description "Tests for the clautolisp drawing CL API (Phase 17b)."
+  :author "Codex"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/drawing" "fiveam")
+  :serial t
+  :components
+  ((:file "drawing/tests/package")
+   (:file "drawing/tests/test-harness")
+   (:file "drawing/tests/api-tests")
+   (:file "drawing/tests/persistence-tests")
+   (:file "drawing/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.drawing.tests
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-mock-host/tests"
@@ -642,6 +660,7 @@
   :depends-on ("clautolisp/autolisp-reader/tests"
                "clautolisp/autolisp-source-map/tests"
                "clautolisp/autolisp-runtime/tests"
+               "clautolisp/drawing/tests"
                "clautolisp/autolisp-host/tests"
                "clautolisp/autolisp-mock-host/tests"
                "clautolisp/autolisp-dcl/tests"
@@ -659,6 +678,8 @@
                            (uiop:symbol-call :clautolisp.autolisp-reader.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-runtime.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.drawing.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-host.tests
                                              :run-all-tests)
