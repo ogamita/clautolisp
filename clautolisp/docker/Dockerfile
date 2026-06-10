@@ -24,7 +24,8 @@ RUN apt-get update \
 WORKDIR /opt
 
 RUN git clone --depth 1 --branch "v${CCL_VERSION}" https://github.com/Clozure/ccl.git ccl \
- && curl -fsSL -o /tmp/linuxx86.tar.gz \
+ && curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 \
+      -o /tmp/linuxx86.tar.gz \
       "https://github.com/Clozure/ccl/releases/download/v${CCL_VERSION}/linuxx86.tar.gz" \
  && tar -xzf /tmp/linuxx86.tar.gz -C /opt/ccl \
  && printf '%s\n' '#!/bin/sh' 'exec /opt/ccl/lx86cl64 "$@"' > /usr/local/bin/ccl \
@@ -33,7 +34,8 @@ RUN git clone --depth 1 --branch "v${CCL_VERSION}" https://github.com/Clozure/cc
 
 RUN mkdir -p /root/.cache /root/quicklisp /tmp/quicklisp
 
-RUN curl -fsSL -o /tmp/quicklisp.lisp "${QUICKLISP_URL}" \
+RUN curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 \
+      -o /tmp/quicklisp.lisp "${QUICKLISP_URL}" \
  && sbcl --noinform --no-userinit --non-interactive \
       --load /tmp/quicklisp.lisp \
       --eval '(quicklisp-quickstart:install :path #P"/root/quicklisp/")' \

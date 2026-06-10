@@ -1,0 +1,199 @@
+-*- coding:utf-8 -*-
+
+cad-load-encoding-macos — BricsCAD native (load) ignores the -e/load encoding on macOS
+======================================================================================
+
+Reported from: SCHMS+ test harness (sncf-reseau/src/schms) run via
+`alfe --bricscad --mode batch -e Windows-1252` on macOS (BricsCAD V26).
+The full suite runs; 13 of 177 fail, ALL on accented strings only.
+
+Summary
+-------
+
+`alfe ... -e Windows-1252` correctly decodes the files alfe itself
+loads (the `-l`/`--load` actions: test framework, test-unitaire.lsp).
+But files pulled in by an *in-engine* `(load "...")` (the SCHMS+
+modules under src-vlx, loaded by the harness via `tu:load` =
+native AutoLISP `load`) are decoded with BricsCAD's macOS default
+codepage (Mac Roman), NOT Windows-1252. The cp1252 source bytes are
+therefore mis-decoded for accented characters.
+
+Symptom
+-------
+
+Description strings built by the modules come out with mangled
+accents, mismatching the (correct) literals in the test files:
+
+    expected="entière"          actual="entiËre"
+    expected="réelle"           actual="rÈelle"
+    expected="égale à 42"       actual="Ègale ‡ 42"
+    expected="«salut»"          actual="´salutª"
+    expected="correspondant à"  actual="correspondant ‡"
+
+Pattern is consistent with cp1252 bytes interpreted as Mac Roman
+(è 0xE8 -> Ë, à 0xE0 -> ‡, « 0xAB -> ´, » 0xBB -> ª).
+
+Not reproduced on:
+- clautolisp backend (`-e Windows-1252` is honored for every load) — 177 OK.
+- (expected) Windows BricsCAD, whose default codepage is cp1252.
+
+Expected
+--------
+
+The load encoding requested via `-e` (or the dialect/host default)
+should apply to in-engine `(load …)` too, so cp1252 sources decode
+identically regardless of which load path pulls them in — matching
+clautolisp's behavior.
+
+Possible approaches
+-------------------
+
+- PREFERRED: map the requested `-e` encoding to BricsCAD's SYSCODEPAGE
+  sysvar at startup -- e.g. `-e Windows-1252` -> `(setvar "SYSCODEPAGE"
+  "CP-1252")` -- set BEFORE any module is loaded. BricsCAD is expected
+  to follow SYSCODEPAGE for native `load` decoding.
+- Have alfe set BricsCAD's code page / locale at launch so native
+  `load` reads cp1252 on macOS.
+- Provide an encoding-aware load shim on the BricsCAD backend (the
+  `load` shadow already exists for `*autolisp-load-pathname*`) that
+  decodes per the active `-e` encoding.
+- At minimum, document that native `(load)` on macOS BricsCAD uses
+  the OS default codepage, not `-e`.
+
+Tested so far (inconclusive)
+----------------------------
+
+    make test-unit-bricscad \
+      ALFE_BRICSCAD_OPTIONS="-e WINDOWS-1252 -x '(setvar \"SYSCODEPAGE\" \"CP-1252\")'"
+
+showed no change. Caveats to rule out before concluding the sysvar has
+no effect: (1) the var name is `SYSCODEPAGE` (no space); (2) the setvar
+must run BEFORE the modules are loaded (in the harness the -x runs first,
+so timing is OK there); (3) SYSCODEPAGE may only be honored at session
+start, not after BricsCAD is already running.
+
+Notes
+-----
+
+Harness/CI are unaffected (CI runs clautolisp, 177 OK). This only
+hits local macOS BricsCAD runs of `make test-unit-bricscad`. Filed
+per the BricsCAD/AutoCAD-vs-clautolisp parity rule. A harness-side
+workaround would require a cp1252-aware loader for the modules, since
+native `load` takes no encoding argument.
+
+
+Note: I tried:
+
+   make test-unit-bricscad ALFE_BRICSCAD_OPTIONS="-e WINDOWS-1252 -x '(setvar \"SYSCODEPAGE\" \"CP-1252\")'"
+
+but to no visible effect.
+
+
+Using this windows-1252 test file:
+
+iconv -f windows-1252 -t utf-8 < test-1252.lsp
+------------------------------------------------------------------------
+;; -*- mode:autocad-lisp; coding:windows-1252-dos -*-
+
+(defun test-string ()
+  "À Noël, l’âgé Ægyr brûla du maïs rôti près d’un cañon où Fœdor jugea déçu que l’île exiguë, bâtie sur du würmien, était trop naïve pour Zoë et Cécÿle.")
+------------------------------------------------------------------------
+
+this alfe command should print the right test string, and the comparison should return true.
+
+alfe --debug --keep-workdir \
+     --bricscad --mode batch \
+     -E UTF-8 -e WINDOWS-1252 \
+     -x '(setvar "SYSCODEPAGE" "CP1252")' \
+     -x '(load "test-1252.lsp")' \
+     -x '(print (test-string))' \
+     -x '(print (= (test-string) "À Noël, l’âgé Ægyr brûla du maïs rôti près d’un cañon où Fœdor jugea déçu que l’île exiguë, bâtie sur du würmien, était trop naïve pour Zoë et Cécÿle."))'
+
+alfe may have to convert strings received from the remote cad in one
+encoding to the terminal encoding and vice-versa.
+
+For example (print (test-string)) will send a string that is originally in windows-1252 from bricscad to alfe.
+alfe needs to print it on the terminal which is utf-8, so it must convert that string from windows-1252 to utf-8.
+
+
+
+alfe[debug]: cli: version 1.1.16
+alfe[debug]: cli: backend :BRICSCAD, dialect :BRICSCAD-V26, host :MOCK, mode :BATCH
+alfe[debug]: cli: load-encoding "WINDOWS-1252", io-encoding "UTF-8", no-color-p NIL
+alfe[debug]: cli: actions = 4
+alfe[debug]: resolve-backend: selected :BRICSCAD (source: explicit flag)
+alfe[verbose]: cli: load-encoding "WINDOWS-1252", io-encoding "UTF-8"
+alfe[verbose]: backend BRICSCAD: starting engine (mode AUTO)
+alfe[debug]: backend BRICSCAD: workdir = /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-10482-25f79e/
+alfe[debug]: backend BRICSCAD: ready-timeout = 30 s; wait-for-ready = T
+alfe[debug]: backend BRICSCAD: staged bootstrap -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-10482-25f79e/runtime/autolisp-bootstrap.lsp
+alfe[debug]: backend BRICSCAD: staged runtime -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-10482-25f79e/runtime/autolisp-remote-io.lsp
+alfe[debug]: backend BRICSCAD: emitted run-common.lsp -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-10482-25f79e/run-common.lsp
+alfe[debug]: backend BRICSCAD: protocol status file -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-10482-25f79e/protocol/status.txt
+alfe[verbose]: backend BRICSCAD: effective mode = BATCH
+alfe[debug]: backend BRICSCAD: wrote run.scr (quit-on-finish-p T) -> /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-10482-25f79e/run.scr
+alfe[verbose]: backend BRICSCAD: launching: /Applications/BricsCAD V26.app/Contents/MacOS/bricscad /Users/pjb/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-mm.dwt -B /var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-10482-25f79e/run.scr
+alfe[debug]: backend BRICSCAD: spawned, process-info-pid = 10483
+alfe[verbose]: backend BRICSCAD: waiting for READY (timeout 30 s)
+alfe[debug]: protocol: wait-for-status-prefix "READY" (timeout 30 s)
+alfe[debug]: protocol: status now "BOOTING" (elapsed 0.00 s)
+alfe[debug]: [CAD] run-common.lsp evaluated; about to bootstrap runtime
+alfe[debug]: [CAD] loading bootstrap: /private/var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-10482-25f79e/runtime/autolisp-bootstrap.lsp
+alfe[debug]: [CAD] bootstrap LOAD succeeded
+alfe[debug]: [CAD] loading runtime: /private/var/folders/pj/10wbyjcd40qdfwd9hqjz2qw40000gn/T/alfe-bricscad-10482-25f79e/runtime/autolisp-remote-io.lsp
+alfe[debug]: [CAD] runtime LOAD succeeded
+alfe[debug]: [CAD] host supports &rest; installing variadic shadows + no-op normalize
+alfe[debug]: [CAD] I/O bridged onto protocol/stdout.txt and protocol/stderr.txt
+alfe[debug]: [CAD] entering autolisp-protocol-server-loop
+alfe[debug]: protocol: status now "READY 0" (elapsed 8.35 s)
+alfe[debug]: protocol: matched "READY" after 8.35 s
+alfe[verbose]: backend BRICSCAD: READY after 8.35 s (status "READY 0")
+alfe[verbose]: cli: resolved plan with 6 actions
+alfe[verbose]: cli: plan[1] = load "/Users/pjb/.autolisp"
+alfe[verbose]: cli: plan[2] = eval "(setvar \"SYSCODEPAGE\" \"CP1252\")"
+alfe[verbose]: cli: plan[3] = eval "(load \"test-1252.lsp\")"
+alfe[verbose]: cli: plan[4] = eval "(print (test-string))"
+alfe[verbose]: cli: plan[5] = eval "(print (= (test-string) \"À Noël, l’âgé Ægyr brûla du maïs rôti près d’un cañon où Fœdor jugea déçu que l’île exiguë, bâtie sur du würmien, était trop naïve pour Zoë et Cécÿle.\"))"
+alfe[verbose]: cli: plan[6] = quit
+alfe[verbose]: cad-common: driving 6 actions (request-timeout 30 s)
+alfe[debug]: cad-common: starting from request-counter 0
+alfe[debug]: cad-common: action LOAD payload (:PATH "/Users/pjb/.autolisp"
+                                              :ENCODING "WINDOWS-1252")
+alfe[debug]: protocol: wait-for-status-prefix "DONE 1" (timeout 30 s)
+alfe[debug]: protocol: status now "READY 0" (elapsed 0.00 s)
+alfe[debug]: protocol: status now "DONE 1 OK" (elapsed 0.06 s)
+alfe[debug]: protocol: matched "DONE 1" after 0.06 s
+alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+
+alfe[debug]: cad-common: action EVAL payload "(setvar \"SYSCODEPAGE\" \"CP1252\")"
+alfe[debug]: protocol: wait-for-status-prefix "DONE 2" (timeout 30 s)
+alfe[debug]: protocol: status now "DONE 1 OK" (elapsed 0.00 s)
+alfe[debug]: protocol: status now "DONE 2 OK" (elapsed 0.06 s)
+alfe[debug]: protocol: matched "DONE 2" after 0.06 s
+
+
+alfe[debug]: cad-common: action EVAL payload "(load \"test-1252.lsp\")"
+alfe[debug]: protocol: wait-for-status-prefix "DONE 3" (timeout 30 s)
+alfe[debug]: protocol: status now "DONE 2 OK" (elapsed 0.00 s)
+alfe[debug]: protocol: status now "DONE 3 OK" (elapsed 0.06 s)
+alfe[debug]: protocol: matched "DONE 3" after 0.06 s
+alfe[debug]: cad-common: action EVAL payload "(print (test-string))"
+alfe[debug]: protocol: wait-for-status-prefix "DONE 4" (timeout 30 s)
+alfe[debug]: protocol: status now "DONE 3 OK" (elapsed 0.00 s)
+alfe[debug]: protocol: status now "DONE 4 OK" (elapsed 0.06 s)
+alfe[debug]: protocol: matched "DONE 4" after 0.06 s
+
+"¿ NoÎl, lí‚gÈ ∆gyr br˚la du maÔs rÙti prËs díun caÒon o˘ Fúdor jugea dÈÁu que líÓle exiguÎ, b‚tie sur du w¸rmien, Ètait trop naÔve pour ZoÎ et CÈcˇle."
+Alfe[debug]: cad-common: action EVAL payload "(print (= (test-string) \"À Noël, l’âgé Ægyr brûla du maïs rôti près d’un cañon où Fœdor jugea déçu que l’île exiguë, bâtie sur du würmien, était trop naïve pour Zoë et Cécÿle.\"))"
+alfe[debug]: protocol: wait-for-status-prefix "DONE 5" (timeout 30 s)
+alfe[debug]: protocol: status now "DONE 4 OK" (elapsed 0.00 s)
+alfe[debug]: protocol: status now "DONE 5 OK" (elapsed 0.06 s)
+alfe[debug]: protocol: matched "DONE 5" after 0.06 s
+Ôve pour ZoÎ et CÈcˇle."
+
+nil
+alfe[debug]: cad-common: action QUIT payload NIL
+alfe[debug]: [CAD] server-loop returned normally
+nil
+
+alfe[verbose]: cli: plan finished status=:SUCCESS exit=0 elapsed=8.74s

@@ -1,0 +1,30 @@
+sequenceDiagram
+    participant terminal
+    participant aldo as aldo<br/>debugger thread
+    participant main as autolisp<br/>main thread
+
+    terminal->>main: Interruption (C-c)
+    main->>main: invoke-debugger-at-next-poll-point
+    main->>aldo: invoke-debugger
+    activate main
+
+    loop n times
+        aldo->>terminal: print menu
+        terminal->>aldo: input debugging command
+        aldo->>aldo: execute command
+    end
+
+    aldo->>main: step in
+    deactivate main
+
+    main->>aldo: stepped in
+    activate main
+
+    loop n times
+        aldo->>terminal: print menu
+        terminal->>aldo: input debugging command
+        aldo->>aldo: execute command
+    end
+
+    aldo->>main: continue
+    deactivate main
