@@ -33,8 +33,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
-      # The documentation build needs TeX + makeinfo; install lazily.
-      - run: sudo apt-get update && sudo apt-get install -y texlive texlive-latex-extra texinfo
+      # Doc build needs Emacs (the autolisp-spec paged split), TeX (PDFs)
+      # and makeinfo (Info).
+      - run: sudo apt-get update && sudo apt-get install -y emacs-nox texlive texlive-latex-extra texinfo
+      # Cache the slow per-section split (3026 sections -> html/info/pages);
+      # invalidated only when the spec org or the split scripts change.
+      - name: Cache autolisp-spec paged build
+        uses: actions/cache@v4
+        with:
+          path: autolisp-spec/build
+          key: spec-paged-${{ hashFiles('autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org', 'autolisp-spec/scripts/build-paged-*.el') }}
       - run: make release-documentation
       - uses: actions/upload-artifact@v4
         with: { name: documentation, path: dist/* }
