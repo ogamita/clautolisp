@@ -172,17 +172,30 @@ build:alfe:sbcl:
 # (macOS, Windows, arm64) and are tracked in the issue — the GitHub
 # Actions release workflow scaffolds the full 6-target matrix.
 
-release:linux:x86-64:
+# --- Release artefacts (issues/open/release-artefacts.issue) -----------
+#
+# Per-target jobs build + package on a version tag (v* / clautolisp-v*),
+# or manually. The Linux x86-64 lane runs on GitLab's shared runners via
+# our CI image. The arm64 / macOS lanes are routed by `tags:` to a
+# SELF-HOSTED runner on an Apple-Silicon workstation
+# (see documentation/self-hosted-runners.md):
+#   tags [linux,arm64]  -> docker executor (the host runs linux/arm64)
+#   tags [macos,arm64]  -> shell  executor (native macOS build)
+# arm64 targets are SBCL-only: Clozure CL has no arm64 build.
+# Windows targets need a Windows runner (paid SaaS, or a Win11-ARM VM
+# with its own runner) — not provided here yet.
+
+.release-common:
   stage: release
-  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive   # libredwg (+ jsmn) needed by build-libraries
   rules:
     - if: '$CI_COMMIT_TAG =~ /^(v|clautolisp-v)/'
       when: on_success
     - when: manual
       allow_failure: true
   # Cache the slow autolisp-spec paged split (3026 sections -> html/info/
-  # pages); keyed on the spec org + the split driver so it is rebuilt
-  # only when they change.
+  # pages); keyed on the spec org + the split driver.
   cache:
     key:
       files:
@@ -190,6 +203,14 @@ release:linux:x86-64:
         - autolisp-spec/scripts/build-paged-spec.el
     paths:
       - autolisp-spec/build/
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 30 days
+
+release:linux:x86-64:
+  extends: .release-common
+  image: $CLAUTOLISP_CI_LATEST
   before_script:
     - command -v cmake >/dev/null || (apt-get update && apt-get install -y cmake)
   script:
@@ -202,6 +223,40 @@ release:linux:x86-64:
     - make release-documentation || echo "documentation build skipped (Emacs/TeX toolchain?)"
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-linux-x86-64"
-    paths:
-      - dist/
+    paths: [dist/]
+    expire_in: 30 days
+
+release:linux:arm64:
+  extends: .release-common
+  tags: [linux, arm64]            # self-hosted docker executor (Apple-Silicon host runs linux/arm64)
+  image: buildpack-deps:bookworm  # multi-arch (pulled as arm64); has git + a C toolchain
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
+    - curl -fsSL -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
+    - sbcl --non-interactive --load /tmp/ql.lisp --eval '(quicklisp-quickstart:install)'
+  script:
+    - make build-libraries          # vendored libdwg + shim (native arm64)
+    - make build-programs           # SBCL arm64 images (no CCL on arm64)
+    - make release-programs
+    - make release-libraries
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-linux-arm64"
+    paths: [dist/]
+    expire_in: 30 days
+
+release:darwin:arm64:
+  extends: .release-common
+  tags: [macos, arm64]            # self-hosted shell executor on the Apple-Silicon workstation
+  before_script:
+    # The workstation provides the toolchain (MacPorts: sbcl, cmake; cc
+    # via Xcode) and Quicklisp at ~/quicklisp/. SBCL-only on arm64.
+    - command -v sbcl cmake cc >/dev/null
+  script:
+    - make build-libraries          # vendored libdwg + shim (native arm64)
+    - make build-programs           # SBCL arm64 images
+    - make release-programs
+    - make release-libraries
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-darwin-arm64"
+    paths: [dist/]
     expire_in: 30 days
