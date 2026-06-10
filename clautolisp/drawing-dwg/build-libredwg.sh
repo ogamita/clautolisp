@@ -35,12 +35,17 @@ cmake -S "$lr" -B "$build" \
 cmake --build "$build" --target redwg \
       -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
-# Compile the shim, linked against libredwg (rpath -> build dir).
+# Compile the shim, linked against libredwg. Two rpaths so the SAME
+# binary works both in the dev tree (libredwg in $build) and when
+# installed adjacent to libredwg (release layout lib/clautolisp/<os>/<arch>/):
+#   - $build                : dev build dir (absolute)
+#   - @loader_path / $ORIGIN: the shim's own directory (relocatable)
 ext=dylib
-[ "$(uname)" = "Linux" ] && ext=so
+origin='@loader_path'
+if [ "$(uname)" = "Linux" ]; then ext=so; origin='$ORIGIN'; fi
 cc -shared -fPIC -O2 -D_DARWIN_C_SOURCE \
    -o "$here/source/clal_dwg.$ext" "$here/source/clal_dwg.c" \
    -I"$build/src" -I"$build" -I"$lr/include" -I"$lr/src" \
-   -L"$build" -lredwg -Wl,-rpath,"$build"
+   -L"$build" -lredwg -Wl,-rpath,"$build" -Wl,-rpath,"$origin"
 
 echo "built: $here/source/clal_dwg.$ext  (+ $build/libredwg.$ext)"
