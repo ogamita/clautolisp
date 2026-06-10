@@ -48,7 +48,19 @@ DEFAULT_LISP ?=
 # the top level should carry a `## ...` description so it appears in
 # `make help`.
 
-.PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS)
+.PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS) \
+        build-documentation build-programs build-libraries \
+        release release-sources release-documentation release-programs release-libraries
+
+# --- Release artefacts (see issues/open/release-artefacts.issue) -------
+#
+# VERSION is read from the single source of truth (the clautolisp
+# version stamp). Artefacts are written into $(DIST).
+VERSION := $(shell sed -n 's/.*\*version\* *"\([0-9.]*\)".*/\1/p' clautolisp/tools/clautolisp/source/version.lisp)
+DIST    ?= $(CURDIR)/dist
+# Downcased OS / arch for the per-target binary + native-lib layout.
+REL_OS   := $(shell uname | tr 'A-Z' 'a-z')
+REL_ARCH := $(shell uname -m | tr 'A-Z' 'a-z')
 
 help:  ## Show this message (list available targets and their purpose).
 	@awk 'BEGIN { \
@@ -107,6 +119,46 @@ test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpu
 	$(MAKE) -C clautolisp test
 	$(MAKE) -C autolisp-test test
 	$(MAKE) -C autolisp-front-end test
+
+# --- Build phases, split by artefact kind ------------------------------
+
+build-documentation:  ## Build all PDF/info documentation (same as `documentation`).
+	$(MAKE) documentation
+
+build-programs:  ## Build the host program binaries (clautolisp, alfe, …) for this platform.
+	$(MAKE) build-sbcl
+
+build-libraries:  ## Build the releasable libraries (the drawing/drawing-dwg native libdwg).
+	$(MAKE) -C clautolisp build-libredwg
+
+# --- Release packaging -------------------------------------------------
+#
+# release-sources is platform-independent and fully implemented here.
+# release-{documentation,programs,libraries} build their kind then stage
+# + archive it; the multi-target (6 platforms) combination is assembled
+# by CI from per-target artefacts (see the issue).
+
+release: release-sources release-documentation release-programs release-libraries  ## Produce every release artefact for this host.
+
+release-sources:  ## Produce the source tarball + zip (tracked files incl. submodules).
+	@mkdir -p "$(DIST)"
+	@prefix=clautolisp-$(VERSION); \
+	stage=$$(mktemp -d); dest="$$stage/$$prefix"; mkdir -p "$$dest"; \
+	git ls-files --recurse-submodules -z | tar -cf - --null -T - | tar -C "$$dest" -xf -; \
+	tar -C "$$stage" -cjf "$(DIST)/$$prefix-sources.tar.bz2" "$$prefix"; \
+	( cd "$$stage" && zip -qr "$(DIST)/$$prefix-sources.zip" "$$prefix" ); \
+	rm -rf "$$stage"; \
+	echo "wrote $(DIST)/$$prefix-sources.tar.bz2"; \
+	echo "wrote $(DIST)/$$prefix-sources.zip"
+
+release-documentation: build-documentation  ## Build docs and package the documentation artefact.
+	@echo "TODO(release-artefacts.issue): stage spec draft + alref -> $(DIST)/clautolisp-$(VERSION)-documentation.tar.bz2/.zip"
+
+release-programs: build-programs  ## Build programs and package this host's binaries artefact.
+	@echo "TODO(release-artefacts.issue): stage bin/ dispatch + libexec/$(REL_OS)/$(REL_ARCH) -> $(DIST)/clautolisp-$(VERSION)-binaries-$(REL_OS)-$(REL_ARCH).*"
+
+release-libraries: build-libraries  ## Build libraries and package the libraries artefact (lisp sources + libdwg).
+	@echo "TODO(release-artefacts.issue): stage asd sources + lib/$(REL_OS)/$(REL_ARCH)/libdwg + include/ -> $(DIST)/clautolisp-$(VERSION)-libraries.*"
 
 clean:: clean-pdf
 clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources).
