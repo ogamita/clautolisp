@@ -26,7 +26,14 @@ stages:
 build:clautolisp-ci-image:
   stage: build
   extends: .docker-job
+  # Transient network failures (e.g. the CCL download from GitHub) should
+  # not fail a whole pipeline run.
+  retry: 2
   rules:
+    # Never rebuild the image on a release tag: use the already-published
+    # :latest. (Otherwise a flaky image build blocks the release stage.)
+    - if: '$CI_COMMIT_TAG'
+      when: never
     - changes:
         - .gitlab-ci.yml
         - Makefile
@@ -232,7 +239,7 @@ release:linux:arm64:
   image: buildpack-deps:bookworm  # multi-arch (pulled as arm64); has git + a C toolchain
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
-    - curl -fsSL -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
+    - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
     - sbcl --non-interactive --load /tmp/ql.lisp --eval '(quicklisp-quickstart:install)'
   script:
     - make build-libraries          # vendored libdwg + shim (native arm64)

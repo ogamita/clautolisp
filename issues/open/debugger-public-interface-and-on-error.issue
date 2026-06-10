@@ -1,16 +1,15 @@
-debugger-public-interface-and-on-error — AutoLISP-facing debugger API + --on-error CLI option (+ aldb connection options)
-=========================================================================================================================
+* debugger-public-interface-and-on-error — AutoLISP-facing debugger API + --on-error CLI option (+ aldb connection options)
 
-See also:
-  clautolisp/documentation/clautolisp-debugger-spec.org (§10 *error*, §18 dumb UI, §20 emacs UI, §21 start-session)
-  clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phases 3, 5, 7)
-  clautolisp/documentation/clautolisp-debugger-design-notes.org (DN-9 abort-from-any-stop, DN-10 aldb RPC)
-  issues/open/clautolisp-debugger.issue (parent)
-  clautolisp/autolisp-cli/source/spec.lisp (*common-option-specs*; the shared CLI surface)
-  clautolisp/autolisp-builtins-core/source/api.lisp (builtin registry; *error*/vl-catch-all live here)
+See also: ::
 
-Context — what exists today
----------------------------
+- clautolisp/documentation/clautolisp-debugger-spec.org (§10 *error*, §18 dumb UI, §20 emacs UI, §21 start-session)
+- clautolisp/documentation/clautolisp-debugger-implementation-plan.org (Phases 3, 5, 7)
+- clautolisp/documentation/clautolisp-debugger-design-notes.org (DN-9 abort-from-any-stop, DN-10 aldb RPC)
+- issues/open/clautolisp-debugger.issue (parent)
+- clautolisp/autolisp-cli/source/spec.lisp (*common-option-specs*; the shared CLI surface)
+- clautolisp/autolisp-builtins-core/source/api.lisp (builtin registry; *error*/vl-catch-all live here)
+
+** Context — what exists today
 
 The debugger engine (Phases 0–3), inspector (4), and three UIs (5–7) are
 implemented and tested, BUT none of it is reachable yet from:
@@ -31,93 +30,559 @@ their own code. This issue specifies both, plus the options aldb needs.
 This is a SPECIFICATION issue. Implementation lands after, gated on the engine
 already merged on the `debugger` branch.
 
-----------------------------------------------------------------------
-Part A — AutoLISP-facing debugger API (new clal-* builtins)
-----------------------------------------------------------------------
+** Architecture
 
-These are the user-callable entry points, registered in autolisp-builtins-core
-(prefix `clal-` per the project naming convention). They are clautolisp
-EXTENSIONS, not Autodesk AutoLISP — document them as such and keep them inert
-(or graceful no-ops) when no debug session is possible.
+See clautolisp/documentation/design-note-threads-and-terminal-io.org
+for threads and *terminal-io* streams considerations.
 
-A.1  (clal-invoke-debugger [message])
-     Enter the debugger NOW at the current poll point, as if a breakpoint
-     had fired here (a programmatic break, the analog of CL INVOKE-DEBUGGER /
-     SLIME's `break`). MESSAGE (optional string) is shown as the stop reason.
-     - Requires an active session on this thread (started via the CLI
-       --on-error debug, or clal-debug-session below). If none is active,
-       behaviour follows *the current --on-error policy* (quit/ignore/print)
-       — i.e. it degrades to "signal an error" when there is no debugger to
-       enter, so a program shipped with clal-invoke-debugger left in it does
-       not hard-fail in production.
-     - Returns nil on resume (continue), or whatever the resume directive
-       yields (e.g. a continue-with-return value).
-     Implementation: it is a new stop-reason :user-break delivered through the
-     same *debug-hit-handler* path (poll.lisp). The instrumenter must ensure
-     the call site is a poll point so current-pp / the snapshot are accurate.
+We'll name aldo the clautolisp debugger.
+aldo - AutoLisp Debugging Orchestrator.
+aldb is the emacs user interface to this aldo debugger.
 
-A.2  (clal-break [test [message]])
-     Conditional programmatic break: enter the debugger only if TEST is
-     non-nil (TEST is an already-evaluated value, AutoLISP having no special
-     forms for users). Sugar over clal-invoke-debugger; returns TEST.
-     (Name chosen over a bare `break` to avoid colliding with any product
-     BREAK and to keep the clal- namespace.)
+The system is based on two threads:
+- the main thread, which runs and is being debugged,
+- the aldo debugger thread.
 
-A.3  (clal-debug-session)  /  (clal-end-debug-session)
+They execute alternatively one or the other thru a mutex.
+To be able to debug the code that runs in the main thread, it must
+have been instrumentalised.
+
+This means it has gone thru LOAD, COMPILE, COMPILE-FILE, or perhaps
+just READ/EVAL.  We'll have a global optimization level option to
+indicate whether these operation must prepare for debugging the
+processed code.
+eg. (clal-optimize '(debug)) vs. (clal-optimize '(size))
+
+Some operations (most operations?) are available from both threads.
+For example, setting a break-point.
+
+And while all the lisp operators work synchronuously, we'll also allow
+invoking the debugger upon interrupt (control-c) of the main thread.
+The SIGINT signal will only set a flag to indicate the next poll point
+that entry into the debugger is wanted.
+
+If a second SIGINT is received while this flag is set, then the user
+wants an immediate non-local exit, forgoing the debugger.  This means
+interrupting non-instrumented code.  (we don't want to enter the
+Common Lisp debugger). To do it cleanly, we'd have to put "poll
+points" at the entry of all autolisp functions (non instrumented ones
+too), so a second flag can be set and upon entry of the next autolisp
+function, we can perform a non-local exit, or just signal a CL
+continuable error, that can be handled by a handler-bind near the
+toplevel that will be able to report the backtrace and propose the
+user to inspect variables, continue execution, or restart (our
+non-local exit) to the toplevel REPL.
+
+See the sequence diagram:
+clautolisp/documentation/aldo-debugger-interaction.png
+(source clautolisp/documentation/aldo-debugger-interaction.puml)
+
+
+CONCLUSION: the aldo debugging thread must be started and ready to
+work at any time as soon as the autolisp system is booted.
+
+
+Since we don't have a multi-thread system, we don't need to open
+debugging sessions on specific threads. We have just our main thread,
+and we will have always an aldo thread available for it.
+
+** Part A — AutoLISP-facing debugger API (new clal-* builtins)
+*** Function CLAL-OPTIMIZATION ()
+
+Return: the current list of optimization qualities, which will be used
+for the following calls to =LOAD=, =VLISP-COMPILE-FILE=,
+=CLAL-COMPILE-FILE=, =CLAL-COMPILE=, and =EVAL=.
+
+Example:
+#+begin_src lisp
+((DEBUG 3) (SPACE 0) (SPEED 0))
+#+end_src
+
+Note: until we have a compiler, SPEED is always at level 0.
+
+The result of optimization level on the two forks of the functions:
+
+| Optimization levels           | non-instrumented fork | instrumented fork |
+|-------------------------------+-----------------------+-------------------|
+| (DEBUG 3) (SPACE x) (SPEED 0) | pr, int               | pr, int, ins      |
+| (DEBUG 3) (SPACE x) (SPEED 3) | pr, com               | pr, com, ins      |
+| (DEBUG 0) (SPACE 3) (SPEED 0) | pr, int               | ab                |
+| (DEBUG 0) (SPACE 3) (SPEED 3) | pr, com               | ab                |
+|                               |                       |                   |
+
+3=2=1
+0=0
+x = doesn't matter
+ab = absent
+pr = present
+com = compiled (to native or byte code).
+int = interpreted
+ins = instrumented
+
+
+(CL parenthesis: in CL we would mention minimal compilation and both
+forks would be at least minimal-compiled (ie. macroexpanded).  But
+there are no macros in autolisp, only special operators and functions,
+so no such expansion/optimization is required or possible).
+
+*** Function CLAL-OPTIMIZE (qualities)
+
+Sets the current list of optimization qualities. This will only
+influence the following calls to =LOAD=, =VLISP-COMPILE-FILE=,
+=CLAL-COMPILE-FILE=, =CLAL-COMPILE=, and =EVAL=.
+
+Possible qualities:
+
+- =DEBUG= code is not optimized, but instrumented for debugging with aldo.
+- =SPACE= code is not instrumented, (thus reducing its size).
+- =SPEED= code is compiled to a faster binary.
+
+A quality can also be associated with a quality value, an integer 0, 1, 2 or 3.
+The relative quality values stress the priority of qualities when several are given.
+
+Examples:
+    #+begin_src lisp
+    (CLAL-OPTIMIZE '(DEBUG))
+    (CLAL-OPTIMIZE '((DEBUG 3) (SPACE 1) (SPEED 2)))
+    #+end_src
+
+*** Function LOAD
+**** Loading source files
+
+Loading source files will create functions.  These functions will have
+one or two of their code forks filled, depending on the
+current CLAL-OPTIMIZATION levels.
+
+Also, a source file contains indiscriminate expressions, not only DEFUN special operator calls.
+
+Theorically, ~load = (loop (eval (read)))~. But we want to be able to
+debug the code thus loaded that we're evaluating.
+
+A file containing:
+
+    #+begin_src lisp
+    (setq table (big-computation))
+    #+end_src
+
+may have a bug in the big-computation that we want to debug. This
+means that the expression (big-computation) needs to be instrumented.
+
+We need the compiled-eval model:
+
+#+begin_src common-lisp
+(eval expr) == (funcall (compile nil (lambda () expr)))
+#+end_src
+
+which means that to evaluate an expression, we wrap it in a lambda,
+compile this function (optimization level take effect, generating the
+one or two forks of the function), then the function is called, (the
+debugging fork is selected given the current optimization levels), and
+thus interruptions, errors, and breakpoints may apply.
+
+**** Loading compiled files
+
+A source file such as:
+
+#+begin_src lisp
+      (setq total 0)
+
+      (defun foo (x / r)
+        (princ 'hi)
+        (setq total (+ total x))
+        (setq r (list 'foo x))
+        (print 'bye)
+        r)
+
+      (lambda (method)
+         (cond ((eq method 'total) total)
+               ((eq method 'incr)  (foo 1))))
+#+end_src
+
+would be transformed by compile-file into:
+
+#+begin_src lisp
+  (lambda () (setq total 0))
+
+  (lambda ()
+    (defun foo (x / r)
+      (princ 'hi)
+      (setq total (+ total x))
+      (setq r (list 'foo x))
+      (print 'bye)
+      r))
+
+  (lambda ()
+     (lambda (method)
+         (cond ((eq method 'total) total)
+               ((eq method 'incr)  (foo 1)))))
+#+end_src
+
+ie. a compiled file is reduced to a sequence of anonymous functions without parameter.
+Loading a compiled file consist in reading each compiled function and calling it.
+The result of the last function is returned as result of LOAD.
+
+When we have only an interpreter, vlisp-compile-file or
+clal-compile-file will produce this explicit transformation.
+
+Note: the code generated by the interpreter compile-file is not
+instrumented.  We'll let the loader instrument the interpreted code.
+
+So, when loading compiled files, the wrapping of each form into a
+lambda is already done, so LOAD only has to read one lambda, compile
+it (this will generate a function with one or two forks depending on
+the optimization levels), and call it (selecting the right forks
+depending on the optimization levels).
+
+*** Function VLISP-COMPILE-FILE (mode source [object])
+
+Calls:
+#+begin_src lisp
+(caddr (CLAL-COMPILE-FILE source [object]))
+#+end_src
+
+Currently the mode is ignored.
+
+*** Function CLAL-COMPILE-FILE (input-file [output-file [verbose [print [external-format]]]])
+
+=> (output-truename warnings-p failure-p)
+
+A header is written in the fasl file.
+
+#+begin_example
+;; INTEPRETER|COMPILER clautolisp 1.1.1
+;; OPTIMIZATION (qualities)
+;; SOURCE-FILE source
+#+end_example
+
+**** Interpreter
+
+The interpreter will perform the source transformation described in
+the "Loading compiled files" subsection.
+
+When PRINT is true, each source form is printed.
+When VERBOSE is true, a message is printed for each definition (variable assigned, function defined).
+These printing are done at compilation time, and have no effect on the generated fasl file.
+
+**** Compiler
+
+The compiler would perform the same transformation, but generate a
+serialization of the compiled function with its two forks.
+
+Basically:
+
+#+begin_example
+LAMBDA lambda-list speed-fork debug-fork
+#+end_example
+
+Each fork being a vector of code (natif or byte-code).
+Some green bytes may be added if required.
+
+*** Function CLAL-COMPILED-FILE-OPTIMIZATION (fasl-file-path)
+
+Returns the optimization qualities of the fasl-file-path.
+If this is an INTERPRETER fasl-file,
+then actually returns (CLAL-OPTIMIZATION).
+
+*** Function CLAL-COMPILE (name-or-nil lambda-expression)
+
+The core.
+
+The function CLAL-COMPILE creates an anonymous function from the given lambda-expression.
+Depending on the optimization levels, this anonymous function will have one or two forks.
+
+With the interpreter, the non-instrumented form is basically the
+lambda-expression itself (function entry and function exit poll point
+are inserted for handling of interrupts), and the instrumented fork is
+a transformed lambda-expressions, with poll points inserted.
+
+With the compiler, the same source transformations apply, but then the
+lambda expressions are compiled into natif or byte code.
+
+The returned function objects have the following properties:
+- name or nil for anonymous functions,
+- lambda-list,
+- optimization levels (list of qualities),
+- docstring,
+- non-instrumented fork,
+- instrumented fork (or nil).
+
+*** Function CLAL-FUNCTION-OPTIMIZATION (function)
+
+Return the optimiation levels of the given function object (or the
+function object bound to the given symbol).
+
+*** Function EVAL (form)
+
+The form passed to EVAL may be created from scratch, or read from some
+source file, or some combination.
+
+In any case again, depending on the optimization levels, we may want
+to be able to debug this form, and place break points inside it, etc.
+
+#+begin_src lisp
+(eval '(progn (f1) (f2) … (f1000)))
+#+end_src
+
+To be able to do this, we'll reduce EVAL to the above, with the
+following transformation:
+
+#+begin_src common-lisp
+(eval expr) == (funcall (compile nil (lambda () expr)))
+#+end_src
+
+So basically:
+#+begin_src lisp
+(defun eval (expr)
+  (apply (clal-compile nil (list 'lambda '() expr))  '()))
+#+end_src
+
+*** Variable *CLAL-DEBUGGER-HOOK*
+
+A designator for a function of two arguments: a condition (message)
+and the value of ~*CLAL-DEBUGGER-HOOK*~ at the time the debugger was
+entered, or ~NIL~. (the condition is the error message).
+
+Initial Value: ~NIL~.
+
+Description:
+
+When the value of ~*CLAL-DEBUGGER-HOOK*~ is non-NIL, it is called
+prior to normal entry into the debugger, either due to a call to
+CLAL-INVOKE-DEBUGGER or due to automatic entry into the debugger from
+a call to error with a condition that is not handled. The function may
+either handle the condition (transfer control) or return normally
+(allowing the standard ~aldo~ debugger to run). To minimize recursive
+errors while debugging, ~*CLAL-DEBUGGER-HOOK*~ is bound to ~NIL~ by
+~CLAL-INVOKE-DEBUGGER~ prior to calling the function.
+
+Note: the ~*CLAL-DEBUGGER-HOOK*~ function is called in the main
+thread. It's up to the user to set a function that invoke aldo (thru
+~clal-invoke-debugger~ with a ~NIL~ ~*CLAL-DEBUGGER-HOOK*~), or to
+proceed otherwise.
+
+*** Function CLAL-INVOKE-DEBUGGER (condition)
+
+-- the condition is the error message.
+
+Enter the debugger NOW at the current poll point, as if a breakpoint
+had fired here (a programmatic break, the analog of CL INVOKE-DEBUGGER /
+SLIME's `break`). MESSAGE (optional string) is shown as the stop reason.
+  - Requires an active session on this thread (started via the CLI
+  --on-error debug, or clal-debug-session below). If none is active,
+  behaviour follows *the current --on-error policy* (quit/ignore/print)
+  — i.e. it degrades to "signal an error" when there is no debugger to
+  enter, so a program shipped with clal-invoke-debugger left in it does
+  not hard-fail in production.
+- Returns nil on resume (continue), or whatever the resume directive
+  yields (e.g. a continue-with-return value).
+Implementation: it is a new stop-reason :user-break delivered through the
+same *debug-hit-handler* path (poll.lisp). The instrumenter must ensure
+the call site is a poll point so current-pp / the snapshot are accurate.
+
+
+~CLAL-INVOKE-DEBUGGER~ attempts to enter the debugger with condition.
+
+If ~*CLAL-DEBUGGER-HOOK*~ is not nil, it should be a function (or the
+name of a function) to be called prior to entry to the standard
+debugger. The function is called with ~*CLAL-DEBUGGER-HOOK*~ bound to
+nil, and the function must accept two arguments: the condition
+and the value of ~*CLAL-DEBUGGER-HOOK*~ prior to binding it to nil. If
+the function returns normally, the standard debugger is entered.
+
+The standard debugger never directly returns. Return can occur
+only by a non-local transfer of control, such as the use of a
+restart function, transfering back to the REPL or quitting.
+
+*** Function CLAL-BREAK ([message])
+
+~CLAL-BREAK~ binds ~*CLAL-DEBUGGER-HOOK*~ to ~NIL~ before calling
+~CLAL-INVOKE-DEBUGGER~.  It passes "break" to ~CLAL-INVOKE-DEBUGGER~
+if no message is given, and returns NIL if the debugger continues.
+
+
+*** Function clal-begin-debug-session, Function clal-end-debug-session
+
+Internal function, they're not needed, the main thread is always run
+with the debugger ready to jump in.
+
      Start (resp. end) a debugger session bound to the current thread from
-     within AutoLISP, so a script can arm debugging around a region without a
+     within AutoLISP, so a script ggercan arm debugging around a region without a
      CLI flag. clal-debug-session starts a dumb-terminal session on the
      controlling tty (the only UI guaranteed available from inside a running
      program); returns T on success, nil if no tty / already in a session.
      clal-end-debug-session tears it down (spec §24). These wrap
      clautolisp.debug.ui:start-session / the session teardown.
 
-A.4  (clal-trace fn ...)  /  (clal-untrace fn ...)
+*** Function CLAL-TRACE (fn ...) Function CLAL-UNTRACE (fn ...)
+
      NOTE: TRACE / UNTRACE special operators already exist (api.lisp
      *special-operator-dispatch*) and print enter/exit lines. Decide whether
      to (a) leave those as the lightweight tracer and add clal-trace as the
-     debugger-backed trace point (spec §6.4 tagged breakpoint, no app-side
+     debugger-backed trace point (spec §6.4 tagged breakpoint, thno app-side
      printing), or (b) unify. RECOMMEND (a): keep TRACE as-is; add
      `clal-trace-break fn` that installs a debugger trace point on FN's entry
-     poll point. Flag for the author to confirm.
+     poll point.
 
-A.5  Inspector entry: (clal-inspect value)
+     Indeed. TO_BE_DONE
+
+*** Function CLAL-INSPECT (value [place])
+
      Open the inspector on VALUE from AutoLISP (clautolisp.inspect:inspect),
      into the dumb-terminal sink by default, or the active session's UI if one
      is attached. Returns VALUE (so it is transparent in expression position).
+     PLACE is a form that can be used to get the value.
 
-Open questions (Part A)
+     #+begin_example
+     ((lambda (/ k)
+      (setq k (cons 1 (cons 2 3)))
+      (clal-inspect k 'k)))
+     #+end_example
+
+*** Open questions (Part A)
+
   - Should clal-invoke-debugger with no active session START one (dumb, on the
     tty) instead of degrading to the --on-error policy? Proposed: only if a
     tty is present AND --on-error is not `quit`/`ignore`; otherwise degrade.
+t
+==> There will always be an aldo debugger actif.
+
+For example if we configure aldb, and no process connects to the aldo
+sockets, if aldo is invoked, it will print a message:
+#+begin_example
+Waiting for aldb to connect to host:port.
+#+end_example
+
+We could indeed offer the user the alternative to continue (return
+from invoke-debugger), return to the REPL toplevel, quit, or enter the
+dumb terminal debugger UI.
+
+
   - Naming: clal-invoke-debugger vs clal-break vs clal-debugger. Proposed set
     above; confirm.
 
-----------------------------------------------------------------------
-Part B — CLI option: --on-error quit|debug|ignore
-----------------------------------------------------------------------
+==> Affirmative. We define an API inspired from Common Lisp debugger API.
+
+** Part B — Options: reacting to some events
+
+We distinguish three events that can be configured to invoke the
+debugger, be ignored, or quit the process.
+
+- interrupt (Control-C, ~SIGINT~).
+
+- ~ERROR~ -- an uncaught call to the ~ERROR~ function.  When the
+  program catch errors, it can invoke the debugger explicitely if
+  wanted.
+
+- ~QUIT~ -- a call to the ~QUIT~ function, or reaching end-of-file on
+  stdin when interactive, or the ~--quit~ option.
+
+
+These events can be configured by ~--on-<event>~ CLI options, or by
+setting autolisp variables. Notably, setting the variables overrides
+the CLI option which specifies only their initial setting. The
+variables may be modified by the program.
+
+
+| CLI option (both clautolisp & alfe) | variable              | type                       | default |
+|-------------------------------------+-----------------------+----------------------------+---------|
+| ~--on-interrupt~ debug ignore quit  | ~*CLAL-ON-INTERRUPT*~ | (member DEBUG IGNORE QUIT) | DEBUG   |
+| ~--on-error~     debug ignore quit  | ~*CLAL-ON-ERROR*~     | (member DEBUG IGNORE QUIT) | DEBUG   |
+| ~--on-quit~      debug              | ~*CLAL-ON-QUIT*~      | (member DEBUG QUIT)        | QUIT    |
+
+
+The values may be:
+
+- ~DEBUG~ -- invoke the debugger,
+- ~IGNORE~ -- the event is ignored,
+- ~QUIT~ -- the process quits.
+
+The ~QUIT~ event cannot be ignored, only the debugger can be entered,
+or quit is performed.
+
+In all cases, when the debugger is invoked, it's before unwinding the stack.
+
+*** Variable *CLAL-ON-INTERRUPT*
+
+Type: (MEMBER DEBUG IGNORE QUIT)
+Default value: DEBUG
+CLI Option: --on-interrupt
+Description:
+
+Specifies what happens when an interrupt (Control-C, ~SIGINT~) is received.
+
+When DEBUG, the debugger is invoked. The signal(2) haondler sets a flag
+that will make the next poll point, either in instrumented code, or in
+non-instrumented code at function entry / function exit points to
+invoke the debugger.
+
+If a second interrupt is received while this flag is set, meaning the
+debugger still hasn't entered, a confirmation is asked to the user,
+and if she accepts, the process is terminated (with a call to
+exit(3)), otherwise, the new interruption is ignored and the program
+continues until a poll point is reached.
+
+*** Variable *CLAL-ON-ERROR*
+
+Type: (MEMBER DEBUG IGNORE QUIT)
+Default value: DEBUG
+CLI Option: --on-error
+Description:
+
+Specifies what happens when a uncaught call to ~ERROR~ is made.
+
+TODO: See the interaction with *ERROR*
+
+If there is not error catcher, then the debugger is invoked. ERROR
+becomes essentially a poll point.  The debugger user will be able to
+decide how to handle the error (continuing the normal process,
+returning to the toplevelREPL, quitting, calling another function,
+etc).
+
+*** Variable *CLAL-ON-QUIT*
+
+Type: (MEMBER DEBUG QUIT)
+Default value: QUIT
+CLI Option: --on-quit
+Description:
+
+Specifies what happens when ~QUIT~ is called.
+
+When ~DEBUG~, the debugger is called from ~QUIT~ before calling the
+hooks or unwinding the stack.  ~QUIT~ becomes essentially a poll
+point.  The debugger user will be able to decide how to handle the
+error (continuing the normal process, returning to the toplevelREPL,
+continuing quitting, calling another function, etc).
+
+*** ~--on-error~ option TODO
+
+NOTE: This has probably become redundant with the preceding. See if
+there's unstated/unmentionned items and merge with the previous
+elements.
 
 A new SHARED option (goes in *common-option-specs*, used by both clautolisp
 and alfe), controlling what happens when an uncaught AutoLISP error reaches
 top level (the §10.1 unhandled-error path).
 
 B.1  Values
+
      --on-error quit    (DEFAULT)  Run the user's *error* if any, print the
                                    error, and exit non-zero. This is today's
                                    behaviour, made explicit.
-     --on-error debug              Start a dumb-terminal debugger session
-                                   (clautolisp.ui.dumb) and stop at the error
+
+     --on-error debug              Invoke the debugger. The debugger
+                                   user interface is configured by
+                                   other options. This means the main
+                                   process is stopped at the error
                                    point, so the user can inspect/step/abort
-                                   (spec §10.1, §18). On a non-tty / batch
-                                   input the debugger reads commands from
-                                   stdin and writes to stdout (the dumb UI is
-                                   built exactly for this); EOF ⇒ continue
-                                   ⇒ falls back to quit semantics.
+                                   (spec §10.1, §18).
+
      --on-error ignore             Continue past the error where the engine
                                    can (continue-with-error: run the user's
                                    *error*, then keep going to the next form /
                                    action). Where continuation is impossible,
                                    degrade to quit.
+
+*** verbosity levels TODO
 
 B.2  Interaction with --silent / --quiet (-q)
      There is no --silent today; --quiet (-q) sets verbosity to :WARN.
@@ -132,6 +597,7 @@ B.2  Interaction with --silent / --quiet (-q)
      If a dedicated --silent is wanted as a stronger form of --quiet, specify
      it here too; otherwise reuse --quiet. RECOMMEND reusing --quiet.
 
+*** Naming / collision TODO
 B.3  Naming / collision
      Use the long option --on-error with a single string argument
      (:takes-arg-p t), validated at parse time to one of quit|debug|ignore
@@ -140,6 +606,8 @@ B.3  Naming / collision
      cli-options slot `on-error` (keyword :quit|:debug|:ignore, default :quit)
      and mirror it to an *AUTOLISP-ON-ERROR* transmit variable if useful to
      backends/init files (cf. the *AUTOLISP-* convention).
+
+*** Wiring TODO
 
 B.4  Wiring
      The top-level run loop (run-autolisp-file / run-autolisp-string, and
@@ -151,9 +619,43 @@ B.4  Wiring
        :ignore → install an *error* path that, after the user *error*,
                  resumes the next action instead of exiting.
 
-----------------------------------------------------------------------
-Part C — aldb (Emacs) connection options
-----------------------------------------------------------------------
+** Part C - CLI option: selecting the user interface
+
+| CLI option (both clautolisp & alfe)   | variable           | type                           | default   |
+|---------------------------------------+--------------------+--------------------------------+-----------|
+| ~--debugger-ui~ terminal¦ncurses¦aldb | *CLAL-DEBUGGER-UI* | (member terminal ncurses aldb) | terminal  |
+|                                       |                    |                                |           |
+| ~--aldb-listen~ host:port             | *CLAL-ALDB-LISTEN* | (or string (member STDIO))     | see below |
+|                                       |                    |                                |           |
+| ~--aldb-stdio~                        | *CLAL-ALDB-LISTEN* |                                |           |
+
+*** Variable *CLAL-DEBUGGER-UI*
+
+Type: (MEMBER TERMINAL NCURSES ALDB)
+Default value: TERMINAL
+CLI Option: --debugger-ui
+Description:
+
+
+*** Variable *CLAL-ALDB-LISTEN*
+
+Type: (OR STRING (MEMBER STDIO))
+Default value: see description
+CLI Option: --aldb-listen and --aldb-stdio
+Description:
+
+Specify the socket or stdio interface used by the ~aldo~ debugger.
+
+- if a string, it contains the host (name or IP adderss), and port
+  that aldo must listen to for the UI to connect to.
+
+  By default, the host is localhost and the port is a random number
+  between 4000 and 4099 that is not already used.
+
+- if the symbol STDIO, then the connection with the UI process is done
+  thru stdin/stdout.
+
+** Part D — aldb (Emacs) connection option
 
 To use the Emacs UI (Phase 7, clautolisp.ui.emacs / aldb.el), the process
 must expose the line-oriented S-expr RPC channel (§20.1, DN-10) on something
@@ -201,9 +703,8 @@ Open questions (Part C)
     clautolisp/alfe tool-specific? The RPC is shared, so shared is fine;
     confirm.
 
-----------------------------------------------------------------------
-Deliverables when this is implemented
-----------------------------------------------------------------------
+** Deliverables when this is implemented
+
 
 1. clal-* builtins (Part A) in autolisp-builtins-core, with the engine wired
    in (a new :user-break stop reason in clautolisp.debug). Builtins-core gains
@@ -224,11 +725,20 @@ Deliverables when this is implemented
    decision. Version bump per policy (feature ⇒ ≥ 1.2.0 given the new
    user-facing surface; confirm with the version convention).
 
-Naming decisions to confirm with the author (summary)
------------------------------------------------------
+** Naming decisions to confirm with the author (summary)
+
+
   - clal-invoke-debugger / clal-break / clal-debug-session / clal-inspect set.
   - --on-error quit|debug|ignore (default quit); reuse --quiet for silence.
   - --debugger terminal|ncurses|emacs as an orthogonal UI selector (preferred)
     vs an --on-error debug-emacs value.
   - --aldb-listen / --aldb-stdio transport; 127.0.0.1 default bind.
   - Keep TRACE special operator; add a debugger-backed trace point separately.
+
+  - The debugger itself will be named aldo (Auto Lisp Debugging Orchestrator).
+
+* Epilog                                                            :noprint:
+
+Local Variables:
+mode: org
+End:
