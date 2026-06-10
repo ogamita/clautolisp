@@ -37,26 +37,37 @@ which yields a `glrt-…` **authentication token**:
   registration token.
 
 Create one runner per executor (one for `macos,arm64` shell, one for
-`linux,arm64` docker), or one runner advertising both tag sets.
+`linux,arm64` docker). **Create one runner per executor — each gets its
+OWN `glrt-…` token.** Reusing one token for a second `register` on the
+same machine fails with "A runner with this system ID and token has
+already been registered" (one token = one runner; the shared machine
+system_id is fine and expected).
 
 ## 2. Install + register on the workstation (macOS, MacPorts)
+
+In the new (authentication-token) workflow, **tags and runner options are
+set in the UI when you create the runner** and are reserved on the
+server: `register` accepts only the name + executor config. Passing
+`--tag-list` (or `--locked` / `--run-untagged` / `--access-level` /
+`--maximum-timeout` / `--paused` / `--maintenance-note`) is a FATAL error.
+So do NOT pass `--tag-list`; set tags when creating each runner.
 
 ```sh
 sudo port install gitlab-runner      # 18.x
 
-# macOS arm64 — native shell executor
+# macOS arm64 — native shell executor (runner created in UI with tags macos,arm64)
 gitlab-runner register \
   --non-interactive \
   --url https://gitlab.com \
-  --token glrt-XXXXXXXX \
+  --token glrt-MACOS_TOKEN \
   --executor shell \
   --description "mac-studio macos/arm64"
 
-# linux/arm64 — docker executor (host Docker runs linux/arm64)
+# linux/arm64 — docker executor (a SEPARATE runner, tags linux,arm64 set in UI)
 gitlab-runner register \
   --non-interactive \
   --url https://gitlab.com \
-  --token glrt-YYYYYYYY \
+  --token glrt-LINUX_TOKEN \
   --executor docker \
   --docker-image buildpack-deps:bookworm \
   --description "mac-studio linux/arm64 (docker)"
