@@ -1,0 +1,113 @@
+name: Release
+
+# Produce the release artefacts (see issues/open/release-artefacts.issue)
+# on a version tag. Scaffolds all six SBCL targets; only the
+# Linux x86-64 lane is required — the others are `experimental` (their
+# failures do not fail the run) until their runners/toolchains are
+# tuned. Windows packaging follows issues/open/windows-package-spec.md
+# and is still a stub.
+
+on:
+  push:
+    tags: ['v*', 'clautolisp-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write          # attach artefacts to the GitHub release
+
+jobs:
+  # --- layout-independent artefacts ------------------------------------
+  sources:
+    name: sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - run: make release-sources
+      - uses: actions/upload-artifact@v4
+        with: { name: sources, path: dist/* }
+
+  documentation:
+    name: documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      # The documentation build needs TeX + makeinfo; install lazily.
+      - run: sudo apt-get update && sudo apt-get install -y texlive texlive-latex-extra texinfo
+      - run: make release-documentation
+      - uses: actions/upload-artifact@v4
+        with: { name: documentation, path: dist/* }
+
+  # --- per-target programs + libraries ---------------------------------
+  binaries:
+    name: ${{ matrix.t.os }}-${{ matrix.t.arch }}
+    runs-on: ${{ matrix.t.runner }}
+    continue-on-error: ${{ matrix.t.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        t:
+          - { os: linux,   arch: x86-64, runner: ubuntu-latest,    experimental: false }
+          - { os: linux,   arch: arm64,  runner: ubuntu-24.04-arm, experimental: true  }
+          - { os: darwin,  arch: x86-64, runner: macos-13,         experimental: true  }
+          - { os: darwin,  arch: arm64,  runner: macos-14,         experimental: true  }
+          - { os: windows, arch: x86-64, runner: windows-latest,   experimental: true  }
+          - { os: windows, arch: arm64,  runner: windows-11-arm,   experimental: true  }
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      # Toolchain: SBCL + cmake + a C compiler + Quicklisp.
+      - name: Install toolchain (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y sbcl cmake build-essential
+      - name: Install toolchain (macOS)
+        if: runner.os == 'macOS'
+        run: brew install sbcl cmake
+      - name: Bootstrap Quicklisp (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          curl -fsSL https://beta.quicklisp.org/quicklisp.lisp -o /tmp/ql.lisp
+          sbcl --non-interactive --load /tmp/ql.lisp \
+               --eval '(quicklisp-quickstart:install)'
+
+      # Build + package (Unix). Windows uses the windows-package-spec
+      # path, still a stub.
+      - name: Build + package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          make build-libraries        # builds vendored libdwg + shim
+          make release-programs
+          make release-libraries
+      - name: Build + package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "TODO Windows packaging per issues/open/windows-package-spec.md (stub)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.t.os }}-${{ matrix.t.arch }}
+          path: dist/*
+          if-no-files-found: warn
+
+  # --- collect + attach to the release ---------------------------------
+  collect:
+    name: collect + publish
+    needs: [sources, documentation, binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: incoming }
+      # TODO (release-artefacts.issue): union the per-target unix
+      # binaries/libraries into the combined clautolisp-<ver>-binaries.tar.bz2
+      # / -libraries.tar.bz2 (merge libexec/<os>/<arch>/ + lib/<os>/<arch>/);
+      # keep the Windows zips per-arch.
+      - name: List collected artefacts
+        run: find incoming -type f | sort
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: incoming/**/*
