@@ -122,8 +122,9 @@ test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpu
 
 # --- Build phases, split by artefact kind ------------------------------
 
-build-documentation:  ## Build all PDF/info documentation (same as `documentation`).
+build-documentation:  ## Build all PDF docs + the autolisp-spec paged split (HTML/info/pages — the slow part).
 	$(MAKE) documentation
+	$(MAKE) -C autolisp-spec paged
 
 build-programs:  ## Build the host program binaries (clautolisp, alfe, …) for this platform.
 	$(MAKE) build-sbcl
@@ -151,24 +152,10 @@ release-sources:  ## Produce the source tarball + zip (tracked files incl. submo
 	echo "wrote $(DIST)/$$prefix-sources.tar.bz2"; \
 	echo "wrote $(DIST)/$$prefix-sources.zip"
 
-release-documentation: build-documentation  ## Build docs and package the documentation artefact (spec draft + alref), unpacks into $PREFIX.
+release-documentation: build-documentation  ## Package the documentation artefact: the spec (pdf/org + prebuilt paged HTML/info/pages) + alref, unpacks into $PREFIX.
 	@mkdir -p "$(DIST)"
-	@ver="$(VERSION)"; \
-	stage=$$(mktemp -d); \
-	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
-	for d in autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.pdf \
-	         autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org \
-	         autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.html; do \
-	  if [ -f "$$d" ]; then cp "$$d" "$$docdir"/; fi; \
-	done; \
-	if [ -f autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.info ]; then \
-	  mkdir -p "$$stage/share/info"; \
-	  cp autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.info "$$stage/share/info"/; \
-	fi; \
-	mkdir -p "$$stage/share/autolisp/site-lisp"; \
-	cp autolisp-spec/autolisp/alref.lsp "$$stage/share/autolisp/site-lisp"/ 2>/dev/null || true; \
-	mkdir -p "$$stage/share/emacs/site-lisp"; \
-	cp autolisp-spec/emacs/alref.el "$$stage/share/emacs/site-lisp"/ 2>/dev/null || true; \
+	@ver="$(VERSION)"; stage=$$(mktemp -d); \
+	$(MAKE) -C autolisp-spec install DESTDIR="$$stage" PREFIX= >/dev/null; \
 	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-documentation.tar.bz2" .; \
 	rm -rf "$$stage"; \
 	echo "wrote $(DIST)/clautolisp-$$ver-documentation.tar.bz2"
