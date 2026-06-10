@@ -4,7 +4,7 @@ name: Release
 # on a version tag. Scaffolds all six SBCL targets; only the
 # Linux x86-64 lane is required — the others are `experimental` (their
 # failures do not fail the run) until their runners/toolchains are
-# tuned. Windows packaging follows issues/open/windows-package-spec.md
+# tuned. Windows packaging follows documentation/windows-package-spec.md
 # and is still a stub.
 
 on:
@@ -91,7 +91,7 @@ jobs:
       - name: Build + package (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: echo "TODO Windows packaging per issues/open/windows-package-spec.md (stub)"
+        run: echo "TODO Windows packaging per documentation/windows-package-spec.md (stub)"
 
       - uses: actions/upload-artifact@v4
         with:
