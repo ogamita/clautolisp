@@ -142,3 +142,6 @@ documentation/*.info
 clautolisp/third-party/libredwg/build/
 clautolisp/drawing-dwg/source/clal_dwg.dylib
 clautolisp/drawing-dwg/source/clal_dwg.so
+
+# Release artefacts (make release-*)
+/dist/
