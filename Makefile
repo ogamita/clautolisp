@@ -151,11 +151,56 @@ release-sources:  ## Produce the source tarball + zip (tracked files incl. submo
 	echo "wrote $(DIST)/$$prefix-sources.tar.bz2"; \
 	echo "wrote $(DIST)/$$prefix-sources.zip"
 
-release-documentation: build-documentation  ## Build docs and package the documentation artefact.
-	@echo "TODO(release-artefacts.issue): stage spec draft + alref -> $(DIST)/clautolisp-$(VERSION)-documentation.tar.bz2/.zip"
+release-documentation: build-documentation  ## Build docs and package the documentation artefact (spec draft + alref), unpacks into $PREFIX.
+	@mkdir -p "$(DIST)"
+	@ver="$(VERSION)"; \
+	stage=$$(mktemp -d); \
+	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
+	for d in autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.pdf \
+	         autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org \
+	         autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.html; do \
+	  if [ -f "$$d" ]; then cp "$$d" "$$docdir"/; fi; \
+	done; \
+	if [ -f autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.info ]; then \
+	  mkdir -p "$$stage/share/info"; \
+	  cp autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.info "$$stage/share/info"/; \
+	fi; \
+	mkdir -p "$$stage/share/autolisp/site-lisp"; \
+	cp autolisp-spec/autolisp/alref.lsp "$$stage/share/autolisp/site-lisp"/ 2>/dev/null || true; \
+	mkdir -p "$$stage/share/emacs/site-lisp"; \
+	cp autolisp-spec/emacs/alref.el "$$stage/share/emacs/site-lisp"/ 2>/dev/null || true; \
+	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-documentation.tar.bz2" .; \
+	rm -rf "$$stage"; \
+	echo "wrote $(DIST)/clautolisp-$$ver-documentation.tar.bz2"
 
-release-programs: build-programs  ## Build programs and package this host's binaries artefact.
-	@echo "TODO(release-artefacts.issue): stage bin/ dispatch + libexec/$(REL_OS)/$(REL_ARCH) -> $(DIST)/clautolisp-$(VERSION)-binaries-$(REL_OS)-$(REL_ARCH).*"
+release-programs: build-programs  ## Build programs and package this host's per-target binaries artefact (unpacks into $PREFIX). CI unions the unix targets.
+	@mkdir -p "$(DIST)"
+	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
+	stage=$$(mktemp -d); \
+	bindir="$$stage/libexec/clautolisp/binaries/$$os/$$arch"; mkdir -p "$$bindir"; \
+	for b in clautolisp/tools/clautolisp/bin/clautolisp-sbcl \
+	         clautolisp/tools/clautolisp/bin/clautolisp-ccl \
+	         clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-sbcl \
+	         clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-ccl \
+	         autolisp-front-end/tools/alfe/bin/alfe-sbcl \
+	         autolisp-front-end/tools/alfe/bin/alfe-ccl; do \
+	  if [ -f "$$b" ]; then cp "$$b" "$$bindir"/; fi; \
+	done; \
+	mkdir -p "$$stage/bin"; \
+	cp clautolisp/tools/packaging/dispatch.sh "$$stage/bin/clautolisp"; chmod +x "$$stage/bin/clautolisp"; \
+	( cd "$$stage/bin" && ln -sf clautolisp alfe && ln -sf clautolisp read-autolisp ); \
+	mandir="$$stage/share/man/man1"; mkdir -p "$$mandir"; \
+	find clautolisp autolisp-front-end -path '*/documentation/man/*.1' -exec cp {} "$$mandir"/ \; 2>/dev/null || true; \
+	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
+	for d in clautolisp/documentation/clautolisp-user-manual.info \
+	         clautolisp/documentation/clautolisp-user-manual.pdf \
+	         autolisp-front-end/documentation/alfe-user-manual.info \
+	         autolisp-front-end/documentation/alfe-user-manual.pdf; do \
+	  if [ -f "$$d" ]; then cp "$$d" "$$docdir"/; fi; \
+	done; \
+	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2" .; \
+	rm -rf "$$stage"; \
+	echo "wrote $(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2"
 
 release-libraries: build-libraries  ## Build libraries and package the libraries artefact (asd sources + native libdwg), unpacks into $PREFIX.
 	@mkdir -p "$(DIST)"
