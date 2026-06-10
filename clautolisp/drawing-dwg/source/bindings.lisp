@@ -3,30 +3,70 @@
 ;;;; CFFI bindings to the libredwg shim (Phase 17e).
 ;;;;
 ;;;; The shim (source/clal_dwg.c) is compiled by the build into
-;;;; source/clal_dwg.<dylib|so>, linked against the vendored libredwg
-;;;; (which it finds at runtime via an embedded rpath). We bind only
-;;;; its two trivial (int, path, path) entry points; no libredwg struct
-;;;; layout crosses into Lisp.
+;;;; clal_dwg.<dylib|so|dll>, linked against the vendored libredwg. The
+;;;; shim carries two rpaths (its own dev build dir, and @loader_path /
+;;;; $ORIGIN), so it finds libredwg both in the dev tree and when
+;;;; installed adjacent to it. We bind only its two trivial
+;;;; (int, path, path) entry points; no libredwg struct layout crosses
+;;;; into Lisp.
+;;;;
+;;;; The shim is located by searching, in order:
+;;;;   1. $CLAUTOLISP_DWG_LIBDIR                (explicit override)
+;;;;   2. the dev tree: <system>/drawing-dwg/source/
+;;;;   3. the installed layout: <PREFIX>/lib/clautolisp/<os>/<arch>/,
+;;;;      with PREFIX derived from this system's installed source dir
+;;;;      (<PREFIX>/share/common-lisp/source/clautolisp/).
 
-(defun %shim-library-pathname ()
-  (asdf:system-relative-pathname
-   :clautolisp/drawing-dwg
-   (format nil "drawing-dwg/source/clal_dwg.~A"
-           #+darwin "dylib" #-darwin "so")))
+(defun %shim-file-name ()
+  (format nil "clal_dwg.~A"
+          (cond ((uiop:os-windows-p) "dll")
+                ((uiop:os-macosx-p)  "dylib")
+                (t                   "so"))))
+
+(defun %os () (cond ((uiop:os-macosx-p) "darwin")
+                    ((uiop:os-windows-p) "windows")
+                    (t "linux")))
+
+(defun %arch () (string-downcase (machine-type)))  ; "x86-64" / "arm64"
+
+(defun %installed-libdir ()
+  "The lib/clautolisp/<os>/<arch>/ directory under the PREFIX this
+system was installed into, or NIL in a dev checkout. PREFIX is the
+ancestor of <PREFIX>/share/common-lisp/source/clautolisp/."
+  (let* ((src (asdf:system-source-directory :clautolisp/drawing-dwg))
+         (s   (and src (namestring src)))
+         (marker "/share/common-lisp/source/")
+         (pos (and s (search marker s))))
+    (when pos
+      (merge-pathnames
+       (format nil "lib/clautolisp/~A/~A/" (%os) (%arch))
+       (subseq s 0 (1+ pos))))))           ; PREFIX/ (keep trailing slash)
+
+(defun %candidate-shim-pathnames ()
+  (let ((name (%shim-file-name)) (cands '()))
+    (let ((env (uiop:getenv "CLAUTOLISP_DWG_LIBDIR")))
+      (when env (push (merge-pathnames name (uiop:ensure-directory-pathname env)) cands)))
+    (push (asdf:system-relative-pathname
+           :clautolisp/drawing-dwg (format nil "drawing-dwg/source/~A" name))
+          cands)
+    (let ((libdir (%installed-libdir)))
+      (when libdir (push (merge-pathnames name libdir) cands)))
+    (nreverse cands)))
 
 (defvar *shim-loaded* nil)
 
 (defun ensure-shim-loaded ()
-  "Load the compiled libredwg shim if it has not been loaded yet.
-Signals a clear error if it has not been built (run `make
-build-libredwg` in the clautolisp subproject first)."
+  "Load the compiled libredwg shim if not yet loaded, searching the
+candidate locations. Signals a clear error if it cannot be found (run
+`make build-libredwg`, or set CLAUTOLISP_DWG_LIBDIR)."
   (unless *shim-loaded*
-    (let ((path (%shim-library-pathname)))
-      (unless (probe-file path)
+    (let* ((candidates (%candidate-shim-pathnames))
+           (path (find-if #'probe-file candidates)))
+      (unless path
         (error 'drawing-error
-               :format-control "the libredwg shim is not built: ~A is missing. ~
-Build it with `make build-libredwg` in the clautolisp subproject."
-               :format-arguments (list path)))
+               :format-control "the libredwg shim was not found in any of: ~{~A~^, ~}. ~
+Build it with `make build-libredwg`, or set CLAUTOLISP_DWG_LIBDIR."
+               :format-arguments (list candidates)))
       (cffi:load-foreign-library path)
       (setf *shim-loaded* t))))
 

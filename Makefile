@@ -157,8 +157,29 @@ release-documentation: build-documentation  ## Build docs and package the docume
 release-programs: build-programs  ## Build programs and package this host's binaries artefact.
 	@echo "TODO(release-artefacts.issue): stage bin/ dispatch + libexec/$(REL_OS)/$(REL_ARCH) -> $(DIST)/clautolisp-$(VERSION)-binaries-$(REL_OS)-$(REL_ARCH).*"
 
-release-libraries: build-libraries  ## Build libraries and package the libraries artefact (lisp sources + libdwg).
-	@echo "TODO(release-artefacts.issue): stage asd sources + lib/$(REL_OS)/$(REL_ARCH)/libdwg + include/ -> $(DIST)/clautolisp-$(VERSION)-libraries.*"
+release-libraries: build-libraries  ## Build libraries and package the libraries artefact (asd sources + native libdwg), unpacks into $PREFIX.
+	@mkdir -p "$(DIST)"
+	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
+	stage=$$(mktemp -d); \
+	srcroot="$$stage/share/common-lisp/source/clautolisp"; mkdir -p "$$srcroot"; \
+	( cd clautolisp && git ls-files -z '*.lisp' '*.asd' | tar -cf - --null -T - ) | tar -C "$$srcroot" -xf -; \
+	mkdir -p "$$stage/share/common-lisp/systems"; \
+	( cd "$$stage/share/common-lisp/systems" && ln -sf ../source/clautolisp/clautolisp.asd clautolisp.asd ); \
+	libdir="$$stage/lib/clautolisp/$$os/$$arch"; mkdir -p "$$libdir"; \
+	cp clautolisp/third-party/libredwg/build/libredwg.dylib \
+	   clautolisp/third-party/libredwg/build/libredwg.so \
+	   clautolisp/third-party/libredwg/build/libredwg.dll "$$libdir"/ 2>/dev/null || true; \
+	cp clautolisp/drawing-dwg/source/clal_dwg.dylib \
+	   clautolisp/drawing-dwg/source/clal_dwg.so \
+	   clautolisp/drawing-dwg/source/clal_dwg.dll "$$libdir"/ 2>/dev/null || true; \
+	mkdir -p "$$stage/include/clautolisp"; \
+	cp clautolisp/third-party/libredwg/include/dwg.h "$$stage/include/clautolisp"/; \
+	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
+	cp clautolisp/drawing/documentation/drawing-specifications.org "$$docdir"/ 2>/dev/null || true; \
+	cp clautolisp/third-party/libredwg/COPYING "$$docdir"/libredwg-COPYING 2>/dev/null || true; \
+	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-libraries.tar.bz2" .; \
+	rm -rf "$$stage"; \
+	echo "wrote $(DIST)/clautolisp-$$ver-libraries.tar.bz2"
 
 clean:: clean-pdf
 clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources).
