@@ -128,9 +128,16 @@ WARNING was signalled."
    :prepend-kernel t
    :error-handler t)
   #+sbcl
-  (sb-ext:save-lisp-and-die
-   (namestring (merge-pathnames program-name release-directory nil))
-   :executable t
-   :compression 9
-   :save-runtime-options t
-   :toplevel (make-toplevel-function main-function)))
+  ;; :COMPRESSION is only accepted when the running SBCL was built with
+  ;; core compression support (feature :SB-CORE-COMPRESSION, which in
+  ;; turn requires libzstd at build time). On platforms where zstd is
+  ;; unavailable SBCL ships without that feature and passing :COMPRESSION
+  ;; signals an error, so we gate the keyword on the feature and fall
+  ;; back to an uncompressed (larger) executable image.
+  (apply #'sb-ext:save-lisp-and-die
+         (namestring (merge-pathnames program-name release-directory nil))
+         :executable t
+         :save-runtime-options t
+         :toplevel (make-toplevel-function main-function)
+         #+sb-core-compression (list :compression 9)
+         #-sb-core-compression '()))
