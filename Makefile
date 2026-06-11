@@ -192,7 +192,7 @@ release-programs: build-programs  ## Build programs and package this host's per-
 	rm -rf "$$stage"; \
 	echo "wrote $(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2"
 
-release-libraries: build-libraries  ## Build libraries and package the libraries artefact (asd sources + native libdwg), unpacks into $PREFIX.
+release-libraries: build-libraries  ## Build libraries and package this host's per-target libraries artefact (asd sources + native libdwg). CI unions the targets into clautolisp-<ver>-libraries.tar.bz2.
 	@mkdir -p "$(DIST)"
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
 	stage=$$(mktemp -d); \
@@ -212,9 +212,48 @@ release-libraries: build-libraries  ## Build libraries and package the libraries
 	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
 	cp clautolisp/drawing/documentation/drawing-specifications.org "$$docdir"/ 2>/dev/null || true; \
 	cp clautolisp/third-party/libredwg/COPYING "$$docdir"/libredwg-COPYING 2>/dev/null || true; \
-	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-libraries.tar.bz2" .; \
+	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2" .; \
 	rm -rf "$$stage"; \
-	echo "wrote $(DIST)/clautolisp-$$ver-libraries.tar.bz2"
+	echo "wrote $(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2"
+
+# CI collect phase: union the per-target artefacts (gathered by the
+# pipeline into COLLECT_IN) into the final combined release set in
+# COLLECT_OUT. Pure repackaging — no build, no rebuild. The combined
+# binaries/libraries tarballs merge each target's libexec/<os>/<arch>/
+# and lib/<os>/<arch>/ subtrees (the shared bin/, lisp sources, include/
+# overwrite identically); sources + documentation pass through once;
+# the Windows artefact is kept as-is.
+COLLECT_IN  ?= $(DIST)
+COLLECT_OUT ?= $(DIST)/combined
+collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the combined release set in COLLECT_OUT.
+	@ver="$(VERSION)"; in="$(COLLECT_IN)"; out="$(COLLECT_OUT)"; mkdir -p "$$out"; \
+	bstage=$$(mktemp -d); n=0; \
+	for t in "$$in"/clautolisp-$$ver-binaries-*.tar.bz2; do \
+	  [ -f "$$t" ] || continue; echo "merge $$(basename "$$t")"; tar -C "$$bstage" -xjf "$$t"; n=$$((n+1)); \
+	done; \
+	if [ "$$n" -gt 0 ]; then \
+	  tar -C "$$bstage" -cjf "$$out/clautolisp-$$ver-binaries.tar.bz2" .; \
+	  echo "wrote $$out/clautolisp-$$ver-binaries.tar.bz2 (from $$n target(s))"; \
+	else echo "WARNING: no per-target binaries artefacts in $$in"; fi; \
+	rm -rf "$$bstage"; \
+	lstage=$$(mktemp -d); n=0; \
+	for t in "$$in"/clautolisp-$$ver-libraries-*.tar.bz2; do \
+	  [ -f "$$t" ] || continue; echo "merge $$(basename "$$t")"; tar -C "$$lstage" -xjf "$$t"; n=$$((n+1)); \
+	done; \
+	if [ "$$n" -gt 0 ]; then \
+	  tar -C "$$lstage" -cjf "$$out/clautolisp-$$ver-libraries.tar.bz2" .; \
+	  echo "wrote $$out/clautolisp-$$ver-libraries.tar.bz2 (from $$n target(s))"; \
+	else echo "WARNING: no per-target libraries artefacts in $$in"; fi; \
+	rm -rf "$$lstage"; \
+	for f in "$$in"/clautolisp-$$ver-sources.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-sources.zip \
+	         "$$in"/clautolisp-$$ver-documentation.tar.bz2; do \
+	  [ -f "$$f" ] && cp "$$f" "$$out"/ && echo "passthrough $$(basename "$$f")"; \
+	done; \
+	for f in "$$in"/*windows*; do \
+	  [ -e "$$f" ] || continue; cp "$$f" "$$out"/ && echo "windows $$(basename "$$f")"; \
+	done; \
+	echo "--- combined release set ($$out) ---"; ls -l "$$out"
 
 clean:: clean-pdf
 clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources).
