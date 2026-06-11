@@ -27,7 +27,14 @@
                     ((uiop:os-windows-p) "windows")
                     (t "linux")))
 
-(defun %arch () (string-downcase (machine-type)))  ; "x86-64" / "arm64"
+(defun %arch ()
+  "Canonical arch tag x86-64 / arm64, matching the Makefile REL_ARCH and
+dispatch.sh layout. (machine-type) varies by implementation: SBCL gives
+\"X86-64\"/\"ARM64\"; others may give \"x86_64\"/\"aarch64\"/\"amd64\"."
+  (let ((m (string-downcase (machine-type))))
+    (cond ((member m '("x86-64" "x86_64" "amd64" "x8664") :test #'string=) "x86-64")
+          ((member m '("arm64" "aarch64") :test #'string=) "arm64")
+          (t m))))
 
 (defun %installed-libdir ()
   "The lib/clautolisp/<os>/<arch>/ directory under the PREFIX this

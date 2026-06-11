@@ -14,7 +14,9 @@ set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 prefix=$(CDPATH= cd -- "$here/.." && pwd)
 os=$(uname | tr 'A-Z' 'a-z')
-arch=$(uname -m | tr 'A-Z' 'a-z')
+# Canonical arch x86-64 / arm64 (must match Makefile REL_ARCH and
+# drawing-dwg/source/bindings.lisp %arch).
+arch=$(uname -m | tr 'A-Z' 'a-z' | sed -e 's/^x86_64$/x86-64/' -e 's/^amd64$/x86-64/' -e 's/^aarch64$/arm64/')
 prog=$(basename -- "$0")
 
 lisp=${CLAUTOLISP_LISP:-sbcl}
