@@ -176,11 +176,18 @@ release-programs: build-programs  ## Build programs and package this host's per-
 	         clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-ccl \
 	         autolisp-front-end/tools/alfe/bin/alfe-sbcl \
 	         autolisp-front-end/tools/alfe/bin/alfe-ccl; do \
-	  if [ -f "$$b" ]; then cp "$$b" "$$bindir"/; fi; \
+	  if [ -f "$$b" ]; then cp "$$b" "$$bindir"/; \
+	  elif [ -f "$$b.exe" ]; then cp "$$b.exe" "$$bindir"/; fi; \
 	done; \
 	mkdir -p "$$stage/bin"; \
-	cp clautolisp/tools/packaging/dispatch.sh "$$stage/bin/clautolisp"; chmod +x "$$stage/bin/clautolisp"; \
-	( cd "$$stage/bin" && ln -sf clautolisp alfe && ln -sf clautolisp read-autolisp ); \
+	for p in clautolisp alfe read-autolisp; do \
+	  cp clautolisp/tools/packaging/dispatch.sh "$$stage/bin/$$p"; chmod +x "$$stage/bin/$$p"; \
+	done; \
+	if [ "$$os" = windows ]; then \
+	  for p in clautolisp alfe read-autolisp; do \
+	    sed 's/\r*$$/\r/' clautolisp/tools/packaging/dispatch.cmd > "$$stage/bin/$$p.cmd"; \
+	  done; \
+	fi; \
 	mandir="$$stage/share/man/man1"; mkdir -p "$$mandir"; \
 	find clautolisp autolisp-front-end -path '*/documentation/man/*.1' -exec cp {} "$$mandir"/ \; 2>/dev/null || true; \
 	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
