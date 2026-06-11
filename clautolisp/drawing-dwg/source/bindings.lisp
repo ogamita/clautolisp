@@ -74,6 +74,16 @@ candidate locations. Signals a clear error if it cannot be found (run
                :format-control "the libredwg shim was not found in any of: ~{~A~^, ~}. ~
 Build it with `make build-libredwg`, or set CLAUTOLISP_DWG_LIBDIR."
                :format-arguments (list candidates)))
+      ;; Windows DLLs carry no rpath/$ORIGIN, so the dynamic loader will
+      ;; not find clal_dwg.dll's dependency libredwg.dll just because it
+      ;; sits next to the shim. Pre-load it by absolute path first: once
+      ;; libredwg.dll is in the process the shim's import resolves to it.
+      ;; (On ELF/Mach-O the rpath handles this, so this is a no-op there.)
+      (when (uiop:os-windows-p)
+        (let ((dep (merge-pathnames "libredwg.dll"
+                                    (uiop:pathname-directory-pathname path))))
+          (when (probe-file dep)
+            (cffi:load-foreign-library dep))))
       (cffi:load-foreign-library path)
       (setf *shim-loaded* t))))
 
