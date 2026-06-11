@@ -13,6 +13,7 @@ stages:
   - build
   - test
   - release
+  - collect
 
 .docker-job:
   image: docker:27
@@ -288,4 +289,34 @@ release:windows:x86-64:
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-windows-x86-64-stub"
     paths: [dist/]
+    expire_in: 30 days
+
+# --- collect: union the per-target artefacts into the combined set -----
+#
+# Gathers the four release jobs' dist/ (binaries-<os>-<arch>,
+# libraries-<os>-<arch>, sources, documentation, windows) and unions
+# them into the combined clautolisp-<ver>-{binaries,libraries}.tar.bz2
+# (+ sources/documentation passthrough, windows kept as-is). Exposed as
+# downloadable job artifacts only — publishing a GitLab Release is a
+# separate, on-demand step taken AFTER the artefacts are tested.
+collect:release:
+  stage: collect
+  image: $CLAUTOLISP_CI_LATEST     # only needs make + tar + bzip2
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  needs:
+    - { job: "release:linux:x86-64", artifacts: true }
+    - { job: "release:linux:arm64",  artifacts: true }
+    - { job: "release:darwin:arm64", artifacts: true }
+    - { job: "release:windows:x86-64", artifacts: true }
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^(v|clautolisp-v)/'
+      when: on_success
+    - when: manual
+      allow_failure: true
+  script:
+    - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-release"
+    paths: [dist/combined/]
     expire_in: 30 days
