@@ -59,10 +59,12 @@ DEFAULT_LISP ?=
 VERSION := $(shell sed -n 's/.*\*version\* *"\([0-9.]*\)".*/\1/p' clautolisp/tools/clautolisp/source/version.lisp)
 DIST    ?= $(CURDIR)/dist
 # Downcased OS / arch for the per-target binary + native-lib layout.
-# Arch is normalised to the canonical x86-64 / arm64 (uname -m reports
-# x86_64/amd64 and aarch64/arm64 inconsistently across OSes); this MUST
-# match dispatch.sh and drawing-dwg/source/bindings.lisp (%arch).
-REL_OS   := $(shell uname | tr 'A-Z' 'a-z')
+# OS is normalised to linux/darwin/windows (uname on MSYS2/MinGW/Cygwin
+# reports mingw64_nt-*/msys_nt-*/cygwin_nt-*); arch to the canonical
+# x86-64 / arm64 (uname -m reports x86_64/amd64 and aarch64/arm64
+# inconsistently). These MUST match dispatch.sh and
+# drawing-dwg/source/bindings.lisp (%os / %arch).
+REL_OS   := $(shell uname | tr 'A-Z' 'a-z' | sed -e 's/^mingw.*/windows/' -e 's/^msys.*/windows/' -e 's/^cygwin.*/windows/')
 REL_ARCH := $(shell uname -m | tr 'A-Z' 'a-z' | sed -e 's/^x86_64$$/x86-64/' -e 's/^amd64$$/x86-64/' -e 's/^aarch64$$/arm64/')
 
 help:  ## Show this message (list available targets and their purpose).

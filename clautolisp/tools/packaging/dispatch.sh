@@ -13,9 +13,9 @@ set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 prefix=$(CDPATH= cd -- "$here/.." && pwd)
-os=$(uname | tr 'A-Z' 'a-z')
-# Canonical arch x86-64 / arm64 (must match Makefile REL_ARCH and
-# drawing-dwg/source/bindings.lisp %arch).
+# Canonical os linux/darwin/windows and arch x86-64 / arm64 (must match
+# Makefile REL_OS/REL_ARCH and drawing-dwg/source/bindings.lisp %os/%arch).
+os=$(uname | tr 'A-Z' 'a-z' | sed -e 's/^mingw.*/windows/' -e 's/^msys.*/windows/' -e 's/^cygwin.*/windows/')
 arch=$(uname -m | tr 'A-Z' 'a-z' | sed -e 's/^x86_64$/x86-64/' -e 's/^amd64$/x86-64/' -e 's/^aarch64$/arm64/')
 prog=$(basename -- "$0")
 
