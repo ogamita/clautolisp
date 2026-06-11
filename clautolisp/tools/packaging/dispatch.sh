@@ -25,6 +25,7 @@ case "$prog" in
 esac
 
 bin="$prefix/libexec/clautolisp/binaries/$os/$arch/$prog-$lisp"
+[ "$os" = windows ] && bin="$bin.exe"   # Windows executables keep .exe
 if [ ! -x "$bin" ]; then
   echo "$prog: no binary for $os/$arch with lisp=$lisp" >&2
   echo "  expected: $bin" >&2
