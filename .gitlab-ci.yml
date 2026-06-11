@@ -267,3 +267,25 @@ release:darwin:arm64:
     name: "clautolisp-$CI_COMMIT_TAG-darwin-arm64"
     paths: [dist/]
     expire_in: 30 days
+
+# Windows x86-64 — STUB for now (real packaging follows
+# documentation/windows-package-spec.md: SBCL/CCL images, libdwg.dll,
+# and a zip into the Windows install root). This job only confirms the
+# self-hosted Windows runner is reachable and reports its toolchain.
+# Shell executor = PowerShell. No submodules needed for the stub.
+release:windows:x86-64:
+  extends: .release-common
+  tags: [windows, x86-64]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - 'Write-Host "clautolisp $env:CI_COMMIT_TAG -- windows/x86-64 lane (STUB)"'
+    - 'Write-Host "Toolchain probe:"'
+    - 'foreach ($t in @("sbcl","cmake","git","cl","gcc")) { $c = Get-Command $t -ErrorAction SilentlyContinue; if ($c) { Write-Host ("  {0}: {1}" -f $t, $c.Source) } else { Write-Host ("  {0}: NOT FOUND" -f $t) } }'
+    - 'New-Item -ItemType Directory -Force -Path dist | Out-Null'
+    - '"clautolisp $env:CI_COMMIT_TAG windows/x86-64 packaging is a STUB. See documentation/windows-package-spec.md." | Set-Content -Encoding utf8 dist/windows-x86-64-STUB.txt'
+    - 'Get-Content dist/windows-x86-64-STUB.txt'
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-windows-x86-64-stub"
+    paths: [dist/]
+    expire_in: 30 days
