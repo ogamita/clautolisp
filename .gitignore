@@ -138,6 +138,13 @@ documentation/*.info
 **/documentation/*.info
 **/documentation/*.texi
 
+# RELEASE_NOTES.org is canonical at the repo root; clautolisp/Makefile
+# mirrors it into clautolisp/documentation/ at build time so the
+# install rule picks it up alongside the other user-facing org docs.
+# The mirrored .org and its rendered .pdf are generated artefacts.
+clautolisp/documentation/RELEASE_NOTES.org
+clautolisp/documentation/RELEASE_NOTES.pdf
+
 # Phase 17e: vendored libredwg build artifacts + CFFI shim binary
 clautolisp/third-party/libredwg/build/
 clautolisp/drawing-dwg/source/clal_dwg.dylib
