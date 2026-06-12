@@ -219,6 +219,8 @@ build:alfe:sbcl:
 release:linux:x86-64:
   extends: .release-common
   image: $CLAUTOLISP_CI_LATEST
+  variables:
+    RELEASE_LISPS: "sbcl ccl"     # x86-64 ships both SBCL + CCL (arm64 lanes stay sbcl-only by default)
   before_script:
     # bzip2 (tar -cjf) and zip are required by the release-* packaging;
     # cmake by build-libraries. Install whatever the image lacks (the CI
@@ -244,6 +246,10 @@ release:linux:x86-64:
 release:documentation:
   extends: .release-common
   image: $CLAUTOLISP_CI_LATEST
+  # First run builds the 3026-section paged split from scratch (~60 min,
+  # just over the 1 h project default); 2 h lets it finish and populate
+  # the cache, after which subsequent runs are fast.
+  timeout: 2h
   variables:
     GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
   before_script:

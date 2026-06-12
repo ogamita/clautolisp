@@ -67,6 +67,13 @@ DIST    ?= $(CURDIR)/dist
 REL_OS   := $(shell uname | tr 'A-Z' 'a-z' | sed -e 's/^mingw.*/windows/' -e 's/^msys.*/windows/' -e 's/^cygwin.*/windows/')
 REL_ARCH := $(shell uname -m | tr 'A-Z' 'a-z' | sed -e 's/^x86_64$$/x86-64/' -e 's/^amd64$$/x86-64/' -e 's/^aarch64$$/arm64/')
 
+# Which Lisp implementations the release lane builds + packages on this
+# target. CCL has no arm64 build (its "linuxarm" is 32-bit Raspberry-Pi;
+# Apple Silicon is unsupported), so arm64 targets are SBCL-only, while
+# x86-64 ships both. The release CI lanes override this per target
+# (x86-64 -> "sbcl ccl"); the default keeps everything else SBCL-only.
+RELEASE_LISPS ?= sbcl
+
 help:  ## Show this message (list available targets and their purpose).
 	@awk 'BEGIN { \
 	    FS = ":.*?## "; \
@@ -131,8 +138,8 @@ build-documentation:  ## Build all PDF docs + the autolisp-spec paged split (HTM
 	$(MAKE) documentation
 	$(MAKE) -C autolisp-spec paged
 
-build-programs:  ## Build the host program binaries (clautolisp, alfe, …) for this platform.
-	$(MAKE) build-sbcl
+build-programs:  ## Build the host program binaries (clautolisp, alfe, …) for each Lisp in RELEASE_LISPS (default sbcl; x86-64 release sets "sbcl ccl").
+	@for l in $(RELEASE_LISPS); do $(MAKE) build-$$l || exit $$?; done
 
 build-libraries:  ## Build the releasable libraries (the drawing/drawing-dwg native libdwg).
 	$(MAKE) -C clautolisp build-libredwg
@@ -170,14 +177,13 @@ release-programs: build-programs  ## Build programs and package this host's per-
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
 	stage=$$(mktemp -d); \
 	bindir="$$stage/libexec/clautolisp/binaries/$$os/$$arch"; mkdir -p "$$bindir"; \
-	for b in clautolisp/tools/clautolisp/bin/clautolisp-sbcl \
-	         clautolisp/tools/clautolisp/bin/clautolisp-ccl \
-	         clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-sbcl \
-	         clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-ccl \
-	         autolisp-front-end/tools/alfe/bin/alfe-sbcl \
-	         autolisp-front-end/tools/alfe/bin/alfe-ccl; do \
-	  if [ -f "$$b" ]; then cp "$$b" "$$bindir"/; \
-	  elif [ -f "$$b.exe" ]; then cp "$$b.exe" "$$bindir"/; fi; \
+	for l in $(RELEASE_LISPS); do \
+	  for b in clautolisp/tools/clautolisp/bin/clautolisp-$$l \
+	           clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-$$l \
+	           autolisp-front-end/tools/alfe/bin/alfe-$$l; do \
+	    if [ -f "$$b" ]; then cp "$$b" "$$bindir"/; \
+	    elif [ -f "$$b.exe" ]; then cp "$$b.exe" "$$bindir"/; fi; \
+	  done; \
 	done; \
 	mkdir -p "$$stage/bin"; \
 	for p in clautolisp alfe read-autolisp; do \
