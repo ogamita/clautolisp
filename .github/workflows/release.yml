@@ -33,9 +33,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
-      # Doc build needs Emacs (the autolisp-spec paged split), TeX (PDFs)
-      # and makeinfo (Info).
-      - run: sudo apt-get update && sudo apt-get install -y emacs-nox texlive texlive-latex-extra texinfo
+      # Doc build needs Emacs (the autolisp-spec paged split), TeX (PDFs,
+      # via xelatex => texlive-xetex) and makeinfo (Info). Keep this list
+      # identical to the GitLab release:documentation job (both forges
+      # must build the same docs).
+      - run: sudo apt-get update && sudo apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texinfo
       # Cache the slow per-section split (3026 sections -> html/info/pages);
       # invalidated only when the spec org or the split scripts change.
       - name: Cache autolisp-spec paged build

@@ -230,11 +230,29 @@ release:linux:x86-64:
     - make build-libraries
     - make release-programs
     - make release-libraries
-    # documentation needs Emacs + TeX + makeinfo; build it where the
-    # toolchain is present (the paged split is cached above):
-    - make release-documentation || echo "documentation build skipped (Emacs/TeX toolchain?)"
   artifacts:
     name: "clautolisp-$CI_COMMIT_TAG-linux-x86-64"
+    paths: [dist/]
+    expire_in: 30 days
+
+# Documentation is its OWN lane (mirrors the GitHub `documentation` job)
+# so each forge independently produces the complete release set. It is
+# slow (Emacs paged split of 3026 sections + xelatex PDFs across four
+# subprojects), so the autolisp-spec/build paged split is cached (via
+# .release-common). xelatex => texlive-xetex is REQUIRED (the bare
+# `texlive` metapackage does not pull it).
+release:documentation:
+  extends: .release-common
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends
+        emacs-nox texlive texlive-latex-extra texlive-xetex texinfo
+  script:
+    - make release-documentation
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-documentation"
     paths: [dist/]
     expire_in: 30 days
 
@@ -313,6 +331,7 @@ collect:release:
     - { job: "release:linux:arm64",  artifacts: true }
     - { job: "release:darwin:arm64", artifacts: true }
     - { job: "release:windows:x86-64", artifacts: true }
+    - { job: "release:documentation", artifacts: true }
   rules:
     - if: '$CI_COMMIT_TAG =~ /^(v|clautolisp-v)/'
       when: on_success
