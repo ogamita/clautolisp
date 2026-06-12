@@ -286,10 +286,21 @@ run-file-compat-autocad-windows:
 	 $(RUN_FILE_COMPAT) --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 
-documentation: $(PDF_FILES) $(INFO_FILES)
+documentation: $(PDF_FILES) $(INFO_FILES) documentation/RELEASE_NOTES.pdf
 
 user-manual: documentation/clautolisp-user-manual.pdf documentation/clautolisp-user-manual.info
 specifications: documentation/clautolisp-specifications.pdf documentation/clautolisp-specifications.info
+
+# RELEASE_NOTES.org lives at the repo root (single source of truth)
+# but ships to $PREFIX/share/doc/clautolisp/ alongside the other
+# user-facing org docs. Mirror the file into documentation/ at build
+# time so the existing %.pdf rule and the install-time wildcard pick
+# it up without special-casing. The mirrored copy is regenerated from
+# the root file every time the root file changes; .gitignore keeps
+# both the mirrored .org and the resulting .pdf out of the repo.
+documentation/RELEASE_NOTES.org: ../RELEASE_NOTES.org
+	@mkdir -p documentation
+	cp $< $@
 
 %.pdf: %.org
 	$(EMACS) --batch \
@@ -315,6 +326,7 @@ specifications: documentation/clautolisp-specifications.pdf documentation/clauto
 
 clean-pdf:
 	rm -f $(PDF_FILES) $(INFO_FILES) $(ALL_ORG_FILES:.org=.texi)
+	rm -f documentation/RELEASE_NOTES.org documentation/RELEASE_NOTES.pdf documentation/RELEASE_NOTES.texi
 
 builtins-coverage:
 	@tools/builtins-coverage/coverage.sh > documentation/builtins-coverage.md
