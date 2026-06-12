@@ -1,0 +1,187 @@
+#+TITLE: clautolisp — release notes
+#+AUTHOR: Codex
+#+OPTIONS: toc:2
+
+* About this file
+
+This file records every user-visible feature shipped by the programs
+that =make install= places under =$PREFIX= (default =/opt/local=).
+Read it to know what each program does and where to find the full
+reference. Each entry is intentionally short — one to three lines —
+and points at the relevant ~user-manual.org~ for normative details.
+
+This is not a changelog. Each section reflects the *current* state of
+master at the top of the file (clautolisp 1.2.5 / alfe 1.2.1). For the
+chronology and the issue-by-issue history, see ~git log~ on master and
+the issues under ~issues/closed/~.
+
+A standing rule lives in ~AGENTS.md~ § /Release notes/: this file
+*must* be updated in the same commit as any user-visible feature
+addition or change, including optimisations the user can observe (e.g.
+faster startup, lower memory, narrower diagnostic output). Internal
+refactors with no user-visible effect do not require an entry.
+
+---
+
+* clautolisp / read-autolisp (=clautolisp/documentation/clautolisp-user-manual.org=)
+
+clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
+standalone CLI. read-autolisp is its tokenizer/reader available as a
+separate binary for tool integrators.
+
+** Standalone CLI (clautolisp-sbcl / clautolisp-ccl)
+
+- Three modes: file (~clautolisp file.lsp~), expression (~-x EXPR~),
+  and interactive REPL. See § /Modes of Operation/.
+- Five dialects selectable via ~--strict~ / ~--autocad~ /
+  ~--bricscad~ / ~--clautolisp~ / ~--lax~. The ~lax~ dialect silences
+  every encoding-dispatch diagnostic globally. See § /Options /
+  Dialect selection/.
+- Host backend selectable via ~--host mock|null~ (default mock).
+  Mock-host carries the full 1836-entry vendor sysvar catalogue.
+
+** Encoding handling (issues/closed/encoding-dispatch.issue)
+
+- Launch chain: =LC_ALL → LANG → LC_CTYPE → -e= resolves the active
+  encoding at startup and populates ~SYSCODEPAGE~, ~DWGCODEPAGE~, and
+  ~*AUTOLISP-FILE-ENCODING*~ (no more empty placeholders). Empty-
+  string sentinel for ~*AUTOLISP-FILE-ENCODING*~ in the degenerate
+  case (no locale env, no -e) falls through to the dialect default.
+  See § /Source-file and terminal encoding/.
+- ~LOAD~ and ~OPEN~ accept a positional ~[encoding]~ argument under
+  ~--clautolisp~ / ~--lax~. Foreign-dialect spellings (AutoCAD's
+  ~"utf8"~ / ~"utf8-bom"~ third arg, BricsCAD's ~,ccs=…~ mode suffix,
+  ~LISPSYS~) work under their native dialect; other dialects emit
+  ~enc-foreign-dialect~ but still honour the call.
+- Diagnostic codes: ~enc-foreign-dialect~, ~enc-extension-used~,
+  ~enc-unsupported-target~, ~enc-invalid-value~,
+  ~enc-lispsys-out-of-range~, ~enc-codepage-mismatch~,
+  ~enc-unknown-codepage~, ~enc-host-dependent~. See § /Errors and
+  Diagnostics / Encoding-dispatch diagnostics (enc-*)/.
+
+** clautolisp-only helpers (CLAL-* prefix)
+
+- ~clal-sysvar-list~, ~clal-sysvar-apropos~ — discover the active
+  host's system variables.
+- ~clal-system-codepage~, ~clal-drawing-codepage~,
+  ~clal-codepage-mismatch-p~ — canonicalised SYSCODEPAGE / DWGCODEPAGE
+  query for defensive comparison.
+- ~clal-file-encoding PATH~ — sniff the BOM, return one of
+  ~"UTF-8-BOM"~ / ~"UTF-16-LE"~ / ~"UTF-16-BE"~ / ~"UTF-32-LE"~ /
+  ~"UTF-32-BE"~ / ~"ANSI"~. See § /clautolisp Extensions/.
+
+** AutoLISP-protocol image-introspection variables
+
+- ~*AUTOLISP-FRONTEND*~ — ALFE / CLAUTOLISP (the entry-point tool).
+- ~*AUTOLISP-BACKEND*~ — CLAUTOLISP / BRICSCAD / AUTOCAD (the engine).
+- ~*AUTOLISP-HELP*~ — the --help banner as a string.
+- Plus ~*AUTOLISP-DIALECT*~, ~*AUTOLISP-HOST*~,
+  ~*AUTOLISP-VERSION*~, ~*AUTOLISP-LOAD-PATHNAME*~,
+  ~*AUTOLISP-EXPRESSION*~, ~*AUTOLISP-INTERACTIVE*~, etc.
+  See § /Image-introspection variables (*AUTOLISP-…*)/.
+
+** Surface coverage of the AutoLISP / Visual LISP spec
+
+- 100% surface-bound: 548 real implementations plus 410 M6 stubs
+  (nil-returning placeholders) under every documented identifier.
+  Calling a stub returns nil; ~(boundp 'X)~ is ~T~. Real impls track
+  through ~issues/open/deferred-stubbed-functions.issue~. ~ALERT~
+  is now a real builtin (emits ~"WARNING: <message>"~ to stdout in
+  the headless engine).
+
+** Other AutoLISP semantics matches
+
+- ~(quit)~ and ~(exit)~ are catchable by ~VL-CATCH-ALL-APPLY~ — the
+  vendor surface, needed by test frameworks like test-unitaire.lsp.
+- Source-level ~'NIL~ normalises to CL nil so ~(a b c . NIL)~ is a
+  proper list (REVERSE / LENGTH / MAPCAR etc. accept it).
+- Reader accepts ~"42."~, ~"5."~, ~".5"~ as reals (vendor semantics,
+  distinct from CL).
+- Float printer emits ~"3.14"~ / ~"42.0"~ / ~"1.0e20"~ — no CL
+  double-float marker.
+- Relational operators ~<~, ~<=~, ~>~, ~>=~ fold non-numeric args
+  (including nil) to nil — matches AutoLISP loop-guard idioms.
+- ~(substr s start 0)~ returns ~""~.
+- Locale-insensitive numeric I/O (period decimal separator regardless
+  of ~LC_NUMERIC~ / ~DIMDSEP~).
+
+** read-autolisp
+
+- Standalone tokenizer/reader CLI. See ~clautolisp/autolisp-reader/
+  documentation/autolisp-reader-user-manual.org~.
+
+---
+
+* alfe — AutoLisp FrontEnd (=autolisp-front-end/documentation/alfe-user-manual.org=)
+
+alfe is the multi-backend driver: it speaks the AutoLISP CLI surface,
+resolves a backend (in-process clautolisp, or a CAD-host bridge via
+file or COM), and forwards the workload.
+
+** Backends (autolisp-front-end/documentation/alfe-user-manual.org § /Backends/)
+
+- ~--clautolisp~ (default) — drive the in-process clautolisp engine.
+- ~--bricscad~ — drive a BricsCAD process via the file-protocol
+  bridge (BricsCAD V26 / macOS).
+- ~--autocad~ — drive an AutoCAD process (Windows + macOS lanes).
+- ~--echo~ — a test backend that logs without executing.
+
+** Modes
+
+- ~--mode auto~ (default), ~--mode batch~, ~--mode automation~.
+  See § /Backend invocation/ for the file-protocol handshake.
+
+** Diagnostics under ~--verbose~ / ~--debug~
+
+- Both flags now emit progressive diagnostics through every
+  backend's lifecycle (workdir, argv, BOOTSTRAP timing, status-file
+  polling). The old "single error line" failure mode is gone.
+
+** Image-introspection variables
+
+- alfe publishes the same ~*AUTOLISP-…*~ globals as clautolisp, plus
+  ~*AUTOLISP-MODE*~, ~*AUTOLISP-DRAWING*~, ~*AUTOLISP-WORKDIR*~,
+  ~*AUTOLISP-KEEP-WORKDIR*~. See the alfe manual's
+  § /The *AUTOLISP-…* globals/ table.
+
+---
+
+* autolisp-spec — language reference (=autolisp-spec/documentation/autolisp-spec-user-manual.org=)
+
+- 957 named operators documented (938 ~Function Entry~ + 19
+  ~Special Form Entry~), one per spec section. Includes vendor
+  divergence notes, source URLs, and ~Source Notes~ provenance.
+- Paged HTML / Info / PDF builds. The paged split is cached in
+  ~autolisp-spec/scripts/build-paged-spec.el~.
+- ~alref~ AutoLISP library: loadable into any AutoLISP host, exposes
+  ~(alref-apropos PATTERN)~ and ~(alref-describe NAME)~ for
+  REPL-driven discovery (matches the spec's clautolisp-extension
+  family).
+- New normative anchors in this release line:
+  - locale-insensitivity contract for ~rtos~ and the value printer;
+  - the ~atof~ lex model with the OR rule for ~"42."~ / ~"5."~ /
+    ~".5"~ (vendor reader semantics);
+  - the ~clautolisp dispatch for LISPSYS~ sub-section in ch. 9.
+
+---
+
+* autolisp-test — conformance harness (=autolisp-test/documentation/autolisp-test-user-manual.org=)
+
+- A test-runner driving a corpus of AutoLISP test files against any
+  configured AutoLISP host. Installed under
+  ~$PREFIX/libexec/autolisp-test/~ (harness + tests + docs).
+- Used by ~make conformance~ in alfe and by ~make test~ at the
+  repo root.
+
+---
+
+* Where things land on disk (=make install=)
+
+| Subproject       | Bin / libexec                                            | Docs                              |
+|------------------+----------------------------------------------------------+-----------------------------------|
+| clautolisp       | =$PREFIX/bin/clautolisp= (+ -sbcl / -ccl + read-autolisp)| share/doc/clautolisp/             |
+| alfe             | =$PREFIX/bin/alfe= (+ -sbcl / -ccl)                      | share/doc/alfe/                   |
+| autolisp-spec    | (docs only — HTML, Info, pages, .org, .pdf)              | share/doc/autolisp-spec/          |
+| autolisp-test    | libexec/autolisp-test/{harness,tests}                    | share/doc/autolisp-test/          |
+
+Override ~$PREFIX~ on the make line (default ~/opt/local~) to relocate.

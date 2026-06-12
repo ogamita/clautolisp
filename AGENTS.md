@@ -254,3 +254,30 @@ When a stub is promoted to a real implementation, delete the
 `STUB:` marker, replace it with a normal docstring describing
 the real behaviour, and move the issue entry to the issue's
 Resolved tail.
+
+## Release notes
+
+- The repo-root file `RELEASE_NOTES.org` records every user-visible
+  feature shipped by the programs that `make install` places under
+  `$PREFIX` (clautolisp, alfe, read-autolisp, autolisp-spec docs,
+  the autolisp-test harness).
+- `RELEASE_NOTES.org` MUST be updated in the same commit as any
+  change that affects the user experience. That includes:
+  - new features, options, dialect modes, builtins;
+  - changes to existing user-visible behaviour (output format,
+    error / diagnostic codes, default values);
+  - observable performance improvements (faster startup, lower
+    memory, narrower output) — list these as "Optimisations"
+    under the relevant subproject;
+  - new files or directories produced by `make install`;
+  - new docs that ship under `share/doc/`.
+- Internal refactors with no user-visible effect (renamed CL
+  functions, moved files, test-only changes, comment edits) do
+  NOT require a `RELEASE_NOTES.org` entry.
+- Each entry should be 1–3 lines. The full reference lives in the
+  per-subproject `documentation/<name>-user-manual.org`; the
+  entry just names the feature and links the manual section.
+- Keep entries grouped under the subproject they ship in
+  (clautolisp / alfe / autolisp-spec / autolisp-test). If a
+  feature spans subprojects, mention it once in the most
+  user-facing one and cross-link.
