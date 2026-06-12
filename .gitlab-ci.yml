@@ -220,7 +220,11 @@ release:linux:x86-64:
   extends: .release-common
   image: $CLAUTOLISP_CI_LATEST
   before_script:
-    - command -v cmake >/dev/null || (apt-get update && apt-get install -y cmake)
+    # bzip2 (tar -cjf) and zip are required by the release-* packaging;
+    # cmake by build-libraries. Install whatever the image lacks (the CI
+    # image gains them once it is rebuilt from master; this keeps tag
+    # pipelines working in the meantime).
+    - pkgs=""; for t in cmake bzip2 zip; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
   script:
     - make release-sources
     - make build-libraries
@@ -314,6 +318,10 @@ collect:release:
       when: on_success
     - when: manual
       allow_failure: true
+  before_script:
+    # collect un/re-compresses the per-target tarballs (tar -xjf / -cjf),
+    # so it needs bzip2 — absent from the CI image until rebuilt.
+    - command -v bzip2 >/dev/null 2>&1 || { apt-get update && apt-get install -y bzip2; }
   script:
     - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
   artifacts:

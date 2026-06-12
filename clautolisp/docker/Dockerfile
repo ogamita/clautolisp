@@ -11,6 +11,7 @@ ENV XDG_CACHE_HOME=/root/.cache
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
+      bzip2 \
       ca-certificates \
       curl \
       git \
@@ -19,6 +20,7 @@ RUN apt-get update \
       sbcl \
       tar \
       xz-utils \
+      zip \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
