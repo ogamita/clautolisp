@@ -247,8 +247,11 @@ release:documentation:
   variables:
     GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
   before_script:
+    # texlive-plain-generic carries ulem.sty (tex/generic/ulem/) which
+    # org's default export uses ([normalem]{ulem}) and which neither
+    # `texlive` nor texlive-latex-extra pulls in.
     - apt-get update && apt-get install -y --no-install-recommends
-        emacs-nox texlive texlive-latex-extra texlive-xetex texinfo
+        emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo
   script:
     - make release-documentation
   artifacts:
