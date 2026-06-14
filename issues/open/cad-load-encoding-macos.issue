@@ -1,0 +1,78 @@
+cad-load-encoding-macos — BricsCAD native (load) ignores the -e/load encoding on macOS
+======================================================================================
+
+Reported from: SCHMS+ test harness (sncf-reseau/src/schms) run via
+`alfe --bricscad --mode batch -e Windows-1252` on macOS (BricsCAD V26).
+The full suite runs; 13 of 177 fail, ALL on accented strings only.
+
+Summary
+-------
+
+`alfe ... -e Windows-1252` correctly decodes the files alfe itself
+loads (the `-l`/`--load` actions: test framework, test-unitaire.lsp).
+But files pulled in by an *in-engine* `(load "...")` (the SCHMS+
+modules under src-vlx, loaded by the harness via `tu:load` =
+native AutoLISP `load`) are decoded with BricsCAD's macOS default
+codepage (Mac Roman), NOT Windows-1252. The cp1252 source bytes are
+therefore mis-decoded for accented characters.
+
+Symptom
+-------
+
+Description strings built by the modules come out with mangled
+accents, mismatching the (correct) literals in the test files:
+
+    expected="entière"          actual="entiËre"
+    expected="réelle"           actual="rÈelle"
+    expected="égale à 42"       actual="Ègale ‡ 42"
+    expected="«salut»"          actual="´salutª"
+    expected="correspondant à"  actual="correspondant ‡"
+
+Pattern is consistent with cp1252 bytes interpreted as Mac Roman
+(è 0xE8 -> Ë, à 0xE0 -> ‡, « 0xAB -> ´, » 0xBB -> ª).
+
+Not reproduced on:
+- clautolisp backend (`-e Windows-1252` is honored for every load) — 177 OK.
+- (expected) Windows BricsCAD, whose default codepage is cp1252.
+
+Expected
+--------
+
+The load encoding requested via `-e` (or the dialect/host default)
+should apply to in-engine `(load …)` too, so cp1252 sources decode
+identically regardless of which load path pulls them in — matching
+clautolisp's behavior.
+
+Possible approaches
+-------------------
+
+- PREFERRED: map the requested `-e` encoding to BricsCAD's SYSCODEPAGE
+  sysvar at startup -- e.g. `-e Windows-1252` -> `(setvar "SYSCODEPAGE"
+  "CP-1252")` -- set BEFORE any module is loaded. BricsCAD is expected
+  to follow SYSCODEPAGE for native `load` decoding.
+- Provide an encoding-aware load shim on the BricsCAD backend (the
+  `load` shadow already exists for `*autolisp-load-pathname*`) that
+  decodes per the active `-e` encoding.
+- At minimum, document that native `(load)` on macOS BricsCAD uses
+  the OS default codepage, not `-e`.
+
+Tested so far (inconclusive)
+----------------------------
+
+    make test-unit-bricscad \
+      ALFE_BRICSCAD_OPTIONS="-e WINDOWS-1252 -x '(setvar \"SYSCODEPAGE\" \"CP-1252\")'"
+
+showed no change. Caveats to rule out before concluding the sysvar has
+no effect: (1) the var name is `SYSCODEPAGE` (no space); (2) the setvar
+must run BEFORE the modules are loaded (in the harness the -x runs first,
+so timing is OK there); (3) SYSCODEPAGE may only be honored at session
+start, not after BricsCAD is already running.
+
+Notes
+-----
+
+Harness/CI are unaffected (CI runs clautolisp, 177 OK). This only
+hits local macOS BricsCAD runs of `make test-unit-bricscad`. Filed
+per the BricsCAD/AutoCAD-vs-clautolisp parity rule. A harness-side
+workaround would require a cp1252-aware loader for the modules, since
+native `load` takes no encoding argument.
