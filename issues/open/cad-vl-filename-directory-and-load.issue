@@ -60,3 +60,24 @@ Related
 See cad-path-dotdot-resolution.issue (BricsCAD does not resolve ".."
 segments) — the harness now emits clean paths to avoid that, but the
 framework path still does not resolve here.
+
+UPDATE / RESOLUTION
+-------------------
+
+Diagnosed further: `vl-filename-directory` is NOT the culprit — it
+behaves like clautolisp on BricsCAD (`(vl-filename-directory "/a/b/c")`
+=> "/a/b"), and `*tu:test-framework*` was confirmed to hold the correct
+non-nil string right before the failing form. The real cause is that an
+IN-FILE native `(load <abs-path>)` fails under BricsCAD's `load` shadow
+in that context, even though alfe's own `--load` action and
+`(vl-catch-all-apply 'load (list <same-path>))` both succeed.
+
+Worked around on the SCHMS+ side by loading the framework via an alfe
+`--load` action and skipping the in-file `(load …)` (guarded by
+`(boundp '*t:suites*)`). With that, the full suite runs under BricsCAD.
+
+So this issue is effectively "in-file native `(load <abs-path>)` fails
+under the BricsCAD load shadow in some contexts" — retitle/triage
+accordingly. The vl-filename-directory angle can be dropped. (The
+remaining BricsCAD/macOS failures are encoding only — see
+cad-load-encoding-macos.issue.)
