@@ -240,24 +240,18 @@ release:linux:x86-64:
 # Documentation is its OWN lane (mirrors the GitHub `documentation` job)
 # so each forge independently produces the complete release set. It is
 # slow (Emacs paged split of 3026 sections + xelatex PDFs across four
-# subprojects), so the autolisp-spec/build paged split is cached (via
-# .release-common). xelatex => texlive-xetex is REQUIRED (the bare
-# `texlive` metapackage does not pull it).
+# subprojects). It runs on the SELF-HOSTED macOS shell runner: the
+# workstation has Emacs + MacPorts texlive (xelatex) natively, so this
+# consumes no GitLab compute minutes and is not bound by the shared-
+# runner 1 h cap. (GitHub builds the same docs on its own runner — see
+# .github/workflows/release.yml.)
 release:documentation:
   extends: .release-common
-  image: $CLAUTOLISP_CI_LATEST
-  # First run builds the 3026-section paged split from scratch (~60 min,
-  # just over the 1 h project default); 2 h lets it finish and populate
-  # the cache, after which subsequent runs are fast.
-  timeout: 2h
+  tags: [macos, arm64]                # self-hosted shell runner (thalassa)
   variables:
     GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
   before_script:
-    # texlive-plain-generic carries ulem.sty (tex/generic/ulem/) which
-    # org's default export uses ([normalem]{ulem}) and which neither
-    # `texlive` nor texlive-latex-extra pulls in.
-    - apt-get update && apt-get install -y --no-install-recommends
-        emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo
+    - command -v emacs makeinfo xelatex >/dev/null   # native MacPorts toolchain
   script:
     - make release-documentation
   artifacts:
@@ -332,7 +326,7 @@ release:windows:x86-64:
 # separate, on-demand step taken AFTER the artefacts are tested.
 collect:release:
   stage: collect
-  image: $CLAUTOLISP_CI_LATEST     # only needs make + tar + bzip2
+  tags: [macos, arm64]             # self-hosted shell runner (no GitLab minutes); native tar/bzip2
   variables:
     GIT_SUBMODULE_STRATEGY: none
   needs:
@@ -347,9 +341,7 @@ collect:release:
     - when: manual
       allow_failure: true
   before_script:
-    # collect un/re-compresses the per-target tarballs (tar -xjf / -cjf),
-    # so it needs bzip2 — absent from the CI image until rebuilt.
-    - command -v bzip2 >/dev/null 2>&1 || { apt-get update && apt-get install -y bzip2; }
+    - command -v bzip2 tar make >/dev/null   # native on macOS
   script:
     - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
   artifacts:
