@@ -248,7 +248,7 @@ record per line, suitable for diffing across runs."
 
 (defun autolisp-test--print-line (text) (princ text) (princ "\n"))
 
-(defun autolisp-test-print-recap (descriptor results matrix / total pass fail
+(defun autolisp-test-print-recap (impl-desc results matrix / total pass fail
                                                               skip xfail xpass
                                                               unimpl na)
   (setq total (length results))
@@ -263,55 +263,42 @@ record per line, suitable for diffing across runs."
   (autolisp-test--print-line "============================================================")
   (autolisp-test--print-line "  autolisp-test conformance report")
   (autolisp-test--print-line "------------------------------------------------------------")
-  (autolisp-test--print-line
-   (strcat "  Implementation : "
-           (or (cdr (assoc 'impl-name descriptor)) "?")
-           " ("
-           (vl-symbol-name (cdr (assoc 'impl descriptor)))
-           ")"))
-  (autolisp-test--print-line
-   (strcat "  Version        : " (cdr (assoc 'version descriptor))))
-  (autolisp-test--print-line
-   (strcat "  Platforms      : "
-           (autolisp-test--format-value (cdr (assoc 'platforms descriptor)))))
-  (autolisp-test--print-line
-   (strcat "  Runtimes       : "
-           (autolisp-test--format-value (cdr (assoc 'runtimes descriptor)))))
-  (autolisp-test--print-line
-   (strcat "  Profile target : "
-           (vl-symbol-name (cdr (assoc 'profile-target descriptor)))))
+  (princ "  Implementation : ")
+  (princ (cdr (assoc 'impl-name impl-desc)))
+  (princ " (")
+  (princ (cdr (assoc 'impl impl-desc)))
+  (autolisp-test--print-line ")")
+  (princ "  Version        : ")
+  (autolisp-test--print-line (cdr (assoc 'version impl-desc)))
+  (princ "  Platforms      : ")
+  (autolisp-test--print-line (autolisp-test--format-value (cdr (assoc 'platforms impl-desc))))
+  (princ "  Runtimes       : ")
+  (autolisp-test--print-line (autolisp-test--format-value (cdr (assoc 'runtimes impl-desc))))
+  (princ "  Profile target : ")
+  (autolisp-test--print-line (vl-symbol-name (cdr (assoc 'profile-target impl-desc))))
   (autolisp-test--print-line "------------------------------------------------------------")
-  (autolisp-test--print-line
-   (strcat "  Total tests    : " (itoa total)))
-  (autolisp-test--print-line
-   (strcat "  Pass           : " (itoa pass)))
-  (autolisp-test--print-line
-   (strcat "  Fail           : " (itoa fail)))
-  (autolisp-test--print-line
-   (strcat "  Skip           : " (itoa skip)))
-  (autolisp-test--print-line
-   (strcat "  Not applicable : " (itoa na)))
-  (autolisp-test--print-line
-   (strcat "  Unimplemented  : " (itoa unimpl)))
-  (autolisp-test--print-line
-   (strcat "  XFail          : " (itoa xfail)))
-  (autolisp-test--print-line
-   (strcat "  XPass          : " (itoa xpass)))
+  (princ "  Total tests    : ") (autolisp-test--print-line (itoa total))
+  (princ "  Pass           : ") (autolisp-test--print-line (itoa pass))
+  (princ "  Fail           : ") (autolisp-test--print-line (itoa fail))
+  (princ "  Skip           : ") (autolisp-test--print-line (itoa skip))
+  (princ "  Not applicable : ") (autolisp-test--print-line (itoa na))
+  (princ "  Unimplemented  : ") (autolisp-test--print-line (itoa unimpl))
+  (princ "  XFail          : ") (autolisp-test--print-line (itoa xfail))
+  (princ "  XPass          : ") (autolisp-test--print-line (itoa xpass))
   (autolisp-test--print-line "------------------------------------------------------------")
   (autolisp-test--print-line "  Verdict matrix:")
   (foreach pair matrix
-    (autolisp-test--print-line
-     (strcat "    "
-             (car pair)
-             "  ->  "
-             (vl-symbol-name (cdr (assoc 'verdict (cadr pair))))
-             "   ("
-             (itoa (cdr (assoc 'applicable-count (cadr pair))))
-             "/"
-             (itoa (cdr (assoc 'total-count (cadr pair))))
-             " applicable; "
-             (itoa (cdr (assoc 'fail (cadr pair))))
-             " failing)")))
+    (princ "    ")
+    (princ (car pair))
+    (princ "  ->  ")
+    (princ (vl-symbol-name (cdr (assoc 'verdict (cadr pair)))))
+    (princ "   (")
+    (princ (itoa (cdr (assoc 'applicable-count (cadr pair)))))
+    (princ "/")
+    (princ (itoa (cdr (assoc 'total-count (cadr pair)))))
+    (princ " applicable; ")
+    (princ (itoa (cdr (assoc 'fail (cadr pair)))))
+    (autolisp-test--print-line " failing)"))
   (autolisp-test--print-line "============================================================"))
 
 (princ "[autolisp-test] report.lsp loaded.\n")
