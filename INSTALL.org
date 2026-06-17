@@ -42,9 +42,49 @@ are already pulled in by =texlive-xetex=.
 
 * Ubuntu / Debian
 
-TODO
+Install the following packages with ~apt~:
 
-Table of packages and brief description (same layout as Fedora / Red Hat above).
+#+begin_src sh
+sudo apt install -y \
+  sbcl                \
+  emacs               \
+  texlive-xetex       \
+  texlive-latex-extra \
+  texinfo             \
+  cmake               \
+  qt6-base-dev        \
+  pkg-config          \
+  make                \
+  git                 \
+  curl
+#+end_src
+
+| Package                | Provides                          |
+|------------------------+-----------------------------------|
+| sbcl                   | SBCL Common Lisp compiler         |
+| emacs                  | Org-mode → LaTeX export           |
+| texlive-xetex          | xelatex (PDF from .org)           |
+| texlive-latex-extra    | wrapfig, ulem, capt-of, etc.      |
+| texinfo                | makeinfo (.texi → .info)          |
+| cmake                  | C++ build system (Qt GUI)         |
+| qt6-base-dev           | Qt 6 Core + Widgets (GUI)         |
+| pkg-config             | Probe tool for Qt6 detection      |
+| make                   | Build driver                      |
+| git                    | Source control                     |
+| curl                   | Quicklisp download                 |
+
+On Ubuntu, the extra TeX packages (=wrapfig=, =ulem=, =capt-of=) are
+part of =texlive-latex-extra= rather than separate packages as on
+Fedora.
+
+Ubuntu also packages CCL directly:
+
+#+begin_src sh
+sudo apt install -y clozure-cl
+#+end_src
+
+The manual install procedure in the Quick-Reference section remains
+available when the system package lags behind upstream.
 
 * Common Lisp implementations
 
