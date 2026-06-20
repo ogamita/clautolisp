@@ -1,0 +1,40 @@
+#!/bin/bash
+set -e
+
+ports=(autoconf automake libtool
+       libiconv pslib pcre2
+       gperf cmake ninja TeXinfo swig doxygen jq shellcheck
+       shfmt 
+       timeout parallel)
+
+tools=(gcc clang clang-format clang-tidy make autoconf automake libtool
+       gperf cmake ninja  swig doxygen jq shellcheck valgrind
+       shfmt
+       parallel picat
+       valgrind)
+
+yes y | sudo port install ${ports[@]}
+
+if [ $(uname) = Darwin ] ; then
+    if [ $(uname -m) = arm64 ] ; then
+        yes y | sudo port install valgrind-macos-devel
+    else
+        yes y | sudo port install valgrind 
+    fi
+else
+    yes y | sudo port install valgrind 
+fi
+
+echo $NORMAL
+line='#-----------------------------------------------------------------------'
+for f in ${tools[@]} ; do
+    echo "$line"
+    if type -p "$f" ; then
+        case "$f" in
+        (libtool) "$f" -V ;;
+        (*) "$f" --version ;;
+        esac
+    fi
+done
+echo "$line"
+

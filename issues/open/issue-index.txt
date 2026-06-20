@@ -68,6 +68,11 @@ drawing-database-api.issue  -- parent tracking issue; see the plan in
     drawing-codec-libredwg-submodule.issue              (Phase 17e)
     deferred-document-lifecycle-command-semantics.issue (Phase 17f, parity)
 
+
+release-artefacts.issue  -- CI + Makefile workflow to produce release
+  tarballs/zips (sources, documentation, programs, libraries) across the
+  6 SBCL targets; bin/ dispatch + libexec layout; bundled libdwg.
+
 ---
 
 

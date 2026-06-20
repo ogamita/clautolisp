@@ -12,6 +12,8 @@ default:
 stages:
   - build
   - test
+  - release
+  - collect
 
 .docker-job:
   image: docker:27
@@ -25,7 +27,14 @@ stages:
 build:clautolisp-ci-image:
   stage: build
   extends: .docker-job
+  # Transient network failures (e.g. the CCL download from GitHub) should
+  # not fail a whole pipeline run.
+  retry: 2
   rules:
+    # Never rebuild the image on a release tag: use the already-published
+    # :latest. (Otherwise a flaky image build blocks the release stage.)
+    - if: '$CI_COMMIT_TAG'
+      when: never
     - changes:
         - .gitlab-ci.yml
         - Makefile
@@ -162,3 +171,180 @@ build:alfe:sbcl:
     paths:
       - autolisp-front-end/tools/alfe/bin/alfe-sbcl
     expire_in: 14 days
+
+# --- Release artefacts (see issues/open/release-artefacts.issue) -------
+#
+# On a version tag, produce the source / documentation / programs /
+# libraries artefacts. The hosted GitLab runners + CI image are
+# Linux x86-64 only; the other five SBCL targets need dedicated runners
+# (macOS, Windows, arm64) and are tracked in the issue — the GitHub
+# Actions release workflow scaffolds the full 6-target matrix.
+
+# --- Release artefacts (issues/open/release-artefacts.issue) -----------
+#
+# Per-target jobs build + package on a version tag (v* / clautolisp-v*),
+# or manually. The Linux x86-64 lane runs on GitLab's shared runners via
+# our CI image. The arm64 / macOS lanes are routed by `tags:` to a
+# SELF-HOSTED runner on an Apple-Silicon workstation
+# (see documentation/self-hosted-runners.md):
+#   tags [linux,arm64]  -> docker executor (the host runs linux/arm64)
+#   tags [macos,arm64]  -> shell  executor (native macOS build)
+# arm64 targets are SBCL-only: Clozure CL has no arm64 build.
+# Windows targets need a Windows runner (paid SaaS, or a Win11-ARM VM
+# with its own runner) — not provided here yet.
+
+.release-common:
+  stage: release
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive   # libredwg (+ jsmn) needed by build-libraries
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^(v|clautolisp-v)/'
+      when: on_success
+    - when: manual
+      allow_failure: true
+  # Cache the slow autolisp-spec paged split (3026 sections -> html/info/
+  # pages); keyed on the spec org + the split driver.
+  cache:
+    key:
+      files:
+        - autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+        - autolisp-spec/scripts/build-paged-spec.el
+    paths:
+      - autolisp-spec/build/
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 30 days
+
+release:linux:x86-64:
+  extends: .release-common
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    RELEASE_LISPS: "sbcl ccl"     # x86-64 ships both SBCL + CCL (arm64 lanes stay sbcl-only by default)
+  before_script:
+    # bzip2 (tar -cjf) and zip are required by the release-* packaging;
+    # cmake by build-libraries. Install whatever the image lacks (the CI
+    # image gains them once it is rebuilt from master; this keeps tag
+    # pipelines working in the meantime).
+    - pkgs=""; for t in cmake bzip2 zip; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
+  script:
+    - make release-sources
+    - make build-libraries
+    - make release-programs
+    - make release-libraries
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-linux-x86-64"
+    paths: [dist/]
+    expire_in: 30 days
+
+# Documentation is its OWN lane (mirrors the GitHub `documentation` job)
+# so each forge independently produces the complete release set. It is
+# slow (Emacs paged split of 3026 sections + xelatex PDFs across four
+# subprojects). It runs on the SELF-HOSTED macOS shell runner: the
+# workstation has Emacs + MacPorts texlive (xelatex) natively, so this
+# consumes no GitLab compute minutes and is not bound by the shared-
+# runner 1 h cap. (GitHub builds the same docs on its own runner — see
+# .github/workflows/release.yml.)
+release:documentation:
+  extends: .release-common
+  tags: [macos, arm64]                # self-hosted shell runner (thalassa)
+  variables:
+    GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
+  before_script:
+    - command -v emacs makeinfo xelatex >/dev/null   # native MacPorts toolchain
+  script:
+    - make release-documentation
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-documentation"
+    paths: [dist/]
+    expire_in: 30 days
+
+release:linux:arm64:
+  extends: .release-common
+  tags: [linux, arm64]            # self-hosted docker executor (Apple-Silicon host runs linux/arm64)
+  image: buildpack-deps:bookworm  # multi-arch (pulled as arm64); has git + a C toolchain
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
+    - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
+    - sbcl --non-interactive --load /tmp/ql.lisp --eval '(quicklisp-quickstart:install)'
+  script:
+    - make build-libraries          # vendored libdwg + shim (native arm64)
+    - make build-programs           # SBCL arm64 images (no CCL on arm64)
+    - make release-programs
+    - make release-libraries
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-linux-arm64"
+    paths: [dist/]
+    expire_in: 30 days
+
+release:darwin:arm64:
+  extends: .release-common
+  tags: [macos, arm64]            # self-hosted shell executor on the Apple-Silicon workstation
+  before_script:
+    # The workstation provides the toolchain (MacPorts: sbcl, cmake; cc
+    # via Xcode) and Quicklisp at ~/quicklisp/. SBCL-only on arm64.
+    - command -v sbcl cmake cc >/dev/null
+  script:
+    - make build-libraries          # vendored libdwg + shim (native arm64)
+    - make build-programs           # SBCL arm64 images
+    - make release-programs
+    - make release-libraries
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-darwin-arm64"
+    paths: [dist/]
+    expire_in: 30 days
+
+# Windows x86-64 — STUB for now (real packaging follows
+# documentation/windows-package-spec.md: SBCL/CCL images, libdwg.dll,
+# and a zip into the Windows install root). This job only confirms the
+# self-hosted Windows runner is reachable and reports its toolchain.
+# Shell executor = PowerShell. No submodules needed for the stub.
+release:windows:x86-64:
+  extends: .release-common
+  tags: [windows, x86-64]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - 'Write-Host "clautolisp $env:CI_COMMIT_TAG -- windows/x86-64 lane (STUB)"'
+    - 'Write-Host "Toolchain probe:"'
+    - 'foreach ($t in @("sbcl","cmake","git","cl","gcc")) { $c = Get-Command $t -ErrorAction SilentlyContinue; if ($c) { Write-Host ("  {0}: {1}" -f $t, $c.Source) } else { Write-Host ("  {0}: NOT FOUND" -f $t) } }'
+    - 'New-Item -ItemType Directory -Force -Path dist | Out-Null'
+    - '"clautolisp $env:CI_COMMIT_TAG windows/x86-64 packaging is a STUB. See documentation/windows-package-spec.md." | Set-Content -Encoding utf8 dist/windows-x86-64-STUB.txt'
+    - 'Get-Content dist/windows-x86-64-STUB.txt'
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-windows-x86-64-stub"
+    paths: [dist/]
+    expire_in: 30 days
+
+# --- collect: union the per-target artefacts into the combined set -----
+#
+# Gathers the four release jobs' dist/ (binaries-<os>-<arch>,
+# libraries-<os>-<arch>, sources, documentation, windows) and unions
+# them into the combined clautolisp-<ver>-{binaries,libraries}.tar.bz2
+# (+ sources/documentation passthrough, windows kept as-is). Exposed as
+# downloadable job artifacts only — publishing a GitLab Release is a
+# separate, on-demand step taken AFTER the artefacts are tested.
+collect:release:
+  stage: collect
+  tags: [macos, arm64]             # self-hosted shell runner (no GitLab minutes); native tar/bzip2
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  needs:
+    - { job: "release:linux:x86-64", artifacts: true }
+    - { job: "release:linux:arm64",  artifacts: true }
+    - { job: "release:darwin:arm64", artifacts: true }
+    - { job: "release:windows:x86-64", artifacts: true }
+    - { job: "release:documentation", artifacts: true }
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^(v|clautolisp-v)/'
+      when: on_success
+    - when: manual
+      allow_failure: true
+  before_script:
+    - command -v bzip2 tar make >/dev/null   # native on macOS
+  script:
+    - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-release"
+    paths: [dist/combined/]
+    expire_in: 30 days
