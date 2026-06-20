@@ -35,12 +35,30 @@ cmake -S "$lr" -B "$build" \
 cmake --build "$build" --target redwg \
       -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
-# Compile the shim, linked against libredwg (rpath -> build dir).
-ext=dylib
-[ "$(uname)" = "Linux" ] && ext=so
+# Compile the shim, linked against libredwg. Two rpaths so the SAME
+# binary works both in the dev tree (libredwg in $build) and when
+# installed adjacent to libredwg (release layout lib/clautolisp/<os>/<arch>/):
+#   - $build                : dev build dir (absolute)
+#   - @loader_path / $ORIGIN: the shim's own directory (relocatable)
+case "$(uname)" in
+  Linux)               ext=so;    origin='$ORIGIN' ;;
+  Darwin)              ext=dylib; origin='@loader_path' ;;
+  MINGW*|MSYS*|CYGWIN*) ext=dll;  origin='' ;;   # Windows: no rpath; the
+                                                 # loader resolves DLLs from
+                                                 # the shim's own dir / PATH
+  *)                   ext=so;    origin='$ORIGIN' ;;
+esac
+
+# Windows DLLs have no rpath; clal_dwg.dll's dependency libredwg.dll is
+# resolved at load time (bindings.lisp pre-loads it from the same dir).
+rpaths=""
+[ -n "$origin" ] && rpaths="-Wl,-rpath,$build -Wl,-rpath,$origin"
+
+# On MinGW the import library may be libredwg.dll.a under $build or
+# $build/src; search both. -fPIC is a no-op (and harmless) on Windows.
 cc -shared -fPIC -O2 -D_DARWIN_C_SOURCE \
    -o "$here/source/clal_dwg.$ext" "$here/source/clal_dwg.c" \
    -I"$build/src" -I"$build" -I"$lr/include" -I"$lr/src" \
-   -L"$build" -lredwg -Wl,-rpath,"$build"
+   -L"$build" -L"$build/src" -lredwg $rpaths
 
-echo "built: $here/source/clal_dwg.$ext  (+ $build/libredwg.$ext)"
+echo "built: $here/source/clal_dwg.$ext  (+ libredwg.$ext under $build)"

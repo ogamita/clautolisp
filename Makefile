@@ -48,7 +48,31 @@ DEFAULT_LISP ?=
 # the top level should carry a `## ...` description so it appears in
 # `make help`.
 
-.PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS)
+.PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS) \
+        build-documentation build-programs build-libraries \
+        release release-sources release-documentation release-programs release-libraries
+
+# --- Release artefacts (see issues/open/release-artefacts.issue) -------
+#
+# VERSION is read from the single source of truth (the clautolisp
+# version stamp). Artefacts are written into $(DIST).
+VERSION := $(shell sed -n 's/.*\*version\* *"\([0-9.]*\)".*/\1/p' clautolisp/tools/clautolisp/source/version.lisp)
+DIST    ?= $(CURDIR)/dist
+# Downcased OS / arch for the per-target binary + native-lib layout.
+# OS is normalised to linux/darwin/windows (uname on MSYS2/MinGW/Cygwin
+# reports mingw64_nt-*/msys_nt-*/cygwin_nt-*); arch to the canonical
+# x86-64 / arm64 (uname -m reports x86_64/amd64 and aarch64/arm64
+# inconsistently). These MUST match dispatch.sh and
+# drawing-dwg/source/bindings.lisp (%os / %arch).
+REL_OS   := $(shell uname | tr 'A-Z' 'a-z' | sed -e 's/^mingw.*/windows/' -e 's/^msys.*/windows/' -e 's/^cygwin.*/windows/')
+REL_ARCH := $(shell uname -m | tr 'A-Z' 'a-z' | sed -e 's/^x86_64$$/x86-64/' -e 's/^amd64$$/x86-64/' -e 's/^aarch64$$/arm64/')
+
+# Which Lisp implementations the release lane builds + packages on this
+# target. CCL has no arm64 build (its "linuxarm" is 32-bit Raspberry-Pi;
+# Apple Silicon is unsupported), so arm64 targets are SBCL-only, while
+# x86-64 ships both. The release CI lanes override this per target
+# (x86-64 -> "sbcl ccl"); the default keeps everything else SBCL-only.
+RELEASE_LISPS ?= sbcl
 
 help:  ## Show this message (list available targets and their purpose).
 	@awk 'BEGIN { \
@@ -107,6 +131,144 @@ test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpu
 	$(MAKE) -C clautolisp test
 	$(MAKE) -C autolisp-test test
 	$(MAKE) -C autolisp-front-end test
+
+# --- Build phases, split by artefact kind ------------------------------
+
+build-documentation:  ## Build all PDF docs + the autolisp-spec paged split (HTML/info/pages — the slow part).
+	$(MAKE) documentation
+	$(MAKE) -C autolisp-spec paged
+
+build-programs:  ## Build the host program binaries (clautolisp, alfe, …) for each Lisp in RELEASE_LISPS (default sbcl; x86-64 release sets "sbcl ccl").
+	@for l in $(RELEASE_LISPS); do $(MAKE) build-$$l || exit $$?; done
+
+build-libraries:  ## Build the releasable libraries (the drawing/drawing-dwg native libdwg).
+	$(MAKE) -C clautolisp build-libredwg
+
+# --- Release packaging -------------------------------------------------
+#
+# release-sources is platform-independent and fully implemented here.
+# release-{documentation,programs,libraries} build their kind then stage
+# + archive it; the multi-target (6 platforms) combination is assembled
+# by CI from per-target artefacts (see the issue).
+
+release: release-sources release-documentation release-programs release-libraries  ## Produce every release artefact for this host.
+
+release-sources:  ## Produce the source tarball + zip (tracked files incl. submodules).
+	@mkdir -p "$(DIST)"
+	@prefix=clautolisp-$(VERSION); \
+	stage=$$(mktemp -d); dest="$$stage/$$prefix"; mkdir -p "$$dest"; \
+	git ls-files --recurse-submodules -z | tar -cf - --null -T - | tar -C "$$dest" -xf -; \
+	tar -C "$$stage" -cjf "$(DIST)/$$prefix-sources.tar.bz2" "$$prefix"; \
+	( cd "$$stage" && zip -qr "$(DIST)/$$prefix-sources.zip" "$$prefix" ); \
+	rm -rf "$$stage"; \
+	echo "wrote $(DIST)/$$prefix-sources.tar.bz2"; \
+	echo "wrote $(DIST)/$$prefix-sources.zip"
+
+release-documentation: build-documentation  ## Package the documentation artefact: the spec (pdf/org + prebuilt paged HTML/info/pages) + alref, unpacks into $PREFIX.
+	@mkdir -p "$(DIST)"
+	@ver="$(VERSION)"; stage=$$(mktemp -d); \
+	$(MAKE) -C autolisp-spec install DESTDIR="$$stage" PREFIX= >/dev/null; \
+	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-documentation.tar.bz2" .; \
+	rm -rf "$$stage"; \
+	echo "wrote $(DIST)/clautolisp-$$ver-documentation.tar.bz2"
+
+release-programs: build-programs  ## Build programs and package this host's per-target binaries artefact (unpacks into $PREFIX). CI unions the unix targets.
+	@mkdir -p "$(DIST)"
+	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
+	stage=$$(mktemp -d); \
+	bindir="$$stage/libexec/clautolisp/binaries/$$os/$$arch"; mkdir -p "$$bindir"; \
+	for l in $(RELEASE_LISPS); do \
+	  for b in clautolisp/tools/clautolisp/bin/clautolisp-$$l \
+	           clautolisp/autolisp-reader/tools/read-autolisp/bin/read-autolisp-$$l \
+	           autolisp-front-end/tools/alfe/bin/alfe-$$l; do \
+	    if [ -f "$$b" ]; then cp "$$b" "$$bindir"/; \
+	    elif [ -f "$$b.exe" ]; then cp "$$b.exe" "$$bindir"/; fi; \
+	  done; \
+	done; \
+	mkdir -p "$$stage/bin"; \
+	for p in clautolisp alfe read-autolisp; do \
+	  cp clautolisp/tools/packaging/dispatch.sh "$$stage/bin/$$p"; chmod +x "$$stage/bin/$$p"; \
+	done; \
+	if [ "$$os" = windows ]; then \
+	  for p in clautolisp alfe read-autolisp; do \
+	    sed 's/\r*$$/\r/' clautolisp/tools/packaging/dispatch.cmd > "$$stage/bin/$$p.cmd"; \
+	  done; \
+	fi; \
+	mandir="$$stage/share/man/man1"; mkdir -p "$$mandir"; \
+	find clautolisp autolisp-front-end -path '*/documentation/man/*.1' -exec cp {} "$$mandir"/ \; 2>/dev/null || true; \
+	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
+	for d in clautolisp/documentation/clautolisp-user-manual.info \
+	         clautolisp/documentation/clautolisp-user-manual.pdf \
+	         autolisp-front-end/documentation/alfe-user-manual.info \
+	         autolisp-front-end/documentation/alfe-user-manual.pdf; do \
+	  if [ -f "$$d" ]; then cp "$$d" "$$docdir"/; fi; \
+	done; \
+	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2" .; \
+	rm -rf "$$stage"; \
+	echo "wrote $(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2"
+
+release-libraries: build-libraries  ## Build libraries and package this host's per-target libraries artefact (asd sources + native libdwg). CI unions the targets into clautolisp-<ver>-libraries.tar.bz2.
+	@mkdir -p "$(DIST)"
+	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
+	stage=$$(mktemp -d); \
+	srcroot="$$stage/share/common-lisp/source/clautolisp"; mkdir -p "$$srcroot"; \
+	( cd clautolisp && git ls-files -z '*.lisp' '*.asd' | tar -cf - --null -T - ) | tar -C "$$srcroot" -xf -; \
+	mkdir -p "$$stage/share/common-lisp/systems"; \
+	( cd "$$stage/share/common-lisp/systems" && ln -sf ../source/clautolisp/clautolisp.asd clautolisp.asd ); \
+	libdir="$$stage/lib/clautolisp/$$os/$$arch"; mkdir -p "$$libdir"; \
+	cp clautolisp/third-party/libredwg/build/libredwg.dylib \
+	   clautolisp/third-party/libredwg/build/libredwg.so \
+	   clautolisp/third-party/libredwg/build/libredwg.dll "$$libdir"/ 2>/dev/null || true; \
+	cp clautolisp/drawing-dwg/source/clal_dwg.dylib \
+	   clautolisp/drawing-dwg/source/clal_dwg.so \
+	   clautolisp/drawing-dwg/source/clal_dwg.dll "$$libdir"/ 2>/dev/null || true; \
+	mkdir -p "$$stage/include/clautolisp"; \
+	cp clautolisp/third-party/libredwg/include/dwg.h "$$stage/include/clautolisp"/; \
+	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
+	cp clautolisp/drawing/documentation/drawing-specifications.org "$$docdir"/ 2>/dev/null || true; \
+	cp clautolisp/third-party/libredwg/COPYING "$$docdir"/libredwg-COPYING 2>/dev/null || true; \
+	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2" .; \
+	rm -rf "$$stage"; \
+	echo "wrote $(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2"
+
+# CI collect phase: union the per-target artefacts (gathered by the
+# pipeline into COLLECT_IN) into the final combined release set in
+# COLLECT_OUT. Pure repackaging — no build, no rebuild. The combined
+# binaries/libraries tarballs merge each target's libexec/<os>/<arch>/
+# and lib/<os>/<arch>/ subtrees (the shared bin/, lisp sources, include/
+# overwrite identically); sources + documentation pass through once;
+# the Windows artefact is kept as-is.
+COLLECT_IN  ?= $(DIST)
+COLLECT_OUT ?= $(DIST)/combined
+collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the combined release set in COLLECT_OUT.
+	@ver="$(VERSION)"; in="$(COLLECT_IN)"; out="$(COLLECT_OUT)"; mkdir -p "$$out"; \
+	bstage=$$(mktemp -d); n=0; \
+	for t in "$$in"/clautolisp-$$ver-binaries-*.tar.bz2; do \
+	  [ -f "$$t" ] || continue; echo "merge $$(basename "$$t")"; tar -C "$$bstage" -xjf "$$t"; n=$$((n+1)); \
+	done; \
+	if [ "$$n" -gt 0 ]; then \
+	  tar -C "$$bstage" -cjf "$$out/clautolisp-$$ver-binaries.tar.bz2" .; \
+	  echo "wrote $$out/clautolisp-$$ver-binaries.tar.bz2 (from $$n target(s))"; \
+	else echo "WARNING: no per-target binaries artefacts in $$in"; fi; \
+	rm -rf "$$bstage"; \
+	lstage=$$(mktemp -d); n=0; \
+	for t in "$$in"/clautolisp-$$ver-libraries-*.tar.bz2; do \
+	  [ -f "$$t" ] || continue; echo "merge $$(basename "$$t")"; tar -C "$$lstage" -xjf "$$t"; n=$$((n+1)); \
+	done; \
+	if [ "$$n" -gt 0 ]; then \
+	  tar -C "$$lstage" -cjf "$$out/clautolisp-$$ver-libraries.tar.bz2" .; \
+	  echo "wrote $$out/clautolisp-$$ver-libraries.tar.bz2 (from $$n target(s))"; \
+	else echo "WARNING: no per-target libraries artefacts in $$in"; fi; \
+	rm -rf "$$lstage"; \
+	for f in "$$in"/clautolisp-$$ver-sources.tar.bz2 \
+	         "$$in"/clautolisp-$$ver-sources.zip \
+	         "$$in"/clautolisp-$$ver-documentation.tar.bz2; do \
+	  [ -f "$$f" ] && cp "$$f" "$$out"/ && echo "passthrough $$(basename "$$f")"; \
+	done; \
+	for f in "$$in"/*windows*; do \
+	  [ -e "$$f" ] || continue; cp "$$f" "$$out"/ && echo "windows $$(basename "$$f")"; \
+	done; \
+	echo "--- combined release set ($$out) ---"; ls -l "$$out"
 
 clean:: clean-pdf
 clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources).

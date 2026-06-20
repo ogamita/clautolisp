@@ -1,0 +1,266 @@
+release-artefacts — CI + Makefile workflow to produce release tarballs/zips
+==========================================================================
+
+See also:
+  drawing-codec-libredwg-submodule.issue  (vendored, self-built libdwg)
+  drawing-database-api.issue               (the drawing library)
+  Makefile (root + subprojects), .gitlab-ci.yml, .github/workflows/
+
+Goal
+----
+
+Produce installable release artefacts for each tagged release, split by
+*kind* so each can be built and shipped independently:
+
+  - source tarballs,
+  - a documentation bundle (it is slow to build, so build it once),
+  - per-platform program binaries,
+  - the drawing library (Lisp sources + the native libdwg binaries).
+
+Binaries are cross-built by CI (GitLab and/or GitHub) on per-target
+runners/containers; their outputs are collected and repackaged into the
+combined artefacts below. Unix artefacts are tarballs meant to unpack
+into $PREFIX; MS-Windows artefacts are zips meant to unpack into the
+Windows install root.
+
+Target matrix
+-------------
+
+Six binary targets, per the SBCL platform table
+(https://www.sbcl.org/platform-table.html):
+
+  - Linux       x86-64, arm64
+  - macOS       x86-64, arm64
+  - MS-Windows  x86-64, arm64
+
+`<os>`   = downcased `uname` (linux / darwin / windows)
+`<arch>` = downcased `uname -m` (x86-64 / arm64)
+
+Install prefix
+--------------
+
+  - Unix: $PREFIX (default /opt/local), usual subdirs bin/ libexec/
+    lib/ include/ share/.
+  - Windows: a PREFIX-equivalent install root. [DECISION NEEDED]
+    proposal: C:\Program Files\clautolisp\ with the same bin/ lib/
+    include/ share/doc/ layout. Confirm where Windows programs expect
+    documentation and libraries.
+
+Makefile targets
+----------------
+
+Split *building* (host-local) from *releasing* (build + package). The
+build-* targets are what developers already use; the release-* targets
+add packaging and emit named artefacts into a dist/ directory.
+
+  make build-documentation     build the documentation (current behaviour).
+  make release-documentation   build-documentation + package:
+                                 -> clautolisp-${version}-documentation.tar.bz2 (unix, into $PREFIX)
+                                 -> clautolisp-${version}-documentation.zip      (windows)
+                               Contents: only the autolisp-specification
+                               draft files + alref (autolisp + emacs).
+
+  make build  (= build-programs)   build the programs for the host.
+  make build-programs              build the host program binaries.
+  make release-programs            build-programs + package (per host/target):
+                                 -> tarball (unix) / zip (windows) of the
+                                    programs to install into $PREFIX, plus
+                                    auxiliary files (man / info / pdf that
+                                    document the binaries).
+
+  make build-libraries         build the libraries. Today: the
+                               drawing / drawing-dwg ASDF library, whose
+                               native dependency is libdwg. Lisp code
+                               ships as source; native libdwg ships as a
+                               binary (notably for MS-Windows).
+  make release-libraries       build-libraries + package:
+                                 -> tarball (unix) / zip (windows)
+                               Contents: the libdwg native binaries, the
+                               ASDF Lisp sources, and the library docs.
+
+  make release-sources         produce our own source tarball/zip with a
+                               controlled name and contents (see below).
+
+  make artefact-programs       (CI helper) package only, from an already
+                               built tree on one target runner.
+
+Per-kind build targets must be independent (documentation must not
+require building the binaries, and vice-versa).
+
+Independent library .asd (carve-out from the monolith)
+------------------------------------------------------
+
+Today a single clautolisp.asd defines *every* system. A library consumer
+(e.g. outils-autolisp/dwg-identifier) needs only clautolisp/drawing
+(+ clautolisp/drawing-dwg), so the library should be releasable and
+installable on its own, with its own .asd, without the whole monorepo.
+
+
+All lisp system is a library, so we have more libraries, and it's
+natural to have autolisp-runtime amongst them and as a dependency of
+drawing. We'll install as lisp library all the clautolisp sources and
+asdf systems.
+
+
+In scope here:
+  - Provide standalone system definition(s) for the library:
+    clautolisp-drawing.asd (and the DWG backend) defining the same
+    components, depending only on what the library needs.
+  - Settle the dependency boundary: drawing depends on
+    autolisp-runtime (so the runtime is either carved out / bundled in
+    the library artefact too, or made a separate releasable system);
+    drawing-dwg additionally depends on cffi + the native libdwg.
+  - Decide system naming (keep the slash-namespaced
+    `clautolisp/drawing`, or a flat `clautolisp-drawing`) and keep the
+    monolithic clautolisp.asd working for the full build.
+
+==> Since we will distribute all the asd systems and lisp code along as libraries,
+    we can keep the current naming scheme. clautolisp/drawing
+    
+  - The library artefact installs these .asd files where ASDF /
+    Quicklisp can find them under $PREFIX (e.g. share/common-lisp/systems
+    or the registry the install configures).
+
+Yes, installed where quicklisp can find them, so we can install
+several asd systems, ie. the drawing an drawing-dwg systems, and their
+dependency autolisp-runtime.
+
+
+Binary layout + dispatch (combined unix artefact)
+-------------------------------------------------
+
+The unix programs artefact bundles all unix targets; bin/ holds small
+dispatch scripts, libexec/ holds the per-target binaries:
+
+  bin/clautolisp
+  bin/alfe
+  bin/…
+  libexec/clautolisp/binaries/linux/x86-64/{clautolisp-{sbcl,ccl},alfe-{sbcl,ccl},…}
+  libexec/clautolisp/binaries/linux/arm64/…
+  libexec/clautolisp/binaries/darwin/x86-64/…
+  libexec/clautolisp/binaries/darwin/arm64/…
+  libexec/clautolisp/binaries/windows/x86-64/…   (windows ships as separate zips, see below)
+  libexec/clautolisp/binaries/windows/arm64/…
+
+Each bin/ script dispatches to the right binary for the running host and
+the chosen Lisp implementation:
+
+  exec libexec/clautolisp/binaries/$(uname)/$(uname -m)/$(basename $0)-${lisp} "$@"
+
+`uname` / `uname -m` downcased; `${lisp}` from the environment
+(CLAUTOLISP_LISP / ALFE_LISP / …), defaulting to sbcl.
+
+MS-Windows binaries ship as per-arch zips (no uname dispatch); the zip's
+launcher selects the implementation analogously.
+
+Native library layout + loading
+-------------------------------
+
+  include/clautolisp/dwg.h
+  lib/clautolisp/linux/x86-64/libdwg.so
+  lib/clautolisp/linux/arm64/libdwg.so
+  lib/clautolisp/darwin/x86-64/libdwg.dylib
+  lib/clautolisp/darwin/arm64/libdwg.dylib
+  lib/clautolisp/windows/x86-64/libdwg.dll
+  lib/clautolisp/windows/arm64/libdwg.dll
+
+drawing-dwg selects the right directory at load time by pushing
+lib/clautolisp/<os>/<arch>/ onto cffi:*foreign-library-directories*
+(replacing the dev-time rpath into the submodule build tree).
+
+libdwg bundling + licence
+-------------------------
+
+libdwg is GPL; clautolisp is AGPL-3.0 — compatible. We may redistribute
+libdwg with our library and programs, so we do, as a convenience:
+  - binary library artefacts carry the libdwg native binaries AND the
+    libdwg sources;
+  - libdwg's sources include a README about building it on MS-Windows.
+
+CI workflow (GitLab + GitHub)
+-----------------------------
+
+The release artefacts are produced by CI, not on a single dev host:
+
+  1. Per-target build jobs. One job per target (the 6 above), each in a
+     container/runner with the toolchain (sbcl/ccl, cmake, C compiler):
+       - build the vendored libdwg (make build-libredwg),
+       - make build-programs / make build-libraries,
+       - make artefact-programs / package the per-target outputs,
+       - upload the per-target artefact (binaries [+ libdwg native]).
+  2. Documentation job (once; it is slow):
+       - make release-documentation -> documentation artefact.
+  3. Source job:
+       - make release-sources -> source tarball/zip (controlled name).
+  4. Collect + repackage job:
+       - gather the per-target artefacts,
+       - repackage the unix targets into the single combined tarball
+         (bin/ dispatch + libexec/<os>/<arch>/ + lib/<os>/<arch>/),
+       - keep the windows targets as per-arch zips,
+       - attach all artefacts to the GitLab/GitHub release for the tag.
+
+Source tarball naming
+---------------------
+
+GitLab/GitHub auto-generate a source archive per tag, but with a poor
+name (e.g. "Source code (tar.gz)" / project-<ref>.tar.gz) and contents
+we do not control (submodules, dev/ excluded?). Decision: produce our
+own with `make release-sources` so we control the name and contents
+(include the vendored libdwg sources; exclude dev-only trees):
+  -> clautolisp-${version}-sources.tar.bz2 / .zip
+If the auto-generated archive name can be configured acceptably, we may
+rely on it instead — to be checked per platform.
+
+Artefacts (final set)
+---------------------
+
+Unix (Linux + macOS), tar.bz2 to unpack into $PREFIX:
+  clautolisp-${version}-sources.tar.bz2
+  clautolisp-${version}-documentation.tar.bz2
+  clautolisp-${version}-libraries.tar.bz2
+  clautolisp-${version}-binaries.tar.bz2
+
+MS-Windows, zip to unpack into the Windows install root:
+  clautolisp-${version}-sources.zip
+  clautolisp-${version}-documentation.zip
+  clautolisp-${version}-libraries-windows-x86_64.zip
+  clautolisp-${version}-libraries-windows-arm64.zip
+  clautolisp-${version}-binaries-windows-x86_64.zip
+  clautolisp-${version}-binaries-windows-arm64.zip
+
+Open questions
+--------------
+
+  - Windows install root / PREFIX, and where Windows expects docs and
+    native libraries.
+  - Whether to rename the platform auto-source-archive or always ship
+    our own release-sources output.
+  - macOS arm64 + Windows arm64 CI runner availability (GitLab/GitHub
+    hosted vs self-hosted); CCL availability per target (the matrix may
+    be sbcl-only on some targets).
+  - Where the library .asd files install under $PREFIX so ASDF/Quicklisp
+    find them, and the exact carved system names.
+  - Code signing / notarization for macOS and Windows binaries (future).
+
+Acceptance criteria
+-------------------
+
+  - `make build-documentation` / `build-programs` / `build-libraries`
+    are independent host-local targets.
+  - `make release-documentation` / `release-programs` /
+    `release-libraries` / `release-sources` each emit the named
+    artefact(s) into dist/.
+  - CI builds all six targets, then assembles the combined unix tarballs
+    and the per-arch Windows zips, and attaches them to the tag's
+    release on GitLab and GitHub.
+  - A fresh install of the binaries artefact into $PREFIX runs
+    bin/clautolisp and bin/alfe via the dispatch scripts, honouring
+    CLAUTOLISP_LISP / ALFE_LISP (default sbcl).
+  - A fresh install of the libraries artefact lets a downstream CL
+    program load the drawing library by its standalone .asd, and
+    drawing-dwg finds the bundled libdwg.
+  - The documentation artefact contains only the
+    autolisp-specification-draft files + alref (autolisp + emacs); the
+    binaries artefact carries the man / info / pdf for the binaries; the
+    libraries artefact carries the libdwg native binaries + sources +
+    the library docs.
