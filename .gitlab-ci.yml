@@ -195,7 +195,9 @@ build:alfe:sbcl:
 # or manually. Runners are selected by configuration tags
 # <os>,<arch>,<executor> (see documentation/self-hosted-runners.md):
 #   [linux, amd64, docker]  -> poseidon  (always-on Linux compute box)
-#   [linux, arm64, docker]  -> thalassa  (native linux/arm64 container)
+#   [linux, arm64, qemu]    -> poseidon  (arm64 via qemu-user emulation)
+#   [linux, arm32, qemu]    -> poseidon  (arm32/armhf via qemu; for arm32 lanes)
+#   [linux, arm64, docker]  -> thalassa  (NATIVE linux/arm64; optional validation)
 #   [macos, arm64, shell]   -> thalassa  (native macOS build; intermittent)
 #   [windows, amd64, shell] -> windows PC (intermittent)
 # thalassa + windows are laptops with intermittent connectivity, so their
@@ -276,8 +278,12 @@ release:documentation:
 
 release:linux:arm64:
   extends: .release-common
-  tags: [linux, arm64, docker]    # thalassa docker (native linux/arm64 in a container)
-  image: buildpack-deps:bookworm  # multi-arch (pulled as arm64); has git + a C toolchain
+  # poseidon (always-on) builds arm64 under qemu emulation — the runner's
+  # docker config sets platform=linux/arm64, so buildpack-deps:bookworm is
+  # pulled as arm64 and runs via binfmt/qemu-user-static. thalassa's native
+  # [linux,arm64,docker] runner is kept for an optional native validation.
+  tags: [linux, arm64, qemu]      # poseidon qemu (was thalassa native)
+  image: buildpack-deps:bookworm  # pulled as arm64 (runner platform=linux/arm64)
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
     - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp

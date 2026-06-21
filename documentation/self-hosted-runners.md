@@ -29,7 +29,7 @@ a branch is pushed for validation.
 | `release:linux:x86-64` | `linux, amd64, docker`| ogamita-linux-docker (poseidon) | linux/x86-64 binaries       |
 | `collect:release`      | `linux, amd64, docker`| ogamita-linux-docker (poseidon) | unions the per-target dist/ |
 | `release:documentation`| `linux, amd64, docker`| ogamita-linux-docker (poseidon) | docs (Emacs + xelatex; toolchain apt-installed) |
-| `release:linux:arm64`  | `linux, arm64, docker`| thalassa             | linux/arm64 in a container  |
+| `release:linux:arm64`  | `linux, arm64, qemu`  | poseidon (qemu-user) | linux/arm64 (emulated; thalassa `linux,arm64,docker` kept for native) |
 | `release:darwin:arm64` | `macos, arm64, shell` | thalassa             | native macOS arm64 binaries |
 | `release:windows:x86-64`| `windows, amd64, shell`| windows PC          | windows/amd64 (stub)        |
 
