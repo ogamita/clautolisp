@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 # setup-poseidon-website.sh — put the poseidon web site under git and add a
 # link from the home page to the AutoLISP spec.
 #
