@@ -454,11 +454,13 @@ collect:release:
 # setup-deploy.sh helper provisions the account, dir and key).
 #
 # Required CI/CD variables (Settings > CI/CD > Variables — set them
-# protected, and prefer the **File** type so the multi-line key needs no
-# escaping; the script also accepts plain value variables):
-#   DEPLOY_SSH_PRIVATE_KEY  private key whose public half is the deploy
-#                           account's rrsync-restricted authorized_keys entry
-#   DEPLOY_KNOWN_HOSTS      `ssh-keyscan poseidon.informatimago.com` output
+# protected AND masked). Both are stored BASE64-ENCODED: a raw multi-line
+# SSH key / known_hosts cannot be masked (GitLab rejects whitespace), but
+# its single-line base64 can be. setup-deploy.sh prints the exact values.
+# The job base64-decodes them (it works with value- or File-type vars):
+#   DEPLOY_SSH_PRIVATE_KEY  base64 of the private key whose public half is
+#                           the deploy account's rrsync authorized_keys entry
+#   DEPLOY_KNOWN_HOSTS      base64 of `ssh-keyscan poseidon.informatimago.com`
 # The non-secret host/account below are plain job variables; override in CI
 # if they ever change.
 deploy:documentation:
@@ -489,10 +491,11 @@ deploy:documentation:
     - tar -C "$stage" -xjf "$tarball"
     - html="$stage/share/doc/autolisp-spec/html"
     - test -f "$html/index.html"   # fail loudly if the artefact layout changed
-    # 2. Prepare an isolated SSH config (works with File- or value-type vars).
+    # 2. Prepare an isolated SSH config. The secrets are base64 (so they can
+    #    be masked); decode them. Accept value- or File-type variables.
     - install -d -m 700 ~/.ssh
-    - if [ -f "$DEPLOY_SSH_PRIVATE_KEY" ]; then cp "$DEPLOY_SSH_PRIVATE_KEY" ~/.ssh/id_deploy; else printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > ~/.ssh/id_deploy; fi
-    - if [ -f "$DEPLOY_KNOWN_HOSTS" ]; then cp "$DEPLOY_KNOWN_HOSTS" ~/.ssh/known_hosts; else printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts; fi
+    - if [ -f "$DEPLOY_SSH_PRIVATE_KEY" ]; then base64 -d "$DEPLOY_SSH_PRIVATE_KEY"; else printf '%s' "$DEPLOY_SSH_PRIVATE_KEY" | base64 -d; fi > ~/.ssh/id_deploy
+    - if [ -f "$DEPLOY_KNOWN_HOSTS" ]; then base64 -d "$DEPLOY_KNOWN_HOSTS"; else printf '%s' "$DEPLOY_KNOWN_HOSTS" | base64 -d; fi > ~/.ssh/known_hosts
     - chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
     - 'SSH="ssh -i $HOME/.ssh/id_deploy -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o IdentitiesOnly=yes"'
     # 3. Mirror the manual into the rrsync-restricted dir (empty remote path

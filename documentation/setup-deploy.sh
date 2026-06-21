@@ -15,9 +15,12 @@
 #     that one directory (no shell, no other path, no forwarding)
 #
 # It then self-tests the exact rsync the CI job runs, and prints the two
-# values to paste into GitLab > Settings > CI/CD > Variables (protected):
-#     DEPLOY_SSH_PRIVATE_KEY   (File type recommended)
-#     DEPLOY_KNOWN_HOSTS       (File type recommended)
+# values to paste into GitLab > Settings > CI/CD > Variables (protected +
+# masked). They are printed BASE64-ENCODED: a raw multi-line key/known_hosts
+# cannot be masked (GitLab rejects whitespace), but its single-line base64
+# can. The deploy:documentation job base64-decodes them.
+#     DEPLOY_SSH_PRIVATE_KEY   (base64; protected + masked)
+#     DEPLOY_KNOWN_HOSTS       (base64; protected + masked)
 set -eu
 
 DEPLOY_USER=clautolisp-deploy
@@ -78,12 +81,13 @@ fi
 echo
 echo "============================================================"
 echo "Set these GitLab CI/CD variables (Settings > CI/CD > Variables,"
-echo "scope: protected; File type recommended for both):"
+echo "scope: protected + masked). Values are base64 (single line, no"
+echo "whitespace) so GitLab accepts masking; the CI job base64-decodes them."
 echo
-echo "------ DEPLOY_SSH_PRIVATE_KEY ------------------------------"
-cat "$KEYFILE"
-echo "------ DEPLOY_KNOWN_HOSTS ----------------------------------"
-ssh-keyscan -t ed25519,rsa,ecdsa "$PUBHOST" 2>/dev/null
+echo "------ DEPLOY_SSH_PRIVATE_KEY (protected + masked) ---------"
+base64 -w0 "$KEYFILE"; echo
+echo "------ DEPLOY_KNOWN_HOSTS (protected + masked) -------------"
+ssh-keyscan -t ed25519,rsa,ecdsa "$PUBHOST" 2>/dev/null | base64 -w0; echo
 echo "------------------------------------------------------------"
 echo "Done. The deploy:documentation job will publish to"
 echo "  http://$PUBHOST/ogamita/autolisp-spec/"
