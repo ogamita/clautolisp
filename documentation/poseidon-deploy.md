@@ -57,3 +57,13 @@ type recommended for both):
 After that, tagging a release (or running the job manually) publishes the
 spec. To rotate the key, re-run `setup-deploy.sh` after deleting
 `/var/lib/clautolisp-deploy/.ssh/id_clautolisp_ci*`.
+
+## Home-page link / web site under git
+
+The deployed pages are reached from the poseidon home page. The companion
+helper `documentation/setup-poseidon-website.sh` (run once, as root) puts
+the DocumentRoot under git, `.gitignore`s the CI-deployed
+`ogamita/autolisp-spec/` pages (build output, not site source), and adds
+the link to `/ogamita/autolisp-spec/` on the home page:
+
+    sudo documentation/setup-poseidon-website.sh
