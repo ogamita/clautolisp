@@ -20,6 +20,7 @@ stages:
   - test
   - release
   - collect
+  - deploy
 
 # Build the CI image with kaniko — NO Docker daemon, NO privileged, NO
 # socket exposure. The poseidon group runner is rootless docker
@@ -412,3 +413,80 @@ collect:release:
     name: "clautolisp-$CI_COMMIT_TAG-release"
     paths: [dist/combined/]
     expire_in: 30 days
+
+# --- deploy: publish the spec HTML manual to the poseidon web site -----
+#
+# Takes release:documentation's artefact
+# (dist/clautolisp-<ver>-documentation.tar.bz2), unpacks the prebuilt
+# HTML manual it ships at  share/doc/autolisp-spec/html/  and rsyncs it
+# over SSH onto the poseidon web root, publishing it at
+#   http://poseidon.informatimago.com/ogamita/autolisp-spec/
+#
+# These HTML pages are BUILD OUTPUT ("object files") of the documentation
+# job — they are deployed here, never committed. The poseidon web site is
+# itself a git repo whose .gitignore excludes ogamita/autolisp-spec/ for
+# exactly this reason.
+#
+# Runs on the poseidon group runner (linux,amd64,docker — a rootless
+# docker executor on poseidon itself) and SSHes back to the host's sshd
+# as the dedicated, least-privilege deploy account. Triggered on a version
+# tag (after release:documentation succeeds) or manually.
+#
+# The deploy account's key is locked down with an rrsync forced command
+# (command="rrsync .../ogamita/autolisp-spec",restrict in authorized_keys):
+# the key can ONLY rsync into that one directory — no shell, no other path,
+# no port/agent/X11 forwarding. So the remote target below is the empty
+# path (rrsync chroots the session to the restricted dir) and there is no
+# server-side mkdir step. See documentation/poseidon-deploy.md (the
+# setup-deploy.sh helper provisions the account, dir and key).
+#
+# Required CI/CD variables (Settings > CI/CD > Variables — set them
+# protected, and prefer the **File** type so the multi-line key needs no
+# escaping; the script also accepts plain value variables):
+#   DEPLOY_SSH_PRIVATE_KEY  private key whose public half is the deploy
+#                           account's rrsync-restricted authorized_keys entry
+#   DEPLOY_KNOWN_HOSTS      `ssh-keyscan poseidon.informatimago.com` output
+# The non-secret host/account below are plain job variables; override in CI
+# if they ever change.
+deploy:documentation:
+  stage: deploy
+  image: $CLAUTOLISP_CI_LATEST
+  tags: [linux, amd64, docker]        # poseidon (always-on); SSHes to its own sshd
+  variables:
+    GIT_STRATEGY: none                # nothing from the repo is needed — only the artefact
+    DEPLOY_HOST: poseidon.informatimago.com
+    DEPLOY_USER: clautolisp-deploy
+    DEPLOY_URL: http://poseidon.informatimago.com/ogamita/autolisp-spec/
+  needs:
+    - { job: "release:documentation", artifacts: true }
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^(v|clautolisp-v)/'
+      when: on_success
+    - when: manual
+      allow_failure: true
+  before_script:
+    # rsync + ssh client may be absent from the CI image; install if so.
+    - pkgs=""; for t in rsync ssh; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs ${t/ssh/openssh-client}"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y --no-install-recommends $pkgs; }
+  script:
+    - set -eu
+    # 1. Unpack the documentation artefact and locate the HTML manual.
+    - tarball=$(ls dist/clautolisp-*-documentation.tar.bz2 | head -n1)
+    - 'echo "deploying from: $tarball"'
+    - stage=$(mktemp -d)
+    - tar -C "$stage" -xjf "$tarball"
+    - html="$stage/share/doc/autolisp-spec/html"
+    - test -f "$html/index.html"   # fail loudly if the artefact layout changed
+    # 2. Prepare an isolated SSH config (works with File- or value-type vars).
+    - install -d -m 700 ~/.ssh
+    - if [ -f "$DEPLOY_SSH_PRIVATE_KEY" ]; then cp "$DEPLOY_SSH_PRIVATE_KEY" ~/.ssh/id_deploy; else printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > ~/.ssh/id_deploy; fi
+    - if [ -f "$DEPLOY_KNOWN_HOSTS" ]; then cp "$DEPLOY_KNOWN_HOSTS" ~/.ssh/known_hosts; else printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts; fi
+    - chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+    - 'SSH="ssh -i $HOME/.ssh/id_deploy -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o IdentitiesOnly=yes"'
+    # 3. Mirror the manual into the rrsync-restricted dir (empty remote path
+    #    = the restricted root). --delete prunes pages dropped from a newer
+    #    spec build; the dir is pre-provisioned by setup-deploy.sh.
+    - rsync -rlptz --delete -e "$SSH" "$html/" "$DEPLOY_USER@$DEPLOY_HOST:"
+    - 'echo "published to $DEPLOY_URL"'
+  environment:
+    name: poseidon/autolisp-spec
+    url: http://poseidon.informatimago.com/ogamita/autolisp-spec/
