@@ -251,18 +251,22 @@ release:linux:x86-64:
 # Documentation is its OWN lane (mirrors the GitHub `documentation` job)
 # so each forge independently produces the complete release set. It is
 # slow (Emacs paged split of 3026 sections + xelatex PDFs across four
-# subprojects). It runs on the SELF-HOSTED macOS shell runner: the
-# workstation has Emacs + MacPorts texlive (xelatex) natively, so this
-# consumes no GitLab compute minutes and is not bound by the shared-
-# runner 1 h cap. (GitHub builds the same docs on its own runner — see
-# .github/workflows/release.yml.)
+# subprojects) but platform-agnostic, so it runs on poseidon (the
+# always-on Linux box) rather than the intermittent macOS laptop. The
+# stock CI image is a Lisp image, so the before_script installs the doc
+# toolchain — the SAME package set the GitHub `documentation` job uses
+# (.github/workflows/release.yml). TODO: bake these into the CI image's
+# Dockerfile to drop the per-run apt install.
 release:documentation:
   extends: .release-common
-  tags: [macos, arm64, shell]         # thalassa (intermittent): native Emacs + xelatex
+  tags: [linux, amd64, docker]        # poseidon (always-on)
+  image: $CLAUTOLISP_CI_LATEST
   variables:
     GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
   before_script:
-    - command -v emacs makeinfo xelatex >/dev/null   # native MacPorts toolchain
+    # Emacs (autolisp-spec paged split), TeX/xelatex (PDFs), makeinfo (Info).
+    - apt-get update && apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo
+    - command -v emacs makeinfo xelatex >/dev/null
   script:
     - make release-documentation
   artifacts:
