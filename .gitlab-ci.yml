@@ -298,6 +298,42 @@ release:linux:arm64:
     paths: [dist/]
     expire_in: 30 days
 
+# armv7 (32-bit ARM, Raspberry-Pi class) on poseidon under qemu. Unlike
+# arm64, CCL HAS a 32-bit ARM build (its "linuxarm" release, binary
+# `armcl`), so this lane exercises BOTH sbcl and ccl: SBCL armhf from apt,
+# CCL from the v1.13 linuxarm tarball. NOTE: CCL under qemu-user emulation
+# is less proven than SBCL; if armcl misbehaves the native fallback is a
+# real armv7 host (e.g. a Raspberry Pi shell runner). The early `ccl`
+# sanity invocation makes such a failure surface clearly.
+release:linux:arm32:
+  extends: .release-common
+  tags: [linux, arm32, qemu]      # poseidon qemu (runner platform=linux/arm/v7)
+  image: buildpack-deps:bookworm  # pulled as arm/v7 (runner platform)
+  variables:
+    RELEASE_LISPS: "sbcl ccl"     # armv7 ships both (CCL linuxarm = armcl)
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
+    # CCL v1.13 32-bit ARM: linuxarm.tar.gz -> /opt/ccl/armcl; `ccl` wrapper on PATH.
+    - |
+      curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 \
+           -o /tmp/linuxarm.tar.gz \
+           https://github.com/Clozure/ccl/releases/download/v1.13/linuxarm.tar.gz
+      tar -xzf /tmp/linuxarm.tar.gz -C /opt
+      printf '%s\n' '#!/bin/sh' 'exec /opt/ccl/armcl "$@"' > /usr/local/bin/ccl
+      chmod +x /usr/local/bin/ccl
+      ccl --no-init --eval '(progn (format t "CCL ~a on ~a~%" (lisp-implementation-version) (machine-type)) (ccl:quit))'
+    - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
+    - sbcl --non-interactive --load /tmp/ql.lisp --eval '(quicklisp-quickstart:install)'
+  script:
+    - make build-libraries          # vendored libdwg + shim (armv7)
+    - make build-programs           # loops RELEASE_LISPS -> build-sbcl + build-ccl
+    - make release-programs
+    - make release-libraries
+  artifacts:
+    name: "clautolisp-$CI_COMMIT_TAG-linux-arm32"
+    paths: [dist/]
+    expire_in: 30 days
+
 release:darwin:arm64:
   extends: .release-common
   tags: [macos, arm64, shell]     # thalassa (intermittent): native macOS arm64 build
@@ -339,7 +375,7 @@ release:windows:x86-64:
 
 # --- collect: union the per-target artefacts into the combined set -----
 #
-# Gathers the four release jobs' dist/ (binaries-<os>-<arch>,
+# Gathers the per-target release jobs' dist/ (binaries-<os>-<arch>,
 # libraries-<os>-<arch>, sources, documentation, windows) and unions
 # them into the combined clautolisp-<ver>-{binaries,libraries}.tar.bz2
 # (+ sources/documentation passthrough, windows kept as-is). Exposed as
@@ -357,6 +393,7 @@ collect:release:
   needs:
     - { job: "release:linux:x86-64", artifacts: true }
     - { job: "release:linux:arm64",  artifacts: true }
+    - { job: "release:linux:arm32",  artifacts: true }
     - { job: "release:darwin:arm64", artifacts: true }
     - { job: "release:windows:x86-64", artifacts: true }
     - { job: "release:documentation", artifacts: true }
