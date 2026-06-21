@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash -x
 # setup-poseidon-website.sh — put the poseidon web site under git and add a
 # link from the home page to the AutoLISP spec.
 #
@@ -8,17 +8,16 @@
 # pages (ogamita/autolisp-spec/) are build output and are .gitignore'd —
 # they live in the working tree but are never committed.
 set -eu
-
+cd /
 DOCROOT=/var/www/poseidon/public_html
-GIT="sudo -u www-data git -c safe.directory=$DOCROOT \
-     -c user.name=Pascal J. Bourguignon -c user.email=informatimago@gmail.com"
+GIT=( sudo -u www-data git -c safe.directory=$DOCROOT -c user.name='Pascal J. Bourguignon' -c user.email=informatimago@gmail.com )
 
 [ "$(id -u)" = 0 ] || { echo "run as root (sudo $0)" >&2; exit 1; }
 [ -d "$DOCROOT" ] || { echo "no docroot at $DOCROOT" >&2; exit 1; }
 
 echo "== 1. git init (docroot is the working tree) =="
 if [ ! -d "$DOCROOT/.git" ]; then
-    $GIT init -b master "$DOCROOT"
+    "${GIT[@]}" init -b master "$DOCROOT"
     echo "initialised git repo at $DOCROOT"
 else
     echo "$DOCROOT is already a git repo"
@@ -55,14 +54,14 @@ echo "== 4. commit =="
 # index.html.orig is a one-off backup; don't track it.
 grep -qxF '/index.html.orig' "$DOCROOT/.gitignore" 2>/dev/null \
     || echo '/index.html.orig' >> "$DOCROOT/.gitignore"
-$GIT -C "$DOCROOT" add -A
-if $GIT -C "$DOCROOT" diff --cached --quiet; then
+"${GIT[@]}" -C "$DOCROOT" add -A
+if "${GIT[@]}" -C "$DOCROOT" diff --cached --quiet; then
     echo "nothing to commit (already up to date)"
 else
-    $GIT -C "$DOCROOT" commit -q -m "site: home page + link to /ogamita/autolisp-spec/; ignore CI-deployed spec pages"
+    "${GIT[@]}" -C "$DOCROOT" commit -q -m "site: home page + link to /ogamita/autolisp-spec/; ignore CI-deployed spec pages"
     echo "committed"
 fi
-$GIT -C "$DOCROOT" --no-pager log --oneline -1
+"${GIT[@]}" -C "$DOCROOT" --no-pager log --oneline -1
 echo
 echo "Done. Home page now links to http://poseidon.informatimago.com/ogamita/autolisp-spec/"
 echo "(The spec pages appear once the clautolisp deploy:documentation job runs.)"
