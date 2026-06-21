@@ -297,12 +297,24 @@ release:linux:arm64:
   # [linux,arm64,docker] runner is kept for optional native validation.
   tags: [linux, arm64, qemu]      # poseidon qemu (was thalassa native)
   image: $ARM64_BASE              # buildpack-deps bookworm, arm64 (digest-pinned)
+  # Cache the libredwg cmake build dir so the slow (emulated) C compile is
+  # reused across runs — cmake rebuilds only changed objects. Per-arch key
+  # (objects are arch-specific). Interim measure (b); the durable fix (a) is
+  # baking libredwg into a per-arch CI image. Bump -v2 to force a cold build.
+  cache:
+    key:
+      prefix: libredwg-arm64-v1
+      files:
+        - .gitmodules
+        - clautolisp/drawing-dwg/build-libredwg.sh
+    paths:
+      - clautolisp/third-party/libredwg/build/
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
     - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
     - sbcl --non-interactive --load /tmp/ql.lisp --eval '(quicklisp-quickstart:install)'
   script:
-    - make build-libraries          # vendored libdwg + shim (native arm64)
+    - make build-libraries          # vendored libdwg + shim (emulated arm64)
     - make build-programs           # SBCL arm64 images (no CCL on arm64)
     - make release-programs
     - make release-libraries
@@ -324,6 +336,17 @@ release:linux:arm32:
   image: $ARMV7_BASE              # buildpack-deps bookworm, armv7/armhf (digest-pinned)
   variables:
     RELEASE_LISPS: "sbcl ccl"     # armv7 ships both (CCL linuxarm = armcl)
+  # Cache the libredwg cmake build dir (see arm64 lane) — the emulated armv7
+  # C compile is the slowest step; reusing objects across runs is the (b)
+  # time-saver until libredwg is baked into a per-arch CI image (a).
+  cache:
+    key:
+      prefix: libredwg-arm32-v1
+      files:
+        - .gitmodules
+        - clautolisp/drawing-dwg/build-libredwg.sh
+    paths:
+      - clautolisp/third-party/libredwg/build/
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
     # CCL v1.13 32-bit ARM: the linuxarm tarball holds armcl/armcl.image at its
