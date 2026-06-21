@@ -29,7 +29,8 @@ a branch is pushed for validation.
 | `release:linux:x86-64` | `linux, amd64, docker`| ogamita-linux-docker (poseidon) | linux/x86-64 binaries       |
 | `collect:release`      | `linux, amd64, docker`| ogamita-linux-docker (poseidon) | unions the per-target dist/ |
 | `release:documentation`| `linux, amd64, docker`| ogamita-linux-docker (poseidon) | docs (Emacs + xelatex; toolchain apt-installed) |
-| `release:linux:arm64`  | `linux, arm64, qemu`  | poseidon (qemu-user) | linux/arm64 (emulated; thalassa `linux,arm64,docker` kept for native) |
+| `release:linux:arm64`  | `linux, arm64, qemu`  | poseidon (qemu-user) | linux/arm64 (emulated, SBCL-only; thalassa `linux,arm64,docker` kept for native) |
+| `release:linux:arm32`  | `linux, arm32, qemu`  | poseidon (qemu-user) | linux/armv7 (emulated, **SBCL + CCL** — CCL v1.13 `linuxarm`/`armcl`) |
 | `release:darwin:arm64` | `macos, arm64, shell` | thalassa             | native macOS arm64 binaries |
 | `release:windows:x86-64`| `windows, amd64, shell`| windows PC          | windows/amd64 (stub)        |
 
@@ -39,8 +40,10 @@ executor builds macOS natively (macOS cannot be containerised). The
 **windows** lane runs on a separate Windows PC (shell executor); it is the
 host carrying the GUI BricsCAD/AutoCAD toolchain.
 
-> **arm64 is SBCL-only.** Clozure CL has no arm64 build, so these lanes
-> produce `*-sbcl` binaries only (the `bin/` dispatch defaults to sbcl).
+> **arm64 is SBCL-only; arm32 is SBCL + CCL.** Clozure CL has no arm64
+> build, so the arm64 lane produces `*-sbcl` binaries only. CCL *does*
+> ship a 32-bit ARM build (v1.13 `linuxarm`, binary `armcl`), so the arm32
+> lane builds both — `RELEASE_LISPS: "sbcl ccl"`.
 
 ## 1. Get a runner authentication token
 
