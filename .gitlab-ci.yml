@@ -466,7 +466,7 @@ deploy:documentation:
       allow_failure: true
   before_script:
     # rsync + ssh client may be absent from the CI image; install if so.
-    - pkgs=""; for t in rsync ssh; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs ${t/ssh/openssh-client}"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y --no-install-recommends $pkgs; }
+    - need=""; command -v rsync >/dev/null 2>&1 || need="$need rsync"; command -v ssh >/dev/null 2>&1 || need="$need openssh-client"; [ -z "$need" ] || { apt-get update && apt-get install -y --no-install-recommends $need; }
   script:
     - set -eu
     # 1. Unpack the documentation artefact and locate the HTML manual.
