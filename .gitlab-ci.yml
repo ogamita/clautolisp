@@ -1,13 +1,19 @@
 variables:
   CLAUTOLISP_CI_IMAGE: $CI_REGISTRY_IMAGE/clautolisp-ci
   CLAUTOLISP_CI_LATEST: $CI_REGISTRY_IMAGE/clautolisp-ci:latest
-  CLAUTOLISP_CI_PLATFORM: linux/amd64
-  DOCKER_BUILDKIT: "1"
-  DOCKER_HOST: tcp://docker:2375
-  DOCKER_TLS_CERTDIR: ""
 
 default:
   image: $CLAUTOLISP_CI_LATEST
+  # Runners are selected by CONFIGURATION tags: <os>,<arch>,<executor>
+  # (+ capability tags like gui/bricscad/autocad where a job needs them).
+  # The linux/amd64 work runs in the CI image on the self-hosted poseidon
+  # group runner (ogamita-linux-docker, tags linux,amd64,docker; poseidon
+  # is the always-on Linux compute box). Jobs needing another platform
+  # override `tags:` — arm64/macOS → thalassa, windows → the windows PC
+  # (both intermittent laptops, so their tagged jobs queue until the host
+  # is online, e.g. when a branch is pushed for validation). Instance
+  # (shared) runners are disabled for this project.
+  tags: [linux, amd64, docker]
 
 stages:
   - build
@@ -15,18 +21,17 @@ stages:
   - release
   - collect
 
-.docker-job:
-  image: docker:27
-  services:
-    - name: docker:27-dind
-      command: ["--tls=false"]
-  before_script:
-    - docker info
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-
+# Build the CI image with kaniko — NO Docker daemon, NO privileged, NO
+# socket exposure. The poseidon group runner is rootless docker
+# (privileged=false), so a docker:dind service cannot start (it would fail
+# with "Cannot connect to the Docker daemon at tcp://docker:2375"). kaniko
+# builds the image inside the job container and pushes straight to the
+# GitLab registry — the same approach the bocl project uses.
 build:clautolisp-ci-image:
   stage: build
-  extends: .docker-job
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
   # Transient network failures (e.g. the CCL download from GitHub) should
   # not fail a whole pipeline run.
   retry: 2
@@ -44,16 +49,20 @@ build:clautolisp-ci-image:
       when: on_success
     - when: never
   script:
-    - docker buildx create --use --name clautolisp-ci-builder || docker buildx use clautolisp-ci-builder
-    - docker buildx inspect --bootstrap
     - |
-      docker buildx build \
-        --platform "$CLAUTOLISP_CI_PLATFORM" \
-        --file clautolisp/docker/Dockerfile \
-        --tag "$CLAUTOLISP_CI_IMAGE:$CI_COMMIT_SHA" \
-        $(if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then printf '%s' "--tag $CLAUTOLISP_CI_LATEST"; fi) \
-        --push \
-        .
+      mkdir -p /kaniko/.docker
+      cat > /kaniko/.docker/config.json <<EOF
+      {"auths":{"$CI_REGISTRY":{"username":"$CI_REGISTRY_USER","password":"$CI_REGISTRY_PASSWORD"}}}
+      EOF
+      # :$CI_COMMIT_SHA always; :latest only on the default branch.
+      DESTS="--destination $CLAUTOLISP_CI_IMAGE:$CI_COMMIT_SHA"
+      [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && DESTS="$DESTS --destination $CLAUTOLISP_CI_LATEST"
+      /kaniko/executor \
+        --context "$CI_PROJECT_DIR" \
+        --dockerfile "$CI_PROJECT_DIR/clautolisp/docker/Dockerfile" \
+        $DESTS \
+        --cache=true \
+        --cache-repo "$CLAUTOLISP_CI_IMAGE/cache"
 
 # The clautolisp/autolisp-debug subsystem depends on bordeaux-threads
 # (added in the debugger merge). The Docker image's Quicklisp install
@@ -175,20 +184,22 @@ build:alfe:sbcl:
 # --- Release artefacts (see issues/open/release-artefacts.issue) -------
 #
 # On a version tag, produce the source / documentation / programs /
-# libraries artefacts. The hosted GitLab runners + CI image are
-# Linux x86-64 only; the other five SBCL targets need dedicated runners
+# libraries artefacts. The ogamita-group runner on poseidon + CI image
+# cover Linux x86-64 only; the other five SBCL targets need dedicated runners
 # (macOS, Windows, arm64) and are tracked in the issue — the GitHub
 # Actions release workflow scaffolds the full 6-target matrix.
 
 # --- Release artefacts (issues/open/release-artefacts.issue) -----------
 #
 # Per-target jobs build + package on a version tag (v* / clautolisp-v*),
-# or manually. The Linux x86-64 lane runs on GitLab's shared runners via
-# our CI image. The arm64 / macOS lanes are routed by `tags:` to a
-# SELF-HOSTED runner on an Apple-Silicon workstation
-# (see documentation/self-hosted-runners.md):
-#   tags [linux,arm64]  -> docker executor (the host runs linux/arm64)
-#   tags [macos,arm64]  -> shell  executor (native macOS build)
+# or manually. Runners are selected by configuration tags
+# <os>,<arch>,<executor> (see documentation/self-hosted-runners.md):
+#   [linux, amd64, docker]  -> poseidon  (always-on Linux compute box)
+#   [linux, arm64, docker]  -> thalassa  (native linux/arm64 container)
+#   [macos, arm64, shell]   -> thalassa  (native macOS build; intermittent)
+#   [windows, amd64, shell] -> windows PC (intermittent)
+# thalassa + windows are laptops with intermittent connectivity, so their
+# tagged jobs queue until the host is online (e.g. on a validation push).
 # arm64 targets are SBCL-only: Clozure CL has no arm64 build.
 # Windows targets need a Windows runner (paid SaaS, or a Win11-ARM VM
 # with its own runner) — not provided here yet.
@@ -247,7 +258,7 @@ release:linux:x86-64:
 # .github/workflows/release.yml.)
 release:documentation:
   extends: .release-common
-  tags: [macos, arm64]                # self-hosted shell runner (thalassa)
+  tags: [macos, arm64, shell]         # thalassa (intermittent): native Emacs + xelatex
   variables:
     GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
   before_script:
@@ -261,7 +272,7 @@ release:documentation:
 
 release:linux:arm64:
   extends: .release-common
-  tags: [linux, arm64]            # self-hosted docker executor (Apple-Silicon host runs linux/arm64)
+  tags: [linux, arm64, docker]    # thalassa docker (native linux/arm64 in a container)
   image: buildpack-deps:bookworm  # multi-arch (pulled as arm64); has git + a C toolchain
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
@@ -279,7 +290,7 @@ release:linux:arm64:
 
 release:darwin:arm64:
   extends: .release-common
-  tags: [macos, arm64]            # self-hosted shell executor on the Apple-Silicon workstation
+  tags: [macos, arm64, shell]     # thalassa (intermittent): native macOS arm64 build
   before_script:
     # The workstation provides the toolchain (MacPorts: sbcl, cmake; cc
     # via Xcode) and Quicklisp at ~/quicklisp/. SBCL-only on arm64.
@@ -301,7 +312,7 @@ release:darwin:arm64:
 # Shell executor = PowerShell. No submodules needed for the stub.
 release:windows:x86-64:
   extends: .release-common
-  tags: [windows, x86-64]
+  tags: [windows, amd64, shell]   # windows PC (intermittent): GUI bricscad/autocad host
   variables:
     GIT_SUBMODULE_STRATEGY: none
   script:
@@ -326,7 +337,11 @@ release:windows:x86-64:
 # separate, on-demand step taken AFTER the artefacts are tested.
 collect:release:
   stage: collect
-  tags: [macos, arm64]             # self-hosted shell runner (no GitLab minutes); native tar/bzip2
+  # Just unions the per-target dist/ (tar/bzip2) — no platform-specific
+  # toolchain needed, so run it on the always-on poseidon box rather than
+  # waiting on the intermittent macOS laptop.
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
   variables:
     GIT_SUBMODULE_STRATEGY: none
   needs:
@@ -341,7 +356,9 @@ collect:release:
     - when: manual
       allow_failure: true
   before_script:
-    - command -v bzip2 tar make >/dev/null   # native on macOS
+    # tar/make are in the CI image; install bzip2 if the image lacks it
+    # (mirrors release:linux:x86-64's package-guard).
+    - pkgs=""; for t in bzip2 tar make; do command -v $t >/dev/null 2>&1 || pkgs="$pkgs $t"; done; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
   script:
     - make collect-artefacts COLLECT_IN=dist COLLECT_OUT=dist/combined
   artifacts:
