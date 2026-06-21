@@ -46,13 +46,20 @@ and prints the two values to register in GitLab:
 
     sudo documentation/setup-deploy.sh
 
-Then add, in **Settings > CI/CD > Variables** (scope: protected; *File*
-type recommended for both):
+Then add, in **Settings > CI/CD > Variables** (scope: **protected +
+masked**), the two values exactly as the script prints them:
 
-| Variable                 | Value                                              |
+| Variable                 | Value (printed by the script)                      |
 |--------------------------|----------------------------------------------------|
-| `DEPLOY_SSH_PRIVATE_KEY` | the printed private key                             |
-| `DEPLOY_KNOWN_HOSTS`     | the printed `ssh-keyscan poseidon.informatimago.com` output |
+| `DEPLOY_SSH_PRIVATE_KEY` | base64 of the private key                            |
+| `DEPLOY_KNOWN_HOSTS`     | base64 of `ssh-keyscan poseidon.informatimago.com`  |
+
+> **Why base64?** GitLab can only *mask* a variable whose value is a single
+> line with no whitespace, so a raw multi-line key/known_hosts can't be
+> masked. Storing the base64 (single line) lets you mask it; the job
+> `base64 -d`s it back. (If you'd rather not base64, set a **File**-type
+> variable with the raw value instead — it won't be masked, but the job
+> never echoes it, so it stays out of the logs either way.)
 
 After that, tagging a release (or running the job manually) publishes the
 spec. To rotate the key, re-run `setup-deploy.sh` after deleting
