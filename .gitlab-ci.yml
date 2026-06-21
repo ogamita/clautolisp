@@ -1,6 +1,17 @@
 variables:
   CLAUTOLISP_CI_IMAGE: $CI_REGISTRY_IMAGE/clautolisp-ci
   CLAUTOLISP_CI_LATEST: $CI_REGISTRY_IMAGE/clautolisp-ci:latest
+  # Foreign-arch base images, pinned to their per-arch MANIFEST DIGEST.
+  # GitLab Runner 19.1's docker executor ignores `[runners.docker] platform`,
+  # so a plain `buildpack-deps:bookworm` would be pulled as amd64. Pinning the
+  # arm sub-manifest digest makes the daemon pull that exact (single-platform)
+  # image, which then runs under host binfmt/qemu-user-static. Refresh with:
+  #   docker manifest inspect buildpack-deps:bookworm \
+  #     | jq -r '.manifests[]|select(.platform.architecture=="arm64" or
+  #              (.platform.architecture=="arm" and .platform.variant=="v7"))
+  #              |"\(.platform.architecture)\(.platform.variant//"") \(.digest)"'
+  ARM64_BASE: "buildpack-deps@sha256:22e6f90b138866051d4209b774fe28813483a8b67b431b4cb6475176ebe06a86"
+  ARMV7_BASE: "buildpack-deps@sha256:b7e46ca6d5b66b2e56275cd8b319bfc87355efad36b4b089601c771674b79b4e"
 
 default:
   image: $CLAUTOLISP_CI_LATEST
@@ -279,12 +290,13 @@ release:documentation:
 
 release:linux:arm64:
   extends: .release-common
-  # poseidon (always-on) builds arm64 under qemu emulation — the runner's
-  # docker config sets platform=linux/arm64, so buildpack-deps:bookworm is
-  # pulled as arm64 and runs via binfmt/qemu-user-static. thalassa's native
-  # [linux,arm64,docker] runner is kept for an optional native validation.
+  # poseidon (always-on) builds arm64 under qemu-user emulation. The base
+  # image is pinned to its arm64 manifest digest ($ARM64_BASE) so the daemon
+  # pulls the arm64 image (the runner `platform` key is ignored by
+  # gitlab-runner 19.1); binfmt then runs it. thalassa's native
+  # [linux,arm64,docker] runner is kept for optional native validation.
   tags: [linux, arm64, qemu]      # poseidon qemu (was thalassa native)
-  image: buildpack-deps:bookworm  # pulled as arm64 (runner platform=linux/arm64)
+  image: $ARM64_BASE              # buildpack-deps bookworm, arm64 (digest-pinned)
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
     - curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 -o /tmp/ql.lisp https://beta.quicklisp.org/quicklisp.lisp
@@ -308,18 +320,19 @@ release:linux:arm64:
 # sanity invocation makes such a failure surface clearly.
 release:linux:arm32:
   extends: .release-common
-  tags: [linux, arm32, qemu]      # poseidon qemu (runner platform=linux/arm/v7)
-  image: buildpack-deps:bookworm  # pulled as arm/v7 (runner platform)
+  tags: [linux, arm32, qemu]      # poseidon qemu
+  image: $ARMV7_BASE              # buildpack-deps bookworm, armv7/armhf (digest-pinned)
   variables:
     RELEASE_LISPS: "sbcl ccl"     # armv7 ships both (CCL linuxarm = armcl)
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends sbcl cmake m4
-    # CCL v1.13 32-bit ARM: linuxarm.tar.gz -> /opt/ccl/armcl; `ccl` wrapper on PATH.
+    # CCL v1.13 32-bit ARM: the linuxarm tarball holds armcl/armcl.image at its
+    # ROOT (no ccl/ prefix), so extract INTO /opt/ccl; `ccl` wrapper on PATH.
     - |
       curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 \
            -o /tmp/linuxarm.tar.gz \
            https://github.com/Clozure/ccl/releases/download/v1.13/linuxarm.tar.gz
-      tar -xzf /tmp/linuxarm.tar.gz -C /opt
+      mkdir -p /opt/ccl && tar -xzf /tmp/linuxarm.tar.gz -C /opt/ccl
       printf '%s\n' '#!/bin/sh' 'exec /opt/ccl/armcl "$@"' > /usr/local/bin/ccl
       chmod +x /usr/local/bin/ccl
       ccl --no-init --eval '(progn (format t "CCL ~a on ~a~%" (lisp-implementation-version) (machine-type)) (ccl:quit))'
