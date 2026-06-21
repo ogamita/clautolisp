@@ -27,11 +27,14 @@ git -C "$lr" submodule update --init
 
 # Configure + build the shared library.
 #  - DISABLE_WERROR: this clang/SDK turns several libredwg warnings fatal.
+#  - -w: silence libredwg's (very verbose) warnings. We don't act on a
+#        vendored lib's warnings, and on CI the flood blows GitLab's 4 MB
+#        job-log cap during the build — hiding any real downstream error.
 #  - -Wno-unused-command-line-argument: clang rejects -fstack-clash-protection.
 #  - -D_DARWIN_C_SOURCE: expose memmem() in <string.h> on macOS (no-op elsewhere).
 cmake -S "$lr" -B "$build" \
       -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DDISABLE_WERROR=ON \
-      -DCMAKE_C_FLAGS="-Wno-unused-command-line-argument -D_DARWIN_C_SOURCE"
+      -DCMAKE_C_FLAGS="-w -Wno-unused-command-line-argument -D_DARWIN_C_SOURCE"
 cmake --build "$build" --target redwg \
       -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
