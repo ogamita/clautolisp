@@ -30,7 +30,7 @@ a branch is pushed for validation.
 | `collect:release`      | `linux, amd64, docker`| ogamita-linux-docker (poseidon) | unions the per-target dist/ |
 | `release:documentation`| `linux, amd64, docker`| ogamita-linux-docker (poseidon) | docs (Emacs + xelatex; toolchain apt-installed) |
 | `release:linux:arm64`  | `linux, arm64, qemu`  | poseidon (qemu-user) | linux/arm64 (emulated, SBCL-only; thalassa `linux,arm64,docker` kept for native) |
-| `release:linux:arm32`  | `linux, arm32, qemu`  | poseidon (qemu-user) | linux/armv7 (emulated, **SBCL + CCL** — CCL v1.13 `linuxarm`/`armcl`) |
+| `release:linux:arm32`  | `linux, arm32, docker`| **native armv7 (not yet provisioned)** | linux/armv7 — does NOT build under qemu (manual/allow_failure; CCL-only; see note) |
 | `release:darwin:arm64` | `macos, arm64, shell` | thalassa             | native macOS arm64 binaries |
 | `release:windows:x86-64`| `windows, amd64, shell`| windows PC          | windows/amd64 (stub)        |
 
@@ -40,10 +40,16 @@ executor builds macOS natively (macOS cannot be containerised). The
 **windows** lane runs on a separate Windows PC (shell executor); it is the
 host carrying the GUI BricsCAD/AutoCAD toolchain.
 
-> **arm64 is SBCL-only; arm32 is SBCL + CCL.** Clozure CL has no arm64
-> build, so the arm64 lane produces `*-sbcl` binaries only. CCL *does*
-> ship a 32-bit ARM build (v1.13 `linuxarm`, binary `armcl`), so the arm32
-> lane builds both — `RELEASE_LISPS: "sbcl ccl"`.
+> **arm64 = SBCL (threaded, builds under qemu). arm32 = CCL-only, native
+> hardware required.** Clozure CL has no arm64 build, so arm64 is `*-sbcl`
+> only — and Debian's arm64 SBCL is threaded, so it builds fine emulated.
+> arm32 is the hard one (verified by probes 2026-06-22): Debian's **armhf
+> SBCL has no threads**, so bordeaux-threads rejects it ("This implementation
+> is unsupported") — true even on a native Pi with Debian's SBCL; and **CCL's
+> `armcl` faults under qemu-user** as soon as it uses threads
+> (`Fault during read of memory address #x0`). So the arm32 lane is parked at
+> `when: manual`/`allow_failure`, tagged for a **native** arm32 docker host,
+> `RELEASE_LISPS: "ccl"` (armhf SBCL needs a thread-enabled build to join).
 
 ## 1. Get a runner authentication token
 

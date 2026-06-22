@@ -323,19 +323,27 @@ release:linux:arm64:
     paths: [dist/]
     expire_in: 30 days
 
-# armv7 (32-bit ARM, Raspberry-Pi class) on poseidon under qemu. Unlike
-# arm64, CCL HAS a 32-bit ARM build (its "linuxarm" release, binary
-# `armcl`), so this lane exercises BOTH sbcl and ccl: SBCL armhf from apt,
-# CCL from the v1.13 linuxarm tarball. NOTE: CCL under qemu-user emulation
-# is less proven than SBCL; if armcl misbehaves the native fallback is a
-# real armv7 host (e.g. a Raspberry Pi shell runner). The early `ccl`
-# sanity invocation makes such a failure surface clearly.
+# armv7 (32-bit ARM, Raspberry-Pi class). DOES NOT BUILD UNDER QEMU — so it
+# is `when: manual` + allow_failure (never auto-runs, never blocks) and tagged
+# for a NATIVE arm32 docker host that doesn't exist yet (a Pi); it just queues
+# until one is registered. Confirmed by direct probes on poseidon (2026-06-22):
+#   - SBCL: Debian armhf SBCL 2.2.9 is built WITHOUT threads (sb-thread absent),
+#     so bordeaux-threads v0.9.4 rejects it ("This implementation is
+#     unsupported"). A native Pi with Debian's SBCL hits the same wall — arm32
+#     SBCL needs a thread-enabled SBCL build. Hence RELEASE_LISPS=ccl here.
+#   - CCL: armcl runs trivially but FAULTS under qemu-user the moment it uses
+#     threads ("Fault during read of memory address #x0" in CCL::%INIT-MISC);
+#     it works only on NATIVE armv7.
+# arm64, by contrast, has a threaded SBCL and builds fine under qemu.
 release:linux:arm32:
   extends: .release-common
-  tags: [linux, arm32, qemu]      # poseidon qemu
+  tags: [linux, arm32, docker]    # NATIVE arm32 docker host (e.g. a Pi) — NOT the qemu runner
   image: $ARMV7_BASE              # buildpack-deps bookworm, armv7/armhf (digest-pinned)
   variables:
-    RELEASE_LISPS: "sbcl ccl"     # armv7 ships both (CCL linuxarm = armcl)
+    RELEASE_LISPS: "ccl"          # CCL only — armhf SBCL has no threads (see above)
+  rules:
+    - when: manual                # never auto-run (no native arm32 runner yet) and never block
+      allow_failure: true
   # Cache the libredwg cmake build dir (see arm64 lane) — the emulated armv7
   # C compile is the slowest step; reusing objects across runs is the (b)
   # time-saver until libredwg is baked into a per-arch CI image (a).
@@ -430,7 +438,6 @@ collect:release:
   needs:
     - { job: "release:linux:x86-64", artifacts: true }
     - { job: "release:linux:arm64",  artifacts: true }
-    - { job: "release:linux:arm32",  artifacts: true }
     - { job: "release:darwin:arm64", artifacts: true }
     - { job: "release:windows:x86-64", artifacts: true }
     - { job: "release:documentation", artifacts: true }
