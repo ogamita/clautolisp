@@ -705,9 +705,31 @@ autolisp-dcl load time) stays in effect."
         (format *error-output*
                 "~&[dcl-debug] subprocess renderer installed.~%")))))
 
+(defun synchronize-process-cwd ()
+  "Align the engine's notion of the current directory with the LIVE
+process working directory at launch.
+
+The runtime captures `*autolisp-current-directory*` (and the default
+support path) at image-DUMP time via `(truename \".\")`, so a saved
+executable would otherwise resolve relative LOAD / OPEN / FINDFILE
+paths against the build directory rather than the directory the user
+launched it from. Re-reading the cwd here — and keeping Common Lisp's
+`*default-pathname-defaults*` in agreement — makes a relative path
+resolve against the live cwd / $PWD, matching POSIX and the CAD hosts.
+See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
+  (let ((cwd (ignore-errors (uiop:getcwd))))
+    (when cwd
+      (setf *default-pathname-defaults* cwd)
+      (clautolisp.autolisp-runtime:set-autolisp-current-directory cwd)
+      (clautolisp.autolisp-runtime:set-autolisp-support-paths
+       (list (namestring cwd))))))
+
 (defun main (&rest argv)
   (handler-case
       (let* ((options (parse-arguments (rest argv))))
+        ;; Resolve relative paths against the live launch directory,
+        ;; not the (dumped) build directory.
+        (synchronize-process-cwd)
         ;; --help / --version / --list-encodings short-circuit
         ;; before any context build.
         (when (clautolisp.autolisp-cli:cli-options-help-p options)
