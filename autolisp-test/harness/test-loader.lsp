@@ -137,6 +137,8 @@
         "tests/sysvar/coupling-angle.lsp"
         "tests/sysvar/coupling-units.lsp"
         "tests/sysvar/inventory-coverage.lsp"
+        ;; documentation (clautolisp source-aware ;| |; doc extension)
+        "tests/documentation/preceding-doc.lsp"
         ;; --- Phase D: vendor-divergent twin tests --------------------
         "tests/divergent/atof-hex-float.lsp"
         "tests/divergent/print-framing.lsp"

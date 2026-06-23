@@ -447,3 +447,38 @@ existing two-tier behaviour is preserved.
     the frame is popped.
 - clautolisp/tools/clautolisp/source/version.lisp — bump
   DEVELOP per the repo-wide convention.
+
+* Status (2026-06-23): feature implemented; end-to-end tests added
+
+Verification found the feature already implemented across the stack:
+- reader pending-doc / :preceding-doc thread
+  (autolisp-reader/source/parser.lisp, model.lisp);
+- binding-cell `doc` slot + `lookup-documentation`
+  (autolisp-runtime/source/model.lisp, api.lisp);
+- `CLAUTOLISP-DOCUMENTATION` / `CLAUTOLISP-DOCUMENTATION-KIND` builtins
+  (autolisp-builtins-core/source/api.lisp), registered as core subrs;
+- spec Function Entries (draft.org:2909, 2954);
+- alref.lsp third lookup tier (alref-documentation / alref-describe).
+
+The missing deliverable was the test coverage. Added
+`autolisp-test/tests/documentation/preceding-doc.lsp` (registered in
+the test-loader manifest) with end-to-end cases for every row of the
+Phase-2 update-rules table and the shadowing worked example:
+defun+block, defun-without-block-overwrites, setq+block,
+setq-without-block-preserves-variable-doc, setq-after-defun-clears,
+multi-pair setq attaches to the first name only, the function/variable
+kind tag, and the dynamic-scope shadowing case (inner doc visible in
+the body, outer doc restored after the frame is popped). All 10 pass.
+
+Verified behaviour note: the doc text is preserved VERBATIM between the
+`;|` / `|;` delimiters (only the delimiters are stripped), so
+`;| foo |;` yields " foo " — the tests use tight `;|foo|;` blocks to
+assert exact strings. This matches the acceptance criterion ("delimiters
+stripped, internal indentation and blank lines preserved verbatim").
+
+Remaining (optional): reader-level unit tests under
+autolisp-reader/tests/ for the pending-doc thread itself (block before
+defun captured, line comments between block and defun, second block
+clobbers first, form-without-block, block at top of file). The
+behaviour is exercised end-to-end by the above; the reader-unit layer
+is a nice-to-have.
