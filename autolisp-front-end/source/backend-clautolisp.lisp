@@ -510,7 +510,15 @@ constructed state on an error path)."
 (defun direct-load (session action)
   "Run a (:LOAD …) action in the direct variant. Honours the
 optional :encoding plist entry by passing :external-format through
-to AUTOLISP-LOAD-FILE-IN-CONTEXT."
+to AUTOLISP-LOAD-FILE-IN-CONTEXT.
+
+Binds *AUTOLISP-LOAD-PATHNAME* around the load, exactly as the
+standalone clautolisp executable does for its -l action (see
+tools/clautolisp/source/main.lisp EVAL-ACTION-IN-CONTEXT). Without
+this, `alfe --clautolisp -l FILE` left the variable UNBOUND while
+`alfe --bricscad` and bare `clautolisp` bound it, so a loaded file
+could not self-locate under the clautolisp backend. See
+issues/open/autolisp-load-pathname-always-bound.issue."
   (let* ((payload  (action-payload action))
          (path     (getf payload :path))
          (encoding (getf payload :encoding))
@@ -523,11 +531,15 @@ to AUTOLISP-LOAD-FILE-IN-CONTEXT."
              ((null encoding) nil)
              ((stringp encoding) (encoding-keyword encoding))
              (t encoding))))
-    (if external-format
-        (autolisp-load-file-in-context path context
-                                       :options options
-                                       :external-format external-format)
-        (autolisp-load-file-in-context path context :options options))))
+    (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
+     context "*AUTOLISP-LOAD-PATHNAME*"
+     (clautolisp.autolisp-runtime:make-autolisp-string (namestring path))
+     (lambda ()
+       (if external-format
+           (autolisp-load-file-in-context path context
+                                          :options options
+                                          :external-format external-format)
+           (autolisp-load-file-in-context path context :options options))))))
 
 (defun encoding-keyword (encoding-string)
   "Map a CLI encoding string to the Lisp keyword external-format.
