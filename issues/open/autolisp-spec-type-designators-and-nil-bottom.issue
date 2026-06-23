@@ -1,0 +1,150 @@
+autolisp-spec-type-designators-and-nil-bottom — complete the TYPE designator dictionary; pin LIST = conses only; document NIL as bottom (⊥)
+==========================================================================================================================================
+
+See also:
+  - autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+    chapter 4, "* 4 Types and Runtime Classes" (line 1832) — the dictionary
+    to complete.
+  - same file:
+      * NIL distinguished-object entry  line 1838
+      * Symbol entry                    line 1886  (titled "Symbol", but
+                                                     TYPE returns SYM)
+      * ENAME entry                     line 1925
+      * PICKSET entry                   line 1959
+      * FILE entry                      line 1991
+  - the `type` reference page already cited at draft.org:1877/2017.
+  - generated artefacts under autolisp-spec/build/org/ regenerate from the
+    draft.org source — do NOT hand-edit them.
+
+Problem 1 — the dictionary is missing most TYPE designators
+-----------------------------------------------------------
+
+`type` returns a small set of designator symbols, but chapter 4 only has
+entries for NIL, Symbol (SYM), ENAME, PICKSET, FILE. Missing at least:
+
+  - INT     — integers
+  - REAL    — reals
+  - STR     — strings
+  - LIST    — cons cells (see Problem 2)
+  - SUBR    — built-in/internal subroutine (BricsCAD returns SUBR for
+              built-ins AND for lambdas in the observed probe)
+  - USUBR   — user-defined subroutine (clautolisp returns USUBR for a user
+              lambda: `#<USUBR LAMBDA>` -> USUBR)
+  - EXSUBR / EXRXSUBR — external (ADS / ObjectARX) subroutines
+  - PAGETB  — function paging table
+  - VLA-OBJECT, SAFEARRAY, VARIANT — ActiveX/automation values
+
+This is non-exhaustive. The designator set differs per host (e.g. SUBR vs
+USUBR for user functions — see the cross-vendor note below), so the
+authoritative list must be obtained by *probing*: run `type` over the
+return values of as many AutoCAD and BricsCAD functions as practical and
+collect every distinct designator. Worked evidence from the reporter:
+
+  alfe --bricscad: (function type) -> type SUBR ; a user lambda -> SUBR
+  clautolisp:      a user lambda   -> #<USUBR LAMBDA> -> type USUBR
+
+So SUBR-vs-USUBR for user functions is itself a cross-vendor divergence
+worth a Compatibility note on those entries.
+
+Scope for Problem 1:
+  - Add a Type Entry for each designator `type` can return, in the same
+    template as the existing entries (Name = the exact designator token,
+    Class, Description, Representation, Valid Operations, Availability,
+    Source Notes).
+  - Normalize the existing Symbol entry to the designator token SYM (keep
+    "Symbol" as the prose name) so the dictionary is keyed by what `type`
+    actually returns.
+  - Record the host divergence for the function designators (SUBR /
+    USUBR / EXSUBR / EXRXSUBR) — which host returns which for built-ins
+    vs user functions vs ADS/ARX externals.
+  - Probe both hosts; cite the `type` reference page's documented list as
+    the starting catalogue and mark any designator seen in a probe but not
+    in the docs (and vice-versa).
+
+Problem 2 — LIST is the set of CONS cells only; it excludes NIL
+---------------------------------------------------------------
+
+The `LIST` designator covers cons cells (including dotted/improper pairs)
+and does NOT include the empty list. Evidence:
+
+  (type '(a . d)) ==> LIST
+  (type 'nil)     ==> nil
+  (type '())      ==> nil
+
+So `(type X)` returns `LIST` iff X is a cons; for the empty list it
+returns `nil`, not `LIST`. This must be stated explicitly, because it is
+easy to conflate with the `listp` predicate, which returns T for BOTH
+conses AND nil. The two notions diverge:
+
+  - `listp` true set  = conses ∪ {nil}
+  - `LIST` type set   = conses only
+
+The current NIL entry (draft.org:1845-1846) lists "LIST" under Related
+Types and says "nil is also the empty list" / "listp returns T for nil",
+which is correct for `listp` but must NOT be read as "nil has type LIST".
+
+Scope for Problem 2:
+  - Add a LIST Type Entry stating: type set = cons cells (proper and
+    dotted/improper); empty list is NOT of type LIST.
+  - Add a normative note contrasting the `LIST` designator with the
+    `listp` predicate (conses-only vs conses∪{nil}).
+  - Adjust the NIL entry's "Related Types: LIST" so it does not imply nil
+    is of type LIST; point instead at the listp-vs-LIST distinction.
+
+Problem 3 — NIL behaves as bottom (⊥), not as a symbol
+------------------------------------------------------
+
+The NIL entry (draft.org:1838) already says `(type nil)` returns `nil`
+(not a `NIL`/`SYM` designator) and that nil is the false value. It is
+worth adding the unifying interpretation: in AutoLISP `nil` serves as
+*bottom* (⊥), and that single reading explains the otherwise-odd facts:
+
+  (type nil)    ==> nil        ; not SYM, not a distinct NIL designator
+  (boundp 'nil) ==> nil
+  (not (eq 'sym (type 'nil)))  ; the type of nil is NOT the symbol SYM
+
+Argument to record: if `nil` were an ordinary symbol that evaluates to
+`nil`, then `(boundp 'nil)` returning `nil` would be inconsistent (a
+self-evaluating bound symbol). Reading `nil` as ⊥ makes the whole family
+coherent — `(quote ⊥) ==> ⊥`, `(boundp ⊥) ==> ⊥`, `(type ⊥) ==> ⊥` —
+every operation on bottom yields bottom. The "type NIL contains NIL"
+phrasing (a singleton bottom type whose sole inhabitant prints as nil) is
+the dual view.
+
+Scope for Problem 3:
+  - Add a Notes/Discussion subsection to the NIL entry presenting the ⊥
+    interpretation as the rationale for the `type`/`boundp`/`eq` results,
+    keeping the existing normative statements intact.
+  - Keep it explicitly non-collapsible to Common Lisp symbol/type behaviour
+    (the entry already warns against the CL `nil` type model — reinforce
+    with the ⊥ framing).
+  - Verify `(boundp 'nil)` and `(not (eq 'sym (type 'nil)))` on both hosts
+    and cite, so the ⊥ reading is evidence-backed, not just argued.
+  - Note the comparison predicates as another manifestation of ⊥
+    propagation: `=` `/=` `<` `<=` `>` `>=` signal a type error on
+    incompatible NON-nil types but return `nil` (not an error) when an
+    argument is `nil` — e.g. `(< 1 nil) -> nil`, `(< "abc" nil) -> nil`.
+    Keep this consistent with
+    issues/open/autolisp-spec-comparison-operators-chapter-placement.issue.
+
+Out of scope
+------------
+
+- Host object ontology details (ENAME/PICKSET/VLA-OBJECT internals) beyond
+  giving each a dictionary entry — chapters 16/17/20 own the deep
+  semantics.
+- clautolisp's own printer reprs (`#<USUBR LAMBDA>` etc.) — relevant only
+  as probe evidence for which designator a value carries.
+
+Definition of done
+-------------------
+
+- Chapter 4 has a Type Entry for every designator `type` can return,
+  obtained from the `type` reference plus an AutoCAD/BricsCAD probe, with
+  cross-vendor divergences (esp. SUBR/USUBR) noted.
+- A LIST entry states conses-only and a normative note distinguishes the
+  `LIST` type from the `listp` predicate; the NIL entry no longer implies
+  nil is of type LIST.
+- The NIL entry documents the ⊥ interpretation as rationale for
+  type/boundp/eq, backed by probed evidence.
+- build/org regenerates cleanly from the draft.org source.

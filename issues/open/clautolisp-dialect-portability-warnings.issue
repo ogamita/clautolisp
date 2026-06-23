@@ -1,0 +1,117 @@
+clautolisp-dialect-portability-warnings — verify the dialect portability-warning mechanism is implemented, with tests
+====================================================================================================================
+
+See also:
+  - autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+    chapter 25, "** Normative Rules: Dialect Portability Warnings" — the
+    spec section defining the model this issue verifies against.
+  - issues/open/autolisp-spec-defun-rest-parameter.issue — the first
+    concrete construct (`defun` `&rest`) that must emit such a warning.
+  - clautolisp/autolisp-reader/source/dialect.lisp — named dialects
+    (:strict 101, :autocad-2026 104, :bricscad-v26 120, :clautolisp 133)
+    and the dialect descriptor where a warning/escalation knob would live.
+  - clautolisp/autolisp-runtime/source/api.lisp:2276 — the unbound-variable
+    dialect-gated branch, as a model for where/how a dialect-gated
+    diagnostic is dispatched at evaluation time.
+
+Context
+-------
+
+The specification now defines *dialect portability warnings* (chapter 25):
+advisory, run-time diagnostics printed when an executing program reaches a
+construct unsupported by the host targeted by the active dialect. The
+defining properties:
+
+  - Run-time, evaluation-tied: a warning fires only when the incompatible
+    construct is actually evaluated. Guarded/feature-tested code that is
+    never reached produces no warning.
+  - Once per occurrence: each distinct source occurrence warns at most
+    once per run, on its first evaluation. A loop around an incompatible
+    expression warns once, not once per iteration. A different occurrence
+    (another defun, another call site) warns separately.
+  - Advisory: evaluation is unchanged; under a dialect whose target host
+    supports the construct natively, nothing is printed. Optional
+    escalation to error is a separate knob (cf. :unbound-variable-mode
+    :strict-error).
+  - One knowledge base: the catalogue of "construct X unsupported by
+    host/dialect Y" feeds both the run-time emitter and any static linter.
+
+The user reports never having seen any such warning printed — so the first
+job is to establish what, if anything, is currently implemented.
+
+Scope of work
+-------------
+
+1. Audit current state. Determine whether ANY dialect portability warning
+   is emitted today:
+     - grep the reader/runtime for an existing warning emitter and a
+       per-occurrence dedup table; identify whether the plumbing exists
+       and is simply unused, or is absent.
+     - confirm whether warnings are wired to the active dialect at all.
+   Record findings so we know if this is "verify" or "build".
+
+2. Define the warning infrastructure (if missing):
+     - a portability knowledge base / catalogue mapping a construct
+       (special form, function, or argument shape) -> the set of
+       host/dialects that support it, with a human-readable message.
+     - a once-per-occurrence dedup mechanism keyed by source occurrence
+       (definition site or call site), reset per run/evaluation session,
+       NOT keyed by construct class.
+     - a dialect-gated emit point at evaluation time (mirror the
+       unbound-variable dispatch at autolisp-runtime/source/api.lisp:2276):
+       warn iff the active dialect's target host lacks the construct.
+     - an optional warning->error escalation knob on the dialect
+       descriptor, off by default (precedent: :unbound-variable-mode).
+
+3. First concrete consumer: `defun` `&rest` (see the defun-rest issue).
+     - Native under :bricscad-v26 and :clautolisp -> no warning.
+     - Under :strict and :autocad-2026 -> warn once at the definition's
+       first evaluation, message naming the function, e.g.
+       "DIALECT WARNING: DEFUN FOO with &REST only works in bricscad and
+       clautolisp".
+
+4. Enumerate the other constructs that should warn. Walk chapter 24
+   ("BricsCAD Extensions") and the cross-vendor hazards already recorded
+   (e.g. anything BricsCAD-only) and build the initial catalogue. List
+   them in this issue as they are confirmed; each entry needs the
+   supporting host set and a message.
+
+5. Tests (the core deliverable). For `&rest` first, then each catalogued
+   construct:
+     - fires once on first evaluation under :strict and :autocad-2026;
+     - silent under :bricscad-v26 and :clautolisp;
+     - a second distinct occurrence warns independently;
+     - an occurrence evaluated repeatedly (loop) warns exactly once;
+     - a guarded/never-evaluated occurrence warns zero times;
+     - with the escalation knob on, the warning becomes the corresponding
+       error and (only then) changes program outcome.
+   Capture the emitted text so the message format is pinned.
+
+6. Make the warnings actually visible. Since the user has never seen one,
+   verify the output stream/sink the warnings go to is the one a normal
+   `alfe`/clautolisp run surfaces, and that no verbosity/quiet default is
+   swallowing them. Document how a user enables/sees them.
+
+Out of scope
+------------
+
+- The static-analysis tool itself. This issue covers the run-time
+  emitter and the shared catalogue; a static linter is a separate
+  consumer of the same catalogue and can be a follow-up.
+- Authoring the full construct catalogue in one pass — start with
+  `&rest`, add entries incrementally as cross-vendor hazards are
+  confirmed elsewhere.
+
+Definition of done
+-------------------
+
+- The run-time dialect portability-warning mechanism exists and matches
+  chapter 25: evaluation-tied, once-per-occurrence, advisory, dialect-
+  gated.
+- `defun` `&rest` warns per the spec under :strict / :autocad-2026 and is
+  silent under :bricscad-v26 / :clautolisp.
+- Tests validate the firing/dedup/guarded/escalation behaviours and pin
+  the message text.
+- Warnings are demonstrably visible in a normal run; how to see them is
+  documented.
+- DEVELOP bumped in tools/clautolisp/source/version.lisp.
