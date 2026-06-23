@@ -24,14 +24,32 @@ resolved and moved to issues/closed/, one is deferred and stays open.
 
 
 
-test-file-encodings.issue
+test-file-encodings.issue  -- BLOCKED (needs a content decision): the
+  specified fixture sentence is not ISO-8859-1-encodable (U+0153 oe,
+  U+2019 right-quote), so "encode in utf-8 AND iso-8859-1 then assert
+  text = <that exact sentence>" is inconsistent for the Latin-1 half.
+  Parts 4 (verify *cad docs/behaviour) + the autolisp-spec update also
+  need CAD access / spec authority. (Basic encoding+newline round-trip
+  is already covered by file-compat latin-1-text / crlf-text /
+  cr-only-text scenarios; the gap is the full matrix + wrong-encoding
+  error cases + the *AUTOLISP-FILE-ENCODING* loop program.)
 
-source-aware-defun-documentation.issue
+source-aware-defun-documentation.issue  -- DONE 2026-06-23: feature was
+  already implemented across reader/runtime/builtins/spec/alref; added
+  end-to-end tests (tests/documentation/preceding-doc.lsp, 10 cases, all
+  pass). Optional reader-unit tests noted in the issue.
 source-aware-defun-documentation.lsp
 
-variadic-functions.issue
+variadic-functions.issue  -- DONE 2026-06-23: feature shipped 1.1.16;
+  added the autolisp-spec &rest extension subsection. Only the
+  strict/bricscad dialect-warning remains (tracked in
+  bricscad-undocumented-clisms.issue).
 
 system-variables.issues -- Verify what is implemented, and implement the missing parts.
+  AUDITED 2026-06-23 (in the issue): inventory + spec chapter +
+  data-driven catalogue + ERRNO are DONE; fixed EXTNAMES->snvalid
+  coupling (1.2.11). Remaining couplings + rtos float-format
+  divergences itemised in the issue.
 
 
 
