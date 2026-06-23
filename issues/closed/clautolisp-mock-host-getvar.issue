@@ -90,3 +90,32 @@ Related
 - clautolisp CAD-parity rule (sncf-reseau memory): behavior diffs
   vs BricsCAD/AutoCAD are tracked as clautolisp issues.
 - A cadaptor-side follow-up may add a CLAUTOLISP platform branch.
+
+Resolution
+----------
+
+Fixed in clautolisp 1.2.9. The mock host's sysvar catalogue is
+generated from BricsCAD data, so PROGRAM / VENDORNAME / PLATFORM /
+ACADVER masqueraded as Bricsys. `install-transmit-variables`
+(`clautolisp/autolisp-cli/source/transmit.lisp`) now stamps the
+clautolisp engine identity at launch via
+`apply-clautolisp-host-identity` / `host-set-derived-sysvar`:
+
+    (getvar "PROGRAM")    => frontend name  ("clautolisp" or "alfe")
+    (getvar "VENDORNAME") => "clautolisp"
+    (getvar "PLATFORM")   => "clautolisp"
+    (getvar "ACADVER")    => *AUTOLISP-VERSION*  (e.g. "1.2.9")
+
+PROGRAM is taken from the *AUTOLISP-FRONTEND* identity rather than
+argv[0] (which is unreliable in a dumped image). The same values apply
+under bare `clautolisp` and `alfe --clautolisp`. The injection is
+reached only by the clautolisp engine — alfe's bricscad/autocad
+backends drive a real CAD and never run this path — so a genuine CAD's
+identity is never clobbered. Unknown/absent sysvars still return nil.
+
+The other system variables cadaptor reads (LISPSYS, SHORTCUTMENU,
+ORTHOMODE, CLAYER, CMDECHO, FILEDIA, OSMODE) already carry type-correct
+defaults in the generated catalogue and were confirmed sane. Remaining
+minor nuance (left as a follow-up): the AutoCAD-only SELECTIONOFFSCREEN
+is still present in the mock catalogue rather than reported absent on
+the clautolisp host.
