@@ -217,3 +217,72 @@ a test. Known couplings to seed the list:
   - [ ] ERRNO has real semantics; each listed coupling implemented and
         tested.
   - [ ] autolisp-test conformance green; spec-coverage-style gate green.
+
+## Verification audit (2026-06-23)
+
+"Verify what is implemented, and implement the missing parts."
+Evidence-based audit of the current tree against the deliverables above;
+the bulk of the issue is DONE. Remaining work is in the function↔sysvar
+couplings.
+
+Deliverable status:
+
+  - [x] Inventory: `autolisp-spec/documentation/system-variables-inventory.sexp`
+        exists with 1836 records, all 13 schema fields, per-vendor
+        provenance; parseable.
+  - [x] Spec chapter: §16 "System Variables" present (1836 per-sysvar
+        entries + the normative-rules preamble); GETVAR/SETVAR Function
+        Entries cross-link it; document version is 0.9.2 (>= the
+        requested 0.9.0).
+  - [x] Catalogue: `autolisp-mock-host/source/sysvar-catalogue.lisp` is
+        auto-generated from the inventory (1836 cells); read-only is
+        enforced on setvar, getvar returns nil for unknown names, and
+        type coercion is in place.
+  - [x] ERRNO: real semantics via the `errno-and-return` runtime helper,
+        wired through open / findfile / entget / entmod / entsel /
+        nentsel / ssget / ssname / read-line / write-line / handent.
+  - [~] Couplings: PARTIAL — see the table below.
+  - [x] Tests/gate: inventory-coverage conformance + a spec↔inventory↔
+        catalogue coverage gate (`check-sysvar-spec-coverage.lisp`) exist;
+        coupling tests under `autolisp-test/tests/sysvar/`.
+
+Coupling status (verified against the built engine, not just by reading):
+
+  IMPLEMENTED & passing:
+    - ERRNO -> open / file IO / entity / selection.
+    - ANGBASE/ANGDIR/AUNITS/AUPREC -> angtos / angle / getangle / getorient.
+    - USERR1..5 / USERI1..5 / USERS1..5 scratch round-trip.
+    - getvar/setvar unknown-name + read-only behaviour.
+    - EXTNAMES -> snvalid  (FIXED 2026-06-23 in clautolisp 1.2.11; was
+      previously ignoring EXTNAMES — snvalid now applies the extended
+      (EXTNAMES=1) reserved-char rule, the restrictive (EXTNAMES=0) R14
+      rule, and the FLAG bit that permits "|", matching the SNVALID spec
+      entry's examples. coupling-extnames.lsp's relaxed-accepts assertion
+      now holds.)
+
+  NOT YET coupled (functions don't consult their sysvar):
+    - LUNITS/LUPREC/DIMZIN/UNITMODE -> rtos/distance default precision.
+      NB: coupling-units.lsp passes precision EXPLICITLY (3rd arg), so it
+      does NOT actually exercise the LUPREC default; its two genuinely
+      failing cases are rtos FLOAT-FORMATTING divergences, not a sysvar
+      coupling: (rtos 1.6 2 0) => "2." (want "2") and (rtos 100.0 1 2) =>
+      "1.00d+2" (want "1.00E+02"). These belong with the float-printing /
+      strict-dialect formatting work, not here. Wiring rtos/distance to
+      read LUPREC/LUNITS when the precision/mode args are omitted is the
+      real remaining coupling.
+    - CMDECHO -> command/vl-cmdf echo policy.
+    - TILEMODE/CVPORT -> vports/setview.
+    - SNAPANG/ANGBASE radians-vs-display on setvar.
+    - DWGNAME/DWGPREFIX -> default path resolution for file builtins.
+    - DATE/CDATE/TDCREATE/TDUPDATE -> edtime.
+    - MAXSORT -> acad_strlsort.
+    - SRCHPATH (BricsCAD) / support path -> findfile/load.
+    - TRUSTEDPATHS/SECURELOAD -> load/open/findtrustedfile trust gating.
+  (The last eight have no coupling test yet.)
+
+Recommended next steps (by priority): (1) the rtos/distance float-format
+divergences ("N." for integer-valued reals; "d+NN" vs "E+0NN" scientific)
+— likely shared with strict-dialect float printing; (2) wire rtos/distance
+to LUPREC/LUNITS/DIMZIN/UNITMODE defaults; (3) the trust-gating coupling
+(TRUSTEDPATHS/SECURELOAD), which is security-relevant; (4) the remaining
+behavioural couplings with tests.

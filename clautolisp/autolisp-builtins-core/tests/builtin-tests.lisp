@@ -1772,7 +1772,11 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
                                     (make-autolisp-string "abc")
                                     (make-autolisp-string "[abc]bc"))))
     (is (eq t-symbol (call-autolisp-function snvalid-fn (make-autolisp-string "Layer_01"))))
-    (is (null (call-autolisp-function snvalid-fn (make-autolisp-string "with space"))))
+    ;; EXTNAMES defaults to 1 (extended naming): a space is a valid name
+    ;; character, but the reserved set (< > / \ " : ? * | , = ` ;) is not.
+    ;; See the SNVALID / EXTNAMES spec entries and system-variables.issue.
+    (is (eq t-symbol (call-autolisp-function snvalid-fn (make-autolisp-string "with space"))))
+    (is (null (call-autolisp-function snvalid-fn (make-autolisp-string "a/b"))))
     (is (string= "ABC"
                  (autolisp-string-value
                   (call-autolisp-function xstrcase-fn (make-autolisp-string "abc")))))))

@@ -3072,20 +3072,40 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
         (1 (* parsed (/ pi 180.0d0)))
         (otherwise parsed)))))
 
+(defun %host-sysvar-integer (host name &optional (default 0))
+  "Fetch an integer-valued sysvar from HOST as a CL integer, returning
+DEFAULT when HOST is nil, the sysvar is absent or non-integer, or the
+host does not support getvar (e.g. a host-less unit-test context).
+Companion to %HOST-SYSVAR-STRING."
+  (let ((raw (and host (ignore-errors (host-getvar host name)))))
+    (if (integerp raw) raw default)))
+
 (defun builtin-snvalid (string &optional flag)
-  ;; (snvalid STRING [FLAG]) -> T if STRING is a valid AutoCAD
-  ;; symbol-table name (alnum + a few specials, non-empty). FLAG
-  ;; controls whether vertical bar is allowed; we accept conservative
-  ;; identifier characters by default.
-  (declare (ignore flag))
-  (let ((value (autolisp-string-value (require-string string "SNVALID"))))
-    (if (and (> (length value) 0)
-             (every (lambda (c)
-                      (or (alphanumericp c)
-                          (find c "_-$#")))
-                    value))
-        (intern-autolisp-symbol "T")
-        nil)))
+  ;; (snvalid STRING [FLAG]) -> T when STRING is a valid symbol-table
+  ;; name, nil otherwise. The rules track the EXTNAMES sysvar (see the
+  ;; SNVALID / EXTNAMES entries in the spec, and
+  ;; issues/open/system-variables.issue "Coupling"):
+  ;;   EXTNAMES = 1 (default): extended naming — every character is
+  ;;     accepted except the reserved set  < > / \ " : ? * | , = ` ;
+  ;;     (spaces ARE allowed); FLAG with the 1 bit set additionally
+  ;;     permits the vertical bar "|" (xref-dependent names).
+  ;;   EXTNAMES = 0: restrictive R14 naming — only A-Z 0-9 $ _ - .
+  ;; A name is never valid when empty.
+  (let* ((value (autolisp-string-value (require-string string "SNVALID")))
+         (extnames (%host-sysvar-integer (ignore-errors (current-evaluation-host))
+                                         "EXTNAMES" 1))
+         (permit-bar (and flag (if (integerp flag) (logbitp 0 flag) t))))
+    (cond
+      ((zerop (length value)) nil)
+      ((eql extnames 0)
+       (if (every (lambda (c) (or (alphanumericp c) (find c "$_-"))) value)
+           (intern-autolisp-symbol "T")
+           nil))
+      (t
+       (let ((reserved (if permit-bar "<>/\\\":?*,=`;" "<>/\\\":?*|,=`;")))
+         (if (find-if (lambda (c) (find c reserved)) value)
+             nil
+             (intern-autolisp-symbol "T")))))))
 
 (defun builtin-xstrcase (string &optional downcase-p)
   ;; vl-extension flavour of strcase that handles non-ASCII text
