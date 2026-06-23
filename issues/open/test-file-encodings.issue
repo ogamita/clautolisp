@@ -5,8 +5,8 @@ Prepare 6 files containing this lisp expression:
 (setq
  text
  (strcat
-   "« À Noël, l’âgé Ægyr brûla du maïs rôti près d’un cañon où Fœdor "
-   "jugea déçu que l’île exiguë, bâtie sur du würmien, était trop naïve "
+   "« À Noël, l'âgé Ægyr brûla du maïs rôti près d'un cañon où Foedor "
+   "jugea déçu que l'île exiguë, bâtie sur du würmien, était trop naïve "
    "pour Zoë et Cécÿle. »"))
 ------------------------------------------------------------------------
 
@@ -18,7 +18,7 @@ and with dos, mac and unix line terminations.
 - expect read errors when the wrong encoding or line-termination is used.
 
 - check that the text variable is equal to:
-   "« À Noël, l’âgé Ægyr brûla du maïs rôti près d’un cañon où Fœdor jugea déçu que l’île exiguë, bâtie sur du würmien, était trop naïve pour Zoë et Cécÿle. »"
+   "« À Noël, l'âgé Ægyr brûla du maïs rôti près d'un cañon où Foedor jugea déçu que l'île exiguë, bâtie sur du würmien, était trop naïve pour Zoë et Cécÿle. »"
   (be careful with the encoding when doing the check, and reset the text variable before loading each file).
 
 2- Write a script using alfe to read the files with read-line using  -e {utf-8,iso-8859-1,us-ascii}x{-mac,-dos,-unix,}
@@ -43,3 +43,56 @@ clautolisp extension using *AUTOLISP-FILE-ENCODING* as defaut encoding
 for load and open should be precised, and the fact that the encoding
 doesn't change between read, read-line, read-char calls (or
 print/write calls).
+
+== Status (2026-06-23) ==
+
+Fixture sentence corrected to be ISO-8859-1-safe (pbourguignon): U+0153
+(oe ligature) is ISO-8859-15, not ISO-8859-1, so it is written "oe"
+(Foedor); U+2019 (right single quote) is written "'". The sentence now
+contains only code points <= U+00FF, so it encodes in BOTH UTF-8 and
+ISO-8859-1.
+
+DONE — the 6-fixture encoding x line-termination matrix, as file-compat
+round-trip scenarios:
+
+  clautolisp/autolisp-file-compat/scenarios/encodings/french-{utf8,latin1}-{unix,dos,mac}.sexp
+  (+ byte-exact reference artifacts under .../artifacts/)
+
+Each writes the sentence with its :external-format (:utf-8 / :iso-8859-1)
+and :newline-mode (:lf / :crlf / :cr), reads it back, and asserts the
+decoded text/lines round-trip. All 6 pass (verified bytes: UTF-8 «=c2 ab,
+À=c3 80; ISO-8859-1 «=ab, À=c0; newline lf=0a, crlf=0d 0a, cr=0d). This
+covers the codec + line-termination half of parts 1-2. (Non-LF variants
+assert via :expected-lines, since the raw read-back retains the CR/CRLF
+terminator — same convention as the existing crlf-text / cr-only-text
+scenarios.)
+
+FINDING (blocks parts 1 & 3 as written) — AutoLISP write ignores the
+requested encoding:
+
+  At the AutoLISP level, `(open PATH "w")` followed by `princ`/`write-line`
+  writes ISO-8859-1 / ANSI bytes REGARDLESS of *AUTOLISP-FILE-ENCODING*
+  or the CLI `-e` flag. Verified: writing "é" yields the single byte E9
+  under both `*AUTOLISP-FILE-ENCODING* "utf-8"` and `... "iso-8859-1"`,
+  and likewise under `-e utf-8` / `-e iso-8859-1`. READ does honor the
+  requested encoding (a UTF-8 `load` of those Latin-1 bytes signals a
+  UTF-8 stream-decoding error). So:
+    - read/load/read-line  -> honor *AUTOLISP-FILE-ENCODING* / -e  (good)
+    - open-for-write/princ -> always Latin-1/ANSI                 (bug?)
+  This is why parts 1 & 3 cannot yet be realized as a pure-AutoLISP
+  program that AUTHORS its own UTF-8 fixtures and loads them back: the
+  authoring step can't produce UTF-8 from AutoLISP. The file-compat
+  scenarios above sidestep it by writing the artifacts at the CL level.
+
+  Whether open-for-write SHOULD honor *AUTOLISP-FILE-ENCODING* is a
+  CAD-parity question (what byte sequence do AutoCAD / BricsCAD write for
+  a non-ASCII char under a chosen code page?) — exactly the kind of thing
+  this issue says must be verified against the *cads and then specified.
+
+REMAINING (needs CAD access / spec authority):
+  - decide + fix the open-for-write encoding behaviour (above), then add
+    the part-1 (LOAD a `(setq text (strcat …))` fixture per encoding) and
+    part-3 (loop over *AUTOLISP-FILE-ENCODING*) AutoLISP test programs,
+    including the wrong-encoding / wrong-line-termination error cases;
+  - verify the per-open (not per-read) encoding-selection against AutoCAD
+    and BricsCAD and update the autolisp-spec accordingly.
