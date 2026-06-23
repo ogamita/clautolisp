@@ -7,19 +7,18 @@ Because the fact that these functions are variadic prevents us from
 overriding them cleanly (we have to choose one arity, and calls with
 other arities become errors).
 
-We propose to use & to introduce the parameter that collects all
-remaining arguments.
+Bricscad implements &REST like Common Lisp, we'll do the same.
 
 Syntax:
 
 So the syntax of the lambda-list would be:
 
-lambda-list ::= { parameter-name } [ '&' rest-parameter-name ] [ '/' { local-name } ] .
+lambda-list ::= { parameter-name } [ '&rest' rest-parameter-name ] [ '/' { local-name } ] .
 parameter-name ::= symbol .
 rest-parameter-name ::= parameter-name .
 local-name ::= symbol .
 
-'&' and '/' stand for the symbols & and / themselves.
+'&REST' and '/' stand for the symbols &REST and / themselves.
 
 Semantics:
 
@@ -34,7 +33,8 @@ If there are fewer parameters than the number of parameter-name, then
 an error missing arguments is signaled.
 
 There is essentially no upper bound to the number of argument for
-functions with & in their lambda-list.
+functions with &REST in their lambda-list.  The arguments are accumulated
+in a list, instead of being passed on the stack.
 
 
 Example:
@@ -42,11 +42,11 @@ Example:
 princ has no mandatory parameters, only optional parameters.
 
 <pre>
-(defun funcall (fun & arguments)
+(defun funcall (fun &rest arguments)
   (apply fun arguments))
 
 (setq original-princ (function princ))
-(defun princ (& arguments / value fileHandle)
+(defun princ (&rest arguments / value fileHandle)
   (if (null arguments)
       (funcall original-princ)
       (progn
@@ -81,8 +81,8 @@ Diagnostics surface at CALL time (matching the usual AutoLISP
 late-binding error model):
 
   :wrong-number-of-arguments  — fewer args than required formals.
-  :invalid-rest-parameter     — `& ' followed by ≠ 1 symbol, or
-                                `& ' appearing after `/' (which
+  :invalid-rest-parameter     — `&rest' followed by ≠ 1 symbol, or
+                                `&rest' appearing after `/' (which
                                 would name a local instead).
 
 The debugger metadata pipeline (`autolisp-debug/source/instrument.lisp')
@@ -109,15 +109,16 @@ prevents us from posting such a feature request for lack of
 privileges.
 
 Bricsys support has CONFIRMED that BricsCAD V26 already implements
-`&rest' as an undocumented extension. We have NOT yet probed the
-exact spelling BricsCAD accepts (`&rest' keyword vs bare `&'
-symbol) — that's tracked in
+`&rest' as an undocumented extension.  BricsCAD accepts `&rest'
+keyword — that's tracked in
 `issues/open/bricscad-undocumented-clisms.issue', along with a
 broader inventory of CL constructs BricsCAD silently accepts
 (`setf', `let', `let*' have been observed).
+This should be verified in the Bricscad reference documentation, since it's officially supported (Bricscad support message).
+
 
 Strict-mode warning: this is still pending. The clautolisp
-`--strict' / dialect-bricscad reader currently accepts `&' without
+`--strict' / dialect-bricscad reader currently accepts `&rest' without
 emitting a diagnostic. The right move is:
 
   - clautolisp default dialect: accept silently (matches the
