@@ -1,0 +1,99 @@
+autolisp-spec-eval-misleading-examples — EVAL examples hide the double evaluation; add quoted/computed-form examples
+==================================================================================================================
+
+See also:
+  - autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+    chapter 5, "** Function Entry: EVAL" line 2134; Examples block
+    lines 2158-2163.
+  - generated artefacts under autolisp-spec/build/org/ regenerate from the
+    draft.org source — do NOT hand-edit them.
+
+Problem
+-------
+
+`eval` is a FUNCTION, so its argument is evaluated by the normal
+call-argument machinery BEFORE `eval` runs — and then `eval` evaluates
+that result a SECOND time. The pedagogical point of `eval` is precisely
+this second evaluation. The current examples (draft.org:2160-2163) all
+pass values that self-evaluate, so the second evaluation is invisible and
+the examples look like no-ops or, worse, like `eval` "does nothing":
+
+  Given (setq a 123) and (setq b 'a):
+  - (eval 4.0)        returns 4.0   ; arg evaluates to 4.0, eval of 4.0 = 4.0
+  - (eval (abs -10))  returns 10    ; arg evaluates to 10,  eval of 10  = 10
+  - (eval a)          returns 123   ; arg a evaluates to 123, eval of 123 = 123
+  - (eval b)          returns 123   ; arg b evaluates to symbol A,
+                                      eval of A = 123  <- the only example
+                                      where the 2nd eval actually does work
+
+The first three are misleading: nothing distinguishes `eval` from "return
+the argument", because each argument's value is self-evaluating. Only the
+`(eval b)` case exercises the second evaluation, and even there the spec's
+explanation is muddled — "b holds the symbol a which itself names the
+value 123" conflates the two evaluation steps.
+
+Accurate accounting of each current example (worth stating in the page):
+  - (eval 4.0):      eval RECEIVES 4.0 (arg already evaluated); 4.0
+                     self-evaluates to 4.0.
+  - (eval (abs -10)):eval RECEIVES 10 (the call computed abs first);
+                     10 self-evaluates to 10.
+  - (eval a):        eval RECEIVES 123 (the value of A); 123
+                     self-evaluates to 123.
+  - (eval b):        eval RECEIVES the symbol A (the value of B, since
+                     (setq b 'a)); A then evaluates to 123 in the current
+                     dynamic context.
+
+Fix — add significative examples (quoted / computed forms)
+----------------------------------------------------------
+
+Add examples where the FIRST evaluation yields an unevaluated FORM (a
+quoted list, or a list built at run time) so the SECOND evaluation has
+real work to do:
+
+  - (eval '(+ 1 2))  ==> 3
+      the arg '(+ 1 2) evaluates to the list (+ 1 2); eval then evaluates
+      that list as a form -> 3.
+
+  - (eval (list '+ 'a b))  ==> 246
+      (list '+ 'a b) evaluates to (+ A A) — because '+ -> the symbol +,
+      'a -> the symbol A, and b -> A (its value); eval then evaluates
+      (+ A A), and A is bound to 123, giving 246.
+      Equivalent to (eval '(+ A A)) ==> 246.
+
+Keep at least one of the existing self-evaluating examples (e.g.
+(eval 4.0)) but RELABEL it so the reader sees it is the self-evaluating
+edge case, not the general behaviour.
+
+Scope of work
+-------------
+
+1. Rewrite the Examples block (draft.org:2158-2163):
+   - keep (setq a 123) / (setq b 'a) as setup;
+   - retain one self-evaluating example, explicitly labelled as such;
+   - add (eval '(+ 1 2)) and (eval (list '+ 'a b)) with the step-by-step
+     "arg evaluates to X, then eval evaluates X" explanation;
+   - correct the (eval b) explanation to separate the two evaluation
+     steps (arg b -> symbol A; eval A -> 123).
+2. Add one sentence to the Description (draft.org:2149) making the two-stage
+   evaluation explicit: as a function, eval's argument is evaluated by the
+   caller, then eval evaluates the resulting form again.
+3. Verify the two new examples on both hosts (AutoCAD 2026, BricsCAD V26)
+   and update the Availability Status off "pending Phase 4 verification"
+   for the points the probe settles.
+
+Out of scope
+------------
+
+- Macro / fexpr semantics — AutoLISP `eval` is an ordinary function;
+  this issue only clarifies its examples and the double-evaluation.
+
+Definition of done
+-------------------
+
+- The EVAL Examples block includes quoted and run-time-computed forms that
+  demonstrate the second evaluation, with correct step-by-step
+  explanations, and any retained self-evaluating example is labelled as an
+  edge case.
+- The Description states the two-stage (caller-then-eval) evaluation.
+- New examples verified on both hosts.
+- build/org regenerates cleanly from the draft.org source.

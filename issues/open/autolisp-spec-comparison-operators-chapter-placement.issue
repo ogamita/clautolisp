@@ -1,0 +1,134 @@
+autolisp-spec-comparison-operators-chapter-placement — move = /= < <= > >= from Numbers to Data and Control Flow (they compare strings too)
+===========================================================================================================================================
+
+See also:
+  - autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+      * chapter 5 "Data and Control Flow"   line 2022
+          - EQ                              line 2176
+          - EQUAL                           line 2216
+      * chapter 8 "Numbers"                 line 2934
+          - =   line 3093   /=  line 3133
+          - <   line 3166   <=  line 3202
+          - >   line 3235   >=  line 3268
+  - issues/open/autolisp-spec-equality-operators.issue — overlapping
+    ticket; it explicitly left open "decide whether the relational
+    operators (< <= > >=) deserve their own page or a subsection". THIS
+    issue answers the placement question; coordinate so the two don't
+    diverge.
+  - generated artefacts under autolisp-spec/build/org/ regenerate from the
+    draft.org source — do NOT hand-edit them.
+
+Context
+-------
+
+The six comparison operators `=` `/=` `<` `<=` `>` `>=` currently live in
+chapter 8 ("Numbers", line 2934) and are described in purely numeric terms
+— e.g. `<` (draft.org:3178) says only "Returns T if each argument is less
+than the argument to its right", with a numeric example and no mention of
+strings. But these operators also compare STRINGS:
+
+  - `=` / `/=` test string (in)equality.
+  - `<` `<=` `>` `>=` order strings (lexicographically, per host).
+
+This was verified in BricsCAD. The numeric-only placement and wording are
+therefore misleading: these are general comparison predicates, not number
+functions. They belong in chapter 5 ("Data and Control Flow", line 2022)
+alongside EQ (2176) and EQUAL (2216), the other comparison predicates.
+
+The distinction the move must preserve: EQ and EQUAL accept arguments of
+ANY type, whereas `=` `/=` `<` … carry MORE restrictions on the
+combinations of argument types they accept (numbers and strings, with
+host-specific rules on mixing types — e.g. whether `(< 1 "a")` is an
+error, coerces, or returns nil). The relocation is not a claim that they
+are as type-permissive as EQ/EQUAL — only that they are comparison
+predicates and belong with them.
+
+Incompatible-type rule, with a NIL exception (bottom propagation):
+when `=` `/=` `<` `<=` `>` `>=` are given genuinely incompatible argument
+types they signal a TYPE ERROR — EXCEPT when one of the arguments is
+`nil`. Because `nil` is bottom (⊥), a comparison with `nil` does not
+error; it simply returns `nil` (⊥ in, ⊥ out):
+
+  (< 1 nil)      ==> nil        ; no error
+  (< "abc" nil)  ==> nil        ; no error
+  (< 1 "a")      --> TYPE ERROR ; two incompatible NON-nil types
+
+This is the same ⊥ semantics tracked for the NIL distinguished object in
+issues/open/autolisp-spec-type-designators-and-nil-bottom.issue (chapter 4),
+applied to the comparison predicates: any operation on bottom yields
+bottom rather than signalling. The two issues must state this
+consistently.
+
+Scope of work
+-------------
+
+1. Confirm the string behaviour in the specifications, not just by probe:
+   find the AutoCAD and BricsCAD reference pages that document string
+   comparison for `=` `/=` `<` `<=` `>` `>=` (the AutoLISP "Equality and
+   Conditional Functions" family page is the likely source; cite per
+   operator). Record the BricsCAD V26 verification already done as
+   supporting evidence.
+
+2. Determine the exact argument-type domain per operator:
+   - which argument-type combinations are accepted (number×number,
+     string×string, and any mixed/cross-type cases);
+   - the ordering rule for strings (lexicographic; case sensitivity;
+     code-point vs locale);
+   - cross-type behaviour: error vs nil vs coercion for two NON-nil
+     incompatible types — `(< 1 "a")`, `(= 1 "1")`, etc. (expected: TYPE
+     ERROR);
+   - the NIL/bottom exception: any comparison with a `nil` argument
+     returns `nil` and does NOT error —
+       (< 1 nil)      -> nil
+       (< "abc" nil)  -> nil
+       (= 1 nil)      -> nil
+       (= nil nil)    -> ?   (confirm: nil or T — probe both hosts)
+       (>= nil 1)     -> nil
+     so the type-error check must fire only when ALL offending arguments
+     are non-nil-but-incompatible;
+   - confirm the variadic chaining semantics hold for strings the same way
+     they do for numbers (`(< "a" "b" "c")`), and what a `nil` in the
+     middle of a chain does (short-circuit to nil?).
+   Capture probe rows in the existing vendor-evidence style.
+
+3. Move the six Function Entries from chapter 8 to chapter 5, placing them
+   next to EQ/EQUAL. Update each entry:
+   - Description / Arguments and Values: state that the operator compares
+     numbers AND strings (not numbers only), with the per-operator domain
+     from step 2;
+   - add string examples alongside the numeric ones (e.g. `(< "a" "b")`);
+   - add a Compatibility note on cross-type/mixed-argument behaviour and
+     any AutoCAD/BricsCAD divergence found;
+   - promote the Availability Status off "presumed / pending Phase 4
+     verification" where the probe + cited pages settle it.
+
+4. Reconcile with chapter 8: leave a forward-reference from "Numbers"
+   (these operators are numeric-capable but defined under Data and Control
+   Flow), so a reader looking under Numbers still finds them.
+
+5. Coordinate with autolisp-spec-equality-operators.issue: that issue's
+   open question "where do the relational operators live / own page vs
+   subsection" is answered here (chapter 5, next to EQ/EQUAL). Ensure the
+   "Normative Rules: Equality Predicates" page and these entries cross-
+   reference consistently and do not contradict.
+
+Out of scope
+------------
+
+- The full numeric tower / coercion rules for the numeric case — owned by
+  "Normative Rules: Number Tower and Division" (chapter 3 / chapter 8);
+  reference it rather than restating.
+- EQ / EQUAL themselves, which already sit in chapter 5 — touch only to
+  add cross-references.
+
+Definition of done
+-------------------
+
+- `=` `/=` `<` `<=` `>` `>=` are defined in chapter 5 next to EQ/EQUAL,
+  with string comparison documented and sourced per operator, and a
+  forward-reference left in chapter 8.
+- Each entry states its accepted argument-type domain (numbers and
+  strings) and the cross-type behaviour, with the more-restrictive-than-
+  EQ/EQUAL caveat explicit.
+- Placement is consistent with autolisp-spec-equality-operators.issue.
+- build/org regenerates cleanly from the draft.org source.

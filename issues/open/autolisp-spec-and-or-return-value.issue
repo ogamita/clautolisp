@@ -1,0 +1,106 @@
+autolisp-spec-and-or-return-value — AND/OR return only T or NIL, never a subexpression value; close out the AND page to OR's standard
+===================================================================================================================================
+
+See also:
+  - autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+    line 861 ("** Special Form Entry: AND") — under-specified, the page to fix.
+  - same file, line 903 — the stale Notes line to remove/replace.
+  - same file, line 1149 ("** Special Form Entry: OR") — ALREADY resolved
+    (Phase-5 closure, line 1176); use it as the template for AND.
+  - issues/open/autolisp-spec-questions.issue — "AND, OR" section already
+    records the expectation that the return value is boolean, not the last
+    value (what CL does), and that they cannot short-circuit-return a value.
+  - generated artefacts under autolisp-spec/build/org/ regenerate from the
+    draft.org source — do NOT hand-edit them.
+
+Context
+-------
+
+It is now established that AutoLISP's `and` and `or` are *boolean*: they
+return only `T` or `nil`, never the value of one of their subexpressions.
+This breaks the Common-Lisp idioms that rely on the value flowing through:
+
+  - `(and test expr)` is NOT a `when` — CL returns `expr`'s value on a
+    true test; AutoLISP returns `T`. So `(setq r (and ok (compute)))`
+    stores `T`, not the computed value.
+  - `(or x default)` is NOT an or-else — CL returns the first non-nil
+    value; AutoLISP returns `T`. So `(setq x (or x default))` *clobbers*
+    `x` with `T`. Portable code must use `(if (not x) (setq x default))`.
+  - neither can stand in for `unless` / value-returning conditionals.
+
+The OR page already captures all of this: it documents "T or nil" return,
+cites BricsCAD V26's per-symbol page, gives the `(or 123 nil) -> T`
+example, and spells out the `(setq x (or x default))` clobber hazard
+(draft.org:1176, Phase-5 closure, Status "documented in both vendors").
+
+The AND page does NOT. It still says (draft.org:884-887):
+  "Vendor summary documentation describes `and` as returning the logical
+   AND ... The exact return-value convention still needs dedicated
+   per-function confirmation ... remains mildly under-specified."
+and carries the stale Notes line (draft.org:903):
+  "Because Autodesk's summary page is brief, the exact value returned in
+   non-trivial truthy cases should still be confirmed by dedicated vendor
+   pages or tests."
+with Availability Status "BricsCAD presumed-both pending Phase 4
+verification" (draft.org:908).
+
+So AND is out of sync with OR and with the now-established fact.
+
+Scope of work
+-------------
+
+1. Confirm the AND return convention against the specifications first:
+   look for a dedicated BricsCAD V26 per-symbol `and` page and the
+   AutoCAD 2026 `and` page (mirror the OR Source Notes at draft.org:1187).
+   If a dedicated page states the return ("T if all non-NIL, else NIL"
+   or equivalent), cite it the way OR cites its page.
+
+2. If the specifications do not state it explicitly, add a probe to
+   verify on the live host(s) (BricsCAD V26 / macOS, AutoCAD where
+   available). Probe rows, in the style of the existing vendor-evidence
+   blocks:
+     - (and T T)            -> expect T
+     - (and 1 2 3)          -> T or 3 ?   (the decisive CL-vs-AutoLISP row)
+     - (and T nil)          -> nil
+     - (setq r (and 1 2))   -> r = T or r = 2 ?
+     - (or 123 nil)         -> T   (re-confirm OR alongside, already known)
+     - (setq x (or nil 5))  -> x = T or x = 5 ?  (or-else clobber row)
+   The "(and 1 2 3)" / "(setq r (and 1 2))" rows are the ones that prove
+   the value does not flow through.
+
+3. Update the AND page (draft.org:861) to OR's standard:
+     - Return Values: state plainly "returns only `T` or `nil`; never the
+       value of any subexpression" (replace draft.org:884-887).
+     - Remove/replace the stale Notes line (draft.org:903).
+     - Add a Compatibility paragraph mirroring OR's (draft.org:1175):
+       differs from Common Lisp `and` (which returns the last value);
+       `(and test expr)` is not a value-returning `when`; give the
+       portable rewrite.
+     - Promote Availability Status from "presumed / pending Phase 4" to
+       the confirmed wording once evidence lands.
+
+4. Re-verify the OR page is still accurate after the probe (it is
+   believed complete — Phase-5 closure) and add a cross-reference between
+   the two pages so the AND/OR boolean-return rule reads as one rule, and
+   point both at issues/open/autolisp-spec-questions.issue "AND, OR".
+
+5. Consider a short shared normative note ("AND and OR are boolean special
+   forms; they do not return subexpression values, so they cannot serve as
+   `when` / `or-else` / `unless`") so the rule is stated once, not only
+   buried in two per-form entries.
+
+Out of scope
+------------
+
+- Short-circuit / side-effect ordering — already documented on both pages
+  (draft.org:889-890, 1170-1173) and not in dispute here.
+
+Definition of done
+-------------------
+
+- The AND page states "T or nil only, never a subexpression value", backed
+  by a cited vendor page or a probe evidence row, with the CL `when`
+  hazard and portable rewrite spelled out.
+- The AND Availability Status no longer says "pending Phase 4 verification".
+- AND and OR cross-reference each other and share the boolean-return rule.
+- build/org regenerates cleanly from the draft.org source.

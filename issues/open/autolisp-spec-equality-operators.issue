@@ -1,0 +1,107 @@
+autolisp-spec-equality-operators — verify every equality operator and fold them into the Equality Predicates normative page
+==========================================================================================================================
+
+See also:
+  - autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+    line 645 ("** Normative Rules: Equality Predicates") — the page to extend.
+  - same file, line 3093 ("** Function Entry: =") and line 3133
+    ("** Function Entry: /=") — the per-function reference entries.
+  - generated artefact: autolisp-spec/build/org/3-normative-rules-equality-predicates.org
+    (do NOT edit by hand — regenerated from the draft.org source above).
+  - issues/open/autolisp-spec-questions.issue — sibling "resolve from a
+    standard-specification point of view" ticket.
+
+Context
+-------
+
+The "Normative Rules: Equality Predicates" page currently states the
+semantics of only two predicates:
+
+  - (eq a b)    — pointer identity, with literal string/symbol interning.
+  - (equal a b) — structural equality; cross-type numeric (equal 1 1.0) = T.
+
+But AutoLISP's equality/comparison family is larger. The reference
+document already carries separate function entries for:
+
+  - =   (Function Entry, draft.org:3093) — "Compares arguments for
+        equality under AutoLISP comparison semantics", documented as
+        accepting strings as well as numbers (draft.org:3119,
+        "Autodesk comparison functions accept strings as well as
+        numbers"), one-or-more-argument variadic form (= [expr ...]).
+  - /=  (Function Entry, draft.org:3133) — pairwise inequality.
+
+and the relational operators < <= > >= belong to the same Autodesk
+"Equality and Conditional Functions" reference family. The normative
+page silently omits all of these. A reader who lands on "Equality
+Predicates" cannot tell from that page:
+
+  - that = exists at all, nor how it differs from eq / equal;
+  - whether = does cross-type numeric coercion the way equal does
+    ((= 1 1.0) → ?);
+  - how = behaves on *non-numbers* — strings and symbols in particular
+    (Autodesk's summary says the comparison functions accept strings;
+    does (= "abc" "abc") return T, and is it by-content like equal or
+    by-identity like eq? does (= 'a 'a) work, or is = numeric/string
+    only and errors / returns nil on symbols?);
+  - the arity / short-circuit semantics of the variadic form
+    ((= a b c ...): all-pairwise-equal, left-to-right, etc.);
+  - what /= means for >2 arguments (CL's /= is "all pairwise
+    distinct" — is AutoLISP's the same?).
+
+Scope of work
+-------------
+
+1. Enumerate, from the reference document, the full equality/comparison
+   operator set: = /= < <= > >= , alongside eq and equal. Confirm which
+   ones the reference actually documents for AutoCAD 2026 / BricsCAD V26
+   (the = and /= entries are currently marked "presumed / pending
+   Phase 4 verification" — draft.org:3124, 3158).
+
+2. Probe the live hosts (BricsCAD V26 / macOS, and AutoCAD where
+   available) to pin down, with evidence rows in the same style as the
+   page's existing "Vendor Evidence" block:
+     - (= 1 1)        (= 1 1.0)      — numeric, cross-type coercion?
+     - (= "abc" "abc")               — string by-content vs by-identity
+     - (= 'a 'a)      (= 'a 'b)      — symbols: supported? value?
+     - (= 1 1 1)      (= 1 1 2)      — variadic all-equal semantics
+     - (/= 1 2)       (/= 1 1 2)     — pairwise-distinct vs adjacent
+     - the relational ops on strings: (< "a" "b"), ordering rule.
+     - mixed-type comparisons: (= 1 "1"), (= "1" 1) — error or nil?
+
+3. Integrate the confirmed semantics into the "Normative Rules:
+   Equality Predicates" page (draft.org:645): add = (and /=, and a
+   note on the relational family) to the Statement bullet list, with
+   the by-content/by-identity rule for strings and the symbol behaviour
+   called out explicitly, and add the corresponding Vendor Evidence
+   rows. Cross-reference the individual = and /= Function Entries.
+
+4. Decide whether the relational operators (< <= > >=) deserve their
+   own normative page or a short subsection here; if separate, leave a
+   forward-reference rather than omitting them silently.
+   NOTE: placement is now driven by
+   issues/open/autolisp-spec-comparison-operators-chapter-placement.issue,
+   which moves = /= < <= > >= into chapter 5 (Data and Control Flow) next
+   to EQ/EQUAL because they also compare strings. Keep this page's
+   treatment consistent with that relocation.
+
+5. Reconcile the per-function entries (draft.org:3093, 3133) with the
+   normative page so the two do not drift — update their Availability /
+   Status lines once the Phase-4 probe lands.
+
+Out of scope
+------------
+
+- The relational operators' full numeric tower rules (covered by
+  "Normative Rules: Number Tower and Division").
+- eq / equal themselves, which the page already covers — except to add
+  the contrast with = where it sharpens the = description.
+
+Definition of done
+-------------------
+
+- The "Normative Rules: Equality Predicates" page names every equality
+  operator from the reference, with = 's behaviour on numbers, strings,
+  and symbols stated normatively and backed by a Vendor Evidence row.
+- = and /= Function Entries no longer say "pending Phase 4 verification"
+  for the points the probe settled.
+- build/org regenerates cleanly from the draft.org source.

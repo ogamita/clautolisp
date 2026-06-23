@@ -1,0 +1,122 @@
+alfe-princ-prin1-spurious-newlines — prin1/princ/print emit a trailing newline per call, breaking same-line output
+=================================================================================================================
+
+Affected: alfe 1.2.1 (front-end), protocol/IPC backends (--bricscad
+confirmed; --autocad likely — shared bootstrap). clautolisp's own REPL
+is correct, so this is an alfe bridge bug, not a runtime printer bug.
+
+See also:
+  - autolisp-front-end/source/file-protocol.lisp — the CAD-side bootstrap
+    that installs the I/O shadows:
+      * princ shadow            line 1186 (calls autolisp-emit-user-line)
+      * print shadow            line 1196
+      * prin1 shadow            line 1203 (calls autolisp-emit-user-out)
+      * prompt shadow           line 1209 (calls autolisp-emit-user-line)
+      * autolisp-emit-user-line line 1056 (-> autolisp-write-line, +\n)
+      * autolisp-emit-user-out  line 1059 (-> autolisp-write-line, +\n)
+  - autolisp-front-end/source/file-protocol.lisp:515 — drain-stdout is
+    BYTE-oriented (reads all new bytes since the last offset), so partial
+    lines without a trailing newline drain correctly; the line-coupling is
+    not required by the transport.
+  - the 1-arg fallback shadows (host without &rest) route through the same
+    autolisp-emit-user-line / autolisp-emit-user-out emitters and have the
+    same defect.
+
+Symptom
+-------
+
+Each prin1/princ/print call writes its argument followed by a newline, so
+consecutive output primitives within one form each land on their own line.
+terpri then adds yet another. Expected: the writes concatenate on one line
+and only terpri / "\n" / print's leading newline break the line.
+
+Reproduction (alfe 1.2.1, clautolisp 1.2.7):
+
+  alfe --bricscad --mode batch
+  alfe> (mapcar (lambda (x) (prin1 x) (princ " ") (prin1 (type x)) (terpri))
+                (append (list (function type) (function foo)
+                              (lambda () 'hI) (function (lambda () 'lo)))
+                        '(1 1.1 "one" one (one))))
+
+alfe (WRONG) — one element shown:
+
+  1
+  <space>
+  INT
+
+i.e. `1\n \nINT\n` — a newline after `(prin1 x)` and after `(princ " ")`
+that the program never wrote.
+
+clautolisp (CORRECT) — same form, direct REPL:
+
+  1 INT
+
+i.e. `1 INT\n` — the only newline is the terpri.
+
+(The differing function reprs — alfe `#<<FUNCTION> ...>` / type SUBR vs
+clautolisp `#<USUBR LAMBDA>` — are NOT the bug: alfe --bricscad reflects
+the live BricsCAD host's printer. Only the spurious newlines are in scope.)
+
+Root cause
+----------
+
+The output shadows emit *lines*, not *text*. In file-protocol.lisp the
+variadic shadows are:
+
+  (defun princ (&rest args) ... (autolisp-emit-user-line (autolisp-str (car args))) ...)   ; 1186
+  (defun prin1 (&rest args) ... (autolisp-emit-user-out (car args)) ...)                   ; 1203
+
+and both emitters call autolisp-write-line, which appends a trailing
+newline (file-protocol.lisp:1056-1062). So every (princ X) / (prin1 X)
+writes `X\n`. AutoLISP semantics are the opposite: princ and prin1 write
+their argument with NO newline; terpri writes the newline; print writes a
+LEADING newline (and the documented trailing space) around its argument.
+
+Fix direction
+-------------
+
+- Add a no-newline emitter (e.g. autolisp-emit-user-text / an
+  autolisp-write-string companion to autolisp-write-line) that writes the
+  raw bytes to *AUTOLISP_PROTOCOL_STDOUTFILE* without appending \n.
+- princ (1-arg case) -> write text, no newline.
+- prin1 -> write readable text, no newline.
+- print -> leading newline + readable text (+ documented trailing space),
+  no trailing newline. (current print at 1196 already does
+  autolisp-princ-newline first, then autolisp-emit-user-out which adds a
+  trailing newline — drop the trailing newline.)
+- prompt -> string, no newline (matches princ-like behaviour).
+- terpri / (princ) / (print) no-arg -> the only newline producers; keep
+  autolisp-princ-newline.
+- Apply the SAME change to the 1-arg fallback shadows (host without
+  &rest), which share the emitters.
+- drain-stdout is byte-oriented (515), so no transport change is needed;
+  verify nothing else relies on stdout.txt being one-record-per-line
+  (e.g. the [ALFE-CONTROL] sentinel parser, file-protocol.lisp:1118-1144 —
+  those sentinels DO need their own newline; keep them line-terminated).
+
+Verification
+-----------
+
+- The reproduction form prints `<repr> <type>` one element per line, e.g.
+  `1 INT`, `1.1 REAL`, `"one" STR`, with the blank-line artefacts gone.
+- A bare (princ "a") (princ "b") in one form yields `ab`, not `a\nb`.
+- (print 'x) yields a leading newline then `x ` (trailing space), no extra
+  trailing newline beyond what print documents.
+- [ALFE-CONTROL] sentinels still parse (regression guard on the control
+  channel).
+- Confirm --autocad exhibits the same bug and the fix covers it (shared
+  bootstrap), or scope the issue to --bricscad if AutoCAD differs.
+- Add an alfe protocol/bridge test asserting the exact byte stream for the
+  multi-call form, so the per-call-newline regression cannot return.
+
+Definition of done
+-------------------
+
+- princ/prin1/print/prompt write without a spurious per-call newline on
+  the protocol backends; terpri/explicit newlines are the only line
+  breaks.
+- The reproduction form matches clautolisp's line layout (modulo host
+  printer reprs).
+- Control-channel sentinels remain line-terminated and still parse.
+- A regression test pins the byte-level output of a multi-call form.
+- alfe version bumped per project convention.

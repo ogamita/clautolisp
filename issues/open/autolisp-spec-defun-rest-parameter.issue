@@ -1,0 +1,163 @@
+autolisp-spec-defun-rest-parameter — DEFUN: BricsCAD supports &REST for variable-arity functions (BricsCAD-only portability hazard; clautolisp warns under strict/autocad-2026 dialects)
+=====================================================================================================================================================================================
+
+See also:
+  - autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+    line 1574 ("** Special Form Entry: DEFUN") — the page to extend.
+  - same file, line 1583 — the Syntax line that omits &rest.
+  - same file, line 1596 ("must not be replaced with Common Lisp
+    lambda-list semantics") — needs a carve-out: &rest IS supported, but
+    only &rest, not the full CL lambda list.
+  - clautolisp/autolisp-reader/source/dialect.lisp — the named dialects
+    (:strict line 101, :autocad-2026 line 104, :bricscad-v26 line 120,
+    :clautolisp line 133) where the dialect-gated warning belongs.
+  - autolisp-front-end/source/cli.lisp:230 — `--dialect NAME`
+    {strict (default), autocad-2026, bricscad-v26, clautolisp}; note
+    `--autocad`/`--bricscad` (cli.lisp:215-216) are *host backend*
+    selectors, NOT reader dialects.
+  - generated artefacts under autolisp-spec/build/org/ regenerate from the
+    draft.org source — do NOT hand-edit them.
+
+Context
+-------
+
+BricsCAD's `defun` accepts an `&rest` parameter to define variable-arity
+functions: the parameters before `&rest` are required positionally, and
+the `&rest` parameter binds to a *list* of all remaining arguments (nil
+when there are none). Locals still follow via the `/` separator, after
+the `&rest` parameter.
+
+Established behaviour in BricsCAD (V26, to be re-confirmed by probe):
+
+  (defun foo (a b &rest r / x)
+    (setq x (list a b r))
+    x)
+
+  (foo 1 2 3 4)   ==> (1 2 (3 4))   ; r collects the extra args as a list
+  (foo 1 2)       ==> (1 2 nil)     ; no extras -> r is nil
+  (foo 1)         --> ERROR         ; a and b are required; too few args
+
+The current DEFUN page does not mention `&rest` at all. Its Syntax line
+(draft.org:1583) is:
+
+  (defun sym ([arguments] [/ locals ...]) expr ...)
+
+and its Evaluation Rules (draft.org:1596) say the parameter syntax "must
+not be replaced with Common Lisp lambda-list semantics" — which, read
+literally, would suggest `&rest` is unavailable. So the page is both
+incomplete (no &rest) and slightly misleading on this point.
+
+Vendor scope — RESOLVED: `&rest` is a BricsCAD extension. AutoCAD has NO
+support for variable-arity functions (confirmed by a question put to
+AutoCAD support). This is therefore a clear, one-directional portability
+hazard: a `defun` using `&rest` runs on BricsCAD but NOT on AutoCAD.
+Document it the way the OR `(setq x (or x default))` clobber is
+documented — as a named cross-vendor hazard, not a footnote.
+
+clautolisp's stance: clautolisp WILL support `&rest` (the engine accepts
+variable-arity defuns), but must emit a portability *warning* when the
+active reader dialect targets a host that lacks it — i.e. under the
+`:strict` and `:autocad-2026` dialects. Under `:bricscad-v26` (and the
+`:clautolisp` superset) the construct is native and must NOT warn.
+
+Scope of work
+-------------
+
+1. Vendor scope is already resolved (BricsCAD-only; AutoCAD has no
+   variable-arity functions, per AutoCAD support). Still capture the
+   primary evidence in the page: cite the BricsCAD V26 `defun` DevRef
+   page for the documented `&rest` support, and record the AutoCAD
+   negative (no `&rest` on the AutoCAD 2026 `defun` page, draft.org:1617,
+   plus the support-channel confirmation) so the divergence is sourced,
+   not asserted.
+
+2. If not settled by the specifications, add a probe (BricsCAD V26 / macOS,
+   and AutoCAD where available) covering, in the vendor-evidence style:
+     - (foo 1 2 3 4) -> (1 2 (3 4))         ; rest collects as a list
+     - (foo 1 2)     -> (1 2 nil)           ; empty rest is nil, not '()
+                                              distinct? confirm printed form
+     - (foo 1)       -> error               ; required arg shortfall; capture
+                                              the exact error message/code
+     - (foo 1 2 3)   -> (1 2 (3))           ; single extra still a list
+     - placement: confirm the order is `req... &rest r / locals` and that
+       `/ locals` after `&rest` works (the example uses `&rest r / x`).
+     - confirm only ONE symbol may follow `&rest` (CL allows exactly one
+       rest var; verify BricsCAD rejects `&rest r s`).
+
+3. Update the DEFUN page (draft.org:1574):
+     - Syntax: extend to show the rest parameter, e.g.
+         (defun sym ([arg ...] [&rest rest] [/ locals ...]) expr ...)
+     - Arguments and Values: document `&rest rest` — binds the list of
+       arguments beyond the required ones; nil when none.
+     - Evaluation Rules: soften draft.org:1596 — AutoLISP supports the
+       `&rest` rest-parameter, but NOT the rest of the CL lambda list
+       (`&optional`, `&key`, `&aux`, defaults, supplied-p); those remain
+       unavailable. Keep the "/ locals" rule.
+     - Exceptional Situations: too few arguments for the required
+       parameters is an error (cite the probed message).
+     - Compatibility / Availability: state whether &rest is BricsCAD-only
+       or cross-vendor, and promote the Status off "pending Phase 4
+       verification" once evidence lands.
+
+4. Surface the BricsCAD-only status as a named portability hazard on the
+   page, the way OR/`(setq x (or x default))` is surfaced: AutoCAD-
+   targeted code cannot use `&rest`.
+
+clautolisp implementation
+-------------------------
+
+The general warning mechanism (run-time, once-per-occurrence, advisory,
+dialect-gated) is specified in autolisp-spec chapter 25, "Normative Rules:
+Dialect Portability Warnings", and tracked as
+issues/open/clautolisp-dialect-portability-warnings.issue. `&rest` is the
+FIRST concrete consumer of that mechanism; the once-per-occurrence /
+evaluation-tied / escalation semantics live there, not here. Specifically,
+for `&rest`, clautolisp must:
+
+  - Accept `&rest` in `defun` parameter lists in the engine/reader for
+    ALL dialects (the construct evaluates with the BricsCAD semantics:
+    required params positional, `&rest` binds the list of the remainder,
+    nil when empty, too-few-required-args is an error).
+  - Emit a portability WARNING (not an error) when a `defun` uses `&rest`
+    AND the active reader dialect is `:strict` or `:autocad-2026` —
+    because the resulting code will not run on AutoCAD. The warning text
+    should name the construct and the offending dialect/target, e.g.
+    "&rest in DEFUN is a BricsCAD extension; not supported by AutoCAD
+    (dialect autocad-2026)".
+  - NOT warn under `:bricscad-v26` or `:clautolisp` (native there).
+  - Mirror the dialect set in clautolisp/autolisp-reader/source/dialect.lisp
+    (:strict 101, :autocad-2026 104, :bricscad-v26 120, :clautolisp 133);
+    decide whether this belongs in the reader's dialect-validation pass or
+    a defun-specific check, and whether `--strict-error`-style escalation
+    (warning -> error) is wanted as a knob (see the existing
+    unbound-variable-mode precedent on the dialect descriptor).
+  - Add clautolisp unit tests: &rest accepted and evaluates correctly
+    under all dialects; warning fires under :strict and :autocad-2026;
+    no warning under :bricscad-v26 / :clautolisp.
+  - Per the clautolisp version-bump convention, bump DEVELOP in
+    tools/clautolisp/source/version.lisp when landing the change.
+
+Out of scope
+------------
+
+- `&optional` / `&key` / `&aux` and other CL lambda-list keywords — this
+  issue is specifically the `&rest` variable-arity form. If the probe
+  incidentally reveals any of those are accepted, note it for a follow-up
+  but do not document them here.
+- DEFUN's return value (separately flagged as under-specified at
+  draft.org:1599) — out of scope unless the probe trivially settles it.
+
+Definition of done
+-------------------
+
+- The DEFUN page documents `&rest`, with the list-collection semantics,
+  the empty-rest = nil case, and the required-arg-shortfall error, backed
+  by a cited vendor page or probe evidence rows.
+- The "no Common Lisp lambda-list semantics" rule is corrected to admit
+  `&rest` while still excluding the rest of the CL lambda list.
+- The page states the BricsCAD-only scope as a named portability hazard,
+  with the AutoCAD negative sourced.
+- clautolisp accepts `&rest` under all dialects and emits a portability
+  warning under :strict and :autocad-2026 only, covered by unit tests;
+  DEVELOP bumped in tools/clautolisp/source/version.lisp.
+- build/org regenerates cleanly from the draft.org source.
