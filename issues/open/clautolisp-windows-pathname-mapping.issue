@@ -131,3 +131,11 @@ clautolisp-boot-cwd-pwd-pathname-defaults.issue). On macOS/Linux the
 mapping is the identity, so that fix is sufficient there; the Windows
 mapping layer remains future design work, to be scheduled against a
 real Windows target.
+
+A full design specification for the mapping layer (three frames of
+reference, the mount-table model, map-in/map-out primitives, build- and
+run-frame detection, edge-case rules, the conformance matrix, and a
+W0..W5 implementation plan) is now written up in
+clautolisp/documentation/clautolisp-windows-pathname-mapping-spec.org
+(PDF beside it). This issue stays open as the tracking issue for that
+spec.
