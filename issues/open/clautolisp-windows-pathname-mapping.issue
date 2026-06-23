@@ -1,0 +1,115 @@
+clautolisp-windows-pathname-mapping — a path/pathname mapping layer for cross-environment Windows
+=================================================================================================
+
+Reported from: pathname-resolution problems surfaced while loading
+cadaptor under clautolisp (relative paths, cwd/PWD), generalised to
+the underlying Windows portability problem.
+Observed on: design issue; concrete symptoms on clautolisp 1.2.7 /
+alfe 1.1.16. Primary target: MS-Windows builds/runs.
+
+Terminology
+-----------
+
+- pathname : the Common Lisp notion (structured object).
+- path     : the POSIX / AutoCAD / BricsCAD notion (a plain string).
+
+The AutoLISP/AutoCAD/BricsCAD API works with PATH STRINGS, so
+clautolisp must be compatible with them; it cannot expose CL
+pathnames to user code.
+
+Summary
+-------
+
+There is a fundamental problem mapping CL pathnames to physical paths.
+
+On macOS and Linux, CL implementations are well-behaved: the mapping
+from pathnames to paths is handled correctly, roots are unambiguous
+("/"), and a single environment is in play.
+
+On MS-Windows there is NOT a single environment. Several coexisting
+environments use different path syntaxes and different virtual mount
+points / roots for the same physical files:
+
+- Native Windows: drive-letter roots, e.g. `C:/...`.
+- Cygwin / MSYS2: POSIX-style roots; `C:/` appears as `/c/` or
+  `/mnt/c` (the latter under WSL).
+- From native Windows, an MSYS2 `/` is actually something like
+  `C:/msys64/`.
+- `~/` (home) resolves to a variety of paths depending on the
+  environment.
+
+Worse:
+
+- A program such as SBCL may have been COMPILED in one environment
+  (msys2, WSL, native) and RUN in another. WSL is especially nasty
+  because it presents itself as Linux (`uname` says Linux) while the
+  surrounding Windows paths still exist.
+- The environment clautolisp was COMPILED in can differ from the
+  environment it is RUN in, which can differ again from the syntax of
+  the paths the USER passes to it.
+
+So at runtime there are (at least) three frames of reference to
+reconcile:
+
+1. what the CL implementation expects as physical pathnames — syntax
+   and roots / mount points — i.e. essentially the environment SBCL
+   (or the host CL) was compiled in;
+2. what the run-time environment expects (which Windows environment we
+   are actually running under);
+3. the paths the user gives us (in yet another syntax/rooting).
+
+Expected
+--------
+
+clautolisp needs a path-mapping layer (conceptually similar to
+logical pathnames) that:
+
+- knows frame (1): the physical-pathname syntax and roots the
+  underlying CL implementation was built for;
+- knows frame (2): the path syntax and mount points of the runtime
+  environment;
+- can transform / map paths between (3) the user-supplied syntax and
+  whatever the CL runtime actually needs to hit the right physical
+  file.
+
+Constraints / notes
+-------------------
+
+- We cannot "just use CL logical pathnames": the AutoLISP/AutoCAD/
+  BricsCAD API passes plain path strings, and user code expects path
+  strings back. The mapping must be compatible with that string-based
+  API and be transparent to user code.
+- Exposing CL logical pathnames as a *clautolisp extension* (opt-in,
+  on top of the string API) is a separate idea worth considering, but
+  it does not replace the mapping layer above.
+- macOS/Linux can keep the trivial identity mapping; the layer only
+  needs to do real work on Windows / cross-environment builds.
+
+Why it matters
+--------------
+
+Without this, clautolisp on Windows will mis-resolve user paths
+whenever the compile-time and run-time environments disagree (a very
+common situation: SBCL from msys2/WSL, run under native Windows or
+vice-versa). Path strings that work in one frame silently fail or hit
+the wrong file in another.
+
+Suggested direction
+-------------------
+
+- Detect, at build time, the physical-pathname syntax/roots the host
+  CL expects (record it in the image).
+- Detect, at run time, the active Windows environment (native /
+  Cygwin / MSYS2 / WSL) and its mount-point mapping.
+- Implement a canonicalisation/translation step applied to every path
+  string crossing the API boundary (in: user/AutoLISP -> CL; out: CL
+  -> user/AutoLISP), driven by the (build-env, run-env) pair.
+- Add a conformance test matrix across the environment combinations.
+
+Related
+-------
+
+- clautolisp-boot-cwd-pwd-pathname-defaults.issue (cwd/PWD at boot —
+  a special case of getting the base reference right).
+- cad-path-dotdot-resolution.issue (`..` semantics once the base and
+  rooting are correct).
