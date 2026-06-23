@@ -24,15 +24,16 @@ resolved and moved to issues/closed/, one is deferred and stays open.
 
 
 
-test-file-encodings.issue  -- BLOCKED (needs a content decision): the
-  specified fixture sentence is not ISO-8859-1-encodable (U+0153 oe,
-  U+2019 right-quote), so "encode in utf-8 AND iso-8859-1 then assert
-  text = <that exact sentence>" is inconsistent for the Latin-1 half.
-  Parts 4 (verify *cad docs/behaviour) + the autolisp-spec update also
-  need CAD access / spec authority. (Basic encoding+newline round-trip
-  is already covered by file-compat latin-1-text / crlf-text /
-  cr-only-text scenarios; the gap is the full matrix + wrong-encoding
-  error cases + the *AUTOLISP-FILE-ENCODING* loop program.)
+test-file-encodings.issue  -- PARTIAL 2026-06-23 (content fixed by pjb:
+  oe / ' substitutions make the sentence ISO-8859-1-safe). DONE: the
+  6-fixture encoding x line-termination matrix as file-compat round-trip
+  scenarios (french-{utf8,latin1}-{unix,dos,mac}, all pass, byte-exact
+  artifacts). FINDING recorded in the issue: AutoLISP (open "w") writes
+  Latin-1/ANSI regardless of *AUTOLISP-FILE-ENCODING* / -e (read honors
+  it; write doesn't) -- this blocks the LOAD-fixture (part 1) and the
+  *AUTOLISP-FILE-ENCODING* loop (part 3) programs, and is a CAD-parity
+  question. REMAINING: fix open-write encoding + add parts 1/3 + verify
+  vs *cad + spec update (need CAD access / spec authority).
 
 source-aware-defun-documentation.issue  -- DONE 2026-06-23: feature was
   already implemented across reader/runtime/builtins/spec/alref; added
