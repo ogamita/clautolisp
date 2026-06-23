@@ -89,3 +89,20 @@ Related
   correct).
 - clautolisp-windows-pathname-mapping.issue (cwd/PWD/root mapping is
   far thornier on Windows; see that issue).
+
+Resolution
+----------
+
+Fixed in clautolisp 1.2.8. The engine captured
+`*autolisp-current-directory*` (and the default support path) at image-
+DUMP time via `(truename ".")`, so a saved executable resolved relative
+paths against the build directory. `tools/clautolisp/source/main.lisp`
+now calls `synchronize-process-cwd` at the top of `main`, re-reading
+the live process cwd via `(uiop:getcwd)` and setting
+`*autolisp-current-directory*`, the default support path, and CL's
+`*default-pathname-defaults*` to it.
+
+Verified: from a sibling working directory,
+`clautolisp --no-init -x '(load "../cadaptor/loader.lsp")'` now loads
+the file, and `(open "../cadaptor/loader.lsp" "r")` returns a file
+object instead of nil.

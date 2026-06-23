@@ -1,3 +1,28 @@
+===  cadaptor-portability batch (filed 2026-06; triaged + processed in priority order)
+
+Five issues surfaced while porting cadaptor (sncf-reseau) to clautolisp.
+Triaged by impact x feasibility and processed in this order; four are
+resolved and moved to issues/closed/, one is deferred and stays open.
+
+  P1  clautolisp-boot-cwd-pwd-pathname-defaults.issue   RESOLVED 1.2.8  -> closed/
+        relative load/open/findfile now resolve against the live cwd
+        (engine cwd was baked at image-dump time).
+  P1  autolisp-load-pathname-always-bound.issue         RESOLVED alfe 1.2.2 -> closed/
+        alfe --clautolisp -l now binds *AUTOLISP-LOAD-PATHNAME* like
+        bare clautolisp does (direct-load missed the transmit binding).
+  P2  clautolisp-mock-host-getvar.issue                 RESOLVED 1.2.9  -> closed/
+        mock host now reports clautolisp identity (PROGRAM / VENDORNAME
+        / PLATFORM / ACADVER) instead of masquerading as BricsCAD.
+  P3  clautolisp-module-app-extensions.issue            RESOLVED 1.2.10 -> closed/
+        new CLAL-MODULE-EXTENSION publishes .lap (compiled-app) and the
+        OS shared-lib ext (native-module); clautolisp owns the contract.
+  P4  clautolisp-windows-pathname-mapping.issue         DEFERRED (stays open)
+        cross-environment Windows path-mapping layer; a design issue not
+        reproducible/testable off Windows. The testable subset (boot
+        cwd) was split out as the P1 boot-cwd fix above.
+
+===
+
 ---  almost done, soon to be closed
 
 alfe.plan -- remains to be tested with the CADs on macOS and MS-Windows

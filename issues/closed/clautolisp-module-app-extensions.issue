@@ -97,3 +97,30 @@ Probably the extensions come from:
 | .so    | Shared Object file           |
 | .dylib | DYnamically loadable LIBrary |
 
+Resolution
+----------
+
+Implemented in clautolisp 1.2.10. clautolisp now owns and publishes the
+artefact extensions through a new builtin `CLAL-MODULE-EXTENSION`
+(`clautolisp/autolisp-builtins-core/source/api.lisp`):
+
+    (clal-module-extension "compiled-app")  => ".lap"
+    (clal-module-extension "native-module") => ".dll" | ".dylib" | ".so"
+                                               (by the RUN-time OS)
+
+Decisions made (adopting this issue's own proposal as the clautolisp
+contract):
+- compiled-app => ".lap" ("Lisp APplication"), the clautolisp analogue
+  of AutoCAD .vlx / BricsCAD .des.
+- native-module is a shared library loaded by the host CL, so its
+  extension is OS-dependent (.dll / .dylib / .so), matching the
+  .arx / .brx slot — resolved at run time via uiop:os-windows-p /
+  uiop:os-macosx-p (so a cross-environment image reports the OS it runs
+  in, not the one it was built in). This supersedes the provisional
+  ".lar" cadaptor used for native-module.
+- An unknown KIND signals :invalid-module-kind.
+
+cadaptor can drop its provisional ".lap"/".lar" hard-coding and call
+`CLAL-MODULE-EXTENSION` instead. The exact letters now live in one
+version-controlled place and can be revised without every client
+re-guessing.

@@ -113,3 +113,21 @@ Related
   a special case of getting the base reference right).
 - cad-path-dotdot-resolution.issue (`..` semantics once the base and
   rooting are correct).
+
+Triage (clautolisp 1.2.10)
+--------------------------
+
+DEFERRED — kept open. This is a cross-environment design issue, not a
+bounded bug: it requires a path-mapping layer driven by the
+(build-env, run-env) pair, plus a conformance matrix across native
+Windows / Cygwin / MSYS2 / WSL. None of that is reproducible or
+testable on the Linux/macOS build hosts, so it cannot be implemented
+and verified here.
+
+The narrow, testable subset it shares with cadaptor's symptoms —
+relative paths resolving against the live cwd at boot — was the
+separable bug and is fixed in 1.2.8 (see
+clautolisp-boot-cwd-pwd-pathname-defaults.issue). On macOS/Linux the
+mapping is the identity, so that fix is sufficient there; the Windows
+mapping layer remains future design work, to be scheduled against a
+real Windows target.

@@ -99,3 +99,19 @@ Related
 - autolisp-load-pathname.issue (original report).
 - clautolisp-boot-cwd-pwd-pathname-defaults.issue (the cwd fallback
   that is only needed because this is missing).
+
+Resolution
+----------
+
+Fixed in alfe 1.2.2. Bare `clautolisp -l FILE` already bound
+`*AUTOLISP-LOAD-PATHNAME*` for every dialect at 1.2.7; the gap was the
+alfe `--clautolisp` direct backend, whose `direct-load`
+(`autolisp-front-end/source/backend-clautolisp.lisp`) called
+`autolisp-load-file-in-context` without the binding the standalone tool
+applies. `direct-load` now wraps the load in
+`call-with-dynamic-transmit-binding`, matching
+`tools/clautolisp/source/main.lisp`'s -l action so the two executables
+agree.
+
+Verified: `alfe --clautolisp --mode batch --no-init -l /tmp/lp.lsp -q`
+now prints `BOUND /tmp/lp.lsp` (was UNBOUND).
