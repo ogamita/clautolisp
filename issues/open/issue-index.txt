@@ -16,10 +16,11 @@ resolved and moved to issues/closed/, one is deferred and stays open.
   P3  clautolisp-module-app-extensions.issue            RESOLVED 1.2.10 -> closed/
         new CLAL-MODULE-EXTENSION publishes .lap (compiled-app) and the
         OS shared-lib ext (native-module); clautolisp owns the contract.
-  P4  clautolisp-windows-pathname-mapping.issue         DEFERRED (stays open)
+  P4  clautolisp-windows-pathname-mapping.issue         DEFERRED (stays open; spec written)
         cross-environment Windows path-mapping layer; a design issue not
         reproducible/testable off Windows. The testable subset (boot
-        cwd) was split out as the P1 boot-cwd fix above.
+        cwd) was split out as the P1 boot-cwd fix above. Full design spec:
+        clautolisp/documentation/clautolisp-windows-pathname-mapping-spec.org
 
 
 
