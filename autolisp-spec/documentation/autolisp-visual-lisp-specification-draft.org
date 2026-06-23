@@ -91532,6 +91532,80 @@ This chapter defines the environment-profile mechanism for `clautolisp`.
 - strict/lax acceptance policy is separate from dialect selection
 - environment profiles are selected by configuration or command-line options
 
+** Normative Rules: Dialect Portability Warnings
+*** Statement
+A *dialect portability warning* is a diagnostic emitted when a program
+uses a construct — a special form, a function, or a particular argument
+shape — that is not portable to the host targeted by the currently
+selected dialect. The canonical example is the ~&rest~ parameter in
+~defun~ (chapter 24, "BricsCAD Extensions"): it is native to BricsCAD
+(and to ~clautolisp~) but unsupported by AutoCAD, which has no
+variable-arity user functions.
+
+These warnings are *advisory*. They do not alter evaluation: under a
+dialect whose target host supports the construct natively, the construct
+runs and *no* warning is produced; under a dialect whose target host
+lacks it, the construct still runs in ~clautolisp~ (which is a superset)
+but a warning is printed. A construct that is portable under the active
+dialect never warns. An implementation may additionally offer a knob that
+escalates such a warning to an error (compare the ~:strict-error~
+diagnostic mode of ~:unbound-variable-mode~, chapter 3); escalation is
+optional and non-conforming when it changes whether a program runs.
+
+*** Runtime semantics (executing implementation)
+In an executing implementation such as ~clautolisp~ the warning is a
+*run-time* event, tied to *evaluation*, not to mere textual presence:
+
+- A warning is emitted only when the incompatible construct is actually
+  *reached* during evaluation. A construct guarded behind a feature test
+  — for example, code that probes whether the running implementation
+  supports an extension and avoids it when it does not — is never
+  evaluated on a host that lacks it, and therefore produces no warning
+  and causes nothing wrong to happen.
+- Each distinct source *occurrence* warns *at most once per run*, on its
+  first evaluation. The first time ~foo~ (a ~defun~ using ~&rest~) is
+  evaluated, the warning prints; subsequent evaluations of the *same*
+  ~foo~ — including evaluations inside a loop — are silent.
+- A *different* occurrence warns separately: if ~bar~ also uses ~&rest~,
+  the first evaluation of ~bar~ prints its own warning, independently of
+  ~foo~'s. The dedup key is the occurrence, not the construct class.
+- For ~defun~ specifically the warning attaches to the definition site,
+  so it is rare in practice (once per definition); for warnings about a
+  specific function or argument usage the trigger is the call site, but
+  the same once-per-occurrence rule applies — an incompatible expression
+  executed repeatedly warns only on its first execution.
+
+A representative message form:
+
+#+begin_example
+DIALECT WARNING: DEFUN FOO with &REST only works in bricscad and clautolisp
+#+end_example
+
+*** Contrast with static analysis
+A static-analysis tool built on the same knowledge base behaves
+differently by necessity: it must report *every* potentially incompatible
+occurrence whether or not it is ever evaluated, because it generally
+cannot prove that a given expression is unreachable or guarded. Thus the
+run-time discipline ("warn once, and only for what actually executes")
+and the static discipline ("flag every occurrence") are two consumers of
+*one* portability knowledge base — the catalogue of which constructs are
+supported by which host/dialect. The same catalogue feeds the
+~clautolisp~ run-time warnings and any external static linter.
+
+*** Cross-references
+- Chapter 24, "BricsCAD Extensions" — the constructs that drive these
+  warnings (e.g. ~defun~ ~&rest~).
+- Chapter 27, "Version Compatibility and Portability" — the tagging axes
+  (product / version / platform / strict-lax) the knowledge base records.
+- Chapter 3, ~:unbound-variable-mode~ ~:strict-error~ — precedent for a
+  dialect-descriptor diagnostic knob and warning→error escalation.
+
+*** Source Notes
+- Design intent recorded for `clautolisp`; the warning catalogue is shared
+  between the run-time emitter and any static-analysis tooling.
+- Status: design stated; per-construct coverage and tests tracked as a
+  `clautolisp` implementation issue.
+
 ** Source Notes
 - project architectural policy recorded in `AGENTS.md`
 - Status: implementation-defined for `clautolisp`, consistent with project goals.
