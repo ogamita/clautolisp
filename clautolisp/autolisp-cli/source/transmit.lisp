@@ -210,23 +210,81 @@ DWGCODEPAGE via HOST-SET-DERIVED-SYSVAR again."
         (clautolisp.autolisp-host:host-set-derived-sysvar
          host "DWGCODEPAGE" effective)))))
 
+(defun launch-program-name (frontend-name)
+  "Return the value to publish as the PROGRAM sysvar (the AutoLISP/
+AutoCAD `(getvar \"PROGRAM\")` slot = the running application).
+
+FRONTEND-NAME is the *AUTOLISP-FRONTEND* identity (\"CLAUTOLISP\" /
+\"ALFE\"), the user-facing executable — that is precisely what PROGRAM
+should report, and unlike argv[0] it survives image dumping. Downcased
+to \"clautolisp\" / \"alfe\". Falls back to argv0's basename, then to
+\"clautolisp\", if no frontend identity was transmitted."
+  (or (and frontend-name (stringp frontend-name) (plusp (length frontend-name))
+           (string-downcase frontend-name))
+      (let ((argv0 (ignore-errors (uiop:argv0))))
+        (and argv0 (stringp argv0) (plusp (length argv0))
+             (let ((p (ignore-errors (pathname argv0))))
+               (and p (pathname-name p)))))
+      "clautolisp"))
+
+(defun apply-clautolisp-host-identity (context version-string frontend-name)
+  "Stamp the clautolisp engine's identity onto the host sysvars that
+report which CAD program is running, so user code (e.g. a portability
+layer) can tell it is running on clautolisp rather than BricsCAD.
+
+The mock host's sysvar catalogue is generated from BricsCAD data, so
+PROGRAM / VENDORNAME / PLATFORM / ACADVER would otherwise masquerade
+as Bricsys (\"reports BRICSCAD from clautolisp\"). Set once at launch
+through HOST-SET-DERIVED-SYSVAR, which bypasses the read-only flag and
+silently no-ops on hosts (or sysvar subsets) that lack the cell.
+
+Reached only by the clautolisp engine: alfe's bricscad/autocad
+backends drive a real CAD and never call INSTALL-TRANSMIT-VARIABLES on
+a local context, so this never clobbers a genuine CAD's identity.
+See issues/open/clautolisp-mock-host-getvar.issue."
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
+      (when host
+        (clautolisp.autolisp-host:host-set-derived-sysvar
+         host "PROGRAM" (launch-program-name frontend-name))
+        (clautolisp.autolisp-host:host-set-derived-sysvar
+         host "VENDORNAME" "clautolisp")
+        (clautolisp.autolisp-host:host-set-derived-sysvar
+         host "PLATFORM" "clautolisp")
+        (when (and version-string (plusp (length version-string)))
+          (clautolisp.autolisp-host:host-set-derived-sysvar
+           host "ACADVER" version-string))))))
+
 (defun install-transmit-variables (context bindings)
   "Intern each binding's name as an AutoLISP symbol and set it to
 the binding's value in CONTEXT. Called once, before the first user
 action runs (init files included), so init files can branch on
 the values.
 
-Side effect: when the *AUTOLISP-FILE-ENCODING* binding is seen, the
-same value is also pushed into the host's SYSCODEPAGE and
-DWGCODEPAGE sysvars via APPLY-LAUNCH-CODEPAGE-TO-SYSVARS, fixing the
-historical empty-string default for those sysvars."
+Side effects:
+- when the *AUTOLISP-FILE-ENCODING* binding is seen, the same value
+  is also pushed into the host's SYSCODEPAGE and DWGCODEPAGE sysvars
+  via APPLY-LAUNCH-CODEPAGE-TO-SYSVARS, fixing the historical empty-
+  string default for those sysvars;
+- the clautolisp engine identity (PROGRAM / VENDORNAME / PLATFORM /
+  ACADVER) is stamped onto the host via APPLY-CLAUTOLISP-HOST-IDENTITY
+  so a clautolisp host stops reporting itself as BricsCAD."
   (dolist (binding bindings)
     (let ((name (first binding))
           (value (second binding)))
       (set-variable (intern-autolisp-symbol name) value context)
       (when (string= name "*AUTOLISP-FILE-ENCODING*")
         (apply-launch-codepage-to-sysvars
-         context (%autolisp-string->plain value))))))
+         context (%autolisp-string->plain value)))))
+  (let ((version (let ((entry (assoc "*AUTOLISP-VERSION*" bindings
+                                     :test #'string=)))
+                   (and entry (%autolisp-string->plain (second entry)))))
+        (frontend (let ((entry (assoc "*AUTOLISP-FRONTEND*" bindings
+                                      :test #'string=)))
+                    (when (and entry (second entry))
+                      (clautolisp.autolisp-runtime:autolisp-symbol-name
+                       (second entry))))))
+    (apply-clautolisp-host-identity context version frontend)))
 
 (defun call-with-dynamic-transmit-binding (context name value thunk)
   "Set the *AUTOLISP-…* variable NAME to VALUE for the duration of
