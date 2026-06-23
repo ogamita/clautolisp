@@ -102,6 +102,22 @@ Tests (clautolisp/autolisp-runtime/tests/evaluator-tests.lisp):
   lambda-ampersand-rest-binds-list-of-extra-args
 
 
+== Status (2026-06-23): autolisp-spec subsection added ==
+
+The "augment the defun special operator section of the autolisp-spec
+with an extension subsection" deliverable (above) is DONE. Added
+`*** Extension (clautolisp): variadic lambda lists with =&rest=` to the
+DEFUN entry in
+`autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org`
+(spec v0.9.2), documenting the extended lambda-list grammar, the
+gather-into-list semantics, the `:wrong-number-of-arguments` /
+`:invalid-rest-parameter` call-time diagnostics, and the per-dialect
+acceptance/rejection policy. The Availability field now records the
+`&rest` extension's per-vendor status. Draft PDF regenerated.
+
+Remaining: only the strict/bricscad dialect-warning wiring, which is
+tracked in `bricscad-undocumented-clisms.issue` (see below).
+
 == Status of the cross-vendor feature request ==
 
 A feature request had been posted at Bricsys support, while AutoDesk

@@ -1608,10 +1608,75 @@ Writes the resulting function value into the symbol's *single binding cell* (see
 *** Notes
 The slash separating arguments and locals must be surrounded by spaces in Autodesk documentation. AutoLISP is *Lisp-1*: ~defun~ and ~setq~ share the same per-symbol binding cell.
 
+*** Extension (clautolisp): variadic lambda lists with =&rest=
+This subsection documents a clautolisp extension to the ~defun~ (and
+~lambda~) lambda list; it is *not* part of the Autodesk-documented
+syntax. It exists so that user code can cleanly override the variadic
+built-ins (~princ~, ~load~, …): a fixed-arity redefinition cannot accept
+the same range of calls the original does, whereas a ~&rest~ parameter
+can.
+
+Extended lambda-list grammar:
+#+begin_example
+lambda-list      ::= { parameter-name } [ '&rest' rest-parameter-name ] [ '/' { local-name } ] .
+parameter-name   ::= symbol .
+rest-parameter-name ::= parameter-name .
+local-name       ::= symbol .
+#+end_example
+
+~&rest~ and ~/~ stand for the symbols =&REST= and =/= themselves. The
+optional ~&rest~ clause, when present, must appear after the mandatory
+parameter names and before the ~/~ locals.
+
+Semantics (mirrors Common Lisp ~&rest~, which BricsCAD V26 also
+implements as an undocumented extension):
+- the call must supply at least as many arguments as there are mandatory
+  ~parameter-name~ entries; they are bound in order;
+- any *excess* arguments are gathered into a freshly-consed list bound to
+  ~rest-parameter-name~ (=nil= when there is no excess);
+- with a ~&rest~ parameter present there is no upper bound on the argument
+  count — extras accumulate in the list rather than being passed
+  positionally;
+- ~local-name~ entries after ~/~ behave exactly as in the base syntax.
+
+Example — redefining the variadic ~princ~ over a module output port:
+#+begin_example
+(defun funcall (fun &rest arguments)
+  (apply fun arguments))
+
+(setq original-princ (function princ))
+(defun princ (&rest arguments / value fileHandle)
+  (if (null arguments)
+      (funcall original-princ)
+      (progn
+        (setq value (car arguments))
+        (setq fileHandle (mymodule-output))
+        (if (cdr arguments)
+            (setq fileHandle (cadr arguments)))
+        (mymodule-write fileHandle value))))
+#+end_example
+
+Diagnostics surface at *call* time, matching AutoLISP's late-binding
+error model:
+- =:wrong-number-of-arguments= — fewer arguments than the mandatory
+  formals require;
+- =:invalid-rest-parameter= — ~&rest~ followed by other than exactly one
+  symbol, or ~&rest~ appearing after ~/~ (where it would name a local
+  rather than introduce a rest parameter).
+
+Dialect handling: the default clautolisp dialect accepts ~&rest~
+silently. =dialect bricscad= accepts it (and is expected to warn that it
+is an undocumented BricsCAD extension); =dialect strict= / =autocad=
+reject it at ~defun~ time with =:strict-lambda-list-extension=. The
+dialect-warning wiring is tracked in
+~issues/open/bricscad-undocumented-clisms.issue~.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- =&rest= extension: clautolisp (implemented 1.1.16); BricsCAD V26
+  (undocumented, confirmed by Bricsys support); AutoCAD: not available.
 
 *** Source Notes
 - [About Defining a Function (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-LT-AutoLISP/files/GUID-9EDF48C2-1678-4DC3-BFD6-9D1DEAC525F0.htm)
