@@ -1,0 +1,114 @@
+open-write-ignores-file-encoding — file output ignores *AUTOLISP-FILE-ENCODING* and -e
+=======================================================================================
+
+Reported from: building the test-file-encodings fixtures — an AutoLISP
+program that writes a file with (open ... "w") + princ could not produce
+UTF-8 output.
+Observed on: clautolisp *AUTOLISP-VERSION* 1.2.11 (SBCL), Linux.
+
+Summary
+-------
+
+When a file is opened for OUTPUT, clautolisp chooses the write external
+format independently of the encoding the engine uses for INPUT. The
+default write encoding is ANSI / ISO-8859-1 and is NOT taken from
+`*AUTOLISP-FILE-ENCODING*` (nor from the CLI `-e` flag) — even though
+both control the read / load path.
+
+So the same byte that `load` will later decode as UTF-8 is written by
+`princ` as ISO-8859-1, and a round-trip through AutoLISP file I/O
+silently changes the encoding.
+
+Note: an EXPLICIT per-open encoding argument — the clautolisp positional
+extension `(open PATH "w" "utf-8")` — IS honoured. Only the DEFAULT
+(when no 3rd argument is given) is wrong: it falls back to ANSI instead
+of consulting `*AUTOLISP-FILE-ENCODING*` the way the read path does.
+
+Repro
+-----
+
+    ;; U+00E9 (LATIN SMALL LETTER E WITH ACUTE, "e-acute"); (chr 233)
+    ;; keeps this repro pure-ASCII. Correct UTF-8 for it is C3 A9;
+    ;; ISO-8859-1 / ANSI is the single byte E9.
+
+    # 1. *AUTOLISP-FILE-ENCODING* = "utf-8", default open "w":
+    #    writes E9 (ANSI) -- WRONG, want C3 A9
+    $ clautolisp --no-init -x '(progn (setq *AUTOLISP-FILE-ENCODING* "utf-8") (setq f (open "/tmp/a" "w")) (princ (chr 233) f) (close f))' -q
+    $ od -An -tx1 /tmp/a
+     e9
+
+    # 2. CLI -e utf-8, default open "w":  also writes E9 (ANSI) -- WRONG
+    $ clautolisp --no-init -e utf-8 -x '(progn (setq f (open "/tmp/b" "w")) (princ (chr 233) f) (close f))' -q
+    $ od -An -tx1 /tmp/b
+     e9
+
+    # 3. EXPLICIT 3rd-arg encoding:  CORRECT -- writes C3 A9 (UTF-8)
+    $ clautolisp --no-init -x '(progn (setq f (open "/tmp/c" "w" "utf-8")) (princ (chr 233) f) (close f))' -q
+    $ od -An -tx1 /tmp/c
+     c3 a9
+
+    # 4. the READ path DOES honour the encoding (the asymmetry):
+    #    loading the ANSI byte E9 as utf-8 fails to decode
+    $ printf '(setq z "\xe9")' > /tmp/d.lsp
+    $ clautolisp --no-init -e utf-8 -x '(load "/tmp/d.lsp")' -q
+    ; ... runtime error: :UTF-8 stream decoding error ... octet #(233) cannot be decoded.
+
+Expected
+--------
+
+The OUTPUT (write) external format should use the same precedence the
+INPUT (read / load) path already uses:
+
+    1. an explicit per-open encoding argument        (already honoured);
+    2. else *AUTOLISP-FILE-ENCODING*                  (MISSING for output;
+       settable at runtime, also seeded from the CLI -e flag);
+    3. else the dialect / locale default.
+
+i.e. step 2 is absent for output. With `*AUTOLISP-FILE-ENCODING*`
+"utf-8" (or `-e utf-8`), `(open PATH "w")` followed by
+`(princ (chr 233) f)` should write C3 A9, so a value written and then
+read back under the same encoding round-trips byte-for-byte.
+
+Why it matters
+--------------
+
+- A pure-AutoLISP program cannot author a UTF-8 (or any non-ANSI) file
+  through `open` / `princ` / `write-line` / `print` — it always gets
+  ANSI bytes. This blocks parts 1 and 3 of test-file-encodings.issue
+  (writing the per-encoding fixtures from AutoLISP, and looping over
+  `*AUTOLISP-FILE-ENCODING*`).
+- The read/write asymmetry is surprising: code that sets
+  `*AUTOLISP-FILE-ENCODING*` and round-trips data through a file gets
+  different bytes out than it can read back in.
+
+Suggested implementation
+------------------------
+
+- In the OPEN builtin's output path, when no explicit encoding argument
+  is supplied, resolve the external format from
+  `*AUTOLISP-FILE-ENCODING*` (falling through to the dialect / locale
+  default), mirroring the resolution the LOAD / input path already
+  performs. The explicit-argument path already works, so the codec
+  plumbing is in place — only the default lookup for output is missing.
+- Builtins involved: OPEN (mode "w"/"a") and the writers it feeds
+  (princ / prin1 / print / write-line / write-char / terpri).
+
+CAD parity (to confirm)
+-----------------------
+
+What byte sequence do AutoCAD / BricsCAD write for a non-ASCII character
+via `(open ... "w")` + `write-line` / `princ` under a given code page?
+clautolisp should match. The per-open vs per-process encoding-selection
+model is the same open question raised in test-file-encodings.issue;
+resolve them together and reflect the answer in the autolisp-spec OPEN /
+*AUTOLISP-FILE-ENCODING* entries.
+
+Related
+-------
+
+- test-file-encodings.issue (surfaced this; its file-compat round-trip
+  matrix sidesteps the bug by writing artifacts at the CL level — the
+  AutoLISP-authored fixtures it asks for are blocked until this is
+  fixed).
+- issues/closed/encoding-dispatch.issue, issues/closed/encodings.issue
+  (the read-side encoding precedence this output path should mirror).
