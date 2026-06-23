@@ -1,0 +1,92 @@
+clautolisp-mock-host-getvar — implement getvar with correct values for the clautolisp mock host
+================================================================================================
+
+Reported from: cadaptor portability helpers
+(sncf-reseau/src/cadaptor) reporting CAD identity via getvar.
+Observed on: clautolisp *AUTOLISP-VERSION* 1.2.7 and alfe 1.1.16
+(--clautolisp / bare clautolisp, --dialect clautolisp/strict),
+macOS.
+
+Summary
+-------
+
+Under the clautolisp mock host, `getvar` returns BricsCAD-flavoured
+values regardless of dialect/executable, so a program cannot tell it
+is running on clautolisp:
+
+    $ clautolisp --no-init -x '(setq *cadaptor-root* "../cadaptor")' \
+        -l ../cadaptor/loader.lsp \
+        -x '(print (list (cadaptor-program-name) (cadaptor-platform) (cadaptor-version)))' -q
+    ("BRICSCAD" "BRICSCAD" "")
+
+    # same with --dialect strict and --dialect clautolisp: identical.
+    # raw values behind it:
+    (getvar "PROGRAM")    => "BRICSCAD"
+    (getvar "VENDORNAME") => "Bricsys"
+    (getvar "ACADVER")    => ""
+
+These are wrong for a clautolisp host (it is neither BricsCAD nor
+Bricsys), and `ACADVER` is empty.
+
+Expected (clautolisp mock host)
+-------------------------------
+
+    (getvar "PROGRAM")    => argv[0]  (the running executable name,
+                                       e.g. "clautolisp")
+    (getvar "ACADVER")    => *AUTOLISP-VERSION*   (e.g. "1.2.7")
+    platform              => "clautolisp"
+
+For "platform": AutoCAD/BricsCAD expose `(getvar "PLATFORM")` as the
+host/OS string. The mock should return something that identifies the
+clautolisp host as "clautolisp". NOTE: cadaptor derives its *logical*
+platform (cadaptor-platform) from VENDORNAME + PROGRAM and only knows
+AUTOCAD / BRICSCAD / UNKNOWN; for cadaptor-platform to yield
+"clautolisp" it would also need a clautolisp branch (cadaptor-side
+follow-up). Decide whether the mock advertises itself via PROGRAM /
+VENDORNAME (so existing inference can pick it up) and/or a dedicated
+`PLATFORM` sysvar.
+
+Other getvar variables cadaptor reads (please return sane values)
+-----------------------------------------------------------------
+
+cadaptor reads these system variables; the mock should provide
+plausible, type-correct defaults so context save/restore and feature
+probing work:
+
+    VENDORNAME          string identifying the clautolisp vendor
+    LISPSYS             integer (cadaptor-unicode-mode)
+    SHORTCUTMENU        integer (presence probed; must exist or be
+                        reported absent consistently)
+    ORTHOMODE           integer 0/1 (also set via setvar)
+    CLAYER              string (current layer name)
+    CMDECHO             integer 0/1
+    FILEDIA             integer 0/1
+    OSMODE              integer
+    selectionoffscreen  AutoCAD-only; should be ABSENT on clautolisp
+
+Reading an unknown/absent sysvar should behave like the CAD hosts
+(documented nil/absent), so cadaptor's "missing variable" sentinel
+detection keeps working.
+
+Why it matters
+--------------
+
+cadaptor is a portability layer; its whole job is to report the host
+identity and adapt. A mock host that masquerades as BricsCAD makes it
+impossible to test the clautolisp branch and produces misleading
+output (the reported bug: "reports BRICSCAD from clautolisp").
+
+Suggested implementation
+------------------------
+
+- Mock host getvar table keyed by sysvar name, with PROGRAM <= argv[0],
+  ACADVER <= *AUTOLISP-VERSION*, a platform/vendor identifying
+  clautolisp, and type-correct defaults for the variables above.
+- Same values under bare `clautolisp` and `alfe --clautolisp`.
+
+Related
+-------
+
+- clautolisp CAD-parity rule (sncf-reseau memory): behavior diffs
+  vs BricsCAD/AutoCAD are tracked as clautolisp issues.
+- A cadaptor-side follow-up may add a CLAUTOLISP platform branch.

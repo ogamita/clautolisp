@@ -1,0 +1,101 @@
+autolisp-load-pathname-always-bound — *AUTOLISP-LOAD-PATHNAME* must be bound during LOAD in every executable/dialect
+==================================================================================================================
+
+Reported from: loading cadaptor through its loader
+(sncf-reseau/src/cadaptor/loader.lsp).
+Observed on: clautolisp *AUTOLISP-VERSION* 1.2.7 and alfe 1.1.16,
+macOS.
+
+NOTE: this updates/overlaps the existing autolisp-load-pathname.issue
+(filed at alfe 1.1.14). Merge as you see fit — kept separate here to
+record the NEW per-executable / per-dialect asymmetry seen at 1.1.16.
+
+Summary
+-------
+
+`*AUTOLISP-LOAD-PATHNAME*` (the AutoLISP analogue of CL
+`*load-pathname*`) is meant to hold the absolute pathname of the file
+currently being loaded, dynamically scoped around the body of `load`
+(and the `-l` CLI action). At 1.1.16 the binding is INCONSISTENT
+across executables and dialects:
+
+    executable / dialect            *AUTOLISP-LOAD-PATHNAME* during -l
+    ------------------------------  ----------------------------------
+    alfe --bricscad                 BOUND   (e.g. "/tmp/probe.lsp")
+    alfe --clautolisp               UNBOUND
+    clautolisp (bare) any --dialect UNBOUND   (please confirm all)
+
+So a loaded file can self-locate under the BricsCAD backend but NOT
+under clautolisp — exactly where cadaptor's loader needs it.
+
+Repro
+-----
+
+    $ printf '(princ (if (boundp (quote *AUTOLISP-LOAD-PATHNAME*)) (strcat "BOUND " *AUTOLISP-LOAD-PATHNAME*) "UNBOUND"))\n' > /tmp/lp.lsp
+
+    $ alfe --version
+    alfe 1.2.1
+
+    $ alfe --bricscad   --mode batch -l /tmp/lp.lsp -q
+    alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+
+
+
+    BOUND /tmp/lp.lsp
+
+
+    $ alfe --clautolisp   --mode batch -l /tmp/lp.lsp -q
+    alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+    UNBOUND
+
+    $ alfe --clautolisp --no-init  --mode batch -l /tmp/lp.lsp -q
+    UNBOUND
+
+    $ clautolisp --version ; for dialect_option in --strict  --autocad  --bricscad  --clautolisp ; do printf "%-20s %s\n" "$dialect_option" $(clautolisp $dialect_option --quiet --no-init -l /tmp/lp.lsp -q) ; done
+    clautolisp 1.2.7
+    --strict             BOUND
+    /tmp/lp.lsp          
+    --autocad            BOUND
+    /tmp/lp.lsp          
+    --bricscad           BOUND
+    /tmp/lp.lsp          
+    --clautolisp         BOUND
+    /tmp/lp.lsp          
+
+Expected
+--------
+
+Whenever `load` (or `-l` / `--load`) evaluates a file, bind
+`*AUTOLISP-LOAD-PATHNAME*` in the engine to the truename (resolved
+absolute path) of that file, regardless of executable (clautolisp or
+alfe) and dialect. Dynamically scoped: rebound for nested loads,
+restored to the prior value (NIL at top level) on exit, including on
+non-local exit.
+
+Since `alfe --clautolisp` is meant to be equivalent to
+`clautolisp --dialect clautolisp` (modulo CLI parsing), the two MUST
+agree.
+
+Why it matters
+--------------
+
+It is the only portable, cwd-independent way for a loaded file to
+discover its own directory and reach sibling sources. cadaptor's
+loader uses it as its primary mechanism and currently falls back to
+`(getenv "PWD")` only because it is missing under clautolisp.
+
+Suggested implementation
+------------------------
+
+- clautolisp engine: bind `*AUTOLISP-LOAD-PATHNAME*` (to the truename)
+  around the body of `load`; make the `-l`/`--load` CLI action go
+  through that same code path.
+- Ensure the alfe `--clautolisp` backend uses the engine `load` (not a
+  shim that bypasses the binding), so it matches `--bricscad`.
+
+Related
+-------
+
+- autolisp-load-pathname.issue (original report).
+- clautolisp-boot-cwd-pwd-pathname-defaults.issue (the cwd fallback
+  that is only needed because this is missing).

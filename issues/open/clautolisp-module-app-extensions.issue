@@ -1,0 +1,99 @@
+clautolisp-module-app-extensions — define compiled-app / native-module file extensions and expose an API
+=========================================================================================================
+
+Reported from: cadaptor portability layer
+(sncf-reseau/src/cadaptor), which must choose a file extension per
+platform when resolving compiled applications and native modules.
+Observed on: clautolisp *AUTOLISP-VERSION* 1.2.7 / alfe 1.1.16.
+
+Summary
+-------
+
+AutoCAD/BricsCAD have well-known per-platform extensions for the two
+"packaged" artefact kinds:
+
+    kind             AutoCAD   BricsCAD
+    ---------------  -------   --------
+    compiled-app     .vlx      .des
+    native-module    .arx      .brx     (also OpenDCL runtime)
+
+clautolisp has NO defined equivalent and no API to query one. cadaptor
+must nonetheless return *something* for `(cadaptor-module-extension
+kind)` on the CLAUTOLISP platform, so it currently hard-codes
+PROVISIONAL placeholders:
+
+    compiled-app   => ".lap"
+    native-module  => ".lar"
+
+These are guesses and should not be the long-term contract.
+
+Request
+-------
+
+1. Decide whether clautolisp even HAS these artefact kinds:
+
+   - "compiled application": is there a clautolisp notion of a
+     compiled/packaged Lisp app (the AutoLISP .vlx/.des analogue)? If
+     yes, define its canonical extension; if no, say so (callers
+     should treat it as "source only", i.e. plain .lsp).
+
+   - "native module": a clautolisp native module would most naturally
+     be a shared library loaded by the host CL implementation. On that
+     basis the extension is OS-dependent, matching CL conventions:
+
+         Windows  => .dll
+         Linux    => .so
+         macOS    => .dylib
+
+     (so it is NOT a single fixed string — it depends on the run-time
+     OS, which ties into clautolisp-windows-pathname-mapping.issue).
+
+2. Expose an API so callers do not hard-code extensions, e.g. a
+   function returning the extension for a given artefact kind on the
+   current host, analogous to what cadaptor wants:
+
+       (something-module-extension "compiled-app")   => host value
+       (something-module-extension "native-module")  => host/OS value
+
+   Whatever the spelling, the point is: clautolisp owns these values
+   and publishes them, instead of every client guessing.
+
+Why it matters
+--------------
+
+cadaptor is a portability layer; hard-coding ".lap"/".lar" bakes a
+guess into client code that will diverge from whatever clautolisp
+eventually settles on. A queryable API keeps the contract in one place.
+
+Notes / current cadaptor behavior
+---------------------------------
+
+- cadaptor.lsp `cadaptor--module-extension-for-platform` returns
+  ".lap"/".lar" for the CLAUTOLISP platform, with a comment marking
+  them provisional and pointing here.
+- cadaptor-specifications.org section 5 documents them as provisional,
+  pending this issue.
+
+Related
+-------
+
+- clautolisp-windows-pathname-mapping.issue (native-module extension
+  is OS/environment-dependent on Windows).
+- clautolisp-mock-host-getvar.issue (host identity that drives the
+  platform branch in the first place).
+
+Note 
+----
+
+Probably the extensions come from:
+
+| .vlx   | Virtual Lisp eXtension       |
+| .des   | Data Encryption Standard     |
+| .arx   | Autocad Runtime eXtension    |
+| .brx   | Bricscad Runtime eXtension   |
+| .lap   | Lisp APplication             |
+| .lar   | Lisp ARchive (for libraries) |
+| .dll   | Dynamically Loadable Library |
+| .so    | Shared Object file           |
+| .dylib | DYnamically loadable LIBrary |
+

@@ -1,0 +1,91 @@
+clautolisp-boot-cwd-pwd-pathname-defaults — relative paths must resolve to cwd / PWD at boot
+============================================================================================
+
+Reported from: loading cadaptor through its loader
+(sncf-reseau/src/cadaptor/loader.lsp) from a sibling working
+directory (sncf-reseau/src/schms).
+Observed on: clautolisp *AUTOLISP-VERSION* 1.2.7 and alfe 1.1.16
+(--clautolisp / --host mock), macOS. Check BOTH executables.
+
+Summary
+-------
+
+At boot time, the process current working directory, `(getenv "PWD")`
+and Common Lisp's `*default-pathname-defaults*` do NOT agree inside
+the AutoLISP engine. As a result, a relative pathname handed to
+`load` / `open` / `findfile` does NOT resolve against the directory
+the user launched the program from.
+
+The expectation (matching POSIX, AutoCAD/BricsCAD and every shell
+tool) is: until the program explicitly changes its current directory,
+a relative path resolves against the launch directory = cwd = PWD.
+
+Repro
+-----
+
+    # shell cwd is .../src/schms ; the file exists one level up:
+    $ cd .../src/schms
+    $ ls ../cadaptor/loader.lsp                # exists
+
+    # getenv agrees with the shell:
+    $ clautolisp --no-init -x '(princ (getenv "PWD"))' -q
+    .../src/schms
+
+    # but a relative load resolved by the engine does NOT find it:
+    $ clautolisp --no-init -x '(load "../cadaptor/loader.lsp")' -q
+    ; ... LOAD could not locate ../cadaptor/loader.lsp.
+
+    # and a relative open of an existing file returns nil:
+    $ clautolisp --no-init -x '(princ (open "../cadaptor/src/cadaptor.lsp" "r"))' -q
+    nil
+
+    # the SAME relative path made absolute via PWD opens fine:
+    $ clautolisp --no-init \
+        -x '(princ (open (strcat (getenv "PWD") "/../cadaptor/src/cadaptor.lsp") "r"))' -q
+    #<file ...>     ; OPENED
+
+Note: alfe's `-l <relative>` works only because the alfe CLI resolves
+the path against its own cwd before handing an absolute path to the
+engine; a relative `(load ...)` *inside* AutoLISP code does not.
+
+Expected
+--------
+
+At engine boot:
+
+- the engine current directory, `(getenv "PWD")` and
+  `*default-pathname-defaults*` are consistent and equal to the
+  launch directory;
+- `*default-pathname-defaults*` is `#P""` (or `#P"./"`), i.e. a
+  relative designator, so that `(merge-pathnames relative)` resolves
+  against the actual cwd rather than some fixed/compiled-in root;
+- a relative `load` / `open` / `findfile` argument resolves against
+  cwd / PWD until the program changes its current directory.
+
+Why it matters
+--------------
+
+Any loader or test harness that wants to reach sibling files by a
+relative path is currently broken under clautolisp unless it
+absolutizes paths itself (cadaptor's loader had to prepend
+`(getenv "PWD")`). Aligning cwd / PWD / `*default-pathname-defaults*`
+removes that whole class of workarounds and matches the CAD hosts.
+
+Suggested implementation
+------------------------
+
+- On startup, set the Lisp working directory from the inherited
+  process cwd (and keep `(getenv "PWD")` in sync, or derive one from
+  the other), then bind `*default-pathname-defaults*` to a relative
+  designator so `merge-pathnames` uses the live cwd.
+- Audit `resolve-open-pathname` / load path resolution to merge
+  against the live current directory rather than a value captured at
+  build/dump time.
+
+Related
+-------
+
+- cad-path-dotdot-resolution.issue (`..` handling once the base is
+  correct).
+- clautolisp-windows-pathname-mapping.issue (cwd/PWD/root mapping is
+  far thornier on Windows; see that issue).
