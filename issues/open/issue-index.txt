@@ -21,22 +21,26 @@ resolved and moved to issues/closed/, one is deferred and stays open.
         reproducible/testable off Windows. The testable subset (boot
         cwd) was split out as the P1 boot-cwd fix above.
 
-===
 
----  almost done, soon to be closed
-
-alfe.plan -- remains to be tested with the CADs on macOS and MS-Windows
-
-missing-functions-plan.md  -- archived (issue closed at clautolisp 1.1.12)
-
----
 
 test-file-encodings.issue
 
-system-variables.issues
-
 source-aware-defun-documentation.issue
 source-aware-defun-documentation.lsp
+
+variadic-functions.issue
+
+system-variables.issues -- Verify what is implemented, and implement the missing parts.
+
+
+
+==== STOP HERE, Wait for further specification of the debugger UI and the rest of issues.
+
+---  almost done, soon to be closed --- skip it for now.
+alfe.plan -- remains to be tested with the CADs on macOS and MS-Windows
+
+---
+
 
 clautolisp-debugger.issue  -- parent tracking issue; see the plan in
   clautolisp/documentation/clautolisp-debugger-implementation-plan.org
@@ -68,7 +72,7 @@ deferred-spec-research.issue
 deferred-stubbed-functions.issue
 
 
-variadic-functions.issue
+
 
 opendcl.plan
 opendcl-conformance.issue
