@@ -4053,6 +4053,47 @@ user code can choose between rewriting the BOM and dropping it."
          (set-autolisp-errno 0)
          (make-autolisp-string (or sniffed "ANSI")))))))
 
+(defun %native-module-extension ()
+  "Return the running host OS's native shared-library extension,
+leading dot included: \".dll\" on Windows, \".dylib\" on macOS,
+\".so\" on Linux and everywhere else. Resolved at RUN time (not
+read/build time) so an image built in one environment reports the
+extension of the environment it actually runs in."
+  (cond
+    ((uiop:os-windows-p) ".dll")
+    ((uiop:os-macosx-p)  ".dylib")
+    (t                   ".so")))
+
+(defun builtin-clal-module-extension (kind)
+  "Return, as a string with leading dot, the file extension clautolisp
+uses for a packaged-artefact KIND on the current host — so portability
+layers query clautolisp instead of hard-coding a guess. KIND is a
+string, matched case-insensitively:
+
+  \"compiled-app\"   => \".lap\"  (\"Lisp APplication\" — the clautolisp
+                                   analogue of AutoCAD .vlx / BricsCAD
+                                   .des; clautolisp owns the name).
+  \"native-module\"  => the host OS shared-library extension
+                        (\".dll\" Windows / \".dylib\" macOS / \".so\"
+                        else). A clautolisp native module is a shared
+                        library loaded by the host CL, so the extension
+                        is OS-dependent — the .arx / .brx slot.
+
+Signals :invalid-module-kind on any other KIND. See
+issues/open/clautolisp-module-app-extensions.issue."
+  (let ((k (string-downcase
+            (autolisp-string-value
+             (require-string kind "CLAL-MODULE-EXTENSION")))))
+    (cond
+      ((string= k "compiled-app")  (make-autolisp-string ".lap"))
+      ((string= k "native-module") (make-autolisp-string
+                                    (%native-module-extension)))
+      (t (signal-builtin-argument-error
+          :invalid-module-kind "CLAL-MODULE-EXTENSION"
+          "CLAL-MODULE-EXTENSION expects \"compiled-app\" or ~
+\"native-module\", got ~S."
+          k)))))
+
 ;;; --- Phase 12: headless interaction channel -----------------------
 
 (defun optional-prompt-string (prompt operator-name)
@@ -7241,6 +7282,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)
    (make-core-builtin-subr "CLAL-ENABLE-ENC-DIAGNOSTIC"   #'builtin-clal-enable-enc-diagnostic)
    (make-core-builtin-subr "CLAL-LINT-ENCODING-EXTENSIONS" #'builtin-clal-lint-encoding-extensions)
+   (make-core-builtin-subr "CLAL-MODULE-EXTENSION" #'builtin-clal-module-extension)
    ;; Phase 12 — headless interaction channel (PROMPT is registered
    ;; once already as a *standard-output* writer; we keep that)
    (make-core-builtin-subr "INITGET"    #'builtin-initget)
