@@ -98,6 +98,15 @@ to live on the test host."
       (loop for ch = (read-char in nil :eof)
             until (eq ch :eof) do (write-char ch out)))))
 
+(defun touch-file (path &optional (contents ""))
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output
+                            :if-exists :supersede
+                            :if-does-not-exist :create
+                            :external-format :utf-8)
+    (write-string contents out))
+  path)
+
 (test bricscad-emit-run-scr-loads-runtime-and-quits
   "EMIT-RUN-SCR writes a SCR that:
    - loads run-common.lsp,
@@ -185,6 +194,57 @@ System Events to keystroke the (load …) form into BricsCAD."
     (is (not (null backend)))
     (is (eq :autocad (alfe.backend:backend-name backend)))))
 
+(test bricscad-discover-windows-installed-binary-via-program-files-env
+  "On native Windows, BricsCAD discovery should search the Program
+Files roots advertised by the standard environment variables, not
+just an MSYS-style /c mirror."
+  (let ((root (uiop:ensure-directory-pathname
+               (merge-pathnames
+                (format nil "alfe-test-win-bricscad-~D/" (random 999999))
+                (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (touch-file (merge-pathnames "Bricsys/BricsCAD V26/bricscad.exe" root))
+          (with-env ("BRICSCAD_EXE" "")
+            (with-env ("ProgramW6432" (namestring root))
+              (with-env ("ProgramFiles" "")
+                (with-env ("ProgramFiles(x86)" "")
+                  (let ((discovered
+                          (alfe.backend.bricscad:discover-bricscad-binary
+                           :os :windows)))
+                    (is discovered)
+                    (is (search "BricsCAD V26" discovered))
+                    (is (search "bricscad.exe" discovered))))))))
+      (uiop:delete-directory-tree root :validate t
+                                       :if-does-not-exist :ignore))))
+
+(test bricscad-discover-windows-env-var-wins-over-default-search
+  "When $BRICSCAD_EXE is set, it must override the default Windows
+Program Files scan."
+  (let ((root (uiop:ensure-directory-pathname
+               (merge-pathnames
+                (format nil "alfe-test-win-bricscad-env-~D/" (random 999999))
+                (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (let ((installed (touch-file
+                            (merge-pathnames "Bricsys/BricsCAD V26/bricscad.exe"
+                                             root)))
+                (override (touch-file
+                           (merge-pathnames "custom/override-bricscad.exe"
+                                            root))))
+            (declare (ignore installed))
+            (with-env ("ProgramW6432" (namestring root))
+              (with-env ("ProgramFiles" "")
+                (with-env ("ProgramFiles(x86)" "")
+                  (with-env ("BRICSCAD_EXE" (namestring override))
+                    (is (string=
+                         (namestring override)
+                         (alfe.backend.bricscad:discover-bricscad-binary
+                          :os :windows)))))))))
+      (uiop:delete-directory-tree root :validate t
+                                       :if-does-not-exist :ignore))))
+
 (test autocad-detect-on-non-windows-signals-unsupported-os
   "AutoCAD is Windows-only; on macOS/Linux DETECT signals
 BACKEND-NOT-AVAILABLE with :unsupported-os and a structured message
@@ -209,6 +269,72 @@ purposeful error, not 'this OS unknown'."
     (is (or (search "macOS" message)
             (search "Linux" message)
             (search "this OS" message)))))
+
+(test autocad-discover-windows-installed-binaries-via-program-files-env
+  "On native Windows, AutoCAD discovery should walk the actual
+Program Files roots from the environment for both acad.exe and
+accoreconsole.exe."
+  (let ((root (uiop:ensure-directory-pathname
+               (merge-pathnames
+                (format nil "alfe-test-win-autocad-~D/" (random 999999))
+                (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (touch-file (merge-pathnames
+                       "Autodesk/AutoCAD 2026/acad.exe" root))
+          (touch-file (merge-pathnames
+                       "Autodesk/AutoCAD 2026/accoreconsole.exe" root))
+          (with-env ("AUTOCAD_EXE" "")
+            (with-env ("AUTOCAD_ACCORECONSOLE" "")
+              (with-env ("ProgramW6432" (namestring root))
+                (with-env ("ProgramFiles" "")
+                  (with-env ("ProgramFiles(x86)" "")
+                    (let ((acad (alfe.backend.autocad:discover-autocad-binary
+                                 :os :windows))
+                          (acc (alfe.backend.autocad:discover-accoreconsole-binary
+                                :os :windows)))
+                      (is acad)
+                      (is acc)
+                      (is (search "AutoCAD 2026" acad))
+                      (is (search "acad.exe" acad))
+                      (is (search "accoreconsole.exe" acc)))))))))
+      (uiop:delete-directory-tree root :validate t
+                                       :if-does-not-exist :ignore))))
+
+(test autocad-discover-windows-env-vars-win-over-default-search
+  "When $AUTOCAD_EXE / $AUTOCAD_ACCORECONSOLE are set, they must
+override the default Windows Program Files scan."
+  (let ((root (uiop:ensure-directory-pathname
+               (merge-pathnames
+                (format nil "alfe-test-win-autocad-env-~D/" (random 999999))
+                (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (touch-file (merge-pathnames
+                       "Autodesk/AutoCAD 2026/acad.exe" root))
+          (touch-file (merge-pathnames
+                       "Autodesk/AutoCAD 2026/accoreconsole.exe" root))
+          (let ((override-acad (touch-file
+                                (merge-pathnames "custom/override-acad.exe"
+                                                 root)))
+                (override-acc (touch-file
+                               (merge-pathnames "custom/override-acc.exe"
+                                                root))))
+            (with-env ("ProgramW6432" (namestring root))
+              (with-env ("ProgramFiles" "")
+                (with-env ("ProgramFiles(x86)" "")
+                  (with-env ("AUTOCAD_EXE" (namestring override-acad))
+                    (with-env ("AUTOCAD_ACCORECONSOLE" (namestring override-acc))
+                      (is (string=
+                           (namestring override-acad)
+                           (alfe.backend.autocad:discover-autocad-binary
+                            :os :windows)))
+                      (is (string=
+                           (namestring override-acc)
+                           (alfe.backend.autocad:discover-accoreconsole-binary
+                            :os :windows)))))))))
+      (uiop:delete-directory-tree root :validate t
+                                       :if-does-not-exist :ignore))))
 
 ;;; --- AutoCAD emitter ----------------------------------------------
 
