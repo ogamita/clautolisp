@@ -8,7 +8,7 @@ LISP ?= $(SBCL)
 # xelatex so arbitrary UTF-8 codepoints (such as set-theoretic `∩')
 # render without missing-glyph errors. Both variables are
 # overridable, e.g. `make documentation LATEX_COMPILER=lualatex'.
-EMACS          ?= emacs
+EMACS          ?= $(shell sh ../scripts/resolve-emacs.sh)
 MAKEINFO       ?= makeinfo
 INSTALL_INFO   ?= install-info
 LATEX_COMPILER ?= xelatex
