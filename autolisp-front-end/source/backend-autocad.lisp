@@ -56,6 +56,7 @@
                 #:windows-p
                 #:env-binary
                 #:first-existing
+                #:windows-glob-existing-files
                 #:vbs-escape
                 #:discover-runtime-lsp
                 #:discover-bootstrap-lsp
@@ -121,25 +122,37 @@ by --mode batch."))
 ;;; --- binary discovery ---------------------------------------------
 
 (defun windows-acad-candidates ()
-  (sort (mapcar #'namestring
-                (append
-                 (directory "/c/Program Files/Autodesk/AutoCAD */acad.exe")
-                 (directory "/c/Program Files/Autodesk/AutoCAD LT */acadlt.exe")))
+  (sort (append
+         (windows-glob-existing-files
+          '("Autodesk/AutoCAD */acad.exe"
+            "Autodesk/AutoCAD LT */acadlt.exe"))
+         ;; Keep the MSYS/MinGW-style /c fallback for compatibility
+         ;; with Unix-like Windows runtimes that do expose that view.
+         (mapcar #'namestring
+                 (append
+                  (directory "/c/Program Files/Autodesk/AutoCAD */acad.exe")
+                  (directory "/c/Program Files/Autodesk/AutoCAD LT */acadlt.exe"))))
         #'string>))
 
 (defun windows-accoreconsole-candidates ()
-  (sort (mapcar #'namestring
-                (directory "/c/Program Files/Autodesk/*/accoreconsole.exe"))
+  (sort (append
+         (windows-glob-existing-files '("Autodesk/*/accoreconsole.exe"))
+         ;; Keep the MSYS/MinGW-style /c fallback for compatibility
+         ;; with Unix-like Windows runtimes that do expose that view.
+         (mapcar #'namestring
+                 (directory "/c/Program Files/Autodesk/*/accoreconsole.exe")))
         #'string>))
 
-(defun discover-autocad-binary ()
+(defun discover-autocad-binary (&key
+                                  (os (host-os)))
   (or (env-binary "AUTOCAD_EXE")
-      (when (windows-p)
+      (when (eq os :windows)
         (first-existing (windows-acad-candidates)))))
 
-(defun discover-accoreconsole-binary ()
+(defun discover-accoreconsole-binary (&key
+                                        (os (host-os)))
   (or (env-binary "AUTOCAD_ACCORECONSOLE")
-      (when (windows-p)
+      (when (eq os :windows)
         (first-existing (windows-accoreconsole-candidates)))))
 
 ;;; --- DETECT --------------------------------------------------------

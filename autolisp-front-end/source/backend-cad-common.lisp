@@ -26,6 +26,8 @@
            ;; binary discovery
            #:env-binary
            #:first-existing
+           #:windows-program-files-roots
+           #:windows-glob-existing-files
            #:vbs-escape
            #:applescript-escape
            ;; runtime LSP discovery
@@ -75,6 +77,46 @@ splices optional env-var values); those are skipped silently."
                (probe-file candidate))
       (return-from first-existing (namestring (truename candidate)))))
   nil)
+
+(defparameter *windows-program-files-env-vars*
+  '("ProgramW6432" "ProgramFiles" "ProgramFiles(x86)")
+  "Environment variables that typically point at Windows program-
+installation roots. The order prefers the native 64-bit tree, then
+the generic tree, then the 32-bit compatibility tree.")
+
+(defun windows-program-files-roots ()
+  "Return the distinct existing Program Files roots advertised by the
+current environment. The result is a list of directory pathnames in
+search order, suitable for MERGE-PATHNAMES-based globbing on native
+Windows Lisp images."
+  (let ((seen (make-hash-table :test #'equal))
+        (roots '()))
+    (dolist (name *windows-program-files-env-vars* (nreverse roots))
+      (let ((value (uiop:getenv name)))
+        (when (and value (plusp (length value)))
+          (let* ((root (ignore-errors
+                         (uiop:ensure-directory-pathname
+                          (uiop:parse-native-namestring value))))
+                 (namestring (and root (probe-file root)
+                                  (namestring (truename root)))))
+            (when (and namestring
+                       (not (gethash namestring seen)))
+              (setf (gethash namestring seen) t)
+              (push (uiop:ensure-directory-pathname namestring) roots))))))))
+
+(defun windows-glob-existing-files (relative-globs &key
+                                                    (roots
+                                                      (windows-program-files-roots)))
+  "Expand each RELATIVE-GLOBS pattern under every directory in ROOTS
+and return the existing matches as absolute namestrings. RELATIVE-GLOBS
+uses forward-slash separators and may contain `*' wildcards in any
+path segment, which keeps the callers readable on both native Windows
+and MSYS/MinGW-hosted Lisp images."
+  (loop for root in roots
+        append (loop for relative-glob in relative-globs
+                     append (mapcar #'namestring
+                                    (directory
+                                     (merge-pathnames relative-glob root))))))
 
 ;;; --- string escapers for emitted bridge scripts ------------------
 

@@ -61,8 +61,10 @@
                 #:macos-p
                 #:linux-p
                 #:windows-p
+                #:host-os
                 #:env-binary
                 #:first-existing
+                #:windows-glob-existing-files
                 #:vbs-escape
                 #:applescript-escape
                 #:discover-runtime-lsp
@@ -158,18 +160,23 @@ installation is found."
 
 (defun windows-bricscad-candidates ()
   "Windows candidates in priority order (descending version)."
-  (sort (mapcar #'namestring
-                (directory "/c/Program Files*/Bricsys/*/bricscad.exe"))
+  (sort (append
+         (windows-glob-existing-files '("Bricsys/*/bricscad.exe"))
+         ;; Keep the MSYS/MinGW-style /c fallback for compatibility
+         ;; with Unix-like Windows runtimes that do expose that view.
+         (mapcar #'namestring
+                 (directory "/c/Program Files*/Bricsys/*/bricscad.exe")))
         #'string>))
 
-(defun discover-bricscad-binary ()
+(defun discover-bricscad-binary (&key
+                                   (os (host-os)))
   "Run the platform-aware binary search documented in the issue.
 Returns the absolute path of a usable bricscad executable, or NIL."
   (or (env-binary "BRICSCAD_EXE")
       (cond
-        ((macos-p)   (macos-bricscad-app-binary))
-        ((linux-p)   (first-existing (linux-bricscad-candidates)))
-        ((windows-p) (first-existing (windows-bricscad-candidates)))
+        ((eq os :macos)   (macos-bricscad-app-binary))
+        ((eq os :linux)   (first-existing (linux-bricscad-candidates)))
+        ((eq os :windows) (first-existing (windows-bricscad-candidates)))
         (t nil))))
 
 (defun discover-bricscad-template (&key requested)
