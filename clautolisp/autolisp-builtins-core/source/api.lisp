@@ -3039,6 +3039,27 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
   (let ((value (require-int32 object "ITOA")))
     (make-autolisp-string (format nil "~D" value))))
 
+(defun %format-decimal-real (n p)
+  "Fixed-point (decimal) formatting for RTOS / ANGTOS: P places after
+the point, but with NO trailing decimal point when P is 0 — AutoCAD's
+`(rtos 1.6 2 0)` is \"2\", not CL's `~,0F` \"2.\". P is clamped to
+non-negative. system-variables.issue, 'rtos/distance float-format'."
+  (let ((s (format nil "~,vF" (max 0 p) n)))
+    (if (and (plusp (length s))
+             (char= (char s (1- (length s))) #\.))
+        (subseq s 0 (1- (length s)))
+        s)))
+
+(defun %format-scientific-real (n p)
+  "Scientific (mode 1) formatting for RTOS in AutoCAD style: uppercase
+E, an always-signed exponent zero-padded to at least two digits, e.g.
+`(rtos 100.0 1 2)' => \"1.00E+02\". CL's bare `~E' would emit the
+double-float exponent marker (\"1.00d+2\") with an unpadded exponent;
+the ~E exponent-digits (2) and exponent-char ('E) parameters fix both.
+Exponents wider than two digits expand as needed (e.g. \"1.00E+100\").
+system-variables.issue, 'rtos/distance float-format'."
+  (format nil "~,v,2,,,,'EE" (max 0 p) n))
+
 (defun builtin-rtos (number &optional mode precision)
   ;; (rtos NUMBER [MODE [PRECISION]]) -> string. We honour MODE 1
   ;; (scientific) and 2 (decimal) and the PRECISION argument; modes
@@ -3052,8 +3073,8 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
         (n (coerce number 'double-float)))
     (make-autolisp-string
      (case m
-       (1 (format nil "~,vE" p n))
-       (otherwise (format nil "~,vF" (max 0 p) n))))))
+       (1 (%format-scientific-real n p))
+       (otherwise (%format-decimal-real n p))))))
 
 (defun builtin-angtos (angle &optional mode precision)
   ;; (angtos ANGLE [MODE [PRECISION]]) -> string in radians (MODE 0)
@@ -3067,8 +3088,8 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
         (rad (coerce angle 'double-float)))
     (make-autolisp-string
      (case m
-       (0 (format nil "~,vF" (max 0 p) rad))
-       (otherwise (format nil "~,vF" (max 0 p) (* rad (/ 180.0d0 pi))))))))
+       (0 (%format-decimal-real rad p))
+       (otherwise (%format-decimal-real (* rad (/ 180.0d0 pi)) p))))))
 
 (defun builtin-distof (string &optional mode)
   (declare (ignore mode))

@@ -263,13 +263,18 @@ Coupling status (verified against the built engine, not just by reading):
   NOT YET coupled (functions don't consult their sysvar):
     - LUNITS/LUPREC/DIMZIN/UNITMODE -> rtos/distance default precision.
       NB: coupling-units.lsp passes precision EXPLICITLY (3rd arg), so it
-      does NOT actually exercise the LUPREC default; its two genuinely
-      failing cases are rtos FLOAT-FORMATTING divergences, not a sysvar
-      coupling: (rtos 1.6 2 0) => "2." (want "2") and (rtos 100.0 1 2) =>
-      "1.00d+2" (want "1.00E+02"). These belong with the float-printing /
-      strict-dialect formatting work, not here. Wiring rtos/distance to
-      read LUPREC/LUNITS when the precision/mode args are omitted is the
-      real remaining coupling.
+      does NOT actually exercise the LUPREC default. Its two genuinely
+      failing cases were rtos FLOAT-FORMATTING divergences, not a sysvar
+      coupling -- (rtos 1.6 2 0) => "2." (want "2") and (rtos 100.0 1 2)
+      => "1.00d+2" (want "1.00E+02"). FIXED 2026-06-24 in clautolisp
+      1.2.13: %FORMAT-DECIMAL-REAL strips the trailing point at
+      precision 0, and %FORMAT-SCIENTIFIC-REAL emits AutoCAD-style
+      scientific notation (uppercase E, signed two-digit-padded
+      exponent) instead of CL's double-float "d+N". Both
+      coupling-units.lsp and string/rtos.lsp now pass; angtos shares the
+      same decimal helper. STILL REMAINING (the real coupling): wire
+      rtos/distance to READ LUPREC/LUNITS/DIMZIN/UNITMODE when the
+      precision/mode args are OMITTED.
     - CMDECHO -> command/vl-cmdf echo policy.
     - TILEMODE/CVPORT -> vports/setview.
     - SNAPANG/ANGBASE radians-vs-display on setvar.
@@ -280,9 +285,11 @@ Coupling status (verified against the built engine, not just by reading):
     - TRUSTEDPATHS/SECURELOAD -> load/open/findtrustedfile trust gating.
   (The last eight have no coupling test yet.)
 
-Recommended next steps (by priority): (1) the rtos/distance float-format
-divergences ("N." for integer-valued reals; "d+NN" vs "E+0NN" scientific)
-— likely shared with strict-dialect float printing; (2) wire rtos/distance
-to LUPREC/LUNITS/DIMZIN/UNITMODE defaults; (3) the trust-gating coupling
+Recommended next steps (by priority): (1) DONE 2026-06-24 (1.2.13) —
+the rtos/distance float-format divergences ("N." for integer-valued
+reals at precision 0; "d+N" vs "E+0N" scientific) are fixed in
+%FORMAT-DECIMAL-REAL / %FORMAT-SCIENTIFIC-REAL; (2) wire rtos/distance
+to LUPREC/LUNITS/DIMZIN/UNITMODE defaults (consult the sysvar when the
+precision/mode args are omitted) — NEXT; (3) the trust-gating coupling
 (TRUSTEDPATHS/SECURELOAD), which is security-relevant; (4) the remaining
 behavioural couplings with tests.
