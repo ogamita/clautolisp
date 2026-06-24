@@ -5,7 +5,7 @@
 # xelatex so arbitrary UTF-8 codepoints render without missing-glyph
 # errors. Both variables are overridable, e.g.
 # `make documentation LATEX_COMPILER=lualatex'.
-EMACS          ?= emacs
+EMACS          ?= $(shell sh ../scripts/resolve-emacs.sh)
 LATEX_COMPILER ?= xelatex
 MAKEINFO       ?= makeinfo
 INSTALL_INFO   ?= install-info
