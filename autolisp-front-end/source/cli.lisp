@@ -822,6 +822,8 @@ engine."
                                 (cli-options-bootstrap-phase options)
                                 :interactive-p
                                 (cli-options-interactive-p options)
+                                :mode (cli-options-mode options)
+                                :dwg (cli-options-dwg options)
                                 :load-encoding
                                 (cli-options-load-encoding options)
                                 :io-encoding
@@ -880,4 +882,3 @@ engine."
       (ignore-errors (shutdown session :reason :cli-exit))
       (ignore-errors (cleanup-workdir backend workdir
                                       :keep-p (cli-options-keep-workdir-p options))))))
-

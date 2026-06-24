@@ -212,7 +212,7 @@ just an MSYS-style /c mirror."
                   (let ((discovered
                           (alfe.backend.bricscad:discover-bricscad-binary
                            :os :windows)))
-                    (is discovered)
+                    (is (not (null discovered)))
                     (is (search "BricsCAD V26" discovered))
                     (is (search "bricscad.exe" discovered))))))))
       (uiop:delete-directory-tree root :validate t
@@ -293,8 +293,8 @@ accoreconsole.exe."
                                  :os :windows))
                           (acc (alfe.backend.autocad:discover-accoreconsole-binary
                                 :os :windows)))
-                      (is acad)
-                      (is acc)
+                      (is (not (null acad)))
+                      (is (not (null acc)))
                       (is (search "AutoCAD 2026" acad))
                       (is (search "acad.exe" acad))
                       (is (search "accoreconsole.exe" acc)))))))))
@@ -334,7 +334,7 @@ override the default Windows Program Files scan."
                            (alfe.backend.autocad:discover-accoreconsole-binary
                             :os :windows)))))))))
       (uiop:delete-directory-tree root :validate t
-                                       :if-does-not-exist :ignore))))
+                                       :if-does-not-exist :ignore)))))
 
 ;;; --- AutoCAD emitter ----------------------------------------------
 
