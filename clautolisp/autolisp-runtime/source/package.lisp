@@ -273,6 +273,7 @@
    #:locale-default-source-encoding
    #:parse-posix-locale
    #:parse-locale-encoding-string
+   #:lookup-autolisp-file-encoding
    ;; Encoding-dispatch diagnostics (encoding-dispatch.issue Phase 4).
    #:*enc-diagnostic-stream*
    #:*enc-diagnostic-suppress-p*

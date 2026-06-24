@@ -67,8 +67,18 @@ assert via :expected-lines, since the raw read-back retains the CR/CRLF
 terminator — same convention as the existing crlf-text / cr-only-text
 scenarios.)
 
-FINDING (blocks parts 1 & 3 as written) — AutoLISP write ignores the
-requested encoding:
+FINDING — RESOLVED 1.2.12 (open-write-ignores-file-encoding.issue, now
+in issues/closed/). (open PATH "w") + princ/write-line now honours
+*AUTOLISP-FILE-ENCODING* / -e for the write encoding (default lookup
+added in OPEN-DEFAULT-EXTERNAL-FORMAT, mirroring the read path). So the
+engine no longer blocks a pure-AutoLISP program from authoring its own
+UTF-8 fixtures. Parts 1 & 3 are unblocked at the engine level; what
+remains for them is CAD-parity confirmation of the chosen write
+encoding + the spec update (see REMAINING). Original finding kept below
+for context.
+
+FINDING (originally blocked parts 1 & 3 as written) — AutoLISP write
+ignored the requested encoding:
 
   At the AutoLISP level, `(open PATH "w")` followed by `princ`/`write-line`
   writes ISO-8859-1 / ANSI bytes REGARDLESS of *AUTOLISP-FILE-ENCODING*

@@ -1715,11 +1715,25 @@ forms (autolisp-spec ch. 16, \"OPEN External-Format Argument\"):
    (string (int32->character code "CHR"))))
 
 (defun open-default-external-format ()
-  "Resolve the active dialect's default file encoding for `open`,
-falling back to :iso-8859-1 (the historic ANSI/MBCS legacy default)
-when no dialect is in scope."
+  "Resolve the default file encoding for `open` when no explicit
+per-open encoding argument (or BricsCAD ,ccs= suffix) is supplied.
+Precedence mirrors the input/LOAD path (autolisp-runtime
+AUTOLISP-LOAD-FILE-IN-CONTEXT) so a value written and read back
+under the same encoding round-trips:
+
+  1. the AutoLISP-level *AUTOLISP-FILE-ENCODING* global (settable at
+     runtime, also seeded from the CLI -e flag), via
+     LOOKUP-AUTOLISP-FILE-ENCODING;
+  2. else the active dialect's default file encoding;
+  3. else :iso-8859-1 (the historic ANSI/MBCS legacy default) when no
+     dialect is in scope.
+
+Before this consulted only tiers 2-3, so OPEN-for-write ignored
+*AUTOLISP-FILE-ENCODING* / -e and always wrote ANSI bytes while the
+read path honoured them — see open-write-ignores-file-encoding.issue."
   (let ((dialect (ignore-errors (current-evaluation-dialect))))
-    (or (and dialect
+    (or (ignore-errors (clautolisp.autolisp-runtime:lookup-autolisp-file-encoding))
+        (and dialect
              (clautolisp.autolisp-reader:autolisp-dialect-default-file-encoding
               dialect))
         :iso-8859-1)))
