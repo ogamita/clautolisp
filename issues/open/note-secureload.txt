@@ -1,0 +1,124 @@
+Some references:
+
+https://static.au-uw2-prd.autodesk.com/DV3459-R_additional_3459_all_20you_20need_20to_20know_20about_20autocad_20secureload.pdf
+
+
+System Variables:
+SECURELOAD
+ACADLSPASDOC
+TRUSTEDPATHS
+
+https://help.autodesk.com/view/ACDMAC/2027/ENU/?guid=GUID-C32BA40E-AEB1-476D-A19B-DDEC8BF806B6
+https://help.autodesk.com/view/ACDMAC/2027/ENU/?guid=GUID-E0049DB8-DC45-47A1-A8B7-67012F7AEDB8
+https://help.autodesk.com/view/ACDMAC/2027/ENU/?guid=GUID-9DEA7E46-708F-42DD-A497-F1324B8F4989
+
+
+Note that for SECURELOAD, autocad documentation is slightly ambiguous:
+for the value 1 it doesn't say that it allows files to be loaded from
+any location, but this is what is implied by the description for value
+2 "only if".
+
+SECURELOAD:
+
+    0 Loads executable files without warning. This option maintains legacy
+      behavior, but is not recommended.
+
+    1 Loads executable files only if their location is in the trusted
+      locations specified in the TRUSTEDPATHS system variable. Displays a
+      warning during load requests from executable files that are not in
+      trusted locations.
+
+    2 Allows executable files to be loaded only if their location is in
+      the trusted locations specified in the TRUSTEDPATHS system variable.
+
+TRUSTEDPATHS:
+
+    - When TRUSTEDPATHS is set to one or more folder paths in quotes and
+      separated by semicolons, the previously listed file types are loaded
+      from the specified folders.
+
+    - When TRUSTEDPATHS is set to "" (an empty string) or "." (a period),
+      there are no trusted folder paths in addition to the implicitly
+      trusted ones.
+
+    - When TRUSTEDPATHS includes a folder that ends with \... (backslash
+      and three dots) or /... (backslash and three dots), all of its
+      subfolders are also trusted.
+
+Support File Search Path
+
+Apparently there are no public system variable to access it in Autocad (ISTR there may be something in Bricscad).
+
+
+Set Paths to Referenced Drawings
+https://help.autodesk.com/view/ACDMAC/2027/ENU/?guid=GUID-5188114A-E5C3-49B0-B93B-08D15C7F8C1C
+
+PROJECTNAME
+https://help.autodesk.com/view/ACDMAC/2027/ENU/?guid=GUID-BBE6FA4B-800E-4D7D-9D59-EDA24829C5E9
+
+
+Related, but deferred to when we have something equivalent to ARX/BRX:
+SECUREREMOTEACCESS  
+https://help.autodesk.com/view/ACDMAC/2027/ENU/?guid=GUID-B76972C0-FB74-4E1E-AEA0-427B7B6FEEFB
+
+
+For bricscad, search in the reference documentation of bricscad these
+system variables and verify if they are implemented in the same way or
+if they deviate. (also check the autolisp-spec system variable pages
+for them).
+
+
+clautocad:
+
+With --dialect autocad
+we should strive to be fully compatible with autocad, so implement the described semantics the most closely possible.
+
+With --dialect bricscad
+we should strive to be fully compatible with bricscad, so implement the described semantics the most closely possible.
+
+With --dialect strict
+we should strive to be fully compatible with both autocad and bricscad, so implement the described semantics the most closely possible. (closer to autocad when there's incompatibilities).
+
+With --dialect clautolisp
+we may deviate slightly to ease the use of the system.
+
+   1-  we must provide a "Support File Search Path" backed by a system variable
+       CLAUTOLISPSUPPORTFILESEARCHPATH  RW Default: "./" (the current working directory)
+       Meaning relative path are searched only in the current working directory.
+       Absolute paths are used directly as absolute path, no need for search.
+
+   2-  SECURELOAD default value in clautolisp depends on the dialect.
+       In --autocad and --bricscad it must be the same default as in these implementations.
+       In --strict it must be 2
+       In --lax it must be 0
+       In --clautolisp it must be 1
+
+   3- TRUSTEDPATHS default value in clautolisp depends on the dialect
+      In --autocad and --bricscad it must be the same default as in these implementations.
+      ("" in bricscad on macos)
+      In --strict it must be ""
+      In --lax, the default TRUSTEDPATHS be "" but shouldn't matter for the value of SECURELOAD.
+      In --clautolisp, the default TRUSTEDPATHS be "" but shouldn't matter for the value of SECURELOAD.
+   
+   4- we need to define a list of "implicitly trusted folder paths" backed by a system variable
+      CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS  RW Default: "" (no implicitely trusted folders,
+      but this doesn't matter since by default we have SECURELOAD=1 in clautolisp).
+      The user may set it with the same syntax and semantics as
+      CLAUTOLISPSUPPORTFILESEARCHPATH and TRUSTEDPATHS.
+   
+
+CLAUTOLISP system variables can be initialized with environment
+variables of the same name, instead of the default values specified
+here.
+
+Note ACADLSPASDOC specifies an additionnal file that can be loaded
+automatically (after the rc file), once for the session or once for
+each dwg that are loaded in clautolisp host. (I'm not sure yet of the
+semantics of loading dwg in clautolisp).
+
+These search paths are to be used by LOAD and OPEN (and I assume by
+findfile (check it) when given relative paths, this should result in
+an absolute path. Then the filter apply on the absolute paths are
+given, or searched.
+
+See also the specifications for findfile and findtrustedfile.
