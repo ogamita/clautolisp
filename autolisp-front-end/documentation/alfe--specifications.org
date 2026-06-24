@@ -722,8 +722,12 @@ documented; this must be worked out during implementation.
 |-----------------+---------------------------------------------------|
 | =BRICSCAD_EXE=  | Explicit path to =bricscad.exe=.                  |
 
-Failing that, glob =/c/Program Files*/Bricsys/*/bricscad.exe=, in
-descending lexicographic order (newest first).
+Failing that, search the Windows Program Files roots advertised by
+=%ProgramW6432%=, =%ProgramFiles%= and =%ProgramFiles(x86)%= for
+=Bricsys/*/bricscad.exe=, in descending lexicographic order (newest
+first). For MSYS/MinGW-hosted Lisp images, also keep the historical
+=/c/Program Files*/Bricsys/*/bricscad.exe= glob as a compatibility
+fallback.
 
 *** =automation= mode (COM, default)
 
@@ -941,10 +945,13 @@ exits cleanly with code =3= and an error message.
 | =AUTOCAD_EXE=           | Explicit path to =acad.exe= or =acadlt.exe=.                           |
 | =AUTOCAD_ACCORECONSOLE= | Explicit path to =accoreconsole.exe= (=batch= mode only).              |
 
-Failing that, glob:
+Failing that, search the Windows Program Files roots advertised by
+=%ProgramW6432%=, =%ProgramFiles%= and =%ProgramFiles(x86)%= for:
 
-1. =/c/Program Files/Autodesk/AutoCAD\ */acad.exe=, descending sort;
-2. =/c/Program Files/Autodesk/AutoCAD\ LT\ */acadlt.exe=, descending sort.
+1. =Autodesk/AutoCAD */acad.exe=, descending sort;
+2. =Autodesk/AutoCAD LT */acadlt.exe=, descending sort;
+3. for MSYS/MinGW-hosted Lisp images, also keep the historical
+   =/c/Program Files/Autodesk/...= globs as a compatibility fallback.
 
 Reference: =autolisp:1395–1405=.
 
@@ -1315,7 +1322,9 @@ Executable lookup:
 
 Prerequisites:
 
-- a DWG: =--dwg FILE= or =$AUTOLISP_DWG=;
+- a DWG: =--dwg FILE= or =$AUTOLISP_DWG=; if neither is set, try a
+  shipped =Template/acadiso.dwt= or =Template/acad.dwt= next to the
+  discovered AutoCAD install before failing;
 - a =.scr= file (LSP transformed into a script, at =$SCRFILE=).
 
 Command:
