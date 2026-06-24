@@ -876,3 +876,52 @@ $AUTOLISP_DWG, nor an install template exists."
               (is (member "/s" argv :test #'string=)))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
+
+(test autocad-start-engine-batch-surfaces-early-process-exit
+  "If the batch child process exits before publishing READY, START-ENGINE
+surfaces the child stderr / exit code instead of reporting a misleading
+READY timeout."
+  (when (alfe.backend.cad-common:windows-p)
+    (let ((workdir (uiop:ensure-directory-pathname
+                    (merge-pathnames
+                     (format nil "alfe-test-acad-exit-~D/" (random 999999))
+                     (uiop:temporary-directory)))))
+      (unwind-protect
+          (progn
+            (ensure-directories-exist workdir)
+            (let ((backend (alfe.backend.autocad:make-autocad-backend
+                            :accoreconsole-path "C:/dummy/accoreconsole.exe"))
+                  (launcher
+                    (lambda (argv &rest keys &key input output error-output &allow-other-keys)
+                      (declare (ignore argv input output error-output keys))
+                      (uiop:launch-program
+                       '("powershell.exe" "-NoProfile" "-Command"
+                         "[Console]::Error.WriteLine('fatal cfg lock'); exit 7")
+                       :input :stream
+                       :output :stream
+                       :error-output :stream))))
+              (handler-case
+                  (progn
+                    (alfe.backend:start-engine
+                     backend workdir
+                     :dialect :strict
+                     :host :mock
+                     :mock-input nil
+                     :bootstrap-phase :full
+                     :interactive-p nil
+                     :mode :batch
+                     :dwg (namestring
+                           (touch-file (merge-pathnames "explicit.dwg" workdir)))
+                     :launcher launcher
+                     :wait-for-ready t
+                     :ready-timeout 5)
+                    (is nil "Expected BACKEND-BOOTSTRAP-ERROR for early child exit."))
+                (alfe.error:backend-bootstrap-error (condition)
+                  (is (eq :process-exited-before-ready
+                          (alfe.error:backend-error-code condition)))
+                  (is (search "fatal cfg lock"
+                              (alfe.error:backend-error-message condition)))
+                  (is (= 7 (getf (alfe.error:backend-error-details condition)
+                                 :exit-code)))))))
+        (uiop:delete-directory-tree workdir :validate t
+                                            :if-does-not-exist :ignore)))))
