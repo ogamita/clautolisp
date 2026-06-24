@@ -3493,6 +3493,66 @@ single character. Used by the Phase-3 LOAD-encoding tests."
       (is (typep result 'autolisp-string))
       (is (= 1 (length (autolisp-string-value result)))))))
 
+;;;; ----- OPEN (write) honours the AutoLISP-level *AUTOLISP-FILE-ENCODING* -----
+;;;;
+;;;; open-write-ignores-file-encoding.issue: the OUTPUT path used to
+;;;; pick the write external-format from the dialect default only,
+;;;; ignoring *AUTOLISP-FILE-ENCODING* (and the CLI -e flag that seeds
+;;;; it) — so the read path honoured the encoding while the write path
+;;;; always emitted ANSI/Latin-1. OPEN-DEFAULT-EXTERNAL-FORMAT now
+;;;; mirrors the LOAD precedence: global -> dialect default -> Latin-1.
+;;;;
+;;;; The repro writes U+00E9 (é) via (chr 233): correct UTF-8 is the
+;;;; two bytes C3 A9; ISO-8859-1 / ANSI is the single byte E9. We read
+;;;; the file back at the CL level (raw octets) to assert the bytes.
+
+(defun %open-write-chr233-bytes (encoding-setup-form)
+  "Run an AutoLISP program that opens a temp file for write (after
+ENCODING-SETUP-FORM, e.g. a (setq *autolisp-file-encoding* …)),
+writes (chr 233) with PRINC, closes it, and returns the raw octets
+written, as a list of (unsigned-byte 8)."
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (run-autolisp-string
+     (format nil "(progn ~A (setq f (open ~S \"w\")) (princ (chr 233) f) (close f))"
+             encoding-setup-form (namestring path))
+     :setup-fn #'install-core-into)
+    (with-open-file (in path :direction :input
+                             :element-type '(unsigned-byte 8))
+      (loop for b = (read-byte in nil nil)
+            while b collect b))))
+
+(test open-write-honours-autolisp-file-encoding-utf-8
+  ;; Core fix: with *AUTOLISP-FILE-ENCODING* "UTF-8", the default
+  ;; (no third-arg) open-for-write must emit UTF-8 — C3 A9 for é.
+  (is (equal '(#xC3 #xA9)
+             (%open-write-chr233-bytes
+              "(setq *autolisp-file-encoding* \"UTF-8\")"))))
+
+(test open-write-honours-autolisp-file-encoding-latin1
+  ;; The other direction round-trips: under ISO-8859-1 the same char
+  ;; is the single byte E9.
+  (is (equal '(#xE9)
+             (%open-write-chr233-bytes
+              "(setq *autolisp-file-encoding* \"ISO-8859-1\")"))))
+
+(test open-write-explicit-encoding-overrides-global
+  ;; Regression guard: the explicit per-open third argument still wins
+  ;; over *AUTOLISP-FILE-ENCODING* (it already did before the fix).
+  (reset-autolisp-symbol-table)
+  (uiop:with-temporary-file (:pathname path :type "txt" :keep nil)
+    (run-autolisp-string
+     (format nil "(progn (setq *autolisp-file-encoding* \"ISO-8859-1\")
+                         (setq f (open ~S \"w\" \"UTF-8\"))
+                         (princ (chr 233) f) (close f))"
+             (namestring path))
+     :setup-fn #'install-core-into)
+    (let ((bytes (with-open-file (in path :direction :input
+                                         :element-type '(unsigned-byte 8))
+                   (loop for b = (read-byte in nil nil)
+                         while b collect b))))
+      (is (equal '(#xC3 #xA9) bytes)))))
+
 ;;;; ----- enc-* diagnostics: per-dialect dispatch (Phase 4) -----------
 ;;;;
 ;;;; The runtime always honours LOAD's third positional [encoding]

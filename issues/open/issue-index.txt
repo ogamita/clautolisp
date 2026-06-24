@@ -28,19 +28,22 @@ test-file-encodings.issue  -- PARTIAL 2026-06-23 (content fixed by pjb:
   oe / ' substitutions make the sentence ISO-8859-1-safe). DONE: the
   6-fixture encoding x line-termination matrix as file-compat round-trip
   scenarios (french-{utf8,latin1}-{unix,dos,mac}, all pass, byte-exact
-  artifacts). FINDING recorded in the issue: AutoLISP (open "w") writes
-  Latin-1/ANSI regardless of *AUTOLISP-FILE-ENCODING* / -e (read honors
-  it; write doesn't) -- this blocks the LOAD-fixture (part 1) and the
-  *AUTOLISP-FILE-ENCODING* loop (part 3) programs, and is a CAD-parity
-  question. REMAINING: fix open-write encoding + add parts 1/3 + verify
-  vs *cad + spec update (need CAD access / spec authority).
+  artifacts). The open-write encoding finding recorded here is now FIXED
+  (1.2.12, see open-write-ignores-file-encoding -> closed/): (open "w")
+  honors *AUTOLISP-FILE-ENCODING* / -e, so parts 1 & 3 are unblocked at
+  the engine level. REMAINING: add the parts 1/3 AutoLISP test programs
+  + verify the per-open write encoding vs *cad + spec update (need CAD
+  access / spec authority).
 
-open-write-ignores-file-encoding.issue  -- NEW 2026-06-23: bug filed for
-  the finding above. (open PATH "w") + princ writes ANSI/ISO-8859-1
-  regardless of *AUTOLISP-FILE-ENCODING* / -e; the explicit 3rd-arg
-  (open PATH "w" "utf-8") IS honored, so only the output DEFAULT lookup
-  is missing. Concrete + actionable (engine fix), modulo CAD-parity
-  confirmation of the target write encoding.
+open-write-ignores-file-encoding.issue  -- RESOLVED 1.2.12 -> closed/
+  (open PATH "w") + princ now resolves the write encoding the same way
+  the read path does: explicit 3rd-arg, else *AUTOLISP-FILE-ENCODING*
+  (also seeded by -e), else dialect/locale default. The missing output
+  DEFAULT lookup was added in OPEN-DEFAULT-EXTERNAL-FORMAT (shared
+  resolver LOOKUP-AUTOLISP-FILE-ENCODING, now exported). Verified on
+  the binary (utf-8/-e/explicit -> c3 a9; iso-8859-1 -> e9; round-trip
+  OK) + 3 regression tests (suite 1214/1214). CAD-parity confirmation
+  of the target write encoding still tracked in test-file-encodings.
 
 source-aware-defun-documentation.issue  -- DONE 2026-06-23: feature was
   already implemented across reader/runtime/builtins/spec/alref; added

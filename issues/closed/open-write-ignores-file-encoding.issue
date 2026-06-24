@@ -1,6 +1,39 @@
 open-write-ignores-file-encoding — file output ignores *AUTOLISP-FILE-ENCODING* and -e
 =======================================================================================
 
+Status: RESOLVED 1.2.12.
+----------------------------------------------------------------------
+
+OPEN-DEFAULT-EXTERNAL-FORMAT (clautolisp/autolisp-builtins-core/source/
+api.lisp) now mirrors the input/LOAD precedence: when no explicit
+per-open encoding argument (nor BricsCAD ,ccs= suffix) is supplied, the
+write external-format is resolved as
+
+    1. *AUTOLISP-FILE-ENCODING* (settable at runtime, seeded from -e),
+       via the now-exported runtime LOOKUP-AUTOLISP-FILE-ENCODING;
+    2. else the active dialect's default file encoding;
+    3. else :iso-8859-1.
+
+LOOKUP-AUTOLISP-FILE-ENCODING was made context-optional and exported so
+both the read and write paths share one resolver.
+
+Verified against the built 1.2.12 binary (all four repro cases below):
+  1. (setq *AUTOLISP-FILE-ENCODING* "utf-8") + default open "w" -> c3 a9
+  2. -e utf-8 + default open "w"                                -> c3 a9
+  3. explicit (open ... "w" "utf-8")                            -> c3 a9
+  4. -e iso-8859-1 + default open "w"                           -> e9
+And a write-then-read-line round-trip under -e utf-8 returns the single
+char é (ascii 233). Regression tests added in
+clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp
+(open-write-honours-autolisp-file-encoding-{utf-8,latin1},
+open-write-explicit-encoding-overrides-global); full suite 1214/1214.
+
+CAD-parity confirmation of the target write encoding and the per-open
+vs per-process selection model remains a spec question, tracked with
+the same open question in test-file-encodings.issue.
+
+----------------------------------------------------------------------
+
 Reported from: building the test-file-encodings fixtures — an AutoLISP
 program that writes a file with (open ... "w") + princ could not produce
 UTF-8 output.

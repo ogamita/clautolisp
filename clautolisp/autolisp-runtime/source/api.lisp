@@ -2388,13 +2388,17 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
 (defun autolisp-read-from-file (path &rest options &key &allow-other-keys)
   (first (apply #'read-runtime-from-file path options)))
 
-(defun lookup-autolisp-file-encoding (context)
+(defun lookup-autolisp-file-encoding (&optional (context (current-evaluation-context)))
   "Resolve the AutoLISP-level *AUTOLISP-FILE-ENCODING* global to a
 CL external-format keyword, or NIL when the global isn't bound
 to a usable string. Lets a user's `(setq *autolisp-file-encoding*
 \"ISO-8859-1\")' at the REPL actually take effect on the next
 LOAD — without it the CL session slot (set at startup by the
-CLI's -e flag) silently wins."
+CLI's -e flag) silently wins.
+
+Used by both the input path (LOAD / read / read-line) and the
+output path (OPEN for write/append, see OPEN-DEFAULT-EXTERNAL-FORMAT)
+so a value written and read back under the same encoding round-trips."
   (handler-case
       (multiple-value-bind (value boundp)
           (lookup-variable (intern-autolisp-symbol "*AUTOLISP-FILE-ENCODING*")
