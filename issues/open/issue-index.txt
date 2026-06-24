@@ -66,6 +66,14 @@ system-variables.issues -- Verify what is implemented, and implement the missing
   omitted; then trust-gating (TRUSTEDPATHS/SECURELOAD); then the
   remaining behavioural couplings. All itemised in the issue.
 
+autolisp-test-recap-crash-got-t.issue -- NEW 2026-06-24 (found while
+  verifying the rtos fix above). (autolisp-test-run-all) runs all 3915
+  tests fine but its matrix / write-sexp-report / print-recap stages
+  raise "FOREACH/LENGTH ... got T". Guarded, so the run still writes a
+  report.sexp -- but the verdict matrix + recap are lost. Hits every
+  version bump (no expectations overlay for the new version). Repro +
+  ruled-out list + leads in the issue; root cause not yet isolated.
+
 
 
 ==== STOP HERE, Wait for further specification of the debugger UI and the rest of issues.
