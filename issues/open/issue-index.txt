@@ -63,9 +63,21 @@ system-variables.issues -- Verify what is implemented, and implement the missing
   precision-0 trailing dot + AutoCAD-style scientific notation); wired
   rtos to LUNITS/LUPREC defaults + DIMZIN zero-suppression (1.2.14;
   coupling-units.lsp gained default-reading + DIMZIN deftests).
-  NEXT: trust-gating coupling (TRUSTEDPATHS/SECURELOAD, security-
-  relevant); then the remaining behavioural couplings; UNITMODE waits
-  on rtos modes 3-5. All itemised in the issue.
+  IN PROGRESS: trust-gating coupling (TRUSTEDPATHS/SECURELOAD,
+  security-relevant) -- pjb expanded the scope (see note-secureload.txt):
+  dialect-dependent defaults, 2 new clautolisp sysvars, env-var init,
+  gate load/open/findfile/findtrustedfile, spec for 3 dialects. Design
+  spec: clautolisp/documentation/clautolisp-secureload-trust-model-spec.org.
+  PHASE 1 DONE (1.2.15): pure trust-model primitives (gated extensions,
+  TRUSTEDPATHS parse incl. \... / ... recursion, TRUST-P predicate,
+  dialect-default tables, SECURELOAD action resolver) + 44 unit checks;
+  no behavioural change yet. PHASES 2-4 remain: sysvar seeding + env
+  vars; behavioural gating in the 4 builtins; autolisp-spec updates.
+  Then the remaining behavioural couplings; UNITMODE waits on rtos
+  modes 3-5.
+
+note-secureload.txt  -- pjb's requirements + AutoCAD/BricsCAD references
+  for the SECURELOAD/TRUSTEDPATHS trust model (drives the spec above).
 
 autolisp-test-recap-crash-got-t.issue -- NEW 2026-06-24 (found while
   verifying the rtos fix above). (autolisp-test-run-all) runs all 3915

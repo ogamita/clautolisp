@@ -1830,6 +1830,91 @@ calls) under a mock host and return the resulting CL string."
   (is (string= ".5" (%rtos-with-mock-host
                      "(progn (setvar \"DIMZIN\" 12) (rtos 0.5 2 4))"))))
 
+;;;; ----- SECURELOAD / TRUSTEDPATHS trust-model primitives -----------
+;;;;
+;;;; Phase 1 (pure functions; no behavioural change). spec
+;;;; documentation/clautolisp-secureload-trust-model-spec.org.
+
+(test secureload-gated-extension-classification
+  (flet ((gated (s) (clautolisp.autolisp-builtins-core::secureload-gated-extension-p s)))
+    (is (eq t (gated "foo.lsp")))
+    (is (eq t (gated "FOO.LSP")))           ; case-insensitive
+    (is (eq t (gated "/a/b/x.fas")))
+    (is (eq t (gated "app.vlx")))
+    (is (eq t (gated "macro.dvb")))
+    (is (null (gated "data.txt")))
+    (is (null (gated "noext")))             ; no extension -> not gated
+    (is (null (gated "/tmp/report.csv")))))
+
+(test secureload-dialect-defaults
+  (flet ((sl (d) (clautolisp.autolisp-builtins-core::secureload-dialect-default d))
+         (ro (d) (clautolisp.autolisp-builtins-core::secureload-read-only-for-dialect-p d)))
+    (is (= 1 (sl :autocad-2026)))
+    (is (= 0 (sl :bricscad-v26)))
+    (is (= 2 (sl :strict)))
+    (is (= 0 (sl :lax)))
+    (is (= 1 (sl :clautolisp)))
+    ;; BricsCAD makes the trust sysvars read-only; others settable.
+    (is (eq t (ro :bricscad-v26)))
+    (is (null (ro :autocad-2026)))
+    (is (null (ro :clautolisp)))
+    (is (string= "" (clautolisp.autolisp-builtins-core::trustedpaths-dialect-default :strict)))))
+
+(test secureload-parse-trusted-path-spec
+  (flet ((parse (s) (clautolisp.autolisp-builtins-core::parse-trusted-path-spec s)))
+    ;; "" and "." -> no entries (only implicit trust applies).
+    (is (null (parse "")))
+    (is (null (parse ".")))
+    (is (null (parse "  ;  ; . ")))
+    ;; plain semicolon-separated, non-recursive.
+    (let ((e (parse "/opt/lisp;/home/me/lsp")))
+      (is (= 2 (length e)))
+      (is (string= "/opt/lisp" (car (first e))))
+      (is (null (cdr (first e))))
+      (is (string= "/home/me/lsp" (car (second e)))))
+    ;; quotes and whitespace stripped.
+    (let ((e (parse "  \"/a b/lisp\" ")))
+      (is (= 1 (length e)))
+      (is (string= "/a b/lisp" (car (first e)))))
+    ;; trailing recursion markers (both \... and /...).
+    (let ((e (parse "/opt/lisp/...;/x\\...")))
+      (is (eq t (cdr (first e))))
+      (is (string= "/opt/lisp" (car (first e))))
+      (is (eq t (cdr (second e))))
+      (is (string= "/x" (car (second e)))))))
+
+(test secureload-path-trusted-p
+  (flet ((trusted (file spec)
+           (clautolisp.autolisp-builtins-core::path-trusted-p
+            file
+            (clautolisp.autolisp-builtins-core::parse-trusted-path-spec spec))))
+    ;; empty trust set -> never trusted.
+    (is (null (trusted "/opt/lisp/a.lsp" "")))
+    ;; non-recursive: file directly in the folder is trusted...
+    (is (eq t (trusted "/opt/lisp/a.lsp" "/opt/lisp")))
+    ;; ...but a file in a SUBfolder is not (non-recursive).
+    (is (null (trusted "/opt/lisp/sub/a.lsp" "/opt/lisp")))
+    ;; recursive: subfolders are trusted.
+    (is (eq t (trusted "/opt/lisp/sub/deep/a.lsp" "/opt/lisp/...")))
+    (is (eq t (trusted "/opt/lisp/a.lsp" "/opt/lisp/...")))
+    ;; a sibling folder is not trusted.
+    (is (null (trusted "/opt/other/a.lsp" "/opt/lisp/...")))
+    ;; any-of: one matching entry suffices.
+    (is (eq t (trusted "/b/x.lsp" "/a;/b;/c")))))
+
+(test secureload-action-resolver
+  (flet ((act (v trusted) (clautolisp.autolisp-builtins-core::secureload-action v trusted)))
+    ;; trusted file always allowed, whatever SECURELOAD is.
+    (is (eq :allow (act 2 t)))
+    (is (eq :allow (act 1 t)))
+    ;; untrusted: 0 allow, 1 warn, 2 (and higher) block.
+    (is (eq :allow (act 0 nil)))
+    (is (eq :warn  (act 1 nil)))
+    (is (eq :block (act 2 nil)))
+    (is (eq :block (act 3 nil)))
+    ;; nil SECURELOAD (no host) -> allow.
+    (is (eq :allow (act nil nil)))))
+
 (test phase7-geometry
   (reset-autolisp-symbol-table)
   (install-core-builtins)

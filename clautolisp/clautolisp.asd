@@ -202,6 +202,7 @@
   :serial t
   :components
   ((:file "autolisp-builtins-core/source/package")
+   (:file "autolisp-builtins-core/source/secureload")
    (:file "autolisp-builtins-core/source/api"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-builtins-core/tests")))
