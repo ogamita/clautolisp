@@ -3060,21 +3060,72 @@ Exponents wider than two digits expand as needed (e.g. \"1.00E+100\").
 system-variables.issue, 'rtos/distance float-format'."
   (format nil "~,v,2,,,,'EE" (max 0 p) n))
 
+(defun %rtos-units-sysvar (name default)
+  "Read an integer linear-units sysvar (LUNITS / LUPREC / DIMZIN)
+from the active evaluation host for RTOS, returning DEFAULT in a
+host-less context (e.g. a bare unit test) so RTOS keeps its
+documented AutoCAD defaults — LUNITS 2, LUPREC 4, DIMZIN 0."
+  (%host-sysvar-integer (ignore-errors (current-evaluation-host)) name default))
+
+(defun %apply-dimzin-decimal (s dimzin)
+  "Apply DIMZIN decimal zero-suppression to a fixed-point RTOS string S.
+For decimal output only two DIMZIN bits are meaningful (the feet/inch
+bits 0-3 are architectural):
+
+  - bit 3 (value 8): suppress trailing zeros — \"12.5000\" -> \"12.5\",
+    \"12.0000\" -> \"12\" (a now-empty fraction drops its point);
+  - bit 2 (value 4): suppress a leading zero in the integer part —
+    \"0.5000\" -> \".5000\", \"-0.5000\" -> \"-.5000\".
+
+DIMZIN 0 (the default) leaves S untouched. autolisp-spec rtos Notes;
+system-variables.issue 'Coupling'."
+  (let ((suppress-trailing (logbitp 3 dimzin))
+        (suppress-leading   (logbitp 2 dimzin))
+        (result s))
+    ;; Trailing zeros only matter when there is a fractional part.
+    (when (and suppress-trailing (find #\. result))
+      (setf result (string-right-trim "0" result))
+      (when (and (plusp (length result))
+                 (char= (char result (1- (length result))) #\.))
+        (setf result (subseq result 0 (1- (length result))))))
+    (when suppress-leading
+      (cond
+        ((and (>= (length result) 2)
+              (char= (char result 0) #\0)
+              (char= (char result 1) #\.))
+         (setf result (subseq result 1)))
+        ((and (>= (length result) 3)
+              (char= (char result 0) #\-)
+              (char= (char result 1) #\0)
+              (char= (char result 2) #\.))
+         (setf result (concatenate 'string "-" (subseq result 2))))))
+    result))
+
 (defun builtin-rtos (number &optional mode precision)
   ;; (rtos NUMBER [MODE [PRECISION]]) -> string. We honour MODE 1
   ;; (scientific) and 2 (decimal) and the PRECISION argument; modes
   ;; 3 (engineering), 4 (architectural), 5 (fractional) are not
   ;; useful headlessly and fall back to mode 2.
+  ;;
+  ;; When MODE / PRECISION are omitted, RTOS reads the LUNITS /
+  ;; LUPREC system variables (autolisp-spec rtos Notes; AutoCAD
+  ;; defaults LUNITS 2, LUPREC 4 match the historic hard-coded
+  ;; values, so a host that never sets them is unchanged). The
+  ;; decimal result is then zero-suppressed per DIMZIN. UNITMODE
+  ;; affects only the engineering/architectural/fractional modes,
+  ;; which fall back to decimal here, so it is currently a no-op.
+  ;; system-variables.issue 'Coupling'.
   (require-number number "RTOS")
   (when mode (require-int32 mode "RTOS"))
   (when precision (require-int32 precision "RTOS"))
-  (let ((m (or mode 2))
-        (p (or precision 4))
-        (n (coerce number 'double-float)))
+  (let* ((m (or mode (%rtos-units-sysvar "LUNITS" 2)))
+         (p (or precision (%rtos-units-sysvar "LUPREC" 4)))
+         (dimzin (%rtos-units-sysvar "DIMZIN" 0))
+         (n (coerce number 'double-float)))
     (make-autolisp-string
      (case m
        (1 (%format-scientific-real n p))
-       (otherwise (%format-decimal-real n p))))))
+       (otherwise (%apply-dimzin-decimal (%format-decimal-real n p) dimzin))))))
 
 (defun builtin-angtos (angle &optional mode precision)
   ;; (angtos ANGLE [MODE [PRECISION]]) -> string in radians (MODE 0)

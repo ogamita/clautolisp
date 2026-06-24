@@ -259,22 +259,30 @@ Coupling status (verified against the built engine, not just by reading):
       rule, and the FLAG bit that permits "|", matching the SNVALID spec
       entry's examples. coupling-extnames.lsp's relaxed-accepts assertion
       now holds.)
-
-  NOT YET coupled (functions don't consult their sysvar):
-    - LUNITS/LUPREC/DIMZIN/UNITMODE -> rtos/distance default precision.
-      NB: coupling-units.lsp passes precision EXPLICITLY (3rd arg), so it
-      does NOT actually exercise the LUPREC default. Its two genuinely
-      failing cases were rtos FLOAT-FORMATTING divergences, not a sysvar
-      coupling -- (rtos 1.6 2 0) => "2." (want "2") and (rtos 100.0 1 2)
-      => "1.00d+2" (want "1.00E+02"). FIXED 2026-06-24 in clautolisp
-      1.2.13: %FORMAT-DECIMAL-REAL strips the trailing point at
-      precision 0, and %FORMAT-SCIENTIFIC-REAL emits AutoCAD-style
-      scientific notation (uppercase E, signed two-digit-padded
-      exponent) instead of CL's double-float "d+N". Both
-      coupling-units.lsp and string/rtos.lsp now pass; angtos shares the
-      same decimal helper. STILL REMAINING (the real coupling): wire
-      rtos/distance to READ LUPREC/LUNITS/DIMZIN/UNITMODE when the
-      precision/mode args are OMITTED.
+    - LUNITS/LUPREC/DIMZIN -> rtos default mode/precision + zero
+      suppression  (FIXED 2026-06-24 in clautolisp 1.2.13 + 1.2.14):
+        * 1.2.13 fixed the rtos FLOAT-FORMATTING divergences (these were
+          NOT a sysvar coupling): (rtos 1.6 2 0) => "2." (want "2") and
+          (rtos 100.0 1 2) => "1.00d+2" (want "1.00E+02").
+          %FORMAT-DECIMAL-REAL strips the trailing point at precision 0;
+          %FORMAT-SCIENTIFIC-REAL emits AutoCAD-style scientific notation
+          (uppercase E, signed two-digit-padded exponent). angtos shares
+          the decimal helper.
+        * 1.2.14 wired the actual coupling: with MODE / PRECISION
+          OMITTED, rtos now reads LUNITS (mode) and LUPREC (precision);
+          the decimal result is zero-suppressed per DIMZIN (bit 3 = drop
+          trailing zeros, bit 2 = drop a leading zero). AutoCAD defaults
+          (LUNITS 2, LUPREC 4, DIMZIN 0) match the historic hard-coded
+          values, so a host that never sets them is unchanged.
+          coupling-units.lsp gained default-reading + DIMZIN deftests;
+          builtins-core gained 9 regression checks.
+      STILL OPEN under this heading:
+        - UNITMODE: only affects engineering/architectural/fractional
+          (rtos modes 3-5), which clautolisp falls back to decimal
+          headlessly, so UNITMODE is currently a no-op (documented in
+          builtin-rtos). Implementing modes 3-5 is the remaining work.
+        - distance/getdist reading LUPREC for INPUT parsing (distance
+          itself returns a real number, not a formatted string).
     - CMDECHO -> command/vl-cmdf echo policy.
     - TILEMODE/CVPORT -> vports/setview.
     - SNAPANG/ANGBASE radians-vs-display on setvar.
@@ -283,13 +291,14 @@ Coupling status (verified against the built engine, not just by reading):
     - MAXSORT -> acad_strlsort.
     - SRCHPATH (BricsCAD) / support path -> findfile/load.
     - TRUSTEDPATHS/SECURELOAD -> load/open/findtrustedfile trust gating.
-  (The last eight have no coupling test yet.)
+  (None of these eight have a coupling test yet.)
 
 Recommended next steps (by priority): (1) DONE 2026-06-24 (1.2.13) —
 the rtos/distance float-format divergences ("N." for integer-valued
 reals at precision 0; "d+N" vs "E+0N" scientific) are fixed in
-%FORMAT-DECIMAL-REAL / %FORMAT-SCIENTIFIC-REAL; (2) wire rtos/distance
-to LUPREC/LUNITS/DIMZIN/UNITMODE defaults (consult the sysvar when the
-precision/mode args are omitted) — NEXT; (3) the trust-gating coupling
-(TRUSTEDPATHS/SECURELOAD), which is security-relevant; (4) the remaining
+%FORMAT-DECIMAL-REAL / %FORMAT-SCIENTIFIC-REAL; (2) DONE 2026-06-24
+(1.2.14) — rtos reads LUNITS/LUPREC when mode/precision omitted and
+applies DIMZIN zero-suppression (UNITMODE remains a no-op pending rtos
+modes 3-5); (3) the trust-gating coupling
+(TRUSTEDPATHS/SECURELOAD), which is security-relevant — NEXT; (4) the remaining
 behavioural couplings with tests.

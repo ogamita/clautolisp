@@ -1766,6 +1766,70 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     (is (string= "0.0000E+00" (autolisp-string-value
                                (call-autolisp-function rtos-fn 0.0d0 1 4))))))
 
+;;;; ----- RTOS reads LUNITS / LUPREC / DIMZIN when args omitted -------
+;;;;
+;;;; system-variables.issue 'Coupling', step 2: with MODE / PRECISION
+;;;; omitted, RTOS takes them from the LUNITS / LUPREC sysvars, and the
+;;;; decimal result is zero-suppressed per DIMZIN. These need a host
+;;;; (GETVAR/SETVAR), so they go through RUN-AUTOLISP-STRING with a
+;;;; mock host. The host-less defaults (LUNITS 2, LUPREC 4, DIMZIN 0)
+;;;; are exercised by the formatting tests above.
+
+(defun %rtos-with-mock-host (form-source)
+  "Evaluate FORM-SOURCE (an RTOS expression, usually after setvar
+calls) under a mock host and return the resulting CL string."
+  (autolisp-string-value
+   (run-autolisp-string form-source :setup-fn #'%install-mock-host-and-core)))
+
+(test rtos-precision-defaults-to-luprec
+  ;; PRECISION omitted -> LUPREC; MODE omitted -> LUNITS (2 = decimal).
+  (reset-autolisp-symbol-table)
+  (is (string= "3.14" (%rtos-with-mock-host
+                       "(progn (setvar \"LUNITS\" 2) (setvar \"LUPREC\" 2)
+                               (rtos 3.14159))")))
+  (reset-autolisp-symbol-table)
+  (is (string= "3.1416" (%rtos-with-mock-host
+                         "(progn (setvar \"LUPREC\" 4) (rtos 3.14159))"))))
+
+(test rtos-mode-defaults-to-lunits-scientific
+  ;; MODE omitted with LUNITS 1 -> scientific, precision from LUPREC.
+  (reset-autolisp-symbol-table)
+  (is (string= "1.00E+02"
+               (%rtos-with-mock-host
+                "(progn (setvar \"LUNITS\" 1) (setvar \"LUPREC\" 2)
+                        (rtos 100.0))"))))
+
+(test rtos-explicit-args-override-sysvars
+  ;; Explicit MODE / PRECISION still win over LUNITS / LUPREC.
+  (reset-autolisp-symbol-table)
+  (is (string= "1.235"
+               (%rtos-with-mock-host
+                "(progn (setvar \"LUNITS\" 1) (setvar \"LUPREC\" 0)
+                        (rtos 1.234567 2 3))"))))
+
+(test rtos-dimzin-suppresses-trailing-zeros
+  ;; DIMZIN bit 3 (value 8): trailing zeros dropped; an all-zero
+  ;; fraction loses its decimal point too.
+  (reset-autolisp-symbol-table)
+  (is (string= "12.5" (%rtos-with-mock-host
+                       "(progn (setvar \"DIMZIN\" 8) (rtos 12.5 2 4))")))
+  (reset-autolisp-symbol-table)
+  (is (string= "12" (%rtos-with-mock-host
+                     "(progn (setvar \"DIMZIN\" 8) (rtos 12.0 2 4))"))))
+
+(test rtos-dimzin-suppresses-leading-zero
+  ;; DIMZIN bit 2 (value 4): a leading 0 in the integer part is dropped
+  ;; (sign preserved). Bit 12 = both leading and trailing.
+  (reset-autolisp-symbol-table)
+  (is (string= ".5000" (%rtos-with-mock-host
+                        "(progn (setvar \"DIMZIN\" 4) (rtos 0.5 2 4))")))
+  (reset-autolisp-symbol-table)
+  (is (string= "-.5000" (%rtos-with-mock-host
+                         "(progn (setvar \"DIMZIN\" 4) (rtos -0.5 2 4))")))
+  (reset-autolisp-symbol-table)
+  (is (string= ".5" (%rtos-with-mock-host
+                     "(progn (setvar \"DIMZIN\" 12) (rtos 0.5 2 4))"))))
+
 (test phase7-geometry
   (reset-autolisp-symbol-table)
   (install-core-builtins)
