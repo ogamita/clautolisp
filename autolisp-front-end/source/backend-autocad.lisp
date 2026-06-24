@@ -418,6 +418,78 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
                   "Batch mode requires --dwg FILE, $AUTOLISP_DWG, or a discoverable AutoCAD template."))
          (list acc "/i" resolved-dwg "/s" (namestring scr)))))))
 
+(defun string-prefix-p (prefix string)
+  (and string
+       (>= (length string) (length prefix))
+       (string= prefix string :end2 (length prefix))))
+
+(defun slurp-process-stream (stream)
+  (if (null stream)
+      ""
+      (with-output-to-string (out)
+        (loop for ch = (read-char stream nil nil)
+              while ch
+              unless (char= ch #\Null)
+                do (write-char ch out)))))
+
+(defun process-exit-details (process-info)
+  (let ((exit-code (ignore-errors (uiop:wait-process process-info)))
+        (stdout (slurp-process-stream
+                 (ignore-errors (uiop:process-info-output process-info))))
+        (stderr (slurp-process-stream
+                 (ignore-errors (uiop:process-info-error-output process-info)))))
+    (list :exit-code exit-code
+          :stdout stdout
+          :stderr stderr)))
+
+(defun summarize-process-exit (details)
+  (let* ((exit-code (getf details :exit-code))
+         (stderr (string-trim '(#\Return #\Newline #\Space #\Tab)
+                              (or (getf details :stderr) "")))
+         (stdout (string-trim '(#\Return #\Newline #\Space #\Tab)
+                              (or (getf details :stdout) "")))
+         (snippet (cond ((plusp (length stderr)) stderr)
+                        ((plusp (length stdout)) stdout)
+                        (t ""))))
+    (if (plusp (length snippet))
+        (format nil "AutoCAD process exited before READY (exit ~A): ~A"
+                exit-code snippet)
+        (format nil "AutoCAD process exited before READY (exit ~A)."
+                exit-code))))
+
+(defun wait-for-ready-or-process-exit (protocol process-info timeout)
+  (let ((start (get-internal-real-time))
+        (interval-ms 50)
+        (last-seen nil)
+        (prev-status nil))
+    (labels ((elapsed ()
+               (/ (float (- (get-internal-real-time) start))
+                  internal-time-units-per-second)))
+      (loop
+        (alfe.protocol.file:stream-debug-log-to-logger protocol)
+        (setf last-seen (alfe.protocol.file:read-current-status protocol))
+        (when (and last-seen (not (equal last-seen prev-status)))
+          (log-debug "protocol: status now ~S (elapsed ~,2F s)"
+                     last-seen (elapsed))
+          (setf prev-status last-seen))
+        (when (string-prefix-p "READY" last-seen)
+          (log-debug "protocol: matched ~S after ~,2F s"
+                     "READY" (elapsed))
+          (alfe.protocol.file:stream-debug-log-to-logger protocol)
+          (return (values :ready (elapsed) last-seen nil)))
+        (when (and process-info
+                   (not (uiop:process-alive-p process-info)))
+          (let ((details (process-exit-details process-info)))
+            (alfe.protocol.file:stream-debug-log-to-logger protocol)
+            (return (values :exited (elapsed) last-seen details))))
+        (when (>= (elapsed) timeout)
+          (log-debug "protocol: timeout after ~,2F s (last status ~S)"
+                     (elapsed) last-seen)
+          (alfe.protocol.file:stream-debug-log-to-logger protocol)
+          (return (values :timeout (elapsed) last-seen nil)))
+        (sleep (/ interval-ms 1000.0))
+        (setf interval-ms (min 500 (* 2 interval-ms)))))))
+
 ;;; --- session subclass + START-ENGINE -----------------------------
 
 (defstruct (autocad-session
@@ -532,13 +604,24 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
           (when wait-for-ready
             (log-verbose "backend AUTOCAD: waiting for READY (timeout ~A s)"
                          ready-timeout)
-            (multiple-value-bind (ok elapsed last)
-                (alfe.protocol.file:wait-for-status-prefix
-                 protocol "READY" :timeout ready-timeout)
+            (multiple-value-bind (state elapsed last details)
+                (wait-for-ready-or-process-exit
+                 protocol process-info ready-timeout)
               (cond
-                (ok
+                ((eq state :ready)
                  (log-verbose "backend AUTOCAD: READY after ~,2F s (status ~S)"
                               elapsed last))
+                ((eq state :exited)
+                 (log-warn "backend AUTOCAD: process exited after ~,2F s; last status = ~S"
+                           elapsed last)
+                 (error 'backend-bootstrap-error
+                        :backend :autocad
+                        :code :process-exited-before-ready
+                        :message (summarize-process-exit details)
+                        :details (append
+                                  (list :workdir workdir
+                                        :last-status last)
+                                  details)))
                 (t
                  (log-warn "backend AUTOCAD: READY timeout after ~,2F s; last status = ~S"
                            elapsed last)

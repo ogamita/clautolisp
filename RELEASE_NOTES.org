@@ -136,6 +136,10 @@ file or COM), and forwards the workload.
   ~AUTOLISP_DWG~ or a shipped ~acadiso.dwt~ / ~acad.dwt~ template
   next to the discovered AutoCAD install, instead of requiring an
   explicit ~--dwg~ on every invocation.
+- AutoCAD batch bootstrap now reports the child ~accoreconsole~
+  process exit code and console diagnostics immediately when the CAD
+  process dies before publishing ~READY~, instead of timing out with a
+  generic ~READY-TIMEOUT~.
 
 ** Modes
 
