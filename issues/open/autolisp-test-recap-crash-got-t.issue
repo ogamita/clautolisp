@@ -1,0 +1,109 @@
+autolisp-test-recap-crash-got-t — run-all report/recap stages raise "got T"
+===========================================================================
+
+Reported from: running the autolisp-test conformance harness against
+clautolisp 1.2.13 (SBCL), Linux, while verifying the rtos/distance
+float-format fix (system-variables.issue).
+
+Status: open — characterised, root cause NOT yet isolated.
+
+Summary
+-------
+
+A full `(autolisp-test-run-all)` runs all test files and per-test
+results correctly (the 3915 tests execute and the per-entry results
+list is well-formed), but the three post-run aggregation stages crash:
+
+    [autolisp-test] matrix raised: FOREACH list argument must
+                    evaluate to a proper list, got T.
+    [autolisp-test] write-sexp-report raised: FOREACH list argument
+                    must evaluate to a proper list, got T.
+    [autolisp-test] print-recap raised: LENGTH expects a proper list,
+                    got T.
+
+Each stage is wrapped in autolisp-test--guarded, so the run does not
+abort — the report.sexp is still written — but the matrix is empty and
+no human-readable recap is printed. The verdict summary is therefore
+lost for any run that hits this.
+
+Repro
+-----
+
+    $ clautolisp --no-init -x '(progn (load "autolisp-test/harness/run.lsp")
+                                      (autolisp-test-run-all))' -q
+    ;; ... 3915 tests run ...
+    ;; [autolisp-test] no expectations file at:
+    ;;     autolisp-test/harness/expectations/BRICSCAD/1.2.13/unknown.lsp
+    ;; [autolisp-test] matrix raised: FOREACH ... got T.
+    ;; [autolisp-test] write-sexp-report raised: FOREACH ... got T.
+    ;; [autolisp-test] print-recap raised: LENGTH ... got T.
+
+(run from the repository root so the harness' "autolisp-test/" path
+prefix resolves.)
+
+What was ruled out
+------------------
+
+The "got T" is a value reaching FOREACH / LENGTH that is the symbol T
+rather than a list. Investigation so far did NOT find it in the obvious
+places:
+
+- The detected DESCRIPTOR is well-formed:
+    ((IMPL . BRICSCAD) (IMPL-NAME . BricsCAD) (VERSION . 1.2.13)
+     (PLATFORMS) (RUNTIMES EXPRESS-TOOLS USER-INPUT GRAPHICS DCL
+     OBJECTDBX ARX VLR VLAX-CURVE COM VLAX) (PROFILE-TARGET . BRICSCAD))
+- RESULTS from autolisp-test-run-many is a proper list of 3915 alists;
+  no result entry is a non-list / T.
+- No test ENTRY has a non-list meta, nor a profile / platform-tags /
+  runtime-tags / tags slot equal to T.
+- The missing expectations overlay is handled correctly:
+  autolisp-test-load-expectations returns nil, and
+  autolisp-test-apply-expectations with a nil overlay returns RESULTS
+  unchanged (same length).
+- Calling autolisp-test-matrix DIRECTLY on the exact (entries,
+  descriptor, results) triple — including after the load/apply-
+  expectations round-trip — does NOT raise. The crash only manifests
+  inside autolisp-test-run-all.
+- The autolisp-test--guarded mechanism itself is not at fault in the
+  obvious way: a list-built (lambda nil ...) applied via
+  vl-catch-all-apply within a defun DOES see that defun's /-locals as
+  free variables (verified with a standalone probe), so the guarded
+  thunks' references to entries/descriptor/results/matrix should
+  resolve to run-all's locals.
+
+Leads (not yet confirmed)
+-------------------------
+
+Because the crash reproduces ONLY through run-all and NOT when its
+steps are replayed by hand on the same data, the trigger is most
+likely stateful: something accumulated while the 3915 tests run, read
+back by the aggregation stages. The guarded thunks reference
+`entries`, `descriptor`, `results`, `matrix` as FREE variables; the
+prime suspect is a deftest body somewhere in the corpus doing an
+unqualified `(setq <name> ...)` that leaks a global which shadows /
+collides with one of those names (or with a report-stage local such as
+total / pass / fail) and is bound to T. Worth doing:
+
+- Bisect the corpus: run-all over progressively smaller manifests
+  until the crash disappears, to find the polluting test file.
+- Audit deftest bodies for unqualified setq of: results, entries,
+  descriptor, matrix, total, pass, fail, skip, n, acc, r, entry, tag.
+- Have autolisp-test--guarded capture and log the offending value
+  (type + identity) so the next failure names the variable.
+
+Why it matters
+--------------
+
+- Every clautolisp version bump produces a NEW
+  expectations/<IMPL>/<VERSION>/<host>.lsp path that does not exist
+  yet, so the "no expectations file" branch is the common case — and
+  this crash rides along with it on essentially every dev run.
+- The verdict matrix and recap are the harness' primary human-readable
+  output; losing them silently (the run still "succeeds" and writes a
+  report) is a poor failure mode.
+
+Related
+-------
+
+- Surfaced during system-variables.issue (rtos/distance float-format
+  verification, clautolisp 1.2.13).
