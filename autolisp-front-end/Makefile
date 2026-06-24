@@ -2,7 +2,7 @@
 # exporter rather than pandoc (consistent with the other subprojects).
 # The LaTeX compiler defaults to xelatex for UTF-8 codepoint coverage;
 # both variables are overridable.
-EMACS          ?= emacs
+EMACS          ?= $(shell sh ../scripts/resolve-emacs.sh)
 MAKEINFO       ?= makeinfo
 INSTALL_INFO   ?= install-info
 LATEX_COMPILER ?= xelatex
