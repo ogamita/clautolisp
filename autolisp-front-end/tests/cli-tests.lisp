@@ -7,6 +7,64 @@
 ;;;; backend for the --dry-run, --help, --version, and exit-code
 ;;;; paths.
 
+(defclass capture-backend (alfe.backend:backend) ())
+
+(defparameter *capture-start-engine-args* nil)
+
+(defstruct (capture-session
+            (:include alfe.backend:session)
+            (:constructor make-capture-session)
+            (:copier nil)))
+
+(defun make-capture-backend ()
+  (make-instance 'capture-backend
+                 :name :capture
+                 :display-name "Capture"))
+
+(defmethod alfe.backend:detect ((backend capture-backend) &key)
+  backend)
+
+(defmethod alfe.backend:prepare-workdir ((backend capture-backend) workdir-root &key)
+  (declare (ignore backend))
+  (or workdir-root
+      (uiop:ensure-directory-pathname
+       (merge-pathnames
+        (format nil "alfe-test-capture-~D/" (random 999999))
+        (uiop:temporary-directory)))))
+
+(defmethod alfe.backend:start-engine ((backend capture-backend) workdir
+                                      &key dialect host mock-input bootstrap-phase
+                                           interactive-p load-encoding io-encoding
+                                           cli-options version-text mode dwg)
+  (declare (ignore backend workdir dialect host mock-input bootstrap-phase
+                   interactive-p load-encoding io-encoding
+                   cli-options version-text))
+  (setf *capture-start-engine-args*
+        (list :mode mode :dwg dwg))
+  (make-capture-session :backend :capture
+                        :workdir workdir
+                        :dialect :strict
+                        :state :ready))
+
+(defmethod alfe.backend:eval-plan ((session capture-session) plan)
+  (declare (ignore session plan))
+  (alfe.backend:make-eval-result :status :success
+                                 :value nil
+                                 :output ""
+                                 :error-output ""))
+
+(defmethod alfe.backend:shutdown ((session capture-session) &key reason)
+  (declare (ignore reason))
+  (alfe.backend:session-state-set session :stopped)
+  session)
+
+(defmethod alfe.backend:cleanup-workdir ((backend capture-backend) workdir &key keep-p)
+  (declare (ignore backend keep-p))
+  (when (and workdir (probe-file workdir))
+    (uiop:delete-directory-tree workdir :validate t
+                                        :if-does-not-exist :ignore))
+  nil)
+
 ;;; --- PARSE-ARGUMENTS: positive cases --------------------------------
 
 (test cli-parses-version-and-help
@@ -322,6 +380,24 @@ the test image), prints the resolved plan, and exits 0."
            (let ((*error-output* stderr))
              (run '("--clautolisp" "-x" "(+ 1 2)") :version "0.0.1"))))
     (is (= 3 exit-code))))
+
+(test cli-run-plan-forwards-mode-and-dwg-to-start-engine
+  "Regression: RUN-PLAN must forward CLI --mode / --dwg into the
+backend START-ENGINE call. Without this, CAD backends silently fell
+back to :AUTO mode and ignored the drawing path even though the CLI
+had already parsed them."
+  (let ((alfe.backend:*backends* (make-hash-table :test #'eql))
+        (*capture-start-engine-args* nil))
+    (alfe.backend:register-backend :capture (make-capture-backend))
+    (let* ((options (parse-arguments '("--mode" "batch"
+                                       "--dwg" "C:/tmp/test.dwg"
+                                       "-x" "(+ 1 2)"))))
+      (setf (alfe.cli::cli-options-backend options) :capture)
+      (is (= 0 (alfe.cli::run-plan options
+                                   (alfe.backend:find-backend :capture)
+                                   :version-text "0.0.1")))
+      (is (equal '(:mode :batch :dwg "C:/tmp/test.dwg")
+                 *capture-start-engine-args*)))))
 
 (test cli-run-eval-plus-1-2-against-echo-prints-three
   "End-to-end: -x \"(+ 1 2)\" against the echo backend prints \"3\\n\"

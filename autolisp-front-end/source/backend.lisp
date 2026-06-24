@@ -145,7 +145,8 @@ pathname."))
 
 (defgeneric start-engine (backend workdir &key dialect host
                                           mock-input bootstrap-phase
-                                          interactive-p load-encoding
+                                          interactive-p mode dwg
+                                          load-encoding
                                           io-encoding
                                           cli-options version-text)
   (:documentation

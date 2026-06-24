@@ -486,6 +486,7 @@ SHUTDOWN can terminate it."
 (defmethod start-engine ((backend bricscad-backend) workdir
                          &key dialect host mock-input bootstrap-phase
                               interactive-p
+                              dwg
                               load-encoding
                               io-encoding
                               cli-options version-text
@@ -509,7 +510,7 @@ future ticket."
   ;; DIALECT is currently irrelevant on the CAD side: the AutoLISP
   ;; dialect lives inside the CAD engine and is not swappable from
   ;; outside. HOST is meaningful only to clautolisp.
-  (declare (ignore host mock-input dialect load-encoding io-encoding))
+  (declare (ignore host mock-input dialect dwg load-encoding io-encoding))
   (log-verbose "backend BRICSCAD: starting engine (mode ~A)" mode)
   (log-debug "backend BRICSCAD: workdir = ~A" workdir)
   (log-debug "backend BRICSCAD: ready-timeout = ~A s; wait-for-ready = ~A"

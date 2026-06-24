@@ -125,6 +125,13 @@ file or COM), and forwards the workload.
   bridge (BricsCAD V26 / macOS).
 - ~--autocad~ — drive an AutoCAD process (Windows + macOS lanes).
 - ~--echo~ — a test backend that logs without executing.
+- On MS-Windows, ~--bricscad~ and ~--autocad~ now discover installed
+  BricsCAD / AutoCAD binaries from the standard ~Program Files~ roots
+  by default; ~BRICSCAD_EXE~, ~AUTOCAD_EXE~ and
+  ~AUTOCAD_ACCORECONSOLE~ still override discovery explicitly.
+- ~--mode~ and ~--dwg~ are now forwarded correctly into CAD backend
+  startup, so ~alfe --autocad --mode batch --dwg file.dwg ...~ no
+  longer falls back silently to ~:auto~ / automation mode.
 
 ** Modes
 
@@ -151,6 +158,9 @@ file or COM), and forwards the workload.
 - 957 named operators documented (938 ~Function Entry~ + 19
   ~Special Form Entry~), one per spec section. Includes vendor
   divergence notes, source URLs, and ~Source Notes~ provenance.
+- MSYS2 / MinGW builds now resolve a native Emacs binary for doc
+  export instead of tripping over a stray =/opt/local/bin/emacs=
+  wrapper. Override remains available via ~make EMACS=/path/to/emacs~.
 - Paged HTML / Info / PDF builds. The paged split is cached in
   ~autolisp-spec/scripts/build-paged-spec.el~.
 - ~alref~ AutoLISP library: loadable into any AutoLISP host, exposes

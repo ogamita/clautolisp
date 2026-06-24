@@ -369,7 +369,7 @@ SHUTDOWN."
 
 (defmethod start-engine ((backend clautolisp-backend) workdir
                          &key dialect host mock-input
-                              bootstrap-phase interactive-p
+                              bootstrap-phase interactive-p mode dwg
                               load-encoding io-encoding
                               cli-options version-text)
   ;; INTERACTIVE-P is forwarded to start-subprocess-engine below; the
@@ -389,7 +389,7 @@ SHUTDOWN."
   ;; freshly created runtime context (transmit-options.issue). The
   ;; subprocess variant ignores it — the spawned clautolisp-sbcl
   ;; installs its own from argv.
-  (declare (ignore mock-input bootstrap-phase io-encoding))
+  (declare (ignore mock-input bootstrap-phase io-encoding mode dwg))
   (ecase (clautolisp-backend-variant backend)
     (:direct
      (handler-case
