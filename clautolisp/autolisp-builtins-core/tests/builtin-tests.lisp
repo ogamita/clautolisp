@@ -1735,6 +1735,37 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     (is (string= "3.14"
                  (autolisp-string-value (call-autolisp-function rtos-fn 3.14159d0 2 2))))))
 
+(test rtos-decimal-precision-zero-has-no-trailing-dot
+  ;; system-variables.issue, 'rtos/distance float-format': AutoCAD's
+  ;; (rtos 1.6 2 0) is "2", not CL's ~,0F "2.". %FORMAT-DECIMAL-REAL
+  ;; strips the trailing point at precision 0.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((rtos-fn (autolisp-symbol-function (find-autolisp-symbol "RTOS"))))
+    (is (string= "2" (autolisp-string-value
+                      (call-autolisp-function rtos-fn 1.6d0 2 0))))
+    (is (string= "4" (autolisp-string-value
+                      (call-autolisp-function rtos-fn 3.5d0 2 0))))
+    ;; Non-zero precision keeps the point and trailing zeros.
+    (is (string= "0.00" (autolisp-string-value
+                         (call-autolisp-function rtos-fn 0.0d0 2 2))))
+    (is (string= "-1.23" (autolisp-string-value
+                          (call-autolisp-function rtos-fn -1.234d0 2 2))))))
+
+(test rtos-scientific-mode-autocad-style-exponent
+  ;; system-variables.issue: mode 1 must emit AutoCAD-style scientific
+  ;; notation — uppercase E, signed two-digit-padded exponent
+  ;; ("1.00E+02"), not CL's double-float "1.00d+2".
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((rtos-fn (autolisp-symbol-function (find-autolisp-symbol "RTOS"))))
+    (is (string= "1.00E+02" (autolisp-string-value
+                             (call-autolisp-function rtos-fn 100.0d0 1 2))))
+    (is (string= "-4.20E-03" (autolisp-string-value
+                              (call-autolisp-function rtos-fn -0.0042d0 1 2))))
+    (is (string= "0.0000E+00" (autolisp-string-value
+                               (call-autolisp-function rtos-fn 0.0d0 1 4))))))
+
 (test phase7-geometry
   (reset-autolisp-symbol-table)
   (install-core-builtins)

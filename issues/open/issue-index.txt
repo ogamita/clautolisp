@@ -59,8 +59,12 @@ variadic-functions.issue  -- DONE 2026-06-23: feature shipped 1.1.16;
 system-variables.issues -- Verify what is implemented, and implement the missing parts.
   AUDITED 2026-06-23 (in the issue): inventory + spec chapter +
   data-driven catalogue + ERRNO are DONE; fixed EXTNAMES->snvalid
-  coupling (1.2.11). Remaining couplings + rtos float-format
-  divergences itemised in the issue.
+  coupling (1.2.11); fixed rtos/distance float-format divergences
+  (1.2.13: precision-0 trailing dot + AutoCAD-style scientific
+  notation; coupling-units.lsp + string/rtos.lsp now pass). NEXT:
+  wire rtos/distance to LUPREC/LUNITS defaults when precision/mode
+  omitted; then trust-gating (TRUSTEDPATHS/SECURELOAD); then the
+  remaining behavioural couplings. All itemised in the issue.
 
 
 
