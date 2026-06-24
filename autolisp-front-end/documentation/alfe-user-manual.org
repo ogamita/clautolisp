@@ -204,6 +204,21 @@ actions use. Practical points:
 - Errors do not exit the REPL: a failed eval surfaces its message on
   =stderr=, the prompt comes back, the runtime stays in its read-eval
   loop.
+
+On MS-Windows, the CAD backends discover installed engines by
+default from the standard =Program Files= roots. =--bricscad=
+searches =%ProgramW6432%=, =%ProgramFiles%= and
+=%ProgramFiles(x86)%= for =Bricsys/*/bricscad.exe=; =--autocad=
+searches the same roots for =Autodesk/AutoCAD */acad.exe=,
+=AutoCAD LT */acadlt.exe= and =accoreconsole.exe=. If
+=BRICSCAD_EXE=, =AUTOCAD_EXE= or =AUTOCAD_ACCORECONSOLE= is set,
+that explicit path wins.
+
+For =alfe --autocad --mode batch=, the drawing/template selection is:
+=--dwg FILE= first, then =AUTOLISP_DWG=, then a shipped
+=Template/acadiso.dwt= or =Template/acad.dwt= next to the discovered
+AutoCAD install. Only if all three miss does batch mode stop with a
+=NO-DWG= bootstrap error.
 - Exit with any of: Ctrl-D (EOF), an empty line that equals =:quit=,
   =:q=, =:exit=, =(quit)=, =(exit)=, or by queuing a =--quit= action.
 

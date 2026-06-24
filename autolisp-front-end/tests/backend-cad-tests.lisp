@@ -133,7 +133,7 @@ to live on the test host."
             (is (search "_FILEDIA 0" content))
             (is (search "_QUIT _N" content))))
       (uiop:delete-directory-tree workdir :validate t
-                                          :if-does-not-exist :ignore))))
+                                          :if-does-not-exist :ignore)))
 
 (test bricscad-emit-bridge-vbs-substitutes-placeholders
   "EMIT-BRIDGE-VBS substitutes every documented placeholder. The
@@ -335,6 +335,48 @@ override the default Windows Program Files scan."
                             :os :windows)))))))))
       (uiop:delete-directory-tree root :validate t
                                        :if-does-not-exist :ignore)))))
+
+(test autocad-discover-template-prefers-requested-then-env-then-install
+  "Batch mode needs a drawing/template. Discovery order is:
+requested --dwg, then $AUTOLISP_DWG, then a template shipped with the
+discovered AutoCAD install."
+  (let ((root (uiop:ensure-directory-pathname
+               (merge-pathnames
+                (format nil "alfe-test-win-autocad-template-~D/" (random 999999))
+                (uiop:temporary-directory)))))
+    (unwind-protect
+        (let* ((install-template
+                 (touch-file (merge-pathnames
+                              "Autodesk/AutoCAD 2026/Template/acadiso.dwt" root)))
+               (requested
+                 (touch-file (merge-pathnames "custom/requested.dwg" root)))
+               (env-template
+                 (touch-file (merge-pathnames "custom/from-env.dwg" root)))
+               (backend (alfe.backend.autocad:make-autocad-backend
+                         :executable-path
+                         (namestring
+                          (touch-file (merge-pathnames
+                                       "Autodesk/AutoCAD 2026/acad.exe" root)))
+                         :accoreconsole-path
+                         (namestring
+                          (touch-file (merge-pathnames
+                                       "Autodesk/AutoCAD 2026/accoreconsole.exe"
+                                       root))))))
+          (with-env ("AUTOLISP_DWG" "")
+            (is (string=
+                 (namestring requested)
+                 (alfe.backend.autocad:discover-autocad-template
+                  backend :requested (namestring requested)))))
+          (with-env ("AUTOLISP_DWG" (namestring env-template))
+            (is (string=
+                 (namestring env-template)
+                 (alfe.backend.autocad:discover-autocad-template backend))))
+          (with-env ("AUTOLISP_DWG" "")
+            (is (string=
+                 (namestring install-template)
+                 (alfe.backend.autocad:discover-autocad-template backend)))))
+      (uiop:delete-directory-tree root :validate t
+                                       :if-does-not-exist :ignore))))
 
 ;;; --- AutoCAD emitter ----------------------------------------------
 
@@ -785,10 +827,11 @@ CAR, and the SCR points into the workdir."
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
-(test autocad-build-launch-argv-batch-requires-dwg-and-accoreconsole
-  "Batch mode without --dwg signals :no-dwg; without accoreconsole
-binary signals :no-accoreconsole. Both surface as
-BACKEND-BOOTSTRAP-ERROR (exit code 4)."
+(test autocad-build-launch-argv-batch-discovers-template-and-still-requires-accoreconsole
+  "Batch mode discovers a usable template when one ships with the
+AutoCAD install. It still signals :no-accoreconsole when the batch
+binary itself is missing, and :no-dwg when neither --dwg,
+$AUTOLISP_DWG, nor an install template exists."
   (let ((workdir (uiop:ensure-directory-pathname
                   (merge-pathnames
                    (format nil "alfe-test-acad-argv-~D/" (random 999999))
@@ -798,16 +841,36 @@ BACKEND-BOOTSTRAP-ERROR (exit code 4)."
           (ensure-directories-exist workdir)
           (let* ((protocol (alfe.protocol.file:init-session workdir))
                  (no-acc (alfe.backend.autocad:make-autocad-backend))
+                 (with-install-template
+                   (alfe.backend.autocad:make-autocad-backend
+                    :executable-path
+                    (namestring
+                     (touch-file (merge-pathnames
+                                  "AutoCAD 2026/acad.exe" workdir)))
+                    :accoreconsole-path "/usr/bin/true"))
                  (with-acc (alfe.backend.autocad:make-autocad-backend
                             :accoreconsole-path "/usr/bin/true")))
+            (touch-file (merge-pathnames
+                         "AutoCAD 2026/Template/acadiso.dwt" workdir))
             (signals alfe.error:backend-bootstrap-error
               (alfe.backend.autocad:build-launch-argv
-               no-acc protocol :mode :batch :dwg "/tmp/x.dwg"))
+               no-acc protocol :mode :batch
+               :dwg (namestring
+                     (touch-file (merge-pathnames "explicit.dwg" workdir)))))
             (signals alfe.error:backend-bootstrap-error
               (alfe.backend.autocad:build-launch-argv
                with-acc protocol :mode :batch))
             (let ((argv (alfe.backend.autocad:build-launch-argv
-                         with-acc protocol :mode :batch :dwg "/tmp/x.dwg")))
+                         with-install-template protocol :mode :batch)))
+              (is (string= "/usr/bin/true" (first argv)))
+              (is (member "/i" argv :test #'string=))
+              (is (find "acadiso.dwt" argv :test (lambda (needle s)
+                                                   (search needle s))))))
+            (let ((argv (alfe.backend.autocad:build-launch-argv
+                         with-acc protocol :mode :batch
+                         :dwg (namestring
+                               (touch-file (merge-pathnames "explicit-2.dwg"
+                                                            workdir))))))
               (is (string= "/usr/bin/true" (first argv)))
               (is (member "/i" argv :test #'string=))
               (is (member "/s" argv :test #'string=)))))

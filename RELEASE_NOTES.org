@@ -132,6 +132,10 @@ file or COM), and forwards the workload.
 - ~--mode~ and ~--dwg~ are now forwarded correctly into CAD backend
   startup, so ~alfe --autocad --mode batch --dwg file.dwg ...~ no
   longer falls back silently to ~:auto~ / automation mode.
+- ~alfe --autocad --mode batch~ now falls back to
+  ~AUTOLISP_DWG~ or a shipped ~acadiso.dwt~ / ~acad.dwt~ template
+  next to the discovered AutoCAD install, instead of requiring an
+  explicit ~--dwg~ on every invocation.
 
 ** Modes
 

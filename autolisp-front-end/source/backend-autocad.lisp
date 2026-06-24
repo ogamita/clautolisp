@@ -75,6 +75,7 @@
            #:build-launch-argv
            #:discover-autocad-binary
            #:discover-accoreconsole-binary
+           #:discover-autocad-template
            #:unsupported-os-message))
 
 (in-package #:alfe.backend.autocad)
@@ -154,6 +155,40 @@ by --mode batch."))
   (or (env-binary "AUTOCAD_ACCORECONSOLE")
       (when (eq os :windows)
         (first-existing (windows-accoreconsole-candidates)))))
+
+(defun candidate-autocad-template-paths (backend)
+  "Return likely DWG/DWT templates that ship alongside the discovered
+AutoCAD install. The list is ordered by the ISO template first, then
+the imperial one. This is an implementation-default for batch mode
+when the user did not pass --dwg / $AUTOLISP_DWG."
+  (let ((roots
+          (remove nil
+                  (mapcar (lambda (path)
+                            (when path
+                              (uiop:ensure-directory-pathname
+                               (make-pathname :name nil :type nil :version nil
+                                              :defaults path))))
+                          (list (autocad-backend-executable-path backend)
+                                (autocad-backend-accoreconsole-path backend))))))
+    (loop for root in roots
+          append (list (merge-pathnames "Template/acadiso.dwt" root)
+                       (merge-pathnames "Template/acad.dwt" root)
+                       (merge-pathnames "UserDataCache/Template/acadiso.dwt" root)
+                       (merge-pathnames "UserDataCache/Template/acad.dwt" root)))))
+
+(defun discover-autocad-template (backend &key requested)
+  "Resolve the drawing/template to feed accoreconsole batch mode.
+Order of precedence:
+  1. REQUESTED (from --dwg) when it exists;
+  2. $AUTOLISP_DWG when it exists;
+  3. a shipped acadiso.dwt/acad.dwt next to the discovered AutoCAD
+     install;
+  4. NIL, in which case the caller raises :no-dwg."
+  (or (and requested
+           (probe-file requested)
+           (namestring (truename requested)))
+      (env-binary "AUTOLISP_DWG")
+      (first-existing (candidate-autocad-template-paths backend))))
 
 ;;; --- DETECT --------------------------------------------------------
 
@@ -360,7 +395,9 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
 (defun build-launch-argv (backend protocol-session
                           &key (mode :auto) dwg)
   (let* ((variant (choose-effective-mode backend mode))
-         (workdir (alfe.protocol.file:protocol-session-workdir protocol-session)))
+         (workdir (alfe.protocol.file:protocol-session-workdir protocol-session))
+         (resolved-dwg (and (eq variant :batch)
+                            (discover-autocad-template backend :requested dwg))))
     (case variant
       (:automation
        (list "cscript" "//nologo"
@@ -373,12 +410,13 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
                   :backend :autocad
                   :code :no-accoreconsole
                   :message "Batch mode requires $AUTOCAD_ACCORECONSOLE or accoreconsole.exe on disk."))
-         (unless dwg
+         (unless resolved-dwg
            (error 'backend-bootstrap-error
                   :backend :autocad
                   :code :no-dwg
-                  :message "Batch mode requires --dwg FILE (accoreconsole has no template default)."))
-         (list acc "/i" (namestring dwg) "/s" (namestring scr)))))))
+                  :message
+                  "Batch mode requires --dwg FILE, $AUTOLISP_DWG, or a discoverable AutoCAD template."))
+         (list acc "/i" resolved-dwg "/s" (namestring scr)))))))
 
 ;;; --- session subclass + START-ENGINE -----------------------------
 
