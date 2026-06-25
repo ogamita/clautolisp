@@ -102,9 +102,17 @@ system-variables.issues -- Verify what is implemented, and implement the missing
   LOAD/OPEN/FINDFILE/FINDTRUSTEDFILE + clautolisp subsections on
   SECURELOAD/TRUSTEDPATHS + two new clautolisp sysvar entries. Doc-only;
   org parses clean (27024 headlines). SECURELOAD/TRUSTEDPATHS trust model
-  COMPLETE (Phases 1-4). Then the remaining behavioural couplings
-  (CMDECHO, TILEMODE/CVPORT, SNAPANG/ANGBASE, DWGNAME/DWGPREFIX, DATE
-  family, MAXSORT, SRCHPATH); UNITMODE waits on rtos modes 3-5.
+  COMPLETE (Phases 1-4).
+  DATE FAMILY (live clock) DONE (1.2.21): DATE (Julian day + day
+  fraction), CDATE (decimal YYYYMMDD.HHMMSS) and MILLISECS (monotonic ms
+  since process start) are now computed live in the mock host's
+  host-getvar (mirroring the ERRNO live-source path); read-only enforced.
+  +12 mock-host checks, +4 conformance deftests (sysvar/coupling-date.lsp).
+  Verified on the binary (DATE 2461217.56 = 2026-06-25). The four
+  TD*CREATE/UPDATE timestamps wait on the document/dwg lifecycle;
+  TDINDWG/TDUSRTIMER need a session timer. Then the remaining couplings
+  (CMDECHO, TILEMODE/CVPORT, SNAPANG/ANGBASE, DWGNAME/DWGPREFIX, MAXSORT,
+  SRCHPATH); UNITMODE waits on rtos modes 3-5.
   pjb's spec revision (ad748c2) also surfaced a broad new requirement:
   dialect-platform-version-axis.issue (autocad vs autocad-mac + version
   suffixes; drives the "/..."-warns-on-windows rule). Filed, not blocking.

@@ -136,6 +136,7 @@
         "tests/sysvar/coupling-errno.lsp"
         "tests/sysvar/coupling-angle.lsp"
         "tests/sysvar/coupling-units.lsp"
+        "tests/sysvar/coupling-date.lsp"
         "tests/sysvar/inventory-coverage.lsp"
         ;; documentation (clautolisp source-aware ;| |; doc extension)
         "tests/documentation/preceding-doc.lsp"
