@@ -6494,6 +6494,108 @@ The strict choice is *deliberately permissive at the byte level*: a 1-1 byte cod
 
 #+LATEX: \newpage
 
+** Normative Rules: Secure File Loading and Trust Model
+*** Statement
+AutoCAD and BricsCAD restrict where executable files (=.lsp=, =.fas=,
+=.vlx=, =.mnl=, =.scr=, =.arx= / =.crx= / =.dbx=, =.hdi=, =.dvb=, plus
+host-specific items such as DLLs and .NET / VBA assemblies) may be loaded
+from. The restriction is governed by two system variables, ~SECURELOAD~
+(how strict the gate is) and ~TRUSTEDPATHS~ (which folders are trusted),
+and applies to ~load~, ~autoload~, ~arxload~, ~autoarxload~,
+~vl-vbaload~, ~findtrustedfile~, and — in clautolisp — ~open~ for a file
+whose extension is in the gated set above.
+
+*** SECURELOAD values
+| Value | Meaning                                                                 |
+|-------+-------------------------------------------------------------------------|
+|     0 | Load executable files from any location, no warning (legacy behavior).  |
+|     1 | Load only from trusted locations; otherwise *warn* (AutoCAD prompts).    |
+|     2 | Load only from trusted locations; non-trusted files are *blocked*.       |
+
+clautolisp is *headless* — there is no interactive "trust this file?"
+prompt — so value 1 is interpreted as *warn-and-proceed*: a diagnostic is
+emitted (=[sec-untrusted-load]= / =[sec-untrusted-open]= on
+~*error-output*~) and the load proceeds. Value 2 *blocks*: the builtin
+sets ~ERRNO~ (73 for ~load~) and signals a security error
+(=:load-untrusted-file= / =:open-untrusted-file=); the file is not
+loaded or opened. A trusted file is always allowed silently, at any
+~SECURELOAD~ value. Under ~--lax~ the diagnostic is suppressed entirely.
+
+*** The trusted set
+A file is *trusted* when its absolute path is, in clautolisp:
+- inside a folder listed in ~TRUSTEDPATHS~; or
+- inside one of the implicitly-trusted folders
+  (~CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS~, clautolisp only — see its
+  system-variable entry); or
+- an exact match of one of the user init files the engine auto-loads at
+  startup (=~/.autolisp= and its XDG variants), unless ~--no-init~ was
+  given; or
+- (under the ~clautolisp~ dialect only) inside the current working
+  directory subtree, which that dialect prepends to the implicit folders
+  as a convenience.
+
+On AutoCAD and BricsCAD the trusted set is the install support tree plus
+whatever ~TRUSTEDPATHS~ names; the cwd is *not* implicitly trusted, and
+clautolisp matches that under ~--strict~ / ~--autocad~ / ~--bricscad~.
+
+*** TRUSTEDPATHS syntax
+~TRUSTEDPATHS~ is a semicolon-separated list of folders, each optionally
+quoted. A value of ~""~ or ~"."~ adds no trusted folders beyond the
+implicit ones. A folder ending in ~\...~ (backslash + three dots) trusts
+all of its subfolders recursively. AutoCAD documents only the backslash
+form on Windows; AutoCAD for macOS and clautolisp also accept the
+forward-slash form ~/...~ (a deliberate cross-platform extension —
+clautolisp accepts it in every dialect and flags it only when a future
+~autocad~ /Windows/ dialect is selected; see
+~issues/open/dialect-platform-version-axis.issue~).
+
+*** Per-Dialect Defaults
+| Dialect          | SECURELOAD default | Settable? | TRUSTEDPATHS default |
+|------------------+--------------------+-----------+----------------------|
+| ~:autocad-2026~  | 1                  | yes       | host-derived ("")    |
+| ~:bricscad-v26~  | 0                  | no (RO)   | "" (read-only)       |
+| ~:strict~        | 1 (warn)           | yes       | ""                   |
+| ~:lax~           | 0                  | yes       | ""                   |
+| ~:clautolisp~    | 1 (warn)           | yes       | ""                   |
+
+~--strict~ means *the intersection of all dialects* (a program that runs
+clean under ~--strict~ is expected to run on any implementation), not
+"maximally locked down": its ~SECURELOAD~ default is therefore 1 (warn),
+not 2. A program that needs hard blocking sets ~SECURELOAD~ to 2 itself.
+BricsCAD makes both sysvars read-only (admin-configured); clautolisp
+mirrors that under ~--bricscad~ and leaves them settable elsewhere.
+
+*** Search paths
+Relative names passed to ~load~, ~open~, and ~findfile~ are searched
+through the *support search path*: the ~*autolisp-support-paths*~ list
+(default the current directory), followed under the ~clautolisp~ dialect
+by the folders in ~CLAUTOLISPSUPPORTFILESEARCHPATH~ (default ~"./"~).
+~findfile~ searches the *union* of the support path and the trusted
+folders; ~findtrustedfile~ searches the *trusted folders only*. An
+absolute name is used directly with no search.
+
+*** Environment seeding
+Each trust system variable can be seeded at launch from an environment
+variable of the same name — ~SECURELOAD~, ~TRUSTEDPATHS~,
+~CLAUTOLISPSUPPORTFILESEARCHPATH~, ~CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS~.
+Precedence is ~setvar~ > environment variable > dialect default.
+
+*** Cross-references
+- Function Entry: LOAD, OPEN, FINDFILE, FINDTRUSTEDFILE (this chapter).
+- System Variable Entry: SECURELOAD, TRUSTEDPATHS,
+  CLAUTOLISPSUPPORTFILESEARCHPATH, CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS
+  (chapter 16).
+- Design spec: ~clautolisp/documentation/clautolisp-secureload-trust-model-spec.org~
+  (clautolisp implementation, 1.2.15–1.2.20).
+
+*** Source Notes
+- [SECURELOAD (Autodesk)](https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-541566C6-2738-49DD-87C3-C1490E924A02)
+- [TRUSTEDPATHS (Autodesk)](https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2FB4611D-F141-48D5-9B6E-460EB59351AF)
+- [TRUSTEDPATHS subfolder recursion, AutoCAD 2027 macOS](https://help.autodesk.com/view/ACDMAC/2027/ENU/?guid=GUID-9DEA7E46-708F-42DD-A497-F1324B8F4989)
+- [SECURELOAD (BricsCAD)](https://help.bricsys.com/en-us/document/system-variable-reference/s/secureload-system-variable)
+
+#+LATEX: \newpage
+
 ** Function Entry: OPEN
 *** Name
 `open`
@@ -6537,6 +6639,16 @@ Errors are reported for invalid paths, modes, or inaccessible files.
 
 *** Notes
 `clautolisp` should decouple path semantics from native OS via environment profiles.
+
+In clautolisp, ~open~ resolves a relative name through the support search
+path (an existing file is found on the path; a new name falls back to the
+current directory, so write semantics are unchanged), and it is *gated by
+the trust model* for files whose extension is in the gated set: at
+~SECURELOAD~ 2 an untrusted gated file is blocked (ERRNO + a
+=:open-untrusted-file= error), at 1 it warns and proceeds; ordinary data
+files are never gated. Autodesk does not gate ~open~ — this is a
+clautolisp extension (1.2.18 / 1.2.20). See *Normative Rules: Secure File
+Loading and Trust Model* (this chapter).
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -6633,6 +6745,10 @@ None.
 - Autodesk documents that `filename` must not contain a directory prefix.
 - Autodesk documents that the support-file search path is searched.
 - Autodesk documents that URL strings may also be returned when appropriate.
+- In clautolisp, ~findfile~ searches the *union* of the support search
+  path and the trusted folders (~TRUSTEDPATHS~ plus the implicit folders),
+  without trust-filtering. See *Normative Rules: Secure File Loading and
+  Trust Model* (this chapter).
 
 #+LATEX: \newpage
 
@@ -6675,6 +6791,10 @@ None.
 *** Notes
 - Autodesk documents that trusted paths are searched instead of the ordinary support-file search path.
 - Autodesk documents that URL strings may also be returned when appropriate.
+- In clautolisp, ~findtrustedfile~ searches the *trusted folders only*
+  (~TRUSTEDPATHS~ plus the implicit folders), so it returns a file only
+  from a trusted location. See *Normative Rules: Secure File Loading and
+  Trust Model* (this chapter).
 
 #+LATEX: \newpage
 
@@ -8138,6 +8258,15 @@ As soon as a match is found, loading stops and that file is loaded.
 
 *** Notes
 Autodesk also documents that VLX support is Windows-only.
+
+In clautolisp, ~load~ is *gated by the trust model*: at ~SECURELOAD~ 2 a
+source/executable file in an untrusted location is blocked (ERRNO 73 and
+a =:load-untrusted-file= error, or the ~onfailure~ value when supplied),
+at 1 it warns and proceeds, and a trusted file is always allowed. The
+user init files the engine auto-loads (=~/.autolisp= and its XDG
+variants) are trusted by exact path unless ~--no-init~ is given. Relative
+names are resolved through the support search path. See *Normative Rules:
+Secure File Loading and Trust Model* (this chapter).
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -47572,6 +47701,27 @@ Controls whether executable files are restricted to being loaded from trusted fo
 AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
 Divergence: type AutoCAD Integer, BricsCAD Short; default AutoCAD 1, may be locked by the CAD administrator, BricsCAD 0; read-only AutoCAD False, BricsCAD True; saved-in AutoCAD Registry, BricsCAD Not saved.
 
+*** clautolisp
+Per-dialect default and settability:
+
+| Dialect          | Default | Settable? |
+|------------------+---------+-----------|
+| ~:autocad-2026~  | 1       | yes       |
+| ~:bricscad-v26~  | 0       | no (RO)   |
+| ~:strict~        | 1       | yes       |
+| ~:lax~           | 0       | yes       |
+| ~:clautolisp~    | 1       | yes       |
+
+Because clautolisp is headless there is no trust prompt: value 1 means
+*warn-and-proceed* (a =[sec-untrusted-load]= diagnostic, then the load
+succeeds) and value 2 means *block* (ERRNO + a security error). ~--strict~
+defaults to 1, not 2, because it denotes the dialect intersection
+(portability), not maximum lockdown; a program raises ~SECURELOAD~ to 2
+itself when it wants hard blocking. Seedable from the ~SECURELOAD~
+environment variable (precedence ~setvar~ > env > dialect default). The
+gate also applies to ~open~ for gated-extension files. Full rules:
+*Normative Rules: Secure File Loading and Trust Model* (chapter 11).
+
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-541566C6-2738-49DD-87C3-C1490E924A02
 - BricsCAD: https://help.bricsys.com/en-us/document/system-variable-reference/s/secureload-system-variable
@@ -57284,9 +57434,109 @@ Specifies which folders have permission to load and execute files that contain c
 AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
 Divergence: read-only AutoCAD False, BricsCAD True; saved-in AutoCAD Registry, BricsCAD Not saved.
 
+*** clautolisp
+Semicolon-separated folder list (each optionally quoted); ~""~ / ~"."~
+add no folders beyond the implicit ones; a trailing ~\...~ (or, in
+clautolisp and AutoCAD-mac, ~/...~) trusts subfolders recursively. The
+clautolisp default is ~""~ in every dialect; settable except under
+~--bricscad~ (read-only, matching BricsCAD). When the trust gate computes
+whether a file is trusted it uses ~TRUSTEDPATHS~ together with the
+implicit folders (~CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS~) and the
+trusted init files. Seedable from the ~TRUSTEDPATHS~ environment variable.
+Full rules: *Normative Rules: Secure File Loading and Trust Model*
+(chapter 11).
+
 *** Source Notes
 - AutoCAD: https://help.autodesk.com/view/ACD/2026/ENU/?guid=GUID-2FB4611D-F141-48D5-9B6E-460EB59351AF
 - BricsCAD: https://help.bricsys.com/en-us/document/system-variable-reference/t/trustedpaths-system-variable
+
+#+LATEX: \newpage
+
+** System Variable Entry: CLAUTOLISPSUPPORTFILESEARCHPATH
+*** Name
+CLAUTOLISPSUPPORTFILESEARCHPATH
+
+*** Type
+string
+
+*** Default
+~"./"~
+
+*** Read-Only
+no
+
+*** Scope
+session
+
+*** Description
+clautolisp-only. The folders a relative ~load~ / ~open~ / ~findfile~ name
+is searched in, in TRUSTEDPATHS syntax (semicolon-separated, optional
+quotes). It is appended *after* the ~*autolisp-support-paths*~ list, so
+the support paths take precedence. The default ~"./"~ resolves to the
+current working directory, reproducing the legacy behaviour. Relative
+paths are searched on this path; absolute paths are used directly.
+
+*** Read/Written By
+- findfile
+- load
+- open
+
+*** Compatibility
+clautolisp extension; absent on AutoCAD and BricsCAD. Honoured only under
+the ~:clautolisp~ dialect; ~getvar~ on it under another dialect returns
+~nil~ (an out-of-dialect foreign-sysvar access). Seedable from the
+environment variable of the same name (precedence ~setvar~ > env >
+default).
+
+*** Source Notes
+- No vendor reference. Specified by
+  ~clautolisp/documentation/clautolisp-secureload-trust-model-spec.org~;
+  implemented 1.2.16 / 1.2.20.
+
+#+LATEX: \newpage
+
+** System Variable Entry: CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS
+*** Name
+CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS
+
+*** Type
+string
+
+*** Default
+~"$XDG_DATA_HOME/autolisp/...;$PREFIX/share/autolisp/..."~ (with the
+current-directory subtree ~$(pwd)/...~ prepended under the ~:clautolisp~
+dialect), substituted to absolute paths at launch.
+
+*** Read-Only
+no
+
+*** Scope
+session
+
+*** Description
+clautolisp-only. Folders that are implicitly trusted in addition to
+~TRUSTEDPATHS~ when the trust gate decides whether a file may be loaded
+or opened. Same syntax as ~TRUSTEDPATHS~, including the ~\...~ / ~/...~
+subfolder-recursion marker. ~$XDG_DATA_HOME~ falls back to
+~$HOME/.local/share~; ~$PREFIX~ comes from ~CLAUTOLISP_PREFIX~ and is
+omitted when unset.
+
+*** Read/Written By
+- load
+- open
+- findtrustedfile
+- findfile
+
+*** Compatibility
+clautolisp extension; absent on AutoCAD and BricsCAD (which derive
+implicit trust from the install tree and registry). Honoured only under
+the ~:clautolisp~ dialect. Seedable from the environment variable of the
+same name (precedence ~setvar~ > env > default).
+
+*** Source Notes
+- No vendor reference. Specified by
+  ~clautolisp/documentation/clautolisp-secureload-trust-model-spec.org~;
+  implemented 1.2.16 / 1.2.17.
 
 #+LATEX: \newpage
 

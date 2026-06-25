@@ -247,10 +247,16 @@ env seed. Precedence: setvar > env var > dialect default.
     now resolves a relative name through this support search path (an
     existing file is found on the path; a new name still falls back to
     the cwd, so write semantics are unchanged) instead of only the cwd.
-- *Phase 4: autolisp-spec.* Update the LOAD / OPEN / FINDFILE /
-  FINDTRUSTEDFILE / SECURELOAD / TRUSTEDPATHS entries for the three
-  dialects; document the clautolisp extensions (new sysvars, =/...=,
-  open-gating, headless value-1 semantics, env-var seeding).
+- *Phase 4 (done): autolisp-spec.* Added a normative section "Secure
+  File Loading and Trust Model" to chapter 11 of
+  autolisp-visual-lisp-specification-draft.org (SECURELOAD values +
+  headless semantics, the trusted set, TRUSTEDPATHS syntax incl.
+  =\...= / =/...=, per-dialect defaults, search paths, env seeding);
+  annotated the LOAD / OPEN / FINDFILE / FINDTRUSTEDFILE entries with
+  their clautolisp trust behaviour; added clautolisp subsections to the
+  SECURELOAD and TRUSTEDPATHS sysvar entries; and added the two new
+  clautolisp sysvar entries (CLAUTOLISPSUPPORTFILESEARCHPATH,
+  CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS). Doc only; org parses clean.
 
 * Open questions (need pjb / CAD verification)
 
