@@ -353,12 +353,15 @@ DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 INSTALL_INFO        ?= install-info
 
-.PHONY: install uninstall
+.PHONY: install install-programs install-documentation uninstall
 
-install: build  ## Install harness + tests + docs into $$PREFIX (run `make build` first so this can be sudo'd cleanly).
+install: build  ## Install harness + tests + docs into $$PREFIX (build first; sudo-friendly).
+	$(MAKE) install-programs
+	$(MAKE) install-documentation
+
+install-programs:  ## Install just the autolisp-test harness + tests (no docs).
 	install -d $(LIBEXEC_INSTALL_DIR)/harness
 	install -d $(LIBEXEC_INSTALL_DIR)/tests
-	install -d $(DOC_INSTALL_DIR)
 	@if [ -d harness ]; then \
 	  for f in harness/*.lsp; do \
 	    [ -f "$$f" ] && install -m 0644 "$$f" $(LIBEXEC_INSTALL_DIR)/harness/ ; \
@@ -373,6 +376,10 @@ install: build  ## Install harness + tests + docs into $$PREFIX (run `make build
 	    fi ; \
 	  done ; \
 	fi
+	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+
+install-documentation:  ## Install just the autolisp-test documentation.
+	install -d $(DOC_INSTALL_DIR)
 	@for f in documentation/*.org documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
@@ -385,7 +392,7 @@ install: build  ## Install harness + tests + docs into $$PREFIX (run `make build
 	      || echo "[skip] install-info dir update for $$installed" ; \
 	  fi ; \
 	done
-	@echo "autolisp-test install complete: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the autolisp-test install from $$PREFIX.
 	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)

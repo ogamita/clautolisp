@@ -48,7 +48,7 @@ DEFAULT_LISP ?=
 # the top level should carry a `## ...` description so it appears in
 # `make help`.
 
-.PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS) \
+.PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install install-programs install-libraries install-documentation uninstall $(SUBPROJECTS) \
         build-documentation build-programs build-libraries \
         release release-sources release-documentation release-programs release-libraries \
         probe probe-autocad probe-bricscad probe-clautolisp
@@ -323,6 +323,24 @@ install:  ## Install every subproject's built artefacts into $$PREFIX (default /
 	$(MAKE) -C clautolisp         install $(INSTALL_VARS)
 	$(MAKE) -C autolisp-test      install $(INSTALL_VARS)
 	$(MAKE) -C autolisp-front-end install $(INSTALL_VARS)
+
+# Independent install phases mirroring build-programs / build-libraries /
+# build-documentation, so a consumer can install only what it needs. CI
+# that exercises the programs uses `make install-programs' and skips the
+# slow documentation build+install entirely.
+install-programs: build-programs  ## Install only the program binaries (clautolisp/alfe/read-autolisp + the test harness) — no docs. The CI fast path.
+	$(MAKE) -C clautolisp         install-programs $(INSTALL_VARS)
+	$(MAKE) -C autolisp-test      install-programs $(INSTALL_VARS)
+	$(MAKE) -C autolisp-front-end install-programs $(INSTALL_VARS)
+
+install-libraries: build-libraries  ## Install only the native libraries (the drawing/drawing-dwg native libdwg + CFFI shim).
+	$(MAKE) -C clautolisp         install-libraries $(INSTALL_VARS)
+
+install-documentation: build-documentation  ## Install only the documentation (the slow phase: PDFs + the autolisp-spec paged HTML/info/pages).
+	$(MAKE) -C autolisp-spec      install-documentation $(INSTALL_VARS)
+	$(MAKE) -C clautolisp         install-documentation $(INSTALL_VARS)
+	$(MAKE) -C autolisp-test      install-documentation $(INSTALL_VARS)
+	$(MAKE) -C autolisp-front-end install-documentation $(INSTALL_VARS)
 
 uninstall:  ## Remove every subproject's install from $$PREFIX.
 	$(MAKE) -C autolisp-spec      uninstall $(INSTALL_VARS)

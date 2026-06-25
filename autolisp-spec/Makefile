@@ -124,7 +124,16 @@ INFO_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/info
 EMACS_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/emacs/site-lisp/$(SUBPROJECT_NAME)
 LISP_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/autolisp/site-lisp/$(SUBPROJECT_NAME)
 
-install: build  ## Install docs (.org + .pdf + HTML), Info, alref libs, plain pages into $$PREFIX (run `make build` first so this can be sudo'd cleanly).
+.PHONY: install install-programs install-documentation uninstall
+
+install: build  ## Install the autolisp-spec documentation into $$PREFIX (build first; sudo-friendly).
+	$(MAKE) install-programs
+	$(MAKE) install-documentation
+
+install-programs:  ## No-op: autolisp-spec ships documentation only.
+	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+
+install-documentation:  ## Install the autolisp-spec docs (.org/.pdf/HTML/Info/pages + alref libs).
 	install -d $(DOC_INSTALL_DIR)/html
 	install -d $(DATA_INSTALL_DIR)/pages
 	install -d $(INFO_INSTALL_DIR)
@@ -151,6 +160,7 @@ install: build  ## Install docs (.org + .pdf + HTML), Info, alref libs, plain pa
 	  install -d $(LISP_INSTALL_DIR); \
 	  for f in autolisp/*.lsp; do [ -f "$$f" ] && install -m 0644 "$$f" $(LISP_INSTALL_DIR)/; done; \
 	fi
+	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the spec install from $$PREFIX.
 	rm -rf $(DOC_INSTALL_DIR) $(DATA_INSTALL_DIR) \
