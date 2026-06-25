@@ -247,3 +247,38 @@
             (is nil "expected setvar on read-only clock sysvar to signal"))
         (autolisp-runtime-error (c)
           (is (eq :sysvar-read-only (autolisp-runtime-error-code c))))))))
+
+(test clock-sysvars-are-cached-within-a-millisecond
+  ;; Deterministic (injected clock): two reads for the SAME millisecond
+  ;; return the identical cached value with no recompute; a different
+  ;; millisecond refreshes the cache.
+  (let ((at #'clautolisp.autolisp-mock-host::%clock-sysvar-at))
+    (let ((d1 (funcall at "DATE" 5000))
+          (d2 (funcall at "DATE" 5000)))
+      (is (eql d1 d2)))                  ; same ms -> cache hit
+    (funcall at "MILLISECS" 6000)        ; different ms -> refresh
+    (is (eql 6000 (clautolisp.autolisp-mock-host::clock-cache-millis
+                   clautolisp.autolisp-mock-host::*clock-cache*)))
+    ;; MILLISECS reflects the injected millisecond.
+    (is (eql 6000 (funcall at "MILLISECS" 6000)))))
+
+(test clock-cache-throughput-benchmark
+  ;; Instructive: how many cached GETVARs fit in one millisecond. Spin
+  ;; reading MILLISECS, counting reads until the value ticks, over
+  ;; several consecutive windows. The first window is a partial ms, so
+  ;; the later windows are the representative ones.
+  (let ((mock (make-mock-host))
+        (windows '()))
+    (dotimes (r 6)
+      (let ((start (host-getvar mock "MILLISECS"))
+            (n 0))
+        (loop for v = (host-getvar mock "MILLISECS")
+              while (and (eql v start) (< n 100000000))
+              do (incf n))
+        (push n windows)))
+    (setq windows (nreverse windows))
+    (format t "~&[clock-cache] cached MILLISECS reads per ms across ~D windows ~
+(first is a partial ms): ~S~%"
+            (length windows) windows)
+    ;; The later (full-ms) windows should fit many cached reads.
+    (is (> (apply #'max windows) 100))))
