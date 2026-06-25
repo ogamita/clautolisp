@@ -356,7 +356,7 @@ disrupting the value-returning shape of the call site."
            (when direct
              (return direct)))
          (let ((located (search-path-list-for-file candidate
-                                                   (autolisp-support-paths))))
+                                                   (%effective-support-dirs))))
            (when located
              (return (pathname located)))))))))
 
@@ -469,6 +469,53 @@ host / dialect."
     (secureload-path-trusted-p
      abs-namestring trustedpaths implicit
      (clautolisp.autolisp-runtime:autolisp-trusted-init-files))))
+
+(defun %secureload-trusted-dirs ()
+  "The trusted directories for the current host / dialect: the folders
+named by TRUSTEDPATHS plus (under clautolisp) the implicit folders.
+Used by FINDFILE (union) and FINDTRUSTEDFILE (trusted-only)."
+  (let* ((host (ignore-errors (current-evaluation-host)))
+         (dialect-name (%secureload-dialect-name))
+         (trustedpaths (and host (ignore-errors
+                                  (%host-sysvar-string host "TRUSTEDPATHS"))))
+         (implicit (and host (eq dialect-name :clautolisp)
+                        (ignore-errors
+                         (%host-sysvar-string
+                          host "CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS")))))
+    ;; The sysvar-named dirs, plus the programmatic *AUTOLISP-TRUSTED-PATHS*
+    ;; list (set-autolisp-trusted-paths) for callers that configure trust
+    ;; in CL rather than via the sysvar.
+    (append (trusted-spec-directories trustedpaths implicit)
+            (clautolisp.autolisp-runtime:autolisp-trusted-paths))))
+
+(defun %normalize-support-dir (dir)
+  "Resolve DIR (possibly relative, '.' or './') to an absolute directory
+namestring against the current directory, so a CLAUTOLISPSUPPORTFILE-
+SEARCHPATH default of \"./\" behaves exactly like the cwd."
+  (let ((p (uiop:ensure-directory-pathname dir))
+        (cwd (uiop:ensure-directory-pathname
+              (clautolisp.autolisp-runtime:autolisp-current-directory))))
+    (namestring (if (uiop:absolute-pathname-p p)
+                    p
+                    (uiop:merge-pathnames* p cwd)))))
+
+(defun %effective-support-dirs ()
+  "The directories a relative LOAD / FINDFILE name is searched in. Under
+the clautolisp dialect this is CLAUTOLISPSUPPORTFILESEARCHPATH
+(TRUSTEDPATHS syntax, default \"./\"), normalised to absolute folders;
+otherwise the existing *AUTOLISP-SUPPORT-PATHS* list. Falls back to the
+support-paths list when the sysvar is unset/blank so behaviour is
+unchanged by default."
+  (let* ((host (ignore-errors (current-evaluation-host)))
+         (dialect-name (%secureload-dialect-name))
+         (spec (and host (eq dialect-name :clautolisp)
+                    (ignore-errors
+                     (%host-sysvar-string
+                      host "CLAUTOLISPSUPPORTFILESEARCHPATH"))))
+         (dirs (and spec (trusted-spec-directories spec))))
+    (if dirs
+        (mapcar #'%normalize-support-dir dirs)
+        (clautolisp.autolisp-runtime:autolisp-support-paths))))
 
 (defun %secureload-guard (abs-namestring builtin-name diagnostic-code)
   "Apply the SECURELOAD gate to ABS-NAMESTRING (already known to be a
@@ -2068,19 +2115,24 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
        (search-path-list-for-file filename support-paths)))))
 
 (defun builtin-findfile (filename)
-  ;; Documented to set ERRNO on failure. No dedicated code in the
-  ;; enumerated set; we use 22 (Value out of range) for "filename
-  ;; argument did not resolve" matching OPEN.
+  ;; FINDFILE searches the UNION of the support path and the trusted
+  ;; paths, without filtering by trust (secureload trust model spec
+  ;; § 'Which functions are gated'). Documented to set ERRNO on failure;
+  ;; no dedicated code, so 22 (Value out of range) as for OPEN.
   (let* ((value (autolisp-string-value (require-string filename "FINDFILE")))
-         (located (resolve-existing-file value (autolisp-support-paths))))
+         (search-dirs (append (%effective-support-dirs)
+                              (%secureload-trusted-dirs)))
+         (located (resolve-existing-file value search-dirs)))
     (if located
         (errno-and-return 0 (make-autolisp-string located))
         (errno-and-return 22 nil))))
 
 (defun builtin-findtrustedfile (filename)
-  ;; Same ERRNO contract as FINDFILE (search-path miss -> 22).
+  ;; FINDTRUSTEDFILE returns a file only when it is in a TRUSTED location
+  ;; (TRUSTEDPATHS u the implicit folders) — the trusted-only intersection
+  ;; (secureload trust model spec). Same ERRNO contract as FINDFILE.
   (let* ((value (autolisp-string-value (require-string filename "FINDTRUSTEDFILE")))
-         (located (resolve-existing-file value (autolisp-trusted-paths))))
+         (located (resolve-existing-file value (%secureload-trusted-dirs))))
     (if located
         (errno-and-return 0 (make-autolisp-string located))
         (errno-and-return 22 nil))))

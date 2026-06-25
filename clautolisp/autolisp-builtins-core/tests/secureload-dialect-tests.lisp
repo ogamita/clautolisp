@@ -252,3 +252,68 @@ run BODY, then delete the file."
        (clautolisp.autolisp-runtime:make-autolisp-string (namestring p)))
       (is (%did-load-p))
       (clautolisp.autolisp-runtime:set-autolisp-trusted-init-files '()))))
+
+
+;;;; FINDFILE (union) / FINDTRUSTEDFILE (trusted-only) (Phase 3b).
+
+(defmacro %with-two-dirs ((tdir-var odir-var) &body body)
+  "Bind TDIR-VAR / ODIR-VAR to two fresh temp directories, each holding
+a marker file (mark.txt), run BODY, then clean up."
+  `(let ((,tdir-var (ensure-directories-exist
+                     (merge-pathnames (format nil "sec-t-~36R/" (random (expt 36 8)))
+                                      (uiop:temporary-directory))))
+         (,odir-var (ensure-directories-exist
+                     (merge-pathnames (format nil "sec-o-~36R/" (random (expt 36 8)))
+                                      (uiop:temporary-directory)))))
+     (unwind-protect
+          (progn
+            (with-open-file (s (merge-pathnames "tmark.txt" ,tdir-var)
+                               :direction :output :if-exists :supersede) (write-line "x" s))
+            (with-open-file (s (merge-pathnames "omark.txt" ,odir-var)
+                               :direction :output :if-exists :supersede) (write-line "x" s))
+            ,@body)
+       (ignore-errors (delete-file (merge-pathnames "tmark.txt" ,tdir-var)))
+       (ignore-errors (delete-file (merge-pathnames "omark.txt" ,odir-var)))
+       (ignore-errors (uiop:delete-empty-directory ,tdir-var))
+       (ignore-errors (uiop:delete-empty-directory ,odir-var)))))
+
+(defun %ff (name)
+  (let ((r (clautolisp.autolisp-builtins-core::builtin-findfile
+            (clautolisp.autolisp-runtime:make-autolisp-string name))))
+    (and r (clautolisp.autolisp-runtime:autolisp-string-value r))))
+
+(defun %ftf (name)
+  (let ((r (clautolisp.autolisp-builtins-core::builtin-findtrustedfile
+            (clautolisp.autolisp-runtime:make-autolisp-string name))))
+    (and r (clautolisp.autolisp-runtime:autolisp-string-value r))))
+
+(test secureload-findtrustedfile-searches-trusted-only
+  (setup-mock-evaluation-context)
+  (clautolisp.autolisp-runtime:set-autolisp-trusted-paths '())
+  (%with-two-dirs (tdir odir)
+    (clautolisp.autolisp-host:host-define-sysvar
+     (%gate-host) "TRUSTEDPATHS" :string (string-right-trim "/" (namestring tdir)) nil)
+    ;; A file in the trusted folder is found...
+    (is (stringp (%ftf "tmark.txt")))
+    ;; ...one only in the untrusted folder is not.
+    (is (null (%ftf "omark.txt")))))
+
+(test secureload-findfile-searches-union-of-support-and-trusted
+  (setup-mock-evaluation-context)
+  (clautolisp.autolisp-runtime:set-autolisp-trusted-paths '())
+  (%with-two-dirs (tdir odir)
+    (clautolisp.autolisp-host:host-define-sysvar
+     (%gate-host) "TRUSTEDPATHS" :string (string-right-trim "/" (namestring tdir)) nil)
+    ;; FINDFILE searches support u trusted: the trusted file is found
+    ;; (it is not on the support path, only in TRUSTEDPATHS).
+    (is (stringp (%ff "tmark.txt")))
+    ;; The untrusted file is in neither support nor trusted -> nil.
+    (is (null (%ff "omark.txt")))))
+
+(test secureload-findtrustedfile-empty-trusted-finds-nothing
+  (setup-mock-evaluation-context)
+  (clautolisp.autolisp-runtime:set-autolisp-trusted-paths '())
+  (%with-two-dirs (tdir odir)
+    (clautolisp.autolisp-host:host-define-sysvar
+     (%gate-host) "TRUSTEDPATHS" :string "" nil)
+    (is (null (%ftf "tmark.txt")))))
