@@ -338,21 +338,41 @@ INSTALL_BINARIES_sbcl := $(ALFE_SBCL)
 INSTALL_BINARIES_ccl  := $(ALFE_CCL)
 INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
 
-.PHONY: install uninstall
+.PHONY: install install-programs install-documentation uninstall
 
-install: build  ## Install built alfe binaries + docs into $$PREFIX (run `make build` first so this can be sudo'd cleanly).
+install: build  ## Install built alfe binaries + docs into $$PREFIX (build first; sudo-friendly).
+	$(MAKE) install-programs
+	$(MAKE) install-documentation
+
+install-programs:  ## Install just the alfe executables (no docs).
 	install -d $(BIN_INSTALL_DIR)
 	install -d $(LIBEXEC_INSTALL_DIR)
-	install -d $(DOC_INSTALL_DIR)
 	@for exe in $(INSTALL_BINARIES); do \
 	  if [ -x "$$exe" ]; then \
 	    install -m 0755 "$$exe" $(BIN_INSTALL_DIR)/ ; \
 	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/" ; \
 	  else \
-	    echo "Error: $$exe missing after build (unexpected)" ; \
-	    exit 1 ; \
+	    echo "[skip]     $$exe (not built — run build-programs first)" ; \
 	  fi ; \
 	done
+	@# Bare-name `alfe' symlink pointing at the user's preferred
+	@# CL impl. Relative target so the install tree stays
+	@# relocatable across machines/staging dirs.
+	@if [ -n "$(DEFAULT_LISP)" ]; then \
+	  target="alfe-$(DEFAULT_LISP)" ; \
+	  if [ -x "$(BIN_INSTALL_DIR)/$$target" ]; then \
+	    ln -sf "$$target" "$(BIN_INSTALL_DIR)/alfe" ; \
+	    echo "linked:    $(BIN_INSTALL_DIR)/alfe -> $$target" ; \
+	  else \
+	    echo "[skip]     $(BIN_INSTALL_DIR)/alfe (target $$target not installed)" ; \
+	  fi ; \
+	else \
+	  echo "[skip]     bare alfe symlink (DEFAULT_LISP is empty)" ; \
+	fi
+	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+
+install-documentation:  ## Install just the alfe documentation (org/pdf/info/man).
+	install -d $(DOC_INSTALL_DIR)
 	@for f in documentation/*.org documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
@@ -373,21 +393,7 @@ install: build  ## Install built alfe binaries + docs into $$PREFIX (run `make b
 	    echo "installed: $$f -> $(MAN_INSTALL_DIR)/" ; \
 	  fi ; \
 	done
-	@# Bare-name `alfe' symlink pointing at the user's preferred
-	@# CL impl. Relative target so the install tree stays
-	@# relocatable across machines/staging dirs.
-	@if [ -n "$(DEFAULT_LISP)" ]; then \
-	  target="alfe-$(DEFAULT_LISP)" ; \
-	  if [ -x "$(BIN_INSTALL_DIR)/$$target" ]; then \
-	    ln -sf "$$target" "$(BIN_INSTALL_DIR)/alfe" ; \
-	    echo "linked:    $(BIN_INSTALL_DIR)/alfe -> $$target" ; \
-	  else \
-	    echo "[skip]     $(BIN_INSTALL_DIR)/alfe (target $$target not installed)" ; \
-	  fi ; \
-	else \
-	  echo "[skip]     bare alfe symlink (DEFAULT_LISP is empty)" ; \
-	fi
-	@echo "alfe install complete: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the alfe install from $$PREFIX.
 	rm -f $(BIN_INSTALL_DIR)/alfe $(BIN_INSTALL_DIR)/alfe-sbcl $(BIN_INSTALL_DIR)/alfe-ccl

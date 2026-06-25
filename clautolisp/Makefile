@@ -365,6 +365,13 @@ LIBEXEC_INSTALL_DIR := $(DESTDIR)$(PREFIX)/libexec/$(SUBPROJECT_NAME)
 DOC_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/doc/$(SUBPROJECT_NAME)
 INFO_INSTALL_DIR    := $(DESTDIR)$(PREFIX)/share/info
 MAN_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/share/man/man1
+# Native DWG codec libraries install under lib/<subproject>/<os>/<arch>/,
+# the layout the drawing-dwg CFFI loader probes (see %arch / the lib
+# directory resolver in drawing-dwg/source/bindings.lisp). os/arch are
+# detected the same way as the root Makefile's REL_OS / REL_ARCH.
+REL_OS   := $(shell uname | tr 'A-Z' 'a-z' | sed -e 's/^mingw.*/windows/' -e 's/^msys.*/windows/' -e 's/^cygwin.*/windows/')
+REL_ARCH := $(shell uname -m | tr 'A-Z' 'a-z' | sed -e 's/^x86_64$$/x86-64/' -e 's/^amd64$$/x86-64/' -e 's/^aarch64$$/arm64/')
+LIB_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/lib/$(SUBPROJECT_NAME)/$(REL_OS)/$(REL_ARCH)
 
 CLAUTOLISP_GUI_QT_BIN := tools/clautolisp-gui-qt/build/clautolisp-gui-qt
 RUN_FILE_COMPAT_BIN   := $(RUN_FILE_COMPAT)
@@ -373,19 +380,21 @@ INSTALL_BINARIES_sbcl := $(CLAUTOLISP_SBCL) $(READ_AUTOLISP_SBCL)
 INSTALL_BINARIES_ccl  := $(CLAUTOLISP_CCL)  $(READ_AUTOLISP_CCL)
 INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
 
-.PHONY: install uninstall
+.PHONY: install install-programs install-documentation install-libraries uninstall
 
-install: build  ## Install built executables, run-file-compat, and docs into $$PREFIX (run `make build` first so this can be sudo'd cleanly).
+install: build  ## Install built executables + docs into $$PREFIX (build first; sudo-friendly). Native libraries are a separate `install-libraries' phase.
+	$(MAKE) install-programs
+	$(MAKE) install-documentation
+
+install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-compat executables (no docs) -- the CI-friendly fast path.
 	install -d $(BIN_INSTALL_DIR)
 	install -d $(LIBEXEC_INSTALL_DIR)
-	install -d $(DOC_INSTALL_DIR)
 	@for exe in $(INSTALL_BINARIES); do \
 	  if [ -x "$$exe" ]; then \
 	    install -m 0755 "$$exe" $(BIN_INSTALL_DIR)/ ; \
 	    echo "installed: $$exe -> $(BIN_INSTALL_DIR)/" ; \
 	  else \
-	    echo "Error: $$exe missing after build (unexpected)" ; \
-	    exit 1 ; \
+	    echo "[skip]     $$exe (not built — run build-programs first)" ; \
 	  fi ; \
 	done
 	@if [ -x "$(CLAUTOLISP_GUI_QT_BIN)" ]; then \
@@ -398,6 +407,27 @@ install: build  ## Install built executables, run-file-compat, and docs into $$P
 	  install -m 0755 "$(RUN_FILE_COMPAT_BIN)" $(LIBEXEC_INSTALL_DIR)/ ; \
 	  echo "installed: $(RUN_FILE_COMPAT_BIN) -> $(LIBEXEC_INSTALL_DIR)/" ; \
 	fi
+	@# Bare-name symlinks pointing at the user's preferred CL impl.
+	@# Relative targets so the install tree stays relocatable
+	@# (the user can rsync $(PREFIX)/bin/ to another machine and
+	@# the link keeps pointing at the sibling binary).
+	@if [ -n "$(DEFAULT_LISP)" ]; then \
+	  for stem in clautolisp read-autolisp; do \
+	    target="$$stem-$(DEFAULT_LISP)" ; \
+	    if [ -x "$(BIN_INSTALL_DIR)/$$target" ]; then \
+	      ln -sf "$$target" "$(BIN_INSTALL_DIR)/$$stem" ; \
+	      echo "linked:    $(BIN_INSTALL_DIR)/$$stem -> $$target" ; \
+	    else \
+	      echo "[skip]     $(BIN_INSTALL_DIR)/$$stem (target $$target not installed)" ; \
+	    fi ; \
+	  done ; \
+	else \
+	  echo "[skip]     bare symlinks (DEFAULT_LISP is empty)" ; \
+	fi
+	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+
+install-documentation:  ## Install just the clautolisp documentation (org/pdf/info/man).
+	install -d $(DOC_INSTALL_DIR)
 	@for f in documentation/*.org documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
@@ -423,24 +453,22 @@ install: build  ## Install built executables, run-file-compat, and docs into $$P
 	    echo "installed: $$f -> $(MAN_INSTALL_DIR)/" ; \
 	  fi ; \
 	done
-	@# Bare-name symlinks pointing at the user's preferred CL impl.
-	@# Relative targets so the install tree stays relocatable
-	@# (the user can rsync $(PREFIX)/bin/ to another machine and
-	@# the link keeps pointing at the sibling binary).
-	@if [ -n "$(DEFAULT_LISP)" ]; then \
-	  for stem in clautolisp read-autolisp; do \
-	    target="$$stem-$(DEFAULT_LISP)" ; \
-	    if [ -x "$(BIN_INSTALL_DIR)/$$target" ]; then \
-	      ln -sf "$$target" "$(BIN_INSTALL_DIR)/$$stem" ; \
-	      echo "linked:    $(BIN_INSTALL_DIR)/$$stem -> $$target" ; \
-	    else \
-	      echo "[skip]     $(BIN_INSTALL_DIR)/$$stem (target $$target not installed)" ; \
-	    fi ; \
-	  done ; \
-	else \
-	  echo "[skip]     bare symlinks (DEFAULT_LISP is empty)" ; \
-	fi
-	@echo "clautolisp install complete: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
+
+install-libraries:  ## Install the native DWG codec libraries (libredwg + CFFI shim) into $$PREFIX/lib.
+	install -d $(LIB_INSTALL_DIR)
+	@for f in third-party/libredwg/build/libredwg.so \
+	          third-party/libredwg/build/libredwg.dylib \
+	          third-party/libredwg/build/libredwg.dll \
+	          drawing-dwg/source/clal_dwg.so \
+	          drawing-dwg/source/clal_dwg.dylib \
+	          drawing-dwg/source/clal_dwg.dll; do \
+	  if [ -f "$$f" ]; then \
+	    install -m 0755 "$$f" $(LIB_INSTALL_DIR)/ ; \
+	    echo "installed: $$f -> $(LIB_INSTALL_DIR)/" ; \
+	  fi ; \
+	done
+	@echo "libraries installed: $(LIB_INSTALL_DIR)"
 
 uninstall:  ## Remove the clautolisp install from $$PREFIX.
 	rm -f $(BIN_INSTALL_DIR)/clautolisp $(BIN_INSTALL_DIR)/read-autolisp \
