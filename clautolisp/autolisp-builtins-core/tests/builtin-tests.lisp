@@ -1851,7 +1851,8 @@ calls) under a mock host and return the resulting CL string."
          (ro (d) (clautolisp.autolisp-builtins-core::secureload-read-only-for-dialect-p d)))
     (is (= 1 (sl :autocad-2026)))
     (is (= 0 (sl :bricscad-v26)))
-    (is (= 2 (sl :strict)))
+    ;; strict warns (1), not blocks (2): strict = intersection of dialects.
+    (is (= 1 (sl :strict)))
     (is (= 0 (sl :lax)))
     (is (= 1 (sl :clautolisp)))
     ;; BricsCAD makes the trust sysvars read-only; others settable.
