@@ -125,3 +125,130 @@ deterministic."
                       (t nil))))
          (h (%trust-host :clautolisp env)))
     (is (string= "./;./lib" (%getvar-str h "CLAUTOLISPSUPPORTFILESEARCHPATH")))))
+
+
+;;;; SECURELOAD behavioural gate on LOAD (Phase 3a).
+;;;;
+;;;; Exercises builtin-load end-to-end against a mock host whose
+;;;; SECURELOAD / TRUSTEDPATHS are configured per case: allow at 0, warn-
+;;;; and-proceed at 1, block at 2 (untrusted), and allow at 2 when the
+;;;; file is trusted (TRUSTEDPATHS folder, or an exact trusted init file).
+
+(defun %gate-host ()
+  (clautolisp.autolisp-runtime:current-evaluation-host
+   (clautolisp.autolisp-runtime:current-evaluation-context)))
+
+(defun %gate-configure (secureload trustedpaths)
+  "Set SECURELOAD (int) + TRUSTEDPATHS (string) on the active mock host,
+bypassing read-only via host-define-sysvar."
+  (let ((h (%gate-host)))
+    (clautolisp.autolisp-host:host-define-sysvar h "SECURELOAD" :integer secureload nil)
+    (clautolisp.autolisp-host:host-define-sysvar h "TRUSTEDPATHS" :string (or trustedpaths "") nil)))
+
+(defmacro %with-temp-lsp ((path-var) &body body)
+  "Bind PATH-VAR to a fresh temp .lsp file containing a marker setq,
+run BODY, then delete the file."
+  `(let ((,path-var (merge-pathnames
+                     (format nil "sec-gate-~36R.lsp" (random (expt 36 8)))
+                     (uiop:temporary-directory))))
+     (unwind-protect
+          (progn
+            (with-open-file (s ,path-var :direction :output :if-exists :supersede
+                                         :if-does-not-exist :create)
+              (write-line "(setq sec-gate-loaded 1)" s))
+            ,@body)
+       (when (probe-file ,path-var) (delete-file ,path-var)))))
+
+(defun %did-load-p ()
+  (let ((v (clautolisp.autolisp-runtime:autolisp-symbol-value
+            (clautolisp.autolisp-runtime:intern-autolisp-symbol "SEC-GATE-LOADED"))))
+    (and v (not (eq v (clautolisp.autolisp-runtime:intern-autolisp-symbol "NIL"))))))
+
+(defun %clear-load-marker ()
+  (clautolisp.autolisp-runtime:set-variable
+   (clautolisp.autolisp-runtime:intern-autolisp-symbol "SEC-GATE-LOADED")
+   nil))
+
+(test secureload-gate-allows-at-0
+  (setup-mock-evaluation-context)
+  (clautolisp.autolisp-runtime:set-autolisp-trusted-init-files '())
+  (%gate-configure 0 "")
+  (let ((clautolisp.autolisp-runtime:*secureload-diagnostic-suppress-p* nil)
+        (clautolisp.autolisp-runtime:*secureload-diagnostic-stream*
+         (make-string-output-stream)))
+    (%with-temp-lsp (p)
+      (%clear-load-marker)
+      (clautolisp.autolisp-builtins-core::builtin-load
+       (clautolisp.autolisp-runtime:make-autolisp-string (namestring p)))
+      (is (%did-load-p))
+      ;; value 0 is silent.
+      (is (zerop (length (get-output-stream-string
+                          clautolisp.autolisp-runtime:*secureload-diagnostic-stream*)))))))
+
+(test secureload-gate-warns-and-proceeds-at-1
+  (setup-mock-evaluation-context)
+  (clautolisp.autolisp-runtime:set-autolisp-trusted-init-files '())
+  (%gate-configure 1 "")
+  (let* ((stream (make-string-output-stream))
+         (clautolisp.autolisp-runtime:*secureload-diagnostic-suppress-p* nil)
+         (clautolisp.autolisp-runtime:*secureload-diagnostic-stream* stream))
+    (%with-temp-lsp (p)
+      (%clear-load-marker)
+      (clautolisp.autolisp-builtins-core::builtin-load
+       (clautolisp.autolisp-runtime:make-autolisp-string (namestring p)))
+      ;; warn-and-proceed: the file still loads, and a diagnostic fired.
+      (is (%did-load-p))
+      (is (search "sec-untrusted-load" (get-output-stream-string stream))))))
+
+(test secureload-gate-blocks-at-2-untrusted
+  (setup-mock-evaluation-context)
+  (clautolisp.autolisp-runtime:set-autolisp-trusted-init-files '())
+  (%gate-configure 2 "")
+  (let ((clautolisp.autolisp-runtime:*secureload-diagnostic-suppress-p* t))
+    (%with-temp-lsp (p)
+      (%clear-load-marker)
+      ;; With an onfailure value, a block returns it and sets ERRNO 73.
+      (clautolisp.autolisp-runtime:set-autolisp-errno 0)
+      (let ((r (clautolisp.autolisp-builtins-core::builtin-load
+                (clautolisp.autolisp-runtime:make-autolisp-string (namestring p))
+                :blocked-marker)))
+        (is (eq r :blocked-marker))
+        (is (eql 73 (clautolisp.autolisp-runtime:autolisp-errno)))
+        ;; the file was NOT loaded.
+        (is (not (%did-load-p))))
+      ;; Without onfailure, a block signals a runtime error.
+      (is (eq :signalled
+              (handler-case
+                  (progn
+                    (clautolisp.autolisp-builtins-core::builtin-load
+                     (clautolisp.autolisp-runtime:make-autolisp-string (namestring p)))
+                    :no-error)
+                (clautolisp.autolisp-runtime:autolisp-runtime-error () :signalled)))))))
+
+(test secureload-gate-allows-at-2-when-folder-trusted
+  (setup-mock-evaluation-context)
+  (clautolisp.autolisp-runtime:set-autolisp-trusted-init-files '())
+  (let ((clautolisp.autolisp-runtime:*secureload-diagnostic-suppress-p* t))
+    (%with-temp-lsp (p)
+      ;; Trust the temp file's own directory (non-recursive).
+      (let ((dir (namestring (make-pathname :directory (pathname-directory p)
+                                            :name nil :type nil))))
+        (%gate-configure 2 dir))
+      (%clear-load-marker)
+      (clautolisp.autolisp-builtins-core::builtin-load
+       (clautolisp.autolisp-runtime:make-autolisp-string (namestring p)))
+      (is (%did-load-p)))))
+
+(test secureload-gate-allows-init-file-at-2
+  (setup-mock-evaluation-context)
+  (let ((clautolisp.autolisp-runtime:*secureload-diagnostic-suppress-p* t))
+    (%with-temp-lsp (p)
+      ;; Register the file itself as a trusted init file; untrusted dir.
+      (clautolisp.autolisp-runtime:set-autolisp-trusted-init-files
+       (list (namestring (truename p))))
+      (%gate-configure 2 "")
+      (%clear-load-marker)
+      (clautolisp.autolisp-builtins-core::builtin-load
+       (clautolisp.autolisp-runtime:make-autolisp-string (namestring p)))
+      (is (%did-load-p))
+      (clautolisp.autolisp-runtime:set-autolisp-trusted-init-files '()))))

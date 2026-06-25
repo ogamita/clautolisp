@@ -444,6 +444,55 @@ extension; --~(~A~) has no per-call encoding control on LOAD."
                           (t name))))
       (t nil))))
 
+;;; --- SECURELOAD trust gate (Phase 3) -------------------------------
+;;;
+;;; The behavioural side of the trust model: load / open consult
+;;; SECURELOAD + the trusted set (TRUSTEDPATHS u implicit folders u the
+;;; trusted init files) and either allow, warn-and-proceed, or block.
+;;; The pure decisions live in secureload.lisp; these helpers read the
+;;; host sysvars and the runtime init-file set. See
+;;; documentation/clautolisp-secureload-trust-model-spec.org.
+
+(defun %secureload-dialect-name ()
+  (let ((d (ignore-errors (current-evaluation-dialect))))
+    (and d (clautolisp.autolisp-reader:autolisp-dialect-name d))))
+
+(defun %secureload-trusted-p (abs-namestring host dialect-name)
+  "True when ABS-NAMESTRING is a trusted load location for the current
+host / dialect."
+  (let ((trustedpaths (and host (ignore-errors
+                                  (%host-sysvar-string host "TRUSTEDPATHS"))))
+        (implicit (and host (eq dialect-name :clautolisp)
+                       (ignore-errors
+                        (%host-sysvar-string
+                         host "CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS")))))
+    (secureload-path-trusted-p
+     abs-namestring trustedpaths implicit
+     (clautolisp.autolisp-runtime:autolisp-trusted-init-files))))
+
+(defun %secureload-guard (abs-namestring builtin-name diagnostic-code)
+  "Apply the SECURELOAD gate to ABS-NAMESTRING (already known to be a
+gated file). Returns :PROCEED — allow, or warn-and-proceed with a
+diagnostic emitted — or :BLOCK, which the caller turns into ERRNO + a
+security error. Host-less contexts (no SECURELOAD cell) default to
+allow."
+  (let* ((host (ignore-errors (current-evaluation-host)))
+         (dialect-name (%secureload-dialect-name))
+         (secureload (%host-sysvar-integer host "SECURELOAD" 0))
+         (trusted-p (%secureload-trusted-p abs-namestring host dialect-name))
+         (action (secureload-action secureload trusted-p)))
+    (case action
+      (:warn
+       (clautolisp.autolisp-runtime:signal-secureload-diagnostic
+        diagnostic-code
+        "~A: ~A is a gated file in an untrusted location (SECURELOAD=~A); ~
+on a host with SECURELOAD=2 this would be blocked. Add its folder to ~
+TRUSTEDPATHS to trust it."
+        builtin-name abs-namestring secureload)
+       :proceed)
+      (:block :block)
+      (otherwise :proceed))))
+
 (defun builtin-load (filename
                      &optional (onfailure nil onfailure-supplied-p)
                                (encoding nil encoding-supplied-p))
@@ -512,20 +561,35 @@ extension; --~(~A~) has no per-call encoding control on LOAD."
               (absolute-as-autolisp
                (clautolisp.autolisp-runtime:make-autolisp-string
                 (namestring absolute))))
-         (unwind-protect
-              (progn
-                (clautolisp.autolisp-runtime:set-variable
-                 load-pathname-sym absolute-as-autolisp)
-                (let ((result (if encoding-kw
-                                  (autolisp-load-file
-                                   (namestring resolved)
-                                   :external-format encoding-kw)
-                                  (autolisp-load-file
-                                   (namestring resolved)))))
-                  (set-autolisp-errno 0)
-                  result))
-           (clautolisp.autolisp-runtime:set-variable
-            load-pathname-sym prior-value)))))))
+         (if (eq :block (%secureload-guard (namestring absolute)
+                                           "LOAD" :sec-untrusted-load))
+             ;; SECURELOAD=2 + untrusted: refuse, like the not-found path.
+             (progn
+               (set-autolisp-errno 73)
+               (if onfailure-supplied-p
+                   (evaluate-load-onfailure onfailure)
+                   (call-with-autolisp-error-handler
+                    (lambda ()
+                      (signal-builtin-host-error
+                       :load-untrusted-file
+                       "LOAD"
+                       "LOAD blocked: ~A is not in a trusted location ~
+(SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
+                       (namestring absolute))))))
+             (unwind-protect
+                  (progn
+                    (clautolisp.autolisp-runtime:set-variable
+                     load-pathname-sym absolute-as-autolisp)
+                    (let ((result (if encoding-kw
+                                      (autolisp-load-file
+                                       (namestring resolved)
+                                       :external-format encoding-kw)
+                                      (autolisp-load-file
+                                       (namestring resolved)))))
+                      (set-autolisp-errno 0)
+                      result))
+               (clautolisp.autolisp-runtime:set-variable
+                load-pathname-sym prior-value))))))))
 
 (defun builtin-autoload (filename function-list)
   (let ((path (autolisp-string-value (require-string filename "AUTOLOAD"))))
@@ -1957,6 +2021,23 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
           (when effective-encoding-string
             (%check-open-host-dependent-write
              effective-encoding-string direction "OPEN")))
+        ;; SECURELOAD gate: OPEN is not gated by Autodesk, but pjb
+        ;; directs clautolisp to gate it for files whose extension is in
+        ;; the gated set (a .lsp etc. can be read then evaluated). Only
+        ;; gated extensions are affected; ordinary data files are not.
+        (when (secureload-gated-extension-p path-string)
+          (when (eq :block (%secureload-guard (namestring path)
+                                              "OPEN" :sec-untrusted-open))
+            (return-from builtin-open
+              (call-with-autolisp-error-handler
+               (lambda ()
+                 (set-autolisp-errno 22)
+                 (signal-builtin-host-error
+                  :open-untrusted-file
+                  "OPEN"
+                  "OPEN blocked: ~A is a gated file in an untrusted ~
+location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
+                  path-string))))))
         (handler-case
             (let ((stream (open path
                                 :direction direction

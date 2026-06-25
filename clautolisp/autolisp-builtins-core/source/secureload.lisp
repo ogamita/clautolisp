@@ -164,6 +164,28 @@ trusted."
              trusted-entries)
        t))
 
+(defun %same-file-p (a b)
+  "True when namestrings A and B denote the same file (string match, or
+equal truenames when both resolve)."
+  (and a b
+       (or (string= a b)
+           (let ((ta (ignore-errors (truename a)))
+                 (tb (ignore-errors (truename b))))
+             (and ta tb (equal ta tb))))))
+
+(defun secureload-path-trusted-p (abs-file-path trustedpaths-string
+                                  implicit-string init-files)
+  "True when ABS-FILE-PATH (an absolute file namestring) is trusted:
+either an exact match of one of INIT-FILES (the trusted user init
+files), or inside a directory trusted by TRUSTEDPATHS-STRING or
+IMPLICIT-STRING (each a TRUSTEDPATHS-syntax spec; NIL/empty allowed).
+This is the trust test the load / open gate uses."
+  (and (or (some (lambda (f) (%same-file-p abs-file-path f)) init-files)
+           (path-trusted-p abs-file-path
+                           (append (parse-trusted-path-spec (or trustedpaths-string ""))
+                                   (parse-trusted-path-spec (or implicit-string "")))))
+       t))
+
 ;;; --- SECURELOAD action resolver ------------------------------------
 
 (defun secureload-action (secureload-value trusted-p)

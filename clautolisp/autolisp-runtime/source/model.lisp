@@ -5,6 +5,12 @@
   (namestring (uiop:ensure-directory-pathname (truename "."))))
 (defparameter *autolisp-support-paths* (list *autolisp-current-directory*))
 (defparameter *autolisp-trusted-paths* '())
+(defparameter *autolisp-trusted-init-files* '()
+  "Absolute namestrings of the user init files the engine auto-loads at
+startup (~/.autolisp + XDG variants). The SECURELOAD trust resolver
+treats these as trusted by EXACT path so loading them is never gated.
+Empty under --no-init. Registered by the launch wiring; see the
+clautolisp-secureload-trust-model spec.")
 
 (defstruct autolisp-symbol
   (name "" :type string)

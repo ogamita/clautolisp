@@ -192,8 +192,15 @@ The two-arg env-var check `no-init-requested-p NO-INIT-P
 $AUTOLISP_NO_INIT shared kill-switch, and the per-program
 $CLAUTOLISP_NO_INIT env var into one boolean."
   (when (no-init-requested-p no-init-p "CLAUTOLISP_NO_INIT")
+    ;; --no-init: do not load init files, and trust nothing on their
+    ;; behalf (the SECURELOAD resolver's trusted-init-file set is empty).
+    (clautolisp.autolisp-runtime:set-autolisp-trusted-init-files '())
     (return-from prepend-init-file-actions actions))
   (let ((init-paths (find-init-files *default-clautolisp-stems*)))
+    ;; The init files the engine auto-loads are trusted by exact path, so
+    ;; the SECURELOAD gate never warns/blocks on the user's own init
+    ;; files. See the secureload trust model spec.
+    (clautolisp.autolisp-runtime:set-autolisp-trusted-init-files init-paths)
     (append
      (loop for path in init-paths
            collect (cons :file (namestring path)))
