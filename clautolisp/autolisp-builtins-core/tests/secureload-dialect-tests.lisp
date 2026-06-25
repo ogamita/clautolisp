@@ -10,15 +10,22 @@
 ;;;; sysvars, and the environment-variable override (env > dialect
 ;;;; default). See documentation/clautolisp-secureload-trust-model-spec.org.
 
+(defun %const-cwd (&rest _)
+  "A deterministic getcwd stub for tests (no real cwd dependency)."
+  (declare (ignore _))
+  "/work/proj")
+
 (defun %trust-host (dialect &optional getenv)
   "A fresh MockHost with the dialect trust defaults applied. GETENV, when
-supplied, stubs the environment lookups (a function NAME -> string-or-nil)."
+supplied, stubs the environment lookups (a function NAME -> string-or-nil).
+The cwd is stubbed to /work/proj so implicit-trusted defaults are
+deterministic."
   (let ((mock (clautolisp.autolisp-mock-host:make-mock-host)))
     (if getenv
         (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
-         mock dialect :getenv getenv)
+         mock dialect :getenv getenv :getcwd #'%const-cwd)
         (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
-         mock dialect))
+         mock dialect :getcwd #'%const-cwd))
     mock))
 
 (defun %getvar-int (host name)
@@ -41,7 +48,8 @@ supplied, stubs the environment lookups (a function NAME -> string-or-nil)."
 (test secureload-dialect-default-values
   (is (eql 1 (%getvar-int (%trust-host :autocad-2026) "SECURELOAD")))
   (is (eql 0 (%getvar-int (%trust-host :bricscad-v26) "SECURELOAD")))
-  (is (eql 2 (%getvar-int (%trust-host :strict) "SECURELOAD")))
+  ;; strict warns (1), not blocks (2): strict = intersection of dialects.
+  (is (eql 1 (%getvar-int (%trust-host :strict) "SECURELOAD")))
   (is (eql 0 (%getvar-int (%trust-host :lax) "SECURELOAD")))
   (is (eql 1 (%getvar-int (%trust-host :clautolisp) "SECURELOAD"))))
 
@@ -74,25 +82,26 @@ supplied, stubs the environment lookups (a function NAME -> string-or-nil)."
     (is (null (%getvar-str ac "CLAUTOLISPSUPPORTFILESEARCHPATH")))
     (is (null (%getvar-str ac "CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS")))))
 
-(test implicitly-trusted-default-substitutes-prefix-and-xdg
+(test implicitly-trusted-default-substitutes-cwd-prefix-and-xdg
+  ;; cwd subtree first (clautolisp convenience), then XDG, then PREFIX.
   (let* ((env (lambda (n)
                 (cond ((string= n "CLAUTOLISP_PREFIX") "/opt/local")
                       ((string= n "XDG_DATA_HOME") "/data")
                       (t nil))))
          (cl (%trust-host :clautolisp env)))
-    (is (string= "/data/autolisp/...;/opt/local/share/autolisp/..."
+    (is (string= "/work/proj/...;/data/autolisp/...;/opt/local/share/autolisp/..."
                  (%getvar-str cl "CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS"))))
-  ;; XDG falls back to $HOME/.local/share; no prefix -> single segment.
+  ;; XDG falls back to $HOME/.local/share; no prefix -> cwd + xdg only.
   (let* ((env (lambda (n)
                 (cond ((string= n "HOME") "/home/me") (t nil))))
          (cl (%trust-host :clautolisp env)))
-    (is (string= "/home/me/.local/share/autolisp/..."
+    (is (string= "/work/proj/...;/home/me/.local/share/autolisp/..."
                  (%getvar-str cl "CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS")))))
 
 ;;; --- environment override (env > dialect default) -------------------
 
 (test env-override-beats-dialect-default
-  ;; strict defaults SECURELOAD to 2; SECURELOAD=0 in the env wins.
+  ;; strict defaults SECURELOAD to 1; SECURELOAD=0 in the env wins.
   (let* ((env (lambda (n) (cond ((string= n "SECURELOAD") "0")
                                 ((string= n "TRUSTEDPATHS") "/opt/lisp;/usr/lisp/...")
                                 (t nil))))

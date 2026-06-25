@@ -43,7 +43,12 @@ A file with no extension is not gated."
   (case dialect-name
     (:autocad-2026 1)
     (:bricscad-v26 0)
-    (:strict 2)
+    ;; --strict means "the intersection of all dialects" (a program that
+    ;; runs clean under --strict runs on any implementation), NOT
+    ;; "maximally locked down". So strict warns (1) rather than blocks
+    ;; (2): an untrusted load is a portability signal, not a hard stop.
+    ;; A program that needs blocking sets SECURELOAD=2 itself.
+    (:strict 1)
     (:lax 0)
     (:clautolisp 1)
     (t 1)))                              ; conservative AutoCAD-like default
@@ -201,23 +206,41 @@ trimmed string otherwise (uiop:getenv returns \"\" for set-empty)."
 (defun %nonempty (s)
   (and s (stringp s) (plusp (length (string-trim '(#\Space #\Tab) s))) s))
 
-(defun default-implicitly-trusted-paths (&optional (getenv #'uiop:getenv))
+(defun %cwd-namestring (getcwd)
+  "The current working directory as a namestring without a trailing
+separator, or NIL when it cannot be determined."
+  (let ((dir (ignore-errors (funcall getcwd))))
+    (and dir
+         (let ((s (namestring dir)))
+           (%nonempty (string-right-trim "/\\" s))))))
+
+(defun default-implicitly-trusted-paths (&key (getenv #'uiop:getenv)
+                                              (getcwd #'uiop:getcwd))
   "Compute the launch-time default for CLAUTOLISPIMPLICITLYTRUSTEDFOLDER-
-PATHS: \"$PREFIX/share/autolisp/...;$XDG_DATA_HOME/autolisp/...\" with
-the variables substituted to absolute paths (spec § 'New clautolisp
-system variables'). $PREFIX is taken from CLAUTOLISP_PREFIX (omitted
-when unset, since the install root is not otherwise knowable headless);
-$XDG_DATA_HOME falls back to $HOME/.local/share. Each segment keeps the
+PATHS under the clautolisp dialect (spec § 'New clautolisp system
+variables'):
+
+  \"$(pwd)/...;$XDG_DATA_HOME/autolisp/...;$PREFIX/share/autolisp/...\"
+
+with the variables substituted to absolute paths. The current working
+directory subtree is prepended as a clautolisp convenience (AutoCAD /
+BricsCAD do NOT implicitly trust the cwd, so this is clautolisp-only);
+$XDG_DATA_HOME (falling back to $HOME/.local/share) comes next, then
+$PREFIX from CLAUTOLISP_PREFIX (omitted when unset, since the install
+root is not otherwise knowable headless). Each segment keeps the
 cross-platform \"/...\" recursion marker so all subfolders are trusted.
 The whole value is overridable by the CLAUTOLISPIMPLICITLYTRUSTEDFOLDER-
-PATHS environment variable (handled by the caller, higher precedence)."
-  (let* ((prefix (%nonempty (%env getenv "CLAUTOLISP_PREFIX")))
+PATHS environment variable (applied by the caller, higher precedence)."
+  (let* ((cwd    (%cwd-namestring getcwd))
+         (prefix (%nonempty (%env getenv "CLAUTOLISP_PREFIX")))
          (xdg    (%nonempty (%env getenv "XDG_DATA_HOME")))
          (home   (%nonempty (%env getenv "HOME")))
          (data   (or xdg (and home (concatenate 'string home "/.local/share"))))
          (segs '()))
-    ;; $XDG_DATA_HOME first (the user's own data dir takes precedence),
-    ;; then $PREFIX (the install tree).
+    ;; cwd subtree first (clautolisp convenience), then $XDG_DATA_HOME
+    ;; (the user's own data dir), then $PREFIX (the install tree).
+    (when cwd
+      (push (concatenate 'string cwd "/...") segs))
     (when data
       (push (concatenate 'string data "/autolisp/...") segs))
     (when prefix
@@ -243,7 +266,8 @@ it does not parse (an unparsable integer is ignored rather than set)."
     (:string raw)))
 
 (defun apply-dialect-trust-sysvar-defaults (host dialect-keyword
-                                            &key (getenv #'uiop:getenv))
+                                            &key (getenv #'uiop:getenv)
+                                                 (getcwd #'uiop:getcwd))
   "Launch-time overlay: stamp the dialect-dependent SECURELOAD /
 TRUSTEDPATHS defaults and read-only-ness onto HOST, register the two
 clautolisp-only trust sysvars under the clautolisp dialect, then apply
@@ -273,7 +297,8 @@ spec §§ 'Dialect-dependent defaults', 'New clautolisp system variables',
           (define "CLAUTOLISPSUPPORTFILESEARCHPATH" :string
                   *clautolisp-support-search-path-default* nil)
           (define "CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS" :string
-                  (default-implicitly-trusted-paths getenv) nil))
+                  (default-implicitly-trusted-paths :getenv getenv :getcwd getcwd)
+                  nil))
         ;; 3. environment-variable overrides (env > dialect default).
         (dolist (entry *clautolisp-trust-env-sysvars*)
           (let ((name (car entry)) (kind (cdr entry)))
