@@ -87,6 +87,18 @@ This is the trust-gating coupling tracked in system-variables.issue.
   These directory may contain =acad.lsp= or =acaddoc.lsp= (or compiled
   versions) which are loaded according to the specified rules.
 
+  Init files are implicitly trusted. The user init files the clautolisp
+  engine auto-loads at startup — =~/.autolisp= and its XDG variants
+  (=~/.config/autolisp/init=, =~/.config/clautolisp/init=, the alfe
+  equivalents; see the autolisp-init-files subsystem's find-init-files)
+  — must be trusted to load, in every dialect, UNLESS =--no-init= (or
+  the equivalent env flag) is given. These are trusted by EXACT resolved
+  path, not by trusting their containing folder (so =~/.autolisp= does
+  not make all of =$HOME= a trusted load location). The trust resolver
+  consults this launch-computed trusted-init-file set in addition to
+  TRUSTEDPATHS ∪ the implicit folders; under =--no-init= the set is
+  empty (and the init files are not loaded anyway).
+
 ** Gated "executable" file extensions
 
 AutoCAD (Windows): =arx crx dbx hdi lsp fas vlx mnl scr dvb dll= +
@@ -188,7 +200,9 @@ env seed. Precedence: setvar > env var > dialect default.
    findfile) to an absolute path; findtrustedfile searches the trusted
    set instead.
 2. *Trust test* (TRUST-P below) on the absolute path against
-   TRUSTEDPATHS ∪ CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS.
+   TRUSTEDPATHS ∪ CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS, OR exact-path
+   membership in the launch-computed trusted-init-file set (the resolved
+   ~/.autolisp + XDG init files, empty under --no-init).
 3. *Gate.* For load (and open of a gated-extension file): apply the
    SECURELOAD action table above. findtrustedfile returns the path only
    when trusted; findfile returns it regardless (union search).
@@ -209,12 +223,19 @@ env seed. Precedence: setvar > env var > dialect default.
   tested, no behavioural change.* Gated-extension set, trusted-path
   parsing (quotes, =;=, ""/".", =\...= / =/...=), TRUST-P, the
   dialect-default tables, and the SECURELOAD action resolver.
-- *Phase 2: sysvar seeding.* Dialect-dependent SECURELOAD/TRUSTEDPATHS
-  defaults + the two new clautolisp sysvars, via a dialect-aware
-  overlay; env-var initialisation in the CLI transmit layer.
+- *Phase 2 (done, 1.2.16-17): sysvar seeding.* Dialect-dependent
+  SECURELOAD/TRUSTEDPATHS defaults + read-only-ness + the two new
+  clautolisp sysvars, via a dialect-aware overlay (host-define-sysvar);
+  env-var initialisation in the CLI transmit layer. strict default
+  SECURELOAD=1 (warn); clautolisp prepends the cwd subtree.
 - *Phase 3: behavioural gating.* Wire the resolver into load, open,
   findfile, findtrustedfile; ERRNO + security-error signalling; the
-  warn diagnostic. Conformance tests (sysvar/ + file-compat) and
+  warn diagnostic. Register the launch-computed trusted-init-file set
+  (resolved ~/.autolisp + XDG init files, empty under --no-init) and
+  consult it in the resolver. Wire relative-path search to
+  CLAUTOLISPSUPPORTFILESEARCHPATH and connect TRUSTEDPATHS + implicit
+  folders to the findfile (union) / findtrustedfile (trusted-only)
+  search sets. Conformance tests (sysvar/ + file-compat) and
   builtins-core unit tests.
 - *Phase 4: autolisp-spec.* Update the LOAD / OPEN / FINDFILE /
   FINDTRUSTEDFILE / SECURELOAD / TRUSTEDPATHS entries for the three
