@@ -185,6 +185,8 @@
    #:set-autolisp-support-paths
    #:autolisp-trusted-paths
    #:set-autolisp-trusted-paths
+   #:autolisp-trusted-init-files
+   #:set-autolisp-trusted-init-files
    #:autolisp-true-p
    #:autolisp-false-p
    #:autolisp-boundp
@@ -281,6 +283,10 @@
    #:*enc-diagnostic-codes*
    #:signal-encoding-diagnostic
    #:call-with-suppressed-encoding-diagnostics
+   #:*secureload-diagnostic-stream*
+   #:*secureload-diagnostic-suppress-p*
+   #:*secureload-diagnostic-codes*
+   #:signal-secureload-diagnostic
    ;; Terminal colour-output policy. *COLOR-OUTPUT* is the single
    ;; switch the AUTOLISP-SYMBOL PRINT-OBJECT method consults; the
    ;; CLI calls RESOLVE-COLOR-POLICY at startup, binds the result

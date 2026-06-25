@@ -72,6 +72,7 @@ HARNESS_SNIPPET := \
   (setq *clautolisp-version* "0.x") \
   (setq *autolisp-test-debug-p* nil) \
   (setq *autolisp-test-root* "$(ROOT_DIR)/") \
+  (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-test-root* "..."))) \
   (load (strcat *autolisp-test-root* "harness/run.lsp")) \
   (autolisp-test-run-all)
 
@@ -82,6 +83,7 @@ HARNESS_DEBUG_SNIPPET := \
   (setq *clautolisp-version* "0.x") \
   (setq *autolisp-test-debug-p* T) \
   (setq *autolisp-test-root* "$(ROOT_DIR)/") \
+  (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-test-root* "..."))) \
   (load (strcat *autolisp-test-root* "harness/run.lsp")) \
   (autolisp-test-run-all)
 

@@ -217,6 +217,21 @@ the binding-cell doc slot."
   (setf clautolisp.autolisp-runtime.internal::*autolisp-trusted-paths*
         (mapcar #'normalize-directory-path paths)))
 
+(defun autolisp-trusted-init-files ()
+  "The list of absolute init-file namestrings trusted by exact path
+(see *AUTOLISP-TRUSTED-INIT-FILES*)."
+  (copy-list clautolisp.autolisp-runtime.internal::*autolisp-trusted-init-files*))
+
+(defun set-autolisp-trusted-init-files (paths)
+  "Register PATHS (pathnames or namestrings) as the trusted init files.
+Stored as namestrings; nil / blank entries are dropped. Called by the
+launch wiring after resolving the user init files (empty under
+--no-init)."
+  (setf clautolisp.autolisp-runtime.internal::*autolisp-trusted-init-files*
+        (loop for p in paths
+              for s = (and p (namestring p))
+              when (and s (plusp (length s))) collect s)))
+
 (defun find-autolisp-symbol (name)
   (gethash name clautolisp.autolisp-runtime.internal::*autolisp-symbol-table*))
 
@@ -506,6 +521,8 @@ profiles between subordinate evaluations within a single session."
       ((or (eq code :builtin-file-error)
            (eq code :load-file-not-found)
            (eq code :unsupported-load-file-type)
+           (eq code :load-untrusted-file)
+           (eq code :open-untrusted-file)
            (eq code :autoload-definition-missing)
            (eq code :invalid-open-mode)
            (eq code :invalid-external-format)
@@ -2595,6 +2612,46 @@ call-site signature."
               (member code *enc-diagnostic-suppress-codes*)
               (%enc-dialect-is-lax-p))
     (let ((stream (or *enc-diagnostic-stream* *error-output*))
+          (code-name (string-downcase (symbol-name code))))
+      (fresh-line stream)
+      (format stream "[~A] " code-name)
+      (apply #'format stream format-control format-args)
+      (terpri stream)
+      (force-output stream))))
+
+;;; --- SECURELOAD trust diagnostics ----------------------------------
+;;;
+;;; Parallel to the encoding diagnostics above: the warn-and-proceed
+;;; path of the SECURELOAD trust model (value 1) emits a diagnostic and
+;;; continues. Same suppression model so tests / harnesses can silence
+;;; it; :lax also silences (no gating under --lax).
+
+(defparameter *secureload-diagnostic-stream* nil
+  "Stream SECURELOAD trust diagnostics are written to. NIL falls back
+to *error-output* at call time.")
+
+(defparameter *secureload-diagnostic-suppress-p* nil
+  "When true, SIGNAL-SECURELOAD-DIAGNOSTIC is a no-op. Bound by tests
+and by harnesses that load their own trusted corpus.")
+
+(defparameter *secureload-diagnostic-codes*
+  '(:sec-untrusted-load     ; LOAD of a gated file from an untrusted location
+    :sec-untrusted-open)    ; OPEN of a gated-extension file, untrusted location
+  "Closed set of diagnostic codes SIGNAL-SECURELOAD-DIAGNOSTIC accepts.")
+
+(defun signal-secureload-diagnostic (code format-control &rest format-args)
+  "Emit a SECURELOAD trust diagnostic with CODE (a keyword from
+*SECURELOAD-DIAGNOSTIC-CODES*) as \"[CODE] message\" to
+*SECURELOAD-DIAGNOSTIC-STREAM* (default *error-output*). Suppressed by
+*SECURELOAD-DIAGNOSTIC-SUPPRESS-P* or under the :lax dialect. Never a
+runtime error — this is the warn-and-proceed path; the caller has
+already decided to honour the load."
+  (unless (member code *secureload-diagnostic-codes*)
+    (error "Unknown secureload-diagnostic code ~S; expected one of ~S."
+           code *secureload-diagnostic-codes*))
+  (unless (or *secureload-diagnostic-suppress-p*
+              (%enc-dialect-is-lax-p))
+    (let ((stream (or *secureload-diagnostic-stream* *error-output*))
           (code-name (string-downcase (symbol-name code))))
       (fresh-line stream)
       (format stream "[~A] " code-name)
