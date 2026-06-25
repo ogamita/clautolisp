@@ -108,7 +108,10 @@ system-variables.issues -- Verify what is implemented, and implement the missing
   since process start) are now computed live in the mock host's
   host-getvar (mirroring the ERRNO live-source path); read-only enforced.
   +12 mock-host checks, +4 conformance deftests (sysvar/coupling-date.lsp).
-  Verified on the binary (DATE 2461217.56 = 2026-06-25). The four
+  Verified on the binary (DATE 2461217.56 = 2026-06-25). 1.2.22 adds a
+  shared 1 ms cache (the sysvars' required resolution) so a tight poll
+  loop computes the clock at most once per ms; benchmark ~8k-20k cached
+  reads/ms (mock-host suite 244/244). The four
   TD*CREATE/UPDATE timestamps wait on the document/dwg lifecycle;
   TDINDWG/TDUSRTIMER need a session timer. Then the remaining couplings
   (CMDECHO, TILEMODE/CVPORT, SNAPANG/ANGBASE, DWGNAME/DWGPREFIX, MAXSORT,

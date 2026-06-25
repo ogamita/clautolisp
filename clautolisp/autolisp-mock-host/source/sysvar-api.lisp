@@ -140,29 +140,58 @@ autolisp-string wrapper, others are returned as-is."
        (floor y 400)
        -32045)))
 
-(defun %clock-date ()
-  "DATE: local Julian day + fraction of the day since local midnight."
-  (multiple-value-bind (sec min hour day month year)
-      (decode-universal-time (get-universal-time))
-    (+ (%gregorian-julian-day-number year month day)
-       (/ (+ (* hour 3600) (* min 60) sec) 86400.0d0))))
+;; The three clock sysvars share a 1 ms cache. Their required
+;; resolution is one millisecond, so within a given millisecond every
+;; GETVAR returns the value computed for that millisecond: a tight loop
+;; polling the clock pays the get-universal-time + decode + Julian-day
+;; cost at most once per ms (the per-call cost drops to a single
+;; monotonic tick read). The cache is global because the wall clock is
+;; global; a concurrent reader might at worst trigger a redundant
+;; refresh for the same ms, never observe a wrong value.
 
-(defun %clock-cdate ()
-  "CDATE: local date+time as the decimal YYYYMMDD.HHMMSS."
-  (multiple-value-bind (sec min hour day month year)
-      (decode-universal-time (get-universal-time))
-    (+ (coerce (+ (* year 10000) (* month 100) day) 'double-float)
-       (/ (+ (* hour 10000) (* min 100) sec) 1.0d6))))
+(defstruct (clock-cache (:constructor %make-clock-cache))
+  (millis -1 :type integer)            ; the ms tick the cache was filled for
+  (date 0.0d0 :type double-float)
+  (cdate 0.0d0 :type double-float)
+  (millisecs 0 :type integer))
 
-(defun %clock-millisecs ()
+(defparameter *clock-cache* (%make-clock-cache)
+  "1 ms cache shared by the DATE / CDATE / MILLISECS sysvars.")
+
+(defun %clock-now-millis ()
   "Milliseconds since the engine process started (monotonic)."
-  (round (* 1000 (get-internal-real-time)) internal-time-units-per-second))
+  (floor (* 1000 (get-internal-real-time)) internal-time-units-per-second))
+
+(defun %refresh-clock-cache (now-millis)
+  "Recompute all three clock values for NOW-MILLIS from a single
+universal-time read, so DATE and CDATE always describe the same instant."
+  (multiple-value-bind (sec min hour day month year)
+      (decode-universal-time (get-universal-time))
+    (let ((c *clock-cache*))
+      (setf (clock-cache-date c)
+            (+ (%gregorian-julian-day-number year month day)
+               (/ (+ (* hour 3600) (* min 60) sec) 86400.0d0))
+            (clock-cache-cdate c)
+            (+ (coerce (+ (* year 10000) (* month 100) day) 'double-float)
+               (/ (+ (* hour 10000) (* min 100) sec) 1.0d6))
+            (clock-cache-millisecs c) now-millis
+            (clock-cache-millis c) now-millis))))
+
+(defun %clock-sysvar-at (string now-millis)
+  "Return STRING's clock value for the millisecond NOW-MILLIS, refreshing
+the cache only when NOW-MILLIS differs from the cached tick. Split out
+from COMPUTE-CLOCK-SYSVAR so the cache can be exercised with an injected
+clock."
+  (let ((c *clock-cache*))
+    (unless (eql now-millis (clock-cache-millis c))
+      (%refresh-clock-cache now-millis))
+    (cond
+      ((string-equal string "DATE")      (clock-cache-date c))
+      ((string-equal string "CDATE")     (clock-cache-cdate c))
+      ((string-equal string "MILLISECS") (clock-cache-millisecs c)))))
 
 (defun compute-clock-sysvar (string)
-  (cond
-    ((string-equal string "DATE")      (%clock-date))
-    ((string-equal string "CDATE")     (%clock-cdate))
-    ((string-equal string "MILLISECS") (%clock-millisecs))))
+  (%clock-sysvar-at string (%clock-now-millis)))
 
 ;;; --- Method definitions ------------------------------------------
 
