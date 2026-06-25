@@ -81,9 +81,21 @@ system-variables.issues -- Verify what is implemented, and implement the missing
   TRUST-SYSVAR-DEFAULTS wired in the CLI transmit layer. +27 unit checks
   (secureload-dialect-tests), verified on the 1.2.16 binary across all
   dialects + env overrides; mock-host suite 228/228, builtins-core
-  1301/1301. PHASES 3-4 remain: behavioural gating in load/open/findfile/
-  findtrustedfile; autolisp-spec updates. Then the remaining behavioural
-  couplings; UNITMODE waits on rtos modes 3-5.
+  1301/1301.
+  PHASE 3 DONE (3a 1.2.18 + 3b 1.2.19): behavioural gating. 3a wires the
+  trust gate into LOAD and OPEN (gated extensions) -- allow/warn/block per
+  SECURELOAD + trusted set (TRUSTEDPATHS u implicit u trusted init files,
+  the latter registered at launch, empty under --no-init); ERRNO +
+  security-error signalling + the signal-secureload-diagnostic warn
+  channel; strict warns (non-breaking). 3b: FINDFILE = support u trusted,
+  FINDTRUSTEDFILE = trusted-only, relative LOAD/FINDFILE search honours
+  CLAUTOLISPSUPPORTFILESEARCHPATH under clautolisp. Verified on the binary
+  (block/warn/allow, trusted dirs, cwd-trust, --no-init) + corpus loads
+  121 files/3920 tests with 0 warn leaks under strict & bricscad;
+  builtins-core 1316/1316. Deferred: OPEN relative-name search-path
+  resolution (gate already in place). PHASE 4 remains: autolisp-spec for
+  the 3 dialects. Then the remaining behavioural couplings; UNITMODE
+  waits on rtos modes 3-5.
   pjb's spec revision (ad748c2) also surfaced a broad new requirement:
   dialect-platform-version-axis.issue (autocad vs autocad-mac + version
   suffixes; drives the "/..."-warns-on-windows rule). Filed, not blocking.

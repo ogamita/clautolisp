@@ -228,15 +228,22 @@ env seed. Precedence: setvar > env var > dialect default.
   clautolisp sysvars, via a dialect-aware overlay (host-define-sysvar);
   env-var initialisation in the CLI transmit layer. strict default
   SECURELOAD=1 (warn); clautolisp prepends the cwd subtree.
-- *Phase 3: behavioural gating.* Wire the resolver into load, open,
-  findfile, findtrustedfile; ERRNO + security-error signalling; the
-  warn diagnostic. Register the launch-computed trusted-init-file set
-  (resolved ~/.autolisp + XDG init files, empty under --no-init) and
-  consult it in the resolver. Wire relative-path search to
-  CLAUTOLISPSUPPORTFILESEARCHPATH and connect TRUSTEDPATHS + implicit
-  folders to the findfile (union) / findtrustedfile (trusted-only)
-  search sets. Conformance tests (sysvar/ + file-compat) and
-  builtins-core unit tests.
+- *Phase 3 (done): behavioural gating.*
+  - 3a (1.2.18): the gate on LOAD and OPEN — SECURELOAD + the trusted
+    set (TRUSTEDPATHS u implicit u trusted init files) resolve to
+    allow / warn-and-proceed / block; ERRNO + :load-untrusted-file /
+    :open-untrusted-file signalling; the signal-secureload-diagnostic
+    warn channel. OPEN is gated only for gated-extension files. The
+    trusted-init-file set is registered at launch (empty under
+    --no-init). Host reads degrade to allow on a null/base host.
+  - 3b (1.2.19): FINDFILE = support u trusted; FINDTRUSTEDFILE =
+    trusted-only; both driven by TRUSTEDPATHS + the implicit folders
+    (and the programmatic *AUTOLISP-TRUSTED-PATHS*). Relative LOAD /
+    FINDFILE search honours CLAUTOLISPSUPPORTFILESEARCHPATH under the
+    clautolisp dialect (default "./" preserves cwd behaviour).
+  - Deferred: OPEN's relative-name resolution still uses the cwd (not
+    the support search path); search-path resolution for OPEN read mode
+    is a small follow-up (OPEN's gate is already in place).
 - *Phase 4: autolisp-spec.* Update the LOAD / OPEN / FINDFILE /
   FINDTRUSTEDFILE / SECURELOAD / TRUSTEDPATHS entries for the three
   dialects; document the clautolisp extensions (new sysvars, =/...=,

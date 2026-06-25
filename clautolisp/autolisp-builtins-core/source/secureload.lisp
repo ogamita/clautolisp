@@ -164,6 +164,22 @@ trusted."
              trusted-entries)
        t))
 
+(defun trusted-spec-directories (&rest specs)
+  "Return the list of directory strings named by the TRUSTEDPATHS-syntax
+SPECS (each a string or NIL), in order, de-duplicated. The recursion
+marker is irrelevant to a per-folder file search, so only the directory
+component of each entry is kept. Used to build the findfile (support u
+trusted) and findtrustedfile (trusted-only) search lists."
+  (let ((dirs '()))
+    (dolist (spec specs)
+      (dolist (entry (parse-trusted-path-spec (or spec "")))
+        ;; Return directory-form namestrings (trailing separator) so a
+        ;; search via merge-pathnames treats them as folders, not files.
+        (let ((dir (namestring (uiop:ensure-directory-pathname (car entry)))))
+          (unless (member dir dirs :test #'string=)
+            (push dir dirs)))))
+    (nreverse dirs)))
+
 (defun %same-file-p (a b)
   "True when namestrings A and B denote the same file (string match, or
 equal truenames when both resolve)."
