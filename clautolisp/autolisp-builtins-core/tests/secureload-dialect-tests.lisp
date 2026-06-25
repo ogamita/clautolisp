@@ -317,3 +317,27 @@ a marker file (mark.txt), run BODY, then clean up."
     (clautolisp.autolisp-host:host-define-sysvar
      (%gate-host) "TRUSTEDPATHS" :string "" nil)
     (is (null (%ftf "tmark.txt")))))
+
+
+;;;; OPEN resolves relative names via the support search path (not just cwd).
+
+(test open-resolution-uses-support-search-path
+  (setup-mock-evaluation-context)
+  (%with-two-dirs (sdir odir)
+    (let ((saved (clautolisp.autolisp-runtime:autolisp-support-paths)))
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-runtime:set-autolisp-support-paths
+              (list (namestring sdir)))
+             ;; An existing file on the support path resolves INTO sdir
+             ;; (whose temp name carries the "sec-t-" prefix)...
+             (let ((r (clautolisp.autolisp-builtins-core::resolve-open-search-pathname
+                       "tmark.txt")))
+               (is (search "sec-t-" (namestring r)))
+               (is (probe-file r)))
+             ;; ...a new (non-existent) name falls back to the cwd, not sdir,
+             ;; so OPEN "w" still creates in the working directory.
+             (let ((r (clautolisp.autolisp-builtins-core::resolve-open-search-pathname
+                       "brand-new-xyz.dat")))
+               (is (not (search "sec-t-" (namestring r))))))
+        (clautolisp.autolisp-runtime:set-autolisp-support-paths saved)))))

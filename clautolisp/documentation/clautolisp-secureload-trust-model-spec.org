@@ -241,9 +241,12 @@ env seed. Precedence: setvar > env var > dialect default.
     (and the programmatic *AUTOLISP-TRUSTED-PATHS*). Relative LOAD /
     FINDFILE search honours CLAUTOLISPSUPPORTFILESEARCHPATH under the
     clautolisp dialect (default "./" preserves cwd behaviour).
-  - Deferred: OPEN's relative-name resolution still uses the cwd (not
-    the support search path); search-path resolution for OPEN read mode
-    is a small follow-up (OPEN's gate is already in place).
+  - 3c (1.2.20): the effective support dirs always begin with
+    *AUTOLISP-SUPPORT-PATHS* (default the cwd), and under clautolisp the
+    CLAUTOLISPSUPPORTFILESEARCHPATH folders are appended AFTER it. OPEN
+    now resolves a relative name through this support search path (an
+    existing file is found on the path; a new name still falls back to
+    the cwd, so write semantics are unchanged) instead of only the cwd.
 - *Phase 4: autolisp-spec.* Update the LOAD / OPEN / FINDFILE /
   FINDTRUSTEDFILE / SECURELOAD / TRUSTEDPATHS entries for the three
   dialects; document the clautolisp extensions (new sysvars, =/...=,

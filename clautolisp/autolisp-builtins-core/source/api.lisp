@@ -500,22 +500,25 @@ SEARCHPATH default of \"./\" behaves exactly like the cwd."
                     (uiop:merge-pathnames* p cwd)))))
 
 (defun %effective-support-dirs ()
-  "The directories a relative LOAD / FINDFILE name is searched in. Under
-the clautolisp dialect this is CLAUTOLISPSUPPORTFILESEARCHPATH
-(TRUSTEDPATHS syntax, default \"./\"), normalised to absolute folders;
-otherwise the existing *AUTOLISP-SUPPORT-PATHS* list. Falls back to the
-support-paths list when the sysvar is unset/blank so behaviour is
-unchanged by default."
+  "The directories a relative LOAD / OPEN / FINDFILE name is searched in.
+Always begins with the *AUTOLISP-SUPPORT-PATHS* list (default the cwd);
+under the clautolisp dialect the CLAUTOLISPSUPPORTFILESEARCHPATH folders
+(TRUSTEDPATHS syntax, default \"./\", normalised to absolute) are
+appended AFTER it. So the support paths take precedence over the
+clautolisp sysvar, and non-clautolisp dialects are unchanged."
   (let* ((host (ignore-errors (current-evaluation-host)))
          (dialect-name (%secureload-dialect-name))
+         (base (clautolisp.autolisp-runtime:autolisp-support-paths))
          (spec (and host (eq dialect-name :clautolisp)
                     (ignore-errors
                      (%host-sysvar-string
                       host "CLAUTOLISPSUPPORTFILESEARCHPATH"))))
          (dirs (and spec (trusted-spec-directories spec))))
     (if dirs
-        (mapcar #'%normalize-support-dir dirs)
-        (clautolisp.autolisp-runtime:autolisp-support-paths))))
+        (remove-duplicates
+         (append base (mapcar #'%normalize-support-dir dirs))
+         :test #'string= :from-end t)
+        base)))
 
 (defun %secureload-guard (abs-namestring builtin-name diagnostic-code)
   "Apply the SECURELOAD gate to ABS-NAMESTRING (already known to be a
@@ -1173,6 +1176,24 @@ TRUSTEDPATHS to trust it."
         (pathname normalized)
         (merge-pathnames normalized
                          (pathname (autolisp-current-directory))))))
+
+(defun resolve-open-search-pathname (string)
+  "Resolve STRING for OPEN. An absolute name is used directly. A relative
+name is first searched through the effective support dirs (so OPEN
+honours the support search path like LOAD); when no existing file
+matches — e.g. creating a new file for write — it falls back to the
+current directory. With the default support path (the cwd) this is
+identical to a plain cwd merge."
+  (let ((normalized (normalize-path-string string)))
+    (cond
+      ((absolute-path-string-p normalized) (pathname normalized))
+      (t
+       (let ((located (search-path-list-for-file normalized
+                                                 (%effective-support-dirs))))
+         (if located
+             (pathname located)
+             (merge-pathnames normalized
+                              (pathname (autolisp-current-directory)))))))))
 
 (defun search-path-list-for-file (filename directories)
   (let ((normalized (normalize-path-string filename)))
@@ -2028,7 +2049,7 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
   ;; the encoding (user code stays runnable across dialects).
   (let* ((path-string (autolisp-string-value (require-string filename "OPEN")))
          (raw-mode-string (autolisp-string-value (require-string mode "OPEN")))
-         (path (resolve-open-pathname path-string))
+         (path (resolve-open-search-pathname path-string))
          (encoding-string (when encoding
                             (autolisp-string-value
                              (require-string encoding "OPEN"))))
