@@ -50,7 +50,8 @@ DEFAULT_LISP ?=
 
 .PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install uninstall $(SUBPROJECTS) \
         build-documentation build-programs build-libraries \
-        release release-sources release-documentation release-programs release-libraries
+        release release-sources release-documentation release-programs release-libraries \
+        probe probe-autocad probe-bricscad probe-clautolisp
 
 # --- Release artefacts (see issues/open/release-artefacts.issue) -------
 #
@@ -131,6 +132,31 @@ test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpu
 	$(MAKE) -C clautolisp test
 	$(MAKE) -C autolisp-test test
 	$(MAKE) -C autolisp-front-end test
+
+# --- CAD ground-truth probes (see probes/README.org) -------------------
+#
+# Run the project-wide probe suite (probes/sources/) inside a real CAD
+# — or the bundled clautolisp binary — and commit the captured records
+# under probe-results/<product>/<platform>/<timestamp>/results.sexp, to
+# be diffed against clautolisp. `make probe` is the one-liner to run on
+# a CAD workstation; it auto-detects an installed AutoCAD or BricsCAD
+# (honouring the AUTOCAD_*/BRICSCAD_* env overrides) and falls back to
+# the clautolisp baseline when no CAD is present. Set PROBE_NO_COMMIT=1
+# to skip the auto-commit.
+
+probe:  ## Run CAD ground-truth probes on this host (auto-detect AutoCAD/BricsCAD, else clautolisp) and commit results under probe-results/.
+	@if   bash probes/scripts/detect-cad.sh autocad  >/dev/null 2>&1; then $(MAKE) probe-autocad; \
+	 elif bash probes/scripts/detect-cad.sh bricscad >/dev/null 2>&1; then $(MAKE) probe-bricscad; \
+	 else echo "make probe: no AutoCAD/BricsCAD detected — running the clautolisp baseline."; $(MAKE) probe-clautolisp; fi
+
+probe-autocad:  ## Probe AutoCAD (accoreconsole/acad; override AUTOCAD_ACCORECONSOLE / AUTOCAD_EXE / AUTOCAD_RUNNER).
+	bash probes/scripts/run-probes.sh autocad
+
+probe-bricscad:  ## Probe BricsCAD (override BRICSCAD_EXE / BRICSCAD_RUNNER).
+	bash probes/scripts/run-probes.sh bricscad
+
+probe-clautolisp:  ## Probe the bundled clautolisp binary (headless baseline column for diffing).
+	bash probes/scripts/run-probes.sh clautolisp
 
 # --- Build phases, split by artefact kind ------------------------------
 

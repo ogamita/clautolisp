@@ -1,0 +1,19 @@
+# probes/sources/manifest.txt
+#
+# The probe suites run by `make probe`, in order. One suite per line:
+#
+#     <source-file-relative-to-this-dir>   <run-function>
+#
+# run-probes.sh loads probe-core.lsp first (always), then loads each
+# source file below and calls its run-function between
+# (cad-probe-begin-run) and (cad-probe-end-run).
+#
+# To add a probe suite: drop a probe-<name>.lsp in this directory that
+# defines (cad-probe-run-<name>-probes), then add one line here. No
+# shell or Makefile change is needed.
+#
+# Blank lines and #-comments are ignored.
+
+probe-sysvars.lsp      cad-probe-run-sysvar-probes
+probe-rtos.lsp         cad-probe-run-rtos-probes
+probe-secureload.lsp   cad-probe-run-secureload-probes

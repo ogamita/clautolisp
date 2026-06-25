@@ -1,0 +1,61 @@
+clautolisp host reports PRODUCT = "BricsCAD"
+=============================================
+
+Summary
+-------
+
+A clautolisp engine still answers (getvar "PRODUCT") with "BricsCAD",
+even though the sibling identity sysvars correctly report clautolisp.
+This is a leftover from the mock-host identity fix
+(clautolisp-mock-host-getvar.issue, RESOLVED 1.2.9): that change
+stamped PROGRAM / VENDORNAME / PLATFORM / ACADVER but missed PRODUCT.
+
+Observed (clautolisp baseline probe, 2026-06-25, version 1.2.15)
+---------------------------------------------------------------
+
+From probe-results (make probe-clautolisp), the sysvar suite:
+
+    (NAME . "PROGRAM")  (VALUE . "clautolisp")
+    (NAME . "PRODUCT")  (VALUE . "BricsCAD")    <-- inconsistent
+    (NAME . "PLATFORM") (VALUE . "clautolisp")
+    (NAME . "ACADVER")  (VALUE . "1.2.15")
+
+So portability code that branches on PRODUCT (a documented BricsCAD
+sysvar) is told it is running on BricsCAD, contradicting PROGRAM /
+PLATFORM. This re-opens the exact masquerade the 1.2.9 fix set out to
+remove, for the one sysvar it did not cover.
+
+Root cause
+----------
+
+clautolisp/autolisp-mock-host/source/sysvar-catalogue.lisp:1161
+
+    ("PRODUCT" :STRING "BricsCAD" T NIL)
+
+is the generated BricsCAD default, and the runtime identity overlay
+
+    clautolisp/autolisp-cli/source/transmit.lisp:230
+      apply-clautolisp-host-identity
+
+stamps PROGRAM / VENDORNAME / PLATFORM / ACADVER but not PRODUCT.
+
+Suggested fix
+-------------
+
+Add a PRODUCT stamp to apply-clautolisp-host-identity, consistent with
+the others, e.g. host-set-derived-sysvar host "PRODUCT" "clautolisp"
+(confirm the desired surface string against what real AutoCAD returns
+for PRODUCT before settling on the exact value -- AutoCAD and BricsCAD
+differ on whether PRODUCT exists / what it returns; a probe column
+from each will settle it). Bump the clautolisp DEVELOP version when
+fixing. Add a regression alongside the existing mock-host identity
+tests, and a deftest that (getvar "PRODUCT") does not report a foreign
+vendor under --clautolisp.
+
+Found by
+--------
+
+The new CAD probe harness (probes/, make probe). This is the first
+parity finding the baseline column surfaced; the AutoCAD / BricsCAD
+PRODUCT columns (run make probe on those hosts) will confirm the
+correct per-dialect value.
