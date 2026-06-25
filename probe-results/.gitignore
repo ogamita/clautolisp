@@ -1,0 +1,6 @@
+# Committed probe artefacts: results.sexp + metadata.json (added
+# explicitly by run-probes.sh). The generated probe wrapper and CAD
+# script carry absolute host paths and are reproducible, so they stay
+# untracked.
+run-probes.lsp
+run-probes.scr

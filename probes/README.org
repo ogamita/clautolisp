@@ -1,0 +1,123 @@
+#+TITLE: clautolisp CAD probes
+#+OPTIONS: toc:2
+
+* What this is
+
+A small, vendor-neutral AutoLISP harness for capturing /ground truth/
+from the real CAD applications clautolisp targets — AutoCAD and
+BricsCAD — so the implementation and the specs can be checked against
+observed fact instead of documentation prose.
+
+The same probe programs also run against the bundled =clautolisp=
+binary, producing a baseline column that is diffed against the CAD
+columns. Because the probes are ordinary AutoLISP, the harness itself
+is exercised headlessly on every platform via =make probe-clautolisp=.
+
+Probes answer questions like: /what does =(rtos 2.5 1 0)= actually
+print in AutoCAD?/, /what is the default =SECURELOAD= in BricsCAD, and
+is it read-only?/, /what does =findtrustedfile= return that =findfile=
+does not?/
+
+* Running it
+
+On a CAD workstation, one command:
+
+#+begin_src sh
+make probe
+#+end_src
+
+=make probe= auto-detects an installed AutoCAD or BricsCAD (and falls
+back to the clautolisp baseline if neither is present), runs the probe
+suite inside it, writes the records to
+
+: probe-results/<product>/<platform>/<timestamp>/results.sexp
+
+and *commits* that file (and its =metadata.json=) so it can be handed
+back for processing. It is never pushed — review and push yourself.
+
+Explicit targets:
+
+| target                  | engine                                            |
+|-------------------------+---------------------------------------------------|
+| =make probe-autocad=    | AutoCAD (accoreconsole headless, else acad)       |
+| =make probe-bricscad=   | BricsCAD (batch =-B=)                              |
+| =make probe-clautolisp= | the bundled clautolisp binary (baseline)          |
+
+Run probes on a *freshly launched CAD with a new empty drawing*, so the
+sysvar probes see product/dialect defaults rather than session-mutated
+values.
+
+** When auto-detection misses
+
+Detection mirrors alfe's backend discovery
+(=autolisp-front-end/source/backend-*.lisp=). Override the executable:
+
+#+begin_src sh
+make probe-bricscad BRICSCAD_EXE="/Applications/BricsCAD.app/Contents/MacOS/bricscad"
+make probe-autocad  AUTOCAD_ACCORECONSOLE="C:/Program Files/Autodesk/AutoCAD 2026/accoreconsole.exe"
+#+end_src
+
+…or supply the whole runner command, with the placeholders
+=__SCRIPT_FILE__= (a generated =.scr=) and =__PROBE_FILE__= (the
+generated wrapper =.lsp=):
+
+#+begin_src sh
+make probe-autocad AUTOCAD_RUNNER='"C:/path/accoreconsole.exe" /s __SCRIPT_FILE__'
+#+end_src
+
+Set =PROBE_NO_COMMIT=1= to write the results without committing.
+
+* Layout
+
+| path                          | role                                            |
+|-------------------------------+-------------------------------------------------|
+| =sources/probe-core.lsp=      | record writer + capture/sysvar helpers          |
+| =sources/probe-*.lsp=         | one probe suite each                            |
+| =sources/manifest.txt=        | the suites to run, in order                     |
+| =scripts/detect-cad.sh=       | locate the CAD engine, emit a runner template   |
+| =scripts/run-probes.sh=       | generate the wrapper, run, write + commit        |
+| =../probe-results/=           | committed results, per product/platform/run     |
+
+* Adding a probe suite
+
+1. Drop =sources/probe-<name>.lsp= defining
+   =(defun cad-probe-run-<name>-probes () ...)=. Inside it, call
+   =(cad-probe-capture SUITE CASE THUNK)= for value probes and
+   =(cad-probe-sysvar SUITE NAME)= for system-variable probes.
+2. Add one line to =sources/manifest.txt=:
+   : probe-<name>.lsp   cad-probe-run-<name>-probes
+
+No Makefile or shell change is needed.
+
+** Portability rules for probe code
+
+The harness must run unchanged in AutoCAD, BricsCAD and clautolisp:
+
+- Don't use =(setq x (or x default))= — BricsCAD V26 =or= returns
+  =T=/=nil=. Guard defaults with =if=.
+- Emit records only through =cad-probe--record= (it uses
+  =vl-prin1-to-string= + =write-line=, the one combination every host
+  serialises faithfully).
+- Wrap anything that might be missing or error in the probe body; the
+  =cad-probe-capture= / =cad-probe-sysvar= helpers already run their
+  argument under =vl-catch-all-apply= and record a =error= status.
+
+* Result format
+
+One s-expression per line. Kinds:
+
+#+begin_src lisp
+((kind . "run-start")  (product . "...") (platform . "...") ...)
+((kind . "probe-result") (suite . "rtos") (case . "(rtos 2.5 1 0)")
+                         (status . "ok") (value . "3.E+00"))
+((kind . "probe-result") (suite . "...") (case . "...")
+                         (status . "error") (message . "..."))
+((kind . "sysvar") (suite . "...") (name . "SECURELOAD")
+                   (status . "ok") (value . 1) (read-only . T))
+((kind . "note") (suite . "...") (case . "...") (text . "..."))
+((kind . "run-end") (product . "...") (platform . "..."))
+#+end_src
+
+=case= is kept verbatim so a reader can re-evaluate the expression.
+=read-only= is detected by writing a sysvar back to its current value
+and seeing whether the host rejects it.
