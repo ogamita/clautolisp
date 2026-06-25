@@ -103,6 +103,67 @@ autolisp-string wrapper, others are returned as-is."
   (and (stringp string)
        (string-equal string "ERRNO")))
 
+;;; --- Live clock sysvars (DATE / CDATE / MILLISECS) ----------------
+;;;
+;;; These are host-derived, read-only, and *dynamic*: each GETVAR
+;;; reports the current clock, so the stored cell value (a 0.0 / 0
+;;; placeholder from the catalogue) is never the truth. Computed here
+;;; from the CL time functions, mirroring the ERRNO live-source path.
+;;;
+;;; DATE  — local date+time as a Julian day number plus the fraction of
+;;;         the day elapsed since local midnight.
+;;; CDATE — the same instant as the decimal YYYYMMDD.HHMMSS.
+;;; MILLISECS — milliseconds since the engine process started (a
+;;;         monotonic tick; the headless analogue of the host uptime).
+;;;
+;;; Note: the exact Julian-day offset convention (whether AutoCAD's DATE
+;;; integer is the noon-based JDN, as assumed here via the standard
+;;; AutoLISP reverse-conversion formulas) should be confirmed against a
+;;; *cad probe; see probes/ and make probe.
+
+(defun clock-sysvar-name-p (string)
+  (and (stringp string)
+       (or (string-equal string "DATE")
+           (string-equal string "CDATE")
+           (string-equal string "MILLISECS"))))
+
+(defun %gregorian-julian-day-number (year month day)
+  "The Julian Day Number for a Gregorian calendar date (integer)."
+  (let* ((a (floor (- 14 month) 12))
+         (y (+ year 4800 (- a)))
+         (m (+ month (* 12 a) -3)))
+    (+ day
+       (floor (+ (* 153 m) 2) 5)
+       (* 365 y)
+       (floor y 4)
+       (- (floor y 100))
+       (floor y 400)
+       -32045)))
+
+(defun %clock-date ()
+  "DATE: local Julian day + fraction of the day since local midnight."
+  (multiple-value-bind (sec min hour day month year)
+      (decode-universal-time (get-universal-time))
+    (+ (%gregorian-julian-day-number year month day)
+       (/ (+ (* hour 3600) (* min 60) sec) 86400.0d0))))
+
+(defun %clock-cdate ()
+  "CDATE: local date+time as the decimal YYYYMMDD.HHMMSS."
+  (multiple-value-bind (sec min hour day month year)
+      (decode-universal-time (get-universal-time))
+    (+ (coerce (+ (* year 10000) (* month 100) day) 'double-float)
+       (/ (+ (* hour 10000) (* min 100) sec) 1.0d6))))
+
+(defun %clock-millisecs ()
+  "Milliseconds since the engine process started (monotonic)."
+  (round (* 1000 (get-internal-real-time)) internal-time-units-per-second))
+
+(defun compute-clock-sysvar (string)
+  (cond
+    ((string-equal string "DATE")      (%clock-date))
+    ((string-equal string "CDATE")     (%clock-cdate))
+    ((string-equal string "MILLISECS") (%clock-millisecs))))
+
 ;;; --- Method definitions ------------------------------------------
 
 (defmethod host-getvar ((host mock-host) name)
@@ -114,6 +175,11 @@ autolisp-string wrapper, others are returned as-is."
       ;; ERRNO is sourced from the live runtime session.
       ((errno-name-p string)
        (let ((v (clautolisp.autolisp-runtime:autolisp-errno)))
+         (setf (sysvar-cell-value cell) v)
+         v))
+      ;; DATE / CDATE / MILLISECS are computed live from the clock.
+      ((clock-sysvar-name-p string)
+       (let ((v (compute-clock-sysvar string)))
          (setf (sysvar-cell-value cell) v)
          v))
       (t

@@ -202,3 +202,48 @@
     (populate-default-sysvars mock :catalogue :seed)
     (is (null (mock-host-sysvar mock "SYSCODEPAGE")))
     (is (null (host-set-derived-sysvar mock "SYSCODEPAGE" "UTF-8")))))
+
+;;; --- Live clock sysvars: DATE / CDATE / MILLISECS -----------------
+
+(test host-getvar-date-is-live-julian
+  ;; DATE = Julian day number + fraction of the day. Assert structure,
+  ;; not an exact value (it tracks the wall clock).
+  (let* ((mock (make-mock-host))
+         (d (host-getvar mock "DATE")))
+    (is (typep d 'double-float))
+    ;; Modern dates sit around JDN 2.46e6; bracket generously.
+    (is (< 2400000 (floor d) 2500000))
+    ;; Fraction of day is in [0,1).
+    (let ((frac (- d (floor d))))
+      (is (<= 0 frac))
+      (is (< frac 1)))))
+
+(test host-getvar-cdate-is-todays-decimal-date
+  ;; CDATE integer part is YYYYMMDD for the current local date.
+  (multiple-value-bind (sec min hour day month year)
+      (decode-universal-time (get-universal-time))
+    (declare (ignore sec min hour))
+    (let* ((mock (make-mock-host))
+           (c (host-getvar mock "CDATE"))
+           (expected (+ (* year 10000) (* month 100) day)))
+      (is (typep c 'double-float))
+      (is (eql expected (floor c))))))
+
+(test host-getvar-millisecs-is-monotonic-integer
+  (let* ((mock (make-mock-host))
+         (a (host-getvar mock "MILLISECS"))
+         (b (host-getvar mock "MILLISECS")))
+    (is (integerp a))
+    (is (>= a 0))
+    (is (>= b a))))
+
+(test host-setvar-on-date-signals-read-only
+  ;; DATE / CDATE / MILLISECS are read-only on both vendors.
+  (let ((mock (make-mock-host)))
+    (dolist (name '("DATE" "CDATE" "MILLISECS"))
+      (handler-case
+          (progn
+            (host-setvar mock name 1)
+            (is nil "expected setvar on read-only clock sysvar to signal"))
+        (autolisp-runtime-error (c)
+          (is (eq :sysvar-read-only (autolisp-runtime-error-code c))))))))
