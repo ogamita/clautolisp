@@ -149,6 +149,13 @@ backend share this instance.")
   (declare (ignore name value))
   nil)
 
+(defmethod host-define-sysvar ((host null-host) name kind value read-only-p)
+  ;; Silent no-op for the same reason as host-set-derived-sysvar: the
+  ;; dialect-trust-default launch wiring calls this unconditionally and
+  ;; null-host has no sysvar table to populate.
+  (declare (ignore name kind value read-only-p))
+  nil)
+
 (defmethod host-sysvar-names ((host null-host))
   (signal-host-not-supported host 'sysvar-names))
 

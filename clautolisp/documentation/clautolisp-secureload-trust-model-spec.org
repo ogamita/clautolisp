@@ -77,7 +77,8 @@ This is the trust-gating coupling tracked in system-variables.issue.
   =\Support= folders.
 
   For clautolisp, we designate the implicitely trusted paths:
-  - "$PREFIX/share/autolisp/...;$XDG_DATA_HOME/autolisp/..."
+  - "$XDG_DATA_HOME/autolisp/...;$PREFIX/share/autolisp/..." (the
+    user's own data dir takes precedence over the install tree)
   - overriden by the environment variable CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS.
 
   These directory may contain =acad.lsp= or =acaddoc.lsp= (or compiled
@@ -148,7 +149,7 @@ blocks, until the user raises SECURELOAD to 2 or runs =--strict=.
 | CLAUTOLISPSUPPORTFILESEARCHPATH        | RthW | "./"                                                     | Relative-path search list for load/open/findfile. Absolute paths are     |
 |                                        |    |                                                          | used directly (no search). Semicolon-separated, TRUSTEDPATHS syntax.     |
 |                                        |    |                                                          |                                                                          |
-| CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS | RW | "$PREFIX/share/autolisp/...;$XDG_DATA_HOME/autolisp/..." | Implicitly trusted folders (added to TRUSTEDPATHS when computing trust). |
+| CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS | RW | "$XDG_DATA_HOME/autolisp/...;$PREFIX/share/autolisp/..." | Implicitly trusted folders (added to TRUSTEDPATHS when computing trust). |
 |                                        |    |                                                          | Same syntax incl. =\...= / =/...= recursion.                             |
 
 Note: $PREFIX and $XDG_DATA_HOME are substituted at launch-time, the

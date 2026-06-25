@@ -268,7 +268,11 @@ Side effects:
   string default for those sysvars;
 - the clautolisp engine identity (PROGRAM / VENDORNAME / PLATFORM /
   ACADVER) is stamped onto the host via APPLY-CLAUTOLISP-HOST-IDENTITY
-  so a clautolisp host stops reporting itself as BricsCAD."
+  so a clautolisp host stops reporting itself as BricsCAD;
+- the dialect-dependent SECURELOAD / TRUSTEDPATHS defaults (and the
+  clautolisp-only trust sysvars) are stamped via
+  APPLY-DIALECT-TRUST-DEFAULTS so each dialect launches with its own
+  secure-load posture (spec clautolisp-secureload-trust-model)."
   (dolist (binding bindings)
     (let ((name (first binding))
           (value (second binding)))
@@ -284,7 +288,34 @@ Side effects:
                     (when (and entry (second entry))
                       (clautolisp.autolisp-runtime:autolisp-symbol-name
                        (second entry))))))
-    (apply-clautolisp-host-identity context version frontend)))
+    (apply-clautolisp-host-identity context version frontend)
+    (apply-dialect-trust-defaults context (transmit-dialect-keyword bindings))))
+
+(defun transmit-dialect-keyword (bindings)
+  "Recover the dialect keyword (:strict / :autocad-2026 / :bricscad-v26
+/ :lax / :clautolisp) from the *AUTOLISP-DIALECT* binding, whose value
+is an AutoLISP symbol named after the dialect. Returns :strict when the
+binding is absent."
+  (let ((entry (assoc "*AUTOLISP-DIALECT*" bindings :test #'string=)))
+    (if (and entry (second entry))
+        (intern (string-upcase
+                 (clautolisp.autolisp-runtime:autolisp-symbol-name
+                  (second entry)))
+                :keyword)
+        :strict)))
+
+(defun apply-dialect-trust-defaults (context dialect-keyword)
+  "Apply the dialect-dependent SECURELOAD / TRUSTEDPATHS defaults and
+register the clautolisp-only trust sysvars on CONTEXT's host. Delegates
+to the trust-model overlay in autolisp-builtins-core. Reached only by
+the clautolisp engine (alfe's CAD backends never install transmit
+variables on a local context), so this never touches a real CAD's
+sysvars."
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
+      (when host
+        (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
+         host dialect-keyword)))))
 
 (defun call-with-dynamic-transmit-binding (context name value thunk)
   "Set the *AUTOLISP-…* variable NAME to VALUE for the duration of

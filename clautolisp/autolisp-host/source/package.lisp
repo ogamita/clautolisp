@@ -45,6 +45,7 @@
    #:host-getvar
    #:host-setvar
    #:host-set-derived-sysvar
+   #:host-define-sysvar
    #:host-sysvar-names
    ;; --- Command dispatch -----------------------------------------
    #:host-command

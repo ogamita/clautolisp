@@ -71,10 +71,22 @@ system-variables.issues -- Verify what is implemented, and implement the missing
   PHASE 1 DONE (1.2.15): pure trust-model primitives (gated extensions,
   TRUSTEDPATHS parse incl. \... / ... recursion, TRUST-P predicate,
   dialect-default tables, SECURELOAD action resolver) + 44 unit checks;
-  no behavioural change yet. PHASES 2-4 remain: sysvar seeding + env
-  vars; behavioural gating in the 4 builtins; autolisp-spec updates.
-  Then the remaining behavioural couplings; UNITMODE waits on rtos
-  modes 3-5.
+  no behavioural change yet.
+  PHASE 2 DONE (1.2.16): dialect-dependent SECURELOAD/TRUSTEDPATHS
+  defaults + read-only-ness, the two clautolisp-only sysvars
+  (CLAUTOLISPSUPPORTFILESEARCHPATH "./", CLAUTOLISPIMPLICITLYTRUSTED-
+  FOLDERPATHS = $XDG_DATA_HOME/autolisp/...;$PREFIX/share/autolisp/...),
+  and env-var seeding (env > dialect default). New host protocol
+  host-define-sysvar (upsert/create cell); launch overlay APPLY-DIALECT-
+  TRUST-SYSVAR-DEFAULTS wired in the CLI transmit layer. +27 unit checks
+  (secureload-dialect-tests), verified on the 1.2.16 binary across all
+  dialects + env overrides; mock-host suite 228/228, builtins-core
+  1301/1301. PHASES 3-4 remain: behavioural gating in load/open/findfile/
+  findtrustedfile; autolisp-spec updates. Then the remaining behavioural
+  couplings; UNITMODE waits on rtos modes 3-5.
+  pjb's spec revision (ad748c2) also surfaced a broad new requirement:
+  dialect-platform-version-axis.issue (autocad vs autocad-mac + version
+  suffixes; drives the "/..."-warns-on-windows rule). Filed, not blocking.
 
 note-secureload.txt  -- pjb's requirements + AutoCAD/BricsCAD references
   for the SECURELOAD/TRUSTEDPATHS trust model (drives the spec above).
