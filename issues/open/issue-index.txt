@@ -92,10 +92,19 @@ system-variables.issues -- Verify what is implemented, and implement the missing
   CLAUTOLISPSUPPORTFILESEARCHPATH under clautolisp. Verified on the binary
   (block/warn/allow, trusted dirs, cwd-trust, --no-init) + corpus loads
   121 files/3920 tests with 0 warn leaks under strict & bricscad;
-  builtins-core 1316/1316. Deferred: OPEN relative-name search-path
-  resolution (gate already in place). PHASE 4 remains: autolisp-spec for
-  the 3 dialects. Then the remaining behavioural couplings; UNITMODE
-  waits on rtos modes 3-5.
+  builtins-core 1316/1316.
+  PHASE 3c DONE (1.2.20): *autolisp-support-paths* always searched first
+  (before CLAUTOLISPSUPPORTFILESEARCHPATH under clautolisp); OPEN resolves
+  relative names through the support search path (existing file found on
+  path, new name falls back to cwd). builtins-core 1319/1319.
+  PHASE 4 DONE: autolisp-spec updated -- new "Secure File Loading and
+  Trust Model" normative section (chapter 11) + clautolisp annotations on
+  LOAD/OPEN/FINDFILE/FINDTRUSTEDFILE + clautolisp subsections on
+  SECURELOAD/TRUSTEDPATHS + two new clautolisp sysvar entries. Doc-only;
+  org parses clean (27024 headlines). SECURELOAD/TRUSTEDPATHS trust model
+  COMPLETE (Phases 1-4). Then the remaining behavioural couplings
+  (CMDECHO, TILEMODE/CVPORT, SNAPANG/ANGBASE, DWGNAME/DWGPREFIX, DATE
+  family, MAXSORT, SRCHPATH); UNITMODE waits on rtos modes 3-5.
   pjb's spec revision (ad748c2) also surfaced a broad new requirement:
   dialect-platform-version-axis.issue (autocad vs autocad-mac + version
   suffixes; drives the "/..."-warns-on-windows rule). Filed, not blocking.
