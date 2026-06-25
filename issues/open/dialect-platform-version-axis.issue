@@ -1,0 +1,80 @@
+Dialect platform + version axis (autocad vs autocad-mac, version suffixes)
+=========================================================================
+
+Summary
+-------
+
+pjb's SECURELOAD trust-model spec revision
+(clautolisp-secureload-trust-model-spec.org, commit ad748c2) introduces
+a general requirement that exceeds the trust model: the --dialect
+option must carry a PLATFORM and a VERSION, not just a product.
+
+  --dialect autocad           windows, latest known (currently 2027)
+  --dialect autocad-mac       macOS,   latest known (currently 2027)
+  --dialect autocad-2022      windows, version 2022
+  --dialect autocad-mac-2027  macOS,   version 2027
+
+Rule (verbatim from the spec):
+
+  "As a general rule for the questions of reference, all the versions of
+   autocad or bricscad documentations need to be scanned to identify the
+   differences and also the availability of features, from one version
+   to the other; the --dialect option may be specified down to the
+   version. If the version is not specified, we have to select the
+   latest version known."
+
+Motivation / first concrete consumer
+------------------------------------
+
+TRUSTEDPATHS subfolder recursion:
+- "\..." is accepted by AutoCAD on all platforms.
+- "/..." is accepted by clautolisp AND by AutoCAD-mac, but must be
+  FLAGGED (a warning) on AutoCAD-windows.
+
+So the trust model already needs to know platform (mac vs windows) to
+decide whether "/..." warns. The SECURELOAD work currently assumes the
+existing keyword set (:autocad-2026 == windows) and accepts "/..."
+everywhere without the windows warning; that warning is deferred to
+this issue.
+
+Scope
+-----
+
+1. Dialect naming: extend the dialect keyword space with a platform
+   facet (autocad / autocad-mac; presumably bricscad / bricscad-mac /
+   bricscad-linux too) and an optional version facet. Decide the
+   canonical keyword form (e.g. :autocad, :autocad-mac, :autocad-2022,
+   :autocad-mac-2027) and the "latest known" resolution.
+
+2. CLI: parse the new --dialect spellings (options.lisp parse-dialect,
+   spec.lisp) and the shorthands; keep --autocad / --bricscad meaning
+   "latest known windows".
+
+3. Reader/runtime dialect descriptor: carry platform + version so
+   builtins can branch on them (current-evaluation-dialect already
+   returns a descriptor).
+
+4. Feature/version matrix: a data-driven table of which features /
+   sysvars / behaviours exist in which product+platform+version, sourced
+   from scanning every AutoCAD / BricsCAD version's reference docs
+   (this is large; do it incrementally, driven by probes -- see
+   probes/ and `make probe`).
+
+5. Migrate existing dialect keywords: :autocad-2026 / :bricscad-v26 are
+   the current placeholders; reconcile them with the new scheme.
+
+Relation to other work
+-----------------------
+
+- SECURELOAD/TRUSTEDPATHS trust model (system-variables.issue, the
+  secureload spec): consumes platform for the "/..." warning. The trust
+  model is being implemented against the current keywords with a
+  forward-compatible hook; this issue supplies the real platform axis.
+- "BricsCAD silent => assume AutoCAD-like + add a probe" (spec open
+  questions) feeds the feature matrix.
+- The CAD probe harness (probes/, make probe) is the mechanism to
+  populate the per-version feature/behaviour matrix from ground truth.
+
+Status: OPEN, design needed. Surfaced 2026-06-25 from the spec revision.
+Not blocking the secureload phases, which proceed on the current
+keywords.

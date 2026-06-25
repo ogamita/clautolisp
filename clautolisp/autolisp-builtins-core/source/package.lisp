@@ -175,4 +175,5 @@
    #:core-builtins
    #:find-core-builtin
    #:install-core-builtins
-   #:autolisp-value->string))
+   #:autolisp-value->string
+   #:apply-dialect-trust-sysvar-defaults))

@@ -178,3 +178,111 @@ interpretation of the SECURELOAD values'."
     ((<= secureload-value 0) :allow)
     ((= secureload-value 1) :warn)
     (t :block)))
+
+;;; --- clautolisp-only trust sysvars (Phase 2) -----------------------
+;;;
+;;; CLAUTOLISPSUPPORTFILESEARCHPATH and CLAUTOLISPIMPLICITLYTRUSTEDFOLDER-
+;;; PATHS exist only under the clautolisp dialect. The mock host's
+;;; generated catalogue is dialect-neutral and has neither, so the launch
+;;; overlay (APPLY-DIALECT-TRUST-SYSVAR-DEFAULTS below) registers them
+;;; via HOST-DEFINE-SYSVAR when the dialect is :clautolisp.
+
+(defparameter *clautolisp-support-search-path-default* "./"
+  "Default CLAUTOLISPSUPPORTFILESEARCHPATH: relative load/open/findfile
+names are searched in the current directory only; absolute names are
+used directly. spec § 'New clautolisp system variables'.")
+
+(defun %env (getenv name)
+  "Look NAME up via the GETENV function, returning NIL for unset and a
+trimmed string otherwise (uiop:getenv returns \"\" for set-empty)."
+  (let ((v (funcall getenv name)))
+    (and v (stringp v) v)))
+
+(defun %nonempty (s)
+  (and s (stringp s) (plusp (length (string-trim '(#\Space #\Tab) s))) s))
+
+(defun default-implicitly-trusted-paths (&optional (getenv #'uiop:getenv))
+  "Compute the launch-time default for CLAUTOLISPIMPLICITLYTRUSTEDFOLDER-
+PATHS: \"$PREFIX/share/autolisp/...;$XDG_DATA_HOME/autolisp/...\" with
+the variables substituted to absolute paths (spec § 'New clautolisp
+system variables'). $PREFIX is taken from CLAUTOLISP_PREFIX (omitted
+when unset, since the install root is not otherwise knowable headless);
+$XDG_DATA_HOME falls back to $HOME/.local/share. Each segment keeps the
+cross-platform \"/...\" recursion marker so all subfolders are trusted.
+The whole value is overridable by the CLAUTOLISPIMPLICITLYTRUSTEDFOLDER-
+PATHS environment variable (handled by the caller, higher precedence)."
+  (let* ((prefix (%nonempty (%env getenv "CLAUTOLISP_PREFIX")))
+         (xdg    (%nonempty (%env getenv "XDG_DATA_HOME")))
+         (home   (%nonempty (%env getenv "HOME")))
+         (data   (or xdg (and home (concatenate 'string home "/.local/share"))))
+         (segs '()))
+    ;; $XDG_DATA_HOME first (the user's own data dir takes precedence),
+    ;; then $PREFIX (the install tree).
+    (when data
+      (push (concatenate 'string data "/autolisp/...") segs))
+    (when prefix
+      (push (concatenate 'string prefix "/share/autolisp/...") segs))
+    (format nil "~{~A~^;~}" (nreverse segs))))
+
+(defparameter *clautolisp-trust-env-sysvars*
+  '(("SECURELOAD" . :integer)
+    ("TRUSTEDPATHS" . :string)
+    ("CLAUTOLISPSUPPORTFILESEARCHPATH" . :string)
+    ("CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS" . :string))
+  "Trust-model sysvars seedable from an identically-named environment
+variable. Precedence is setvar > env var > dialect default (spec
+§ 'Environment-variable initialisation'). SECURELOAD parses as an
+integer; the rest are strings. The CLAUTOLISP* pair is seeded only
+under the clautolisp dialect, where the cells exist.")
+
+(defun %coerce-env-sysvar-value (kind raw)
+  "Coerce a raw environment string RAW to the sysvar KIND, or NIL when
+it does not parse (an unparsable integer is ignored rather than set)."
+  (ecase kind
+    (:integer (parse-integer raw :junk-allowed t))
+    (:string raw)))
+
+(defun apply-dialect-trust-sysvar-defaults (host dialect-keyword
+                                            &key (getenv #'uiop:getenv))
+  "Launch-time overlay: stamp the dialect-dependent SECURELOAD /
+TRUSTEDPATHS defaults and read-only-ness onto HOST, register the two
+clautolisp-only trust sysvars under the clautolisp dialect, then apply
+environment-variable overrides (env > dialect default). DIALECT-KEYWORD
+is one of :strict / :autocad-2026 / :bricscad-v26 / :lax / :clautolisp.
+Mock-host only; no-ops on hosts without a sysvar table. Returns HOST.
+spec §§ 'Dialect-dependent defaults', 'New clautolisp system variables',
+'Environment-variable initialisation'."
+  (when host
+    (let* ((dk dialect-keyword)
+           (ro (secureload-read-only-for-dialect-p dk))
+           (clautolisp-p (eq dk :clautolisp)))
+      (flet ((define (name kind value read-only-p)
+               (clautolisp.autolisp-host:host-define-sysvar
+                host name kind value read-only-p))
+             (read-only-for (name)
+               ;; SECURELOAD / TRUSTEDPATHS follow the dialect; the
+               ;; clautolisp-only pair is always settable.
+               (if (member name '("SECURELOAD" "TRUSTEDPATHS") :test #'string=)
+                   ro
+                   nil)))
+        ;; 1. dialect defaults for the two product sysvars.
+        (define "SECURELOAD"   :integer (secureload-dialect-default dk)   ro)
+        (define "TRUSTEDPATHS" :string  (trustedpaths-dialect-default dk) ro)
+        ;; 2. the clautolisp-only sysvars (only where they exist).
+        (when clautolisp-p
+          (define "CLAUTOLISPSUPPORTFILESEARCHPATH" :string
+                  *clautolisp-support-search-path-default* nil)
+          (define "CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS" :string
+                  (default-implicitly-trusted-paths getenv) nil))
+        ;; 3. environment-variable overrides (env > dialect default).
+        (dolist (entry *clautolisp-trust-env-sysvars*)
+          (let ((name (car entry)) (kind (cdr entry)))
+            (when (or clautolisp-p
+                      (member name '("SECURELOAD" "TRUSTEDPATHS")
+                              :test #'string=))
+              (let ((raw (%env getenv name)))
+                (when raw
+                  (let ((value (%coerce-env-sysvar-value kind raw)))
+                    (when value
+                      (define name kind value (read-only-for name))))))))))
+    host)))

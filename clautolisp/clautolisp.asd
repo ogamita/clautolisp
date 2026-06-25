@@ -244,7 +244,10 @@
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-runtime"
-               "clautolisp/autolisp-host")
+               "clautolisp/autolisp-host"
+               ;; for APPLY-DIALECT-TRUST-SYSVAR-DEFAULTS, the launch-time
+               ;; dialect-dependent SECURELOAD / TRUSTEDPATHS overlay.
+               "clautolisp/autolisp-builtins-core")
   :serial t
   :components
   ((:file "autolisp-cli/source/package")
@@ -414,6 +417,7 @@
    (:file "autolisp-builtins-core/tests/builtin-tests")
    (:file "autolisp-builtins-core/tests/errno-coupling-tests")
    (:file "autolisp-builtins-core/tests/clal-extensions-tests")
+   (:file "autolisp-builtins-core/tests/secureload-dialect-tests")
    (:file "autolisp-builtins-core/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

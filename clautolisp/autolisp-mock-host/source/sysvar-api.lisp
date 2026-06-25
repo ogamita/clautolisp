@@ -172,3 +172,29 @@ side callers don't need to know which catalogue is installed."
                       (sysvar-cell-kind cell) value string)))
         (setf (sysvar-cell-value cell) coerced)
         coerced))))
+
+(defmethod host-define-sysvar ((host mock-host) name kind value read-only-p)
+  "Upsert a sysvar cell. When NAME exists, set its value (coerced to
+the cell's kind, or to KIND when supplied) and its read-only flag;
+otherwise create the cell with KIND (defaulting to :string), VALUE and
+READ-ONLY-P. Used at launch to apply dialect-dependent trust defaults
+and to register the clautolisp-only trust sysvars. Returns the stored
+value."
+  (let* ((string (ensure-sysvar-name name 'define-sysvar))
+         (cell (mock-host-sysvar host string)))
+    (if cell
+        (let* ((effective-kind (or kind (sysvar-cell-kind cell)))
+               (coerced (coerce-sysvar-value effective-kind value string)))
+          (setf (sysvar-cell-kind cell) effective-kind
+                (sysvar-cell-value cell) coerced
+                (sysvar-cell-read-only-p cell) (and read-only-p t))
+          coerced)
+        (let* ((effective-kind (or kind :string))
+               (coerced (coerce-sysvar-value effective-kind value string))
+               (new (make-sysvar-cell :name string
+                                      :kind effective-kind
+                                      :value coerced
+                                      :read-only-p (and read-only-p t)
+                                      :host-derived-p nil)))
+          (setf (gethash string (mock-host-sysvars host)) new)
+          coerced))))
