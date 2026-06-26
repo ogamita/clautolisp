@@ -1,0 +1,101 @@
+# -*- mode:org; coding:utf-8 -*-
+
+* Dribble
+
+This feature applies both to clautolisp and to alfe (with whatever backend CAD in alfe).
+
+** Activation and deactivation
+
+
+Dribble may be activated on the command line with the options =--dribble= or =--drible=$file=.
+
+It may be activated by calling the lisp function =(clautolisp-dribble [dribble-file-path])=
+Without a dribble-file-path parameter, it acts as a toggle, activating the dribble if it was off,
+or deactivating if it was on. 
+ 
+If a dribble file path is not given, the file used is indicated in the following table.
+
+| Option                  | Lisp fonction                             | Dribble stored in file:                                      |
+|-------------------------+-------------------------------------------+--------------------------------------------------------------|
+| --dribble               | (clautolisp-dribble) ; if dribble was off | =$XDG_STATE_HOME=/clautolisp/dribbles/20260626T143218.log    |
+|                         |                                           | =$XDG_STATE_HOME=/alfe/dribbles/${BACKEND}/20260626T143218.log |
+|                         |                                           |                                                              |
+| --dribble=$dribble_file | (clautolisp-dribble "$dribble-file")      | $dribble_file ; close previous file if it was on             |
+|                         |                                           |                                                              |
+|                         | (clautolisp-dribble) if dribble was on    | ; close previous file                                        |
+
+=${BACKEND}= is the selected alfe backend: =clautolisp=, =bricscad= or
+=autocad= The file name is the date of start of the dribble in
+iso-8601 format =YYYYMMDDTHHMMSS= with a '.log' file type.
+
+In all cases, if the dribble file already exists it is appended to.
+
+The content of the file is a header line followed by a sequence of
+REPL interactions with the following format, depending on the program,
+clautolisp or alfe:
+
+Header format, one of the two lines:
+
+    #+begin_src 
+    ;; H: clautolisp $clautolisp_version
+    ;; H: alfe $alfe_version clautolisp|bricscad|autocad $cad_version
+    #+end_src
+
+Interaction block format, repeated:
+    #+begin_src 
+    input
+    ;; O: standard output line
+    ;; E: error output line
+    ;; C: condition/error message
+    #+end_src
+
+=input= is the input entered by the user; it's usually a lisp form, but
+it can also be a debugger command, or input to the program (line
+buffer).
+
+Output can be produced on the standard output stream, or the error
+output stream.  Each line is processed independently.  If some output
+from the other stream is produced before a new-line on the first
+stream is issued, a new-line is deemed separating them.
+
+Each line of output is printed out, prefixed by ";; O: " or ";; E: "
+depending on it source (standard-output -> O, or error output -> E).
+
+If an error occurs, The condition / error message is displayed on
+lines prefixed by ";; C: ". (This may be redundant with output from a
+debugger, but we don't mind).
+
+
+** Example
+
+#+begin_src 
+$ clautolisp --dribble=trace.sexp
+clautolisp 1.2.11 — REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+_$ (+ 1 2 3)
+6
+_$ (/ 0)
+clautolisp: runtime error: DIVISION-BY-ZERO: Division by zero in /.
+AutoLISP backtrace (most recent call first, 2 frames):
+  in SUBR /: (0)
+  in EVAL: (/ 0)
+_$ (dribble)
+_$ (- 1 2 3)
+-4
+_$ (quit)
+clautolisp: terminated by QUIT
+#+end_src
+
+produces a driible file =trace.sexp=:
+
+#+begin_src 
+(+ 1 2 3)
+;; O: 6
+(/ 0)
+;; C: DIVISION-BY-ZERO: Division by zero in /.
+;; O: clautolisp: runtime error: DIVISION-BY-ZERO: Division by zero in /.
+;; O: AutoLISP backtrace (most recent call first, 2 frames):
+;; O:   in SUBR /: (0)
+;; O:   in EVAL: (/ 0)
+(dribble)
+#+end_src
+
