@@ -31,8 +31,9 @@ one or two letters (=c=, =n=, =lb=) or one or two words (=next=, =list
 breakpoints=) — that are NOT evaluated as values but dispatched to debugger
 actions. (In Common Lisp these would be symbol-macros expanding to calls;
 AutoLISP has none, so they are special-cased in check-commands instead.)
-The command table is *user-extensible from AutoLISP* (see =§8 define=), so a
-user can add or rebind commands.
+The command table is *user-extensible from AutoLISP* (see §8
+=define-debugger-command=, an ordinary function — so command sets load from
+=.lsp= files), so a user can add or rebind commands.
 
 The *same command symbols* drive all three UIs (spec §17 keeps them
 interchangeable):
@@ -117,7 +118,7 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | convenience vars ($1, $foo)    | (setq …) / (defun …) at REPL | —   | have    |
 | inspector "name this value"    | bind NAME                    | —   | have    |
 | help / apropos                 | help ; apropos               | h ? | have    |
-| define (user command)          | define                       | —   | new     |
+| define (user command)          | (define-debugger-command …)  | —   | new     |
 | settings / set option          | settings                     | —   | new     |
 | shell / python / script        | —                            | —   | n/a     |
 
@@ -146,9 +147,10 @@ the initial(s) of the word(s)* — no exceptions:
    full (no =l b=, no =list b=); only its *key* contracts to the initials.
 
 This rule keeps the key column collision-free, and it is the rule
-*user-defined commands MUST also follow* (§8 =define=): a user registers a
-command word (or two) whose key is its initial(s); =define= rejects a name
-whose initial(s) clash with an existing key. There are no
+*user-defined commands MUST also follow* (§8 =define-debugger-command=): a
+user registers a command word (or two) whose key is its initial(s); the
+registration function signals an error on a name whose initial(s) clash with
+an existing key. There are no
 "first-two-letters-of-one-word" abbreviations — every two-letter key is the
 initials of a genuine two-word command (which is why =tbreak= became the
 two-word =break once=, key =bo=).
@@ -506,27 +508,60 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
   preview length, colour. gdb =set= / lldb =settings set=.
 - backing: =[new]= (a small per-session options plist).
 
-** define  (user-defined commands)   =[new]=
-- aldb: =,define WORD [WORD2] FUNCTION=
-- desc: a user command is *nothing more than a mapping from a short/long
-  command name to an ordinary AutoLISP function* — the user already writes
-  the behaviour with =defun= at the REPL (or loads it from a file), and
-  =define= just registers it in the command table under WORD (key = its
-  initial(s), per the consistency rule). When the command is invoked the
-  function is called in the stop context, receiving any typed argument; it
-  may call the built-in commands (exposed as =clal-= functions) and read the
-  snapshot. =define= *rejects* a name whose initial(s) clash with an
-  existing key or word command, so user commands inherit the collision-free
-  discipline. Example:
-  #+begin_src lisp
-    (defun $list-this () (princ (eval (current-form))))   ; the behaviour
-  #+end_src
-  =,define list this $list-this=  → now =lt= (= =list this=) runs it.
-  (Because a command is just a name→function map, the built-in commands are
-  themselves this same mechanism pre-populated; =define= adds to the table.)
-- backing: =[new]= (a command-table the =check-commands= step consults,
-  mapping a (short . long) name pair to a function; the =clal-*= command
-  functions of the public-interface issue are what user functions call).
+** define-debugger-command  (user-defined commands)   =[new]=
+
+A user command is *nothing more than a mapping from a short/long command
+name to an ordinary AutoLISP function*. Registration is itself an ordinary
+AutoLISP *function* — NOT a macro (AutoLISP has none) — so it can be called
+at the REPL or, crucially, *loaded from a .lsp file* like any other code:
+
+#+begin_src lisp
+  (defun define-debugger-command (names lambda-list debugging-function) ...)
+#+end_src
+
+- =NAMES= — a list naming the command: a 1- or 2-letter key symbol followed
+  by one or two word symbols, e.g. =(b break)=, =(lv list variables)=,
+  =(z zar)=. The key MUST be the initial(s) of the word(s) (the §0 /
+  consistency rule); =define-debugger-command= *signals an error* if it is
+  not, or if the key / words clash with an existing command.
+- =LAMBDA-LIST= — the parameters the command takes. Its length tells the
+  =check-commands= reader *how many arguments to read* after the command at
+  the prompt, and they are passed positionally to the function.
+- =DEBUGGING-FUNCTION= — any AutoLISP function object: a fresh =(lambda …)=,
+  or =(function EXISTING)= to reuse a function you already wrote with
+  =defun=. Called in the stop context; it may call the built-in commands
+  (the =clal-*= functions) and read the snapshot.
+
+Because there is no macro to capture the body, the function is passed
+*explicitly* (a value), and the lambda-list is passed *as data* (a quoted
+list) so the reader knows the arity:
+
+#+begin_src lisp
+  ;; inline behaviour
+  (define-debugger-command '(f foo) '(arg)
+                           (lambda (arg) (do-something-foo arg)))
+
+  ;; reuse a named function (loaded from a file, say)
+  (defun debugging-zar (count function-name)
+    (do-something-zar-with count function-name))
+  (define-debugger-command '(z zar) '(count function-name)
+                           (function debugging-zar))
+#+end_src
+
+After the first, =f= (= =,foo=) reads one argument and calls it; after the
+second, =z= (= =,zar=) reads two and calls =debugging-zar=. The built-in
+commands are this same mechanism, pre-populated — =define-debugger-command=
+just adds to the table.
+
+A companion convenience may also be offered:
+=(undefine-debugger-command names-or-key)= to remove a user command (the
+built-ins are protected).
+
+- backing: =[new]= — a command table the =check-commands= step consults,
+  mapping each (key . words) to a (lambda-list . function) entry; the engine
+  reads =(length lambda-list)= arguments and applies the function. The
+  =clal-*= command functions (public-interface issue) are what user
+  functions call to drive the debugger.
 
 ** shell / python / script   =[n/a]=
 - No shell-out or scripting layer in the debugger; the AutoLISP =eval=
@@ -555,7 +590,8 @@ Genuinely new (=[new]=, in scope, small→medium):
 - type (=t=, ptype/whatis)
 - settings, apropos
 - rbreak REGEX
-- define (user-defined commands; enforces the consistency rule)
+- define-debugger-command (an AutoLISP function: names + lambda-list +
+  function; loadable from .lsp files; enforces the consistency rule)
 
 New and worth a design pass (=[new]=, medium):
 - *watch SYMBOL* — software data breakpoint (per-poll-point value compare,
@@ -591,6 +627,8 @@ all driven by the same =read → check-commands → eval → print= loop:
 
 None of these surfaces adds debugger *capability* — every command maps to a
 =cmd-*= or an engine entry point, so "a feature missing in the dumb terminal
-is missing everywhere" (spec §20.4) continues to hold. The =define= command
-(§8) lets the *user* extend the table, but only within the same consistency
-rule, so user commands inherit the same collision-free key discipline.
+is missing everywhere" (spec §20.4) continues to hold.
+=define-debugger-command= (§8) lets the *user* extend the table from
+AutoLISP (and from loaded =.lsp= files), but only within the same
+consistency rule, so user commands inherit the same collision-free key
+discipline.
