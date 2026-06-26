@@ -118,7 +118,7 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | convenience vars ($1, $foo)    | (setq …) / (defun …) at REPL | —   | have    |
 | inspector "name this value"    | bind NAME                    | —   | have    |
 | help / apropos                 | help ; apropos               | h ? | have    |
-| define (user command)          | (define-debugger-command …)  | —   | new     |
+| define (user/built-in command) | bind-/define-debugger-command| —   | new     |
 | settings / set option          | settings                     | —   | new     |
 | shell / python / script        | —                            | —   | n/a     |
 
@@ -499,7 +499,9 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
 
 ** help / apropos
 - aldb: =h=  =?=  | =,help [COMMAND]=  | =,apropos WORD=
-- desc: list commands / describe one / search command docs.
+- desc: list commands / describe one / search command docs. The one-line
+  text for each command is the =DOCSTRING= given to =bind-debugger-command=
+  (§8), so user-defined and built-in commands document themselves uniformly.
 - backing: =[have]= (dumb =h=); =,apropos= is =[new]=, trivial.
 
 ** settings
@@ -508,60 +510,109 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
   preview length, colour. gdb =set= / lldb =settings set=.
 - backing: =[new]= (a small per-session options plist).
 
-** define-debugger-command  (user-defined commands)   =[new]=
+** Defining commands (built-in and user)   =[new]=
 
-A user command is *nothing more than a mapping from a short/long command
-name to an ordinary AutoLISP function*. Registration is itself an ordinary
-AutoLISP *function* — NOT a macro (AutoLISP has none) — so it can be called
-at the REPL or, crucially, *loaded from a .lsp file* like any other code:
+A debugger command is *nothing more than a mapping from a short/long name
+to a function*. There is one underlying *primitive*, a plain function
+present in both languages, plus thin conveniences on top. The same name and
+shape are used whether the command is a built-in (a Common Lisp function) or
+a user command (an AutoLISP function), so the built-ins are simply the table
+pre-populated by the same mechanism.
+
+*** The primitive: =bind-debugger-command=
 
 #+begin_src lisp
-  (defun define-debugger-command (names lambda-list debugging-function) ...)
+  (defun bind-debugger-command (names lambda-list docstring function) ...)
 #+end_src
 
-- =NAMES= — a list naming the command: a 1- or 2-letter key symbol followed
-  by one or two word symbols, e.g. =(b break)=, =(lv list variables)=,
+- =NAMES= — =(KEY WORD [WORD2])=: a 1- or 2-letter key symbol followed by
+  one or two word symbols, e.g. =(b break)=, =(lv list variables)=,
   =(z zar)=. The key MUST be the initial(s) of the word(s) (the §0 /
-  consistency rule); =define-debugger-command= *signals an error* if it is
+  consistency rule); =bind-debugger-command= *signals an error* if it is
   not, or if the key / words clash with an existing command.
-- =LAMBDA-LIST= — the parameters the command takes. Its length tells the
-  =check-commands= reader *how many arguments to read* after the command at
-  the prompt, and they are passed positionally to the function.
-- =DEBUGGING-FUNCTION= — any AutoLISP function object: a fresh =(lambda …)=,
-  or =(function EXISTING)= to reuse a function you already wrote with
-  =defun=. Called in the stop context; it may call the built-in commands
-  (the =clal-*= functions) and read the snapshot.
+- =LAMBDA-LIST= — passed *as data*. Its length tells the =check-commands=
+  reader *how many arguments to read* after the command at the prompt; they
+  are passed positionally to =FUNCTION=.
+- =DOCSTRING= — one line shown by =help= / =,apropos= (§8 help).
+- =FUNCTION= — any function object, called in the stop context: a fresh
+  =(lambda …)=, or =(function EXISTING)= to reuse a function written with
+  =defun=. It may call the built-in commands (the =clal-*= functions) and
+  read the snapshot.
 
-Because there is no macro to capture the body, the function is passed
-*explicitly* (a value), and the lambda-list is passed *as data* (a quoted
-list) so the reader knows the arity:
+Because there is no macro layer here, the function is passed *explicitly*
+(a value) and the lambda-list *as data*, so the registration is itself an
+ordinary function call — usable at the REPL and, crucially, *loadable from a
+=.lsp= file* like any other code. =bind-debugger-command= is the form used
+to register *built-in* commands too (from Common Lisp), binding a CL
+function; the built-in table is just this primitive applied many times at
+boot.
+
+A companion =(unbind-debugger-command names-or-key)= removes a user command
+(built-ins are protected).
+
+*** AutoLISP convenience: =define-debugger-command=
+
+For user commands written in AutoLISP, =define-debugger-command= is the same
+primitive — AutoLISP has no macros, so it is *also a function*, identical to
+=bind-debugger-command= (it is an alias / thin wrapper). Example uses:
 
 #+begin_src lisp
   ;; inline behaviour
-  (define-debugger-command '(f foo) '(arg)
+  (define-debugger-command '(f foo) '(arg) "Foo the ARG."
                            (lambda (arg) (do-something-foo arg)))
 
   ;; reuse a named function (loaded from a file, say)
   (defun debugging-zar (count function-name)
     (do-something-zar-with count function-name))
   (define-debugger-command '(z zar) '(count function-name)
+                           "Zar a function COUNT times."
                            (function debugging-zar))
 #+end_src
 
 After the first, =f= (= =,foo=) reads one argument and calls it; after the
-second, =z= (= =,zar=) reads two and calls =debugging-zar=. The built-in
-commands are this same mechanism, pre-populated — =define-debugger-command=
-just adds to the table.
+second, =z= (= =,zar=) reads two and calls =debugging-zar=.
 
-A companion convenience may also be offered:
-=(undefine-debugger-command names-or-key)= to remove a user command (the
-built-ins are protected).
+*** Common Lisp convenience: the =define-debugger-command= macro
+
+In Common Lisp (where built-ins and CL-side commands are written) a macro of
+the *same name* removes the explicit-function / quoted-lambda-list
+boilerplate, capturing the body directly:
+
+#+begin_src common-lisp
+  (defmacro define-debugger-command ((short long &optional second-long)
+                                     lambda-list docstring &body body)
+    `(bind-debugger-command
+      (list ',short ',long ,@(when second-long (list `',second-long)))
+      ',lambda-list
+      ,docstring
+      (lambda ,lambda-list ,docstring ,@body)))
+#+end_src
+
+so a built-in is written as, e.g.:
+
+#+begin_src common-lisp
+  (define-debugger-command (b break) (line) "Set a breakpoint at LINE."
+    (cmd-set-breakpoint-at-line *session* line))
+
+  (define-debugger-command (lv list variables) () "List visible variables."
+    (show-visible-names (current-snapshot *session*)))
+#+end_src
+
+The macro expands to the =bind-debugger-command= primitive: =NAMES= built
+from the =(short long [second-long])= header, =LAMBDA-LIST= quoted as data
+for the arity, =DOCSTRING= passed through, and the =BODY= wrapped in a
+=lambda= (the docstring kept as the lambda's documentation). Note the macro
+exists only in CL — it is sugar over the primitive; the AutoLISP function
+form is the canonical one and what the two-language table is keyed on.
 
 - backing: =[new]= — a command table the =check-commands= step consults,
-  mapping each (key . words) to a (lambda-list . function) entry; the engine
-  reads =(length lambda-list)= arguments and applies the function. The
-  =clal-*= command functions (public-interface issue) are what user
-  functions call to drive the debugger.
+  mapping each (key . words) to a (lambda-list . docstring . function)
+  entry; the engine reads =(length lambda-list)= arguments and applies the
+  function. =bind-debugger-command= is the registrar in both languages;
+  =define-debugger-command= is the AutoLISP function alias and the CL macro
+  sugar. The =clal-*= command functions (public-interface issue) are what
+  AutoLISP command functions call; CL built-ins call the engine =cmd-*= /
+  entry points directly.
 
 ** shell / python / script   =[n/a]=
 - No shell-out or scripting layer in the debugger; the AutoLISP =eval=
@@ -590,8 +641,10 @@ Genuinely new (=[new]=, in scope, small→medium):
 - type (=t=, ptype/whatis)
 - settings, apropos
 - rbreak REGEX
-- define-debugger-command (an AutoLISP function: names + lambda-list +
-  function; loadable from .lsp files; enforces the consistency rule)
+- command registration: =bind-debugger-command= primitive (names +
+  lambda-list + docstring + function; both languages, loadable from .lsp);
+  =define-debugger-command= AutoLISP-function alias + CL macro sugar;
+  enforces the consistency rule. Built-ins use the same registrar.
 
 New and worth a design pass (=[new]=, medium):
 - *watch SYMBOL* — software data breakpoint (per-poll-point value compare,
