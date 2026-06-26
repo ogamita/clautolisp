@@ -86,7 +86,8 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | run / start / launch           | — (always debugging)         | —   | n/a     |
 | enter debugger (break)         | clautolisp-break / -invoke-debugger | — | new |
 | kill                           | quit                         | q   | have    |
-| stepi / nexti / jump           | —                            | —   | n/a     |
+| jump LINE                      | jump LINE                    | j   | new     |
+| stepi / nexti                  | —                            | —   | n/a     |
 | break LINE / FN                | break LINE                   | b   | have    |
 | tbreak (temporary)             | break once LINE              | bo  | engine  |
 | condition / ignore             | condition ; ignore           | —   | engine  |
@@ -270,10 +271,55 @@ question at all.
   =--on-error= (all specified in
   =debugger-public-interface-and-on-error.issue=).
 
-** stepi / nexti / jump   =[n/a]=
-- The interpreter has no machine instructions and no arbitrary control
-  transfer; instruction-level stepping is explicitly out of scope
-  (spec §6, Part VIII). Dropped.
+** jump LINE   =[new]=
+- aldb: =j LINE=  | =,jump LINE=
+- params: LINE in the current function (or =FID FORM-ID= for a precise poll
+  point) — the form to resume execution *at*, skipping the forms in between.
+- desc: resume control flow, but *skip the evaluation* of the forms between
+  the current stopping point and the target, executing none of them. We
+  cannot "jump to an address" — but we do not need to, because a poll point
+  is what decides whether *its form runs at all*. A poll point wraps its
+  form as an unevaluated thunk:
+  #+begin_src lisp
+    (progn e1 e2 e3)
+    ;; instrumented (schematically):
+    (poll (lambda ()
+            (progn (poll (lambda () e1))
+                   (poll (lambda () e2))
+                   (poll (lambda () e3)))))
+  #+end_src
+  In jump-to-=e3= mode the outer =poll= still runs the real =progn= (so
+  control flow — the sequencing — is preserved), but each inner =poll=
+  consults the target before calling its thunk:
+  - poll point *is* the target → call the thunk normally, leave jump mode;
+  - target is a *descendant* of this poll point (=parent-form-map=, §7 of
+    the spec / the debug metadata) → call the thunk to *descend into* it,
+    staying in jump mode;
+  - otherwise → *do not call the thunk* (skip the form), and let the
+    surrounding control flow carry execution to the next poll point.
+  So jumping *forward within a sequence* is clean: the skipped forms are
+  simply not evaluated. The /same suppress-the-body mechanism/ implements
+  function =return= (skip the rest of the body, deliver a value at the
+  function-exit poll point). Jumping *outward* (to an enclosing form) is the
+  =return=/unwind direction: unwind to the common-ancestor poll point — the
+  =CLAL-POLL-RETURN= restart / =clal-abort= catch the engine already has —
+  then jump forward from there.
+- caveats (as in gdb): a *backward* jump re-executes forms and a jump
+  *across binding scopes* (into/out of a =/=-local or =foreach= binding) may
+  leave the environment inconsistent; aldb warns and, like gdb, does not
+  promise correctness in those cases. Forward, same-scope jumps are the
+  supported case.
+- backing: =[new]= — a per-thread /jump target/ consulted in the poll-point
+  routine (the interpreter's =eval-poll-form= already holds its body
+  unevaluated; the compiled fork must wrap the body in a real closure to get
+  the same suppression — DN-1). Reuses =parent-form-map= and the existing
+  unwind primitives.
+
+** stepi / nexti   =[n/a]=
+- The interpreter has no machine instructions; instruction-level stepping is
+  explicitly out of scope (spec §6, Part VIII). Dropped. (=jump=, by
+  contrast, IS expressible — see above — because it is form-level, not
+  instruction-level.)
 
 * 2. Breakpoints, tracepoints, watchpoints
 
@@ -697,13 +743,20 @@ New and worth a design pass (=[new]=, medium):
   or instrumented binding read/write). The highest-value addition: it is
   the natural answer to "why did this variable change", which the spec's
   shadowed-binding inspection (§9.4) already half-addresses.
+- *jump LINE* (=j=) — form-level jump by /suppressing poll-point bodies/
+  between here and the target (forward, same-scope; outward = unwind like
+  =return=). Expressible because a poll point gates whether its form runs;
+  reuses =parent-form-map= and the unwind primitives. Backward / cross-scope
+  jumps warn, as in gdb.
 
-Dropped as not applicable (=[n/a]=): stepi/nexti, jump, hbreak, x/memory/
+Dropped as not applicable (=[n/a]=): stepi/nexti, hbreak, x/memory/
 registers, directory, shell/python/script (interpreted, tagged-value
 runtime with no machine model — spec §6, §1.3, Part VIII); and
 thread/info-threads (AutoLISP is single-threaded and clautolisp does not
 plan threads; the debugger/main-thread split is an internal mechanism, not
-an addressable thread — §6).
+an addressable thread — §6). NOTE: gdb's =jump= is *not* dropped — though it
+"jumps to an address" in gdb, the form-level equivalent is expressible here
+via poll-point body suppression (see =jump LINE=, §1).
 
 * 10. Note on surfaces
 
