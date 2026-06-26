@@ -113,7 +113,7 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | list / source                  | list source ; source         | ls  | have    |
 | edit / directory / search      | —                            | —   | n/a/new |
 | x / memory / registers         | —                            | —   | n/a     |
-| thread / info threads          | (deferred — no threads)      | —   | engine  |
+| thread / info threads          | —                            | —   | n/a     |
 | workspace ($N)                 | workspace ; bind             | —   | have    |
 | help / apropos                 | help ; apropos               | h ? | have    |
 | define (user command)          | define                       | —   | new     |
@@ -183,7 +183,7 @@ question at all.
 ** continue
 - aldb: =c=  | =,continue [N]=
 - params: optional N = ignore N-1 subsequent stops of the same kind.
-- desc: resume until the next breakpoint, step landing, or thread exit.
+- desc: resume until the next breakpoint, step landing, or program exit.
 - backing: =[have]= =cmd-continue=. (N-count is =[new]=, trivial loop.)
 
 ** into  (step into)
@@ -442,16 +442,21 @@ hence the explicit check-commands step.)
   file names from the reader.
 - =search REGEX= / =reverse-search=: =[new]=, low priority.
 
-* 6. Threads
+* 6. Threads   =[n/a]=
 
-** thread / info threads
-- aldb: =,threads=  | =,thread N=
-- desc: list debugged application threads / select one. Breakpoints are
-  per-thread (spec §23); a session may debug several app threads. The
-  default UI shows only the active thread (spec §20.4); switching is a
-  command, not a permanent pane.
-- backing: =[engine]= (=*thread-debug-info-table*= keys threads; wire the
-  list/select commands).
+** thread / info threads   =[n/a]=
+- AutoLISP has no threads, and clautolisp does not plan to add them: there
+  is exactly one application program, single-threaded, being debugged. The
+  gdb/lldb thread-selection commands (=thread=, =info threads=,
+  =thread step-*=) therefore have no meaning here and are dropped.
+- The *only* use of OS threads inside clautolisp is an implementation
+  technicality — the aldo debugger runs in its own thread, alternating with
+  the single main (debuggee) thread through a mutex (see the architecture in
+  =issues/open/debugger-public-interface-and-on-error.issue=). That is
+  invisible to the AutoLISP programmer: it is not an addressable "thread" to
+  list or select, just the mechanism by which the one debuggee is paused and
+  resumed. There is one debuggee, hence no per-thread breakpoints and no
+  thread switching — a session is simply "the program".
 
 * 7. Workspace ($N) — beyond gdb/lldb
 
@@ -510,7 +515,7 @@ down (=d=), list frames (=lf=, backtrace), list locals/parameters/variables
 Thin wiring over existing engine support (=[engine]=, no new engine work):
 break once (=bo=, tbreak), condition (post-hoc), breakpoint commands (=action=), trace
 point (=action= + auto-continue), catch on/off (=*break-on-caught-error*=),
-thread list/select, outer-frame eval/setq.
+outer-frame eval/setq.
 
 Genuinely new (=[new]=, in scope, small→medium):
 - enable/disable (add =enabled-p= to =breakpoint=)
@@ -528,8 +533,11 @@ New and worth a design pass (=[new]=, medium):
   shadowed-binding inspection (§9.4) already half-addresses.
 
 Dropped as not applicable (=[n/a]=): stepi/nexti, jump, hbreak, x/memory/
-registers, directory, shell/python/script. Reason: interpreted,
-tagged-value runtime with no machine model (spec §6, §1.3, Part VIII).
+registers, directory, shell/python/script (interpreted, tagged-value
+runtime with no machine model — spec §6, §1.3, Part VIII); and
+thread/info-threads (AutoLISP is single-threaded and clautolisp does not
+plan threads; the debugger/main-thread split is an internal mechanism, not
+an addressable thread — §6).
 
 * 10. Note on surfaces
 
