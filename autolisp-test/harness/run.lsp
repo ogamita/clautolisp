@@ -68,8 +68,24 @@ switch."
          nil)
         (T catcher)))
 
+(defun autolisp-test--guarded-apply (label fn-symbol args / catcher)
+  "Call FN-SYMBOL with ARGS inside VL-CATCH-ALL-APPLY. On error,
+prints a diagnostic prefixed by LABEL and returns nil so the
+caller can continue. ARGS is evaluated at the call site before
+entering the catch, so values (not symbols) flow into the callee."
+  (setq catcher (vl-catch-all-apply fn-symbol args))
+  (cond ((vl-catch-all-error-p catcher)
+         (princ
+          (strcat "[autolisp-test] "
+                  label
+                  " raised: "
+                  (vl-catch-all-error-message catcher)
+                  "\n"))
+         nil)
+        (T catcher)))
+
 (defun autolisp-test-run-all ( / descriptor entries results matrix overlay
-                                 directory report-path)
+                                 guard-tmp directory report-path)
   (autolisp-test-registry-clear)
   (autolisp-test-load-all-tests)
   (setq descriptor (autolisp-test-detect-implementation))
@@ -88,36 +104,37 @@ switch."
   ;; Step 2: expectation overlays. Bracket the call in case the
   ;; overlay file itself is malformed.
   (setq overlay
-        (autolisp-test--guarded
+        (autolisp-test--guarded-apply
          "load-expectations"
-         (list 'lambda nil
-               (list 'autolisp-test-load-expectations 'descriptor))))
-  (setq results
-        (or (autolisp-test--guarded
-             "apply-expectations"
-             (list 'lambda nil
-                   (list 'autolisp-test-apply-expectations 'results 'overlay)))
-            results))
+         'autolisp-test-load-expectations
+         (list descriptor)))
+  (progn
+    (setq guard-tmp
+          (autolisp-test--guarded-apply
+           "apply-expectations"
+           'autolisp-test-apply-expectations
+           (list results overlay)))
+    (if (listp guard-tmp)
+        (setq results guard-tmp)))
   ;; Step 3: matrix.
   (setq matrix
-        (autolisp-test--guarded
+        (autolisp-test--guarded-apply
          "matrix"
-         (list 'lambda nil
-               (list 'autolisp-test-matrix 'entries 'descriptor 'results))))
+         'autolisp-test-matrix
+         (list entries descriptor results)))
   ;; Step 4: report-directory + write report.
   (setq directory (autolisp-test--report-directory descriptor))
   (autolisp-test--ensure-directory directory)
   (setq report-path (strcat directory "report.sexp"))
-  (autolisp-test--guarded
+  (autolisp-test--guarded-apply
    "write-sexp-report"
-   (list 'lambda nil
-         (list 'autolisp-test-write-sexp-report 'report-path 'descriptor
-               'entries 'results 'matrix)))
+   'autolisp-test-write-sexp-report
+   (list report-path descriptor entries results matrix))
   ;; Step 5: human-readable recap.
-  (autolisp-test--guarded
+  (autolisp-test--guarded-apply
    "print-recap"
-   (list 'lambda nil
-         (list 'autolisp-test-print-recap 'descriptor 'results 'matrix)))
+   'autolisp-test-print-recap
+   (list descriptor results matrix))
   (princ (strcat "[autolisp-test] report written to: " report-path "\n"))
   (list (cons 'descriptor descriptor)
         (cons 'results results)

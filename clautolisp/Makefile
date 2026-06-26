@@ -47,6 +47,12 @@ ifeq ($(HAVE_CCL),yes)
   AVAILABLE_IMPLEMENTATIONS += ccl
 endif
 
+# Qt6 GUI availability.  Checked at parse time so `make all' skips
+# the subprocess build when the toolchain is not installed.
+HAVE_CMAKE := $(shell command -v cmake >/dev/null 2>&1 && echo yes)
+HAVE_QT6   := $(shell pkg-config --exists Qt6Core Qt6Widgets 2>/dev/null && echo yes)
+HAVE_QT6_GUI := $(if $(filter yes,$(HAVE_CMAKE)),$(if $(filter yes,$(HAVE_QT6)),yes))
+
 # DEFAULT_LISP picks the implementation the bare `clautolisp' /
 # `read-autolisp' symlinks in $(PREFIX)/bin point at after install.
 # Defaults to the first implementation found on the host (SBCL
@@ -118,8 +124,13 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
         documentation user-manual clean-pdf specifications builtins-coverage \
         run-file-compat-bricscad-macos run-file-compat-bricscad-windows \
         run-file-compat-autocad-windows
+ifneq ($(HAVE_QT6_GUI),yes)
+GUI_TARGET :=
+else
+GUI_TARGET := clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt
+endif
 
-all: documentation build clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt
+all: documentation build $(GUI_TARGET)
 
 # ---------------------------------------------------------------------
 # build / build-<impl> — the user-facing build entry points.
@@ -333,7 +344,7 @@ builtins-coverage:
 	@echo "wrote documentation/builtins-coverage.md"
 
 clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
-	cd tools/clautolisp-gui-qt/ ; cmake --build build
+	cd tools/clautolisp-gui-qt/ && cmake -B build && cmake --build build
 
 # ---------------------------------------------------------------------
 # Install / uninstall.
@@ -401,7 +412,7 @@ install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-com
 	  install -m 0755 "$(CLAUTOLISP_GUI_QT_BIN)" $(BIN_INSTALL_DIR)/ ; \
 	  echo "installed: $(CLAUTOLISP_GUI_QT_BIN) -> $(BIN_INSTALL_DIR)/" ; \
 	else \
-	  echo "[skip] $(CLAUTOLISP_GUI_QT_BIN) not built (run 'cmake --build tools/clautolisp-gui-qt/build' first)" ; \
+	  echo "[skip] $(CLAUTOLISP_GUI_QT_BIN) not built (run 'cmake -B tools/clautolisp-gui-qt/build && cmake --build tools/clautolisp-gui-qt/build' first)" ; \
 	fi
 	@if [ -x "$(RUN_FILE_COMPAT_BIN)" ]; then \
 	  install -m 0755 "$(RUN_FILE_COMPAT_BIN)" $(LIBEXEC_INSTALL_DIR)/ ; \
