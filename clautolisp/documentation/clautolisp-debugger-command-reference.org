@@ -114,7 +114,8 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | edit / directory / search      | —                            | —   | n/a/new |
 | x / memory / registers         | —                            | —   | n/a     |
 | thread / info threads          | —                            | —   | n/a     |
-| workspace ($N)                 | workspace ; bind             | —   | have    |
+| convenience vars ($1, $foo)    | (setq …) / (defun …) at REPL | —   | have    |
+| inspector "name this value"    | bind NAME                    | —   | have    |
 | help / apropos                 | help ; apropos               | h ? | have    |
 | define (user command)          | define                       | —   | new     |
 | settings / set option          | settings                     | —   | new     |
@@ -411,11 +412,11 @@ hence the explicit check-commands step.)
 ** visit  (inspect / explore a value)
 - aldb: =v EXPR=  | =,visit EXPR=
 - desc: open the structured inspector on a value — descend car/cdr/nth,
-  DXF group codes of an ename, ssget members, etc.; copy the path
-  expression; bind to a workspace slot. gdb has no equivalent; named
-  =visit= (key =v=) so its key does not collide with =into= (=i=). Far
-  richer than =print= (spec Part IV). Inspector sub-commands: descend N,
-  up, path, bind, eval.
+  DXF group codes of an ename, ssget members, etc.; copy the accessor /path
+  expression/; or =bind NAME= the current value to a variable (= a =setq=,
+  §7). gdb has no equivalent; named =visit= (key =v=) so its key does not
+  collide with =into= (=i=). Far richer than =print= (spec Part IV).
+  Inspector sub-commands: descend N, up, path, bind, eval.
 - backing: =[have]= =cmd-inspect= + =cmd-inspector-descend= / =-up= /
   =-bind= / =-path-expression=.
 
@@ -458,17 +459,39 @@ hence the explicit check-commands step.)
   resumed. There is one debuggee, hence no per-thread breakpoints and no
   thread switching — a session is simply "the program".
 
-* 7. Workspace ($N) — beyond gdb/lldb
+* 7. Scratch values — just the REPL (no separate workspace)
 
-** workspace list / bind / clear
-- aldb: =,ws=  | =,bind $|NAME|! NAME=  | =,ws clear [$N]=
-- desc: the debugger's private numbered slots =$1=, =$2=, … plus =$0= for
-  the inspector's current value (spec §16.2). =,bind $= stashes the
-  inspected value in the next slot; =$N= is then usable in any =eval=.
-  This has no gdb/lldb analog (gdb convenience vars =$1= are the closest)
-  and is one of aldb's distinctive features.
-- backing: =[have]= =cmd-workspace-list= / =cmd-workspace-clear= /
-  =cmd-inspector-bind=.
+gdb/lldb have /convenience variables/ (=$1=, =$foo=) precisely because
+their command language is *not* a programming language — you cannot define
+a variable or a function at a gdb prompt. aldb does not need them: the
+debugger prompt IS a full AutoLISP REPL (§4), so the language's own
+=setq=/=defun= already give you named scratch values and helpers, usable in
+any later expression at the prompt:
+
+#+begin_src lisp
+  (setq $1 42)                  ; a scratch variable (any name; $-names by
+  (setq myvar $1)               ;   convention to avoid clashing user vars)
+  (defun $dbg () (foo (bar)))   ; a scratch helper
+  ($dbg)                        ; … call it
+#+end_src
+
+These are ordinary dynamic bindings in the program's namespace, so they
+persist across stops within the session and are visible to the program too
+(use =$=-prefixed names to keep them out of the way of user variables).
+There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
+=,workspace= command — the REPL subsumes them.
+
+** bind  (name the inspector's current value)   =[have]=
+- aldb: in the inspector, =b NAME=  | =,bind NAME=
+- desc: the one genuinely useful remnant of the gdb convenience-variable
+  idea. While exploring a value in the inspector (§4 =visit=), =bind NAME=
+  does =(setq NAME <current value>)= so you can name a value you navigated
+  to — e.g. a DXF group pulled out of an entity — without retyping its
+  accessor path. =bind= with no name uses a fresh =$N= (=$1=, =$2=, …) as a
+  convenience. Equivalent to typing =(setq NAME …)= yourself; the command
+  just saves you from spelling the accessor expression.
+- backing: =[have]= =cmd-inspector-bind= (it performs the =setq=); the
+  inspector can also show the accessor /path expression/ to copy (§4).
 
 * 8. Meta
 
@@ -484,18 +507,26 @@ hence the explicit check-commands step.)
 - backing: =[new]= (a small per-session options plist).
 
 ** define  (user-defined commands)   =[new]=
-- aldb: =,define WORD [WORD2] (PARAMS...) BODY...=
-- desc: register a new debugger command in AutoLISP, so the user customises
-  the command table. WORD (or WORD WORD2) names it; its key is the
-  initial(s) per the consistency rule, and =define= *rejects* a name whose
-  initial(s) clash with an existing key or word command. BODY is AutoLISP
-  evaluated in the stop context when the command is invoked; it may call the
-  built-in commands (exposed as =clal-= functions) and read PARAMS. This is
-  what lets a user bind, e.g., =lt= = =,list this= to their own form. The
-  rule (above) is enforced here precisely so user commands stay collision-
-  free against the built-in key space.
-- backing: =[new]= (a command-table the =check-commands= step consults; the
-  =clal-*= command functions of the public-interface issue back the body).
+- aldb: =,define WORD [WORD2] FUNCTION=
+- desc: a user command is *nothing more than a mapping from a short/long
+  command name to an ordinary AutoLISP function* — the user already writes
+  the behaviour with =defun= at the REPL (or loads it from a file), and
+  =define= just registers it in the command table under WORD (key = its
+  initial(s), per the consistency rule). When the command is invoked the
+  function is called in the stop context, receiving any typed argument; it
+  may call the built-in commands (exposed as =clal-= functions) and read the
+  snapshot. =define= *rejects* a name whose initial(s) clash with an
+  existing key or word command, so user commands inherit the collision-free
+  discipline. Example:
+  #+begin_src lisp
+    (defun $list-this () (princ (eval (current-form))))   ; the behaviour
+  #+end_src
+  =,define list this $list-this=  → now =lt= (= =list this=) runs it.
+  (Because a command is just a name→function map, the built-in commands are
+  themselves this same mechanism pre-populated; =define= adds to the table.)
+- backing: =[new]= (a command-table the =check-commands= step consults,
+  mapping a (short . long) name pair to a function; the =clal-*= command
+  functions of the public-interface issue are what user functions call).
 
 ** shell / python / script   =[n/a]=
 - No shell-out or scripting layer in the debugger; the AutoLISP =eval=
@@ -508,9 +539,9 @@ Already usable through the protocol (=[have]=): continue (=c=), into (=i=),
 next (=n=), out (=o=), advance (=a=), return (=r=), quit (=q=), break
 (=b=), list breakpoints (=lb=), delete/clear, frame (=f=) / up (=u=) /
 down (=d=), list frames (=lf=, backtrace), list locals/parameters/variables
-(=ll=/=lp=/=lv=), print (=p=), eval (bare sexp), set via =(setq …)=, visit
-(=v=, the inspector + descend/up/path/bind), workspace / bind, list source
-(=ls=), help (=h=).
+(=ll=/=lp=/=lv=), print (=p=), eval (bare sexp), scratch vars/funcs and
+=set= via plain =(setq …)= / =(defun …)= at the REPL, visit (=v=, the
+inspector + descend/up/path/bind), list source (=ls=), help (=h=).
 
 Thin wiring over existing engine support (=[engine]=, no new engine work):
 break once (=bo=, tbreak), condition (post-hoc), breakpoint commands (=action=), trace
