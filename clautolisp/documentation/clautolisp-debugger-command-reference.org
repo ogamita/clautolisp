@@ -83,7 +83,8 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | finish / step-out              | out                          | o   | have    |
 | until / advance LINE           | advance LINE                 | a   | have    |
 | return [VALUE]                 | return [FORM]                | r   | have    |
-| run / start / launch           | (session entry)              | —   | partial |
+| run / start / launch           | — (always debugging)         | —   | n/a     |
+| enter debugger (break)         | clautolisp-break / -invoke-debugger | — | new |
 | kill                           | quit                         | q   | have    |
 | stepi / nexti / jump           | —                            | —   | n/a     |
 | break LINE / FN                | break LINE                   | b   | have    |
@@ -232,11 +233,42 @@ question at all.
   =kill=; named =quit= here (key =q=).
 - backing: =[have]= =cmd-abort=.
 
-** run / start
-- aldb: (no in-session command; the session entry runs the program)
-- desc: gdb's =run= maps to starting a session over a load/eval; aldb has
-  no "rerun" yet. =,start= could re-load + break at the first poll point.
-- backing: =[partial]=. Re-run is =[future]= (needs session re-entry).
+** run / start   =[n/a — always debugging]=
+- There is *no* "run"/"start"/"launch" command, and no notion of opening or
+  closing a debug session. clautolisp assumes it is *always* debugging: when
+  the AutoLISP system boots, the *aldo debugger thread is started right away
+  and stays ready* for the lifetime of the process (see the architecture in
+  =issues/open/debugger-public-interface-and-on-error.issue= and the
+  sequence diagram =clautolisp/documentation/aldo-architecture.png= /
+  =aldo-debugger-interaction.puml=). gdb's =run= — launch the program under
+  the debugger — has no analogue: the program is *already* running under
+  aldo.
+- The *user-visible entry into the debugger* is therefore not a "start"
+  command but =invoke-debugger=, fired from a *poll point*:
+  - *interrupt* — C-c sets a "stop at the next poll point" flag; at the next
+    poll point the main thread calls =invoke-debugger=, handing control to
+    the always-ready aldo thread (the two alternate through a mutex). A
+    second C-c while the flag is set forces an immediate non-local exit,
+    forgoing the debugger (see the issue's interrupt design).
+  - *programmatic* — the AutoLISP user API =(clautolisp-break)= and
+    =(clautolisp-invoke-debugger [message])= drop into the debugger at the
+    current poll point from the program itself (the analogue of CL
+    =break= / =invoke-debugger=). =clautolisp-break= is the conditional/
+    plain breakpoint-in-source form; =clautolisp-invoke-debugger= the
+    unconditional entry. (These are the Part-A clal-/clautolisp- builtins of
+    =debugger-public-interface-and-on-error.issue= — confirm the final
+    prefix, =clautolisp-= vs =clal-=, there.)
+  - *on error* — an uncaught AutoLISP error enters the debugger when policy
+    asks for it; the policy is the =--on-error quit|debug|ignore= CLI option
+    backed by a dynamic variable =*clautolisp-on-error*= that the option
+    sets and that user code / init files may rebind to shadow it (e.g.
+    =(let ((*clautolisp-on-error* :debug)) …)= around a suspect region).
+- backing: =[have]= for the engine entry (=*debug-hit-handler*= +
+  poll-point dispatch already implement "invoke the debugger at a poll
+  point"); =[new]= for the =clautolisp-break= / =clautolisp-invoke-debugger=
+  builtins, the C-c/SIGINT flag plumbing, and =*clautolisp-on-error*= /
+  =--on-error= (all specified in
+  =debugger-public-interface-and-on-error.issue=).
 
 ** stepi / nexti / jump   =[n/a]=
 - The interpreter has no machine instructions and no arbitrary control
