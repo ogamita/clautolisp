@@ -547,11 +547,10 @@ to register *built-in* commands too (from Common Lisp), binding a CL
 function; the built-in table is just this primitive applied many times at
 boot.
 
-A companion =(unbind-debugger-function names-or-key)= removes a command,
-symmetrically with =bind-debugger-command= (built-ins are protected). The
-AutoLISP side exposes it as =(undefine-debugger-command names-or-key)=,
-pairing with =define-debugger-command= the same way =unbind-debugger-function=
-pairs with =bind-debugger-command=.
+A companion =(unbind-debugger-command names-or-key)= removes a command,
+pairing with =bind-debugger-command= (built-ins are protected). The AutoLISP
+side exposes it as =(undefine-debugger-command names-or-key)=, pairing with
+=define-debugger-command=.
 
 *** AutoLISP convenience: =define-debugger-command=
 
