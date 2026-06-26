@@ -84,7 +84,7 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | until / advance LINE           | advance LINE                 | a   | have    |
 | return [VALUE]                 | return [FORM]                | r   | have    |
 | run / start / launch           | — (always debugging)         | —   | n/a     |
-| enter debugger (break)         | clautolisp-break / -invoke-debugger | — | new |
+| enter debugger (break)         | clal-break / clal-invoke-debugger | — | new |
 | kill                           | quit                         | q   | have    |
 | jump LINE                      | jump LINE                    | j   | new     |
 | stepi / nexti                  | —                            | —   | n/a     |
@@ -251,24 +251,23 @@ question at all.
     the always-ready aldo thread (the two alternate through a mutex). A
     second C-c while the flag is set forces an immediate non-local exit,
     forgoing the debugger (see the issue's interrupt design).
-  - *programmatic* — the AutoLISP user API =(clautolisp-break)= and
-    =(clautolisp-invoke-debugger [message])= drop into the debugger at the
+  - *programmatic* — the AutoLISP user API =(clal-break)= and
+    =(clal-invoke-debugger [message])= drop into the debugger at the
     current poll point from the program itself (the analogue of CL
-    =break= / =invoke-debugger=). =clautolisp-break= is the conditional/
-    plain breakpoint-in-source form; =clautolisp-invoke-debugger= the
-    unconditional entry. (These are the Part-A clal-/clautolisp- builtins of
-    =debugger-public-interface-and-on-error.issue= — confirm the final
-    prefix, =clautolisp-= vs =clal-=, there.)
+    =break= / =invoke-debugger=). =clal-break= is the conditional/plain
+    breakpoint-in-source form; =clal-invoke-debugger= the unconditional
+    entry. (These are the Part-A =clal-= builtins of
+    =debugger-public-interface-and-on-error.issue=.)
   - *on error* — an uncaught AutoLISP error enters the debugger when policy
     asks for it; the policy is the =--on-error quit|debug|ignore= CLI option
-    backed by a dynamic variable =*clautolisp-on-error*= that the option
-    sets and that user code / init files may rebind to shadow it (e.g.
-    =(let ((*clautolisp-on-error* :debug)) …)= around a suspect region).
+    backed by a dynamic variable =*clal-on-error*= that the option sets and
+    that user code / init files may rebind to shadow it (e.g.
+    =(let ((*clal-on-error* :debug)) …)= around a suspect region).
 - backing: =[have]= for the engine entry (=*debug-hit-handler*= +
   poll-point dispatch already implement "invoke the debugger at a poll
-  point"); =[new]= for the =clautolisp-break= / =clautolisp-invoke-debugger=
-  builtins, the C-c/SIGINT flag plumbing, and =*clautolisp-on-error*= /
-  =--on-error= (all specified in
+  point"); =[new]= for the =clal-break= / =clal-invoke-debugger= builtins,
+  the C-c/SIGINT flag plumbing, and =*clal-on-error*= / =--on-error= (all
+  specified in
   =debugger-public-interface-and-on-error.issue=).
 
 ** jump LINE   =[new]=
