@@ -372,6 +372,18 @@ treated as commands rather than as variable references. (In CL one would
 make them symbol-macros expanding to calls; AutoLISP has no symbol-macros,
 hence the explicit check-commands step.)
 
+*Note — no recursive debugging.* When the debugger evaluates an expression
+(the bare-=(form)= REPL, or =p= / =t= / =(setq …)= / =,eval= / a breakpoint
+condition / a trace form), that evaluation is *not itself debugged*:
+breakpoints, stepping, and =clal-invoke-debugger= are inert inside it, so
+the debugger never re-enters itself. Any error signalled during the
+evaluation is *caught and reported*, and the command is *aborted* (its
+evaluation and execution stop), returning to the debugger prompt at the
+same stopping point — no nested debugger session is opened. This is the
+=*debugging*=-off discipline of =eval-in-frame= (DN-9 / spec §9.5): the
+debugger drives its own evaluations the way a host debugger runs with
+debugging disabled.
+
 ** eval / print a form  (the REPL itself)
 - aldb: a bare =(form ...)= line  — no command name.
 - desc: read, evaluate in the selected frame's context, print the value.
