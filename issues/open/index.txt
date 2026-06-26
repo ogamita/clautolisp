@@ -1,3 +1,29 @@
+Rules of Processing Issues
+
+- if an issue is completely done, it should be closed and moved to issues/closed/.
+
+- process the issues in the order given here.
+
+- strive to implement an issue completely. Only in case of
+  inconsistency, or dependency (including missing specifications, or
+  missing implementation of another issue)  may issue be put on hold
+  and the following issues processed.
+
+- before processing an issue, check the state of the
+  implementation. Sometimes progress has been made that render parts
+  or the whole of the issue irrelevant anymore. The issue may then be
+  closed with an explanation of how it's already implemented.
+
+- when bugs are discovered, if they are non-blocking for the current
+  issue, they can be enqueued by the creation of a new issue, and
+  added to this index list. If a bug is discovered that is blocking
+  for the current issue then it must be fixed in the frame of the
+  current issue. (can be separate commit).
+
+
+Current list of issues to resolve:
+
+
 ===  cadaptor-portability batch (filed 2026-06; triaged + processed in priority order)
 
 Five issues surfaced while porting cadaptor (sncf-reseau) to clautolisp.
