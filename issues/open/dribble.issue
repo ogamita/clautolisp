@@ -65,6 +65,11 @@ If an error occurs, The condition / error message is displayed on
 lines prefixed by ";; C: ". (This may be redundant with output from a
 debugger, but we don't mind).
 
+** Result
+
+Then function clautolisp-dribble returns the absolute path of the
+dribble file it just openned, or NIL when it just closed it and
+stopped dribbling.
 
 ** Example
 
