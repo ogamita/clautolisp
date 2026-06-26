@@ -20,27 +20,26 @@
 
 ;;; --- verdict aggregation -------------------------------------------
 
-(defun autolisp-test--count-status (status results / n)
+(defun autolisp-test--count-status (status outcome-list / n)
   (setq n 0)
-  (foreach r results
+  (foreach r outcome-list
     (if (eq status (cdr (assoc 'status r)))
         (setq n (+ n 1))))
   n)
 
-(defun autolisp-test-verdict-for (entries descriptor results
+(defun autolisp-test-verdict-for (entries descriptor outcome-list
                                   / applicable applicable-results pass-n fail-n
                                     skip-n xfail-n xpass-n unimpl-n)
   "Compute the verdict for the subset (ENTRIES) given the implementation
-DESCRIPTOR and the per-test RESULTS list (returned by run-all). Returns
+DESCRIPTOR and the per-test OUTCOME-LIST list (returned by run-all). Returns
 an alist with KEYS verdict, applicable-count, total-count, pass, fail,
 skip, xfail, xpass, unimplemented."
   (setq applicable nil)
-  (setq applicable-results nil)
   (foreach entry entries
     (if (autolisp-test-applicable-p entry descriptor)
         (progn
           (setq applicable (cons entry applicable))
-          (foreach r results
+          (foreach r outcome-list
             (if (equal (cdr (assoc 'name r))
                        (autolisp-test-entry-name entry))
                 (setq applicable-results (cons r applicable-results)))))))
@@ -64,7 +63,7 @@ skip, xfail, xpass, unimplemented."
         (cons 'xpass xpass-n)
         (cons 'unimplemented unimpl-n)))
 
-(defun autolisp-test-matrix (entries descriptor results / matrix
+(defun autolisp-test-matrix (entries descriptor outcome-list / matrix
                                                           strict-set
                                                           autocad-set
                                                           bricscad-set
@@ -79,9 +78,9 @@ bricscad, plus the same intersected with each detected runtime tag."
   (setq strict-set   (autolisp-test-select-by-profile 'strict   entries))
   (setq autocad-set  (autolisp-test-select-by-profile 'autocad  entries))
   (setq bricscad-set (autolisp-test-select-by-profile 'bricscad entries))
-  (setq v-strict     (autolisp-test-verdict-for strict-set descriptor results))
-  (setq v-autocad    (autolisp-test-verdict-for autocad-set descriptor results))
-  (setq v-bricscad   (autolisp-test-verdict-for bricscad-set descriptor results))
+  (setq v-strict     (autolisp-test-verdict-for strict-set descriptor outcome-list))
+  (setq v-autocad    (autolisp-test-verdict-for autocad-set descriptor outcome-list))
+  (setq v-bricscad   (autolisp-test-verdict-for bricscad-set descriptor outcome-list))
   (setq matrix
         (list
          (list "strict"    v-strict)
@@ -96,15 +95,15 @@ bricscad, plus the same intersected with each detected runtime tag."
            (list (strcat "strict + " (vl-symbol-name tag))
                  (autolisp-test-verdict-for
                   (autolisp-test-select-by-tag tag strict-set)
-                  descriptor results))
+                  descriptor outcome-list))
            (list (strcat "autocad + " (vl-symbol-name tag))
                  (autolisp-test-verdict-for
                   (autolisp-test-select-by-tag tag autocad-set)
-                  descriptor results))
+                  descriptor outcome-list))
            (list (strcat "bricscad + " (vl-symbol-name tag))
                  (autolisp-test-verdict-for
                   (autolisp-test-select-by-tag tag bricscad-set)
-                  descriptor results))))
+                  descriptor outcome-list))))
     (setq matrix (append matrix subsets)))
   matrix)
 

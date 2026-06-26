@@ -1,0 +1,208 @@
+#+TITLE: Installation
+#+DATE: 2026-06-18
+
+This document describes how to obtain the dependencies needed to build,
+document, and test the clautolisp project.
+
+* Fedora / Red Hat
+
+Install the following packages with =dnf=:
+
+#+begin_src sh
+sudo dnf install -y \
+  sbcl              \
+  emacs             \
+  texlive-xetex     \
+  texlive-wrapfig   \
+  texlive-ulem      \
+  texlive-capt-of   \
+  texinfo           \
+  make              \
+  git               \
+  curl
+#+end_src
+
+| Package           | Provides                    |
+|-------------------+-----------------------------|
+| sbcl              | SBCL Common Lisp compiler   |
+| emacs             | Org-mode → LaTeX export     |
+| texlive-xetex     | xelatex (PDF from .org)     |
+| texlive-wrapfig   | wrapfig.sty                 |
+| texlive-ulem      | ulem.sty                    |
+| texlive-capt-of   | capt-of.sty                 |
+| texinfo           | makeinfo (.texi → .info)    |
+| make              | Build driver                |
+| git               | Source control               |
+| curl              | Quicklisp download           |
+
+The remaining TeX packages (=graphicx=, =hyperref=, =longtable=,
+=rotating=, =ulem=) are part of the standard TeX Live distribution and
+are already pulled in by =texlive-xetex=.
+
+
+* Ubuntu / Debian
+
+Install the following packages with ~apt~:
+
+#+begin_src sh
+sudo apt install -y \
+  sbcl                \
+  emacs               \
+  texlive-xetex       \
+  texlive-latex-extra \
+  texinfo             \
+  cmake               \
+  qt6-base-dev        \
+  pkg-config          \
+  make                \
+  git                 \
+  curl
+#+end_src
+
+| Package                | Provides                          |
+|------------------------+-----------------------------------|
+| sbcl                   | SBCL Common Lisp compiler         |
+| emacs                  | Org-mode → LaTeX export           |
+| texlive-xetex          | xelatex (PDF from .org)           |
+| texlive-latex-extra    | wrapfig, ulem, capt-of, etc.      |
+| texinfo                | makeinfo (.texi → .info)          |
+| cmake                  | C++ build system (Qt GUI)         |
+| qt6-base-dev           | Qt 6 Core + Widgets (GUI)         |
+| pkg-config             | Probe tool for Qt6 detection      |
+| make                   | Build driver                      |
+| git                    | Source control                     |
+| curl                   | Quicklisp download                 |
+
+On Ubuntu, the extra TeX packages (=wrapfig=, =ulem=, =capt-of=) are
+part of =texlive-latex-extra= rather than separate packages as on
+Fedora.
+
+Ubuntu also packages CCL directly:
+
+#+begin_src sh
+sudo apt install -y clozure-cl
+#+end_src
+
+The manual install procedure in the Quick-Reference section remains
+available when the system package lags behind upstream.
+
+* Common Lisp implementations
+
+SBCL is available as a system package on both Fedora/Red Hat
+(=sbcl= via =dnf=, see above) and Ubuntu/Debian (=sbcl= via =apt=,
+see below).
+
+** CCL (Clozure CL)
+
+There is no Fedora package for CCL.  Download a binary release from
+[[https://github.com/Clozure/ccl/releases]]:
+
+#+begin_src sh
+sudo mkdir -p /opt/ccl
+curl -fsSL -o /tmp/linuxx86.tar.gz \
+  "https://github.com/Clozure/ccl/releases/download/v1.13/linuxx86.tar.gz"
+sudo tar -xzf /tmp/linuxx86.tar.gz -C /opt/ccl
+sudo ln -s /opt/ccl/lx86cl64 /usr/local/bin/ccl
+rm -f /tmp/linuxx86.tar.gz
+#+end_src
+
+Replace version =1.13= with the latest release if newer.
+
+* Quicklisp
+
+Quicklisp is the Common Lisp package manager.  It must be installed
+manually for each CL implementation that will build the project.
+
+#+begin_src sh
+curl -fsSL -o /tmp/quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp
+sbcl --noinform --no-userinit --non-interactive \
+  --load /tmp/quicklisp.lisp \
+  --eval '(quicklisp-quickstart:install)' \
+  --eval '(sb-ext:quit)'
+#+end_src
+
+To make Quicklisp load automatically in SBCL, the convenience helper
+=ql:add-to-init-file= appends the relevant loader lines to
+=~/.sbclrc=.  It is an interactive step (it waits for =Enter=), so the
+non-interactive invocations above skip it.  Run it once manually:
+
+#+begin_src sh
+sbcl --eval '(load "~/quicklisp/setup.lisp")' \
+     --eval '(ql:add-to-init-file)' \
+     --quit
+#+end_src
+
+Then press =Enter= when prompted.
+
+For CCL, repeat the install with a CCL invocation after the SBCL step:
+
+#+begin_src sh
+ccl --no-init --quiet \
+  --eval '(load "/tmp/quicklisp.lisp")' \
+  --eval '(quicklisp-quickstart:install :path "/root/quicklisp/")' \
+  --eval '(ccl:quit)'
+#+end_src
+
+* Common Lisp library dependencies
+
+The test suite needs =fiveam= (the test framework) and
+=bordeaux-threads= (used by the debugger subsystem).  These are fetched
+automatically by Quicklisp when the test target runs, but can be
+pre-loaded:
+
+#+begin_src sh
+sbcl --noinform --no-userinit --non-interactive \
+  --eval '(load "~/quicklisp/setup.lisp")' \
+  --eval '(ql:quickload "fiveam" :silent t)' \
+  --eval '(ql:quickload "bordeaux-threads" :silent t)' \
+  --eval '(sb-ext:quit)'
+#+end_src
+
+* Build
+
+With all dependencies in place:
+
+#+begin_src sh
+make all
+#+end_src
+
+This builds documentation (PDF + Info) for every subproject.
+
+* Test
+
+#+begin_src sh
+make test
+#+end_src
+
+This runs the SBCL unit test suite (FiveAM) followed by the
+autolisp-test conformance harness.  Both must exit 0.
+
+* Quick reference (package list only)
+
+#+begin_src sh
+# Fedora system packages
+sudo dnf install -y sbcl emacs texlive-xetex texlive-wrapfig \
+  texlive-ulem texlive-capt-of texinfo make git curl
+
+# CCL (manual)
+curl -fsSL -o /tmp/linuxx86.tar.gz \
+  "https://github.com/Clozure/ccl/releases/download/v1.13/linuxx86.tar.gz"
+sudo tar -xzf /tmp/linuxx86.tar.gz -C /opt/ccl
+sudo ln -s /opt/ccl/lx86cl64 /usr/local/bin/ccl
+rm -f /tmp/linuxx86.tar.gz
+
+# Quicklisp (for SBCL)
+curl -fsSL -o /tmp/quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp
+sbcl --noinform --no-userinit --non-interactive \
+  --load /tmp/quicklisp.lisp \
+  --eval '(quicklisp-quickstart:install)' \
+  --eval '(sb-ext:quit)'
+rm -f /tmp/quicklisp.lisp
+
+# Pre-load Quicklisp libraries (optional, tests fetch them on demand)
+sbcl --noinform --no-userinit --non-interactive \
+  --eval '(load "~/quicklisp/setup.lisp")' \
+  --eval '(ql:quickload "fiveam" :silent t)' \
+  --eval '(ql:quickload "bordeaux-threads" :silent t)' \
+  --eval '(sb-ext:quit)'
+#+end_src
