@@ -962,6 +962,10 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
 - desc: list commands / describe one / search command docs. The one-line
   text for each command is the =DOCSTRING= given to =bind-debugger-command=
   (§8), so user-defined and built-in commands document themselves uniformly.
+  The full command list is the canonical *long output* — usually taller than a
+  small terminal — so on the dumb terminal it goes through the *pager* below
+  (=,help= obeys =,settings pager=); ncurses shows it in a scrollable window,
+  aldb in a buffer.
 - backing: =[have]= (dumb =h=); =,apropos= is =[new]=, trivial.
 
 ** settings
@@ -987,6 +991,16 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     stop.
   - preview length — truncation width for one-line value previews (=print=,
     inspector annotations).
+  - =pager= — =on= / =off=: whether long command output (longer than the
+    screen) is captured and shown a page at a time in the *dumb terminal*
+    (*Paging long output* below). Default *on* for a size-limited terminal;
+    typically set =off= under an Emacs =shell= (where the buffer scrolls). Not
+    used by ncurses (its own scrollable window) or aldb (Emacs scrollback).
+  - =pager-height= — optional page height in lines for the pager. The effective
+    page is =min(terminal-height, pager-height)= when the terminal height is
+    known, else =pager-height= alone (the terminal size is often unavailable on
+    a dumb terminal). With neither available, a built-in fallback (provisionally
+    24) is used. (Option names provisional.)
 - backing: =[new]= (a small per-session options plist; =style= reuses the
   runtime colour policy, and =*navigation-history-max*= the navigation
   history). The exact option NAMEs for the source-window and preview-length
@@ -1032,6 +1046,56 @@ richer plain-terminal listing without any ncurses or Emacs UI.
   and Emacs UIs already colour these elements with their own facilities;
   this entry is purely about giving the *plain terminal* the same emphasis
   where the terminal can render it.
+
+** Paging long output   =[new]=
+
+Some commands emit output that can be *longer than the screen* — =help= (the
+full command list) is the canonical case, and =list breakpoints=, =list
+frames=, =apropos=, a long =list source= or a big value preview can be too. On
+a size-limited terminal that scrolls the head off before the user can read it.
+Each surface handles this the way that fits it:
+
+- *ncurses* — long output goes to a *scrollable window* the user can page back
+  and forth through (and close); there is no separate pager. (The ncurses UI
+  already owns its panes; this is just "make the relevant pane scrollable",
+  §19 / the ncurses issue.)
+- *Emacs aldb* — output is written to a buffer and *Emacs scrolls it*; no
+  pager is wanted (this is why one typically sets =,settings pager off= under
+  an Emacs =shell=).
+- *dumb terminal* — an optional *built-in pager* (the =,settings pager= option,
+  §8) captures the output and shows it *one page at a time*, pausing at a
+  prompt between pages. This is the only surface that needs it, because a dumb
+  terminal has no scrollback the debugger can drive.
+
+*The dumb-terminal pager.* When =pager= is =on=, a command's output is
+collected and emitted a page at a time; after each page (except the last) the
+pager shows a prompt and reads *one key* (a small modal sub-mode, like the
+location-selection sub-mode of §2 — its keys are local and do not touch the
+top-level map):
+
+- forward one page — =SPACE= or =RET= or =>= (the universal "more" gesture; =>=
+  matches the §3 forward motion);
+- backward one page — =<= (matches the §3 backward motion);
+- first / last page — =<<= / =>>= (as §3);
+- quit reading (discard the rest) — =q=.
+
+These spellings are *provisional* but deliberately reuse the §3 navigation
+directions so the pager needs no new vocabulary. When =pager= is =off=, output
+is written straight through (the Emacs-shell / redirect case), and — as for
+EOF at the prompt (DN-6) — a non-interactive input stream never blocks on the
+pager: it behaves as =off= so a piped or CI session runs to completion.
+
+*Page height.* The effective page is =min(terminal-height, pager-height)= when
+the terminal height is known; the dumb terminal often *cannot* report its size,
+so the configured =pager-height= is then used alone, and with neither available
+a built-in fallback (provisionally 24 lines) applies. One line is reserved for
+the pager prompt.
+
+- backing: =[new]= — a thin output-capturing wrapper around the commands that
+  can overflow, driven by the =,settings pager= / =pager-height= options and
+  the (best-effort) terminal-size query; reuses the dumb UI's injectable
+  streams (DN-6) so it is testable over string streams. ncurses scrollback and
+  the aldb buffer are existing-surface behaviour, not this wrapper.
 
 ** Defining commands (built-in and user)   =[new]=
 

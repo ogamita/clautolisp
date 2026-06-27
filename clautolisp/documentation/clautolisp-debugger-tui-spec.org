@@ -718,6 +718,33 @@ warning glyph so the user knows where execution is.
 If variables are watched, their values would be displayed before the
 source form, each time we enter the debugger.
 
+** Paging Long Command Output
+
+Some commands produce output *longer than the screen* — =help= (the full
+command list) above all, but also =list breakpoints= / =list frames= /
+=apropos= and a large =list source= or value preview. Where Partial Printing
+(above) shrinks one big *form* to fit, paging handles long *command output*
+that is already as short as it can be. Each UI deals with it in its own way:
+
+- *ncurses*: long output is shown in a *scrollable window* — the user pages
+  back and forth through the *whole* text (e.g. reading all of =help=) and
+  closes it to return. The window *is* the pager; no separate prompt is
+  needed. (This is the ncurses UI managing a pane, §19.)
+- *aldb (Emacs)*: output goes to a buffer and Emacs scrolls it; no pager —
+  which is why one usually disables it there (=,settings pager off=).
+- *dumb terminal*: an optional built-in *pager* (the =,settings pager= /
+  =pager-height= options) captures the output and shows it a page at a time,
+  pausing between pages for a single key — forward =SPACE= / =RET= / =>=,
+  backward =<=, first / last =<<= / =>>=, quit =q= (a modal sub-mode reusing
+  the §3 navigation directions). With =pager off=, or on a non-interactive
+  input stream, output is written straight through.
+
+The *normative specification* of the dumb-terminal pager, its keys, the
+=pager= / =pager-height= settings, and the page-height rule
+(=min(terminal-height, pager-height)=, or the configured height alone when the
+terminal size is unavailable) is in the command reference, §8 *Paging long
+output*; this section records only the per-surface behaviour.
+
 ** The Inspector while Stepping
 
 Inspecting a value (=visit= / =v= on a selection, command reference §7)
