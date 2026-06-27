@@ -280,31 +280,46 @@ function* =f=, a command (say =definition=) opens =f='s definition and
 makes it the displayed form. A complementary command (say =back=) pops
 back to the form and selection we came from.
 
-This is *static source browsing*: it follows the /call graph by name/, not
-the runtime stack. It does *not* move the current frame and the *bindings
-do not follow* — you are reading code, not moving the program counter. So
-=print=, =(setq …)=, =list locals= etc. still act in the *current frame*
-(command reference §3), never in a function you have merely browsed into.
-You may even browse into a function that is not (yet) on the runtime stack
-at all.
+This is *source browsing*: it follows the /call graph by name/, not the
+runtime stack, and it does *not* move the current frame. It is *not*
+"read-only", though — from a browsed form you can still do every
+*source-located* operation: set / clear / enable / disable a breakpoint,
+attach a condition, or designate a sub-form as a =jump= destination.
+Those act on *poll points*, which belong to the source, so they work
+wherever the source is shown, on or off the runtime stack — you may even
+browse into a function that is not (yet) on the stack at all and breakpoint
+it.
+
+What a browsed form lacks is a *frame*: there are no live bindings there.
+So the *binding-dependent* operations — =print=, =(setq …)=, =list
+locals=, evaluation — still act in the *current frame* (command reference
+§3), never in a function you have merely browsed into. That, not
+read-vs-write, is the real line between the two stacks below: one is an
+actual stack of *runtime frames* (with bindings), the other is only a
+*navigation stack through the source code* (with poll points but no
+bindings).
 
 *** The two stacks
 
-There are two stacks, and only one of them is "real":
+There are two stacks; they differ by *what their entries are*, not by what
+you may do from them:
 
-- *The runtime (Lisp) call stack* — the actual frames; the current
-  poll-point sits in the current (top) frame. It is navigated with the
-  existing *frame family* (=fi= / =fo= / =ft= / =fb=, =list frames=;
-  command reference §3). Selecting a frame *is* a real move: it changes
-  the binding/evaluation context (=with-frame-bindings=) and the view
-  shows that frame's function with its active sub-form. Its depth is
-  whatever the program actually called.
-- *The source-navigation (browse) stack* — built purely by =definition= /
-  =back=. It is independent of the runtime stack and read-only; its entries
-  are =(form . selection)= pairs. Its depth is bounded only by how far the
-  user drills: with recursive or mutually-recursive functions =definition=
-  can revisit a function already on the browse stack (a /cycle/ in the
-  static call graph), so the depth is *user-bounded, not graph-bounded*.
+- *The runtime (Lisp) call stack* — a stack of actual *frames*; the
+  current poll-point sits in the current (top) frame. It is navigated with
+  the existing *frame family* (=fi= / =fo= / =ft= / =fb=, =list frames=;
+  command reference §3). Selecting a frame *is* a real move: it changes the
+  binding/evaluation context (=with-frame-bindings=) and the view shows
+  that frame's function with its active sub-form. Its depth is whatever the
+  program actually called.
+- *The source-navigation (browse) stack* — a stack of *source positions*,
+  =(form . selection)= pairs, built by =definition= / =back=. It is
+  independent of the runtime stack and carries *no frames and no bindings*.
+  You can still breakpoint and =jump=-target the poll points it shows (they
+  are source objects), but binding-dependent operations defer to the
+  current frame (above). Its depth is bounded only by how far the user
+  drills: with recursive or mutually-recursive functions =definition= can
+  revisit a function already on the browse stack (a /cycle/ in the static
+  call graph), so the depth is *user-bounded, not graph-bounded*.
 
 The default display always *anchors* to the current poll-point — the
 current frame's active form. Frame moves re-anchor to another real frame;
@@ -331,10 +346,11 @@ where they were, instead of re-drilling each time.
 *** Bounds and parameters
 
 - =*navigation-history-max*= (a =,settings= option) caps the number of
-  saved navigation states; the oldest is dropped beyond the limit.
-- The browse-stack depth is naturally user-bounded (above); an optional
-  =*browse-depth-max*= may cap it to guard against an unbounded drill
-  through a recursion.
+  saved navigation states; the oldest is dropped beyond the limit. Default
+  *1000* — essentially unbounded: reaching 1000 distinct navigation states
+  in one debugging session would be quite something.
+- The browse-stack depth needs no separate cap: it is naturally
+  user-bounded (the user does the drilling), so we do without one.
 
 *** ncurses and aldb
 
@@ -349,9 +365,95 @@ where they were, instead of re-drilling each time.
   the *re-anchor on re-entry* — moving point to the new current poll-point
   when execution stops again.
 
-Command-language note: the new verbs (=form=, =definition=, =back=,
-=history=) must be registered in the command reference with keys that obey
-its naming consistency rule (§0); the names above are provisional.
+** Command Dictionaries and the sedit Command Set
+
+The new verbs above (=form=, =definition=, =back=, =history=) are
+*navigation* commands of the *sedit navigation mode*, not free-standing
+debugger commands. That raises two questions: which of sedit's own commands
+carry over, and how a mode's commands coexist with the debugger's.
+
+*** The sedit command set, filtered
+
+The structural editor =sedit/sedit.lisp= (sedit branch) already defines a
+command map. We keep its *navigation* commands and drop its *mutating* ones
+— the debugger never destructively rewrites the program's source from this
+view:
+
+| sedit command          | key       | disposition                      |
+|------------------------+-----------+----------------------------------|
+| down                   | d         | keep — enter the selected list   |
+| up                     | u         | keep — select the enclosing list |
+| forward / next         | f / n     | keep — next sibling sexp (or up) |
+| backward / previous    | b / p     | keep — previous sibling (or up)  |
+| help                   | h         | keep — list the active commands  |
+| eval                   | e         | adapt — see below                |
+| quit                   | q         | adapt — see below                |
+| insert / add / replace | i / a / r | drop (mutating)                  |
+| cut / copy / paste     | x / c / y | drop (mutating)                  |
+| save / load            | s / l     | drop (mutating)                  |
+
+Two adaptations: =eval= sends the *selection* to the debugger REPL to be
+evaluated in the *current frame* (command reference §3/§4), not a bare
+=CL:EVAL= of the sexp; =quit= simply *leaves the navigator* — nothing is
+returned and nothing is mutated, unlike stand-alone sedit which returns the
+edited sexp. To these the debugger adds its own verbs: =form=,
+=definition=, =back=, =history=, designation-by-number, and the breakpoint
+operations.
+
+TODO: =sedit= also offers motions worth importing — jump N sexps
+forward/backward by typing a number (which dovetails with
+designation-by-number) and a search; decide which to adopt.
+
+*** Two navigation backends: sexp (sedit) and file:line
+
+These commands are defined over the *sexp structure* (sedit). The debugger
+also shows source the *flat* way — lines around a point (command reference
+=list source=). The verbs must work for *both* backends:
+
+- *sexp / sedit*: =down= / =up= / =forward= / =backward= move by structure;
+  =definition= descends into a called function, =back= pops.
+- *file:line*: motion is by line; =definition= jumps to the function's
+  file+line and =back= returns; =forward= / =backward= mean the next /
+  previous *poll point* in the listing, so designation still lands on
+  sexps, not raw lines.
+
+TODO: settle the file:line bindings, and whether the backend is a user
+toggle or follows terminal capability.
+
+*** Command dictionaries (stacked dispatch)
+
+sedit's keys collide hard with the debugger's: =b= is sedit-/backward/ but
+debugger-/break/; =f n p c a r i q= clash likewise. Rather than rename
+either set, dispatch goes through *stacked command dictionaries*, one per
+module:
+
+- the *sedit navigator*, the *inspector*, and the *global debugger*
+  dictionaries;
+- the active mode puts its dictionary *on top*; lookup walks from the
+  innermost dictionary outward, *first match wins*. So in the navigator =b=
+  is /backward/, in the inspector =b= is its own =bind= (command reference
+  §7), and a key bound only globally still resolves through to the
+  debugger.
+
+*Escaping to an outer dictionary.* When an inner binding shadows a debugger
+command you still want, a reserved *prefix* routes the next token to the
+outer/global dictionary — the word =debugger= (=debugger continue=) or a
+dedicated escape key. The prefix must itself be free in the active mode, so
+it cannot be a bare =d= (that is sedit-/down/); the spelled-out =debugger=
+word, or one key reserved across all modes, avoids the clash. In the
+RET-terminated dumb terminal the word form is unambiguous; the single-key
+UIs need a dedicated escape key.
+
+*User dictionaries.* =bind-debugger-command= / =define-debugger-command=
+(command reference §8) gain a *dictionary* argument, so a user can add a
+command to a specific dictionary — inspector-only or navigator-only —
+rather than only the global one (the default).
+
+This stacked dispatch generalises the single command table of command
+reference §8 and belongs there alongside =bind-debugger-command=; it is
+recorded here because the sedit/inspector navigation is what forces it. The
+new verbs still take keys that obey the §0 naming-consistency rule *within
+each dictionary*; the names above are provisional.
 
 ** Partial Printing of the Form
 
