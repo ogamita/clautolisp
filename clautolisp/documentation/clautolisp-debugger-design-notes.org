@@ -777,17 +777,24 @@ change without disturbing the settled decisions around it. Mostly they are
 confirmed by use rather than argued up front. (The settled decisions are
 DN-1…DN-12 and the command-reference §0 rules; those are *not* on this list.)
 
-| Provisional item                     | Where                                   | Current choice                                              | Alternative / fallback                              | How it gets settled            |
-|--------------------------------------+-----------------------------------------+-------------------------------------------------------------+-----------------------------------------------------+--------------------------------|
-| Poll-point id numbering              | DN-11; TUI "Numbered Poll-Points"       | one *globally-stable* number space, assigned once, reused never | per-top-level-form ids (a bp then carries its form) | use — if typed numbers grow too big |
-| =navigator= setting (name + values)  | cmd-ref §8 settings; TUI "Two navigator…" | name =navigator=; values =sexp= / =classic=                 | another name / value spelling                       | naming review                  |
-| =pager= / =pager-height= names       | cmd-ref §8 "Paging long output"         | =pager= (on/off), =pager-height= (lines)                    | another name                                        | naming review                  |
-| Pager fallback page height           | cmd-ref §8 "Paging long output"         | 24 lines when terminal size is unknown                      | another default                                     | pick a default                 |
-| Pager command keys                   | cmd-ref §8 "Paging long output"         | =less=(1) commands + §3 direction aliases (=> < << >>=)      | keep only one of the two vocabularies               | UX review                      |
-| Poll-point-state modifier glyphs     | TUI "Numbered Poll-Points" (states)     | suffix modifiers: conditional =?=, once = underlined gutter, plus ignore-count / trace / has-commands / transient-target markers | other glyphs / a status column      | glyph design + terminal test   |
-| source-window-size, preview-length names | cmd-ref §8 settings                  | descriptive only (no earmuffed names yet)                   | concrete =*…*= option names                         | naming review                  |
-| Mode-dictionary names + escape key   | TUI "Command Dictionaries"; cmd-ref §8  | =*sedit-navigator-dictionary*= / =*classic-navigator-dictionary*= / =*inspector-dictionary*=; escape = word =debugger= (a dedicated escape *key* is unspecified) | other names; a chosen escape key | naming review + key choice     |
+| Provisional / deferred item      | Where                                  | Current choice                                         | Alternative / fallback                     | How it settles             |
+|----------------------------------+----------------------------------------+--------------------------------------------------------+--------------------------------------------+----------------------------|
+| Poll-point id numbering          | DN-11; TUI "Numbered Poll-Points"      | one globally-stable number space, never reused         | per-top-level-form ids (bp carries its form) | use — if numbers grow too big |
+| Poll-point-state modifier glyphs (deferred) | TUI "Numbered Poll-Points" (states)    | selecting a pp shows its full info at screen bottom; glyphs only flag presence | add modifier glyphs only if use shows a need | see by use                 |
+| source-window-size, preview-length names | cmd-ref §8 settings                    | descriptive only (no earmuffed names yet)              | concrete =*…*= option names                | naming review              |
+| Mode-dictionary names + escape key | TUI "Command Dictionaries"; cmd-ref §8 | =*sedit-/classic-/inspector-…-dictionary*=; escape = word =debugger= (no key yet) | other names; a chosen escape key           | naming review + key choice |
 
 These complement the inline =[new]= / =[engine]= / =[have]= backing tags (which
 track *implementation* status); this register tracks *design* choices still
 open to revision.
+
+*Settled since (were provisional, now fixed).* All set via =set NAME VALUE=
+(§8; case-insensitive), the form §4 reserved for non-Lisp debugger variables:
+
+- =navigator= setting — name =navigator=, values =sexp= | =line=
+  (=set navigator line=).
+- =pager= / =pager-height= settings — names fixed; =pager= = =on= | =off=,
+  =pager-height= = an integer (=set pager off=, =set pager-height 40=).
+- pager fallback page height — *24* lines when the terminal size is unknown.
+- pager command keys — the =less=(1) command set plus the §3 direction
+  aliases (=> < << >>=), coexisting (collision-free).

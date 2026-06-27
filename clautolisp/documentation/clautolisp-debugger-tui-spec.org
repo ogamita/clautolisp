@@ -161,12 +161,18 @@ style), *not* as new base states, always with an ASCII fallback:
 - *transient target* — a volatile =advance= breakpoint or a pending =jump=
   target (source-located, removed on first stop); shown only while armed.
 
-The specific modifier glyphs are *provisional* (they extend the rendering
-ladder of the decoration table — circled/super-subscript/bracketed — and must
-each keep an ASCII fallback and stay readable when combined with the status and
-number glyphs). The condition / pre-expression / post-expression themselves are
-still displayed *in full* under the source form when their poll point is
-selected (see "Additional Debugging Commands").
+The specific modifier glyphs are *deferred* (provisional): rather than fix a
+glyph for every attribute up front, the rule is that *when a poll point is
+selected, its full information is shown at the bottom of the screen* — whether
+it carries an enabled / disabled break-point, its condition, its pre- and
+post-expression, ignore count, trace/commands, and so on (see "Additional
+Debugging Commands"). Because that bottom panel carries the detail, the inline
+decorations need only *flag presence* (this poll point has a breakpoint /
+carries attributes), and we will *see by use* whether extra modifier glyphs are
+warranted beyond the base status. Any glyph that is added extends the rendering
+ladder of the decoration table (circled / super-subscript / bracketed), keeps
+an ASCII fallback, and must stay readable combined with the status and number
+glyphs.
 
 ** Numbered Poll-Points — Designation by Number
 
@@ -594,10 +600,11 @@ and the *same conceptual verbs* are defined for both:
 Decisions (settled):
 
 - *Selection is a pure =,settings= toggle*, not inferred from terminal
-  capability. A =,settings= option — provisionally =navigator= with values
-  =sexp= (the sedit structural view) and =classic= (the flat file:line view) —
-  chooses which navigator is active; the debugger does not switch on detected
-  terminal capability. (Recorded in the command reference §8 settings list.)
+  capability. The =navigator= option (=set navigator sexp= / =set navigator
+  line=, case-insensitive) chooses which navigator is active — =sexp= the sedit
+  structural view, =line= the flat file:line view; the debugger does not switch
+  on detected terminal capability. (Recorded in the command reference §8
+  settings list.)
 - *The classic navigator reuses the unified motion keys* — the *same* keys as
   the sexp navigator (=d u > < << >>=, =±N=, and =g= =.= =goto= =definition=
   =back= =history= =search=), so there is *one* key vocabulary across both
