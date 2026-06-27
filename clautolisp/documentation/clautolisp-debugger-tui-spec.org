@@ -4,11 +4,18 @@
 
  For the command language see clautolisp-debugger-command-reference.org
 
- This document concentrates on the specification of an experimental
- interface to display and specify break points in a sexp-based source
- form.
+This document concentrates on the specification of an experimental
+interface to display and specify break points in a sexp-based source
+form.
 
-** sexp structural editor
+Note: the term pretty-printing as used in this document, refers to
+the standard Common Lisp pretty-printing for the original sedit code,
+but actually to a debugger-specific pretty-printing, similar but with
+modified and added features. Perhaps it can be implemented by
+customizing CL:PRETTY-PRINT, or it would have to be implemented
+entirely specifically for the purpose described in this document.
+
+** Sexp Structural Editor
 
 The debugger user interface used to display source code, breakpoints
 and to let the user set break points in a S-expression source form, is
@@ -57,6 +64,8 @@ sub-expressions, like we do for the selection decorated with brackets,
 to indicate set break-points and other debugging information
 (eg. current breakpoint/poll-point).
 
+** Debugger Specific Decorations
+
 We already have wrapped forms (the forms instrumentalised for
 debugging), we can take them and pretty-print them each sub-form in
 function of the state of the wrapping poll-point.
@@ -100,7 +109,7 @@ The status of the poll-point can be indicated by different ways:
     #+end_example>
   or:
     #+begin_example
-    [(print 'world)]  
+    [(print 'world)]
     #+end_example
   Of course, we will avoid plain parentheses to avoid confusing them with lisp lists or vectors,
   but <…> {…} or […] can be sufficiently unique to be of usage in the worst case.
@@ -108,7 +117,7 @@ The status of the poll-point can be indicated by different ways:
   Note: in the case of the selection brackets they surround the poll-point decoration so we could have:
     #+begin_example
     【⏸(print 'hi)】
-    #+end_example 
+    #+end_example
   or:
     #+begin_example
     [^(print 'hi)]
@@ -129,12 +138,12 @@ Currently defined (see table above) poll-point statuses are:
 - current poll-point (the one that is calling the debugger),
 - enabled break-point
 - disabled break-point
-- neutral poll-point (no decoration, we'll step in or over it, or continue, etc).  
-- selected sub-expression (can wrap around poll-points).    
+- neutral poll-point (no decoration, we'll step in or over it, or continue, etc).
+- selected sub-expression (can wrap around poll-points).
 
-TODO: verify if there are other poll-point states that should be indicated for the user. 
+TODO: verify if there are other poll-point states that should be indicated for the user.
 
-** Additionnal debugging commands
+** Additionnal Debugging Commands
 
 In addition to the selection movement in the sedit mode, the debugger
 will provide these sedit commands:
@@ -148,11 +157,11 @@ will provide these sedit commands:
 - set/change/clear a post-expression
 
 TODO: verify if there are other sedit command we should provide to the
-user. 
+user.
 
 When the selection is changed to a breakpoint, the condition,
 pre-expression, post-expression can be displayed under the
-pretty-printed source code.  
+pretty-printed source code.
 
 Note: when we give a step or continue command, and then we re-enter
 the debugger, it can display automatically the source form of the
@@ -161,5 +170,66 @@ selection moved to the current poll-point (so eg. with 【⏵(break)】)
 So a sequence of command next would redisplay the source form with the
 【⏵…】 indicator advancing step by step.
 
+** Partial Printing of the Form
+
+If pretty-printing the source form (any toplevel form the poll-point
+belongs to, often a defun or a lambda but could be any other form),
+produces a listing that is too big for the screen (or the user's field
+of vision), ie typically if it's bigger than 80x24 (or a configurable
+limit), then the debugger sedit will pretty-print only a partial
+sub-form.
+For a selected subform that is deep inside the full form, we can
+pretty-print only a surrounding subform that fits into the limits.
+Other subforms, before or after the selected subform may be shortened
+in the guise of *print-length* *print-depth* *print-array*
+etc. Ie. showing # instead of the forms:
+
+#+begin_example
+(progn
+   e1
+   …
+   en-1
+   [en]
+   en+1
+   …
+   em)
+#+end_example
+
+could be displayed as:
+
+#+begin_example
+(progn
+   #
+   en-1
+   [en]
+   en+1
+   #)
+#+end_example
+
+or with more en-i…en+i if we have space.
+The same treatment can be given to surrounding forms:
+
+#+begin_src
+(defun foo
+   #
+   (#
+      (progn
+         #
+         en-1
+         [en]
+         en+1
+         #)
+      #))
+#+end_src
+
+The subforms that are elided would be re-evaluated each time we
+re-pretty-print the form, with a different selection.
+
+Decoration of the '#' tokens could occur if any subform would be
+decorated (be a break-point, or the current poll-point).
+
+** Watching variables
+
 If variables are watched, their values would be displayed before the
-source form.
+source form, each time we enter the debugger.
+
