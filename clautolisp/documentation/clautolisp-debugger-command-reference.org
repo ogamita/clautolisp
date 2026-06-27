@@ -446,6 +446,13 @@ terminal can always /name/ any poll point — but the natural gesture is to
   name FN (its entry poll point), or the pointed sexp.
 - desc: set a steady breakpoint at the poll point covering LINE
   (spec §17.3, click/line → poll point via =poll-point-at=).
+- *Breakpoint identity = poll-point number.* A breakpoint is not a
+  separate object with its own counter; it is the breakpoint /flag/ on a
+  poll point. So a breakpoint is named by *its poll-point number* =PP= (the
+  =ppN= of the location grammar above) — there is at most one breakpoint per
+  poll point, and the =condition= / =ignore= / =enable= / =disable= /
+  =delete= commands below all take that same number (DN-11; TUI spec,
+  "Numbered Poll-Points").
 - backing: =[have]= =cmd-set-breakpoint-at-line= / =cmd-set-breakpoint=.
 
 ** break once LINE  (gdb tbreak)
@@ -457,29 +464,30 @@ terminal can always /name/ any poll point — but the natural gesture is to
 - backing: =[engine]= (=add-breakpoint :steady nil=; wire a command).
 
 ** condition
-- aldb: =,condition BPID FORM=
-- params: a breakpoint id and an AutoLISP FORM evaluated at the point;
-  the breakpoint fires only if FORM is non-nil. =,condition BPID= with no
-  form clears it.
+- aldb: =,condition PP FORM=
+- params: a poll-point number PP (the breakpoint there) and an AutoLISP
+  FORM evaluated at the point; the breakpoint fires only if FORM is
+  non-nil. =,condition PP= with no form clears it.
 - desc: conditional breakpoint (the breakpoint =condition= slot).
 - backing: =[engine]= (the slot exists; =cmd-set-breakpoint :condition=
   takes it at creation; a post-hoc =,condition= editor is =[new]=).
 
 ** ignore COUNT
-- aldb: =,ignore BPID COUNT=
+- aldb: =,ignore PP COUNT=
 - desc: skip the next COUNT hits of a breakpoint (a counting condition).
 - backing: =[new]= (a small wrapper building a counting condition).
 
 ** enable / disable
-- aldb: =,enable [BPID...]=  | =,disable [BPID...]=
+- aldb: =,enable [PP...]=  | =,disable [PP...]=
 - desc: temporarily deactivate a breakpoint without deleting it.
 - backing: =[new]= (add an =enabled-p= slot to =breakpoint=; the
   poll-point exact-lookup already filters by =breakpoint-active-p=, extend
   it to consult =enabled-p=).
 
 ** delete / clear
-- aldb: =,delete [BPID...]=  | =,clear LINE=
-- desc: remove one/all breakpoints, or the breakpoint(s) at a line. Word-only
+- aldb: =,delete [PP...]=  | =,clear LOC=
+- desc: remove one/all breakpoints (=,delete= with poll-point numbers, or
+  all if none), or the breakpoint(s) at a location (=,clear=). Word-only
   (no single-letter key): they take an argument anyway, and being destructive
   they are deliberately kept off a bare keypress in the no-RET UIs. (=d= is
   free since frame navigation moved to =fi=/=fo=; left unassigned here on
@@ -489,13 +497,13 @@ terminal can always /name/ any poll point — but the natural gesture is to
 
 ** list breakpoints  (info breakpoints)
 - aldb: =lb=  | =,list breakpoints=
-- desc: list breakpoints with id, function, line, when, steady/volatile,
-  condition, hit count. Member of the =list= family (=lb= = list +
-  breakpoints).
+- desc: list breakpoints with poll-point number, function, line, when,
+  steady/volatile, condition, hit count. Member of the =list= family
+  (=lb= = list + breakpoints).
 - backing: =[have]= =cmd-list-breakpoints=.
 
 ** commands (breakpoint actions)
-- aldb: =,bpcmd BPID FORM...=
+- aldb: =,bpcmd PP FORM...=
 - desc: attach forms to run automatically when a breakpoint hits
   (gdb =commands=). The breakpoint =action= slot is exactly this hook.
 - backing: =[engine]= (=action= slot; wire a command).
