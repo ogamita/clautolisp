@@ -921,6 +921,11 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
 - desc: per-session options; =,settings= with no argument lists them all with
   their current values, =,set-option NAME VALUE= sets one. gdb =set= / lldb
   =settings set=. The options:
+  - =navigator= — which source navigator is active: =sexp= (the structural
+    sedit view) or =classic= (the flat file:line view). A *pure user toggle*,
+    not inferred from terminal capability; both reuse the same motion keys
+    (§3 *Navigation*), differing only in rendering (TUI spec, "Two navigator
+    options"). (Option name provisional.)
   - =*navigation-history-max*= — cap on saved navigation states (the browse
     stack + selection pushed on each debugger re-entry, §3 *Navigation*);
     oldest dropped beyond the limit. Default *1000* (essentially unbounded).

@@ -210,9 +210,14 @@ exclusive: the decorations (numbers + status) are always shown; the user
 may either type a number to act at once, or walk the selection when
 browsing an unfamiliar form. Both designate the same poll-points.
 
-TODO: decide whether elided =#= regions (see "Partial Printing") that
-*contain* a numbered breakpoint should surface that number on the =#= (so
-it stays designatable without expanding), or require expansion first.
+Decision: an elided =#= region (see "Partial Printing") that *contains* one
+or more breakpoints does *not* surface their numbers — *expansion is required
+first* to designate them. A single =#= typically hides *several* poll points
+and possibly *several* breakpoints, so a number on the =#= would be ambiguous.
+The =#= instead carries a *warning decoration* meaning only "there are
+breakpoints hidden in here" (a presence flag, not an identity); the user
+expands the region (=down= / =>=) to see the numbered poll points and act on
+them.
 
 Decision (provisional): poll-point ids are *globally stable* — one space
 across all instrumented forms, assigned once and never reused — so a bare
@@ -539,8 +544,35 @@ and the *same conceptual verbs* are defined for both:
   walked the gdb way (list a file, step among its top-level forms).
   =definition= jumps to the function's file+line, =back= returns.
 
-TODO: settle the exact classic-navigator bindings, and whether the option
-is a user setting or follows terminal capability.
+Decisions (settled):
+
+- *Selection is a pure =,settings= toggle*, not inferred from terminal
+  capability. A =,settings= option — provisionally =navigator= with values
+  =sexp= (the sedit structural view) and =classic= (the flat file:line view) —
+  chooses which navigator is active; the debugger does not switch on detected
+  terminal capability. (Recorded in the command reference §8 settings list.)
+- *The classic navigator reuses the unified motion keys* — the *same* keys as
+  the sexp navigator (=d u > < << >>=, =±N=, and =g= =.= =goto= =definition=
+  =back= =history= =search=), so there is *one* key vocabulary across both
+  navigators; only the *rendering* differs (flat lines vs structural
+  pretty-print). The per-level meaning of each key in the flat view:
+
+  | key   | classic file:line meaning                                       |
+  |-------+-----------------------------------------------------------------|
+  | =>=   | next poll point in the listing (designation lands on the sexp)  |
+  | =<=   | previous poll point in the listing                              |
+  | =<<= =>>= | first / last poll point of the current form / listing       |
+  | =d=   | descend a containment level: dir → file → form → (poll point)   |
+  | =u=   | ascend a containment level: poll point → form → file → dir      |
+  | =±N=  | skip N poll points forward / backward (clamped)                 |
+  | bare =N= | designate poll-point =N= directly                            |
+  | =g= =.= =goto= =definition= | by name / FILE:LINE / call-graph, as above |
+
+  At the *file* level =>= / =<= step among the file's top-level forms and =d=
+  enters a form; at the *directory* level they step among files / sub-dirs —
+  the gdb-style "list and step" walk, driven by the same keys. The keys are
+  unchanged from the §3 *Navigation* table; the classic navigator is the same
+  vocabulary over a flat presentation.
 
 *** Command dictionaries (stacked dispatch)
 
@@ -624,8 +656,15 @@ The same treatment can be given to surrounding forms:
 The subforms that are elided would be re-evaluated each time we
 re-pretty-print the form, with a different selection.
 
-Decoration of the '#' tokens could occur if any subform would be
-decorated (be a break-point, or the current poll-point).
+Decoration of the '#' tokens occurs when an elided subform *would* be
+decorated (hides a break-point, or hides the current poll-point). The
+decoration is only a *warning marker* — "decorated poll points are hidden in
+here" — never a poll-point *number*: one '#' usually elides several poll
+points and possibly several breakpoints, so a number would be ambiguous (see
+the decision under "Numbered Poll-Points"). To designate anything inside, the
+user expands the region first (=down= / =>=). A '#' hiding the *current*
+poll-point is the strongest case to expand, and may carry the current-pp
+warning glyph so the user knows where execution is.
 
 ** Watching variables
 
