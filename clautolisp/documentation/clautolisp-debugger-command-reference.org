@@ -976,7 +976,9 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
   no-RET UIs). Option NAMEs and their symbolic VALUEs are *case-insensitive*.
   gdb =set= / lldb =settings set=. (=set NAME VALUE= is the "non-Lisp debugger
   variable" assignment that §4 reserved — settings are exactly those
-  variables.) The options:
+  variables.) All options live in the one configuration sexp
+  =*clal-aldo-configuration*=, loaded from an XDG file at start-up and saved
+  only on request (*Configuration and persistence* below). The options:
   - =navigator= — which source navigator is active: =sexp= (the structural
     sedit view) or =line= (the flat file:line view); =set navigator sexp= /
     =set navigator line= (case-insensitive). A *pure user toggle*, not inferred
@@ -1014,6 +1016,58 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
 - backing: =[new]= (a small per-session options plist; =style= reuses the
   runtime colour policy, and =*navigation-history-max*= the navigation
   history).
+
+** Configuration and persistence — =*clal-aldo-configuration*=   =[new]=
+
+All debugger settings (=settings=, above — =navigator=,
+=*navigation-history-max*=, =style=, =break-on-caught=, =source-window-height=,
+=value-line-width=, =pager=, =pager-height=) *and* the display options (the
+glyph charset — unicode / ascii —, the colours, and the bold / underline /
+inverse attributes of *Terminal styling* below and the decoration table, TUI
+spec) are held in *one AutoLISP configuration sexp* bound to the variable
+=*clal-aldo-configuration*=. The settings are thus ordinary AutoLISP data the
+user can read and modify like anything else.
+
+*Loading (XDG).* At start-up the configuration is read from
+=$XDG_CONFIG_HOME/clautolisp/aldo.conf= if that file exists; otherwise the
+relative path =clautolisp/aldo.conf= is searched along =$XDG_CONFIG_DIRS=, the
+first match winning. (The XDG defaults apply when the variables are unset:
+=$XDG_CONFIG_HOME= = =~/.config=, =$XDG_CONFIG_DIRS= = =/etc/xdg=.) The sexp so
+read becomes the value of =*clal-aldo-configuration*=.
+
+*Order: configuration before rc / init.* The configuration is read *before* the
+rc and init files are loaded — so those files, and the REPL, may then *modify*
+=*clal-aldo-configuration*= at will (override a value, compute one, …), their
+changes sitting on top of the file's.
+
+*Saving is explicit only.* =set NAME VALUE= updates =*clal-aldo-configuration*=
+*in memory* only; the file is *never* written automatically. It is saved *only
+on explicit user request* — a settings subcommand (below) or the Lisp function.
+
+*User-callable Lisp functions.* The subcommands and the user share one pair of
+functions, usable at the REPL and from =.lsp= files:
+- =(clal-load-aldo-configuration)= — (re)read the configuration from the
+  available XDG file into =*clal-aldo-configuration*= and apply it.
+- =(clal-save-aldo-configuration)= — write =*clal-aldo-configuration*= to
+  =$XDG_CONFIG_HOME/clautolisp/aldo.conf=.
+
+*Settings subcommands.* /Recommended design (provisional — the exact spellings
+are the open TODO below)./ Building on the existing =settings= / =set= verbs:
+- =,settings= — list every parameter with its current value (already).
+- =,settings NAME= — print one parameter's value.
+- =set NAME VALUE= — set one parameter (already; updates the variable only).
+- =,settings save= — write the configuration to the user's XDG file
+  (=clal-save-aldo-configuration=).
+- =,settings reload= — re-read it from the available XDG file
+  (=clal-load-aldo-configuration=).
+
+TODO: design the settings subcommands to *list*, *print*, and *set* the various
+parameters of the aldo configuration (and =save= / =reload=). The recommendation
+above reuses =,settings= as the umbrella (list / print / save / reload) and
+=set NAME VALUE= to set; confirm or revise the spellings.
+
+- backing: =[new]= — =*clal-aldo-configuration*=, the XDG load/search, the two
+  =clal-*= functions, and the save / reload subcommands. No auto-save.
 
 ** Terminal styling (the dumb terminal isn't so dumb)   =[new]=
 
