@@ -116,7 +116,11 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | inspect / explore value        | visit EXPR                   | v   | have    |
 | ptype / whatis                 | type EXPR                    | t   | new     |
 | list / source                  | list source ; source         | ls  | have    |
-| edit / directory / search      | —                            | —   | n/a/new |
+| structural navigation          | §3: d u > < << >> ±N         | —   | new     |
+| go to definition / locate      | definition ; goto            | . g | new     |
+| source-browse back / history   | back ; history               | —   | new     |
+| edit / directory               | —                            | —   | n/a     |
+| search (now navigation)        | search REGEXP                | —   | new     |
 | x / memory / registers         | —                            | —   | n/a     |
 | thread / info threads          | —                            | —   | n/a     |
 | convenience vars ($1, $foo)    | (setq …) / (defun …) at REPL | —   | have    |
@@ -190,6 +194,41 @@ so it reads anyway.) All word commands are also available as =,word=
 comma-commands (typed, with RET). In the dumb terminal every command is a
 typed token + RET, so there is no prefix
 question at all.
+
+*** Navigator-mode keys — collision-free with the global set
+
+The structural-navigation and source-browsing commands (§3 *Navigation*) live
+in the *navigator dictionaries* (the sedit and classic file:line navigators),
+layered over the global debugger dictionary by the stacked dispatch of §8. They
+are *designed collision-free* against the global keys above, so every global
+debugger verb stays reachable from a navigator without escaping, and the
+navigator keys never shadow a global one. Their keys:
+
+- *Structural motion* — =d= down, =u= up, =>= forward, =<= backward, =<<=
+  first sibling, =>>= last sibling, =±N= signed sibling skip. =d= / =u= are
+  initials (§0 rule); =>= =<= =<<= =>>= are *directional* mnemonics (no word
+  has these initials), and on AZERTY a single dedicated key (=<= unshifted /
+  =>= shifted). A *bare* number =N= designates poll-point =N= (§2); the *sign*
+  on =±N= disambiguates the relative skip from the bare designator.
+- *Go-to / browse* — =g= =goto= (initial), =.= =definition=. =.= is the one
+  *conventional* non-initial key (the Emacs =M-.= "go to definition" lineage,
+  and =d= is already taken by down), in the same spirit as =?= aliasing
+  =help=. =back=, =history=, =search= are *word commands* with no single-letter
+  key — =back='s and =history='s initials would clash with =break= / =help=, so
+  all three stay word-only (optional single-key aliases, if wanted, are drawn
+  from the still-free =, ; k m w '= keys, never from a clashing initial).
+
+Checking the spaces with the navigator keys folded in:
+
+- *New single-letter keys* =d u g= — none collide with =c i n o a r q b f j p t
+  v h ?=.
+- *New punctuation keys* =. > <= and *two-punctuation* =<< >>= — distinct from
+  each other, from =?=, and from the two-letter set =bo lb lf ls ll lp lv fi fo
+  ft fb=.
+- =back= =history= =search= add *no* key, so they cannot collide.
+
+So the union stays collision-free, and =bind-debugger-command='s registrar (§8)
+enforces it on any further addition, *per dictionary* (§8).
 
 * 1. Execution control (run / step / resume)
 
@@ -537,7 +576,15 @@ terminal can always /name/ any poll point — but the natural gesture is to
   break-on-caught (=*break-on-caught-error*=). backing: =[partial]=
   (engine flag exists; wire the toggle commands).
 
-* 3. Stack and frames
+* 3. Stack, frames, and navigation
+
+The runtime *frame* stack (this section's =list frames= / =frame= family /
+=list locals=) is one of *two stacks* the debugger exposes; the other is the
+*source-browse* stack walked by the *Navigation* commands at the end of this
+section. They are documented together because they are counterparts — one a
+stack of live runtime frames, the other a stack of source positions — and the
+TUI spec (=clautolisp-debugger-tui-spec.org=, "The two stacks") is the fuller
+treatment.
 
 ** list frames  (backtrace)
 - aldb: =lf=  | =,list frames [N]=
@@ -587,6 +634,122 @@ terminal can always /name/ any poll point — but the natural gesture is to
   Three members of the =list= family. (=,list variables all= could add the
   shadowed chain via =bindings-of-name=.)
 - backing: =[have]=.
+
+** Navigation — one tree, the two stacks, go-to   =[new]=
+
+Browsing the *source* (as opposed to walking the runtime frames above) is done
+with a small family of *navigation* commands. They change only *what is
+displayed and selected*; they never touch execution or the evaluation context
+(evaluation is §4 — =p=, the bare =(form)=, =(setq …)= always act in the
+*current frame*, never in a merely-browsed function). These verbs are settled
+in the TUI spec and registered here for the global reference; they belong to
+the *navigator dictionaries* (§8 stacked dispatch) and are collision-free with
+the global keys (§0 *Navigator-mode keys*). The fuller rationale —
+sedit-reconciliation, partial printing, re-entry — is in
+=clautolisp-debugger-tui-spec.org=.
+
+*** The two stacks
+
+- *Runtime (Lisp) call stack* — actual *frames* with bindings, navigated by
+  the =frame= family above (=f fi fo ft fb=, =list frames=). Selecting a frame
+  changes the binding/evaluation context (=with-frame-bindings=).
+- *Source-browse stack* — *source positions* =(form . selection)=, built by
+  =definition= / =back=; *no frames, no bindings*. You may still set / clear /
+  enable / disable breakpoints and designate =jump= targets from it (those are
+  *source*-located poll points), but binding-dependent ops (=print=, =setq=,
+  =list locals=, eval) defer to the *current frame*. Its depth is
+  *user-bounded* (=definition= may revisit a function — a cycle in the static
+  call graph — so it is not graph-bounded).
+
+The display always *anchors* to the current poll-point; on re-entry after
+=continue= / =next= / =step= the view resets to the new current poll-point, and
+the browse state is saved to a bounded *navigation history*
+(=*navigation-history-max*=, §8; default 1000).
+
+*** One tree: sexp → form → file → directory  (structural motion)
+
+The selected node sits in one *containment tree* — a list/sexp inside a
+top-level form inside a file inside a directory — and the *same* motions act at
+every level (=up= from a top-level form lands on the file's form list, =up=
+again on the directory listing, =down= into a file is back among forms):
+
+| motion           | key   | at every level                              |
+|------------------+-------+---------------------------------------------|
+| down             | =d=   | descend into the selected node              |
+| up               | =u=   | ascend to the parent node                   |
+| forward (next)   | =>=   | next sibling                                |
+| backward (prev)  | =<=   | previous sibling                            |
+| first sibling    | =<<=  | jump to the first sibling                   |
+| last sibling     | =>>=  | jump to the last sibling                    |
+| skip ±N siblings | =+N= =-N= | move N siblings forward / backward (clamped) |
+
+A *bare* number =N= designates *poll-point N* (§2; TUI "Numbered Poll-Points");
+the *signed* =+N= / =-N= is the relative sibling skip — the sign disambiguates.
+
+*Input paradigm.* These spellings are the *dumb-terminal* ones, and the dumb
+terminal is *line-buffered* (a token + RET) — function / arrow / Home / End
+keys do not belong there (they encode awkwardly and an Emacs =shell= captures
+Home/End). So the dumb terminal stays all-typeable (=<< < > >>=, =±N=, words).
+The *ncurses* and *aldb* UIs read real keystrokes and *additionally* bind
+=Home= / =End= = first / last and the arrows = forward / backward / down / up,
+firing on the keypress with no RET; the typeable spellings remain valid in all
+three.
+
+- backing: =[new]= (the navigator selection state and motions; the sedit
+  structural editor on the =sedit= branch is the reference implementation of
+  the sexp-level moves).
+
+*** goto
+- aldb: =g PATH=  | =,goto PATH=
+- params: a *name* or *qualified path*, one of:
+  - =goto FILE= / =goto FILE:LINE= — a file (at its top-level forms, or at
+    =LINE=): the classic file:line jump.
+  - =goto NAME= — a *global* function =NAME=, to its definition.
+  - =goto OUTER INNER …= — a *qualified path* descending through *nested local*
+    definitions: =goto foo bar= is the =bar= defined inside =foo= (the
+    AutoLISP local-function idiom
+    =(defun foo (x / bar) (defun bar (y) (+ x y)) (bar x))=).
+  - =goto OBJ INNER …= — the AutoLISP *object* idiom: when the first name is a
+    *variable* holding a lambda loaded from a file, =OBJ= names the *file* via
+    the lambda's source metadata and =INNER= a local function in it — so
+    =goto o1 bar= and =goto o2 bar= reach *different files* when =o1= / =o2=
+    were loaded from different files. (See the DN-12 engine prerequisite.)
+- desc: jump *by name or path*; the path disambiguates the many *local*
+  namespaces. (Supersedes the earlier, unclear =form NAME=.)
+- backing: =[new]= (name/path resolution over the source map; the object idiom
+  needs source metadata on file-loaded lambdas — DN-12).
+
+*** definition
+- aldb: =.=  | =,definition=
+- desc: open the definition of the *selected* function call =(f …)= or symbol
+  =f= and make it the displayed form — *crossing files* if =f= lives
+  elsewhere. This follows the *call graph by name*, not the runtime stack, and
+  does *not* move the current frame. From a browsed form you may still set
+  breakpoints and designate =jump= targets (source-located); only
+  binding-dependent ops defer to the current frame. =back= pops to where you
+  came from.
+- backing: =[new]= (source-map lookup of the selected symbol's definition).
+
+*** back / history
+- aldb: =,back=  | =,history= (word commands; no single-letter key — initials
+  =b= / =h= are taken by =break= / =help=)
+- desc: =back= pops the source-browse stack to the previous =(form . selection)=.
+  =history= lists the saved *navigation states* (each a browse stack + its
+  selection, pushed on every debugger re-entry); =history= + back / forward or
+  =restore N= returns to a previous state, so across stops the user resumes
+  reading where they last were. Capped by =*navigation-history-max*= (§8).
+- backing: =[new]= (the browse stack and the bounded navigation-history list).
+
+*** search
+- aldb: =,search REGEXP= (word command; no single-letter key — grouped with
+  =back= / =history=)
+- desc: a search whose *scope follows the current level* — recursive through a
+  directory's sub-directories and Lisp files, or just the current file when in
+  a file/form. Lists the matches; picking one moves the selection to the
+  matching *sexp*, entering the file if need be. (Abstract name kept; a first
+  implementation may shell out to =grep=. This supersedes the §5
+  =search REGEX= "low priority" entry.)
+- backing: =[new]=.
 
 * 4. Data: print, eval, set, inspect
 
@@ -689,7 +852,10 @@ debugging disabled.
   low priority).
 - =directory= (source search path): =[n/a]= — positions carry absolute
   file names from the reader.
-- =search REGEX= / =reverse-search=: =[new]=, low priority.
+- =search REGEX=: now a real *navigation* command — the scope-following
+  =,search REGEXP= of §3 *Navigation* (recursive in a directory, current file
+  in a file/form), not the low-priority flat search this entry once held.
+  =reverse-search= remains =[new]=, low priority.
 
 * 6. Threads   =[n/a]=
 
@@ -935,7 +1101,14 @@ Genuinely new (=[new]=, in scope, small→medium):
 - command registration: =bind-debugger-command= primitive (names +
   lambda-list + docstring + function; both languages, loadable from .lsp);
   =define-debugger-command= AutoLISP-function alias + CL macro sugar;
-  enforces the consistency rule. Built-ins use the same registrar.
+  enforces the consistency rule. Built-ins use the same registrar. *Stacked
+  dictionaries* (the =dictionary= argument; innermost-first lookup; escape
+  prefix) generalise the single table — §8.
+- *navigation* (§3): structural motion (=d u > < << >> ±N=), =goto= (=g=),
+  =definition= (=.=), =back= / =history= / =search= (word commands); the
+  source-browse stack and the bounded navigation history
+  (=*navigation-history-max*=). Navigator-dictionary commands, collision-free
+  with the global keys (§0).
 
 New and worth a design pass (=[new]=, medium):
 - *watch SYMBOL* — software data breakpoint (per-poll-point value compare,
