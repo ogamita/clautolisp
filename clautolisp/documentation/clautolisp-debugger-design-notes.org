@@ -695,8 +695,9 @@ that fell out:
   *global* debugger dictionary; lookup is innermost-outward, first match wins;
   each is *designed collision-free* against the global set so every debugger
   verb stays reachable, and a mode may *shadow* a global key locally (inspector
-  =b= = =bind=). An escape prefix (word =debugger=, or a dedicated key — never
-  bare =d=) reaches a shadowed command. =bind-debugger-command= gains a
+  =b= = =bind=) — though dictionaries are *designed to avoid shadowing*, so this
+  is exceptional. The *word* =debugger= as a prefix (no dedicated key) reaches a
+  shadowed command. =bind-debugger-command= gains a
   =dictionary= argument. (Normative spec: command reference §3 and §8;
   collision check: command reference §0.)
 
@@ -800,12 +801,14 @@ need. All the naming / value / key choices are settled (below).
   aliases (=> < << >>=), coexisting (collision-free).
 - =source-window-height= setting — name fixed; an integer, default *24*
   (=set source-window-height N=).
-- Mode-dictionary names + escape key — an *implementation choice*. The spec
-  mandates only a *simple API* for a module to hook its command dictionary onto
-  the active stack when activated — from a setting (=navigator=) or a command
-  (=visit= → inspector) — and unhook it when deactivated (cmd-ref §8
-  *Activation*). Names, count, representation, and any escape *key* are left to
-  the implementation; the portable escape form is the word =debugger=.
+- Mode-dictionary names — an *implementation choice*. The spec mandates only a
+  *simple API* for a module to hook its command dictionary onto the active
+  stack when activated — from a setting (=navigator=) or a command (=visit= →
+  inspector) — and unhook it when deactivated (cmd-ref §8 *Activation*). Names,
+  count, and representation are left to the implementation.
+- Dictionary escape — the *word* =debugger= only; *no dedicated key*.
+  Dictionaries are designed to *avoid shadowing* global commands, so escaping
+  is exceptional and one word suffices.
 - preview-length option — named =value-line-width= (the width of a single-line
   value display). Convention: a future *multi-line* value display would use
   =value-window-width= / =value-window-height=, matching =source-window-height=.

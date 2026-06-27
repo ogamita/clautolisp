@@ -1277,15 +1277,16 @@ at its own activation boundaries, and the dispatcher always consults the
 current top-of-stack first (above). Nothing else about the dictionaries (their
 names, how many, their internal representation) is normative.
 
-*Escape to an outer dictionary.* When an inner binding shadows a global
-command you still want, a reserved *prefix* routes the next token to the
-outer/global dictionary: the portable form is the word =debugger=
-(=debugger break= reaches =break= from inside the inspector); a single-key UI
-*may* also bind a dedicated *escape key* (which key, if any, is an
-implementation choice). The prefix must be free in the active mode — the
-spelled-out =debugger= word, or one key reserved across *all* modes, avoids any
-clash; a bare =d= is *not* used for this (it is the navigator's =down=). In the
-RET-terminated dumb terminal the word form suffices.
+*Escape to an outer dictionary (exceptional).* Dictionaries are *designed to
+avoid shadowing* global commands in the first place — a mode binds its own key
+over a global one only where it genuinely must (e.g. the inspector =b= =
+=bind=), and the navigator dictionaries shadow nothing — so reaching a
+shadowed global command is *rare*. When it is needed, the escape is simply the
+*word* =debugger= as a prefix: =debugger break= reaches =break= from inside the
+inspector. There is *no dedicated escape key* — the spelled-out word works in
+every UI and cannot clash (in particular it is not a bare =d=, which is the
+navigator's =down=). Because shadowing is the exception, this single word is
+enough.
 
 *Per-dictionary consistency.* The §0 naming-consistency rule and the
 collision check are enforced *within each dictionary*: =bind-debugger-command=

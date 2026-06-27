@@ -645,18 +645,21 @@ integrated* interface, not three rival ones.
 reference, §8 "Command dictionaries (stacked dispatch)".* In brief: lookup is
 *stacked* (the active mode dictionary on top of the global one,
 innermost-outward, first match wins); a mode may *shadow* a global key
-locally (the inspector =b= = =bind=, not =break=); a reserved *escape prefix*
-(the word =debugger=, or a dedicated key — never a bare =d=) reaches a
-shadowed global command; and =bind-debugger-command= /
+locally (the inspector =b= = =bind=, not =break=) — though dictionaries are
+*designed to avoid shadowing*, so this is exceptional; the *word* =debugger= as
+a prefix (=debugger break=) reaches a shadowed global command (there is *no
+dedicated escape key*); and =bind-debugger-command= /
 =define-debugger-command= take a *dictionary* argument so a user can add an
 inspector-only or navigator-only command. The §0 naming-consistency rule and
 the collision check are enforced *per dictionary*. See §8 for the full
 treatment; this section keeps only the UI-specific motivation (why three
-separate-but-collision-free dictionaries exist). The dictionary *names* and the
-escape *key* are an *implementation choice*: the spec mandates only a simple
-API by which a module hooks its dictionary onto the active stack when it is
-activated — from a *setting* (=navigator=) or a *command* (=visit= → inspector)
-— and unhooks it when deactivated (§8 *Activation*).
+separate-but-collision-free dictionaries exist). The dictionary *names* are an
+*implementation choice*: the spec mandates only a simple API by which a module
+hooks its dictionary onto the active stack when it is activated — from a
+*setting* (=navigator=) or a *command* (=visit= → inspector) — and unhooks it
+when deactivated (§8 *Activation*). Escaping a shadowed global command uses the
+*word* =debugger= (no dedicated key); since dictionaries are designed to avoid
+shadowing, this is exceptional.
 
 ** Partial Printing of the Form
 
