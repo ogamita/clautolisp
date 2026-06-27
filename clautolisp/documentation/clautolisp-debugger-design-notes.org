@@ -205,7 +205,7 @@ preemptively.
 ** Compiler path (Phase 8)
 
 Unchanged from DN-1's note: the compiler still emits two CL bodies, but the
-"which body runs" decision should likewise be driven by whether a function was
+which body runs" decision should likewise be driven by whether a function was
 compiled-for-debug and a session is active, installed the remote way (debug
 body under the public name), rather than by call-path propagation.
 
@@ -718,6 +718,24 @@ source-located operations can act there.
 lambda loaded from a file, =INNER= a local function in it) needs to recover the
 *file* a file-loaded lambda came from, so =goto o1 bar= and =goto o2 bar= reach
 different files. *Confirmed this holds in the current runtime:*
+of course, several levels are possible =goto OUT MIDO MIDI INNER=
+
+#+begin_example
+(defun out ( / mido )
+  (defun mido ( / midi )
+     (defun midi ( / inner )
+        (defun inner ()
+           'hi)
+        (inner))
+     (midi))
+ (mido))
+
+ goto out mido midi inner ; would select (defun inner …) and w
+ in    ; enters the defun (selects 'hi)
+ break ; creates a breakpoint before 'hi
+ continue ; run until we call (out) and therefore (innner).
+#+end_example
+
 
 - =autolisp-usubr= carries =debug-metadata=
   (=clautolisp/autolisp-runtime/source/model.lisp=), a

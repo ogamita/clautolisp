@@ -479,6 +479,16 @@ terminal can always /name/ any poll point — but the natural gesture is to
   listing and the styling layer.
 
 ** break LINE
+
+TODO: in aldb, ie in emacs, it's very unnatural to indicate line
+numbers, since line numbers are not usually displayed.
+(line-number-mode only shows the number of the current line
+in the status line; you'd need a special mode to display the line
+numbers along the buffer). The natural way is to move the cursor on
+the form you want, and give the break command to install the break
+point. So we must revise the aldb commands and interactions such as
+the following one:
+
 - aldb: =b LINE=  | =,break LINE=  | =,break FN [LINE]=
 - params: a LOC (above) — a source LINE in the current function (the
   covering poll point), a finer =LINE.K= / =LINE:COL= / =ppN=, a function
