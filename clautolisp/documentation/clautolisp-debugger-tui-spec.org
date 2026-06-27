@@ -214,11 +214,17 @@ TODO: decide whether elided =#= regions (see "Partial Printing") that
 *contain* a numbered breakpoint should surface that number on the =#= (so
 it stays designatable without expanding), or require expansion first.
 
-TODO: decide whether poll-point ids are global-stable (one space across
-all instrumented forms, ids may be large) or per-top-level-form
-(small ids, but a breakpoint needs its form for context). Recommended:
-global-stable, so a bare number is unambiguous everywhere; the rendering
-ladder absorbs large ids.
+Decision (provisional): poll-point ids are *globally stable* — one space
+across all instrumented forms, assigned once and never reused — so a bare
+number is unambiguous everywhere (TUI, =aldb=, dumb prompt) and a
+breakpoint never needs its form quoted for context. The accepted downside
+is that there are many more poll-points than breakpoints, so the numbers a
+user types are *larger* than a gdb-style per-session breakpoint counter
+would give. We judge the single-namespace simplification worth it, and the
+rendering ladder (circled → bracketed decimal) absorbs the large ids in
+the display. This is a /try-it/ choice: if the big numbers prove
+inconvenient in practice, fall back to a small per-top-level-form id (and
+then a breakpoint must carry its form for identity).
 
 ** Additionnal Debugging Commands
 

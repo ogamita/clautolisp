@@ -648,7 +648,13 @@ object a number denotes is fixed by the *command that consumes it*.
   sits on. "Breakpoint 12" is "poll point 12, with its breakpoint flag set", so
   there is at most one breakpoint per poll point and the breakpoint number *is*
   the poll-point number (TUI spec, "Numbered poll points"). One numbering space,
-  not two.
+  not two. Poll-point ids are *globally stable* (assigned once across all
+  instrumented forms, never reused), so a bare number is unambiguous in every
+  UI. The accepted cost: far more poll points than breakpoints means the typed
+  numbers are larger than a gdb-style per-session breakpoint counter would give.
+  This is a /try-it/ choice — if the big numbers prove inconvenient, fall back
+  to small per-top-level-form ids (and then a breakpoint must carry its form for
+  identity).
 - No evidence cuts the other way decisively — there is no controlled "sigil vs
   bare id" study; the case rests on keystroke counting (Card, Moran & Newell
   1980), the Cognitive Dimensions framework (Green 1989), and the convergent
