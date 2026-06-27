@@ -1051,23 +1051,67 @@ functions, usable at the REPL and from =.lsp= files:
 - =(clal-save-aldo-configuration)= — write =*clal-aldo-configuration*= to
   =$XDG_CONFIG_HOME/clautolisp/aldo.conf=.
 
-*Settings subcommands.* /Recommended design (provisional — the exact spellings
-are the open TODO below)./ Building on the existing =settings= / =set= verbs:
-- =,settings= — list every parameter with its current value (already).
+*Settings subcommands.* Building on the existing =settings= / =set= verbs
+(=,settings= is the umbrella; =set= sets):
+- =,settings= — list every parameter with its current value.
 - =,settings NAME= — print one parameter's value.
-- =set NAME VALUE= — set one parameter (already; updates the variable only).
+- =set NAME VALUE= — set one parameter (updates =*clal-aldo-configuration*= in
+  memory only).
 - =,settings save= — write the configuration to the user's XDG file
   (=clal-save-aldo-configuration=).
 - =,settings reload= — re-read it from the available XDG file
   (=clal-load-aldo-configuration=).
 
-TODO: design the settings subcommands to *list*, *print*, and *set* the various
-parameters of the aldo configuration (and =save= / =reload=). The recommendation
-above reuses =,settings= as the umbrella (list / print / save / reload) and
-=set NAME VALUE= to set; confirm or revise the spellings.
+*Structure of =*clal-aldo-configuration*=.* The value is an *association list*
+(a property list of =(KEY . VALUE)= pairs, read with =assoc=): one pair per
+setting, plus nested sub-lists for the grouped *display options*. Keys are
+symbols (AutoLISP up-cases them; spelled here in lower case, and
+case-insensitive like the =set= names); values are integers (sizes), symbols
+(enumerations), or =T= / =nil= (flags). Example:
+
+#+begin_src lisp
+  (setq *clal-aldo-configuration*
+    '((navigator              . sexp)        ; sexp | line
+      (navigation-history-max  . 1000)
+      (style                   . auto)        ; auto | on | off  (colour policy)
+      (charset                 . unicode)     ; unicode | ascii  (glyph repertoire)
+      (break-on-caught         . nil)
+      (source-window-height    . 24)
+      (value-line-width        . 72)
+      (pager                   . on)          ; on | off
+      (pager-height            . 24)
+      ;; display options — the decoration glyphs (TUI decoration table) …
+      (decorations
+        (current-pp     . 9205)               ; ⏵  U+23F5, as a CODE-POINT (ASCII-safe)
+        (enabled-bp     . "⏸")                ; or as a literal UTF-8 string (optional)
+        (disabled-bp    . 9199)               ; ⏯  U+23EF
+        (selection-open . 12304)              ; 【 U+3010
+        (selection-close . 12305))            ; 】 U+3011
+      ;; … and the styling faces (§8 Terminal styling): colour + attributes
+      (faces
+        (current-line      (fg . red)  (attr . inverse))
+        (breakpoint-gutter (fg . red))
+        (prompt            (attr . bold)))))
+#+end_src
+
+The setting keys are exactly the =settings= options above; the =decorations=
+and =faces= sub-lists hold the display options, whose element keys follow the
+TUI decoration table and the *Terminal styling* style map (so they are not
+re-enumerated here — that layer owns them).
+
+*Glyphs: code-point or string.* A decoration glyph may be written either as an
+*integer code point* (e.g. =9205= for =⏵= U+23F5) or as a *literal string*
+(e.g. ="⏵"=). =aldo.conf= is saved as *UTF-8*, so literal Unicode in strings is
+allowed; but using *code points* is the prudent default, because the saved file
+is then pure *ASCII* (no encoding surprises, diff/grep-friendly). The two forms
+are interchangeable on read; =clal-save-aldo-configuration= writes whichever the
+in-memory value holds, so a user who prefers an ASCII =aldo.conf= keeps glyphs
+as code points. (This applies only where the build actually supports Unicode;
+otherwise the ASCII column of the decoration table is used regardless.)
 
 - backing: =[new]= — =*clal-aldo-configuration*=, the XDG load/search, the two
-  =clal-*= functions, and the save / reload subcommands. No auto-save.
+  =clal-*= functions, the save / reload subcommands, and the
+  code-point-or-string glyph reader. No auto-save.
 
 ** Terminal styling (the dumb terminal isn't so dumb)   =[new]=
 

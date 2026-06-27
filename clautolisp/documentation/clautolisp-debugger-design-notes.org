@@ -782,14 +782,13 @@ DN-1…DN-12 and the command-reference §0 rules; those are *not* on this list.)
 |----------------------------------+----------------------------------------+--------------------------------------------------------+--------------------------------------------+----------------------------|
 | Poll-point id numbering (deferred) | DN-11; TUI "Numbered Poll-Points"      | one globally-stable number space, never reused         | per-top-level-form ids (bp carries its form) | see by use — if numbers grow too big |
 | Poll-point-state modifier glyphs (deferred) | TUI "Numbered Poll-Points" (states)    | selecting a pp shows its full info at screen bottom; glyphs only flag presence | add modifier glyphs only if use shows a need | see by use                 |
-| aldo config settings subcommands | cmd-ref §8 "Configuration and persistence" | recommended: =,settings= (list / print / save / reload) + =set NAME VALUE= | other spellings | confirm spellings (TODO) |
 
 These complement the inline =[new]= / =[engine]= / =[have]= backing tags (which
 track *implementation* status); this register tracks *design* choices still
-open to revision. The two poll-point items are *decide-by-use* (resolve only if
-practice shows a need); the settings-subcommand spellings are an open *naming*
-TODO with a recommended resolution recorded inline. Everything else
-(setting names, values, keys) is settled (below).
+open to revision. Both remaining items are *decide-by-use* — they resolve only
+if practice shows a need; no naming or spec call is pending on them. Everything
+else (setting names, values, keys, the settings subcommands, the configuration
+format) is settled (below).
 
 *Settled since (were provisional, now fixed).* All set via =set NAME VALUE=
 (§8; case-insensitive), the form §4 reserved for non-Lisp debugger variables:
@@ -814,3 +813,11 @@ TODO with a recommended resolution recorded inline. Everything else
 - preview-length option — named =value-line-width= (the width of a single-line
   value display). Convention: a future *multi-line* value display would use
   =value-window-width= / =value-window-height=, matching =source-window-height=.
+- settings subcommands — =,settings= (list), =,settings NAME= (print one),
+  =set NAME VALUE= (set), =,settings save=, =,settings reload= (cmd-ref §8
+  "Configuration and persistence").
+- configuration persistence — =*clal-aldo-configuration*= is an assoc-list
+  plist; loaded from =$XDG_CONFIG_HOME/clautolisp/aldo.conf= (else searched on
+  =$XDG_CONFIG_DIRS=) *before* the rc/init files; saved (UTF-8) only on request
+  via =,settings save= / =clal-save-aldo-configuration=. Decoration glyphs may
+  be code points (keeps =aldo.conf= ASCII) or literal UTF-8 strings.
