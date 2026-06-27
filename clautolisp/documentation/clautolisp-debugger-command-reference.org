@@ -101,8 +101,10 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | catch (events)                 | catch                        | —   | partial |
 | backtrace                      | list frames                  | lf  | have    |
 | frame N                        | frame N                      | f   | have    |
-| up (outer frame)               | up                           | u   | have    |
-| down (inner frame)             | down                         | d   | have    |
+| up (gdb: toward caller)        | frame outer                  | fo  | have    |
+| down (gdb: toward callee)      | frame inner                  | fi  | have    |
+| (innermost / current frame)    | frame top                    | ft  | have    |
+| (outermost / toplevel frame)   | frame bottom                 | fb  | have    |
 | info locals                    | list locals                  | ll  | have    |
 | info args / params             | list parameters              | lp  | have    |
 | all visible variables          | list variables               | lv  | have    |
@@ -161,26 +163,32 @@ two-word =break once=, key =bo=).
 
 Under the rule, the key space is:
 
-- *Single-letter keys, all unique:* =c i n o a r q b f u d p t v h ?=.
-- *Two-letter keys, all unique:* =bo lb lf ls ll lp lv=.
+- *Single-letter keys, all unique:* =c i n o a r q b f j p t v h ?=.
+- *Two-letter keys, all unique:* =bo lb lf ls ll lp lv fi fo ft fb=.
 - No single-letter key shares its letter with a /different/ word command.
 
-Two command families fall out of the rule:
+Three command families fall out of the rule:
 
 - *The =break= family* (=b=): =break LINE= (=b=) and =break once LINE= (=bo=,
   the temporary one-shot breakpoint).
+- *The =frame= family* (=f=): =frame N= (=f=, select), =frame inner= (=fi=),
+  =frame outer= (=fo=), =frame top= (=ft=), =frame bottom= (=fb=). The
+  second initial gives the direction/extremum (§3).
 - *The =list= family* (=l=): =list breakpoints= (=lb=), =list frames= (=lf=,
   = backtrace), =list source= (=ls=), =list locals= (=ll=), =list
   parameters= (=lp=), =list variables= (=lv=). The second initial selects
   what to list — one mental group, six members, no clashes.
 
-*Immediate vs typed resolves any prefix overlap.* In ncurses/Emacs only the
-*single-letter* keys fire on a keypress with no RET (=c i n o q u d=
-fire-and-go; =a b f p r t v= begin reading their argument after the key).
-The two-letter keys (=bo lb lf ls ll lp lv=) and all word commands are
-entered as =,word= comma-commands (typed, with RET), so =b= (break) firing
-on a key never blocks =bo= (=,break once=) — different input modes. In the
-dumb terminal every command is a typed token + RET, so there is no prefix
+*Immediate vs typed, with at most one key of lookahead.* In ncurses/Emacs
+the argument-free single keys fire on a keypress with no RET (=c i n o q j=);
+the argument-readers (=a b p r t v=) begin reading after the key. =f= is the
+one key with a *family*: after =f=, a digit means =frame N= while a letter
+=i/o/t/b= means =frame inner/outer/top/bottom= — a single deterministic key
+of lookahead, the family member firing on that second key. (=b= similarly
+admits =bo= when the user types =o= next, but =break= takes a line argument
+so it reads anyway.) All word commands are also available as =,word=
+comma-commands (typed, with RET). In the dumb terminal every command is a
+typed token + RET, so there is no prefix
 question at all.
 
 * 1. Execution control (run / step / resume)
@@ -402,9 +410,11 @@ question at all.
 
 ** delete / clear
 - aldb: =,delete [BPID...]=  | =,clear LINE=
-- desc: remove one/all breakpoints, or the breakpoint(s) at a line. (No
-  single-letter key: =d= is =down=; these are word-only =,delete= /
-  =,clear=, which both take an argument anyway.)
+- desc: remove one/all breakpoints, or the breakpoint(s) at a line. Word-only
+  (no single-letter key): they take an argument anyway, and being destructive
+  they are deliberately kept off a bare keypress in the no-RET UIs. (=d= is
+  free since frame navigation moved to =fi=/=fo=; left unassigned here on
+  purpose.)
 - backing: =[have]= =cmd-remove-breakpoint= per bp; "delete all" /
   "clear by line" are thin =[new]= conveniences over =clear-breakpoints=.
 
@@ -460,14 +470,37 @@ question at all.
   AutoLISP frames only — host =EVAL= frames are filtered (spec §1.3).
 - backing: =[have]= (the snapshot's =call-stack=; dumb UI prints it).
 
-** frame / up / down
-- aldb: =f N=  | =,frame N=  | =u= (up/outer)  | =d= (down/inner)
-- desc: select a frame; =u=/=d= move one frame outer/inner relative to the
-  current one. The selected frame is the binding view for subsequent
-  =print= / =list locals= etc. (spec §9.3 =with-frame-bindings=;
-  outer-frame *eval/setq* is innermost-only today — the §9.3 Partial item).
-  =f= always takes a number, so it never fires bare in a no-RET UI.
-- backing: =[have]= =cmd-select-frame= (outer-frame eval =[engine]=, partial).
+** frame family  (select / navigate the call stack)
+- aldb: =f N= =,frame N=  | =fi= =,frame inner=  | =fo= =,frame outer=  |
+  =ft= =,frame top=  | =fb= =,frame bottom=
+- desc: select a frame and make it the binding view for subsequent =print= /
+  =list locals= / =(setq …)= etc. (spec §9.3 =with-frame-bindings=).
+  - =frame N= — select frame N absolutely (frame 0 = innermost = current).
+  - =frame inner= (=fi=) / =frame outer= (=fo=) — move one frame *inner*
+    (toward the callee / current) or *outer* (toward the caller / toplevel).
+  - =frame top= (=ft=) / =frame bottom= (=fb=) — jump to the *innermost*
+    (current, frame 0) or *outermost* (toplevel) frame.
+- *Why not =up= / =down=.* gdb/lldb's =up= / =down= are notoriously
+  ambiguous: "up" goes toward /higher frame numbers/ = callers = the
+  /bottom/ of the data-structure stack and the /bottom/ of the printed
+  backtrace — three metaphors that disagree. aldb names the unambiguous
+  *call relation* instead: =inner= can only mean "toward the callee",
+  =outer= "toward the caller"; =top= / =bottom= pin the extrema. The pin:
+  *top = innermost = current = frame 0* (matching a hardware stack, where
+  the top is the most-recent push); =bottom= = outermost = toplevel. So
+  =inner= heads toward =top=, =outer= toward =bottom= — self-consistent.
+  This also folds frame navigation into the =frame= family (keys =f fi fo ft
+  fb=), mirroring the =list= and =break= families, and frees =u= / =d= /
+  =i= / =o= / =t= / =b= for their own commands.
+- In ncurses/Emacs the stack pane's *arrow keys* are the natural
+  convenience (↑ = the line above = frame 0 = inner); the =fi= / =fo= keys
+  and =,frame …= comma-commands are for the dumb terminal and explicit
+  selection.
+- backing: =[have]= =cmd-select-frame= (=fi=/=fo=/=ft=/=fb= are thin
+  relative/absolute wrappers over it). Outer-frame *eval/setq* is
+  innermost-only today — the §9.3 Partial item — so selecting an outer frame
+  changes the /view/ (=print=, =list locals=) but =(setq …)= still writes
+  the frame-0-visible binding until per-frame setq lands.
 
 ** list locals / parameters / variables  (info locals / args)
 - aldb: =ll= =,list locals=  | =lp= =,list parameters=  | =lv= =,list variables=
@@ -755,8 +788,9 @@ form is the canonical one and what the two-language table is keyed on.
 
 Already usable through the protocol (=[have]=): continue (=c=), into (=i=),
 next (=n=), out (=o=), advance (=a=), return (=r=), quit (=q=), break
-(=b=), list breakpoints (=lb=), delete/clear, frame (=f=) / up (=u=) /
-down (=d=), list frames (=lf=, backtrace), list locals/parameters/variables
+(=b=), list breakpoints (=lb=), delete/clear, frame family (=f= select,
+=fi=/=fo= inner/outer, =ft=/=fb= top/bottom), list frames (=lf=, backtrace),
+list locals/parameters/variables
 (=ll=/=lp=/=lv=), print (=p=), eval (bare sexp), scratch vars/funcs and
 =set= via plain =(setq …)= / =(defun …)= at the REPL, visit (=v=, the
 inspector + descend/up/path/bind), list source (=ls=), help (=h=).
@@ -808,14 +842,15 @@ all driven by the same =read → check-commands → eval → print= loop:
 - *dumb terminal:* every command is a typed token (=c=, =lf=, =break 12=,
   or a bare =(form)=) terminated by RET. No prefix ambiguity — the whole
   token is read before dispatch.
-- *ncurses / Emacs aldb:* the *single-letter* commands (=c i n o q u d= and
-  the arg-readers =a b f p r t v=) are bound to single keys that fire
-  *without* RET — same convention in both UIs. The *two-letter* commands
-  (=bo lb lf ls ll lp lv=) and all *word* commands are entered as
-  =,word= comma-commands (typed, with RET). Because immediate single keys
-  and typed =,word= commands live in different input modes, =b= firing on a
-  keypress never blocks =bo= (=,break once=). A single key may also be rebound
-  in Emacs (=aldb-mode-map=) to its command.
+- *ncurses / Emacs aldb:* the argument-free single keys (=c i n o q j=) and
+  the arg-readers (=a b p r t v=) fire on a keypress *without* RET — same
+  convention in both UIs. =f= takes one key of lookahead (a digit → =frame
+  N=, a letter → the =frame= family =fi=/=fo=/=ft=/=fb=). The remaining
+  two-letter commands (=bo lb lf ls ll lp lv=) and all *word* commands are
+  entered as =,word= comma-commands (typed, with RET). In the stack pane the
+  *arrow keys* are the natural frame-navigation convenience (↑ = the line
+  above = frame 0 = inner). A single key may also be rebound in Emacs
+  (=aldb-mode-map=).
 - *RPC (Emacs ↔ CL, §20.1):* each command becomes a wire tag; the keys and
   =,word= forms are purely client-side spellings of those tags.
 
