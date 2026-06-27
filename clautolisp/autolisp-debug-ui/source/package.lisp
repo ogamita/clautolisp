@@ -82,4 +82,14 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:current-snapshot #:current-metadata
    ;; lifecycle
    #:start-session #:call-with-session #:with-session
-   #:register-ui #:*ui-constructors* #:make-ui))
+   #:register-ui #:*ui-constructors* #:make-ui
+   ;; settings / configuration (command reference §8)
+   #:*aldo-configuration* #:*default-aldo-configuration* #:*setting-specs*
+   #:reset-aldo-configuration
+   #:config-get #:config-set #:config-keys #:normalize-config-key
+   #:set-aldo-setting #:get-aldo-setting #:setting-spec #:parse-setting-value
+   #:aldo-settings-lines #:format-setting-value
+   #:xdg-config-home #:xdg-config-dirs
+   #:aldo-config-save-path #:aldo-config-load-path
+   #:save-aldo-configuration #:load-aldo-configuration
+   #:write-aldo-configuration #:read-aldo-configuration))
