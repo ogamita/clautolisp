@@ -976,14 +976,17 @@ pre-populated by the same mechanism.
 *** The primitive: =bind-debugger-command=
 
 #+begin_src lisp
-  (defun bind-debugger-command (names lambda-list docstring function) ...)
+  (defun bind-debugger-command (names lambda-list docstring function
+                                &optional (dictionary *global-dictionary*)) ...)
 #+end_src
 
 - =NAMES= — =(KEY WORD [WORD2])=: a 1- or 2-letter key symbol followed by
   one or two word symbols, e.g. =(b break)=, =(lv list variables)=,
   =(z zar)=. The key MUST be the initial(s) of the word(s) (the §0 /
   consistency rule); =bind-debugger-command= *signals an error* if it is
-  not, or if the key / words clash with an existing command.
+  not, or if the key / words clash with an existing command *in the same
+  dictionary* (collisions across different dictionaries are allowed and
+  resolved by the stacked lookup below).
 - =LAMBDA-LIST= — passed *as data*. Its length tells the =check-commands=
   reader *how many arguments to read* after the command at the prompt; they
   are passed positionally to =FUNCTION=.
@@ -992,6 +995,13 @@ pre-populated by the same mechanism.
   =(lambda …)=, or =(function EXISTING)= to reuse a function written with
   =defun=. It may call the built-in commands (the =clal-*= functions) and
   read the snapshot.
+- =DICTIONARY= — which command dictionary to register in; defaults to the
+  *global* debugger dictionary. The other dictionaries are the *mode*
+  dictionaries (=*sedit-navigator-dictionary*=, =*classic-navigator-dictionary*=,
+  =*inspector-dictionary*=); see *Command dictionaries (stacked dispatch)*
+  below. A user adds an inspector-only or navigator-only command by passing
+  the relevant dictionary; omitting it keeps the historical single-table
+  behaviour.
 
 Because there is no macro layer here, the function is passed *explicitly*
 (a value) and the lambda-list *as data*, so the registration is itself an
@@ -1001,10 +1011,11 @@ to register *built-in* commands too (from Common Lisp), binding a CL
 function; the built-in table is just this primitive applied many times at
 boot.
 
-A companion =(unbind-debugger-command names-or-key)= removes a command,
-pairing with =bind-debugger-command= (built-ins are protected). The AutoLISP
-side exposes it as =(undefine-debugger-command names-or-key)=, pairing with
-=define-debugger-command=.
+A companion =(unbind-debugger-command names-or-key &optional dictionary)=
+removes a command (from =DICTIONARY=, default global), pairing with
+=bind-debugger-command= (built-ins are protected). The AutoLISP side exposes
+it as =(undefine-debugger-command names-or-key &optional dictionary)=, pairing
+with =define-debugger-command=.
 
 *** AutoLISP convenience: =define-debugger-command=
 
@@ -1026,7 +1037,11 @@ primitive — AutoLISP has no macros, so it is *also a function*, identical to
 #+end_src
 
 After the first, =f= (= =,foo=) reads one argument and calls it; after the
-second, =z= (= =,zar=) reads two and calls =debugging-zar=.
+second, =z= (= =,zar=) reads two and calls =debugging-zar=. A trailing
+optional =DICTIONARY= argument (default global) registers the command in a
+mode dictionary instead — e.g.
+=(define-debugger-command '(w wrap) '() "Wrap." (function do-wrap)
+*inspector-dictionary*)= adds =w= to the *inspector* only.
 
 *** Common Lisp convenience: the =define-debugger-command= macro
 
@@ -1059,7 +1074,10 @@ from the =(short long [second-long])= header, =LAMBDA-LIST= quoted as data
 for the arity, =DOCSTRING= passed through, and the =BODY= wrapped in a
 =lambda= (the docstring kept as the lambda's documentation). Note the macro
 exists only in CL — it is sugar over the primitive; the AutoLISP function
-form is the canonical one and what the two-language table is keyed on.
+form is the canonical one and what the two-language table is keyed on. The
+macro targets the *global* dictionary; to register a built-in into a mode
+dictionary, call the =bind-debugger-command= primitive directly with its
+=DICTIONARY= argument.
 
 - backing: =[new]= — a command table the =check-commands= step consults,
   mapping each (key . words) to a (lambda-list . docstring . function)
@@ -1069,6 +1087,46 @@ form is the canonical one and what the two-language table is keyed on.
   sugar. The =clal-*= command functions (public-interface issue) are what
   AutoLISP command functions call; CL built-ins call the engine =cmd-*= /
   entry points directly.
+
+*** Command dictionaries (stacked dispatch)   =[new]=
+
+The single command table above is the *global* debugger dictionary. The text
+UIs add *mode* dictionaries layered over it — the *sedit navigator*, the
+*classic file:line navigator*, and the *inspector* (TUI spec, "Command
+Dictionaries"). They are kept *separate* because they are alternative UIs (you
+run sedit *or* the classic navigator; you *enter* the inspector on a value),
+yet each is *designed collision-free against the global debugger commands*, so
+from any mode every global verb (=continue=, =next=, =break=, …) is *directly
+reachable* without escaping.
+
+*Stacked lookup.* The active mode's dictionary sits *on top* of the global
+dictionary; =check-commands= walks the stack *innermost-outward* and the
+*first match wins*:
+
+1. the active mode dictionary (if any), then
+2. the global debugger dictionary.
+
+A key bound only globally resolves through from any mode. Where a mode
+genuinely needs a key the global set also uses, *the mode wins locally* — e.g.
+in the *inspector* =b= is its own =bind= (§7), shadowing the global =break=.
+The two *navigator* dictionaries are collision-free with the global set by
+design and so shadow nothing.
+
+*Escape to an outer dictionary.* When an inner binding shadows a global
+command you still want, a reserved *prefix* routes the next token to the
+outer/global dictionary: the word =debugger= (=debugger break= reaches =break=
+from inside the inspector) or a dedicated *escape key*. The prefix must itself
+be free in the active mode — the spelled-out =debugger= word, or one key
+reserved across *all* modes, avoids any clash; a bare =d= is *not* used for
+this (it is the navigator's =down=). In the RET-terminated dumb terminal the
+word form is unambiguous; the single-key UIs use the dedicated escape key.
+
+*Per-dictionary consistency.* The §0 naming-consistency rule and the
+collision check are enforced *within each dictionary*: =bind-debugger-command=
+signals an error only on a clash *in the dictionary it registers into*, so the
+same key may legitimately mean different things in two different dictionaries
+(the inspector =b= vs the global =break=) while staying unambiguous at the
+point of dispatch.
 
 ** shell / python / script   =[n/a]=
 - No shell-out or scripting layer in the debugger; the AutoLISP =eval=

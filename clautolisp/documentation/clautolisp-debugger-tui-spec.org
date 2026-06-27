@@ -555,35 +555,19 @@ reconciliation table shows for sedit, so from any mode the debugger verbs
 the whole point — three carefully-fitted dictionaries giving *one
 integrated* interface, not three rival ones.
 
-Dispatch is *stacked*:
-
-- the active mode's dictionary sits *on top* of the global debugger
-  dictionary; lookup walks innermost-outward, *first match wins*;
-- where a mode genuinely needs a key the debugger also uses, the mode wins
-  locally — e.g. in the *inspector* =b= is its own =bind= (command
-  reference §7), not =break=. The navigator dictionaries have no such clash
-  by design; a key bound only globally still resolves through from any
-  mode.
-
-*Escaping to an outer dictionary.* When an inner binding (an inspector key,
-a user command) shadows a debugger command you still want, a reserved
-*prefix* routes the next token to the outer/global dictionary — the word
-=debugger= (=debugger continue=) or a dedicated escape key. The prefix must
-itself be free in the active mode; the spelled-out =debugger= word, or one
-key reserved across all modes, avoids any clash. In the RET-terminated dumb
-terminal the word form is unambiguous; the single-key UIs need a dedicated
-escape key.
-
-*User dictionaries.* =bind-debugger-command= / =define-debugger-command=
-(command reference §8) gain a *dictionary* argument, so a user can add a
-command to a specific dictionary — inspector-only or navigator-only —
-rather than only the global one (the default).
-
-This stacked dispatch generalises the single command table of command
-reference §8 and belongs there alongside =bind-debugger-command=; it is
-recorded here because the sedit/inspector navigation is what forces it. The
-new verbs still take keys that obey the §0 naming-consistency rule *within
-each dictionary*; the names above are provisional.
+*The dispatch mechanism is now specified normatively in the command
+reference, §8 "Command dictionaries (stacked dispatch)".* In brief: lookup is
+*stacked* (the active mode dictionary on top of the global one,
+innermost-outward, first match wins); a mode may *shadow* a global key
+locally (the inspector =b= = =bind=, not =break=); a reserved *escape prefix*
+(the word =debugger=, or a dedicated key — never a bare =d=) reaches a
+shadowed global command; and =bind-debugger-command= /
+=define-debugger-command= take a *dictionary* argument so a user can add an
+inspector-only or navigator-only command. The §0 naming-consistency rule and
+the collision check are enforced *per dictionary*. See §8 for the full
+treatment; this section keeps only the UI-specific motivation (why three
+separate-but-collision-free dictionaries exist). The mode-dictionary names
+above are provisional.
 
 ** Partial Printing of the Form
 
