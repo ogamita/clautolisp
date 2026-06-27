@@ -254,6 +254,105 @@ selection moved to the current poll-point (so eg. with 【⏵(break)】)
 So a sequence of command next would redisplay the source form with the
 【⏵…】 indicator advancing step by step.
 
+** Navigating Forms — Definitions, the Two Stacks, and History
+
+The sedit view is not nailed to one form. The user can move to another
+form, follow a call into its definition, and walk back — and across
+several debugger stops, return to where they were last looking. Three
+distinct mechanisms, carefully kept apart.
+
+*** Changing the displayed form
+
+- *By name* — a command (say =form NAME=) displays the definition of the
+  named function (or any named top-level form), with the selection on its
+  whole body.
+- *Among a file's top-level forms* — when the form being debugged came
+  from a known file, commands walk that file's top-level forms (next /
+  previous), so the user can browse a source file form by form.
+
+These only change *what is displayed*; they do not touch execution or the
+evaluation context.
+
+*** Go to a definition, and pop back
+
+When the selection is a *function call* =(f …)= or a *symbol naming a
+function* =f=, a command (say =definition=) opens =f='s definition and
+makes it the displayed form. A complementary command (say =back=) pops
+back to the form and selection we came from.
+
+This is *static source browsing*: it follows the /call graph by name/, not
+the runtime stack. It does *not* move the current frame and the *bindings
+do not follow* — you are reading code, not moving the program counter. So
+=print=, =(setq …)=, =list locals= etc. still act in the *current frame*
+(command reference §3), never in a function you have merely browsed into.
+You may even browse into a function that is not (yet) on the runtime stack
+at all.
+
+*** The two stacks
+
+There are two stacks, and only one of them is "real":
+
+- *The runtime (Lisp) call stack* — the actual frames; the current
+  poll-point sits in the current (top) frame. It is navigated with the
+  existing *frame family* (=fi= / =fo= / =ft= / =fb=, =list frames=;
+  command reference §3). Selecting a frame *is* a real move: it changes
+  the binding/evaluation context (=with-frame-bindings=) and the view
+  shows that frame's function with its active sub-form. Its depth is
+  whatever the program actually called.
+- *The source-navigation (browse) stack* — built purely by =definition= /
+  =back=. It is independent of the runtime stack and read-only; its entries
+  are =(form . selection)= pairs. Its depth is bounded only by how far the
+  user drills: with recursive or mutually-recursive functions =definition=
+  can revisit a function already on the browse stack (a /cycle/ in the
+  static call graph), so the depth is *user-bounded, not graph-bounded*.
+
+The default display always *anchors* to the current poll-point — the
+current frame's active form. Frame moves re-anchor to another real frame;
+=definition= browsing layers a browse stack on top of the current anchor,
+and =back= unwinds it.
+
+*** Re-entry, and the navigation history
+
+Browsing never changes what executes. If the user has drilled into some
+called function and then issues =continue= / =next= / =step=, it is the
+*current poll-point* that resumes — not the browsed function. Execution
+may then re-enter the debugger from an entirely *different* runtime stack,
+in a different function. When it does, the view *resets to the new current
+poll-point's form* (the re-display note above).
+
+The browse state the user had built is *not* discarded: the navigation
+state — the browse stack together with its active selection — is pushed
+onto a *history*, a list of such navigation states. A command (say
+=history=, plus back / forward or =restore N=) lets the user return to a
+previous state: the very form and selection that were active when they
+last left the debugger. So across many stops the user can resume reading
+where they were, instead of re-drilling each time.
+
+*** Bounds and parameters
+
+- =*navigation-history-max*= (a =,settings= option) caps the number of
+  saved navigation states; the oldest is dropped beyond the limit.
+- The browse-stack depth is naturally user-bounded (above); an optional
+  =*browse-depth-max*= may cap it to guard against an unbounded drill
+  through a recursion.
+
+*** ncurses and aldb
+
+- *ncurses* — the same model applies directly: a source pane that defaults
+  to the current poll-point's form, with =form= / =definition= / =back= and
+  the same bounded navigation history.
+- *aldb (Emacs)* — likely *less* needed, because Emacs already keeps
+  buffers open and has native definition jumping (=xref= =M-.= and its
+  marker ring). aldb can simply expose the current poll-point's form and
+  selection over the RPC (§20.1) and *let Emacs's own buffers and mark ring
+  serve as the browse stack and history*. The one piece aldb still owns is
+  the *re-anchor on re-entry* — moving point to the new current poll-point
+  when execution stops again.
+
+Command-language note: the new verbs (=form=, =definition=, =back=,
+=history=) must be registered in the command reference with keys that obey
+its naming consistency rule (§0); the names above are provisional.
+
 ** Partial Printing of the Form
 
 If pretty-printing the source form (any toplevel form the poll-point
