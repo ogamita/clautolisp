@@ -143,10 +143,88 @@ Currently defined (see table above) poll-point statuses are:
 
 TODO: verify if there are other poll-point states that should be indicated for the user.
 
+** Numbered Poll-Points — Designation by Number
+
+Structural navigation (move the selection forward / backward / in / out)
+is one way to /point at/ a sub-expression. An alternative, often quicker
+when the target is already on screen, is to *number every poll-point in
+the displayed form and let the user type the number to designate it* —
+no walking the tree.
+
+Every poll-point sub-form is decorated with its *number*, a compact glyph
+placed as a prefix (and combinable with the status glyph of the table
+above). The number is the poll-point's stable id — the very =ppN= used in
+the command reference (§2, "Specifying a location"), not a fresh
+per-display counter — so the same number means the same poll-point in the
+TUI, in =aldb=, and at the dumb-terminal prompt.
+
+Rendering ladder for the number, best available first:
+
+- Unicode enclosed digits: ① ② ③ … ⑳ (and ㉑ … ㊿ where the font has
+  them).
+- Unicode super/subscript digits, concatenated for multi-digit: ¹² , ₁₂ .
+- Pure-ASCII fallback: a bracketed decimal that cannot be mistaken for a
+  Lisp list or the selection brackets — e.g. =<7>= or =⟨7⟩=. (We avoid
+  =#7= so the decoration is not read as a punctuation /sigil/; see the
+  design note DN-11 — the number the user *types* is always bare.)
+
+Number and status glyph combine, number first:
+
+#+begin_example
+(progn (print 'hello) ②⏸(print 'world) ③(print '!))
+#+end_example
+
+or in ASCII:
+
+#+begin_example
+(progn (print 'hello) <2>^(print 'world) <3>(print '!))
+#+end_example
+
+— poll-point ② carries an enabled breakpoint, poll-point ③ is a plain
+poll-point the user could designate to set one. *Every* poll-point shows
+its number (so any of them can be designated), while the status glyph
+appears only on the current one and on breakpoints.
+
+Designation then has two cheap forms, both bypassing navigation:
+
+- a *bare number* =N= moves the selection to poll-point =N= (a direct jump
+  in the sedit loop, complementing forward/backward/in/out);
+- a *command + number* acts directly without first selecting: =b 7= sets a
+  breakpoint at poll-point 7, =clear 7=, =disable 7=, =condition 7 FORM=,
+  etc. The number is bare because the command already says what kind of
+  object it is (DN-11).
+
+*The breakpoint number is the poll-point number.* A breakpoint is not a
+separate object with its own counter; it is the breakpoint /flag/ on a
+poll-point. So "breakpoint 7" is "poll-point 7, breakpoint set" — there is
+at most one breakpoint per poll-point, =list breakpoints= shows poll-point
+numbers, and =clear= / =enable= / =disable= / =condition= all take the
+same numbers the decorations show. One numbering space, not two — this is
+the simplification, and it scales fine even with many poll-points: the
+displayed form only ever shows /its own/ poll-points, a small readable
+subset, and only the glyphs degrade (circled → bracketed decimal) as ids
+grow.
+
+This numbered mode and the sedit selection mode are *complementary*, not
+exclusive: the decorations (numbers + status) are always shown; the user
+may either type a number to act at once, or walk the selection when
+browsing an unfamiliar form. Both designate the same poll-points.
+
+TODO: decide whether elided =#= regions (see "Partial Printing") that
+*contain* a numbered breakpoint should surface that number on the =#= (so
+it stays designatable without expanding), or require expansion first.
+
+TODO: decide whether poll-point ids are global-stable (one space across
+all instrumented forms, ids may be large) or per-top-level-form
+(small ids, but a breakpoint needs its form for context). Recommended:
+global-stable, so a bare number is unambiguous everywhere; the rendering
+ladder absorbs large ids.
+
 ** Additionnal Debugging Commands
 
-In addition to the selection movement in the sedit mode, the debugger
-will provide these sedit commands:
+In addition to the selection movement in the sedit mode, and the
+designation-by-number above, the debugger will provide these sedit
+commands:
 
 - clear a breakpoint
 - set a breakpoint

@@ -597,3 +597,61 @@ missing in the dumb terminal is missing in Emacs" (§20.4) holds by construction
 partial output and dispatches each complete top-level form. The CL shim is
 transport-agnostic too (just two streams). Neither side mandates sockets vs
 pipes vs a reused swank connection (§20.1).
+
+* DN-11. Object ids are bare numbers, command-namespaced — no per-type sigils
+
+The debugger refers to several kinds of numbered object: breakpoints, call
+frames, poll points, REPL scratch values. A natural temptation is to give each
+kind a distinguishing /sigil/ so a reference carries its own type — say =#1= a
+breakpoint, =!2= a frame, =&3= a poll point, alongside gdb's =$1= for a scratch
+value. We *reject* per-type sigils. Ids are *plain numbers*, and what kind of
+object a number denotes is fixed by the *command that consumes it*.
+
+** Decision
+
+- =break 1=, =frame 2=, =clear 3=, =condition 4 FORM= — the verb supplies the
+  noun. The number is bare; the *same* small number may mean a different object
+  under a different command, and that is not confusing because the user never
+  holds "object 1" in the abstract, only "frame 1" or "breakpoint 1" — the
+  command they just typed.
+- Where a *single command's argument is polymorphic* (=break= / =jump= /
+  =advance= / =clear= accept a line *or* a poll point *or* a function), the
+  discriminator is a readable *word prefix*, not punctuation: =break 13= is a
+  line, =break pp13= is a poll point (command reference §2, "Specifying a
+  location").
+- The one genuine sigil is =$N= (=$1=, =$myvar=), and only because it is used
+  where *no command disambiguates it* — embedded in a REPL expression, where a
+  bare =1= is already the integer one (command reference §7). It also carries a
+  real mnemonic ("=$= = a value"), unlike an arbitrary =!=/=&=.
+
+** Why bare numbers win
+
+- *A discriminator only repays its cost when the type is ambiguous at the point
+  of use.* The command almost always removes the ambiguity before the number is
+  typed, so a sigil there is pure overhead — paid on every reference, every
+  keystroke.
+- *Keystroke cost is real and layout-dependent.* A punctuation sigil is an
+  extra (often shifted or AltGr) keystroke; on an AZERTY keyboard the digits are
+  themselves shifted and several sigils sit on AltGr, so =#3= / =&3= cost
+  strictly more than a bare number while =pp13= stays plain letters+digits.
+- *Arbitrary sigil→type maps are hard to recall.* =$=-means-value has a hook;
+  =!=-means-frame, =&=-means-poll-point do not. A word prefix (=pp=) is instead
+  *role-expressive* and self-documenting (Cognitive Dimensions of Notations).
+- *This is the battle-tested convention.* gdb/lldb (bare =break N= / =frame N=,
+  sigil only for =$= convenience vars) and the shells (=kill 1= = PID, =kill %1=
+  = job — the =%= appears exactly where one command's argument is polymorphic;
+  history =!3= where there is no command at all) all converge on the same rule.
+
+** Consequences
+
+- A breakpoint has *no identifier of its own*: it is named by the poll point it
+  sits on. "Breakpoint 12" is "poll point 12, with its breakpoint flag set", so
+  there is at most one breakpoint per poll point and the breakpoint number *is*
+  the poll-point number (TUI spec, "Numbered poll points"). One numbering space,
+  not two.
+- No evidence cuts the other way decisively — there is no controlled "sigil vs
+  bare id" study; the case rests on keystroke counting (Card, Moran & Newell
+  1980), the Cognitive Dimensions framework (Green 1989), and the convergent
+  precedent above. If a future need arises to mention an object with *no*
+  command context (an id inside a REPL expression), it would follow the =$N=
+  pattern — a sigil earned by genuine ambiguity, not decoration.
