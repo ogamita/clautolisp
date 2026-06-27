@@ -185,12 +185,14 @@ Three command families fall out of the rule:
 
 *Immediate vs typed, with at most one key of lookahead.* In ncurses/Emacs
 the argument-free single keys fire on a keypress with no RET (=c i n o q j=);
-the argument-readers (=a b p r t v=) begin reading after the key. =f= is the
-one key with a *family*: after =f=, a digit means =frame N= while a letter
-=i/o/t/b= means =frame inner/outer/top/bottom= — a single deterministic key
-of lookahead, the family member firing on that second key. (=b= similarly
-admits =bo= when the user types =o= next, but =break= takes a line argument
-so it reads anyway.) All word commands are also available as =,word=
+the expression-readers (=p r t v=) begin reading a typed expression after the
+key. The *location* keys (=b a=, and =j=) also fire on the keypress: their
+poll point comes from the *cursor*, not a typed line (see *aldb / ncurses are
+cursor-based*, below) — only in the dumb terminal do they read a typed LOC.
+=f= is the one key with a *family*: after =f=, a digit means =frame N= while a
+letter =i/o/t/b= means =frame inner/outer/top/bottom= — a single deterministic
+key of lookahead, the family member firing on that second key. (=b= similarly
+admits =bo= when the user types =o= next.) All word commands are also available as =,word=
 comma-commands (typed, with RET). In the dumb terminal every command is a
 typed token + RET, so there is no prefix
 question at all.
@@ -230,6 +232,34 @@ Checking the spaces with the navigator keys folded in:
 So the union stays collision-free, and =bind-debugger-command='s registrar (§8)
 enforces it on any further addition, *per dictionary* (§8).
 
+*** aldb / ncurses are cursor-based — no typed line numbers (NORMATIVE)
+
+In the keystroke UIs (aldb/Emacs and ncurses) the user *never types a line
+number*. Emacs does not normally show line numbers down the buffer
+(=line-number-mode= displays only the *current* line, in the mode line; numbers
+along the buffer need a special mode), so a typed =LINE= would be unnatural and
+error-prone. The rule:
+
+- Every command fires on its key (no RET) and acts on the *current context*.
+- *Any command that needs a line, a location, or a poll-point number takes it
+  from the cursor position* — the poll point of the *innermost instrumented
+  form enclosing point* (the *Pointing instead of typing* rule, §2; if point is
+  between forms, the next poll point in reading order). This governs every
+  location-taking command: =break=, =break once=, =advance=, =jump=, =clear=,
+  =list source=, and =goto FILE:LINE= (the line is point's line). It also
+  governs the commands whose argument is a *poll-point number* =PP= —
+  =condition=, =ignore=, =enable=, =disable=, =delete=, =bpcmd=: in aldb /
+  ncurses you put the cursor on the breakpoint's form (or select it in the §3
+  navigator) and the command acts on *that* poll point, so its =PP= is never
+  typed. Likewise the §3 navigator designates the form at the *selection*.
+
+So the =LINE= / =LINE.K= / =LINE:COL= / =ppN= spellings in the command entries
+below are the *dumb-terminal* (typed) and *explicit, off-cursor override* forms.
+In aldb / ncurses the same commands read their location from the cursor instead;
+the dumb terminal, having no cursor, types the LOC or opens the sedit-style
+selection sub-mode (§2). Each command entry lists *both* spellings — the
+keystroke-UI cursor form and the typed form — under this rule.
+
 * 1. Execution control (run / step / resume)
 
 ** continue
@@ -260,9 +290,10 @@ enforces it on any further addition, *per dictionary* (§8).
 - backing: =[have]= =cmd-step :out= / =:finish=.
 
 ** advance LINE  (until)
-- aldb: =a LINE=  | =,advance LINE=
-- params: a LOC (§2 *Specifying a location*) — a LINE, a finer poll-point
-  spelling, or the pointed sexp — for poll-point precision.
+- aldb / ncurses: cursor on the target form + =a= (location from the cursor,
+  §0); dumb / explicit: =a LINE=  | =,advance LINE=  | =,advance ppN=
+- params: a LOC (§2 *Specifying a location*) — the form at point (keystroke
+  UIs), or a typed LINE / finer poll-point spelling — for poll-point precision.
 - desc: set a volatile breakpoint at that poll point and continue; it is
   removed on the first stop (spec §6.2 "advance to point").
 - backing: =[have]= =cmd-advance= (and =poll-point-at= for source→pp).
@@ -319,10 +350,11 @@ enforces it on any further addition, *per dictionary* (§8).
   =debugger-public-interface-and-on-error.issue=).
 
 ** jump LINE   =[new]=
-- aldb: =j LINE=  | =,jump LINE=
-- params: a LOC (§2 *Specifying a location*) — a LINE, the exact poll point
-  (=ppN=, =LINE.K=, =LINE:COL=), or the pointed sexp — the form to resume
-  execution *at*, skipping the forms in between. (Poll-point precision
+- aldb / ncurses: cursor on the target form + =j= (location from the cursor,
+  §0); dumb / explicit: =j LINE=  | =,jump LINE=  | =,jump ppN=
+- params: a LOC (§2 *Specifying a location*) — the form at point (keystroke
+  UIs), or a typed LINE, the exact poll point (=ppN=, =LINE.K=, =LINE:COL=) —
+  the form to resume execution *at*, skipping the forms in between. (Poll-point precision
   matters most here: §1 jump targets a specific poll point, e.g. =pp2= vs
   =pp3= in =jump-back.lsp=, where the choice changes which bindings exist.)
 - desc: resume control flow, but *skip the evaluation* of the forms between
@@ -478,23 +510,17 @@ terminal can always /name/ any poll point — but the natural gesture is to
   navigator is =[new]= — a focused dumb-terminal mode reusing the source
   listing and the styling layer.
 
-** break LINE
-
-TODO: in aldb, ie in emacs, it's very unnatural to indicate line
-numbers, since line numbers are not usually displayed.
-(line-number-mode only shows the number of the current line
-in the status line; you'd need a special mode to display the line
-numbers along the buffer). The natural way is to move the cursor on
-the form you want, and give the break command to install the break
-point. So we must revise the aldb commands and interactions such as
-the following one:
-
-- aldb: =b LINE=  | =,break LINE=  | =,break FN [LINE]=
-- params: a LOC (above) — a source LINE in the current function (the
-  covering poll point), a finer =LINE.K= / =LINE:COL= / =ppN=, a function
-  name FN (its entry poll point), or the pointed sexp.
-- desc: set a steady breakpoint at the poll point covering LINE
-  (spec §17.3, click/line → poll point via =poll-point-at=).
+** break
+- aldb / ncurses: cursor on the form + =b= (no argument) — the location comes
+  from the cursor (§0 *cursor-based*; *Pointing instead of typing*, above).
+- dumb / explicit: =b LINE=  | =,break LINE=  | =,break FN [LINE]=  |
+  =,break ppN=
+- params: a LOC — the form at point (keystroke UIs), or a typed source LINE in
+  the current function (the covering poll point), a finer =LINE.K= / =LINE:COL=
+  / =ppN=, or a function name FN (its entry poll point).
+- desc: set a steady breakpoint at the designated poll point (the form at
+  point, or the poll point covering LINE; spec §17.3, click/cursor/line →
+  poll point via =poll-point-at=).
 - *Breakpoint identity = poll-point number.* A breakpoint is not a
   separate object with its own counter; it is the breakpoint /flag/ on a
   poll point. So a breakpoint is named by *its poll-point number* =PP= (the
@@ -505,7 +531,8 @@ the following one:
 - backing: =[have]= =cmd-set-breakpoint-at-line= / =cmd-set-breakpoint=.
 
 ** break once LINE  (gdb tbreak)
-- aldb: =bo LINE=  | =,break once LINE=
+- aldb / ncurses: cursor on the form + =bo= (location from the cursor, §0);
+  dumb / explicit: =bo LINE=  | =,break once LINE=  | =,break once ppN=
 - desc: a one-shot breakpoint — a steady-API breakpoint created volatile
   (=:steady nil=), removed on first hit. gdb's =tbreak=; named =break once=
   here so its key (=bo=) is the genuine two-word initials and it joins the
@@ -534,9 +561,11 @@ the following one:
   it to consult =enabled-p=).
 
 ** delete / clear
-- aldb: =,delete [PP...]=  | =,clear LOC=
+- aldb / ncurses: cursor on the breakpoint's form + =,clear= (poll point from
+  the cursor, §0); dumb / explicit: =,delete [PP...]=  | =,clear LOC=
 - desc: remove one/all breakpoints (=,delete= with poll-point numbers, or
-  all if none), or the breakpoint(s) at a location (=,clear=). Word-only
+  all if none), or the breakpoint(s) at a location (=,clear=); in aldb /
+  ncurses the location is the cursor's poll point. Word-only
   (no single-letter key): they take an argument anyway, and being destructive
   they are deliberately kept off a bare keypress in the no-RET UIs. (=d= is
   free since frame navigation moved to =fi=/=fo=; left unassigned here on
@@ -710,15 +739,22 @@ three.
   the sexp-level moves).
 
 *** goto
-- aldb: =g PATH=  | =,goto PATH=
+- aldb / ncurses: =g PATH= | =,goto PATH= — same as the dumb terminal. =goto=
+  is the deliberate exception to the §0 cursor rule: its argument is a
+  *destination* you are *not* at, so it cannot come from the cursor. In aldb
+  the natural forms are =goto NAME= / a path / =definition= (=.=); a typed
+  =FILE:LINE= is used only when an exact line is already in hand (e.g. copied
+  from an error) — that line is an explicit target, not read from point.
 - params: a *name* or *qualified path*, one of:
   - =goto FILE= / =goto FILE:LINE= — a file (at its top-level forms, or at
     =LINE=): the classic file:line jump.
   - =goto NAME= — a *global* function =NAME=, to its definition.
   - =goto OUTER INNER …= — a *qualified path* descending through *nested local*
-    definitions: =goto foo bar= is the =bar= defined inside =foo= (the
-    AutoLISP local-function idiom
-    =(defun foo (x / bar) (defun bar (y) (+ x y)) (bar x))=).
+    definitions, *to any depth*: =goto foo bar= is the =bar= defined inside
+    =foo= (the AutoLISP local-function idiom
+    =(defun foo (x / bar) (defun bar (y) (+ x y)) (bar x))=), and
+    =goto out mido midi inner= descends four levels of nested =defun=
+    (see the worked example in DN-12).
   - =goto OBJ INNER …= — the AutoLISP *object* idiom: when the first name is a
     *variable* holding a lambda loaded from a file, =OBJ= names the *file* via
     the lambda's source metadata and =INNER= a local function in it — so
@@ -843,8 +879,10 @@ debugging disabled.
 * 5. Source
 
 ** list source  (source)
-- aldb: =ls [LINE]=  | =,list source [LINE]=  | =,source [LINE]=
-- desc: show source lines around the current stop (or LINE), with the
+- aldb / ncurses: =ls= (no argument) lists around the cursor's line (§0);
+  dumb / explicit: =ls [LINE]=  | =,list source [LINE]=  | =,source [LINE]=
+- desc: show source lines around the current stop (or LINE; or the cursor's
+  line in the keystroke UIs), with the
   current line marked =>>=, lines carrying a breakpoint marked =*= in the
   gutter, and the current poll-point span bracketed. On an ANSI-capable
   terminal these markers are additionally *styled* (current line inverse,
@@ -1231,15 +1269,22 @@ all driven by the same =read → check-commands → eval → print= loop:
   token is read before dispatch. Dumb for *input* only: its *output* is
   styled with ANSI colour/inverse where the terminal allows (see *Terminal
   styling*, §8).
-- *ncurses / Emacs aldb:* the argument-free single keys (=c i n o q j=) and
-  the arg-readers (=a b p r t v=) fire on a keypress *without* RET — same
-  convention in both UIs. =f= takes one key of lookahead (a digit → =frame
-  N=, a letter → the =frame= family =fi=/=fo=/=ft=/=fb=). The remaining
+- *ncurses / Emacs aldb:* *cursor-based — the user never types a line number*
+  (§0 *cursor-based*). The location commands (=b j a=, and =clear=) fire on
+  the keypress and take their poll point from the *cursor* (the form at point),
+  not a typed LINE; so they need no argument here even though their dumb-
+  terminal forms read a LOC. The argument-free single keys (=c i n o q=) fire
+  immediately too. The genuine arg-readers that remain are the ones reading a
+  typed *expression* — =p= (print EXPR), =r= (return FORM), =t= (type EXPR),
+  =v= (visit EXPR) — which begin reading after the key (an expression is not a
+  line number, so this is unaffected by the cursor rule). =f= takes one key of
+  lookahead (a digit → =frame N=, a letter → the =frame= family). The remaining
   two-letter commands (=bo lb lf ls ll lp lv=) and all *word* commands are
-  entered as =,word= comma-commands (typed, with RET). In the stack pane the
-  *arrow keys* are the natural frame-navigation convenience (↑ = the line
-  above = frame 0 = inner). A single key may also be rebound in Emacs
-  (=aldb-mode-map=).
+  entered as =,word= comma-commands; a word command that would take a LINE / PP
+  (e.g. =,clear=, =,condition=, =,disable=) likewise uses the cursor's poll
+  point. In the stack pane the *arrow keys* are the natural frame-navigation
+  convenience (↑ = the line above = frame 0 = inner). A single key may also be
+  rebound in Emacs (=aldb-mode-map=).
 - *RPC (Emacs ↔ CL, §20.1):* each command becomes a wire tag; the keys and
   =,word= forms are purely client-side spellings of those tags.
 
