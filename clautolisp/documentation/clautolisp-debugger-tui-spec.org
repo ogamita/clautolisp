@@ -256,29 +256,72 @@ So a sequence of command next would redisplay the source form with the
 
 ** Navigating Forms — Definitions, the Two Stacks, and History
 
-The sedit view is not nailed to one form. The user can move to another
-form, follow a call into its definition, and walk back — and across
-several debugger stops, return to where they were last looking. Three
-distinct mechanisms, carefully kept apart.
+The sedit view is not nailed to one form. The selected node sits in a
+single *containment tree* that reaches from a sub-expression all the way
+out to the file system, and *one* set of motion commands walks every level
+of it. On top of that, the user can jump by name or location, follow a
+call into its definition, and — across several debugger stops — return to
+where they were last looking.
 
-*** Changing the displayed form
+*** One tree: sexps, forms, files, directories
 
-- *By name* — a command (say =form NAME=) displays the definition of the
-  named function (or any named top-level form), with the selection on its
-  whole body.
-- *Among a file's top-level forms* — when the form being debugged came
-  from a known file, commands walk that file's top-level forms (next /
-  previous), so the user can browse a source file form by form.
+The levels of the tree, innermost out:
 
-These only change *what is displayed*; they do not touch execution or the
-evaluation context.
+- a *list / sexp* — its elements;
+- a *top-level form* — its sub-sexps;
+- a *file* — its top-level forms;
+- a *directory* — its Lisp files and sub-directories.
+
+The *same* motions act at every level — so =up= from a top-level form
+lands on the file's form list, =up= again on the directory listing, and
+there the very same keys walk files and sub-directories until you =down=
+into a Lisp file and are back among top-level forms. The user learns one
+vocabulary; navigation simply *extends* up into files and directories
+without any new commands.
+
+| motion             | key   | at every level                              |
+|--------------------+-------+---------------------------------------------|
+| down               | =d=   | descend into the selected node              |
+| up                 | =u=   | ascend to the parent node                   |
+| forward (next)     | =>=   | next sibling                                |
+| backward (prev)    | =<=   | previous sibling                            |
+| first sibling      | =<<=  | jump to the first sibling                   |
+| last sibling       | =>>=  | jump to the last sibling                    |
+| skip ±N siblings   | =+N= / =-N= | move N siblings forward / backward (clamped) |
+
+A bare number designates *poll-point N* (numbered poll points, above); a
+*signed* =+N= / =-N= is the relative sibling skip — the sign disambiguates.
+
+=search REGEXP= is a grep whose *scope follows the current level*: in a
+directory it recurses through the sub-directories and Lisp files; in a file
+or a form it searches just that file. It prints the matching lines (like
+grep); the user picks one and the selection moves to the *sexp* that
+matched, entering the file if need be.
+
+Jumping by name or location — the *go to* family, as opposed to
+step-by-step motion:
+
+- =definition= (=.=) — the definition of the selected call/symbol (may
+  cross files; next subsection);
+- =form NAME= — a named top-level form (function): the common by-name jump;
+- =goto LOCATION= — =FILE=, =FILE:LINE=, =FILE:FUNCTION=, or a directory
+  =DIR/= — this folds the classic file:line / file:function navigation into
+  the same tree;
+- =back= / =history= — return through the browse stack / the saved
+  navigation states (below).
+
+All of these change only *what is displayed and selected*; they never touch
+execution or the evaluation context. (Evaluation is separate: =e= sends the
+*selection* to the debugger REPL, and typing a bare =(form)= sends itself
+to the REPL — both evaluated in the *current frame*, §3/§4.)
 
 *** Go to a definition, and pop back
 
 When the selection is a *function call* =(f …)= or a *symbol naming a
-function* =f=, a command (say =definition=) opens =f='s definition and
-makes it the displayed form. A complementary command (say =back=) pops
-back to the form and selection we came from.
+function* =f=, =definition= (=.=) opens =f='s definition and makes it the
+displayed form — *crossing files* if =f= lives elsewhere, so the browse
+moves through the one tree just like =goto=. =back= pops to the form and
+selection we came from.
 
 This is *source browsing*: it follows the /call graph by name/, not the
 runtime stack, and it does *not* move the current frame. It is *not*
@@ -372,15 +415,19 @@ The new verbs above (=form=, =definition=, =back=, =history=) are
 debugger commands. That raises two questions: which of sedit's own commands
 carry over, and how a mode's commands coexist with the debugger's.
 
-*** Reconciling the two sets into one homogeneous command set
+*** Reconciling sedit motions with the debugger commands
 
 With sedit as the *spine* of the TUI, its navigation commands and the
-debugger's commands must form *one* set, not two sets reconciled by
-mode-escaping. The good news: the debugger's single-key map was already
+debugger's commands must *integrate cleanly* — collision-free, so every
+debugger verb stays reachable from sedit *without* mode-escaping. (They are
+still distinct dictionaries, §below; "integrate" here means the sedit
+dictionary is designed not to clash with the global one, not that the two
+are merged.) The good news: the debugger's single-key map was already
 designed collision-free (command reference §0), and the keys sedit needs
 for /pure motion/ are either *already free* there (=d=, =u=) or can take
 intuitive *directional* keys (=>=, =<=) that no debugger command uses — so
-homogenising costs the debugger set *nothing*: no debugger command moves.
+fitting sedit in costs the debugger set *nothing*: no debugger command
+moves.
 
 Both sets side by side, and the unified assignment (=sedit/sedit.lisp=,
 sedit branch, supplies the sedit column):
@@ -419,48 +466,64 @@ Adaptations of the three kept-but-changed sedit verbs:
 
 To these motions the debugger adds its own families *unchanged* —
 execution (=c i n o a j r=), breakpoint (=b bo= + words), frame (=f fi fo
-ft fb=), inspection (=p t v= + =l*=) and browse (=form= =definition= =back=
-=history=). The whole thing is then *one* command set in *one* dictionary,
-internally collision-free.
+ft fb=), inspection (=p t v= + =l*=) and the go-to / browse family
+(=. definition=, =form=, =goto=, =back=, =history=, =search=). So the sedit
+dictionary is *designed collision-free against the debugger commands*: from
+sedit every debugger verb is directly reachable, no escaping. It is
+nonetheless kept a *separate* dictionary (next subsections), because sedit
+is only *one* of the navigator options.
 
-TODO: =sedit= also offers motions worth importing — jump N sexps
-forward/backward by typing a number (dovetails with designation-by-number)
-and a search; decide which to adopt, and pick keys for the browse verbs
-(=definition= / =back= / =history= / =form=) from the free keys
-(=. , ; g k m w= … remain).
+Command shapes settled here: first/last siblings take =<<= / =>>=, the skip
+is the signed =±N=, both imported from sedit's numeric motions; =.= is
+=definition=; =form=, =goto=, =back=, =history=, =search= are word commands
+(single-key aliases, if wanted, to be drawn from the still-free
+=, ; g k m w '= keys).
 
-*** Two navigation backends: sexp (sedit) and file:line
+*** Two navigator options: sexp (sedit) and classic file:line
 
-These commands are defined over the *sexp structure* (sedit). The debugger
-also shows source the *flat* way — lines around a point (command reference
-=list source=). The verbs must work for *both* backends:
+sedit is *one* navigator UI, not the only one. The debugger also offers a
+*classic*, more gdb-like navigator that shows source the *flat* way — lines
+around a point (command reference =list source=) — for users who prefer it
+or terminals where the structural display is awkward. The two are
+*alternative UI options*, each with *its own dictionary* (next subsection),
+and the *same conceptual verbs* are defined for both:
 
-- *sexp / sedit*: =down= / =up= / =forward= / =backward= move by structure;
-  =definition= descends into a called function, =back= pops.
-- *file:line*: motion is by line; =definition= jumps to the function's
-  file+line and =back= returns; =forward= / =backward= mean the next /
-  previous *poll point* in the listing, so designation still lands on
-  sexps, not raw lines.
+- *sexp / sedit*: =down= / =up= / =forward= / =backward= / =first= / =last=
+  move by structure over the one tree (sexp → form → file → directory);
+  =definition= descends into a called function, =back= pops; =search= is
+  scope-following grep.
+- *classic file:line*: motion is by line and by file; =forward= / =backward=
+  mean the next / previous *poll point* in the listing (so designation
+  still lands on sexps, not raw lines); =goto FILE:LINE= / =goto
+  FILE:FUNCTION= and the file/directory levels of the tree are reached the
+  gdb way (list a file, step among its top-level forms). =definition= jumps
+  to the function's file+line, =back= returns.
 
-TODO: settle the file:line bindings, and whether the backend is a user
-toggle or follows terminal capability.
+TODO: settle the exact classic-navigator bindings, and whether the option
+is a user setting or follows terminal capability.
 
 *** Command dictionaries (stacked dispatch)
 
-Because the navigator and debugger sets are *homogenised* into one
-collision-free set (above), they share *one* dictionary — no escaping is
-needed between them. Separate dictionaries are still wanted for the
-*inspector*, whose compact keys are tuned for value navigation and would
-otherwise shadow debugger verbs (its =b= is =bind=, command reference §7,
-not =break=), and for *user-defined* commands. So dispatch goes through
-*stacked command dictionaries*:
+There are *three* mode dictionaries — the *sedit navigator*, the *classic
+file:line navigator*, and the *inspector* — each layered over the *global
+debugger* dictionary. They are kept *separate* because they are alternative
+UIs (you run sedit *or* the classic navigator; you *enter* the inspector on
+a value), not because they fight: every one of the three is *designed
+collision-free against the debugger commands*, exactly as the
+reconciliation table shows for sedit, so from any mode the debugger verbs
+(=continue=, =next=, =step=, =break=, …) are *directly reachable*. That is
+the whole point — three carefully-fitted dictionaries giving *one
+integrated* interface, not three rival ones.
 
-- the *navigator + debugger* dictionary (the homogeneous set above) and the
-  *inspector* dictionary, over the *global* debugger dictionary;
-- the active mode puts its dictionary *on top*; lookup walks from the
-  innermost dictionary outward, *first match wins*. So in the inspector =b=
-  is its own =bind=, while in the navigator there is no such clash to begin
-  with, and a key bound only globally still resolves through.
+Dispatch is *stacked*:
+
+- the active mode's dictionary sits *on top* of the global debugger
+  dictionary; lookup walks innermost-outward, *first match wins*;
+- where a mode genuinely needs a key the debugger also uses, the mode wins
+  locally — e.g. in the *inspector* =b= is its own =bind= (command
+  reference §7), not =break=. The navigator dictionaries have no such clash
+  by design; a key bound only globally still resolves through from any
+  mode.
 
 *Escaping to an outer dictionary.* When an inner binding (an inspector key,
 a user command) shadows a debugger command you still want, a reserved
@@ -544,4 +607,34 @@ decorated (be a break-point, or the current poll-point).
 
 If variables are watched, their values would be displayed before the
 source form, each time we enter the debugger.
+
+** The Inspector while Stepping
+
+Inspecting a value (=visit= / =v= on a selection, command reference §7)
+switches to the *inspector* UI — an entirely different surface from the
+sedit navigator, with its own dictionary (above) for walking *inside a data
+structure* (descend / up / path / =bind=).
+
+The inspector is *sticky across stepping*. Because the global debugger
+verbs resolve through the inspector's stacked dictionary, the user can
+issue =continue= / =next= / =step= / =out= *from within the inspector*.
+Execution resumes; at the next stop the debugger does its normal re-entry
+display — the *watched variables* and the *current poll-point form* — and
+then, *if the inspector was not left*, control *returns to the inspector*,
+which *re-displays the current data node*. The node is re-fetched, so you
+see the structure *as it now is*: this is how you watch a data structure
+mutate while you single-step.
+
+- *Following the same node.* The inspector remembers the /access path/ to
+  the current node (the path expression of command reference §7 / DN-5);
+  after a step it re-evaluates that path against the (possibly changed)
+  value, so the view tracks the same slot/element as it evolves. If the
+  path no longer resolves — the structure changed shape — the inspector
+  falls back to the nearest still-valid ancestor (or the root) and says so.
+- *Leaving vs quitting.* Returning to the navigator is a *mode-local* leave
+  command of the inspector dictionary; it is distinct from the debugger
+  =q= (the global non-local =quit=). The inspector may bind its own =q= to
+  "leave the inspector" (shadowing the global =quit=, which stays reachable
+  through the escape prefix), so =q= reads naturally in both modes: close
+  the inspector when inspecting, abort the session when not.
 
