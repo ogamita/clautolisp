@@ -141,7 +141,32 @@ Currently defined (see table above) poll-point statuses are:
 - neutral poll-point (no decoration, we'll step in or over it, or continue, etc).
 - selected sub-expression (can wrap around poll-points).
 
-TODO: verify if there are other poll-point states that should be indicated for the user.
+Verification (resolved): the *base* states above are complete — a poll point
+is either neutral, the current one, or carries a breakpoint that is enabled or
+disabled, and any sub-expression may be the selection. But a breakpoint can
+also carry *attributes* defined by the command reference (§2), and these are
+worth surfacing so the user sees them without opening =list breakpoints=. They
+are shown as *modifiers* on the breakpoint glyph (a small suffix glyph and/or a
+style), *not* as new base states, always with an ASCII fallback:
+
+- *conditional* — the breakpoint has a =condition= (fires only when a form is
+  true); e.g. a trailing =?= on the glyph.
+- *ignore-count* — an =ignore COUNT= is pending (skip the next N hits); e.g. a
+  small count after the glyph.
+- *once / temporary* — a =break once= (=bo=) one-shot breakpoint; the §8
+  styling map already sets this apart (gutter *underlined* vs a sticky one).
+- *tracepoint* — a =trace= breakpoint that runs its action and auto-continues
+  (it never stops); a distinct glyph so it is not mistaken for a stopping bp.
+- *has-commands* — a =bpcmd= action is attached; e.g. a small marker.
+- *transient target* — a volatile =advance= breakpoint or a pending =jump=
+  target (source-located, removed on first stop); shown only while armed.
+
+The specific modifier glyphs are *provisional* (they extend the rendering
+ladder of the decoration table — circled/super-subscript/bracketed — and must
+each keep an ASCII fallback and stay readable when combined with the status and
+number glyphs). The condition / pre-expression / post-expression themselves are
+still displayed *in full* under the source form when their poll point is
+selected (see "Additional Debugging Commands").
 
 ** Numbered Poll-Points — Designation by Number
 
@@ -245,8 +270,30 @@ commands:
 - set/change/clear a pre-expression
 - set/change/clear a post-expression
 
-TODO: verify if there are other sedit command we should provide to the
-user.
+Verification (resolved): the commands a sedit selection can offer are exactly
+the *source-located* operations of the command reference — those that act on a
+*poll point*, which is what a selected sub-form designates. Beyond the seven
+above, the complete set adds (each = the command-reference verb applied to the
+selected poll point, with no typed location, per §0 *cursor-based*):
+
+- *break once* (a temporary one-shot breakpoint at the selection; cmd-ref §2
+  =break once=);
+- *set/clear an ignore count* (=ignore=, §2);
+- *attach/clear breakpoint commands* (=bpcmd=, §2 — this *is* the
+  pre/post-expression facility above, named in the command reference);
+- *set/clear a tracepoint* (=trace= / =untrace=, §2: a breakpoint that runs
+  its action and auto-continues);
+- *designate as a =jump= target* and *=advance= to here* (§1 — both
+  source-located: they name a poll point to resume at / run to);
+- *watch a variable at the selection* (=watch SYMBOL=, §2) when the selection
+  is a symbol.
+
+What a sedit selection does *not* offer is the *binding-dependent* operations
+(=print=, =setq=, =list locals=, evaluation): those need a *frame*, not a
+source position, so they act in the current frame regardless of the selection
+(the two-stacks rule, below). The pre/post-expression entries above are the
+=bpcmd= action in TUI vocabulary; they remain displayed in full under the
+source form when their poll point is selected (next paragraph).
 
 When the selection is changed to a breakpoint, the condition,
 pre-expression, post-expression can be displayed under the
