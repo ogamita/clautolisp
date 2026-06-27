@@ -779,12 +779,14 @@ DN-1…DN-12 and the command-reference §0 rules; those are *not* on this list.)
 
 | Provisional / deferred item      | Where                                  | Current choice                                         | Alternative / fallback                     | How it settles             |
 |----------------------------------+----------------------------------------+--------------------------------------------------------+--------------------------------------------+----------------------------|
-| Poll-point id numbering          | DN-11; TUI "Numbered Poll-Points"      | one globally-stable number space, never reused         | per-top-level-form ids (bp carries its form) | use — if numbers grow too big |
+| Poll-point id numbering (deferred) | DN-11; TUI "Numbered Poll-Points"      | one globally-stable number space, never reused         | per-top-level-form ids (bp carries its form) | see by use — if numbers grow too big |
 | Poll-point-state modifier glyphs (deferred) | TUI "Numbered Poll-Points" (states)    | selecting a pp shows its full info at screen bottom; glyphs only flag presence | add modifier glyphs only if use shows a need | see by use                 |
 
 These complement the inline =[new]= / =[engine]= / =[have]= backing tags (which
 track *implementation* status); this register tracks *design* choices still
-open to revision.
+open to revision. Both remaining items are *decide-by-use* — no naming or
+spec call is pending on them; each resolves (or not) only if practice shows a
+need. All the naming / value / key choices are settled (below).
 
 *Settled since (were provisional, now fixed).* All set via =set NAME VALUE=
 (§8; case-insensitive), the form §4 reserved for non-Lisp debugger variables:
