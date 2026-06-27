@@ -600,10 +600,16 @@ debugging disabled.
 ** list source  (source)
 - aldb: =ls [LINE]=  | =,list source [LINE]=  | =,source [LINE]=
 - desc: show source lines around the current stop (or LINE), with the
-  current line marked =>>= and (in ncurses) poll-point/breakpoint
-  colouring. Member of the =list= family (=ls= = list + source); =source=
-  is a one-word synonym. Uses =clautolisp.source:lines-of=.
-- backing: =[have]= (ncurses source pane; =ui-show-source=).
+  current line marked =>>=, lines carrying a breakpoint marked =*= in the
+  gutter, and the current poll-point span bracketed. On an ANSI-capable
+  terminal these markers are additionally *styled* (current line inverse,
+  breakpoint gutter in colour, current poll-point inverse) — see *Terminal
+  styling* below; the ASCII markers always remain so the listing reads
+  correctly with styling off. Member of the =list= family (=ls= = list +
+  source); =source= is a one-word synonym. Uses
+  =clautolisp.source:lines-of=.
+- backing: =[have]= (ncurses source pane; =ui-show-source=); the
+  plain-terminal styling layer is =[new]= but reuses =ansi-colorize=.
 
 ** edit / directory / search   =[mostly n/a]=
 - =edit= (open $EDITOR at the line): =[n/a]= in-session (the Emacs UI
@@ -675,8 +681,50 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
 ** settings
 - aldb: =,settings=  | =,set-option NAME VALUE=
 - desc: per-session toggles — source window size, break-on-caught,
-  preview length, colour. gdb =set= / lldb =settings set=.
+  preview length, and the *style* options below. gdb =set= / lldb
+  =settings set=.
 - backing: =[new]= (a small per-session options plist).
+
+** Terminal styling (the dumb terminal isn't so dumb)   =[new]=
+
+The line-mode terminal is "dumb" only for *input* (a token, then RET).
+Its *output* can carry ANSI SGR styling whenever the terminal supports it
+— and the common ones do: an Emacs =shell=/=comint= buffer, =xterm=, and
+friends all render the 8 ANSI colours (foreground /and/ background) plus
+the =BOLD=, =UNDERLINE= and =INVERSE= attributes. So aldb can present a
+richer plain-terminal listing without any ncurses or Emacs UI.
+
+- *No new mechanism — reuse the runtime's colour policy.* clautolisp
+  already ships =*color-output*=, =ansi-colorize=/=write-ansi-colorized=
+  and =resolve-color-policy= (which already honours =NO_COLOR=,
+  =COLORFGBG=, tty detection and the OSC 11 background-luminance probe).
+  The debugger does *not* add a parallel colour switch; it adds only a
+  *style map* (which face for which element) on top of that policy. The
+  =,settings= /style/ option is tri-state: =auto= (default — follow
+  =resolve-color-policy=), =on= (force), =off= (force plain).
+- *Colour is always redundant, never the sole signal.* Every styled
+  element keeps its ASCII marker (=>>=, the =*= breakpoint gutter, the
+  poll-point brackets). With styling =off=, piped to a file, or under
+  =NO_COLOR=, the output still reads unambiguously — styling only
+  *emphasises* what the markers already say. This is the same discipline
+  =*color-output*= follows for ordinary value printing.
+- *The style map (initial faces; all rebindable via =,set-option=):*
+  - *list source* — current line: =INVERSE= (or =BOLD=); a line bearing a
+    breakpoint: =*= gutter in red; a /once/ breakpoint (=bo=): the gutter
+    underlined to set it apart from a sticky one; the current poll-point
+    span: =INVERSE=.
+  - *list frames / backtrace* — the current frame line: =BOLD=; frame
+    numbers: a dim colour; the =>= current-frame arrow stays as text.
+  - *prompt and errors* — error/condition text from a failed REPL eval or
+    an =--on-error debug= entry: red; the =aldo>= prompt: =BOLD= so it
+    stands out in a long scrollback.
+  - *inspector* — the type tag and the accessor /path expression/ (§4):
+    a dim colour, since they are annotations, not the value itself.
+- backing: =[new]=, thin — a face→SGR table plus calls to the existing
+  =ansi-colorize=; gated by the =,settings= /style/ tri-state. The ncurses
+  and Emacs UIs already colour these elements with their own facilities;
+  this entry is purely about giving the *plain terminal* the same emphasis
+  where the terminal can render it.
 
 ** Defining commands (built-in and user)   =[new]=
 
@@ -846,7 +894,9 @@ all driven by the same =read → check-commands → eval → print= loop:
 
 - *dumb terminal:* every command is a typed token (=c=, =lf=, =break 12=,
   or a bare =(form)=) terminated by RET. No prefix ambiguity — the whole
-  token is read before dispatch.
+  token is read before dispatch. Dumb for *input* only: its *output* is
+  styled with ANSI colour/inverse where the terminal allows (see *Terminal
+  styling*, §8).
 - *ncurses / Emacs aldb:* the argument-free single keys (=c i n o q j=) and
   the arg-readers (=a b p r t v=) fire on a keypress *without* RET — same
   convention in both UIs. =f= takes one key of lookahead (a digit → =frame
