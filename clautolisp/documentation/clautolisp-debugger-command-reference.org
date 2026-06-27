@@ -988,10 +988,13 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
   - =*navigation-history-max*= — cap on saved navigation states (the browse
     stack + selection pushed on each debugger re-entry, §3 *Navigation*);
     oldest dropped beyond the limit. Default *1000* (essentially unbounded).
-  - =style= — the terminal-styling tri-state (*Terminal styling* below):
-    =auto= (default — follow =resolve-color-policy=), =on= (force), =off=
-    (force plain). Plus the per-element *style map* faces, each rebindable
-    via =set= (see *Terminal styling*).
+  - =theme= — the decoration *theme*, one of =unicode= | =ascii= |
+    =white-on-black= | =black-on-white= | =green-on-black= | =attributes=
+    (=set theme ascii=). One choice selects *both* the glyph repertoire and the
+    colour / attribute scheme — it *replaces* the former =style= and =charset=
+    options. The per-situation decorations for each theme live in the
+    =decorations= list of =*clal-aldo-configuration*= (*Configuration* below;
+    *Terminal styling* for how they render).
   - break-on-caught — stop on a /caught/ error too (=*break-on-caught-error*=,
     §2 =catch=); default off.
   - =source-window-height= — how many source lines =list source= shows around
@@ -1013,20 +1016,19 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     terminal height is known, else =pager-height= alone (the terminal size is
     often unavailable on a dumb terminal). With neither available, the built-in
     fallback of *24* lines is used.
-- backing: =[new]= (a small per-session options plist; =style= reuses the
-  runtime colour policy, and =*navigation-history-max*= the navigation
-  history).
+- backing: =[new]= (a small per-session options plist; the colour =theme=s
+  reuse the runtime colour policy, and =*navigation-history-max*= the
+  navigation history).
 
 ** Configuration and persistence — =*clal-aldo-configuration*=   =[new]=
 
 All debugger settings (=settings=, above — =navigator=,
-=*navigation-history-max*=, =style=, =break-on-caught=, =source-window-height=,
-=value-line-width=, =pager=, =pager-height=) *and* the display options (the
-glyph charset — unicode / ascii —, the colours, and the bold / underline /
-inverse attributes of *Terminal styling* below and the decoration table, TUI
-spec) are held in *one AutoLISP configuration sexp* bound to the variable
-=*clal-aldo-configuration*=. The settings are thus ordinary AutoLISP data the
-user can read and modify like anything else.
+=*navigation-history-max*=, =theme=, =break-on-caught=, =source-window-height=,
+=value-line-width=, =pager=, =pager-height=) *and* the display *decorations*
+(the per-situation glyphs, colours and attributes of *Terminal styling* below
+and the decoration table, TUI spec) are held in *one AutoLISP configuration
+sexp* bound to the variable =*clal-aldo-configuration*=. The settings are thus
+ordinary AutoLISP data the user can read and modify like anything else.
 
 *Loading (XDG).* At start-up the configuration is read from
 =$XDG_CONFIG_HOME/clautolisp/aldo.conf= if that file exists; otherwise the
@@ -1064,54 +1066,85 @@ functions, usable at the REPL and from =.lsp= files:
 
 *Structure of =*clal-aldo-configuration*=.* The value is an *association list*
 (a property list of =(KEY . VALUE)= pairs, read with =assoc=): one pair per
-setting, plus nested sub-lists for the grouped *display options*. Keys are
-symbols (AutoLISP up-cases them; spelled here in lower case, and
-case-insensitive like the =set= names); values are integers (sizes), symbols
-(enumerations), or =T= / =nil= (flags). Example:
+setting, plus a =theme= selector and a =decorations= list. Keys and symbolic
+values are symbols (AutoLISP up-cases them; spelled here in lower case, and
+case-insensitive); sizes are integers, flags are =T= / =nil=. Example:
 
 #+begin_src lisp
   (setq *clal-aldo-configuration*
     '((navigator              . sexp)        ; sexp | line
       (navigation-history-max  . 1000)
-      (style                   . auto)        ; auto | on | off  (colour policy)
-      (charset                 . unicode)     ; unicode | ascii  (glyph repertoire)
       (break-on-caught         . nil)
       (source-window-height    . 24)
       (value-line-width        . 72)
       (pager                   . on)          ; on | off
       (pager-height            . 24)
-      ;; display options — the decoration glyphs (TUI decoration table) …
+      (theme                   . unicode)     ; selects the active decoration set
       (decorations
-        (current-pp     . 9205)               ; ⏵  U+23F5, as a CODE-POINT (ASCII-safe)
-        (enabled-bp     . "⏸")                ; or as a literal UTF-8 string (optional)
-        (disabled-bp    . 9199)               ; ⏯  U+23EF
-        (selection-open . 12304)              ; 【 U+3010
-        (selection-close . 12305))            ; 】 U+3011
-      ;; … and the styling faces (§8 Terminal styling): colour + attributes
-      (faces
-        (current-line      (fg . red)  (attr . inverse))
-        (breakpoint-gutter (fg . red))
-        (prompt            (attr . bold)))))
+        ;; one entry per (situation, theme); the active THEME picks which apply
+        (current-pp  unicode (9205))          ; prefix ⏵ U+23F5, as a code-point list
+        (current-pp  ascii   ">")             ; prefix, as a string
+        (enabled-bp  unicode (9208))          ; prefix ⏸ U+23F8
+        (enabled-bp  ascii   "^")
+        (selection   unicode (12304) (12305)) ; open 【 / close 】 (two strings)
+        (selection   ascii   "[" "]")
+        (current-pp  white-on-black red   black)    ; colour theme: fg bg
+        (current-pp  attributes    bold)            ; attributes theme
+        (selection   attributes    bold invert))))
 #+end_src
 
-The setting keys are exactly the =settings= options above; the =decorations=
-and =faces= sub-lists hold the display options, whose element keys follow the
-TUI decoration table and the *Terminal styling* style map (so they are not
-re-enumerated here — that layer owns them).
+*The =theme= and the =decorations= grammar.* The =theme= setting selects one
+decoration set; =decorations= lists, per situation, the decoration to use under
+each theme — the renderer applies the entry whose theme tag equals the active
+=theme=. =theme= replaces the former =style= (colour on/off/auto) and =charset=
+(unicode/ascii) by folding both into one choice, and its six values are exactly
+the columns of the TUI decoration table:
 
-*Glyphs: code-point or string.* A decoration glyph may be written either as an
-*integer code point* (e.g. =9205= for =⏵= U+23F5) or as a *literal string*
-(e.g. ="⏵"=). =aldo.conf= is saved as *UTF-8*, so literal Unicode in strings is
-allowed; but using *code points* is the prudent default, because the saved file
-is then pure *ASCII* (no encoding surprises, diff/grep-friendly). The two forms
-are interchangeable on read; =clal-save-aldo-configuration= writes whichever the
-in-memory value holds, so a user who prefers an ASCII =aldo.conf= keeps glyphs
-as code points. (This applies only where the build actually supports Unicode;
-otherwise the ASCII column of the decoration table is used regardless.)
+#+begin_example
+  (theme . unicode | ascii | white-on-black | black-on-white | green-on-black | attributes)
+
+  (decorations . list-of-decoration)
+  list-of-decoration ::= ( decoration … ) .
+  decoration ::= situation 'unicode'  prefix              ;; one or more prefix chars
+               | situation 'unicode'  open close          ;; surrounding "parens"
+               | situation 'ascii'    prefix
+               | situation 'ascii'    open close
+               | situation color-theme foreground background
+               | situation 'attributes' attributes .
+  situation  ::= 'current-pp' | 'enabled-bp' | 'disabled-bp' | 'selection' | … .
+  prefix     ::= string-or-codepoints .
+  open       ::= string-or-codepoints .
+  close      ::= string-or-codepoints .
+  color-theme::= 'white-on-black' | 'black-on-white' | 'green-on-black' .
+  foreground ::= ansi-color .   background ::= ansi-color .
+  ansi-color ::= 'black' | 'red' | 'green' | 'yellow'
+               | 'blue' | 'magenta' | 'cyan' | 'white' .
+  attributes ::= attribute … .
+  attribute  ::= 'bold' | 'underline' | 'invert' .
+  string-or-codepoints ::= string | ( codepoint … ) .   ;; either form, anywhere
+  codepoint  ::= integer .      ;; 0 … 1114111  (a Unicode scalar value)
+#+end_example
+
+So a decoration is either a *prefix* (one =string-or-codepoints=, one or more
+characters placed before the sub-form) or a *surrounding pair* (=open= +
+=close=, two strings, usually one char each but any length), or — for the
+colour and =attributes= themes — a foreground/background colour pair or a set
+of attributes. The situation keys are those of the TUI decoration table
+(=current-pp=, =enabled-bp=, =disabled-bp=, =selection=, … extensible).
+
+*Strings as code points → an ASCII =aldo.conf=.* Anywhere a string is allowed,
+a *list of integer code points* may be used instead (=(9205)= ≡ ="⏵"=).
+=aldo.conf= is saved as *UTF-8*, so literal Unicode strings are allowed; but
+code-point lists are the prudent default, because the saved file is then pure
+*ASCII* (no encoding surprises, diff/grep-friendly). The two forms are
+interchangeable on read; =clal-save-aldo-configuration= writes back whichever
+the in-memory value holds, so a user who prefers an ASCII file keeps glyphs as
+code points. (Unicode decorations apply only where the build supports Unicode;
+the =ascii= theme is the always-available fallback.)
 
 - backing: =[new]= — =*clal-aldo-configuration*=, the XDG load/search, the two
-  =clal-*= functions, the save / reload subcommands, and the
-  code-point-or-string glyph reader. No auto-save.
+  =clal-*= functions, the save / reload subcommands, the =theme= selector, and
+  the string-or-codepoints decoration reader. No auto-save.
 
 ** Terminal styling (the dumb terminal isn't so dumb)   =[new]=
 
@@ -1122,36 +1155,36 @@ friends all render the 8 ANSI colours (foreground /and/ background) plus
 the =BOLD=, =UNDERLINE= and =INVERSE= attributes. So aldb can present a
 richer plain-terminal listing without any ncurses or Emacs UI.
 
-- *No new mechanism — reuse the runtime's colour policy.* clautolisp
-  already ships =*color-output*=, =ansi-colorize=/=write-ansi-colorized=
-  and =resolve-color-policy= (which already honours =NO_COLOR=,
-  =COLORFGBG=, tty detection and the OSC 11 background-luminance probe).
-  The debugger does *not* add a parallel colour switch; it adds only a
-  *style map* (which face for which element) on top of that policy. The
-  =,settings= /style/ option is tri-state: =auto= (default — follow
-  =resolve-color-policy=), =on= (force), =off= (force plain).
-- *Colour is always redundant, never the sole signal.* Every styled
-  element keeps its ASCII marker (=>>=, the =*= breakpoint gutter, the
-  poll-point brackets). With styling =off=, piped to a file, or under
-  =NO_COLOR=, the output still reads unambiguously — styling only
-  *emphasises* what the markers already say. This is the same discipline
+- *Driven by the =theme= setting + the =decorations= config.* The styling is
+  not a separate switch: the =theme= option (§8 settings; *Configuration*) picks
+  one of =unicode= / =ascii= / =white-on-black= / =black-on-white= /
+  =green-on-black= / =attributes=, and the per-situation =decorations= give the
+  glyph prefix / surrounding pair (the =unicode= / =ascii= themes), the
+  foreground/background colours (the three colour themes), or the
+  bold/underline/invert attributes (the =attributes= theme). All of it is data
+  in =*clal-aldo-configuration*=, editable with =set= and saved with
+  =,settings save=.
+- *Reuse the runtime's colour policy.* clautolisp already ships
+  =*color-output*=, =ansi-colorize= / =write-ansi-colorized= and
+  =resolve-color-policy= (which honours =NO_COLOR=, =COLORFGBG=, tty detection
+  and the OSC 11 background-luminance probe). The colour themes emit through
+  that policy, so when colour is unavailable (piped, =NO_COLOR=) a colour theme
+  *degrades to its markers* rather than emitting raw escapes.
+- *A marker is always present, never colour alone.* The structural markers
+  (=>>= current line, the =*= breakpoint gutter, the poll-point brackets) are
+  always written; the =unicode= / =ascii= themes are marker-only, and the
+  colour / =attributes= themes *add* emphasis on top. So piped to a file or
+  under =NO_COLOR= the output still reads unambiguously — the same discipline
   =*color-output*= follows for ordinary value printing.
-- *The style map (initial faces; all rebindable via =set=):*
-  - *list source* — current line: =INVERSE= (or =BOLD=); a line bearing a
-    breakpoint: =*= gutter in red; a /once/ breakpoint (=bo=): the gutter
-    underlined to set it apart from a sticky one; the current poll-point
-    span: =INVERSE=.
-  - *list frames / backtrace* — the current frame line: =BOLD=; frame
-    numbers: a dim colour; the =>= current-frame arrow stays as text.
-  - *prompt and errors* — error/condition text from a failed REPL eval or
-    an =--on-error debug= entry: red; the =aldo>= prompt: =BOLD= so it
-    stands out in a long scrollback.
-  - *inspector* — the type tag and the accessor /path expression/ (§4):
-    a dim colour, since they are annotations, not the value itself.
-- backing: =[new]=, thin — a face→SGR table plus calls to the existing
-  =ansi-colorize=; gated by the =,settings= /style/ tri-state. The ncurses
-  and Emacs UIs already colour these elements with their own facilities;
-  this entry is purely about giving the *plain terminal* the same emphasis
+- *Default situations* (the decoration table, TUI spec) — current poll-point,
+  enabled / disabled breakpoint (a /once/ breakpoint set apart, e.g. an
+  underlined gutter), the selection, the current frame line, the =aldo>= prompt
+  and error text, and the inspector type tag / path annotations. The shipped
+  defaults populate the =decorations= list; the user overrides any of them.
+- backing: =[new]=, thin — the =theme= selector over the =decorations= data
+  plus calls to the existing =ansi-colorize=, the colour themes gated by
+  =resolve-color-policy=. The ncurses and Emacs UIs colour these elements with
+  their own facilities; this entry gives the *plain terminal* the same emphasis
   where the terminal can render it.
 
 ** Paging long output   =[new]=

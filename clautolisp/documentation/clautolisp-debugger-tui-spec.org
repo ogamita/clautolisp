@@ -83,6 +83,13 @@ Here is a table indicating how to display
 use all 8 combinations of bold, underline and invert, but it could be
 difficult to read, so we will try to limit the use of combinations.
 
+This table is the *default* decoration set; its columns are exactly the values
+of the =theme= setting (=unicode=, =ascii=, =white-on-black=, =green-on-black=,
+=black-on-white=, =attributes=), and each cell is a configurable =decoration=
+entry in =*clal-aldo-configuration*= — see the command reference §8
+(*Configuration and persistence* — the =theme= / =decorations= grammar).
+A glyph may be a literal string or a list of Unicode code points.
+
 The status of the poll-point can be indicated by different ways:
 
 - a unicode character or an ASCII special character prefixing the sub-expression.
