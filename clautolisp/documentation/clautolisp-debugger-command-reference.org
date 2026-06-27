@@ -994,8 +994,12 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     §2 =catch=); default off.
   - =source-window-height= — how many source lines =list source= shows around
     the stop (=set source-window-height N=); an integer, default *24*.
-  - preview length — truncation width for one-line value previews (=print=,
-    inspector annotations). (Option name still provisional.)
+  - =value-line-width= — the width, in characters, of a *single-line* value
+    display: the one-line "preview" used by =print= / =p=, the inspector's
+    value lines, =list locals= / =list variables=, and the =$N= slots; a longer
+    value is truncated (=set value-line-width N=). Named for consistency with
+    =source-window-height=: should a *multi-line* value display ever be needed,
+    it would use =value-window-width= / =value-window-height=.
   - =pager= — =on= / =off= (=set pager on= / =set pager off=): whether long
     command output (longer than the screen) is captured and shown a page at a
     time in the *dumb terminal* (*Paging long output* below). Default *on* for
@@ -1009,8 +1013,7 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     fallback of *24* lines is used.
 - backing: =[new]= (a small per-session options plist; =style= reuses the
   runtime colour policy, and =*navigation-history-max*= the navigation
-  history). The exact option NAME for the preview-length option is still
-  provisional.
+  history).
 
 ** Terminal styling (the dumb terminal isn't so dumb)   =[new]=
 
