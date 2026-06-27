@@ -88,6 +88,141 @@ The REPL accepts multi-line input: as long as the parser reports
 ~:unexpected-eof~, the REPL keeps reading continuation lines and
 appends them to the in-progress form before retrying.
 
+* Debugger
+
+Clautolisp ships an interactive source-level debugger, *aldo*. It steps
+through AutoLISP code, sets breakpoints on forms, inspects the call
+stack and live values, and evaluates expressions in the context of a
+stopped frame. The full command vocabulary is in the companion
+/aldb Command Reference/ (=clautolisp-debugger-command-reference.org=);
+this section is an orientation and a guide to the three user interfaces.
+
+** Entering the debugger
+
+Clautolisp is *always debugging*: the aldo thread is ready for the
+lifetime of the process, so there is no "run" or "start" step. Control
+reaches the debugger in one of three ways:
+
+- *interrupt* — pressing =C-c= asks aldo to stop at the next instrumented
+  form; a second =C-c= forces an immediate abort, skipping the debugger.
+- *programmatic* — the AutoLISP forms ~(clal-break)~ and
+  ~(clal-invoke-debugger [message])~ drop into aldo from your own code
+  (the analogues of Common Lisp ~break~ / ~invoke-debugger~).
+- *on error* — an uncaught AutoLISP error enters the debugger when the
+  error policy asks for it. The policy is the ~--on-error
+  quit|debug|ignore~ option (and the ~*clal-on-error*~ variable your
+  code may rebind).
+
+Only *instrumented* functions can be stepped into or stopped in;
+instrument exactly what you want to debug (uninstrumented code runs at
+full speed and is stepped over).
+
+** The three user interfaces
+
+aldo presents *one* command set through three interchangeable
+interfaces; a feature available in one is available in all.
+
+- *TUI* — the line-mode terminal interface. You type a short command
+  token (or an AutoLISP form) and press =RET=. It needs nothing beyond a
+  plain terminal, styles its output with ANSI colour where the terminal
+  allows, and pages long output (see /Settings/ below). It is the
+  fallback that always works, including inside an Emacs ~shell~ buffer.
+- *ncurses* — a full-screen, four-pane interface (stack, source,
+  interactor, REPL). Commands fire on a single keypress; you move the
+  cursor onto a form and act on it (no line numbers to type). It runs on
+  the terminal's alternate screen, so your program's display is restored
+  when you resume.
+- *aldb* — the Emacs interface (an SLDB-style minor mode). The debugger
+  listens on a socket; from Emacs you connect with =M-x aldb-connect RET
+  address:port RET=. Navigation and history reuse Emacs's own buffers and
+  mark ring.
+
+*Choosing the interface.* The default is the ~default-user-interface~
+setting (=tui=, =ncurses= or =aldb=). A single run can override it on
+the command line, without changing the saved default:
+
+#+begin_example
+  clautolisp --aldo-user-interface ncurses  program.lsp
+  clautolisp --aldo-user-interface aldb \
+             --aldb-listening-address 127.0.0.1 \
+             --aldb-listening-port 4301          program.lsp
+#+end_example
+
+When aldb is selected and Emacs is not yet connected, aldo prints the
+=M-x aldb-connect= line to the terminal and waits — you may instead pick
+the TUI or ncurses there.
+
+** Common commands
+
+The same verbs work in every interface (typed as tokens in the TUI,
+single keys in ncurses/aldb). The most used:
+
+- Execution: ~continue~ (=c=), ~into~ (=i=, step into), ~next~ (=n=,
+  step over), ~out~ (=o=, finish), ~quit~ (=q=, abort the run).
+- Breakpoints: ~break~ (=b=) at a form / line; ~list breakpoints~ (=lb=);
+  ~enable~ / ~disable~ / ~delete~ / ~condition~ / ~ignore~ a breakpoint.
+- Stack: ~list frames~ (=lf=, the backtrace); the ~frame~ family —
+  ~frame N~ (=f=), ~frame inner~/~outer~ (=fi=/=fo=),
+  ~frame top~/~bottom~ (=ft=/=fb=); ~list locals~ / ~parameters~ /
+  ~variables~ (=ll=/=lp=/=lv=).
+- Data: ~print EXPR~ (=p=); typing a bare ~(form)~ evaluates it in the
+  current frame; ~visit EXPR~ (=v=) opens the structured inspector.
+- Source: ~list source~ (=ls=); ~help~ (=h= or =?=).
+
+In ncurses and aldb you never type a line number: put the cursor on the
+target form and the command takes the form at point.
+
+** Navigating the source
+
+Beyond stepping, you can browse the source structurally — over one tree
+that runs from a sub-expression out to the file system:
+
+- =d= / =u= — descend into / ascend out of the selected node;
+- =>= / =<= — next / previous sibling; =<<= / =>>= first / last;
+- ~goto~ (=g=) — jump by name or path (=goto FILE:LINE=, =goto FN=, or a
+  qualified path into nested local functions);
+- ~definition~ (=.=) — open the definition of the selected call;
+  ~back~ / ~history~ — return through where you have been.
+
+Browsing never changes what executes; ~print~, ~setq~ and friends always
+act in the current frame.
+
+** Settings and configuration
+
+Per-session options are read and set from any interface:
+
+- =,settings= — list every option and its value; =,settings NAME= —
+  print one.
+- =set NAME VALUE= — set one (names and values are case-insensitive).
+  Common options: ~navigator~ (=sexp= | =line=), ~theme~ (=unicode= |
+  =ascii= | =white-on-black= | =black-on-white= | =green-on-black= |
+  =attributes=), ~pager~ (=on= | =off=), ~pager-height~,
+  ~source-window-height~, ~value-line-width~, ~break-on-caught~.
+
+The configuration lives in an AutoLISP sexp bound to
+~*clal-aldo-configuration*~, read at start-up from
+=$XDG_CONFIG_HOME/clautolisp/aldo.conf= (or searched along
+=$XDG_CONFIG_DIRS=) *before* your rc/init files, which may then modify
+it. Changes made with =set= update the variable in memory only; nothing
+is written automatically. Save and reload explicitly:
+
+- =,settings save= — write the configuration to
+  =$XDG_CONFIG_HOME/clautolisp/aldo.conf= (UTF-8);
+- =,settings reload= — re-read it.
+
+The same is available from AutoLISP as ~(clal-save-aldo-configuration)~
+and ~(clal-load-aldo-configuration)~.
+
+** Long output and the pager
+
+Commands whose output exceeds the screen — =help=, a long
+=list source=, a big value — are shown a page at a time in the TUI when
+~pager~ is =on= (the default on a size-limited terminal; you typically
+turn it =off= under an Emacs ~shell~, which scrolls). The pager accepts
+the familiar =less= keys (=SPACE=/=f= forward, =b= back, =q= quit). The
+ncurses interface uses a scrollable window instead, and aldb relies on
+Emacs's own buffer scrolling.
+
 * Options
 All options begin with two dashes except for ~-x~. They may appear in
 any order before, after, or interleaved with the ~FILE~ argument; the
