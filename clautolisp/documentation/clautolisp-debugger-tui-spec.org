@@ -1,0 +1,165 @@
+# -*- mode:org;coding:utf-8 -*-
+
+* clautolisp debugger - aldo - Text User Interface Specifications
+
+ For the command language see clautolisp-debugger-command-reference.org
+
+ This document concentrates on the specification of an experimental
+ interface to display and specify break points in a sexp-based source
+ form.
+
+** sexp structural editor
+
+The debugger user interface used to display source code, breakpoints
+and to let the user set break points in a S-expression source form, is
+based on sedit, a simple S-expression structural editor.
+
+The operation is based on a S-expression, with one special item, a
+selection which wraps the S-expression or one of its sub-expressions.
+
+The operation is a loop where:
+
+- the lisp form is pretty-printed, with the selection duly displayed
+  in a recognizable way.
+
+  Typically, we may use a different background color, or surround it
+  with uncommon parentheses such as unicode【…】(if no unicode, and no
+  ANSI terminal control codes (bold, italic, underline, invert, colors
+  (foreground/background)) are available we can use normal brackets:
+  […] or digraph or trigraph kind of parentheses.
+
+- commands are available to the user to move the selection, forward,
+  backward (in the same parent list), up the s-exp tree, into the
+  selected list, etc.
+
+- the command change change the selection wrapper in the s-expr, and
+  then we loop and it's re-pretty-printed with the changed selection.
+
+In sedit other commands let use insert sub-expressions, change the
+selected expressions (input a new s-expr to replace it), copy, paste,
+list operations such as slurp, barf, split, slice, etc.
+
+Notably, as a simple, basic structural editor, sedit doesn't bother
+with the "structure" of the forms and subforms, such as macros and
+special operators distinguishing non-evaluable subforms from evaluable
+sub-expressions, the editor is a S-expression editor (remember,
+S-expressions are lisp data, but code is data too, data can be code).
+
+Now one interesting feature of such a sedit is the ability for the
+user to select (point at) a specific sub-expression of a form.
+
+Some commands can be added to ease and quicken it even more, such as
+search, or jump n expressions forward or backward with directly
+entering a number (positive or negative), etc.
+
+The second interesting feature is that we can decorate
+sub-expressions, like we do for the selection decorated with brackets,
+to indicate set break-points and other debugging information
+(eg. current breakpoint/poll-point).
+
+We already have wrapped forms (the forms instrumentalised for
+debugging), we can take them and pretty-print them each sub-form in
+function of the state of the wrapping poll-point.
+
+Here is a table indicating how to display
+
+| What                | Unicode | ASCII | white-on-black | green-on-black | black-on-white | bold-underline-invert(¹) |
+|---------------------+---------+-------+----------------+----------------+----------------+--------------------------|
+| current pp          | ⏵       | >     | red-on-black   | red-on-black   | red-on-white   | bold                     |
+| disabled breakpoint | ⏯      | _     | blue-on-black  | blue-on-black  | blue-on-white  | underline                |
+| enabled breakpoint  | ⏸      | ^     | cyan-on-black  | cyan-on-black  | cyan-on-black  | invert                   |
+| selected subform    |【…】    | […]   | black-on-white | black-on-white | white-on-black | bold-invert              |
+
+(¹) we don't use blinking! and italic is not often available. We could
+use all 8 combinations of bold, underline and invert, but it could be
+difficult to read, so we will try to limit the use of combinations.
+
+The status of the poll-point can be indicated by different ways:
+
+- a unicode character or an ASCII special character prefixing the sub-expression.
+
+  Even with ascii special characters, it should remain easily
+  readable,since in lisp, the only characters that can precede an open-parenthesis are:
+  spaces, open-parenthesis, or reader macros such as ' or #A.  so
+  something like:
+    #+begin_example
+    (progn (print 'hello) >(print 'world) ^(print '!))
+    #+end_example
+  or:
+    #+begin_example
+    (progn
+      (print 'hello)
+     >(print 'world)
+     ^(print '!))
+    #+end_example
+  should be clear. The more so with unicode characters.
+
+- a pair of parenthesing unicode or ASCII characters surrounding the sub-expression.
+    #+begin_example
+    【(print 'world)】
+    #+end_example>
+  or:
+    #+begin_example
+    [(print 'world)]  
+    #+end_example
+  Of course, we will avoid plain parentheses to avoid confusing them with lisp lists or vectors,
+  but <…> {…} or […] can be sufficiently unique to be of usage in the worst case.
+
+  Note: in the case of the selection brackets they surround the poll-point decoration so we could have:
+    #+begin_example
+    【⏸(print 'hi)】
+    #+end_example 
+  or:
+    #+begin_example
+    [^(print 'hi)]
+    #+end_example
+
+- displaying the sub-expression with a specific foreground/background
+  color (which depends on the general "theme" black-on-white or
+  white-on-black (or green-on-black).
+  colors may be mixed with bold, underline, invert attributes but this
+  is not advised.
+
+- displaying the sub-expression with a specific combination of bold,
+  underline, invert attributes (blinking are definitively to avoid,
+  and italic is often not available).
+
+Currently defined (see table above) poll-point statuses are:
+
+- current poll-point (the one that is calling the debugger),
+- enabled break-point
+- disabled break-point
+- neutral poll-point (no decoration, we'll step in or over it, or continue, etc).  
+- selected sub-expression (can wrap around poll-points).    
+
+TODO: verify if there are other poll-point states that should be indicated for the user. 
+
+** Additionnal debugging commands
+
+In addition to the selection movement in the sedit mode, the debugger
+will provide these sedit commands:
+
+- clear a breakpoint
+- set a breakpoint
+- disable a breakpoint
+- enable a breakpoint
+- set/change/clear a condition
+- set/change/clear a pre-expression
+- set/change/clear a post-expression
+
+TODO: verify if there are other sedit command we should provide to the
+user. 
+
+When the selection is changed to a breakpoint, the condition,
+pre-expression, post-expression can be displayed under the
+pretty-printed source code.  
+
+Note: when we give a step or continue command, and then we re-enter
+the debugger, it can display automatically the source form of the
+function (or a sub-expression if it's too big) we're in, with the
+selection moved to the current poll-point (so eg. with 【⏵(break)】)
+So a sequence of command next would redisplay the source form with the
+【⏵…】 indicator advancing step by step.
+
+If variables are watched, their values would be displayed before the
+source form.
