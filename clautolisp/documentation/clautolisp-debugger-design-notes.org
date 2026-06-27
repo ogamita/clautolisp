@@ -819,5 +819,12 @@ format) is settled (below).
 - configuration persistence — =*clal-aldo-configuration*= is an assoc-list
   plist; loaded from =$XDG_CONFIG_HOME/clautolisp/aldo.conf= (else searched on
   =$XDG_CONFIG_DIRS=) *before* the rc/init files; saved (UTF-8) only on request
-  via =,settings save= / =clal-save-aldo-configuration=. Decoration glyphs may
-  be code points (keeps =aldo.conf= ASCII) or literal UTF-8 strings.
+  via =,settings save= / =clal-save-aldo-configuration=.
+- decorations / theme — a single =theme= setting (=unicode= | =ascii= |
+  =white-on-black= | =black-on-white= | =green-on-black= | =attributes=)
+  *replaces* the old =style= + =charset=. =decorations= is a grammar of
+  per-(situation, theme) entries: a *prefix* or an *open/close* pair for the
+  glyph themes, foreground/background for the colour themes, or
+  bold/underline/invert for =attributes= (cmd-ref §8). Any string may be a
+  *list of code points* (so =aldo.conf= can stay pure ASCII even with Unicode
+  glyphs); the file is UTF-8, so literal Unicode strings are allowed too.
