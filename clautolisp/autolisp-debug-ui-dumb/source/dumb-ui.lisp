@@ -133,8 +133,39 @@ reading. A line that looks like (form) is eval-in-frame."
     ((string= cmd "a") (cmd-abort session))
     ((string= cmd "r") (return-value-cmd ui session hit arg))
     ((member cmd '("q") :test #'string=) (cmd-abort session))
+    ((string= cmd "set") (set-setting-cmd ui arg) nil)
+    ((member cmd '(",settings" "settings") :test #'string=) (settings-cmd ui arg) nil)
     ((member cmd '("h" "?") :test #'string=) (print-help ui) nil)
     (t (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil)))
+
+(defun set-setting-cmd (ui arg)
+  "`set NAME VALUE' — update one aldo setting (command reference §8)."
+  (if (null arg)
+      (out ui "DBG> set: usage: set NAME VALUE~%")
+      (let* ((sp (position #\Space arg))
+             (name (subseq arg 0 (or sp (length arg))))
+             (value (and sp (string-trim " " (subseq arg sp)))))
+        (handler-case
+            (let ((v (set-aldo-setting name (or value ""))))
+              (out ui "DBG> ~(~A~) = ~A~%" name (format-setting-value v)))
+          (error (e) (out ui "DBG> set error: ~A~%" e))))))
+
+(defun settings-cmd (ui arg)
+  "`,settings' — list all options; `,settings NAME' print one; `,settings save'
+/ `,settings reload' persist (command reference §8)."
+  (cond
+    ((null arg)
+     (dolist (line (aldo-settings-lines)) (out ui "  ~A~%" line)))
+    ((string-equal arg "save")
+     (handler-case (out ui "DBG> saved ~A~%" (save-aldo-configuration))
+       (error (e) (out ui "DBG> save error: ~A~%" e))))
+    ((string-equal arg "reload")
+     (handler-case
+         (let ((p (load-aldo-configuration)))
+           (if p (out ui "DBG> reloaded ~A~%" p)
+               (out ui "DBG> no configuration file found~%")))
+       (error (e) (out ui "DBG> reload error: ~A~%" e))))
+    (t (out ui "  ~(~A~) = ~A~%" arg (format-setting-value (get-aldo-setting arg))))))
 
 (defun eval-and-print (ui session form-string)
   (handler-case

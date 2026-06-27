@@ -101,6 +101,27 @@ global store."
       (ignore-errors (delete-file path))
       (clautolisp.debug.ui:reset-aldo-configuration))))
 
+(test dumb-ui-settings-commands
+  ;; the TUI `,settings' / `set' commands drive the configuration core
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint
+     ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
+    (let ((clautolisp.debug.ui:*aldo-configuration*
+            (copy-tree clautolisp.debug.ui:*default-aldo-configuration*)))
+      (multiple-value-bind (result output)
+          (run-ui (format nil ",settings~%set navigator line~%,settings navigator~%c~%")
+                  :context context :thread-info ti
+                  :thunk (lambda ()
+                           (clautolisp.autolisp-runtime:autolisp-eval
+                            (list (rt-sym "FROB") 7) context)))
+        (declare (ignore result))
+        (is (contains output "navigator = sexp"))  ; the initial ,settings listing
+        (is (contains output "navigator = line"))  ; set echo + ,settings NAME
+        (is (eq :line (clautolisp.debug.ui:get-aldo-setting :navigator)))))))
+
 (test settings-conf-file-is-ascii-friendly
   ;; with code-point glyphs (the default), the saved file is pure ASCII and
   ;; uses bare lower-case symbols (no keywords, no raw Unicode)
