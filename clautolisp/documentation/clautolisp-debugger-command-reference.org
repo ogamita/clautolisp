@@ -342,6 +342,9 @@ keystroke-UI cursor form and the typed form — under this rule.
     backed by a dynamic variable =*clal-on-error*= that the option sets and
     that user code / init files may rebind to shadow it (e.g.
     =(let ((*clal-on-error* :debug)) …)= around a suspect region).
+  - The debugger's *other* CLI options select the UI and configure the aldb
+    listener — =--aldo-user-interface=, =--aldb-listening-address=,
+    =--aldb-listening-port= (§10 *Selecting the user interface*).
 - backing: =[have]= for the engine entry (=*debug-hit-handler*= +
   poll-point dispatch already implement "invoke the debugger at a poll
   point"); =[new]= for the =clal-break= / =clal-invoke-debugger= builtins,
@@ -1016,9 +1019,21 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     terminal height is known, else =pager-height= alone (the terminal size is
     often unavailable on a dumb terminal). With neither available, the built-in
     fallback of *24* lines is used.
+  - =default-user-interface= — which UI the debugger uses on entry: =tui=
+    (the line-mode terminal UI), =ncurses= (the full-screen UI), or =aldb= (the
+    Emacs UI). This is the *persisted default*; the *current* value
+    =user-interface= (set by the CLI, §10) overrides it for one run without
+    being saved. See §10 *Selecting the user interface*.
+  - =default-aldb-listening-address= — the address aldb listens on for the
+    Emacs client: an IPv4 / IPv6 address or a domain name. Persisted default;
+    the CLI =--aldb-listening-address= sets the current value.
+  - =default-aldb-listening-port= — the aldb listening port: a port number or a
+    service name. Persisted default; the CLI =--aldb-listening-port= sets the
+    current value.
 - backing: =[new]= (a small per-session options plist; the colour =theme=s
   reuse the runtime colour policy, and =*navigation-history-max*= the
-  navigation history).
+  navigation history). The =default-aldb-listening-*= keys configure the aldb
+  listener (DN-10 / the public-interface issue).
 
 ** Configuration and persistence — =*clal-aldo-configuration*=   =[new]=
 
@@ -1524,3 +1539,57 @@ is missing everywhere" (spec §20.4) continues to hold.
 AutoLISP (and from loaded =.lsp= files), but only within the same
 consistency rule, so user commands inherit the same collision-free key
 discipline.
+
+** Selecting the user interface   =[new]=
+
+The debugger runs one of *three* UIs: =tui= (the line-mode terminal UI — the
+"dumb terminal" above), =ncurses= (the full-screen UI), or =aldb= (the Emacs
+UI). The choice has a *persisted default* and a *current* (per-run) override:
+
+- *Persisted default* — the =default-user-interface= setting (§8;
+  =set default-user-interface ncurses=), stored in =*clal-aldo-configuration*=;
+  aldb's listener likewise has =default-aldb-listening-address= /
+  =default-aldb-listening-port=.
+- *Current value* — =user-interface= (and =aldb-listening-address= /
+  =aldb-listening-port=). These *override* the defaults for the running session
+  but are *not* saved into =*clal-aldo-configuration*=, so =,settings save=
+  never persists a one-off run choice.
+- *Command-line options* set the current values (values case-insensitive):
+  - =--aldo-user-interface tui|ncurses|aldb=
+  - =--aldb-listening-address IPV4address|IPV6address|domain-name=
+  - =--aldb-listening-port PORTNUMBER|service-name=
+
+  They join =--on-error= (§1) as the debugger's CLI options (the
+  public-interface issue owns the option plumbing).
+
+The effective UI on entry is the *current* =user-interface= if present, else
+=default-user-interface= — and likewise for the aldb address / port.
+
+** Entering the debugger: activating the UI   =[new]=
+
+The *first* time control reaches the debugger it reads =user-interface= (else
+=default-user-interface=) and activates that UI:
+
+- *aldb — not yet connected.* aldo prints, on the program's terminal, the Emacs
+  command to connect, and *waits* — for the connection, or for the user to pick
+  a terminal UI instead:
+  #+begin_example
+  ARITHMETIC ERROR: division by zero
+  Aldo debugger activated, please use emacs aldb to connect:
+      M-x aldb-connect RET 127.0.0.1:4301 RET
+  Alternatively, select a terminal or ncurses user interface,
+    1) TUI
+    2) ncurses
+  Debugger UI?
+  #+end_example
+  When aldb connects, the terminal input is cancelled, terminal control reverts
+  to the suspended program, and debugging proceeds in aldb. (Typing =1= / =2=
+  switches to the tui / ncurses UI for this session instead.)
+- *aldb — already connected.* Nothing appears on the terminal; aldb is simply
+  messaged and Emacs raises the aldb buffer.
+- *ncurses.* The UI runs on the terminal's *alternate screen*, so on resume the
+  program recovers the terminal with exactly the display it had when the
+  debugger was entered.
+- *tui.* The session shares the program's screen: on resume the program
+  continues *below* the debugging session, and the user scrolls back to recover
+  the program's pre-debug terminal state.

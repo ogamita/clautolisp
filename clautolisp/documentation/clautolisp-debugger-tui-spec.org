@@ -8,6 +8,13 @@ This document concentrates on the specification of an experimental
 interface to display and specify break points in a sexp-based source
 form.
 
+Which UI runs (=tui= — this line-mode terminal UI —, =ncurses=, or =aldb=),
+how it is selected (the =default-user-interface= setting, the =user-interface=
+current value, the =--aldo-user-interface= CLI option) and how it is activated
+on entry (the aldb connect prompt, the ncurses alternate screen, the tui
+scroll-back) are specified in the command reference, §10 *Selecting the user
+interface* / *Entering the debugger*.
+
 Note: the term pretty-printing as used in this document, refers to
 the standard Common Lisp pretty-printing for the original sedit code,
 but actually to a debugger-specific pretty-printing, similar but with
