@@ -222,7 +222,8 @@ question at all.
 
 ** advance LINE  (until)
 - aldb: =a LINE=  | =,advance LINE=
-- params: LINE in the current function (or =FID FORM-ID= for precision).
+- params: a LOC (§2 *Specifying a location*) — a LINE, a finer poll-point
+  spelling, or the pointed sexp — for poll-point precision.
 - desc: set a volatile breakpoint at that poll point and continue; it is
   removed on the first stop (spec §6.2 "advance to point").
 - backing: =[have]= =cmd-advance= (and =poll-point-at= for source→pp).
@@ -280,8 +281,11 @@ question at all.
 
 ** jump LINE   =[new]=
 - aldb: =j LINE=  | =,jump LINE=
-- params: LINE in the current function (or =FID FORM-ID= for a precise poll
-  point) — the form to resume execution *at*, skipping the forms in between.
+- params: a LOC (§2 *Specifying a location*) — a LINE, the exact poll point
+  (=ppN=, =LINE.K=, =LINE:COL=), or the pointed sexp — the form to resume
+  execution *at*, skipping the forms in between. (Poll-point precision
+  matters most here: §1 jump targets a specific poll point, e.g. =pp2= vs
+  =pp3= in =jump-back.lsp=, where the choice changes which bindings exist.)
 - desc: resume control flow, but *skip the evaluation* of the forms between
   the current stopping point and the target, executing none of them. We
   cannot "jump to an address" — but we do not need to, because a poll point
@@ -376,10 +380,70 @@ question at all.
 
 * 2. Breakpoints, tracepoints, watchpoints
 
+** Specifying a location — line, poll point, or pointed sexp   =[new]=
+
+Every command that takes a "where" — =break=, =break once=, =advance=,
+=jump=, =clear= — accepts a *location* (LOC). Because clautolisp is
+sexp-oriented, the unit these commands actually attach to is a *poll
+point* (an instrumented form), and one source line routinely carries
+*several* of them: in =(setq a (foo (bar x)))= the =setq=, the =foo= call
+and the =bar= call each have their own poll point. A bare line number is
+thus only the coarse, common-case spelling; the finer forms name the exact
+poll point.
+
+- =LINE= — the *first* poll point that begins on LINE (today's behaviour,
+  the usual case). =poll-point-at= already maps a line to its covering
+  poll point.
+- =LINE.K= — the =K=-th poll point beginning on LINE, counted left to
+  right (1-based). The styled =list source= gutter (§8) can number the
+  poll points on a line, so =K= is read straight off the listing.
+- =LINE:COL= — the poll point whose form *starts* at column =COL= (the
+  exact reader span). Handy when a position is copied from an error or a
+  tool.
+- =FN= / =FN LINE= — a function's entry poll point, or a LINE inside FN
+  (already supported); resolves across files without tracking line
+  offsets.
+- =ppN= — a poll point by its id, the spelling already used in the worked
+  traces (=jump-back.lsp=). Ids appear in =list source= and =list
+  breakpoints=, so a poll point named once is re-addressable without
+  re-deriving its line. (This supersedes the earlier ad-hoc =FID FORM-ID=
+  notation.)
+
+*Pointing instead of typing.* The textual forms above exist so the dumb
+terminal can always /name/ any poll point — but the natural gesture is to
+*point at the sexp*, and each UI offers that:
+
+- *ncurses / Emacs aldb* — put the cursor on (or anywhere inside) the sexp
+  and invoke the command with no argument: =b= breaks at the poll point of
+  the *innermost instrumented form enclosing point* (=jump=, =advance=,
+  =clear= likewise). This is spec §17.3's click→poll-point, generalised
+  from a mouse click to the text cursor; if point sits between forms, the
+  *next* poll point in reading order is taken.
+- *dumb terminal — a sedit-style sexp navigator.* Giving a location
+  command no argument opens a small *structural selection* sub-mode (the
+  keyboard analogue of pointing, modelled on a Lisp structure editor): the
+  current function is shown with one sexp highlighted *inverse* (via the
+  styling layer, §8), and structural motions move the highlight —
+  =f=/=b= forward/back among siblings, =i= in (to the first child), =o=
+  out (to the enclosing form), =n=/=p= next/previous poll point in reading
+  order. =RET= confirms the highlighted sexp's poll point as the location;
+  =q= aborts. The keys are *modal* — local to this sub-mode, so they do
+  not touch the top-level key map. Because the motions follow the *sexp
+  structure*, not characters, you reach the same precise poll point a
+  mouse cursor would, without counting columns.
+
+- backing: =LINE→pp= is =[have]= (=poll-point-at=); =LINE.K= / =LINE:COL=
+  / =ppN= are =[new]= but thin (the reader spans and a poll-point id index
+  already exist). Cursor selection is =[have]= for the ncurses/aldb click
+  path, =[new]= for "innermost form at the text cursor". The sedit-style
+  navigator is =[new]= — a focused dumb-terminal mode reusing the source
+  listing and the styling layer.
+
 ** break LINE
 - aldb: =b LINE=  | =,break LINE=  | =,break FN [LINE]=
-- params: a source LINE in the current function, or a function name FN
-  (breaks at its entry poll point), optionally a LINE within FN.
+- params: a LOC (above) — a source LINE in the current function (the
+  covering poll point), a finer =LINE.K= / =LINE:COL= / =ppN=, a function
+  name FN (its entry poll point), or the pointed sexp.
 - desc: set a steady breakpoint at the poll point covering LINE
   (spec §17.3, click/line → poll point via =poll-point-at=).
 - backing: =[have]= =cmd-set-breakpoint-at-line= / =cmd-set-breakpoint=.
