@@ -918,10 +918,26 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
 
 ** settings
 - aldb: =,settings=  | =,set-option NAME VALUE=
-- desc: per-session toggles — source window size, break-on-caught,
-  preview length, and the *style* options below. gdb =set= / lldb
-  =settings set=.
-- backing: =[new]= (a small per-session options plist).
+- desc: per-session options; =,settings= with no argument lists them all with
+  their current values, =,set-option NAME VALUE= sets one. gdb =set= / lldb
+  =settings set=. The options:
+  - =*navigation-history-max*= — cap on saved navigation states (the browse
+    stack + selection pushed on each debugger re-entry, §3 *Navigation*);
+    oldest dropped beyond the limit. Default *1000* (essentially unbounded).
+  - =style= — the terminal-styling tri-state (*Terminal styling* below):
+    =auto= (default — follow =resolve-color-policy=), =on= (force), =off=
+    (force plain). Plus the per-element *style map* faces, each rebindable
+    via =,set-option= (see *Terminal styling*).
+  - break-on-caught — stop on a /caught/ error too (=*break-on-caught-error*=,
+    §2 =catch=); default off.
+  - source window size — how many source lines =list source= shows around the
+    stop.
+  - preview length — truncation width for one-line value previews (=print=,
+    inspector annotations).
+- backing: =[new]= (a small per-session options plist; =style= reuses the
+  runtime colour policy, and =*navigation-history-max*= the navigation
+  history). The exact option NAMEs for the source-window and preview-length
+  options are provisional.
 
 ** Terminal styling (the dumb terminal isn't so dumb)   =[new]=
 
