@@ -661,3 +661,91 @@ object a number denotes is fixed by the *command that consumes it*.
   precedent above. If a future need arises to mention an object with *no*
   command context (an id inside a REPL expression), it would follow the =$N=
   pattern — a sigil earned by genuine ambiguity, not decoration.
+
+* DN-12. TUI navigator/dictionary architecture; the =goto= object-idiom prerequisite
+  :PROPERTIES:
+  :CUSTOM_ID: dn-navigator-architecture
+  :END:
+
+/Phase 5–7 TUI, settling the experimental sedit-based interface
+(=clautolisp-debugger-tui-spec.org=)./ The text UI must let the user *point at*
+poll points in a sexp source form, browse definitions across files, and run the
+debugger commands — without growing a second, rival command language. The shape
+that fell out:
+
+** Decision — one tree, two stacks, stacked dictionaries
+
+- *One navigation tree.* The selection sits in a single containment tree
+  (list/sexp → top-level form → file → directory); *one* set of motions
+  (=d u > < << >>=, =±N=, bare =N= = poll-point N) walks every level. No new
+  command per level; navigation simply *extends* outward into files and
+  directories. =goto= / =definition= / =back= / =history= / =search= jump by
+  name, path, or call-graph rather than step by step.
+- *Two stacks, distinguished by what their entries are* — not by what you may
+  do from them. The *runtime frame stack* (frames + bindings; the =frame=
+  family) versus the *source-browse stack* (=(form . selection)= positions, no
+  bindings; =definition= / =back=). You may still set breakpoints and =jump=
+  targets from a browsed form (those are *source*-located), but
+  binding-dependent ops (=print=, =setq=, =list locals=, eval) always defer to
+  the current frame. The browse stack is *user-bounded* (cycles in the static
+  call graph are allowed), and browse state is saved to a bounded *navigation
+  history* across re-entries (=*navigation-history-max*=, default 1000).
+- *Stacked command dictionaries.* The sedit navigator, the classic file:line
+  navigator, and the inspector are *mode* dictionaries layered over the
+  *global* debugger dictionary; lookup is innermost-outward, first match wins;
+  each is *designed collision-free* against the global set so every debugger
+  verb stays reachable, and a mode may *shadow* a global key locally (inspector
+  =b= = =bind=). An escape prefix (word =debugger=, or a dedicated key — never
+  bare =d=) reaches a shadowed command. =bind-debugger-command= gains a
+  =dictionary= argument. (Normative spec: command reference §3 and §8;
+  collision check: command reference §0.)
+
+** Why this shape
+
+The debugger's single-key map was already collision-free (command reference
+§0), and the keys sedit needs for /pure motion/ were either free there (=d=,
+=u=) or take directional mnemonics (=>=, =<=) no debugger command uses — so
+folding sedit in costs the debugger command set *nothing* (no debugger command
+moves). Keeping the navigator/inspector dictionaries *separate but
+collision-free* — rather than merging them — keeps each UI swappable while
+still letting the global verbs through without escaping. The two-stacks split
+follows the engine reality: a browsed source position has *no frame*, so only
+source-located operations can act there.
+
+** Engine prerequisite — =goto='s object idiom resolves a lambda to its file
+
+=goto OBJ INNER= (the AutoLISP "object" idiom: =OBJ= is a *variable* holding a
+lambda loaded from a file, =INNER= a local function in it) needs to recover the
+*file* a file-loaded lambda came from, so =goto o1 bar= and =goto o2 bar= reach
+different files. *Confirmed this holds in the current runtime:*
+
+- =autolisp-usubr= carries =debug-metadata=
+  (=clautolisp/autolisp-runtime/source/model.lisp=), a
+  =clautolisp.debug:function-debug-metadata= record
+  (=clautolisp/autolisp-debug/source/metadata.lisp=) that holds a back-pointer
+  =usubr=, the function's own =source-position=, and a =form-id->position=
+  vector.
+- A =clautolisp.source:source-position=
+  (=clautolisp/autolisp-source-map/source/source-map.lisp=) carries a =file=
+  slot, filled from the reader span's =source-span-source-name=
+  (=source-position-from-span=).
+- =run-autolisp-file= sets the reader's =source-name= to the file path
+  (=clautolisp/autolisp-runtime/source/api.lisp=, =effective-source-name=), and
+  a *tracked* load (=clautolisp.source:*track-source-positions*= bound T for a
+  debug load) records each compound form's position via =note-position=.
+
+So from the lambda object: =debug-metadata= →
+=function-debug-metadata-source-position= → =source-position-file= yields the
+load file. The variable→lambda step is an ordinary symbol-value lookup in the
+current context; the file then comes from metadata.
+
+*Gating conditions (the prerequisite proper).* The file is recoverable *only
+when the lambda was both instrumented and loaded under a debug/tracked load*
+(=*track-source-positions*= = T, =debug-metadata= non-nil). A production-loaded
+or un-instrumented lambda has empty position tracking and NIL =debug-metadata=,
+so the object idiom cannot resolve it — consistent with DN-2's "instrument
+exactly what you want to debug". This is acceptable: =goto= into an object is a
+*debugging* operation and a debug session is exactly the context where the
+tracked metadata exists. If object-idiom =goto= is ever wanted for
+un-instrumented code, the loader would have to retain a lambda→source-file map
+outside the debug metadata — not added preemptively.
