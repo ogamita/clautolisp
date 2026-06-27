@@ -652,8 +652,11 @@ shadowed global command; and =bind-debugger-command= /
 inspector-only or navigator-only command. The §0 naming-consistency rule and
 the collision check are enforced *per dictionary*. See §8 for the full
 treatment; this section keeps only the UI-specific motivation (why three
-separate-but-collision-free dictionaries exist). The mode-dictionary names
-above are provisional.
+separate-but-collision-free dictionaries exist). The dictionary *names* and the
+escape *key* are an *implementation choice*: the spec mandates only a simple
+API by which a module hooks its dictionary onto the active stack when it is
+activated — from a *setting* (=navigator=) or a *command* (=visit= → inspector)
+— and unhooks it when deactivated (§8 *Activation*).
 
 ** Partial Printing of the Form
 

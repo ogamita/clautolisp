@@ -782,7 +782,6 @@ DN-1…DN-12 and the command-reference §0 rules; those are *not* on this list.)
 | Poll-point id numbering          | DN-11; TUI "Numbered Poll-Points"      | one globally-stable number space, never reused         | per-top-level-form ids (bp carries its form) | use — if numbers grow too big |
 | Poll-point-state modifier glyphs (deferred) | TUI "Numbered Poll-Points" (states)    | selecting a pp shows its full info at screen bottom; glyphs only flag presence | add modifier glyphs only if use shows a need | see by use                 |
 | preview-length option name       | cmd-ref §8 settings                    | descriptive only (no earmuffed name yet)               | a concrete option name                     | naming review              |
-| Mode-dictionary names + escape key | TUI "Command Dictionaries"; cmd-ref §8 | =*sedit-/classic-/inspector-…-dictionary*=; escape = word =debugger= (no key yet) | other names; a chosen escape key           | naming review + key choice |
 
 These complement the inline =[new]= / =[engine]= / =[have]= backing tags (which
 track *implementation* status); this register tracks *design* choices still
@@ -800,3 +799,9 @@ open to revision.
   aliases (=> < << >>=), coexisting (collision-free).
 - =source-window-height= setting — name fixed; an integer, default *24*
   (=set source-window-height N=).
+- Mode-dictionary names + escape key — an *implementation choice*. The spec
+  mandates only a *simple API* for a module to hook its command dictionary onto
+  the active stack when activated — from a setting (=navigator=) or a command
+  (=visit= → inspector) — and unhook it when deactivated (cmd-ref §8
+  *Activation*). Names, count, representation, and any escape *key* are left to
+  the implementation; the portable escape form is the word =debugger=.
