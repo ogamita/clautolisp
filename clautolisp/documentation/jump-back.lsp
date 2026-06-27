@@ -64,13 +64,22 @@ If we explicit the poll-points:
 ;; pp1 notice that pp2 is inside its form,
 ;; so it enters the function call.
 ;; 
-;; Since function calls establish binding, we'd need to reestablish them.
-;; If don't want to re-évaluate the arguments (but we can consider that
-;; this is implied by the jump back), we could save the arguments of the
-;; previous call, and re-use the values to bind the parameters. This doesn't seem more justified than recomputing them. It could be a user option.
-;; 
+;; Since function calls establish bindings, we need to re-establish them.
+;; Decision: we always RE-EVALUATE the arguments; we do NOT save and reuse
+;; the values of the previous call.  The decisive reason is that AutoLISP
+;; has no closures: saving a frame's environment to restore it later is
+;; precisely the captured-environment machinery we would otherwise have to
+;; build.  Re-evaluating reuses the language's own binding mechanism.
+;;
+;; A consequence the user must accept: a jump that lands past a binding
+;; leaves that local at its default.  Jumping to pp 2 (the :before of the
+;; setq) re-binds a and then runs the setq, so a is 1.  But jumping to pp 3
+;; -- inside the setq, past a's establishment -- would leave a unbound (nil),
+;; and the later (+ x a) would signal an error.  That is the user's
+;; responsibility, not the debugger's.
+;;
 ;; We enter the function, the bindings are established, and the local variables created.
 ;; Then pp 2 executes.
 ;; pp 2 sees: let's jump to pp2,
-;; houra!
+;; hooray!
 ;; remove this instruction and continue executing normally (or step-by-step, etc).

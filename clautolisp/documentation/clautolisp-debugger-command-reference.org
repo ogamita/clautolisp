@@ -335,24 +335,29 @@ question at all.
   function's body across a call boundary*, is in
   =clautolisp/documentation/jump-back.lsp= (the poll-point-by-poll-point
   unwind pp13→pp12→pp9→pp0, then the forward descent pp0→pp1→pp2).
-- *Crossing a call boundary — argument re-evaluation.* When the re-drive
-  re-enters a function call (to reach a target inside that function's body),
-  the function's parameters and =/=-locals must be re-bound, which raises a
-  choice the engine must settle (see =jump-back.lsp=):
-  - *re-compute* the call's arguments by re-evaluating the argument forms —
-    faithful to "run from the target's entry", but re-runs the arguments'
-    side effects; or
-  - *reuse the saved argument values* from the original call — faithful to
-    "the frame as it was", but the argument expressions' /current/ meaning
-    may have changed.
-  Neither is clearly more justified, so this is a *user option* (default to
-  re-compute, matching "resume execution at the target"). Either way the
-  bindings are freshly established before the target poll point fires.
+- *Crossing a call boundary — always re-evaluate, never save.* When the
+  re-drive re-enters a function call (to reach a target inside that
+  function's body), the parameters and =/=-locals are re-bound by
+  *re-evaluating the argument forms* — the arguments are recomputed, not
+  restored from the original call. This is a *deliberate, simple* rule, and
+  the decisive reason is that *AutoLISP has no closures*: saving a frame's
+  environment to restore it later is precisely the captured-environment
+  machinery we would otherwise have to build. Re-evaluation reuses the
+  language's own binding mechanism — no per-frame snapshots, no closure
+  infrastructure. (See =jump-back.lsp=.)
+- *Landing past a binding — your responsibility.* A jump that skips the form
+  that would have given a local its value simply leaves that local at its
+  default. In =jump-back.lsp=, jumping to =pp 2= (the =:before= of
+  =(setq a 1)=) re-binds =a= and then runs the =setq=, so =a= is 1. But
+  jumping to =pp 3= — *inside* that =setq=, past =a='s establishment — would
+  leave =a= unbound (=nil=), and the later =(+ x a)= signals an error,
+  caught and reported normally. The debugger does *not* second-guess the
+  jump target: a jump into an inconsistent binding state is the user's
+  responsibility, exactly as in gdb.
 - caveats: re-driving forms *re-runs their side effects* (a =backward= jump
-  re-executes =setq=, I/O, =entmod=, … and possibly call arguments, above) —
-  the same hazard gdb warns about; and a jump landing in a different binding
-  scope can still surprise. aldb warns and does not promise correctness
-  there. *v1 scope:* forward and outward jumps; *backward* jump is
+  re-executes =setq=, I/O, =entmod=, and recomputes call arguments) — the
+  same hazard gdb warns about; and a jump landing past a binding errors as
+  above. *v1 scope:* forward and outward jumps; *backward* jump is
   mechanically the same (ancestor re-drive) but is deferred to a following
   version because of these re-execution semantics.
 - backing: =[new]= — a per-thread /jump target/ consulted in the poll-point
