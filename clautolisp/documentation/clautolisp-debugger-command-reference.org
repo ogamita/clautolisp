@@ -992,10 +992,10 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     via =set= (see *Terminal styling*).
   - break-on-caught — stop on a /caught/ error too (=*break-on-caught-error*=,
     §2 =catch=); default off.
-  - source window size — how many source lines =list source= shows around the
-    stop.
+  - =source-window-height= — how many source lines =list source= shows around
+    the stop (=set source-window-height N=); an integer, default *24*.
   - preview length — truncation width for one-line value previews (=print=,
-    inspector annotations).
+    inspector annotations). (Option name still provisional.)
   - =pager= — =on= / =off= (=set pager on= / =set pager off=): whether long
     command output (longer than the screen) is captured and shown a page at a
     time in the *dumb terminal* (*Paging long output* below). Default *on* for
@@ -1009,8 +1009,8 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     fallback of *24* lines is used.
 - backing: =[new]= (a small per-session options plist; =style= reuses the
   runtime colour policy, and =*navigation-history-max*= the navigation
-  history). The exact option NAMEs for the source-window and preview-length
-  options are provisional.
+  history). The exact option NAME for the preview-length option is still
+  provisional.
 
 ** Terminal styling (the dumb terminal isn't so dumb)   =[new]=
 
