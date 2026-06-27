@@ -1,0 +1,74 @@
+<div class="document" id="sedit"
+     title="Sexp Edit"
+     description="A Simple Sexp Structure Editor."
+     author="Pascal J. Bourguignon"
+     keywords="Common Lisp, Lisp, Sexp, Editor, Structure Editor"
+     language="en">
+
+  <h1>A Simple Sexp Structure Editor</h1>
+
+  <p>This is a simple sexp structure editor to demonstrate how we can
+     edit lisp sources directly instead of going thru the
+     deserialization and serialization (converting the sexps into a
+     textual representation and using a text editor such as emacs).<p>
+
+  <p>This editor manipulates directly the sexp data structure.</p>
+
+  <ul>
+    <li><a href="sedit.lisp">sedit.lisp</a></li>
+  </ul>
+
+
+  <p>It is invoked as (sedit sexp), and returns the modified sexp.
+     (The sexp is modified destructively).</p>
+  <pre class="command">
+ (sedit (copy-tree '(an example)))
+  </pre>
+  <p>At each interaction loop, it prints the whole sexp, showing the selected
+    sub-sexp, and query a command. The list of commands are:</p>
+  <ul>
+    <li><tt> q quit               </tt> to return the modified sexp from sedit.
+    <li><tt> i in                 </tt> to enter inside the selected list.
+    <li><tt> o out                </tt> to select the list containing the selection.
+    <li><tt> f forward n next     </tt> to select the sexp following the selection (or out).
+    <li><tt> b backward p previous</tt> to select the sexp preceding the selection (or out).
+    <li><tt> s insert             </tt> to insert a new sexp before the selection.
+    <li><tt> r replace            </tt> to replace the selection with a new sexp.
+    <li><tt> a add                </tt> to add a new sexp after the selection.
+    <li><tt> x cut                </tt> to cut the selection into a *clipboard*.
+    <li><tt> c copy               </tt> to copy the selection into a *clipboard*.
+    <li><tt> y paste              </tt> to paste the *clipboard* replacing the selection.
+  </ul>
+
+  Example:
+  <pre class="dribble">
+
+C/IBCL-USER[4]&gt; (sedit '())
+
+Sexp Editor:
+【NIL】
+&gt; r
+replacement sexp: (let ((*package #.*package*)) (print 'hello))
+【(LET ((*PACKAGE #&lt;PACKAGE IMAGE-BASED-COMMON-LISP-USER&gt;)) (PRINT (QUOTE HELLO)))】
+&gt; i
+(【LET】 ((*PACKAGE #&lt;PACKAGE IMAGE-BASED-COMMON-LISP-USER&gt;)) (PRINT (QUOTE HELLO)))
+&gt; n
+(LET 【((*PACKAGE #&lt;PACKAGE IMAGE-BASED-COMMON-LISP-USER&gt;))】 (PRINT (QUOTE HELLO)))
+&gt; i
+(LET (【(*PACKAGE #&lt;PACKAGE IMAGE-BASED-COMMON-LISP-USER&gt;)】) (PRINT (QUOTE HELLO)))
+&gt; i
+(LET ((【*PACKAGE】 #&lt;PACKAGE IMAGE-BASED-COMMON-LISP-USER&gt;)) (PRINT (QUOTE HELLO)))
+&gt; r
+replacement sexp: *package*
+(LET ((【*PACKAGE*】 #&lt;PACKAGE IMAGE-BASED-COMMON-LISP-USER&gt;)) (PRINT (QUOTE HELLO)))
+&gt; q
+(LET ((*PACKAGE* #&lt;PACKAGE IMAGE-BASED-COMMON-LISP-USER&gt;)) (PRINT 'HELLO))
+C/IBCL-USER[5]&gt; (eval *)
+
+HELLO
+HELLO
+C/IBCL-USER[6]&gt;
+
+  </pre>
+</div>
+
