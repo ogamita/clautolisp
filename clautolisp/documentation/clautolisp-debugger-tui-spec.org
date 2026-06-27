@@ -256,6 +256,13 @@ So a sequence of command next would redisplay the source form with the
 
 ** Navigating Forms — Definitions, the Two Stacks, and History
 
+Note: the navigation and go-to verbs settled in this section (=d u > < << >>=,
+=±N=, =goto=, =definition=, =back=, =history=, =search=) are now *registered
+normatively* in the command reference, §3 *Navigation*, with their keys
+verified collision-free against the global command set (§0). This section
+remains the fuller treatment (rationale, sedit reconciliation, re-entry); the
+command reference is the canonical command/key registry.
+
 The sedit view is not nailed to one form. The selected node sits in a
 single *containment tree* that reaches from a sub-expression all the way
 out to the file system, and *one* set of motion commands walks every level
