@@ -21,9 +21,11 @@
 ;;;;    lambda list, a variable name, a quoted datum and the grouping list of
 ;;;;    a COND clause are NOT poll-points; navigation skips them.  Which
 ;;;;    positions are evaluated is decided per special operator by a rule in
-;;;;    *SPECIAL-FORMS* (here: DEFUN, PROGN, IF, COND, FOREACH; everything
-;;;;    else is treated as a function call: skip the operator, evaluate the
-;;;;    arguments).
+;;;;    *SPECIAL-FORMS* (DEFUN, DEFUN-Q, LAMBDA, SETQ, FOREACH, COND, QUOTE,
+;;;;    FUNCTION, IF, PROGN, WHILE, REPEAT, AND, OR); everything else is
+;;;;    treated as a function call: skip the operator, evaluate the arguments.
+;;;;    SETQ skips its target symbols, DEFUN/LAMBDA skip the lambda list, and
+;;;;    QUOTE descends into AutoLISP's '(lambda ...) anonymous-function idiom.
 ;;;;
 ;;;;    Every poll-point gets a stable number (ppN, pre-order).  A breakpoint
 ;;;;    is just a flag on a poll-point (at most one per poll-point), so the
@@ -104,26 +106,60 @@
   `(setf (gethash ',name *special-forms*)
          (lambda (,form) (declare (ignorable ,form)) ,@body)))
 
-(defun indices-from (form start)
-  (loop :for i :from start :below (length form) :collect (list i)))
+(defun indices-from (form start &optional (step 1))
+  (loop :for i :from start :below (length form) :by step :collect (list i)))
 
-;; (defun name lambda-list . body) -- skip DEFUN, name and lambda list.
-(define-form-rule defun   (form) (indices-from form 3))
-;; (progn . body)               -- skip PROGN.
-(define-form-rule progn   (form) (indices-from form 1))
-;; (if test then [else])        -- skip IF; test/then/else are evaluated.
-(define-form-rule if      (form) (indices-from form 1))
-;; (foreach var listexpr . body)-- skip FOREACH and the loop variable.
-(define-form-rule foreach (form) (indices-from form 2))
-;; (cond (test . body) ...)     -- skip COND and each clause's grouping list.
-(define-form-rule cond    (form)
+;;; --- Operators that skip a name and/or a parameter list --------------------
+
+;; (defun name lambda-list . body)      -- skip DEFUN, name and lambda list.
+(define-form-rule defun    (form) (indices-from form 3))
+;; (defun-q name lambda-list . body)    -- like DEFUN (body is quoted, same shape).
+(define-form-rule defun-q  (form) (indices-from form 3))
+;; (lambda lambda-list . body)          -- skip LAMBDA and the lambda list.
+(define-form-rule lambda   (form) (indices-from form 2))
+
+;;; --- Operators with non-evaluated operand positions -----------------------
+
+;; (setq sym1 val1 sym2 val2 ...)       -- the symbols are not evaluated; the
+;;                                         value positions (even indices) are.
+(define-form-rule setq     (form) (indices-from form 2 2))
+;; (foreach var listexpr . body)        -- skip FOREACH and the loop variable.
+(define-form-rule foreach  (form) (indices-from form 2))
+;; (cond (test . body) ...)             -- skip COND and each clause grouping list.
+(define-form-rule cond     (form)
   (loop :for ci :from 1 :below (length form)
         :for clause := (nth ci form)
         :when (proper-list-p clause)
           :append (loop :for ei :from 0 :below (length clause)
                         :collect (list ci ei))))
-;; (quote datum)                -- nothing evaluated.
-(define-form-rule quote   (form) '())
+;; (quote datum)                        -- nothing evaluated, EXCEPT AutoLISP's
+;;   '(lambda ...) idiom: a quoted lambda is an anonymous function whose body
+;;   IS evaluated when applied, so we descend into it.
+(define-form-rule quote    (form)
+  (if (and (= (length form) 2)
+           (consp (second form))
+           (eq (first (second form)) 'lambda))
+      (list (list 1))
+      '()))
+;; (function arg)                       -- a function designator; descend only
+;;   when it is a (lambda ...) form, otherwise nothing is evaluated.
+(define-form-rule function (form)
+  (if (and (>= (length form) 2) (consp (second form)))
+      (list (list 1))
+      '()))
+
+;;; --- Operators that evaluate every operand (listed for completeness; their
+;;;     poll-points are exactly the default CALL-RULE's, but naming them keeps
+;;;     the table an explicit catalogue of the language's special operators) --
+
+;; (if test then [else]) (progn . body) (while test . body) (repeat n . body)
+;; (and . exprs) (or . exprs)           -- skip the operator, evaluate the rest.
+(define-form-rule if       (form) (indices-from form 1))
+(define-form-rule progn    (form) (indices-from form 1))
+(define-form-rule while    (form) (indices-from form 1))
+(define-form-rule repeat   (form) (indices-from form 1))
+(define-form-rule and      (form) (indices-from form 1))
+(define-form-rule or       (form) (indices-from form 1))
 
 (defun call-rule (form)
   "Default: a function call.  Skip the operator, evaluate the arguments."
@@ -280,7 +316,15 @@
     (multiple-value-bind (open close)
         (decoration deco (pp-number pp)
                     (eq pp *current*) (pp-breakpoint pp) (eq pp *selection*))
-      (if (consp inner)
+      (cond
+        ;; (quote X) -> 'X  (keep the AutoLISP/Lisp reader abbreviation).
+        ((and (consp inner) (eq (first inner) 'quote)
+              (consp (cdr inner)) (null (cddr inner)))
+         (princ open stream)
+         (write-char #\' stream)
+         (write (second inner) :stream stream)
+         (princ close stream))
+        ((consp inner)
           (pprint-logical-block (stream inner
                                  :prefix (concatenate 'string open "(")
                                  :suffix (concatenate 'string ")" close))
@@ -289,11 +333,11 @@
               (write (pprint-pop) :stream stream)
               (pprint-exit-if-list-exhausted)
               (write-char #\Space stream)
-              (pprint-newline :fill stream)))
-          (progn
-            (princ open stream)
-            (write inner :stream stream)
-            (princ close stream)))))
+              (pprint-newline :fill stream))))
+        (t
+         (princ open stream)
+         (write inner :stream stream)
+         (princ close stream)))))
   node)
 
 
@@ -302,16 +346,20 @@
 ;;;---------------------------------------------------------------------------
 
 (defparameter *default-form*
-  '(defun sum-positives (n lst)
+  '(defun sum-positives (n lst / acc)
+    (setq acc 0)
     (foreach x lst
       (if (> x n)
           (progn
             (print x)
-            (+ acc x))
+            (setq acc (+ acc x)))
           (cond ((= x 0) (print "zero"))
                 ((< x 0) (print "negative"))
-                (t       (print "small"))))))
-  "A sample form exercising DEFUN, FOREACH, IF, PROGN, COND and calls.")
+                (t       (print "small")))))
+    acc)
+  "A sample form exercising DEFUN (with a `/ acc' local), SETQ, FOREACH,
+IF, PROGN, COND and calls.  Note how the `(n lst / acc)' lambda list and
+the SETQ target symbols carry no poll-point number.")
 
 (defun setup (form)
   (setf *pp-vector*  (make-array 16 :adjustable t :fill-pointer 0)
