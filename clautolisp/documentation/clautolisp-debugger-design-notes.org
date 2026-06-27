@@ -767,3 +767,27 @@ exactly what you want to debug". This is acceptable: =goto= into an object is a
 tracked metadata exists. If object-idiom =goto= is ever wanted for
 un-instrumented code, the loader would have to retain a lambda→source-file map
 outside the debug metadata — not added preemptively.
+
+* Provisional decisions register
+
+The items below are *provisional* ("try-it") choices recorded so they are not
+re-derived from scratch: each is marked inline at its source and is safe to
+change without disturbing the settled decisions around it. Mostly they are
+*names*, *glyphs*, *keys*, and *default magnitudes* — the kind of choice best
+confirmed by use rather than argued up front. (The settled decisions are
+DN-1…DN-12 and the command-reference §0 rules; those are *not* on this list.)
+
+| Provisional item                     | Where                                   | Current choice                                              | Alternative / fallback                              | How it gets settled            |
+|--------------------------------------+-----------------------------------------+-------------------------------------------------------------+-----------------------------------------------------+--------------------------------|
+| Poll-point id numbering              | DN-11; TUI "Numbered Poll-Points"       | one *globally-stable* number space, assigned once, reused never | per-top-level-form ids (a bp then carries its form) | use — if typed numbers grow too big |
+| =navigator= setting (name + values)  | cmd-ref §8 settings; TUI "Two navigator…" | name =navigator=; values =sexp= / =classic=                 | another name / value spelling                       | naming review                  |
+| =pager= / =pager-height= names       | cmd-ref §8 "Paging long output"         | =pager= (on/off), =pager-height= (lines)                    | another name                                        | naming review                  |
+| Pager fallback page height           | cmd-ref §8 "Paging long output"         | 24 lines when terminal size is unknown                      | another default                                     | pick a default                 |
+| Pager command keys                   | cmd-ref §8 "Paging long output"         | =less=(1) commands + §3 direction aliases (=> < << >>=)      | keep only one of the two vocabularies               | UX review                      |
+| Poll-point-state modifier glyphs     | TUI "Numbered Poll-Points" (states)     | suffix modifiers: conditional =?=, once = underlined gutter, plus ignore-count / trace / has-commands / transient-target markers | other glyphs / a status column      | glyph design + terminal test   |
+| source-window-size, preview-length names | cmd-ref §8 settings                  | descriptive only (no earmuffed names yet)                   | concrete =*…*= option names                         | naming review                  |
+| Mode-dictionary names + escape key   | TUI "Command Dictionaries"; cmd-ref §8  | =*sedit-navigator-dictionary*= / =*classic-navigator-dictionary*= / =*inspector-dictionary*=; escape = word =debugger= (a dedicated escape *key* is unspecified) | other names; a chosen escape key | naming review + key choice     |
+
+These complement the inline =[new]= / =[engine]= / =[have]= backing tags (which
+track *implementation* status); this register tracks *design* choices still
+open to revision.

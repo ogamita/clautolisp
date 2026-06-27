@@ -734,10 +734,11 @@ that is already as short as it can be. Each UI deals with it in its own way:
   which is why one usually disables it there (=,settings pager off=).
 - *dumb terminal*: an optional built-in *pager* (the =,settings pager= /
   =pager-height= options) captures the output and shows it a page at a time,
-  pausing between pages for a single key — forward =SPACE= / =RET= / =>=,
-  backward =<=, first / last =<<= / =>>=, quit =q= (a modal sub-mode reusing
-  the §3 navigation directions). With =pager off=, or on a non-interactive
-  input stream, output is written straight through.
+  pausing between pages. It accepts the familiar =less=(1) commands (=SPACE=/=f=
+  forward, =b= back, =d=/=u= half-page, =j=/=k= line, =g=/=G= first/last,
+  =/REGEXP= and =?REGEXP= search, =q= quit) *and* the §3 navigation directions
+  as aliases (=>= =<= =<<= =>>=) — a modal sub-mode. With =pager off=, or on a
+  non-interactive input stream, output is written straight through.
 
 The *normative specification* of the dumb-terminal pager, its keys, the
 =pager= / =pager-height= settings, and the page-height rule
