@@ -1069,21 +1069,28 @@ Each surface handles this the way that fits it:
 
 *The dumb-terminal pager.* When =pager= is =on=, a command's output is
 collected and emitted a page at a time; after each page (except the last) the
-pager shows a prompt and reads *one key* (a small modal sub-mode, like the
+pager shows a prompt and reads a command (a small modal sub-mode, like the
 location-selection sub-mode of §2 — its keys are local and do not touch the
-top-level map):
+top-level map). It accepts *two overlapping vocabularies*:
 
-- forward one page — =SPACE= or =RET= or =>= (the universal "more" gesture; =>=
-  matches the §3 forward motion);
-- backward one page — =<= (matches the §3 backward motion);
-- first / last page — =<<= / =>>= (as §3);
-- quit reading (discard the rest) — =q=.
+- *the familiar =less=(1) commands*, so anyone who knows =less= need learn
+  nothing new: =SPACE= / =f= page forward, =b= page back, =d= / =u= half-page
+  down / up, =j= / =k= (or =RET= for a line) line down / up, =g= / =G= first /
+  last page, =/REGEXP= and =?REGEXP= search forward / back with =n= / =N= for
+  the next / previous match, and =q= to quit (discard the rest);
+- *the §3 navigation directions as aliases* — =>= forward page, =<= back page,
+  =<<= / =>>= first / last page — so the pager shares the debugger's own motion
+  vocabulary too.
 
-These spellings are *provisional* but deliberately reuse the §3 navigation
-directions so the pager needs no new vocabulary. When =pager= is =off=, output
-is written straight through (the Emacs-shell / redirect case), and — as for
-EOF at the prompt (DN-6) — a non-interactive input stream never blocks on the
-pager: it behaves as =off= so a piped or CI session runs to completion.
+Both sets are *provisional* but each is a well-known convention; they coexist
+because their keys do not clash. (=less='s =g= / =G= are top / bottom here, a
+local meaning of the sub-mode — distinct from the global =goto= =g=, which the
+modal sub-mode shadows while paging.) On a *raw-key* terminal these fire on the
+keystroke, =less=-style; on the strictly *line-buffered* dumb terminal (§0) the
+command is typed then =RET= (a bare =RET= = next page). When =pager= is =off=,
+output is written straight through (the Emacs-shell / redirect case), and — as
+for EOF at the prompt (DN-6) — a non-interactive input stream never blocks on
+the pager: it behaves as =off= so a piped or CI session runs to completion.
 
 *Page height.* The effective page is =min(terminal-height, pager-height)= when
 the terminal height is known; the dumb terminal often *cannot* report its size,
