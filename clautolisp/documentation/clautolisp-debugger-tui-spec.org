@@ -292,21 +292,53 @@ without any new commands.
 A bare number designates *poll-point N* (numbered poll points, above); a
 *signed* =+N= / =-N= is the relative sibling skip — the sign disambiguates.
 
-=search REGEXP= is a grep whose *scope follows the current level*: in a
-directory it recurses through the sub-directories and Lisp files; in a file
-or a form it searches just that file. It prints the matching lines (like
-grep); the user picks one and the selection moves to the *sexp* that
-matched, entering the file if need be.
+*Input paradigm.* These spellings are the *dumb-terminal* ones, and the
+dumb terminal is *line-buffered*: you type a short token and press =RET=,
+and the whole line goes to the debugger. Function, arrow and =Home= / =End=
+keys do not belong there — they would have to be encoded into the line
+buffer and you would *still* press =RET=, and in an Emacs =shell= buffer
+they are captured by Emacs (=Home= = beginning-of-buffer, …) and never
+reach the program. So the dumb terminal stays all-typeable: =<< < > >>=,
+=±N=, words. The *ncurses* and *aldb* UIs read real keystrokes, so they
+*additionally* bind the obvious keys — =Home= / =End= for first / last, the
+arrows for forward / backward / down / up — firing on the keypress, no
+=RET=. The typeable spellings remain valid in all three.
 
-Jumping by name or location — the *go to* family, as opposed to
-step-by-step motion:
+=search REGEXP= is a *search* whose *scope follows the current level*: in a
+directory it recurses through the sub-directories and Lisp files; in a file
+or a form it searches just that file. It lists the matches; the user picks
+one and the selection moves to the *sexp* that matched, entering the file
+if need be. (We keep the abstract name =search=; a first implementation may
+simply shell out to =grep=.)
+
+Jumping by name or path — the *go to* family, as opposed to step-by-step
+motion:
 
 - =definition= (=.=) — the definition of the selected call/symbol (may
-  cross files; next subsection);
-- =form NAME= — a named top-level form (function): the common by-name jump;
-- =goto LOCATION= — =FILE=, =FILE:LINE=, =FILE:FUNCTION=, or a directory
-  =DIR/= — this folds the classic file:line / file:function navigation into
-  the same tree;
+  cross files; next subsection).
+- =goto= (=g=) — jump by *name* or *qualified path*; its argument is one of:
+  - =goto FILE= / =goto FILE:LINE= — a file, at its top-level forms or at
+    =LINE= (the classic file:line jump);
+  - =goto NAME= — a global function =NAME=, to its definition;
+  - =goto OUTER INNER …= — a *qualified path* descending through *nested
+    local* definitions: =goto foo bar= is the =bar= defined inside =foo=,
+    the AutoLISP local-function idiom
+    =(defun foo (x / bar) (defun bar (y) (+ x y)) (bar x))=;
+  - =goto OBJ INNER …= — when the first name is a *variable* holding a
+    lambda /object/ loaded from a file (the AutoLISP "object" idiom: a file
+    whose last form is a lambda with local functions and a dispatching
+    body, instantiated by =load=, which returns that lambda), =OBJ= names
+    the *file* via the lambda's source metadata and =INNER= a local
+    function in it. So =goto o1 bar= and =goto o2 bar= reach *different
+    files* when =o1= and =o2= were loaded from different files, even though
+    each defines a local =bar=.
+
+  The *path* is what disambiguates the many *local* namespaces — the same
+  local name can live in several functions or objects, and a bare global
+  =bar= may also exist. (This replaces the earlier =form NAME=: =goto NAME=
+  covers the simple case, and =form= was an unclear name — =defun NAME=
+  would have read better — while =goto='s path handles the nested and
+  object idioms it could not.)
 - =back= / =history= — return through the browse stack / the saved
   navigation states (below).
 
@@ -398,7 +430,7 @@ where they were, instead of re-drilling each time.
 *** ncurses and aldb
 
 - *ncurses* — the same model applies directly: a source pane that defaults
-  to the current poll-point's form, with =form= / =definition= / =back= and
+  to the current poll-point's form, with =goto= / =definition= / =back= and
   the same bounded navigation history.
 - *aldb (Emacs)* — likely *less* needed, because Emacs already keeps
   buffers open and has native definition jumping (=xref= =M-.= and its
@@ -410,7 +442,7 @@ where they were, instead of re-drilling each time.
 
 ** Command Dictionaries and the sedit Command Set
 
-The new verbs above (=form=, =definition=, =back=, =history=) are
+The new verbs above (=goto=, =definition=, =back=, =history=, =search=) are
 *navigation* commands of the *sedit navigation mode*, not free-standing
 debugger commands. That raises two questions: which of sedit's own commands
 carry over, and how a mode's commands coexist with the debugger's.
@@ -467,17 +499,18 @@ Adaptations of the three kept-but-changed sedit verbs:
 To these motions the debugger adds its own families *unchanged* —
 execution (=c i n o a j r=), breakpoint (=b bo= + words), frame (=f fi fo
 ft fb=), inspection (=p t v= + =l*=) and the go-to / browse family
-(=. definition=, =form=, =goto=, =back=, =history=, =search=). So the sedit
+(=. definition=, =g goto=, =back=, =history=, =search=). So the sedit
 dictionary is *designed collision-free against the debugger commands*: from
 sedit every debugger verb is directly reachable, no escaping. It is
 nonetheless kept a *separate* dictionary (next subsections), because sedit
 is only *one* of the navigator options.
 
-Command shapes settled here: first/last siblings take =<<= / =>>=, the skip
-is the signed =±N=, both imported from sedit's numeric motions; =.= is
-=definition=; =form=, =goto=, =back=, =history=, =search= are word commands
-(single-key aliases, if wanted, to be drawn from the still-free
-=, ; g k m w '= keys).
+Command shapes settled here: first/last siblings take =<<= / =>>= (with
+=Home= / =End= as their ncurses/aldb key bindings, unavailable in the
+line-buffered dumb terminal), the skip is the signed =±N=, both imported
+from sedit's numeric motions; =.= is =definition=, =g= is =goto=; =back=,
+=history=, =search= are word commands (single-key aliases, if wanted, from
+the still-free =, ; k m w '= keys).
 
 *** Two navigator options: sexp (sedit) and classic file:line
 
@@ -491,13 +524,13 @@ and the *same conceptual verbs* are defined for both:
 - *sexp / sedit*: =down= / =up= / =forward= / =backward= / =first= / =last=
   move by structure over the one tree (sexp → form → file → directory);
   =definition= descends into a called function, =back= pops; =search= is
-  scope-following grep.
+  the scope-following search.
 - *classic file:line*: motion is by line and by file; =forward= / =backward=
   mean the next / previous *poll point* in the listing (so designation
-  still lands on sexps, not raw lines); =goto FILE:LINE= / =goto
-  FILE:FUNCTION= and the file/directory levels of the tree are reached the
-  gdb way (list a file, step among its top-level forms). =definition= jumps
-  to the function's file+line, =back= returns.
+  still lands on sexps, not raw lines); =goto FILE:LINE= and =goto='s name
+  paths reach functions and files, and the file/directory levels are
+  walked the gdb way (list a file, step among its top-level forms).
+  =definition= jumps to the function's file+line, =back= returns.
 
 TODO: settle the exact classic-navigator bindings, and whether the option
 is a user setting or follows terminal capability.
