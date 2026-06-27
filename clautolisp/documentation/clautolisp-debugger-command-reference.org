@@ -323,14 +323,30 @@ question at all.
   control structures (=progn=, the =defun= body, a =while= …), *re-running
   them re-establishes the dynamic bindings and the call frames* along the
   way — the environment is reconstructed by the re-evaluation itself, not
-  patched up by hand.
+  patched up by hand. A full worked trace, jumping *back into another
+  function's body across a call boundary*, is in
+  =clautolisp/documentation/jump-back.lsp= (the poll-point-by-poll-point
+  unwind pp13→pp12→pp9→pp0, then the forward descent pp0→pp1→pp2).
+- *Crossing a call boundary — argument re-evaluation.* When the re-drive
+  re-enters a function call (to reach a target inside that function's body),
+  the function's parameters and =/=-locals must be re-bound, which raises a
+  choice the engine must settle (see =jump-back.lsp=):
+  - *re-compute* the call's arguments by re-evaluating the argument forms —
+    faithful to "run from the target's entry", but re-runs the arguments'
+    side effects; or
+  - *reuse the saved argument values* from the original call — faithful to
+    "the frame as it was", but the argument expressions' /current/ meaning
+    may have changed.
+  Neither is clearly more justified, so this is a *user option* (default to
+  re-compute, matching "resume execution at the target"). Either way the
+  bindings are freshly established before the target poll point fires.
 - caveats: re-driving forms *re-runs their side effects* (a =backward= jump
-  re-executes =setq=, I/O, =entmod=, …) — the same hazard gdb warns about;
-  and a jump landing in a different binding scope can still surprise. aldb
-  warns and does not promise correctness there. *v1 scope:* forward and
-  outward jumps; *backward* jump is mechanically the same (ancestor re-drive)
-  but is deferred to a following version because of the side-effect
-  re-execution semantics.
+  re-executes =setq=, I/O, =entmod=, … and possibly call arguments, above) —
+  the same hazard gdb warns about; and a jump landing in a different binding
+  scope can still surprise. aldb warns and does not promise correctness
+  there. *v1 scope:* forward and outward jumps; *backward* jump is
+  mechanically the same (ancestor re-drive) but is deferred to a following
+  version because of these re-execution semantics.
 - backing: =[new]= — a per-thread /jump target/ consulted in the poll-point
   routine, plus the "am I an ancestor of the target?" test from
   =parent-form-map=, and the ancestor re-drive. The interpreter's
