@@ -111,7 +111,7 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | print EXPR                     | print EXPR                   | p   | have    |
 | eval / call / expression       | (sexp) — no command          | —   | have    |
 | set var NAME = VALUE           | (setq NAME EXPR ...)         | —   | have*²  |
-| set NON-LISP var               | set NAME EXPR (reserved)     | —   | future  |
+| set NON-LISP var               | set NAME VALUE (= settings)  | —   | new     |
 | display / undisplay            | display ; undisplay          | —   | new     |
 | inspect / explore value        | visit EXPR                   | v   | have    |
 | ptype / whatis                 | type EXPR                    | t   | new     |
@@ -127,7 +127,7 @@ Conflicts from the first pass were resolved (2026-06) thus: =finish→out=
 | inspector "name this value"    | bind NAME                    | —   | have    |
 | help / apropos                 | help ; apropos               | h ? | have    |
 | define (user/built-in command) | bind-/define-debugger-command| —   | new     |
-| settings / set option          | settings                     | —   | new     |
+| settings / set option          | settings ; set NAME VALUE    | —   | new     |
 | shell / python / script        | —                            | —   | n/a     |
 
 (* =delete= of a single breakpoint is =cmd-remove-breakpoint=; "delete
@@ -849,8 +849,9 @@ debugging disabled.
   Setting a /shadowed/ binding (one owned by an outer frame) is a *future
   refinement* via frame selection: =frame 3=, =(setq n 44)=, =frame 0=,
   =p n= — see footnote *² and spec §9.4–§9.5. There is no =,set= word
-  command for Lisp variables; =set NAME EXPR= is *reserved* for possible
-  future non-Lisp debugger variables.
+  command for Lisp variables (use =(setq …)=); =set NAME VALUE= is the command
+  for *non-Lisp debugger variables* — i.e. the per-session *settings* (§8
+  =settings=: =set navigator line=, =set pager off=, …).
 - backing: =[have]= =cmd-set-variable= (frame-0 visible). Per-frame /
   shadowed =setq= is =[future]=.
 
@@ -969,38 +970,43 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
 - backing: =[have]= (dumb =h=); =,apropos= is =[new]=, trivial.
 
 ** settings
-- aldb: =,settings=  | =,set-option NAME VALUE=
+- aldb: =,settings=  | =set NAME VALUE=
 - desc: per-session options; =,settings= with no argument lists them all with
-  their current values, =,set-option NAME VALUE= sets one. gdb =set= / lldb
-  =settings set=. The options:
+  their current values, and =set NAME VALUE= sets one (=,set NAME VALUE= in the
+  no-RET UIs). Option NAMEs and their symbolic VALUEs are *case-insensitive*.
+  gdb =set= / lldb =settings set=. (=set NAME VALUE= is the "non-Lisp debugger
+  variable" assignment that §4 reserved — settings are exactly those
+  variables.) The options:
   - =navigator= — which source navigator is active: =sexp= (the structural
-    sedit view) or =classic= (the flat file:line view). A *pure user toggle*,
-    not inferred from terminal capability; both reuse the same motion keys
-    (§3 *Navigation*), differing only in rendering (TUI spec, "Two navigator
-    options"). (Option name provisional.)
+    sedit view) or =line= (the flat file:line view); =set navigator sexp= /
+    =set navigator line= (case-insensitive). A *pure user toggle*, not inferred
+    from terminal capability; both reuse the same motion keys (§3
+    *Navigation*), differing only in rendering (TUI spec, "Two navigator
+    options").
   - =*navigation-history-max*= — cap on saved navigation states (the browse
     stack + selection pushed on each debugger re-entry, §3 *Navigation*);
     oldest dropped beyond the limit. Default *1000* (essentially unbounded).
   - =style= — the terminal-styling tri-state (*Terminal styling* below):
     =auto= (default — follow =resolve-color-policy=), =on= (force), =off=
     (force plain). Plus the per-element *style map* faces, each rebindable
-    via =,set-option= (see *Terminal styling*).
+    via =set= (see *Terminal styling*).
   - break-on-caught — stop on a /caught/ error too (=*break-on-caught-error*=,
     §2 =catch=); default off.
   - source window size — how many source lines =list source= shows around the
     stop.
   - preview length — truncation width for one-line value previews (=print=,
     inspector annotations).
-  - =pager= — =on= / =off=: whether long command output (longer than the
-    screen) is captured and shown a page at a time in the *dumb terminal*
-    (*Paging long output* below). Default *on* for a size-limited terminal;
-    typically set =off= under an Emacs =shell= (where the buffer scrolls). Not
-    used by ncurses (its own scrollable window) or aldb (Emacs scrollback).
-  - =pager-height= — optional page height in lines for the pager. The effective
-    page is =min(terminal-height, pager-height)= when the terminal height is
-    known, else =pager-height= alone (the terminal size is often unavailable on
-    a dumb terminal). With neither available, a built-in fallback (provisionally
-    24) is used. (Option names provisional.)
+  - =pager= — =on= / =off= (=set pager on= / =set pager off=): whether long
+    command output (longer than the screen) is captured and shown a page at a
+    time in the *dumb terminal* (*Paging long output* below). Default *on* for
+    a size-limited terminal; typically set =off= under an Emacs =shell= (where
+    the buffer scrolls). Not used by ncurses (its own scrollable window) or
+    aldb (Emacs scrollback).
+  - =pager-height= — an *integer* page height in lines (=set pager-height N=).
+    The effective page is =min(terminal-height, pager-height)= when the
+    terminal height is known, else =pager-height= alone (the terminal size is
+    often unavailable on a dumb terminal). With neither available, the built-in
+    fallback of *24* lines is used.
 - backing: =[new]= (a small per-session options plist; =style= reuses the
   runtime colour policy, and =*navigation-history-max*= the navigation
   history). The exact option NAMEs for the source-window and preview-length
@@ -1029,7 +1035,7 @@ richer plain-terminal listing without any ncurses or Emacs UI.
   =NO_COLOR=, the output still reads unambiguously — styling only
   *emphasises* what the markers already say. This is the same discipline
   =*color-output*= follows for ordinary value printing.
-- *The style map (initial faces; all rebindable via =,set-option=):*
+- *The style map (initial faces; all rebindable via =set=):*
   - *list source* — current line: =INVERSE= (or =BOLD=); a line bearing a
     breakpoint: =*= gutter in red; a /once/ breakpoint (=bo=): the gutter
     underlined to set it apart from a sticky one; the current poll-point
@@ -1082,7 +1088,7 @@ top-level map). It accepts *two overlapping vocabularies*:
   =<<= / =>>= first / last page — so the pager shares the debugger's own motion
   vocabulary too.
 
-Both sets are *provisional* but each is a well-known convention; they coexist
+Both sets are *settled*; each is a well-known convention and they coexist
 because their keys do not clash. (=less='s =g= / =G= are top / bottom here, a
 local meaning of the sub-mode — distinct from the global =goto= =g=, which the
 modal sub-mode shadows while paging.) On a *raw-key* terminal these fire on the
@@ -1095,8 +1101,8 @@ the pager: it behaves as =off= so a piped or CI session runs to completion.
 *Page height.* The effective page is =min(terminal-height, pager-height)= when
 the terminal height is known; the dumb terminal often *cannot* report its size,
 so the configured =pager-height= is then used alone, and with neither available
-a built-in fallback (provisionally 24 lines) applies. One line is reserved for
-the pager prompt.
+a built-in fallback of *24 lines* applies. One line is reserved for the pager
+prompt.
 
 - backing: =[new]= — a thin output-capturing wrapper around the commands that
   can overflow, driven by the =,settings pager= / =pager-height= options and
