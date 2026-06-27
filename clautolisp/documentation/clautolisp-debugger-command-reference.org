@@ -299,20 +299,45 @@ question at all.
   So jumping *forward within a sequence* is clean: the skipped forms are
   simply not evaluated. The /same suppress-the-body mechanism/ implements
   function =return= (skip the rest of the body, deliver a value at the
-  function-exit poll point). Jumping *outward* (to an enclosing form) is the
-  =return=/unwind direction: unwind to the common-ancestor poll point — the
-  =CLAL-POLL-RETURN= restart / =clal-abort= catch the engine already has —
-  then jump forward from there.
-- caveats (as in gdb): a *backward* jump re-executes forms and a jump
-  *across binding scopes* (into/out of a =/=-local or =foreach= binding) may
-  leave the environment inconsistent; aldb warns and, like gdb, does not
-  promise correctness in those cases. Forward, same-scope jumps are the
-  supported case.
+  function-exit poll point).
+- *All three directions reduce to "skip forward, but possibly initiated from
+  an ancestor poll point".* A poll point can only skip *forward* among the
+  forms /it itself sequences/; reaching a target it does not sequence is
+  handled by letting control return to the nearest *enclosing* poll point
+  that does, which then re-drives:
+  - *forward, same sequence* — the current form's parent already sequences
+    the target; skip the intervening forms, evaluate at the target.
+  - *outward* (to an enclosing form) — skip to the end of the current form
+    so control returns to the parent poll point; it notices the pending
+    target is /not/ below it either and skips to /its/ end, … unwinding poll
+    point by poll point until the nearest ancestor that *does* enclose the
+    target is reached; that one then jumps forward to it.
+  - *backward* — same as outward up to the common ancestor, then forward.
+    Example: stopped at =^= in =(progn e1 e2 ^ e3)= (the =:before= of =e3=),
+    to jump back to =e1= we cannot act from =e3='s poll point, but =progn='s
+    poll point sequences =e1 e2 e3=: record the target, skip =e3=, control
+    returns to the =progn= poll point, which notices the backward target
+    among its children and *re-drives its subexpressions*, skipping forward
+    to =e1=.
+  The pleasant consequence: because the jump re-enters through the genuine
+  control structures (=progn=, the =defun= body, a =while= …), *re-running
+  them re-establishes the dynamic bindings and the call frames* along the
+  way — the environment is reconstructed by the re-evaluation itself, not
+  patched up by hand.
+- caveats: re-driving forms *re-runs their side effects* (a =backward= jump
+  re-executes =setq=, I/O, =entmod=, …) — the same hazard gdb warns about;
+  and a jump landing in a different binding scope can still surprise. aldb
+  warns and does not promise correctness there. *v1 scope:* forward and
+  outward jumps; *backward* jump is mechanically the same (ancestor re-drive)
+  but is deferred to a following version because of the side-effect
+  re-execution semantics.
 - backing: =[new]= — a per-thread /jump target/ consulted in the poll-point
-  routine (the interpreter's =eval-poll-form= already holds its body
-  unevaluated; the compiled fork must wrap the body in a real closure to get
-  the same suppression — DN-1). Reuses =parent-form-map= and the existing
-  unwind primitives.
+  routine, plus the "am I an ancestor of the target?" test from
+  =parent-form-map=, and the ancestor re-drive. The interpreter's
+  =eval-poll-form= already holds its body unevaluated; the compiled fork must
+  wrap the body in a real closure to get the same suppression (DN-1). Reuses
+  the existing unwind primitives (=CLAL-POLL-RETURN= / =clal-abort=) for the
+  outward/return direction.
 
 ** stepi / nexti   =[n/a]=
 - The interpreter has no machine instructions; instruction-level stepping is
@@ -743,10 +768,12 @@ New and worth a design pass (=[new]=, medium):
   the natural answer to "why did this variable change", which the spec's
   shadowed-binding inspection (§9.4) already half-addresses.
 - *jump LINE* (=j=) — form-level jump by /suppressing poll-point bodies/
-  between here and the target (forward, same-scope; outward = unwind like
-  =return=). Expressible because a poll point gates whether its form runs;
-  reuses =parent-form-map= and the unwind primitives. Backward / cross-scope
-  jumps warn, as in gdb.
+  between here and the target. Expressible because a poll point gates whether
+  its form runs. Forward, outward, and backward all reduce to "skip forward,
+  initiated from the nearest ancestor poll point that encloses the target,
+  which re-drives" — and the re-drive re-establishes bindings/frames for
+  free. v1: forward + outward; backward deferred (re-runs side effects, like
+  gdb). Reuses =parent-form-map= and the unwind primitives.
 
 Dropped as not applicable (=[n/a]=): stepi/nexti, hbreak, x/memory/
 registers, directory, shell/python/script (interpreted, tagged-value
