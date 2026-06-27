@@ -1020,8 +1020,8 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     often unavailable on a dumb terminal). With neither available, the built-in
     fallback of *24* lines is used.
   - =default-user-interface= — which UI the debugger uses on entry: =tui=
-    (the line-mode terminal UI), =ncurses= (the full-screen UI), or =aldb= (the
-    Emacs UI). This is the *persisted default*; the *current* value
+    (the *TUI*, on a line-mode terminal), =ncurses= (the full-screen UI), or
+    =aldb= (the Emacs UI). This is the *persisted default*; the *current* value
     =user-interface= (set by the CLI, §10) overrides it for one run without
     being saved. See §10 *Selecting the user interface*.
   - =default-aldb-listening-address= — the address aldb listens on for the
@@ -1508,9 +1508,9 @@ via poll-point body suppression (see =jump LINE=, §1).
 One command set, three input surfaces (spec §17 keeps UIs interchangeable),
 all driven by the same =read → check-commands → eval → print= loop:
 
-- *dumb terminal:* every command is a typed token (=c=, =lf=, =break 12=,
-  or a bare =(form)=) terminated by RET. No prefix ambiguity — the whole
-  token is read before dispatch. Dumb for *input* only: its *output* is
+- *TUI (line-mode terminal):* every command is a typed token (=c=, =lf=,
+  =break 12=, or a bare =(form)=) terminated by RET. No prefix ambiguity — the
+  whole token is read before dispatch. "Dumb" for *input* only: its *output* is
   styled with ANSI colour/inverse where the terminal allows (see *Terminal
   styling*, §8).
 - *ncurses / Emacs aldb:* *cursor-based — the user never types a line number*
@@ -1542,9 +1542,12 @@ discipline.
 
 ** Selecting the user interface   =[new]=
 
-The debugger runs one of *three* UIs: =tui= (the line-mode terminal UI — the
-"dumb terminal" above), =ncurses= (the full-screen UI), or =aldb= (the Emacs
-UI). The choice has a *persisted default* and a *current* (per-run) override:
+The debugger runs one of *three* UIs: the *TUI* (=tui= — the Text User
+Interface, on a line-mode terminal that is line-buffered for input, a.k.a. the
+"dumb terminal"), =ncurses= (the full-screen UI), or =aldb= (the Emacs UI).
+*TUI* is the user-facing name and is the value used in the CLI option and the
+configuration (=tui=); "dumb / line-mode terminal" only describes its input.
+The choice has a *persisted default* and a *current* (per-run) override:
 
 - *Persisted default* — the =default-user-interface= setting (§8;
   =set default-user-interface ncurses=), stored in =*clal-aldo-configuration*=;
@@ -1590,6 +1593,6 @@ The *first* time control reaches the debugger it reads =user-interface= (else
 - *ncurses.* The UI runs on the terminal's *alternate screen*, so on resume the
   program recovers the terminal with exactly the display it had when the
   debugger was entered.
-- *tui.* The session shares the program's screen: on resume the program
+- *TUI.* The session shares the program's screen: on resume the program
   continues *below* the debugging session, and the user scrolls back to recover
   the program's pre-debug terminal state.

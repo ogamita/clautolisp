@@ -8,7 +8,7 @@ This document concentrates on the specification of an experimental
 interface to display and specify break points in a sexp-based source
 form.
 
-Which UI runs (=tui= — this line-mode terminal UI —, =ncurses=, or =aldb=),
+Which UI runs (the *TUI* =tui= — this very interface —, =ncurses=, or =aldb=),
 how it is selected (the =default-user-interface= setting, the =user-interface=
 current value, the =--aldo-user-interface= CLI option) and how it is activated
 on entry (the aldb connect prompt, the ncurses alternate screen, the tui
