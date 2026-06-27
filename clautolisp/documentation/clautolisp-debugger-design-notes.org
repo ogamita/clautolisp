@@ -205,7 +205,7 @@ preemptively.
 ** Compiler path (Phase 8)
 
 Unchanged from DN-1's note: the compiler still emits two CL bodies, but the
-which body runs" decision should likewise be driven by whether a function was
+"which body runs" decision should likewise be driven by whether a function was
 compiled-for-debug and a session is active, installed the remote way (debug
 body under the public name), rather than by call-path propagation.
 
