@@ -372,37 +372,62 @@ The new verbs above (=form=, =definition=, =back=, =history=) are
 debugger commands. That raises two questions: which of sedit's own commands
 carry over, and how a mode's commands coexist with the debugger's.
 
-*** The sedit command set, filtered
+*** Reconciling the two sets into one homogeneous command set
 
-The structural editor =sedit/sedit.lisp= (sedit branch) already defines a
-command map. We keep its *navigation* commands and drop its *mutating* ones
-— the debugger never destructively rewrites the program's source from this
-view:
+With sedit as the *spine* of the TUI, its navigation commands and the
+debugger's commands must form *one* set, not two sets reconciled by
+mode-escaping. The good news: the debugger's single-key map was already
+designed collision-free (command reference §0), and the keys sedit needs
+for /pure motion/ are either *already free* there (=d=, =u=) or can take
+intuitive *directional* keys (=>=, =<=) that no debugger command uses — so
+homogenising costs the debugger set *nothing*: no debugger command moves.
 
-| sedit command          | key       | disposition                      |
-|------------------------+-----------+----------------------------------|
-| down                   | d         | keep — enter the selected list   |
-| up                     | u         | keep — select the enclosing list |
-| forward / next         | f / n     | keep — next sibling sexp (or up) |
-| backward / previous    | b / p     | keep — previous sibling (or up)  |
-| help                   | h         | keep — list the active commands  |
-| eval                   | e         | adapt — see below                |
-| quit                   | q         | adapt — see below                |
-| insert / add / replace | i / a / r | drop (mutating)                  |
-| cut / copy / paste     | x / c / y | drop (mutating)                  |
-| save / load            | s / l     | drop (mutating)                  |
+Both sets side by side, and the unified assignment (=sedit/sedit.lisp=,
+sedit branch, supplies the sedit column):
 
-Two adaptations: =eval= sends the *selection* to the debugger REPL to be
-evaluated in the *current frame* (command reference §3/§4), not a bare
-=CL:EVAL= of the sexp; =quit= simply *leaves the navigator* — nothing is
-returned and nothing is mutated, unlike stand-alone sedit which returns the
-edited sexp. To these the debugger adds its own verbs: =form=,
-=definition=, =back=, =history=, designation-by-number, and the breakpoint
-operations.
+| concept                     | sedit       | debugger          | unified |
+|-----------------------------+-------------+-------------------+---------|
+| enter selected list (down)  | =d= down    | — (free)          | =d=     |
+| select enclosing list (up)  | =u= up      | — (free)          | =u=     |
+| next sibling (forward)      | =f= / =n=   | =f=,=n= taken     | =>=     |
+| previous sibling (backward) | =b= / =p=   | =b=,=p= taken     | =<=     |
+| evaluate the selection      | =e= eval    | =(sexp)= at REPL  | =e=     |
+| help                        | =h=         | =h= =?=           | =h= =?= |
+| leave debugger → top REPL   | =q= quit    | =q= quit / kill   | =q=     |
+| insert / add / replace      | =i=/=a=/=r= | =i=/=a=/=r= verbs | drop (mutating) |
+| cut / copy / paste          | =x=/=c=/=y= | =c= continue      | drop (mutating) |
+| save / load                 | =s= / =l=   | —                 | drop (not useful) |
+
+The four *real* collisions — sedit =f n b p= against debugger
+=frame=/=next=/=break=/=print= — dissolve once *structural motion* takes
+=d u > <= instead: =d= and =u= were already free, and =>= / =<= are
+mnemonic for forward/backward, unused by either set (and on AZERTY a single
+dedicated key, =<= unshifted / =>= shifted). The sedit aliases =n=
+(=forward) and =p= (=backward) are *not* carried over, so =n= stays
+/step-over/ and =p= stays /print/.
+
+Adaptations of the three kept-but-changed sedit verbs:
+
+- =e= evaluates the *selection* in the *current frame* (command reference
+  §3/§4), not a bare =CL:EVAL= of the sexp.
+- =q= is the *debugger* =quit=: a non-local exit to the top-level REPL
+  (command reference §1; DN-9 abort), not sedit's "return the edited sexp".
+  It is the way *out* only when abandoning the run — the everyday exits are
+  =continue= / =next= / =step=.
+- =save= / =load= are dropped: there is no buffer to persist, and the
+  debugger never rewrites the program's source from this view.
+
+To these motions the debugger adds its own families *unchanged* —
+execution (=c i n o a j r=), breakpoint (=b bo= + words), frame (=f fi fo
+ft fb=), inspection (=p t v= + =l*=) and browse (=form= =definition= =back=
+=history=). The whole thing is then *one* command set in *one* dictionary,
+internally collision-free.
 
 TODO: =sedit= also offers motions worth importing — jump N sexps
-forward/backward by typing a number (which dovetails with
-designation-by-number) and a search; decide which to adopt.
+forward/backward by typing a number (dovetails with designation-by-number)
+and a search; decide which to adopt, and pick keys for the browse verbs
+(=definition= / =back= / =history= / =form=) from the free keys
+(=. , ; g k m w= … remain).
 
 *** Two navigation backends: sexp (sedit) and file:line
 
@@ -422,27 +447,29 @@ toggle or follows terminal capability.
 
 *** Command dictionaries (stacked dispatch)
 
-sedit's keys collide hard with the debugger's: =b= is sedit-/backward/ but
-debugger-/break/; =f n p c a r i q= clash likewise. Rather than rename
-either set, dispatch goes through *stacked command dictionaries*, one per
-module:
+Because the navigator and debugger sets are *homogenised* into one
+collision-free set (above), they share *one* dictionary — no escaping is
+needed between them. Separate dictionaries are still wanted for the
+*inspector*, whose compact keys are tuned for value navigation and would
+otherwise shadow debugger verbs (its =b= is =bind=, command reference §7,
+not =break=), and for *user-defined* commands. So dispatch goes through
+*stacked command dictionaries*:
 
-- the *sedit navigator*, the *inspector*, and the *global debugger*
-  dictionaries;
+- the *navigator + debugger* dictionary (the homogeneous set above) and the
+  *inspector* dictionary, over the *global* debugger dictionary;
 - the active mode puts its dictionary *on top*; lookup walks from the
-  innermost dictionary outward, *first match wins*. So in the navigator =b=
-  is /backward/, in the inspector =b= is its own =bind= (command reference
-  §7), and a key bound only globally still resolves through to the
-  debugger.
+  innermost dictionary outward, *first match wins*. So in the inspector =b=
+  is its own =bind=, while in the navigator there is no such clash to begin
+  with, and a key bound only globally still resolves through.
 
-*Escaping to an outer dictionary.* When an inner binding shadows a debugger
-command you still want, a reserved *prefix* routes the next token to the
-outer/global dictionary — the word =debugger= (=debugger continue=) or a
-dedicated escape key. The prefix must itself be free in the active mode, so
-it cannot be a bare =d= (that is sedit-/down/); the spelled-out =debugger=
-word, or one key reserved across all modes, avoids the clash. In the
-RET-terminated dumb terminal the word form is unambiguous; the single-key
-UIs need a dedicated escape key.
+*Escaping to an outer dictionary.* When an inner binding (an inspector key,
+a user command) shadows a debugger command you still want, a reserved
+*prefix* routes the next token to the outer/global dictionary — the word
+=debugger= (=debugger continue=) or a dedicated escape key. The prefix must
+itself be free in the active mode; the spelled-out =debugger= word, or one
+key reserved across all modes, avoids any clash. In the RET-terminated dumb
+terminal the word form is unambiguous; the single-key UIs need a dedicated
+escape key.
 
 *User dictionaries.* =bind-debugger-command= / =define-debugger-command=
 (command reference §8) gain a *dictionary* argument, so a user can add a
