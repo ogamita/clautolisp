@@ -107,19 +107,45 @@ empty list)."
 ;;; clautolisp.autolisp-runtime::*special-operator-dispatch* are covered; the
 ;;; all-:code ones — SET, PROGN, IF, AND, OR, WHILE, REPEAT — need no entry.)
 
-(defparameter *special-form-arg-roles*
+;;; Each grammar entry is a function (FORM INDEX) → (values ROLE CHILD-CONTEXT):
+;;; ROLE classifies the child at INDEX; CHILD-CONTEXT is the grammar context to
+;;; use when descending INTO that child (NIL = no further structure). This makes
+;;; the classification *context-aware*, so nested non-code structure works —
+;;; e.g. a BricsCAD LET, =(let ((v1 e1) … (vn en)) body…)=, whose binding list
+;;; is a group of bindings, each binding =(vi ei)= having a non-code variable
+;;; =vi= and a code init =ei=.
+
+(defparameter *special-form-grammars*
   (list
-   (cons "QUOTE"    (constantly :non-code))                          ; the datum
-   (cons "FUNCTION" (lambda (i) (if (= i 1) :non-code :code)))       ; the designator
-   (cons "SETQ"     (lambda (i) (if (oddp i) :non-code :code)))      ; var val var val …
-   (cons "DEFUN"    (lambda (i) (if (<= i 2) :non-code :code)))      ; name arglist body…
-   (cons "DEFUN-Q"  (lambda (i) (if (<= i 2) :non-code :code)))      ; name arglist body…
-   (cons "LAMBDA"   (lambda (i) (if (= i 1) :non-code :code)))       ; arglist body…
-   (cons "FOREACH"  (lambda (i) (if (= i 1) :non-code :code)))       ; var list body…
-   (cons "COND"     (constantly :group))                            ; (test body…) clauses
-   (cons "TRACE"    (constantly :non-code))                          ; function-name symbols
-   (cons "UNTRACE"  (constantly :non-code)))                         ; function-name symbols
-  "Per-special-operator role of each argument; see the commentary above.")
+   (cons "QUOTE"    (lambda (form i) (declare (ignore form i)) (values :non-code nil)))
+   (cons "FUNCTION" (lambda (form i) (declare (ignore form)) (if (= i 1) (values :non-code nil) (values :code :form))))
+   (cons "SETQ"     (lambda (form i) (declare (ignore form)) (if (oddp i) (values :non-code nil) (values :code :form))))
+   (cons "DEFUN"    (lambda (form i) (declare (ignore form)) (if (<= i 2) (values :non-code nil) (values :code :form))))
+   (cons "DEFUN-Q"  (lambda (form i) (declare (ignore form)) (if (<= i 2) (values :non-code nil) (values :code :form))))
+   (cons "LAMBDA"   (lambda (form i) (declare (ignore form)) (if (= i 1) (values :non-code nil) (values :code :form))))
+   (cons "FOREACH"  (lambda (form i) (declare (ignore form)) (if (= i 1) (values :non-code nil) (values :code :form))))
+   (cons "COND"     (lambda (form i) (declare (ignore form i)) (values :group :cond-clause)))
+   (cons "TRACE"    (lambda (form i) (declare (ignore form i)) (values :non-code nil)))
+   (cons "UNTRACE"  (lambda (form i) (declare (ignore form i)) (values :non-code nil)))
+   ;; BricsCAD LET (not a clautolisp special operator today, but the grammar is
+   ;; ready): the binding list is a group of bindings; the body is code.
+   (cons "LET"      (lambda (form i) (declare (ignore form)) (if (= i 1) (values :group :let-bindings) (values :code :form))))
+   (cons "LET*"     (lambda (form i) (declare (ignore form)) (if (= i 1) (values :group :let-bindings) (values :code :form)))))
+  "Special-operator name → child grammar (FORM INDEX → (values ROLE CHILD-CONTEXT)).
+Add a special operator with one entry. Operators absent here are ordinary forms
+(all arguments :code).")
+
+(defparameter *sub-grammars*
+  (list
+   ;; the LET binding list: each element is a binding
+   (cons :let-bindings (lambda (form i) (declare (ignore form i)) (values :group :let-binding)))
+   ;; a single LET binding (var init): var is non-code, init is code
+   (cons :let-binding  (lambda (form i) (declare (ignore form)) (if (zerop i) (values :non-code nil) (values :code :form))))
+   ;; a COND clause (test body…): every element is code
+   (cons :cond-clause  (lambda (form i) (declare (ignore form i)) (values :code :form))))
+  "Sub-structure context → child grammar, for the nested non-code structure a
+:group child opens (e.g. a LET binding list, a COND clause). Same shape as
+*special-form-grammars*.")
 
 (defun %operator-name (head)
   "The upper-case operator name of a form head (an AutoLISP or CL symbol), or
@@ -129,23 +155,42 @@ NIL if HEAD is not a symbol."
         ((symbolp head) (string-upcase (symbol-name head)))
         (t nil)))
 
+(defun classify-in-context (context form index)
+  "Classify the child at INDEX of FORM in grammar CONTEXT; return (values ROLE
+CHILD-CONTEXT). CONTEXT :form is an ordinary code form (dispatch on the head's
+operator); other contexts are sub-grammar names."
+  (if (eq context :form)
+      (if (zerop index)
+          (values :non-code nil)               ; the operator / function position
+          (let ((g (and (consp form)
+                        (cdr (assoc (%operator-name (car form)) *special-form-grammars*
+                                    :test #'string=)))))
+            (if g (funcall g form index) (values :code :form))))
+      (let ((g (cdr (assoc context *sub-grammars*))))
+        (if g (funcall g form index) (values :code :form)))))
+
+(defun role-at-path (root path)
+  "Walk PATH from ROOT tracking grammar context; return the role (:code |
+:non-code | :group) of the node at PATH (:code at the root)."
+  (let ((context :form) (form root) (role :code))
+    (dolist (index path role)
+      (multiple-value-bind (r child-context) (classify-in-context context form index)
+        (setf role r
+              form (and (consp form) (nth index form))
+              context (or child-context :form))))))
+
 (defun child-role (parent index)
-  "The role of the child at INDEX of PARENT (0 = the operator/function position):
-:code | :non-code | :group. The operator position is :non-code; arguments
-default to :code unless PARENT is a special form with a role-table entry."
-  (cond
-    ((not (consp parent)) :code)
-    ((zerop index) :non-code)
-    (t (let* ((op (%operator-name (car parent)))
-              (fn (and op (cdr (assoc op *special-form-arg-roles* :test #'string=)))))
-         (if fn (funcall fn index) :code)))))
+  "The role of the child at INDEX of PARENT treated as a top-level form (0 = the
+operator position): :code | :non-code | :group. (One-level convenience; use
+ROLE-AT-PATH for context-aware nested classification.)"
+  (if (consp parent)
+      (values (classify-in-context :form parent index))
+      :code))
 
 (defun nav-selected-role (nav)
-  "The role of the selected node (:code at the root): whether it is an evaluated
-sub-form, a non-code datum/name, or a structural group."
-  (if (null (navigator-path nav))
-      :code
-      (child-role (nav-parent nav) (nav-index nav))))
+  "The role of the selected node (:code at the root) — context-aware, so e.g. a
+LET binding variable is :non-code even though it is nested two lists deep."
+  (role-at-path (navigator-root nav) (navigator-path nav)))
 
 (defun nav-code-p (nav)
   "True when the selected node sits in a *code* position — an evaluated form, so
