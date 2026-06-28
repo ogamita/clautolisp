@@ -210,11 +210,16 @@ the snapshot's FRAME via set-binding-entry (spec §16.1 :frame)."
 
 (defun call-with-session (ui-designator thunk
                           &key thread-info context (auto-quit t)
-                            ui-initargs break-on-caught)
+                            ui-initargs
+                            (break-on-caught (get-aldo-setting :break-on-caught)))
   "Open a debugger session with UI (a keyword or UI object), run THUNK
 with debugging active, and tear down on exit (spec §21/§24). THUNK is the
 AutoLISP work to debug; it should evaluate against CONTEXT. Returns THUNK's
 value (or :ABORTED).
+
+BREAK-ON-CAUGHT defaults to the `break-on-caught' setting (command reference
+§8), so the persisted configuration takes effect at session start; `,catch
+caught on|off' still toggles it mid-session.
 
 The session installs *debug-hit-handler* so each stop runs the UI command
 loop synchronously and applies its resume directive."
