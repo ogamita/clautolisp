@@ -793,8 +793,10 @@ three.
     were loaded from different files. (See the DN-12 engine prerequisite.)
 - desc: jump *by name or path*; the path disambiguates the many *local*
   namespaces. (Supersedes the earlier, unclear =form NAME=.)
-- backing: =[new]= (name/path resolution over the source map; the object idiom
-  needs source metadata on file-loaded lambdas — DN-12).
+- backing: =[partial — global name]=. =goto NAME= resolves a global function
+  via =metadata-for-name= over the source map and browses it (=g= / =,goto=).
+  Qualified local paths, =FILE:LINE=, and the object idiom (DN-12 source
+  metadata on file-loaded lambdas) are not yet implemented.
 
 *** definition
 - aldb: =.=  | =,definition=
@@ -805,7 +807,10 @@ three.
   breakpoints and designate =jump= targets (source-located); only
   binding-dependent ops defer to the current frame. =back= pops to where you
   came from.
-- backing: =[new]= (source-map lookup of the selected symbol's definition).
+- backing: =[done — by name]=. =definition NAME= (=.= / =,definition=) resolves
+  NAME over the source map and browses it, pushing the browse stack. The
+  cursor form (=.= on the selected call, no argument) is for the keystroke UIs;
+  the dumb terminal takes the name explicitly.
 
 *** back / history
 - aldb: =,back=  | =,history= (word commands; no single-letter key — initials
@@ -815,7 +820,10 @@ three.
   selection, pushed on every debugger re-entry); =history= + back / forward or
   =restore N= returns to a previous state, so across stops the user resumes
   reading where they last were. Capped by =*navigation-history-max*= (§8).
-- backing: =[new]= (the browse stack and the bounded navigation-history list).
+- backing: =[partial — browse stack]=. =back= pops the source-browse stack and
+  =history= lists it (innermost/current first). The cross-stop
+  *navigation-history* (a saved browse state per debugger re-entry, with
+  =restore N=) is not yet implemented.
 
 *** search
 - aldb: =,search REGEXP= (word command; no single-letter key — grouped with
@@ -826,7 +834,10 @@ three.
   matching *sexp*, entering the file if need be. (Abstract name kept; a first
   implementation may shell out to =grep=. This supersedes the §5
   =search REGEX= "low priority" entry.)
-- backing: =[new]=.
+- backing: =[partial — name search]=. =search PATTERN= lists instrumented
+  functions whose *name* matches a wcmatch wildcard (the matcher rbreak uses,
+  §2), with their locations; =goto NAME= jumps to one. Full-text search over
+  file/form content (and the grep fallback) is deferred.
 
 * 4. Data: print, eval, set, inspect
 

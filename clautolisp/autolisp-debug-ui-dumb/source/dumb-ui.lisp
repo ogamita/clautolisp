@@ -12,7 +12,10 @@
    (prompt :initarg :prompt :initform "DBG> " :accessor dumb-ui-prompt)
    (source-window :initarg :source-window :initform 2 :accessor dumb-ui-source-window)
    ;; `display' forms (strings), auto-printed after every stop (cmd-ref §4)
-   (displays :initarg :displays :initform '() :accessor dumb-ui-displays)))
+   (displays :initarg :displays :initform '() :accessor dumb-ui-displays)
+   ;; source-browse stack (cmd-ref §3): a list of (NAME . source-position),
+   ;; top = current browse position; pushed by goto/definition, popped by back.
+   (browse-stack :initarg :browse-stack :initform '() :accessor dumb-ui-browse-stack)))
 
 (defun make-dumb-ui (&rest initargs)
   (apply #'make-instance 'dumb-ui initargs))
@@ -229,6 +232,11 @@ reading. A line that looks like (form) is eval-in-frame."
       ;; source (§5) + structural navigation (§3)
       ((string= c "ls") (relist-source ui session) nil)
       ((member c '("nav" ",nav") :test #'string=) (nav-loop ui session) nil)
+      ((member c '("g" "goto" ",goto") :test #'string=) (goto-cmd ui session arg) nil)
+      ((member c '("." "definition" ",definition") :test #'string=) (definition-cmd ui session arg) nil)
+      ((member c '("back" ",back") :test #'string=) (back-cmd ui session) nil)
+      ((member c '("history" ",history") :test #'string=) (history-cmd ui session) nil)
+      ((member c '("search" ",search") :test #'string=) (search-cmd ui session arg) nil)
       ;; spelled two-word "list X"
       ((string= c "list") (list-sub-cmd ui session arg) nil)
       ;; meta (§8)
@@ -580,6 +588,98 @@ leave. The selected sub-form is shown bracketed, with whether it is a code
                   ((member cmd '("q" "quit") :test #'string=) (return))
                   (t (out ui "NAV> ? keys: d u > < << >> ±N q~%"))))))))))
 
+;;; --- source-browse stack (command reference §3 Navigation) ----------------
+
+(defun browse-push-and-show (ui name position)
+  "Push (NAME . POSITION) on the browse stack and display the source there. The
+browse stack changes only what is displayed — never execution or bindings."
+  (push (cons name position) (dumb-ui-browse-stack ui))
+  (out ui "DBG> ~A:~%" name)
+  (if (source-position-p position)
+      (ui-show-source ui position)
+      (out ui "DBG>   (no source position recorded)~%")))
+
+(defun browse-to-name (ui name)
+  "Resolve NAME to an instrumented function and browse to it; T on success."
+  (let ((md (metadata-for-name name)))
+    (cond
+      ((null md) (out ui "DBG> no instrumented function named ~A~%" name) nil)
+      (t (browse-push-and-show ui (function-debug-metadata-name md)
+                               (function-debug-metadata-source-position md))
+         t))))
+
+(defun goto-cmd (ui session arg)
+  "`goto NAME' (=g=) — browse to the definition of the global function NAME
+(command reference §3). v1: a global function name; qualified local paths,
+FILE:LINE, and the object idiom (DN-12) are not yet implemented."
+  (declare (ignore session))
+  (let ((name (and arg (string-trim " " arg))))
+    (cond
+      ((or (null name) (zerop (length name)))
+       (out ui "DBG> goto: usage: goto NAME~%"))
+      ((find #\: name)
+       (out ui "DBG> goto: FILE:LINE not yet supported (v1: goto NAME)~%"))
+      ((find #\Space name)
+       (out ui "DBG> goto: qualified local paths not yet supported (v1: goto NAME)~%"))
+      (t (browse-to-name ui name)))))
+
+(defun definition-cmd (ui session arg)
+  "`definition NAME' (=.=) — follow the call graph by name to NAME's definition
+and browse it, crossing files if need be (command reference §3). The cursor form
+(=.= on the selected call) belongs to the keystroke UIs; the dumb terminal takes
+the name explicitly. Does not move the current frame."
+  (declare (ignore session))
+  (let ((name (and arg (string-trim " " arg))))
+    (if (or (null name) (zerop (length name)))
+        (out ui "DBG> definition: usage: definition NAME~%")
+        (browse-to-name ui name))))
+
+(defun back-cmd (ui session)
+  "`back' — pop the source-browse stack to the previous position and redisplay
+it (command reference §3)."
+  (declare (ignore session))
+  (let ((stack (dumb-ui-browse-stack ui)))
+    (cond
+      ((null stack) (out ui "DBG>   browse stack empty~%"))
+      ((null (rest stack))
+       (setf (dumb-ui-browse-stack ui) '())
+       (out ui "DBG>   browse stack empty (back to the current poll point)~%"))
+      (t (pop (dumb-ui-browse-stack ui))
+         (destructuring-bind (name . position) (first (dumb-ui-browse-stack ui))
+           (out ui "DBG> back to ~A:~%" name)
+           (when (source-position-p position) (ui-show-source ui position)))))))
+
+(defun history-cmd (ui session)
+  "`history' — list the source-browse stack, innermost (current) first (command
+reference §3)."
+  (declare (ignore session))
+  (let ((stack (dumb-ui-browse-stack ui)))
+    (if (null stack)
+        (out ui "DBG>   no browse history~%")
+        (loop for (name . position) in stack
+              for i from 0
+              do (out ui "DBG>   ~D: ~A  ~A~%" i name
+                      (location-string position name))))))
+
+(defun search-cmd (ui session arg)
+  "`search PATTERN' — list instrumented functions whose name matches the wcmatch
+wildcard PATTERN, with their locations; `goto NAME' jumps to one (command
+reference §3). v1: a name search over the source map (full-text search deferred)."
+  (declare (ignore session))
+  (let ((pattern (and arg (string-trim " " arg))))
+    (cond
+      ((or (null pattern) (zerop (length pattern)))
+       (out ui "DBG> search: usage: search PATTERN~%"))
+      (t (let ((matches (sort (functions-matching pattern) #'string-lessp
+                              :key #'function-debug-metadata-name)))
+           (if (null matches)
+               (out ui "DBG>   no function name matches ~A~%" pattern)
+               (dolist (md matches)
+                 (out ui "DBG>   ~A  ~A~%"
+                      (function-debug-metadata-name md)
+                      (location-string (function-debug-metadata-source-position md)
+                                       (function-debug-metadata-name md))))))))))
+
 (defun advance-cmd (ui session arg)
   "`advance LINE' (=a=) — run to the poll point on LINE (§1). Returns the resume
 directive, or NIL (with a message) when LINE has none."
@@ -866,6 +966,7 @@ volatile — removed on first hit (`break once' / `bo', command reference §2)."
             DBG>   ll/lp/lv list locals/parameters/variables   list polls~%~
             DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source~%~
             DBG>   nav (structural navigation: d u > < << >> ±N q)~%~
+            DBG>   g/goto NAME   . /definition NAME   back   history   search PATTERN~%~
             DBG>   set NAME VALUE   ,settings [NAME|save|reload]~%~
             DBG>   display FORM   undisplay [N]~%~
             DBG>   (form...) evaluate in the current frame   h/? help   apropos WORD~%"))
