@@ -1,6 +1,6 @@
 #+TITLE: Plan To Resolve Under-Specified AutoLISP / Visual LISP Semantics
 #+AUTHOR: Codex
-#+OPTIONS: toc:3 num:t
+#+OPTIONS: toc:3 num:t tex:verbatim ^:{}
 #+TEXINFO_FILENAME: specification-resolution-plan.info
 #+TEXINFO_DIR_CATEGORY: AutoLISP specification
 #+TEXINFO_DIR_TITLE: specification-resolution-plan: (specification-resolution-plan).
@@ -182,7 +182,7 @@ The Phase-3 inferred-symmetry-with-`vl-member-if` hypothesis is now confirmed by
 ** Printer / Display Surface
 Closed via direct citation of the BricsCAD V26 `prin1`, `princ`, `print`, `terpri`, and `prompt` per-symbol pages. The previously open distinctions are now explicit:
 
-- `prin1` rewrites control characters (`\t \n \r \" \nnn`) so output round-trips through the reader.
+- `prin1` rewrites control characters (~\t \n \r \" \nnn~) so output round-trips through the reader.
 - `princ` writes control characters verbatim.
 - `print` is `prin1` with a leading newline and a trailing space.
 - `terpri` is zero-arity, command-line-only, returns `nil`.
