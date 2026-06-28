@@ -225,6 +225,7 @@ reading. A line that looks like (form) is eval-in-frame."
             DBG>   b list bkpts  B <line> set bkpt   p [name] print   e <form> eval~%~
             DBG>   l list source  t backtrace   x [form] inspect~%~
             DBG>   a abort   r <form> return value (at error)   q quit   h help~%~
+            DBG>   set NAME VALUE   ,settings [NAME|save|reload]~%~
             DBG>   (form...) evaluate in the current frame~%"))
 
 ;;; --- inspector sub-REPL (spec §18.2) -------------------------------
