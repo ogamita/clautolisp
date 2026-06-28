@@ -302,9 +302,15 @@ documentation/RELEASE_NOTES.org: ../RELEASE_NOTES.org
 	@mkdir -p documentation
 	cp $< $@
 
+# The clautolisp-doc-preamble.sty package gives xelatex the fonts for the
+# Unicode glyphs Latin Modern lacks (arrows, math, media controls, circled
+# numbers, dingbats, box drawing, CJK brackets) — see documentation/
+# clautolisp-doc-preamble.sty. It is injected into every export via
+# org-latex-packages-alist, and TEXINPUTS points at documentation/ so the
+# .sty is found regardless of the .tex's own directory (e.g. specifications/).
 %.pdf: %.org
-	$(EMACS) --batch \
-		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
+	TEXINPUTS="$(ROOT_DIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
+		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
 
