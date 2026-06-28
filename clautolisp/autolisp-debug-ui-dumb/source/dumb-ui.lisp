@@ -947,7 +947,10 @@ volatile — removed on first hit (`break once' / `bo', command reference §2)."
                       (out ui "DBG> no poll point at line ~D~%" line))))))))))
 
 (defun return-value-cmd (ui session hit arg)
-  "r <form> — continue-with-return (spec §10.1), only at an error stop."
+  "r [FORM] — continue-with-return (command reference §1 / spec §10.1): make the
+innermost instrumented form return FORM's value (nil with no FORM). Works at any
+stop that an instrumented form encloses — a breakpoint/step stop as well as an
+error stop."
   (declare (ignore hit))
   (handler-case
       (let ((value (cmd-eval session (or arg "nil"))))
