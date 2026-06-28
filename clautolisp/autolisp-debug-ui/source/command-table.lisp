@@ -127,3 +127,43 @@ Returns (values COMMAND DICTIONARY) or NIL."
 / &rest markers, which simply allow fewer / more)."
   (count-if-not (lambda (s) (and (symbolp s) (char= #\& (char (symbol-name s) 0))))
                 (command-lambda-list command)))
+
+;;; --- AutoLISP-defined commands (command reference §8) -----------------
+;;;
+;;; The AutoLISP-side define-debugger-command: a user .lsp registers a command
+;;; whose body is an AutoLISP function. CLAL-DEFINE-DEBUGGER-COMMAND (builtins-
+;;; core) reaches here through *debug-define-command-hook*, so builtins-core
+;;; needs no dependency on this UI layer.
+
+(defun %autolisp-command-lambda-list (function)
+  "A reader lambda-list (dummy symbols) matching FUNCTION's required arity, with
+&rest when it is variadic; (&rest r) when the arity cannot be determined."
+  (let ((parts (ignore-errors
+                 (multiple-value-list
+                  (clautolisp.autolisp-runtime:split-usubr-lambda-list
+                   (clautolisp.autolisp-runtime:autolisp-usubr-lambda-list function))))))
+    (if parts
+        (destructuring-bind (required &optional rest-param locals) parts
+          (declare (ignore locals))
+          (append (loop repeat (length required) collect (gensym "ARG"))
+                  (when rest-param (list '&rest (gensym "REST")))))
+        (list '&rest (gensym "REST")))))
+
+(defun register-autolisp-command (names function doc)
+  "Register an AutoLISP-defined debugger command (command reference §8). NAMES is
+(KEY WORD…) of CL strings; FUNCTION is an AutoLISP function applied — with
+debugging suppressed, in the stop's evaluation context — to the command's parsed
+string arguments (as AutoLISP strings). The command keeps the loop reading
+(returns NIL). Returns the COMMAND."
+  (bind-debugger-command
+   names (%autolisp-command-lambda-list function) (or doc "")
+   (lambda (&rest args)
+     (let ((clautolisp.autolisp-runtime:*debugging* nil))
+       (apply #'clautolisp.autolisp-runtime:call-autolisp-function function
+              (mapcar (lambda (a)
+                        (clautolisp.autolisp-runtime:make-autolisp-string (or a "")))
+                      args)))
+     nil)))
+
+;; Install the registration hook so CLAL-DEFINE-DEBUGGER-COMMAND reaches here.
+(setf clautolisp.autolisp-runtime:*debug-define-command-hook* #'register-autolisp-command)
