@@ -541,7 +541,8 @@
    (:file "autolisp-debug-ui/source/session")
    (:file "autolisp-debug-ui/source/settings")
    (:file "autolisp-debug-ui/source/decorations")
-   (:file "autolisp-debug-ui/source/command-table"))
+   (:file "autolisp-debug-ui/source/command-table")
+   (:file "autolisp-debug-ui/source/config-bridge"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-debug-ui-dumb/tests")))
   :perform (asdf:test-op (op system)
@@ -575,6 +576,7 @@
    (:file "autolisp-debug-ui-dumb/tests/settings-tests")
    (:file "autolisp-debug-ui-dumb/tests/decorations-tests")
    (:file "autolisp-debug-ui-dumb/tests/command-table-tests")
+   (:file "autolisp-debug-ui-dumb/tests/config-bridge-tests")
    (:file "autolisp-debug-ui-dumb/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
