@@ -416,6 +416,24 @@
       (is (contains output "(traced)"))                ; lb annotation
       (is (contains output "TRACE> ID")))))            ; the trace line fired
 
+(test dumb-ui-catch-toggles-error-policy
+  ;; `catch error|caught on|off' toggles what stops execution and reports the
+  ;; policy (command reference §2).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "catch caught on~%catch error off~%catch~%c~%")
+                :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))
+      ;; the final bare `catch' reports the toggled policy
+      (is (contains output "error off"))
+      (is (contains output "caught on")))))
+
 (test dumb-ui-untrace-removes-tracepoint
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))

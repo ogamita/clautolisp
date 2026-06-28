@@ -22,6 +22,7 @@ UI refines.")
                 #:breakpoint-steady-p #:breakpoint-action #:breakpoint-trace-p
                 #:set-breakpoint-action
                 #:poll-point-id #:poll-point-location
+                #:*break-on-error* #:*break-on-caught-error*
                 #:metadata-for-name #:all-function-metadata
                 #:function-debug-metadata-function-id #:function-debug-metadata-usubr
                 #:function-debug-metadata-name

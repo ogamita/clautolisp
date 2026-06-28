@@ -200,6 +200,7 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '(",bpcmd" "bpcmd") :test #'string=) (bpcmd-cmd ui session arg) nil)
       ((member c '("trace" ",trace") :test #'string=) (trace-cmd ui session arg) nil)
       ((member c '("untrace" ",untrace") :test #'string=) (untrace-cmd ui session arg) nil)
+      ((member c '("catch" ",catch") :test #'string=) (catch-cmd ui arg) nil)
       ;; stack and frames (§3)
       ((string= c "lf") (print-stack ui session) nil)
       ((member c '("f" "frame") :test #'string=) (frame-cmd ui session arg) nil)
@@ -388,6 +389,30 @@ given); removes the entry tracepoint(s) (command reference §6.4)."
                      (progn (cmd-remove-breakpoint session bp)
                             (out ui "DBG> untraced ~A~%" name))
                      (out ui "DBG> ~A is not traced~%" name)))))))))
+
+(defun catch-cmd (ui arg)
+  "`catch error on|off' / `catch caught on|off' — choose what stops execution:
+breaking on an unhandled AutoLISP error (`error', default on) and/or on one
+caught by vl-catch-all (`caught', default off) (command reference §2). With no
+argument, report the current policy."
+  (let* ((toks (and arg (remove "" (uiop:split-string (string-trim " " arg) :separator '(#\Space))
+                                :test #'string=)))
+         (which (and toks (string-downcase (first toks))))
+         (state (and (cdr toks) (string-downcase (second toks)))))
+    (flet ((report ()
+             (out ui "DBG> catch: error ~:[off~;on~]   caught ~:[off~;on~]~%"
+                  *break-on-error* *break-on-caught-error*)))
+      (cond
+        ((null which) (report))
+        ((not (member which '("error" "caught") :test #'string=))
+         (out ui "DBG> catch: usage: catch error|caught on|off~%"))
+        ((not (member state '("on" "off") :test #'string=))
+         (out ui "DBG> catch: usage: catch ~A on|off~%" which))
+        (t (let ((on (string= state "on")))
+             (if (string= which "error")
+                 (setf *break-on-error* on)
+                 (setf *break-on-caught-error* on))
+             (report)))))))
 
 (defun enable-cmd (ui session arg enabled)
   "`enable [N]' / `disable [N]' — (de)activate breakpoint N (the number shown by
@@ -702,7 +727,7 @@ volatile — removed on first hit (`break once' / `bo', command reference §2)."
             DBG>   c continue   i into   n next   o out   a LINE advance   r [FORM] return   q quit~%~
             DBG>   b LINE|ppN break   bo break once   lb list breakpoints   delete [ppN] / clear~%~
             DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT~%~
-            DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]~%~
+            DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]   catch error|caught on|off~%~
             DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~
             DBG>   ll/lp/lv list locals/parameters/variables   list polls~%~
             DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source~%~

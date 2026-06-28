@@ -128,6 +128,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:debug-handle-error
    #:abort-thread
    #:return-thread
+   #:*break-on-error*
    #:*break-on-caught-error*
    ;; snapshot + environment (spec §9)
    #:snapshot
