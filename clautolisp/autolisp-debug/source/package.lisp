@@ -64,6 +64,8 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:metadata-for-usubr
    #:all-function-metadata
    #:metadata-for-name
+   #:wildcard-name-match-p
+   #:functions-matching
    #:form-id-position
    #:form-id-kind
    #:find-form-id-at-line

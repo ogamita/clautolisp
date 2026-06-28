@@ -623,12 +623,17 @@ terminal can always /name/ any poll point — but the natural gesture is to
 
 ** hbreak / rbreak / catch
 - =hbreak= (hardware breakpoint): =[n/a]= — no hardware notion.
-- =rbreak REGEX= (break on every function matching a regex): =[new]=,
-  feasible (iterate instrumented functions, set entry breakpoints).
+- =rbreak PATTERN= (break on every instrumented function whose name matches
+  a *wcmatch wildcard* — =*= any run, =?= one char, case-insensitive):
+  =[done]=. clautolisp has no regex engine, so rbreak uses the AutoLISP
+  wildcard language users already know rather than regular expressions
+  (settled decision). Iterates the instrumented functions and sets an entry
+  breakpoint on each match, skipping any that already carry one.
 - =catch=: aldb already breaks on errors (§10). =,catch error on|off=
-  toggles break-on-(unhandled) and =,catch caught on|off= toggles
-  break-on-caught (=*break-on-caught-error*=). backing: =[partial]=
-  (engine flag exists; wire the toggle commands).
+  toggles break-on-(unhandled) (=*break-on-error*=) and =,catch caught on|off=
+  toggles break-on-caught (=*break-on-caught-error*=). backing: =[done]= —
+  both flags are dynamic and the hooks are always installed but gated by the
+  flag, so the toggles take effect mid-session.
 
 * 3. Stack, frames, and navigation
 

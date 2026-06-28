@@ -88,6 +88,32 @@ functions). Order is unspecified."
              *function-id-registry*)
     result))
 
+(defun wildcard-name-match-p (pattern name)
+  "True when NAME matches the wcmatch wildcard PATTERN, case-insensitively: =*=
+matches any run of characters, =?= matches exactly one (command reference §2
+rbreak). Self-contained so the debug engine stays free of a builtins-core
+dependency."
+  (let ((pattern (string-upcase pattern))
+        (name (string-upcase name)))
+    (labels ((m (pp ss)
+               (cond
+                 ((= pp (length pattern)) (= ss (length name)))
+                 ((char= #\* (char pattern pp))
+                  (or (m (1+ pp) ss)
+                      (and (< ss (length name)) (m pp (1+ ss)))))
+                 ((char= #\? (char pattern pp))
+                  (and (< ss (length name)) (m (1+ pp) (1+ ss))))
+                 ((and (< ss (length name)) (char= (char pattern pp) (char name ss)))
+                  (m (1+ pp) (1+ ss)))
+                 (t nil))))
+      (m 0 0))))
+
+(defun functions-matching (pattern)
+  "A list of every instrumented function whose name matches the wcmatch wildcard
+PATTERN (command reference §2 rbreak)."
+  (remove-if-not (lambda (md) (wildcard-name-match-p pattern (function-debug-metadata-name md)))
+                 (all-function-metadata)))
+
 (defun metadata-for-name (name)
   "The function-debug-metadata of the instrumented function called NAME
 (case-insensitive), or NIL. If several functions share a name (redefinition),

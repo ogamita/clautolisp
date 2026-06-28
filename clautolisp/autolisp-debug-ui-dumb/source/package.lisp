@@ -23,7 +23,7 @@ UI refines.")
                 #:set-breakpoint-action
                 #:poll-point-id #:poll-point-location
                 #:*break-on-error* #:*break-on-caught-error*
-                #:metadata-for-name #:all-function-metadata
+                #:metadata-for-name #:all-function-metadata #:functions-matching
                 #:function-debug-metadata-function-id #:function-debug-metadata-usubr
                 #:function-debug-metadata-name
                 #:function-debug-metadata-poll-point-count #:form-id-position)
