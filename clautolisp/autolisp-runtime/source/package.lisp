@@ -169,6 +169,7 @@
    #:autolisp-eval-progn
    ;; Debugger integration (clautolisp-debugger).
    #:*debugging*
+   #:*clal-on-error*
    #:register-special-operator
    #:unregister-special-operator
    #:known-special-operator-p

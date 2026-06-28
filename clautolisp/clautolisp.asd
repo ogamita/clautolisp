@@ -275,6 +275,13 @@
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-init-files"
+               ;; aldo debugger: the run loop can start a debug session under
+               ;; --aldo-user-interface / --on-error debug (debugger §10).
+               "clautolisp/autolisp-debug"
+               "clautolisp/autolisp-inspect"
+               "clautolisp/autolisp-debug-ui"
+               "clautolisp/autolisp-debug-ui-dumb"
+               "clautolisp/autolisp-debug-ui-ncurses"
                "uiop")
   :serial t
   :components
