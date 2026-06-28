@@ -851,7 +851,7 @@ treated as commands rather than as variable references. (In CL one would
 make them symbol-macros expanding to calls; AutoLISP has no symbol-macros,
 hence the explicit check-commands step.)
 
-*Note — no recursive debugging.* When the debugger evaluates an expression
+*No recursive debugging.* When the debugger evaluates an expression
 (the bare-=(form)= REPL, or =p= / =t= / =(setq …)= / =,eval= / a breakpoint
 condition / a trace form), that evaluation is *not itself debugged*:
 breakpoints, stepping, and =clal-invoke-debugger= are inert inside it, so
