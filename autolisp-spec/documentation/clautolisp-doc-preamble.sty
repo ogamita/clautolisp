@@ -1,0 +1,67 @@
+%% clautolisp-doc-preamble.sty — Unicode glyph coverage for the org→xelatex docs.
+%%
+%% The documentation uses glyphs the default text font (Latin Modern) cannot
+%% render (arrows, math operators, media controls, circled numbers, dingbats,
+%% box drawing, CJK brackets), which made xelatex warn "Missing character(s):
+%% please load an appropriate font with the fontspec package". XeLaTeX has no
+%% automatic font fallback, so we map each such glyph to a font that has it via
+%% newunicodechar. The body text stays in the default font.
+%%
+%% Fonts to install (see the documentation makefile note): a broad text font
+%% (DejaVu), a symbol font (Symbola), and a CJK font (Noto Sans CJK). Each
+%% fallback is guarded by \IfFontExistsTF: a missing font degrades to the same
+%% missing-glyph warning as before — never a hard error — so the build always
+%% completes.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{clautolisp-doc-preamble}[2026/06/28 clautolisp documentation Unicode fallbacks]
+\RequirePackage{fontspec}
+\RequirePackage{newunicodechar}
+
+%% --- pick fallback families (guarded so missing fonts never break the build) ---
+%% text symbols (arrows, math, box, angle brackets, subscripts)
+\IfFontExistsTF{DejaVu Serif}{\newfontfamily\claltext{DejaVu Serif}}{\newcommand\claltext{}}
+%% media controls, dingbats, circled numbers 1..20
+\IfFontExistsTF{Symbola}{\newfontfamily\clalsym{Symbola}}{%
+  \IfFontExistsTF{Noto Sans Symbols 2}{\newfontfamily\clalsym{Noto Sans Symbols 2}}{%
+    \newcommand\clalsym{}}}
+%% CJK punctuation 【 】 and enclosed-CJK circled numbers ㉑ ㊿
+\IfFontExistsTF{Noto Sans CJK SC}{\newfontfamily\clalcjk{Noto Sans CJK SC}}{%
+  \IfFontExistsTF{Noto Serif CJK SC}{\newfontfamily\clalcjk{Noto Serif CJK SC}}{%
+    \IfFontExistsTF{Symbola}{\newfontfamily\clalcjk{Symbola}}{\newcommand\clalcjk{}}}}
+
+%% --- map the glyphs Latin Modern lacks to the fallback families ---
+%% subscripts
+\newunicodechar{₁}{{\claltext ₁}}
+\newunicodechar{₂}{{\claltext ₂}}
+%% arrows Latin Modern misses (↔ ⇒)
+\newunicodechar{↔}{{\claltext ↔}}
+\newunicodechar{⇒}{{\claltext ⇒}}
+%% math operators
+\newunicodechar{∈}{{\claltext ∈}}
+\newunicodechar{∪}{{\claltext ∪}}
+\newunicodechar{≡}{{\claltext ≡}}
+\newunicodechar{≤}{{\claltext ≤}}
+\newunicodechar{≥}{{\claltext ≥}}
+%% box drawing
+\newunicodechar{─}{{\claltext ─}}
+%% mathematical angle brackets
+\newunicodechar{⟨}{{\claltext ⟨}}
+\newunicodechar{⟩}{{\claltext ⟩}}
+%% media controls
+\newunicodechar{⏯}{{\clalsym ⏯}}
+\newunicodechar{⏵}{{\clalsym ⏵}}
+\newunicodechar{⏸}{{\clalsym ⏸}}
+%% dingbats
+\newunicodechar{✔}{{\clalsym ✔}}
+\newunicodechar{✦}{{\clalsym ✦}}
+%% circled numbers 1..20 (enclosed alphanumerics)
+\newunicodechar{①}{{\clalsym ①}}
+\newunicodechar{②}{{\clalsym ②}}
+\newunicodechar{③}{{\clalsym ③}}
+\newunicodechar{⑳}{{\clalsym ⑳}}
+%% CJK brackets + enclosed-CJK circled numbers 21 / 50
+\newunicodechar{【}{{\clalcjk 【}}
+\newunicodechar{】}{{\clalcjk 】}}
+\newunicodechar{㉑}{{\clalcjk ㉑}}
+\newunicodechar{㊿}{{\clalcjk ㊿}}
+\endinput

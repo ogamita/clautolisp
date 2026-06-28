@@ -176,9 +176,13 @@ uninstall:  ## Remove the spec install from $$PREFIX.
 # Example:
 # make probe-bricscad BRICSCAD_RUNNER='"/Applications/BricsCAD.app/Contents/MacOS/bricscad" "__PROBE_FILE__"'
 
+# clautolisp-doc-preamble.sty gives xelatex the fonts for the Unicode glyphs
+# Latin Modern lacks (see documentation/clautolisp-doc-preamble.sty); injected
+# via org-latex-packages-alist, with TEXINPUTS pointing at documentation/ so the
+# .sty is found regardless of the .tex's directory.
 %.pdf: %.org
-	$(EMACS) --batch \
-		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
+	TEXINPUTS="$(CURDIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
+		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
 
