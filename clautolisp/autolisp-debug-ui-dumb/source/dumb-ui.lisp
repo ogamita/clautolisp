@@ -147,6 +147,8 @@ reading. A line that looks like (form) is eval-in-frame."
              (value (and sp (string-trim " " (subseq arg sp)))))
         (handler-case
             (let ((v (set-aldo-setting name (or value ""))))
+              ;; write through to the canonical *CLAL-ALDO-CONFIGURATION*
+              (ignore-errors (sync-config-to-variable))
               (out ui "DBG> ~(~A~) = ~A~%" name (format-setting-value v)))
           (error (e) (out ui "DBG> set error: ~A~%" e))))))
 
@@ -155,17 +157,23 @@ reading. A line that looks like (form) is eval-in-frame."
 / `,settings reload' persist (command reference §8)."
   (cond
     ((null arg)
+     ;; reflect any AutoLISP-side change to the canonical variable first
+     (ignore-errors (sync-config-from-variable))
      (dolist (line (aldo-settings-lines)) (out ui "  ~A~%" line)))
     ((string-equal arg "save")
-     (handler-case (out ui "DBG> saved ~A~%" (save-aldo-configuration))
+     (handler-case
+         (progn (ignore-errors (sync-config-to-variable))
+                (out ui "DBG> saved ~A~%" (save-aldo-configuration)))
        (error (e) (out ui "DBG> save error: ~A~%" e))))
     ((string-equal arg "reload")
      (handler-case
          (let ((p (load-aldo-configuration)))
+           (ignore-errors (sync-config-to-variable))
            (if p (out ui "DBG> reloaded ~A~%" p)
                (out ui "DBG> no configuration file found~%")))
        (error (e) (out ui "DBG> reload error: ~A~%" e))))
-    (t (out ui "  ~(~A~) = ~A~%" arg (format-setting-value (get-aldo-setting arg))))))
+    (t (ignore-errors (sync-config-from-variable))
+       (out ui "  ~(~A~) = ~A~%" arg (format-setting-value (get-aldo-setting arg))))))
 
 (defun eval-and-print (ui session form-string)
   (handler-case
