@@ -482,6 +482,7 @@
   ((:file "autolisp-debug/source/package")
    (:file "autolisp-debug/source/metadata")
    (:file "autolisp-debug/source/breakpoints")
+   (:file "autolisp-debug/source/watch")
    (:file "autolisp-debug/source/snapshot")
    (:file "autolisp-debug/source/stepping")
    (:file "autolisp-debug/source/poll")

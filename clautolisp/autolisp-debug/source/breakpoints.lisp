@@ -53,6 +53,10 @@ so a stuck debugged thread can't hang a caller (tests) forever."
   (poll-depth 0 :type fixnum)
   (call-stack '() :type list)
   (step-request nil)
+  ;; software watchpoints (spec §2 watch): a list of WATCH records re-checked
+  ;; at every poll point, plus the one that most recently fired (for the hit).
+  (watches '() :type list)
+  (fired-watch nil)
   ;; two-thread pause channels (spec §8): debugger→app and app→debugger
   (inbound nil)
   (outbound nil)

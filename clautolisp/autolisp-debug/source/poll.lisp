@@ -12,10 +12,11 @@
   (fid 0 :type fixnum)
   (form-id 0 :type fixnum)
   (when :before :type keyword)
-  (stop-reason :breakpoint :type keyword)   ; :breakpoint | :step | :unhandled-error | :caught-error
+  (stop-reason :breakpoint :type keyword)   ; :breakpoint | :step | :watch | :unhandled-error | :caught-error
   metadata
   source-position
   snapshot
+  watch                                      ; the WATCH that fired, for a :watch stop
   ;; populated for error stops (spec §10)
   condition
   error-message
@@ -42,12 +43,16 @@ debugged thread has armed a step or set a breakpoint covering this point
   (let ((ti *thread-debug-info*))
     (when (and ti (thread-debug-info-debug-flag ti))           ; (a) fast path
       (setf (thread-debug-info-current-pp ti) (cons fid form-id))
-      (let ((reason
-              (cond
-                ((step-request-fires-p ti when) :step)
-                ((and (summary-test ti fid form-id)            ; (b) Bloom
-                      (find-active-breakpoint ti fid form-id when))
-                 :breakpoint))))
+      (let* ((step (step-request-fires-p ti when))
+             (bp (and (not step)
+                      (summary-test ti fid form-id)            ; (b) Bloom
+                      (find-active-breakpoint ti fid form-id when)))
+             ;; software watchpoints (§2): re-checked at every poll point, but
+             ;; only when at least one is set. CHECK-WATCHES refreshes the
+             ;; remembered values whether or not it fires, so a change is
+             ;; reported exactly once even if a breakpoint/step also stops here.
+             (watched (and (thread-debug-info-watches ti) (check-watches ti)))
+             (reason (cond (step :step) (bp :breakpoint) (watched :watch))))
         (when reason
           (handle-stop ti fid form-id when reason))))))
 
@@ -78,6 +83,7 @@ debugged thread has armed a step or set a breakpoint covering this point
     (let ((hit (make-hit :thread-info ti :breakpoint breakpoint :fid fid
                          :form-id form-id :when when :stop-reason reason
                          :metadata metadata
+                         :watch (and (eq reason :watch) (thread-debug-info-fired-watch ti))
                          :source-position (and metadata (form-id-position metadata form-id))
                          :snapshot (build-snapshot ti fid form-id when metadata))))
       (apply-resume-directive ti (funcall *debug-hit-handler* hit)))))

@@ -453,6 +453,54 @@
       (is (contains output "error off"))
       (is (contains output "caught on")))))
 
+(test dumb-ui-watch-stops-on-change
+  ;; `watch VAR' stops when the variable's value changes (a software
+  ;; watchpoint; command reference §2). In TWO, z goes nil → 7 via the setq.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; stop at entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "watch z~%c~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "watching"))
+      (is (contains output "Watchpoint"))
+      (is (contains output "changed"))
+      (is (contains output "7")))))               ; the new value reported
+
+(test dumb-ui-watch-predicate-edge
+  ;; `watch VAR FORM' stops when FORM first becomes true. `watch z z' stops the
+  ;; moment z becomes non-nil (no arithmetic builtin needed).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "watch z z~%c~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "when"))                ; reported as a predicated watch
+      (is (contains output "Watchpoint")))))
+
+(test dumb-ui-unwatch-removes-watch
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "watch z~%unwatch z~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "unwatched z"))
+      (is (not (contains output "Watchpoint"))))))  ; watch gone, never fired
+
 (test dumb-ui-untrace-removes-tracepoint
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +two-source+ "TWO" "ID"))
