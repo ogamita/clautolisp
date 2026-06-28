@@ -38,34 +38,59 @@
   "Emit TEXT to the UI, a page at a time when the pager is on and TEXT is taller
 than a page (command reference §8 *Paging long output*). The page prompt reads
 one line of input (the modal pager sub-mode): SPACE / f / =>= / RET next page,
-b / =<= back, g / =<<= first, G / =>>= last, q quit. With the pager off, or on a
-non-interactive stream (EOF), TEXT is written straight through (never blocks)."
+b / =<= back, d / u half-page down / up, j / k one line down / up, g / =<<=
+first, G / =>>= last, =/pat= / =?pat= search forward / backward, n / N repeat
+search, q quit. With the pager off, or on a non-interactive stream (EOF), TEXT
+is written straight through (never blocks)."
   (let* ((pager-on (eq (get-aldo-setting :pager) :on))
          (page (max 1 (1- (or (get-aldo-setting :pager-height) 24))))
+         (half (max 1 (floor page 2)))
          (lines (coerce (string-lines text) 'vector))
-         (n (length lines)))
-    (if (or (not pager-on) (<= n page))
-        (write-string text (dumb-ui-output ui))
-        (loop with s = 0
-              do (loop for k from s below (min n (+ s page))
-                       do (out ui "~A~%" (svref lines k)))
-                 (let ((end (min n (+ s page))))
-                   (when (>= end n) (return))
-                   (out ui "--More--(~D/~D) [SPACE/f/> b/< g G q] " end n)
-                   (let ((line (read-line (dumb-ui-input ui) nil :eof)))
-                     (if (eq line :eof)
-                         (progn (loop for k from end below n
-                                      do (out ui "~A~%" (svref lines k)))
-                                (return))
-                         (let ((cmd (string-trim " " line)))
-                           (cond
-                             ((string-equal cmd "q") (return))
-                             ((member cmd '("b" "<") :test #'string-equal)
-                              (setf s (max 0 (- s page))))
-                             ((member cmd '("g" "<<") :test #'string-equal) (setf s 0))
-                             ((member cmd '("G" ">>") :test #'string-equal)
-                              (setf s (max 0 (- n page))))
-                             (t (setf s end)))))))))))   ; SPACE/f/>/RET/… → next
+         (n (length lines))
+         (top (max 0 (- n page))))                 ; furthest start keeping a full page
+    (flet ((seek (pat start dir)
+             "First line index from START stepping DIR (±1) whose text contains
+PAT (case-insensitive), or NIL."
+             (when (and pat (plusp (length pat)))
+               (loop for k = start then (+ k dir)
+                     while (and (<= 0 k) (< k n))
+                     when (search pat (svref lines k) :test #'char-equal)
+                       do (return k)))))
+      (if (or (not pager-on) (<= n page))
+          (write-string text (dumb-ui-output ui))
+          (loop with s = 0 with last-pat = nil
+                do (loop for k from s below (min n (+ s page))
+                         do (out ui "~A~%" (svref lines k)))
+                   (let ((end (min n (+ s page))))
+                     (when (>= end n) (return))
+                     (out ui "--More--(~D/~D) [SPACE/f/> b/< d/u j/k g G /pat ?pat n N q] " end n)
+                     (let ((line (read-line (dumb-ui-input ui) nil :eof)))
+                       (if (eq line :eof)
+                           (progn (loop for k from end below n
+                                        do (out ui "~A~%" (svref lines k)))
+                                  (return))
+                           (let* ((cmd (string-trim " " line))
+                                  (c0 (and (plusp (length cmd)) (char cmd 0))))
+                             (cond
+                               ((string-equal cmd "q") (return))
+                               ((member cmd '("b" "<") :test #'string-equal) (setf s (max 0 (- s page))))
+                               ((member cmd '("g" "<<") :test #'string-equal) (setf s 0))
+                               ((member cmd '("G" ">>") :test #'string-equal) (setf s top))
+                               ((string-equal cmd "d") (setf s (min top (+ s half))))   ; half page down
+                               ((string-equal cmd "u") (setf s (max 0 (- s half))))     ; half page up
+                               ((string-equal cmd "j") (setf s (min top (1+ s))))       ; one line down
+                               ((string-equal cmd "k") (setf s (max 0 (1- s))))         ; one line up
+                               ((eql c0 #\/)                                            ; search forward
+                                (let* ((p (subseq cmd 1)) (hit (seek p (1+ s) 1)))
+                                  (setf last-pat p) (when hit (setf s hit))))
+                               ((eql c0 #\?)                                            ; search backward
+                                (let* ((p (subseq cmd 1)) (hit (seek p (1- s) -1)))
+                                  (setf last-pat p) (when hit (setf s hit))))
+                               ((string-equal cmd "n")                                  ; repeat forward
+                                (let ((hit (seek last-pat (1+ s) 1))) (when hit (setf s hit))))
+                               ((string-equal cmd "N")                                  ; repeat backward
+                                (let ((hit (seek last-pat (1- s) -1))) (when hit (setf s hit))))
+                               (t (setf s end))))))))))))   ; SPACE/f/>/RET/… → next
 
 ;;; --- notifications -------------------------------------------------
 
