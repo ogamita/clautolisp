@@ -4037,6 +4037,119 @@ under another."
                (%host-sysvar-string host "DWGCODEPAGE"))))
     (if (string= sys dwg) nil (intern-autolisp-symbol "T"))))
 
+;;; --- aldo debugger configuration (CLAL-*-ALDO-CONFIGURATION) -------
+;;;
+;;; The canonical configuration store is the AutoLISP global variable
+;;; *CLAL-ALDO-CONFIGURATION* (command reference §8): an assoc-list of
+;;; (KEY . VALUE) read at start-up from $XDG_CONFIG_HOME/clautolisp/aldo.conf
+;;; (or searched along $XDG_CONFIG_DIRS), saved only on request. Persistence
+;;; lives here, self-contained (the AutoLISP reader/printer + files); the
+;;; debugger reads settings from the variable.
+
+(defparameter +clal-aldo-configuration-symbol-name+ "*CLAL-ALDO-CONFIGURATION*")
+
+(defparameter +default-aldo-configuration-source+
+  "((navigator . sexp)
+    (navigation-history-max . 1000)
+    (break-on-caught . nil)
+    (source-window-height . 24)
+    (value-line-width . 72)
+    (pager . on)
+    (pager-height . 24)
+    (theme . unicode)
+    (default-user-interface . tui)
+    (default-aldb-listening-address . \"127.0.0.1\")
+    (default-aldb-listening-port . 4301)
+    (decorations
+      (current-pp  unicode (9205))
+      (current-pp  ascii   \">\")
+      (enabled-bp  unicode (9208))
+      (enabled-bp  ascii   \"^\")
+      (disabled-bp unicode (9199))
+      (disabled-bp ascii   \"_\")
+      (selection   unicode (12304) (12305))
+      (selection   ascii   \"[\" \"]\")))"
+  "The default aldo configuration, as AutoLISP source; read into runtime values
+by the AutoLISP reader.")
+
+(defun aldo-config-symbol ()
+  (intern-autolisp-symbol +clal-aldo-configuration-symbol-name+))
+
+(defun default-aldo-configuration-value ()
+  "The default configuration as AutoLISP runtime data."
+  (first (clautolisp.autolisp-runtime:read-runtime-from-string
+          +default-aldo-configuration-source+ :source-name "aldo-default")))
+
+(defun aldo-configuration-value ()
+  "The current value of *CLAL-ALDO-CONFIGURATION*; lazily seeds and returns the
+default when the variable is unbound."
+  (let ((sym (aldo-config-symbol)))
+    (if (autolisp-symbol-value-bound-p sym)
+        (autolisp-symbol-value sym)
+        (let ((default (default-aldo-configuration-value)))
+          (clautolisp.autolisp-runtime:set-variable sym default)
+          default))))
+
+(defun %aldo-getenv (name)
+  (let ((v (uiop:getenv name))) (if (and v (plusp (length v))) v nil)))
+
+(defun aldo-xdg-config-home ()
+  (or (%aldo-getenv "XDG_CONFIG_HOME")
+      (namestring (merge-pathnames ".config/" (user-homedir-pathname)))))
+
+(defun aldo-xdg-config-dirs ()
+  (loop :for part :in (uiop:split-string (or (%aldo-getenv "XDG_CONFIG_DIRS") "/etc/xdg")
+                                         :separator ":")
+        :when (plusp (length part)) :collect part))
+
+(defun aldo-config-relative-path ()
+  (make-pathname :directory '(:relative "clautolisp") :name "aldo" :type "conf"))
+
+(defun aldo-config-save-path ()
+  (merge-pathnames (aldo-config-relative-path)
+                   (uiop:ensure-directory-pathname (aldo-xdg-config-home))))
+
+(defun aldo-config-load-path ()
+  "The save path if it exists, else the first clautolisp/aldo.conf along
+$XDG_CONFIG_DIRS, or NIL."
+  (let ((home (aldo-config-save-path)))
+    (if (probe-file home)
+        home
+        (loop :for dir :in (aldo-xdg-config-dirs)
+              :for path := (merge-pathnames (aldo-config-relative-path)
+                                            (uiop:ensure-directory-pathname dir))
+              :when (probe-file path) :return path))))
+
+(defun load-aldo-configuration-from (path)
+  "Read the configuration from PATH (an AutoLISP sexp) and set
+*CLAL-ALDO-CONFIGURATION*; return the new value, or nil if PATH is missing."
+  (when (and path (probe-file path))
+    (let ((value (first (clautolisp.autolisp-runtime:read-runtime-from-string
+                         (uiop:read-file-string path)
+                         :source-name (namestring path)))))
+      (clautolisp.autolisp-runtime:set-variable (aldo-config-symbol) value)
+      value)))
+
+(defun save-aldo-configuration-to (path)
+  "Write *CLAL-ALDO-CONFIGURATION* to PATH as an AutoLISP sexp (UTF-8); return
+the path string (an AutoLISP string)."
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :if-exists :supersede
+                            :if-does-not-exist :create :external-format :utf-8)
+    (write-string (autolisp-value->string (aldo-configuration-value) t) out)
+    (terpri out))
+  (make-autolisp-string (namestring path)))
+
+(defun builtin-clal-load-aldo-configuration ()
+  "Read *CLAL-ALDO-CONFIGURATION* from the available XDG aldo.conf and set the
+variable; return the new value, or nil if no configuration file was found."
+  (load-aldo-configuration-from (aldo-config-load-path)))
+
+(defun builtin-clal-save-aldo-configuration ()
+  "Write *CLAL-ALDO-CONFIGURATION* to $XDG_CONFIG_HOME/clautolisp/aldo.conf as
+an AutoLISP sexp (UTF-8); return the path string."
+  (save-aldo-configuration-to (aldo-config-save-path)))
+
 (defun set-drawing-codepage (new-codepage-value)
   "Update the host's DWGCODEPAGE sysvar AND emit
 ENC-CODEPAGE-MISMATCH when the canonicalised new value differs
@@ -7538,6 +7651,8 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-SYSTEM-CODEPAGE"     #'builtin-clal-system-codepage)
    (make-core-builtin-subr "CLAL-DRAWING-CODEPAGE"    #'builtin-clal-drawing-codepage)
    (make-core-builtin-subr "CLAL-CODEPAGE-MISMATCH-P" #'builtin-clal-codepage-mismatch-p)
+   (make-core-builtin-subr "CLAL-LOAD-ALDO-CONFIGURATION" #'builtin-clal-load-aldo-configuration)
+   (make-core-builtin-subr "CLAL-SAVE-ALDO-CONFIGURATION" #'builtin-clal-save-aldo-configuration)
    (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
    (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)
    (make-core-builtin-subr "CLAL-ENABLE-ENC-DIAGNOSTIC"   #'builtin-clal-enable-enc-diagnostic)
