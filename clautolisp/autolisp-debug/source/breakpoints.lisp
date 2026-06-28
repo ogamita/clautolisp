@@ -65,7 +65,8 @@ so a stuck debugged thread can't hang a caller (tests) forever."
   (when :before :type keyword)            ; :before | :after | :both
   (steady-p t :type boolean)
   (condition nil)                          ; NIL or a function of (hit) → boolean
-  (action nil))                            ; NIL or a function of (hit) — trace action
+  (action nil)                             ; NIL or a function of (hit) — trace action
+  (enabled-p t :type boolean))             ; NIL ⇒ temporarily inactive (disable/enable)
 
 (defvar *breakpoint-id-counter* 0)
 
@@ -172,7 +173,15 @@ poll point); call REBUILD-SUMMARY to reclaim bits in bulk (spec §11.2)."
   "Return a breakpoint at (FID, FORM-ID) whose WHEN matches the poll
 event, or NIL. A :both breakpoint matches either event."
   (find-if (lambda (bp)
-             (let ((bw (breakpoint-when bp)))
-               (or (eq bw :both) (eq bw when))))
+             (and (breakpoint-enabled-p bp)
+                  (let ((bw (breakpoint-when bp)))
+                    (or (eq bw :both) (eq bw when)))))
            (gethash (combined-key fid form-id)
                     (thread-debug-info-breakpoints ti))))
+
+(defun set-breakpoint-enabled (bp enabled)
+  "Enable (ENABLED non-NIL) or disable a breakpoint without removing it
+(command reference §2). A disabled breakpoint stays in the table but does not
+fire. Returns BP."
+  (setf (breakpoint-enabled-p bp) (and enabled t))
+  bp)
