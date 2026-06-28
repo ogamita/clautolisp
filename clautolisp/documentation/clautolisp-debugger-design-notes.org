@@ -652,9 +652,10 @@ object a number denotes is fixed by the *command that consumes it*.
   instrumented forms, never reused), so a bare number is unambiguous in every
   UI. The accepted cost: far more poll points than breakpoints means the typed
   numbers are larger than a gdb-style per-session breakpoint counter would give.
-  This is a /try-it/ choice — if the big numbers prove inconvenient, fall back
-  to small per-top-level-form ids (and then a breakpoint must carry its form for
-  identity).
+  This is now *settled* and implemented (the poll-point-id registry in
+  =autolisp-debug=: =poll-point-id= / =poll-point-location=); the
+  per-top-level-form fallback (a breakpoint then carrying its form for identity)
+  remains available only if the big numbers prove inconvenient in practice.
 - No evidence cuts the other way decisively — there is no controlled "sigil vs
   bare id" study; the case rests on keystroke counting (Card, Moran & Newell
   1980), the Cognitive Dimensions framework (Green 1989), and the convergent
@@ -780,15 +781,14 @@ DN-1…DN-12 and the command-reference §0 rules; those are *not* on this list.)
 
 | Provisional / deferred item      | Where                                  | Current choice                                         | Alternative / fallback                     | How it settles             |
 |----------------------------------+----------------------------------------+--------------------------------------------------------+--------------------------------------------+----------------------------|
-| Poll-point id numbering (deferred) | DN-11; TUI "Numbered Poll-Points"      | one globally-stable number space, never reused         | per-top-level-form ids (bp carries its form) | see by use — if numbers grow too big |
 | Poll-point-state modifier glyphs (deferred) | TUI "Numbered Poll-Points" (states)    | selecting a pp shows its full info at screen bottom; glyphs only flag presence | add modifier glyphs only if use shows a need | see by use                 |
 
 These complement the inline =[new]= / =[engine]= / =[have]= backing tags (which
 track *implementation* status); this register tracks *design* choices still
-open to revision. Both remaining items are *decide-by-use* — they resolve only
-if practice shows a need; no naming or spec call is pending on them. Everything
+open to revision. The one remaining item is *decide-by-use* — it resolves only
+if practice shows a need; no naming or spec call is pending on it. Everything
 else (setting names, values, keys, the settings subcommands, the configuration
-format) is settled (below).
+format, the poll-point numbering) is settled (below).
 
 *Settled since (were provisional, now fixed).* All set via =set NAME VALUE=
 (§8; case-insensitive), the form §4 reserved for non-Lisp debugger variables:
@@ -828,3 +828,9 @@ format) is settled (below).
   bold/underline/invert for =attributes= (cmd-ref §8). Any string may be a
   *list of code points* (so =aldo.conf= can stay pure ASCII even with Unicode
   glyphs); the file is UTF-8, so literal Unicode strings are allowed too.
+- poll-point numbering — *settled* on the *globally-stable* scheme (DN-11): each
+  poll point is assigned a stable integer, assigned once and never reused within
+  a session, so a bare number (=ppN=) designates it in every UI. Implemented as
+  a poll-point-id registry in =autolisp-debug= (=poll-point-id= /
+  =poll-point-location=, assigned at metadata registration). The per-form-id
+  fallback is no longer pursued unless the numbers prove unwieldy in practice.
