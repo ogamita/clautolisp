@@ -1243,6 +1243,15 @@ error wraps a non-autolisp-runtime condition."
 (defun make-autolisp-variant (&key value)
   (clautolisp.autolisp-runtime.internal::make-autolisp-variant :value value))
 
+(defparameter *clal-on-error* :quit
+  "The error policy when an uncaught AutoLISP error escapes to the top level
+(debugger command reference §10): one of :QUIT (report and exit non-zero — the
+default and the historical clautolisp behavior), :DEBUG (break into the aldo
+debugger), or :IGNORE (let the AutoLISP *error* / default handler run, no
+debugger). Set by the clautolisp CLI's --on-error option; user code and init
+files may rebind it (e.g. (let ((*clal-on-error* :debug)) …)) to shadow it
+around a suspect region.")
+
 (defparameter *debugging* nil
   "Non-nil iff a debug session is active on the executing thread. It is
 set once by the debugger's session entry and is NOT rebound per call.

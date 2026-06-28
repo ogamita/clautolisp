@@ -47,7 +47,12 @@
   ;; Clautolisp-only
   (mock-input       nil)              ; C   --mock-input PATH (string)
   (gui              nil)              ; C   --gui CMD          (string)
-  (trace-p          nil))             ; C   --trace
+  (trace-p          nil)              ; C   --trace
+  ;; Debugger (clautolisp-only): error policy + UI selection (debugger §10)
+  (on-error         nil)              ; C   --on-error quit|debug|ignore  → :quit/:debug/:ignore
+  (user-interface   nil)              ; C   --aldo-user-interface tui|ncurses|aldb → :tui/:ncurses/:aldb
+  (aldb-address     nil)              ; C   --aldb-listening-address ADDR (string)
+  (aldb-port        nil))             ; C   --aldb-listening-port PORT|service (string)
 
 ;;; --- value parsers ----------------------------------------------------
 ;;;
@@ -122,3 +127,28 @@
              :message
              (format nil "Timeout must be a positive integer (got ~S)" value)))
     parsed))
+
+;;; --- debugger option parsers (debugger §10) --------------------------
+
+(defun parse-on-error (value option)
+  "The --on-error policy: quit (abort the program), debug (break into the
+debugger), or ignore (let the user *error* / default handler run)."
+  (cond ((string-equal value "quit")   :quit)
+        ((string-equal value "debug")  :debug)
+        ((string-equal value "ignore") :ignore)
+        (t (error 'cli-usage-error
+                  :option option
+                  :message
+                  (format nil "Unknown --on-error policy ~S (expected quit/debug/ignore)" value)))))
+
+(defun parse-user-interface (value option)
+  "The --aldo-user-interface selection: tui (the line/terminal UI), ncurses, or
+aldb (the Emacs front-end)."
+  (cond ((string-equal value "tui")     :tui)
+        ((or (string-equal value "terminal") (string-equal value "dumb")) :tui)
+        ((string-equal value "ncurses") :ncurses)
+        ((or (string-equal value "aldb") (string-equal value "emacs")) :aldb)
+        (t (error 'cli-usage-error
+                  :option option
+                  :message
+                  (format nil "Unknown --aldo-user-interface ~S (expected tui/ncurses/aldb)" value)))))
