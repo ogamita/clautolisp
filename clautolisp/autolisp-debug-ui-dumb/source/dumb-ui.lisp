@@ -190,6 +190,7 @@ reading. A line that looks like (form) is eval-in-frame."
            (set-breakpoint-cmd ui session arg))
        nil)
       ((string= c "bo") (set-breakpoint-cmd ui session arg nil) nil)  ; break once
+      ((member c '("rbreak" ",rbreak") :test #'string=) (rbreak-cmd ui session arg) nil)
       ((string= c "lb") (list-breakpoints-cmd ui session) nil)
       ((member c '(",delete" "delete" ",clear" "clear") :test #'string=)
        (delete-cmd ui session arg) nil)
@@ -389,6 +390,35 @@ given); removes the entry tracepoint(s) (command reference §6.4)."
                      (progn (cmd-remove-breakpoint session bp)
                             (out ui "DBG> untraced ~A~%" name))
                      (out ui "DBG> ~A is not traced~%" name)))))))))
+
+(defun rbreak-cmd (ui session arg)
+  "`rbreak PATTERN' — set an entry breakpoint on every instrumented function
+whose name matches the wcmatch wildcard PATTERN (=*= any run, =?= one char),
+skipping functions that already carry an entry breakpoint (command reference
+§2)."
+  (let ((pattern (and arg (string-trim " " arg))))
+    (cond
+      ((or (null pattern) (zerop (length pattern)))
+       (out ui "DBG> rbreak: usage: rbreak PATTERN~%"))
+      (t (let ((matches (functions-matching pattern))
+               (set '()))
+           (cond
+             ((null matches)
+              (out ui "DBG> rbreak: no instrumented function matches ~A~%" pattern))
+             (t (dolist (md matches)
+                  (let ((fid (function-debug-metadata-function-id md)))
+                    (unless (find-if (lambda (b)
+                                       (and (= (breakpoint-fid b) fid)
+                                            (= (breakpoint-form-id b) 0)
+                                            (not (breakpoint-action b))))
+                                     (cmd-list-breakpoints session))
+                      (cmd-set-breakpoint session fid 0 :when :before)
+                      (push (function-debug-metadata-name md) set))))
+                (if set
+                    (out ui "DBG> rbreak: ~D breakpoint~:P set: ~{~A~^ ~}~%"
+                         (length set) (nreverse set))
+                    (out ui "DBG> rbreak: all ~D match~:P already have entry breakpoints~%"
+                         (length matches))))))))))
 
 (defun catch-cmd (ui arg)
   "`catch error on|off' / `catch caught on|off' — choose what stops execution:
@@ -725,7 +755,7 @@ volatile — removed on first hit (`break once' / `bo', command reference §2)."
   "The one-screen command summary (command reference §0 vocabulary)."
   (format nil "DBG> commands: (command reference §0 vocabulary)~%~
             DBG>   c continue   i into   n next   o out   a LINE advance   r [FORM] return   q quit~%~
-            DBG>   b LINE|ppN break   bo break once   lb list breakpoints   delete [ppN] / clear~%~
+            DBG>   b LINE|ppN break   bo break once   rbreak PATTERN   lb list breakpoints   delete [ppN] / clear~%~
             DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT~%~
             DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]   catch error|caught on|off~%~
             DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~

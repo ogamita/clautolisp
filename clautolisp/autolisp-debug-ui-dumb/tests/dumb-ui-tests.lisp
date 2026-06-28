@@ -416,6 +416,25 @@
       (is (contains output "(traced)"))                ; lb annotation
       (is (contains output "TRACE> ID")))))            ; the trace line fired
 
+(test dumb-ui-rbreak-sets-breakpoints-by-wildcard
+  ;; `rbreak PATTERN' sets an entry breakpoint on every instrumented function
+  ;; whose name matches the wcmatch wildcard (command reference §2).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (id  (fid-of (second metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; stop at TWO entry
+    (multiple-value-bind (result output)
+        ;; match only ID (not TWO); lb should then show an entry bp on ID's fid.
+        ;; ID is entered twice, so two further continues follow.
+        (run-ui (format nil "rbreak ID~%lb~%c~%c~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "rbreak: 1 breakpoint set: ID"))
+      (is (contains output (format nil "fid ~D form 0" id))))))  ; bp landed on ID entry
+
 (test dumb-ui-catch-toggles-error-policy
   ;; `catch error|caught on|off' toggles what stops execution and reports the
   ;; policy (command reference §2).
