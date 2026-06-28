@@ -169,3 +169,19 @@ global store."
     (is (equal '("Y") (clautolisp.ui.dumb::dumb-ui-displays ui)))
     (clautolisp.ui.dumb::undisplay-cmd ui nil)   ; all
     (is (null (clautolisp.ui.dumb::dumb-ui-displays ui)))))
+
+(test dumb-ui-type-command
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint
+     ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "type X~%c~%") :context context :thread-info ti
+                :thunk (lambda ()
+                         (clautolisp.autolisp-runtime:autolisp-eval
+                          (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      ;; X is the integer 7 -> AutoLISP type INT
+      (is (contains output "INT")))))
