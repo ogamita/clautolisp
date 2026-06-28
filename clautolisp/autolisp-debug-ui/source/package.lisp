@@ -95,4 +95,11 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:write-aldo-configuration #:read-aldo-configuration
    ;; theme / decorations renderer (command reference §8)
    #:glyph->string #:theme-of #:decoration-entries #:decoration-for
-   #:color-theme-p #:sgr-wrap #:apply-decoration #:situation-prefix))
+   #:color-theme-p #:sgr-wrap #:apply-decoration #:situation-prefix
+   ;; command table + stacked dictionaries (command reference §8)
+   #:command #:command-p #:command-key #:command-words #:command-phrase
+   #:command-lambda-list #:command-docstring #:command-function #:command-arity
+   #:dictionary #:dictionary-name #:make-command-dictionary
+   #:*global-dictionary* #:+debugger-escape-word+
+   #:bind-debugger-command #:unbind-debugger-command #:define-debugger-command
+   #:find-command #:lookup-command))
