@@ -142,7 +142,7 @@ own =n= is unchanged. Until per-frame =setq= is implemented, =(setq …)=
 acts on the frame-0-visible binding regardless of the selected frame. See
 §4 / the spec §9.4–§9.5.)
 
-*** The command-naming consistency rule (NORMATIVE)
+** The command-naming consistency rule (NORMATIVE)
 
 Every aldb command name is built to one rule, so the key is *always exactly
 the initial(s) of the word(s)* — no exceptions:
@@ -163,7 +163,7 @@ an existing key. There are no
 initials of a genuine two-word command (which is why =tbreak= became the
 two-word =break once=, key =bo=).
 
-*** No remaining collisions
+** No remaining collisions
 
 Under the rule, the key space is:
 
@@ -197,7 +197,7 @@ comma-commands (typed, with RET). In the dumb terminal every command is a
 typed token + RET, so there is no prefix
 question at all.
 
-*** Navigator-mode keys — collision-free with the global set
+** Navigator-mode keys — collision-free with the global set
 
 The structural-navigation and source-browsing commands (§3 *Navigation*) live
 in the *navigator dictionaries* (the sedit and classic file:line navigators),
@@ -232,7 +232,7 @@ Checking the spaces with the navigator keys folded in:
 So the union stays collision-free, and =bind-debugger-command='s registrar (§8)
 enforces it on any further addition, *per dictionary* (§8).
 
-*** aldb / ncurses are cursor-based — no typed line numbers (NORMATIVE)
+** aldb / ncurses are cursor-based — no typed line numbers (NORMATIVE)
 
 In the keystroke UIs (aldb/Emacs and ncurses) the user *never types a line
 number*. Emacs does not normally show line numbers down the buffer
