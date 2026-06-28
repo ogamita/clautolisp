@@ -107,6 +107,23 @@ Returns the :advance resume directive, or NIL if LINE has no poll point."
 (defun cmd-list-breakpoints (session)
   (list-breakpoints (debugger-session-thread-info session)))
 
+;;; --- software watchpoints (command reference §2 watch) -------------
+
+(defun cmd-watch (session symbol name &key predicate)
+  "Watch the variable SYMBOL (named NAME): stop when its value changes, or — with
+a PREDICATE thunk — when the predicate goes false→true. Returns the watch."
+  (add-watch (debugger-session-thread-info session) symbol name :predicate predicate))
+
+(defun cmd-unwatch (session name)
+  "Remove the watch on the variable named NAME; T if one was removed."
+  (remove-watch (debugger-session-thread-info session) name))
+
+(defun cmd-clear-watches (session)
+  (clear-watches (debugger-session-thread-info session)))
+
+(defun cmd-list-watches (session)
+  (list-watches (debugger-session-thread-info session)))
+
 ;;; --- frame / eval / variable commands ------------------------------
 
 (defun cmd-select-frame (session frame-index)

@@ -109,6 +109,11 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:list-breakpoints
    #:clear-breakpoints
    #:rebuild-summary
+   ;; software watchpoints (command reference §2 watch)
+   #:watch #:watch-p
+   #:watch-symbol #:watch-name #:watch-last-value #:watch-prev-value
+   #:watch-last-bound-p #:watch-prev-bound-p #:watch-predicate
+   #:add-watch #:remove-watch #:clear-watches #:list-watches #:check-watches
    ;; poll points + hit dispatch (spec §11 / §6.4)
    #:poll-point
    #:hit
@@ -122,6 +127,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:hit-source-position
    #:hit-snapshot
    #:hit-stop-reason
+   #:hit-watch
    #:hit-condition
    #:hit-error-message
    #:hit-errno

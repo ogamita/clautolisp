@@ -95,8 +95,14 @@ non-interactive stream (EOF), TEXT is written straight through (never blocks)."
              (error (e) (out ui "DBG> display ~D: ~A = <error: ~A>~%" i form e)))))
 
 (defmethod ui-thread-hit ((ui dumb-ui) session hit)
-  (describe-stop ui session
-                 (if (eq (hit-stop-reason hit) :step) "Step" "Hit breakpoint") hit))
+  (let ((reason (hit-stop-reason hit)))
+    (describe-stop ui session
+                   (case reason (:step "Step") (:watch "Watchpoint") (t "Hit breakpoint"))
+                   hit)
+    (when (and (eq reason :watch) (hit-watch hit))
+      (let ((w (hit-watch hit)))
+        (out ui "DBG>   ~A changed: ~A → ~A~%"
+             (watch-name w) (preview (watch-prev-value w)) (preview (watch-last-value w)))))))
 
 (defmethod ui-thread-unhandled-error ((ui dumb-ui) session hit)
   (describe-stop ui session "Error" hit)
@@ -202,6 +208,9 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '("trace" ",trace") :test #'string=) (trace-cmd ui session arg) nil)
       ((member c '("untrace" ",untrace") :test #'string=) (untrace-cmd ui session arg) nil)
       ((member c '("catch" ",catch") :test #'string=) (catch-cmd ui arg) nil)
+      ((member c '("watch" ",watch") :test #'string=) (watch-cmd ui session arg) nil)
+      ((member c '("unwatch" ",unwatch") :test #'string=) (unwatch-cmd ui session arg) nil)
+      ((string= c "lw") (list-watches-cmd ui session) nil)
       ;; stack and frames (§3)
       ((string= c "lf") (print-stack ui session) nil)
       ((member c '("f" "frame") :test #'string=) (frame-cmd ui session arg) nil)
@@ -444,6 +453,53 @@ argument, report the current policy."
                  (setf *break-on-caught-error* on))
              (report)))))))
 
+(defun watch-cmd (ui session arg)
+  "`watch VAR [FORM]' — set a software watchpoint: stop when VAR's value changes,
+or — with FORM — when FORM first becomes true (an edge), e.g.
+`watch n (= n 17)' (command reference §2). FORM is evaluated at each poll point
+with debugging off."
+  (multiple-value-bind (sp) (and arg (position #\Space arg))
+    (let* ((name (and arg (string-trim " " (subseq arg 0 (or sp (length arg))))))
+           (rest (and sp (string-trim " " (subseq arg sp))))
+           (form (and rest (plusp (length rest)) rest)))
+      (cond
+        ((or (null name) (zerop (length name)))
+         (out ui "DBG> watch: usage: watch VAR [FORM]~%"))
+        (t (let* ((symbol (intern-autolisp-symbol (string-upcase name)))
+                  (rform (and form (ignore-errors (first (read-runtime-from-string form)))))
+                  (predicate (and rform
+                                  (lambda ()
+                                    (let ((*debugging* nil))
+                                      (autolisp-eval rform (current-evaluation-context)))))))
+             (when (and form (null rform))
+               (out ui "DBG> watch: cannot read form ~S (watching value change instead)~%" form))
+             (cmd-watch session symbol name :predicate predicate)
+             (if predicate
+                 (out ui "DBG> watching ~A when ~A~%" name form)
+                 (out ui "DBG> watching ~A~%" name))))))))
+
+(defun unwatch-cmd (ui session arg)
+  "`unwatch [VAR]' — remove the watch on VAR, or every watch when no name is
+given (command reference §2)."
+  (let ((name (and arg (plusp (length (string-trim " " arg))) (string-trim " " arg))))
+    (cond
+      ((null name)
+       (let ((n (length (cmd-list-watches session))))
+         (cmd-clear-watches session)
+         (out ui "DBG> cleared ~D watch~:P~%" n)))
+      (t (if (cmd-unwatch session name)
+             (out ui "DBG> unwatched ~A~%" name)
+             (out ui "DBG> no watch on ~A~%" name))))))
+
+(defun list-watches-cmd (ui session)
+  "`lw' / `list watches' — the active software watchpoints (command reference §2)."
+  (let ((ws (cmd-list-watches session)))
+    (if (null ws)
+        (out ui "DBG>   no watches~%")
+        (dolist (w ws)
+          (out ui "DBG>   ~A~:[~; (predicated)~] = ~A~%"
+               (watch-name w) (watch-predicate w) (preview (watch-last-value w)))))))
+
 (defun enable-cmd (ui session arg enabled)
   "`enable [N]' / `disable [N]' — (de)activate breakpoint N (the number shown by
 `lb'), or all when no number is given (command reference §2). A disabled
@@ -564,15 +620,16 @@ refinement; all three currently show the visible bindings."
 (defun list-sub-cmd (ui session arg)
   "Dispatch the spelled `list X' form to the matching =l*= command."
   (cond
-    ((null arg) (out ui "DBG> list what? (breakpoints|frames|source|locals|parameters|variables|polls)~%"))
+    ((null arg) (out ui "DBG> list what? (breakpoints|watches|frames|source|locals|parameters|variables|polls)~%"))
     ((string-equal arg "breakpoints") (list-breakpoints-cmd ui session))
+    ((string-equal arg "watches") (list-watches-cmd ui session))
     ((string-equal arg "frames") (print-stack ui session))
     ((string-equal arg "source") (relist-source ui session))
     ((string-equal arg "locals") (list-vars-cmd ui session "locals"))
     ((string-equal arg "parameters") (list-vars-cmd ui session "parameters"))
     ((string-equal arg "variables") (list-vars-cmd ui session "variables"))
     ((member arg '("polls" "poll-points") :test #'string-equal) (list-poll-points-cmd ui session))
-    (t (out ui "DBG> list ~A? (breakpoints|frames|source|locals|parameters|variables|polls)~%" arg))))
+    (t (out ui "DBG> list ~A? (breakpoints|watches|frames|source|locals|parameters|variables|polls)~%" arg))))
 
 (defun type-cmd (ui session arg)
   "`type EXPR' — show the AutoLISP type of EXPR's value (command reference §4)."
@@ -758,6 +815,7 @@ volatile — removed on first hit (`break once' / `bo', command reference §2)."
             DBG>   b LINE|ppN break   bo break once   rbreak PATTERN   lb list breakpoints   delete [ppN] / clear~%~
             DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT~%~
             DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]   catch error|caught on|off~%~
+            DBG>   watch VAR [FORM]   unwatch [VAR]   lw list watches~%~
             DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~
             DBG>   ll/lp/lv list locals/parameters/variables   list polls~%~
             DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source~%~

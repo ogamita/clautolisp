@@ -614,12 +614,13 @@ terminal can always /name/ any poll point — but the natural gesture is to
 - aldb: =,watch SYMBOL [FORM]=
 - params: a variable, optionally a predicate FORM over old/new value.
 - desc: stop when SYMBOL's value changes (or FORM becomes true). In an
-  interpreter without hardware watchpoints, implement as an *instrumented
-  read/write hook* on the binding, or as a condition re-checked at each
-  poll point comparing against the last seen value.
-- backing: =[new]= — a real feature to design (cost: a per-poll-point
-  comparison, like gdb software watchpoints). Worth it; SCHMS+-style
-  debugging wants "why did FOO become 17".
+  interpreter without hardware watchpoints, implemented as a condition
+  re-checked at each poll point comparing against the last seen value.
+- backing: =[done]= — software watchpoints: a per-thread WATCH record
+  re-checked by =check-watches= at every poll point (only when ≥1 is set).
+  A bare =watch VAR= fires on any value change (=equal=); =watch VAR FORM=
+  fires when FORM first becomes true (an edge), e.g. =watch n (= n 17)= —
+  exactly the "why did FOO become 17" case. TUI: =watch= / =unwatch= / =lw=.
 
 ** hbreak / rbreak / catch
 - =hbreak= (hardware breakpoint): =[n/a]= — no hardware notion.
