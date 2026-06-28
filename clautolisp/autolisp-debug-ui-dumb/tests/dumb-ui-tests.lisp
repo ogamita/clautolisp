@@ -330,3 +330,21 @@
       (declare (ignore result))
       (is (contains output (format nil "pp~D  line 4" pp4)))  ; pp number + line
       (is (contains output "*breakpoint")))))                 ; the line-4 bp marked
+
+(test dumb-ui-nav-sub-mode
+  ;; `nav' opens a structural-navigation sub-mode over the current function's
+  ;; reconstructed (defun …) form; d/>/q move and leave
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint
+     ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%d~%>~%q~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "NAV"))          ; entered the nav sub-mode
+      (is (contains output "DEFUN"))        ; reconstructed source form shown
+      (is (contains output "【")))))         ; selection bracket
