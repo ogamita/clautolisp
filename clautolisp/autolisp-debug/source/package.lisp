@@ -65,6 +65,8 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:form-id-position
    #:form-id-kind
    #:find-form-id-at-line
+   #:poll-point-id
+   #:poll-point-location
    ;; instrumentation (§3a / spec §5)
    #:instrument-usubr
    #:instrumentedp

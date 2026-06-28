@@ -263,3 +263,18 @@
       (is (contains output "disabled all breakpoints"))
       (is (contains output "(disabled)"))           ; lb shows the disabled state
       (is (contains output "enabled all breakpoints")))))
+
+(test poll-point-id-registry
+  ;; globally-stable poll-point ids: id <-> (fid, form-id) round-trips, stable,
+  ;; unique across poll points (command reference §2 / DN-11)
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (id-fid (fid-of (second metas)))
+         (pp (clautolisp.debug:poll-point-id two 0)))
+    (is (integerp pp))
+    (is (equal (list two 0)
+               (multiple-value-list (clautolisp.debug:poll-point-location pp))))
+    (is (= pp (clautolisp.debug:poll-point-id two 0)))        ; stable
+    (is (/= pp (clautolisp.debug:poll-point-id id-fid 0)))    ; unique per poll point
+    (is (null (clautolisp.debug:poll-point-location 999999)))))  ; unknown id → NIL

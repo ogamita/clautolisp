@@ -33,10 +33,44 @@ component at attach (spec §27).")
 (defun next-function-id ()
   (incf *function-id-counter*))
 
+;;;; Globally-stable poll-point ids (command reference §2 / DN-11): each poll
+;;;; point (FID, FORM-ID) is assigned a stable integer, assigned once and never
+;;;; reused within a session, so the user can designate a poll point / its
+;;;; breakpoint by a bare number (ppN) in every UI.
+
+(defvar *poll-point-id-counter* 0 "Source of fresh, never-reused poll-point ids.")
+(defvar *poll-point-id->location* (make-hash-table :test 'eql)
+  "poll-point id (fixnum) → (FID . FORM-ID).")
+(defvar *location->poll-point-id* (make-hash-table :test 'equal)
+  "(FID FORM-ID) list → poll-point id.")
+
+(defun poll-point-id (fid form-id)
+  "The globally-stable poll-point id for (FID, FORM-ID); assigns a fresh one on
+first request."
+  (let ((key (list fid form-id)))
+    (or (gethash key *location->poll-point-id*)
+        (let ((id (incf *poll-point-id-counter*)))
+          (setf (gethash key *location->poll-point-id*) id
+                (gethash id *poll-point-id->location*) (cons fid form-id))
+          id))))
+
+(defun poll-point-location (id)
+  "Return (values FID FORM-ID) for poll-point ID, or NIL if it is unknown."
+  (let ((loc (gethash id *poll-point-id->location*)))
+    (when loc (values (car loc) (cdr loc)))))
+
+(defun assign-poll-point-ids (metadata)
+  "Assign stable poll-point ids to every poll point of METADATA."
+  (let ((fid (function-debug-metadata-function-id metadata)))
+    (dotimes (form-id (function-debug-metadata-poll-point-count metadata))
+      (poll-point-id fid form-id))))
+
 (defun register-metadata (metadata)
   (setf (gethash (function-debug-metadata-function-id metadata)
                  *function-id-registry*)
-        metadata))
+        metadata)
+  (assign-poll-point-ids metadata)
+  metadata)
 
 (defun metadata-for-function-id (fid)
   "Return the function-debug-metadata for FID, or NIL."
@@ -50,7 +84,10 @@ component at attach (spec §27).")
   "Forget every registered function metadata and reset the id counter.
 Used by tests and at session teardown."
   (clrhash *function-id-registry*)
-  (setf *function-id-counter* 0))
+  (setf *function-id-counter* 0)
+  (clrhash *poll-point-id->location*)
+  (clrhash *location->poll-point-id*)
+  (setf *poll-point-id-counter* 0))
 
 ;;;; Form-id → (position | kind | parent) lookups, bounds-safe.
 

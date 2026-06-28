@@ -264,7 +264,7 @@ breakpoints hidden in here" (a presence flag, not an identity); the user
 expands the region (=down= / =>=) to see the numbered poll points and act on
 them.
 
-Decision (provisional): poll-point ids are *globally stable* — one space
+Decision (*settled*): poll-point ids are *globally stable* — one space
 across all instrumented forms, assigned once and never reused — so a bare
 number is unambiguous everywhere (TUI, =aldb=, dumb prompt) and a
 breakpoint never needs its form quoted for context. The accepted downside
@@ -272,9 +272,11 @@ is that there are many more poll-points than breakpoints, so the numbers a
 user types are *larger* than a gdb-style per-session breakpoint counter
 would give. We judge the single-namespace simplification worth it, and the
 rendering ladder (circled → bracketed decimal) absorbs the large ids in
-the display. This is a /try-it/ choice: if the big numbers prove
-inconvenient in practice, fall back to a small per-top-level-form id (and
-then a breakpoint must carry its form for identity).
+the display. Implemented as a poll-point-id registry in =autolisp-debug=
+(=poll-point-id= / =poll-point-location=). Should the large numbers prove
+inconvenient in practice, the fallback remains a small per-top-level-form id
+(and then a breakpoint must carry its form for identity) — but that is no
+longer the expected path.
 
 ** Additionnal Debugging Commands
 
