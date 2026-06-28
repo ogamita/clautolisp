@@ -19,6 +19,7 @@ UI refines.")
                 #:stack-frame-function-name #:stack-frame-source-position
                 #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when
                 #:breakpoint-enabled-p #:set-breakpoint-enabled #:breakpoint-condition
+                #:breakpoint-steady-p
                 #:poll-point-id #:poll-point-location
                 #:function-debug-metadata-function-id #:function-debug-metadata-usubr
                 #:function-debug-metadata-poll-point-count #:form-id-position)

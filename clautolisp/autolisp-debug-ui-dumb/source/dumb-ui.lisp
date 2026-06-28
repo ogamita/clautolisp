@@ -181,7 +181,15 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '("r" "return") :test #'string=) (return-value-cmd ui session hit arg))
       ((member c '("q" "quit") :test #'string=) (cmd-abort session))
       ;; breakpoints (§2)
-      ((member c '("b" "break") :test #'string=) (set-breakpoint-cmd ui session arg) nil)
+      ((member c '("b" "break") :test #'string=)
+       ;; `break once LINE' (volatile) vs `break LINE'
+       (if (and arg (let ((a (string-left-trim " " arg)))
+                      (and (>= (length a) 5) (string-equal "once " (subseq a 0 5)))))
+           (set-breakpoint-cmd ui session
+                               (string-trim " " (subseq (string-left-trim " " arg) 4)) nil)
+           (set-breakpoint-cmd ui session arg))
+       nil)
+      ((string= c "bo") (set-breakpoint-cmd ui session arg nil) nil)  ; break once
       ((string= c "lb") (list-breakpoints-cmd ui session) nil)
       ((member c '(",delete" "delete" ",clear" "clear") :test #'string=)
        (delete-cmd ui session arg) nil)
@@ -214,6 +222,7 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '(",display" "display") :test #'string=) (display-cmd ui arg) nil)
       ((member c '(",undisplay" "undisplay") :test #'string=) (undisplay-cmd ui arg) nil)
       ((member c '("h" "?" "help") :test #'string=) (print-help ui) nil)
+      ((member c '(",apropos" "apropos") :test #'string=) (apropos-cmd ui arg) nil)
       (t (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil))))
 
 ;;; poll-point-number (PP) designation (command reference §2 / DN-11) ---------
@@ -545,31 +554,34 @@ types into break/condition/…; TUI Numbered Poll-Points)."
   (let ((bps (cmd-list-breakpoints session)))
     (if bps
         (dolist (bp bps)
-          (out ui "DBG>   pp~D fid ~D form ~D ~A~:[ (disabled)~;~]~:[~; (conditional)~]~%"
+          (out ui "DBG>   pp~D fid ~D form ~D ~A~:[ (disabled)~;~]~:[~; (conditional)~]~:[ (once)~;~]~%"
                (breakpoint-pp bp) (breakpoint-fid bp)
                (breakpoint-form-id bp) (breakpoint-when bp)
-               (breakpoint-enabled-p bp) (breakpoint-condition bp)))
+               (breakpoint-enabled-p bp) (breakpoint-condition bp)
+               (breakpoint-steady-p bp)))
         (out ui "DBG>   no breakpoints~%"))))
 
-(defun set-breakpoint-cmd (ui session arg)
+(defun set-breakpoint-cmd (ui session arg &optional (steady t))
   "`b LINE' or `b ppN' — set a breakpoint at a source line of the current
-function, or at a poll point by its number (command reference §2)."
+function, or at a poll point by its number. With STEADY NIL the breakpoint is
+volatile — removed on first hit (`break once' / `bo', command reference §2)."
   (let* ((tok (and arg (string-trim " " arg)))
+         (kind (if steady "" " (once)"))
          (pp (and tok (>= (length tok) 3) (string-equal "pp" (subseq tok 0 2))
                   (ignore-errors (parse-integer (subseq tok 2) :junk-allowed t)))))
     (cond
       ((or (null tok) (zerop (length tok))) (out ui "DBG> break needs a line number or ppN~%"))
       (pp (multiple-value-bind (fid form-id) (poll-point-location pp)
             (if fid
-                (out ui "DBG> breakpoint pp~D set~%"
-                     (breakpoint-pp (cmd-set-breakpoint session fid form-id)))
+                (out ui "DBG> breakpoint pp~D set~A~%"
+                     (breakpoint-pp (cmd-set-breakpoint session fid form-id :steady steady)) kind)
                 (out ui "DBG> no poll point pp~D~%" pp))))
       (t (let ((line (ignore-errors (parse-integer tok :junk-allowed t))))
            (cond
              ((null line) (out ui "DBG> break needs a line number or ppN~%"))
-             (t (let ((bp (cmd-set-breakpoint-at-line session line)))
+             (t (let ((bp (cmd-set-breakpoint-at-line session line :steady steady)))
                   (if bp
-                      (out ui "DBG> breakpoint pp~D set at line ~D~%" (breakpoint-pp bp) line)
+                      (out ui "DBG> breakpoint pp~D set at line ~D~A~%" (breakpoint-pp bp) line kind)
                       (out ui "DBG> no poll point at line ~D~%" line))))))))))
 
 (defun return-value-cmd (ui session hit arg)
@@ -580,11 +592,11 @@ function, or at a poll point by its number (command reference §2)."
         (cmd-return session value))
     (error (e) (out ui "DBG> return error: ~A~%" e) nil)))
 
-(defun print-help (ui)
-  (paged-out ui
-   (format nil "DBG> commands: (command reference §0 vocabulary)~%~
+(defun help-text ()
+  "The one-screen command summary (command reference §0 vocabulary)."
+  (format nil "DBG> commands: (command reference §0 vocabulary)~%~
             DBG>   c continue   i into   n next   o out   a LINE advance   r [FORM] return   q quit~%~
-            DBG>   b LINE|ppN break   lb list breakpoints   delete [ppN] / clear~%~
+            DBG>   b LINE|ppN break   bo break once   lb list breakpoints   delete [ppN] / clear~%~
             DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT~%~
             DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~
             DBG>   ll/lp/lv list locals/parameters/variables   list polls~%~
@@ -592,7 +604,22 @@ function, or at a poll point by its number (command reference §2)."
             DBG>   nav (structural navigation: d u > < << >> ±N q)~%~
             DBG>   set NAME VALUE   ,settings [NAME|save|reload]~%~
             DBG>   display FORM   undisplay [N]~%~
-            DBG>   (form...) evaluate in the current frame   h/? help~%")))
+            DBG>   (form...) evaluate in the current frame   h/? help   apropos WORD~%"))
+
+(defun print-help (ui)
+  (paged-out ui (help-text)))
+
+(defun apropos-cmd (ui arg)
+  "`apropos WORD' — show the command-summary lines mentioning WORD (command
+reference §8). Searches the same text `help' shows, so user-visible commands
+document themselves uniformly."
+  (if (null arg)
+      (out ui "DBG> apropos: usage: apropos WORD~%")
+      (let ((hits (remove-if-not (lambda (line) (search arg line :test #'char-equal))
+                                 (string-lines (help-text)))))
+        (if hits
+            (dolist (line hits) (out ui "  ~A~%" (string-left-trim "DBG> " line)))
+            (out ui "DBG>   no command matching ~A~%" arg)))))
 
 ;;; --- inspector sub-REPL (spec §18.2) -------------------------------
 
