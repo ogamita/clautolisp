@@ -83,8 +83,12 @@ endef
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 NESTED_DOC_ORG := $(wildcard tools/*/documentation/*.org)
 ALL_ORG_FILES := $(DOCUMENTATION_ORG) $(NESTED_DOC_ORG)
-PDF_FILES := $(ALL_ORG_FILES:.org=.pdf)
-INFO_FILES := $(ALL_ORG_FILES:.org=.info)
+# Generated documentation is written under build/ mirroring the source
+# sub-hierarchy, so the source tree stays free of build artefacts and nothing
+# PDF/Info-shaped is tracked in git. install-documentation collects from here.
+BUILD_DIR := build
+PDF_FILES := $(patsubst %.org,$(BUILD_DIR)/%.pdf,$(ALL_ORG_FILES))
+INFO_FILES := $(patsubst %.org,$(BUILD_DIR)/%.info,$(ALL_ORG_FILES))
 MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
@@ -168,7 +172,10 @@ endif
 # clautolisp-doc-preamble.sty gives xelatex the fonts for the Unicode glyphs
 # Latin Modern lacks (see documentation/clautolisp-doc-preamble.sty); injected
 # via org-latex-packages-alist, with TEXINPUTS pointing at documentation/.
-%.pdf: %.org | $(TEX_FMT_DEP)
+# org export writes next to the .org; we move the result under build/ (mirroring
+# the source path) and delete the intermediate .tex so the source tree stays clean.
+$(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
+	@mkdir -p $(@D)
 	TEXINPUTS="$(ROOT_DIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
 	    --eval "(setq org-confirm-babel-evaluate nil)" \
 	    --eval "(setq org-export-with-broken-links t)" \
@@ -178,18 +185,22 @@ endif
 	    --eval "(setq org-latex-pdf-process '(\"$(LATEX_COMPILER) -interaction=nonstopmode -output-directory=%o %f\" \"$(LATEX_COMPILER) -interaction=nonstopmode -output-directory=%o %f\"))" \
 	    "$<" \
 	    --funcall org-latex-export-to-pdf
+	@mv -f "$(<:.org=.pdf)" "$@"
+	@rm -f "$(<:.org=.tex)"
 
-%.texi: %.org
+$(BUILD_DIR)/%.texi: %.org
+	@mkdir -p $(@D)
 	$(EMACS) --batch \
 	    --eval '(progn (require (quote ox-texinfo)) (setq org-export-with-broken-links t))' \
 	    --visit "$<" \
 	    --funcall org-texinfo-export-to-texinfo
+	@mv -f "$(<:.org=.texi)" "$@"
 
-%.info: %.texi
+$(BUILD_DIR)/%.info: $(BUILD_DIR)/%.texi
 	$(MAKEINFO) --no-split -o $@ $<
 
-clean-pdf:  ## Remove every generated PDF / .info / .texi (keeps .org sources).
-	rm -f $(PDF_FILES) $(INFO_FILES) $(ALL_ORG_FILES:.org=.texi)
+clean-pdf:  ## Remove every generated PDF / .info / .texi under build/ (keeps .org sources).
+	rm -rf $(BUILD_DIR)
 
 # ---------------------------------------------------------------------
 # Test targets — mirror clautolisp/Makefile so both subprojects share
@@ -395,13 +406,13 @@ install-programs:  ## Install just the alfe executables (no docs).
 	fi
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
-install-documentation:  ## Install just the alfe documentation (org/pdf/info/man).
+install-documentation:  ## Install just the alfe documentation (org/pdf/info/man). PDFs/Info come from build/.
 	install -d $(DOC_INSTALL_DIR)
-	@for f in documentation/*.org documentation/*.pdf; do \
+	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
 	install -d $(INFO_INSTALL_DIR)
-	@for f in documentation/*.info; do \
+	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
 	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
 	    echo "installed: $$f -> $(INFO_INSTALL_DIR)/" ; \
@@ -421,12 +432,11 @@ install-documentation:  ## Install just the alfe documentation (org/pdf/info/man
 
 uninstall:  ## Remove the alfe install from $$PREFIX.
 	rm -f $(BIN_INSTALL_DIR)/alfe $(BIN_INSTALL_DIR)/alfe-sbcl $(BIN_INSTALL_DIR)/alfe-ccl
-	@for f in documentation/*.info; do \
-	  if [ -f "$$f" ]; then \
-	    $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
-	      || true ; \
-	    rm -f "$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
-	  fi ; \
+	@for f in $(INFO_FILES); do \
+	  base="$$(basename $$f)" ; \
+	  $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$base" 2>/dev/null \
+	    || true ; \
+	  rm -f "$(INFO_INSTALL_DIR)/$$base" ; \
 	done
 	@for f in documentation/man/*.1 tools/*/documentation/man/*.1; do \
 	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename $$f)" ; fi ; \
