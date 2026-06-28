@@ -41,28 +41,40 @@ Existing code (systems under =clautolisp/=):
 
 * Feature matrix — what each UI must gain (completeness / consistency)
 
-Legend: ✔ already present · ✦ to implement · — n/a for that UI.
+Legend: ✔ implemented · ✔* implemented to a documented v1 scope (see the
+command-reference backing) · ✦ to implement · — n/a for that UI.
+
+Status (refreshed): the *TUI (dumb)* surface now implements essentially the
+whole vocabulary — the ✔ / ✔* column. The ✔* items are scoped: =goto= is by
+global name, =search= is a name search, =jump= is forward-only, poll-point
+designation is =ppN= (not yet =LINE.K= / =LINE:COL=), and UI selection wires
+=--on-error= / =--aldo-user-interface tui|ncurses= (the aldb TCP listener is
+deferred). The one TUI ✦ left is routing dispatch through the *stacked command
+dictionaries* (the table layer exists and is tested, but the dumb UI still
+dispatches via a hand-written table). *ncurses* and *aldb* remain thin
+fixed-key surfaces (a follow-up: add a comma-word command reader so the full
+vocabulary is reachable there too).
 
 | Feature (normative §)                         | TUI | ncurses | aldb |
 |-----------------------------------------------+-----+---------+------|
 | Resume/step/break/frame/print/inspect (base)  | ✔   | ✔       | ✔    |
-| Command vocabulary per command-reference §0    | ✦   | ✦       | ✦    |
-| settings: =set NAME VALUE= / =,settings=       | ✦   | ✦       | ✦    |
-| configuration =*clal-aldo-configuration*= (XDG)| ✦   | ✦       | ✦    |
-| =theme= + =decorations= grammar (cmd-ref §8)   | ✦   | ✦       | ✦    |
-| pager (less-style), §8                          | ✦   | (window)| (Emacs) |
-| navigation tree =d u > < << >> ±N= (§3)        | ✦   | ✦       | (Emacs) |
-| =goto= / =definition= / =back= / =history=     | ✦   | ✦       | (Emacs xref) |
-| =search REGEXP= (scope-following)              | ✦   | ✦       | (Emacs) |
+| Command vocabulary per command-reference §0    | ✔   | ✦       | ✦    |
+| settings: =set NAME VALUE= / =,settings=       | ✔   | ✦       | ✦    |
+| configuration =*clal-aldo-configuration*= (XDG)| ✔   | ✦       | ✦    |
+| =theme= + =decorations= grammar (cmd-ref §8)   | ✔   | ✦       | ✦    |
+| pager (less-style), §8                          | ✔   | (window)| (Emacs) |
+| navigation tree =d u > < << >> ±N= (§3)        | ✔   | ✦       | (Emacs) |
+| =goto= / =definition= / =back= / =history=     | ✔*  | ✦       | (Emacs xref) |
+| =search REGEXP= (scope-following)              | ✔*  | ✦       | (Emacs) |
 | stacked command dictionaries + escape (§8)     | ✦   | ✦       | ✦    |
-| poll-point numbers + =ppN=/=LINE.K=/=LINE:COL= | ✦   | ✦       | ✦    |
-| enable/disable/condition/ignore/bpcmd/trace    | ✦   | ✦       | ✦    |
-| =watch SYMBOL= (data breakpoint)               | ✦   | ✦       | ✦    |
-| =jump= (form-level)                            | ✦   | ✦       | ✦    |
-| =display= / =undisplay=                        | ✦   | ✦       | ✦    |
+| poll-point numbers + =ppN=/=LINE.K=/=LINE:COL= | ✔*  | ✦       | ✦    |
+| enable/disable/condition/ignore/bpcmd/trace    | ✔   | ✦       | ✦    |
+| =watch SYMBOL= (data breakpoint)               | ✔   | ✦       | ✦    |
+| =jump= (form-level)                            | ✔*  | ✦       | ✦    |
+| =display= / =undisplay=                        | ✔   | ✦       | ✦    |
 | cursor-based location (no typed line)          | —   | ✦       | ✦    |
-| sticky inspector while stepping (§ TUI)        | ✦   | ✦       | ✦    |
-| UI selection + activation (cmd-ref §10)        | ✦   | ✦       | ✦    |
+| sticky inspector while stepping (§ TUI)        | ✔   | ✦       | ✦    |
+| UI selection + activation (cmd-ref §10)        | ✔*  | ✦       | ✔*   |
 | aldb listening address/port + connect prompt   | —   | —       | ✦    |
 
 The matrix *is* the consistency statement: each UI exposes the same command

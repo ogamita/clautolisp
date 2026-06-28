@@ -581,9 +581,9 @@ terminal can always /name/ any poll point — but the natural gesture is to
 ** enable / disable
 - aldb: =,enable [PP...]=  | =,disable [PP...]=
 - desc: temporarily deactivate a breakpoint without deleting it.
-- backing: =[new]= (add an =enabled-p= slot to =breakpoint=; the
-  poll-point exact-lookup already filters by =breakpoint-active-p=, extend
-  it to consult =enabled-p=).
+- backing: =[done]= — the =breakpoint= struct has an =enabled-p= slot and
+  =find-active-breakpoint= (the poll-point exact lookup) skips disabled
+  breakpoints; =set-breakpoint-enabled= toggles it. TUI: =enable= / =disable=.
 
 ** delete / clear
 - aldb / ncurses: cursor on the breakpoint's form + =,clear= (poll point from
