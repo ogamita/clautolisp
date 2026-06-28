@@ -952,6 +952,21 @@ refinement; all three currently show the visible bindings."
               (out ui "DBG> ~(~A~) = ~A~%" name (format-setting-value v)))
           (error (e) (out ui "DBG> set error: ~A~%" e))))))
 
+(defun call-canonical-config (name)
+  "Invoke the canonical config builtin NAME (CLAL-SAVE/LOAD-ALDO-CONFIGURATION)
+in the current evaluation context — the single on-disk format and store
+(command reference §8). Returns (values RESULT t) when the builtin exists, or
+(values NIL NIL) so the caller falls back to the UI's own file I/O (e.g. a
+minimal context with no core builtins)."
+  (let* ((ctx (ignore-errors (current-evaluation-context)))
+         (fn (and ctx (ignore-errors (lookup-function (intern-autolisp-symbol name) ctx)))))
+    (if fn (values (call-autolisp-function fn) t) (values nil nil))))
+
+(defun config-path-string (value)
+  "A printable path string from a CLAL-SAVE result (an AutoLISP string), or its
+princ form."
+  (handler-case (autolisp-string-value value) (error () (princ-to-string value))))
+
 (defun settings-cmd (ui arg)
   "`,settings' — list all options; `,settings NAME' print one; `,settings save'
 / `,settings reload' persist (command reference §8)."
@@ -962,15 +977,27 @@ refinement; all three currently show the visible bindings."
      (paged-out ui (format nil "~{  ~A~%~}" (aldo-settings-lines))))
     ((string-equal arg "save")
      (handler-case
-         (progn (ignore-errors (sync-config-to-variable))
-                (out ui "DBG> saved ~A~%" (save-aldo-configuration)))
+         (progn
+           (ignore-errors (sync-config-to-variable))   ; UI copy → canonical variable
+           (multiple-value-bind (res ok)
+               (call-canonical-config "CLAL-SAVE-ALDO-CONFIGURATION")
+             (out ui "DBG> saved ~A~%"
+                  (if ok (config-path-string res) (save-aldo-configuration)))))
        (error (e) (out ui "DBG> save error: ~A~%" e))))
     ((string-equal arg "reload")
      (handler-case
-         (let ((p (load-aldo-configuration)))
-           (ignore-errors (sync-config-to-variable))
-           (if p (out ui "DBG> reloaded ~A~%" p)
-               (out ui "DBG> no configuration file found~%")))
+         (multiple-value-bind (res ok)
+             (call-canonical-config "CLAL-LOAD-ALDO-CONFIGURATION")
+           (cond
+             (ok                                       ; canonical reload → sync into UI
+              (ignore-errors (sync-config-from-variable))
+              (if res (out ui "DBG> reloaded~%")
+                  (out ui "DBG> no configuration file found~%")))
+             (t                                        ; fallback: the UI's own loader
+              (let ((p (load-aldo-configuration)))
+                (ignore-errors (sync-config-to-variable))
+                (if p (out ui "DBG> reloaded ~A~%" p)
+                    (out ui "DBG> no configuration file found~%"))))))
        (error (e) (out ui "DBG> reload error: ~A~%" e))))
     (t (ignore-errors (sync-config-from-variable))
        (out ui "  ~(~A~) = ~A~%" arg (format-setting-value (get-aldo-setting arg))))))
