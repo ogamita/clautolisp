@@ -74,19 +74,32 @@ unchanged."
         (format nil "~C[~{~D~^;~}m~A~C[0m" #\Escape codes string #\Escape)
         string)))
 
+(defun color-output-enabled-p ()
+  "True when ANSI colour is permitted on the current output — the runtime's
+resolved colour policy (*COLOR-OUTPUT*), which honours NO_COLOR / --no-color and
+non-tty pipes. The decoration renderer consults it so colour / attributes themes
+degrade gracefully (command reference §8: a colour theme is never colour alone)."
+  (and clautolisp.autolisp-runtime:*color-output* t))
+
 (defun apply-decoration (string situation &optional (config *aldo-configuration*))
   "Decorate STRING for SITUATION under the active theme of CONFIG: prefix it or
 wrap it (glyph themes), or apply ANSI colour / attributes (colour / attributes
 themes). With no decoration configured for (situation, theme), returns STRING
-unchanged."
+unchanged. Colour / attributes themes emit ANSI only when colour is enabled
+(COLOR-OUTPUT-ENABLED-P); when it is not (NO_COLOR, a pipe, --no-color) they
+degrade to the always-present ASCII marker so structure stays visible."
   (let* ((theme (theme-of config))
          (params (decoration-for situation theme config)))
     (cond
       ((null params) string)
-      ((color-theme-p theme)
-       (sgr-wrap string :fg (first params) :bg (second params)))
-      ((eq theme :attributes)
-       (sgr-wrap string :attrs params))
+      ((or (color-theme-p theme) (eq theme :attributes))
+       (cond
+         ((not (color-output-enabled-p))
+          ;; colour suppressed → fall back to the structural ASCII marker
+          (concatenate 'string (situation-prefix situation config) string))
+         ((color-theme-p theme)
+          (sgr-wrap string :fg (first params) :bg (second params)))
+         (t (sgr-wrap string :attrs params))))
       ;; glyph theme: one PARAM => prefix; two => open/close pair
       ((= (length params) 1)
        (concatenate 'string (glyph->string (first params)) string))
