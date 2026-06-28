@@ -10,7 +10,9 @@
   ((input  :initarg :input  :initform *standard-input*  :accessor dumb-ui-input)
    (output :initarg :output :initform *standard-output* :accessor dumb-ui-output)
    (prompt :initarg :prompt :initform "DBG> " :accessor dumb-ui-prompt)
-   (source-window :initarg :source-window :initform 2 :accessor dumb-ui-source-window)))
+   (source-window :initarg :source-window :initform 2 :accessor dumb-ui-source-window)
+   ;; `display' forms (strings), auto-printed after every stop (cmd-ref §4)
+   (displays :initarg :displays :initform '() :accessor dumb-ui-displays)))
 
 (defun make-dumb-ui (&rest initargs)
   (apply #'make-instance 'dumb-ui initargs))
@@ -81,7 +83,16 @@ non-interactive stream (EOF), TEXT is written straight through (never blocks)."
          (location-string (hit-source-position hit)
                           (and snapshot (snapshot-function-name snapshot)))
          (and (eq kind "Error") (hit-error-message hit)))
-    (when snapshot (print-bindings ui snapshot) (print-stack-line ui snapshot))))
+    (when snapshot (print-bindings ui snapshot) (print-stack-line ui snapshot))
+    (print-displays ui session)))
+
+(defun print-displays (ui session)
+  "Auto-print every `display' form in the current frame (command reference §4)."
+  (loop for form in (dumb-ui-displays ui)
+        for i from 1
+        do (handler-case
+               (out ui "DBG> display ~D: ~A = ~A~%" i form (preview (cmd-eval session form) 80))
+             (error (e) (out ui "DBG> display ~D: ~A = <error: ~A>~%" i form e)))))
 
 (defmethod ui-thread-hit ((ui dumb-ui) session hit)
   (describe-stop ui session
@@ -175,8 +186,32 @@ reading. A line that looks like (form) is eval-in-frame."
     ((member cmd '("q") :test #'string=) (cmd-abort session))
     ((string= cmd "set") (set-setting-cmd ui arg) nil)
     ((member cmd '(",settings" "settings") :test #'string=) (settings-cmd ui arg) nil)
+    ((member cmd '(",display" "display") :test #'string=) (display-cmd ui arg) nil)
+    ((member cmd '(",undisplay" "undisplay") :test #'string=) (undisplay-cmd ui arg) nil)
     ((member cmd '("h" "?") :test #'string=) (print-help ui) nil)
     (t (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil)))
+
+(defun display-cmd (ui arg)
+  "`display FORM' — auto-print FORM after every stop (command reference §4)."
+  (if (null arg)
+      (out ui "DBG> display: usage: display FORM~%")
+      (progn
+        (setf (dumb-ui-displays ui) (append (dumb-ui-displays ui) (list arg)))
+        (out ui "DBG> display ~D: ~A~%" (length (dumb-ui-displays ui)) arg))))
+
+(defun undisplay-cmd (ui arg)
+  "`undisplay [N]' — remove auto-display N, or all of them (command reference §4)."
+  (let ((n (and arg (ignore-errors (parse-integer arg :junk-allowed t)))))
+    (cond
+      ((and n (<= 1 n (length (dumb-ui-displays ui))))
+       (setf (dumb-ui-displays ui)
+             (append (subseq (dumb-ui-displays ui) 0 (1- n))
+                     (subseq (dumb-ui-displays ui) n)))
+       (out ui "DBG> undisplay ~D~%" n))
+      ((null arg)
+       (setf (dumb-ui-displays ui) '())
+       (out ui "DBG> undisplay (all)~%"))
+      (t (out ui "DBG> undisplay: no display ~A~%" arg)))))
 
 (defun set-setting-cmd (ui arg)
   "`set NAME VALUE' — update one aldo setting (command reference §8)."
@@ -275,6 +310,7 @@ reading. A line that looks like (form) is eval-in-frame."
             DBG>   l list source  t backtrace   x [form] inspect~%~
             DBG>   a abort   r <form> return value (at error)   q quit   h help~%~
             DBG>   set NAME VALUE   ,settings [NAME|save|reload]~%~
+            DBG>   display FORM   undisplay [N]~%~
             DBG>   (form...) evaluate in the current frame~%")))
 
 ;;; --- inspector sub-REPL (spec §18.2) -------------------------------
