@@ -60,7 +60,11 @@ DESTDIR ?=
 SUBPROJECT_NAME := autolisp-test
 
 DOCUMENTATION_ORG := $(wildcard documentation/*.org) $(wildcard harness/*.org) $(wildcard tests/*.org)
-PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
+# Generated documentation is written under build/ mirroring the source
+# sub-hierarchy, so the source tree stays free of build artefacts and nothing
+# PDF-shaped is tracked in git. install-documentation collects from here.
+BUILD_DIR := build
+PDF_FILES := $(patsubst %.org,$(BUILD_DIR)/%.pdf,$(DOCUMENTATION_ORG))
 
 # Inline AutoLISP snippet that the standalone clautolisp executables
 # evaluate to launch the conformance harness. Sets *clautolisp-version*
@@ -226,14 +230,19 @@ endif
 # Latin Modern lacks (see documentation/clautolisp-doc-preamble.sty); injected
 # via org-latex-packages-alist, with TEXINPUTS pointing at documentation/ so the
 # .sty is found regardless of the .tex's directory (e.g. harness/, tests/).
-%.pdf: %.org | $(TEX_FMT_DEP)
+# org export writes next to the .org; we move the result under build/ (mirroring
+# the source path) and delete the intermediate .tex so the source tree stays clean.
+$(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
+	@mkdir -p $(@D)
 	TEXINPUTS="$(ROOT_DIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
+	@mv -f "$(<:.org=.pdf)" "$@"
+	@rm -f "$(<:.org=.tex)"
 
 clean-pdf:
-	rm -f $(PDF_FILES)
+	rm -rf $(BUILD_DIR)
 
 # ---------------------------------------------------------------------
 # autolisp-test × clautolisp × dialect matrix
@@ -402,11 +411,11 @@ install-programs:  ## Install just the autolisp-test harness + tests (no docs).
 
 install-documentation:  ## Install just the autolisp-test documentation.
 	install -d $(DOC_INSTALL_DIR)
-	@for f in documentation/*.org documentation/*.pdf; do \
+	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
 	install -d $(INFO_INSTALL_DIR)
-	@for f in documentation/*.info; do \
+	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
 	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
 	    installed="$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \

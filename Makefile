@@ -93,7 +93,7 @@ help:  ## Show this message (list available targets and their purpose).
 	    printf "see `make help-test-matrix`.\n"; \
 	  }' $(MAKEFILE_LIST)
 
-all: documentation  ## Default target: build full documentation across all subprojects.
+all: build  ## Default target: build programs + libraries (NOT docs). Documentation is a separate phase: `make build-documentation`.
 
 
 autolisp-spec:  ## Build the autolisp-spec subproject (delegates to its Makefile).
@@ -114,11 +114,7 @@ documentation:  ## Rebuild every subproject's PDF documentation (org → LaTeX �
 	$(MAKE) -C autolisp-test documentation
 	$(MAKE) -C autolisp-front-end documentation
 
-build:  ## Build every subproject's artefacts (executables + docs + paged derivatives) — what `install` then copies. Run this WITHOUT sudo, then `sudo make install`.
-	$(MAKE) -C autolisp-spec      build
-	$(MAKE) -C clautolisp         build
-	$(MAKE) -C autolisp-test      build
-	$(MAKE) -C autolisp-front-end build
+build: build-programs build-libraries  ## Build the program binaries + native libraries (NO docs). Run this WITHOUT sudo, then `sudo make install`. Documentation is a separate phase: `make build-documentation`.
 
 build-sbcl:  ## Strictly build SBCL images across subprojects (errors if sbcl is missing).
 	$(MAKE) -C clautolisp         build-sbcl
@@ -190,10 +186,10 @@ release-sources:  ## Produce the source tarball + zip (tracked files incl. submo
 	echo "wrote $(DIST)/$$prefix-sources.tar.bz2"; \
 	echo "wrote $(DIST)/$$prefix-sources.zip"
 
-release-documentation: build-documentation  ## Package the documentation artefact: the spec (pdf/org + prebuilt paged HTML/info/pages) + alref, unpacks into $PREFIX.
+release-documentation: build-documentation  ## Package the documentation artefact for EVERY subproject (pdf/org/info + the spec's paged HTML/info/pages + alref), structured exactly like install-documentation (share/doc/<sub>/…, share/info/…). Unpacks into $PREFIX.
 	@mkdir -p "$(DIST)"
 	@ver="$(VERSION)"; stage=$$(mktemp -d); \
-	$(MAKE) -C autolisp-spec install DESTDIR="$$stage" PREFIX= >/dev/null; \
+	$(MAKE) install-documentation DESTDIR="$$stage" PREFIX= >/dev/null; \
 	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-documentation.tar.bz2" .; \
 	rm -rf "$$stage"; \
 	echo "wrote $(DIST)/clautolisp-$$ver-documentation.tar.bz2"
@@ -223,10 +219,10 @@ release-programs: build-programs  ## Build programs and package this host's per-
 	mandir="$$stage/share/man/man1"; mkdir -p "$$mandir"; \
 	find clautolisp autolisp-front-end -path '*/documentation/man/*.1' -exec cp {} "$$mandir"/ \; 2>/dev/null || true; \
 	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
-	for d in clautolisp/documentation/clautolisp-user-manual.info \
-	         clautolisp/documentation/clautolisp-user-manual.pdf \
-	         autolisp-front-end/documentation/alfe-user-manual.info \
-	         autolisp-front-end/documentation/alfe-user-manual.pdf; do \
+	for d in clautolisp/build/documentation/clautolisp-user-manual.info \
+	         clautolisp/build/documentation/clautolisp-user-manual.pdf \
+	         autolisp-front-end/build/documentation/alfe-user-manual.info \
+	         autolisp-front-end/build/documentation/alfe-user-manual.pdf; do \
 	  if [ -f "$$d" ]; then cp "$$d" "$$docdir"/; fi; \
 	done; \
 	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2" .; \
@@ -318,11 +314,14 @@ ifneq ($(DEFAULT_LISP),)
   INSTALL_VARS += DEFAULT_LISP=$(DEFAULT_LISP)
 endif
 
-install:  ## Install every subproject's built artefacts into $$PREFIX (default /opt/local). Override the bare-name symlink target with DEFAULT_LISP=sbcl|ccl.
-	$(MAKE) -C autolisp-spec      install $(INSTALL_VARS)
-	$(MAKE) -C clautolisp         install $(INSTALL_VARS)
-	$(MAKE) -C autolisp-test      install $(INSTALL_VARS)
-	$(MAKE) -C autolisp-front-end install $(INSTALL_VARS)
+install: install-programs install-libraries  ## Install programs + libraries into $$PREFIX (default /opt/local; NO docs). Override the bare-name symlink target with DEFAULT_LISP=sbcl|ccl.
+	@printf '\n'
+	@printf '  Programs and libraries installed.  Documentation is a SEPARATE phase\n'
+	@printf '  (it needs Emacs + TeX/xelatex + makeinfo, which a runtime host may lack):\n'
+	@printf '\n'
+	@printf '      make build-documentation        # render PDFs/Info/HTML into each build/\n'
+	@printf '      sudo make install-documentation  # copy them into $$PREFIX/share/doc, share/info\n'
+	@printf '\n'
 
 # Independent install phases mirroring build-programs / build-libraries /
 # build-documentation, so a consumer can install only what it needs. CI

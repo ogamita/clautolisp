@@ -157,3 +157,10 @@ clautolisp/drawing-dwg/source/clal_dwg.so
 # xelatex format (and TeX/font caches) into a per-subproject .cache/texmf-var
 # so large org docs don't exceed TeX's default main_memory. Generated, local.
 .cache/
+
+# Rendered documentation is a build artefact, never tracked: the doc Makefiles
+# render every .org into a PDF (+ Info/HTML) under each subproject's build/
+# (already ignored above). The blanket *.pdf rule keeps a stray in-place render
+# from ever being committed again — every PDF in the tree is generated from a
+# tracked .org. install-documentation / release-documentation collect from build/.
+*.pdf

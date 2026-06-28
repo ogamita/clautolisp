@@ -102,8 +102,13 @@ DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 NESTED_DOC_ORG := $(wildcard autolisp-*/documentation/*.org) \
                   $(wildcard tools/*/documentation/*.org)
 ALL_ORG_FILES := $(DOCUMENTATION_ORG) $(NESTED_DOC_ORG)
-PDF_FILES := $(ALL_ORG_FILES:.org=.pdf)
-INFO_FILES := $(ALL_ORG_FILES:.org=.info)
+# Generated documentation is written under build/, mirroring the source
+# sub-hierarchy (build/documentation/foo.pdf, build/<lib>/documentation/foo.pdf,
+# …) so the source tree stays free of build artefacts and nothing PDF/Info-
+# shaped is tracked in git. install-documentation / release collect from here.
+BUILD_DIR := build
+PDF_FILES := $(patsubst %.org,$(BUILD_DIR)/%.pdf,$(ALL_ORG_FILES))
+INFO_FILES := $(patsubst %.org,$(BUILD_DIR)/%.info,$(ALL_ORG_FILES))
 MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard autolisp-*/documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
@@ -286,10 +291,10 @@ run-file-compat-autocad-windows:
 	 $(RUN_FILE_COMPAT) --autocad $(FILE_COMPAT_ARGS) $(FILE_COMPAT_SCENARIOS)
 
 
-documentation: $(PDF_FILES) $(INFO_FILES) documentation/RELEASE_NOTES.pdf
+documentation: $(PDF_FILES) $(INFO_FILES) $(BUILD_DIR)/documentation/RELEASE_NOTES.pdf
 
-user-manual: documentation/clautolisp-user-manual.pdf documentation/clautolisp-user-manual.info
-specifications: documentation/clautolisp-specifications.pdf documentation/clautolisp-specifications.info
+user-manual: $(BUILD_DIR)/documentation/clautolisp-user-manual.pdf $(BUILD_DIR)/documentation/clautolisp-user-manual.info
+specifications: $(BUILD_DIR)/documentation/clautolisp-specifications.pdf $(BUILD_DIR)/documentation/clautolisp-specifications.info
 
 # RELEASE_NOTES.org lives at the repo root (single source of truth)
 # but ships to $PREFIX/share/doc/clautolisp/ alongside the other
@@ -328,11 +333,18 @@ endif
 # clautolisp-doc-preamble.sty. It is injected into every export via
 # org-latex-packages-alist, and TEXINPUTS points at documentation/ so the
 # .sty is found regardless of the .tex's own directory (e.g. specifications/).
-%.pdf: %.org | $(TEX_FMT_DEP)
+# org export writes its outputs next to the .org; we then move the result
+# under build/ (mirroring the source path) and delete the intermediate .tex so
+# the source tree stays clean. $(@D) is build/<dir>; $(patsubst …) recovers the
+# in-place output org-export produced from the source.
+$(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
+	@mkdir -p $(@D)
 	TEXINPUTS="$(ROOT_DIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
+	@mv -f "$(<:.org=.pdf)" "$@"
+	@rm -f "$(<:.org=.tex)"
 
 # .info build: org -> .texi -> .info. Two stages because Emacs's
 # org-texinfo-export-to-info would invoke makeinfo on the .texi,
@@ -341,18 +353,20 @@ endif
 # file should carry the conventional #+TEXINFO_FILENAME / #+TEXINFO_DIR_*
 # directives; the stub generator (documentation-synchronisation.issue)
 # emits them in the standard place at the top.
-%.texi: %.org
+$(BUILD_DIR)/%.texi: %.org
+	@mkdir -p $(@D)
 	$(EMACS) --batch \
 		--eval '(progn (require (quote ox-texinfo)) (setq org-export-with-broken-links t))' \
 		--visit "$<" \
 		--funcall org-texinfo-export-to-texinfo
+	@mv -f "$(<:.org=.texi)" "$@"
 
-%.info: %.texi
+$(BUILD_DIR)/%.info: $(BUILD_DIR)/%.texi
 	$(MAKEINFO) --no-split -o $@ $<
 
 clean-pdf:
-	rm -f $(PDF_FILES) $(INFO_FILES) $(ALL_ORG_FILES:.org=.texi)
-	rm -f documentation/RELEASE_NOTES.org documentation/RELEASE_NOTES.pdf documentation/RELEASE_NOTES.texi
+	rm -rf $(BUILD_DIR)
+	rm -f documentation/RELEASE_NOTES.org
 
 builtins-coverage:
 	@tools/builtins-coverage/coverage.sh > documentation/builtins-coverage.md
@@ -452,9 +466,9 @@ install-programs:  ## Install just the clautolisp/read-autolisp/gui/run-file-com
 	fi
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
-install-documentation:  ## Install just the clautolisp documentation (org/pdf/info/man).
+install-documentation:  ## Install just the clautolisp documentation (org/pdf/info/man). PDFs/Info come from build/.
 	install -d $(DOC_INSTALL_DIR)
-	@for f in documentation/*.org documentation/*.pdf; do \
+	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
 	@# .info files install under share/info per the FHS convention.
@@ -462,7 +476,7 @@ install-documentation:  ## Install just the clautolisp documentation (org/pdf/in
 	@# `info <doc>` finds them. The directory itself is created
 	@# lazily — distros routinely pre-create it.
 	install -d $(INFO_INSTALL_DIR)
-	@for f in documentation/*.info; do \
+	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
 	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
 	    echo "installed: $$f -> $(INFO_INSTALL_DIR)/" ; \
@@ -502,12 +516,12 @@ uninstall:  ## Remove the clautolisp install from $$PREFIX.
 	      $(BIN_INSTALL_DIR)/read-autolisp-sbcl $(BIN_INSTALL_DIR)/read-autolisp-ccl \
 	      $(BIN_INSTALL_DIR)/clautolisp-gui-qt
 	@# Remove .info entries from the dir node before deleting the files.
-	@for f in documentation/*.info; do \
-	  if [ -f "$$f" ]; then \
-	    $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$f" 2>/dev/null \
-	      || true ; \
-	    rm -f "$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \
-	  fi ; \
+	@# Derived from the source .org list (the generated .info live under build/).
+	@for f in $(INFO_FILES); do \
+	  base="$$(basename $$f)" ; \
+	  $(INSTALL_INFO) --remove --info-dir="$(INFO_INSTALL_DIR)" "$$base" 2>/dev/null \
+	    || true ; \
+	  rm -f "$(INFO_INSTALL_DIR)/$$base" ; \
 	done
 	@for f in documentation/man/*.1; do \
 	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename $$f)" ; fi ; \
