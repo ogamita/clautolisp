@@ -505,6 +505,18 @@ terminal can always /name/ any poll point — but the natural gesture is to
   not touch the top-level key map. Because the motions follow the *sexp
   structure*, not characters, you reach the same precise poll point a
   mouse cursor would, without counting columns.
+  - *Code vs non-code sub-forms.* Special operators have sub-forms that are
+    *not evaluated* and so carry no poll point — the datum of =quote=, the
+    variables of =setq=, the name and arg-list of =defun=, the loop variable of
+    =foreach=, =cond= clauses (a structural group), the function names of
+    =trace= / =untrace=. The navigator classifies each child as =:code= (an
+    evaluated form), =:non-code= (datum / name / variable) or =:group= (a
+    structural list whose elements follow ordinary rules), via a *per-operator
+    role table* keyed by operator name, so a designation lands only on a real
+    poll point and a new special operator is added by one table entry. (The 17
+    runtime special operators are covered; the all-code ones — =set=, =progn=,
+    =if=, =and=, =or=, =while=, =repeat= — need no entry. Implemented as
+    =*special-form-arg-roles*= / =child-role= / =nav-code-p= in the navigator.)
 
 - backing: =LINE→pp= is =[have]= (=poll-point-at=); =LINE.K= / =LINE:COL=
   / =ppN= are =[new]= but thin (the reader spans and a poll-point id index
