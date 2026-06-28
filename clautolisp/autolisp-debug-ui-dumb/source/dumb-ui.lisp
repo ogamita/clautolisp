@@ -94,7 +94,7 @@ non-interactive stream (EOF), TEXT is written straight through (never blocks)."
   (loop for form in (dumb-ui-displays ui)
         for i from 1
         do (handler-case
-               (out ui "DBG> display ~D: ~A = ~A~%" i form (preview (cmd-eval session form) 80))
+               (out ui "DBG> display ~D: ~A = ~A~%" i form (preview (cmd-eval session form)))
              (error (e) (out ui "DBG> display ~D: ~A = <error: ~A>~%" i form e)))))
 
 (defmethod ui-thread-hit ((ui dumb-ui) session hit)
@@ -134,8 +134,17 @@ non-interactive stream (EOF), TEXT is written straight through (never blocks)."
     (when names
       (out ui "DBG>   <stack: ~{~A~^ ← ~} ← top>~%" names))))
 
-(defun preview (value &optional (limit 60))
-  (let ((string (handler-case (prin1-to-string value) (error () "#<?>"))))
+(defun effective-value-line-width ()
+  "The configured single-line value width (the `value-line-width' setting,
+command reference §8), or 72 if unset/unavailable."
+  (or (ignore-errors (get-aldo-setting :value-line-width)) 72))
+
+(defun preview (value &optional limit)
+  "A one-line printed preview of VALUE, truncated with an ellipsis at LIMIT
+characters. LIMIT defaults to the `value-line-width' setting so the user can
+configure how wide single-line value displays are (command reference §8)."
+  (let ((limit (or limit (effective-value-line-width)))
+        (string (handler-case (prin1-to-string value) (error () "#<?>"))))
     (if (> (length string) limit)
         (concatenate 'string (subseq string 0 limit) "…")
         string)))
@@ -558,6 +567,48 @@ BODY…)= for structural navigation, or NIL if there is no current function."
                  (autolisp-usubr-body usubr)))))))
 
 (defun nav-loop (ui session)
+  "`nav' — a navigation sub-mode over the current function (command reference §3).
+The `navigator' setting (§8) chooses the granularity: =sexp= (default) walks the
+structural tree; =line= walks the function's poll-point lines flatly."
+  (if (eq (ignore-errors (get-aldo-setting :navigator)) :line)
+      (nav-line-loop ui session)
+      (nav-sexp-loop ui session)))
+
+(defun nav-line-loop (ui session)
+  "`nav' in LINE mode (the `navigator line' setting): a flat cursor over the
+current function's distinct source lines (those carrying a poll point) instead
+of the structural sexp tree. Keys: =d=/=>= next, =u=/=<= prev, =<<= first,
+=>>= last, =±N= skip, =q= leave."
+  (let* ((pps (current-poll-points session))
+         ;; one entry per distinct source line (a line may hold several poll
+         ;; points); flag the line if any of its poll points is breakpointed.
+         (lines (sort (remove-duplicates (mapcar #'second pps)) #'<)))
+    (if (null lines)
+        (out ui "DBG> nav: no poll points in the current function~%")
+        (let ((i 0) (n (length lines)))
+          (loop
+            (let* ((line (nth i lines))
+                   (bp (some (lambda (pp) (and (= (second pp) line) (third pp))) pps)))
+              (out ui "~&NAV(line ~D/~D)> line ~D~:[~; *breakpoint~]~%"
+                   (1+ i) n line bp))
+            (out ui "NAV> ")
+            (let ((raw (read-line (dumb-ui-input ui) nil :eof)))
+              (when (eq raw :eof) (return))
+              (let* ((cmd (string-trim " " raw))
+                     (signed (and (>= (length cmd) 2)
+                                  (member (char cmd 0) '(#\+ #\-))
+                                  (ignore-errors (parse-integer cmd)))))
+                (cond
+                  ((string= cmd "") nil)
+                  ((member cmd '("d" ">") :test #'string=) (setf i (min (1- n) (1+ i))))
+                  ((member cmd '("u" "<") :test #'string=) (setf i (max 0 (1- i))))
+                  ((string= cmd "<<") (setf i 0))
+                  ((string= cmd ">>") (setf i (1- n)))
+                  (signed (setf i (max 0 (min (1- n) (+ i signed)))))
+                  ((member cmd '("q" "quit") :test #'string=) (return))
+                  (t (out ui "NAV> ? keys: d/> next  u/< prev  << first  >> last  ±N  q~%"))))))))))
+
+(defun nav-sexp-loop (ui session)
   "`nav' — a structural-navigation sub-mode over the current function's form
 (command reference §3 / TUI sedit navigator). Modal keys: =d= down, =u= up, =>=
 forward, =<= backward, =<<= first, =>>= last, =±N= signed sibling skip, =q=
@@ -848,7 +899,7 @@ refinement; all three currently show the visible bindings."
 
 (defun eval-and-print (ui session form-string)
   (handler-case
-      (out ui "DBG> ~A~%" (preview (cmd-eval session form-string) 200))
+      (out ui "DBG> ~A~%" (preview (cmd-eval session form-string)))
     (error (e) (out ui "DBG> eval error: ~A~%" e))))
 
 (defun print-variable-cmd (ui session arg)

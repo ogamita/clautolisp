@@ -453,6 +453,59 @@
       (is (contains output "error off"))
       (is (contains output "caught on")))))
 
+(test dumb-ui-nav-line-mode
+  ;; the `navigator line' setting makes `nav' walk poll-point lines flatly
+  ;; instead of the sexp tree (command reference §8); d advances to the next.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (clautolisp.debug.ui:*aldo-configuration*
+           (let ((c (copy-tree clautolisp.debug.ui:*default-aldo-configuration*)))
+             (setf (cdr (assoc :navigator c)) :line)
+             c)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%d~%q~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "NAV(line"))       ; entered line mode
+      (is (contains output "line 3"))         ; first poll-point line
+      (is (contains output "line 4")))))      ; d advanced to the next
+
+(test dumb-ui-value-line-width-setting-applied
+  ;; the `value-line-width' setting governs single-line value previews
+  ;; (command reference §8); set it small and a long value is truncated.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (clautolisp.debug.ui:*aldo-configuration*
+           (copy-tree clautolisp.debug.ui:*default-aldo-configuration*)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "set value-line-width 8~%p \"abcdefghijklmnopqrstuvwxyz\"~%c~%")
+                :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      (is (contains output "…")))))            ; truncated at the configured width
+
+(test dumb-ui-break-on-caught-setting-applied
+  ;; the `break-on-caught' setting takes effect at session start: it seeds
+  ;; *break-on-caught-error* (command reference §8).
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (captured :unset)
+         (clautolisp.debug.ui:*aldo-configuration*
+           (let ((c (copy-tree clautolisp.debug.ui:*default-aldo-configuration*)))
+             (setf (cdr (assoc :break-on-caught c)) t)
+             c)))
+    (run-ui "" :context context :thread-info ti
+            :thunk (lambda () (setf captured clautolisp.debug:*break-on-caught-error*)))
+    (is (eq t captured))))
+
 (test dumb-ui-return-at-normal-stop-supplies-value
   ;; `return VALUE' at a NORMAL (non-error) breakpoint stop makes the innermost
   ;; instrumented form return VALUE (command reference §1 return / spec §10.1).
