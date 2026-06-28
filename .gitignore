@@ -152,3 +152,8 @@ clautolisp/drawing-dwg/source/clal_dwg.so
 
 # Release artefacts (make release-*)
 /dist/
+
+# Documentation build caches: the doc Makefiles build a private high-memory
+# xelatex format (and TeX/font caches) into a per-subproject .cache/texmf-var
+# so large org docs don't exceed TeX's default main_memory. Generated, local.
+.cache/
