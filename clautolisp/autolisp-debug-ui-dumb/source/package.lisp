@@ -20,11 +20,13 @@ UI refines.")
                 #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when
                 #:breakpoint-enabled-p #:set-breakpoint-enabled #:breakpoint-condition
                 #:poll-point-id #:poll-point-location
-                #:function-debug-metadata-function-id
+                #:function-debug-metadata-function-id #:function-debug-metadata-usubr
                 #:function-debug-metadata-poll-point-count #:form-id-position)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-symbol-name #:read-runtime-from-string
-                #:autolisp-eval #:current-evaluation-context #:*debugging*)
+                #:autolisp-eval #:current-evaluation-context #:*debugging*
+                #:intern-autolisp-symbol #:autolisp-usubr-name
+                #:autolisp-usubr-lambda-list #:autolisp-usubr-body)
   (:import-from #:clautolisp.inspect
                 #:inspect-page-type-name #:inspect-page-header #:inspect-page-components
                 #:inspect-component-label #:inspect-component-preview

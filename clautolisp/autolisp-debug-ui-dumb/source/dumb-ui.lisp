@@ -203,8 +203,9 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '("p" "print") :test #'string=) (print-variable-cmd ui session arg) nil)
       ((member c '("t" "type" ",type") :test #'string=) (type-cmd ui session arg) nil)
       ((member c '("v" "visit") :test #'string=) (inspector-loop ui session arg) nil)
-      ;; source (§5)
+      ;; source (§5) + structural navigation (§3)
       ((string= c "ls") (relist-source ui session) nil)
+      ((member c '("nav" ",nav") :test #'string=) (nav-loop ui session) nil)
       ;; spelled two-word "list X"
       ((string= c "list") (list-sub-cmd ui session arg) nil)
       ;; meta (§8)
@@ -319,6 +320,49 @@ that numbering is settled — design-notes register.)"
                (progn (cmd-remove-breakpoint session bp)
                       (out ui "DBG> deleted breakpoint pp~D~%" pp))
                (out ui "DBG> no breakpoint pp~A~%" arg)))))))
+
+(defun current-source-form (session)
+  "Reconstruct the current function's source form =(defun NAME LAMBDA-LIST
+BODY…)= for structural navigation, or NIL if there is no current function."
+  (let ((metadata (current-metadata session)))
+    (when metadata
+      (let ((usubr (function-debug-metadata-usubr metadata)))
+        (when usubr
+          (list* (intern-autolisp-symbol "DEFUN")
+                 (intern-autolisp-symbol (autolisp-usubr-name usubr))
+                 (autolisp-usubr-lambda-list usubr)
+                 (autolisp-usubr-body usubr)))))))
+
+(defun nav-loop (ui session)
+  "`nav' — a structural-navigation sub-mode over the current function's form
+(command reference §3 / TUI sedit navigator). Modal keys: =d= down, =u= up, =>=
+forward, =<= backward, =<<= first, =>>= last, =±N= signed sibling skip, =q=
+leave. The selected sub-form is shown bracketed, with whether it is a code
+(poll-pointable) position."
+  (let ((form (current-source-form session)))
+    (if (null form)
+        (out ui "DBG> nav: no current function~%")
+        (let ((nav (make-navigator form)))
+          (loop
+            (out ui "~&NAV> ~A~%" (nav-render nav))
+            (out ui "NAV[~A]> " (if (nav-code-p nav) "code" "non-code"))
+            (let ((line (read-line (dumb-ui-input ui) nil :eof)))
+              (when (eq line :eof) (return))
+              (let* ((cmd (string-trim " " line))
+                     (signed (and (>= (length cmd) 2)
+                                  (member (char cmd 0) '(#\+ #\-))
+                                  (ignore-errors (parse-integer cmd)))))
+                (cond
+                  ((string= cmd "") nil)
+                  ((string= cmd "d") (nav-down nav))
+                  ((string= cmd "u") (nav-up nav))
+                  ((string= cmd ">") (nav-forward nav))
+                  ((string= cmd "<") (nav-backward nav))
+                  ((string= cmd "<<") (nav-first nav))
+                  ((string= cmd ">>") (nav-last nav))
+                  (signed (nav-skip nav signed))
+                  ((member cmd '("q" "quit") :test #'string=) (return))
+                  (t (out ui "NAV> ? keys: d u > < << >> ±N q~%"))))))))))
 
 (defun advance-cmd (ui session arg)
   "`advance LINE' (=a=) — run to the poll point on LINE (§1). Returns the resume
@@ -545,6 +589,7 @@ function, or at a poll point by its number (command reference §2)."
             DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~
             DBG>   ll/lp/lv list locals/parameters/variables   list polls~%~
             DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source~%~
+            DBG>   nav (structural navigation: d u > < << >> ±N q)~%~
             DBG>   set NAME VALUE   ,settings [NAME|save|reload]~%~
             DBG>   display FORM   undisplay [N]~%~
             DBG>   (form...) evaluate in the current frame   h/? help~%")))
