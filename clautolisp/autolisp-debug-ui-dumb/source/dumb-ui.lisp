@@ -22,6 +22,46 @@
   (apply #'format (dumb-ui-output ui) control args)
   (force-output (dumb-ui-output ui)))
 
+(defun string-lines (text)
+  "TEXT split into a list of lines (a single trailing newline is dropped)."
+  (let ((lines (uiop:split-string text :separator '(#\Newline))))
+    (if (and (cdr lines) (string= "" (car (last lines))))
+        (butlast lines)
+        lines)))
+
+(defun paged-out (ui text)
+  "Emit TEXT to the UI, a page at a time when the pager is on and TEXT is taller
+than a page (command reference §8 *Paging long output*). The page prompt reads
+one line of input (the modal pager sub-mode): SPACE / f / =>= / RET next page,
+b / =<= back, g / =<<= first, G / =>>= last, q quit. With the pager off, or on a
+non-interactive stream (EOF), TEXT is written straight through (never blocks)."
+  (let* ((pager-on (eq (get-aldo-setting :pager) :on))
+         (page (max 1 (1- (or (get-aldo-setting :pager-height) 24))))
+         (lines (coerce (string-lines text) 'vector))
+         (n (length lines)))
+    (if (or (not pager-on) (<= n page))
+        (write-string text (dumb-ui-output ui))
+        (loop with s = 0
+              do (loop for k from s below (min n (+ s page))
+                       do (out ui "~A~%" (svref lines k)))
+                 (let ((end (min n (+ s page))))
+                   (when (>= end n) (return))
+                   (out ui "--More--(~D/~D) [SPACE/f/> b/< g G q] " end n)
+                   (let ((line (read-line (dumb-ui-input ui) nil :eof)))
+                     (if (eq line :eof)
+                         (progn (loop for k from end below n
+                                      do (out ui "~A~%" (svref lines k)))
+                                (return))
+                         (let ((cmd (string-trim " " line)))
+                           (cond
+                             ((string-equal cmd "q") (return))
+                             ((member cmd '("b" "<") :test #'string-equal)
+                              (setf s (max 0 (- s page))))
+                             ((member cmd '("g" "<<") :test #'string-equal) (setf s 0))
+                             ((member cmd '("G" ">>") :test #'string-equal)
+                              (setf s (max 0 (- n page))))
+                             (t (setf s end)))))))))))   ; SPACE/f/>/RET/… → next
+
 ;;; --- notifications -------------------------------------------------
 
 (defmethod ui-attached ((ui dumb-ui) session)
@@ -159,7 +199,7 @@ reading. A line that looks like (form) is eval-in-frame."
     ((null arg)
      ;; reflect any AutoLISP-side change to the canonical variable first
      (ignore-errors (sync-config-from-variable))
-     (dolist (line (aldo-settings-lines)) (out ui "  ~A~%" line)))
+     (paged-out ui (format nil "~{  ~A~%~}" (aldo-settings-lines))))
     ((string-equal arg "save")
      (handler-case
          (progn (ignore-errors (sync-config-to-variable))
@@ -228,13 +268,14 @@ reading. A line that looks like (form) is eval-in-frame."
     (error (e) (out ui "DBG> return error: ~A~%" e) nil)))
 
 (defun print-help (ui)
-  (out ui "~&DBG> commands:~%~
+  (paged-out ui
+   (format nil "DBG> commands:~%~
             DBG>   c continue   s/n step over   i step in   o step out   f finish~%~
             DBG>   b list bkpts  B <line> set bkpt   p [name] print   e <form> eval~%~
             DBG>   l list source  t backtrace   x [form] inspect~%~
             DBG>   a abort   r <form> return value (at error)   q quit   h help~%~
             DBG>   set NAME VALUE   ,settings [NAME|save|reload]~%~
-            DBG>   (form...) evaluate in the current frame~%"))
+            DBG>   (form...) evaluate in the current frame~%")))
 
 ;;; --- inspector sub-REPL (spec §18.2) -------------------------------
 

@@ -577,6 +577,7 @@
    (:file "autolisp-debug-ui-dumb/tests/decorations-tests")
    (:file "autolisp-debug-ui-dumb/tests/command-table-tests")
    (:file "autolisp-debug-ui-dumb/tests/config-bridge-tests")
+   (:file "autolisp-debug-ui-dumb/tests/pager-tests")
    (:file "autolisp-debug-ui-dumb/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
