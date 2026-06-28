@@ -92,6 +92,66 @@ empty list)."
       (%set-last-index nav (max 0 (min (1- (length parent)) (+ i n))))))
   nav)
 
+;;; --- code vs non-code sub-forms (per special operator) ----------------
+;;;
+;;; AutoLISP special operators have sub-forms that are NOT evaluated as code and
+;;; therefore carry no poll point: the quoted datum of QUOTE, the variables of
+;;; SETQ, the name and arg-list of DEFUN, etc. The navigator consults this table
+;;; to tell code (poll-pointable) sub-forms from non-code ones, so a structural
+;;; designation lands on a real poll point. To support a NEW special operator,
+;;; add one (NAME . ROLE-FN) entry — ROLE-FN maps a 1-based argument index to a
+;;; role: :code (an evaluated form), :non-code (a datum / name / variable), or
+;;; :group (a structural list — e.g. a COND clause — whose own elements follow
+;;; ordinary rules). Operators absent here are ordinary forms: every argument is
+;;; :code. (The 17 runtime special operators of
+;;; clautolisp.autolisp-runtime::*special-operator-dispatch* are covered; the
+;;; all-:code ones — SET, PROGN, IF, AND, OR, WHILE, REPEAT — need no entry.)
+
+(defparameter *special-form-arg-roles*
+  (list
+   (cons "QUOTE"    (constantly :non-code))                          ; the datum
+   (cons "FUNCTION" (lambda (i) (if (= i 1) :non-code :code)))       ; the designator
+   (cons "SETQ"     (lambda (i) (if (oddp i) :non-code :code)))      ; var val var val …
+   (cons "DEFUN"    (lambda (i) (if (<= i 2) :non-code :code)))      ; name arglist body…
+   (cons "DEFUN-Q"  (lambda (i) (if (<= i 2) :non-code :code)))      ; name arglist body…
+   (cons "LAMBDA"   (lambda (i) (if (= i 1) :non-code :code)))       ; arglist body…
+   (cons "FOREACH"  (lambda (i) (if (= i 1) :non-code :code)))       ; var list body…
+   (cons "COND"     (constantly :group))                            ; (test body…) clauses
+   (cons "TRACE"    (constantly :non-code))                          ; function-name symbols
+   (cons "UNTRACE"  (constantly :non-code)))                         ; function-name symbols
+  "Per-special-operator role of each argument; see the commentary above.")
+
+(defun %operator-name (head)
+  "The upper-case operator name of a form head (an AutoLISP or CL symbol), or
+NIL if HEAD is not a symbol."
+  (cond ((typep head 'clautolisp.autolisp-runtime:autolisp-symbol)
+         (string-upcase (clautolisp.autolisp-runtime:autolisp-symbol-name head)))
+        ((symbolp head) (string-upcase (symbol-name head)))
+        (t nil)))
+
+(defun child-role (parent index)
+  "The role of the child at INDEX of PARENT (0 = the operator/function position):
+:code | :non-code | :group. The operator position is :non-code; arguments
+default to :code unless PARENT is a special form with a role-table entry."
+  (cond
+    ((not (consp parent)) :code)
+    ((zerop index) :non-code)
+    (t (let* ((op (%operator-name (car parent)))
+              (fn (and op (cdr (assoc op *special-form-arg-roles* :test #'string=)))))
+         (if fn (funcall fn index) :code)))))
+
+(defun nav-selected-role (nav)
+  "The role of the selected node (:code at the root): whether it is an evaluated
+sub-form, a non-code datum/name, or a structural group."
+  (if (null (navigator-path nav))
+      :code
+      (child-role (nav-parent nav) (nav-index nav))))
+
+(defun nav-code-p (nav)
+  "True when the selected node sits in a *code* position — an evaluated form, so
+poll-pointable. Non-code data/names and structural groups return NIL."
+  (eq :code (nav-selected-role nav)))
+
 ;;; --- rendering --------------------------------------------------------
 
 (defun %render-marked (sexp path open close stream)

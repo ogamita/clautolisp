@@ -113,4 +113,5 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:make-navigator #:navigator-root #:navigator-path #:nav-selected
    #:nav-parent #:nav-index
    #:nav-down #:nav-up #:nav-forward #:nav-backward #:nav-first #:nav-last
-   #:nav-skip #:nav-render))
+   #:nav-skip #:nav-render
+   #:*special-form-arg-roles* #:child-role #:nav-selected-role #:nav-code-p))
