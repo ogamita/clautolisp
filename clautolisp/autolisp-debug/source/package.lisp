@@ -44,6 +44,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:source-position-p
                 #:source-position-equal
                 #:source-position-start-line
+                #:source-position-start-column
                 #:source-position-end-line)
   (:export
    #:*protocol-version*
@@ -69,6 +70,8 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:form-id-position
    #:form-id-kind
    #:find-form-id-at-line
+   #:form-ids-at-line
+   #:form-id-at-line-col
    #:poll-point-id
    #:poll-point-location
    ;; instrumentation (§3a / spec §5)

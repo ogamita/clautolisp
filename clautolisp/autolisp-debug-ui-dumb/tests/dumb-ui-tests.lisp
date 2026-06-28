@@ -636,6 +636,51 @@
       (is (contains output "back to ID"))                  ; back popped to ID
       (is (contains output "no instrumented function named NOPE")))))
 
+(test dumb-ui-break-line-dot-k-and-line-col
+  ;; `b LINE.K' and `b LINE:COL' designate a specific poll point on a line
+  ;; (command reference §2). Line 3 of +two-source+ holds several poll points.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (meta (first metas))
+         (two (fid-of meta))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (ids (clautolisp.debug:form-ids-at-line meta 3))
+         (col (clautolisp.source:source-position-start-column
+               (clautolisp.debug:form-id-position meta (first ids)))))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; stop at entry to issue commands
+    (multiple-value-bind (result output)
+        (run-ui (format nil "b 3.1~%b 3.2~%b 3:~D~%lb~%c~%c~%c~%c~%" col)
+                :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (declare (ignore result))
+      (is (>= (length ids) 2))                       ; line 3 indeed has ≥2 poll points
+      (is (contains output "set at 3.1"))            ; the K-th poll-point form
+      (is (contains output "set at 3.2"))
+      (is (contains output (format nil "set at 3:~D" col))))))  ; the LINE:COL form
+
+(test dumb-ui-navigation-history-restore
+  ;; the cross-stop navigation history: a browse state is saved on each
+  ;; debugger re-entry and `restore N' returns to it (command reference §3).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (meta (first metas))
+         (two (fid-of meta))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    ;; two stops: line 3 then line 4
+    (clautolisp.debug:add-breakpoint ti two (clautolisp.debug:find-form-id-at-line meta 3) :when :before)
+    (clautolisp.debug:add-breakpoint ti two (clautolisp.debug:find-form-id-at-line meta 4) :when :before)
+    (multiple-value-bind (result output)
+        ;; stop 1: browse to ID, continue; stop 2: history shows the saved state,
+        ;; restore 0 returns to it.
+        (run-ui (format nil "goto ID~%c~%history~%restore 0~%c~%")
+                :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (declare (ignore result))
+      (is (contains output "saved navigation states"))  ; the browse state was saved on re-entry
+      (is (contains output "restored to ID")))))         ; restore 0 returned to it
+
 (test dumb-ui-search-lists-matching-functions
   ;; `search PATTERN' lists instrumented functions whose name matches the
   ;; wildcard (command reference §3, name search v1).

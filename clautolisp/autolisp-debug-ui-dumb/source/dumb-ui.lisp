@@ -15,7 +15,12 @@
    (displays :initarg :displays :initform '() :accessor dumb-ui-displays)
    ;; source-browse stack (cmd-ref §3): a list of (NAME . source-position),
    ;; top = current browse position; pushed by goto/definition, popped by back.
-   (browse-stack :initarg :browse-stack :initform '() :accessor dumb-ui-browse-stack)))
+   (browse-stack :initarg :browse-stack :initform '() :accessor dumb-ui-browse-stack)
+   ;; cross-stop navigation history (cmd-ref §3): a list of saved browse-stack
+   ;; snapshots, newest first, pushed on each debugger re-entry; `restore N'
+   ;; returns to one. Bounded by the navigation-history-max setting.
+   (navigation-history :initarg :navigation-history :initform '()
+                       :accessor dumb-ui-navigation-history)))
 
 (defun make-dumb-ui (&rest initargs)
   (apply #'make-instance 'dumb-ui initargs))
@@ -192,7 +197,20 @@ configure how wide single-line value displays are (command reference §8)."
 
 ;;; --- the command loop (spec §18.1) ---------------------------------
 
+(defun record-navigation-state (ui)
+  "On debugger re-entry, save the current browse stack to the navigation history
+(newest first), de-duplicating the immediate previous and capping at the
+navigation-history-max setting (command reference §3)."
+  (let ((stack (dumb-ui-browse-stack ui)))
+    (when (and stack
+               (not (equal stack (first (dumb-ui-navigation-history ui)))))
+      (let ((max (or (ignore-errors (get-aldo-setting :navigation-history-max)) 1000)))
+        (setf (dumb-ui-navigation-history ui)
+              (subseq (cons (copy-list stack) (dumb-ui-navigation-history ui))
+                      0 (min (1+ (length (dumb-ui-navigation-history ui))) (max 1 max))))))))
+
 (defmethod ui-await-command ((ui dumb-ui) session hit)
+  (record-navigation-state ui)
   (loop
     (out ui "~&~A" (dumb-ui-prompt ui))
     (let ((line (read-line (dumb-ui-input ui) nil :eof)))
@@ -323,6 +341,7 @@ command-reference §0 vocabulary. Returns a resume directive, or NIL."
       ((member c '("." "definition" ",definition") :test #'string=) (definition-cmd ui session arg) nil)
       ((member c '("back" ",back") :test #'string=) (back-cmd ui session) nil)
       ((member c '("history" ",history") :test #'string=) (history-cmd ui session) nil)
+      ((member c '("restore" ",restore") :test #'string=) (restore-cmd ui arg) nil)
       ((member c '("search" ",search") :test #'string=) (search-cmd ui session arg) nil)
       ;; spelled two-word "list X"
       ((string= c "list") (list-sub-cmd ui session arg) nil)
@@ -779,16 +798,36 @@ it (command reference §3)."
            (when (source-position-p position) (ui-show-source ui position)))))))
 
 (defun history-cmd (ui session)
-  "`history' — list the source-browse stack, innermost (current) first (command
+  "`history' — list the source-browse stack (innermost/current first) and the
+saved cross-stop navigation states; `restore N' returns to state N (command
 reference §3)."
   (declare (ignore session))
-  (let ((stack (dumb-ui-browse-stack ui)))
+  (let ((stack (dumb-ui-browse-stack ui))
+        (saved (dumb-ui-navigation-history ui)))
     (if (null stack)
-        (out ui "DBG>   no browse history~%")
+        (out ui "DBG>   browse stack empty~%")
         (loop for (name . position) in stack
               for i from 0
               do (out ui "DBG>   ~D: ~A  ~A~%" i name
-                      (location-string position name))))))
+                      (location-string position name))))
+    (when saved
+      (out ui "DBG>   --- saved navigation states (restore N) ---~%")
+      (loop for state in saved
+            for n from 0
+            do (out ui "DBG>   [~D] ~{~A~^ < ~}~%" n (mapcar #'car state))))))
+
+(defun restore-cmd (ui arg)
+  "`restore N' — make saved navigation state N (as listed by `history') the
+current source-browse stack and redisplay its top (command reference §3)."
+  (let* ((n (and arg (ignore-errors (parse-integer (string-trim " " arg) :junk-allowed t))))
+         (saved (dumb-ui-navigation-history ui)))
+    (cond
+      ((null n) (out ui "DBG> restore: usage: restore N~%"))
+      ((not (< -1 n (length saved))) (out ui "DBG> restore: no navigation state ~A~%" n))
+      (t (setf (dumb-ui-browse-stack ui) (copy-list (nth n saved)))
+         (destructuring-bind (name . position) (first (dumb-ui-browse-stack ui))
+           (out ui "DBG> restored to ~A:~%" name)
+           (when (source-position-p position) (ui-show-source ui position)))))))
 
 (defun search-cmd (ui session arg)
   "`search PATTERN' — list instrumented functions whose name matches the wcmatch
@@ -820,8 +859,8 @@ directive, or NIL (with a message) when LINE has none."
 
 (defun jump-target-location (metadata arg)
   "Resolve a jump destination ARG to (values FID FORM-ID): =ppN= names a poll
-point by number; a bare integer is a source LINE in the current function. Returns
-(values NIL NIL) if it cannot be resolved."
+point by number; otherwise a within-function location =LINE= / =LINE.K= /
+=LINE:COL= (command reference §2). Returns (values NIL NIL) if unresolved."
   (let ((tok (and arg (string-trim " " arg))))
     (cond
       ((or (null tok) (zerop (length tok))) (values nil nil))
@@ -829,13 +868,10 @@ point by number; a bare integer is a source LINE in the current function. Return
       ((and (>= (length tok) 2) (string-equal "pp" (subseq tok 0 2)))
        (let ((pp (ignore-errors (parse-integer (subseq tok 2) :junk-allowed t))))
          (if pp (poll-point-location pp) (values nil nil))))
-      ;; otherwise a source line in the current function
-      (t (let ((line (ignore-errors (parse-integer tok :junk-allowed t))))
-           (if line
-               (let ((form-id (find-form-id-at-line metadata line)))
-                 (if form-id
-                     (values (function-debug-metadata-function-id metadata) form-id)
-                     (values nil nil)))
+      ;; otherwise a LINE / LINE.K / LINE:COL location in the current function
+      (t (let ((form-id (resolve-line-spec metadata tok)))
+           (if form-id
+               (values (function-debug-metadata-function-id metadata) form-id)
                (values nil nil)))))))
 
 (defun jump-cmd (ui session hit arg)
@@ -1079,28 +1115,58 @@ conditional, once, traced, bpcmd state (command reference §2)."
                (breakpoint-annotations bp)))
         (out ui "DBG>   no breakpoints~%"))))
 
+(defun location-label (token)
+  "A readable label for a location TOKEN in messages: a bare integer reads as
+\"line N\"; the finer LINE.K / LINE:COL forms are shown verbatim."
+  (if (and (plusp (length token)) (every #'digit-char-p token))
+      (format nil "line ~A" token)
+      token))
+
+(defun resolve-line-spec (metadata token)
+  "Resolve a within-function location TOKEN to a form-id (command reference §2
+*Specifying a location*): =LINE= (the innermost poll point on the line),
+=LINE.K= (the K-th poll point on LINE, left-to-right, 1-based), or =LINE:COL=
+(the poll point starting at that column). Returns the form-id or NIL."
+  (let ((dot (position #\. token))
+        (colon (position #\: token)))
+    (cond
+      (colon
+       (let ((line (ignore-errors (parse-integer token :end colon)))
+             (col (ignore-errors (parse-integer token :start (1+ colon)))))
+         (and line col (form-id-at-line-col metadata line col))))
+      (dot
+       (let ((line (ignore-errors (parse-integer token :end dot)))
+             (k (ignore-errors (parse-integer token :start (1+ dot)))))
+         (and line k (let ((ids (form-ids-at-line metadata line)))
+                       (and (<= 1 k (length ids)) (nth (1- k) ids))))))
+      (t (let ((line (ignore-errors (parse-integer token :junk-allowed t))))
+           (and line (find-form-id-at-line metadata line)))))))
+
 (defun set-breakpoint-cmd (ui session arg &optional (steady t))
-  "`b LINE' or `b ppN' — set a breakpoint at a source line of the current
-function, or at a poll point by its number. With STEADY NIL the breakpoint is
-volatile — removed on first hit (`break once' / `bo', command reference §2)."
+  "`b LINE' / `b LINE.K' / `b LINE:COL' / `b ppN' — set a breakpoint at a poll
+point of the current function by source line (innermost on the line, the K-th on
+the line, or the one at LINE:COL) or by its poll-point number. With STEADY NIL
+the breakpoint is volatile — removed on first hit (`break once' / `bo', §2)."
   (let* ((tok (and arg (string-trim " " arg)))
          (kind (if steady "" " (once)"))
          (pp (and tok (>= (length tok) 3) (string-equal "pp" (subseq tok 0 2))
                   (ignore-errors (parse-integer (subseq tok 2) :junk-allowed t)))))
     (cond
-      ((or (null tok) (zerop (length tok))) (out ui "DBG> break needs a line number or ppN~%"))
+      ((or (null tok) (zerop (length tok))) (out ui "DBG> break needs a location (LINE, LINE.K, LINE:COL, or ppN)~%"))
       (pp (multiple-value-bind (fid form-id) (poll-point-location pp)
             (if fid
                 (out ui "DBG> breakpoint pp~D set~A~%"
                      (breakpoint-pp (cmd-set-breakpoint session fid form-id :steady steady)) kind)
                 (out ui "DBG> no poll point pp~D~%" pp))))
-      (t (let ((line (ignore-errors (parse-integer tok :junk-allowed t))))
-           (cond
-             ((null line) (out ui "DBG> break needs a line number or ppN~%"))
-             (t (let ((bp (cmd-set-breakpoint-at-line session line :steady steady)))
-                  (if bp
-                      (out ui "DBG> breakpoint pp~D set at line ~D~A~%" (breakpoint-pp bp) line kind)
-                      (out ui "DBG> no poll point at line ~D~%" line))))))))))
+      (t (let* ((metadata (current-metadata session))
+                (form-id (and metadata (resolve-line-spec metadata tok))))
+           (if form-id
+               (let ((bp (cmd-set-breakpoint
+                          session (function-debug-metadata-function-id metadata)
+                          form-id :steady steady)))
+                 (out ui "DBG> breakpoint pp~D set at ~A~A~%"
+                      (breakpoint-pp bp) (location-label tok) kind))
+               (out ui "DBG> no poll point at ~A~%" tok)))))))
 
 (defun return-value-cmd (ui session hit arg)
   "r [FORM] — continue-with-return (command reference §1 / spec §10.1): make the
@@ -1117,7 +1183,7 @@ error stop."
   "The one-screen command summary (command reference §0 vocabulary)."
   (format nil "DBG> commands: (command reference §0 vocabulary)~%~
             DBG>   c continue   i into   n next   o out   a LINE advance   j LINE|ppN jump   r [FORM] return   q quit~%~
-            DBG>   b LINE|ppN break   bo break once   rbreak PATTERN   lb list breakpoints   delete [ppN] / clear~%~
+            DBG>   b LINE|LINE.K|LINE:COL|ppN break   bo break once   rbreak PATTERN   lb list breakpoints   delete [ppN] / clear~%~
             DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT~%~
             DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]   catch error|caught on|off~%~
             DBG>   watch VAR [FORM]   unwatch [VAR]   lw list watches~%~
@@ -1125,7 +1191,7 @@ error stop."
             DBG>   ll/lp/lv list locals/parameters/variables   list polls~%~
             DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source~%~
             DBG>   nav (structural navigation: d u > < << >> ±N q)~%~
-            DBG>   g/goto NAME   . /definition NAME   back   history   search PATTERN~%~
+            DBG>   g/goto NAME   . /definition NAME   back   history   restore N   search PATTERN~%~
             DBG>   set NAME VALUE   ,settings [NAME|save|reload]~%~
             DBG>   display FORM   undisplay [N]~%~
             DBG>   (form...) evaluate in the current frame   h/? help   apropos WORD~%"))
