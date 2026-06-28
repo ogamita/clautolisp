@@ -151,7 +151,7 @@ global store."
      ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
     (multiple-value-bind (result output)
         ;; register a display, then step: the step's stop re-prints it
-        (run-ui (format nil "display X~%s~%c~%") :context context :thread-info ti
+        (run-ui (format nil "display X~%n~%c~%") :context context :thread-info ti
                 :thunk (lambda ()
                          (clautolisp.autolisp-runtime:autolisp-eval
                           (list (rt-sym "FROB") 7) context)))

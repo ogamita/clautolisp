@@ -33,7 +33,7 @@
            (clautolisp.debug:add-breakpoint
             ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
            (multiple-value-bind (result output)
-               (run-ui (format nil "l~%c~%") :context context :thread-info ti
+               (run-ui (format nil "ls~%c~%") :context context :thread-info ti
                        :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                           (list (rt-sym "FROB") 7) context)))
              (declare (ignore result))
@@ -58,7 +58,7 @@
     ;; call) then 'c'. Step over must land on the next statement (id z).
     (clautolisp.debug:add-breakpoint ti two 1 :when :before)
     (multiple-value-bind (result output)
-        (run-ui (format nil "s~%c~%") :context context :thread-info ti
+        (run-ui (format nil "n~%c~%") :context context :thread-info ti
                 :thunk (lambda ()
                          (clautolisp.autolisp-runtime:autolisp-eval
                           (list (rt-sym "TWO") 7) context)))
@@ -76,7 +76,7 @@
                                      :when :before)
     ;; 'e X' evaluates X in-frame (= 7), prints it, then continue
     (multiple-value-bind (result output)
-        (run-ui (format nil "e X~%c~%") :context context :thread-info ti
+        (run-ui (format nil "p X~%c~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "FROB") 7) context)))
       (is (eql 7 result))
@@ -106,7 +106,7 @@
     ;; compound form with a poll point), then 'c' hits it, 'c' finishes.
     (clautolisp.debug:add-breakpoint ti two 0 :when :before)
     (multiple-value-bind (result output)
-        (run-ui (format nil "B 4~%c~%c~%") :context context :thread-info ti
+        (run-ui (format nil "b 4~%c~%c~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "TWO") 7) context)))
       (is (eql 7 result))
@@ -120,7 +120,7 @@
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
     (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
     (multiple-value-bind (result output)
-        (run-ui (format nil "a~%") :context context :thread-info ti
+        (run-ui (format nil "q~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "BOOM")) context)))
       (is (eq :aborted result))
@@ -149,7 +149,7 @@
     (clautolisp.debug:add-breakpoint ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
     (multiple-value-bind (result output)
         ;; x L : inspect global L; d 0 : descend into car; p : path; q ; c
-        (run-ui (format nil "x L~%d 0~%p~%q~%c~%") :context context :thread-info ti
+        (run-ui (format nil "v L~%d 0~%p~%q~%c~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "FROB") 7) context)))
       (declare (ignore result))
@@ -192,3 +192,20 @@
         for start = 0 then (+ pos len)
         for pos = (search sub string :start2 start)
         while pos count 1))
+
+(test dumb-ui-frame-and-list-commands
+  ;; §0 vocabulary: lf (list frames), f/fi/fo/ft/fb (frame nav), ll/lp/lv
+  (let* ((src (format nil "(defun id (a) a)~%(defun frob (x / z)~%  (setq z (id x))~%  (id x))"))
+         (context (fresh-context))
+         (metas (load-and-instrument context src "FROB" "ID"))
+         (id-fid (fid-of (second metas)))   ; metas in name order: FROB, ID
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti id-fid 0 :when :before)  ; break at ID entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "lf~%fo~%lv~%fi~%c~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      (is (contains output "ID"))        ; lf lists the ID frame
+      (is (contains output "FROB"))      ; ... and the caller FROB frame
+      (is (contains output "frame")))))  ; fo/fi report the selected frame
