@@ -34,7 +34,8 @@ UI refines.")
                 #:autolisp-symbol-name #:read-runtime-from-string
                 #:autolisp-eval #:current-evaluation-context #:*debugging*
                 #:intern-autolisp-symbol #:autolisp-usubr-name
-                #:autolisp-usubr-lambda-list #:autolisp-usubr-body)
+                #:autolisp-usubr-lambda-list #:autolisp-usubr-body
+                #:lookup-function #:call-autolisp-function #:autolisp-string-value)
   (:import-from #:clautolisp.inspect
                 #:inspect-page-type-name #:inspect-page-header #:inspect-page-components
                 #:inspect-component-label #:inspect-component-preview
