@@ -188,8 +188,19 @@ reading. A line that looks like (form) is eval-in-frame."
     ((member cmd '(",settings" "settings") :test #'string=) (settings-cmd ui arg) nil)
     ((member cmd '(",display" "display") :test #'string=) (display-cmd ui arg) nil)
     ((member cmd '(",undisplay" "undisplay") :test #'string=) (undisplay-cmd ui arg) nil)
+    ((member cmd '(",type" "type") :test #'string=) (type-cmd ui session arg) nil)
     ((member cmd '("h" "?") :test #'string=) (print-help ui) nil)
     (t (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil)))
+
+(defun type-cmd (ui session arg)
+  "`type EXPR' — show the AutoLISP type of EXPR's value (command reference §4)."
+  (if (null arg)
+      (out ui "DBG> type: usage: type EXPR~%")
+      (handler-case
+          (let* ((value (cmd-eval session arg))
+                 (ty (clautolisp.autolisp-runtime:autolisp-type value)))
+            (out ui "DBG> ~A : ~A~%" (preview value 60) (preview ty 40)))
+        (error (e) (out ui "DBG> type error: ~A~%" e)))))
 
 (defun display-cmd (ui arg)
   "`display FORM' — auto-print FORM after every stop (command reference §4)."
@@ -310,7 +321,7 @@ reading. A line that looks like (form) is eval-in-frame."
             DBG>   l list source  t backtrace   x [form] inspect~%~
             DBG>   a abort   r <form> return value (at error)   q quit   h help~%~
             DBG>   set NAME VALUE   ,settings [NAME|save|reload]~%~
-            DBG>   display FORM   undisplay [N]~%~
+            DBG>   display FORM   undisplay [N]   type EXPR~%~
             DBG>   (form...) evaluate in the current frame~%")))
 
 ;;; --- inspector sub-REPL (spec §18.2) -------------------------------
