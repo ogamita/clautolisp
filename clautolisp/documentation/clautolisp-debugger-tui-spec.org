@@ -1,4 +1,5 @@
 # -*- mode:org;coding:utf-8 -*-
+#+TITLE: clautolisp debugger (aldo) — Text User Interface Specification
 
 * clautolisp debugger - aldo - Text User Interface Specifications
 
