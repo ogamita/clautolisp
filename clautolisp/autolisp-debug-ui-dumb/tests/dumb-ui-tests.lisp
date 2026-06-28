@@ -223,3 +223,18 @@
                                    (list (rt-sym "TWO") 7) context)))
       (is (eql 7 result))
       (is (contains output "line 4")))))   ; advanced to line 4
+
+(test dumb-ui-delete-breakpoint
+  ;; set a line-4 breakpoint, delete all, re-list (empty)
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; break at TWO entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "b 4~%delete~%lb~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "deleted all breakpoints"))
+      (is (contains output "no breakpoints")))))   ; lb after delete-all is empty
