@@ -1077,6 +1077,31 @@ The debugger is UI-agnostic. UIs are interchangeable: a session may even
 switch UIs mid-run (terminate the old UI, attach a new one to the same
 debugger-state, resume).
 
+#+begin_quote
+*2026 extensions — read alongside this Part.* §17–§20 below specify the
+original UI protocol and the three UIs (the implemented Phases 5–7). The
+command vocabulary, the structural TUI, and the cross-UI features added since
+(navigation tree, =goto= / =definition= / =back= / =history= / =search=,
+stacked command dictionaries, settings + =*clal-aldo-configuration*=
+persistence, the =theme= / =decorations= grammar, the pager, UI selection and
+the aldb listener, the sticky inspector, cursor-based location) are specified
+*normatively* in:
+- =clautolisp-debugger-command-reference.org= — the command language, settings,
+  configuration, theme, pager, UI selection (the current source for what every
+  UI exposes);
+- =clautolisp-debugger-tui-spec.org= — the structural TUI, navigation,
+  dictionaries, decorations;
+- =clautolisp-debugger-ui-implementation-plan.org= — the per-UI feature matrix
+  (the completeness/consistency map of which extension each UI gains) and the
+  build plan;
+- =clautolisp-debugger-design-notes.org= — DN-1…DN-12 and the provisional
+  register.
+
+Where §18/§19/§20 and those documents differ, the command reference and the TUI
+spec are authoritative for the command set and the structural TUI; §18–§20
+remain the reference for the *protocol* and each UI's original structure.
+#+end_quote
+
 ** 17. The =debugger.ui= protocol
 A UI is a CLOS class implementing a fixed set of generic functions. The
 debugger calls these to report state; the UI calls a fixed set of
