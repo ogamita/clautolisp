@@ -110,7 +110,7 @@
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "TWO") 7) context)))
       (is (eql 7 result))
-      (is (contains output "breakpoint #"))     ; confirmation of the set
+      (is (contains output "breakpoint pp"))     ; confirmation of the set (pp number)
       (is (contains output "set at line 4"))
       ;; the by-line breakpoint actually fired: a hit reported at line 4
       (is (contains output "line 4")))))
@@ -278,3 +278,37 @@
     (is (= pp (clautolisp.debug:poll-point-id two 0)))        ; stable
     (is (/= pp (clautolisp.debug:poll-point-id id-fid 0)))    ; unique per poll point
     (is (null (clautolisp.debug:poll-point-location 999999)))))  ; unknown id → NIL
+
+(test dumb-ui-break-by-pp-and-list-shows-pp
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (pp (clautolisp.debug:poll-point-id
+              two (clautolisp.debug:find-form-id-at-line (first metas) 4))))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; stop at entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "b pp~D~%lb~%c~%" pp) :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (declare (ignore result))
+      (is (contains output (format nil "breakpoint pp~D set" pp)))  ; break ppN
+      (is (contains output (format nil "pp~D" pp))))))              ; lb shows pp
+
+(test dumb-ui-condition-and-ignore
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (pp (clautolisp.debug:poll-point-id
+              two (clautolisp.debug:find-form-id-at-line (first metas) 4))))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)
+    (multiple-value-bind (result output)
+        ;; set a line-4 bp, attach a condition, then an ignore count, then run
+        (run-ui (format nil "b 4~%condition ~D (id 1)~%ignore ~D 2~%c~%" pp pp)
+                :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (declare (ignore result))
+      (is (contains output (format nil "breakpoint pp~D condition set" pp)))
+      (is (contains output (format nil "breakpoint pp~D will ignore the next 2 hit" pp))))))
