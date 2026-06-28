@@ -41,7 +41,8 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
                 #:binding-entry-frame
                 #:bindings-of-name #:visible-value
                 #:eval-in-frame #:set-binding-entry #:set-visible-variable
-                #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when)
+                #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when
+                #:breakpoint-enabled-p #:set-breakpoint-enabled)
   (:import-from #:clautolisp.source
                 #:source-position-p
                 #:source-position-file

@@ -17,7 +17,8 @@ UI refines.")
                 #:snapshot-function-name #:snapshot-source-position
                 #:snapshot-call-stack #:snapshot-visible-names #:snapshot-catch-stack
                 #:stack-frame-function-name #:stack-frame-source-position
-                #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when)
+                #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when
+                #:breakpoint-enabled-p #:set-breakpoint-enabled)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-symbol-name #:read-runtime-from-string)
   (:import-from #:clautolisp.inspect

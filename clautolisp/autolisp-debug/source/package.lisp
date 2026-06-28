@@ -92,8 +92,11 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:breakpoint-steady-p
    #:breakpoint-condition
    #:breakpoint-action
+   #:breakpoint-enabled-p
+   #:set-breakpoint-enabled
    #:add-breakpoint
    #:add-breakpoint-in
+   #:find-active-breakpoint
    #:remove-breakpoint
    #:list-breakpoints
    #:clear-breakpoints

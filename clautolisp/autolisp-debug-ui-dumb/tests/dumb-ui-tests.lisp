@@ -238,3 +238,28 @@
       (is (eql 7 result))
       (is (contains output "deleted all breakpoints"))
       (is (contains output "no breakpoints")))))   ; lb after delete-all is empty
+
+(test breakpoint-enable-disable-firing
+  ;; engine: a disabled breakpoint stays in the table but does not fire (§2)
+  (let* ((ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (bp (clautolisp.debug:add-breakpoint ti 5 2 :when :before)))
+    (is (clautolisp.debug:find-active-breakpoint ti 5 2 :before))      ; fires
+    (clautolisp.debug:set-breakpoint-enabled bp nil)
+    (is (null (clautolisp.debug:find-active-breakpoint ti 5 2 :before))) ; disabled
+    (clautolisp.debug:set-breakpoint-enabled bp t)
+    (is (clautolisp.debug:find-active-breakpoint ti 5 2 :before))))    ; re-enabled
+
+(test dumb-ui-disable-enable-commands
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; break at TWO entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "disable~%lb~%enable~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "disabled all breakpoints"))
+      (is (contains output "(disabled)"))           ; lb shows the disabled state
+      (is (contains output "enabled all breakpoints")))))
