@@ -348,3 +348,32 @@
       (is (contains output "NAV"))          ; entered the nav sub-mode
       (is (contains output "DEFUN"))        ; reconstructed source form shown
       (is (contains output "【")))))         ; selection bracket
+
+(test dumb-ui-break-once
+  ;; `break once' / `bo' set a volatile breakpoint (removed on first hit)
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; stop at entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "break once 4~%lb~%c~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "(once)"))            ; lb shows it is volatile
+      (is (contains output "set at line 4")))))
+
+(test dumb-ui-apropos
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "apropos frame~%apropos nosuchword~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      (is (contains output "list frames"))           ; matched line(s)
+      (is (contains output "no command matching")))))  ; the miss
