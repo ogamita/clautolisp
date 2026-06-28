@@ -108,6 +108,14 @@ stop, not just an error stop."
     ((and (consp directive) (eq (first directive) :jump))
      (destructuring-bind (fid form-id) (rest directive)
        (request-jump ti fid form-id)))
+    ((and (consp directive) (eq (first directive) :continue-with-return))
+     ;; `return FORM' at a normal (non-error) stop: make the innermost
+     ;; instrumented form return VALUE via its CLAL-POLL-RETURN restart
+     ;; (spec §1 return / §10.1). Mirrors APPLY-ERROR-DIRECTIVE; declines
+     ;; (resumes normally) when no instrumented form encloses the stop.
+     (let ((restart (find-restart 'clal-poll-return)))
+       (when restart
+         (invoke-restart restart (coerce-from-cl (second directive))))))
     (t nil))
   directive)
 

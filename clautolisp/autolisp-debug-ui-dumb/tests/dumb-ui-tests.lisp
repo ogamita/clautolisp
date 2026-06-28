@@ -453,6 +453,23 @@
       (is (contains output "error off"))
       (is (contains output "caught on")))))
 
+(test dumb-ui-return-at-normal-stop-supplies-value
+  ;; `return VALUE' at a NORMAL (non-error) breakpoint stop makes the innermost
+  ;; instrumented form return VALUE (command reference §1 return / spec §10.1).
+  ;; Regression: apply-resume-directive used to drop :continue-with-return at a
+  ;; normal stop. Break at TWO's entry, return 99 → TWO yields 99 (not 7).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; entry stop
+    (multiple-value-bind (result output)
+        (run-ui (format nil "r 99~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (declare (ignore output))
+      (is (eql 99 result)))))           ; the returned value replaced the body
+
 (test dumb-ui-browse-goto-definition-history-back
   ;; the source-browse stack (command reference §3): goto/definition push a
   ;; (name . position), history lists it, back pops — none of which touch
