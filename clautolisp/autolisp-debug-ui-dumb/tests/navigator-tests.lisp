@@ -104,3 +104,38 @@
     (clautolisp.debug.ui:nav-forward nav)              ; → (g a) body
     (is (clautolisp.debug.ui:nav-code-p nav))
     (is (eq :code (clautolisp.debug.ui:nav-selected-role nav)))))
+
+(test nav-let-nested-binding-roles
+  ;; context-aware grammar: in (let ((v1 e1) (v2 e2)) body) the binding
+  ;; variables are :non-code even though nested two lists deep, the inits are
+  ;; :code, and the body is :code (BricsCAD LET).
+  (let ((nav (clautolisp.debug.ui:make-navigator
+              '(let ((a 1) (b (g 2))) (h a b)))))
+    ;; arg 1 is the binding list (a group)
+    (setf (clautolisp.debug.ui:navigator-path nav) '(1))
+    (is (eq :group (clautolisp.debug.ui:nav-selected-role nav)))
+    ;; first binding (a 1) is a group
+    (setf (clautolisp.debug.ui:navigator-path nav) '(1 0))
+    (is (eq :group (clautolisp.debug.ui:nav-selected-role nav)))
+    ;; the binding variable a — NON-code, two lists deep
+    (setf (clautolisp.debug.ui:navigator-path nav) '(1 0 0))
+    (is (eq :non-code (clautolisp.debug.ui:nav-selected-role nav)))
+    (is (not (clautolisp.debug.ui:nav-code-p nav)))
+    ;; the init expression 1 — code position
+    (setf (clautolisp.debug.ui:navigator-path nav) '(1 0 1))
+    (is (eq :code (clautolisp.debug.ui:nav-selected-role nav)))
+    ;; the second binding's init (g 2) — code
+    (setf (clautolisp.debug.ui:navigator-path nav) '(1 1 1))
+    (is (eq :code (clautolisp.debug.ui:nav-selected-role nav)))
+    ;; the body (h a b) — code (arg index 2 of let)
+    (setf (clautolisp.debug.ui:navigator-path nav) '(2))
+    (is (eq :code (clautolisp.debug.ui:nav-selected-role nav)))))
+
+(test nav-cond-clause-nested-roles
+  ;; a COND clause is a :group; its test and body are :code
+  (let ((nav (clautolisp.debug.ui:make-navigator '(cond ((p x) (g x)) (t 0)))))
+    (setf (clautolisp.debug.ui:navigator-path nav) '(1))     ; clause ((p x) (g x))
+    (is (eq :group (clautolisp.debug.ui:nav-selected-role nav)))
+    (setf (clautolisp.debug.ui:navigator-path nav) '(1 0))   ; test (p x)
+    (is (eq :code (clautolisp.debug.ui:nav-selected-role nav)))
+    (setf (clautolisp.debug.ui:navigator-path nav) '(1 1)))) ; body (g x)
