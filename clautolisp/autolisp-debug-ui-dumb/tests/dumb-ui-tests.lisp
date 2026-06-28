@@ -312,3 +312,21 @@
       (declare (ignore result))
       (is (contains output (format nil "breakpoint pp~D condition set" pp)))
       (is (contains output (format nil "breakpoint pp~D will ignore the next 2 hit" pp))))))
+
+(test dumb-ui-list-polls-numbers-poll-points
+  ;; `list polls' lists the current function's poll points with their numbers,
+  ;; lines, and breakpoint status (TUI Numbered Poll-Points)
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (pp4 (clautolisp.debug:poll-point-id
+               two (clautolisp.debug:find-form-id-at-line (first metas) 4))))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; stop at entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "b 4~%list polls~%c~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (declare (ignore result))
+      (is (contains output (format nil "pp~D  line 4" pp4)))  ; pp number + line
+      (is (contains output "*breakpoint")))))                 ; the line-4 bp marked
