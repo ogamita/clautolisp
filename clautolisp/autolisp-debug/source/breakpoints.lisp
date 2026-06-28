@@ -65,7 +65,9 @@ so a stuck debugged thread can't hang a caller (tests) forever."
   (when :before :type keyword)            ; :before | :after | :both
   (steady-p t :type boolean)
   (condition nil)                          ; NIL or a function of (hit) → boolean
-  (action nil)                             ; NIL or a function of (hit) — trace action
+  (action nil)                             ; NIL or a function of (hit) run on hit
+  (trace-p t :type boolean)                ; T ⇒ action auto-continues (trace);
+                                           ; NIL ⇒ run action, then STOP (bpcmd, §2)
   (enabled-p t :type boolean))             ; NIL ⇒ temporarily inactive (disable/enable)
 
 (defvar *breakpoint-id-counter* 0)
@@ -111,14 +113,17 @@ bits are not cleared on individual removal, only rebuilt in bulk)."
 
 ;;;; --- breakpoint management (spec §12) ------------------------------
 
-(defun add-breakpoint (ti fid form-id &key (when :before) (steady t) condition action)
+(defun add-breakpoint (ti fid form-id &key (when :before) (steady t) condition action (trace t))
   "Set a breakpoint at poll point (FID, FORM-ID) on TI and return it.
 WHEN is :before, :after, or :both. A non-steady breakpoint is volatile
-and is removed the first time any breakpoint fires (§6)."
+and is removed the first time any breakpoint fires (§6). When ACTION is
+supplied, TRACE governs its disposition: T (default) auto-continues after
+the action (a tracepoint, §6.4); NIL runs the action then stops (bpcmd, §2)."
   (bordeaux-threads:with-lock-held ((thread-debug-info-lock ti))
     (let ((bp (make-breakpoint :id (incf *breakpoint-id-counter*)
                                :fid fid :form-id form-id :when when
-                               :steady-p steady :condition condition :action action))
+                               :steady-p steady :condition condition :action action
+                               :trace-p trace))
           (key (combined-key fid form-id)))
       (push bp (gethash key (thread-debug-info-breakpoints ti)))
       (unless steady (push bp (thread-debug-info-volatile ti)))
@@ -184,4 +189,13 @@ event, or NIL. A :both breakpoint matches either event."
 (command reference §2). A disabled breakpoint stays in the table but does not
 fire. Returns BP."
   (setf (breakpoint-enabled-p bp) (and enabled t))
+  bp)
+
+(defun set-breakpoint-action (bp action &key (trace nil))
+  "Attach ACTION (a function of one HIT argument, or NIL to clear) to BP.
+TRACE governs the disposition (see ADD-BREAKPOINT): NIL (default here) makes
+this a bpcmd breakpoint that runs ACTION then stops (§2); T makes it a
+tracepoint that runs ACTION and continues (§6.4). Returns BP."
+  (setf (breakpoint-action bp) action
+        (breakpoint-trace-p bp) (and trace t))
   bp)

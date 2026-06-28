@@ -377,3 +377,55 @@
       (declare (ignore result))
       (is (contains output "list frames"))           ; matched line(s)
       (is (contains output "no command matching")))))  ; the miss
+
+(test dumb-ui-bpcmd-runs-then-stops
+  ;; `bpcmd ppN FORM' evaluates FORM when the breakpoint hits, shows it, and
+  ;; then STOPS as usual (command reference §2). Distinct from `trace'.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (pp4 (clautolisp.debug:poll-point-id
+               two (clautolisp.debug:find-form-id-at-line (first metas) 4))))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; stop at entry
+    (multiple-value-bind (result output)
+        ;; bp at line 4, attach a command, continue (hits 4 → prints → stops), continue
+        (run-ui (format nil "b 4~%bpcmd ~D (id 1)~%lb~%c~%c~%" pp4)
+                :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output (format nil "breakpoint pp~D command set" pp4)))
+      (is (contains output "(bpcmd)"))                        ; lb annotation
+      (is (contains output (format nil "pp~D: 1" pp4))))))     ; FORM ran, then stopped
+
+(test dumb-ui-trace-then-continues
+  ;; `trace FN' prints a trace line each time FN is entered and continues
+  ;; transparently (command reference §6.4): TWO calls ID twice.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; stop at entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "trace ID~%lb~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))                              ; ran to completion (no stop at ID)
+      (is (contains output "tracing ID"))
+      (is (contains output "(traced)"))                ; lb annotation
+      (is (contains output "TRACE> ID")))))            ; the trace line fired
+
+(test dumb-ui-untrace-removes-tracepoint
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "trace ID~%untrace ID~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "untraced ID"))
+      (is (not (contains output "TRACE> ID"))))))      ; tracepoint gone, never fired

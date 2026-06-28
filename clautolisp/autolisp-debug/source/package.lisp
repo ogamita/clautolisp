@@ -62,6 +62,8 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:function-debug-metadata-source-text
    #:metadata-for-function-id
    #:metadata-for-usubr
+   #:all-function-metadata
+   #:metadata-for-name
    #:form-id-position
    #:form-id-kind
    #:find-form-id-at-line
@@ -94,8 +96,10 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:breakpoint-steady-p
    #:breakpoint-condition
    #:breakpoint-action
+   #:breakpoint-trace-p
    #:breakpoint-enabled-p
    #:set-breakpoint-enabled
+   #:set-breakpoint-action
    #:add-breakpoint
    #:add-breakpoint-in
    #:find-active-breakpoint

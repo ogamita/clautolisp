@@ -19,9 +19,12 @@ UI refines.")
                 #:stack-frame-function-name #:stack-frame-source-position
                 #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when
                 #:breakpoint-enabled-p #:set-breakpoint-enabled #:breakpoint-condition
-                #:breakpoint-steady-p
+                #:breakpoint-steady-p #:breakpoint-action #:breakpoint-trace-p
+                #:set-breakpoint-action
                 #:poll-point-id #:poll-point-location
+                #:metadata-for-name #:all-function-metadata
                 #:function-debug-metadata-function-id #:function-debug-metadata-usubr
+                #:function-debug-metadata-name
                 #:function-debug-metadata-poll-point-count #:form-id-position)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-symbol-name #:read-runtime-from-string

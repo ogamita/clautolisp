@@ -69,10 +69,11 @@
 
 ;;; --- breakpoint commands (no resume; return the breakpoint) --------
 
-(defun cmd-set-breakpoint (session fid form-id &key (when :before) (steady t) condition action)
+(defun cmd-set-breakpoint (session fid form-id &key (when :before) (steady t)
+                                                    condition action (trace t))
   (let ((bp (add-breakpoint (debugger-session-thread-info session)
                             fid form-id :when when :steady steady
-                            :condition condition :action action)))
+                            :condition condition :action action :trace trace)))
     (ui-breakpoint-added (debugger-session-ui session) bp)
     bp))
 

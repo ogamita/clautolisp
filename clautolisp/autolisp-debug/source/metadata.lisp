@@ -80,6 +80,27 @@ first request."
   "Return USUBR's function-debug-metadata, or NIL if un-instrumented."
   (autolisp-usubr-debug-metadata usubr))
 
+(defun all-function-metadata ()
+  "A list of every registered function-debug-metadata (all instrumented
+functions). Order is unspecified."
+  (let ((result '()))
+    (maphash (lambda (fid metadata) (declare (ignore fid)) (push metadata result))
+             *function-id-registry*)
+    result))
+
+(defun metadata-for-name (name)
+  "The function-debug-metadata of the instrumented function called NAME
+(case-insensitive), or NIL. If several functions share a name (redefinition),
+the most-recently-registered wins."
+  (let ((best nil))
+    (maphash (lambda (fid metadata)
+               (when (string-equal (function-debug-metadata-name metadata) name)
+                 (when (or (null best)
+                           (> fid (function-debug-metadata-function-id best)))
+                   (setf best metadata))))
+             *function-id-registry*)
+    best))
+
 (defun reset-function-id-registry ()
   "Forget every registered function metadata and reset the id counter.
 Used by tests and at session teardown."
