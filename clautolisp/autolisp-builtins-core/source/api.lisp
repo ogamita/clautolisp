@@ -4150,6 +4150,21 @@ variable; return the new value, or nil if no configuration file was found."
 an AutoLISP sexp (UTF-8); return the path string."
   (save-aldo-configuration-to (aldo-config-save-path)))
 
+(defun builtin-clal-break ()
+  "Drop into the aldo debugger at the current poll point when a debug session is
+active; a no-op otherwise (debugger command reference §1, programmatic entry).
+Returns nil."
+  (when clautolisp.autolisp-runtime:*debug-break-hook*
+    (funcall clautolisp.autolisp-runtime:*debug-break-hook* nil))
+  nil)
+
+(defun builtin-clal-invoke-debugger (&optional message)
+  "Like CLAL-BREAK, but show MESSAGE at the stop (debugger command reference §1).
+Returns nil."
+  (when clautolisp.autolisp-runtime:*debug-break-hook*
+    (funcall clautolisp.autolisp-runtime:*debug-break-hook* message))
+  nil)
+
 (defun set-drawing-codepage (new-codepage-value)
   "Update the host's DWGCODEPAGE sysvar AND emit
 ENC-CODEPAGE-MISMATCH when the canonicalised new value differs
@@ -7653,6 +7668,8 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-CODEPAGE-MISMATCH-P" #'builtin-clal-codepage-mismatch-p)
    (make-core-builtin-subr "CLAL-LOAD-ALDO-CONFIGURATION" #'builtin-clal-load-aldo-configuration)
    (make-core-builtin-subr "CLAL-SAVE-ALDO-CONFIGURATION" #'builtin-clal-save-aldo-configuration)
+   (make-core-builtin-subr "CLAL-BREAK"            #'builtin-clal-break)
+   (make-core-builtin-subr "CLAL-INVOKE-DEBUGGER"  #'builtin-clal-invoke-debugger)
    (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
    (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)
    (make-core-builtin-subr "CLAL-ENABLE-ENC-DIAGNOSTIC"   #'builtin-clal-enable-enc-diagnostic)
