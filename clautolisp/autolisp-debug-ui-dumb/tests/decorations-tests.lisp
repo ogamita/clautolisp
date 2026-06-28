@@ -55,16 +55,32 @@
                           (:current-pp :attributes :bold :invert))))
          (c1 (config-with :theme :white-on-black :decorations decos))
          (c2 (config-with :theme :attributes :decorations decos)))
-    (let ((out (clautolisp.debug.ui:apply-decoration "x" :current-pp c1)))
-      (is (search (concatenate 'string esc "[") out))    ; has an SGR sequence
-      (is (search "31" out))                              ; fg red = 30+1
-      (is (search "40" out))                              ; bg black = 40+0
-      (is (search (concatenate 'string esc "[0m") out)))  ; reset
-    (let ((out (clautolisp.debug.ui:apply-decoration "x" :current-pp c2)))
-      (is (search "1" out))    ; bold
-      (is (search "7" out)))   ; invert
+    ;; colour is gated on the runtime colour policy — enable it for the SGR path
+    (let ((clautolisp.autolisp-runtime:*color-output* :yellow))
+      (let ((out (clautolisp.debug.ui:apply-decoration "x" :current-pp c1)))
+        (is (search (concatenate 'string esc "[") out))    ; has an SGR sequence
+        (is (search "31" out))                              ; fg red = 30+1
+        (is (search "40" out))                              ; bg black = 40+0
+        (is (search (concatenate 'string esc "[0m") out)))  ; reset
+      (let ((out (clautolisp.debug.ui:apply-decoration "x" :current-pp c2)))
+        (is (search "1" out))    ; bold
+        (is (search "7" out))))  ; invert
     ;; sgr-wrap with nothing requested returns the string unchanged
     (is (string= "x" (clautolisp.debug.ui:sgr-wrap "x")))))
+
+(test deco-colour-degrades-without-colour-output
+  ;; with colour disabled (NO_COLOR / pipe / --no-color → *color-output* nil), a
+  ;; colour or attributes theme emits NO ANSI and falls back to the ASCII marker
+  ;; so structure stays visible (command reference §8).
+  (let* ((esc (string (code-char 27)))
+         (decos (append (clautolisp.debug.ui:config-get
+                         :decorations clautolisp.debug.ui:*default-aldo-configuration*)
+                        '((:current-pp :white-on-black :red :black))))
+         (c1 (config-with :theme :white-on-black :decorations decos))
+         (clautolisp.autolisp-runtime:*color-output* nil))
+    (let ((out (clautolisp.debug.ui:apply-decoration "x" :current-pp c1)))
+      (is (null (search esc out)))            ; no ANSI escape at all
+      (is (string= ">x" out)))))              ; degraded to the ascii marker
 
 (test deco-marker-always-present
   ;; under a colour theme, situation-prefix still yields the ascii marker, so a
