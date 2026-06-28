@@ -17,9 +17,27 @@
 \RequirePackage{fontspec}
 \RequirePackage{newunicodechar}
 
+%% --- body font: a broad Unicode family so the bulk of the glyphs the docs use
+%% (arrows, maths, box drawing, accented Latin, Greek, …) render without a
+%% per-glyph map. DejaVu has the widest coverage; fall back to Noto, else keep
+%% the LaTeX default (Latin Modern). Only the truly exotic glyphs DejaVu lacks
+%% (media controls, dingbats, circled numbers, CJK) still need the maps below.
+\IfFontExistsTF{DejaVu Serif}{%
+  \setmainfont{DejaVu Serif}%
+  \IfFontExistsTF{DejaVu Sans}{\setsansfont{DejaVu Sans}}{}%
+  \IfFontExistsTF{DejaVu Sans Mono}{\setmonofont{DejaVu Sans Mono}[Scale=MatchLowercase]}{}%
+}{%
+  \IfFontExistsTF{Noto Serif}{%
+    \setmainfont{Noto Serif}%
+    \IfFontExistsTF{Noto Sans}{\setsansfont{Noto Sans}}{}%
+    \IfFontExistsTF{Noto Sans Mono}{\setmonofont{Noto Sans Mono}[Scale=MatchLowercase]}{}%
+  }{}}
+
 %% --- pick fallback families (guarded so missing fonts never break the build) ---
-%% text symbols (arrows, math, box, angle brackets, subscripts)
-\IfFontExistsTF{DejaVu Serif}{\newfontfamily\claltext{DejaVu Serif}}{\newcommand\claltext{}}
+%% text symbols (arrows, math, box, angle brackets, subscripts) — used only when
+%% the body font lacks them (e.g. the default Latin Modern, if DejaVu is absent).
+\IfFontExistsTF{DejaVu Serif}{\newfontfamily\claltext{DejaVu Serif}}{%
+  \IfFontExistsTF{Noto Serif}{\newfontfamily\claltext{Noto Serif}}{\newcommand\claltext{}}}
 %% media controls, dingbats, circled numbers 1..20 — Symbola or Noto Sans
 %% Symbols 2 (the family name has a space on macOS, none on Debian).
 \IfFontExistsTF{Symbola}{\newfontfamily\clalsym{Symbola}}{%
