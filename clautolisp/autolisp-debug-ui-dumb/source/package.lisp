@@ -18,9 +18,11 @@ UI refines.")
                 #:snapshot-call-stack #:snapshot-visible-names #:snapshot-catch-stack
                 #:stack-frame-function-name #:stack-frame-source-position
                 #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when
-                #:breakpoint-enabled-p #:set-breakpoint-enabled)
+                #:breakpoint-enabled-p #:set-breakpoint-enabled #:breakpoint-condition
+                #:poll-point-id #:poll-point-location)
   (:import-from #:clautolisp.autolisp-runtime
-                #:autolisp-symbol-name #:read-runtime-from-string)
+                #:autolisp-symbol-name #:read-runtime-from-string
+                #:autolisp-eval #:current-evaluation-context #:*debugging*)
   (:import-from #:clautolisp.inspect
                 #:inspect-page-type-name #:inspect-page-header #:inspect-page-components
                 #:inspect-component-label #:inspect-component-preview

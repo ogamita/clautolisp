@@ -187,6 +187,8 @@ reading. A line that looks like (form) is eval-in-frame."
        (delete-cmd ui session arg) nil)
       ((member c '(",enable" "enable") :test #'string=) (enable-cmd ui session arg t) nil)
       ((member c '(",disable" "disable") :test #'string=) (enable-cmd ui session arg nil) nil)
+      ((member c '(",condition" "condition") :test #'string=) (condition-cmd ui session arg) nil)
+      ((member c '(",ignore" "ignore") :test #'string=) (ignore-cmd ui session arg) nil)
       ;; stack and frames (§3)
       ((string= c "lf") (print-stack ui session) nil)
       ((member c '("f" "frame") :test #'string=) (frame-cmd ui session arg) nil)
@@ -213,6 +215,75 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '("h" "?" "help") :test #'string=) (print-help ui) nil)
       (t (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil))))
 
+;;; poll-point-number (PP) designation (command reference §2 / DN-11) ---------
+
+(defun breakpoint-pp (bp)
+  "The poll-point number a breakpoint sits on (its designator)."
+  (poll-point-id (breakpoint-fid bp) (breakpoint-form-id bp)))
+
+(defun find-bp-by-pp (session pp)
+  "The breakpoint whose poll-point number is PP, or NIL."
+  (and pp (find pp (cmd-list-breakpoints session) :key #'breakpoint-pp)))
+
+(defun parse-pp-token (tok)
+  "Parse a poll-point designator token — \"ppN\" or \"N\" — to the integer N,
+or NIL."
+  (when (and tok (plusp (length tok)))
+    (let ((s (if (and (>= (length tok) 2) (string-equal "pp" (subseq tok 0 2)))
+                 (subseq tok 2) tok)))
+      (ignore-errors (parse-integer s :junk-allowed t)))))
+
+(defun split-pp-and-rest (arg)
+  "Split ARG into (values PP REST): the first token as a poll-point number, the
+remaining text."
+  (if (null arg)
+      (values nil nil)
+      (let* ((sp (position #\Space arg))
+             (tok (subseq arg 0 (or sp (length arg))))
+             (rest (and sp (string-trim " " (subseq arg sp)))))
+        (values (parse-pp-token tok) (and rest (plusp (length rest)) rest)))))
+
+(defun make-condition-predicate (rform)
+  "A breakpoint condition: evaluate RFORM at the poll point with debugging off
+and stop iff it is non-nil; an error in the form also stops (so a broken
+condition is not silently lost)."
+  (lambda (hit)
+    (declare (ignore hit))
+    (handler-case
+        (let ((*debugging* nil))
+          (not (null (autolisp-eval rform (current-evaluation-context)))))
+      (error () t))))
+
+(defun condition-cmd (ui session arg)
+  "`condition ppN [FORM]' — fire breakpoint ppN only when FORM is non-nil; with
+no FORM, clear the condition (command reference §2)."
+  (multiple-value-bind (pp form) (split-pp-and-rest arg)
+    (let ((bp (find-bp-by-pp session pp)))
+      (cond
+        ((null bp) (out ui "DBG> condition: no breakpoint pp~A~%" (or pp arg)))
+        ((null form) (setf (breakpoint-condition bp) nil)
+                     (out ui "DBG> breakpoint pp~D condition cleared~%" pp))
+        (t (let ((rform (ignore-errors (first (read-runtime-from-string form)))))
+             (if (null rform)
+                 (out ui "DBG> condition: cannot read form ~S~%" form)
+                 (progn (setf (breakpoint-condition bp) (make-condition-predicate rform))
+                        (out ui "DBG> breakpoint pp~D condition set~%" pp)))))))))
+
+(defun ignore-cmd (ui session arg)
+  "`ignore ppN COUNT' — skip the next COUNT hits of breakpoint ppN (a counting
+condition, command reference §2)."
+  (multiple-value-bind (pp rest) (split-pp-and-rest arg)
+    (let ((count (and rest (ignore-errors (parse-integer rest :junk-allowed t))))
+          (bp (find-bp-by-pp session pp)))
+      (cond
+        ((null bp) (out ui "DBG> ignore: no breakpoint pp~A~%" (or pp arg)))
+        ((null count) (out ui "DBG> ignore: usage: ignore ppN COUNT~%"))
+        (t (setf (breakpoint-condition bp)
+                 (let ((remaining count))
+                   (lambda (hit) (declare (ignore hit))
+                     (if (plusp remaining) (progn (decf remaining) nil) t))))
+           (out ui "DBG> breakpoint pp~D will ignore the next ~D hit~:P~%" pp count))))))
+
 (defun enable-cmd (ui session arg enabled)
   "`enable [N]' / `disable [N]' — (de)activate breakpoint N (the number shown by
 `lb'), or all when no number is given (command reference §2). A disabled
@@ -224,12 +295,12 @@ breakpoint stays in the list but does not fire."
       ((null arg)
        (dolist (bp bps) (set-breakpoint-enabled bp enabled))
        (out ui "DBG> ~A all breakpoints~%" verb))
-      (t (let* ((id (ignore-errors (parse-integer arg :junk-allowed t)))
-                (bp (and id (find id bps :key #'breakpoint-id))))
+      (t (let* ((pp (parse-pp-token arg))
+                (bp (find-bp-by-pp session pp)))
            (if bp
                (progn (set-breakpoint-enabled bp enabled)
-                      (out ui "DBG> ~A breakpoint #~D~%" verb id))
-               (out ui "DBG> no breakpoint #~A~%" arg)))))))
+                      (out ui "DBG> ~A breakpoint pp~D~%" verb pp))
+               (out ui "DBG> no breakpoint pp~A~%" arg)))))))
 
 (defun delete-cmd (ui session arg)
   "`delete [N]' / `clear' — remove breakpoint N (the number shown by `lb'), or
@@ -242,12 +313,12 @@ that numbering is settled — design-notes register.)"
       ((null arg)
        (dolist (bp bps) (cmd-remove-breakpoint session bp))
        (out ui "DBG> deleted all breakpoints~%"))
-      (t (let* ((id (ignore-errors (parse-integer arg :junk-allowed t)))
-                (bp (and id (find id bps :key #'breakpoint-id))))
+      (t (let* ((pp (parse-pp-token arg))
+                (bp (find-bp-by-pp session pp)))
            (if bp
                (progn (cmd-remove-breakpoint session bp)
-                      (out ui "DBG> deleted breakpoint #~D~%" id))
-               (out ui "DBG> no breakpoint #~A~%" arg)))))))
+                      (out ui "DBG> deleted breakpoint pp~D~%" pp))
+               (out ui "DBG> no breakpoint pp~A~%" arg)))))))
 
 (defun advance-cmd (ui session arg)
   "`advance LINE' (=a=) — run to the poll point on LINE (§1). Returns the resume
@@ -397,21 +468,32 @@ refinement; all three currently show the visible bindings."
   (let ((bps (cmd-list-breakpoints session)))
     (if bps
         (dolist (bp bps)
-          (out ui "DBG>   #~D fid ~D form ~D ~A~:[ (disabled)~;~]~%"
-               (breakpoint-id bp) (breakpoint-fid bp)
+          (out ui "DBG>   pp~D fid ~D form ~D ~A~:[ (disabled)~;~]~:[~; (conditional)~]~%"
+               (breakpoint-pp bp) (breakpoint-fid bp)
                (breakpoint-form-id bp) (breakpoint-when bp)
-               (breakpoint-enabled-p bp)))
+               (breakpoint-enabled-p bp) (breakpoint-condition bp)))
         (out ui "DBG>   no breakpoints~%"))))
 
 (defun set-breakpoint-cmd (ui session arg)
-  "B <line> — set a breakpoint at a line of the current function (§17.3)."
-  (let ((line (and arg (ignore-errors (parse-integer arg :junk-allowed t)))))
+  "`b LINE' or `b ppN' — set a breakpoint at a source line of the current
+function, or at a poll point by its number (command reference §2)."
+  (let* ((tok (and arg (string-trim " " arg)))
+         (pp (and tok (>= (length tok) 3) (string-equal "pp" (subseq tok 0 2))
+                  (ignore-errors (parse-integer (subseq tok 2) :junk-allowed t)))))
     (cond
-      ((null line) (out ui "DBG> B needs a line number~%"))
-      (t (let ((bp (cmd-set-breakpoint-at-line session line)))
-           (if bp
-               (out ui "DBG> breakpoint #~D set at line ~D~%" (breakpoint-id bp) line)
-               (out ui "DBG> no poll point at line ~D~%" line)))))))
+      ((or (null tok) (zerop (length tok))) (out ui "DBG> break needs a line number or ppN~%"))
+      (pp (multiple-value-bind (fid form-id) (poll-point-location pp)
+            (if fid
+                (out ui "DBG> breakpoint pp~D set~%"
+                     (breakpoint-pp (cmd-set-breakpoint session fid form-id)))
+                (out ui "DBG> no poll point pp~D~%" pp))))
+      (t (let ((line (ignore-errors (parse-integer tok :junk-allowed t))))
+           (cond
+             ((null line) (out ui "DBG> break needs a line number or ppN~%"))
+             (t (let ((bp (cmd-set-breakpoint-at-line session line)))
+                  (if bp
+                      (out ui "DBG> breakpoint pp~D set at line ~D~%" (breakpoint-pp bp) line)
+                      (out ui "DBG> no poll point at line ~D~%" line))))))))))
 
 (defun return-value-cmd (ui session hit arg)
   "r <form> — continue-with-return (spec §10.1), only at an error stop."
@@ -425,8 +507,8 @@ refinement; all three currently show the visible bindings."
   (paged-out ui
    (format nil "DBG> commands: (command reference §0 vocabulary)~%~
             DBG>   c continue   i into   n next   o out   a LINE advance   r [FORM] return   q quit~%~
-            DBG>   b LINE break   lb list breakpoints   delete [N] / clear~%~
-            DBG>   enable [N]   disable [N]~%~
+            DBG>   b LINE|ppN break   lb list breakpoints   delete [ppN] / clear~%~
+            DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT~%~
             DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~
             DBG>   ll/lp/lv list locals/parameters/variables~%~
             DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source~%~
