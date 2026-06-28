@@ -209,3 +209,17 @@
       (is (contains output "ID"))        ; lf lists the ID frame
       (is (contains output "FROB"))      ; ... and the caller FROB frame
       (is (contains output "frame")))))  ; fo/fi report the selected frame
+
+(test dumb-ui-advance-command
+  ;; §1 advance: from TWO entry, `a 4' runs to the poll point on line 4 (id z)
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)  ; break at TWO entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "a 4~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "line 4")))))   ; advanced to line 4

@@ -177,6 +177,7 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '("i" "into") :test #'string=) (cmd-step session :into))
       ((member c '("n" "next") :test #'string=) (cmd-step session :over))
       ((member c '("o" "out") :test #'string=) (cmd-step session :out))
+      ((member c '("a" "advance") :test #'string=) (advance-cmd ui session arg))
       ((member c '("r" "return") :test #'string=) (return-value-cmd ui session hit arg))
       ((member c '("q" "quit") :test #'string=) (cmd-abort session))
       ;; breakpoints (§2)
@@ -207,6 +208,15 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '(",undisplay" "undisplay") :test #'string=) (undisplay-cmd ui arg) nil)
       ((member c '("h" "?" "help") :test #'string=) (print-help ui) nil)
       (t (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil))))
+
+(defun advance-cmd (ui session arg)
+  "`advance LINE' (=a=) — run to the poll point on LINE (§1). Returns the resume
+directive, or NIL (with a message) when LINE has none."
+  (let ((line (and arg (ignore-errors (parse-integer arg :junk-allowed t)))))
+    (cond
+      ((null line) (out ui "DBG> advance needs a line number~%") nil)
+      (t (or (cmd-advance-at-line session line)
+             (progn (out ui "DBG> no poll point at line ~D~%" line) nil))))))
 
 (defun frame-cmd (ui session arg)
   "`frame N' / `frame inner|outer|top|bottom' — select a call frame (§3).
@@ -373,7 +383,7 @@ refinement; all three currently show the visible bindings."
 (defun print-help (ui)
   (paged-out ui
    (format nil "DBG> commands: (command reference §0 vocabulary)~%~
-            DBG>   c continue   i into   n next   o out   r [FORM] return   q quit~%~
+            DBG>   c continue   i into   n next   o out   a LINE advance   r [FORM] return   q quit~%~
             DBG>   b LINE break   lb list breakpoints~%~
             DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~
             DBG>   ll/lp/lv list locals/parameters/variables~%~

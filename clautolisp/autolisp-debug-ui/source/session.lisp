@@ -87,6 +87,17 @@ NIL if LINE has none."
           (cmd-set-breakpoint session (function-debug-metadata-function-id metadata)
                               form-id :when when :steady steady))))))
 
+(defun cmd-advance-at-line (session line &optional (when :before))
+  "Advance to the poll point on LINE in the currently-stopped function — a
+volatile breakpoint removed on first stop (spec §6.2, command reference §1).
+Returns the :advance resume directive, or NIL if LINE has no poll point."
+  (let ((metadata (current-metadata session)))
+    (when metadata
+      (let ((form-id (find-form-id-at-line metadata line)))
+        (when form-id
+          (cmd-advance session (function-debug-metadata-function-id metadata)
+                       form-id when))))))
+
 (defun cmd-remove-breakpoint (session breakpoint)
   (remove-breakpoint (debugger-session-thread-info session) breakpoint)
   (ui-breakpoint-removed (debugger-session-ui session) breakpoint)
