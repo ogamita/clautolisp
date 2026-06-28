@@ -213,9 +213,59 @@ reading. A line that looks like (form) is eval-in-frame."
             (arg (and space (string-trim " " (subseq line space)))))
        (run-command ui session hit cmd arg)))))
 
+(defun %command-tokens (arg)
+  "ARG split into whitespace-separated tokens (empties dropped)."
+  (and arg (remove "" (uiop:split-string (string-trim " " arg) :separator '(#\Space #\Tab))
+                   :test #'string=)))
+
+(defun %marshal-command-args (lambda-list tokens)
+  "Map TOKENS (strings) onto LAMBDA-LIST for APPLY: each required / &optional
+parameter takes the next token (or NIL when exhausted); &rest collects the
+remainder as a list. So a command body receives its parsed positional args."
+  (let ((args '()) (toks tokens) (rest-p nil))
+    (dolist (item lambda-list)
+      (cond
+        ((eq item '&optional))
+        ((eq item '&rest) (setf rest-p t) (return))
+        (t (push (pop toks) args))))
+    (nreverse-then-append (nreverse args) (when rest-p (list toks)))))
+
+(defun nreverse-then-append (front rest)
+  (if rest (append front rest) front))
+
+(defun try-command-table (ui session hit cmd arg)
+  "If CMD names a command in the active dictionary stack, dispatch it — binding
+the debugger dynamic vars so the body can reach the session — and return
+(values RESULT t). Otherwise (values NIL NIL), so RUN-COMMAND falls back to the
+built-in dispatch (command reference §8 stacked dispatch)."
+  (let ((command (and (plusp (length cmd))
+                      (lookup-command cmd (active-command-dictionaries)))))
+    (if command
+        (let ((*debugger-ui* ui) (*debugger-session* session) (*debugger-hit* hit))
+          (values (apply (command-function command)
+                         (%marshal-command-args (command-lambda-list command)
+                                                (%command-tokens arg)))
+                  t))
+        (values nil nil))))
+
 (defun run-command (ui session hit cmd arg)
-  "Dispatch one command, using the command reference §0 vocabulary (single keys
-+ word forms). Returns a resume directive, or NIL to keep reading."
+  "Dispatch one command. The `debugger' escape word forces the BUILT-IN meaning
+of the following token (reaching a built-in that a user / mode command shadows);
+otherwise a command in the active dictionary stack (§8 stacked dispatch —
+user-defined commands, mode dictionaries) is tried first, then the built-in
+command-reference §0 vocabulary. Returns a resume directive, or NIL."
+  (if (string-equal cmd +debugger-escape-word+)
+      (let* ((a (or arg "")) (sp (position #\Space a)))
+        (run-builtin-command ui session hit
+                             (subseq a 0 (or sp (length a)))
+                             (and sp (string-trim " " (subseq a sp)))))
+      (multiple-value-bind (result handled) (try-command-table ui session hit cmd arg)
+        (if handled
+            result
+            (run-builtin-command ui session hit cmd arg)))))
+
+(defun run-builtin-command (ui session hit cmd arg)
+  "The built-in command-reference §0 vocabulary (single keys + word forms)."
   (let ((c (string-downcase cmd)))
     (cond
       ;; execution control (§1)

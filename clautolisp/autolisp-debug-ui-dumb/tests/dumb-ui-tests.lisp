@@ -453,6 +453,47 @@
       (is (contains output "error off"))
       (is (contains output "caught on")))))
 
+(test dumb-ui-command-table-dispatch
+  ;; a user command registered via define-debugger-command dispatches through
+  ;; the command table in the dumb UI, receives its parsed arg, and reaches the
+  ;; session via the *debugger-ui* dynamic var (command reference §8).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (clautolisp.debug.ui:*global-dictionary*
+           (clautolisp.debug.ui:make-command-dictionary "test")))
+    (clautolisp.debug.ui:define-debugger-command (z zap) (n) "zap N."
+      (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "ZAPPED ~A~%" n)
+      nil)
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "zap 42~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))                  ; user cmd returned nil → kept reading → c resumed
+      (is (contains output "ZAPPED 42"))))) ; dispatched + parsed arg + reached the UI
+
+(test dumb-ui-escape-word-reaches-builtin
+  ;; the `debugger' escape word forces the built-in meaning of a token a user
+  ;; command shadows (command reference §8).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (clautolisp.debug.ui:*global-dictionary*
+           (clautolisp.debug.ui:make-command-dictionary "test")))
+    (clautolisp.debug.ui:define-debugger-command (c continue) () "shadow c."
+      (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "USER-C~%")
+      nil)
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "c~%debugger c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))                  ; `debugger c' reached the built-in continue
+      (is (contains output "USER-C")))))   ; plain `c' ran the shadowing user command
+
 (test dumb-ui-clal-break-enters-debugger
   ;; The programmatic entry INVOKE-DEBUGGER-BREAK (what the CLAL-BREAK /
   ;; CLAL-INVOKE-DEBUGGER builtins call via *debug-break-hook*) drops into the

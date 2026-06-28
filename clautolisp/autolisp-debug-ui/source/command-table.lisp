@@ -32,6 +32,22 @@
   "The escape prefix: in a mode, `debugger TOKEN' routes TOKEN to the global
 dictionary, reaching a command the mode shadows (command reference §8).")
 
+(defvar *active-command-dictionaries* nil
+  "The dictionary stack the UI dispatcher consults, innermost-first; NIL means
+just *GLOBAL-DICTIONARY*. A mode (navigator, inspector) pushes its dictionary
+here while active (command reference §8 stacked dispatch).")
+
+(defun active-command-dictionaries ()
+  "The current dictionary stack: the active mode dictionaries over the global."
+  (or *active-command-dictionaries* (list *global-dictionary*)))
+
+;;; The debugger dynamic vars a command body reads to reach the live session
+;;; (the chosen calling convention): the dispatcher binds them, and a command
+;;; function receives only its parsed positional arguments.
+(defvar *debugger-ui* nil "The UI dispatching the current command.")
+(defvar *debugger-session* nil "The debugger-session of the current command.")
+(defvar *debugger-hit* nil "The HIT at the current stop, or NIL.")
+
 ;;; --- the §0 naming-consistency rule -----------------------------------
 
 (defun words-initials (words)
