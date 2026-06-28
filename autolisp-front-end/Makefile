@@ -147,10 +147,16 @@ build-ccl:  ## Strictly build the CCL alfe image (errors if ccl is missing).
 
 documentation: $(PDF_FILES) $(INFO_FILES)  ## Render every documentation/*.org into a PDF and .info via Emacs org-export.
 
+# clautolisp-doc-preamble.sty gives xelatex the fonts for the Unicode glyphs
+# Latin Modern lacks (see documentation/clautolisp-doc-preamble.sty); injected
+# via org-latex-packages-alist, with TEXINPUTS pointing at documentation/.
 %.pdf: %.org
-	$(EMACS) --batch \
+	TEXINPUTS="$(ROOT_DIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
 	    --eval "(setq org-confirm-babel-evaluate nil)" \
 	    --eval "(setq org-export-with-broken-links t)" \
+	    --eval "(require 'ox-latex)" \
+	    --eval "(setq org-latex-compiler \"$(LATEX_COMPILER)\")" \
+	    --eval "(add-to-list 'org-latex-packages-alist '(\"\" \"clautolisp-doc-preamble\" t (\"xelatex\" \"lualatex\")) t)" \
 	    --eval "(setq org-latex-pdf-process '(\"$(LATEX_COMPILER) -interaction=nonstopmode -output-directory=%o %f\" \"$(LATEX_COMPILER) -interaction=nonstopmode -output-directory=%o %f\"))" \
 	    "$<" \
 	    --funcall org-latex-export-to-pdf
