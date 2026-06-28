@@ -361,14 +361,15 @@ refinement; all three currently show the visible bindings."
 (defun list-sub-cmd (ui session arg)
   "Dispatch the spelled `list X' form to the matching =l*= command."
   (cond
-    ((null arg) (out ui "DBG> list what? (breakpoints|frames|source|locals|parameters|variables)~%"))
+    ((null arg) (out ui "DBG> list what? (breakpoints|frames|source|locals|parameters|variables|polls)~%"))
     ((string-equal arg "breakpoints") (list-breakpoints-cmd ui session))
     ((string-equal arg "frames") (print-stack ui session))
     ((string-equal arg "source") (relist-source ui session))
     ((string-equal arg "locals") (list-vars-cmd ui session "locals"))
     ((string-equal arg "parameters") (list-vars-cmd ui session "parameters"))
     ((string-equal arg "variables") (list-vars-cmd ui session "variables"))
-    (t (out ui "DBG> list ~A? (breakpoints|frames|source|locals|parameters|variables)~%" arg))))
+    ((member arg '("polls" "poll-points") :test #'string-equal) (list-poll-points-cmd ui session))
+    (t (out ui "DBG> list ~A? (breakpoints|frames|source|locals|parameters|variables|polls)~%" arg))))
 
 (defun type-cmd (ui session arg)
   "`type EXPR' — show the AutoLISP type of EXPR's value (command reference §4)."
@@ -450,6 +451,38 @@ refinement; all three currently show the visible bindings."
       (let ((snapshot (session-snapshot session)))
         (when snapshot (print-bindings ui snapshot)))))
 
+(defun current-poll-points (session)
+  "A list of (PP LINE BREAKPOINTED-P) for the current function's poll points
+that have a known source line (TUI Numbered Poll-Points)."
+  (let ((metadata (current-metadata session))
+        (result '()))
+    (when metadata
+      (let ((fid (function-debug-metadata-function-id metadata))
+            (bps (cmd-list-breakpoints session)))
+        (dotimes (form-id (function-debug-metadata-poll-point-count metadata))
+          (let ((pos (form-id-position metadata form-id)))
+            (when (and (source-position-p pos) (source-position-start-line pos))
+              (push (list (poll-point-id fid form-id)
+                          (source-position-start-line pos)
+                          (and (find-if (lambda (b)
+                                          (and (= (breakpoint-fid b) fid)
+                                               (= (breakpoint-form-id b) form-id)))
+                                        bps)
+                               t))
+                    result))))))
+    (sort result #'< :key #'first)))
+
+(defun list-poll-points-cmd (ui session)
+  "`list polls' — the current function's poll points with their numbers, source
+lines, and breakpoint status (the dumb-terminal way to discover the ppN a user
+types into break/condition/…; TUI Numbered Poll-Points)."
+  (let ((pps (current-poll-points session)))
+    (if (null pps)
+        (out ui "DBG>   no poll points~%")
+        (dolist (pp pps)
+          (destructuring-bind (n line bp) pp
+            (out ui "DBG>   pp~D  line ~D~:[~; *breakpoint~]~%" n line bp))))))
+
 (defun relist-source (ui session)
   (let ((snapshot (session-snapshot session)))
     (when snapshot (ui-show-source ui (snapshot-source-position snapshot)))))
@@ -510,7 +543,7 @@ function, or at a poll point by its number (command reference §2)."
             DBG>   b LINE|ppN break   lb list breakpoints   delete [ppN] / clear~%~
             DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT~%~
             DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~
-            DBG>   ll/lp/lv list locals/parameters/variables~%~
+            DBG>   ll/lp/lv list locals/parameters/variables   list polls~%~
             DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source~%~
             DBG>   set NAME VALUE   ,settings [NAME|save|reload]~%~
             DBG>   display FORM   undisplay [N]~%~
