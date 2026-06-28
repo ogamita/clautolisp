@@ -14,7 +14,7 @@ UI refines.")
   (:import-from #:clautolisp.debug
                 #:hit-stop-reason #:hit-source-position #:hit-error-message
                 #:hit-when #:hit-watch #:hit-fid #:hit-form-id
-                #:find-form-id-at-line
+                #:find-form-id-at-line #:form-ids-at-line #:form-id-at-line-col
                 #:watch-name #:watch-symbol #:watch-last-value #:watch-prev-value
                 #:watch-last-bound-p #:watch-prev-bound-p #:watch-predicate
                 #:snapshot-function-name #:snapshot-source-position

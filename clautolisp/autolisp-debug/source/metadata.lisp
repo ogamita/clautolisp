@@ -165,6 +165,33 @@ found by walking DESCENDANT's parent chain to the root (-1)."
                  ((eql p ancestor) (return t))
                  (t (setf p (form-id-parent metadata p))))))))
 
+(defun form-ids-at-line (metadata line)
+  "The form-ids whose source position starts on LINE, ordered left-to-right (by
+start column, then form-id) — the basis for the LINE.K location (the K-th poll
+point on a line, command reference §2)."
+  (let ((positions (function-debug-metadata-form-id->position metadata))
+        (result '()))
+    (dotimes (form-id (length positions))
+      (let ((pos (aref positions form-id)))
+        (when (and (source-position-p pos)
+                   (eql (source-position-start-line pos) line))
+          (push (cons form-id pos) result))))
+    (mapcar #'car
+            (stable-sort (nreverse result) #'<
+                         :key (lambda (e) (or (source-position-start-column (cdr e)) 0))))))
+
+(defun form-id-at-line-col (metadata line col)
+  "The form-id whose source position starts exactly at LINE:COL (the innermost —
+highest form-id — when several do), or NIL (command reference §2 LINE:COL)."
+  (let ((positions (function-debug-metadata-form-id->position metadata))
+        (best nil))
+    (dotimes (form-id (length positions) best)
+      (let ((pos (aref positions form-id)))
+        (when (and (source-position-p pos)
+                   (eql (source-position-start-line pos) line)
+                   (eql (source-position-start-column pos) col))
+          (setf best form-id))))))
+
 (defun find-form-id-at-line (metadata line)
   "Return the form-id of the innermost recorded form whose source
 position starts on LINE, or NIL. 'Innermost' = the highest form-id
