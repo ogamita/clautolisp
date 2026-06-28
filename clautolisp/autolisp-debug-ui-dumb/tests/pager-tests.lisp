@@ -52,3 +52,17 @@ page-prompt input. Returns the captured output string."
                         (format nil "~%b~%q~%") :height 3)))
     (is (contains out "--More--"))
     (is (contains out "L1"))))
+
+(test pager-search-jumps-to-match
+  ;; `/pat' jumps the view forward to the first matching line (a line not on
+  ;; page 1), proving search works (command reference §8 pager keys).
+  (let ((out (run-pager (format nil "~{L~D~%~}" '(1 2 3 4 5 6 7 8 9 10))
+                        (format nil "/L8~%q~%") :height 3)))
+    (is (contains out "L8"))))
+
+(test pager-half-page-down
+  ;; `d' advances half a page (height 5 => page 4, half 2): from page 1 (L1-L4)
+  ;; it reveals L6, which page 1 alone would not show.
+  (let ((out (run-pager (format nil "~{L~D~%~}" '(1 2 3 4 5 6 7 8 9 10 11 12))
+                        (format nil "d~%q~%") :height 5)))
+    (is (contains out "L6"))))
