@@ -184,6 +184,7 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '("n" "next") :test #'string=) (cmd-step session :over))
       ((member c '("o" "out") :test #'string=) (cmd-step session :out))
       ((member c '("a" "advance") :test #'string=) (advance-cmd ui session arg))
+      ((member c '("j" "jump" ",jump") :test #'string=) (jump-cmd ui session hit arg))
       ((member c '("r" "return") :test #'string=) (return-value-cmd ui session hit arg))
       ((member c '("q" "quit") :test #'string=) (cmd-abort session))
       ;; breakpoints (§2)
@@ -588,6 +589,51 @@ directive, or NIL (with a message) when LINE has none."
       (t (or (cmd-advance-at-line session line)
              (progn (out ui "DBG> no poll point at line ~D~%" line) nil))))))
 
+(defun jump-target-location (metadata arg)
+  "Resolve a jump destination ARG to (values FID FORM-ID): =ppN= names a poll
+point by number; a bare integer is a source LINE in the current function. Returns
+(values NIL NIL) if it cannot be resolved."
+  (let ((tok (and arg (string-trim " " arg))))
+    (cond
+      ((or (null tok) (zerop (length tok))) (values nil nil))
+      ;; ppN — a poll-point number (explicit `pp' prefix)
+      ((and (>= (length tok) 2) (string-equal "pp" (subseq tok 0 2)))
+       (let ((pp (ignore-errors (parse-integer (subseq tok 2) :junk-allowed t))))
+         (if pp (poll-point-location pp) (values nil nil))))
+      ;; otherwise a source line in the current function
+      (t (let ((line (ignore-errors (parse-integer tok :junk-allowed t))))
+           (if line
+               (let ((form-id (find-form-id-at-line metadata line)))
+                 (if form-id
+                     (values (function-debug-metadata-function-id metadata) form-id)
+                     (values nil nil)))
+               (values nil nil)))))))
+
+(defun jump-cmd (ui session hit arg)
+  "`jump LINE' / `jump ppN' (=j=) — resume execution at the target poll point,
+skipping the forms in between WITHOUT evaluating them (command reference §1).
+v1: forward jumps within the current function; backward and cross-function
+jumps (the jump-back.lsp re-drive) are not yet supported. Returns the resume
+directive, or NIL (with a message) when the target is rejected."
+  (let ((metadata (current-metadata session))
+        (cur-fid (and hit (hit-fid hit)))
+        (cur-form (and hit (hit-form-id hit))))
+    (cond
+      ((null metadata) (out ui "DBG> jump: no current function~%") nil)
+      ((or (null arg) (zerop (length (string-trim " " arg))))
+       (out ui "DBG> jump: usage: jump LINE | jump ppN~%") nil)
+      (t (multiple-value-bind (fid form-id) (jump-target-location metadata arg)
+           (cond
+             ((null fid) (out ui "DBG> jump: no poll point for ~A~%" arg) nil)
+             ((not (eql fid cur-fid))
+              (out ui "DBG> jump: cross-function jump not supported (v1: within the current function)~%")
+              nil)
+             ((and cur-form (<= form-id cur-form))
+              (out ui "DBG> jump: backward jump not supported (v1: forward only)~%")
+              nil)
+             (t (out ui "DBG> jumping to pp~D~%" (poll-point-id fid form-id))
+                (cmd-jump session fid form-id))))))))
+
 (defun frame-cmd (ui session arg)
   "`frame N' / `frame inner|outer|top|bottom' — select a call frame (§3).
 top = innermost = frame 0; inner heads toward top, outer toward the toplevel."
@@ -811,7 +857,7 @@ volatile — removed on first hit (`break once' / `bo', command reference §2)."
 (defun help-text ()
   "The one-screen command summary (command reference §0 vocabulary)."
   (format nil "DBG> commands: (command reference §0 vocabulary)~%~
-            DBG>   c continue   i into   n next   o out   a LINE advance   r [FORM] return   q quit~%~
+            DBG>   c continue   i into   n next   o out   a LINE advance   j LINE|ppN jump   r [FORM] return   q quit~%~
             DBG>   b LINE|ppN break   bo break once   rbreak PATTERN   lb list breakpoints   delete [ppN] / clear~%~
             DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT~%~
             DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]   catch error|caught on|off~%~

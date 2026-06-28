@@ -63,6 +63,13 @@
   (declare (ignore session))
   :abort)
 
+(defun cmd-jump (session fid form-id)
+  "Resume execution at poll point (FID, FORM-ID), skipping the forms in between
+without evaluating them (command reference §1 jump). Returns the resume
+directive interpreted by APPLY-RESUME-DIRECTIVE."
+  (declare (ignore session))
+  (list :jump fid form-id))
+
 (defun cmd-return (session value)
   (declare (ignore session))
   (list :continue-with-return value))
