@@ -7508,7 +7508,7 @@ Function
 - `fileHandle` (optional): handle of a file as obtained from `(open ...)`. If omitted or `nil`, output goes to the command line.
 
 *** Description
-Prints `expression` to the command line, or writes it to the open file `fileHandle`. The representation is *machine-readable*: control characters in a string expression (`\t`, `\n`, `\r`, the escaped double-quote, octal `\nnn`) are written as their backslash escape sequences so that the output round-trips through the reader.
+Prints `expression` to the command line, or writes it to the open file `fileHandle`. The representation is *machine-readable*: control characters in a string expression (~\t~, ~\n~, ~\r~, the escaped double-quote, octal ~\nnn~) are written as their backslash escape sequences so that the output round-trips through the reader.
 
 *** Return Values
 Returns the evaluated value of `expression`. With no argument, `(prin1)` returns the *void* symbol value, useful as the last form in a `defun` to emit "nothing" to the command line.
@@ -7559,7 +7559,7 @@ Function
 - `fileHandle` (optional): handle of a file as obtained from `(open ...)`. If omitted or `nil`, output goes to the command line.
 
 *** Description
-Prints `expression` to the command line, or writes it to the open file `fileHandle`. The representation is *display-oriented*: unlike `prin1`, control characters in a string expression are written verbatim (no `\n` / `\t` / escaped-double-quote rewriting). With no argument, `(princ)` returns the *void* symbol value and is the conventional way to terminate a `defun` without emitting anything.
+Prints `expression` to the command line, or writes it to the open file `fileHandle`. The representation is *display-oriented*: unlike `prin1`, control characters in a string expression are written verbatim (no ~\n~ / ~\t~ / escaped-double-quote rewriting). With no argument, `(princ)` returns the *void* symbol value and is the conventional way to terminate a `defun` without emitting anything.
 
 *** Return Values
 Returns the evaluated value of `expression`, or *void* with no argument.
@@ -7624,7 +7624,7 @@ With `(setq x 123)`:
 - `(print x fh)` writes `<newline>123 ` to file handle `fh` and returns `123`.
 
 *** Tested Behaviour (BricsCAD V26 / macOS, 2026-04-26)
-`(print "hello" file-desc)` returns `"hello"` and writes the nine characters `\n"hello" ` (literal newline, then the round-trippable seven characters of `prin1`, then a single trailing space) to the file. Confirms the framing rule from the vendor page.
+`(print "hello" file-desc)` returns `"hello"` and writes the nine characters ~\n"hello"~ (literal newline, then the round-trippable seven characters of `prin1`, then a single trailing space) to the file. Confirms the framing rule from the vendor page.
 
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).
@@ -7678,7 +7678,7 @@ The probe suite emits `(terpri stream)` against an open file handle. BricsCAD V2
 | `(terpri file-desc)`                    | error: `too few / too many arguments at [TERPRI]`               |
 | `(princ "A" file-desc) + (terpri file-desc)` | first call writes `A`; second call errors with the same message |
 
-This empirically confirms BricsCAD V26's documented zero-arity contract. AutoLISP code that wishes to write a newline to a file handle must use `(princ "\n" stream)` (BricsCAD V26 confirmed acceptance: `princ-string.txt` test produced `hello\n`). `terpri` is reserved for command-line output. The same code shape ported from Common Lisp via `(terpri stream)` will not portably work in AutoLISP.
+This empirically confirms BricsCAD V26's documented zero-arity contract. AutoLISP code that wishes to write a newline to a file handle must use ~(princ "\n" stream)~ (BricsCAD V26 confirmed acceptance: `princ-string.txt` test produced ~hello\n~). `terpri` is reserved for command-line output. The same code shape ported from Common Lisp via `(terpri stream)` will not portably work in AutoLISP.
 
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).
@@ -9480,7 +9480,7 @@ Updates the menu state, evaluates DIESEL, or displays an image-tile menu.
 *** Examples
 - Display an image-tile menu: `(menucmd "I=moreicons")` then `(menucmd "I=*")`.
 - Check, then disable a pulldown item: `(setq s (menucmd "P11.3=?"))` and `(if (= s "") (menucmd "P11.3=~"))`.
-- Evaluate DIESEL: `(menucmd "M=$(edtime,$(getvar,date),DDDD\",\" D MONTH YYYY)")`.
+- Evaluate DIESEL: ~(menucmd "M=$(edtime,$(getvar,date),DDDD\",\" D MONTH YYYY)")~.
 
 *** Availability
 - AutoCAD 2026: documented.
@@ -9555,8 +9555,7 @@ Function
 
 *** Description
 Validates a symbol-table name against AutoCAD naming rules. The rules depend on the `EXTNAMES` system variable:
-- `EXTNAMES = 1` (default): extended naming. Most characters are accepted, except `< > / \ " : ? * | , = ` ;`.
-- `EXTNAMES = 0`: restrictive naming. Only A–Z, 0–9, `$`, `_`, and `-` are accepted.
+- `EXTNAMES = 1` (default): extended naming. Most characters are accepted, except ~< > / \ " : ? * | , = ;~.- `EXTNAMES = 0`: restrictive naming. Only A–Z, 0–9, `$`, `_`, and `-` are accepted.
 Control characters, graphic characters, the empty string, and vertical bars at name boundaries are always rejected.
 
 *** Return Values
@@ -11161,8 +11160,7 @@ ACTIVITYINSIGHTSPATH
 string
 
 *** Default
-"C:\\Users\\{username}\\AppData\\Local\\Autodesk\\ActivityInsights\\Common"
-
+~"C:\\Users\\{username}\\AppData\\Local\\Autodesk\\ActivityInsights\\Common"~
 *** Read-Only
 no
 
@@ -14095,8 +14093,7 @@ BMTOOLPATH
 string
 
 *** Default
-"C:\\Program Files\\Bricsys\\BricsCAD V26 en_US\\UserDataCache\\Support\\en_US\\DesignLibrary\\Tools\\"
-
+~"C:\\Program Files\\Bricsys\\BricsCAD V26 en_US\\UserDataCache\\Support\\en_US\\DesignLibrary\\Tools\\"~
 *** Read-Only
 no
 
@@ -41441,8 +41438,7 @@ POINTCLOUDCACHEFOLDER
 string
 
 *** Default
-"C:\\Users\\%username%\\AppData\\Roaming\\Bricsys\\BricsCAD\\ V26 x64\\en_US\\PointCloudCache"
-
+~"C:\\Users\\%username%\\AppData\\Roaming\\Bricsys\\BricsCAD\\ V26 x64\\en_US\\PointCloudCache"~
 *** Read-Only
 no
 
@@ -48300,7 +48296,7 @@ no
 user preference; saved in user preference
 
 *** Description
-Sheet Set template path: The file path for the Sheet Set Templates folder. The default path is: \Users\%username%\AppData\Local\Bricsys\BricsCAD\ V26 x64\en_US\Templates .
+Sheet Set template path: The file path for the Sheet Set Templates folder. The default path is: ~\Users\%username%\AppData\Local\Bricsys\BricsCAD\ V26 x64\en_US\Templates~ .
 
 *** Compatibility
 AutoCAD and BricsCAD. AutoCAD all; BricsCAD V20+.
@@ -71886,7 +71882,7 @@ The stored data, typed as the registry value's data type, or `nil` if the key/va
 None.
 
 *** Examples
-- After `(vl-registry-write "HKEY_CURRENT_USER\Test" "" "test data")`, `(vl-registry-read "HKEY_CURRENT_USER\Test")` returns `"test data"`.
+- After ~(vl-registry-write "HKEY_CURRENT_USER\Test" "" "test data")~, ~(vl-registry-read "HKEY_CURRENT_USER\Test")~ returns `"test data"`.
 
 *** Availability
 - AutoCAD 2026: documented (Windows + macOS).
@@ -71926,7 +71922,7 @@ The stored data string on success; `nil` on failure.
 Mutates the user-level persistent settings store.
 
 *** Examples
-- `(vl-registry-write "HKEY_CURRENT_USER\Test" "" "test data")` returns `"test data"`.
+- ~(vl-registry-write "HKEY_CURRENT_USER\Test" "" "test data")~ returns `"test data"`.
 
 *** Availability
 - AutoCAD 2026: documented (Windows + macOS).
@@ -91142,7 +91138,7 @@ BricsCAD DOSLib Function
 Arguments are described in the vendor page; see Source Notes.
 
 *** Description
-This function copies one or more source files to a target file resp. to a target folder; the source file specification may contain wildcard characters like "*" and "?". sourceFileSpec : (string) specifies an existing file (no wildcards used), or declares a file mask when using wildcards destFileSpec : (string) specifies the target file, if sourceFileSpec also specifies an existing file -OR- it specifies a folder to copy all source files to, if sourceFileSpec Returns T on success or NIL on any failure. Examples : T T T T (dos_copy "J:\FileDoesNotExist.txt" "J:\Test\") NIL Note 1 : any existing target file will be overwritten ! Note 2 : missing target folder(s) will be automatically created Note 3 : when specifying a target folder, the string must end with "\" or "/" character to clearly declare it to be a folder ! Note 4 : both "\" and "/" path separators are allowed on all platforms (Windows, Linux, Mac; they will be adjusted automatically)
+This function copies one or more source files to a target file resp. to a target folder; the source file specification may contain wildcard characters like "*" and "?". sourceFileSpec : (string) specifies an existing file (no wildcards used), or declares a file mask when using wildcards destFileSpec : (string) specifies the target file, if sourceFileSpec also specifies an existing file -OR- it specifies a folder to copy all source files to, if sourceFileSpec Returns T on success or NIL on any failure. Examples : T T T T (dos_copy ~"J:\FileDoesNotExist.txt"~ ~"J:\Test\"~) NIL Note 1 : any existing target file will be overwritten ! Note 2 : missing target folder(s) will be automatically created Note 3 : when specifying a target folder, the string must end with ~"\"~ or "/" character to clearly declare it to be a folder ! Note 4 : both ~"\"~ and "/" path separators are allowed on all platforms (Windows, Linux, Mac; they will be adjusted automatically)
 
 *** Return Values
 Vendor-defined; see Source Notes.
@@ -91430,7 +91426,7 @@ BricsCAD DOSLib Function
 Arguments are described in the vendor page; see Source Notes.
 
 *** Description
-Opens BricsCAD's FileSelection dialog to let the user select one or multiple file(s). title : is the FileSelect dialog title folder : preset folder to be used for file selection; user can change to any other folder filter : a string containing of file specification tokens - a token has the form "any description |*.xxx|", multiple tokens can be combined; to indicate that the tokens sequence is finished, add an extra "|" as last character. Note : under BricsCAD, a simplified filter can be used - simply combine all file type extensions by comma or semicolon : "dwg;txt" Returns a list of selected files when successful, or NIL if dialog was cancelled or failed Note 1 : the first entry of the list is the folder name ! Note 2 : the number of files being selected is limited to ~6000 files ! Example : (dos_getfilem "Select Drawings or Text files" "C:\Projects\" "Drawing Files (dwg)|*.dwg|Text Files (*.txt)|*.txt||") will return a list like ("C:\Projects\Stadium\" "entry.dwg" "places.dwg" "readme.txt")
+Opens BricsCAD's FileSelection dialog to let the user select one or multiple file(s). title : is the FileSelect dialog title folder : preset folder to be used for file selection; user can change to any other folder filter : a string containing of file specification tokens - a token has the form "any description |*.xxx|", multiple tokens can be combined; to indicate that the tokens sequence is finished, add an extra "|" as last character. Note : under BricsCAD, a simplified filter can be used - simply combine all file type extensions by comma or semicolon : "dwg;txt" Returns a list of selected files when successful, or NIL if dialog was cancelled or failed Note 1 : the first entry of the list is the folder name ! Note 2 : the number of files being selected is limited to ~6000 files ! Example : (dos_getfilem "Select Drawings or Text files" ~"C:\Projects\"~ "Drawing Files (dwg)|*.dwg|Text Files (*.txt)|*.txt||") will return a list like (~"C:\Projects\Stadium\"~ "entry.dwg" "places.dwg" "readme.txt")
 
 *** Return Values
 Vendor-defined; see Source Notes.
