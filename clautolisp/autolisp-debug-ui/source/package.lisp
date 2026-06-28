@@ -108,4 +108,9 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    ;; config bridge to the canonical AutoLISP *CLAL-ALDO-CONFIGURATION*
    #:aldo-config-variable-symbol #:autolisp->cl-config #:cl-config->autolisp
    #:config-variable-bound-p #:read-config-variable #:write-config-variable
-   #:sync-config-from-variable #:sync-config-to-variable))
+   #:sync-config-from-variable #:sync-config-to-variable
+   ;; structural sexp navigator (command reference §3)
+   #:make-navigator #:navigator-root #:navigator-path #:nav-selected
+   #:nav-parent #:nav-index
+   #:nav-down #:nav-up #:nav-forward #:nav-backward #:nav-first #:nav-last
+   #:nav-skip #:nav-render))
