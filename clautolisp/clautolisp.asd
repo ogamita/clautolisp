@@ -539,7 +539,8 @@
   ((:file "autolisp-debug-ui/source/package")
    (:file "autolisp-debug-ui/source/protocol")
    (:file "autolisp-debug-ui/source/session")
-   (:file "autolisp-debug-ui/source/settings"))
+   (:file "autolisp-debug-ui/source/settings")
+   (:file "autolisp-debug-ui/source/decorations"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-debug-ui-dumb/tests")))
   :perform (asdf:test-op (op system)
@@ -571,6 +572,7 @@
   ((:file "autolisp-debug-ui-dumb/tests/package")
    (:file "autolisp-debug-ui-dumb/tests/dumb-ui-tests")
    (:file "autolisp-debug-ui-dumb/tests/settings-tests")
+   (:file "autolisp-debug-ui-dumb/tests/decorations-tests")
    (:file "autolisp-debug-ui-dumb/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
