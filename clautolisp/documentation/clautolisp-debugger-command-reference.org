@@ -438,11 +438,21 @@ keystroke-UI cursor form and the typed form — under this rule.
   above. *v1 scope:* forward and outward jumps; *backward* jump is
   mechanically the same (ancestor re-drive) but is deferred to a following
   version because of these re-execution semantics.
-- backing: =[new]= — a per-thread /jump target/ consulted in the poll-point
-  routine, plus the "am I an ancestor of the target?" test from
-  =parent-form-map=, and the ancestor re-drive. The interpreter's
-  =eval-poll-form= already holds its body unevaluated; the compiled fork must
-  wrap the body in a real closure to get the same suppression (DN-1). Reuses
+- backing: =[partial — forward implemented]=. A per-thread /jump target/
+  (=thread-debug-info-jump-target=) is consulted by =eval-poll-form= via
+  =jump-disposition=: the poll point that *is* the target resumes (clears the
+  jump); a poll point that is an *ancestor* of the target (=form-ancestor-p=
+  over =parent-form-map=) descends; any other poll point *skips* its body
+  (contributes =nil=). =poll-point= suppresses stops while a jump is pending.
+  A safety net (=jump-exit-check=) cancels a still-pending jump when the
+  target's function returns, so a target control flow never reaches (an
+  un-taken branch) degrades to "the rest of the function is skipped" rather
+  than skipping the remainder of the program. *Implemented (v1):* forward
+  jumps within the current function (=j LINE= / =,jump ppN=). *Not yet:*
+  backward and cross-function jumps — the ancestor re-drive worked through in
+  =jump-back.lsp=, deferred for its re-execution semantics. The compiled fork
+  must wrap the body in a real closure to get the same suppression (DN-1).
+  Reuses
   the existing unwind primitives (=CLAL-POLL-RETURN= / =clal-abort=) for the
   outward/return direction.
 

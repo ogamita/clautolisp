@@ -41,7 +41,8 @@ debugger/UI boundary in Phase 1–2.")
 debugged thread has armed a step or set a breakpoint covering this point
 (spec §11.1)."
   (let ((ti *thread-debug-info*))
-    (when (and ti (thread-debug-info-debug-flag ti))           ; (a) fast path
+    (when (and ti (thread-debug-info-debug-flag ti)            ; (a) fast path
+               (not (thread-debug-info-jump-target ti)))       ; jumping ⇒ no stops
       (setf (thread-debug-info-current-pp ti) (cons fid form-id))
       (let* ((step (step-request-fires-p ti when))
              (bp (and (not step)
@@ -104,6 +105,9 @@ stop, not just an error stop."
     ((and (consp directive) (eq (first directive) :advance))
      (destructuring-bind (fid form-id &optional (when :before)) (rest directive)
        (advance-to-point ti fid form-id when)))
+    ((and (consp directive) (eq (first directive) :jump))
+     (destructuring-bind (fid form-id) (rest directive)
+       (request-jump ti fid form-id)))
     (t nil))
   directive)
 
@@ -130,8 +134,15 @@ stop, not just an error stop."
                  (restart-case
                      (progn
                        (poll-point fid form-id :before)
-                       (prog1 (autolisp-eval inner context)
-                         (poll-point fid form-id :after)))
+                       ;; Form-level jump (§1): skip this form's body entirely
+                       ;; when it is neither the target nor on the path to it.
+                       ;; A skipped form contributes NIL. JUMP-DISPOSITION
+                       ;; clears the jump when this poll point IS the target.
+                       (if (eq (jump-disposition ti fid form-id) :skip)
+                           nil
+                           (prog1 (autolisp-eval inner context)
+                             (jump-exit-check ti fid form-id)
+                             (poll-point fid form-id :after))))
                    (clal-poll-return (value) value))
               (debug-poll-exit ti form-id)))
           ;; not a debugged thread (e.g. eval-in-frame with *debugging*

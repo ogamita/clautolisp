@@ -57,6 +57,10 @@ so a stuck debugged thread can't hang a caller (tests) forever."
   ;; at every poll point, plus the one that most recently fired (for the hit).
   (watches '() :type list)
   (fired-watch nil)
+  ;; pending form-level jump (spec §1 jump): (FID . FORM-ID) of the target poll
+  ;; point, or NIL. While set, poll points suppress stops and eval-poll-form
+  ;; skips the bodies of forms that are neither the target nor on the path to it.
+  (jump-target nil)
   ;; two-thread pause channels (spec §8): debugger→app and app→debugger
   (inbound nil)
   (outbound nil)

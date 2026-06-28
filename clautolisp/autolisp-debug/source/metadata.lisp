@@ -148,6 +148,23 @@ Used by tests and at session teardown."
     (when (< -1 form-id (length vector))
       (aref vector form-id))))
 
+(defun form-id-parent (metadata form-id)
+  "The enclosing form-id of FORM-ID (-1 for the function-entry root), or NIL if
+out of range. Backed by the instrumenter's parent-form-map (spec §7)."
+  (let ((vector (function-debug-metadata-parent-form-map metadata)))
+    (when (< -1 form-id (length vector))
+      (aref vector form-id))))
+
+(defun form-ancestor-p (metadata ancestor descendant)
+  "True when form ANCESTOR is a proper ancestor of form DESCENDANT in METADATA,
+found by walking DESCENDANT's parent chain to the root (-1)."
+  (and metadata
+       (let ((p (form-id-parent metadata descendant)))
+         (loop
+           (cond ((or (null p) (eql p -1)) (return nil))
+                 ((eql p ancestor) (return t))
+                 (t (setf p (form-id-parent metadata p))))))))
+
 (defun find-form-id-at-line (metadata line)
   "Return the form-id of the innermost recorded form whose source
 position starts on LINE, or NIL. 'Innermost' = the highest form-id

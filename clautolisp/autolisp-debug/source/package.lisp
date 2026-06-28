@@ -114,6 +114,9 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:watch-symbol #:watch-name #:watch-last-value #:watch-prev-value
    #:watch-last-bound-p #:watch-prev-bound-p #:watch-predicate
    #:add-watch #:remove-watch #:clear-watches #:list-watches #:check-watches
+   ;; form-level jump (command reference §1 jump)
+   #:request-jump #:clear-jump #:jump-pending-p #:jump-disposition
+   #:form-id-parent #:form-ancestor-p
    ;; poll points + hit dispatch (spec §11 / §6.4)
    #:poll-point
    #:hit

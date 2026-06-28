@@ -453,6 +453,39 @@
       (is (contains output "error off"))
       (is (contains output "caught on")))))
 
+(test dumb-ui-jump-skips-intervening-forms
+  ;; `jump 4' from the setq (line 3) resumes at (id z) (line 4) WITHOUT running
+  ;; the setq, so z is never assigned and TWO returns nil instead of 7 — the
+  ;; defining property of jump vs advance (command reference §1).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (setq-form (clautolisp.debug:find-form-id-at-line (first metas) 3)))
+    (clautolisp.debug:add-breakpoint ti two setq-form :when :before)  ; stop at the setq
+    (multiple-value-bind (result output)
+        (run-ui (format nil "jump 4~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (contains output "jumping to"))
+      (is (not (eql 7 result))))))    ; the setq was skipped (would have given 7)
+
+(test dumb-ui-jump-backward-rejected
+  ;; v1 supports forward jumps only; a backward target is rejected and execution
+  ;; is unaffected (TWO still returns 7).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (idz-form (clautolisp.debug:find-form-id-at-line (first metas) 4)))
+    (clautolisp.debug:add-breakpoint ti two idz-form :when :before)  ; stop at (id z), z already set
+    (multiple-value-bind (result output)
+        (run-ui (format nil "jump 3~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "backward jump not supported")))))
+
 (test dumb-ui-watch-stops-on-change
   ;; `watch VAR' stops when the variable's value changes (a software
   ;; watchpoint; command reference §2). In TWO, z goes nil → 7 via the setq.
