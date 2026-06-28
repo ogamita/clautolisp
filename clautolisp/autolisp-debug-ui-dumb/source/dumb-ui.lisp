@@ -168,29 +168,86 @@ reading. A line that looks like (form) is eval-in-frame."
        (run-command ui session hit cmd arg)))))
 
 (defun run-command (ui session hit cmd arg)
+  "Dispatch one command, using the command reference §0 vocabulary (single keys
++ word forms). Returns a resume directive, or NIL to keep reading."
+  (let ((c (string-downcase cmd)))
+    (cond
+      ;; execution control (§1)
+      ((member c '("c" "continue") :test #'string=) (cmd-continue session))
+      ((member c '("i" "into") :test #'string=) (cmd-step session :into))
+      ((member c '("n" "next") :test #'string=) (cmd-step session :over))
+      ((member c '("o" "out") :test #'string=) (cmd-step session :out))
+      ((member c '("r" "return") :test #'string=) (return-value-cmd ui session hit arg))
+      ((member c '("q" "quit") :test #'string=) (cmd-abort session))
+      ;; breakpoints (§2)
+      ((member c '("b" "break") :test #'string=) (set-breakpoint-cmd ui session arg) nil)
+      ((string= c "lb") (list-breakpoints-cmd ui session) nil)
+      ;; stack and frames (§3)
+      ((string= c "lf") (print-stack ui session) nil)
+      ((member c '("f" "frame") :test #'string=) (frame-cmd ui session arg) nil)
+      ((string= c "fi") (frame-cmd ui session "inner") nil)
+      ((string= c "fo") (frame-cmd ui session "outer") nil)
+      ((string= c "ft") (frame-cmd ui session "top") nil)
+      ((string= c "fb") (frame-cmd ui session "bottom") nil)
+      ((string= c "ll") (list-vars-cmd ui session "locals") nil)
+      ((string= c "lp") (list-vars-cmd ui session "parameters") nil)
+      ((string= c "lv") (list-vars-cmd ui session "variables") nil)
+      ;; data (§4)
+      ((member c '("p" "print") :test #'string=) (print-variable-cmd ui session arg) nil)
+      ((member c '("t" "type" ",type") :test #'string=) (type-cmd ui session arg) nil)
+      ((member c '("v" "visit") :test #'string=) (inspector-loop ui session arg) nil)
+      ;; source (§5)
+      ((string= c "ls") (relist-source ui session) nil)
+      ;; spelled two-word "list X"
+      ((string= c "list") (list-sub-cmd ui session arg) nil)
+      ;; meta (§8)
+      ((string= c "set") (set-setting-cmd ui arg) nil)
+      ((member c '(",settings" "settings") :test #'string=) (settings-cmd ui arg) nil)
+      ((member c '(",display" "display") :test #'string=) (display-cmd ui arg) nil)
+      ((member c '(",undisplay" "undisplay") :test #'string=) (undisplay-cmd ui arg) nil)
+      ((member c '("h" "?" "help") :test #'string=) (print-help ui) nil)
+      (t (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil))))
+
+(defun frame-cmd (ui session arg)
+  "`frame N' / `frame inner|outer|top|bottom' — select a call frame (§3).
+top = innermost = frame 0; inner heads toward top, outer toward the toplevel."
+  (let* ((snapshot (session-snapshot session))
+         (frames (and snapshot (snapshot-call-stack snapshot)))
+         (n (length frames))
+         (cur (or (session-selected-frame session) 0)))
+    (if (zerop n)
+        (out ui "DBG> no frames~%")
+        (let ((target (cond
+                        ((null arg) cur)
+                        ((string-equal arg "inner") (1- cur))
+                        ((string-equal arg "outer") (1+ cur))
+                        ((string-equal arg "top") 0)
+                        ((string-equal arg "bottom") (1- n))
+                        (t (or (ignore-errors (parse-integer arg :junk-allowed t)) cur)))))
+          (setf target (max 0 (min (1- n) target)))
+          (cmd-select-frame session target)
+          (out ui "DBG> frame ~D: ~A~%" target
+               (stack-frame-function-name (nth target frames)))))))
+
+(defun list-vars-cmd (ui session what)
+  "`list locals|parameters|variables' (=ll=/=lp=/=lv=) — show the visible
+bindings at the stop (§3). The locals/parameters/variables distinction is a
+refinement; all three currently show the visible bindings."
+  (let ((snapshot (session-snapshot session)))
+    (out ui "DBG> ~A:~%" what)
+    (if snapshot (print-bindings ui snapshot) (out ui "DBG>   (no snapshot)~%"))))
+
+(defun list-sub-cmd (ui session arg)
+  "Dispatch the spelled `list X' form to the matching =l*= command."
   (cond
-    ((member cmd '("c") :test #'string=) (cmd-continue session))
-    ((member cmd '("s" "n") :test #'string=) (cmd-step session :over))
-    ((string= cmd "i") (cmd-step session :into))
-    ((string= cmd "o") (cmd-step session :out))
-    ((string= cmd "f") (cmd-step session :finish))
-    ((string= cmd "b") (list-breakpoints-cmd ui session) nil)
-    ((string= cmd "B") (set-breakpoint-cmd ui session arg) nil)
-    ((string= cmd "p") (print-variable-cmd ui session arg) nil)
-    ((string= cmd "e") (when arg (eval-and-print ui session arg)) nil)
-    ((string= cmd "l") (relist-source ui session) nil)
-    ((string= cmd "t") (print-stack ui session) nil)
-    ((string= cmd "x") (inspector-loop ui session arg) nil)
-    ((string= cmd "a") (cmd-abort session))
-    ((string= cmd "r") (return-value-cmd ui session hit arg))
-    ((member cmd '("q") :test #'string=) (cmd-abort session))
-    ((string= cmd "set") (set-setting-cmd ui arg) nil)
-    ((member cmd '(",settings" "settings") :test #'string=) (settings-cmd ui arg) nil)
-    ((member cmd '(",display" "display") :test #'string=) (display-cmd ui arg) nil)
-    ((member cmd '(",undisplay" "undisplay") :test #'string=) (undisplay-cmd ui arg) nil)
-    ((member cmd '(",type" "type") :test #'string=) (type-cmd ui session arg) nil)
-    ((member cmd '("h" "?") :test #'string=) (print-help ui) nil)
-    (t (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil)))
+    ((null arg) (out ui "DBG> list what? (breakpoints|frames|source|locals|parameters|variables)~%"))
+    ((string-equal arg "breakpoints") (list-breakpoints-cmd ui session))
+    ((string-equal arg "frames") (print-stack ui session))
+    ((string-equal arg "source") (relist-source ui session))
+    ((string-equal arg "locals") (list-vars-cmd ui session "locals"))
+    ((string-equal arg "parameters") (list-vars-cmd ui session "parameters"))
+    ((string-equal arg "variables") (list-vars-cmd ui session "variables"))
+    (t (out ui "DBG> list ~A? (breakpoints|frames|source|locals|parameters|variables)~%" arg))))
 
 (defun type-cmd (ui session arg)
   "`type EXPR' — show the AutoLISP type of EXPR's value (command reference §4)."
@@ -315,14 +372,15 @@ reading. A line that looks like (form) is eval-in-frame."
 
 (defun print-help (ui)
   (paged-out ui
-   (format nil "DBG> commands:~%~
-            DBG>   c continue   s/n step over   i step in   o step out   f finish~%~
-            DBG>   b list bkpts  B <line> set bkpt   p [name] print   e <form> eval~%~
-            DBG>   l list source  t backtrace   x [form] inspect~%~
-            DBG>   a abort   r <form> return value (at error)   q quit   h help~%~
+   (format nil "DBG> commands: (command reference §0 vocabulary)~%~
+            DBG>   c continue   i into   n next   o out   r [FORM] return   q quit~%~
+            DBG>   b LINE break   lb list breakpoints~%~
+            DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~
+            DBG>   ll/lp/lv list locals/parameters/variables~%~
+            DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source~%~
             DBG>   set NAME VALUE   ,settings [NAME|save|reload]~%~
-            DBG>   display FORM   undisplay [N]   type EXPR~%~
-            DBG>   (form...) evaluate in the current frame~%")))
+            DBG>   display FORM   undisplay [N]~%~
+            DBG>   (form...) evaluate in the current frame   h/? help~%")))
 
 ;;; --- inspector sub-REPL (spec §18.2) -------------------------------
 
