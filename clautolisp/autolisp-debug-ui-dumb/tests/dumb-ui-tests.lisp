@@ -453,6 +453,28 @@
       (is (contains output "error off"))
       (is (contains output "caught on")))))
 
+(test dumb-ui-clal-break-enters-debugger
+  ;; The programmatic entry INVOKE-DEBUGGER-BREAK (what the CLAL-BREAK /
+  ;; CLAL-INVOKE-DEBUGGER builtins call via *debug-break-hook*) drops into the
+  ;; debugger at the current poll point with a message; `c' resumes (command
+  ;; reference §1). Driven directly here since the bare test runtime does not
+  ;; install the core builtins.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (multiple-value-bind (result output)
+        (run-ui (format nil "c~%") :context context :thread-info ti
+                :thunk (lambda ()
+                         (clautolisp.debug:invoke-debugger-break "halt here")
+                         5))
+      (is (eql 5 result))                 ; resumed and finished
+      (is (contains output "Break"))      ; the programmatic stop was shown
+      (is (contains output "halt here"))))) ; with the message
+
+(test clal-break-hook-installed
+  ;; the debug system installs the programmatic-break hook the builtins call.
+  (is (eq #'clautolisp.debug:invoke-debugger-break
+          clautolisp.autolisp-runtime:*debug-break-hook*)))
+
 (test dumb-ui-nav-line-mode
   ;; the `navigator line' setting makes `nav' walk poll-point lines flatly
   ;; instead of the sexp tree (command reference §8); d advances to the next.

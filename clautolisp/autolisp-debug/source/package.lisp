@@ -119,6 +119,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:form-id-parent #:form-ancestor-p
    ;; poll points + hit dispatch (spec §11 / §6.4)
    #:poll-point
+   #:invoke-debugger-break
    #:hit
    #:hit-p
    #:hit-thread-info

@@ -180,6 +180,7 @@
    #:catch-frame-arguments
    #:*autolisp-catch-stack*
    #:*autolisp-caught-error-hook*
+   #:*debug-break-hook*
    #:autolisp-current-directory
    #:set-autolisp-current-directory
    #:autolisp-support-paths

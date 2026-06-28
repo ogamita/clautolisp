@@ -1287,6 +1287,14 @@ caught autolisp-runtime-error BEFORE returning the AutoLISP error object
 (spec §10.2 'break on caught error'). The debugger installs this only when
 break-on-caught is enabled; NIL by default (off).")
 
+(defparameter *debug-break-hook* nil
+  "When non-nil, a function of one optional MESSAGE argument that the
+CLAL-BREAK / CLAL-INVOKE-DEBUGGER builtins call to drop into the aldo debugger
+at the current poll point — the programmatic debugger entry (debugger command
+reference §1). The aldo debugger installs it when its system is loaded; it is a
+no-op (returns without stopping) unless a debug session is active on the
+thread. NIL when the debug system is absent, making CLAL-BREAK a no-op.")
+
 (defun append-proper-and-tail (elements tail)
   (if (null elements)
       tail

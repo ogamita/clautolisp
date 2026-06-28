@@ -125,8 +125,11 @@ PAT (case-insensitive), or NIL."
 (defmethod ui-thread-hit ((ui dumb-ui) session hit)
   (let ((reason (hit-stop-reason hit)))
     (describe-stop ui session
-                   (case reason (:step "Step") (:watch "Watchpoint") (t "Hit breakpoint"))
+                   (case reason (:step "Step") (:watch "Watchpoint")
+                                (:break "Break") (t "Hit breakpoint"))
                    hit)
+    (when (and (eq reason :break) (hit-error-message hit))
+      (out ui "DBG>   ~A~%" (preview (hit-error-message hit))))
     (when (and (eq reason :watch) (hit-watch hit))
       (let ((w (hit-watch hit)))
         (out ui "DBG>   ~A changed: ~A → ~A~%"

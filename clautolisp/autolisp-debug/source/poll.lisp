@@ -89,6 +89,32 @@ debugged thread has armed a step or set a breakpoint covering this point
                          :snapshot (build-snapshot ti fid form-id when metadata))))
       (apply-resume-directive ti (funcall *debug-hit-handler* hit)))))
 
+(defun invoke-debugger-break (&optional message)
+  "Programmatic debugger entry (CLAL-BREAK / CLAL-INVOKE-DEBUGGER, command
+reference §1): when a debug session is active on this thread, stop at the
+current poll point and run the UI command loop, applying its resume directive
+(so `abort'/`return' work). A no-op otherwise. MESSAGE, if any, is shown at the
+stop. Returns NIL."
+  (let ((ti *thread-debug-info*))
+    (when (and ti (thread-debug-info-debug-flag ti))
+      (let* ((pp (thread-debug-info-current-pp ti))
+             (fid (if pp (car pp) 0))
+             (form-id (if pp (cdr pp) 0))
+             (metadata (metadata-for-function-id fid)))
+        (apply-resume-directive
+         ti (funcall *debug-hit-handler*
+                     (make-hit :thread-info ti :fid fid :form-id form-id :when :before
+                               :stop-reason :break :metadata metadata
+                               :error-message message
+                               :source-position (and metadata (form-id-position metadata form-id))
+                               :snapshot (build-snapshot ti fid form-id :before metadata))))))
+    nil))
+
+;; Install the programmatic-break hook so the CLAL-BREAK / CLAL-INVOKE-DEBUGGER
+;; builtins (autolisp-builtins-core) reach the debugger without builtins-core
+;; depending on the debug system.
+(setf clautolisp.autolisp-runtime:*debug-break-hook* #'invoke-debugger-break)
+
 (defun apply-resume-directive (ti directive)
   "Interpret the handler's return value, arming the next stop. :ABORT
 unwinds the whole evaluation to the session's CLAL-ABORT catch (the same
