@@ -302,13 +302,33 @@ documentation/RELEASE_NOTES.org: ../RELEASE_NOTES.org
 	@mkdir -p documentation
 	cp $< $@
 
+# Large org documents (notably the ~4600-page visual-lisp spec in autolisp-spec)
+# exceed TeX's default main_memory and abort with "TeX capacity exceeded". We
+# ship a repo-local web2c/texmf.cnf that raises the memory parameters and build
+# a private xelatex format with them into a cache dir (TEXMFVAR), so the build
+# needs no machine-wide texmf.cnf edit or root access. The trailing empty
+# component on TEXMFCNF appends the system search path, so all other settings
+# (and base files) still come from the system installation.
+TEX_WEB2C    := $(ROOT_DIR)/documentation/web2c
+TEXFMT_CACHE := $(XDG_CACHE_HOME)/texmf-var
+export TEXMFCNF := $(TEX_WEB2C):
+export TEXMFVAR := $(TEXFMT_CACHE)
+ifeq ($(LATEX_COMPILER),xelatex)
+TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
+$(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
+	@mkdir -p $(TEXFMT_CACHE)
+	fmtutil -user --byfmt xelatex
+else
+TEX_FMT_DEP :=
+endif
+
 # The clautolisp-doc-preamble.sty package gives xelatex the fonts for the
 # Unicode glyphs Latin Modern lacks (arrows, math, media controls, circled
 # numbers, dingbats, box drawing, CJK brackets) — see documentation/
 # clautolisp-doc-preamble.sty. It is injected into every export via
 # org-latex-packages-alist, and TEXINPUTS points at documentation/ so the
 # .sty is found regardless of the .tex's own directory (e.g. specifications/).
-%.pdf: %.org
+%.pdf: %.org | $(TEX_FMT_DEP)
 	TEXINPUTS="$(ROOT_DIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \

@@ -204,11 +204,29 @@ test-asdf-ccl-debug:
 		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
 		--eval '(autolisp-test.clautolisp-driver:run-autolisp-test-suite :debug t)'
 
+# Very large org docs can exceed TeX's default main_memory and abort with "TeX
+# capacity exceeded". A repo-local web2c/texmf.cnf raises the memory parameters;
+# we build a private xelatex format with them into a cache dir (TEXMFVAR) so no
+# machine-wide texmf.cnf edit or root access is needed. The trailing empty
+# component on TEXMFCNF appends the system search path.
+TEX_WEB2C    := $(ROOT_DIR)/documentation/web2c
+TEXFMT_CACHE := $(XDG_CACHE_HOME)/texmf-var
+export TEXMFCNF := $(TEX_WEB2C):
+export TEXMFVAR := $(TEXFMT_CACHE)
+ifeq ($(LATEX_COMPILER),xelatex)
+TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
+$(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
+	@mkdir -p $(TEXFMT_CACHE)
+	fmtutil -user --byfmt xelatex
+else
+TEX_FMT_DEP :=
+endif
+
 # clautolisp-doc-preamble.sty gives xelatex the fonts for the Unicode glyphs
 # Latin Modern lacks (see documentation/clautolisp-doc-preamble.sty); injected
 # via org-latex-packages-alist, with TEXINPUTS pointing at documentation/ so the
 # .sty is found regardless of the .tex's directory (e.g. harness/, tests/).
-%.pdf: %.org
+%.pdf: %.org | $(TEX_FMT_DEP)
 	TEXINPUTS="$(ROOT_DIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \

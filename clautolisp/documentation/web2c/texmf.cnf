@@ -1,0 +1,21 @@
+% clautolisp documentation build — raised TeX memory parameters.
+%
+% Large org→PDF documents (notably autolisp-visual-lisp-specification-draft,
+% ~4600 pages) exceed TeX's conservative default main_memory of 5,000,000
+% words and abort with "TeX capacity exceeded, sorry [main memory size=...]".
+% These are TeX's internal array sizes, unrelated to system RAM; the default
+% is just cautious. We raise them here and the documentation Makefile builds a
+% private xelatex format with these values into a local cache dir (TEXMFVAR),
+% so no machine-wide texmf.cnf edit or root access is needed.
+%
+% kpathsea reads every texmf.cnf on the TEXMFCNF path and takes the first
+% setting of each variable, so this partial file only needs the overrides; all
+% other settings still come from the system texmf.cnf (reached via the trailing
+% empty component the Makefile appends to TEXMFCNF).
+main_memory   = 24000000
+extra_mem_top = 4000000
+extra_mem_bot = 4000000
+pool_size     = 24000000
+max_strings   = 2000000
+hash_extra    = 3000000
+save_size     = 2000000
