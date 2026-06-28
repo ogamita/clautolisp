@@ -136,3 +136,36 @@ global store."
              (is (contains text "9205"))))             ; current-pp glyph as code point
       (ignore-errors (delete-file path))
       (clautolisp.debug.ui:reset-aldo-configuration))))
+
+;;; --- display / undisplay (command reference §4) -------------------
+
+(test dumb-ui-display-auto-prints-after-stop
+  ;; a source with two compound statements, so step-over from line 3 lands on
+  ;; the line-4 form (line 4 must be compound — an atom carries no poll point)
+  (let* ((src (format nil "(defun id (a) a)~%(defun frob (x / z)~%  (setq z (id x))~%  (id x))"))
+         (context (fresh-context))
+         (metas (load-and-instrument context src "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint
+     ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
+    (multiple-value-bind (result output)
+        ;; register a display, then step: the step's stop re-prints it
+        (run-ui (format nil "display X~%s~%c~%") :context context :thread-info ti
+                :thunk (lambda ()
+                         (clautolisp.autolisp-runtime:autolisp-eval
+                          (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      (is (contains output "display 1: X"))     ; registration echo
+      (is (contains output "display 1: X = 7")))))  ; auto-printed at the step stop
+
+(test dumb-ui-undisplay-removes
+  (let* ((ui (clautolisp.ui.dumb:make-dumb-ui
+              :input (make-string-input-stream "") :output (make-string-output-stream))))
+    (clautolisp.ui.dumb::display-cmd ui "X")
+    (clautolisp.ui.dumb::display-cmd ui "Y")
+    (is (equal '("X" "Y") (clautolisp.ui.dumb::dumb-ui-displays ui)))
+    (clautolisp.ui.dumb::undisplay-cmd ui "1")
+    (is (equal '("Y") (clautolisp.ui.dumb::dumb-ui-displays ui)))
+    (clautolisp.ui.dumb::undisplay-cmd ui nil)   ; all
+    (is (null (clautolisp.ui.dumb::dumb-ui-displays ui)))))
