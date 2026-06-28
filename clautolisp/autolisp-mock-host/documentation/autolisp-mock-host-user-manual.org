@@ -20,7 +20,12 @@ Audience: user / integrator.
 User manual: how autolisp-mock-host is used.
 
 * Topics
-  - Installation\n- Loading + entry points\n- Usage examples\n- Configuration knobs\n- Troubleshooting\n- See also (specs, source, related projects)
+  - Installation
+  - Loading + entry points
+  - Usage examples
+  - Configuration knobs
+  - Troubleshooting
+  - See also (specs, source, related projects)
 
 * References
 
