@@ -4165,6 +4165,19 @@ Returns nil."
     (funcall clautolisp.autolisp-runtime:*debug-break-hook* message))
   nil)
 
+(defun builtin-clal-define-debugger-command (names function &optional doc)
+  "Register an AutoLISP debugger command (command reference §8). NAMES is a list
+(KEY WORD…) of strings (the key must be the word initials, §0); FUNCTION is the
+command body, applied to the command's parsed string arguments at dispatch; DOC
+an optional help string. A no-op (returns nil) unless the debugger UI is loaded."
+  (when clautolisp.autolisp-runtime:*debug-define-command-hook*
+    (funcall clautolisp.autolisp-runtime:*debug-define-command-hook*
+             (mapcar (lambda (s) (clautolisp.autolisp-runtime:autolisp-string-value s))
+                     names)
+             (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function)
+             (and doc (clautolisp.autolisp-runtime:autolisp-string-value doc))))
+  nil)
+
 (defun set-drawing-codepage (new-codepage-value)
   "Update the host's DWGCODEPAGE sysvar AND emit
 ENC-CODEPAGE-MISMATCH when the canonicalised new value differs
@@ -7670,6 +7683,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-SAVE-ALDO-CONFIGURATION" #'builtin-clal-save-aldo-configuration)
    (make-core-builtin-subr "CLAL-BREAK"            #'builtin-clal-break)
    (make-core-builtin-subr "CLAL-INVOKE-DEBUGGER"  #'builtin-clal-invoke-debugger)
+   (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
    (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
    (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)
    (make-core-builtin-subr "CLAL-ENABLE-ENC-DIAGNOSTIC"   #'builtin-clal-enable-enc-diagnostic)

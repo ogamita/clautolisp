@@ -1287,6 +1287,13 @@ caught autolisp-runtime-error BEFORE returning the AutoLISP error object
 (spec §10.2 'break on caught error'). The debugger installs this only when
 break-on-caught is enabled; NIL by default (off).")
 
+(defparameter *debug-define-command-hook* nil
+  "When non-nil, a function (NAMES FUNCTION DOC) the CLAL-DEFINE-DEBUGGER-COMMAND
+builtin calls to register an AutoLISP-defined debugger command (command
+reference §8). NAMES is a CL list (KEY WORD…) of strings, FUNCTION the AutoLISP
+command body, DOC a string or NIL. The aldo debugger UI installs it; NIL (a
+no-op) when the debug-ui layer is absent.")
+
 (defparameter *debug-break-hook* nil
   "When non-nil, a function of one optional MESSAGE argument that the
 CLAL-BREAK / CLAL-INVOKE-DEBUGGER builtins call to drop into the aldo debugger

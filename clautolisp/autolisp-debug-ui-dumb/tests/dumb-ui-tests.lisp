@@ -474,6 +474,35 @@
       (is (eql 7 result))                  ; user cmd returned nil → kept reading → c resumed
       (is (contains output "ZAPPED 42"))))) ; dispatched + parsed arg + reached the UI
 
+(test dumb-ui-autolisp-defined-command
+  ;; an AutoLISP function registered as a command (the AutoLISP-side
+  ;; define-debugger-command, command reference §8) dispatches in the dumb UI,
+  ;; receives its parsed arg as an AutoLISP string, and runs in the stop context.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (clautolisp.debug.ui:*global-dictionary*
+           (clautolisp.debug.ui:make-command-dictionary "test"))
+         ;; the command body: (lambda (n) (setq zz n)) — records its arg in ZZ
+         (fnval (clautolisp.autolisp-runtime:autolisp-eval
+                 (first (clautolisp.autolisp-runtime:read-runtime-from-string
+                         "(lambda (n) (setq zz n))"))
+                 context)))
+    (clautolisp.debug.ui::register-autolisp-command '("z" "zap") fnval nil)
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "zap hello~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore output))
+      (is (eql 7 result))
+      ;; the AutoLISP command body set ZZ to the passed arg "hello"
+      (is (string= "hello"
+                   (clautolisp.autolisp-runtime:autolisp-string-value
+                    (nth-value 0 (clautolisp.autolisp-runtime:lookup-variable
+                                  (rt-sym "ZZ") context))))))))
+
 (test dumb-ui-escape-word-reaches-builtin
   ;; the `debugger' escape word forces the built-in meaning of a token a user
   ;; command shadows (command reference §8).

@@ -181,6 +181,7 @@
    #:*autolisp-catch-stack*
    #:*autolisp-caught-error-hook*
    #:*debug-break-hook*
+   #:*debug-define-command-hook*
    #:autolisp-current-directory
    #:set-autolisp-current-directory
    #:autolisp-support-paths
