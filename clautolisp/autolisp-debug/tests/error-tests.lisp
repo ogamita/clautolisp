@@ -77,20 +77,33 @@
        (lambda () (eval-call context "FROB" 7)) :thread-info ti))
     (is (eql 1 catch-stack-len))))
 
-(test break-on-caught-installs-the-runtime-hook
+(test break-on-caught-hook-is-gated-by-the-flag
+  ;; The caught-error hook is now ALWAYS installed (so `,catch caught on' can
+  ;; enable breaking mid-session); whether it actually breaks is governed by the
+  ;; dynamic *break-on-caught-error* flag, which the session rebinds from
+  ;; BREAK-ON-CAUGHT. The unhandled path is likewise gated by *break-on-error*.
   (let* ((context (fresh-context))
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
-         (hook-during nil))
+         (hook-during nil) (caught-flag nil) (error-flag nil))
+    (declare (ignore context))
     (clautolisp.debug:call-with-debugging
-     (lambda () (setf hook-during clautolisp.autolisp-runtime:*autolisp-caught-error-hook*))
+     (lambda ()
+       (setf hook-during clautolisp.autolisp-runtime:*autolisp-caught-error-hook*
+             caught-flag clautolisp.debug:*break-on-caught-error*
+             error-flag  clautolisp.debug:*break-on-error*))
      :thread-info ti :break-on-caught t)
-    (is (not (null hook-during)))            ; hook armed under break-on-caught
-    ;; and NOT armed by default
-    (setf hook-during :unset)
+    (is (not (null hook-during)))            ; hook always armed
+    (is (eq t caught-flag))                  ; flag on under break-on-caught
+    (is (eq t error-flag))                   ; break-on-error on by default
+    ;; default session: hook still installed, but the caught flag is off
+    (setf hook-during :unset caught-flag :unset)
     (clautolisp.debug:call-with-debugging
-     (lambda () (setf hook-during clautolisp.autolisp-runtime:*autolisp-caught-error-hook*))
+     (lambda ()
+       (setf hook-during clautolisp.autolisp-runtime:*autolisp-caught-error-hook*
+             caught-flag clautolisp.debug:*break-on-caught-error*))
      :thread-info ti)
-    (is (null hook-during))))
+    (is (not (null hook-during)))            ; still installed
+    (is (null caught-flag))))                ; but inactive (no break)
 
 (test vl-catch-all-apply-records-catch-frame-and-fires-hook
   ;; End-to-end through the real builtin: it pushes a catch-frame onto the
