@@ -183,6 +183,8 @@ reading. A line that looks like (form) is eval-in-frame."
       ;; breakpoints (§2)
       ((member c '("b" "break") :test #'string=) (set-breakpoint-cmd ui session arg) nil)
       ((string= c "lb") (list-breakpoints-cmd ui session) nil)
+      ((member c '(",delete" "delete" ",clear" "clear") :test #'string=)
+       (delete-cmd ui session arg) nil)
       ;; stack and frames (§3)
       ((string= c "lf") (print-stack ui session) nil)
       ((member c '("f" "frame") :test #'string=) (frame-cmd ui session arg) nil)
@@ -208,6 +210,24 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '(",undisplay" "undisplay") :test #'string=) (undisplay-cmd ui arg) nil)
       ((member c '("h" "?" "help") :test #'string=) (print-help ui) nil)
       (t (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil))))
+
+(defun delete-cmd (ui session arg)
+  "`delete [N]' / `clear' — remove breakpoint N (the number shown by `lb'), or
+all breakpoints when no number is given (command reference §2). (The designator
+is the breakpoint id `lb' displays; it aligns to the poll-point number once
+that numbering is settled — design-notes register.)"
+  (let ((bps (cmd-list-breakpoints session)))
+    (cond
+      ((null bps) (out ui "DBG>   no breakpoints~%"))
+      ((null arg)
+       (dolist (bp bps) (cmd-remove-breakpoint session bp))
+       (out ui "DBG> deleted all breakpoints~%"))
+      (t (let* ((id (ignore-errors (parse-integer arg :junk-allowed t)))
+                (bp (and id (find id bps :key #'breakpoint-id))))
+           (if bp
+               (progn (cmd-remove-breakpoint session bp)
+                      (out ui "DBG> deleted breakpoint #~D~%" id))
+               (out ui "DBG> no breakpoint #~A~%" arg)))))))
 
 (defun advance-cmd (ui session arg)
   "`advance LINE' (=a=) — run to the poll point on LINE (§1). Returns the resume
@@ -384,7 +404,7 @@ refinement; all three currently show the visible bindings."
   (paged-out ui
    (format nil "DBG> commands: (command reference §0 vocabulary)~%~
             DBG>   c continue   i into   n next   o out   a LINE advance   r [FORM] return   q quit~%~
-            DBG>   b LINE break   lb list breakpoints~%~
+            DBG>   b LINE break   lb list breakpoints   delete [N] / clear~%~
             DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~
             DBG>   ll/lp/lv list locals/parameters/variables~%~
             DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source~%~
