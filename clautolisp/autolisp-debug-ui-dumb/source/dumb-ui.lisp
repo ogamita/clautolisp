@@ -197,6 +197,9 @@ reading. A line that looks like (form) is eval-in-frame."
       ((member c '(",disable" "disable") :test #'string=) (enable-cmd ui session arg nil) nil)
       ((member c '(",condition" "condition") :test #'string=) (condition-cmd ui session arg) nil)
       ((member c '(",ignore" "ignore") :test #'string=) (ignore-cmd ui session arg) nil)
+      ((member c '(",bpcmd" "bpcmd") :test #'string=) (bpcmd-cmd ui session arg) nil)
+      ((member c '("trace" ",trace") :test #'string=) (trace-cmd ui session arg) nil)
+      ((member c '("untrace" ",untrace") :test #'string=) (untrace-cmd ui session arg) nil)
       ;; stack and frames (§3)
       ((string= c "lf") (print-stack ui session) nil)
       ((member c '("f" "frame") :test #'string=) (frame-cmd ui session arg) nil)
@@ -293,6 +296,98 @@ condition, command reference §2)."
                    (lambda (hit) (declare (ignore hit))
                      (if (plusp remaining) (progn (decf remaining) nil) t))))
            (out ui "DBG> breakpoint pp~D will ignore the next ~D hit~:P~%" pp count))))))
+
+(defun make-bp-action (ui rform label)
+  "A breakpoint action (function of HIT): with RFORM, evaluate it at the poll
+point (debugging off) and print LABEL plus the value; without RFORM just print
+LABEL. Used by `bpcmd' (then stops) and `trace' (then continues)."
+  (lambda (hit)
+    (declare (ignore hit))
+    (if rform
+        (handler-case
+            (let ((*debugging* nil))
+              (out ui "~A ~A~%" label
+                   (preview (autolisp-eval rform (current-evaluation-context)) 200)))
+          (error (e) (out ui "~A <error: ~A>~%" label e)))
+        (out ui "~A~%" label))))
+
+(defun bpcmd-cmd (ui session arg)
+  "`bpcmd ppN [FORM]' — attach FORM to breakpoint ppN: when the breakpoint hits,
+FORM is evaluated and shown, then the debugger stops as usual (command reference
+§2). With no FORM, clear the attached command."
+  (multiple-value-bind (pp form) (split-pp-and-rest arg)
+    (let ((bp (find-bp-by-pp session pp)))
+      (cond
+        ((null bp) (out ui "DBG> bpcmd: no breakpoint pp~A~%" (or pp arg)))
+        ((null form) (set-breakpoint-action bp nil)
+                     (out ui "DBG> breakpoint pp~D command cleared~%" pp))
+        (t (let ((rform (ignore-errors (first (read-runtime-from-string form)))))
+             (if (null rform)
+                 (out ui "DBG> bpcmd: cannot read form ~S~%" form)
+                 (progn
+                   ;; TRACE NIL ⇒ run the action, then stop (bpcmd, not a tracepoint).
+                   (set-breakpoint-action
+                    bp (make-bp-action ui rform (format nil "DBG> pp~D:" pp)) :trace nil)
+                   (out ui "DBG> breakpoint pp~D command set~%" pp)))))))))
+
+(defun find-trace-breakpoint (session fid)
+  "The entry tracepoint (form-id 0, with an action, trace-p) on function FID, or
+NIL."
+  (find-if (lambda (b)
+             (and (= (breakpoint-fid b) fid) (= (breakpoint-form-id b) 0)
+                  (breakpoint-action b) (breakpoint-trace-p b)))
+           (cmd-list-breakpoints session)))
+
+(defun trace-cmd (ui session arg)
+  "`trace FN [FORM]' — trace function FN: each time it is entered, print a trace
+line (and FORM's value, if given), then continue transparently (command
+reference §6.4). Implemented as an auto-continuing breakpoint (a tracepoint) on
+FN's entry poll point."
+  (multiple-value-bind (sp) (and arg (position #\Space arg))
+    (let* ((name (and arg (string-trim " " (subseq arg 0 (or sp (length arg))))))
+           (rest (and sp (string-trim " " (subseq arg sp))))
+           (form (and rest (plusp (length rest)) rest)))
+      (cond
+        ((or (null name) (zerop (length name))) (out ui "DBG> trace: usage: trace FN [FORM]~%"))
+        (t (let ((metadata (metadata-for-name name)))
+             (cond
+               ((null metadata)
+                (out ui "DBG> trace: ~A is not instrumented~%" name))
+               (t (let* ((fid (function-debug-metadata-function-id metadata))
+                         (rform (and form (ignore-errors (first (read-runtime-from-string form))))))
+                    (when (and form (null rform))
+                      (out ui "DBG> trace: cannot read form ~S (tracing entry only)~%" form))
+                    (when (find-trace-breakpoint session fid)
+                      (out ui "DBG> trace: ~A already traced (replacing)~%" name)
+                      (cmd-remove-breakpoint session (find-trace-breakpoint session fid)))
+                    (cmd-set-breakpoint
+                     session fid 0 :when :before :steady t :trace t
+                     :action (make-bp-action ui rform (format nil "TRACE> ~A" name)))
+                    (out ui "DBG> tracing ~A~%" name))))))))))
+
+(defun untrace-cmd (ui session arg)
+  "`untrace [FN]' — stop tracing FN (or every traced function when no name is
+given); removes the entry tracepoint(s) (command reference §6.4)."
+  (let ((name (and arg (plusp (length (string-trim " " arg))) (string-trim " " arg))))
+    (cond
+      ((null name)
+       (let ((traced (remove-if-not (lambda (b)
+                                      (and (= (breakpoint-form-id b) 0)
+                                           (breakpoint-action b) (breakpoint-trace-p b)))
+                                    (cmd-list-breakpoints session))))
+         (if (null traced)
+             (out ui "DBG>   nothing traced~%")
+             (progn (dolist (b traced) (cmd-remove-breakpoint session b))
+                    (out ui "DBG> untraced ~D function~:P~%" (length traced))))))
+      (t (let ((metadata (metadata-for-name name)))
+           (if (null metadata)
+               (out ui "DBG> untrace: ~A is not instrumented~%" name)
+               (let ((bp (find-trace-breakpoint
+                          session (function-debug-metadata-function-id metadata))))
+                 (if bp
+                     (progn (cmd-remove-breakpoint session bp)
+                            (out ui "DBG> untraced ~A~%" name))
+                     (out ui "DBG> ~A is not traced~%" name)))))))))
 
 (defun enable-cmd (ui session arg enabled)
   "`enable [N]' / `disable [N]' — (de)activate breakpoint N (the number shown by
@@ -550,15 +645,24 @@ types into break/condition/…; TUI Numbered Poll-Points)."
                     (location-string (stack-frame-source-position frame)
                                      (stack-frame-function-name frame)))))))
 
+(defun breakpoint-annotations (bp)
+  "A trailing annotation string for a breakpoint listing — flags disabled,
+conditional, once, traced, bpcmd state (command reference §2)."
+  (with-output-to-string (s)
+    (unless (breakpoint-enabled-p bp) (write-string " (disabled)" s))
+    (when (breakpoint-condition bp) (write-string " (conditional)" s))
+    (unless (breakpoint-steady-p bp) (write-string " (once)" s))
+    (when (breakpoint-action bp)
+      (write-string (if (breakpoint-trace-p bp) " (traced)" " (bpcmd)") s))))
+
 (defun list-breakpoints-cmd (ui session)
   (let ((bps (cmd-list-breakpoints session)))
     (if bps
         (dolist (bp bps)
-          (out ui "DBG>   pp~D fid ~D form ~D ~A~:[ (disabled)~;~]~:[~; (conditional)~]~:[ (once)~;~]~%"
+          (out ui "DBG>   pp~D fid ~D form ~D ~A~A~%"
                (breakpoint-pp bp) (breakpoint-fid bp)
                (breakpoint-form-id bp) (breakpoint-when bp)
-               (breakpoint-enabled-p bp) (breakpoint-condition bp)
-               (breakpoint-steady-p bp)))
+               (breakpoint-annotations bp)))
         (out ui "DBG>   no breakpoints~%"))))
 
 (defun set-breakpoint-cmd (ui session arg &optional (steady t))
@@ -598,6 +702,7 @@ volatile — removed on first hit (`break once' / `bo', command reference §2)."
             DBG>   c continue   i into   n next   o out   a LINE advance   r [FORM] return   q quit~%~
             DBG>   b LINE|ppN break   bo break once   lb list breakpoints   delete [ppN] / clear~%~
             DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT~%~
+            DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]~%~
             DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom~%~
             DBG>   ll/lp/lv list locals/parameters/variables   list polls~%~
             DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source~%~

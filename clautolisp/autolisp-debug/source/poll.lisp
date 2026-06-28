@@ -67,11 +67,14 @@ debugged thread has armed a step or set a breakpoint covering this point
     (clear-volatile-breakpoints ti)
     (clear-step-request ti)
     (when (and breakpoint (breakpoint-action breakpoint))
-      ;; trace point: run the action, do not stop
+      ;; run the attached action; a tracepoint (TRACE-P) continues
+      ;; transparently, a bpcmd breakpoint (TRACE-P NIL) runs the action
+      ;; then falls through to the normal stop (spec §2, §6.4).
       (funcall (breakpoint-action breakpoint)
                (make-hit :thread-info ti :breakpoint breakpoint :fid fid
                          :form-id form-id :when when :stop-reason reason :metadata metadata))
-      (return-from handle-stop :continue))
+      (when (breakpoint-trace-p breakpoint)
+        (return-from handle-stop :continue)))
     (let ((hit (make-hit :thread-info ti :breakpoint breakpoint :fid fid
                          :form-id form-id :when when :stop-reason reason
                          :metadata metadata
