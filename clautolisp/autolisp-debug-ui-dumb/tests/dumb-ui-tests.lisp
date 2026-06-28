@@ -453,6 +453,44 @@
       (is (contains output "error off"))
       (is (contains output "caught on")))))
 
+(test dumb-ui-browse-goto-definition-history-back
+  ;; the source-browse stack (command reference §3): goto/definition push a
+  ;; (name . position), history lists it, back pops — none of which touch
+  ;; execution (TWO still returns 7).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "goto ID~%definition TWO~%history~%back~%goto NOPE~%c~%")
+                :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (is (eql 7 result))                                  ; browsing did not move execution
+      (is (contains output "ID:"))                         ; goto displayed ID
+      (is (contains output "TWO:"))                        ; definition displayed TWO
+      (is (contains output "0: TWO"))                      ; history, innermost first
+      (is (contains output "back to ID"))                  ; back popped to ID
+      (is (contains output "no instrumented function named NOPE")))))
+
+(test dumb-ui-search-lists-matching-functions
+  ;; `search PATTERN' lists instrumented functions whose name matches the
+  ;; wildcard (command reference §3, name search v1).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +two-source+ "TWO" "ID"))
+         (two (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti two 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "search *~%search z*~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "TWO") 7) context)))
+      (declare (ignore result))
+      (is (contains output "ID"))                          ; * matches both
+      (is (contains output "TWO"))
+      (is (contains output "no function name matches z*")))))  ; the miss
+
 (test dumb-ui-jump-skips-intervening-forms
   ;; `jump 4' from the setq (line 3) resumes at (id z) (line 4) WITHOUT running
   ;; the setq, so z is never assigned and TWO returns nil instead of 7 — the

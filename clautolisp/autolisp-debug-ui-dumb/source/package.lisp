@@ -28,7 +28,7 @@ UI refines.")
                 #:*break-on-error* #:*break-on-caught-error*
                 #:metadata-for-name #:all-function-metadata #:functions-matching
                 #:function-debug-metadata-function-id #:function-debug-metadata-usubr
-                #:function-debug-metadata-name
+                #:function-debug-metadata-name #:function-debug-metadata-source-position
                 #:function-debug-metadata-poll-point-count #:form-id-position)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-symbol-name #:read-runtime-from-string
