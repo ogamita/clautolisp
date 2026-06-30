@@ -531,7 +531,7 @@ or nil if FILENAME could not be opened for output."
       (progn
         (princ "dump-sysvars: cannot open file for writing: ")
         (princ filename)
-        (terpri)
+        (princ "\n")
         nil)
       (progn
         (setq count 0)
@@ -539,7 +539,7 @@ or nil if FILENAME could not be opened for output."
           (prin1 name f)              ; "NAME" (quoted, via prin1)
           (princ " " f)
           (prin1 (getvar name) f)     ; VALUE  (quoted if a string)
-          (terpri f)
+          (princ "\n" f)
           (setq count (1+ count)))
         (close f)
         count)))
