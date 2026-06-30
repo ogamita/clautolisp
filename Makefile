@@ -428,3 +428,10 @@ docker-build-clautolisp-ci:  ## Build the GitLab-CI Docker image used to run cla
 
 docker-push-clautolisp-ci: docker-build-clautolisp-ci  ## Build and push the CI image to the configured registry.
 	docker push "$(CLAUTOLISP_CI_IMAGE)"
+
+save-sysvars:
+	for backend in clautolisp autocad bricscad ; do \
+		alfe --$$backend --dialect $$backend --mode batch -norc \
+			-l autolisp-spec/autolisp/dump-sysvars.lsp \
+			-x "(dump-sysvars \"sysvars-$${backend}-$(uname).txt\")"  || true ;\
+	done
