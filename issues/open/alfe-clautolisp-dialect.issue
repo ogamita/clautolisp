@@ -1,7 +1,75 @@
-We need to add the --dialect option to alfe when we use --clautolisp.
+1- We need to add the --dialect option to alfe when we use --clautolisp.
 
 alfe --clautolisp --dialect strict|…|lax …
 alfe --bricscad                          …
 alfe --autocad                           …
 
 By default --clautolisp uses the strict dialect, but sometimes we want something else.
+When --bricscad or --autocad, then --dialect is ignored.
+
+2- add a --list-dialects option to clautolisp and alfe.
+
+--list-dialects  All the possible dialects passed to --dialect option are given:
+
+     strict
+     autocad-2022
+     autocad-2026
+     autocad
+     bricscad-v25
+     bricscad-v26
+     bricscad
+     clautolisp
+     lax
+
+Without a version, a dialect maps to the last known version.
+Always put strict first, and lax last.
+
+for dialect in $(clautolisp --list-dialects) ; do
+   clautolisp --dialect $dialect -l test.lsp -q
+done
+
+
+4- warnings should not be errors. This might be corrected by deferred-clautolisp-out-of-dialect-warnings.issue
+
+$ clautolisp
+alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+clautolisp 1.2.23 — REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+_$ ((lambda (s) (terpri s) (princ "Expected") (princ "Expected" s) (princ s) (close s))  (open "/tmp/foo" "a"))
+clautolisp: runtime error: WRONG-NUMBER-OF-ARGUMENTS: TERPRI takes no arguments in the strict dialect: `(terpri <file>)' is a clautolisp extension (AutoCAD 2026 and BricsCAD V26 document TERPRI as command-line-only). Use (princ "\n" <file>) for a portable file newline, or run under --dialect clautolisp.
+AutoLISP backtrace (most recent call first, 4 frames):
+  in SUBR TERPRI: (#<file /tmp/foo>)
+  in EVAL: (TERPRI S)
+  in USUBR LAMBDA: (#<file /tmp/foo>)
+  in EVAL: ((LAMBDA (S) (TERPRI S) (PRINC "Expected") (PRINC "Expected" S) (PRINC S) (CLOSE S)) (OPEN "/tmp/foo" "a"))
+_$
+
+dialect problems should be signaled with warnings, not errors.
+
+
+
+5- setting *AUTOLISP-DIALECT* should change the dialect
+dynamically. The second warning/error should have not occured:
+
+$ clautolisp
+alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+clautolisp 1.2.23 — REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+_$ *AUTOLISP-DIALECT*
+STRICT
+_$ ((lambda (s) (terpri s) (close s))  (open "/tmp/foo" "a"))
+clautolisp: runtime error: WRONG-NUMBER-OF-ARGUMENTS: TERPRI takes no arguments in the strict dialect: `(terpri <file>)' is a clautolisp extension (AutoCAD 2026 and BricsCAD V26 document TERPRI as command-line-only). Use (princ "\n" <file>) for a portable file newline, or run under --dialect clautolisp.
+AutoLISP backtrace (most recent call first, 4 frames):
+  in SUBR TERPRI: (#<file /tmp/foo>)
+  in EVAL: (TERPRI S)
+  in USUBR LAMBDA: (#<file /tmp/foo>)
+  in EVAL: ((LAMBDA (S) (TERPRI S) (CLOSE S)) (OPEN "/tmp/foo" "a"))
+_$ (setq *AUTOLISP-DIALECT* 'lax)
+LAX          <----------------------------- FROM HERE ON, IT SHOULD BE LAX ! ---------------
+_$ ((lambda (s) (terpri s) (close s))  (open "/tmp/foo" "a"))
+clautolisp: runtime error: WRONG-NUMBER-OF-ARGUMENTS: TERPRI takes no arguments in the strict dialect: `(terpri <file>)' is a clautolisp extension (AutoCAD 2026 and BricsCAD V26 document TERPRI as command-line-only). Use (princ "\n" <file>) for a portable file newline, or run under --dialect clautolisp.
+AutoLISP backtrace (most recent call first, 4 frames):
+  in SUBR TERPRI: (#<file /tmp/foo>)
+  in EVAL: (TERPRI S)
+  in USUBR LAMBDA: (#<file /tmp/foo>)
+  in EVAL: ((LAMBDA (S) (TERPRI S) (CLOSE S)) (OPEN "/tmp/foo" "a"))
+_$ (quit)
+clautolisp: terminated by QUIT
