@@ -1,5 +1,53 @@
 Diagnostic warnings when an out-of-dialect operator is used.
 
+RESOLVED (clautolisp 1.2.23).
+----------------------------
+Implemented on branch claude/out-of-dialect-warnings.
+
+  - Data file: build-paged-spec.el now emits
+    autolisp-spec build/pages/availability.txt — one
+    `SYMBOL<TAB>FLAGS' line per documented operator, FLAGS a subset
+    of "ABC" (A=AutoCAD, B=BricsCAD, C=clautolisp), derived from each
+    entry's *** Availability section (new tri-state helper
+    alref-build/operator-availability-flags-from-lines). symbols.txt
+    is left unchanged so the alref library's column-4 A/B expectation
+    is untouched. The install ships pages/ wholesale, so the file
+    lands at $PREFIX/share/autolisp-spec/pages/availability.txt.
+
+  - Runtime mechanism: clautolisp/autolisp-runtime/source/api.lisp.
+    maybe-warn-out-of-dialect-operator fires on the subr-dispatch
+    branch of call-autolisp-function-in-context; it emits one
+    `[out-of-dialect]' line to *error-output* on the FIRST call to an
+    operator outside the active dialect's documented surface, deduped
+    per (operator, session) via the new runtime-session slot
+    dialect-checked-operators. dialect-admits-operator-p encodes the
+    per-dialect set (Q4): strict = A∧B; autocad = A; bricscad = B;
+    clautolisp = (A∧B)∨C; lax = everything. The availability table is
+    loaded best-effort on first use from
+    *autolisp-operator-availability-file*, then
+    $CLAUTOLISP_OPERATOR_AVAILABILITY_FILE, then
+    $CLAUTOLISP_PREFIX/share/autolisp-spec/pages/availability.txt;
+    while no data is found the mechanism is inert.
+
+  - Silencing: bind *AUTOLISP-WARN-OUT-OF-DIALECT* to NIL.
+
+  - Tests: autolisp-runtime/tests/dialect-availability-tests.lisp
+    (parser, predicate matrix, once-per-session dedup, suppression,
+    inert-without-data, unknown-operator) and
+    autolisp-builtins-core/tests/out-of-dialect-tests.lisp (end-to-end
+    through the real evaluator + STRCAT: warns once under --strict,
+    deduped within a session, silent in-dialect and for portable ops).
+
+  - Docs: clautolisp-specifications.org and clautolisp-user-manual.org
+    § Dialect selection now describe the implemented behaviour instead
+    of pointing at this issue.
+
+Design-question answers recorded for the future warning-vs-warning
+distinction: this issue is the (operator, session) availability
+mechanism; the per-source-occurrence portability warnings of
+clautolisp-dialect-portability-warnings.issue (spec chapter 25) remain
+a separate track and are NOT folded into this one.
+
 The dialect-selection contract documented in
 clautolisp-user-manual.org § Dialect selection and in
 clautolisp-specifications.org § Dialect selection states:

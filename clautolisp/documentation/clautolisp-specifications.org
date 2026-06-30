@@ -163,10 +163,39 @@ Operator availability rule: regardless of dialect, every operator
 the runtime implements remains callable — the dialect descriptor
 gates DEFAULTS (encoding, token-mode, ~atof~ behaviour), not
 operator visibility. Calling an operator that lies outside the
-selected dialect's documented surface is eligible for a diagnostic
-warning at use time; the warning machinery itself is tracked
-separately (see ~deferred-clautolisp-out-of-dialect-warnings.issue~ in the
-project issue tracker).
+selected dialect's documented surface emits a single advisory
+diagnostic at use time and then runs normally.
+
+Out-of-dialect operator warnings (implemented):
+- The first call to an operator outside the active dialect's
+  documented surface prints one ~[out-of-dialect]~ line to standard
+  error; the warning fires at most once per (operator, session)
+  pair, so a loop around such a call warns once, not once per
+  iteration. Evaluation is never affected.
+- Per-dialect admission: ~strict~ admits only the cross-vendor
+  portable set (documented for AutoCAD AND BricsCAD); ~autocad-2026~
+  admits AutoCAD-documented operators; ~bricscad-v26~ admits
+  BricsCAD-documented operators; ~clautolisp~ admits the portable
+  set plus clautolisp extensions; ~lax~ admits everything (no
+  out-of-dialect warning).
+- Source of truth: the per-operator availability data is derived
+  from the ~autolisp-spec~ catalogue. ~build-paged-spec.el~ emits
+  ~pages/availability.txt~ (one ~SYMBOL<TAB>FLAGS~ line per
+  operator, FLAGS a subset of "ABC": A=AutoCAD, B=BricsCAD,
+  C=clautolisp), installed under
+  ~$PREFIX/share/autolisp-spec/pages/availability.txt~. The runtime
+  loads it best-effort on first use; while no data file is found the
+  mechanism is inert (nothing warns).
+- Controls: bind ~clautolisp.autolisp-runtime:*autolisp-warn-out-of-dialect*~
+  to ~nil~ to silence every such warning;
+  ~*autolisp-operator-availability-file*~ or the
+  ~CLAUTOLISP_OPERATOR_AVAILABILITY_FILE~ environment variable
+  override the data-file location.
+
+Implementation: ~clautolisp/autolisp-runtime/source/api.lisp~
+(~maybe-warn-out-of-dialect-operator~, ~dialect-admits-operator-p~,
+the availability loader) and the per-session dedup slot
+~dialect-checked-operators~ on the runtime session.
 
 ** Input selection
 - ~-l FILE~, ~--load FILE~ ::

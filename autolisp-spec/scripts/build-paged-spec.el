@@ -132,8 +132,15 @@ roots).
 FLAGS holds the spec-coverage letter set (a subset of \"AB\")
 derived from the entry's *** Availability section; computed
 once during the dedicated COMPUTE-AVAILABILITY pass before
-the body is destructively finalised by write-pages."
-  chapter level title slug body entry flags
+the body is destructively finalised by write-pages.
+
+OP-FLAGS is the tri-state availability letter set (a subset of
+\"ABC\", adding C for clautolisp) emitted into availability.txt
+and consumed by the runtime's out-of-dialect operator warnings
+(deferred-clautolisp-out-of-dialect-warnings.issue). It is kept
+separate from FLAGS so symbols.txt's column 4 stays the A/B set
+the alref library already expects."
+  chapter level title slug body entry flags op-flags
   prev next up)
 
 (defun alref-build/section-filename (section)
@@ -412,18 +419,61 @@ all flip the corresponding flag on."
         (setq tail (cdr tail))))
     flags))
 
+(defun alref-build/operator-availability-flags-from-lines (lines)
+  "Like `alref-build/availability-flags-from-lines', but tri-state: also
+recognises a `- clautolisp...: VALUE' line and adds 'C' to the returned
+flag string (unless the value starts with 'not'). The result is a subset
+of \"ABC\" — A=AutoCAD, B=BricsCAD, C=clautolisp — consumed by the
+runtime's out-of-dialect operator warnings via availability.txt.
+
+Kept distinct from the A/B `flags' that feed symbols.txt so the alref
+library's column-4 expectations are untouched."
+  (let ((tail lines)
+        (in-availability nil)
+        (flags ""))
+    (while tail
+      (let ((line (car tail)))
+        (cond
+          ((string-match-p "^\\*\\*\\* Availability\\b" line)
+           (setq in-availability t))
+          ((and in-availability (string-match-p "^\\*\\*\\*" line))
+           (setq in-availability nil))
+          (in-availability
+           (when (string-match
+                  "^-\\s-+AutoCAD\\b[^:]*:\\s-*\\(.*\\)$" line)
+             (let ((rest (string-trim (match-string 1 line))))
+               (unless (string-match-p "^not\\b" rest)
+                 (unless (cl-search "A" flags)
+                   (setq flags (concat flags "A"))))))
+           (when (string-match
+                  "^-\\s-+BricsCAD\\b[^:]*:\\s-*\\(.*\\)$" line)
+             (let ((rest (string-trim (match-string 1 line))))
+               (unless (string-match-p "^not\\b" rest)
+                 (unless (cl-search "B" flags)
+                   (setq flags (concat flags "B"))))))
+           (when (string-match
+                  "^-\\s-+clautolisp\\b[^:]*:\\s-*\\(.*\\)$" line)
+             (let ((rest (string-trim (match-string 1 line))))
+               (unless (string-match-p "^not\\b" rest)
+                 (unless (cl-search "C" flags)
+                   (setq flags (concat flags "C"))))))))
+        (setq tail (cdr tail))))
+    flags))
+
 (defun alref-build/compute-availability (sections)
-  "Populate the FLAGS slot of every entry-bearing SECTION before
-write-pages destructively reverses the body. Reads the body
-slot non-destructively (the slot still holds a reverse-order
-list at this point — we walk it in forward order via
-`reverse')."
+  "Populate the FLAGS (A/B, for symbols.txt) and OP-FLAGS (A/B/C, for
+availability.txt) slots of every entry-bearing SECTION before write-pages
+destructively reverses the body. Reads the body slot non-destructively
+(the slot still holds a reverse-order list at this point — we walk it in
+forward order via `reverse')."
   (dolist (section sections)
     (when (alref-build/section-entry section)
       (let* ((rev-body (alref-build/section-body section))
-             (lines (reverse rev-body))
-             (flags (alref-build/availability-flags-from-lines lines)))
-        (setf (alref-build/section-flags section) flags)))))
+             (lines (reverse rev-body)))
+        (setf (alref-build/section-flags section)
+              (alref-build/availability-flags-from-lines lines))
+        (setf (alref-build/section-op-flags section)
+              (alref-build/operator-availability-flags-from-lines lines))))))
 
 (defun alref-build/disambiguate-slugs (sections)
   "Walk SECTIONS in order and ensure every (chapter, slug) pair is
@@ -507,6 +557,36 @@ and ignore the trailing tab + flags."
             (insert (or (alref-build/section-flags section) ""))
             (insert "\n")))))))
 
+(defconst alref-build/operator-kinds
+  '("Function" "Special Form" "Macro")
+  "Entry KINDs that name a callable operator, and so get a line in
+availability.txt. Variables, types and reader syntax are excluded — the
+out-of-dialect warning only fires on operator application.")
+
+(defun alref-build/write-availability (sections output-dir)
+  "Write OUTPUT-DIR/availability.txt — one `SYMBOL\tFLAGS` line per
+documented operator (entry KIND in `alref-build/operator-kinds'). FLAGS is
+the tri-state OP-FLAGS letter set (subset of \"ABC\": A=AutoCAD,
+B=BricsCAD, C=clautolisp) from the entry's *** Availability section.
+
+This is the data file the clautolisp runtime consumes for its
+out-of-dialect operator warnings (deferred-clautolisp-out-of-dialect-
+warnings.issue): an operator whose flags lie outside the active dialect's
+documented surface gets a single advisory diagnostic on first use."
+  (let ((path (expand-file-name "availability.txt" output-dir)))
+    (with-temp-file path
+      (insert "# SYMBOL<TAB>FLAGS  (A=AutoCAD B=BricsCAD C=clautolisp)\n")
+      (insert "# Generated by build-paged-spec.el from the *** Availability\n")
+      (insert "# sections of the AutoLISP/Visual-LISP specification draft.\n")
+      (dolist (section sections)
+        (let ((entry (alref-build/section-entry section)))
+          (when (and entry
+                     (member (car entry) alref-build/operator-kinds))
+            (insert (cdr entry))
+            (insert "\t")
+            (insert (or (alref-build/section-op-flags section) ""))
+            (insert "\n")))))))
+
 ;;; --- main ----------------------------------------------------------
 
 (let* ((argv (alref-build/argv))
@@ -529,4 +609,5 @@ and ignore the trailing tab + flags."
     (let ((count (alref-build/write-pages sections output-dir format)))
       (alref-build/write-index sections output-dir)
       (alref-build/write-symbols sections output-dir)
+      (alref-build/write-availability sections output-dir)
       (message "build-paged-spec: emitted %d pages." count))))

@@ -432,6 +432,189 @@ profiles between subordinate evaluations within a single session."
             (clautolisp.autolisp-runtime.internal::evaluation-context-session context)))
       (clautolisp.autolisp-reader:autolisp-dialect-strict)))
 
+;;; --- Out-of-dialect operator warnings ------------------------------
+;;;
+;;; deferred-clautolisp-out-of-dialect-warnings.issue. The dialect-
+;;; selection contract (clautolisp-specifications.org / -user-manual.org
+;;; § Dialect selection) is: whatever the dialect, EVERY operator the
+;;; runtime implements stays callable; only operators that lie OUTSIDE
+;;; the documented surface of the selected dialect produce a warning when
+;;; used. This block is the run-time half of that contract.
+;;;
+;;; The per-operator availability data is derived from the autolisp-spec
+;;; catalogue (build/pages/availability.txt — one `SYMBOL<TAB>FLAGS' line
+;;; per documented operator, FLAGS a subset of "ABC": A=AutoCAD,
+;;; B=BricsCAD, C=clautolisp). It is loaded best-effort at first use and
+;;; can be injected directly by tests. While no data is loaded the whole
+;;; mechanism is inert — no operator can be judged out-of-dialect, so
+;;; nothing warns.
+;;;
+;;; The warning is advisory only: like the encoding and SECURELOAD
+;;; diagnostics above, it never changes evaluation — the operator runs
+;;; regardless. It fires at most once per (operator, session) pair.
+
+(defparameter *autolisp-warn-out-of-dialect* t
+  "Master switch for the out-of-dialect operator diagnostic. When NIL,
+MAYBE-WARN-OUT-OF-DIALECT-OPERATOR is a no-op so production code can
+silence every such warning. Default T.")
+
+(defparameter *out-of-dialect-diagnostic-stream* nil
+  "Stream the out-of-dialect operator diagnostic is written to. NIL falls
+back to *error-output* at call time. Tests rebind this to a string stream
+to assert on the output without printing to the real stderr.")
+
+(defparameter *autolisp-operator-availability* nil
+  "Hash-table mapping an uppercased operator-name string to its vendor
+availability FLAGS (a string subset of \"ABC\": A=AutoCAD, B=BricsCAD,
+C=clautolisp), or NIL when no availability data has been loaded. While
+NIL the out-of-dialect machinery is inert. Tests bind this to a fixture
+table; production loads it from the installed availability.txt.")
+
+(defparameter *autolisp-operator-availability-file* nil
+  "Explicit override path to an availability.txt data file. When non-NIL,
+ENSURE-OPERATOR-AVAILABILITY-LOADED reads it in preference to the
+environment / install-prefix resolution.")
+
+(defvar *operator-availability-load-attempted* nil
+  "True once ENSURE-OPERATOR-AVAILABILITY-LOADED has tried to resolve the
+data file, so a missing file is not re-probed on every operator call.")
+
+(defun parse-operator-availability-stream (stream)
+  "Read availability lines from STREAM into a fresh hash-table mapping an
+uppercased operator name to its FLAGS string. Each line is
+`SYMBOL<TAB>FLAGS' where FLAGS is a subset of \"ABC\"; a line without a
+tab maps to the empty flag set. Blank lines and lines beginning with `#'
+are ignored. Only the recognised vendor letters A/B/C are retained."
+  (let ((table (make-hash-table :test #'equal)))
+    (loop for raw = (read-line stream nil nil)
+          while raw
+          do (let ((line (string-trim '(#\Space #\Tab #\Return #\Newline) raw)))
+               (unless (or (zerop (length line)) (char= (char line 0) #\#))
+                 (let* ((tab (position #\Tab line))
+                        (name (string-upcase
+                               (string-trim '(#\Space #\Tab)
+                                            (if tab (subseq line 0 tab) line))))
+                        (flags (if tab
+                                   (string-upcase
+                                    (string-trim '(#\Space #\Tab #\Return)
+                                                 (subseq line (1+ tab))))
+                                   "")))
+                   (when (plusp (length name))
+                     (setf (gethash name table)
+                           (remove-if-not (lambda (c) (find c "ABC")) flags))))))
+          finally (return table))))
+
+(defun load-operator-availability-from-file (path)
+  "Parse the availability data file at PATH and install the resulting
+table as *AUTOLISP-OPERATOR-AVAILABILITY*, returning it. Signals on an
+unreadable file — callers that want best-effort loading wrap this in
+IGNORE-ERRORS (see ENSURE-OPERATOR-AVAILABILITY-LOADED)."
+  (with-open-file (in path :direction :input :external-format :utf-8)
+    (setf *autolisp-operator-availability*
+          (parse-operator-availability-stream in))))
+
+(defun resolve-operator-availability-file ()
+  "Return a pathname to an availability.txt data file, or NIL. Resolution
+order, first existing readable file wins:
+
+  1. *AUTOLISP-OPERATOR-AVAILABILITY-FILE* (explicit override),
+  2. $CLAUTOLISP_OPERATOR_AVAILABILITY_FILE,
+  3. $CLAUTOLISP_PREFIX/share/autolisp-spec/pages/availability.txt
+     (the install layout — see autolisp-spec/Makefile)."
+  (flet ((existing (p) (and p (probe-file p)))
+         (nonempty (v) (and v (plusp (length v)) v)))
+    (or (existing *autolisp-operator-availability-file*)
+        (existing (nonempty (uiop:getenv "CLAUTOLISP_OPERATOR_AVAILABILITY_FILE")))
+        (existing (let ((prefix (nonempty (uiop:getenv "CLAUTOLISP_PREFIX"))))
+                    (and prefix
+                         (format nil "~A/share/autolisp-spec/pages/availability.txt"
+                                 (string-right-trim "/" prefix))))))))
+
+(defun ensure-operator-availability-loaded ()
+  "Return the operator-availability table, loading it from the resolved
+data file on first need. A table already bound into
+*AUTOLISP-OPERATOR-AVAILABILITY* (e.g. by tests, or by an earlier load)
+is returned as-is and never overwritten. Returns NIL — leaving the
+mechanism inert — when no data file is available."
+  (or *autolisp-operator-availability*
+      (unless *operator-availability-load-attempted*
+        (setf *operator-availability-load-attempted* t)
+        (let ((file (resolve-operator-availability-file)))
+          (when file
+            (ignore-errors (load-operator-availability-from-file file)))))))
+
+(defun dialect-admits-operator-p (dialect-name flags)
+  "True when an operator whose vendor availability is FLAGS (a string
+subset of \"ABC\") is part of the documented surface of the dialect named
+DIALECT-NAME — i.e. its use should NOT warn:
+
+  :lax           admits everything (the catch-all multi-vendor mode);
+  :autocad-2026  admits operators AutoCAD documents (A);
+  :bricscad-v26  admits operators BricsCAD documents (B);
+  :strict        admits only the cross-vendor portable set (A AND B);
+  :clautolisp    admits the portable set (A AND B) plus clautolisp
+                 extensions (C);
+  anything else  admits everything (unknown dialect: never warn).
+
+See clautolisp-specifications.org § Dialect selection and the issue's
+design note Q4 for the strict/clautolisp rationale."
+  (flet ((has (ch) (and (find ch flags) t)))
+    (case dialect-name
+      ((:lax) t)
+      ((:autocad-2026) (has #\A))
+      ((:bricscad-v26) (has #\B))
+      ((:strict) (and (has #\A) (has #\B)))
+      ((:clautolisp) (or (and (has #\A) (has #\B)) (has #\C)))
+      (t t))))
+
+(defun availability-vendor-list (flags)
+  "Human-readable rendering of the vendors recorded in FLAGS, e.g.
+\"AutoCAD, BricsCAD\", or NIL when FLAGS names no recognised vendor."
+  (let ((parts '()))
+    (when (find #\A flags) (push "AutoCAD" parts))
+    (when (find #\B flags) (push "BricsCAD" parts))
+    (when (find #\C flags) (push "clautolisp" parts))
+    (when parts (format nil "~{~A~^, ~}" (nreverse parts)))))
+
+(defun emit-out-of-dialect-warning (name dialect-name flags)
+  "Write the single advisory `[out-of-dialect]' diagnostic for operator
+NAME to *OUT-OF-DIALECT-DIAGNOSTIC-STREAM* (default *error-output*)."
+  (let ((stream (or *out-of-dialect-diagnostic-stream* *error-output*)))
+    (fresh-line stream)
+    (format stream
+            "[out-of-dialect] ~A is outside the ~(~A~) dialect~@[ (documented for: ~A)~]; ~
+it may not be portable to that target."
+            name (or dialect-name :strict) (availability-vendor-list flags))
+    (terpri stream)
+    (force-output stream)))
+
+(defun maybe-warn-out-of-dialect-operator (name context)
+  "If NAME (an uppercased operator-name string) lies outside the active
+dialect's documented surface, emit a single advisory diagnostic and record
+NAME on the session so the warning fires at most once per (operator,
+session) pair. Inert when *AUTOLISP-WARN-OUT-OF-DIALECT* is NIL or no
+availability data is loaded. Never affects evaluation."
+  (when *autolisp-warn-out-of-dialect*
+    (let ((table (ensure-operator-availability-loaded)))
+      (when table
+        (let* ((session (and context
+                             (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                              context)))
+               (checked (and session
+                             (clautolisp.autolisp-runtime.internal::runtime-session-dialect-checked-operators
+                              session))))
+          (unless (and checked (gethash name checked))
+            ;; Record BEFORE we decide, so even the warning path runs once.
+            (when checked (setf (gethash name checked) t))
+            (let ((flags (gethash name table)))
+              (when flags
+                (let* ((dialect (ignore-errors (current-evaluation-dialect context)))
+                       (dname (and dialect
+                                   (clautolisp.autolisp-reader:autolisp-dialect-name
+                                    dialect))))
+                  (unless (dialect-admits-operator-p dname flags)
+                    (emit-out-of-dialect-warning name dname flags)))))))))))
+
 (defun runtime-session-current-document (session)
   (clautolisp.autolisp-runtime.internal::runtime-session-current-document session))
 
@@ -1778,6 +1961,11 @@ flag only."
     (let ((result
             (cond
               ((typep function 'autolisp-subr)
+               ;; Out-of-dialect advisory: builtins are the only operators
+               ;; that can be vendor-specific (user functions never are), so
+               ;; the once-per-(operator, session) check lives on this branch.
+               (maybe-warn-out-of-dialect-operator (autolisp-subr-name function)
+                                                    context)
                (let ((*autolisp-call-stack*
                       (cons (cons :subr
                                   (cons (autolisp-subr-name function) arguments))

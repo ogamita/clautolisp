@@ -287,6 +287,17 @@
    #:*secureload-diagnostic-suppress-p*
    #:*secureload-diagnostic-codes*
    #:signal-secureload-diagnostic
+   ;; Out-of-dialect operator warnings
+   ;; (deferred-clautolisp-out-of-dialect-warnings.issue).
+   #:*autolisp-warn-out-of-dialect*
+   #:*out-of-dialect-diagnostic-stream*
+   #:*autolisp-operator-availability*
+   #:*autolisp-operator-availability-file*
+   #:parse-operator-availability-stream
+   #:load-operator-availability-from-file
+   #:ensure-operator-availability-loaded
+   #:dialect-admits-operator-p
+   #:maybe-warn-out-of-dialect-operator
    ;; Terminal colour-output policy. *COLOR-OUTPUT* is the single
    ;; switch the AUTOLISP-SYMBOL PRINT-OBJECT method consults; the
    ;; CLI calls RESOLVE-COLOR-POLICY at startup, binds the result

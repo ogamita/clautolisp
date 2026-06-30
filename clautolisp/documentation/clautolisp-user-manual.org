@@ -119,7 +119,30 @@ The ~clautolisp~ dialect includes `clautolisp extensions`
 
 Whatever the dialect selected, all the operators are available. Only
 those that are not specifically inside the set defined by the dialect
-produce warnings when compiled and when used.
+produce warnings when used.
+
+The first time a program calls an operator that lies outside the
+active dialect's documented surface, clautolisp prints a single
+advisory line to standard error, for example:
+
+: [out-of-dialect] VLAX-CREATE-OBJECT is outside the strict dialect (documented for: BricsCAD); it may not be portable to that target.
+
+The operator still runs — the warning is advisory only. It fires at
+most once per operator per run (a loop warns once, not once per
+iteration). Under ~--strict~ an operator must be documented for both
+AutoCAD and BricsCAD to be in-dialect; ~--autocad~ / ~--bricscad~
+admit that vendor's operators; ~--clautolisp~ admits the cross-vendor
+portable set plus clautolisp's own extensions; ~--lax~ never emits the
+warning.
+
+The per-operator availability data ships with the ~autolisp-spec~
+package as ~$PREFIX/share/autolisp-spec/pages/availability.txt~ and is
+loaded automatically. To point clautolisp at a different copy, set the
+~CLAUTOLISP_OPERATOR_AVAILABILITY_FILE~ environment variable. When no
+data file is found the warnings are simply not emitted. To silence the
+warnings while keeping the data loaded, bind the special variable
+~clautolisp.autolisp-runtime:*autolisp-warn-out-of-dialect*~ to ~nil~
+(e.g. from an init file).
 
 Unknown dialect names produce a diagnostic on standard error and exit
 code 1.

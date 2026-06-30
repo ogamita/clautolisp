@@ -121,6 +121,15 @@ clautolisp-secureload-trust-model spec.")
   ;; argument tuples onto this list (newest first). Tests inspect
   ;; the list, then clear it. Production callers leave it nil.
   (event-trace nil)
+  ;; Out-of-dialect operator warnings (deferred-clautolisp-out-of-
+  ;; dialect-warnings.issue). The set of operator-name strings already
+  ;; evaluated for out-of-dialect status in THIS session, so the
+  ;; advisory diagnostic fires at most once per (operator, session)
+  ;; pair. Keyed by the uppercased operator name; a present key means
+  ;; "already checked" — whether or not that check produced a warning —
+  ;; which also keeps the per-call cost on the hot path down to a single
+  ;; hash lookup after the first call.
+  (dialect-checked-operators (make-hash-table :test #'equal))
   ;; Session-level source-file encoding override. When non-nil
   ;; (a keyword such as :UTF-8 / :ISO-8859-1 / :WINDOWS-1252),
   ;; AUTOLISP-LOAD-FILE-IN-CONTEXT uses this instead of the

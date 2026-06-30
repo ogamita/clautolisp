@@ -191,7 +191,6 @@ autolisp-spec-questions.issue
 
 
 complete-unit-tests.issue
-deferred-clautolisp-out-of-dialect-warnings.issue
 deferred-command-special-form.issue
 deferred-spec-research.issue
 deferred-stubbed-functions.issue

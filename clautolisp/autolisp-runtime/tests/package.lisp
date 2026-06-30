@@ -63,6 +63,13 @@
                 #:make-autolisp-string
                 #:make-autolisp-subr
                 #:make-runtime-session
+                #:make-default-runtime-context
+                #:*autolisp-warn-out-of-dialect*
+                #:*out-of-dialect-diagnostic-stream*
+                #:*autolisp-operator-availability*
+                #:parse-operator-availability-stream
+                #:dialect-admits-operator-p
+                #:ensure-operator-availability-loaded
                 #:make-separate-vlx-namespace
                 #:namespace-function-cell
                 #:namespace-value-cell
