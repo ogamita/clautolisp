@@ -1,0 +1,88 @@
+alfe (bricscad backend) leaks file-destined output onto stdout
+
+Status: closed (resolved on branch
+claude/alfe-bricscad-stdout-fix-fv9q1r, alfe 1.2.7).
+
+## Report
+
+A user AutoLISP script that opens a file and writes to it with the
+printing primitives -- e.g.
+
+    (setq f (open "report.txt" "w"))
+    (princ "hello" f)
+    (print '(1 2 3) f)
+    (close f)
+
+saw "hello" and "(1 2 3)" show up on alfe's stdout (the drained
+`protocol/stdout.txt` channel) instead of inside `report.txt`, which
+was left empty. In other words: output destined for a file the script
+opened kept coming out on stdout.
+
+## Root cause
+
+alfe shadows `print` / `princ` / `prin1` on the CAD side so that
+interactive output is captured into the file-IPC stdout slot rather
+than vanishing into the CAD's session log. There are two shadow
+variants:
+
+  1. The 1-arg shadows in
+     `autolisp-front-end/source/runtime/autolisp-bootstrap.lsp`
+     (the fallback for hosts whose `defun` lacks `&rest`).
+  2. The variadic `(&rest args)` shadows emitted into
+     `run-common.lsp` by
+     `autolisp-front-end/source/file-protocol.lisp` when the host
+     supports `&rest` -- the path BricsCAD V26 actually takes.
+
+Both variants only ever consumed the *first* argument and dropped
+AutoLISP's optional file-descriptor argument. The variadic version
+even documented the drop as intentional:
+
+    ;; (princ obj filedes)-> filedes silently dropped (alfe protocol
+    ;;                       captures everything to protocol/stdout.txt;
+    ;;                       routing per-call to an arbitrary handle is
+    ;;                       out of scope for the bridge).
+
+BricsCAD AutoLISP does not error on extra arguments to a user `defun`,
+so `(princ obj f)` silently fell through to the stdout-capture branch
+instead of writing to `f`.
+
+The default in-process clautolisp backend was never affected -- its
+Common-Lisp `princ`/`print`/`prin1` builtins
+(`clautolisp/autolisp-builtins-core/source/api.lisp`) already honour
+the optional file argument via `output-stream-for-file`.
+
+## Resolution
+
+Both shadow variants now honour the file-descriptor argument:
+
+  - when a descriptor is supplied, the rendered text is written to
+    that open file and the input object is returned;
+  - when it is absent (the common no-descriptor call), the previous
+    protocol-capture behaviour is preserved verbatim.
+
+`autolisp-bootstrap.lsp` gains a small helper
+`autolisp-write-string-to-file` that writes a string to an open
+descriptor one character at a time via the (un-shadowed) `write-char`
+-- this reaches the genuine file without needing the original,
+now-shadowed, printer. The variadic shadows in `file-protocol.lisp`
+reuse that helper (the bootstrap is always loaded before the bridge).
+
+`print`-to-file reproduces AutoLISP's documented framing (a leading
+newline before the value and a trailing space after it); `princ` uses
+the princ-style rendering, `prin1` the read-able one -- matching the
+clautolisp builtins.
+
+The helper and its callers stay ASCII-only, per the standing rule for
+the vendored runtime + bootstrap (any byte > 127 has historically
+tripped a BricsCAD / clautolisp LOAD failure).
+
+## Tests
+
+`protocol-emit-run-common-lsp-installs-variadic-shadows` in
+`autolisp-front-end/tests/file-protocol-tests.lisp` now asserts the
+emitted `run-common.lsp` routes through `autolisp-write-string-to-file`
+on the `(cadr args)` file-descriptor branch, and that the old
+"filedes silently dropped" comment is gone so the drop cannot be
+reinstated unnoticed. The existing
+`vendored-runtime-lsp-paren-balance` test continues to pin paren
+balance on the edited bootstrap.

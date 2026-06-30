@@ -1177,26 +1177,37 @@ Returns the path of the emitted file."
   (progn~%~
     (alfe-debug-log~%~
       \"host supports &rest; installing variadic shadows + no-op normalize\")~%~
-    ;; (princ)            -> newline (alias for autolisp-princ-newline).~%~
-    ;; (princ obj)        -> write obj to protocol stdout, return obj.~%~
-    ;; (princ obj filedes)-> filedes silently dropped (alfe protocol~%~
-    ;;                       captures everything to protocol/stdout.txt;~%~
-    ;;                       routing per-call to an arbitrary handle is~%~
-    ;;                       out of scope for the bridge).~%~
+    ;; (princ)             -> newline (alias for autolisp-princ-newline).~%~
+    ;; (princ obj)         -> write obj to protocol stdout, return obj.~%~
+    ;; (princ obj filedes) -> write obj to the open file FILEDES (a~%~
+    ;;                        descriptor from (open ...)) and return~%~
+    ;;                        obj. Output destined for a user-opened~%~
+    ;;                        file must NOT leak onto protocol/stdout.txt.~%~
+    ;;                        See issues/closed/alfe-bricscad-open.issue.~%~
+    ;;                        autolisp-write-string-to-file lives in the~%~
+    ;;                        bootstrap, loaded before this bridge.~%~
     (defun princ (&rest args)~%~
       (cond~%~
         ((null args)~%~
           (autolisp-princ-newline))~%~
+        ((cadr args)~%~
+          (autolisp-write-string-to-file (autolisp-str (car args)) (cadr args))~%~
+          (car args))~%~
         (T~%~
           (autolisp-emit-user-line (autolisp-str (car args)))~%~
           (car args))))~%~
-    ;; (print obj) writes a leading newline before obj — matches the~%~
-    ;; documented AutoLISP semantics. (print) with no args degrades~%~
-    ;; to a bare newline.~%~
+    ;; (print obj) writes a leading newline before obj; (print obj~%~
+    ;; filedes) writes the documented leading-newline + trailing-space~%~
+    ;; framing to the file. (print) with no args degrades to a bare~%~
+    ;; newline.~%~
     (defun print (&rest args)~%~
       (cond~%~
         ((null args)~%~
           (autolisp-princ-newline))~%~
+        ((cadr args)~%~
+          (autolisp-write-string-to-file~%~
+            (strcat \"\\n\" (autolisp-stdout-text (car args)) \" \") (cadr args))~%~
+          (car args))~%~
         (T~%~
           (autolisp-princ-newline)~%~
           (autolisp-emit-user-out (car args)))))~%~
@@ -1204,6 +1215,9 @@ Returns the path of the emitted file."
       (cond~%~
         ((null args)~%~
           (autolisp-emit-user-out nil))~%~
+        ((cadr args)~%~
+          (autolisp-write-string-to-file (autolisp-stdout-text (car args)) (cadr args))~%~
+          (car args))~%~
         (T~%~
           (autolisp-emit-user-out (car args)))))~%~
     (defun prompt (&rest args)~%~

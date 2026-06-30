@@ -871,17 +871,56 @@
       (strcat "WARN log-setup: "
               (vl-catch-all-error-message _autolisp_log_setup_result))))
   (setq *AUTOLISP_LOG_STATE* _autolisp_log_setup_result))
-;; Mirror interactive output to OUTFILE so results do not depend on CAD session logs.
-(defun print (obj)
-  (autolisp-princ-newline)
-  (autolisp-emit-user-out obj))
+;; Write TEXT verbatim to an already-open file descriptor FILE, one
+;; character at a time. write-char is NOT shadowed by the bootstrap, so
+;; this reaches the genuine file. Used by the file-bound branch of the
+;; print/princ/prin1 shadows below: when the user passes a descriptor
+;; opened with (open path "w"|"a"), the output must land in that file,
+;; not in the captured-stdout / protocol slot. Going through
+;; (ascii (substr ...)) avoids needing the original (now-shadowed)
+;; printer to reach the file. Keep ASCII-only (see the note in
+;; autolisp-source-load-run-body-impl): every byte > 127 has tripped a
+;; BricsCAD / clautolisp LOAD failure.
+(defun autolisp-write-string-to-file (text file / idx len)
+  (setq idx 1)
+  (setq len (strlen text))
+  (while (<= idx len)
+    (write-char (ascii (substr text idx 1)) file)
+    (setq idx (+ idx 1)))
+  nil)
 
-(defun princ (obj)
-  (autolisp-emit-user-line (autolisp-str obj))
-  obj)
+;; Mirror interactive output to OUTFILE so results do not depend on CAD
+;; session logs. All three honour AutoLISP's optional file-descriptor
+;; argument: (princ obj f) / (print obj f) / (prin1 obj f) write to the
+;; open file F instead of the captured-stdout slot -- otherwise output
+;; destined for a user-opened file leaks onto stdout. See
+;; issues/closed/alfe-bricscad-open.issue. FILE is nil for the common
+;; no-descriptor call, which keeps the previous protocol behaviour.
+(defun print (obj file)
+  (if file
+    (progn
+      (autolisp-write-string-to-file
+        (strcat "\n" (autolisp-stdout-text obj) " ") file)
+      obj)
+    (progn
+      (autolisp-princ-newline)
+      (autolisp-emit-user-out obj))))
 
-(defun prin1 (obj)
-  (autolisp-emit-user-out obj))
+(defun princ (obj file)
+  (if file
+    (progn
+      (autolisp-write-string-to-file (autolisp-str obj) file)
+      obj)
+    (progn
+      (autolisp-emit-user-line (autolisp-str obj))
+      obj)))
+
+(defun prin1 (obj file)
+  (if file
+    (progn
+      (autolisp-write-string-to-file (autolisp-stdout-text obj) file)
+      obj)
+    (autolisp-emit-user-out obj)))
 
 (defun autolisp-princ-newline ()
   (if *AUTOLISP_CAPTURE_STDOUT*
