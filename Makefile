@@ -429,9 +429,16 @@ docker-build-clautolisp-ci:  ## Build the GitLab-CI Docker image used to run cla
 docker-push-clautolisp-ci: docker-build-clautolisp-ci  ## Build and push the CI image to the configured registry.
 	docker push "$(CLAUTOLISP_CI_IMAGE)"
 
-save-sysvars:
+save-sysvars: ## Dumps the sysvars of various implementations and configuration in sysvars-*.txt files.
 	for backend in clautolisp autocad bricscad ; do \
-		alfe --$$backend --dialect $$backend --mode batch -norc \
+		alfe --$$backend --mode batch \
+			-norc \
 			-l autolisp-spec/autolisp/dump-sysvars.lsp \
-			-x "(dump-sysvars \"sysvars-$${backend}-$(uname).txt\")"  || true ;\
+			-x "(dump-sysvars \"sysvars-alfe-$$(uname)-$${backend}.txt\")"  || true ;\
+	done
+	for dialect in strict autocad bricscad clautolisp lax ; do \
+		clautolisp --dialect $$dialect \
+			-norc \
+			-l autolisp-spec/autolisp/dump-sysvars.lsp \
+			-x "(dump-sysvars \"sysvars-clautolisp-$$(uname)-$${dialect}.txt\")"  || true ;\
 	done
