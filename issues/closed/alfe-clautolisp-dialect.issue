@@ -73,3 +73,47 @@ AutoLISP backtrace (most recent call first, 4 frames):
   in EVAL: ((LAMBDA (S) (TERPRI S) (CLOSE S)) (OPEN "/tmp/foo" "a"))
 _$ (quit)
 clautolisp: terminated by QUIT
+
+----------------------------------------------------------------------
+RESOLVED 1.2.24 -> closed/  (all points)
+
+1- alfe --dialect under --clautolisp (decoupled backend / dialect).
+   alfe's --clautolisp/--autocad/--bricscad now set ONLY the backend.
+   New EFFECTIVE-DIALECT (cli.lisp) resolves the dialect: a CAD backend
+   imposes its own dialect and IGNORES --dialect; the clautolisp backend
+   honours --dialect (any order) defaulting to strict. The backend's
+   resolve-clautolisp-dialect no longer collapses :clautolisp -> strict,
+   so `alfe --clautolisp --dialect clautolisp` now actually enables the
+   clautolisp dialect. Verified: `--clautolisp` warns (strict default),
+   `--clautolisp --dialect clautolisp` and `--dialect lax --clautolisp`
+   are silent (order-independent). The standalone clautolisp binary's
+   --clautolisp (= clautolisp dialect) is unchanged.
+
+2- --list-dialects on clautolisp AND alfe (shared CLI option) prints,
+   one per line, in canonical order: strict, autocad-2022, autocad-2026,
+   autocad, bricscad-v25, bricscad-v26, bricscad, clautolisp, lax
+   (strict first, lax last). New reader registry entries: autocad-2022
+   (legacy ISO-8859-1 default, pre-UTF-8), bricscad-v25 (== v26 for now),
+   and the unversioned aliases autocad -> autocad-2026, bricscad ->
+   bricscad-v26. --dialect now accepts all of these (parse-dialect /
+   keyword->dialect / resolve-clautolisp-dialect all delegate to the
+   reader's single-source-of-truth find-autolisp-dialect).
+
+4- Dialect problems are now WARNINGS, not errors. builtin-terpri under a
+   non-clautolisp dialect emits a non-fatal [terpri-file-extension]
+   warning (was WRONG-NUMBER-OF-ARGUMENTS) and still writes the newline,
+   mirroring the lambda-list-extension convention. The broad sweep of
+   any remaining hard dialect errors stays tracked in
+   deferred-clautolisp-out-of-dialect-warnings.issue.
+
+5- Setting *AUTOLISP-DIALECT* changes the dialect dynamically.
+   current-evaluation-dialect now consults the *AUTOLISP-DIALECT*
+   AutoLISP variable first (when it names a known dialect), over the
+   session dialect, over strict. So `(setq *AUTOLISP-DIALECT* 'lax)`
+   silences the warning from then on. Verified at the REPL/-x.
+
+Tests: builtins-core 1325/1325 (terpri test rewritten to warn+proceed),
+reader 114/114, runtime 336/336, alfe conformance 31/31 + spec-coverage
+28/28, corpus no new failures (terpri-with-file corpus test -> SKIP,
+intentional divergence). Spec: TERPRI extension subsection updated to
+warn-not-error; --list-dialects / --dialect usage updated in both CLIs.

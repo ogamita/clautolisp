@@ -96,6 +96,14 @@ specs without mutating the shared template."
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-list-encodings-p opts) t)))
+   ;; --list-dialects prints every --dialect name (strict first, lax
+   ;; last), one per line, then exits — same short-circuit shape as
+   ;; --help / --version / --list-encodings.
+   (make-option-spec
+    :longs '("--list-dialects") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-list-dialects-p opts) t)))
 
    ;; --- verbosity -------------------------------------------------
    ;; The three verbosity flags compose ADDITIVELY: each handler raises

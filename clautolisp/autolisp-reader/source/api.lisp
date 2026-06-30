@@ -104,6 +104,11 @@
 (defun find-autolisp-dialect (name)
   (clautolisp.autolisp-reader.internal::find-autolisp-dialect name))
 
+(defun autolisp-dialect-names ()
+  "Ordered list of selectable dialect-name strings (strict first, lax
+last); drives --list-dialects and validates --dialect."
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-names))
+
 (defun reader-options-from-dialect (dialect &rest args)
   (apply #'clautolisp.autolisp-reader.internal::reader-options-from-dialect
          dialect args))

@@ -104,23 +104,20 @@
 ;;; --- dialect / host resolution --------------------------------------
 
 (defun resolve-clautolisp-dialect (dialect-keyword)
-  "Map an alfe dialect keyword (:strict / :autocad-2026 / :bricscad-v26
-/ :clautolisp) to a clautolisp.autolisp-reader dialect descriptor.
-:clautolisp is an alias for :strict — see the comment in
-tools/clautolisp/source/main.lisp's argument parser."
-  (case dialect-keyword
-    (:strict        (autolisp-dialect-strict))
-    (:clautolisp    (autolisp-dialect-strict))
-    (:autocad-2026  (autolisp-dialect-autocad-2026))
-    (:bricscad-v26  (autolisp-dialect-bricscad-v26))
-    (otherwise
-     (or (find-autolisp-dialect dialect-keyword)
-         (error 'backend-bootstrap-error
-                :backend :clautolisp
-                :code :unknown-dialect
-                :message (format nil "Unknown clautolisp dialect ~S"
-                                 dialect-keyword)
-                :details (list :dialect dialect-keyword))))))
+  "Map an alfe dialect keyword (any --dialect name; see --list-dialects)
+to a clautolisp.autolisp-reader dialect descriptor, delegating to the
+reader's single-source-of-truth registry. NIL means the strict default.
+Unlike before, :clautolisp resolves to the real clautolisp dialect (not
+strict) so `--clautolisp --dialect clautolisp` enables clautolisp
+extensions; the strict DEFAULT for the --clautolisp backend is supplied
+upstream by EFFECTIVE-DIALECT, not by collapsing the keyword here."
+  (or (find-autolisp-dialect (or dialect-keyword :strict))
+      (error 'backend-bootstrap-error
+             :backend :clautolisp
+             :code :unknown-dialect
+             :message (format nil "Unknown clautolisp dialect ~S"
+                              dialect-keyword)
+             :details (list :dialect dialect-keyword))))
 
 (defun resolve-clautolisp-host (host-keyword)
   "Map an alfe host keyword (:mock / :null) to the HAL backend
@@ -455,15 +452,13 @@ SHUTDOWN."
 ;;; --- START-ENGINE: subprocess variant ------------------------------
 
 (defun dialect-cli-name (dialect-keyword)
-  "Render the alfe dialect keyword in the form clautolisp-sbcl's CLI
-parser accepts. Mirrors the option names in
-tools/clautolisp/source/main.lisp."
-  (case dialect-keyword
-    (:strict        "strict")
-    (:clautolisp    "strict")
-    (:autocad-2026  "autocad-2026")
-    (:bricscad-v26  "bricscad-v26")
-    (otherwise      "strict")))
+  "Render the alfe dialect keyword as the string clautolisp-sbcl's CLI
+--dialect accepts (any name listed by --list-dialects). The downcased
+keyword name matches the reader's dialect registry, so :clautolisp ->
+\"clautolisp\", :autocad-2022 -> \"autocad-2022\", etc.; NIL -> strict."
+  (if dialect-keyword
+      (string-downcase (symbol-name dialect-keyword))
+      "strict"))
 
 (defun start-subprocess-engine (backend workdir &key dialect host interactive-p
                                 load-encoding)

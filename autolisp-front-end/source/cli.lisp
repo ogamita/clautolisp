@@ -98,6 +98,7 @@
                 #:cli-options-help-p
                 #:cli-options-version-p
                 #:cli-options-list-encodings-p
+                #:cli-options-list-dialects-p
                 #:cli-options-dry-run-p
                 #:cli-options-no-init-p
                 #:cli-options-no-color-p
@@ -139,6 +140,7 @@
            #:cli-options-help-p
            #:cli-options-version-p
            #:cli-options-list-encodings-p
+           #:cli-options-list-dialects-p
            #:cli-options-dry-run-p
            #:cli-options-no-init-p
            #:cli-options-no-color-p
@@ -227,7 +229,10 @@ Actions (processed in order):
   --quit                 Force the engine to shut down after the queue.
 
 Dialect, host, encoding:
-  --dialect NAME         strict (default), autocad-2026, bricscad-v26, clautolisp.
+  --dialect NAME         strict (default), autocad-2022, autocad-2026, autocad,
+                         bricscad-v25, bricscad-v26, bricscad, clautolisp, lax.
+                         Honoured under --clautolisp; ignored under --autocad/--bricscad.
+  --list-dialects        Print every --dialect name (strict first, lax last) and exit.
   --host {mock,null}     HAL backend (clautolisp only).
   -e ENC                 Load encoding for -l files.
   -E ENC                 I/O encoding for the engine's stdin/stdout.
@@ -356,23 +361,25 @@ error rather than silently last-winning."
    ;; Backend selectors — override the common versions with
    ;; conflict-checking wrappers. They go first so the parser's
    ;; first-match-wins lookup picks them up.
+   ;; Backend selectors set ONLY the backend; the dialect is resolved
+   ;; later by EFFECTIVE-DIALECT (alfe-clautolisp-dialect.issue point 1):
+   ;; --clautolisp runs the strict dialect by default and honours an
+   ;; explicit --dialect (in any order); --autocad / --bricscad impose
+   ;; the CAD's own dialect and ignore --dialect.
    (make-option-spec
     :longs '("--clautolisp") :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value))
-               (setf (cli-options-dialect opts) :clautolisp)
                (%set-backend-checked opts :clautolisp name)))
    (make-option-spec
     :longs '("--autocad") :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value))
-               (setf (cli-options-dialect opts) :autocad-2026)
                (%set-backend-checked opts :autocad name)))
    (make-option-spec
     :longs '("--bricscad") :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value))
-               (setf (cli-options-dialect opts) :bricscad-v26)
                (%set-backend-checked opts :bricscad name)))
    (make-option-spec
     :longs '("--mode") :takes-arg-p t
@@ -728,6 +735,9 @@ The handler chain matches alfe-cli.issue's exit-code table:
           ((cli-options-list-encodings-p options)
            (clautolisp.autolisp-cli:print-encodings)
            0)
+          ((cli-options-list-dialects-p options)
+           (clautolisp.autolisp-cli:print-dialects)
+           0)
           (t
            (set-level (cli-options-verbosity options))
            ;; Once the log level is set, dump the resolved option
@@ -803,6 +813,19 @@ The handler chain matches alfe-cli.issue's exit-code table:
       (format *error-output* "~&alfe: ~A~%" condition)
       1)))
 
+(defun effective-dialect (options)
+  "Resolve the dialect to run, per alfe-clautolisp-dialect.issue point 1.
+A CAD backend imposes its own dialect and IGNORES --dialect; the
+clautolisp backend (the default) HONOURS --dialect, defaulting to
+strict. Because the backend selectors only set the backend, --dialect
+takes effect regardless of option order."
+  (case (cli-options-backend options)
+    (:autocad  :autocad-2026)
+    (:bricscad :bricscad-v26)
+    ;; :clautolisp or nil (default backend): honour --dialect, whose
+    ;; slot defaults to :strict when the user gave no --dialect.
+    (t (cli-options-dialect options))))
+
 (defun run-plan (options backend &key version-text)
   "Drive a real backend through the action plan. Returns the exit code.
 VERSION-TEXT propagates the alfe version string from RUN so backends
@@ -815,7 +838,7 @@ engine."
          (workdir (prepare-workdir backend
                                    (cli-options-workdir options)))
          (session (start-engine backend workdir
-                                :dialect (cli-options-dialect options)
+                                :dialect (effective-dialect options)
                                 :host (cli-options-host options)
                                 :mock-input nil
                                 :bootstrap-phase

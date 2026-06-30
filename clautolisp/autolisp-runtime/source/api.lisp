@@ -424,9 +424,33 @@ profiles between subordinate evaluations within a single session."
   (setf (clautolisp.autolisp-runtime.internal::runtime-session-dialect session)
         dialect))
 
+(defun %autolisp-dialect-from-variable (context)
+  "If the AutoLISP variable *AUTOLISP-DIALECT* is bound in CONTEXT to a
+symbol (or string) naming a known dialect, return that dialect
+descriptor; otherwise NIL. This lets `(setq *AUTOLISP-DIALECT* 'lax)`
+change the active dialect dynamically at runtime
+(alfe-clautolisp-dialect.issue point 5). Heavily guarded: any failure
+(symbol table not ready, odd value, unknown name) yields NIL so the
+caller falls back to the session dialect."
+  (ignore-errors
+   (let ((sym (find-autolisp-symbol "*AUTOLISP-DIALECT*")))
+     (when sym
+       (multiple-value-bind (value boundp) (lookup-variable sym context)
+         (when (and boundp value)
+           (let ((name (typecase value
+                         (string value)
+                         (t (ignore-errors (autolisp-symbol-name value))))))
+             (when (and name (or (stringp name) (symbolp name)))
+               (clautolisp.autolisp-reader:find-autolisp-dialect name)))))))))
+
 (defun current-evaluation-dialect (&optional (context (current-evaluation-context)))
-  "Return the dialect of CONTEXT's session, or the strict default."
-  (or (and context
+  "Return the active dialect. Precedence: the runtime *AUTOLISP-DIALECT*
+variable (when it names a known dialect) over CONTEXT's session
+dialect over the strict default. The variable override makes
+`(setq *AUTOLISP-DIALECT* 'lax)` take effect immediately for every
+subsequent dialect-sensitive operation."
+  (or (and context (%autolisp-dialect-from-variable context))
+      (and context
            (clautolisp.autolisp-runtime.internal::evaluation-context-session context)
            (clautolisp.autolisp-runtime.internal::runtime-session-dialect
             (clautolisp.autolisp-runtime.internal::evaluation-context-session context)))

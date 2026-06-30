@@ -117,9 +117,45 @@
    :default-source-encoding :utf-8
    :default-file-encoding   :utf-8))
 
+(defparameter *autolisp-dialect-autocad-2022*
+  ;; AutoCAD 2022 is the same AutoLISP surface as 2026 EXCEPT for the
+  ;; default file/source encoding: UTF-8 became the AutoLISP default
+  ;; only in AutoCAD 2025+ (autolisp-spec ch.7), so the 2022 baseline
+  ;; is the legacy ANSI/MBCS one (modelled here as ISO-8859-1, the
+  ;; conservative single-byte default also used by --strict). Any
+  ;; finer 2022-vs-2026 behavioural divergence is a future refinement.
+  (make-autolisp-dialect
+   :name :autocad-2022
+   :token-mode :strict
+   :extended-string-escapes-p nil
+   :warn-on-integer-overflow-p t
+   :canonical-case :upcase
+   :hex-float-atof-p nil
+   :open-ccs-mode-p nil
+   :unbound-variable-mode :silent-nil
+   :default-source-encoding :iso-8859-1
+   :default-file-encoding   :iso-8859-1))
+
 (defparameter *autolisp-dialect-bricscad-v26*
   (make-autolisp-dialect
    :name :bricscad-v26
+   :token-mode :lax
+   :extended-string-escapes-p t
+   :warn-on-integer-overflow-p t
+   :canonical-case :upcase
+   :hex-float-atof-p t
+   :open-ccs-mode-p t
+   :unbound-variable-mode :silent-nil
+   :default-source-encoding :utf-8
+   :default-file-encoding   :utf-8))
+
+(defparameter *autolisp-dialect-bricscad-v25*
+  ;; BricsCAD V25 currently mirrors V26 exactly — no AutoLISP-surface
+  ;; divergence has been product-tested between the two yet. Kept as a
+  ;; distinct, selectable descriptor so `--dialect bricscad-v25` works
+  ;; and so a future V25-specific knob has a home.
+  (make-autolisp-dialect
+   :name :bricscad-v25
    :token-mode :lax
    :extended-string-escapes-p t
    :warn-on-integer-overflow-p t
@@ -177,14 +213,44 @@
    :default-file-encoding   :utf-8))
 
 (defparameter *autolisp-named-dialects*
-  (list (cons :strict *autolisp-dialect-strict*)
-        (cons :autocad-2026 *autolisp-dialect-autocad-2026*)
-        (cons :bricscad-v26 *autolisp-dialect-bricscad-v26*)
-        (cons :clautolisp *autolisp-dialect-clautolisp*)
-        (cons :lax *autolisp-dialect-lax*)))
+  ;; Unversioned vendor names (:autocad, :bricscad) are ALIASES that
+  ;; map to the last known version of that vendor (autocad -> 2026,
+  ;; bricscad -> v26), per alfe-clautolisp-dialect.issue point 2.
+  (list (cons :strict        *autolisp-dialect-strict*)
+        (cons :autocad-2022  *autolisp-dialect-autocad-2022*)
+        (cons :autocad-2026  *autolisp-dialect-autocad-2026*)
+        (cons :autocad       *autolisp-dialect-autocad-2026*)   ; alias -> last known
+        (cons :bricscad-v25  *autolisp-dialect-bricscad-v25*)
+        (cons :bricscad-v26  *autolisp-dialect-bricscad-v26*)
+        (cons :bricscad      *autolisp-dialect-bricscad-v26*)   ; alias -> last known
+        (cons :clautolisp    *autolisp-dialect-clautolisp*)
+        (cons :lax           *autolisp-dialect-lax*)))
+
+(defparameter *autolisp-dialect-names*
+  ;; The ordered, user-facing list of dialect names accepted by the
+  ;; --dialect option and printed by --list-dialects. strict is always
+  ;; first and lax always last (alfe-clautolisp-dialect.issue point 2).
+  ;; An unversioned vendor name maps to the last known version.
+  '(:strict
+    :autocad-2022 :autocad-2026 :autocad
+    :bricscad-v25 :bricscad-v26 :bricscad
+    :clautolisp
+    :lax)
+  "Ordered list of selectable dialect-name keywords (strict first, lax
+last). Drives --list-dialects and validates --dialect.")
+
+(defun autolisp-dialect-name-string (keyword)
+  "Render a dialect-name KEYWORD as its lower-case CLI string
+(e.g. :autocad-2026 -> \"autocad-2026\")."
+  (string-downcase (symbol-name keyword)))
+
+(defun autolisp-dialect-names ()
+  "Return the ordered list of selectable dialect-name strings."
+  (mapcar #'autolisp-dialect-name-string *autolisp-dialect-names*))
 
 (defun find-autolisp-dialect (name)
-  "Return the canonical dialect descriptor named NAME, or nil."
+  "Return the canonical dialect descriptor named NAME (a keyword,
+string, or unversioned alias), or nil."
   (cdr (assoc (cond ((keywordp name) name)
                     ((stringp name) (intern (string-upcase name) "KEYWORD"))
                     (t (error "Invalid dialect name ~S." name)))

@@ -7691,15 +7691,23 @@ When ~file-desc~ is supplied, a newline is written to that open file (equivalent
 
 Dialect handling mirrors the other clautolisp extensions:
 
-| Dialect          | ~(terpri file-desc)~                                      |
-|------------------+-----------------------------------------------------------|
-| ~clautolisp~     | accepted — writes a newline to ~file-desc~                 |
-| ~lax~            | accepted (catch-all "accept every extension" mode)        |
-| ~strict~         | rejected — arity error (intersection of vendor surfaces)  |
-| ~autocad-2026~   | rejected — arity error (matches AutoCAD: command-line-only)|
-| ~bricscad-v26~   | rejected — arity error (matches BricsCAD V26 product test) |
+| Dialect          | ~(terpri file-desc)~                                          |
+|------------------+-------------------------------------------------------------|
+| ~clautolisp~     | accepted silently — writes a newline to ~file-desc~          |
+| ~lax~            | accepted silently (catch-all "accept every extension" mode)  |
+| ~strict~         | warned — non-fatal out-of-dialect warning; newline written   |
+| ~autocad-2026~   | warned — non-fatal out-of-dialect warning; newline written   |
+| ~bricscad-v26~   | warned — non-fatal out-of-dialect warning; newline written   |
 
-Under the rejecting dialects the error message mentions "argument" and points at the portable ~(princ "\n" file-desc)~ form. Portable programs (those that must run on a real AutoCAD/BricsCAD) should use ~(princ "\n" file-desc)~; the `terpri`-with-file form is a clautolisp convenience only. Implemented 1.2.23.
+Dialect problems are signalled with WARNINGS, never errors
+(alfe-clautolisp-dialect.issue point 4): under the warning dialects a
+~[terpri-file-extension]~ line is written to standard error and the
+newline is still written, so existing code keeps running. The warning
+points at the portable ~(princ "\n" file-desc)~ form. Note this is an
+*intentional divergence* from real AutoCAD 2026 / BricsCAD V26, which
+reject ~(terpri file-desc)~ at runtime; portable programs that must run
+on a real CAD should use ~(princ "\n" file-desc)~. Implemented 1.2.23
+(warn, not error: 1.2.24).
 
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).

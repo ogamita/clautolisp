@@ -17,7 +17,10 @@
   (format t "  -x, --eval EXPRESSION  Evaluate EXPRESSION instead of reading a file.~%")
   (format t "  -i, --interactive      Enter the REPL after the action (same evaluation context).~%")
   (format t "Dialect:~%")
-  (format t "  --dialect NAME         One of: strict (default), autocad-2026, bricscad-v26, clautolisp.~%")
+  (format t "  --dialect NAME         One of: strict (default), autocad-2022, autocad-2026, autocad,~%")
+  (format t "                         bricscad-v25, bricscad-v26, bricscad, clautolisp, lax. An~%")
+  (format t "                         unversioned vendor name maps to the last known version.~%")
+  (format t "  --list-dialects        Print every --dialect name (strict first, lax last) and exit.~%")
   (format t "  --strict               Shorthand for --dialect strict (portable AutoCAD ∩ BricsCAD).~%")
   (format t "  --autocad              Shorthand for --dialect autocad-2026.~%")
   (format t "  --bricscad             Shorthand for --dialect bricscad-v26.~%")
@@ -90,26 +93,16 @@
     dialect))
 
 (defun keyword->dialect (dialect-keyword)
-  "Map a parser dialect keyword (:strict / :autocad-2026 /
-:bricscad-v26 / :clautolisp / :lax) to clautolisp's dialect
-descriptor. The descriptor carries the reader-level knobs the
-runtime uses."
-  (ecase (or dialect-keyword :strict)
-    (:strict        (autolisp-dialect-strict))
-    (:autocad-2026  (autolisp-dialect-autocad-2026))
-    (:bricscad-v26  (autolisp-dialect-bricscad-v26))
-    ;; The clautolisp dialect is a superset of :strict (same
-    ;; reader knobs, conservative defaults that work on every
-    ;; conforming host) plus clautolisp extensions (variadic
-    ;; functions via &REST, future quality-of-life conveniences).
-    ;; It defaults to UTF-8 for source/file encoding, matching
-    ;; modern AutoCAD 2025+ / BricsCAD V26 baselines rather than
-    ;; the strict-dialect ISO-8859-1 ANSI/MBCS legacy default.
-    (:clautolisp    (autolisp-dialect-clautolisp))
-    ;; The lax dialect silences every encoding-dispatch diagnostic
-    ;; (encoding-dispatch.issue 'Dialect matrix / --lax'). Other
-    ;; reader / runtime knobs mirror clautolisp.
-    (:lax           (autolisp-dialect-lax))))
+  "Map a parser dialect keyword (any name accepted by --dialect:
+:strict / :autocad-2022 / :autocad-2026 / :autocad / :bricscad-v25 /
+:bricscad-v26 / :bricscad / :clautolisp / :lax — an unversioned vendor
+name resolving to the last known version) to clautolisp's dialect
+descriptor. Delegates to the reader's single-source-of-truth registry
+so adding a dialect only touches dialect.lisp."
+  (or (find-autolisp-dialect (or dialect-keyword :strict))
+      ;; Should never happen: parse-dialect validates against the same
+      ;; registry. Fall back to strict rather than crash the launcher.
+      (autolisp-dialect-strict)))
 
 (defun keyword->host (host-keyword)
   "Map :mock / :null to a HAL backend instance. Defaults to the
@@ -745,6 +738,8 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
           (print-version) (quit 0))
         (when (clautolisp.autolisp-cli:cli-options-list-encodings-p options)
           (clautolisp.autolisp-cli:print-encodings) (quit 0))
+        (when (clautolisp.autolisp-cli:cli-options-list-dialects-p options)
+          (clautolisp.autolisp-cli:print-dialects) (quit 0))
         (let* ((verbosity (clautolisp.autolisp-cli:cli-options-verbosity options))
                (verbose-p (member verbosity '(:verbose :debug)))
                (debug-p   (eq verbosity :debug))

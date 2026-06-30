@@ -82,6 +82,20 @@ variadic-functions.issue  -- DONE 2026-06-23: feature shipped 1.1.16;
   strict/bricscad dialect-warning remains (tracked in
   bricscad-undocumented-clisms.issue).
 
+alfe-clautolisp-dialect.issue -- RESOLVED 1.2.24 -> closed/
+  4-point dialect cleanup. (1) alfe decouples backend from dialect:
+  --clautolisp/--autocad/--bricscad set only the backend, EFFECTIVE-
+  DIALECT resolves it (CAD imposes + ignores --dialect; clautolisp
+  honours --dialect, default strict, any order); resolve-clautolisp-
+  dialect no longer collapses :clautolisp->strict. (2) --list-dialects
+  on both CLIs + new reader dialects autocad-2022 / bricscad-v25 and
+  unversioned aliases autocad / bricscad (last known version). (4)
+  dialect problems are WARNINGS not errors -- terpri-to-file under a
+  non-clautolisp dialect warns + proceeds (was an arity error). (5)
+  setting *AUTOLISP-DIALECT* changes the dialect dynamically
+  (current-evaluation-dialect consults it first). All dialect-name
+  resolution centralised on the reader's find-autolisp-dialect.
+
 terpri.issue -- RESOLVED 1.2.23 -> closed/
   `(terpri f)` (from dump-sysvars.lsp) errored: TERPRI was zero-arity.
   AutoCAD 2026 + BricsCAD V26 both document TERPRI as zero-arity /

@@ -33,6 +33,7 @@
    #:cli-options-help-p          ; AC
    #:cli-options-version-p       ; AC
    #:cli-options-list-encodings-p ; AC
+   #:cli-options-list-dialects-p ; AC
    #:cli-options-dry-run-p       ; A
    #:cli-options-no-init-p       ; AC
    #:cli-options-no-color-p      ; AC
@@ -80,4 +81,5 @@
    #:resolve-locale-encoding-name
    #:resolve-effective-encoding
    #:enumerate-implementation-encodings
-   #:print-encodings))
+   #:print-encodings
+   #:print-dialects))

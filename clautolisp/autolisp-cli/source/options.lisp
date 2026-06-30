@@ -40,6 +40,7 @@
   (help-p           nil)              ; AC
   (version-p        nil)              ; AC
   (list-encodings-p nil)              ; AC  --list-encodings
+  (list-dialects-p  nil)              ; AC  --list-dialects
   (dry-run-p        nil)              ; A
   (no-init-p        nil)              ; AC
   (no-color-p       nil)              ; AC
@@ -96,14 +97,26 @@
                   (format nil "Unknown --host ~S (expected mock/null)" value)))))
 
 (defun parse-dialect (value option)
-  (cond ((string-equal value "strict")        :strict)
-        ((string-equal value "autocad-2026")  :autocad-2026)
-        ((string-equal value "bricscad-v26")  :bricscad-v26)
-        ((string-equal value "clautolisp")    :clautolisp)
-        ((string-equal value "lax")           :lax)
-        (t (error 'cli-usage-error
-                  :option option
-                  :message (format nil "Unknown dialect ~S" value)))))
+  "Validate a --dialect VALUE against the reader's dialect registry
+(strict / autocad-2022 / autocad-2026 / autocad / bricscad-v25 /
+bricscad-v26 / bricscad / clautolisp / lax; an unversioned vendor name
+maps to the last known version) and return it as a keyword. The keyword
+is resolved to a descriptor downstream by FIND-AUTOLISP-DIALECT, so
+aliases stay aliases here."
+  (if (clautolisp.autolisp-reader:find-autolisp-dialect value)
+      (intern (string-upcase value) :keyword)
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "Unknown dialect ~S (see --list-dialects)"
+                              value))))
+
+(defun print-dialects (&optional (stream *standard-output*))
+  "Print every dialect name accepted by --dialect, one per line, in
+canonical order (strict first, lax last; an unversioned vendor name
+maps to the last known version). Drives the --list-dialects action and
+is shell-loop friendly: `for d in $(clautolisp --list-dialects); do …`."
+  (dolist (name (clautolisp.autolisp-reader:autolisp-dialect-names))
+    (write-line name stream)))
 
 (defun parse-bootstrap-phase (value option)
   (cond ((string-equal value "marker") :marker)

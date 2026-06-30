@@ -2677,14 +2677,31 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
 
 (defun %terpri-file-extension-allowed-p ()
   "True when the active dialect accepts the clautolisp `(terpri file)`
-extension. AutoCAD 2026 and BricsCAD V26 both document `terpri` as
-ZERO-ARITY and \"not used for file I/O\", so the optional file handle
-is a clautolisp convenience offered only under --clautolisp and the
-catch-all --lax dialect."
+extension silently. AutoCAD 2026 and BricsCAD V26 both document
+`terpri` as ZERO-ARITY and \"not used for file I/O\", so the optional
+file handle is a clautolisp convenience; it is silent under
+--clautolisp and the catch-all --lax dialect, and merely *warned*
+(not rejected) under the other dialects."
   (let* ((dialect (ignore-errors (current-evaluation-dialect)))
          (name (and dialect
                     (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
     (and (member name '(:clautolisp :lax)) t)))
+
+(defun emit-terpri-file-extension-warning ()
+  "Emit a non-fatal out-of-dialect WARNING for `(terpri <file>)` under
+a dialect that does not natively accept it. Mirrors the runtime's
+`emit-lambda-list-extension-warning`: dialect problems are flagged,
+never raised as errors (terpri.issue / alfe-clautolisp-dialect.issue
+point 4). The newline is still written."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+    (format *error-output*
+            "~&[terpri-file-extension] `(terpri <file>)' is a clautolisp ~
+extension; --dialect ~(~A~) flags it as non-portable (AutoCAD 2026 / ~
+BricsCAD V26 `terpri' is command-line-only). Use (princ \"\\n\" <file>) ~
+for a portable file newline, or --dialect clautolisp to silence.~%"
+            (or name "default"))))
 
 (defun builtin-terpri (&optional (file nil file-supplied-p))
   ;; AutoLISP `terpri` prints a newline. AutoCAD 2026 and BricsCAD V26
@@ -2694,20 +2711,13 @@ catch-all --lax dialect."
   ;; at [TERPRI]" in BricsCAD V26 (Phase-5 product test, 2026-04-26).
   ;;
   ;; clautolisp extends `terpri` with an OPTIONAL file handle as a
-  ;; convenience (so Common-Lisp-shaped `(terpri f)` code works), but
-  ;; only in the --clautolisp / --lax dialects. Under --strict /
-  ;; --autocad / --bricscad it stays zero-arity and rejects the
-  ;; argument so non-portable code is flagged rather than silently
-  ;; accepted — portable file newlines use `(princ "\n" f)`.
+  ;; convenience (so Common-Lisp-shaped `(terpri f)` code works). The
+  ;; extension is silent under --clautolisp / --lax; under --strict /
+  ;; --autocad / --bricscad it emits a non-fatal out-of-dialect WARNING
+  ;; (dialect problems are warnings, never errors) and still writes the
+  ;; newline. Portable file newlines use `(princ "\n" f)`.
   (when (and file-supplied-p (not (%terpri-file-extension-allowed-p)))
-    (let* ((dialect (ignore-errors (current-evaluation-dialect)))
-           (name (and dialect
-                      (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
-      (signal-builtin-argument-error
-       :wrong-number-of-arguments
-       "TERPRI"
-       "TERPRI takes no arguments in the ~(~A~) dialect: `(terpri <file>)' is a clautolisp extension (AutoCAD 2026 and BricsCAD V26 document TERPRI as command-line-only). Use (princ \"\\n\" <file>) for a portable file newline, or run under --dialect clautolisp."
-       (or name "current"))))
+    (emit-terpri-file-extension-warning))
   (terpri (output-stream-for-file (and file-supplied-p file) "TERPRI"))
   nil)
 

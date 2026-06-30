@@ -1483,13 +1483,12 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
 
 (test builtin-terpri-dialect-gated-file-extension
   ;; AutoCAD 2026 and BricsCAD V26 both document `terpri` as ZERO-ARITY
-  ;; and command-line-only (AutoCAD: "not used for file I/O"; BricsCAD
-  ;; V26: `(terpri stream)` raises "too few / too many arguments at
-  ;; [TERPRI]", Phase-5 product test 2026-04-26). clautolisp extends
-  ;; `terpri` with an OPTIONAL file handle, but only in the :clautolisp
-  ;; / :lax dialects; under :strict (the default) / :autocad / :bricscad
-  ;; the file argument is rejected with an arity error whose message
-  ;; mentions "argument".
+  ;; and command-line-only. clautolisp extends `terpri` with an OPTIONAL
+  ;; file handle: SILENT under :clautolisp / :lax, a non-fatal
+  ;; out-of-dialect WARNING (NOT an error) under :strict / :autocad /
+  ;; :bricscad — and in every case the newline is still written
+  ;; (alfe-clautolisp-dialect.issue point 4: dialect problems are
+  ;; signalled with warnings, never errors).
   (reset-autolisp-symbol-table)
   (clautolisp.autolisp-runtime:reset-default-evaluation-context)
   (install-core-builtins)
@@ -1499,50 +1498,56 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
          (close-fn  (autolisp-symbol-function (find-autolisp-symbol "CLOSE")))
          (session   (clautolisp.autolisp-runtime:evaluation-context-session
                      (clautolisp.autolisp-runtime:current-evaluation-context))))
-    ;; --- :strict (default) keeps terpri zero-arity ------------------
-    ;; NB: capture terpri's output into a local BEFORE the `is` checks —
-    ;; FiveAM writes a "." progress dot to *standard-output* per passing
-    ;; check, which would otherwise pollute a rebound capture stream.
-    (clautolisp.autolisp-runtime:set-runtime-session-dialect
-     session (clautolisp.autolisp-reader:autolisp-dialect-strict))
-    (let* ((out (make-string-output-stream))
-           (ret (let ((*standard-output* out))
-                  (call-autolisp-function terpri-fn)))
-           (captured (get-output-stream-string out)))
-      (is (null ret))
-      (is (string= (string #\Newline) captured)))
-    (let ((signalled nil) (msg ""))
-      (handler-case
-          (call-autolisp-function terpri-fn (make-autolisp-string "stream"))
-        (autolisp-runtime-error (c)
-          (setf signalled t
-                msg (autolisp-runtime-error-message c))))
-      (is (eq t signalled))
-      (is (search "argument" msg)))
-    ;; --- :clautolisp accepts the optional file handle ---------------
-    (clautolisp.autolisp-runtime:set-runtime-session-dialect
-     session (clautolisp.autolisp-reader:autolisp-dialect-clautolisp))
-    (let ((ret (let ((*standard-output* (make-string-output-stream)))
-                 (call-autolisp-function terpri-fn))))   ; no-arg still ok
-      (is (null ret)))
-    (let* ((directory (format nil "/tmp/clautolisp-terpri-~D/" (random 1000000000)))
-           (path (concatenate 'string directory "out.txt")))
-      (ensure-directories-exist directory)
-      (let ((file (call-autolisp-function open-fn
-                                          (make-autolisp-string path)
-                                          (make-autolisp-string "w"))))
-        (call-autolisp-function princ-fn (make-autolisp-string "A") file)
-        (is (null (call-autolisp-function terpri-fn file)))
-        (call-autolisp-function close-fn file))
-      (is (string= (format nil "A~%")
-                   (with-open-file (s path :direction :input)
-                     (with-output-to-string (o)
-                       (loop for ch = (read-char s nil nil)
-                             while ch do (write-char ch o))))))
-      (ignore-errors (uiop:delete-directory-tree (pathname directory) :validate t)))
-    ;; restore the default dialect so later tests are unaffected
-    (clautolisp.autolisp-runtime:set-runtime-session-dialect
-     session (clautolisp.autolisp-reader:autolisp-dialect-strict))))
+    (labels ((terpri-to-file ()
+               ;; Write "A" then (terpri file) to a fresh file under the
+               ;; active dialect; return (values terpri-return-value
+               ;; file-contents warning-output).
+               (let* ((directory (format nil "/tmp/clautolisp-terpri-~D/"
+                                         (random 1000000000)))
+                      (path (concatenate 'string directory "out.txt"))
+                      (warn (make-string-output-stream))
+                      (ret :none))
+                 (ensure-directories-exist directory)
+                 (let ((file (call-autolisp-function open-fn
+                                                     (make-autolisp-string path)
+                                                     (make-autolisp-string "w"))))
+                   (call-autolisp-function princ-fn (make-autolisp-string "A") file)
+                   (setf ret (let ((*error-output* warn))
+                               (call-autolisp-function terpri-fn file)))
+                   (call-autolisp-function close-fn file))
+                 (let ((contents (with-open-file (s path :direction :input)
+                                   (with-output-to-string (o)
+                                     (loop for ch = (read-char s nil nil)
+                                           while ch do (write-char ch o))))))
+                   (ignore-errors
+                    (uiop:delete-directory-tree (pathname directory) :validate t))
+                   (values ret contents (get-output-stream-string warn))))))
+      ;; --- :strict — file form WARNS but still writes the newline -----
+      ;; NB: capture terpri's stdout output into a local BEFORE the `is`
+      ;; checks — FiveAM writes a "." progress dot to *standard-output*
+      ;; per passing check, which would pollute a rebound capture stream.
+      (clautolisp.autolisp-runtime:set-runtime-session-dialect
+       session (clautolisp.autolisp-reader:autolisp-dialect-strict))
+      (let* ((out (make-string-output-stream))
+             (ret (let ((*standard-output* out))
+                    (call-autolisp-function terpri-fn)))    ; no-arg, no warning
+             (captured (get-output-stream-string out)))
+        (is (null ret))
+        (is (string= (string #\Newline) captured)))
+      (multiple-value-bind (ret contents warn) (terpri-to-file)
+        (is (null ret))                                     ; not an error
+        (is (string= (format nil "A~%") contents))          ; newline written
+        (is (search "terpri-file-extension" warn)))         ; warning emitted
+      ;; --- :clautolisp — accepts the file handle SILENTLY -------------
+      (clautolisp.autolisp-runtime:set-runtime-session-dialect
+       session (clautolisp.autolisp-reader:autolisp-dialect-clautolisp))
+      (multiple-value-bind (ret contents warn) (terpri-to-file)
+        (is (null ret))
+        (is (string= (format nil "A~%") contents))
+        (is (string= "" warn)))                             ; no warning
+      ;; restore the default dialect so later tests are unaffected
+      (clautolisp.autolisp-runtime:set-runtime-session-dialect
+       session (clautolisp.autolisp-reader:autolisp-dialect-strict)))))
 
 (test builtin-print-trailing-space
   ;; AutoLISP `print` writes leading newline + prin1 form + trailing

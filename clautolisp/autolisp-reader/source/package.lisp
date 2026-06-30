@@ -93,6 +93,7 @@
    #:autolisp-dialect-default-source-encoding
    #:autolisp-dialect-default-file-encoding
    #:find-autolisp-dialect
+   #:autolisp-dialect-names
    #:reader-options-from-dialect
    #:autolisp-dialect-strict
    #:autolisp-dialect-autocad-2026
