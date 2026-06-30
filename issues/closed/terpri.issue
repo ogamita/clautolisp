@@ -1,0 +1,50 @@
+10:01[pjb@thalassa org.xquartz:0 clautolisp 15Gi]$ clautolisp -l autolisp-spec/autolisp/dump-sysvars.lsp -x '(dump-sysvars "clautolisp-sysvars.txt")'
+alref.lsp 1.0.1 loaded. (alref-set-root "…") to point at the install root.
+clautolisp: runtime error: BUILTIN-ERROR: AutoLISP builtin TERPRI signaled an error: invalid number of arguments: 1
+AutoLISP backtrace (most recent call first, 7 frames):
+  in SUBR TERPRI: (#<file clautolisp-sysvars.txt>)
+  in EVAL: (TERPRI F)
+  in EVAL: (FOREACH NAME *DUMP-SYSVARS-NAMES* (PRIN1 NAME F) (PRINC " " F) (PRIN1 (GETVAR NAME) F) (TERPRI F) (SETQ COUNT (1+ COUNT)))
+  in EVAL: (PROGN (SETQ COUNT 0) (FOREACH NAME *DUMP-SYSVARS-NAMES* (PRIN1 NAME F) (PRINC " " F) (PRIN1 (GETVAR NAME) F) (TERPRI F) (SETQ COUNT (1+ COUNT))) (CLOSE F) COUNT)
+  in EVAL: (IF (NULL F) (PROGN (PRINC "dump-sysvars: cannot open file for writing: ") (PRINC FILENAME) (TERPRI) nil) (PROGN (SETQ COUNT 0) (FOREACH NAME *DUMP-SYSVARS-NAMES* (PRIN1 NAME F) (PRINC " " F) (PRIN1 (GETVAR NAME) F) (TERPRI F) (SETQ COUNT (1+ COUNT))) (CLOSE F) COUNT))
+  in USUBR DUMP-SYSVARS: ("clautolisp-sysvars.txt")
+  in EVAL: (DUMP-SYSVARS "clautolisp-sysvars.txt")
+
+TERPRI must be variadic and accept a stream parameter (FILE).
+Other I/O functions are also like this, verify they all accept their optional parameters.
+
+----------------------------------------------------------------------
+RESOLVED 1.2.23 -> closed/
+
+Investigation surfaced that AutoCAD 2026 AND BricsCAD V26 both document
+`(terpri)` as ZERO-ARITY and explicitly "not used for file I/O" (use
+prin1/princ/print for a file newline). So an UNCONDITIONALLY variadic
+TERPRI would diverge from both real CADs and break the --strict
+"intersection of all dialects" guarantee. Per pjb's ruling
+(AskUserQuestion, Option A), TERPRI's optional file handle is a
+clautolisp-DIALECT extension:
+
+  - :clautolisp / :lax  -> `(terpri [file])` accepted; writes the
+    newline to FILE (equivalent to `(princ "\n" file)`).
+  - :strict (default) / :autocad-2026 / :bricscad-v26 -> stays
+    zero-arity; `(terpri <file>)` signals WRONG-NUMBER-OF-ARGUMENTS
+    with a message that mentions "argument" and points at the portable
+    `(princ "\n" <file>)` form. This matches the AutoCAD/BricsCAD docs
+    and the existing strict-profile conformance test.
+
+  dump-sysvars.lsp (which uses `(terpri f)`) now runs under
+  `clautolisp --clautolisp -l autolisp-spec/autolisp/dump-sysvars.lsp
+  -x '(dump-sysvars "...")'` -> 1836 sysvar lines written. Under the
+  default strict dialect it reports the helpful error above.
+
+Other I/O functions verified: prin1, princ, print, read-char,
+write-line, write-char already take `&optional file`. The one outlier,
+READ-LINE, required a mandatory file; AutoLISP's `(read-line
+[file-desc])` is optional (keyboard/stdin fallback), so READ-LINE was
+made `&optional file` mirroring READ-CHAR.
+
+Code: autolisp-builtins-core/source/api.lisp (builtin-terpri +
+%terpri-file-extension-allowed-p; builtin-read-line). Tests:
+builtin-terpri-dialect-gated-file-extension (builtins-core 1324/1324).
+Spec: TERPRI "Extension (clautolisp)" subsection + READ-LINE optional
+file-desc. Conformance corpus terpri/read-line tests pass under strict.

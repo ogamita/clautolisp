@@ -82,6 +82,19 @@ variadic-functions.issue  -- DONE 2026-06-23: feature shipped 1.1.16;
   strict/bricscad dialect-warning remains (tracked in
   bricscad-undocumented-clisms.issue).
 
+terpri.issue -- RESOLVED 1.2.23 -> closed/
+  `(terpri f)` (from dump-sysvars.lsp) errored: TERPRI was zero-arity.
+  AutoCAD 2026 + BricsCAD V26 both document TERPRI as zero-arity /
+  command-line-only, so per pjb's ruling the optional file handle is a
+  clautolisp-DIALECT extension: accepted under :clautolisp / :lax,
+  rejected (arity error mentioning "argument", hint -> (princ "\n" f))
+  under :strict / :autocad / :bricscad. READ-LINE made `&optional file`
+  too (keyboard/stdin fallback, mirroring READ-CHAR); the other I/O
+  builtins already took their optional file arg. Spec: TERPRI
+  "Extension (clautolisp)" + READ-LINE optional file-desc. Tests:
+  builtin-terpri-dialect-gated-file-extension (builtins-core 1324/1324);
+  corpus terpri/read-line pass under strict.
+
 system-variables.issues -- Verify what is implemented, and implement the missing parts.
   AUDITED 2026-06-23 (in the issue): inventory + spec chapter +
   data-driven catalogue + ERRNO are DONE; fixed EXTNAMES->snvalid

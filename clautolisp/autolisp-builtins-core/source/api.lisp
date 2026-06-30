@@ -2401,11 +2401,16 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
                             :condition condition)
              :call-stack (current-autolisp-call-stack)))))
 
-(defun builtin-read-line (file)
-  ;; Documented to set ERRNO on failure. EOF is the canonical
-  ;; failure path; we use 8 ("End of entity file") which is the
-  ;; nearest documented value in the enumerated set.
-  (let ((stream (require-open-file-stream file "READ-LINE")))
+(defun builtin-read-line (&optional file)
+  ;; AutoLISP `(read-line [file-desc])`: the file descriptor is
+  ;; OPTIONAL — when omitted, input comes from the keyboard buffer
+  ;; (here *standard-input*), mirroring `read-char`. Documented to set
+  ;; ERRNO on failure. EOF is the canonical failure path; we use 8
+  ;; ("End of entity file") which is the nearest documented value in
+  ;; the enumerated set.
+  (let ((stream (if file
+                    (require-open-file-stream file "READ-LINE")
+                    *standard-input*)))
     (let ((line (read-line stream nil nil)))
       (if line
           (errno-and-return 0 (make-autolisp-string line))
@@ -2670,14 +2675,40 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
     (write-char #\Space stream))
   object)
 
-(defun builtin-terpri ()
-  ;; AutoLISP `terpri` is *zero-arity*: it does not accept a file
-  ;; handle. The 2-argument form raises "too few / too many arguments
-  ;; at [TERPRI]" in BricsCAD V26 — confirmed in the Phase-5 product
-  ;; test on 2026-04-26. Portable file-handle newline output uses
-  ;; `(princ "\n" stream)` instead. Bricsys recommends `(princ)` over
-  ;; `(terpri)` to terminate a defun without a trailing blank line.
-  (terpri *standard-output*)
+(defun %terpri-file-extension-allowed-p ()
+  "True when the active dialect accepts the clautolisp `(terpri file)`
+extension. AutoCAD 2026 and BricsCAD V26 both document `terpri` as
+ZERO-ARITY and \"not used for file I/O\", so the optional file handle
+is a clautolisp convenience offered only under --clautolisp and the
+catch-all --lax dialect."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+    (and (member name '(:clautolisp :lax)) t)))
+
+(defun builtin-terpri (&optional (file nil file-supplied-p))
+  ;; AutoLISP `terpri` prints a newline. AutoCAD 2026 and BricsCAD V26
+  ;; both document it as ZERO-ARITY and command-line-only: AutoCAD says
+  ;; "the terpri function is not used for file I/O" (use prin1/princ/
+  ;; print), and `(terpri stream)` raises "too few / too many arguments
+  ;; at [TERPRI]" in BricsCAD V26 (Phase-5 product test, 2026-04-26).
+  ;;
+  ;; clautolisp extends `terpri` with an OPTIONAL file handle as a
+  ;; convenience (so Common-Lisp-shaped `(terpri f)` code works), but
+  ;; only in the --clautolisp / --lax dialects. Under --strict /
+  ;; --autocad / --bricscad it stays zero-arity and rejects the
+  ;; argument so non-portable code is flagged rather than silently
+  ;; accepted — portable file newlines use `(princ "\n" f)`.
+  (when (and file-supplied-p (not (%terpri-file-extension-allowed-p)))
+    (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+           (name (and dialect
+                      (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+      (signal-builtin-argument-error
+       :wrong-number-of-arguments
+       "TERPRI"
+       "TERPRI takes no arguments in the ~(~A~) dialect: `(terpri <file>)' is a clautolisp extension (AutoCAD 2026 and BricsCAD V26 document TERPRI as command-line-only). Use (princ \"\\n\" <file>) for a portable file newline, or run under --dialect clautolisp."
+       (or name "current"))))
+  (terpri (output-stream-for-file (and file-supplied-p file) "TERPRI"))
   nil)
 
 (defun builtin-prompt (string)

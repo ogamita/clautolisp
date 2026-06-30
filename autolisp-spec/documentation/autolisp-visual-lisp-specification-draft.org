@@ -7325,11 +7325,11 @@ Function
 
 *** Syntax
 #+begin_example
-(read-line file-desc)
+(read-line [file-desc])
 #+end_example
 
 *** Description
-Reads one line from a file.
+Reads one line of input. ~file-desc~ is *optional*: when supplied, the line is read from that open file; when omitted, input is taken from the keyboard buffer (standard input), mirroring `read-char`.
 
 *** Return Values
 Returns the line without the end-of-line marker, or `nil` at end of file.
@@ -7659,7 +7659,7 @@ Function
 None.
 
 *** Description
-Prints a newline character to the command line. Has no file-handle parameter — the printer-surface family takes a file handle on the per-output-call functions (`prin1`, `princ`, `print`), but `terpri` is command-line-only.
+Prints a newline character to the command line. Has no file-handle parameter — the printer-surface family takes a file handle on the per-output-call functions (`prin1`, `princ`, `print`), but `terpri` is command-line-only. (clautolisp adds an optional file handle as a dialect-gated extension; see *Extension (clautolisp)* below.)
 
 *** Return Values
 Always returns `nil`.
@@ -7679,6 +7679,27 @@ The probe suite emits `(terpri stream)` against an open file handle. BricsCAD V2
 | `(princ "A" file-desc) + (terpri file-desc)` | first call writes `A`; second call errors with the same message |
 
 This empirically confirms BricsCAD V26's documented zero-arity contract. AutoLISP code that wishes to write a newline to a file handle must use `(princ "\n" stream)` (BricsCAD V26 confirmed acceptance: `princ-string.txt` test produced `hello\n`). `terpri` is reserved for command-line output. The same code shape ported from Common Lisp via `(terpri stream)` will not portably work in AutoLISP.
+
+*** Extension (clautolisp): optional file handle
+clautolisp extends `terpri` with an *optional* file-descriptor argument:
+
+#+begin_example
+(terpri [file-desc])
+#+end_example
+
+When ~file-desc~ is supplied, a newline is written to that open file (equivalent to ~(princ "\n" file-desc)~); when omitted, behaviour is the vendor-standard command-line newline. The extension exists so that Common-Lisp-shaped output code (e.g. ~(foreach x xs (prin1 x f) (terpri f))~) runs unchanged under clautolisp.
+
+Dialect handling mirrors the other clautolisp extensions:
+
+| Dialect          | ~(terpri file-desc)~                                      |
+|------------------+-----------------------------------------------------------|
+| ~clautolisp~     | accepted — writes a newline to ~file-desc~                 |
+| ~lax~            | accepted (catch-all "accept every extension" mode)        |
+| ~strict~         | rejected — arity error (intersection of vendor surfaces)  |
+| ~autocad-2026~   | rejected — arity error (matches AutoCAD: command-line-only)|
+| ~bricscad-v26~   | rejected — arity error (matches BricsCAD V26 product test) |
+
+Under the rejecting dialects the error message mentions "argument" and points at the portable ~(princ "\n" file-desc)~ form. Portable programs (those that must run on a real AutoCAD/BricsCAD) should use ~(princ "\n" file-desc)~; the `terpri`-with-file form is a clautolisp convenience only. Implemented 1.2.23.
 
 *** Availability
 - AutoCAD 2026: documented (Autodesk reference page).
