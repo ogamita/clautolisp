@@ -546,7 +546,17 @@ the mock-host used by the test suite."
               (is (search "(defun autolisp-normalize-princ-call (form) form)"
                           content))
               ;; The fallback debug log for hosts that lack &rest.
-              (is (search "host lacks &rest" content)))))
+              (is (search "host lacks &rest" content))
+              ;; Regression (issues/closed/alfe-bricscad-open.issue):
+              ;; (princ obj filedes) / (print …) / (prin1 …) must route
+              ;; to the open file descriptor, NOT leak onto
+              ;; protocol/stdout.txt. The variadic shadows test (cadr
+              ;; args) and write through autolisp-write-string-to-file.
+              (is (search "((cadr args)" content))
+              (is (search "autolisp-write-string-to-file" content))
+              ;; The old comment that documented the drop as intended
+              ;; must be gone, so a future reader can't reinstate it.
+              (is (not (search "filedes silently dropped" content))))))
       (delete-workdir workdir))))
 
 (test protocol-stage-bootstrap-lsp-copies-into-runtime-subdir

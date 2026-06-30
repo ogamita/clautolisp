@@ -122,7 +122,10 @@ file or COM), and forwards the workload.
 
 - ~--clautolisp~ (default) — drive the in-process clautolisp engine.
 - ~--bricscad~ — drive a BricsCAD process via the file-protocol
-  bridge (BricsCAD V26 / macOS).
+  bridge (BricsCAD V26 / macOS). Output a script directs to a file it
+  opened — ~(princ s f)~, ~(print s f)~, ~(prin1 s f)~ on a descriptor
+  from ~(open path "w")~ — now lands in that file instead of leaking
+  onto the captured stdout channel.
 - ~--autocad~ — drive an AutoCAD process (Windows + macOS lanes).
 - ~--echo~ — a test backend that logs without executing.
 - On MS-Windows, ~--bricscad~ and ~--autocad~ now discover installed
