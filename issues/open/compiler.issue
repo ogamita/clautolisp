@@ -1,0 +1,252 @@
+compiler — minimal compiler (with the interpreter) + AutoLISP-to-Common-Lisp compiler
+=====================================================================================
+
+STATUS: DRAFT (collected from existing specs/issues for pjb to write up)
+FILED: 2026-07-01
+VERSION AT DRAFT TIME: clautolisp 1.3.0 (interpreter only)
+
+Sources folded into this draft:
+  issues/open/debugger-public-interface-and-on-error.issue      (Part A: clal-* compile API, compiled-eval model, fasl format)
+  issues/open/deferred-debugger-compiler-two-bodies.issue       (Phase 8: two-bodies discipline emitting CL)
+  issues/open/deferred-stubbed-functions.issue § VLISP-* IDE    (vlisp-compile upgrade path: light/medium/heavy)
+  issues/open/missing-functions-plan.md                          (VLISP-COMPILE = returns nil, no separate compile step)
+  clautolisp/documentation/clautolisp-debugger-implementation-plan.org  (§3a interpreter two-bodies; Phase 8 compiler two-bodies)
+  clautolisp/documentation/clautolisp-debugger-spec.org         (§5 two-bodies, §13 v1/v2 migration)
+  clautolisp/documentation/clautolisp-module-app-extensions (closed issue)  (.lap "compiled-app" extension string)
+  autolisp-spec .../autolisp-visual-lisp-specification-draft.org (vlisp-compile vendor semantics: .fas/.vlx/.des)
+
+
+Motivation
+----------
+
+Two distinct deliverables, in order:
+
+  TIER 1 — a *minimal compiler* that lives alongside the interpreter.
+    Its job is NOT speed. It exists to (a) give LOAD and EVAL a uniform,
+    instrumentable evaluation model so the debugger can step / breakpoint
+    /any/ loaded or eval'd expression, not just DEFUN bodies; (b) implement
+    the public compile API (CLAL-COMPILE / CLAL-COMPILE-FILE / CLAL-OPTIMIZE
+    …) and a real compiled-file format; and (c) make VLISP-COMPILE non-trivial.
+    "Compilation" here is a *source-to-source transformation* — wrap each
+    top-level form in a parameterless lambda — plus AST instrumentation. No
+    native / byte code is emitted; SPEED stays 0.
+
+  TIER 2 — an *AutoLISP-to-Common-Lisp compiler* ("do things seriously").
+    Emit real CL, two bodies per function (ordinary + debug), compiled to
+    native or byte code (SPEED > 0), with real .fas / .des / .lap writers
+    and call-site entry-point dispatch. This is the Phase-8 / v2 work,
+    currently deferred (deferred-debugger-compiler-two-bodies.issue).
+
+
+Current state at 1.3.0 (baseline — what exists today)
+-----------------------------------------------------
+
+- clautolisp is an INTERPRETER. There is no compiler of any kind.
+- VLISP-COMPILE: stub, returns nil.
+    clautolisp/autolisp-builtins-core/source/api.lisp:7022
+    "STUB: VLISP-COMPILE — no separate compile step in clautolisp; future
+     upgrade could emit FASL via compile-file."
+    Test: builtin-tests.lisp m4-vlisp-compile-returns-nil (no-op → nil).
+- VLISP-COMPILE-FILE: does not exist (only named in the debugger issue).
+- CLAL-COMPILE, CLAL-COMPILE-FILE, CLAL-OPTIMIZE, CLAL-OPTIMIZATION,
+  CLAL-COMPILED-FILE-OPTIMIZATION, CLAL-FUNCTION-OPTIMIZATION: NOT DEFINED —
+  design-only in debugger-public-interface-and-on-error.issue Part A.
+- LOAD: pure read + eval, no compile pass.
+    builtin-load api.lisp:546  →  autolisp-load-file-in-context
+    (autolisp-runtime/source/api.lisp)  →  read all forms, autolisp-eval-progn.
+    LOAD actively rejects compiled types (.vlx/.fas): api.lisp:593
+    "LOAD currently supports only source files, got ~A."
+- .lap "compiled-app" extension: a *string* returned by CLAL-MODULE-EXTENSION
+  (api.lisp:4368) — no file of that format is ever written or read.
+- ALREADY LANDED (relevant to Tier 1): the interpreter two-bodies
+  instrumentation from the debugger plan §3a is partially in place —
+    autolisp-usubr gains an INSTRUMENTED-BODY slot (model.lisp:186;
+      accessor autolisp-runtime/source/api.lisp:1241),
+    two-body dispatch at the apply boundary (api.lisp:1853-1867: pick
+      instrumented-body when *debugging* and present, else plain body),
+    %CLAL-POLL poll-point special operator (api.lisp:2280).
+  => The debugger's *instrumentation backend* is AST-level in the interpreter
+     and does not itself require a compiler. What Tier 1 adds is the public
+     compile API + the compiled-eval model for LOAD/EVAL of arbitrary forms.
+
+
+A note on terminology (to reconcile two documents)
+--------------------------------------------------
+
+The debugger-public-interface issue frames LOAD/EVAL through a "compiled-eval
+model" and a CLAL-COMPILE core; the debugger-implementation-plan §3a frames
+the same instrumentation as interpreter AST-weaving (two bodies) and defers
+the CL-emitting compiler to Phase 8. These agree if we read:
+
+  "minimal compiler"  ==  the interpreter's compile-file source transformation
+                          (lambda-sequence fasl) + the compiled-eval model
+                          + AST instrumentation (two forks).  NO codegen.
+  "compiler-to-CL"    ==  Tier 2: emit CL, native/byte forks, SPEED>0.
+
+The (CL parenthesis) in the source issue is worth keeping verbatim: in CL a
+minimal compile means at least macroexpansion, but AutoLISP has no macros
+(only special operators + functions), so no expansion/optimisation is
+"required or possible" — the minimal compiler's real content here is the
+lambda-wrapping + instrumentation, not macroexpansion.
+
+
+TIER 1 — Minimal compiler (interpreter-level)   [needed for the debugger + public API]
+--------------------------------------------------------------------------------------
+
+1. The compiled-eval model (LOAD and EVAL).
+   Instead of  load = (loop (eval (read))),  every top-level form is made
+   instrumentable by wrapping it in a nullary lambda and "compiling" that:
+
+     (eval expr)  ==  (funcall (compile nil (lambda () expr)))
+     (defun eval (expr) (apply (clal-compile nil (list 'lambda '() expr)) '()))
+
+   So a source line like (setq table (big-computation)) can carry breakpoints
+   inside big-computation, because it is evaluated through an instrumentable
+   function rather than a bare eval.
+
+2. Compiled-file format (the interpreter's compile-file output).
+   compile-file transforms a source file into a *sequence of anonymous
+   parameterless functions* — each top-level form F becomes (lambda () F):
+
+     (setq total 0)                    ;; source
+     (defun foo (x / r) ...)
+     (lambda (method) ...)
+        │  compile-file
+        ▼
+     (lambda () (setq total 0))        ;; compiled file
+     (lambda () (defun foo (x / r) ...))
+     (lambda () (lambda (method) ...))
+
+   Loading a compiled file = read one lambda, compile it (→ one or two forks
+   per optimisation), call it; the result of the LAST function is LOAD's
+   result. The interpreter's compile-file leaves the code un-instrumented;
+   the LOADER instruments (weaves the instrumented fork).
+
+3. Fasl header (written by CLAL-COMPILE-FILE):
+
+     ;; INTERPRETER|COMPILER clautolisp <version>
+     ;; OPTIMIZATION (qualities)
+     ;; SOURCE-FILE <source>
+
+   CLAL-COMPILED-FILE-OPTIMIZATION returns the file's OPTIMIZATION; for an
+   INTERPRETER fasl it returns (CLAL-OPTIMIZATION).
+
+4. Public API (new clal-* builtins — from debugger issue Part A):
+
+   CLAL-OPTIMIZATION ()               → current qualities, e.g.
+                                        ((DEBUG 3) (SPACE 0) (SPEED 0)).
+                                        With no compiler, SPEED is always 0.
+   CLAL-OPTIMIZE (qualities)          → set qualities. DEBUG=instrument,
+                                        SPACE=don't instrument (smaller),
+                                        SPEED=compile to faster binary (Tier 2).
+                                        Quality value 0..3 sets priority.
+   CLAL-COMPILE (name-or-nil lambda)  → the core. Build an anonymous function
+                                        with one or two forks (ordinary +
+                                        instrumented) per current optimisation.
+                                        Function object properties: name|nil,
+                                        lambda-list, optimisation levels,
+                                        docstring, non-instrumented fork,
+                                        instrumented fork (or nil).
+   CLAL-COMPILE-FILE (in [out [verbose [print [external-format]]]])
+                                      → (output-truename warnings-p failure-p).
+                                        Writes header + lambda-sequence.
+                                        PRINT: echo each source form (compile
+                                        time only). VERBOSE: message per
+                                        definition. Neither affects the fasl.
+   CLAL-COMPILED-FILE-OPTIMIZATION (path) → optimisation qualities of a fasl.
+   CLAL-FUNCTION-OPTIMIZATION (fn-or-symbol) → optimisation levels of a fn.
+   VLISP-COMPILE-FILE (mode source [object]) → (caddr (CLAL-COMPILE-FILE …)).
+                                        mode currently ignored.
+   VLISP-COMPILE (mode source [out])  → upgrade the stub to route through
+                                        VLISP-COMPILE-FILE (light upgrade in
+                                        deferred-stubbed-functions.issue).
+
+   The optimisation → fork matrix (debugger issue Part A):
+
+     Optimisation                    non-instrumented fork | instrumented fork
+     (DEBUG 3)(SPACE x)(SPEED 0)     pr,int                | pr,int,ins
+     (DEBUG 3)(SPACE x)(SPEED 3)     pr,com                | pr,com,ins       (Tier 2)
+     (DEBUG 0)(SPACE 3)(SPEED 0)     pr,int                | absent
+     (DEBUG 0)(SPACE 3)(SPEED 3)     pr,com                | absent           (Tier 2)
+     (pr=present int=interpreted com=compiled ins=instrumented; 2=1=3-collapse per issue)
+
+5. LOAD updates.
+   - Loading source files: create functions with one/two forks per current
+     CLAL-OPTIMIZATION; evaluate non-DEFUN top-level forms through the
+     compiled-eval model so they are instrumentable.
+   - Loading compiled files: read each lambda, compile, call; return last.
+   - Stop rejecting the interpreter fasl type (currently api.lisp:593);
+     decide the on-disk extension (see open questions).
+
+Tier 1 acceptance (sketch):
+   - (clal-compile-file "foo.lsp") writes an INTERPRETER fasl; (load "foo.<ext>")
+     reproduces source LOAD semantics incl. last-form return value.
+   - (eval '(progn (f1) ... (f1000))) is steppable / breakpointable.
+   - a bug inside (setq table (big-computation)) at top level can be broken on.
+   - CLAL-OPTIMIZATION/CLAL-OPTIMIZE round-trip; SPEED pinned at 0.
+   - VLISP-COMPILE stops being a nil no-op; VLISP-COMPILE-FILE exists.
+
+
+TIER 2 — AutoLISP-to-Common-Lisp compiler   [deferred / v2 — "do things seriously"]
+-----------------------------------------------------------------------------------
+
+From deferred-debugger-compiler-two-bodies.issue (Phase 8) + debugger spec §5/§13:
+
+- Emit two CL bodies per AutoLISP defun: foo/ordinary (optimised, no poll
+  points) and foo/debug (instrumented), behind a function-entries vector
+  (spec §5.1). The interpreter §3a scheme is the AST-level analog, so this is
+  "the same discipline, AST→CL" and a smaller jump from Tier 1.
+- Debug body disables across-poll-point optimisations (spec §5.2): no CSE,
+  no dead-code elimination of sub-form results, no LICM, no TCO, no
+  type-inference propagation across poll points.
+- Call-site dispatch (Fjeld multiple entry points): ordinary code calls
+  ordinary entry points, debug code calls debug entry points; debugging-ness
+  propagates down the call chain. Emit function-debug-metadata (spec §7).
+- SPEED > 0 becomes meaningful: forks compiled to native or byte code
+  (a vector of code); "green bytes" padding as needed (debugger issue).
+- Real compiled-file writers: AutoCAD .fas/.vlx, BricsCAD .des (vlisp-compile
+  vendor semantics, autolisp-spec :71786), and the clautolisp-native .lap
+  "compiled-app" (currently only an extension string). deferred-stubbed-
+  functions.issue calls these the medium/heavy VLISP-COMPILE upgrades.
+- Keep the interpreter available as a fallback (low optimisation /
+  macroexpansion debugging) — the debug protocol and all three UIs are
+  UNCHANGED across the interpreter→compiler migration (spec §13); this is a
+  pure instrumentation-backend swap.
+
+Tier 2 acceptance (from the deferred issue):
+   - production (ordinary) code pays zero instrumentation cost; entering a
+     debug entry point keeps the whole call chain instrumented; identical UI
+     behaviour to the interpreter path.
+
+
+Open questions / decisions for pjb
+----------------------------------
+
+- On-disk fasl extension for the Tier-1 INTERPRETER fasl. Reuse .lap
+  (already the clautolisp "compiled-app" extension), or a distinct name?
+  How does LOAD's current .fas/.vlx rejection change?
+- Does Tier 1 ship the full clal-* API surface, or a minimal subset first
+  (CLAL-COMPILE + CLAL-COMPILE-FILE + CLAL-OPTIMIZE/OPTIMIZATION), deferring
+  CLAL-COMPILED-FILE-OPTIMIZATION / CLAL-FUNCTION-OPTIMIZATION?
+- Dialect gating: CLAL-* are clautolisp extensions. Under strict/autocad/
+  bricscad, warn-not-error per the established out-of-dialect policy
+  (see clautolisp-dialect-divergence); VLISP-COMPILE stays available in the
+  CAD dialects but as the vendor-semantics stub until Tier 2 writers land.
+- Interaction with the already-landed interpreter two-bodies (§3a): CLAL-COMPILE
+  should produce the same instrumented-body the loader currently weaves, so
+  the two mechanisms converge rather than duplicate.
+- Fasl portability / versioning: the header pins version; define load-time
+  behaviour when a fasl's version ≠ the running clautolisp.
+- Is VLISP-COMPILE's `mode` argument honoured or ignored at Tier 1 (issue
+  says ignored)?
+
+
+References (file:line at 1.3.0)
+-------------------------------
+  api.lisp:7022     builtin-vlisp-compile (stub)
+  api.lisp:546      builtin-load ;  api.lisp:593 compiled-type rejection
+  api.lisp:4368     builtin-clal-module-extension (.lap string)
+  api.lisp:1853-1867 two-body dispatch ;  api.lisp:1241 instrumented-body accessor
+  api.lisp:2280     %CLAL-POLL poll-point operator
+  model.lisp:186    autolisp-usubr INSTRUMENTED-BODY slot
+  autolisp-runtime/source/api.lisp  autolisp-load-file-in-context (read+eval)
