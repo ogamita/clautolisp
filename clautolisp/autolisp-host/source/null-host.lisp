@@ -156,6 +156,13 @@ backend share this instance.")
   (declare (ignore name kind value read-only-p))
   nil)
 
+(defmethod host-undefine-sysvar ((host null-host) name)
+  ;; Silent no-op for the same reason as host-define-sysvar: the
+  ;; dialect sysvar-overlay launch wiring calls this unconditionally and
+  ;; null-host has no sysvar table to drop entries from.
+  (declare (ignore name))
+  nil)
+
 (defmethod host-sysvar-names ((host null-host))
   (signal-host-not-supported host 'sysvar-names))
 

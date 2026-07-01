@@ -39,6 +39,14 @@ separate binary for tool integrators.
   Dialect selection/.
 - Host backend selectable via ~--host mock|null~ (default mock).
   Mock-host carries the full 1836-entry vendor sysvar catalogue.
+- Under ~--bricscad~ the sysvar *set* matches BricsCAD: the 382
+  catalogue variables BricsCAD does not define (confirmed by both the
+  inventory and a live BricsCAD V26 probe) are dropped, so ~(getvar
+  "DYNPROMPT")~ returns ~nil~ and ~(setvar …)~ errors, as on a real
+  BricsCAD. Other dialects keep the full AutoCAD-derived catalogue.
+  Engine identity (~PROGRAM~ / ~ACADVER~ / …) and the dynamic codepage
+  sysvars are unaffected. See
+  ~issues/open/bricscad-dialect-sysvar-parity.issue~.
 
 ** Encoding handling (issues/closed/encoding-dispatch.issue)
 

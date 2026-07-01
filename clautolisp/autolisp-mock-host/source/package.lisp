@@ -84,6 +84,7 @@
                 #:host-setvar
                 #:host-set-derived-sysvar
                 #:host-define-sysvar
+                #:host-undefine-sysvar
                 #:host-sysvar-names
                 #:host-command
                 #:host-prompt
@@ -190,6 +191,10 @@
    ;; Sysvar API
    #:mock-host-sysvar
    #:mock-host-set-sysvar
+   #:mock-host-remove-sysvar
+   ;; BricsCAD-dialect sysvar overlay
+   #:*bricscad-absent-sysvars*
+   #:apply-bricscad-dialect-sysvars
    ;; Entity-allocation helpers (Phase 10)
    #:mock-host-creation-order
    #:mock-host-next-handle-counter

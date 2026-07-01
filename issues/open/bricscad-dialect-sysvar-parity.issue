@@ -1,0 +1,163 @@
+bricscad dialect should report BricsCAD's sysvars, not AutoCAD's
+================================================================
+
+Summary
+-------
+
+`clautolisp --bricscad` answers GETVAR/SETVAR from the *AutoCAD-2026*
+sysvar catalogue: every dialect returns identical sysvar data. A diff of
+
+    sysvars-alfe-Darwin-bricscad.txt        (real BricsCAD V26, via alfe)
+    sysvars-clautolisp-Darwin-bricscad.txt  (clautolisp --bricscad)
+
+shows 798 of 1836 variables differ. They fall into a small number of
+root-cause classes; this issue records the classification, fixes the
+unambiguous class now (Phase 1), and tracks the rest as deferred work.
+
+IMPORTANT caveat on the reference dump
+--------------------------------------
+
+sysvars-alfe-Darwin-bricscad.txt is ONE live, customised, French-locale
+BricsCAD session with a metric drawing open and the user's profile/paths
+loaded. It is authoritative for *which* variables exist and for dynamic
+state, but NOT a clean factory-default reference for *values*: e.g.
+INTERFERELAYER "Interférences", OVERKILLLAYER "Entités dupliquées",
+DIMSTYLE "ISO-25", LOCALE "fr_FR", the SCHMS search paths. Do not bulk-
+import values from it; re-harvest from a pristine profile + a freshly
+created default drawing before adopting any static value (Phase 2).
+
+Classification of the 798 differences
+--------------------------------------
+
+  474  alfe = nil, clautolisp non-nil
+         BricsCAD does not define the variable; real GETVAR returns nil.
+         clautolisp ships the AutoCAD catalogue value. -> Phase 1.
+  174  genuine value disagreements (both sides non-nil, non-state)
+         Some are real BricsCAD-vs-AutoCAD factory defaults; many are the
+         loaded-drawing template / customised profile / locale. -> Phase 2,
+         needs a clean re-harvest to separate the two.
+   56  session / drawing / clock state
+   31  machine paths
+         DWGNAME, VIEWCTR, EXTMIN/EXTMAX, TD*, ACADPREFIX, *PATH … must
+         stay dynamic/computed, never hardcoded. -> Phase 3 (compute) /
+         keep-as-difference.
+   25  colour-format representation ("White" / "RGB:.." vs "#ffffff")
+   25  single-float print noise (0.01 vs 0.009999999776482582)
+    9  doc-text placeholders (see below)
+    4  radian-vs-degree (DIMJOGANG 0.785398 vs 45.0; POLARANG; LOFTANG1/2)
+         clautolisp output/representation bugs, dialect-independent.
+         -> separate issues (not bricscad-specific).
+
+Decisions taken (per user, 2026-06-30)
+--------------------------------------
+
+- ACADVER / PROGRAM / VENDORNAME / PLATFORM / PRODUCT: KEEP clautolisp's
+  own identity (stamped by APPLY-CLAUTOLISP-HOST-IDENTITY). A bricscad
+  *dialect* is still the clautolisp engine; it must not masquerade as
+  Bricsys. Not changed here.
+- SYSCODEPAGE / DWGCODEPAGE: already implemented dynamically (launch
+  encoding -> APPLY-LAUNCH-CODEPAGE-TO-SYSVARS) and DWG-driven. This is a
+  *good* difference; keep it.
+- DATE / CDATE / MILLISECS / ERRNO: already computed live; keep.
+- All other host-derived state: keep dynamic; compute incrementally
+  (Phase 3 list below).
+
+Phase 1 — existence overlay (THIS CHANGE, 1.2.25)
+-------------------------------------------------
+
+Existence is locale-, profile-, platform- and drawing-independent, so it
+is the one class adoptable from a single probe. New launch-time overlay
+for the bricscad dialect drops the catalogue cells BricsCAD does not
+define, so GETVAR returns nil and SETVAR signals :unknown-sysvar.
+
+  - clautolisp/autolisp-mock-host/source/bricscad-sysvar-overrides.lisp
+      *BRICSCAD-ABSENT-SYSVARS* (382 names) + APPLY-BRICSCAD-DIALECT-SYSVARS
+  - host-undefine-sysvar generic (host / null-host / mock-host)
+  - APPLY-DIALECT-SYSVAR-DEFAULTS wired into INSTALL-TRANSMIT-VARIABLES
+    alongside the existing trust overlay, guarded on :bricscad-v26.
+
+The 382 names are the INTERSECTION of two independent sources:
+  (a) inventory :versions (… :bricscad nil)  — the portable spec marker;
+  (b) the live BricsCAD V26 probe returning nil.
+Agreement excludes the two residues below, both of which are left on the
+catalogue value (conservative — never wrongly null a real BricsCAD var):
+
+  - 39 inventory rows the V26 probe CONTRADICTS (inventory bug: BricsCAD
+    *does* define them). Fix the inventory's :bricscad marker for:
+      3DOSMODE BACTIONBARMODE BACTIONCOLOR BDEPENDENCYHIGHLIGHT
+      BGRIPOBJCOLOR BGRIPOBJSIZE BLOCKTESTWINDOW BPARAMETERCOLOR
+      BPARAMETERFONT BPARAMETERSIZE BPTEXTHORIZONTAL BTMARKDISPLAY
+      CENTERMT CGEOCS CLIPROMPTUPDATE COMMANDPREVIEW DYNINFOTIPS
+      GEOMAPMODE GRIPMULTIFUNCTIONAL GROUPDISPLAYMODE HPMAXLINES
+      HPORIGINMODE HPQUICKPREVIEW INPUTSEARCHDELAY LAYEREVALCTL LISPSYS
+      MTEXTAUTOSTACK NAVBARDISPLAY PDFSHX PLINEREVERSEWIDTHS PLOTROTMODE
+      RIBBONSELECTMODE STARTMODE SUNSTATUS SUPPRESSALERTS
+      VPLAYEROVERRIDESMODE VSFACESTYLE XREFTYPE _TOOLPALETTEPATH
+  - 98 probe-nil rows the inventory still lists for BricsCAD (edition-/
+    platform-specific absences, many Civil/BIM CV* and macOS-specific).
+    Not nulled: they may exist on other BricsCAD builds.
+
+Doc-text placeholders (the 9)
+-----------------------------
+
+These are catalogue values scraped verbatim from documentation, broken on
+every dialect (not just bricscad):
+
+  ACTIVITYINSIGHTSPATH "C:\\Users\\{username}\\…"   <- bricscad-absent;
+       Phase 1 already makes --bricscad return nil for it.
+  MENUNAME "customization_file_name"
+  INETLOCATION "https://www.autodesk.com/autocad (AutoCAD), …"
+  FONTMAP "acad.fmp (AutoCAD) or acadlt.fmp (AutoCAD LT)"
+  POINTCLOUDCACHEFOLDER "C:\\Users\\%username%\\…"   (BMTOOLPATH similar)
+  CMDLINEEDITBGCOLOR "RGB: 50 54 56 (Settings dialog) #323638 (Command line)"
+  CMDLINEEDITFGCOLOR / REDHILITEFULL_EDGE_COLOR (same shape)
+
+Resolution: these are mock-host catalogue defects, fixed by correcting the
+inventory :default and regenerating sysvar-catalogue.lisp — deferred to
+the mock host / catalogue-regen track, NOT special-cased per dialect. The
+ones that are bricscad-absent (ACTIVITYINSIGHTSPATH) already resolve to
+nil under --bricscad via Phase 1; MENUNAME / INETLOCATION / FONTMAP etc.
+are bricscad-present and will get correct BricsCAD defaults during Phase 2.
+
+Phase 3 — host-derived state not yet computed (deferred)
+--------------------------------------------------------
+
+114 host-derived variables currently return a static catalogue stand-in
+where BricsCAD fills them dynamically. Computed today: DATE, CDATE,
+MILLISECS, ERRNO, SYSCODEPAGE, DWGCODEPAGE, PROGRAM, VENDORNAME, PLATFORM,
+ACADVER. NOT yet computed (representative, by sub-class):
+
+  drawing/view geometry : EXTMIN EXTMAX VSMIN VSMAX LIMMAX VIEWCTR
+                          VIEWSIZE GRIDUNIT SNAPUNIT
+  window/screen         : SCREENSIZE SCREENBOXES SCREENMODE
+                          WNDPMAIN WNDPTEXT WNDSTEXT
+  drawing identity      : DWGPREFIX BASEFILE CLAYOUT WSCURRENT
+  drawing timers        : TDCREATE TDUPDATE TDUCREATE TDUUPDATE
+                          TDINDWG TDUSRTIMER
+  command/session       : CMDACTIVE LASTPROMPT
+  environment/identity  : LOGINNAME LOCALE  (OS-derivable)
+  install/profile paths : ACADPREFIX SRCHPATH *PATH *PREFIX  (install-
+                          specific; likely keep-as-difference, not compute)
+
+Note: several entries the probe shows as "dynamic" are really metric-
+template defaults captured because the alfe session had a drawing open
+(DIMASZ 2.5, DIMTXT 2.5, INSUNITS 4, MEASUREMENT 1, TEXTSIZE 2.5,
+the arrow lengths, DIMSTYLE "ISO-25"). Those belong to Phase 2's "default
+new drawing" decision, not to live computation.
+
+Acceptance (Phase 1)
+--------------------
+
+- (getvar "DYNPROMPT") => nil under --bricscad, unchanged under --autocad.
+- (setvar "DYNPROMPT" 1) signals :unknown-sysvar under --bricscad.
+- shared sysvars (OSMODE, CMDECHO, DIMSTYLE, SECURELOAD, …) intact.
+- 382 cells removed; tests in sysvar-catalogue-tests.lisp.
+- Re-run `make save-sysvars`; the --bricscad dump's nil-set grows by the
+  382 confirmed-absent names.
+
+Found by
+--------
+
+Manual diff of the alfe/clautolisp bricscad sysvar dumps, 2026-06-30.
+Related: clautolisp-host-product-still-bricscad.issue (identity),
+clautolisp-mock-host-getvar.issue (identity overlay).

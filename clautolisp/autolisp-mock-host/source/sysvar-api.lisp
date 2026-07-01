@@ -253,6 +253,13 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
           document :sysvar :vlr-sysvarchanged (list rendered-name))
          (present-sysvar-value (sysvar-cell-kind cell) coerced))))))
 
+(defmethod host-undefine-sysvar ((host mock-host) name)
+  "Drop NAME from HOST's sysvar table (bricscad dialect overlay). NAME may
+be an autolisp-string or a CL string. Silently no-ops on unknown names so
+the launch-time overlay does not need to know which catalogue is installed."
+  (let ((string (ensure-sysvar-name name 'undefine-sysvar)))
+    (mock-host-remove-sysvar host string)))
+
 (defmethod host-set-derived-sysvar ((host mock-host) name value)
   "Launch-time bypass of the cell's read-only flag for host-derived
 sysvars (SYSCODEPAGE, DWGCODEPAGE, …). The catalogue marks these as

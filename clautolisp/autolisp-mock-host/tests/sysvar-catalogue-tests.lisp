@@ -90,6 +90,55 @@
   (let ((mock (make-mock-host)))
     (is (null (host-getvar mock "DEFINITELYNOTASYSVAR")))))
 
+;;; --- BricsCAD-dialect sysvar overlay -----------------------------
+;;;
+;;; APPLY-BRICSCAD-DIALECT-SYSVARS drops the catalogue entries BricsCAD
+;;; does not define, so under --bricscad a GETVAR on them returns nil and
+;;; a SETVAR signals unknown-sysvar, as on a real BricsCAD. The overlay
+;;; must leave the variables BricsCAD *does* share with AutoCAD intact.
+
+(test bricscad-overlay-drops-absent-sysvars
+  (let ((mock (make-mock-host)))
+    ;; Present before the overlay (AutoCAD-derived catalogue ships them):
+    (is (typep (mock-host-sysvar mock "DYNPROMPT") 'sysvar-cell))
+    (is (typep (mock-host-sysvar mock "POINTCLOUDDENSITY") 'sysvar-cell))
+    (clautolisp.autolisp-mock-host:apply-bricscad-dialect-sysvars mock)
+    ;; Gone after the overlay: GETVAR -> nil (unknown name rule).
+    (is (null (mock-host-sysvar mock "DYNPROMPT")))
+    (is (null (host-getvar mock "DYNPROMPT")))
+    (is (null (host-getvar mock "POINTCLOUDDENSITY")))))
+
+(test bricscad-overlay-keeps-shared-sysvars
+  (let ((mock (make-mock-host)))
+    (clautolisp.autolisp-mock-host:apply-bricscad-dialect-sysvars mock)
+    ;; Variables BricsCAD shares with AutoCAD survive the overlay.
+    (dolist (name '("OSMODE" "CMDECHO" "CLAYER" "DIMSTYLE"
+                    "LISPSYS" "ERRNO" "SECURELOAD"))
+      (is (typep (mock-host-sysvar mock name) 'sysvar-cell)
+          "bricscad overlay must keep shared sysvar ~A" name))))
+
+(test bricscad-overlay-setvar-on-dropped-signals-unknown
+  (let ((mock (make-mock-host)))
+    (clautolisp.autolisp-mock-host:apply-bricscad-dialect-sysvars mock)
+    (handler-case
+        (progn
+          (host-setvar mock "DYNPROMPT" 1)
+          (is nil "expected setvar on a dropped sysvar to signal"))
+      (autolisp-runtime-error (c)
+        (is (eq :unknown-sysvar (autolisp-runtime-error-code c)))))))
+
+(test bricscad-overlay-removes-the-expected-count
+  ;; All 382 absent names are present in the AutoCAD-derived catalogue,
+  ;; and exactly that many cells disappear after the overlay.
+  (let* ((mock (make-mock-host))
+         (before (hash-table-count (mock-host-sysvars mock))))
+    (is (= 382 (length clautolisp.autolisp-mock-host:*bricscad-absent-sysvars*)))
+    (dolist (name clautolisp.autolisp-mock-host:*bricscad-absent-sysvars*)
+      (is (typep (mock-host-sysvar mock name) 'sysvar-cell)
+          "absent-list name ~A must exist in the base catalogue" name))
+    (clautolisp.autolisp-mock-host:apply-bricscad-dialect-sysvars mock)
+    (is (= (- before 382) (hash-table-count (mock-host-sysvars mock))))))
+
 ;;; --- ERRNO bridge -------------------------------------------------
 ;;;
 ;;; (getvar "ERRNO") must reflect the live runtime errno, not the

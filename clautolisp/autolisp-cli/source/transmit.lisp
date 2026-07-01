@@ -289,7 +289,8 @@ Side effects:
                       (clautolisp.autolisp-runtime:autolisp-symbol-name
                        (second entry))))))
     (apply-clautolisp-host-identity context version frontend)
-    (apply-dialect-trust-defaults context (transmit-dialect-keyword bindings))))
+    (apply-dialect-trust-defaults context (transmit-dialect-keyword bindings))
+    (apply-dialect-sysvar-defaults context (transmit-dialect-keyword bindings))))
 
 (defun transmit-dialect-keyword (bindings)
   "Recover the dialect keyword (:strict / :autocad-2026 / :bricscad-v26
@@ -316,6 +317,20 @@ sysvars."
       (when host
         (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
          host dialect-keyword)))))
+
+(defun apply-dialect-sysvar-defaults (context dialect-keyword)
+  "Apply the dialect-dependent sysvar overlay on CONTEXT's host. For the
+bricscad dialect this drops the catalogue sysvars BricsCAD does not
+define (the catalogue is AutoCAD-2026-derived), so `clautolisp --bricscad`
+reports BricsCAD's sysvar *set* rather than AutoCAD's. Other dialects are
+left on the AutoCAD-derived catalogue. Reached only by the clautolisp
+engine (alfe's CAD backends never install transmit variables on a local
+context), so this never touches a real CAD's sysvars.
+See issues/open/bricscad-dialect-sysvar-parity.issue."
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
+      (when (and host (eq dialect-keyword :bricscad-v26))
+        (clautolisp.autolisp-mock-host:apply-bricscad-dialect-sysvars host)))))
 
 (defun call-with-dynamic-transmit-binding (context name value thunk)
   "Set the *AUTOLISP-…* variable NAME to VALUE for the duration of

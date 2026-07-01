@@ -162,6 +162,7 @@
    (:file "autolisp-mock-host/source/selection-api")
    (:file "autolisp-mock-host/source/table-api")
    (:file "autolisp-mock-host/source/sysvar-api")
+   (:file "autolisp-mock-host/source/bricscad-sysvar-overrides")
    (:file "autolisp-mock-host/source/prompt-api")
    (:file "autolisp-mock-host/source/com-progids")
    (:file "autolisp-mock-host/source/vlax-api"))
@@ -247,7 +248,11 @@
                "clautolisp/autolisp-host"
                ;; for APPLY-DIALECT-TRUST-SYSVAR-DEFAULTS, the launch-time
                ;; dialect-dependent SECURELOAD / TRUSTEDPATHS overlay.
-               "clautolisp/autolisp-builtins-core")
+               "clautolisp/autolisp-builtins-core"
+               ;; for APPLY-BRICSCAD-DIALECT-SYSVARS, the launch-time
+               ;; bricscad-dialect sysvar overlay (drops the AutoCAD-only
+               ;; catalogue entries BricsCAD does not define).
+               "clautolisp/autolisp-mock-host")
   :serial t
   :components
   ((:file "autolisp-cli/source/package")

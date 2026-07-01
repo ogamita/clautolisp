@@ -133,3 +133,10 @@ it on first reference."
         (signal-host-not-supported mock 'setvar))
       (setf (sysvar-cell-value cell) value)
       value)))
+
+(defun mock-host-remove-sysvar (mock name)
+  "Drop the sysvar cell NAME from MOCK. After this, getvar returns nil
+\(unknown name) and setvar signals unknown-sysvar — the behaviour of a
+real CAD for a variable it does not define. Returns T when a cell was
+removed, nil when NAME was already absent."
+  (remhash name (mock-host-sysvars mock)))
