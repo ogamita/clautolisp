@@ -94,6 +94,13 @@ clautolisp-secureload-trust-model spec.")
   (blackboard-namespace (make-blackboard-namespace))
   (propagated-symbols (make-hash-table :test #'eq))
   (errno 0 :type integer)
+  ;; clautolisp exit-status channel (autolisp-set-status / autolisp-status
+  ;; / (quit [status])). A pending process exit code that a script records
+  ;; via (autolisp-set-status N) and that (quit) — and the CLI's normal
+  ;; end-of-run — pick up. Defaults to 0 (success). Mirrors the CAD-side
+  ;; alfe `autolisp-set-status` bootstrap so a single C:MAIN is portable.
+  ;; See issues/open/autolisp-set-status-and-quit-status.issue.
+  (exit-status 0 :type integer)
   current-document
   ;; Phase 6: every runtime session carries the dialect descriptor
   ;; that drove its instantiation. Builtins that have product-divergent

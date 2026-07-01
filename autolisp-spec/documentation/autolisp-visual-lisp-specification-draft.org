@@ -8020,13 +8020,22 @@ Function
 *** Syntax
 #+begin_example
 (exit)
+(exit status)        ; clautolisp extension
 #+end_example
 
 *** Arguments and Values
-None.
+- None on AutoCAD / BricsCAD.
+- ~status~ (clautolisp extension) — an optional integer process exit
+  status, handled exactly as for ~quit~ (see that entry and
+  ~autolisp-set-status~).
 
 *** Description
 Unconditionally exits the running LISP code and terminates LISP processing for the current invocation. It is a non-local exit from the current LISP evaluation, not a process-level termination of the host CAD application.
+
+clautolisp accepts an OPTIONAL integer ~status~ argument, identical in
+behaviour to ~(quit status)~: ~(exit N)~ terminates with exit code ~N~,
+bare ~(exit)~ uses the pending ~autolisp-set-status~ value. Supplying
+the argument is a clautolisp extension and warns out of dialect.
 
 *** Return Values
 Does not return normally. Bricsys describes the channel-level behaviour as printing the message `; error : quit / exit abort` to the prompt as the LISP top-level handles the abort.
@@ -8065,13 +8074,24 @@ Function
 *** Syntax
 #+begin_example
 (quit)
+(quit status)        ; clautolisp extension
 #+end_example
 
 *** Arguments and Values
-None.
+- None on AutoCAD / BricsCAD.
+- ~status~ (clautolisp extension) — an optional integer process exit
+  status. When omitted, clautolisp uses the pending status recorded by
+  ~autolisp-set-status~ (0 when never set); see ~autolisp-status~.
 
 *** Description
 Unconditionally cancels the running LISP code and terminates LISP processing for the current invocation. Bricsys's per-symbol pages distinguish the verb in prose only — `exit` "exits" the LISP run, `quit` "cancels" it — but the *signature, abort message, and effect on the host* are identical. Treat as an alias of `exit` in implementation.
+
+clautolisp accepts an OPTIONAL integer ~status~ argument (the
+exit-status channel; see ~autolisp-set-status~). ~(quit N)~ terminates
+with exit code ~N~; bare ~(quit)~ terminates with the pending status.
+Supplying the argument is a clautolisp extension: under ~--strict~ /
+~--autocad~ / ~--bricscad~ it emits a non-fatal out-of-dialect WARNING
+(the zero-arg form stays standard and silent).
 
 *** Return Values
 Does not return normally. Channel-level behaviour: prints `; error : quit / exit abort` to the prompt.
@@ -10809,6 +10829,120 @@ four-byte UTF-32 BOM.
 - clautolisp-only extension. See encoding-dispatch.issue for the
   cross-dialect translation table this helper's vocabulary
   matches.
+
+#+LATEX: \newpage
+
+** Function Entry: AUTOLISP-SET-STATUS
+*** Name
+~autolisp-set-status~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(autolisp-set-status status)
+#+end_example
+
+*** Arguments and Values
+- ~status~ -- an integer process exit status. A real is truncated
+  toward zero; a non-number raises ~:invalid-integer-argument~.
+
+*** Description
+Record ~status~ as the process's *pending exit status*. The value is
+stored on the runtime session (see ~autolisp-status~ to read it back)
+and is later consumed by ~(quit)~ / ~(exit)~ with no argument, and by
+the clautolisp CLI's normal end-of-run, so a batch script can report
+pass/fail without calling ~quit~ explicitly.
+
+Unlike the ~CLAL-~ helpers, this entry keeps the ~autolisp-~ prefix on
+purpose: it is name- and semantics-compatible with the ~autolisp-set-status~
+that alfe injects into a driven AutoCAD / BricsCAD session (minus the
+STATUSFILE write). A single ~C:MAIN~ test entry point that ends with
+~(autolisp-set-status (if ok 0 1))~ is therefore portable across
+BricsCAD, AutoCAD and clautolisp with no engine branch.
+
+*** Return Values
+~status~ (the stored integer).
+
+*** Side Effects
+Sets the session's pending exit status.
+
+*** Affected By
+- The active dialect (see Exceptional Situations).
+
+*** Exceptional Situations
+- ~:invalid-integer-argument~ when ~status~ is not a number.
+- Under ~--strict~ / ~--autocad~ / ~--bricscad~ the call emits a
+  non-fatal out-of-dialect WARNING (dialect problems warn, never
+  error); the status is still recorded. Silent under ~--clautolisp~
+  and ~--lax~.
+
+*** Examples
+#+begin_example
+(autolisp-set-status 0)   => 0     ; success recorded
+(autolisp-set-status 2.9) => 2     ; real truncated
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since
+  clautolisp 1.2.26.
+- AutoCAD / BricsCAD: not a native engine primitive, but the same
+  name is provided by alfe's injected bootstrap when clautolisp
+  drives those engines.
+
+*** Source Notes
+- clautolisp exit-status channel; see
+  autolisp-set-status-and-quit-status.issue.
+
+#+LATEX: \newpage
+
+** Function Entry: AUTOLISP-STATUS
+*** Name
+~autolisp-status~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(autolisp-status)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Return the pending process exit status last stored by
+~autolisp-set-status~, or ~0~ when it was never set. This is the
+clautolisp-native reader that ~(quit)~ consults for its default exit
+code; it has no AutoCAD / BricsCAD counterpart.
+
+*** Return Values
+An integer (0 when the channel was never touched).
+
+*** Side Effects
+None.
+
+*** Exceptional Situations
+- Under ~--strict~ / ~--autocad~ / ~--bricscad~ the call emits a
+  non-fatal out-of-dialect WARNING; it still returns the status.
+  Silent under ~--clautolisp~ and ~--lax~.
+
+*** Examples
+#+begin_example
+(autolisp-set-status 9)
+(autolisp-status)         => 9
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since
+  clautolisp 1.2.26.
+- AutoCAD / BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp exit-status channel; see
+  autolisp-set-status-and-quit-status.issue.
 
 #+LATEX: \newpage
 

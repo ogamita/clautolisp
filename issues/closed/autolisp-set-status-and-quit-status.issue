@@ -1,0 +1,103 @@
+autolisp-set-status / autolisp-status + optional (quit [status]) — clautolisp exit-status channel
+=================================================================================================
+
+RESOLVED — shipped on master (clautolisp 1.2.26). The exit-status channel
+is implemented exactly as proposed below:
+
+  - runtime session carries an EXIT-STATUS slot (model.lisp) with
+    AUTOLISP-EXIT-STATUS / SET-AUTOLISP-EXIT-STATUS accessors (api.lisp),
+    mirroring the ERRNO channel;
+  - AUTOLISP-TERMINATION now carries a STATUS slot;
+  - builtins AUTOLISP-SET-STATUS / AUTOLISP-STATUS, and QUIT / EXIT gained
+    an OPTIONAL integer status (autolisp-builtins-core/source/api.lisp).
+    (quit N) exits N; (quit) uses the recorded status; a supplied status
+    warns out of dialect (mirrors the terpri-file extension), silent under
+    --clautolisp / --lax;
+  - the CLI maps the effective status to the process exit code, including
+    on NORMAL end-of-run, so `-x '(C:MAIN)'` that only calls
+    (autolisp-set-status N) exits N without an explicit quit
+    (tools/clautolisp/source/main.lisp);
+  - spec entries added (§ clautolisp Extensions + QUIT / EXIT);
+  - regression suite autolisp-builtins-core/tests/exit-status-tests.lisp
+    (10 tests) + end-to-end exit-code checks.
+
+Original proposal follows.
+
+
+
+See also: the alfe file-IPC bootstrap that already provides this on the
+CAD engines — autolisp-front-end/source/runtime/autolisp-bootstrap.lsp
+(defun autolisp-set-status), injected into each BricsCAD/AutoCAD session
+as run-common.lsp; the CLI quit in tools/clautolisp/source/main.lisp.
+
+Context
+-------
+
+When alfe drives an external CAD engine (--bricscad / --autocad) it
+injects a file-IPC bootstrap that defines `autolisp-set-status`, which
+writes the process exit code into *AUTOLISP_STATUSFILE*; alfe reads that
+file to decide the exit code. This is how test entry points work:
+
+    (defun C:MAIN ( / summary ok)
+      (setq summary (run-suite "..."))
+      ... (autolisp-set-status (if ok 0 1)) ...)
+
+run via  -x '(C:MAIN)'.
+
+The native `--clautolisp` engine runs in-process, so that CAD bootstrap
+is NOT injected: `autolisp-set-status` is undefined, and there is
+currently no in-language way to record an exit status for a later quit.
+Observed under `alfe --clautolisp` (all dialects):
+
+  - `autolisp-set-status` → UNDEFINED-FUNCTION (fatal; vl-catch-all-apply
+    does NOT catch it).
+  - a runtime error inside `-x` does NOT set a non-zero exit code.
+  - `(exit N)` errors: EXIT takes 0 args.
+  - the only lever is `--main FN`: normal return ⇒ exit 0, signalled
+    error ⇒ exit != 0.
+
+So a portable test harness cannot report pass/fail cleanly under
+clautolisp the way it does under the CAD engines.
+
+Proposal
+--------
+
+Add, as clautolisp-specific extensions (available under the `clautolisp`
+dialect, and usable under `lax`; out-of-dialect use — strict / autocad /
+bricscad — emits the usual extension diagnostic), a small status channel
+mirroring the alfe bootstrap semantics:
+
+  - `(autolisp-set-status status)` — store an integer exit status in a
+    per-session runtime slot. Returns `status`. (Mirrors the CAD-side
+    `autolisp-set-status`, minus the STATUSFILE write.)
+
+  - `(autolisp-status)` — read the stored status. Defaults to 0 when
+    never set.
+
+  - `(quit [status])` — add an OPTIONAL integer argument to the existing
+    `quit` / `exit` builtin:
+        * `(quit N)`  → terminate with exit code N;
+        * `(quit)`    → terminate with the stored status
+                        (i.e. `(autolisp-status)`), defaulting to 0.
+
+    This keeps the current 0-arg behaviour as the default while letting
+    a script set the status early and let quit pick it up later.
+
+With this, the existing pattern works unchanged under clautolisp in lax
+(and clautolisp) dialect:
+
+    (autolisp-set-status (if ok 0 1))   ; recorded
+    ...                                 ; alfe/quit later uses it
+
+and alfe can map the recorded status to its process exit code.
+
+Notes
+-----
+
+  - Keep the name and integer semantics identical to the CAD bootstrap
+    `autolisp-set-status` so a single `run-tests.lsp` / `C:MAIN` is
+    portable across BricsCAD, AutoCAD and clautolisp without engine
+    branches.
+  - `autolisp-status` (the reader) has no CAD-bootstrap counterpart; it
+    is the clautolisp-native way for `quit` (and callers) to consult the
+    pending status.

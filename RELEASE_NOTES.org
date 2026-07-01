@@ -78,6 +78,22 @@ separate binary for tool integrators.
   ~"UTF-8-BOM"~ / ~"UTF-16-LE"~ / ~"UTF-16-BE"~ / ~"UTF-32-LE"~ /
   ~"UTF-32-BE"~ / ~"ANSI"~. See § /clautolisp Extensions/.
 
+** Exit-status channel (portable pass/fail for batch scripts)
+
+- ~(autolisp-set-status N)~ records an integer process exit status;
+  ~(autolisp-status)~ reads it back (0 when never set). The name and
+  integer semantics match the ~autolisp-set-status~ alfe injects into a
+  driven AutoCAD / BricsCAD session, so one ~C:MAIN~ reports pass/fail
+  identically across all three engines.
+- ~(quit [status])~ / ~(exit [status])~ take an OPTIONAL integer: ~(quit
+  N)~ exits ~N~, bare ~(quit)~ exits with the recorded status. The
+  clautolisp CLI's normal end-of-run also exits with the recorded status,
+  so ~-x '(C:MAIN)'~ need not call ~quit~ at all.
+- These are clautolisp extensions: silent under ~--clautolisp~ / ~--lax~,
+  and flagged with a non-fatal out-of-dialect WARNING under ~--strict~ /
+  ~--autocad~ / ~--bricscad~ only when the status argument is supplied.
+  See ~issues/closed/autolisp-set-status-and-quit-status.issue~.
+
 ** AutoLISP-protocol image-introspection variables
 
 - ~*AUTOLISP-FRONTEND*~ — ALFE / CLAUTOLISP (the entry-point tool).

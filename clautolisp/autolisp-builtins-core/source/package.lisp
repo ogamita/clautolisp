@@ -24,6 +24,8 @@
                 #:autolisp-current-directory
                 #:autolisp-load-file
                 #:set-autolisp-errno
+                #:autolisp-exit-status
+                #:set-autolisp-exit-status
                 #:autolisp-support-paths
                 #:autolisp-trusted-paths
                 #:call-with-autolisp-error-handler

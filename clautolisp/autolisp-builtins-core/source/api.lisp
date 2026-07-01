@@ -753,11 +753,97 @@ TRUSTEDPATHS to trust it."
      object))
   (make-autolisp-string (autolisp-catch-all-error-message object)))
 
-(defun builtin-exit ()
-  (error 'autolisp-termination :kind :exit))
+;;; --- clautolisp exit-status channel -------------------------------
+;;;
+;;; autolisp-set-status / autolisp-status / (quit [status]) — a small
+;;; process-exit-status channel that mirrors the alfe CAD bootstrap
+;;; `autolisp-set-status`, so a single C:MAIN reports pass/fail
+;;; identically under BricsCAD, AutoCAD and clautolisp without engine
+;;; branches. See issues/open/autolisp-set-status-and-quit-status.issue.
+;;;
+;;; These are clautolisp extensions: silent under --clautolisp / --lax,
+;;; and — only when the STATUS argument is actually supplied — flagged
+;;; with a non-fatal out-of-dialect WARNING under --strict / --autocad /
+;;; --bricscad (dialect problems warn, never error; the call still takes
+;;; effect). Zero-arg (quit)/(exit) stay standard and silent.
 
-(defun builtin-quit ()
-  (error 'autolisp-termination :kind :quit))
+(defun %exit-status-extension-allowed-p ()
+  "True under the dialects that natively own the exit-status channel
+(--clautolisp and the catch-all --lax); false elsewhere, where its use
+is flagged as non-portable."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+    (and (member name '(:clautolisp :lax)) t)))
+
+(defun emit-exit-status-extension-warning (form)
+  "Emit a non-fatal out-of-dialect WARNING for an exit-status-channel
+FORM used under a dialect that does not natively own it. Mirrors
+EMIT-TERPRI-FILE-EXTENSION-WARNING: dialect problems are flagged, never
+raised. The call still takes effect."
+  (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+         (name (and dialect
+                    (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+    (format *error-output*
+            "~&[exit-status-extension] `~A' is a clautolisp extension; ~
+--dialect ~(~A~) flags it as non-portable (on the CAD hosts the exit ~
+status is recorded via alfe's injected autolisp-set-status). Use ~
+--dialect clautolisp to silence.~%"
+            form (or name "default"))))
+
+(defun require-exit-status (object operator-name)
+  "Coerce OBJECT to the integer exit status carried by the channel.
+AutoLISP integers pass through; a real is truncated (mirroring sysvar
+integer coercion); anything else is rejected."
+  (cond
+    ((integerp object) object)
+    ((numberp object) (truncate object))
+    (t
+     (signal-builtin-argument-error
+      :invalid-integer-argument
+      operator-name
+      "~A expects an integer status, got ~S."
+      operator-name
+      object))))
+
+(defun builtin-autolisp-set-status (status)
+  "Record STATUS (an integer) as the pending process exit status,
+returning it. Mirrors the CAD-side autolisp-set-status (minus the
+STATUSFILE write)."
+  (unless (%exit-status-extension-allowed-p)
+    (emit-exit-status-extension-warning "(autolisp-set-status status)"))
+  (let ((value (require-exit-status status "AUTOLISP-SET-STATUS")))
+    (set-autolisp-exit-status value)
+    value))
+
+(defun builtin-autolisp-status ()
+  "Return the pending process exit status (0 when never set)."
+  (unless (%exit-status-extension-allowed-p)
+    (emit-exit-status-extension-warning "(autolisp-status)"))
+  (autolisp-exit-status))
+
+(defun %terminate-with-status (kind operator form status-supplied-p status)
+  "Shared body of (exit [status]) / (quit [status]). When STATUS is
+supplied it becomes the process exit status (recorded via the same slot
+as autolisp-set-status, after the out-of-dialect check); otherwise the
+session's already-stored autolisp-status is used. Signals
+autolisp-termination carrying the effective status."
+  (let ((effective
+          (if status-supplied-p
+              (progn
+                (unless (%exit-status-extension-allowed-p)
+                  (emit-exit-status-extension-warning form))
+                (let ((value (require-exit-status status operator)))
+                  (set-autolisp-exit-status value)
+                  value))
+              (autolisp-exit-status))))
+    (error 'autolisp-termination :kind kind :status effective)))
+
+(defun builtin-exit (&optional (status nil status-supplied-p))
+  (%terminate-with-status :exit "EXIT" "(exit status)" status-supplied-p status))
+
+(defun builtin-quit (&optional (status nil status-supplied-p))
+  (%terminate-with-status :quit "QUIT" "(quit status)" status-supplied-p status))
 
 (defun builtin-vl-exit-with-error (message)
   (let ((text (autolisp-string-value (require-string message "VL-EXIT-WITH-ERROR"))))
@@ -7572,6 +7658,11 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "TBLOBJNAME" #'builtin-tblobjname)
    (make-core-builtin-subr "GETVAR"     #'builtin-getvar)
    (make-core-builtin-subr "SETVAR"     #'builtin-setvar)
+   ;; clautolisp exit-status channel: autolisp-set-status keeps the CAD
+   ;; bootstrap name (portable C:MAIN); autolisp-status is the native
+   ;; reader. See autolisp-set-status-and-quit-status.issue.
+   (make-core-builtin-subr "AUTOLISP-SET-STATUS" #'builtin-autolisp-set-status)
+   (make-core-builtin-subr "AUTOLISP-STATUS"     #'builtin-autolisp-status)
    ;; clautolisp extensions (CLAL-*): not documented by Autodesk or
    ;; Bricsys; see autolisp-spec §16 ~clautolisp Extensions~.
    (make-core-builtin-subr "CLAL-SYSVAR-LIST"    #'builtin-clal-sysvar-list)

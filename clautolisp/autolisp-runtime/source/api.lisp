@@ -140,7 +140,15 @@ the binding-cell doc slot."
 (define-condition autolisp-termination (serious-condition)
   ((kind
     :initarg :kind
-    :reader autolisp-termination-kind))
+    :reader autolisp-termination-kind)
+   ;; The process exit status carried by (quit [status]) / (exit
+   ;; [status]). Defaults to 0 so the historical 0-arg (quit)/(exit)
+   ;; keep exiting with success; a script sets it explicitly, or lets
+   ;; it fall through to the session's stored autolisp-status.
+   (status
+    :initarg :status
+    :initform 0
+    :reader autolisp-termination-status))
   (:report (lambda (condition stream)
              (format stream "AutoLISP termination requested: ~A"
                      (autolisp-termination-kind condition)))))
@@ -465,6 +473,9 @@ subsequent dialect-sensitive operation."
 (defun runtime-session-errno (session)
   (clautolisp.autolisp-runtime.internal::runtime-session-errno session))
 
+(defun runtime-session-exit-status (session)
+  (clautolisp.autolisp-runtime.internal::runtime-session-exit-status session))
+
 (defun find-runtime-session-document (session name)
   (gethash name
            (clautolisp.autolisp-runtime.internal::runtime-session-document-namespaces
@@ -532,6 +543,18 @@ subsequent dialect-sensitive operation."
 
 (defun set-autolisp-errno (value &optional (context (current-evaluation-context)))
   (setf (clautolisp.autolisp-runtime.internal::runtime-session-errno
+         (evaluation-context-session context))
+        value))
+
+(defun autolisp-exit-status (&optional (context (current-evaluation-context)))
+  "Read the pending clautolisp exit status (the value last stored by
+(autolisp-set-status …); 0 when never set)."
+  (runtime-session-exit-status (evaluation-context-session context)))
+
+(defun set-autolisp-exit-status (value &optional (context (current-evaluation-context)))
+  "Store VALUE (an integer) as the pending clautolisp exit status on
+CONTEXT's session. Returns VALUE."
+  (setf (clautolisp.autolisp-runtime.internal::runtime-session-exit-status
          (evaluation-context-session context))
         value))
 

@@ -672,16 +672,20 @@ machinery, not user intent)."
                         :quiet-p quiet-p
                         :mock-input mock-input
                         :gui gui
-                        :trace-p trace-p)))))
+                        :trace-p trace-p))))
+        ;; Normal completion: exit with the status a script recorded via
+        ;; (autolisp-set-status N) — 0 when it never touched the channel.
+        (autolisp-exit-status context))
     (autolisp-runtime-error (condition)
       (report-runtime-error condition)
-      (quit 1))
+      1)
     (autolisp-termination (condition)
       (report-termination condition)
-      (quit 0))
+      ;; (quit [status]) / (exit [status]) carry their effective status.
+      (autolisp-termination-status condition))
     (file-error (condition)
       (report-error condition)
-      (quit 2))))
+      2)))
 
 (defun install-gui-renderer (gui-command)
   "Switch the active DCL renderer to a subprocess driver if
@@ -789,21 +793,24 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
             (install-gui-renderer gui)
             (when trace-p
               (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
-            (run-with-input dialect effective-actions options
-                            :quiet-p quiet-p
-                            :verbose-p verbose-p
-                            :debug-p debug-p
-                            :interactive-p effective-interactive-p
-                            :host host
-                            :mock-input mock-input
-                            :gui gui
-                            :trace-p trace-p
-                            :load-encoding load-encoding
-                            :io-encoding io-encoding
-                            :no-init-p no-init-p
-                            :no-color-p no-color-p)
-            (finish-output)
-            (quit 0))))
+            (let ((status
+                    (run-with-input dialect effective-actions options
+                                    :quiet-p quiet-p
+                                    :verbose-p verbose-p
+                                    :debug-p debug-p
+                                    :interactive-p effective-interactive-p
+                                    :host host
+                                    :mock-input mock-input
+                                    :gui gui
+                                    :trace-p trace-p
+                                    :load-encoding load-encoding
+                                    :io-encoding io-encoding
+                                    :no-init-p no-init-p
+                                    :no-color-p no-color-p)))
+              (finish-output)
+              ;; RUN-WITH-INPUT returns the effective process exit status
+              ;; (autolisp-set-status / (quit N) / error → 1 / file → 2).
+              (quit (if (integerp status) status 0))))))
     (clautolisp.autolisp-cli:cli-usage-error (condition)
       (format *error-output* "~&clautolisp: ~A~%" condition)
       (finish-output *error-output*)

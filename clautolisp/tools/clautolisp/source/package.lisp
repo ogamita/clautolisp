@@ -32,6 +32,8 @@
                 #:autolisp-runtime-error-call-stack
                 #:autolisp-termination
                 #:autolisp-termination-kind
+                #:autolisp-termination-status
+                #:autolisp-exit-status
                 #:call-with-autolisp-error-handler
                 #:derive-reader-options-for-dialect
                 #:intern-autolisp-symbol

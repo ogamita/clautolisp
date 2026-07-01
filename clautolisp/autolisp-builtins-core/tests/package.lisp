@@ -25,6 +25,9 @@
                 #:autolisp-namespace-exit-value
                 #:autolisp-termination
                 #:autolisp-termination-kind
+                #:autolisp-termination-status
+                #:autolisp-exit-status
+                #:set-autolisp-exit-status
                 #:autolisp-string
                 #:make-autolisp-string
                 #:make-autolisp-subr

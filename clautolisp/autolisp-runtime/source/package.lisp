@@ -108,6 +108,7 @@
    #:autolisp-runtime-error-details
    #:autolisp-termination
    #:autolisp-termination-kind
+   #:autolisp-termination-status
    #:autolisp-namespace-exit
    #:autolisp-namespace-exit-kind
    #:autolisp-namespace-exit-value
@@ -133,6 +134,8 @@
    #:autolisp-runtime-error-errno
    #:signal-autolisp-runtime-error
    #:set-autolisp-errno
+   #:autolisp-exit-status
+   #:set-autolisp-exit-status
    #:namespace-binding-cell
    #:namespace-value-cell
    #:namespace-function-cell
