@@ -280,6 +280,12 @@
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-init-files"
+               ;; The interactive debugger (aldo): engine + UI protocol +
+               ;; the dumb-terminal UI, so --on-error debug can drop the
+               ;; REPL into the debugger at an unhandled error (§10.1).
+               "clautolisp/autolisp-debug"
+               "clautolisp/autolisp-debug-ui"
+               "clautolisp/autolisp-debug-ui-dumb"
                "uiop")
   :serial t
   :components

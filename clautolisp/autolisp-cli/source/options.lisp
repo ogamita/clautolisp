@@ -41,6 +41,7 @@
   (version-p        nil)              ; AC
   (list-encodings-p nil)              ; AC  --list-encodings
   (list-dialects-p  nil)              ; AC  --list-dialects
+  (on-error         nil)              ; AC  --on-error :quit/:debug/:ignore (nil = auto: interactive->debug, batch->quit)
   (dry-run-p        nil)              ; A
   (no-init-p        nil)              ; AC
   (no-color-p       nil)              ; AC
@@ -117,6 +118,20 @@ maps to the last known version). Drives the --list-dialects action and
 is shell-loop friendly: `for d in $(clautolisp --list-dialects); do …`."
   (dolist (name (clautolisp.autolisp-reader:autolisp-dialect-names))
     (write-line name stream)))
+
+(defun parse-on-error (value option)
+  "Validate a --on-error VALUE and return it as a keyword. Controls what
+happens when an uncaught AutoLISP error reaches top level (spec §10.1):
+QUIT reports the error (and exits non-zero in batch), DEBUG stops in the
+interactive debugger at the error point, IGNORE runs the user's *error*
+and continues to the next form/action."
+  (cond ((string-equal value "quit")   :quit)
+        ((string-equal value "debug")  :debug)
+        ((string-equal value "ignore") :ignore)
+        (t (error 'cli-usage-error
+                  :option option
+                  :message
+                  (format nil "Unknown --on-error ~S (expected quit/debug/ignore)" value)))))
 
 (defun parse-bootstrap-phase (value option)
   (cond ((string-equal value "marker") :marker)

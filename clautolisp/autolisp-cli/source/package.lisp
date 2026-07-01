@@ -34,6 +34,7 @@
    #:cli-options-version-p       ; AC
    #:cli-options-list-encodings-p ; AC
    #:cli-options-list-dialects-p ; AC
+   #:cli-options-on-error        ; AC — --on-error :quit/:debug/:ignore (nil = auto)
    #:cli-options-dry-run-p       ; A
    #:cli-options-no-init-p       ; AC
    #:cli-options-no-color-p      ; AC
@@ -50,6 +51,7 @@
    #:parse-backend-variant
    #:parse-host
    #:parse-dialect
+   #:parse-on-error
    #:parse-bootstrap-phase
    #:parse-timeout
 

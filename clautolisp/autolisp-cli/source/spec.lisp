@@ -130,6 +130,16 @@ specs without mutating the shared template."
                (declare (ignore value name))
                (raise-verbosity opts :debug)))
 
+   ;; --on-error controls the §10.1 unhandled-error policy: quit (report,
+   ;; batch exits non-zero) / debug (stop in the interactive debugger) /
+   ;; ignore (run *error* and continue). Left unset it is auto: debug when
+   ;; the REPL is interactive, quit for batch runs.
+   (make-option-spec
+    :longs '("--on-error") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-on-error opts)
+                     (parse-on-error value name))))
+
    ;; --- dialect ---------------------------------------------------
    (make-option-spec
     :longs '("--dialect") :shorts nil :takes-arg-p t

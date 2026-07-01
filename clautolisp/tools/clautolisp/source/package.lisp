@@ -66,5 +66,17 @@
                 #:*default-clautolisp-stems*
                 #:find-init-files
                 #:no-init-requested-p)
+  ;; The interactive debugger (aldo): the engine's in-thread entry +
+  ;; hit-handler hook, and the UI session lifecycle. Used to drop the
+  ;; REPL into the dumb-terminal debugger on an unhandled error.
+  (:import-from #:clautolisp.debug
+                #:call-with-debugging
+                #:*debug-hit-handler*)
+  (:import-from #:clautolisp.debug.ui
+                #:start-session
+                #:session-thread-info
+                #:session-stop
+                #:ui-detached
+                #:session-ui)
   (:export #:main
            #:*version*))

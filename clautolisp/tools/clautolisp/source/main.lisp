@@ -41,6 +41,10 @@
   (format t "  -d, --debug            Print debug traces; include CL backtraces on runtime errors.~%")
   (format t "                         --quiet/--verbose/--debug compose additively and commutatively:~%")
   (format t "                         the most verbose request wins regardless of CLI argument order.~%")
+  (format t "  --on-error POLICY      On an uncaught AutoLISP error: quit (report, batch exits~%")
+  (format t "                         non-zero), debug (stop in the interactive aldo debugger at~%")
+  (format t "                         the error point), or ignore (run *error* and continue).~%")
+  (format t "                         Default is auto: debug in the interactive REPL, quit for batch.~%")
   (format t "  --no-color             Disable ANSI colour in AutoLISP value output. Honoured~%")
   (format t "                         equivalently via $NO_COLOR (https://no-color.org).~%")
   (format t "                         Without it, the CLI probes the terminal and picks a~%")
@@ -488,50 +492,92 @@ walk goes oldest-receiver-first so each slot reads its predecessor
                                                                 context)))
                            context))))
 
-(defun repl-loop (dialect context &key quiet-p mock-input gui trace-p)
+(defun repl-eval-turn (forms context)
+  "Evaluate one REPL turn's FORMS, running the user's AutoLISP *error*
+handler on an uncaught error, else re-signalling to the REPL handler-case."
+  (call-with-autolisp-error-handler
+   (lambda () (autolisp-eval-progn forms context))
+   context))
+
+(defun repl-eval-turn/debug (forms context session)
+  "Evaluate one REPL turn under the interactive debugger (--on-error debug).
+The debug session installs the §10.1 HANDLER-BIND *inside* (more recently
+than) call-with-autolisp-error-handler, so on an uncaught error the
+debugger stops at the live error frame BEFORE the stack unwinds. The
+dumb-terminal command loop then decides the resolution:
+
+  c   decline — let the error propagate to the user's *error* / the REPL
+  a/q abort   — unwind cleanly to this turn; the turn yields :ABORTED
+  r   return  — supply a value for the innermost instrumented form (§10.1)
+
+*debug-hit-handler* routes each stop into this session's terminal UI; the
+session's thread-info carries breakpoints set across turns."
+  (call-with-autolisp-error-handler
+   (lambda ()
+     (let ((*debug-hit-handler*
+             (lambda (hit) (session-stop session hit))))
+       (call-with-debugging
+        (lambda () (autolisp-eval-progn forms context))
+        :thread-info (session-thread-info session))))
+   context))
+
+(defun repl-loop (dialect context &key quiet-p mock-input gui trace-p
+                                        (on-error :ignore))
   (unless quiet-p
     (emit-repl-banner dialect context
                       :mock-input mock-input :gui gui :trace-p trace-p))
   (%repl-init-history context)
-  (loop
-    (multiple-value-bind (source eofp)
-        (read-balanced-source-from-stream
-         *standard-input* "_$ " "   " dialect)
-      (when eofp
-        (terpri)
-        (return))
-      (handler-case
-          (let* ((options (derive-reader-options-for-dialect
-                           dialect :source-name "<repl>"))
-                 (forms (read-runtime-from-string source :options options))
-                 ;; A turn evaluates the *last* form of the typed
-                 ;; sequence as the canonical "form being evaluated"
-                 ;; for the :- / :+ / :++ history. If the user typed
-                 ;; just one form (the common case) this is exactly
-                 ;; that form; multi-form turns get their final form
-                 ;; recorded — same convention as SLIME / Allegro's
-                 ;; repl bookkeeping.
-                 (this-form (car (last forms))))
-            ;; Bind :- BEFORE eval so the user's form can reference
-            ;; what they just typed via (print :-), etc.
-            (%repl-bind-dash this-form context)
-            (let ((result (call-with-autolisp-error-handler
-                           (lambda () (autolisp-eval-progn forms context))
-                           context)))
-              (format t "~A~%" (autolisp-value->string result nil))
-              (%repl-rotate-history result context)))
-        (simple-error (condition)
-          (let ((diagnostic (simple-error-diagnostic condition)))
-            (if diagnostic
-                (format *error-output* "~&; reader error: ~A: ~A~%"
-                        (diagnostic-code diagnostic)
-                        condition)
-                (format *error-output* "~&; reader error: ~A~%" condition))))
-        (autolisp-runtime-error (condition)
-          (report-runtime-error condition))
-        (autolisp-termination (condition)
-          (report-termination condition)
-          (return))))))
+  ;; --on-error debug arms the interactive debugger once for the whole
+  ;; REPL: the UI attaches now (one banner line), each turn evaluates
+  ;; under it, and it detaches on Ctrl-D. Other policies keep the plain
+  ;; report-and-continue path.
+  (let ((session (when (eq on-error :debug)
+                   (start-session :ui :terminal :context context))))
+    (unwind-protect
+         (loop
+           (multiple-value-bind (source eofp)
+               (read-balanced-source-from-stream
+                *standard-input* "_$ " "   " dialect)
+             (when eofp
+               (terpri)
+               (return))
+             (handler-case
+                 (let* ((options (derive-reader-options-for-dialect
+                                  dialect :source-name "<repl>"))
+                        (forms (read-runtime-from-string source :options options))
+                        ;; A turn evaluates the *last* form of the typed
+                        ;; sequence as the canonical "form being evaluated"
+                        ;; for the :- / :+ / :++ history. If the user typed
+                        ;; just one form (the common case) this is exactly
+                        ;; that form; multi-form turns get their final form
+                        ;; recorded — same convention as SLIME / Allegro's
+                        ;; repl bookkeeping.
+                        (this-form (car (last forms))))
+                   ;; Bind :- BEFORE eval so the user's form can reference
+                   ;; what they just typed via (print :-), etc.
+                   (%repl-bind-dash this-form context)
+                   (let ((result (if session
+                                     (repl-eval-turn/debug forms context session)
+                                     (repl-eval-turn forms context))))
+                     ;; An aborted (a/q) debug turn yields the :ABORTED
+                     ;; sentinel, not an AutoLISP value — skip printing it.
+                     (unless (eq result :aborted)
+                       (format t "~A~%" (autolisp-value->string result nil))
+                       (%repl-rotate-history result context))))
+               (simple-error (condition)
+                 (let ((diagnostic (simple-error-diagnostic condition)))
+                   (if diagnostic
+                       (format *error-output* "~&; reader error: ~A: ~A~%"
+                               (diagnostic-code diagnostic)
+                               condition)
+                       (format *error-output* "~&; reader error: ~A~%" condition))))
+               (autolisp-runtime-error (condition)
+                 (report-runtime-error condition))
+               (autolisp-termination (condition)
+                 (report-termination condition)
+                 (return)))))
+      (when session
+        (ui-detached (session-ui session))))))
 
 (defun encoding-keyword (encoding-string)
   "Map a CLI encoding string to the Lisp keyword external-format.
@@ -631,7 +677,7 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
                        &key quiet-p verbose-p debug-p
                             interactive-p host mock-input gui trace-p
                             load-encoding io-encoding
-                            no-init-p no-color-p)
+                            no-init-p no-color-p (on-error :ignore))
   "Build a shared evaluation context, install the CLI-derived
 *AUTOLISP-…* globals from CLI-OPTIONS via the shared
 clautolisp.autolisp-cli installer, run every action in ACTIONS in
@@ -672,7 +718,8 @@ machinery, not user intent)."
                         :quiet-p quiet-p
                         :mock-input mock-input
                         :gui gui
-                        :trace-p trace-p))))
+                        :trace-p trace-p
+                        :on-error on-error))))
         ;; Normal completion: exit with the status a script recorded via
         ;; (autolisp-set-status N) — 0 when it never touched the channel.
         (autolisp-exit-status context))
@@ -761,7 +808,8 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                (no-init-p (clautolisp.autolisp-cli:cli-options-no-init-p options))
                (no-color-p (clautolisp.autolisp-cli:cli-options-no-color-p options))
                (explicit-interactive-p
-                 (clautolisp.autolisp-cli:cli-options-interactive-p options)))
+                 (clautolisp.autolisp-cli:cli-options-interactive-p options))
+               (on-error (clautolisp.autolisp-cli:cli-options-on-error options)))
           (let ((*verbose-p* verbose-p)
                 (*debug-p* debug-p)
                 ;; Colour policy is computed exactly once per CLI run
@@ -806,7 +854,16 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                     :load-encoding load-encoding
                                     :io-encoding io-encoding
                                     :no-init-p no-init-p
-                                    :no-color-p no-color-p)))
+                                    :no-color-p no-color-p
+                                    ;; --on-error default is auto: the
+                                    ;; interactive REPL drops into the
+                                    ;; debugger (spec §10.1 / *CLAL-ON-ERROR*
+                                    ;; DEBUG), batch runs report-and-exit
+                                    ;; (the CLI's quit default).
+                                    :on-error
+                                    (or on-error
+                                        (if effective-interactive-p
+                                            :debug :quit)))))
               (finish-output)
               ;; RUN-WITH-INPUT returns the effective process exit status
               ;; (autolisp-set-status / (quit N) / error → 1 / file → 2).
