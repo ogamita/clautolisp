@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.2.5 / alfe 1.2.1). For the
+master at the top of the file (clautolisp 1.3.0 / alfe 1.3.0). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
 
