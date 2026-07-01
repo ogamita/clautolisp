@@ -1302,6 +1302,30 @@ reference §1). The aldo debugger installs it when its system is loaded; it is a
 no-op (returns without stopping) unless a debug session is active on the
 thread. NIL when the debug system is absent, making CLAL-BREAK a no-op.")
 
+(defparameter *instrument-usubr-hook* nil
+  "When non-nil, a function (USUBR) that weaves USUBR's instrumented fork and
+debug-metadata in place (clautolisp.debug:instrument-usubr). The aldo debugger
+installs it when its system loads; NIL when the debug system is absent. Lets the
+runtime instrument functions for stepping/breakpoints — lazily, on a function's
+first call under a debug session — without the runtime depending on the debugger
+layer (the same dependency-inversion as *debug-break-hook*).")
+
+(defparameter *debug-instrumentation-enabled* t
+  "Whether the runtime weaves instrumented forks while debugging. Reflects the
+CLAL-OPTIMIZATION DEBUG level (CLAL-OPTIMIZE sets it: T when DEBUG>0, NIL under
+SPACE / DEBUG 0). When NIL, debugged code runs its plain body — no poll points,
+no stepping — trading debuggability for speed/size (the fork matrix's DEBUG-0
+rows). T by default, so a debug session instruments what it runs.")
+
+(defun maybe-instrument-usubr (function)
+  "Lazily weave FUNCTION's instrumented fork on its first call under a debug
+session, when instrumentation is enabled and the debugger layer is loaded.
+Returns the instrumented body (now non-nil), or NIL if instrumentation is
+disabled / the debugger is absent, so the caller falls back to the plain body."
+  (when (and *debug-instrumentation-enabled* *instrument-usubr-hook*)
+    (ignore-errors (funcall *instrument-usubr-hook* function))
+    (autolisp-usubr-instrumented-body function)))
+
 (defun append-proper-and-tail (elements tail)
   (if (null elements)
       tail
@@ -1840,8 +1864,17 @@ flag only."
                ;; no session active *DEBUGGING* is NIL and this reduces to
                ;; the original plain-body path at no cost.
                (let ((selected-body
-                       (if (and *debugging* (autolisp-usubr-instrumented-body function))
-                           (autolisp-usubr-instrumented-body function)
+                       (if *debugging*
+                           (or (autolisp-usubr-instrumented-body function)
+                               ;; Lazily weave the instrumented fork on this
+                               ;; function's first call under a debug session
+                               ;; (compiled-eval model): stepping/breakpoints
+                               ;; then ride on it, and code defined before the
+                               ;; session becomes debuggable without a separate
+                               ;; instrument-on-defun pass. No cost when not
+                               ;; debugging (*DEBUGGING* NIL short-circuits).
+                               (maybe-instrument-usubr function)
+                               (autolisp-usubr-body function))
                            (autolisp-usubr-body function))))
                  (let ((*autolisp-call-stack*
                         (cons (cons :usubr
@@ -1886,6 +1919,27 @@ flag only."
   (let ((result nil))
     (dolist (form forms result)
       (setf result (autolisp-eval form context)))))
+
+(defun autolisp-compiled-eval (form &optional (context (current-evaluation-context)))
+  "Evaluate a TOP-LEVEL FORM through the compiled-eval model
+(debugger-public-interface issue): (eval expr) == (funcall (clal-compile nil
+`(lambda () ,expr))). Under an active debug session with instrumentation enabled,
+FORM is wrapped in a nullary usubr which the apply boundary instruments, so the
+poll points inside FORM fire — a top-level (/ 0) or (setq x (buggy)) stops at a
+real frame and can be stepped. With no session (all normal runs and tests) this
+is plain AUTOLISP-EVAL at full speed — the wrap is never built."
+  (if (and *debugging* *debug-instrumentation-enabled*)
+      (let ((usubr (make-autolisp-usubr "<toplevel>" '() (list form) context)))
+        (call-autolisp-function-in-context usubr context))
+      (autolisp-eval form context)))
+
+(defun autolisp-eval-toplevel-progn (forms &optional (context (current-evaluation-context)))
+  "Evaluate FORMS as a sequence of TOP-LEVEL forms through AUTOLISP-COMPILED-EVAL
+(so LOAD and the REPL get instrumentable top-level forms under a debug session),
+returning the last form's value. Outside a session this is AUTOLISP-EVAL-PROGN."
+  (let ((result nil))
+    (dolist (form forms result)
+      (setf result (autolisp-compiled-eval form context)))))
 
 (defun eval-quote-form (arguments context)
   (declare (ignore context))
@@ -2493,7 +2547,10 @@ so a value written and read back under the same encoding round-trips."
               read-options)))
     (call-with-autolisp-error-handler
      (lambda ()
-       (autolisp-eval-progn
+       ;; Top-level forms go through the compiled-eval model so a file
+       ;; loaded under a debug session is instrumentable (LOAD → EVAL →
+       ;; clal-compile). Outside a session this is a plain eval-progn.
+       (autolisp-eval-toplevel-progn
         (apply #'read-runtime-from-file path effective-options)
         context))
      context)))

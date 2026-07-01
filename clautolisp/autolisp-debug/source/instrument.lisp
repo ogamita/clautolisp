@@ -160,3 +160,9 @@ USUBR's body conses must have been recorded by a tracked load
                 (autolisp-usubr-debug-metadata usubr) metadata)
           (register-metadata metadata)
           metadata))))
+
+;;; Dependency inversion: let the runtime weave instrumented forks (lazily, on a
+;;; function's first call under a debug session) without depending on this layer.
+;;; The evaluator's two-bodies dispatch calls this hook (clautolisp-debugger
+;;; plan §3a); NIL when the debug system is absent.
+(setf clautolisp.autolisp-runtime:*instrument-usubr-hook* #'instrument-usubr)
