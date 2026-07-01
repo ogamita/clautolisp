@@ -281,3 +281,51 @@ Resolved tail.
   (clautolisp / alfe / autolisp-spec / autolisp-test). If a
   feature spans subprojects, mention it once in the most
   user-facing one and cross-link.
+
+## Release tags and branches
+
+The **release** is versioned on its own axis, independent of any single
+program's version. A release is marked by an annotated (or lightweight)
+tag `vM.m.d` on the release commit.
+
+- The release version `vM.m.d` is NOT the version of any one program.
+  Each shipped program keeps its own version (`clautolisp`'s
+  `version.lisp`, `alfe`, `read-autolisp`, `autolisp-spec`, …), tagged
+  under its own prefix (`clautolisp-vA.B.C`, `alfe-vA.B.C`,
+  `alref-vA.B.C`).
+- A program version `foo-A.B.C` shipped in a release must have its
+  **major.minor match the release's**: any `foo-A.B.C` living in the
+  commits between `vM.m.0` and the tip of `release-M.m` must have
+  `A.B = M.m`. The development counter `C` is a per-program monotonic
+  counter and need NOT match across programs or the release.
+  - Exception: a program that has not changed may stay at an older
+    `A.B.C` with `A.B < M.m` and still ship inside `release-M.m.d`.
+
+**Only clean `vM.m.d` tags are release boundaries.** Ignore, for this
+purpose: pre-release tags (`vM.m.d-rcN`), program-prefixed tags
+(`clautolisp-v*`, `alfe-*`, `alref-v*`), and CI/misc tags (`ci-win`).
+
+For every release tag `vM.m.d` there must be two branches:
+
+- **`release-M.m.d`** — created on the same commit as `vM.m.d`. As a
+  branch it advances onto the following commits until the next release
+  tag `vM'.m'.d'` appears, at which point it is frozen (its tip is the
+  commit just before that next tag). The patch branches thus tile the
+  linear history: one contiguous segment each, no gap, no overlap.
+- **`release-M.m`** — the branch that contains *every* `M.m.d` release,
+  whatever the value of `d`. It advances and keeps advancing until a tag
+  `vM'.m'.d'` with `M'.m' ≠ M.m` appears (the first release of a new
+  minor), then it is frozen just before that tag. The current minor's
+  `release-M.m` never freezes — it tracks the development line (master).
+
+Concretely, when a new release tag `vM.m.d` is placed on commit `C`:
+
+1. freeze the currently-live `release-*.*.* ` patch branch at `C^` and
+   create `release-M.m.d` at `C`;
+2. if `M.m` is unchanged, `release-M.m` keeps advancing; if `M.m` is new,
+   freeze the previous `release-*.*` at `C^` and create `release-M.m`
+   at `C`.
+
+Between releases, fast-forward the two live branches (`release-M.m` and
+the current `release-M.m.d`) as the development line advances. Push the
+release branches to the canonical remote (`origin`).
