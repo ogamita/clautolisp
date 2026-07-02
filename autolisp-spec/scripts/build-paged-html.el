@@ -49,7 +49,9 @@
 
 (defun alref-html/load-symbols (path)
   "Read PATH (build/org/symbols.txt) and return a list of
-(SYMBOL KIND BASENAME) triples."
+(SYMBOL KIND BASENAME) triples. The optional trailing FLAGS column
+(ABC availability letters) is dropped — BASENAME must not include it,
+or the cross-reference hrefs pick up a spurious \"\\tAB\" suffix."
   (let (entries)
     (when (file-exists-p path)
       (with-temp-buffer
@@ -59,7 +61,8 @@
           (let ((line (buffer-substring-no-properties
                        (line-beginning-position)
                        (line-end-position))))
-            (when (string-match "^\\([^\t]+\\)\t\\([^\t]+\\)\t\\(.+\\)$" line)
+            (when (string-match
+                   "^\\([^\t]+\\)\t\\([^\t]+\\)\t\\([^\t]+\\)" line)
               (push (list (match-string 1 line)
                           (match-string 2 line)
                           (match-string 3 line))

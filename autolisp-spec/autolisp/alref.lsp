@@ -51,7 +51,7 @@
 ;; every change that touches alref.lsp's behaviour. (alref-version)
 ;; returns this string — useful when a user reports a bug, so we
 ;; know which revision of the library they're running against.
-(setq *alref-version* "1.0.1")
+(setq *alref-version* "1.3.0")
 
 (defun alref-version ( )
   "Return the alref.lsp library version as a string (e.g. \"1.0.0\").
@@ -114,10 +114,15 @@ avoids vl-string-search for portability."
               (strcase haystack)
               1))))
 
-(defun alref-split-tab (line / tab1 tab2)
-  "Parse a tab-separated three-column line into (FIELD-1 FIELD-2
-FIELD-3). Returns nil when the line doesn't have exactly two
-tabs."
+(defun alref-split-tab (line / tab1 tab2 tab3)
+  "Parse a tab-separated symbols.txt line into (SYMBOL KIND BASENAME
+FLAGS). The FLAGS field carries the ABC availability letters —
+'A' AutoCAD, 'B' BricsCAD, 'C' clautolisp (the runtime library adds
+'C' live, so on-disk lines hold only A/B). FLAGS is optional: lines
+emitted before the flags column was added parse with FLAGS = \"\", and
+any extra trailing tab-separated fields are folded into FLAGS rather
+than leaking into BASENAME. Returns nil when the line lacks the two
+mandatory tabs (SYMBOL / KIND / BASENAME)."
   (setq tab1 (alref-string-position (alref-tab-char) line 1))
   (if (null tab1)
     nil
@@ -125,9 +130,16 @@ tabs."
       (setq tab2 (alref-string-position (alref-tab-char) line (1+ tab1)))
       (if (null tab2)
         nil
-        (list (substr line 1 (1- tab1))
-              (substr line (1+ tab1) (- tab2 tab1 1))
-              (substr line (1+ tab2)))))))
+        (progn
+          ;; Optional 3rd tab separates BASENAME from the FLAGS column.
+          ;; Without it (pre-flags files) BASENAME runs to end-of-line.
+          (setq tab3 (alref-string-position (alref-tab-char) line (1+ tab2)))
+          (list (substr line 1 (1- tab1))
+                (substr line (1+ tab1) (- tab2 tab1 1))
+                (if tab3
+                  (substr line (1+ tab2) (- tab3 tab2 1))
+                  (substr line (1+ tab2)))
+                (if tab3 (substr line (1+ tab3)) "")))))))
 
 (defun alref-page-path (basename / )
   "Compose the absolute pathname of pages/BASENAME.txt under the
@@ -141,7 +153,7 @@ configured root."
 
 (defun alref-load-symbols ( / path lines acc parsed)
   "Return the parsed contents of pages/symbols.txt as a list of
-(SYMBOL KIND BASENAME) triples. Re-reads the file on the first
+(SYMBOL KIND BASENAME FLAGS) tuples. Re-reads the file on the first
 call after `alref-set-root' moves the root."
   (if (and *alref-symbols-cache*
            (= *alref-symbols-root* *alref-root*))

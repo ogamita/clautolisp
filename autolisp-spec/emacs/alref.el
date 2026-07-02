@@ -106,15 +106,17 @@ neither the custom var nor any default location is populated."
 ;;; --- symbol index ---------------------------------------------------
 ;;
 ;; symbols.txt is one line per documented symbol:
-;;   SYMBOL\tKIND\tBASENAME
+;;   SYMBOL\tKIND\tBASENAME\tFLAGS
 ;; KIND is the prose-name of the entry kind (Function / Reader Syntax /
 ;; Special Operator / Variable / Macro / Type). BASENAME is the on-disk
 ;; stem (filename without extension); appended to pages/ → .txt, html/
-;; → .html, etc.
+;; → .html, etc. FLAGS is the ABC availability column ('A' AutoCAD,
+;; 'B' BricsCAD, 'C' clautolisp) and is optional — pre-flags files
+;; omit it, and it must not bleed into BASENAME.
 
 (defvar alref--symbol-table nil
-  "Hash table: SYMBOL → (KIND BASENAME). Filled lazily by
-`alref--ensure-loaded'.")
+  "Hash table: SYMBOL → (KIND BASENAME FLAGS). Filled lazily by
+`alref--ensure-loaded'. FLAGS is \"\" for pre-flags symbols.txt files.")
 
 (defvar alref--symbol-loaded-from nil
   "Pathname the current `alref--symbol-table' was loaded from.
@@ -130,9 +132,15 @@ Used by `alref-reload' to know what to re-read.")
         (let ((line (buffer-substring-no-properties
                      (line-beginning-position)
                      (line-end-position))))
-          (when (string-match "^\\([^\t]+\\)\t\\([^\t]+\\)\t\\(.+\\)$" line)
+          ;; BASENAME must stop at the (optional) FLAGS tab, so group 3
+          ;; is [^\t]+, not a greedy .+ that would swallow "\tAB".
+          (when (string-match
+                 "^\\([^\t]+\\)\t\\([^\t]+\\)\t\\([^\t]+\\)\\(?:\t\\(.*\\)\\)?$"
+                 line)
             (puthash (match-string 1 line)
-                     (list (match-string 2 line) (match-string 3 line))
+                     (list (match-string 2 line)
+                           (match-string 3 line)
+                           (or (match-string 4 line) ""))
                      table)))
         (forward-line 1)))
     table))
