@@ -124,16 +124,32 @@ INFO_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/info
 EMACS_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/emacs/site-lisp/$(SUBPROJECT_NAME)
 LISP_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/autolisp/site-lisp/$(SUBPROJECT_NAME)
 
-.PHONY: install install-programs install-documentation uninstall
+.PHONY: install install-programs install-documentation install-alref-libs uninstall
 
 install: build  ## Install the autolisp-spec documentation into $$PREFIX (build first; sudo-friendly).
 	$(MAKE) install-programs
 	$(MAKE) install-documentation
 
-install-programs:  ## No-op: autolisp-spec ships documentation only.
+# The alref reference libraries (alref.el for Emacs, alref.lsp for the
+# AutoLISP runtime) are BOTH data the docs ship AND programs we run
+# separately (interactive spec lookup from an editor / a REPL). So they
+# are installed by install-documentation *and* install-programs, into
+# the same $(EMACS_INSTALL_DIR) / $(LISP_INSTALL_DIR). The second copy
+# is a deliberate duplicate — idempotent file-copy, no build needed.
+install-alref-libs:
+	@if [ -d emacs ]; then \
+	  install -d $(EMACS_INSTALL_DIR); \
+	  for f in emacs/*.el; do [ -f "$$f" ] && install -m 0644 "$$f" $(EMACS_INSTALL_DIR)/; done; \
+	fi
+	@if [ -d autolisp ]; then \
+	  install -d $(LISP_INSTALL_DIR); \
+	  for f in autolisp/*.lsp; do [ -f "$$f" ] && install -m 0644 "$$f" $(LISP_INSTALL_DIR)/; done; \
+	fi
+
+install-programs: install-alref-libs  ## Install the alref reference libraries (alref.lsp / alref.el) — run separately from the docs.
 	@echo "programs installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
-install-documentation:  ## Install the autolisp-spec docs (.org/.pdf/HTML/Info/pages + alref libs).
+install-documentation: install-alref-libs  ## Install the autolisp-spec docs (.org/.pdf/HTML/Info/pages + alref libs).
 	install -d $(DOC_INSTALL_DIR)/html
 	install -d $(DATA_INSTALL_DIR)/pages
 	install -d $(INFO_INSTALL_DIR)
@@ -152,14 +168,6 @@ install-documentation:  ## Install the autolisp-spec docs (.org/.pdf/HTML/Info/p
 	          documentation/autolisp-spec-user-manual.org; do \
 	  if [ -f $$f ]; then install -m 0644 $$f $(DOC_INSTALL_DIR)/; fi; \
 	done
-	@if [ -d emacs ]; then \
-	  install -d $(EMACS_INSTALL_DIR); \
-	  for f in emacs/*.el; do [ -f "$$f" ] && install -m 0644 "$$f" $(EMACS_INSTALL_DIR)/; done; \
-	fi
-	@if [ -d autolisp ]; then \
-	  install -d $(LISP_INSTALL_DIR); \
-	  for f in autolisp/*.lsp; do [ -f "$$f" ] && install -m 0644 "$$f" $(LISP_INSTALL_DIR)/; done; \
-	fi
 	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
 uninstall:  ## Remove the spec install from $$PREFIX.

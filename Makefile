@@ -328,7 +328,8 @@ install:  ## Install every subproject's built artefacts into $$PREFIX (default /
 # build-documentation, so a consumer can install only what it needs. CI
 # that exercises the programs uses `make install-programs' and skips the
 # slow documentation build+install entirely.
-install-programs: build-programs  ## Install only the program binaries (clautolisp/alfe/read-autolisp + the test harness) — no docs. The CI fast path.
+install-programs: build-programs  ## Install only the program binaries (clautolisp/alfe/read-autolisp + the test harness) + the alref reference libs — no docs. The CI fast path.
+	$(MAKE) -C autolisp-spec      install-programs $(INSTALL_VARS)
 	$(MAKE) -C clautolisp         install-programs $(INSTALL_VARS)
 	$(MAKE) -C autolisp-test      install-programs $(INSTALL_VARS)
 	$(MAKE) -C autolisp-front-end install-programs $(INSTALL_VARS)

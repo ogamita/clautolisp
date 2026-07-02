@@ -1,0 +1,65 @@
+#+TITLE: clautolisp — Demonstration Script
+#+SUBTITLE: Runbook / walkthrough for demoing clautolisp and all its components
+#+OPTIONS: toc:2 num:t
+
+* Status
+  - *DRAFT* — 2-level outline only, to be fleshed out into a runnable script.
+  - Purpose: a reminder scaffold so no component is forgotten on the day.
+  - Convention: keep commands relative to the repo root (use =$SRC/…= when an
+    explicit root-relative path is needed); assume =make install= (or at least
+    =make install-programs=) has been run so =clautolisp=, =alfe=,
+    =read-autolisp=, and the alref libraries are on the system.
+  - TODO before the demo: turn each "**" bullet into the exact command(s) to
+    type, and capture expected output.
+
+* 0. Setup & framing
+  - What clautolisp is: a Common Lisp implementation of the AutoLISP runtime.
+  - The pieces we will show, one slide each (map to the sections below).
+  - Install once up front: =make install= (or =make install-programs= for the
+    fast path — now also drops the alref libraries).
+
+* 1. clautolisp — the core interpreter / REPL
+  - Launch the REPL, evaluate a few AutoLISP forms (list ops, arithmetic).
+  - Load a small =.lsp= file and call a =defun=.
+  - Show the exit-status channel: =(quit N)= / =autolisp-status=.
+
+* 2. Dialects & host-environment profiles
+  - =--dialect strict|clautolisp|bricscad|autocad= — same form, different behaviour.
+  - Host profile: present a Windows-like host while running on macOS/Linux.
+  - One example where a dialect difference actually shows (e.g. a builtin).
+
+* 3. read-autolisp — the reader front tool
+  - Read AutoLISP source and dump the parsed representation.
+  - Highlight encoding / line-ending normalization at the input boundary.
+
+* 4. alfe — the AutoLISP front-end (CAD bridge)
+  - What alfe is: drive real BricsCAD / AutoCAD from the same AutoLISP code.
+  - Batch mode against a CAD host (or the mock host when no CAD is present).
+  - Contrast with clautolisp's headless baseline.
+
+* 5. autolisp-spec & alref — the reference library   [!! don't skip alref !!]
+** 5a. alref in AutoLISP (alref.lsp, in the clautolisp REPL)
+   - =(alref-set-root "…/share/autolisp-spec/")= then =(alref-version)=.
+   - =(alref-lookup "car")= / =(alref-apropos "str")= — spec ∪ live image.
+   - =(alref-describe 'car)= and =(alref-documentation "CAR")= — page text.
+   - Show the ABC availability flags now parse cleanly (the 1.3.0 fix).
+   - =(alref-help "dotted pair")= — full-text search across pages.
+** 5b. alref in Emacs (alref.el)
+   - =M-x alref-lookup= / =alref-describe= from inside a buffer.
+   - Jump to the HTML/Info page for a symbol; =alref-reload= after a rebuild.
+   - Same symbol index, editor-native browsing (contrast with 5a).
+
+* 6. autolisp-test — the conformance harness
+  - Run a slice of the matrix: =make test-clautolisp-sbcl-strict= (and one CAD row).
+  - Show the dialect × implementation grid; read a pass/fail summary.
+
+* 7. autolisp-benchmark — performance
+  - Run the benchmark suite; show the report artefact.
+  - One comparison point (dialect or implementation) to make it concrete.
+
+* 8. Debugger (sedit) — optional / if time
+  - The sedit-based poll-point / breakpoint navigator over a sample form.
+
+* 9. Wrap-up
+  - Recap the component map; where the docs live (per-subproject =documentation/=).
+  - Pointers: repo README, AGENTS.md, this script.
