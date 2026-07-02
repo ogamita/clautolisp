@@ -1,0 +1,57 @@
+alfe --bricscad : `-l fichier` échoue sur une forme unique très grande (inline vs load)
+=======================================================================================
+
+Résumé
+------
+
+Sous `alfe --bricscad --mode batch`, un `-l fichier` dont une forme est très
+grande échoue avec « ERROR protocol request N: error ». Le protocole batch
+semble INLINER les formes du fichier comme un eval (cf. le
+`protocol/alfe-eval.lsp` du workdir : `(setq *AUTOLISP-EVAL-RESULT* <forme>)`),
+et une forme d'environ 688 Ko dépasse la capacité de transfert/lecture de
+l'hôte BricsCAD.
+
+Reproduction
+------------
+
+Fichier : outils-autolisp/autolisp-doc/src/autolisp-ref.lsp — une SEULE forme
+`(setq *autolisp-reference* '(… 440 entrées …))`, ~688 Ko.
+
+  alfe -norc --bricscad --mode batch -l autolisp-ref.lsp -x '(princ (length *autolisp-reference*))'
+  => ERROR protocol request 2: error
+
+Découpé à 20 entrées (~27 Ko), même forme, ça passe :
+
+  => (LOADED 20)
+
+Sous clautolisp (`--dialect bricscad`), le fichier complet se charge sans
+problème (la suite autolisp-doc = 13 OK). Le problème est donc spécifique au
+chemin CAO (BricsCAD/AutoCAD via alfe), pas au code ni aux données.
+
+Le workdir montrait aussi que le loader batch se bloque si le fichier
+se termine par autre chose qu'une forme (commentaire de fin) : il
+tente de lire une forme après la dernière, tombe sur EOF. Contourné
+côté outils-autolisp en retirant les commentaires de fin et en
+ajoutant une forme `()` de fin, mais le loader devrait tolérer du
+texte après la dernière forme. (this may have been corrected in the
+latest versions of clautolisp/alfe).
+
+Attendu / pistes
+----------------
+
+- Pour `-l fichier`, charger via un `(load "fichier")` natif sur l'hôte plutôt
+  que d'inliner une (potentiellement énorme) forme en eval — gère toute taille,
+  et rapproche le comportement de clautolisp / du vrai `load`.
+- À défaut, découper l'envoi (streaming/chunké) pour les grosses formes, et/ou
+  documenter une limite.
+- Rendre le loader batch robuste au texte après la dernière forme (commentaires
+  de fin de fichier), au lieu de bloquer/erreur.
+
+Impact
+------
+
+outils-autolisp : le job CI macos:bricscad / windows:bricscad de autolisp-doc
+échoue au chargement de autolisp-ref.lsp (688 Ko). Contournement possible :
+découper autolisp-ref.lsp en formes plus petites (+ le générateur
+build_autolisp_ref.py). Le job est `allow_failure: true` et la logique doc est
+validée en headless (clautolisp), donc non bloquant en attendant.
