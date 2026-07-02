@@ -888,8 +888,11 @@ autolisp-termination carrying the effective status."
 (defun builtin-eval (form)
   ;; (eval expr) — evaluate the AutoLISP runtime form in the current
   ;; evaluation context. Lets programs evaluate values built at
-  ;; runtime (e.g. constructed via list/cons).
-  (autolisp-eval form))
+  ;; runtime (e.g. constructed via list/cons). Routed through the
+  ;; compiled-eval model (debugger-public-interface issue): under a debug
+  ;; session the form is wrapped + instrumented so it is steppable; outside
+  ;; a session this is a plain AUTOLISP-EVAL at full speed.
+  (clautolisp.autolisp-runtime:autolisp-compiled-eval form))
 
 (defun autolisp-equal-p (a b)
   ;; AutoLISP `equal` (autolisp-spec ch. 5, "Equality Predicates"):
@@ -4304,6 +4307,114 @@ an optional help string. A no-op (returns nil) unless the debugger UI is loaded.
              (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function)
              (and doc (clautolisp.autolisp-runtime:autolisp-string-value doc))))
   nil)
+
+;;; --- CLAL-OPTIMIZE / CLAL-OPTIMIZATION -------------------------------
+;;;
+;;; The optimization qualities (debugger-public-interface issue Part A) gate
+;;; how EVAL and CLAL-COMPILE build a function's forks: DEBUG > 0 weaves the
+;;; instrumented fork (the poll points that stepping and breakpoints ride on),
+;;; SPACE trades that fork away for size, and SPEED would compile to CL — Tier 2,
+;;; pinned at 0 until the compiler-to-CL lands. Levels are 0..3 (SPEED aside,
+;;; the interpreter treats any non-zero DEBUG as "instrument", 3=2=1).
+
+(defparameter *clal-optimization-qualities* '(:debug :space :speed)
+  "The optimization qualities, in canonical print order.")
+
+(defparameter *clal-optimization*
+  (list (cons :debug 3) (cons :space 0) (cons :speed 0))
+  "Current optimization qualities as an alist QUALITY -> level (0..3). Read by
+EVAL / CLAL-COMPILE to choose the fork(s) to build; set by CLAL-OPTIMIZE.")
+
+(defun clal-optimization-level (quality)
+  "The current level (0..3) of QUALITY (:debug / :space / :speed)."
+  (or (cdr (assoc quality *clal-optimization*)) 0))
+
+(defun %clal-quality-keyword (name)
+  "Map a quality NAME string (any case) to its keyword, or NIL if unknown."
+  (cond ((string-equal name "DEBUG") :debug)
+        ((string-equal name "SPACE") :space)
+        ((string-equal name "SPEED") :speed)))
+
+(defun %clal-optimization->autolisp ()
+  "The current qualities as the AutoLISP list ((DEBUG n) (SPACE n) (SPEED n))."
+  (mapcar (lambda (quality)
+            (list (intern-autolisp-symbol (string-upcase (symbol-name quality)))
+                  (clal-optimization-level quality)))
+          *clal-optimization-qualities*))
+
+(defun builtin-clal-optimization ()
+  "Return the current optimization qualities as ((DEBUG n) (SPACE n) (SPEED n))
+(debugger-public-interface issue Part A). SPEED is pinned at 0 until the
+compiler-to-CL (Tier 2)."
+  (%clal-optimization->autolisp))
+
+(defun %clal-parse-optimize-element (element)
+  "Parse and apply one CLAL-OPTIMIZE specifier — a bare quality symbol (level 3)
+or a list (SYMBOL LEVEL). Signals on an unknown quality or an out-of-range level."
+  (multiple-value-bind (symbol level)
+      (cond
+        ((typep element 'autolisp-symbol) (values element 3))
+        ((and (consp element) (typep (first element) 'autolisp-symbol))
+         (let ((lvl (second element)))
+           (unless (typep lvl '(integer 0 3))
+             (signal-builtin-argument-error
+              :bad-argument "CLAL-OPTIMIZE"
+              "Optimization level must be an integer 0..3, got ~S." lvl))
+           (values (first element) lvl)))
+        (t (signal-builtin-argument-error
+            :bad-argument "CLAL-OPTIMIZE"
+            "Expected a quality symbol or (SYMBOL LEVEL), got ~S." element)))
+    (let ((quality (%clal-quality-keyword (autolisp-symbol-name symbol))))
+      (unless quality
+        (signal-builtin-argument-error
+         :bad-argument "CLAL-OPTIMIZE"
+         "Unknown optimization quality ~A (expected DEBUG, SPACE or SPEED)."
+         (autolisp-symbol-name symbol)))
+      (setf (cdr (assoc quality *clal-optimization*)) level))))
+
+(defun builtin-clal-optimize (qualities)
+  "Set the optimization qualities (debugger-public-interface issue Part A).
+QUALITIES is an AutoLISP list; each element is a bare quality symbol (= level 3)
+or (SYMBOL LEVEL). Unmentioned qualities keep their current level. SPEED is
+pinned at 0 (Tier 2, no compiler-to-CL yet). Returns the new qualities."
+  (require-proper-list qualities "CLAL-OPTIMIZE")
+  (dolist (element qualities)
+    (%clal-parse-optimize-element element))
+  (setf (cdr (assoc :speed *clal-optimization*)) 0) ; pinned until Tier 2
+  ;; Reflect DEBUG into the runtime instrumentation gate: DEBUG>0 weaves
+  ;; instrumented forks under a session, DEBUG 0 (SPACE mode) runs plain.
+  (setf clautolisp.autolisp-runtime:*debug-instrumentation-enabled*
+        (plusp (clal-optimization-level :debug)))
+  (%clal-optimization->autolisp))
+
+(defun builtin-clal-compile (name lambda-expression)
+  "Compile LAMBDA-EXPRESSION — a (LAMBDA lambda-list . body) form — into an
+applicable function object, weaving its instrumented fork when the current
+CLAL-OPTIMIZATION has DEBUG>0 (debugger-public-interface issue Part A, the
+compiled-eval core). NAME is nil (anonymous) or a symbol naming the function.
+Returns the function object."
+  (unless (and (consp lambda-expression)
+               (typep (first lambda-expression) 'autolisp-symbol)
+               (string-equal (autolisp-symbol-name (first lambda-expression)) "LAMBDA"))
+    (signal-builtin-argument-error
+     :bad-argument "CLAL-COMPILE"
+     "Expected a (LAMBDA lambda-list . body) form, got ~S." lambda-expression))
+  (let* ((name-string
+           (cond ((null name) "")
+                 ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+                 (t (signal-builtin-argument-error
+                     :bad-argument "CLAL-COMPILE"
+                     "CLAL-COMPILE name must be nil or a symbol, got ~S." name))))
+         (lambda-list (second lambda-expression))
+         (body (cddr lambda-expression))
+         (usubr (clautolisp.autolisp-runtime:make-autolisp-usubr
+                 name-string lambda-list body
+                 (clautolisp.autolisp-runtime:current-evaluation-context))))
+    (when (and (plusp (clal-optimization-level :debug))
+               clautolisp.autolisp-runtime:*instrument-usubr-hook*)
+      (ignore-errors
+       (funcall clautolisp.autolisp-runtime:*instrument-usubr-hook* usubr)))
+    usubr))
 
 (defun set-drawing-codepage (new-codepage-value)
   "Update the host's DWGCODEPAGE sysvar AND emit
@@ -7815,6 +7926,9 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-SAVE-ALDO-CONFIGURATION" #'builtin-clal-save-aldo-configuration)
    (make-core-builtin-subr "CLAL-BREAK"            #'builtin-clal-break)
    (make-core-builtin-subr "CLAL-INVOKE-DEBUGGER"  #'builtin-clal-invoke-debugger)
+   (make-core-builtin-subr "CLAL-OPTIMIZATION"     #'builtin-clal-optimization)
+   (make-core-builtin-subr "CLAL-OPTIMIZE"         #'builtin-clal-optimize)
+   (make-core-builtin-subr "CLAL-COMPILE"          #'builtin-clal-compile)
    (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
    (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
    (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)

@@ -170,8 +170,12 @@
    #:set-dynamic-frame-binding-value
    #:autolisp-eval
    #:autolisp-eval-progn
+   #:autolisp-compiled-eval
+   #:autolisp-eval-toplevel-progn
    ;; Debugger integration (clautolisp-debugger).
    #:*debugging*
+   #:*instrument-usubr-hook*
+   #:*debug-instrumentation-enabled*
    #:*clal-on-error*
    #:register-special-operator
    #:unregister-special-operator
