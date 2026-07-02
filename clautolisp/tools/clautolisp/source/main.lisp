@@ -519,7 +519,28 @@ walk goes oldest-receiver-first so each slot reads its predecessor
                                                                 context)))
                            context))))
 
-(defun repl-loop (dialect context &key quiet-p mock-input gui trace-p)
+(defun repl-eval-turn (forms context session break-on-error)
+  "Evaluate one REPL turn's FORMS. With no SESSION this is the plain path (run
+the user's *error* on an uncaught error, else re-signal to the REPL). With a
+SESSION (--on-error debug) the turn runs under call-with-debugging so the aldo
+debugger breaks at the live error frame BEFORE the stack unwinds: the debugger's
+§10 handler is installed INSIDE (more recently than) call-with-autolisp-error-
+handler, so it fires first. Declining (c) lets the error propagate to *error* /
+the REPL; aborting (a/q) yields :ABORTED — this turn is dropped and the prompt
+returns; and forms evaluate through the compiled-eval model so they are
+instrumentable/steppable."
+  (call-with-autolisp-error-handler
+   (lambda ()
+     (if session
+         (run-under-session-debugging
+          session
+          (lambda () (autolisp-eval-toplevel-progn forms context))
+          break-on-error)
+         (autolisp-eval-progn forms context)))
+   context))
+
+(defun repl-loop (dialect context &key quiet-p mock-input gui trace-p
+                                        session break-on-error)
   (unless quiet-p
     (emit-repl-banner dialect context
                       :mock-input mock-input :gui gui :trace-p trace-p))
@@ -546,11 +567,12 @@ walk goes oldest-receiver-first so each slot reads its predecessor
             ;; Bind :- BEFORE eval so the user's form can reference
             ;; what they just typed via (print :-), etc.
             (%repl-bind-dash this-form context)
-            (let ((result (call-with-autolisp-error-handler
-                           (lambda () (autolisp-eval-progn forms context))
-                           context)))
-              (format t "~A~%" (autolisp-value->string result nil))
-              (%repl-rotate-history result context)))
+            (let ((result (repl-eval-turn forms context session break-on-error)))
+              ;; An aborted (a/q) debug turn yields :ABORTED — a CL sentinel,
+              ;; not an AutoLISP value — so skip printing/history for it.
+              (unless (eq result :aborted)
+                (format t "~A~%" (autolisp-value->string result nil))
+                (%repl-rotate-history result context))))
         (simple-error (condition)
           (let ((diagnostic (simple-error-diagnostic condition)))
             (if diagnostic
@@ -666,6 +688,19 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
     (:ncurses :ncurses)
     (:aldb :aldb)))
 
+(defun run-under-session-debugging (session thunk break-on-error)
+  "Run THUNK with debugging active under an already-attached SESSION (debugger
+§10): an uncaught AutoLISP error stops in the session's UI when BREAK-ON-ERROR
+is set (--on-error debug), and stepping/breakpoints ride on the instrumented
+forks the compiled-eval weaves. Returns THUNK's value, or :ABORTED if the user
+aborted from the debugger. Each call is its own abort extent, so a REPL turn's
+abort returns to the prompt rather than unwinding the whole loop."
+  (let ((clautolisp.debug:*break-on-error* break-on-error)
+        (clautolisp.debug:*debug-hit-handler*
+          (lambda (hit) (clautolisp.debug.ui:session-stop session hit))))
+    (clautolisp.debug:call-with-debugging
+     thunk :thread-info (clautolisp.debug.ui:session-thread-info session))))
+
 (defun run-with-input (dialect actions cli-options
                        &key quiet-p verbose-p debug-p
                             interactive-p host mock-input gui trace-p
@@ -705,26 +740,36 @@ machinery, not user intent)."
                      (let ((start (get-internal-real-time)))
                        (eval-action-in-context context action dialect)
                        (maybe-summarise-action (car action) (cdr action) start))))))
-          ;; Under a debugger UI (--aldo-user-interface / --on-error debug) run
-          ;; the program inside a debug session: *debugging* is active and an
-          ;; uncaught error breaks into the UI (unless --on-error ignore). The
-          ;; UI reads/writes the terminal (stdin/stdout). The REPL below stays
-          ;; the plain REPL (debugging the batch program, not the REPL).
-          (if debug-ui
-              (let ((clautolisp.debug:*break-on-error*
-                      (not (eq on-error-policy :ignore))))
-                (clautolisp.debug.ui:call-with-session
-                 (debug-ui-designator debug-ui) #'run-actions :context context))
-              (run-actions)))
-        (when interactive-p
-          (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
-           context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
-           (lambda ()
-             (repl-loop dialect context
-                        :quiet-p quiet-p
-                        :mock-input mock-input
-                        :gui gui
-                        :trace-p trace-p))))
+          ;; --on-error debug / --aldo-user-interface attach ONE debugger
+          ;; session (debugger §10) for the whole program:
+          ;;  • batch program (-l/-x, non-interactive): run the actions as one
+          ;;    debugging extent so an uncaught error breaks into the UI;
+          ;;  • interactive REPL: run the batch actions PLAIN (init files are
+          ;;    machinery you don't debug) and hand the session to the REPL,
+          ;;    which debugs each turn (so `clautolisp` + (/ 0) breaks in).
+          ;; *break-on-error* is off under --on-error ignore.
+          (let ((break (and debug-ui (not (eq on-error-policy :ignore))))
+                (session (and debug-ui
+                              (clautolisp.debug.ui:start-session
+                               :ui (debug-ui-designator debug-ui) :context context))))
+            (unwind-protect
+                 (progn
+                   (if (and session (not interactive-p))
+                       (run-under-session-debugging session #'run-actions break)
+                       (run-actions))
+                   (when interactive-p
+                     (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
+                      context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
+                      (lambda ()
+                        (repl-loop dialect context
+                                   :quiet-p quiet-p
+                                   :mock-input mock-input
+                                   :gui gui
+                                   :trace-p trace-p
+                                   :session session
+                                   :break-on-error break)))))
+              (when session
+                (clautolisp.debug.ui:ui-detached (clautolisp.debug.ui:session-ui session))))))
         ;; Normal completion: exit with the status a script recorded via
         ;; (autolisp-set-status N) — 0 when it never touched the channel.
         (autolisp-exit-status context))
@@ -812,13 +857,27 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                (io-encoding   (clautolisp.autolisp-cli:cli-options-io-encoding options))
                (no-init-p (clautolisp.autolisp-cli:cli-options-no-init-p options))
                (no-color-p (clautolisp.autolisp-cli:cli-options-no-color-p options))
-               (on-error  (or (clautolisp.autolisp-cli:cli-options-on-error options) :quit))
+               ;; -i, or no -l/-x/positional action, means the REPL is the
+               ;; effective request. `actions' is the raw CLI queue here
+               ;; (init-file loads are prepended later), so its emptiness is
+               ;; the user-intent witness — computed BEFORE the on-error
+               ;; default, which depends on it.
+               (explicit-interactive-p
+                 (clautolisp.autolisp-cli:cli-options-interactive-p options))
+               (effective-interactive-p
+                 (or explicit-interactive-p (null actions)))
+               ;; --on-error policy (debugger §10 / *CLAL-ON-ERROR*). The
+               ;; default is context-dependent: DEBUG for an interactive REPL
+               ;; — so `clautolisp' then a bad form breaks into the aldo
+               ;; debugger — and QUIT for a batch run (report the error and
+               ;; exit, keeping scripts/CI deterministic). An explicit
+               ;; --on-error always wins.
+               (on-error  (or (clautolisp.autolisp-cli:cli-options-on-error options)
+                              (if effective-interactive-p :debug :quit)))
                (user-interface (clautolisp.autolisp-cli:cli-options-user-interface options))
                ;; Debug the program when --on-error debug or a UI was selected.
                (debug-ui  (when (or (eq on-error :debug) user-interface)
-                            (or user-interface :tui)))
-               (explicit-interactive-p
-                 (clautolisp.autolisp-cli:cli-options-interactive-p options)))
+                            (or user-interface :tui))))
           ;; The aldb (Emacs) front-end speaks over a TCP socket; the listener
           ;; is not yet implemented (debugger §10). Fail clearly rather than
           ;; silently doing nothing.
@@ -839,23 +898,6 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                 (clautolisp.autolisp-runtime:*color-output*
                   (clautolisp.autolisp-runtime:resolve-color-policy
                    :no-color-flag no-color-p))
-                ;; Implicit -i: when the user supplied no -l / -x /
-                ;; positional action, the REPL is the desired default.
-                ;; The init-file loads added below are machinery, not
-                ;; user intent, so we snapshot `actions' emptiness
-                ;; BEFORE prepending them. The `actions' from the
-                ;; cli-options include an explicit (:interactive . T)
-                ;; entry when -i was on the command line, so use
-                ;; EXPLICIT-INTERACTIVE-P as the user-intent witness
-                ;; rather than the action-list contents.
-                (effective-interactive-p
-                  (or explicit-interactive-p
-                      ;; Empty action-list means no -l / -x AND no -i;
-                      ;; the implicit REPL is what the user wants.
-                      ;; -i alone shows up as a single (:interactive)
-                      ;; action — non-empty, so we wouldn't fall into
-                      ;; this branch.
-                      (null actions)))
                 (effective-actions
                   (prepend-init-file-actions actions no-init-p)))
             (install-gui-renderer gui)

@@ -142,7 +142,7 @@ PAT (case-insensitive), or NIL."
 
 (defmethod ui-thread-unhandled-error ((ui dumb-ui) session hit)
   (describe-stop ui session "Error" hit)
-  (out ui "DBG>   (a abort, r <form> return a value, c run *error*)~%"))
+  (out ui "DBG>   (q abort, r <form> return a value, c continue/run *error*)~%"))
 
 (defmethod ui-thread-caught-error ((ui dumb-ui) session hit)
   (describe-stop ui session "Caught error" hit))

@@ -85,7 +85,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:cmd-workspace-list #:cmd-workspace-clear
    #:current-snapshot #:current-metadata
    ;; lifecycle
-   #:start-session #:call-with-session #:with-session
+   #:start-session #:call-with-session #:with-session #:session-stop
    #:register-ui #:*ui-constructors* #:make-ui
    ;; settings / configuration (command reference §8)
    #:*aldo-configuration* #:*default-aldo-configuration* #:*setting-specs*
