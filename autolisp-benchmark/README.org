@@ -1,0 +1,69 @@
+#+TITLE: autolisp-benchmark — AutoLISP performance suite
+#+OPTIONS: toc:2
+
+* Overview
+
+=autolisp-benchmark= is a pure-AutoLISP benchmark suite. It measures
+how fast an AutoLISP engine executes a handful of representative
+operation classes, and prints the same shape of report no matter which
+engine ran it — so you can load it into clautolisp, BricsCAD, and
+AutoCAD on the *same hardware* and compare the numbers directly.
+
+It depends on nothing but core AutoLISP: no Common Lisp, no Express
+Tools, no COM/ActiveX. CAD workloads use only entity primitives
+(=entmake=, =entget=, =entmod=, =entdel=), never =(command …)=, so no
+interactive command loop is needed.
+
+* Quick start
+
+Run the whole suite under clautolisp:
+
+#+begin_src sh
+clautolisp -l autolisp-benchmark/harness/run.lsp \
+           -x '(autolisp-benchmark-run-all)'
+#+end_src
+
+Or via the Makefile (rebuilds the clautolisp binary if stale):
+
+#+begin_src sh
+make -C autolisp-benchmark run                 # 5 s per class
+make -C autolisp-benchmark run BENCH_SECONDS=10
+make -C autolisp-benchmark test                # fast smoke run
+#+end_src
+
+Run inside a real CAD engine on the same machine, via =alfe=:
+
+#+begin_src sh
+make -C autolisp-benchmark run-bricscad-macos    # or run-bricscad-windows
+make -C autolisp-benchmark run-autocad-windows
+#+end_src
+
+* What it measures
+
+| Class          | Exercises                                            |
+|----------------+------------------------------------------------------|
+| arithmetic     | integer/float arithmetic, transcendentals, compares  |
+| lists          | cons/list/append, reverse/nth/member, assoc, mapcar  |
+| strings        | strcat/substr/strcase, number<->string, wcmatch      |
+| serialization  | =vl-prin1-to-string= + =read= round-trip             |
+| file-io        | open/write-line/read-line/close on a scratch file    |
+| entity         | entmake/entlast/entget/entmod/entdel cycle           |
+| memory-gc      | allocation churn plus explicit =(gc)=                |
+
+Each class runs for about five seconds; the report prints iterations,
+iterations/second, and microseconds/iteration per class, then an
+overall total.
+
+* Documentation
+
+- =documentation/autolisp-benchmark-user-manual.org= — how to run it,
+  interpret the report, and add a workload.
+- =documentation/autolisp-benchmark-specifications.org= — the timing
+  model and the contract each workload must satisfy.
+- =documentation/autolisp-benchmark-development-plan.org= — design
+  rationale and roadmap.
+- =PLAN.md= — the actionable task tracker.
+
+* License
+
+AGPL-3.0, like the rest of the repository. See the top-level =COPYING=.
