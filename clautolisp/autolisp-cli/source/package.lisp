@@ -42,6 +42,10 @@
    #:cli-options-mock-input      ; C — clautolisp mock-host prompt-stream
    #:cli-options-gui             ; C — clautolisp DCL subprocess renderer
    #:cli-options-trace-p         ; C — clautolisp --trace
+   #:cli-options-on-error        ; C — clautolisp --on-error policy
+   #:cli-options-user-interface  ; C — clautolisp --aldo-user-interface
+   #:cli-options-aldb-address    ; C — clautolisp --aldb-listening-address
+   #:cli-options-aldb-port       ; C — clautolisp --aldb-listening-port
    #:cli-options-positional      ; both — positional FILE arguments
 
    ;; value parsers (one per option-value vocabulary)
@@ -52,6 +56,8 @@
    #:parse-dialect
    #:parse-bootstrap-phase
    #:parse-timeout
+   #:parse-on-error
+   #:parse-user-interface
 
    ;; option-spec + parser
    #:option-spec

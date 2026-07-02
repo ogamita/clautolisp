@@ -1,0 +1,168 @@
+#+TITLE: aldo Debugger — UI Implementation Plan (2026 extensions)
+#+AUTHOR: Draft for review
+#+OPTIONS: toc:3 num:t ^:nil
+#+STARTUP: showall indent
+
+* Purpose and status
+
+The aldo debugger's three UIs — *TUI* (line-mode terminal), *ncurses*, and
+*aldb* (Emacs) — and the UI protocol, inspector and engine are *already
+implemented* (the original Phases 0–7; all unit suites pass). This document
+plans the *2026 extensions* settled in the command reference and the TUI spec
+that are *not yet implemented*, and serves as the per-UI completeness /
+consistency reconciliation those specs need.
+
+Normative sources (do not duplicate; this plan refers to them):
+- =clautolisp-debugger-command-reference.org= — the command language, settings,
+  configuration, theme/decorations, pager, UI selection (canonical).
+- =clautolisp-debugger-tui-spec.org= — the structural TUI, navigation tree,
+  dictionaries, decorations.
+- =clautolisp-debugger-design-notes.org= — DN-1…DN-12 + the provisional
+  register (decisions).
+- =clautolisp-debugger-spec.org= Part V (§18–§20) — the original per-UI spec;
+  its UI sections predate the 2026 extensions and are reconciled by the *feature
+  matrix* below (the command reference / TUI spec are now the current source for
+  the command language and the structural TUI).
+
+Existing code (systems under =clautolisp/=):
+- =autolisp-debug= — engine (instrumentation, poll points, breakpoints,
+  stepping, snapshot, error integration). Package =clautolisp.debug=.
+- =autolisp-debug-ui= — UI protocol + session lifecycle. Package
+  =clautolisp.debug.ui= (=ui-*= notifications, =ui-await-command=, =cmd-*=,
+  =debugger-session=, =register-ui=).
+- =autolisp-debug-ui-dumb= — the TUI (line-mode). Package =clautolisp.ui.dumb=.
+- =autolisp-debug-ui-tui= — curses-free screen abstraction + mock screen.
+- =autolisp-debug-ui-ncurses= — four-pane ncurses UI. Package
+  =clautolisp.ui.ncurses=.
+- =autolisp-debug-ui-tui-charms= — the real cl-charms backend (outside the
+  aggregate).
+- =autolisp-debug-ui-emacs= — the aldb RPC shim. Package =clautolisp.ui.emacs=
+  + =emacs/aldb.el=.
+
+* Feature matrix — what each UI must gain (completeness / consistency)
+
+Legend: ✔ implemented · ✔* implemented to a documented v1 scope (see the
+command-reference backing) · ✦ to implement · — n/a for that UI.
+
+Status (refreshed): the *TUI (dumb)* surface now implements essentially the
+whole vocabulary — the ✔ / ✔* column. The ✔* items are scoped: =goto= is by
+global name, =search= is a name search, =jump= is forward-only, poll-point
+designation is =ppN= (not yet =LINE.K= / =LINE:COL=), and UI selection wires
+=--on-error= / =--aldo-user-interface tui|ncurses= (the aldb TCP listener is
+deferred). The one TUI ✦ left is routing dispatch through the *stacked command
+dictionaries* (the table layer exists and is tested, but the dumb UI still
+dispatches via a hand-written table). *ncurses* and *aldb* remain thin
+fixed-key surfaces (a follow-up: add a comma-word command reader so the full
+vocabulary is reachable there too).
+
+| Feature (normative §)                         | TUI | ncurses | aldb |
+|-----------------------------------------------+-----+---------+------|
+| Resume/step/break/frame/print/inspect (base)  | ✔   | ✔       | ✔    |
+| Command vocabulary per command-reference §0    | ✔   | ✦       | ✦    |
+| settings: =set NAME VALUE= / =,settings=       | ✔   | ✦       | ✦    |
+| configuration =*clal-aldo-configuration*= (XDG)| ✔   | ✦       | ✦    |
+| =theme= + =decorations= grammar (cmd-ref §8)   | ✔   | ✦       | ✦    |
+| pager (less-style), §8                          | ✔   | (window)| (Emacs) |
+| navigation tree =d u > < << >> ±N= (§3)        | ✔   | ✦       | (Emacs) |
+| =goto= / =definition= / =back= / =history=     | ✔*  | ✦       | (Emacs xref) |
+| =search REGEXP= (scope-following)              | ✔*  | ✦       | (Emacs) |
+| stacked command dictionaries + escape (§8)     | ✦   | ✦       | ✦    |
+| poll-point numbers + =ppN=/=LINE.K=/=LINE:COL= | ✔*  | ✦       | ✦    |
+| enable/disable/condition/ignore/bpcmd/trace    | ✔   | ✦       | ✦    |
+| =watch SYMBOL= (data breakpoint)               | ✔   | ✦       | ✦    |
+| =jump= (form-level)                            | ✔*  | ✦       | ✦    |
+| =display= / =undisplay=                        | ✔   | ✦       | ✦    |
+| cursor-based location (no typed line)          | —   | ✦       | ✦    |
+| sticky inspector while stepping (§ TUI)        | ✔   | ✦       | ✦    |
+| UI selection + activation (cmd-ref §10)        | ✔*  | ✦       | ✔*   |
+| aldb listening address/port + connect prompt   | —   | —       | ✦    |
+
+The matrix *is* the consistency statement: each UI exposes the same command
+set (one set, three surfaces), differing only in input (cursor vs typed) and
+rendering (theme glyphs vs ncurses panes vs Emacs faces/buffers).
+
+* Shared foundations (build first — all three UIs depend on them)
+
+** F1. Configuration core (=*clal-aldo-configuration*=)   [in progress]
+
+The settings/configuration model (command-reference §8 *Configuration and
+persistence*). A focused, headless-testable module:
+
+- the *default* configuration assoc-list (every setting with its default);
+- case-insensitive key/value access (=config-get= / =config-set=), symbolic
+  enums, integer sizes, =T=/=nil= flags;
+- XDG resolution: read =$XDG_CONFIG_HOME/clautolisp/aldo.conf=, else search
+  =$XDG_CONFIG_DIRS= for =clautolisp/aldo.conf=; write to
+  =$XDG_CONFIG_HOME/clautolisp/aldo.conf= (UTF-8);
+- =read-configuration= / =write-configuration= (the sexp I/O), with the
+  code-point-or-string glyph reader;
+- read *before* rc/init; saving explicit only.
+
+AutoLISP-facing wiring (later step): bind =*clal-aldo-configuration*= and the
+=clal-load-aldo-configuration= / =clal-save-aldo-configuration= builtins; the
+=set= / =,settings= commands read/update the same store.
+
+** F2. The command table + stacked dictionaries
+
+Generalise the dumb UI's command dispatch into a *command table* keyed by
+(key . words) → (lambda-list . docstring . function), per command-reference §8
+*Defining commands*; add the =dictionary= argument and innermost-first stacked
+lookup; the escape word =debugger=. This replaces the current ad-hoc =cond= in
+=dumb-ui.lisp= and is shared by all UIs.
+
+** F3. Decorations + theme
+
+The =theme= selector and the =decorations= grammar (prefix / open-close /
+colour / attributes; strings as code-point lists). A renderer turning a
+(situation, theme) into the actual prefix/glyph/SGR, reusing the runtime colour
+policy. Used by the TUI listing, the ncurses source pane, and (faces) aldb.
+
+* Per-UI plan
+
+** TUI (first)
+
+1. Wire F1 settings into the line-mode UI: =set= / =,settings= /
+   =,settings save= / =,settings reload= commands.
+2. Adopt the command-reference §0 vocabulary + the F2 command table; add the
+   navigation tree, goto/definition/back/history/search, the breakpoint-control
+   commands, jump, display, watch.
+3. F3 theme/decorations in =list source= and the structural (sedit) view;
+   numbered poll points; the pager for long output.
+4. Sticky inspector while stepping. UI-selection entry (=tui=).
+
+** ncurses (second)
+
+1. F1/F2/F3 shared; cursor-based location (the form at point → poll point).
+2. Poll-point numbers + glyphs/colours in the source pane per =theme=; the
+   navigation tree on =d u > < << >>= plus arrows/Home/End; the scrollable
+   window in lieu of the pager.
+3. Sticky inspector pane; UI selection (=ncurses=); alternate-screen
+   save/restore.
+
+** aldb (third)
+
+1. F1/F2 shared over the RPC; settings and configuration exposed as wire forms.
+2. Navigation/history delegated to Emacs (buffers + =xref= + mark ring);
+   re-anchor point to the current poll-point on re-entry.
+3. UI selection (=aldb=) + the listener: =default-aldb-listening-address= /
+   =-port=, the =--aldb-listening-address= / =-port= CLI options, the
+   not-connected connect prompt and the already-connected message
+   (command-reference §10).
+
+* Engine prerequisites (file issues, fix before/with the UI work)
+
+- =goto= object idiom needs source metadata on file-loaded lambdas (DN-12;
+  confirmed present).
+- =watch= and =jump= are =[new]= engine features (command-reference §1/§2).
+- Per-frame =setq= is =[future]= (command-reference §3/§4).
+
+When a clautolisp bug is found during implementation, file an
+=issues/open/*.issue= (symptom, repro, cause), fix it, and close it before
+resuming the UI work.
+
+* Testing
+
+Every UI is headless-testable (DN-6/7/10): the dumb and emacs UIs over string
+streams, ncurses over the mock screen. New features land with FiveAM tests in
+the corresponding =…/tests/= suite; =asdf:test-system "clautolisp"= must stay
+green.

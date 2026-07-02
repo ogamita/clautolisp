@@ -172,6 +172,7 @@
    #:autolisp-eval-progn
    ;; Debugger integration (clautolisp-debugger).
    #:*debugging*
+   #:*clal-on-error*
    #:register-special-operator
    #:unregister-special-operator
    #:known-special-operator-p
@@ -182,6 +183,8 @@
    #:catch-frame-arguments
    #:*autolisp-catch-stack*
    #:*autolisp-caught-error-hook*
+   #:*debug-break-hook*
+   #:*debug-define-command-hook*
    #:autolisp-current-directory
    #:set-autolisp-current-directory
    #:autolisp-support-paths

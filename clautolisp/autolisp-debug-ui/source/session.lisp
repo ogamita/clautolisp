@@ -63,16 +63,24 @@
   (declare (ignore session))
   :abort)
 
+(defun cmd-jump (session fid form-id)
+  "Resume execution at poll point (FID, FORM-ID), skipping the forms in between
+without evaluating them (command reference §1 jump). Returns the resume
+directive interpreted by APPLY-RESUME-DIRECTIVE."
+  (declare (ignore session))
+  (list :jump fid form-id))
+
 (defun cmd-return (session value)
   (declare (ignore session))
   (list :continue-with-return value))
 
 ;;; --- breakpoint commands (no resume; return the breakpoint) --------
 
-(defun cmd-set-breakpoint (session fid form-id &key (when :before) (steady t) condition action)
+(defun cmd-set-breakpoint (session fid form-id &key (when :before) (steady t)
+                                                    condition action (trace t))
   (let ((bp (add-breakpoint (debugger-session-thread-info session)
                             fid form-id :when when :steady steady
-                            :condition condition :action action)))
+                            :condition condition :action action :trace trace)))
     (ui-breakpoint-added (debugger-session-ui session) bp)
     bp))
 
@@ -87,6 +95,17 @@ NIL if LINE has none."
           (cmd-set-breakpoint session (function-debug-metadata-function-id metadata)
                               form-id :when when :steady steady))))))
 
+(defun cmd-advance-at-line (session line &optional (when :before))
+  "Advance to the poll point on LINE in the currently-stopped function — a
+volatile breakpoint removed on first stop (spec §6.2, command reference §1).
+Returns the :advance resume directive, or NIL if LINE has no poll point."
+  (let ((metadata (current-metadata session)))
+    (when metadata
+      (let ((form-id (find-form-id-at-line metadata line)))
+        (when form-id
+          (cmd-advance session (function-debug-metadata-function-id metadata)
+                       form-id when))))))
+
 (defun cmd-remove-breakpoint (session breakpoint)
   (remove-breakpoint (debugger-session-thread-info session) breakpoint)
   (ui-breakpoint-removed (debugger-session-ui session) breakpoint)
@@ -94,6 +113,23 @@ NIL if LINE has none."
 
 (defun cmd-list-breakpoints (session)
   (list-breakpoints (debugger-session-thread-info session)))
+
+;;; --- software watchpoints (command reference §2 watch) -------------
+
+(defun cmd-watch (session symbol name &key predicate)
+  "Watch the variable SYMBOL (named NAME): stop when its value changes, or — with
+a PREDICATE thunk — when the predicate goes false→true. Returns the watch."
+  (add-watch (debugger-session-thread-info session) symbol name :predicate predicate))
+
+(defun cmd-unwatch (session name)
+  "Remove the watch on the variable named NAME; T if one was removed."
+  (remove-watch (debugger-session-thread-info session) name))
+
+(defun cmd-clear-watches (session)
+  (clear-watches (debugger-session-thread-info session)))
+
+(defun cmd-list-watches (session)
+  (list-watches (debugger-session-thread-info session)))
 
 ;;; --- frame / eval / variable commands ------------------------------
 
@@ -174,11 +210,16 @@ the snapshot's FRAME via set-binding-entry (spec §16.1 :frame)."
 
 (defun call-with-session (ui-designator thunk
                           &key thread-info context (auto-quit t)
-                            ui-initargs break-on-caught)
+                            ui-initargs
+                            (break-on-caught (get-aldo-setting :break-on-caught)))
   "Open a debugger session with UI (a keyword or UI object), run THUNK
 with debugging active, and tear down on exit (spec §21/§24). THUNK is the
 AutoLISP work to debug; it should evaluate against CONTEXT. Returns THUNK's
 value (or :ABORTED).
+
+BREAK-ON-CAUGHT defaults to the `break-on-caught' setting (command reference
+§8), so the persisted configuration takes effect at session start; `,catch
+caught on|off' still toggles it mid-session.
 
 The session installs *debug-hit-handler* so each stop runs the UI command
 loop synchronously and applies its resume directive."

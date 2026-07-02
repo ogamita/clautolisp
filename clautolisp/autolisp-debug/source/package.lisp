@@ -44,6 +44,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:source-position-p
                 #:source-position-equal
                 #:source-position-start-line
+                #:source-position-start-column
                 #:source-position-end-line)
   (:export
    #:*protocol-version*
@@ -62,9 +63,17 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:function-debug-metadata-source-text
    #:metadata-for-function-id
    #:metadata-for-usubr
+   #:all-function-metadata
+   #:metadata-for-name
+   #:wildcard-name-match-p
+   #:functions-matching
    #:form-id-position
    #:form-id-kind
    #:find-form-id-at-line
+   #:form-ids-at-line
+   #:form-id-at-line-col
+   #:poll-point-id
+   #:poll-point-location
    ;; instrumentation (§3a / spec §5)
    #:instrument-usubr
    #:instrumentedp
@@ -92,14 +101,28 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:breakpoint-steady-p
    #:breakpoint-condition
    #:breakpoint-action
+   #:breakpoint-trace-p
+   #:breakpoint-enabled-p
+   #:set-breakpoint-enabled
+   #:set-breakpoint-action
    #:add-breakpoint
    #:add-breakpoint-in
+   #:find-active-breakpoint
    #:remove-breakpoint
    #:list-breakpoints
    #:clear-breakpoints
    #:rebuild-summary
+   ;; software watchpoints (command reference §2 watch)
+   #:watch #:watch-p
+   #:watch-symbol #:watch-name #:watch-last-value #:watch-prev-value
+   #:watch-last-bound-p #:watch-prev-bound-p #:watch-predicate
+   #:add-watch #:remove-watch #:clear-watches #:list-watches #:check-watches
+   ;; form-level jump (command reference §1 jump)
+   #:request-jump #:clear-jump #:jump-pending-p #:jump-disposition
+   #:form-id-parent #:form-ancestor-p
    ;; poll points + hit dispatch (spec §11 / §6.4)
    #:poll-point
+   #:invoke-debugger-break
    #:hit
    #:hit-p
    #:hit-thread-info
@@ -111,6 +134,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:hit-source-position
    #:hit-snapshot
    #:hit-stop-reason
+   #:hit-watch
    #:hit-condition
    #:hit-error-message
    #:hit-errno
@@ -119,6 +143,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:debug-handle-error
    #:abort-thread
    #:return-thread
+   #:*break-on-error*
    #:*break-on-caught-error*
    ;; snapshot + environment (spec §9)
    #:snapshot

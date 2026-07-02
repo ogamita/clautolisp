@@ -280,6 +280,13 @@
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-init-files"
+               ;; aldo debugger: the run loop can start a debug session under
+               ;; --aldo-user-interface / --on-error debug (debugger §10).
+               "clautolisp/autolisp-debug"
+               "clautolisp/autolisp-inspect"
+               "clautolisp/autolisp-debug-ui"
+               "clautolisp/autolisp-debug-ui-dumb"
+               "clautolisp/autolisp-debug-ui-ncurses"
                "uiop")
   :serial t
   :components
@@ -488,6 +495,8 @@
   ((:file "autolisp-debug/source/package")
    (:file "autolisp-debug/source/metadata")
    (:file "autolisp-debug/source/breakpoints")
+   (:file "autolisp-debug/source/watch")
+   (:file "autolisp-debug/source/jump")
    (:file "autolisp-debug/source/snapshot")
    (:file "autolisp-debug/source/stepping")
    (:file "autolisp-debug/source/poll")
@@ -544,7 +553,12 @@
   :components
   ((:file "autolisp-debug-ui/source/package")
    (:file "autolisp-debug-ui/source/protocol")
-   (:file "autolisp-debug-ui/source/session"))
+   (:file "autolisp-debug-ui/source/session")
+   (:file "autolisp-debug-ui/source/settings")
+   (:file "autolisp-debug-ui/source/decorations")
+   (:file "autolisp-debug-ui/source/command-table")
+   (:file "autolisp-debug-ui/source/config-bridge")
+   (:file "autolisp-debug-ui/source/navigator"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-debug-ui-dumb/tests")))
   :perform (asdf:test-op (op system)
@@ -575,6 +589,12 @@
   :components
   ((:file "autolisp-debug-ui-dumb/tests/package")
    (:file "autolisp-debug-ui-dumb/tests/dumb-ui-tests")
+   (:file "autolisp-debug-ui-dumb/tests/settings-tests")
+   (:file "autolisp-debug-ui-dumb/tests/decorations-tests")
+   (:file "autolisp-debug-ui-dumb/tests/command-table-tests")
+   (:file "autolisp-debug-ui-dumb/tests/config-bridge-tests")
+   (:file "autolisp-debug-ui-dumb/tests/pager-tests")
+   (:file "autolisp-debug-ui-dumb/tests/navigator-tests")
    (:file "autolisp-debug-ui-dumb/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

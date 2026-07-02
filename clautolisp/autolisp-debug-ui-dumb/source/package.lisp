@@ -13,13 +13,29 @@ UI refines.")
                 #:lines-of)
   (:import-from #:clautolisp.debug
                 #:hit-stop-reason #:hit-source-position #:hit-error-message
-                #:hit-when
+                #:hit-when #:hit-watch #:hit-fid #:hit-form-id
+                #:find-form-id-at-line #:form-ids-at-line #:form-id-at-line-col
+                #:watch-name #:watch-symbol #:watch-last-value #:watch-prev-value
+                #:watch-last-bound-p #:watch-prev-bound-p #:watch-predicate
                 #:snapshot-function-name #:snapshot-source-position
                 #:snapshot-call-stack #:snapshot-visible-names #:snapshot-catch-stack
                 #:stack-frame-function-name #:stack-frame-source-position
-                #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when)
+                #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when
+                #:breakpoint-enabled-p #:set-breakpoint-enabled #:breakpoint-condition
+                #:breakpoint-steady-p #:breakpoint-action #:breakpoint-trace-p
+                #:set-breakpoint-action
+                #:poll-point-id #:poll-point-location
+                #:*break-on-error* #:*break-on-caught-error*
+                #:metadata-for-name #:all-function-metadata #:functions-matching
+                #:function-debug-metadata-function-id #:function-debug-metadata-usubr
+                #:function-debug-metadata-name #:function-debug-metadata-source-position
+                #:function-debug-metadata-poll-point-count #:form-id-position)
   (:import-from #:clautolisp.autolisp-runtime
-                #:autolisp-symbol-name #:read-runtime-from-string)
+                #:autolisp-symbol-name #:read-runtime-from-string
+                #:autolisp-eval #:current-evaluation-context #:*debugging*
+                #:intern-autolisp-symbol #:autolisp-usubr-name
+                #:autolisp-usubr-lambda-list #:autolisp-usubr-body
+                #:lookup-function #:call-autolisp-function #:autolisp-string-value)
   (:import-from #:clautolisp.inspect
                 #:inspect-page-type-name #:inspect-page-header #:inspect-page-components
                 #:inspect-component-label #:inspect-component-preview

@@ -193,6 +193,48 @@ build:alfe:sbcl:
       - autolisp-front-end/tools/alfe/bin/alfe-sbcl
     expire_in: 14 days
 
+# Build the documentation on ordinary pipelines (default branch + merge
+# requests) and publish it as a SHORT-lived job artefact, structured exactly
+# like install-documentation (share/doc/<sub>/…, share/info/…) inside
+# clautolisp-<ver>-documentation.tar.bz2 — the same artefact the release lane
+# produces, only with a short expiry. Skipped on tags (release:documentation
+# produces the long-lived release artefact there) and on feature branches (the
+# Emacs paged split + xelatex across four subprojects is slow). Runs on the
+# always-on poseidon box; the stock CI image is a Lisp image, so the
+# before_script installs the doc toolchain (same set as release:documentation).
+documentation:
+  stage: test
+  tags: [linux, amd64, docker]        # poseidon (always-on)
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
+  rules:
+    - if: '$CI_COMMIT_TAG'            # tags: release:documentation handles it
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+    - when: never
+  # Reuse the slow paged-split cache (mirrors .release-common): keyed on the
+  # spec org + the split driver; build/ also now holds the rendered PDFs.
+  cache:
+    key:
+      files:
+        - autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+        - autolisp-spec/scripts/build-paged-spec.el
+    paths:
+      - autolisp-spec/build/
+  before_script:
+    - apt-get update && apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo
+    - command -v emacs makeinfo xelatex >/dev/null
+  script:
+    - make release-documentation      # build-documentation + package the share/doc tarball
+  artifacts:
+    name: "clautolisp-documentation-$CI_COMMIT_SHORT_SHA"
+    paths: [dist/]
+    expire_in: 1 week
+
 # --- Release artefacts (see issues/open/release-artefacts.issue) -------
 #
 # On a version tag, produce the source / documentation / programs /

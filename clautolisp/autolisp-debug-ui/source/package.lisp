@@ -25,6 +25,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
                 #:remove-breakpoint
                 #:list-breakpoints
                 #:clear-breakpoints
+                #:add-watch #:remove-watch #:clear-watches #:list-watches
                 #:request-step
                 #:advance-to-point
                 #:poll-point-at
@@ -41,7 +42,8 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
                 #:binding-entry-frame
                 #:bindings-of-name #:visible-value
                 #:eval-in-frame #:set-binding-entry #:set-visible-variable
-                #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when)
+                #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when
+                #:breakpoint-enabled-p #:set-breakpoint-enabled)
   (:import-from #:clautolisp.source
                 #:source-position-p
                 #:source-position-file
@@ -73,8 +75,10 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:session-ui #:session-thread-info #:session-context #:session-workspace
    #:session-snapshot #:session-selected-frame #:session-inspector #:session-last-step
    ;; UI → debugger (commands)
-   #:cmd-continue #:cmd-step #:cmd-advance #:cmd-abort #:cmd-return
-   #:cmd-set-breakpoint #:cmd-set-breakpoint-at-line #:cmd-remove-breakpoint #:cmd-list-breakpoints
+   #:cmd-continue #:cmd-step #:cmd-advance #:cmd-abort #:cmd-return #:cmd-jump
+   #:cmd-set-breakpoint #:cmd-set-breakpoint-at-line #:cmd-advance-at-line
+   #:cmd-remove-breakpoint #:cmd-list-breakpoints
+   #:cmd-watch #:cmd-unwatch #:cmd-clear-watches #:cmd-list-watches
    #:cmd-select-frame #:cmd-eval #:cmd-set-variable
    #:cmd-inspect #:cmd-inspector-descend #:cmd-inspector-up
    #:cmd-inspector-bind #:cmd-inspector-path-expression
@@ -82,4 +86,37 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:current-snapshot #:current-metadata
    ;; lifecycle
    #:start-session #:call-with-session #:with-session
-   #:register-ui #:*ui-constructors* #:make-ui))
+   #:register-ui #:*ui-constructors* #:make-ui
+   ;; settings / configuration (command reference §8)
+   #:*aldo-configuration* #:*default-aldo-configuration* #:*setting-specs*
+   #:reset-aldo-configuration
+   #:config-get #:config-set #:config-keys #:normalize-config-key
+   #:set-aldo-setting #:get-aldo-setting #:setting-spec #:parse-setting-value
+   #:aldo-settings-lines #:format-setting-value
+   #:xdg-config-home #:xdg-config-dirs
+   #:aldo-config-save-path #:aldo-config-load-path
+   #:save-aldo-configuration #:load-aldo-configuration
+   #:write-aldo-configuration #:read-aldo-configuration
+   ;; theme / decorations renderer (command reference §8)
+   #:glyph->string #:theme-of #:decoration-entries #:decoration-for
+   #:color-theme-p #:sgr-wrap #:apply-decoration #:situation-prefix
+   ;; command table + stacked dictionaries (command reference §8)
+   #:command #:command-p #:command-key #:command-words #:command-phrase
+   #:command-lambda-list #:command-docstring #:command-function #:command-arity
+   #:dictionary #:dictionary-name #:make-command-dictionary
+   #:*global-dictionary* #:+debugger-escape-word+
+   #:*active-command-dictionaries* #:active-command-dictionaries
+   #:*debugger-ui* #:*debugger-session* #:*debugger-hit*
+   #:bind-debugger-command #:unbind-debugger-command #:define-debugger-command
+   #:find-command #:lookup-command
+   ;; config bridge to the canonical AutoLISP *CLAL-ALDO-CONFIGURATION*
+   #:aldo-config-variable-symbol #:autolisp->cl-config #:cl-config->autolisp
+   #:config-variable-bound-p #:read-config-variable #:write-config-variable
+   #:sync-config-from-variable #:sync-config-to-variable
+   ;; structural sexp navigator (command reference §3)
+   #:make-navigator #:navigator-root #:navigator-path #:nav-selected
+   #:nav-parent #:nav-index
+   #:nav-down #:nav-up #:nav-forward #:nav-backward #:nav-first #:nav-last
+   #:nav-skip #:nav-render
+   #:*special-form-grammars* #:*sub-grammars* #:child-role #:role-at-path
+   #:nav-selected-role #:nav-code-p))

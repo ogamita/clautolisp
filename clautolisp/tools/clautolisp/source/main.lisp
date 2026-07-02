@@ -35,6 +35,16 @@
   (format t "                         Defaults to the built-in terminal renderer (or $CLAUTOLISP_GUI).~%")
   (format t "  --trace                Print every AutoLISP function call (entry args + exit value),~%")
   (format t "                         indented by call depth. Output goes to *trace-output* (stderr).~%")
+  (format t "Debugger (aldo):~%")
+  (format t "  --on-error POLICY      What to do when an uncaught AutoLISP error reaches the top~%")
+  (format t "                         level: quit (report and exit, the default), debug (break into~%")
+  (format t "                         the aldo debugger), or ignore (run the AutoLISP *error* handler).~%")
+  (format t "                         Sets *CLAL-ON-ERROR*, which code may rebind.~%")
+  (format t "  --aldo-user-interface UI  Debugger front-end: tui (the line/terminal UI, default),~%")
+  (format t "                         ncurses, or aldb (the Emacs front-end). Selecting one runs the~%")
+  (format t "                         program under a debug session.~%")
+  (format t "  --aldb-listening-address ADDR  Address the aldb listener binds (with --aldo-user-interface aldb).~%")
+  (format t "  --aldb-listening-port PORT     Port (or service name) the aldb listener binds.~%")
   (format t "REPL and diagnostics:~%")
   (format t "  -q, --quiet            Suppress the REPL banner.~%")
   (format t "  -v, --verbose          Print extra diagnostic information (banner, summary, …).~%")
@@ -170,7 +180,28 @@ front-end."
              :longs '("--trace") :shorts nil :takes-arg-p nil
              :handler (lambda (opts value name)
                         (declare (ignore value name))
-                        (setf (clautolisp.autolisp-cli:cli-options-trace-p opts) t)))))))
+                        (setf (clautolisp.autolisp-cli:cli-options-trace-p opts) t)))
+            ;; --- debugger (aldo) options (debugger §10) ---
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--on-error") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (setf (clautolisp.autolisp-cli:cli-options-on-error opts)
+                              (clautolisp.autolisp-cli:parse-on-error value name))))
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--aldo-user-interface") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (setf (clautolisp.autolisp-cli:cli-options-user-interface opts)
+                              (clautolisp.autolisp-cli:parse-user-interface value name))))
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--aldb-listening-address") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (declare (ignore name))
+                        (setf (clautolisp.autolisp-cli:cli-options-aldb-address opts) value)))
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--aldb-listening-port") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (declare (ignore name))
+                        (setf (clautolisp.autolisp-cli:cli-options-aldb-port opts) value)))))))
     (clautolisp.autolisp-cli:parse-arguments-with-spec specs arguments)))
 
 (defun prepend-init-file-actions (actions no-init-p)
@@ -627,11 +658,20 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
   (with-output-to-string (*standard-output*)
     (usage)))
 
+(defun debug-ui-designator (ui-keyword)
+  "Map a --aldo-user-interface keyword to a registered UI designator
+(register-ui name). :tui is the dumb/terminal UI."
+  (ecase ui-keyword
+    (:tui :terminal)
+    (:ncurses :ncurses)
+    (:aldb :aldb)))
+
 (defun run-with-input (dialect actions cli-options
                        &key quiet-p verbose-p debug-p
                             interactive-p host mock-input gui trace-p
                             load-encoding io-encoding
-                            no-init-p no-color-p)
+                            no-init-p no-color-p
+                            debug-ui on-error-policy)
   "Build a shared evaluation context, install the CLI-derived
 *AUTOLISP-…* globals from CLI-OPTIONS via the shared
 clautolisp.autolisp-cli installer, run every action in ACTIONS in
@@ -659,11 +699,23 @@ machinery, not user intent)."
                         :usage-text (usage-string)
                         :version-text *version*)))
         (clautolisp.autolisp-cli:install-transmit-variables context bindings)
-        (dolist (action actions)
-          (unless (eq :interactive (car action))
-            (let ((start (get-internal-real-time)))
-              (eval-action-in-context context action dialect)
-              (maybe-summarise-action (car action) (cdr action) start))))
+        (flet ((run-actions ()
+                 (dolist (action actions)
+                   (unless (eq :interactive (car action))
+                     (let ((start (get-internal-real-time)))
+                       (eval-action-in-context context action dialect)
+                       (maybe-summarise-action (car action) (cdr action) start))))))
+          ;; Under a debugger UI (--aldo-user-interface / --on-error debug) run
+          ;; the program inside a debug session: *debugging* is active and an
+          ;; uncaught error breaks into the UI (unless --on-error ignore). The
+          ;; UI reads/writes the terminal (stdin/stdout). The REPL below stays
+          ;; the plain REPL (debugging the batch program, not the REPL).
+          (if debug-ui
+              (let ((clautolisp.debug:*break-on-error*
+                      (not (eq on-error-policy :ignore))))
+                (clautolisp.debug.ui:call-with-session
+                 (debug-ui-designator debug-ui) #'run-actions :context context))
+              (run-actions)))
         (when interactive-p
           (clautolisp.autolisp-cli:call-with-dynamic-transmit-binding
            context "*AUTOLISP-INTERACTIVE*" (intern-autolisp-symbol "T")
@@ -760,10 +812,26 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                (io-encoding   (clautolisp.autolisp-cli:cli-options-io-encoding options))
                (no-init-p (clautolisp.autolisp-cli:cli-options-no-init-p options))
                (no-color-p (clautolisp.autolisp-cli:cli-options-no-color-p options))
+               (on-error  (or (clautolisp.autolisp-cli:cli-options-on-error options) :quit))
+               (user-interface (clautolisp.autolisp-cli:cli-options-user-interface options))
+               ;; Debug the program when --on-error debug or a UI was selected.
+               (debug-ui  (when (or (eq on-error :debug) user-interface)
+                            (or user-interface :tui)))
                (explicit-interactive-p
                  (clautolisp.autolisp-cli:cli-options-interactive-p options)))
+          ;; The aldb (Emacs) front-end speaks over a TCP socket; the listener
+          ;; is not yet implemented (debugger §10). Fail clearly rather than
+          ;; silently doing nothing.
+          (when (eq debug-ui :aldb)
+            (format *error-output*
+                    "~&clautolisp: --aldo-user-interface aldb is not yet implemented ~
+                     (the aldb TCP listener is pending); use tui or ncurses.~%")
+            (finish-output *error-output*)
+            (quit 2))
           (let ((*verbose-p* verbose-p)
                 (*debug-p* debug-p)
+                ;; The error policy (debugger §10): user code may rebind it.
+                (clautolisp.autolisp-runtime:*clal-on-error* on-error)
                 ;; Colour policy is computed exactly once per CLI run
                 ;; against the LIVE *standard-output*. NIL means "no
                 ;; colour"; a keyword is the accent the symbol
@@ -806,7 +874,9 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                     :load-encoding load-encoding
                                     :io-encoding io-encoding
                                     :no-init-p no-init-p
-                                    :no-color-p no-color-p)))
+                                    :no-color-p no-color-p
+                                    :debug-ui debug-ui
+                                    :on-error-policy on-error)))
               (finish-output)
               ;; RUN-WITH-INPUT returns the effective process exit status
               ;; (autolisp-set-status / (quit N) / error → 1 / file → 2).

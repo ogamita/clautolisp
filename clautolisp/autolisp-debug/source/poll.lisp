@@ -12,10 +12,11 @@
   (fid 0 :type fixnum)
   (form-id 0 :type fixnum)
   (when :before :type keyword)
-  (stop-reason :breakpoint :type keyword)   ; :breakpoint | :step | :unhandled-error | :caught-error
+  (stop-reason :breakpoint :type keyword)   ; :breakpoint | :step | :watch | :unhandled-error | :caught-error
   metadata
   source-position
   snapshot
+  watch                                      ; the WATCH that fired, for a :watch stop
   ;; populated for error stops (spec §10)
   condition
   error-message
@@ -40,14 +41,19 @@ debugger/UI boundary in Phase 1–2.")
 debugged thread has armed a step or set a breakpoint covering this point
 (spec §11.1)."
   (let ((ti *thread-debug-info*))
-    (when (and ti (thread-debug-info-debug-flag ti))           ; (a) fast path
+    (when (and ti (thread-debug-info-debug-flag ti)            ; (a) fast path
+               (not (thread-debug-info-jump-target ti)))       ; jumping ⇒ no stops
       (setf (thread-debug-info-current-pp ti) (cons fid form-id))
-      (let ((reason
-              (cond
-                ((step-request-fires-p ti when) :step)
-                ((and (summary-test ti fid form-id)            ; (b) Bloom
-                      (find-active-breakpoint ti fid form-id when))
-                 :breakpoint))))
+      (let* ((step (step-request-fires-p ti when))
+             (bp (and (not step)
+                      (summary-test ti fid form-id)            ; (b) Bloom
+                      (find-active-breakpoint ti fid form-id when)))
+             ;; software watchpoints (§2): re-checked at every poll point, but
+             ;; only when at least one is set. CHECK-WATCHES refreshes the
+             ;; remembered values whether or not it fires, so a change is
+             ;; reported exactly once even if a breakpoint/step also stops here.
+             (watched (and (thread-debug-info-watches ti) (check-watches ti)))
+             (reason (cond (step :step) (bp :breakpoint) (watched :watch))))
         (when reason
           (handle-stop ti fid form-id when reason))))))
 
@@ -67,17 +73,47 @@ debugged thread has armed a step or set a breakpoint covering this point
     (clear-volatile-breakpoints ti)
     (clear-step-request ti)
     (when (and breakpoint (breakpoint-action breakpoint))
-      ;; trace point: run the action, do not stop
+      ;; run the attached action; a tracepoint (TRACE-P) continues
+      ;; transparently, a bpcmd breakpoint (TRACE-P NIL) runs the action
+      ;; then falls through to the normal stop (spec §2, §6.4).
       (funcall (breakpoint-action breakpoint)
                (make-hit :thread-info ti :breakpoint breakpoint :fid fid
                          :form-id form-id :when when :stop-reason reason :metadata metadata))
-      (return-from handle-stop :continue))
+      (when (breakpoint-trace-p breakpoint)
+        (return-from handle-stop :continue)))
     (let ((hit (make-hit :thread-info ti :breakpoint breakpoint :fid fid
                          :form-id form-id :when when :stop-reason reason
                          :metadata metadata
+                         :watch (and (eq reason :watch) (thread-debug-info-fired-watch ti))
                          :source-position (and metadata (form-id-position metadata form-id))
                          :snapshot (build-snapshot ti fid form-id when metadata))))
       (apply-resume-directive ti (funcall *debug-hit-handler* hit)))))
+
+(defun invoke-debugger-break (&optional message)
+  "Programmatic debugger entry (CLAL-BREAK / CLAL-INVOKE-DEBUGGER, command
+reference §1): when a debug session is active on this thread, stop at the
+current poll point and run the UI command loop, applying its resume directive
+(so `abort'/`return' work). A no-op otherwise. MESSAGE, if any, is shown at the
+stop. Returns NIL."
+  (let ((ti *thread-debug-info*))
+    (when (and ti (thread-debug-info-debug-flag ti))
+      (let* ((pp (thread-debug-info-current-pp ti))
+             (fid (if pp (car pp) 0))
+             (form-id (if pp (cdr pp) 0))
+             (metadata (metadata-for-function-id fid)))
+        (apply-resume-directive
+         ti (funcall *debug-hit-handler*
+                     (make-hit :thread-info ti :fid fid :form-id form-id :when :before
+                               :stop-reason :break :metadata metadata
+                               :error-message message
+                               :source-position (and metadata (form-id-position metadata form-id))
+                               :snapshot (build-snapshot ti fid form-id :before metadata))))))
+    nil))
+
+;; Install the programmatic-break hook so the CLAL-BREAK / CLAL-INVOKE-DEBUGGER
+;; builtins (autolisp-builtins-core) reach the debugger without builtins-core
+;; depending on the debug system.
+(setf clautolisp.autolisp-runtime:*debug-break-hook* #'invoke-debugger-break)
 
 (defun apply-resume-directive (ti directive)
   "Interpret the handler's return value, arming the next stop. :ABORT
@@ -95,6 +131,17 @@ stop, not just an error stop."
     ((and (consp directive) (eq (first directive) :advance))
      (destructuring-bind (fid form-id &optional (when :before)) (rest directive)
        (advance-to-point ti fid form-id when)))
+    ((and (consp directive) (eq (first directive) :jump))
+     (destructuring-bind (fid form-id) (rest directive)
+       (request-jump ti fid form-id)))
+    ((and (consp directive) (eq (first directive) :continue-with-return))
+     ;; `return FORM' at a normal (non-error) stop: make the innermost
+     ;; instrumented form return VALUE via its CLAL-POLL-RETURN restart
+     ;; (spec §1 return / §10.1). Mirrors APPLY-ERROR-DIRECTIVE; declines
+     ;; (resumes normally) when no instrumented form encloses the stop.
+     (let ((restart (find-restart 'clal-poll-return)))
+       (when restart
+         (invoke-restart restart (coerce-from-cl (second directive))))))
     (t nil))
   directive)
 
@@ -121,8 +168,15 @@ stop, not just an error stop."
                  (restart-case
                      (progn
                        (poll-point fid form-id :before)
-                       (prog1 (autolisp-eval inner context)
-                         (poll-point fid form-id :after)))
+                       ;; Form-level jump (§1): skip this form's body entirely
+                       ;; when it is neither the target nor on the path to it.
+                       ;; A skipped form contributes NIL. JUMP-DISPOSITION
+                       ;; clears the jump when this poll point IS the target.
+                       (if (eq (jump-disposition ti fid form-id) :skip)
+                           nil
+                           (prog1 (autolisp-eval inner context)
+                             (jump-exit-check ti fid form-id)
+                             (poll-point fid form-id :after))))
                    (clal-poll-return (value) value))
               (debug-poll-exit ti form-id)))
           ;; not a debugged thread (e.g. eval-in-frame with *debugging*

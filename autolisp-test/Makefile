@@ -60,7 +60,11 @@ DESTDIR ?=
 SUBPROJECT_NAME := autolisp-test
 
 DOCUMENTATION_ORG := $(wildcard documentation/*.org) $(wildcard harness/*.org) $(wildcard tests/*.org)
-PDF_FILES := $(DOCUMENTATION_ORG:.org=.pdf)
+# Generated documentation is written under build/ mirroring the source
+# sub-hierarchy, so the source tree stays free of build artefacts and nothing
+# PDF-shaped is tracked in git. install-documentation collects from here.
+BUILD_DIR := build
+PDF_FILES := $(patsubst %.org,$(BUILD_DIR)/%.pdf,$(DOCUMENTATION_ORG))
 
 # Inline AutoLISP snippet that the standalone clautolisp executables
 # evaluate to launch the conformance harness. Sets *clautolisp-version*
@@ -204,14 +208,41 @@ test-asdf-ccl-debug:
 		--eval '(asdf:load-system "autolisp-test/clautolisp-driver")' \
 		--eval '(autolisp-test.clautolisp-driver:run-autolisp-test-suite :debug t)'
 
-%.pdf: %.org
-	$(EMACS) --batch \
-		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
+# Very large org docs can exceed TeX's default main_memory and abort with "TeX
+# capacity exceeded". A repo-local web2c/texmf.cnf raises the memory parameters;
+# we build a private xelatex format with them into a cache dir (TEXMFVAR) so no
+# machine-wide texmf.cnf edit or root access is needed. The trailing empty
+# component on TEXMFCNF appends the system search path.
+TEX_WEB2C    := $(ROOT_DIR)/documentation/web2c
+TEXFMT_CACHE := $(XDG_CACHE_HOME)/texmf-var
+export TEXMFCNF := $(TEX_WEB2C):
+export TEXMFVAR := $(TEXFMT_CACHE)
+ifeq ($(LATEX_COMPILER),xelatex)
+TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
+$(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
+	@mkdir -p $(TEXFMT_CACHE)
+	fmtutil -user --byfmt xelatex
+else
+TEX_FMT_DEP :=
+endif
+
+# clautolisp-doc-preamble.sty gives xelatex the fonts for the Unicode glyphs
+# Latin Modern lacks (see documentation/clautolisp-doc-preamble.sty); injected
+# via org-latex-packages-alist, with TEXINPUTS pointing at documentation/ so the
+# .sty is found regardless of the .tex's directory (e.g. harness/, tests/).
+# org export writes next to the .org; we move the result under build/ (mirroring
+# the source path) and delete the intermediate .tex so the source tree stays clean.
+$(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
+	@mkdir -p $(@D)
+	TEXINPUTS="$(ROOT_DIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
+		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
+	@mv -f "$(<:.org=.pdf)" "$@"
+	@rm -f "$(<:.org=.tex)"
 
 clean-pdf:
-	rm -f $(PDF_FILES)
+	rm -rf $(BUILD_DIR)
 
 # ---------------------------------------------------------------------
 # autolisp-test × clautolisp × dialect matrix
@@ -380,11 +411,11 @@ install-programs:  ## Install just the autolisp-test harness + tests (no docs).
 
 install-documentation:  ## Install just the autolisp-test documentation.
 	install -d $(DOC_INSTALL_DIR)
-	@for f in documentation/*.org documentation/*.pdf; do \
+	@for f in documentation/*.org $(BUILD_DIR)/documentation/*.pdf; do \
 	  if [ -f "$$f" ]; then install -m 0644 "$$f" $(DOC_INSTALL_DIR)/ ; fi ; \
 	done
 	install -d $(INFO_INSTALL_DIR)
-	@for f in documentation/*.info; do \
+	@for f in $(BUILD_DIR)/documentation/*.info; do \
 	  if [ -f "$$f" ]; then \
 	    install -m 0644 "$$f" $(INFO_INSTALL_DIR)/ ; \
 	    installed="$(INFO_INSTALL_DIR)/$$(basename $$f)" ; \

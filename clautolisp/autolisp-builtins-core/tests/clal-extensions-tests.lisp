@@ -307,3 +307,78 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
          "GARBAGE-ENCODING"
          (clautolisp.autolisp-builtins-core::%canonical-codepage-string
           "GARBAGE-ENCODING")))))
+
+;;; --- aldo configuration (CLAL-*-ALDO-CONFIGURATION) ----------------
+
+(defun %aldo-config-assoc (key-name config)
+  "Value of KEY-NAME (a string) in the AutoLISP assoc-list CONFIG."
+  (cdr (assoc (clautolisp.autolisp-runtime:intern-autolisp-symbol key-name)
+              config :test #'eq)))
+
+(defun %aldo-sym-name (object)
+  (and (typep object 'clautolisp.autolisp-runtime:autolisp-symbol)
+       (clautolisp.autolisp-runtime:autolisp-symbol-name object)))
+
+(test aldo-config-default-parses
+  (setup-mock-host-context)
+  (let ((config (clautolisp.autolisp-builtins-core::default-aldo-configuration-value)))
+    (is (consp config))
+    (is (string= "SEXP" (%aldo-sym-name (%aldo-config-assoc "NAVIGATOR" config))))
+    (is (string= "UNICODE" (%aldo-sym-name (%aldo-config-assoc "THEME" config))))
+    (is (eql 24 (%aldo-config-assoc "SOURCE-WINDOW-HEIGHT" config)))
+    (is (eql 4301 (%aldo-config-assoc "DEFAULT-ALDB-LISTENING-PORT" config)))))
+
+(test aldo-config-lazy-seed
+  (setup-mock-host-context)
+  (let ((sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
+    (is (not (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p sym)))
+    (let ((value (clautolisp.autolisp-builtins-core::aldo-configuration-value)))
+      (is (consp value))
+      (is (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p sym))
+      (is (string= "SEXP" (%aldo-sym-name (%aldo-config-assoc "NAVIGATOR" value)))))))
+
+(test aldo-config-save-load-roundtrip
+  (setup-mock-host-context)
+  (let ((path (merge-pathnames "aldo-core-roundtrip.conf" (uiop:temporary-directory)))
+        (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
+    (unwind-protect
+         (progn
+           ;; set the variable to a modified configuration, then save
+           (clautolisp.autolisp-runtime:set-variable
+            sym (first (clautolisp.autolisp-runtime:read-runtime-from-string
+                        "((navigator . line) (pager-height . 42))"
+                        :source-name "test")))
+           (clautolisp.autolisp-builtins-core::save-aldo-configuration-to path)
+           (is (probe-file path))
+           ;; clobber the variable, then load it back from the file
+           (clautolisp.autolisp-runtime:set-variable
+            sym (clautolisp.autolisp-builtins-core::default-aldo-configuration-value))
+           (is (string= "SEXP" (%aldo-sym-name
+                                (%aldo-config-assoc "NAVIGATOR"
+                                                    (clautolisp.autolisp-runtime:autolisp-symbol-value sym)))))
+           (let ((loaded (clautolisp.autolisp-builtins-core::load-aldo-configuration-from path)))
+             (is (string= "LINE" (%aldo-sym-name (%aldo-config-assoc "NAVIGATOR" loaded))))
+             (is (eql 42 (%aldo-config-assoc "PAGER-HEIGHT" loaded)))
+             ;; the variable itself was updated
+             (is (string= "LINE" (%aldo-sym-name
+                                  (%aldo-config-assoc "NAVIGATOR"
+                                                      (clautolisp.autolisp-runtime:autolisp-symbol-value sym)))))))
+      (ignore-errors (delete-file path)))))
+
+(test aldo-config-file-is-ascii-friendly
+  (setup-mock-host-context)
+  (let ((path (merge-pathnames "aldo-core-ascii.conf" (uiop:temporary-directory)))
+        (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-runtime:set-variable
+            sym (clautolisp.autolisp-builtins-core::default-aldo-configuration-value))
+           (clautolisp.autolisp-builtins-core::save-aldo-configuration-to path)
+           (let ((text (uiop:read-file-string path)))
+             (is (every (lambda (ch) (< (char-code ch) 128)) text)) ; pure ASCII
+             (is (search "navigator" text :test #'char-equal)) ; reader upcases symbols
+             (is (search "9205" text))   ; current-pp glyph as a code point
+             ;; and it reads back as valid AutoLISP data
+             (is (consp (first (clautolisp.autolisp-runtime:read-runtime-from-string text
+                                                                                     :source-name "rt"))))))
+      (ignore-errors (delete-file path)))))

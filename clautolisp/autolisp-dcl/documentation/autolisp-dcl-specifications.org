@@ -20,7 +20,11 @@ Audience: developer of the project.
 Specifications: what autolisp-dcl should do.
 
 * Topics
-  - Goals and contract\n- Public interfaces (functions, structs, packages)\n- Internal invariants\n- Test coverage expectations\n- Open questions / decisions deferred
+  - Goals and contract
+  - Public interfaces (functions, structs, packages)
+  - Internal invariants
+  - Test coverage expectations
+  - Open questions / decisions deferred
 
 * References
 

@@ -15,11 +15,15 @@ BRICSCAD_RUNNER ?=
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 SPECIFICATIONS_ORG := $(wildcard specifications/*.org)
 ORG_FILES := $(DOCUMENTATION_ORG) $(SPECIFICATIONS_ORG)
-PDF_FILES := $(ORG_FILES:.org=.pdf)
+# Generated PDFs are written under build/ mirroring the source sub-hierarchy
+# (build/documentation/…, build/specifications/…), joining the paged HTML/Info
+# derivatives that already live under build/. Nothing PDF-shaped is tracked in
+# git; install-documentation collects everything from build/.
+BUILD_DIR := build
+PDF_FILES := $(patsubst %.org,$(BUILD_DIR)/%.pdf,$(ORG_FILES))
 
 # Source-of-truth org file the paged builds slice up.
 SPEC_ORG := documentation/autolisp-visual-lisp-specification-draft.org
-BUILD_DIR := build
 PAGES_DIR := $(BUILD_DIR)/pages
 HTML_DIR  := $(BUILD_DIR)/html
 INFO_DIR  := $(BUILD_DIR)/info
@@ -162,9 +166,9 @@ install-documentation: install-alref-libs  ## Install the autolisp-spec docs (.o
 	    || echo "[skip] install-info dir update for autolisp-spec.info"; \
 	fi
 	@for f in documentation/autolisp-visual-lisp-specification-draft.org \
-	          documentation/autolisp-visual-lisp-specification-draft.pdf \
+	          $(BUILD_DIR)/documentation/autolisp-visual-lisp-specification-draft.pdf \
 	          documentation/autolisp-reference-notes.org \
-	          documentation/autolisp-reference-notes.pdf \
+	          $(BUILD_DIR)/documentation/autolisp-reference-notes.pdf \
 	          documentation/autolisp-spec-user-manual.org; do \
 	  if [ -f $$f ]; then install -m 0644 $$f $(DOC_INSTALL_DIR)/; fi; \
 	done
@@ -184,11 +188,38 @@ uninstall:  ## Remove the spec install from $$PREFIX.
 # Example:
 # make probe-bricscad BRICSCAD_RUNNER='"/Applications/BricsCAD.app/Contents/MacOS/bricscad" "__PROBE_FILE__"'
 
-%.pdf: %.org
-	$(EMACS) --batch \
-		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
+# The ~4600-page visual-lisp spec exceeds TeX's default main_memory and aborts
+# with "TeX capacity exceeded". A repo-local web2c/texmf.cnf raises the memory
+# parameters; we build a private xelatex format with them into a cache dir
+# (TEXMFVAR) so no machine-wide texmf.cnf edit or root access is needed. The
+# trailing empty component on TEXMFCNF appends the system search path.
+TEX_WEB2C    := $(CURDIR)/documentation/web2c
+TEXFMT_CACHE := $(CURDIR)/.cache/texmf-var
+export TEXMFCNF := $(TEX_WEB2C):
+export TEXMFVAR := $(TEXFMT_CACHE)
+ifeq ($(LATEX_COMPILER),xelatex)
+TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
+$(TEX_FMT_DEP): $(TEX_WEB2C)/texmf.cnf
+	@mkdir -p $(TEXFMT_CACHE)
+	fmtutil -user --byfmt xelatex
+else
+TEX_FMT_DEP :=
+endif
+
+# clautolisp-doc-preamble.sty gives xelatex the fonts for the Unicode glyphs
+# Latin Modern lacks (see documentation/clautolisp-doc-preamble.sty); injected
+# via org-latex-packages-alist, with TEXINPUTS pointing at documentation/ so the
+# .sty is found regardless of the .tex's directory.
+# org export writes next to the .org; we move the result under build/ (mirroring
+# the source path) and delete the intermediate .tex so the source tree stays clean.
+$(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
+	@mkdir -p $(@D)
+	TEXINPUTS="$(CURDIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
+		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
+	@mv -f "$(<:.org=.pdf)" "$@"
+	@rm -f "$(<:.org=.tex)"
 
 clean-pdf:
 	rm -f $(PDF_FILES)

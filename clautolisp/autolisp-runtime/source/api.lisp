@@ -1290,6 +1290,15 @@ error wraps a non-autolisp-runtime condition."
 (defun make-autolisp-variant (&key value)
   (clautolisp.autolisp-runtime.internal::make-autolisp-variant :value value))
 
+(defparameter *clal-on-error* :quit
+  "The error policy when an uncaught AutoLISP error escapes to the top level
+(debugger command reference §10): one of :QUIT (report and exit non-zero — the
+default and the historical clautolisp behavior), :DEBUG (break into the aldo
+debugger), or :IGNORE (let the AutoLISP *error* / default handler run, no
+debugger). Set by the clautolisp CLI's --on-error option; user code and init
+files may rebind it (e.g. (let ((*clal-on-error* :debug)) …)) to shadow it
+around a suspect region.")
+
 (defparameter *debugging* nil
   "Non-nil iff a debug session is active on the executing thread. It is
 set once by the debugger's session entry and is NOT rebound per call.
@@ -1324,6 +1333,21 @@ by the debugger's snapshot. NIL when no catch is active.")
 caught autolisp-runtime-error BEFORE returning the AutoLISP error object
 (spec §10.2 'break on caught error'). The debugger installs this only when
 break-on-caught is enabled; NIL by default (off).")
+
+(defparameter *debug-define-command-hook* nil
+  "When non-nil, a function (NAMES FUNCTION DOC) the CLAL-DEFINE-DEBUGGER-COMMAND
+builtin calls to register an AutoLISP-defined debugger command (command
+reference §8). NAMES is a CL list (KEY WORD…) of strings, FUNCTION the AutoLISP
+command body, DOC a string or NIL. The aldo debugger UI installs it; NIL (a
+no-op) when the debug-ui layer is absent.")
+
+(defparameter *debug-break-hook* nil
+  "When non-nil, a function of one optional MESSAGE argument that the
+CLAL-BREAK / CLAL-INVOKE-DEBUGGER builtins call to drop into the aldo debugger
+at the current poll point — the programmatic debugger entry (debugger command
+reference §1). The aldo debugger installs it when its system is loaded; it is a
+no-op (returns without stopping) unless a debug session is active on the
+thread. NIL when the debug system is absent, making CLAL-BREAK a no-op.")
 
 (defun append-proper-and-tail (elements tail)
   (if (null elements)

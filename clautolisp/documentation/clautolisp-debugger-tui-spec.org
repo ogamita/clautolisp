@@ -1,0 +1,808 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: clautolisp debugger (aldo) — Text User Interface Specification
+
+* clautolisp debugger - aldo - Text User Interface Specifications
+
+ For the command language see clautolisp-debugger-command-reference.org
+
+This document concentrates on the specification of an experimental
+interface to display and specify break points in a sexp-based source
+form.
+
+Which UI runs (the *TUI* =tui= — this very interface —, =ncurses=, or =aldb=),
+how it is selected (the =default-user-interface= setting, the =user-interface=
+current value, the =--aldo-user-interface= CLI option) and how it is activated
+on entry (the aldb connect prompt, the ncurses alternate screen, the tui
+scroll-back) are specified in the command reference, §10 *Selecting the user
+interface* / *Entering the debugger*.
+
+Note: the term pretty-printing as used in this document, refers to
+the standard Common Lisp pretty-printing for the original sedit code,
+but actually to a debugger-specific pretty-printing, similar but with
+modified and added features. Perhaps it can be implemented by
+customizing CL:PRETTY-PRINT, or it would have to be implemented
+entirely specifically for the purpose described in this document.
+
+** Sexp Structural Editor
+
+The debugger user interface used to display source code, breakpoints
+and to let the user set break points in a S-expression source form, is
+based on sedit, a simple S-expression structural editor.
+
+The operation is based on a S-expression, with one special item, a
+selection which wraps the S-expression or one of its sub-expressions.
+
+The operation is a loop where:
+
+- the lisp form is pretty-printed, with the selection duly displayed
+  in a recognizable way.
+
+  Typically, we may use a different background color, or surround it
+  with uncommon parentheses such as unicode【…】(if no unicode, and no
+  ANSI terminal control codes (bold, italic, underline, invert, colors
+  (foreground/background)) are available we can use normal brackets:
+  […] or digraph or trigraph kind of parentheses.
+
+- commands are available to the user to move the selection, forward,
+  backward (in the same parent list), up the s-exp tree, into the
+  selected list, etc.
+
+- the command change change the selection wrapper in the s-expr, and
+  then we loop and it's re-pretty-printed with the changed selection.
+
+In sedit other commands let use insert sub-expressions, change the
+selected expressions (input a new s-expr to replace it), copy, paste,
+list operations such as slurp, barf, split, slice, etc.
+
+Notably, as a simple, basic structural editor, sedit doesn't bother
+with the "structure" of the forms and subforms, such as macros and
+special operators distinguishing non-evaluable subforms from evaluable
+sub-expressions, the editor is a S-expression editor (remember,
+S-expressions are lisp data, but code is data too, data can be code).
+
+Now one interesting feature of such a sedit is the ability for the
+user to select (point at) a specific sub-expression of a form.
+
+Some commands can be added to ease and quicken it even more, such as
+search, or jump n expressions forward or backward with directly
+entering a number (positive or negative), etc.
+
+The second interesting feature is that we can decorate
+sub-expressions, like we do for the selection decorated with brackets,
+to indicate set break-points and other debugging information
+(eg. current breakpoint/poll-point).
+
+** Debugger Specific Decorations
+
+We already have wrapped forms (the forms instrumentalised for
+debugging), we can take them and pretty-print them each sub-form in
+function of the state of the wrapping poll-point.
+
+Here is a table indicating how to display
+
+| What                | Unicode | ASCII | white-on-black | green-on-black | black-on-white | bold-underline-invert(¹) |
+|---------------------+---------+-------+----------------+----------------+----------------+--------------------------|
+| current pp          | ⏵       | >     | red-on-black   | red-on-black   | red-on-white   | bold                     |
+| disabled breakpoint | ⏯      | _     | blue-on-black  | blue-on-black  | blue-on-white  | underline                |
+| enabled breakpoint  | ⏸      | ^     | cyan-on-black  | cyan-on-black  | cyan-on-black  | invert                   |
+| selected subform    |【…】    | […]   | black-on-white | black-on-white | white-on-black | bold-invert              |
+
+(¹) we don't use blinking! and italic is not often available. We could
+use all 8 combinations of bold, underline and invert, but it could be
+difficult to read, so we will try to limit the use of combinations.
+
+This table is the *default* decoration set; its columns are exactly the values
+of the =theme= setting (=unicode=, =ascii=, =white-on-black=, =green-on-black=,
+=black-on-white=, =attributes=), and each cell is a configurable =decoration=
+entry in =*clal-aldo-configuration*= — see the command reference §8
+(*Configuration and persistence* — the =theme= / =decorations= grammar).
+A glyph may be a literal string or a list of Unicode code points.
+
+The status of the poll-point can be indicated by different ways:
+
+- a unicode character or an ASCII special character prefixing the sub-expression.
+
+  Even with ascii special characters, it should remain easily
+  readable,since in lisp, the only characters that can precede an open-parenthesis are:
+  spaces, open-parenthesis, or reader macros such as ' or #A.  so
+  something like:
+    #+begin_example
+    (progn (print 'hello) >(print 'world) ^(print '!))
+    #+end_example
+  or:
+    #+begin_example
+    (progn
+      (print 'hello)
+     >(print 'world)
+     ^(print '!))
+    #+end_example
+  should be clear. The more so with unicode characters.
+
+- a pair of parenthesing unicode or ASCII characters surrounding the sub-expression.
+    #+begin_example
+    【(print 'world)】
+    #+end_example>
+  or:
+    #+begin_example
+    [(print 'world)]
+    #+end_example
+  Of course, we will avoid plain parentheses to avoid confusing them with lisp lists or vectors,
+  but <…> {…} or […] can be sufficiently unique to be of usage in the worst case.
+
+  Note: in the case of the selection brackets they surround the poll-point decoration so we could have:
+    #+begin_example
+    【⏸(print 'hi)】
+    #+end_example
+  or:
+    #+begin_example
+    [^(print 'hi)]
+    #+end_example
+
+- displaying the sub-expression with a specific foreground/background
+  color (which depends on the general "theme" black-on-white or
+  white-on-black (or green-on-black).
+  colors may be mixed with bold, underline, invert attributes but this
+  is not advised.
+
+- displaying the sub-expression with a specific combination of bold,
+  underline, invert attributes (blinking are definitively to avoid,
+  and italic is often not available).
+
+Currently defined (see table above) poll-point statuses are:
+
+- current poll-point (the one that is calling the debugger),
+- enabled break-point
+- disabled break-point
+- neutral poll-point (no decoration, we'll step in or over it, or continue, etc).
+- selected sub-expression (can wrap around poll-points).
+
+Verification (resolved): the *base* states above are complete — a poll point
+is either neutral, the current one, or carries a breakpoint that is enabled or
+disabled, and any sub-expression may be the selection. But a breakpoint can
+also carry *attributes* defined by the command reference (§2), and these are
+worth surfacing so the user sees them without opening =list breakpoints=. They
+are shown as *modifiers* on the breakpoint glyph (a small suffix glyph and/or a
+style), *not* as new base states, always with an ASCII fallback:
+
+- *conditional* — the breakpoint has a =condition= (fires only when a form is
+  true); e.g. a trailing =?= on the glyph.
+- *ignore-count* — an =ignore COUNT= is pending (skip the next N hits); e.g. a
+  small count after the glyph.
+- *once / temporary* — a =break once= (=bo=) one-shot breakpoint; the §8
+  styling map already sets this apart (gutter *underlined* vs a sticky one).
+- *tracepoint* — a =trace= breakpoint that runs its action and auto-continues
+  (it never stops); a distinct glyph so it is not mistaken for a stopping bp.
+- *has-commands* — a =bpcmd= action is attached; e.g. a small marker.
+- *transient target* — a volatile =advance= breakpoint or a pending =jump=
+  target (source-located, removed on first stop); shown only while armed.
+
+The specific modifier glyphs are *deferred* (provisional): rather than fix a
+glyph for every attribute up front, the rule is that *when a poll point is
+selected, its full information is shown at the bottom of the screen* — whether
+it carries an enabled / disabled break-point, its condition, its pre- and
+post-expression, ignore count, trace/commands, and so on (see "Additional
+Debugging Commands"). Because that bottom panel carries the detail, the inline
+decorations need only *flag presence* (this poll point has a breakpoint /
+carries attributes), and we will *see by use* whether extra modifier glyphs are
+warranted beyond the base status. Any glyph that is added extends the rendering
+ladder of the decoration table (circled / super-subscript / bracketed), keeps
+an ASCII fallback, and must stay readable combined with the status and number
+glyphs.
+
+** Numbered Poll-Points — Designation by Number
+
+Structural navigation (move the selection forward / backward / in / out)
+is one way to /point at/ a sub-expression. An alternative, often quicker
+when the target is already on screen, is to *number every poll-point in
+the displayed form and let the user type the number to designate it* —
+no walking the tree.
+
+Every poll-point sub-form is decorated with its *number*, a compact glyph
+placed as a prefix (and combinable with the status glyph of the table
+above). The number is the poll-point's stable id — the very =ppN= used in
+the command reference (§2, "Specifying a location"), not a fresh
+per-display counter — so the same number means the same poll-point in the
+TUI, in =aldb=, and at the dumb-terminal prompt.
+
+Rendering ladder for the number, best available first:
+
+- Unicode enclosed digits: ① ② ③ … ⑳ (and ㉑ … ㊿ where the font has
+  them).
+- Unicode super/subscript digits, concatenated for multi-digit: ¹² , ₁₂ .
+- Pure-ASCII fallback: a bracketed decimal that cannot be mistaken for a
+  Lisp list or the selection brackets — e.g. =<7>= or =⟨7⟩=. (We avoid
+  =#7= so the decoration is not read as a punctuation /sigil/; see the
+  design note DN-11 — the number the user *types* is always bare.)
+
+Number and status glyph combine, number first:
+
+#+begin_example
+(progn (print 'hello) ②⏸(print 'world) ③(print '!))
+#+end_example
+
+or in ASCII:
+
+#+begin_example
+(progn (print 'hello) <2>^(print 'world) <3>(print '!))
+#+end_example
+
+— poll-point ② carries an enabled breakpoint, poll-point ③ is a plain
+poll-point the user could designate to set one. *Every* poll-point shows
+its number (so any of them can be designated), while the status glyph
+appears only on the current one and on breakpoints.
+
+Designation then has two cheap forms, both bypassing navigation:
+
+- a *bare number* =N= moves the selection to poll-point =N= (a direct jump
+  in the sedit loop, complementing forward/backward/in/out);
+- a *command + number* acts directly without first selecting: =b 7= sets a
+  breakpoint at poll-point 7, =clear 7=, =disable 7=, =condition 7 FORM=,
+  etc. The number is bare because the command already says what kind of
+  object it is (DN-11).
+
+*The breakpoint number is the poll-point number.* A breakpoint is not a
+separate object with its own counter; it is the breakpoint /flag/ on a
+poll-point. So "breakpoint 7" is "poll-point 7, breakpoint set" — there is
+at most one breakpoint per poll-point, =list breakpoints= shows poll-point
+numbers, and =clear= / =enable= / =disable= / =condition= all take the
+same numbers the decorations show. One numbering space, not two — this is
+the simplification, and it scales fine even with many poll-points: the
+displayed form only ever shows /its own/ poll-points, a small readable
+subset, and only the glyphs degrade (circled → bracketed decimal) as ids
+grow.
+
+This numbered mode and the sedit selection mode are *complementary*, not
+exclusive: the decorations (numbers + status) are always shown; the user
+may either type a number to act at once, or walk the selection when
+browsing an unfamiliar form. Both designate the same poll-points.
+
+Decision: an elided =#= region (see "Partial Printing") that *contains* one
+or more breakpoints does *not* surface their numbers — *expansion is required
+first* to designate them. A single =#= typically hides *several* poll points
+and possibly *several* breakpoints, so a number on the =#= would be ambiguous.
+The =#= instead carries a *warning decoration* meaning only "there are
+breakpoints hidden in here" (a presence flag, not an identity); the user
+expands the region (=down= / =>=) to see the numbered poll points and act on
+them.
+
+Decision (*settled*): poll-point ids are *globally stable* — one space
+across all instrumented forms, assigned once and never reused — so a bare
+number is unambiguous everywhere (TUI, =aldb=, dumb prompt) and a
+breakpoint never needs its form quoted for context. The accepted downside
+is that there are many more poll-points than breakpoints, so the numbers a
+user types are *larger* than a gdb-style per-session breakpoint counter
+would give. We judge the single-namespace simplification worth it, and the
+rendering ladder (circled → bracketed decimal) absorbs the large ids in
+the display. Implemented as a poll-point-id registry in =autolisp-debug=
+(=poll-point-id= / =poll-point-location=). Should the large numbers prove
+inconvenient in practice, the fallback remains a small per-top-level-form id
+(and then a breakpoint must carry its form for identity) — but that is no
+longer the expected path.
+
+** Additionnal Debugging Commands
+
+In addition to the selection movement in the sedit mode, and the
+designation-by-number above, the debugger will provide these sedit
+commands:
+
+- clear a breakpoint
+- set a breakpoint
+- disable a breakpoint
+- enable a breakpoint
+- set/change/clear a condition
+- set/change/clear a pre-expression
+- set/change/clear a post-expression
+
+Verification (resolved): the commands a sedit selection can offer are exactly
+the *source-located* operations of the command reference — those that act on a
+*poll point*, which is what a selected sub-form designates. Beyond the seven
+above, the complete set adds (each = the command-reference verb applied to the
+selected poll point, with no typed location, per §0 *cursor-based*):
+
+- *break once* (a temporary one-shot breakpoint at the selection; cmd-ref §2
+  =break once=);
+- *set/clear an ignore count* (=ignore=, §2);
+- *attach/clear breakpoint commands* (=bpcmd=, §2 — this *is* the
+  pre/post-expression facility above, named in the command reference);
+- *set/clear a tracepoint* (=trace= / =untrace=, §2: a breakpoint that runs
+  its action and auto-continues);
+- *designate as a =jump= target* and *=advance= to here* (§1 — both
+  source-located: they name a poll point to resume at / run to);
+- *watch a variable at the selection* (=watch SYMBOL=, §2) when the selection
+  is a symbol.
+
+What a sedit selection does *not* offer is the *binding-dependent* operations
+(=print=, =setq=, =list locals=, evaluation): those need a *frame*, not a
+source position, so they act in the current frame regardless of the selection
+(the two-stacks rule, below). The pre/post-expression entries above are the
+=bpcmd= action in TUI vocabulary; they remain displayed in full under the
+source form when their poll point is selected (next paragraph).
+
+When the selection is changed to a breakpoint, the condition,
+pre-expression, post-expression can be displayed under the
+pretty-printed source code.
+
+Note: when we give a step or continue command, and then we re-enter
+the debugger, it can display automatically the source form of the
+function (or a sub-expression if it's too big) we're in, with the
+selection moved to the current poll-point (so eg. with 【⏵(break)】)
+So a sequence of command next would redisplay the source form with the
+【⏵…】 indicator advancing step by step.
+
+** Navigating Forms — Definitions, the Two Stacks, and History
+
+Note: the navigation and go-to verbs settled in this section (=d u > < << >>=,
+=±N=, =goto=, =definition=, =back=, =history=, =search=) are now *registered
+normatively* in the command reference, §3 *Navigation*, with their keys
+verified collision-free against the global command set (§0). This section
+remains the fuller treatment (rationale, sedit reconciliation, re-entry); the
+command reference is the canonical command/key registry.
+
+The sedit view is not nailed to one form. The selected node sits in a
+single *containment tree* that reaches from a sub-expression all the way
+out to the file system, and *one* set of motion commands walks every level
+of it. On top of that, the user can jump by name or location, follow a
+call into its definition, and — across several debugger stops — return to
+where they were last looking.
+
+*** One tree: sexps, forms, files, directories
+
+The levels of the tree, innermost out:
+
+- a *list / sexp* — its elements;
+- a *top-level form* — its sub-sexps;
+- a *file* — its top-level forms;
+- a *directory* — its Lisp files and sub-directories.
+
+The *same* motions act at every level — so =up= from a top-level form
+lands on the file's form list, =up= again on the directory listing, and
+there the very same keys walk files and sub-directories until you =down=
+into a Lisp file and are back among top-level forms. The user learns one
+vocabulary; navigation simply *extends* up into files and directories
+without any new commands.
+
+| motion             | key   | at every level                              |
+|--------------------+-------+---------------------------------------------|
+| down               | =d=   | descend into the selected node              |
+| up                 | =u=   | ascend to the parent node                   |
+| forward (next)     | =>=   | next sibling                                |
+| backward (prev)    | =<=   | previous sibling                            |
+| first sibling      | =<<=  | jump to the first sibling                   |
+| last sibling       | =>>=  | jump to the last sibling                    |
+| skip ±N siblings   | =+N= / =-N= | move N siblings forward / backward (clamped) |
+
+A bare number designates *poll-point N* (numbered poll points, above); a
+*signed* =+N= / =-N= is the relative sibling skip — the sign disambiguates.
+
+*Input paradigm.* These spellings are the *dumb-terminal* ones, and the
+dumb terminal is *line-buffered*: you type a short token and press =RET=,
+and the whole line goes to the debugger. Function, arrow and =Home= / =End=
+keys do not belong there — they would have to be encoded into the line
+buffer and you would *still* press =RET=, and in an Emacs =shell= buffer
+they are captured by Emacs (=Home= = beginning-of-buffer, …) and never
+reach the program. So the dumb terminal stays all-typeable: =<< < > >>=,
+=±N=, words. The *ncurses* and *aldb* UIs read real keystrokes, so they
+*additionally* bind the obvious keys — =Home= / =End= for first / last, the
+arrows for forward / backward / down / up — firing on the keypress, no
+=RET=. The typeable spellings remain valid in all three.
+
+=search REGEXP= is a *search* whose *scope follows the current level*: in a
+directory it recurses through the sub-directories and Lisp files; in a file
+or a form it searches just that file. It lists the matches; the user picks
+one and the selection moves to the *sexp* that matched, entering the file
+if need be. (We keep the abstract name =search=; a first implementation may
+simply shell out to =grep=.)
+
+Jumping by name or path — the *go to* family, as opposed to step-by-step
+motion:
+
+- =definition= (=.=) — the definition of the selected call/symbol (may
+  cross files; next subsection).
+- =goto= (=g=) — jump by *name* or *qualified path*; its argument is one of:
+  - =goto FILE= / =goto FILE:LINE= — a file, at its top-level forms or at
+    =LINE= (the classic file:line jump);
+  - =goto NAME= — a global function =NAME=, to its definition;
+  - =goto OUTER INNER …= — a *qualified path* descending through *nested
+    local* definitions: =goto foo bar= is the =bar= defined inside =foo=,
+    the AutoLISP local-function idiom
+    =(defun foo (x / bar) (defun bar (y) (+ x y)) (bar x))=;
+  - =goto OBJ INNER …= — when the first name is a *variable* holding a
+    lambda /object/ loaded from a file (the AutoLISP "object" idiom: a file
+    whose last form is a lambda with local functions and a dispatching
+    body, instantiated by =load=, which returns that lambda), =OBJ= names
+    the *file* via the lambda's source metadata and =INNER= a local
+    function in it. So =goto o1 bar= and =goto o2 bar= reach *different
+    files* when =o1= and =o2= were loaded from different files, even though
+    each defines a local =bar=.
+
+  The *path* is what disambiguates the many *local* namespaces — the same
+  local name can live in several functions or objects, and a bare global
+  =bar= may also exist. (This replaces the earlier =form NAME=: =goto NAME=
+  covers the simple case, and =form= was an unclear name — =defun NAME=
+  would have read better — while =goto='s path handles the nested and
+  object idioms it could not.)
+- =back= / =history= — return through the browse stack / the saved
+  navigation states (below).
+
+All of these change only *what is displayed and selected*; they never touch
+execution or the evaluation context. (Evaluation is separate: =e= sends the
+*selection* to the debugger REPL, and typing a bare =(form)= sends itself
+to the REPL — both evaluated in the *current frame*, §3/§4.)
+
+*** Go to a definition, and pop back
+
+When the selection is a *function call* =(f …)= or a *symbol naming a
+function* =f=, =definition= (=.=) opens =f='s definition and makes it the
+displayed form — *crossing files* if =f= lives elsewhere, so the browse
+moves through the one tree just like =goto=. =back= pops to the form and
+selection we came from.
+
+This is *source browsing*: it follows the /call graph by name/, not the
+runtime stack, and it does *not* move the current frame. It is *not*
+"read-only", though — from a browsed form you can still do every
+*source-located* operation: set / clear / enable / disable a breakpoint,
+attach a condition, or designate a sub-form as a =jump= destination.
+Those act on *poll points*, which belong to the source, so they work
+wherever the source is shown, on or off the runtime stack — you may even
+browse into a function that is not (yet) on the stack at all and breakpoint
+it.
+
+What a browsed form lacks is a *frame*: there are no live bindings there.
+So the *binding-dependent* operations — =print=, =(setq …)=, =list
+locals=, evaluation — still act in the *current frame* (command reference
+§3), never in a function you have merely browsed into. That, not
+read-vs-write, is the real line between the two stacks below: one is an
+actual stack of *runtime frames* (with bindings), the other is only a
+*navigation stack through the source code* (with poll points but no
+bindings).
+
+*** The two stacks
+
+There are two stacks; they differ by *what their entries are*, not by what
+you may do from them:
+
+- *The runtime (Lisp) call stack* — a stack of actual *frames*; the
+  current poll-point sits in the current (top) frame. It is navigated with
+  the existing *frame family* (=fi= / =fo= / =ft= / =fb=, =list frames=;
+  command reference §3). Selecting a frame *is* a real move: it changes the
+  binding/evaluation context (=with-frame-bindings=) and the view shows
+  that frame's function with its active sub-form. Its depth is whatever the
+  program actually called.
+- *The source-navigation (browse) stack* — a stack of *source positions*,
+  =(form . selection)= pairs, built by =definition= / =back=. It is
+  independent of the runtime stack and carries *no frames and no bindings*.
+  You can still breakpoint and =jump=-target the poll points it shows (they
+  are source objects), but binding-dependent operations defer to the
+  current frame (above). Its depth is bounded only by how far the user
+  drills: with recursive or mutually-recursive functions =definition= can
+  revisit a function already on the browse stack (a /cycle/ in the static
+  call graph), so the depth is *user-bounded, not graph-bounded*.
+
+The default display always *anchors* to the current poll-point — the
+current frame's active form. Frame moves re-anchor to another real frame;
+=definition= browsing layers a browse stack on top of the current anchor,
+and =back= unwinds it.
+
+*** Re-entry, and the navigation history
+
+Browsing never changes what executes. If the user has drilled into some
+called function and then issues =continue= / =next= / =step=, it is the
+*current poll-point* that resumes — not the browsed function. Execution
+may then re-enter the debugger from an entirely *different* runtime stack,
+in a different function. When it does, the view *resets to the new current
+poll-point's form* (the re-display note above).
+
+The browse state the user had built is *not* discarded: the navigation
+state — the browse stack together with its active selection — is pushed
+onto a *history*, a list of such navigation states. A command (say
+=history=, plus back / forward or =restore N=) lets the user return to a
+previous state: the very form and selection that were active when they
+last left the debugger. So across many stops the user can resume reading
+where they were, instead of re-drilling each time.
+
+*** Bounds and parameters
+
+- =*navigation-history-max*= (a =,settings= option) caps the number of
+  saved navigation states; the oldest is dropped beyond the limit. Default
+  *1000* — essentially unbounded: reaching 1000 distinct navigation states
+  in one debugging session would be quite something.
+- The browse-stack depth needs no separate cap: it is naturally
+  user-bounded (the user does the drilling), so we do without one.
+
+*** ncurses and aldb
+
+- *ncurses* — the same model applies directly: a source pane that defaults
+  to the current poll-point's form, with =goto= / =definition= / =back= and
+  the same bounded navigation history.
+- *aldb (Emacs)* — likely *less* needed, because Emacs already keeps
+  buffers open and has native definition jumping (=xref= =M-.= and its
+  marker ring). aldb can simply expose the current poll-point's form and
+  selection over the RPC (§20.1) and *let Emacs's own buffers and mark ring
+  serve as the browse stack and history*. The one piece aldb still owns is
+  the *re-anchor on re-entry* — moving point to the new current poll-point
+  when execution stops again.
+
+** Command Dictionaries and the sedit Command Set
+
+The new verbs above (=goto=, =definition=, =back=, =history=, =search=) are
+*navigation* commands of the *sedit navigation mode*, not free-standing
+debugger commands. That raises two questions: which of sedit's own commands
+carry over, and how a mode's commands coexist with the debugger's.
+
+*** Reconciling sedit motions with the debugger commands
+
+With sedit as the *spine* of the TUI, its navigation commands and the
+debugger's commands must *integrate cleanly* — collision-free, so every
+debugger verb stays reachable from sedit *without* mode-escaping. (They are
+still distinct dictionaries, §below; "integrate" here means the sedit
+dictionary is designed not to clash with the global one, not that the two
+are merged.) The good news: the debugger's single-key map was already
+designed collision-free (command reference §0), and the keys sedit needs
+for /pure motion/ are either *already free* there (=d=, =u=) or can take
+intuitive *directional* keys (=>=, =<=) that no debugger command uses — so
+fitting sedit in costs the debugger set *nothing*: no debugger command
+moves.
+
+Both sets side by side, and the unified assignment (=sedit/sedit.lisp=,
+sedit branch, supplies the sedit column):
+
+| concept                     | sedit       | debugger          | unified |
+|-----------------------------+-------------+-------------------+---------|
+| enter selected list (down)  | =d= down    | — (free)          | =d=     |
+| select enclosing list (up)  | =u= up      | — (free)          | =u=     |
+| next sibling (forward)      | =f= / =n=   | =f=,=n= taken     | =>=     |
+| previous sibling (backward) | =b= / =p=   | =b=,=p= taken     | =<=     |
+| evaluate the selection      | =e= eval    | =(sexp)= at REPL  | =e=     |
+| help                        | =h=         | =h= =?=           | =h= =?= |
+| leave debugger → top REPL   | =q= quit    | =q= quit / kill   | =q=     |
+| insert / add / replace      | =i=/=a=/=r= | =i=/=a=/=r= verbs | drop (mutating) |
+| cut / copy / paste          | =x=/=c=/=y= | =c= continue      | drop (mutating) |
+| save / load                 | =s= / =l=   | —                 | drop (not useful) |
+
+The four *real* collisions — sedit =f n b p= against debugger
+=frame=/=next=/=break=/=print= — dissolve once *structural motion* takes
+=d u > <= instead: =d= and =u= were already free, and =>= / =<= are
+mnemonic for forward/backward, unused by either set (and on AZERTY a single
+dedicated key, =<= unshifted / =>= shifted). The sedit aliases =n=
+(=forward) and =p= (=backward) are *not* carried over, so =n= stays
+/step-over/ and =p= stays /print/.
+
+Adaptations of the three kept-but-changed sedit verbs:
+
+- =e= evaluates the *selection* in the *current frame* (command reference
+  §3/§4), not a bare =CL:EVAL= of the sexp.
+- =q= is the *debugger* =quit=: a non-local exit to the top-level REPL
+  (command reference §1; DN-9 abort), not sedit's "return the edited sexp".
+  It is the way *out* only when abandoning the run — the everyday exits are
+  =continue= / =next= / =step=.
+- =save= / =load= are dropped: there is no buffer to persist, and the
+  debugger never rewrites the program's source from this view.
+
+To these motions the debugger adds its own families *unchanged* —
+execution (=c i n o a j r=), breakpoint (=b bo= + words), frame (=f fi fo
+ft fb=), inspection (=p t v= + =l*=) and the go-to / browse family
+(=. definition=, =g goto=, =back=, =history=, =search=). So the sedit
+dictionary is *designed collision-free against the debugger commands*: from
+sedit every debugger verb is directly reachable, no escaping. It is
+nonetheless kept a *separate* dictionary (next subsections), because sedit
+is only *one* of the navigator options.
+
+Command shapes settled here: first/last siblings take =<<= / =>>= (with
+=Home= / =End= as their ncurses/aldb key bindings, unavailable in the
+line-buffered dumb terminal), the skip is the signed =±N=, both imported
+from sedit's numeric motions; =.= is =definition=, =g= is =goto=; =back=,
+=history=, =search= are word commands (single-key aliases, if wanted, from
+the still-free =, ; k m w '= keys).
+
+*** Two navigator options: sexp (sedit) and classic file:line
+
+sedit is *one* navigator UI, not the only one. The debugger also offers a
+*classic*, more gdb-like navigator that shows source the *flat* way — lines
+around a point (command reference =list source=) — for users who prefer it
+or terminals where the structural display is awkward. The two are
+*alternative UI options*, each with *its own dictionary* (next subsection),
+and the *same conceptual verbs* are defined for both:
+
+- *sexp / sedit*: =down= / =up= / =forward= / =backward= / =first= / =last=
+  move by structure over the one tree (sexp → form → file → directory);
+  =definition= descends into a called function, =back= pops; =search= is
+  the scope-following search.
+- *classic file:line*: motion is by line and by file; =forward= / =backward=
+  mean the next / previous *poll point* in the listing (so designation
+  still lands on sexps, not raw lines); =goto FILE:LINE= and =goto='s name
+  paths reach functions and files, and the file/directory levels are
+  walked the gdb way (list a file, step among its top-level forms).
+  =definition= jumps to the function's file+line, =back= returns.
+
+Decisions (settled):
+
+- *Selection is a pure =,settings= toggle*, not inferred from terminal
+  capability. The =navigator= option (=set navigator sexp= / =set navigator
+  line=, case-insensitive) chooses which navigator is active — =sexp= the sedit
+  structural view, =line= the flat file:line view; the debugger does not switch
+  on detected terminal capability. (Recorded in the command reference §8
+  settings list.)
+- *The classic navigator reuses the unified motion keys* — the *same* keys as
+  the sexp navigator (=d u > < << >>=, =±N=, and =g= =.= =goto= =definition=
+  =back= =history= =search=), so there is *one* key vocabulary across both
+  navigators; only the *rendering* differs (flat lines vs structural
+  pretty-print). The per-level meaning of each key in the flat view:
+
+  | key   | classic file:line meaning                                       |
+  |-------+-----------------------------------------------------------------|
+  | =>=   | next poll point in the listing (designation lands on the sexp)  |
+  | =<=   | previous poll point in the listing                              |
+  | =<<= =>>= | first / last poll point of the current form / listing       |
+  | =d=   | descend a containment level: dir → file → form → (poll point)   |
+  | =u=   | ascend a containment level: poll point → form → file → dir      |
+  | =±N=  | skip N poll points forward / backward (clamped)                 |
+  | bare =N= | designate poll-point =N= directly                            |
+  | =g= =.= =goto= =definition= | by name / FILE:LINE / call-graph, as above |
+
+  At the *file* level =>= / =<= step among the file's top-level forms and =d=
+  enters a form; at the *directory* level they step among files / sub-dirs —
+  the gdb-style "list and step" walk, driven by the same keys. The keys are
+  unchanged from the §3 *Navigation* table; the classic navigator is the same
+  vocabulary over a flat presentation.
+
+*** Command dictionaries (stacked dispatch)
+
+There are *three* mode dictionaries — the *sedit navigator*, the *classic
+file:line navigator*, and the *inspector* — each layered over the *global
+debugger* dictionary. They are kept *separate* because they are alternative
+UIs (you run sedit *or* the classic navigator; you *enter* the inspector on
+a value), not because they fight: every one of the three is *designed
+collision-free against the debugger commands*, exactly as the
+reconciliation table shows for sedit, so from any mode the debugger verbs
+(=continue=, =next=, =step=, =break=, …) are *directly reachable*. That is
+the whole point — three carefully-fitted dictionaries giving *one
+integrated* interface, not three rival ones.
+
+*The dispatch mechanism is now specified normatively in the command
+reference, §8 "Command dictionaries (stacked dispatch)".* In brief: lookup is
+*stacked* (the active mode dictionary on top of the global one,
+innermost-outward, first match wins); a mode may *shadow* a global key
+locally (the inspector =b= = =bind=, not =break=) — though dictionaries are
+*designed to avoid shadowing*, so this is exceptional; the *word* =debugger= as
+a prefix (=debugger break=) reaches a shadowed global command (there is *no
+dedicated escape key*); and =bind-debugger-command= /
+=define-debugger-command= take a *dictionary* argument so a user can add an
+inspector-only or navigator-only command. The §0 naming-consistency rule and
+the collision check are enforced *per dictionary*. See §8 for the full
+treatment; this section keeps only the UI-specific motivation (why three
+separate-but-collision-free dictionaries exist). The dictionary *names* are an
+*implementation choice*: the spec mandates only a simple API by which a module
+hooks its dictionary onto the active stack when it is activated — from a
+*setting* (=navigator=) or a *command* (=visit= → inspector) — and unhooks it
+when deactivated (§8 *Activation*). Escaping a shadowed global command uses the
+*word* =debugger= (no dedicated key); since dictionaries are designed to avoid
+shadowing, this is exceptional.
+
+** Partial Printing of the Form
+
+If pretty-printing the source form (any toplevel form the poll-point
+belongs to, often a defun or a lambda but could be any other form),
+produces a listing that is too big for the screen (or the user's field
+of vision), ie typically if it's bigger than 80x24 (or a configurable
+limit), then the debugger sedit will pretty-print only a partial
+sub-form.
+For a selected subform that is deep inside the full form, we can
+pretty-print only a surrounding subform that fits into the limits.
+Other subforms, before or after the selected subform may be shortened
+in the guise of *print-length* *print-depth* *print-array*
+etc. Ie. showing # instead of the forms:
+
+#+begin_example
+(progn
+   e1
+   …
+   en-1
+   [en]
+   en+1
+   …
+   em)
+#+end_example
+
+could be displayed as:
+
+#+begin_example
+(progn
+   #
+   en-1
+   [en]
+   en+1
+   #)
+#+end_example
+
+or with more en-i…en+i if we have space.
+The same treatment can be given to surrounding forms:
+
+#+begin_src
+(defun foo
+   #
+   (#
+      (progn
+         #
+         en-1
+         [en]
+         en+1
+         #)
+      #))
+#+end_src
+
+The subforms that are elided would be re-evaluated each time we
+re-pretty-print the form, with a different selection.
+
+Decoration of the '#' tokens occurs when an elided subform *would* be
+decorated (hides a break-point, or hides the current poll-point). The
+decoration is only a *warning marker* — "decorated poll points are hidden in
+here" — never a poll-point *number*: one '#' usually elides several poll
+points and possibly several breakpoints, so a number would be ambiguous (see
+the decision under "Numbered Poll-Points"). To designate anything inside, the
+user expands the region first (=down= / =>=). A '#' hiding the *current*
+poll-point is the strongest case to expand, and may carry the current-pp
+warning glyph so the user knows where execution is.
+
+** Watching variables
+
+If variables are watched, their values would be displayed before the
+source form, each time we enter the debugger.
+
+** Paging Long Command Output
+
+Some commands produce output *longer than the screen* — =help= (the full
+command list) above all, but also =list breakpoints= / =list frames= /
+=apropos= and a large =list source= or value preview. Where Partial Printing
+(above) shrinks one big *form* to fit, paging handles long *command output*
+that is already as short as it can be. Each UI deals with it in its own way:
+
+- *ncurses*: long output is shown in a *scrollable window* — the user pages
+  back and forth through the *whole* text (e.g. reading all of =help=) and
+  closes it to return. The window *is* the pager; no separate prompt is
+  needed. (This is the ncurses UI managing a pane, §19.)
+- *aldb (Emacs)*: output goes to a buffer and Emacs scrolls it; no pager —
+  which is why one usually disables it there (=,settings pager off=).
+- *dumb terminal*: an optional built-in *pager* (the =,settings pager= /
+  =pager-height= options) captures the output and shows it a page at a time,
+  pausing between pages. It accepts the familiar =less=(1) commands (=SPACE=/=f=
+  forward, =b= back, =d=/=u= half-page, =j=/=k= line, =g=/=G= first/last,
+  =/REGEXP= and =?REGEXP= search, =q= quit) *and* the §3 navigation directions
+  as aliases (=>= =<= =<<= =>>=) — a modal sub-mode. With =pager off=, or on a
+  non-interactive input stream, output is written straight through.
+
+The *normative specification* of the dumb-terminal pager, its keys, the
+=pager= / =pager-height= settings, and the page-height rule
+(=min(terminal-height, pager-height)=, or the configured height alone when the
+terminal size is unavailable) is in the command reference, §8 *Paging long
+output*; this section records only the per-surface behaviour.
+
+** The Inspector while Stepping
+
+Inspecting a value (=visit= / =v= on a selection, command reference §7)
+switches to the *inspector* UI — an entirely different surface from the
+sedit navigator, with its own dictionary (above) for walking *inside a data
+structure* (descend / up / path / =bind=).
+
+The inspector is *sticky across stepping*. Because the global debugger
+verbs resolve through the inspector's stacked dictionary, the user can
+issue =continue= / =next= / =step= / =out= *from within the inspector*.
+Execution resumes; at the next stop the debugger does its normal re-entry
+display — the *watched variables* and the *current poll-point form* — and
+then, *if the inspector was not left*, control *returns to the inspector*,
+which *re-displays the current data node*. The node is re-fetched, so you
+see the structure *as it now is*: this is how you watch a data structure
+mutate while you single-step.
+
+- *Following the same node.* The inspector remembers the /access path/ to
+  the current node (the path expression of command reference §7 / DN-5);
+  after a step it re-evaluates that path against the (possibly changed)
+  value, so the view tracks the same slot/element as it evolves. If the
+  path no longer resolves — the structure changed shape — the inspector
+  falls back to the nearest still-valid ancestor (or the root) and says so.
+- *Leaving vs quitting.* Returning to the navigator is a *mode-local* leave
+  command of the inspector dictionary; it is distinct from the debugger
+  =q= (the global non-local =quit=). The inspector may bind its own =q= to
+  "leave the inspector" (shadowing the global =quit=, which stays reachable
+  through the escape prefix), so =q= reads naturally in both modes: close
+  the inspector when inspecting, abort the session when not.
+

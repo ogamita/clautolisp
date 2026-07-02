@@ -1,0 +1,203 @@
+* continue — debugger command-reference + TUI specification (handoff to poseidon)
+
+Handoff so Claude Code on *poseidon* (Linux box) can continue this work in the
+background. The work is the collaborative *specification* of the clautolisp
+debugger's command language and its text UI (the "aldo" debugger, Emacs UI
+"aldb"). It is documentation/spec work — no engine code is being changed here.
+
+** Where the work lives
+
+- Canonical remote: =git@gitlab.com:ogamita/clautolisp.git= (GitLab is canonical
+  for clautolisp). On poseidon: clone it, =git checkout debugger=.
+- Branch: =debugger=. The push target is *origin* (= GitLab) ONLY for these
+  doc commits — do NOT push to the github/local remotes during this spec work.
+- HEAD at handoff: =51b8714= ("debugger: TUI — line-buffered input paradigm;
+  goto name-path replaces form.").
+- Commit trailer (required): end each commit message with
+  =Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>=.
+- Version bump: NOT needed — these are =documentation/*= and =issues/*= files,
+  not clautolisp sources. (The DEVELOP bump rule applies only to source code.)
+
+** Files
+
+- =clautolisp/documentation/clautolisp-debugger-command-reference.org= — the
+  command language (gdb/lldb reconciled with aldb). Sections 0–10.
+- =clautolisp/documentation/clautolisp-debugger-tui-spec.org= — the experimental
+  sedit-based TUI (the bulk of recent work).
+- =clautolisp/documentation/clautolisp-debugger-design-notes.org= — DN-1…DN-11
+  design notes (rationale, source of truth for settled decisions).
+- =clautolisp/documentation/jump-back.lsp= — worked backward-jump example
+  (user-authored; do not rewrite its substance without asking).
+- =clautolisp/documentation/clautolisp-debugger-spec.org= /
+  =-implementation-plan.org= — the older full spec + phase plan (engine context).
+- Reference: =sedit/sedit.lisp= on the =sedit= branch (read via
+  =git show sedit:sedit/sedit.lisp=) — the structural editor the TUI builds on.
+
+** Memories — decisions already settled (with rationale)
+
+These were decided collaboratively; treat them as fixed unless the user reopens.
+
+1. *jump-back argument handling* (command-reference §1; jump-back.lsp). On a
+   backward jump that re-enters a call, ALWAYS re-evaluate the argument forms;
+   never save/reuse the old call's argument values. Reason: AutoLISP has *no
+   closures*, so saving an environment would mean building closure machinery.
+   Consequence the user accepts: a jump landing past a local's init leaves it
+   nil → ordinary error → user's responsibility (e.g. pp2 vs pp3 in jump-back).
+
+2. *No per-type sigils* (DN-11; command-reference §0/§2). Object ids are bare
+   numbers, namespaced by the command (=break 1=, =frame 2=). A discriminator
+   only repays its cost when the type is ambiguous at the point of use; the verb
+   supplies it. The lone sigil is =$N= (REPL scratch), justified because it is
+   embedded in expressions with no command context. Where one command's arg is
+   polymorphic, the discriminator is a *word prefix* (=pp13=), not punctuation.
+
+3. *Breakpoint id = poll-point number* (DN-11; command-reference §2; TUI). A
+   breakpoint is just the flag on a poll point; it has no id of its own. One
+   numbering space. =condition/ignore/enable/disable/delete/bpcmd= take poll-point
+   numbers (was "BPID", now "PP"). Poll-point ids are *globally stable* (assigned
+   once, never reused). Accepted downside: bigger typed numbers than a per-session
+   bp counter. Provisional — revert to per-form ids if inconvenient.
+
+4. *Numbered poll points* (TUI "Numbered Poll-Points"). Each poll-point sub-form
+   is decorated with its stable id (circled digits → super/subscript → bracketed
+   decimal fallback), combinable with the status glyph; the user types the bare
+   number to designate it. =,settings *navigation-history-max*= default 1000.
+
+5. *Terminal styling* (command-reference §8). The dumb terminal's *output* can be
+   ANSI-styled where supported (8 colours fg/bg + bold/underline/inverse), gated
+   by a tri-state =,settings style= (auto/on/off) and reusing the runtime's
+   existing =*color-output*= / =ansi-colorize= / =resolve-color-policy=. Colour is
+   always redundant with an ASCII marker (NO_COLOR/pipe-safe).
+
+6. *sedit ⇒ debugger reconciliation* (TUI "Reconciling…"). sedit is the spine of
+   the TUI. Keep sedit's *navigation* commands, drop its *mutating* ones
+   (insert/add/replace/cut/copy/paste/save/load) and adapt =eval= (→ REPL in
+   current frame) and =quit= (→ debugger quit, non-local exit to top REPL; DN-9).
+   The 4 real key collisions (sedit f/n/b/p vs debugger frame/next/break/print)
+   are dissolved by putting structural motion on =d u > <= (d,u were already free;
+   >,< are directional and AZERTY-cheap). NO debugger command moves.
+
+7. *One navigation tree* (TUI "One tree"). The same motions act at every level:
+   list/sexp → top-level form → file → directory. Motions: =d= down, =u= up, =>=
+   forward, =<= backward, =<<= first, =>>= last, =±N= signed sibling skip (bare N
+   = poll-point N). =search REGEXP= = scope-following search (recursive in a dir,
+   current file in a file/form). Kept abstract name "search" (impl may use grep).
+
+8. *Input paradigm* (TUI "One tree"). The dumb terminal is *line-buffered*: type a
+   token + RET. Function/arrow/Home/End keys cannot serve there (encoding +
+   still-RET; Emacs =shell= captures Home/End). So dumb terminal = all-typeable
+   (=<< < > >>=, =±N=, words). ncurses/aldb read real keystrokes and ADDITIONALLY
+   bind Home/End = first/last and arrows = forward/backward/down/up.
+
+9. *goto, not form* (TUI). Dropped the unclear =form=. =goto= (key =g=) takes a
+   name or *qualified path*: =goto FILE[:LINE]=; =goto NAME= (global fn);
+   =goto foo bar= (=bar= nested inside =foo=, local-defun idiom);
+   =goto obj bar= (the AutoLISP "object" idiom — =obj= is a *variable* holding a
+   lambda loaded from a file; =obj= names the file via the lambda's source
+   metadata, =bar= its local fn; so =goto o1 bar= and =goto o2 bar= reach
+   different files). The path disambiguates the many local namespaces.
+   =definition= (=.=) jumps from the *selected* call/symbol (may cross files);
+   =back= / =history= unwind.
+
+10. *Three separate mode dictionaries* (TUI "Command dictionaries"). The sedit
+    navigator, the classic file:line navigator, and the inspector each have their
+    own dictionary over the global debugger dictionary — kept *separate* because
+    they are alternative UIs, but each *designed collision-free against the
+    debugger commands* (so every debugger verb is reachable from any mode without
+    escaping). Escape prefix (word =debugger=, or a dedicated key — not bare =d=)
+    reaches a shadowed outer command (e.g. inspector =b= = bind vs break).
+    =bind-debugger-command= / =define-debugger-command= gain a *dictionary* arg.
+
+11. *Two stacks* (TUI "The two stacks"). Runtime (Lisp) call stack = frames, with
+    bindings, navigated by the existing frame family (fi/fo/ft/fb). Source-browse
+    stack = source positions, no bindings — but you CAN still set breakpoints and
+    jump-target poll points from it (those are source-located). Only
+    binding-dependent ops (print/setq/locals/eval) defer to the current frame.
+    Display always anchors to the current poll-point; browse state is saved to a
+    bounded navigation history across debugger re-entries.
+
+12. *Sticky inspector* (TUI "The Inspector while Stepping"). continue/next/step
+    work from inside the inspector; on re-entry the debugger shows watched vars +
+    poll-point form, then returns to the inspector re-displaying the current data
+    node (re-fetched via its access path, DN-5) — so you watch a structure mutate
+    while single-stepping. Mode-local "leave inspector" (its =q=) vs global =quit=.
+
+** Plan — what to do next (doc-only, low-risk first)
+
+These are propagation/consolidation tasks for decisions ALREADY settled above.
+Do them; keep all three docs mutually consistent; commit small, push to origin.
+
+1. *Propagate the TUI verbs into the command reference.* The navigation/go-to
+   verbs (=d u > < << >>=, =±N=, =search=, =goto=, =definition=, =back=,
+   =history=) currently live only in the TUI spec, marked provisional. Register
+   them in command-reference §3 (or a new "Navigation" section) with keys obeying
+   the §0 naming-consistency rule, verifying the single- and two-letter key
+   spaces stay collision-free (re-run the awk/grep key-space check the
+   command-reference uses).
+
+2. *Stacked-dictionary dispatch into command-reference §8.* Generalise
+   =bind-debugger-command= to take a *dictionary* argument; describe stacked
+   innermost-first lookup and the escape prefix. The TUI spec says this "belongs
+   in §8"; move the normative part there and leave the TUI spec referencing it.
+
+3. *Settings options.* Add to the command-reference §8 =settings= list:
+   =*navigation-history-max*= (default 1000), the =style= tri-state (auto/on/off),
+   and any others referenced (preview length, source window size).
+
+4. *Resolve the two open TUI TODOs* (ask the user if a design call is needed,
+   otherwise record the recommended resolution):
+   - elided =#= regions (Partial Printing): should a =#= that hides a breakpoint
+     surface that breakpoint's number so it stays designatable, or require
+     expansion first?
+   - classic file:line navigator: settle its exact bindings, and whether the
+     navigator option is a =,settings= toggle or follows terminal capability.
+
+5. *Engine prerequisite note.* =goto='s object-idiom resolution assumes a lambda
+   loaded from a file carries its source file in debug metadata
+   (=autolisp-usubr-debug-metadata= / source spans, set by =load=). Confirm this
+   holds (read =clautolisp/autolisp-runtime/=) and, if so, record it as a
+   prerequisite in the design notes (a DN-12 on the navigator/dictionary
+   architecture would be a good home).
+
+6. *Only then*, if the user confirms the specs are complete, the natural follow-on
+   is implementation, which is GATED on the engine and the public API issue
+   (=issues/open/debugger-public-interface-and-on-error.issue=). Do not start
+   implementation without the user's go-ahead.
+
+Stop and ask the user before making any NEW design decision (naming, semantics,
+key assignments that aren't mechanical). The pattern in this work is: user
+decides, Claude edits + verifies collision-freedom + commits + pushes to origin.
+
+** Prompt to paste into Claude Code on poseidon
+
+#+begin_src text
+You are continuing the clautolisp debugger SPECIFICATION work on the `debugger`
+branch (origin = git@gitlab.com:ogamita/clautolisp.git). Read
+issues/open/continue.issue first — it has the full context, the settled
+decisions (treat as fixed), and the plan.
+
+Then read these three docs end to end before touching anything:
+  - clautolisp/documentation/clautolisp-debugger-command-reference.org
+  - clautolisp/documentation/clautolisp-debugger-tui-spec.org
+  - clautolisp/documentation/clautolisp-debugger-design-notes.org   (DN-1..DN-11)
+
+Work through the plan in issues/open/continue.issue, starting with task 1
+(propagate the TUI navigation/go-to verbs into the command reference §3 with
+collision-free keys per the §0 naming rule) and task 2 (stacked-dictionary
+dispatch + the dictionary argument into §8). Keep the three docs mutually
+consistent; after every key change, re-verify the single- and two-letter key
+spaces are collision-free.
+
+Rules:
+  - These are doc/issue files: NO version bump. Commit small, one decision per
+    commit. Push to ORIGIN (GitLab) ONLY — not github/local.
+  - End every commit message with:
+      Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+  - Do NOT invent new design decisions (naming, semantics, key choices that
+    aren't mechanical). If a real choice arises, STOP and ask. The settled
+    decisions in continue.issue are fixed unless the user reopens them.
+  - Do not edit jump-back.lsp's substance.
+
+Report progress after each task with the file:line of what changed and the
+commit hash, and surface the open questions (plan tasks 4–5) for me to decide.
+#+end_src

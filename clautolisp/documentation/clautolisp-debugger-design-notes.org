@@ -597,3 +597,240 @@ missing in the dumb terminal is missing in Emacs" (§20.4) holds by construction
 partial output and dispatches each complete top-level form. The CL shim is
 transport-agnostic too (just two streams). Neither side mandates sockets vs
 pipes vs a reused swank connection (§20.1).
+
+* DN-11. Object ids are bare numbers, command-namespaced — no per-type sigils
+
+The debugger refers to several kinds of numbered object: breakpoints, call
+frames, poll points, REPL scratch values. A natural temptation is to give each
+kind a distinguishing /sigil/ so a reference carries its own type — say =#1= a
+breakpoint, =!2= a frame, =&3= a poll point, alongside gdb's =$1= for a scratch
+value. We *reject* per-type sigils. Ids are *plain numbers*, and what kind of
+object a number denotes is fixed by the *command that consumes it*.
+
+** Decision
+
+- =break 1=, =frame 2=, =clear 3=, =condition 4 FORM= — the verb supplies the
+  noun. The number is bare; the *same* small number may mean a different object
+  under a different command, and that is not confusing because the user never
+  holds "object 1" in the abstract, only "frame 1" or "breakpoint 1" — the
+  command they just typed.
+- Where a *single command's argument is polymorphic* (=break= / =jump= /
+  =advance= / =clear= accept a line *or* a poll point *or* a function), the
+  discriminator is a readable *word prefix*, not punctuation: =break 13= is a
+  line, =break pp13= is a poll point (command reference §2, "Specifying a
+  location").
+- The one genuine sigil is =$N= (=$1=, =$myvar=), and only because it is used
+  where *no command disambiguates it* — embedded in a REPL expression, where a
+  bare =1= is already the integer one (command reference §7). It also carries a
+  real mnemonic ("=$= = a value"), unlike an arbitrary =!=/=&=.
+
+** Why bare numbers win
+
+- *A discriminator only repays its cost when the type is ambiguous at the point
+  of use.* The command almost always removes the ambiguity before the number is
+  typed, so a sigil there is pure overhead — paid on every reference, every
+  keystroke.
+- *Keystroke cost is real and layout-dependent.* A punctuation sigil is an
+  extra (often shifted or AltGr) keystroke; on an AZERTY keyboard the digits are
+  themselves shifted and several sigils sit on AltGr, so =#3= / =&3= cost
+  strictly more than a bare number while =pp13= stays plain letters+digits.
+- *Arbitrary sigil→type maps are hard to recall.* =$=-means-value has a hook;
+  =!=-means-frame, =&=-means-poll-point do not. A word prefix (=pp=) is instead
+  *role-expressive* and self-documenting (Cognitive Dimensions of Notations).
+- *This is the battle-tested convention.* gdb/lldb (bare =break N= / =frame N=,
+  sigil only for =$= convenience vars) and the shells (=kill 1= = PID, =kill %1=
+  = job — the =%= appears exactly where one command's argument is polymorphic;
+  history =!3= where there is no command at all) all converge on the same rule.
+
+** Consequences
+
+- A breakpoint has *no identifier of its own*: it is named by the poll point it
+  sits on. "Breakpoint 12" is "poll point 12, with its breakpoint flag set", so
+  there is at most one breakpoint per poll point and the breakpoint number *is*
+  the poll-point number (TUI spec, "Numbered poll points"). One numbering space,
+  not two. Poll-point ids are *globally stable* (assigned once across all
+  instrumented forms, never reused), so a bare number is unambiguous in every
+  UI. The accepted cost: far more poll points than breakpoints means the typed
+  numbers are larger than a gdb-style per-session breakpoint counter would give.
+  This is now *settled* and implemented (the poll-point-id registry in
+  =autolisp-debug=: =poll-point-id= / =poll-point-location=); the
+  per-top-level-form fallback (a breakpoint then carrying its form for identity)
+  remains available only if the big numbers prove inconvenient in practice.
+- No evidence cuts the other way decisively — there is no controlled "sigil vs
+  bare id" study; the case rests on keystroke counting (Card, Moran & Newell
+  1980), the Cognitive Dimensions framework (Green 1989), and the convergent
+  precedent above. If a future need arises to mention an object with *no*
+  command context (an id inside a REPL expression), it would follow the =$N=
+  pattern — a sigil earned by genuine ambiguity, not decoration.
+
+* DN-12. TUI navigator/dictionary architecture; the =goto= object-idiom prerequisite
+  :PROPERTIES:
+  :CUSTOM_ID: dn-navigator-architecture
+  :END:
+
+/Phase 5–7 TUI, settling the experimental sedit-based interface
+(=clautolisp-debugger-tui-spec.org=)./ The text UI must let the user *point at*
+poll points in a sexp source form, browse definitions across files, and run the
+debugger commands — without growing a second, rival command language. The shape
+that fell out:
+
+** Decision — one tree, two stacks, stacked dictionaries
+
+- *One navigation tree.* The selection sits in a single containment tree
+  (list/sexp → top-level form → file → directory); *one* set of motions
+  (=d u > < << >>=, =±N=, bare =N= = poll-point N) walks every level. No new
+  command per level; navigation simply *extends* outward into files and
+  directories. =goto= / =definition= / =back= / =history= / =search= jump by
+  name, path, or call-graph rather than step by step.
+- *Two stacks, distinguished by what their entries are* — not by what you may
+  do from them. The *runtime frame stack* (frames + bindings; the =frame=
+  family) versus the *source-browse stack* (=(form . selection)= positions, no
+  bindings; =definition= / =back=). You may still set breakpoints and =jump=
+  targets from a browsed form (those are *source*-located), but
+  binding-dependent ops (=print=, =setq=, =list locals=, eval) always defer to
+  the current frame. The browse stack is *user-bounded* (cycles in the static
+  call graph are allowed), and browse state is saved to a bounded *navigation
+  history* across re-entries (=*navigation-history-max*=, default 1000).
+- *Stacked command dictionaries.* The sedit navigator, the classic file:line
+  navigator, and the inspector are *mode* dictionaries layered over the
+  *global* debugger dictionary; lookup is innermost-outward, first match wins;
+  each is *designed collision-free* against the global set so every debugger
+  verb stays reachable, and a mode may *shadow* a global key locally (inspector
+  =b= = =bind=) — though dictionaries are *designed to avoid shadowing*, so this
+  is exceptional. The *word* =debugger= as a prefix (no dedicated key) reaches a
+  shadowed command. =bind-debugger-command= gains a
+  =dictionary= argument. (Normative spec: command reference §3 and §8;
+  collision check: command reference §0.)
+
+** Why this shape
+
+The debugger's single-key map was already collision-free (command reference
+§0), and the keys sedit needs for /pure motion/ were either free there (=d=,
+=u=) or take directional mnemonics (=>=, =<=) no debugger command uses — so
+folding sedit in costs the debugger command set *nothing* (no debugger command
+moves). Keeping the navigator/inspector dictionaries *separate but
+collision-free* — rather than merging them — keeps each UI swappable while
+still letting the global verbs through without escaping. The two-stacks split
+follows the engine reality: a browsed source position has *no frame*, so only
+source-located operations can act there.
+
+** Engine prerequisite — =goto='s object idiom resolves a lambda to its file
+
+=goto OBJ INNER= (the AutoLISP "object" idiom: =OBJ= is a *variable* holding a
+lambda loaded from a file, =INNER= a local function in it) needs to recover the
+*file* a file-loaded lambda came from, so =goto o1 bar= and =goto o2 bar= reach
+different files. *Confirmed this holds in the current runtime:*
+of course, several levels are possible =goto OUT MIDO MIDI INNER=
+
+#+begin_example
+(defun out ( / mido )
+  (defun mido ( / midi )
+     (defun midi ( / inner )
+        (defun inner ()
+           'hi)
+        (inner))
+     (midi))
+ (mido))
+
+ goto out mido midi inner ; would select (defun inner …) and w
+ in    ; enters the defun (selects 'hi)
+ break ; creates a breakpoint before 'hi
+ continue ; run until we call (out) and therefore (innner).
+#+end_example
+
+
+- =autolisp-usubr= carries =debug-metadata=
+  (=clautolisp/autolisp-runtime/source/model.lisp=), a
+  =clautolisp.debug:function-debug-metadata= record
+  (=clautolisp/autolisp-debug/source/metadata.lisp=) that holds a back-pointer
+  =usubr=, the function's own =source-position=, and a =form-id->position=
+  vector.
+- A =clautolisp.source:source-position=
+  (=clautolisp/autolisp-source-map/source/source-map.lisp=) carries a =file=
+  slot, filled from the reader span's =source-span-source-name=
+  (=source-position-from-span=).
+- =run-autolisp-file= sets the reader's =source-name= to the file path
+  (=clautolisp/autolisp-runtime/source/api.lisp=, =effective-source-name=), and
+  a *tracked* load (=clautolisp.source:*track-source-positions*= bound T for a
+  debug load) records each compound form's position via =note-position=.
+
+So from the lambda object: =debug-metadata= →
+=function-debug-metadata-source-position= → =source-position-file= yields the
+load file. The variable→lambda step is an ordinary symbol-value lookup in the
+current context; the file then comes from metadata.
+
+*Gating conditions (the prerequisite proper).* The file is recoverable *only
+when the lambda was both instrumented and loaded under a debug/tracked load*
+(=*track-source-positions*= = T, =debug-metadata= non-nil). A production-loaded
+or un-instrumented lambda has empty position tracking and NIL =debug-metadata=,
+so the object idiom cannot resolve it — consistent with DN-2's "instrument
+exactly what you want to debug". This is acceptable: =goto= into an object is a
+*debugging* operation and a debug session is exactly the context where the
+tracked metadata exists. If object-idiom =goto= is ever wanted for
+un-instrumented code, the loader would have to retain a lambda→source-file map
+outside the debug metadata — not added preemptively.
+
+* Provisional decisions register
+
+The items below are *provisional* ("try-it") choices recorded so they are not
+re-derived from scratch: each is marked inline at its source and is safe to
+change without disturbing the settled decisions around it. Mostly they are
+*names*, *glyphs*, *keys*, and *default magnitudes* — the kind of choice best
+confirmed by use rather than argued up front. (The settled decisions are
+DN-1…DN-12 and the command-reference §0 rules; those are *not* on this list.)
+
+| Provisional / deferred item      | Where                                  | Current choice                                         | Alternative / fallback                     | How it settles             |
+|----------------------------------+----------------------------------------+--------------------------------------------------------+--------------------------------------------+----------------------------|
+| Poll-point-state modifier glyphs (deferred) | TUI "Numbered Poll-Points" (states)    | selecting a pp shows its full info at screen bottom; glyphs only flag presence | add modifier glyphs only if use shows a need | see by use                 |
+
+These complement the inline =[new]= / =[engine]= / =[have]= backing tags (which
+track *implementation* status); this register tracks *design* choices still
+open to revision. The one remaining item is *decide-by-use* — it resolves only
+if practice shows a need; no naming or spec call is pending on it. Everything
+else (setting names, values, keys, the settings subcommands, the configuration
+format, the poll-point numbering) is settled (below).
+
+*Settled since (were provisional, now fixed).* All set via =set NAME VALUE=
+(§8; case-insensitive), the form §4 reserved for non-Lisp debugger variables:
+
+- =navigator= setting — name =navigator=, values =sexp= | =line=
+  (=set navigator line=).
+- =pager= / =pager-height= settings — names fixed; =pager= = =on= | =off=,
+  =pager-height= = an integer (=set pager off=, =set pager-height 40=).
+- pager fallback page height — *24* lines when the terminal size is unknown.
+- pager command keys — the =less=(1) command set plus the §3 direction
+  aliases (=> < << >>=), coexisting (collision-free).
+- =source-window-height= setting — name fixed; an integer, default *24*
+  (=set source-window-height N=).
+- Mode-dictionary names — an *implementation choice*. The spec mandates only a
+  *simple API* for a module to hook its command dictionary onto the active
+  stack when activated — from a setting (=navigator=) or a command (=visit= →
+  inspector) — and unhook it when deactivated (cmd-ref §8 *Activation*). Names,
+  count, and representation are left to the implementation.
+- Dictionary escape — the *word* =debugger= only; *no dedicated key*.
+  Dictionaries are designed to *avoid shadowing* global commands, so escaping
+  is exceptional and one word suffices.
+- preview-length option — named =value-line-width= (the width of a single-line
+  value display). Convention: a future *multi-line* value display would use
+  =value-window-width= / =value-window-height=, matching =source-window-height=.
+- settings subcommands — =,settings= (list), =,settings NAME= (print one),
+  =set NAME VALUE= (set), =,settings save=, =,settings reload= (cmd-ref §8
+  "Configuration and persistence").
+- configuration persistence — =*clal-aldo-configuration*= is an assoc-list
+  plist; loaded from =$XDG_CONFIG_HOME/clautolisp/aldo.conf= (else searched on
+  =$XDG_CONFIG_DIRS=) *before* the rc/init files; saved (UTF-8) only on request
+  via =,settings save= / =clal-save-aldo-configuration=.
+- decorations / theme — a single =theme= setting (=unicode= | =ascii= |
+  =white-on-black= | =black-on-white= | =green-on-black= | =attributes=)
+  *replaces* the old =style= + =charset=. =decorations= is a grammar of
+  per-(situation, theme) entries: a *prefix* or an *open/close* pair for the
+  glyph themes, foreground/background for the colour themes, or
+  bold/underline/invert for =attributes= (cmd-ref §8). Any string may be a
+  *list of code points* (so =aldo.conf= can stay pure ASCII even with Unicode
+  glyphs); the file is UTF-8, so literal Unicode strings are allowed too.
+- poll-point numbering — *settled* on the *globally-stable* scheme (DN-11): each
+  poll point is assigned a stable integer, assigned once and never reused within
+  a session, so a bare number (=ppN=) designates it in every UI. Implemented as
+  a poll-point-id registry in =autolisp-debug= (=poll-point-id= /
+  =poll-point-location=, assigned at metadata registration). The per-form-id
+  fallback is no longer pursued unless the numbers prove unwieldy in practice.
