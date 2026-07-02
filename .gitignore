@@ -138,12 +138,18 @@ documentation/*.info
 **/documentation/*.info
 **/documentation/*.texi
 
+# Generated PDFs are build artefacts: the canonical source is the .org
+# (or man page), and the Makefiles render the .pdf at build/install
+# time. Don't commit them. Already-tracked .pdf files are left in place
+# (this rule doesn't retro-remove them); it only stops new ones from
+# being added. See AGENTS.md > Documentation.
+*.pdf
+
 # RELEASE_NOTES.org is canonical at the repo root; clautolisp/Makefile
 # mirrors it into clautolisp/documentation/ at build time so the
 # install rule picks it up alongside the other user-facing org docs.
 # The mirrored .org and its rendered .pdf are generated artefacts.
 clautolisp/documentation/RELEASE_NOTES.org
-clautolisp/documentation/RELEASE_NOTES.pdf
 
 # Phase 17e: vendored libredwg build artifacts + CFFI shim binary
 clautolisp/third-party/libredwg/build/

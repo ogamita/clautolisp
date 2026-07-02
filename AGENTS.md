@@ -90,6 +90,7 @@ General directives for this repository.
 ## Documentation
 
 - Specifications converted from PDF should be maintained as Org mode files when added to the repository.
+- Generated PDFs are build artefacts, not source: the canonical form is the `.org` (or man page), and the Makefiles render the `.pdf` at build/install time. Do not commit generated PDFs — `*.pdf` is gitignored. Keep the Makefile rules that build them. Existing already-tracked `.pdf` files are left in place (the ignore rule does not retro-remove them).
 - Planning, architecture, and decision documents should be written in Org mode under the appropriate subproject `documentation/` directory.
 - Each subproject must have a `PLAN.md` file at its root.
 - Within the `clautolisp/` implementation subproject, each ASDF system should live in its own subdirectory, with its own `PLAN.md`, documentation, sources, and related module-local files.
