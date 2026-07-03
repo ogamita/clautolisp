@@ -212,6 +212,7 @@
    #:set-autolisp-function-list-definition
    #:set-autolisp-symbol-function
    #:set-autolisp-symbol-value
+   #:autolisp-makunbound
    #:close-autolisp-file
    #:call-autolisp-function
    #:resolve-autolisp-function-designator

@@ -4015,6 +4015,198 @@ builds) so user code stays runnable."
 (defun %lispsys-name-p (string)
   (and (stringp string) (string-equal string "LISPSYS")))
 
+;;; --- CL drop: CLAUTOLISPDROP / CLAL-COMMON-LISP / CLAL-BACK ----------
+;;;
+;;; A developer escape hatch from AutoLISP into a live Common Lisp REPL
+;;; running inside the clautolisp image (cl-debugging.issue). The AutoLISP
+;;; symbol CLAL-COMMON-LISP is unbound by default; setting the read/write
+;;; sysvar CLAUTOLISPDROP to 1 shadows it with the builtin below (saving,
+;;; and on 0 restoring, any user binding). The CL REPL, CLAL-BACK and
+;;; *CLAL-ON-ERROR* live in COMMON-LISP-USER, the package the dropped REPL
+;;; reads in (the issue's "must be present in COMMON-LISP-USER").
+
+(defvar common-lisp-user::*clal-on-error* :debug
+  "Policy for an unhandled Common Lisp error while CLAL-COMMON-LISP evaluates
+a form or runs its REPL, including an error converting the result
+(cl-debugging.issue): :DEBUG invokes the native CL debugger (the default),
+:ERROR signals a catchable AutoLISP error (VL-CATCH-ALL-APPLY sees it),
+:IGNORE returns AutoLISP nil, and any other value is returned — converted to
+AutoLISP when it is a convertible CL object, or as-is when it is already an
+AutoLISP object.")
+
+(defvar %clal-back-tag (list '#:clal-back)
+  "Unique CATCH tag that CLAL-BACK throws to, to leave the dropped CL REPL.")
+
+(defun common-lisp-user::clal-back (&optional value)
+  "Return from the innermost dropped Common Lisp REPL to AutoLISP, yielding
+VALUE (default nil) from the CLAL-COMMON-LISP call (cl-debugging.issue)."
+  (throw %clal-back-tag value))
+
+(defun %clal-al->cl (value)
+  "Convert an AutoLISP VALUE to a Common Lisp form (cl-debugging.issue):
+integers, reals and nil pass through; strings unwrap to CL strings; symbols
+are re-read with CL:READ under the current CL *package* / *readtable* (so
+'(foo cl:car :kw) can become (CL-USER::FOO CL:CAR :KW)); conses convert car
+and cdr recursively; any other AutoLISP object passes through unchanged."
+  (typecase value
+    (null            nil)
+    (real            value)             ; integers and doubles pass through
+    (autolisp-string (autolisp-string-value value))
+    (autolisp-symbol (values (read-from-string (autolisp-symbol-name value))))
+    (cons            (cons (%clal-al->cl (car value))
+                           (%clal-al->cl (cdr value))))
+    (t               value)))
+
+(defun %clal-cl->al (value &optional (seen (make-hash-table :test 'eq)))
+  "Convert a Common Lisp VALUE to an AutoLISP object (cl-debugging.issue): a
+CL integer in AutoLISP range passes through (else a CL error); a float is cast
+to double-float; a string is wrapped; a keyword becomes an AutoLISP symbol
+whose name is the keyword name prefixed by a colon; a cons converts car and
+cdr recursively (a cycle is a CL error); any other symbol is PRIN1-TO-STRING'd,
+upcased and interned as an AutoLISP symbol (its package qualification thus
+follows the current CL *package*); an object already an AutoLISP value is
+returned as-is; anything else is a CL error."
+  (typecase value
+    (null    nil)
+    (integer (if (typep value '(signed-byte 32))
+                 value
+                 (error "CLAL-COMMON-LISP: integer ~A is out of the AutoLISP range."
+                        value)))
+    (float   (coerce value 'double-float))
+    (string  (make-autolisp-string value))
+    (keyword (intern-autolisp-symbol
+              (concatenate 'string ":" (symbol-name value))))
+    (cons
+     (when (gethash value seen)
+       (error "CLAL-COMMON-LISP: cannot convert a circular structure to AutoLISP."))
+     (setf (gethash value seen) t)
+     (prog1 (cons (%clal-cl->al (car value) seen)
+                  (%clal-cl->al (cdr value) seen))
+       (remhash value seen)))
+    (symbol  (intern-autolisp-symbol (string-upcase (prin1-to-string value))))
+    (t       (if (clautolisp.autolisp-runtime:runtime-value-p value)
+                 value
+                 (error "CLAL-COMMON-LISP: cannot convert ~S to an AutoLISP object."
+                        value)))))
+
+(defun %clal-error-action (condition)
+  "Apply COMMON-LISP-USER::*CLAL-ON-ERROR* to CONDITION. :DEBUG enters the
+native CL debugger in the error's context; :ERROR re-signals as a catchable
+AutoLISP error; otherwise the policy value itself is produced as the result —
+returned via the caller's DONE block. Meant to run as a HANDLER-BIND handler."
+  (let ((policy common-lisp-user::*clal-on-error*))
+    (cond
+      ((eq policy :debug)  (let ((*debugger-hook* nil)) (invoke-debugger condition)))
+      ((eq policy :error)  (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                            :clal-common-lisp-error "CLAL-COMMON-LISP: ~A" condition))
+      (t                   policy))))     ; :IGNORE (nil) or a value; caller returns it
+
+(defun %clal-guarded (thunk)
+  "Call THUNK (which returns an AutoLISP value) under *CLAL-ON-ERROR*. On a CL
+error the policy decides: :DEBUG debugger, :ERROR AutoLISP error, :IGNORE nil,
+otherwise the policy value converted to AutoLISP (as-is if already AutoLISP)."
+  (block done
+    (handler-bind
+        ((error (lambda (condition)
+                  (let ((policy (%clal-error-action condition)))
+                    ;; Reached only for :IGNORE / value policies (the others
+                    ;; transfer control); convert a CL policy value out.
+                    (return-from done
+                      (cond ((eq policy :ignore) nil)
+                            ((clautolisp.autolisp-runtime:runtime-value-p policy) policy)
+                            (t (%clal-cl->al policy))))))))
+      (funcall thunk))))
+
+(defun %clal-eval-cl (form)
+  "Evaluate the CL FORM, returning the list of its CL values, honoring
+*CLAL-ON-ERROR* on error. Used by the REPL, which prints the raw CL values."
+  (block done
+    (handler-bind
+        ((error (lambda (condition)
+                  (let ((policy (%clal-error-action condition)))
+                    (return-from done
+                      (if (eq policy :ignore) (list nil) (list policy)))))))
+      (multiple-value-list (eval form)))))
+
+(defun %clal-repl ()
+  "Run an interactive Common Lisp REPL in COMMON-LISP-USER until (CLAL-BACK) or
+end of input, reading from *STANDARD-INPUT* and printing to *STANDARD-OUTPUT*.
+Returns the AutoLISP-converted value passed to CLAL-BACK (nil by default)."
+  (let ((*package* (find-package '#:common-lisp-user))
+        (eof (list '#:eof)))
+    (%clal-cl->al
+     (catch %clal-back-tag
+       (loop
+         (fresh-line)
+         (write-string "CL-USER> ")
+         (finish-output)
+         (let ((form (read *standard-input* nil eof)))
+           (when (eq form eof) (return nil))
+           (with-simple-restart (abort "Return to the CLAL Common Lisp REPL.")
+             (dolist (v (%clal-eval-cl form))
+               (fresh-line)
+               (prin1 v))
+             (terpri))))))))
+
+(defun builtin-clal-common-lisp (&optional (arg nil argp))
+  "CLAL-COMMON-LISP (cl-debugging.issue): with no argument, run an interactive
+Common Lisp REPL in COMMON-LISP-USER (leave it with (CLAL-BACK)); with a string
+argument, READ one CL form from it and evaluate it; with any other AutoLISP
+argument, structurally convert it to a CL form and evaluate it. The primary
+value is converted back to an AutoLISP object. Errors follow *CLAL-ON-ERROR*."
+  (cond
+    ((not argp) (%clal-repl))
+    ((typep arg 'autolisp-string)
+     (let ((source (autolisp-string-value arg)))
+       (%clal-guarded (lambda ()
+                        (%clal-cl->al (eval (values (read-from-string source))))))))
+    (t (%clal-guarded (lambda () (%clal-cl->al (eval (%clal-al->cl arg))))))))
+
+(defun common-lisp-user::clal-common-lisp (&optional (form nil formp))
+  "From Common Lisp: with no argument run the dropped CL REPL; with a string,
+READ then EVAL it; otherwise EVAL FORM. Returns the raw CL value. Companion in
+COMMON-LISP-USER to the AutoLISP CLAL-COMMON-LISP builtin (cl-debugging.issue)."
+  (cond
+    ((not formp)     (%clal-repl))
+    ((stringp form)  (eval (values (read-from-string form))))
+    (t               (eval form))))
+
+(defvar *clautolisp-drop-active* nil
+  "T while CLAUTOLISPDROP has shadowed CLAL-COMMON-LISP with the builtin.")
+
+(defvar *clautolisp-drop-saved-binding* nil
+  "The pre-shadow binding of CLAL-COMMON-LISP as (BOUND-P . FUNCTION), or NIL
+when nothing is currently shadowed.")
+
+(defun %clautolisp-drop-name-p (string)
+  (and (stringp string) (string-equal string "CLAUTOLISPDROP")))
+
+(defun %apply-clautolisp-drop (level)
+  "React to a CLAUTOLISPDROP write (cl-debugging.issue): a non-zero LEVEL shadows
+the AutoLISP symbol CLAL-COMMON-LISP with the builtin, saving any user binding;
+LEVEL 0 restores that saved binding (or unbinds when there was none). Idempotent
+— a write that does not change the shadow state is a no-op, so a user binding is
+never overwritten by a redundant (setvar \"CLAUTOLISPDROP\" 1)."
+  (let ((symbol (intern-autolisp-symbol "CLAL-COMMON-LISP")))
+    (cond
+      ((and (not (zerop level)) (not *clautolisp-drop-active*))
+       ;; Save the raw cell (value view) so a user binding to either a
+       ;; value or a function is preserved (Lisp-1: one cell — the issue's
+       ;; "to a value or a function").
+       (setf *clautolisp-drop-saved-binding*
+             (cons (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p symbol)
+                   (clautolisp.autolisp-runtime:autolisp-symbol-value symbol)))
+       (set-autolisp-symbol-function
+        symbol (make-core-builtin-subr "CLAL-COMMON-LISP" #'builtin-clal-common-lisp))
+       (setf *clautolisp-drop-active* t))
+      ((and (zerop level) *clautolisp-drop-active*)
+       (destructuring-bind (bound-p . saved) *clautolisp-drop-saved-binding*
+         (if bound-p
+             (clautolisp.autolisp-runtime:set-autolisp-symbol-value symbol saved)
+             (clautolisp.autolisp-runtime:autolisp-makunbound symbol)))
+       (setf *clautolisp-drop-saved-binding* nil
+             *clautolisp-drop-active* nil)))))
+
 (defun builtin-getvar (name)
   (let ((string (autolisp-string-value (require-string name "GETVAR"))))
     (when (%lispsys-name-p string)
@@ -4026,7 +4218,11 @@ builds) so user code stays runnable."
     (when (%lispsys-name-p string)
       (%dispatch-lispsys-foreign-dialect-diagnostic "SETVAR")
       (%validate-lispsys-value value))
-    (host-setvar (current-evaluation-host) string value)))
+    (let ((result (host-setvar (current-evaluation-host) string value)))
+      (when (%clautolisp-drop-name-p string)
+        (%apply-clautolisp-drop
+         (%host-sysvar-integer (current-evaluation-host) "CLAUTOLISPDROP" 0)))
+      result)))
 
 ;;; --- clautolisp extensions (clal-*) -------------------------------
 ;;;

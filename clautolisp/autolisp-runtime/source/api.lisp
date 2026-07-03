@@ -1118,6 +1118,21 @@ when it actually invokes the binding."
 (defun set-autolisp-symbol-function (symbol function)
   (set-function symbol function))
 
+(defun autolisp-makunbound (symbol &optional (context (current-evaluation-context)))
+  "Clear SYMBOL's binding in the current namespace (Lisp-1: the single
+value/function cell), returning SYMBOL. Dynamic-frame shadows are left
+untouched — this is a top-level operation, the inverse of
+SET-AUTOLISP-SYMBOL-FUNCTION / -VALUE for a symbol that had no prior
+binding. A no-op when SYMBOL has no namespace cell yet."
+  (let ((cell (namespace-binding-cell
+               (evaluation-context-current-namespace context) symbol :createp nil)))
+    (when cell
+      (setf (clautolisp.autolisp-runtime.internal::binding-cell-value cell) nil
+            (clautolisp.autolisp-runtime.internal::binding-cell-bound-p cell) nil
+            (clautolisp.autolisp-runtime.internal::binding-cell-compatibility-definition
+             cell) nil)))
+  symbol)
+
 (defun runtime-value-p (object)
   (or (null object)
       (typep object '(signed-byte 32))

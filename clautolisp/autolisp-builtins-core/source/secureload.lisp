@@ -336,7 +336,9 @@ spec §§ 'Dialect-dependent defaults', 'New clautolisp system variables',
                   *clautolisp-support-search-path-default* nil)
           (define "CLAUTOLISPIMPLICITLYTRUSTEDFOLDERPATHS" :string
                   (default-implicitly-trusted-paths :getenv getenv :getcwd getcwd)
-                  nil))
+                  nil)
+          ;; CL drop: gate on CLAL-COMMON-LISP availability (cl-debugging.issue).
+          (define "CLAUTOLISPDROP" :integer 0 nil))
         ;; 3. environment-variable overrides (env > dialect default).
         (dolist (entry *clautolisp-trust-env-sysvars*)
           (let ((name (car entry)) (kind (cdr entry)))

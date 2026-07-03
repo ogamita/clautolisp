@@ -84,3 +84,37 @@ defined above must be present in the COMMON-LISP-USER package.
 (setvar "CLAUTOLISPDROP" 0)
 (clal-common-lisp '(princ myarr)) ; autolisp error "COMMON-LISP is not available"
 #+end_example
+
+-- RESOLVED (clautolisp 1.4.3) --------------------------------------------
+
+Implemented. Under the clautolisp dialect, the read/write integer sysvar
+CLAUTOLISPDROP (default 0) gates the AutoLISP function CLAL-COMMON-LISP:
+setting it to 1 shadows the symbol with the builtin (saving any prior user
+value/function binding); setting it back to 0 restores that binding, or
+unbinds the symbol when the user had none. The shadow is idempotent, so a
+redundant (setvar "CLAUTOLISPDROP" 1) never overwrites a user binding.
+
+CLAL-COMMON-LISP with no argument runs an interactive Common Lisp REPL in
+COMMON-LISP-USER (leave it with (CLAL-BACK [value])); a string argument is
+READ as one CL form and evaluated; any other AutoLISP argument is
+structurally converted to a CL form and evaluated. The primary value is
+converted back to an AutoLISP object. Conversion follows the issue exactly:
+ints/reals/nil/conses pass through structurally, strings unwrap/wrap,
+AutoLISP symbols re-read with CL:READ, CL keywords become :NAME AutoLISP
+symbols, other CL symbols are prin1/upcased/interned, out-of-range integers
+and circular lists signal, other AutoLISP objects pass through as-is.
+
+Error handling honours COMMON-LISP-USER::*CLAL-ON-ERROR* (default :DEBUG):
+:DEBUG enters the native CL debugger, :ERROR signals a catchable AutoLISP
+error (VL-CATCH-ALL-APPLY sees it), :IGNORE returns nil, and any other value
+is returned (converted, or as-is when already an AutoLISP object) — including
+result-conversion errors.
+
+Code: autolisp-builtins-core/source/api.lisp (the "CL drop" block:
+%clal-al->cl, %clal-cl->al, %clal-guarded, %clal-eval-cl, %clal-repl,
+builtin-clal-common-lisp, COMMON-LISP-USER::{clal-common-lisp,clal-back,
+*clal-on-error*}, %apply-clautolisp-drop; builtin-setvar interception),
+secureload.lisp (CLAUTOLISPDROP registration under :clautolisp), and a new
+runtime helper autolisp-runtime/source/api.lisp:autolisp-makunbound. Tests:
+autolisp-builtins-core/tests/clal-extensions-tests.lisp (converters, error
+policies, shadow/restore/idempotency — builtins-core 1387/1387).

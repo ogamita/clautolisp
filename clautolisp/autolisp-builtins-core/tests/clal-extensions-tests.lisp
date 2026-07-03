@@ -382,3 +382,126 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
              (is (consp (first (clautolisp.autolisp-runtime:read-runtime-from-string text
                                                                                      :source-name "rt"))))))
       (ignore-errors (delete-file path)))))
+
+;;; --- CL drop: CLAUTOLISPDROP / CLAL-COMMON-LISP (cl-debugging.issue) ---
+
+;;; AutoLISP -> Common Lisp form conversion.
+
+(test clal-al->cl-passes-numbers-and-nil-through
+  (is (eql 5 (clautolisp.autolisp-builtins-core::%clal-al->cl 5)))
+  (is (eql 2.5d0 (clautolisp.autolisp-builtins-core::%clal-al->cl 2.5d0)))
+  (is (null (clautolisp.autolisp-builtins-core::%clal-al->cl nil))))
+
+(test clal-al->cl-unwraps-strings-and-reads-symbols
+  (is (string= "hi" (clautolisp.autolisp-builtins-core::%clal-al->cl
+                     (clautolisp.autolisp-runtime:make-autolisp-string "hi"))))
+  (is (string= "CAR" (symbol-name
+                      (clautolisp.autolisp-builtins-core::%clal-al->cl
+                       (clautolisp.autolisp-runtime:intern-autolisp-symbol "CAR"))))))
+
+(test clal-al->cl-recurses-into-conses
+  (is (equal '(1 2 3)
+             (clautolisp.autolisp-builtins-core::%clal-al->cl (list 1 2 3)))))
+
+;;; Common Lisp -> AutoLISP conversion.
+
+(test clal-cl->al-numbers-nil-and-strings
+  (is (eql 7 (clautolisp.autolisp-builtins-core::%clal-cl->al 7)))
+  (is (typep (clautolisp.autolisp-builtins-core::%clal-cl->al 1.5)
+             'double-float))
+  (is (null (clautolisp.autolisp-builtins-core::%clal-cl->al nil)))
+  (is (string= "hi" (clautolisp.autolisp-runtime:autolisp-string-value
+                     (clautolisp.autolisp-builtins-core::%clal-cl->al "hi")))))
+
+(test clal-cl->al-keyword-gets-leading-colon
+  (is (string= ":BAR"
+               (clautolisp.autolisp-runtime:autolisp-symbol-name
+                (clautolisp.autolisp-builtins-core::%clal-cl->al :bar)))))
+
+(test clal-cl->al-symbol-interns-upcased-name
+  (is (string= "FOO"
+               (clautolisp.autolisp-runtime:autolisp-symbol-name
+                (clautolisp.autolisp-builtins-core::%clal-cl->al 'foo)))))
+
+(test clal-cl->al-recurses-into-conses
+  (is (equal '(1 2 3)
+             (clautolisp.autolisp-builtins-core::%clal-cl->al '(1 2 3)))))
+
+(test clal-cl->al-rejects-out-of-range-integer
+  (is (eq :caught
+          (handler-case
+              (progn (clautolisp.autolisp-builtins-core::%clal-cl->al (expt 2 40))
+                     :no-error)
+            (error () :caught)))))
+
+(test clal-cl->al-rejects-circular-structure
+  (let ((x (list 1)))
+    (setf (cdr x) x)
+    (is (eq :caught
+            (handler-case
+                (progn (clautolisp.autolisp-builtins-core::%clal-cl->al x)
+                       :no-error)
+              (error () :caught))))))
+
+;;; CLAL-COMMON-LISP evaluation entry.
+
+(test clal-common-lisp-evaluates-autolisp-form
+  (setup-mock-host-context)
+  (is (= 3 (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
+            (list (clautolisp.autolisp-runtime:intern-autolisp-symbol "+") 1 2)))))
+
+(test clal-common-lisp-evaluates-string-form
+  (setup-mock-host-context)
+  (is (= 42 (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
+             (clautolisp.autolisp-runtime:make-autolisp-string "(* 6 7)")))))
+
+(test clal-common-lisp-on-error-ignore-returns-nil
+  (setup-mock-host-context)
+  (let ((common-lisp-user::*clal-on-error* :ignore))
+    (is (null (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
+               (clautolisp.autolisp-runtime:make-autolisp-string "(error \"x\")"))))))
+
+(test clal-common-lisp-on-error-object-returns-value
+  (setup-mock-host-context)
+  (let ((common-lisp-user::*clal-on-error* 99))
+    (is (= 99 (clautolisp.autolisp-builtins-core::builtin-clal-common-lisp
+               (clautolisp.autolisp-runtime:make-autolisp-string "(error \"x\")"))))))
+
+;;; CLAUTOLISPDROP shadow / restore of the CLAL-COMMON-LISP binding.
+
+(defun %reset-clautolisp-drop ()
+  (setf clautolisp.autolisp-builtins-core::*clautolisp-drop-active* nil
+        clautolisp.autolisp-builtins-core::*clautolisp-drop-saved-binding* nil)
+  (clautolisp.autolisp-runtime:autolisp-makunbound
+   (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP")))
+
+(test clautolisp-drop-installs-and-unbinds-clal-common-lisp
+  (setup-mock-host-context)
+  (%reset-clautolisp-drop)
+  (let ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP")))
+    (is (not (clautolisp.autolisp-runtime:autolisp-symbol-function-bound-p sym)))
+    (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 1)
+    (is (clautolisp.autolisp-runtime:autolisp-symbol-function-bound-p sym))
+    (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 0)
+    (is (not (clautolisp.autolisp-runtime:autolisp-symbol-function-bound-p sym)))))
+
+(test clautolisp-drop-preserves-user-binding
+  (setup-mock-host-context)
+  (%reset-clautolisp-drop)
+  (let* ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP"))
+         (stub (clautolisp.autolisp-runtime:make-autolisp-string "USER")))
+    (clautolisp.autolisp-runtime:set-autolisp-symbol-value sym stub)
+    (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 1)
+    (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 0)
+    (is (eq stub (clautolisp.autolisp-runtime:autolisp-symbol-value sym)))))
+
+(test clautolisp-drop-is-idempotent-on-repeated-enable
+  (setup-mock-host-context)
+  (%reset-clautolisp-drop)
+  (let* ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol "CLAL-COMMON-LISP"))
+         (stub (clautolisp.autolisp-runtime:make-autolisp-string "USER")))
+    (clautolisp.autolisp-runtime:set-autolisp-symbol-value sym stub)
+    (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 1)
+    (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 1) ; must not re-save the builtin
+    (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 0)
+    (is (eq stub (clautolisp.autolisp-runtime:autolisp-symbol-value sym)))))
