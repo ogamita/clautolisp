@@ -285,3 +285,15 @@ STILL NOT DONE (deferred):
   (Removed from the deferred list: the `b'-in-nav item is done. Still deferred:
    virtual/deferred breakpoints for an unloaded file; a multi-column :column
    directory listing.)
+
+-- STATUS (clautolisp 1.4.9) — use the SPECIFIED breakpoint decoration ---------
+
+  The nav breakpoint marker used a placeholder `*'. Corrected to the TUI spec
+  decoration table (documentation/clautolisp-debugger-tui-spec.org §Debugger
+  Specific Decorations, mirrored in settings.lisp :decorations): the enabled
+  breakpoint is ⏸ (U+23F8) under the :unicode theme, ^ under :ascii — read via
+  the new aldo-decoration-glyph (theme-aware). Placement now follows the spec:
+  the glyph is a PREFIX on the sub-form, inside the selection brackets —
+  【⏸(if …)】 — in the sexp breadcrumb, and it marks the form's line in the
+  verbatim source gutter. (aldo-decoration-glyph is the first consumer of the
+  hitherto-unused :decorations config.)

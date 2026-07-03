@@ -331,11 +331,12 @@ walking up the path lands on a positioned enclosing form.)"
       (when (null path) (return nil))
       (setf path (butlast path)))))
 
-(defun %nav-listing-for-node (nav node &optional breakpoint-lines)
+(defun %nav-listing-for-node (nav node &optional breakpoint-lines (bp-glyph "^"))
   "A verbatim source listing of NODE (a sub-tree of NAV's root) — the file's own
 lines spanning NODE, each with its line number and original indentation. The
-selected node's line is flagged with a >> gutter; a line in BREAKPOINT-LINES
-gets a * breakpoint marker. NIL when no source text is available (not read under
+selected node's line is flagged with a >> gutter; a line in BREAKPOINT-LINES gets
+the BP-GLYPH breakpoint marker (the enabled-breakpoint decoration — ⏸ / ^, TUI
+spec decoration table). NIL when no source text is available (not read under
 source tracking, or the file is unreadable)."
   (let ((positions (%nav-collect-positions node '())))
     (when positions
@@ -357,12 +358,12 @@ source tracking, or the file is unreadable)."
               (loop for n from (max 1 start) to (min (length lines) end)
                     for text = (aref lines (1- n))
                     do (format stream "~A~A~3D:   ~A~%"
-                               (if (member n breakpoint-lines) "*" " ")
+                               (if (member n breakpoint-lines) bp-glyph " ")
                                (if (eql n target) ">>" "  ")
                                n text)))))))))
 
-(defun nav-source-listing (nav &optional breakpoint-lines)
+(defun nav-source-listing (nav &optional breakpoint-lines (bp-glyph "^"))
   "Verbatim source listing spanning NAV's whole root form (the whole function),
-the selection flagged >> and any BREAKPOINT-LINES flagged *. NIL when no source
-text is available."
-  (%nav-listing-for-node nav (navigator-root nav) breakpoint-lines))
+the selection flagged >> and any BREAKPOINT-LINES flagged with BP-GLYPH (the
+enabled-breakpoint decoration). NIL when no source text is available."
+  (%nav-listing-for-node nav (navigator-root nav) breakpoint-lines bp-glyph))

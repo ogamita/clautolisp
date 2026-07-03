@@ -152,6 +152,25 @@ setting or an invalid value."
   "The current value of setting NAME (case-insensitive)."
   (config-get name config))
 
+(defun %decoration-glyph->string (spec)
+  "Turn a decoration glyph SPEC — a literal string or a list of Unicode code
+points — into a string."
+  (cond ((stringp spec) spec)
+        ((and (consp spec) (every #'integerp spec)) (map 'string #'code-char spec))
+        (t "")))
+
+(defun aldo-decoration-glyph (name &optional (config *aldo-configuration*))
+  "The glyph string for decoration NAME (:current-pp / :enabled-bp /
+:disabled-bp / :selection) under the current :theme — the :ascii variant for the
+ascii theme, the :unicode variant otherwise (command reference §8 / TUI spec
+decoration table). Returns the first glyph (the OPEN one for :selection), or NIL
+when the decoration is not configured."
+  (let* ((theme (or (config-get :theme config) :unicode))
+         (variant (if (eq theme :ascii) :ascii :unicode))
+         (entry (find-if (lambda (e) (and (eq (first e) name) (eq (second e) variant)))
+                         (cdr (assoc :decorations config)))))
+    (and entry (%decoration-glyph->string (third entry)))))
+
 (defun format-setting-value (value)
   "Render a setting VALUE for the `,settings' listing."
   (cond ((eq value t) "on")

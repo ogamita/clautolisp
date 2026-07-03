@@ -93,7 +93,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:reset-aldo-configuration
    #:config-get #:config-set #:config-keys #:normalize-config-key
    #:set-aldo-setting #:get-aldo-setting #:setting-spec #:parse-setting-value
-   #:aldo-settings-lines #:format-setting-value
+   #:aldo-settings-lines #:format-setting-value #:aldo-decoration-glyph
    #:xdg-config-home #:xdg-config-dirs
    #:aldo-config-save-path #:aldo-config-load-path
    #:save-aldo-configuration #:load-aldo-configuration

@@ -185,3 +185,15 @@ global store."
       (declare (ignore result))
       ;; X is the integer 7 -> AutoLISP type INT
       (is (contains output "INT")))))
+
+(test settings-decoration-glyph-per-theme
+  ;; The enabled-breakpoint decoration is ⏸ (U+23F8) under the unicode theme and
+  ;; ^ under the ascii theme (TUI spec decoration table).
+  (with-fresh-config
+    (is (string= (string (code-char 9208))
+                 (clautolisp.debug.ui:aldo-decoration-glyph :enabled-bp)))   ; ⏸
+    (is (string= (string (code-char 9205))
+                 (clautolisp.debug.ui:aldo-decoration-glyph :current-pp)))   ; ⏵
+    (clautolisp.debug.ui:set-aldo-setting "theme" "ascii")
+    (is (string= "^" (clautolisp.debug.ui:aldo-decoration-glyph :enabled-bp)))
+    (is (string= "_" (clautolisp.debug.ui:aldo-decoration-glyph :disabled-bp)))))

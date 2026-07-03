@@ -936,15 +936,36 @@ navigator's * decoration (aldo-pre-debug.issue). NIL when either is missing."
             when (source-position-p pos)
               collect (source-position-start-line pos)))))
 
+(defun nav-selection-breakpointed-p (session loc)
+  "True when the currently-selected form carries a breakpoint (for the 【⏸…】
+selection decoration; TUI spec decoration table)."
+  (let ((md (nav-loc-metadata loc)))
+    (when (and session md)
+      (let* ((pos (position-of (nav-selected (nav-loc-navigator loc))))
+             (form-id (and (source-position-p pos)
+                           (form-id-at-line-col
+                            md (source-position-start-line pos)
+                            (source-position-start-column pos))))
+             (fid (function-debug-metadata-function-id md)))
+        (and form-id
+             (some (lambda (bp) (and (eql (breakpoint-fid bp) fid)
+                                     (eql (breakpoint-form-id bp) form-id)))
+                   (list-breakpoints (session-thread-info session))))))))
+
 (defun nav-render-loc (ui session loc)
   (ecase (nav-loc-kind loc)
     (:sexp
      (let* ((nav (nav-loc-navigator loc))
             (bp-lines (nav-breakpoint-lines session (nav-loc-metadata loc)))
-            (listing (nav-source-listing nav bp-lines)))
+            (glyph (or (aldo-decoration-glyph :enabled-bp) "^"))
+            (listing (nav-source-listing nav bp-lines glyph))
+            ;; the enabled-breakpoint decoration prefixes the sub-form, inside
+            ;; the selection brackets: 【⏸(…)】 (TUI spec decoration table).
+            (open (if (nav-selection-breakpointed-p session loc)
+                      (concatenate 'string "【" glyph) "【")))
        (if listing
-           (out ui "~&~Asel> ~A~%" listing (nav-render nav))
-           (out ui "~&NAV> ~A~%" (nav-render nav)))
+           (out ui "~&~Asel> ~A~%" listing (nav-render nav open "】"))
+           (out ui "~&NAV> ~A~%" (nav-render nav open "】")))
        (out ui "NAV[~A]> " (if (nav-code-p nav) "code" "non-code"))))
     (:file
      (nav-render-file ui loc)
