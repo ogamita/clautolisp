@@ -792,3 +792,60 @@
       (is (eql 7 result))
       (is (contains output "untraced ID"))
       (is (not (contains output "TRACE> ID"))))))      ; tracepoint gone, never fired
+
+;;; --- pre-debug file/directory navigation (aldo-pre-debug.issue) ---
+
+(test nav-window-bounds-clamps-and-defaults
+  (multiple-value-bind (lo hi) (clautolisp.ui.dumb::nav-window-bounds 5 20 0)
+    (is (= 0 lo)) (is (= 20 hi)))          ; window 0 -> whole range
+  (multiple-value-bind (lo hi) (clautolisp.ui.dumb::nav-window-bounds 5 20 2)
+    (is (= 3 lo)) (is (= 8 hi)))           ; +-2 around index 5
+  (multiple-value-bind (lo hi) (clautolisp.ui.dumb::nav-window-bounds 0 20 2)
+    (is (= 0 lo)) (is (= 3 hi))))          ; clamped at the low end
+
+(test nav-lsp-file-p-recognizes-lsp-case-insensitively
+  (is (clautolisp.ui.dumb::nav-lsp-file-p #p"/x/foo.lsp"))
+  (is (clautolisp.ui.dumb::nav-lsp-file-p #p"/x/FOO.LSP"))
+  (is (not (clautolisp.ui.dumb::nav-lsp-file-p #p"/x/foo.txt"))))
+
+(test nav-directory-entries-and-initial-index
+  (let ((base (uiop:ensure-directory-pathname
+               (merge-pathnames "clal-navdir-test" (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist (merge-pathnames "sub/keep" base))
+           (dolist (name '("alpha.lsp" "beta.lsp" "notes.txt"))
+             (with-open-file (s (merge-pathnames name base)
+                                :direction :output :if-exists :supersede
+                                :if-does-not-exist :create)
+               (write-string "(defun z ())" s)))
+           (let* ((entries (clautolisp.ui.dumb::nav-read-dir-entries base))
+                  (names (map 'list (lambda (e) (getf e :name)) entries)))
+             (is (string= "../" (getf (aref entries 0) :name)))   ; .. first
+             (is (member "alpha.lsp" names :test #'string=))
+             (is (member "beta.lsp" names :test #'string=))
+             (is (member "notes.txt" names :test #'string=))
+             (is (member "sub/" names :test #'string=))
+             ;; initial selection defaults to the first .lsp file
+             (let ((idx (clautolisp.ui.dumb::nav-initial-dir-index entries nil)))
+               (is (string= "alpha.lsp" (getf (aref entries idx) :name))))
+             ;; a select-name overrides the default
+             (let ((idx (clautolisp.ui.dumb::nav-initial-dir-index entries "beta.lsp")))
+               (is (string= "beta.lsp" (getf (aref entries idx) :name))))))
+      (ignore-errors (uiop:delete-directory-tree base :validate t)))))
+
+(test nav-file-form-index-for-line
+  (let ((path (merge-pathnames "clal-navfile-test.lsp" (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (s path :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create)
+             ;; line 1-2: (defun a ...)   line 4-5: (defun b ...)
+             (write-string (format nil "(defun a (x)~%  x)~%~%(defun b (y)~%  y)~%") s))
+           (let ((forms (clautolisp.ui.dumb::nav-read-file-forms
+                         (namestring (truename path)))))
+             (is (= 2 (length forms)))
+             (is (= 0 (clautolisp.ui.dumb::nav-form-index-for-line forms nil)))  ; nil -> first
+             (is (= 0 (clautolisp.ui.dumb::nav-form-index-for-line forms 1)))    ; line 1 -> first
+             (is (= 1 (clautolisp.ui.dumb::nav-form-index-for-line forms 4)))))  ; line 4 -> second
+      (ignore-errors (delete-file path)))))

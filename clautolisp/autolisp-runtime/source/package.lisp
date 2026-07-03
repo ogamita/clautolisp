@@ -189,7 +189,8 @@
    #:*autolisp-caught-error-hook*
    #:*debug-break-hook*
    #:*debug-define-command-hook*
-   #:*debug-nav-function-hook*
+   #:*debug-nav-hook*
+   #:*debug-select-file-hook*
    #:autolisp-current-directory
    #:set-autolisp-current-directory
    #:autolisp-support-paths

@@ -24,6 +24,8 @@
 
 (defparameter *default-aldo-configuration*
   '((:navigator . :sexp)
+    (:directory-listing . :short)
+    (:directory-window . 0)
     (:navigation-history-max . 1000)
     (:break-on-caught . nil)
     (:source-window-height . 24)
@@ -49,6 +51,8 @@ types and the :DECORATIONS sub-list for the theme glyphs.")
 
 (defparameter *setting-specs*
   '((:navigator               :enum (:sexp :line))
+    (:directory-listing       :enum (:long :column :short))
+    (:directory-window        :integer)
     (:navigation-history-max  :integer)
     (:break-on-caught         :boolean)
     (:source-window-height    :integer)

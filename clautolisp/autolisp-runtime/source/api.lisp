@@ -1364,11 +1364,19 @@ reference §1). The aldo debugger installs it when its system is loaded; it is a
 no-op (returns without stopping) unless a debug session is active on the
 thread. NIL when the debug system is absent, making CLAL-BREAK a no-op.")
 
-(defparameter *debug-nav-function-hook* nil
-  "When non-nil, a function (NAME) the CLAL-NAV-FUNCTION builtin calls to enter
-the aldo debugger navigating the source of the global function NAME (a string) —
-pre-debug navigation (aldo-pre-debug.issue). The aldo debugger UI installs it;
-NIL (a no-op) when the debug-ui layer is absent or no debug session is active.")
+(defparameter *debug-nav-hook* nil
+  "When non-nil, a function (REQUEST) the CLAL-NAV-FUNCTION / CLAL-NAV-FILE /
+CLAL-NAV-DIRECTORY builtins call to enter the aldo debugger in a navigation mode
+(pre-debug navigation, aldo-pre-debug.issue). REQUEST is a CL list: (:function
+NAME) navigates a function's source; (:file PATH LINE) a file's top-level forms
+(LINE may be NIL); (:directory PATH) a directory listing (PATH may be NIL for the
+current directory). The aldo debugger UI installs it; NIL (a no-op) when the
+debug-ui layer is absent or no debug session is active.")
+
+(defparameter *debug-select-file-hook* nil
+  "When non-nil, a function (FILE LINE) the CLAL-SELECT-FILE builtin calls to make
+the debugger's `ls' list-source command show FILE at LINE (aldo-pre-debug.issue).
+The aldo debugger installs it; NIL (a no-op) when the debug system is absent.")
 
 (defparameter *instrument-usubr-hook* nil
   "When non-nil, a function (USUBR) that weaves USUBR's instrumented fork and

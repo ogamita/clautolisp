@@ -4491,20 +4491,58 @@ Returns nil."
     (funcall clautolisp.autolisp-runtime:*debug-break-hook* message))
   nil)
 
+(defun %clal-nav-name-string (value operator)
+  "Coerce VALUE (a symbol or string) to a name string for the CLAL-NAV-* builtins."
+  (cond
+    ((typep value 'autolisp-symbol) (autolisp-symbol-name value))
+    ((typep value 'autolisp-string) (autolisp-string-value value))
+    (t (signal-builtin-argument-error
+        :bad-argument operator "Expected a symbol or string, got ~S." value))))
+
 (defun builtin-clal-nav-function (name)
   "Enter the aldo debugger navigating the source form of the global function
 NAME — a symbol or a string (pre-debug navigation, aldo-pre-debug.issue). Lets
 you observe a function and set breakpoints before it is ever called; the
 function is instrumented on demand. A no-op (returns nil) unless a debug session
 is active."
-  (let ((string (cond
-                  ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
-                  ((typep name 'autolisp-string) (autolisp-string-value name))
-                  (t (signal-builtin-argument-error
-                      :bad-argument "CLAL-NAV-FUNCTION"
-                      "Expected a function-name symbol or string, got ~S." name)))))
-    (when clautolisp.autolisp-runtime:*debug-nav-function-hook*
-      (funcall clautolisp.autolisp-runtime:*debug-nav-function-hook* string)))
+  (let ((string (%clal-nav-name-string name "CLAL-NAV-FUNCTION")))
+    (when clautolisp.autolisp-runtime:*debug-nav-hook*
+      (funcall clautolisp.autolisp-runtime:*debug-nav-hook* (list :function string))))
+  nil)
+
+(defun builtin-clal-nav-file (path &optional line)
+  "Enter the aldo debugger navigating the top-level forms of the file PATH (a
+string), starting at the form on or containing LINE (an integer) when given
+(aldo-pre-debug.issue). A no-op (returns nil) unless a debug session is active."
+  (let ((string (%clal-nav-name-string path "CLAL-NAV-FILE"))
+        (line-n (cond ((null line) nil)
+                      ((integerp line) line)
+                      (t (signal-builtin-argument-error
+                          :bad-argument "CLAL-NAV-FILE"
+                          "LINE must be an integer, got ~S." line)))))
+    (when clautolisp.autolisp-runtime:*debug-nav-hook*
+      (funcall clautolisp.autolisp-runtime:*debug-nav-hook* (list :file string line-n))))
+  nil)
+
+(defun builtin-clal-nav-directory (&optional path)
+  "Enter the aldo debugger browsing the directory PATH (a string; the current
+directory when omitted), so you can walk the file system and enter files
+(aldo-pre-debug.issue). A no-op (returns nil) unless a debug session is active."
+  (let ((string (and path (%clal-nav-name-string path "CLAL-NAV-DIRECTORY"))))
+    (when clautolisp.autolisp-runtime:*debug-nav-hook*
+      (funcall clautolisp.autolisp-runtime:*debug-nav-hook* (list :directory string))))
+  nil)
+
+(defun builtin-clal-select-file (path line)
+  "Select PATH:LINE as the source the debugger's `ls' command shows
+(aldo-pre-debug.issue). Returns nil."
+  (let ((string (%clal-nav-name-string path "CLAL-SELECT-FILE"))
+        (line-n (if (integerp line) line
+                    (signal-builtin-argument-error
+                     :bad-argument "CLAL-SELECT-FILE"
+                     "LINE must be an integer, got ~S." line))))
+    (when clautolisp.autolisp-runtime:*debug-select-file-hook*
+      (funcall clautolisp.autolisp-runtime:*debug-select-file-hook* string line-n)))
   nil)
 
 (defun builtin-clal-define-debugger-command (names function &optional doc)
@@ -8143,6 +8181,9 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-COMPILE"          #'builtin-clal-compile)
    (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
    (make-core-builtin-subr "CLAL-NAV-FUNCTION"     #'builtin-clal-nav-function)
+   (make-core-builtin-subr "CLAL-NAV-FILE"         #'builtin-clal-nav-file)
+   (make-core-builtin-subr "CLAL-NAV-DIRECTORY"    #'builtin-clal-nav-directory)
+   (make-core-builtin-subr "CLAL-SELECT-FILE"      #'builtin-clal-select-file)
    (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
    (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)
    (make-core-builtin-subr "CLAL-ENABLE-ENC-DIAGNOSTIC"   #'builtin-clal-enable-enc-diagnostic)

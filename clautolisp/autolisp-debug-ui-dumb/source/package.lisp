@@ -10,6 +10,7 @@ UI refines.")
   (:import-from #:clautolisp.source
                 #:source-position-p #:source-position-file
                 #:source-position-start-line #:source-position-start-column
+                #:source-position-end-line #:position-of #:with-source-tracking
                 #:lines-of)
   (:import-from #:clautolisp.debug
                 #:hit-stop-reason #:hit-source-position #:hit-error-message
@@ -26,7 +27,8 @@ UI refines.")
                 #:set-breakpoint-action
                 #:poll-point-id #:poll-point-location
                 #:*break-on-error* #:*break-on-caught-error*
-                #:metadata-for-name #:ensure-metadata-for-name #:*pending-nav-function*
+                #:metadata-for-name #:ensure-metadata-for-name
+                #:*pending-nav-request* #:*selected-source*
                 #:all-function-metadata #:functions-matching
                 #:function-debug-metadata-function-id #:function-debug-metadata-usubr
                 #:function-debug-metadata-name #:function-debug-metadata-source-position

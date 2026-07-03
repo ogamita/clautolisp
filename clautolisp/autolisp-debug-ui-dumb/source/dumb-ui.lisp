@@ -211,14 +211,15 @@ navigation-history-max setting (command reference §3)."
 
 (defmethod ui-await-command ((ui dumb-ui) session hit)
   (record-navigation-state ui)
-  ;; CLAL-NAV-FUNCTION requested a stop to navigate a specific function: open
-  ;; the navigator on it immediately, then fall into the normal command loop so
-  ;; the user can set breakpoints and continue (aldo-pre-debug.issue).
-  (when *pending-nav-function*
-    (let ((name *pending-nav-function*))
-      (setf *pending-nav-function* nil)
-      (when (browse-to-name ui session name)
-        (nav-loop ui session))))
+  ;; CLAL-NAV-* requested a stop to open a navigator (a function's source, a
+  ;; file's forms, or a directory): open it immediately, then fall into the
+  ;; normal command loop so the user can set breakpoints and continue
+  ;; (aldo-pre-debug.issue).
+  (when *pending-nav-request*
+    (let ((request *pending-nav-request*))
+      (setf *pending-nav-request* nil)
+      (let ((loc (nav-loc-for-request ui session request)))
+        (when loc (nav-browse ui session loc)))))
   (loop
     (out ui "~&~A" (dumb-ui-prompt ui))
     (let ((line (read-line (dumb-ui-input ui) nil :eof)))
@@ -678,11 +679,16 @@ any, else the stopped frame's function (aldo-pre-debug.issue). NIL if neither."
 
 (defun nav-loop (ui session)
   "`nav' — a navigation sub-mode over the current function (command reference §3).
-The `navigator' setting (§8) chooses the granularity: =sexp= (default) walks the
-structural tree; =line= walks the function's poll-point lines flatly."
+The `navigator' setting (§8) chooses the granularity: =sexp= (default) opens the
+source/structure browser over the current function — from which =u= ascends to
+the file's directory (aldo-pre-debug.issue) — while =line= walks the function's
+poll-point lines flatly."
   (if (eq (ignore-errors (get-aldo-setting :navigator)) :line)
       (nav-line-loop ui session)
-      (nav-sexp-loop ui session)))
+      (let ((loc (nav-function-loc session)))
+        (if loc
+            (nav-browse ui session loc)
+            (out ui "DBG> nav: no current function~%")))))
 
 (defun nav-line-loop (ui session)
   "`nav' in LINE mode (the `navigator line' setting): a flat cursor over the
@@ -718,41 +724,270 @@ of the structural sexp tree. Keys: =d=/=>= next, =u=/=<= prev, =<<= first,
                   ((member cmd '("q" "quit") :test #'string=) (return))
                   (t (out ui "NAV> ? keys: d/> next  u/< prev  << first  >> last  ±N  q~%"))))))))))
 
-(defun nav-sexp-loop (ui session)
-  "`nav' — a structural-navigation sub-mode over the current function's form
-(command reference §3 / TUI sedit navigator). Modal keys: =d= down, =u= up, =>=
-forward, =<= backward, =<<= first, =>>= last, =±N= signed sibling skip, =q=
-leave. The selected sub-form is shown bracketed, with whether it is a code
-(poll-pointable) position."
-  (let ((form (current-source-form session)))
-    (if (null form)
-        (out ui "DBG> nav: no current function~%")
-        (let ((nav (make-navigator form)))
-          (loop
-            (let ((listing (nav-source-listing nav)))
-              (if listing
-                  ;; Verbatim source — the file's own line breaks and
-                  ;; indentation — with the selection shown compactly below.
-                  (out ui "~&~Asel> ~A~%" listing (nav-render nav))
-                  (out ui "~&NAV> ~A~%" (nav-render nav))))
-            (out ui "NAV[~A]> " (if (nav-code-p nav) "code" "non-code"))
-            (let ((line (read-line (dumb-ui-input ui) nil :eof)))
-              (when (eq line :eof) (return))
-              (let* ((cmd (string-trim " " line))
-                     (signed (and (>= (length cmd) 2)
-                                  (member (char cmd 0) '(#\+ #\-))
-                                  (ignore-errors (parse-integer cmd)))))
-                (cond
-                  ((string= cmd "") nil)
-                  ((string= cmd "d") (nav-down nav))
-                  ((string= cmd "u") (nav-up nav))
-                  ((string= cmd ">") (nav-forward nav))
-                  ((string= cmd "<") (nav-backward nav))
-                  ((string= cmd "<<") (nav-first nav))
-                  ((string= cmd ">>") (nav-last nav))
-                  (signed (nav-skip nav signed))
-                  ((member cmd '("q" "quit") :test #'string=) (return))
-                  (t (out ui "NAV> ? keys: d u > < << >> ±N q~%"))))))))))
+;;; ===== unified navigation: function/file source + directory browsing =====
+;;;
+;;; (aldo-pre-debug.issue) One modal loop over a "location" that is either a
+;;; :SEXP navigator (a function's form, or a file's top-level forms) or a :DIR
+;;; directory listing. `u' ascends the hierarchy — sub-form -> form -> file ->
+;;; directory -> parent directory; `d' descends (into a sub-form, a subdirectory,
+;;; or a file's forms); `>'/`<'/`<<'/`>>'/±N move among siblings; `q' leaves.
+
+(defstruct nav-loc
+  kind                    ; :sexp | :dir
+  ;; :sexp
+  navigator               ; a navigator over a form tree
+  file                    ; source file namestring the form belongs to, or NIL
+  (scope :root)           ; :root (span whole form) | :selection (span selection)
+  ;; :dir
+  dir                     ; directory namestring
+  entries                 ; simple-vector of entry plists (:name :path :dir-p :lsp-p)
+  (index 0))
+
+(defun nav-function-loc (session)
+  "A :SEXP location over the current function — the `g'/nav target or the stopped
+frame — or NIL when there is none. `u' at its root ascends to the file's directory."
+  (let* ((metadata (or (session-nav-target session) (current-metadata session)))
+         (form (and metadata (source-form-of-metadata metadata)))
+         (file (and metadata
+                    (let ((p (function-debug-metadata-source-position metadata)))
+                      (and p (source-position-file p))))))
+    (when form
+      (make-nav-loc :kind :sexp :navigator (make-navigator form) :file file :scope :root))))
+
+;;; --- reading a file's top-level forms (with source positions) -------------
+
+(defun nav-read-file-forms (file)
+  "Read FILE's top-level forms with source positions recorded (so the navigator
+can show verbatim source), or NIL on a read/IO error."
+  (ignore-errors
+   (with-source-tracking ()
+     (read-runtime-from-string (uiop:read-file-string file) :source-name file))))
+
+(defun nav-form-index-for-line (forms line)
+  "Index of the top-level form on or containing LINE (or the first at/after it,
+else the last), or 0 when LINE is NIL (aldo-pre-debug.issue)."
+  (if (null line)
+      0
+      (let ((after nil))
+        (loop for f in forms for i from 0
+              for p = (position-of f)
+              when p do
+                (when (<= (source-position-start-line p) line (source-position-end-line p))
+                  (return-from nav-form-index-for-line i))
+                (when (and (null after) (>= (source-position-start-line p) line))
+                  (setf after i)))
+        (or after (max 0 (1- (length forms)))))))
+
+(defun nav-make-file-loc (path &optional line)
+  "A :SEXP location over PATH's top-level forms, selecting the form on/containing
+LINE. NIL when PATH cannot be read or has no forms."
+  (let* ((file (ignore-errors (namestring (truename path))))
+         (forms (and file (nav-read-file-forms file))))
+    (when (and file forms)
+      (let ((nav (make-navigator forms)))
+        (setf (navigator-path nav) (list (nav-form-index-for-line forms line)))
+        (make-nav-loc :kind :sexp :navigator nav :file file :scope :selection)))))
+
+;;; --- directory listing ----------------------------------------------------
+
+(defun nav-dir-name (subdir)
+  "The last directory component of the directory pathname SUBDIR."
+  (car (last (pathname-directory subdir))))
+
+(defun nav-lsp-file-p (pathname)
+  (let ((type (pathname-type pathname)))
+    (and (stringp type) (string-equal type "lsp"))))
+
+(defun nav-read-dir-entries (dir)
+  "A simple-vector of DIR's entries as plists (:name :path :dir-p :lsp-p): `..'
+first, then subdirectories (sorted), then files (sorted)."
+  (let* ((dirpath (uiop:ensure-directory-pathname dir))
+         (parent (uiop:pathname-parent-directory-pathname dirpath))
+         (subdirs (ignore-errors (uiop:subdirectories dirpath)))
+         (files (ignore-errors (uiop:directory-files dirpath)))
+         (entries '()))
+    (dolist (f (sort (copy-list files) #'string< :key #'file-namestring))
+      (push (list :name (file-namestring f) :path (namestring f)
+                  :dir-p nil :lsp-p (nav-lsp-file-p f))
+            entries))
+    (dolist (d (sort (copy-list subdirs) #'string< :key #'nav-dir-name))
+      (push (list :name (concatenate 'string (nav-dir-name d) "/")
+                  :path (namestring d) :dir-p t :lsp-p nil)
+            entries))
+    (setf entries (nreverse entries))
+    (push (list :name "../" :path (namestring parent) :dir-p t :lsp-p nil) entries)
+    (coerce entries 'simple-vector)))
+
+(defun nav-initial-dir-index (entries select-name)
+  "The initial selection: the SELECT-NAME entry if present, else the first .lsp
+file, else the first subdirectory, else `..' (index 0)."
+  (or (and select-name
+           (position select-name entries
+                     :key (lambda (e) (getf e :name)) :test #'string-equal))
+      (position-if (lambda (e) (getf e :lsp-p)) entries)
+      (position-if (lambda (e) (and (getf e :dir-p)
+                                    (not (string= (getf e :name) "../"))))
+                   entries)
+      0))
+
+(defun nav-make-dir-loc (dir &optional select-name)
+  (let* ((canon (namestring (uiop:ensure-directory-pathname dir)))
+         (entries (nav-read-dir-entries canon)))
+    (make-nav-loc :kind :dir :dir canon :entries entries
+                  :index (nav-initial-dir-index entries select-name))))
+
+(defun nav-format-date (universal)
+  (if universal
+      (multiple-value-bind (s mi h d mo y) (decode-universal-time universal)
+        (declare (ignore s))
+        (format nil "~4,'0D-~2,'0D-~2,'0D ~2,'0D:~2,'0D" y mo d h mi))
+      (make-string 16 :initial-element #\Space)))
+
+(defun nav-entry-label (entry mode)
+  "The display text for a directory ENTRY under the DIRECTORY-LISTING MODE
+(:long adds size + mtime; :short / :column show the name only)."
+  (let ((name (getf entry :name)))
+    (if (eq mode :long)
+        (let* ((path (getf entry :path))
+               (size (and (not (getf entry :dir-p))
+                          (ignore-errors
+                           (with-open-file (s path :element-type '(unsigned-byte 8))
+                             (file-length s)))))
+               (date (ignore-errors (file-write-date path))))
+          (format nil "~10@A  ~A  ~A" (or size "") (nav-format-date date) name))
+        name)))
+
+(defun nav-window-bounds (index n window)
+  "Half-open [lo, hi) of entries to show: the whole range when WINDOW <= 0, else
+WINDOW context entries on each side of INDEX (aldo-pre-debug.issue note 2)."
+  (if (and (integerp window) (plusp window))
+      (values (max 0 (- index window)) (min n (+ index window 1)))
+      (values 0 n)))
+
+(defun nav-render-dir (ui loc)
+  (let* ((entries (nav-loc-entries loc))
+         (n (length entries))
+         (index (nav-loc-index loc))
+         (mode (or (ignore-errors (get-aldo-setting :directory-listing)) :short))
+         (window (or (ignore-errors (get-aldo-setting :directory-window)) 0)))
+    (out ui "~&NAV: directory ~A~%" (nav-loc-dir loc))
+    (multiple-value-bind (lo hi) (nav-window-bounds index n window)
+      (when (> lo 0) (out ui "   ...~%"))
+      (loop for i from lo below hi
+            for e = (aref entries i)
+            do (out ui "~A~A~%" (if (= i index) " > " "   ") (nav-entry-label e mode)))
+      (when (< hi n) (out ui "   ...~%")))))
+
+;;; --- the modal loop -------------------------------------------------------
+
+(defun nav-render-loc (ui loc)
+  (ecase (nav-loc-kind loc)
+    (:sexp
+     (let* ((nav (nav-loc-navigator loc))
+            (listing (if (eq (nav-loc-scope loc) :selection)
+                         (nav-selection-listing nav)
+                         (nav-source-listing nav))))
+       (if listing
+           (out ui "~&~Asel> ~A~%" listing (nav-render nav))
+           (out ui "~&NAV> ~A~%" (nav-render nav)))
+       (out ui "NAV[~A]> " (if (nav-code-p nav) "code" "non-code"))))
+    (:dir
+     (nav-render-dir ui loc)
+     (out ui "NAV[dir]> "))))
+
+(defun nav-ascend-to-dir (ui loc)
+  "Ascend from a :SEXP location to its file's directory, the file selected; or a
+message and NIL when there is no source file."
+  (let ((file (nav-loc-file loc)))
+    (if file
+        (nav-make-dir-loc (namestring (uiop:pathname-directory-pathname file))
+                          (file-namestring file))
+        (progn (out ui "NAV> (no source file to ascend to)~%") nil))))
+
+(defun nav-dispatch-sexp (ui loc cmd signed)
+  "Handle one key in a :SEXP location; return (values NEXT-LOC LEAVE-P)."
+  (let ((nav (nav-loc-navigator loc)))
+    (cond
+      ((string= cmd "") nil)
+      ((string= cmd "d") (nav-down nav) nil)
+      ((string= cmd "u")
+       (if (navigator-path nav)
+           (progn (nav-up nav) nil)
+           (nav-ascend-to-dir ui loc)))     ; at the root: ascend to the directory
+      ((string= cmd ">") (nav-forward nav) nil)
+      ((string= cmd "<") (nav-backward nav) nil)
+      ((string= cmd "<<") (nav-first nav) nil)
+      ((string= cmd ">>") (nav-last nav) nil)
+      (signed (nav-skip nav signed) nil)
+      ((member cmd '("q" "quit") :test #'string=) (values nil t))
+      (t (out ui "NAV> ? keys: d down  u up  > < siblings  << >> ends  ±N skip  q~%")
+         nil))))
+
+(defun nav-enter-dir-entry (ui entry)
+  "Descend into a directory ENTRY: a subdirectory/`..' -> its listing, a .lsp file
+-> its top-level forms, otherwise a message. Returns the new location or NIL."
+  (cond
+    ((getf entry :dir-p) (nav-make-dir-loc (getf entry :path)))
+    ((getf entry :lsp-p)
+     (or (nav-make-file-loc (getf entry :path))
+         (progn (out ui "NAV[dir]> cannot read ~A~%" (getf entry :name)) nil)))
+    (t (out ui "NAV[dir]> ~A is not a .lsp file~%" (getf entry :name)) nil)))
+
+(defun nav-dispatch-dir (ui loc cmd signed)
+  "Handle one key in a :DIR location; return (values NEXT-LOC LEAVE-P)."
+  (let* ((entries (nav-loc-entries loc))
+         (n (length entries))
+         (i (nav-loc-index loc)))
+    (flet ((setix (j) (setf (nav-loc-index loc) (max 0 (min (max 0 (1- n)) j))) nil))
+      (cond
+        ((string= cmd "") nil)
+        ((string= cmd ">") (setix (1+ i)))
+        ((string= cmd "<") (setix (1- i)))
+        ((string= cmd "<<") (setix 0))
+        ((string= cmd ">>") (setix (1- n)))
+        (signed (setix (+ i signed)))
+        ((string= cmd "u")
+         (nav-make-dir-loc
+          (namestring (uiop:pathname-parent-directory-pathname
+                       (uiop:ensure-directory-pathname (nav-loc-dir loc))))))
+        ((member cmd '("d" "enter") :test #'string=)
+         (if (plusp n) (nav-enter-dir-entry ui (aref entries i)) nil))
+        ((member cmd '("q" "quit") :test #'string=) (values nil t))
+        (t (out ui "NAV[dir]> ? keys: > < siblings  << >> ends  ±N skip  d enter  u up  q~%")
+           nil)))))
+
+(defun nav-browse (ui session loc)
+  "Run the modal navigation loop from LOC until the user leaves (`q'/EOF)
+(aldo-pre-debug.issue)."
+  (declare (ignore session))
+  (loop
+    (nav-render-loc ui loc)
+    (let ((line (read-line (dumb-ui-input ui) nil :eof)))
+      (when (eq line :eof) (return))
+      (let* ((cmd (string-trim " " line))
+             (signed (and (>= (length cmd) 2)
+                          (member (char cmd 0) '(#\+ #\-))
+                          (ignore-errors (parse-integer cmd)))))
+        (multiple-value-bind (next leave)
+            (ecase (nav-loc-kind loc)
+              (:sexp (nav-dispatch-sexp ui loc cmd signed))
+              (:dir  (nav-dispatch-dir ui loc cmd signed)))
+          (when leave (return))
+          (when next (setf loc next)))))))
+
+(defun nav-loc-for-request (ui session request)
+  "Build the initial navigation location for a CLAL-NAV-* REQUEST — (:function
+NAME) / (:file PATH LINE) / (:directory PATH) — or NIL (aldo-pre-debug.issue)."
+  (ecase (first request)
+    (:function
+     (and (browse-to-name ui session (second request))
+          (nav-function-loc session)))
+    (:file
+     (destructuring-bind (path &optional line) (rest request)
+       (or (nav-make-file-loc path line)
+           (progn (out ui "DBG> nav: cannot read file ~A~%" path) nil))))
+    (:directory
+     (nav-make-dir-loc (or (second request) (namestring (uiop:getcwd)))))))
 
 ;;; --- source-browse stack (command reference §3 Navigation) ----------------
 
@@ -1104,8 +1339,15 @@ types into break/condition/…; TUI Numbered Poll-Points)."
             (out ui "DBG>   pp~D  line ~D~:[~; *breakpoint~]~%" n line bp))))))
 
 (defun relist-source (ui session)
-  (let ((snapshot (session-snapshot session)))
-    (when snapshot (ui-show-source ui (snapshot-source-position snapshot)))))
+  "`ls' — list source around the current stop, or around the file:line selected
+by CLAL-SELECT-FILE when one is set (aldo-pre-debug.issue)."
+  (let ((selected *selected-source*))
+    (if selected
+        (ui-show-source ui (clautolisp.source:make-source-position
+                            :file (car selected)
+                            :start-line (cdr selected) :end-line (cdr selected)))
+        (let ((snapshot (session-snapshot session)))
+          (when snapshot (ui-show-source ui (snapshot-source-position snapshot)))))))
 
 (defun print-stack (ui session)
   (let ((snapshot (session-snapshot session)))

@@ -270,12 +270,12 @@ walking up the path lands on a positioned enclosing form.)"
       (when (null path) (return nil))
       (setf path (butlast path)))))
 
-(defun nav-source-listing (nav)
-  "A verbatim source listing of the navigated form — the file's own lines
-spanning the form, each with its line number and the original indentation, the
+(defun %nav-listing-for-node (nav node)
+  "A verbatim source listing of NODE (a sub-tree of NAV's root) — the file's own
+lines spanning NODE, each with its line number and original indentation, the
 selected node's line flagged with a >> gutter — or NIL when no source text is
-available (form not read under source tracking, or the file is unreadable)."
-  (let ((positions (%nav-collect-positions (navigator-root nav) '())))
+available (not read under source tracking, or the file is unreadable)."
+  (let ((positions (%nav-collect-positions node '())))
     (when positions
       (let* ((file (%nav-dominant-file positions))
              (here (remove-if-not
@@ -296,3 +296,16 @@ available (form not read under source tracking, or the file is unreadable)."
                     for text = (aref lines (1- n))
                     do (format stream "~A~3D:   ~A~%"
                                (if (eql n target) ">> " "   ") n text)))))))))
+
+(defun nav-source-listing (nav)
+  "Verbatim source listing spanning NAV's whole root form (the whole function),
+selection flagged >>. NIL when no source text is available."
+  (%nav-listing-for-node nav (navigator-root nav)))
+
+(defun nav-selection-listing (nav)
+  "Verbatim source listing spanning the SELECTED sub-tree only (bounded — used
+by file navigation so a single top-level form is shown, not the whole file),
+selection flagged >>. Falls back to the whole root when the selection carries no
+source text (e.g. at the root of a synthetic top-level-form list)."
+  (or (%nav-listing-for-node nav (nav-selected nav))
+      (%nav-listing-for-node nav (navigator-root nav))))

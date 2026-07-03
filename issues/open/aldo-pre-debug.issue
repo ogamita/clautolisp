@@ -206,15 +206,44 @@ and ensure-metadata-for-name (poll.lisp / instrument.lisp); session NAV-TARGET
 browse-to-name / goto-cmd / set-breakpoint / ui-await-command wiring. Tests:
 autolisp-debug ensure-metadata (112/112), dumb-ui goto message (310/310).
 
-NOT DONE (deferred — larger, net-new subsystems), tracked here:
+-- STATUS (clautolisp 1.4.6) — file / directory navigation --------------------
 
-  * (clal-nav-file path [line]) and virtual/deferred breakpoints (recorded with
-    toplevel-form-relative positions, armed when the file is loaded). No
-    deferred-breakpoint store or load-time arming hook exists yet.
-  * (clal-nav-directory [path]) — a filesystem-browsing navigation mode, the
-    `u'-at-function-root -> directory listing behaviour, the DIRECTORY-LISTING
-    (LONG/COLUMN/SHORT) and DIRECTORY-WINDOW settings, and the pager windowing.
-    No directory reader or file-nav mode exists yet.
-  * (clal-select-file path line) — select the current file:line for `ls'.
+DONE — file and directory navigation, a unified modal browser:
+
+  * (clal-nav-file path [line]) — new builtin. Opens the navigator on PATH's
+    top-level forms (read fresh under source tracking, so verbatim source shows
+    even if the file is not loaded), selecting the form on/containing LINE (the
+    first at/after it, else the last; first form when LINE omitted).
+  * (clal-nav-directory [path]) — new builtin. Opens a directory browser (PATH,
+    or the current directory). Listing: `../' first, then subdirectories, then
+    files (sorted); initial selection = first .lsp file, else first subdir, else
+    `..'. Keys: > < move, << >> ends, ±N skip, d enter (a subdir/.. -> its
+    listing, a .lsp file -> its forms), u parent directory, q leave.
+  * `u' at the root of a function/file navigator ASCENDS to the file's directory
+    with that file selected (the issue's "attendu": nav fact then u -> directory).
+    The whole browser (function form / file forms / directory) is one modal loop
+    (nav-loc / nav-browse) with a consistent d-descend / u-ascend / >< siblings.
+  * (clal-select-file path line) — new builtin. Makes `ls' show PATH:LINE
+    instead of the current stop's source.
+  * Settings DIRECTORY-LISTING (:short default / :long size+mtime / :column) and
+    DIRECTORY-WINDOW n (show n context entries each side of the selection, with
+    `...' markers; 0 = show all — issue note 2).
+
+Implementation: general runtime hook *debug-nav-hook* (request (:function NAME) /
+(:file PATH LINE) / (:directory PATH)) + *debug-select-file-hook*; engine
+*pending-nav-request* / request-nav, *selected-source* / select-source
+(poll.lisp); the CLAL-NAV-FILE / CLAL-NAV-DIRECTORY / CLAL-SELECT-FILE builtins;
+navigator nav-selection-listing (bounded to the selected top-level form);
+dumb-ui nav-loc / nav-browse / directory reader / file-form reader and the
+relist-source override. Tests: dumb-ui nav helpers (330/330).
+
+STILL NOT DONE (deferred):
+
+  * Virtual / deferred breakpoints for a not-yet-loaded file (recorded with
+    top-level-form-relative positions, armed when the file is loaded). The file
+    navigator shows such a file's source, but breakpoints there still need the
+    function loaded/instrumented; no deferred-breakpoint store or load-time
+    arming hook exists yet.
   * Setting a breakpoint from inside the `nav' sub-loop (a `b' key on the
     selected node). Today breakpoints are set from the DBG prompt by line/ppN.
+  * DIRECTORY-LISTING :column is treated as :short (no multi-column grid yet).

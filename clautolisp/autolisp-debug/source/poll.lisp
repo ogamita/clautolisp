@@ -115,20 +115,32 @@ stop. Returns NIL."
 ;; depending on the debug system.
 (setf clautolisp.autolisp-runtime:*debug-break-hook* #'invoke-debugger-break)
 
-(defvar *pending-nav-function* nil
-  "Set by REQUEST-NAV-FUNCTION to the name of a function the UI should navigate
-on its next stop (pre-debug navigation, aldo-pre-debug.issue). The UI command
-loop reads and clears it. NIL when there is no pending navigation request.")
+(defvar *pending-nav-request* nil
+  "Set by REQUEST-NAV to the navigation REQUEST the UI should open on its next
+stop — (:function NAME) / (:file PATH LINE) / (:directory PATH) (pre-debug
+navigation, aldo-pre-debug.issue). The UI command loop reads and clears it. NIL
+when there is no pending navigation request.")
 
-(defun request-nav-function (name)
-  "CLAL-NAV-FUNCTION entry: record NAME as the pending navigation target and
-break into the debugger, so the UI opens the navigator on NAME's source. A no-op
-(and the pending target is cleared) when no debug session is active."
-  (setf *pending-nav-function* name)
+(defun request-nav (request)
+  "CLAL-NAV-* entry: record REQUEST as the pending navigation and break into the
+debugger, so the UI opens the corresponding navigator. A no-op (and the pending
+request is cleared) when no debug session is active."
+  (setf *pending-nav-request* request)
   (unwind-protect (invoke-debugger-break nil)
-    (setf *pending-nav-function* nil)))
+    (setf *pending-nav-request* nil)))
 
-(setf clautolisp.autolisp-runtime:*debug-nav-function-hook* #'request-nav-function)
+(setf clautolisp.autolisp-runtime:*debug-nav-hook* #'request-nav)
+
+(defvar *selected-source* nil
+  "A (FILE . LINE) the debugger's `ls' command should show instead of the current
+stop's source, or NIL (aldo-pre-debug.issue). Set by CLAL-SELECT-FILE.")
+
+(defun select-source (file line)
+  "CLAL-SELECT-FILE entry: make `ls' show FILE at LINE. Returns nil."
+  (setf *selected-source* (and file (cons file line)))
+  nil)
+
+(setf clautolisp.autolisp-runtime:*debug-select-file-hook* #'select-source)
 
 (defun apply-resume-directive (ti directive)
   "Interpret the handler's return value, arming the next stop. :ABORT

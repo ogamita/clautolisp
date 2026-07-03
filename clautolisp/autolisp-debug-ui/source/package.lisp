@@ -118,6 +118,6 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:make-navigator #:navigator-root #:navigator-path #:nav-selected
    #:nav-parent #:nav-index
    #:nav-down #:nav-up #:nav-forward #:nav-backward #:nav-first #:nav-last
-   #:nav-skip #:nav-render #:nav-source-listing #:nav-selected-position
+   #:nav-skip #:nav-render #:nav-source-listing #:nav-selection-listing #:nav-selected-position
    #:*special-form-grammars* #:*sub-grammars* #:child-role #:role-at-path
    #:nav-selected-role #:nav-code-p))
