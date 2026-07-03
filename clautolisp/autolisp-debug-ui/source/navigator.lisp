@@ -220,6 +220,79 @@ poll-pointable. Non-code data/names and structural groups return NIL."
 
 (defun nav-render (nav &optional (open "【") (close "】"))
   "A string of the root form with the selected sub-sexp wrapped in OPEN/CLOSE
-(the selection decoration; command reference §8 / TUI decoration table)."
+(the selection decoration; command reference §8 / TUI decoration table). Bound
+non-pretty so a large form stays on one compact line — the host pretty-printer
+would otherwise wrap it with deep, unwieldy indentation."
   (with-output-to-string (stream)
-    (%render-marked (navigator-root nav) (navigator-path nav) open close stream)))
+    (let ((*print-pretty* nil))
+      (%render-marked (navigator-root nav) (navigator-path nav) open close stream))))
+
+;;; --- verbatim source listing ------------------------------------------
+;;;
+;;; When the navigated form was read under source tracking, its sub-forms
+;;; carry SOURCE-POSITIONs (clautolisp.source). We prefer to show the form
+;;; using its ORIGINAL source text — the file's own line breaks and
+;;; indentation — instead of re-printing the reconstructed sexp (which the
+;;; pretty-printer lays out with its own, much larger, indentation). The
+;;; selected sub-form's line is flagged with a >> gutter.
+
+(defun %nav-collect-positions (node acc)
+  "Collect every recorded SOURCE-POSITION under NODE (a form tree) into ACC,
+iterating the list spine and recursing into cars."
+  (loop
+    (if (consp node)
+        (progn
+          (let ((position (clautolisp.source:position-of node)))
+            (when position (push position acc)))
+          (setf acc (%nav-collect-positions (car node) acc))
+          (setf node (cdr node)))
+        (return acc))))
+
+(defun %nav-dominant-file (positions)
+  "The file named by the most POSITIONS (the function's own file), or NIL."
+  (let ((counts (make-hash-table :test 'equal))
+        (best nil) (best-n 0))
+    (dolist (position positions)
+      (let ((file (clautolisp.source:source-position-file position)))
+        (when file (incf (gethash file counts 0)))))
+    (maphash (lambda (file n) (when (> n best-n) (setf best file best-n n))) counts)
+    best))
+
+(defun nav-selected-position (nav)
+  "The SOURCE-POSITION of the selected node, or of its nearest positioned
+ancestor, or NIL. (Atoms and the reconstructed root cons carry no position;
+walking up the path lands on a positioned enclosing form.)"
+  (let ((path (navigator-path nav)))
+    (loop
+      (let ((position (clautolisp.source:position-of
+                       (path-ref (navigator-root nav) path))))
+        (when position (return position)))
+      (when (null path) (return nil))
+      (setf path (butlast path)))))
+
+(defun nav-source-listing (nav)
+  "A verbatim source listing of the navigated form — the file's own lines
+spanning the form, each with its line number and the original indentation, the
+selected node's line flagged with a >> gutter — or NIL when no source text is
+available (form not read under source tracking, or the file is unreadable)."
+  (let ((positions (%nav-collect-positions (navigator-root nav) '())))
+    (when positions
+      (let* ((file (%nav-dominant-file positions))
+             (here (remove-if-not
+                    (lambda (p) (equal (clautolisp.source:source-position-file p) file))
+                    positions))
+             (lines (and file (ignore-errors (clautolisp.source:lines-of file)))))
+        (when (and file here lines (plusp (length lines)))
+          (let* ((start (reduce #'min here
+                                :key #'clautolisp.source:source-position-start-line))
+                 (end   (reduce #'max here
+                                :key #'clautolisp.source:source-position-end-line))
+                 (selected (nav-selected-position nav))
+                 (target (and selected
+                              (equal (clautolisp.source:source-position-file selected) file)
+                              (clautolisp.source:source-position-start-line selected))))
+            (with-output-to-string (stream)
+              (loop for n from (max 1 start) to (min (length lines) end)
+                    for text = (aref lines (1- n))
+                    do (format stream "~A~3D:   ~A~%"
+                               (if (eql n target) ">> " "   ") n text)))))))))

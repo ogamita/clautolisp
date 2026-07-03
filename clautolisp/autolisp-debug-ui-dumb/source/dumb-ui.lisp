@@ -716,7 +716,12 @@ leave. The selected sub-form is shown bracketed, with whether it is a code
         (out ui "DBG> nav: no current function~%")
         (let ((nav (make-navigator form)))
           (loop
-            (out ui "~&NAV> ~A~%" (nav-render nav))
+            (let ((listing (nav-source-listing nav)))
+              (if listing
+                  ;; Verbatim source — the file's own line breaks and
+                  ;; indentation — with the selection shown compactly below.
+                  (out ui "~&~Asel> ~A~%" listing (nav-render nav))
+                  (out ui "~&NAV> ~A~%" (nav-render nav))))
             (out ui "NAV[~A]> " (if (nav-code-p nav) "code" "non-code"))
             (let ((line (read-line (dumb-ui-input ui) nil :eof)))
               (when (eq line :eof) (return))

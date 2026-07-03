@@ -904,6 +904,13 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
             (when trace-p
               (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
             (let ((status
+                    ;; Under a debug session, record source positions during
+                    ;; the load so the navigator can show a form's ORIGINAL
+                    ;; source text (its own line breaks and indentation) rather
+                    ;; than a re-pretty-printed sexp. A no-op otherwise: the
+                    ;; non-debug load path stays allocation-free.
+                    (let ((clautolisp.source:*track-source-positions*
+                            (if debug-ui t clautolisp.source:*track-source-positions*)))
                     (run-with-input dialect effective-actions options
                                     :quiet-p quiet-p
                                     :verbose-p verbose-p
@@ -918,7 +925,7 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                     :no-init-p no-init-p
                                     :no-color-p no-color-p
                                     :debug-ui debug-ui
-                                    :on-error-policy on-error)))
+                                    :on-error-policy on-error))))
               (finish-output)
               ;; RUN-WITH-INPUT returns the effective process exit status
               ;; (autolisp-set-status / (quit N) / error → 1 / file → 2).
