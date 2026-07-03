@@ -733,15 +733,33 @@ of the structural sexp tree. Keys: =d=/=>= next, =u=/=<= prev, =<<= first,
 ;;; or a file's forms); `>'/`<'/`<<'/`>>'/±N move among siblings; `q' leaves.
 
 (defstruct nav-loc
-  kind                    ; :sexp | :dir
-  ;; :sexp
-  navigator               ; a navigator over a form tree
+  kind                    ; :sexp | :file | :dir
+  ;; :sexp — a navigator over ONE form (a function, or one of a file's top forms)
+  navigator
   file                    ; source file namestring the form belongs to, or NIL
-  (scope :root)           ; :root (span whole form) | :selection (span selection)
-  ;; :dir
-  dir                     ; directory namestring
+  parent-loc              ; :file loc to return to on `u' at the root; NIL -> directory
+  ;; :file — a file's top-level forms, one shown at a time
+  file-forms              ; simple-vector of top-level forms (may be empty)
+  (file-index 0)
+  ;; :dir — a directory listing
+  dir
   entries                 ; simple-vector of entry plists (:name :path :dir-p :lsp-p)
   (index 0))
+
+;;; Modal keys, with the i/k/jj/j/l/ll aliases for u/d/<</</>/>> (a spatial
+;;; layout: i above k, j left of l, doubled for the extremes) — aldo-pre-debug.
+
+(defun nav-key= (cmd key)
+  "True when the command string CMD is KEY (or one of its aliases)."
+  (member cmd (ecase key
+                (:up    '("u" "i"))
+                (:down  '("d" "k" "enter"))
+                (:prev  '("<" "j"))
+                (:next  '(">" "l"))
+                (:first '("<<" "jj"))
+                (:last  '(">>" "ll"))
+                (:quit  '("q" "quit")))
+          :test #'string=))
 
 (defun nav-function-loc (session)
   "A :SEXP location over the current function — the `g'/nav target or the stopped
@@ -752,16 +770,18 @@ frame — or NIL when there is none. `u' at its root ascends to the file's direc
                     (let ((p (function-debug-metadata-source-position metadata)))
                       (and p (source-position-file p))))))
     (when form
-      (make-nav-loc :kind :sexp :navigator (make-navigator form) :file file :scope :root))))
+      (make-nav-loc :kind :sexp :navigator (make-navigator form) :file file))))
 
 ;;; --- reading a file's top-level forms (with source positions) -------------
 
 (defun nav-read-file-forms (file)
   "Read FILE's top-level forms with source positions recorded (so the navigator
-can show verbatim source), or NIL on a read/IO error."
-  (ignore-errors
-   (with-source-tracking ()
-     (read-runtime-from-string (uiop:read-file-string file) :source-name file))))
+can show verbatim source). Returns the (possibly empty) list of forms, or :ERROR
+on a read/IO/parse failure — distinct from an empty file, which yields NIL."
+  (handler-case
+      (with-source-tracking ()
+        (read-runtime-from-string (uiop:read-file-string file) :source-name file))
+    (error () :error)))
 
 (defun nav-form-index-for-line (forms line)
   "Index of the top-level form on or containing LINE (or the first at/after it,
@@ -779,14 +799,19 @@ else the last), or 0 when LINE is NIL (aldo-pre-debug.issue)."
         (or after (max 0 (1- (length forms)))))))
 
 (defun nav-make-file-loc (path &optional line)
-  "A :SEXP location over PATH's top-level forms, selecting the form on/containing
-LINE. NIL when PATH cannot be read or has no forms."
+  "A :FILE location over PATH's top-level forms — shown one at a time — selecting
+the form on/containing LINE (the first when LINE is NIL; a file with no forms
+selects NIL). NIL only when PATH cannot be read (aldo-pre-debug.issue)."
   (let* ((file (ignore-errors (namestring (truename path))))
          (forms (and file (nav-read-file-forms file))))
-    (when (and file forms)
-      (let ((nav (make-navigator forms)))
-        (setf (navigator-path nav) (list (nav-form-index-for-line forms line)))
-        (make-nav-loc :kind :sexp :navigator nav :file file :scope :selection)))))
+    (cond
+      ((null file) nil)
+      ((eq forms :error) nil)
+      (t (let ((vec (coerce forms 'simple-vector)))
+           (make-nav-loc :kind :file :file file :file-forms vec
+                         :file-index (if (plusp (length vec))
+                                         (nav-form-index-for-line forms line)
+                                         0)))))))
 
 ;;; --- directory listing ----------------------------------------------------
 
@@ -880,17 +905,36 @@ WINDOW context entries on each side of INDEX (aldo-pre-debug.issue note 2)."
 
 ;;; --- the modal loop -------------------------------------------------------
 
+(defun nav-render-file (ui loc)
+  "Show the file one top-level form at a time: only the selected form is
+pretty-printed (verbatim source), with `...' above/below when other forms are
+omitted — never above the first form or below the last. An empty file shows NIL
+(aldo-pre-debug.issue)."
+  (let* ((forms (nav-loc-file-forms loc))
+         (n (length forms))
+         (i (nav-loc-file-index loc)))
+    (out ui "~&NAV: file ~A~%" (nav-loc-file loc))
+    (if (zerop n)
+        (out ui "   NIL   (no top-level forms)~%")
+        (progn
+          (when (> i 0) (out ui "   ...~%"))
+          (let* ((nav (make-navigator (aref forms i)))
+                 (listing (nav-source-listing nav)))
+            (if listing (out ui "~A" listing) (out ui "   ~A~%" (nav-render nav))))
+          (when (< i (1- n)) (out ui "   ...~%"))))))
+
 (defun nav-render-loc (ui loc)
   (ecase (nav-loc-kind loc)
     (:sexp
      (let* ((nav (nav-loc-navigator loc))
-            (listing (if (eq (nav-loc-scope loc) :selection)
-                         (nav-selection-listing nav)
-                         (nav-source-listing nav))))
+            (listing (nav-source-listing nav)))
        (if listing
            (out ui "~&~Asel> ~A~%" listing (nav-render nav))
            (out ui "~&NAV> ~A~%" (nav-render nav)))
        (out ui "NAV[~A]> " (if (nav-code-p nav) "code" "non-code"))))
+    (:file
+     (nav-render-file ui loc)
+     (out ui "NAV[file]> "))
     (:dir
      (nav-render-dir ui loc)
      (out ui "NAV[dir]> "))))
@@ -904,24 +948,53 @@ message and NIL when there is no source file."
                           (file-namestring file))
         (progn (out ui "NAV> (no source file to ascend to)~%") nil))))
 
+(defun nav-file-ascend (loc)
+  "Ascend from a :FILE location to its directory, the file selected."
+  (nav-make-dir-loc (namestring (uiop:pathname-directory-pathname (nav-loc-file loc)))
+                    (file-namestring (nav-loc-file loc))))
+
 (defun nav-dispatch-sexp (ui loc cmd signed)
   "Handle one key in a :SEXP location; return (values NEXT-LOC LEAVE-P)."
   (let ((nav (nav-loc-navigator loc)))
     (cond
       ((string= cmd "") nil)
-      ((string= cmd "d") (nav-down nav) nil)
-      ((string= cmd "u")
+      ((nav-key= cmd :down) (nav-down nav) nil)
+      ((nav-key= cmd :up)
        (if (navigator-path nav)
            (progn (nav-up nav) nil)
-           (nav-ascend-to-dir ui loc)))     ; at the root: ascend to the directory
-      ((string= cmd ">") (nav-forward nav) nil)
-      ((string= cmd "<") (nav-backward nav) nil)
-      ((string= cmd "<<") (nav-first nav) nil)
-      ((string= cmd ">>") (nav-last nav) nil)
+           ;; at the root: back to the file (if descended from one), else the dir
+           (or (nav-loc-parent-loc loc) (nav-ascend-to-dir ui loc))))
+      ((nav-key= cmd :next) (nav-forward nav) nil)
+      ((nav-key= cmd :prev) (nav-backward nav) nil)
+      ((nav-key= cmd :first) (nav-first nav) nil)
+      ((nav-key= cmd :last) (nav-last nav) nil)
       (signed (nav-skip nav signed) nil)
-      ((member cmd '("q" "quit") :test #'string=) (values nil t))
-      (t (out ui "NAV> ? keys: d down  u up  > < siblings  << >> ends  ±N skip  q~%")
+      ((nav-key= cmd :quit) (values nil t))
+      (t (out ui "NAV> ? keys: d down  u up  > < siblings  << >> ends  ±N skip  q  (i k jj j l ll)~%")
          nil))))
+
+(defun nav-dispatch-file (ui loc cmd signed)
+  "Handle one key in a :FILE location; return (values NEXT-LOC LEAVE-P). Moving
+among top-level forms shows only the selected one; `d' descends into it."
+  (let* ((forms (nav-loc-file-forms loc))
+         (n (length forms))
+         (i (nav-loc-file-index loc)))
+    (flet ((setix (j) (setf (nav-loc-file-index loc) (max 0 (min (max 0 (1- n)) j))) nil))
+      (cond
+        ((string= cmd "") nil)
+        ((nav-key= cmd :quit) (values nil t))
+        ((nav-key= cmd :up) (nav-file-ascend loc))
+        ((zerop n) (out ui "NAV[file]> (no top-level forms) — u up, q leave~%") nil)
+        ((nav-key= cmd :next) (setix (1+ i)))
+        ((nav-key= cmd :prev) (setix (1- i)))
+        ((nav-key= cmd :first) (setix 0))
+        ((nav-key= cmd :last) (setix (1- n)))
+        (signed (setix (+ i signed)))
+        ((nav-key= cmd :down)
+         (make-nav-loc :kind :sexp :navigator (make-navigator (aref forms i))
+                       :file (nav-loc-file loc) :parent-loc loc))
+        (t (out ui "NAV[file]> ? keys: > < forms  << >> ends  ±N  d enter  u up  q  (i k jj j l ll)~%")
+           nil)))))
 
 (defun nav-enter-dir-entry (ui entry)
   "Descend into a directory ENTRY: a subdirectory/`..' -> its listing, a .lsp file
@@ -941,19 +1014,19 @@ message and NIL when there is no source file."
     (flet ((setix (j) (setf (nav-loc-index loc) (max 0 (min (max 0 (1- n)) j))) nil))
       (cond
         ((string= cmd "") nil)
-        ((string= cmd ">") (setix (1+ i)))
-        ((string= cmd "<") (setix (1- i)))
-        ((string= cmd "<<") (setix 0))
-        ((string= cmd ">>") (setix (1- n)))
+        ((nav-key= cmd :next) (setix (1+ i)))
+        ((nav-key= cmd :prev) (setix (1- i)))
+        ((nav-key= cmd :first) (setix 0))
+        ((nav-key= cmd :last) (setix (1- n)))
         (signed (setix (+ i signed)))
-        ((string= cmd "u")
+        ((nav-key= cmd :up)
          (nav-make-dir-loc
           (namestring (uiop:pathname-parent-directory-pathname
                        (uiop:ensure-directory-pathname (nav-loc-dir loc))))))
-        ((member cmd '("d" "enter") :test #'string=)
+        ((nav-key= cmd :down)
          (if (plusp n) (nav-enter-dir-entry ui (aref entries i)) nil))
-        ((member cmd '("q" "quit") :test #'string=) (values nil t))
-        (t (out ui "NAV[dir]> ? keys: > < siblings  << >> ends  ±N skip  d enter  u up  q~%")
+        ((nav-key= cmd :quit) (values nil t))
+        (t (out ui "NAV[dir]> ? keys: > < siblings  << >> ends  ±N skip  d enter  u up  q  (i k jj j l ll)~%")
            nil)))))
 
 (defun nav-browse (ui session loc)
@@ -971,6 +1044,7 @@ message and NIL when there is no source file."
         (multiple-value-bind (next leave)
             (ecase (nav-loc-kind loc)
               (:sexp (nav-dispatch-sexp ui loc cmd signed))
+              (:file (nav-dispatch-file ui loc cmd signed))
               (:dir  (nav-dispatch-dir ui loc cmd signed)))
           (when leave (return))
           (when next (setf loc next)))))))

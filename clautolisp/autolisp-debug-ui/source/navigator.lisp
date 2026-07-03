@@ -301,11 +301,3 @@ available (not read under source tracking, or the file is unreadable)."
   "Verbatim source listing spanning NAV's whole root form (the whole function),
 selection flagged >>. NIL when no source text is available."
   (%nav-listing-for-node nav (navigator-root nav)))
-
-(defun nav-selection-listing (nav)
-  "Verbatim source listing spanning the SELECTED sub-tree only (bounded — used
-by file navigation so a single top-level form is shown, not the whole file),
-selection flagged >>. Falls back to the whole root when the selection carries no
-source text (e.g. at the root of a synthetic top-level-form list)."
-  (or (%nav-listing-for-node nav (nav-selected nav))
-      (%nav-listing-for-node nav (navigator-root nav))))

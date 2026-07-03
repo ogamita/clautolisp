@@ -247,3 +247,17 @@ STILL NOT DONE (deferred):
   * Setting a breakpoint from inside the `nav' sub-loop (a `b' key on the
     selected node). Today breakpoints are set from the DBG prompt by line/ppN.
   * DIRECTORY-LISTING :column is treated as :short (no multi-column grid yet).
+
+-- STATUS (clautolisp 1.4.7) — file-view ergonomics + key aliases --------------
+
+  * File navigation now shows ONE top-level form at a time (a :FILE location),
+    not the whole file as a parenthesized list. Entering a file with `d' selects
+    the first top-level form; `<<'/`<'/`>'/`>>'/±N move among the forms with only
+    the selected one pretty-printed, `...' marking omitted forms above/below
+    (never above the first or below the last). `d' descends into the selected
+    form (structural sexp nav); `u' returns to the file, then to its directory.
+    A file with no top-level forms shows NIL.
+  * Navigation-mode key aliases (a spatial layout): i k jj j l ll  ==
+    u d << < > >> — added everywhere in the nav sub-loop (sexp, file, directory)
+    alongside the originals; no conflicts (the sub-loop only used d u > < << >>
+    ±N q). nav-key= maps them.

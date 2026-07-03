@@ -849,3 +849,39 @@
              (is (= 0 (clautolisp.ui.dumb::nav-form-index-for-line forms 1)))    ; line 1 -> first
              (is (= 1 (clautolisp.ui.dumb::nav-form-index-for-line forms 4)))))  ; line 4 -> second
       (ignore-errors (delete-file path)))))
+
+(test nav-key-aliases-map-i-k-jj-j-l-ll
+  (flet ((k (c) (loop for key in '(:up :down :prev :next :first :last :quit)
+                      when (clautolisp.ui.dumb::nav-key= c key) return key)))
+    (is (eq :up    (k "u")))  (is (eq :up    (k "i")))
+    (is (eq :down  (k "d")))  (is (eq :down  (k "k")))
+    (is (eq :prev  (k "<")))  (is (eq :prev  (k "j")))
+    (is (eq :next  (k ">")))  (is (eq :next  (k "l")))
+    (is (eq :first (k "<<"))) (is (eq :first (k "jj")))
+    (is (eq :last  (k ">>"))) (is (eq :last  (k "ll")))
+    (is (eq :quit  (k "q")))
+    (is (null (k "z")))))
+
+(test nav-make-file-loc-is-a-file-location-selecting-line
+  (let ((path (merge-pathnames "clal-navfileloc-test.lsp" (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (s path :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (write-string (format nil "(defun a (x)~%  x)~%~%(defun b (y)~%  y)~%") s))
+           (let ((loc (clautolisp.ui.dumb::nav-make-file-loc (namestring (truename path)) 4)))
+             (is (eq :file (clautolisp.ui.dumb::nav-loc-kind loc)))
+             (is (= 2 (length (clautolisp.ui.dumb::nav-loc-file-forms loc))))
+             (is (= 1 (clautolisp.ui.dumb::nav-loc-file-index loc)))))   ; line 4 -> 2nd form
+      (ignore-errors (delete-file path)))))
+
+(test nav-make-file-loc-empty-file-selects-nil
+  (let ((path (merge-pathnames "clal-navempty-test.lsp" (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (s path :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create))
+           (let ((loc (clautolisp.ui.dumb::nav-make-file-loc (namestring (truename path)))))
+             (is (eq :file (clautolisp.ui.dumb::nav-loc-kind loc)))
+             (is (= 0 (length (clautolisp.ui.dumb::nav-loc-file-forms loc))))))
+      (ignore-errors (delete-file path)))))
