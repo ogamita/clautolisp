@@ -1,0 +1,176 @@
+Before we find a bug, how do we put breakpoints?
+
+Two answers:
+
+sexp navigation
+---------------
+  
+  We need functions to start navigating:
+
+  (clal-nav-function fname)
+
+     If fname is bound to a function of which we know the source
+     lambda-expression (either because it was given at the REPL, and
+     we recorded it (perhaps using defun-q under the hood, or
+     because it was loaded from a file), then the navigator is
+     run on the source form of the function fname, letting us to
+     observe and put breakpoints, etc.
+
+     This function does essentially:
+     
+           #+begin_src 
+           (clal-invoke-debugger "")
+           g fname
+           nav
+           #+end_src
+           
+     
+  (clal-nav-file path [line])
+
+     PATH is a string containing the path to the file.
+
+     If the file has already been loaded, then we can navigate it and
+     see and set breakpoints, etc, as usual.
+
+     If the file has not already been loaded, then we can navigate it,
+     and see and set virtual breakpoints, that will be activated when
+     the file is loaded. The virtual breakpoints must be recorded with
+     toplevel form-relative positions so that it may work when the
+     toplevel forms have moved in the file. 
+
+     LINE is an optional line number. If not given, navigation starts
+     at the first toplevel form of the file. If given, navigation
+     starts at the first toplevel form on or containing the line.
+
+
+     line N:  (a) (b) (c) ; toplevel forms on the same line
+     --> navigation starts at [(a)]
+
+              (defun foo ()          
+     line N:    (a)
+                (b)
+                (c))
+     --> navigation starts at [(defun foo ()
+                                 (a)
+                                 (b)
+                                 (c))]
+     
+     
+  (clal-nav-directory [path])
+
+     PATH is a string containing the path to a directory.
+     If not given, then the current working directory is used.
+     navigation starts with the first .lsp file in the directory (by
+     lexicographic order of file names) selected. If no such file,
+     then the first subdirectory, (and if no subdirectory, then "..").
+
+     navigation let us navigate thru file systems and enter or exit
+     files.
+
+
+file navigation
+---------------
+
+  (clal-select-file path line)
+
+  PATH and LINE as in CLAL-NAV-FILE.
+  This selects the current file:line for the ls list source command.
+
+
+
+
+
+  
+Bugs (features not implemented yet):
+========================================
+
+
+file navigation
+---------------
+
+    (load "~/src/public/autolisp/fact.lsp")
+    (clal-invoke-debugger "")
+    g fact
+    nav
+
+on obtient:
+
+    NAV> 【(DEFUN <toplevel> NIL (CLAL-INVOKE-DEBUGGER "let us see"))】
+    NAV[code]> 
+
+
+attendu:
+
+   NAV>
+      【(defun fact (x)
+         ^(if (= 1 x)
+             (/ 0)
+             (* x (fact (- x 1)))))】
+  NAV[code]> 
+
+on tape:
+
+   u
+
+on obtient encore:
+
+NAV> 【(DEFUN <toplevel> NIL (CLAL-INVOKE-DEBUGGER "let us see"))】
+NAV[code]>    
+
+attendu:
+
+NAV: directory /Users/pjb/src/public/autolisp
+drwxr-xr-x 55 pjb staff  1760 Jul  1 22:43   ../
+-rw-r--r--  1 pjb staff  1702 Jul  3 10:04   bloc-dynamic.lsp
+-rw-r--r--  1 pjb staff   407 Jul  3 10:04   defun.lsp
+-rw-r--r--  1 pjb staff   214 Jul  2 17:06 【fact.lsp】
+-rw-r--r--  1 pjb staff  1139 Jul  3 10:04   list-vlisp.lsp
+-rw-r--r--  1 pjb staff 10028 Jul  3 10:04   make-loader.lsp
+NAV[file]>
+
+note 1: displaying the long info is optional, we could have only
+        the directory and file names, with a setting DIRECTORY-LISTING:
+            LONG    (ls -l)
+            COLUMN  (ls -c)
+            SHORT   (ls -1)
+
+note 2: displaying the whole contents of a directory could activate
+        the pager (depending the pager height setting). This would be
+        unfortunate, therefore we can implement a "window", where we don't
+        display the first lines and the last lines around the current
+        selection. With a setting:
+        DIRECTORY-WINDOW n
+        with n being the number of "context" lines to display before
+        and after then selection.
+
+        Assuming we have:
+           ../
+           bloc-dynamic.lsp
+           defun.lsp
+           fact.lsp
+           list-vlisp.lsp
+           make-loader.lsp
+           notes-commands.lsp
+           object.lsp
+         [ place-block.lsp ]
+           run-schms-benchmark.lsp
+           scan-drawings.lsp
+           subdivise.lsp
+           test-foreach.lsp
+           test-unitaire.lsp
+           vla-shared.lsp
+           vlisp-symbols.txt
+
+        we could display:
+
+           ...
+           make-loader.lsp
+           notes-commands.lsp
+           object.lsp
+         [ place-block.lsp ]
+           run-schms-benchmark.lsp
+           scan-drawings.lsp
+           subdivise.lsp
+           ...
+
+        and scroll as we navigate forward or backward.
