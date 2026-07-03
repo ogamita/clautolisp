@@ -367,3 +367,38 @@ source tracking, or the file is unreadable)."
 the selection flagged >> and any BREAKPOINT-LINES flagged with BP-GLYPH (the
 enabled-breakpoint decoration). NIL when no source text is available."
   (%nav-listing-for-node nav (navigator-root nav) breakpoint-lines bp-glyph))
+
+(defun %nav-node-span (node)
+  "The (values FILE START-LINE END-LINE) spanned by NODE's positioned
+descendants, or NIL when NODE carries no source positions."
+  (let ((positions (%nav-collect-positions node '())))
+    (when positions
+      (let* ((file (%nav-dominant-file positions))
+             (here (remove-if-not
+                    (lambda (p) (equal (clautolisp.source:source-position-file p) file))
+                    positions)))
+        (when (and file here)
+          (values file
+                  (reduce #'min here :key #'clautolisp.source:source-position-start-line)
+                  (reduce #'max here :key #'clautolisp.source:source-position-end-line)))))))
+
+(defun nav-form-span (nav)
+  "The (values FILE START-LINE END-LINE) of NAV's whole root form (its verbatim
+source extent), or NIL when no source text is available."
+  (%nav-node-span (navigator-root nav)))
+
+(defun nav-selected-bounds (nav)
+  "The source extent of the selected node for the 【…】 selection decoration:
+(values FILE START-LINE START-COL END-LINE END-COL). START-COL / END-COL are NIL
+for a node that carries no exact position of its own (a reconstructed root) — the
+caller then brackets whole lines. NIL when no source text is available."
+  (let* ((node (nav-selected nav))
+         (own (clautolisp.source:position-of node)))
+    (if own
+        (values (clautolisp.source:source-position-file own)
+                (clautolisp.source:source-position-start-line own)
+                (clautolisp.source:source-position-start-column own)
+                (clautolisp.source:source-position-end-line own)
+                (clautolisp.source:source-position-end-column own))
+        (multiple-value-bind (file start end) (%nav-node-span node)
+          (when file (values file start nil end nil))))))

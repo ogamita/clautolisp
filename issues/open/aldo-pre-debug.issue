@@ -297,3 +297,30 @@ STILL NOT DONE (deferred):
   【⏸(if …)】 — in the sexp breadcrumb, and it marks the form's line in the
   verbatim source gutter. (aldo-decoration-glyph is the first consumer of the
   hitherto-unused :decorations config.)
+
+-- STATUS (clautolisp 1.4.11) — decorations woven into the source, printed once -
+
+  The nav :code display printed the function source AND a separate single-line
+  `sel>' re-print of the whole form (losing the file's formatting), with the
+  breakpoint marker only in a gutter. Redesigned per request:
+
+  * The top-level form is printed ONCE, from the file's own lines (line numbers,
+    `>>' on the selection's start line). The `sel>' breadcrumb is gone.
+  * The decorations are woven INTO the source lines using the aldo :decorations
+    config (theme-aware, inspectable/settable via set / ,settings): the selected
+    sub-form in the selection brackets 【…】, and each poll point carrying its
+    status as a prefix on its opening paren — ⏸/^ enabled breakpoint, ⏯/_
+    disabled, ⏵/> current poll point. Glyphs are placed by consuming the leading
+    indentation so the code stays aligned (e.g. ` >>143:   【⏸(setq value nil)】`).
+  * The selection's closing bracket is placed by SCANNING the source for the
+    matching close paren (%nav-form-end — balances ()/strings/;comments), so it
+    is correct regardless of the reader's end-column convention (which is
+    exclusive mid-line but lands on the last char at end-of-line).
+  * Breakpoints now work while navigating a browsed FILE too: a (defun NAME …)
+    form resolves NAME to the loaded function's metadata on demand
+    (nav-ensure-loc-metadata), so `b' and the decorations work in file nav when
+    the function is loaded. (This removes the "breakpoints need a loaded
+    function" message for a loaded function reached via clal-nav-file.)
+
+  New: aldo-decoration-glyph gained a :open/:close part arg (for 【 / 】);
+  nav-form-span / nav-selected-bounds (navigator). Tests: dumb-ui 376/376.

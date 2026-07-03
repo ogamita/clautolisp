@@ -885,3 +885,39 @@
              (is (eq :file (clautolisp.ui.dumb::nav-loc-kind loc)))
              (is (= 0 (length (clautolisp.ui.dumb::nav-loc-file-forms loc))))))
       (ignore-errors (delete-file path)))))
+
+;;; --- inline decoration weaving (aldo-pre-debug.issue) ---
+
+(test nav-form-end-scans-matching-close
+  (let ((lines (coerce (list "(defun demo (a)"
+                             "  (if a"
+                             "      1"
+                             "      2))")
+                       'simple-vector)))
+    ;; whole defun: starts 1:1, closes at 4:9 (the second ')')
+    (multiple-value-bind (l c) (clautolisp.ui.dumb::%nav-form-end lines 1 1)
+      (is (= 4 l)) (is (= 9 c)))
+    ;; the if: starts 2:3, closes at 4:8 (the first ')')
+    (multiple-value-bind (l c) (clautolisp.ui.dumb::%nav-form-end lines 2 3)
+      (is (= 4 l)) (is (= 8 c)))))
+
+(test nav-form-end-ignores-parens-in-strings
+  (let ((lines (coerce (list "(foo \")))\" bar)") 'simple-vector)))
+    ;; the )))" inside the string must not close the form; it closes at 1:15
+    (multiple-value-bind (l c) (clautolisp.ui.dumb::%nav-form-end lines 1 1)
+      (is (= 1 l)) (is (= 15 c)))))
+
+(test nav-weave-line-consumes-leading-space
+  ;; selection 【 before col 3 (a leading space is consumed), 】 after col 10
+  (is (string= " 【(setq x)】"
+               (clautolisp.ui.dumb::%nav-weave-line "  (setq x)" 0
+                                                    '((3 . "【")) '((11 . "】"))))))
+
+(test nav-defun-name-extracts-the-name
+  (flet ((sym (s) (clautolisp.autolisp-runtime:intern-autolisp-symbol s)))
+    (is (string= "FOO" (clautolisp.ui.dumb::nav-defun-name
+                        (list (sym "DEFUN") (sym "FOO") '()))))
+    (is (string= "BAR" (clautolisp.ui.dumb::nav-defun-name
+                        (list (sym "DEFUN-Q") (sym "BAR") '()))))
+    (is (null (clautolisp.ui.dumb::nav-defun-name (list (sym "SETQ") (sym "X") 1))))
+    (is (null (clautolisp.ui.dumb::nav-defun-name '(1 2 3))))))

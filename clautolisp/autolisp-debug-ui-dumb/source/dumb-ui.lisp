@@ -925,47 +925,159 @@ omitted — never above the first form or below the last. An empty file shows NI
             (if listing (out ui "~A" listing) (out ui "   ~A~%" (nav-render nav))))
           (when (< i (1- n)) (out ui "   ...~%"))))))
 
-(defun nav-breakpoint-lines (session metadata)
-  "The source line numbers carrying a breakpoint in METADATA's function, for the
-navigator's * decoration (aldo-pre-debug.issue). NIL when either is missing."
-  (when (and session metadata)
-    (let ((fid (function-debug-metadata-function-id metadata)))
-      (loop for bp in (list-breakpoints (session-thread-info session))
-            for pos = (and (eql (breakpoint-fid bp) fid)
-                           (form-id-position metadata (breakpoint-form-id bp)))
-            when (source-position-p pos)
-              collect (source-position-start-line pos)))))
+;;; --- decorations woven into the verbatim source (TUI spec) ----------------
+;;;
+;;; The debugger navigator prints the function's source ONCE — the file's own
+;;; lines — and weaves the decoration glyphs INTO those lines: the selected
+;;; sub-form in the selection brackets 【…】, each poll point carrying its status
+;;; (⏸ enabled / ⏯ disabled breakpoint, ⏵ current poll point) as a prefix on its
+;;; opening paren. The glyphs come from the aldo :decorations config
+;;; (theme-aware; set / ,settings can change them). They are placed by consuming
+;;; the leading indentation so the code stays aligned (aldo-pre-debug.issue; TUI
+;;; spec §Debugger Specific Decorations).
 
-(defun nav-selection-breakpointed-p (session loc)
-  "True when the currently-selected form carries a breakpoint (for the 【⏸…】
-selection decoration; TUI spec decoration table)."
-  (let ((md (nav-loc-metadata loc)))
-    (when (and session md)
-      (let* ((pos (position-of (nav-selected (nav-loc-navigator loc))))
-             (form-id (and (source-position-p pos)
-                           (form-id-at-line-col
-                            md (source-position-start-line pos)
-                            (source-position-start-column pos))))
-             (fid (function-debug-metadata-function-id md)))
-        (and form-id
-             (some (lambda (bp) (and (eql (breakpoint-fid bp) fid)
-                                     (eql (breakpoint-form-id bp) form-id)))
-                   (list-breakpoints (session-thread-info session))))))))
+(defun nav-defun-name (form)
+  "The function name string of a (DEFUN NAME …) / (DEFUN-Q NAME …) FORM, or NIL."
+  (when (and (consp form) (consp (cdr form))
+             (typep (first form) 'clautolisp.autolisp-runtime:autolisp-symbol)
+             (member (string-upcase (autolisp-symbol-name (first form)))
+                     '("DEFUN" "DEFUN-Q") :test #'string=)
+             (typep (second form) 'clautolisp.autolisp-runtime:autolisp-symbol))
+    (autolisp-symbol-name (second form))))
+
+(defun nav-ensure-loc-metadata (loc)
+  "The function-debug-metadata for a :SEXP LOC: the one it carries (function
+nav), or — for a browsed file's (defun NAME …) form — the loaded function's
+metadata (resolved / instrumented on demand, cached on the loc), or NIL when no
+such function is loaded (aldo-pre-debug.issue)."
+  (or (nav-loc-metadata loc)
+      (let ((name (nav-defun-name (navigator-root (nav-loc-navigator loc)))))
+        (when name
+          (setf (nav-loc-metadata loc) (ensure-metadata-for-name name))))))
+
+(defun nav-decoration-points (session md file)
+  "A list of (LINE COL . GLYPH) poll-point decorations for MD's function that lie
+in FILE: enabled / disabled breakpoints and the current poll point (TUI spec
+decoration table)."
+  (when (and session md)
+    (let ((fid (function-debug-metadata-function-id md))
+          (points '()))
+      (flet ((add (pos glyph)
+               (when (and (source-position-p pos) glyph (plusp (length glyph))
+                          (equal (source-position-file pos) file))
+                 (push (list* (source-position-start-line pos)
+                              (source-position-start-column pos) glyph)
+                       points))))
+        (dolist (bp (list-breakpoints (session-thread-info session)))
+          (when (eql (breakpoint-fid bp) fid)
+            (add (form-id-position md (breakpoint-form-id bp))
+                 (aldo-decoration-glyph (if (breakpoint-enabled-p bp)
+                                            :enabled-bp :disabled-bp)))))
+        (let* ((snap (session-snapshot session))
+               (pos (and snap (snapshot-source-position snap))))
+          (add pos (aldo-decoration-glyph :current-pp))))
+      points)))
+
+(defun %nav-first-nonspace-col (text)
+  (1+ (or (position #\Space text :test-not #'char=) 0)))
+
+(defun %nav-last-nonspace-col (text)
+  (let ((p (position #\Space text :test-not #'char= :from-end t)))
+    (if p (1+ p) (max 1 (length text)))))
+
+(defun %nav-weave-line (text sep before after)
+  "Weave decorations into one source line: TEXT prefixed by a SEP-space
+separator. BEFORE is an alist (COL . STRING) inserted immediately before source
+COL, consuming up to (length STRING) leading spaces so the code stays put; AFTER
+is an alist (COL . STRING) inserted just BEFORE source COL (COL = one past the
+form's last character, so the string lands right after it)."
+  (let ((s (concatenate 'string (make-string sep :initial-element #\Space) text)))
+    (dolist (a (sort (copy-list after) #'> :key #'car))
+      (let ((p (min (length s) (+ sep (1- (car a))))))
+        (setf s (concatenate 'string (subseq s 0 p) (cdr a) (subseq s p)))))
+    (dolist (b (sort (copy-list before) #'> :key #'car))
+      (let* ((p (min (length s) (+ sep (1- (car b)))))
+             (left (subseq s 0 p)) (right (subseq s p))
+             (avail (- (length left) (length (string-right-trim " " left))))
+             (k (min (length (cdr b)) avail)))
+        (setf s (concatenate 'string (subseq left 0 (- (length left) k)) (cdr b) right))))
+    s))
+
+(defun %nav-form-end (lines start-line start-col)
+  "Scan LINES (a vector of strings) from the sexp beginning at (START-LINE,
+START-COL) to its end, returning (values END-LINE END-COL) — END-COL the 1-based
+column of the form's last character. Balances ( ), skips \"strings\" (with
+backslash escapes) and ; comments. Used to place the selection's closing bracket
+independently of the reader's end-column convention (aldo-pre-debug.issue)."
+  (let ((line start-line) (col start-col) (depth 0) (seen-open nil) (in-string nil))
+    (loop
+      (when (> line (length lines)) (return (values start-line start-col)))
+      (let* ((text (aref lines (1- line))) (len (length text)))
+        (loop while (<= col len) do
+          (let ((ch (char text (1- col))))
+            (cond
+              (in-string (cond ((char= ch #\\) (incf col))
+                               ((char= ch #\") (setf in-string nil))))
+              ((char= ch #\") (setf in-string t seen-open t))
+              ((char= ch #\;) (return))                          ; comment: skip rest of line
+              ((char= ch #\() (incf depth) (setf seen-open t))
+              ((char= ch #\))
+               (decf depth)
+               (when (<= depth 0) (return-from %nav-form-end (values line col))))
+              ((and (not seen-open) (not (member ch '(#\Space #\Tab))))
+               (let ((e col))                                    ; a bare atom: its token
+                 (loop while (and (<= e len)
+                                  (not (find (char text (1- e)) " 	()\";")))
+                       do (incf e))
+                 (return-from %nav-form-end (values line (1- e)))))))
+          (incf col))
+        (incf line) (setf col 1)))))
+
+(defun nav-render-sexp-source (ui session loc)
+  "Print LOC's function source ONCE with the decorations woven in — selection
+brackets 【…】 and poll-point status glyphs. Returns T, or NIL when no source
+text is available (so the caller can fall back)."
+  (let ((nav (nav-loc-navigator loc)))
+    (multiple-value-bind (file f-start f-end) (nav-form-span nav)
+      (let ((lines (and file (ignore-errors (lines-of file)))))
+        (when (and file lines (plusp (length lines)))
+          (let ((decos (nav-decoration-points session (nav-ensure-loc-metadata loc) file))
+                (open  (or (aldo-decoration-glyph :selection :open) "【"))
+                (close (or (aldo-decoration-glyph :selection :close) "】"))
+                (so-line nil) (so-col nil) (sc-line nil) (sc-col nil))
+            ;; selection bounds: start from the reader position, end by scanning
+            (multiple-value-bind (sf s-line s-col) (nav-selected-bounds nav)
+              (declare (ignore sf))
+              (when (and s-line (<= 1 s-line (length lines)))
+                (let ((scol (or s-col (%nav-first-nonspace-col (aref lines (1- s-line))))))
+                  (multiple-value-bind (e-line e-col) (%nav-form-end lines s-line scol)
+                    (setf so-line s-line so-col scol
+                          sc-line e-line sc-col (1+ e-col))))))  ; close after the last char
+            (loop for n from (max 1 f-start) to (min (length lines) f-end)
+                  for text = (aref lines (1- n))
+                  for before = '() for after = '()
+                  do
+                     (dolist (d decos)
+                       (when (eql (first d) n)
+                         (push (cons (second d) (cddr d)) before)))
+                     (when (eql n so-line)
+                       (let ((cell (assoc so-col before)))
+                         (if cell
+                             (setf (cdr cell) (concatenate 'string open (cdr cell)))
+                             (push (cons so-col open) before))))
+                     (when (eql n sc-line)
+                       (push (cons sc-col close) after))
+                     (out ui "~A~3D:~A~%"
+                          (if (eql n so-line) " >>" "   ")
+                          n (%nav-weave-line text 3 before after)))
+            t))))))
 
 (defun nav-render-loc (ui session loc)
   (ecase (nav-loc-kind loc)
     (:sexp
-     (let* ((nav (nav-loc-navigator loc))
-            (bp-lines (nav-breakpoint-lines session (nav-loc-metadata loc)))
-            (glyph (or (aldo-decoration-glyph :enabled-bp) "^"))
-            (listing (nav-source-listing nav bp-lines glyph))
-            ;; the enabled-breakpoint decoration prefixes the sub-form, inside
-            ;; the selection brackets: 【⏸(…)】 (TUI spec decoration table).
-            (open (if (nav-selection-breakpointed-p session loc)
-                      (concatenate 'string "【" glyph) "【")))
-       (if listing
-           (out ui "~&~Asel> ~A~%" listing (nav-render nav open "】"))
-           (out ui "~&NAV> ~A~%" (nav-render nav open "】")))
+     (let ((nav (nav-loc-navigator loc)))
+       (unless (nav-render-sexp-source ui session loc)
+         (out ui "~&NAV> ~A~%" (nav-render nav)))   ; no source text: fall back
        (out ui "NAV[~A]> " (if (nav-code-p nav) "code" "non-code"))))
     (:file
      (nav-render-file ui loc)
@@ -992,7 +1104,7 @@ message and NIL when there is no source file."
   "`b' in nav — set a breakpoint on the selected form. Needs a loaded/
 instrumented function (a function navigation); breakpoints on a merely-browsed
 file need the function loaded (aldo-pre-debug.issue)."
-  (let ((md (nav-loc-metadata loc))
+  (let ((md (nav-ensure-loc-metadata loc))
         (nav (nav-loc-navigator loc)))
     (cond
       ((not (and session md))
