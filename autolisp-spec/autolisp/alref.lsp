@@ -51,7 +51,7 @@
 ;; every change that touches alref.lsp's behaviour. (alref-version)
 ;; returns this string — useful when a user reports a bug, so we
 ;; know which revision of the library they're running against.
-(setq *alref-version* "1.3.0")
+(setq *alref-version* "1.3.1")
 
 (defun alref-version ( )
   "Return the alref.lsp library version as a string (e.g. \"1.0.0\").
@@ -563,7 +563,13 @@ page contains a match. Slow (reads all 1126 pages on each call)
       (setq matches (cons basename matches))))
   (reverse matches))
 
-(princ (strcat "alref.lsp " *alref-version*
-               " loaded. (alref-set-root \"…\") to point at the install root."))
-(terpri)
+;; The load banner is advisory only; keep a plain (load "alref.lsp") quiet
+;; unless the user asked for chatter with *AUTOLISP-VERBOSE*. An unbound
+;; *AUTOLISP-VERBOSE* reads as nil in AutoLISP (and clautolisp), so this stays
+;; silent on hosts that do not define it.
+(if *AUTOLISP-VERBOSE*
+  (progn
+    (princ (strcat "alref.lsp " *alref-version*
+                   " loaded. (alref-set-root \"…\") to point at the install root."))
+    (terpri)))
 (princ "")
