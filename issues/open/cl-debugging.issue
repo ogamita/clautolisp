@@ -1,0 +1,86 @@
+As a developper, I'd want a way to drop into the Common Lisp REPL while running clautolisp.
+
+Let's define a clautolisp specific system variable: CLAUTOLISPDROP
+
+It's a read/write system variable that indicates whether the
+CLAL-COMMON-LISP function is available.
+
+| 0 | Nothing changed.                           |
+| 1 | The function CLAL-COMMON-LISP is available.|
+
+By default, the autolisp symbol CLAL-COMMON-LISP is not bound (NIL).
+If the user binds it (to a value or a function), this binding is
+preserved. Setting CLAUTOLISPDROP to 1 "shadows" the binding of
+CLAL-COMMON-LISP with the function described here. When setting back
+CLAUTOLISPDROP to 0, CLAL-COMMON-LISP retrieve the binding set by the
+user, if any.
+
+Calling the CLAL-COMMON-LISP function without argument runs a Common
+Lisp REPL in the dynamic (Common-Lisp) environment where it's called.
+
+In this CL REPL, a function named (CLAL-BACK) returns from the CL REPL
+back to the autolisp environment, returning from the CLAL-COMMON-LISP
+function.
+
+An optional argument can be passed to CLAL-COMMON-LISP function:
+- a string containing a Common Lisp form that is read and evaluated.
+- an autolisp sexp, that is converted into a Common Lisp form:
+   - autolisp integers are converted to CL integers,
+   - autolisp floats are converted to CL floats,
+   - autolisp strings are converted to CL strings,
+   - autolisp cons are converted to CL cons, and recursiveley for the car and cdr.
+   - autolisp symbols are converted to CL symbols with CL:READ (using the current CL settings of package, and readtable, etc).
+     (this means that autolisp '(foo cl:car :keyword) can be converted eg. to the CL (CL-USER::FOO CL:CAR :KEYWORD)).
+   - another autolisp type object is passed as-in (it can be handled in CL with the clautolisp functions).
+ The converted CL form is evaluated.
+
+The main value of the result is converted back to an autolisp object:
+- a CL integer (in the range of autolisp integers) is converted to an autolisp integer,
+- a CL float is casted to cl:double-float and converted to an autolisp float,
+- a CL string is converted to an autolisp string (if invalid characters are present, a CL error is signaled),
+- a CL cons is converted to an autolisp cons, and recursively the car and the cdr. If there are cycles, a CL error is signaled.
+- a CL keyword is converted to an autolisp symbol with the same name prefixed by a colon.
+- a CL symbol is prin1-to-string'ed, upper-cased, and this string is interned as an autolisp symbol (in the current package and CL settings).
+  (this means that the symbol package qualification can be adjusted at will). If the result contains a character invalid in autolisp symbol names a CL error is signaled.
+- an autolisp object is returned as is,
+- any other type of object signals a CL error.
+
+Error handling
+--------------
+
+The CL variable *CLAL-ON-ERROR* determines what happens when an unhandled CL error occurs while in the CL REPL, including when converting the result.
+
+| :DEBUG               | the normal CL debugger is invoked (default).                                |
+|                      |                                                                             |
+| :ERROR               | the CLAL-COMMON-LISP function signals an autolisp error                     |
+|                      | (it can be handled in autolisp with VL-CATCH-ALL-APPLY, etc).               |
+|                      |                                                                             |
+| :IGNORE              | the CLAL-COMMON-LISP function returns autolisp NIL.                         |
+|                      |                                                                             |
+| a CL object that     | the CLAL-COMMON-LISP function returns the converted *CLAL-ON-ERROR* object. |
+| can be converted     |                                                                             |
+| as above to autolisp |                                                                             |
+|                      |                                                                             |
+| an autolisp object   | the CLAL-COMMON-LISP function returns the *CLAL-ON-ERROR* autolisp object.  |
+
+
+Note: the default CL package in which this CL REPL is run is
+COMMON-LISP-USER (subject to change later, we may define a package
+more practical for autolisp stuff). The CL functions and variables
+defined above must be present in the COMMON-LISP-USER package.
+
+#+begin_example
+(setvar "CLAUTOLISPDROP" 0) ; the default
+(defun clal-common-lisp (&rest arg)
+  (error "COMMON-LISP is not available"))
+
+(setvar "CLAUTOLISPDROP" 1)
+(clal-common-lisp '(setq *clal-on-error* nil))
+(clal-common-lisp '(setq myarr (make-array 3)))   ; -> nil (an error might have been signaled with an array)
+(clal-common-lisp '(setf (aref myarr 0) "hello")) ; -> "hello"
+(clal-common-lisp '(setf (aref myarr 1) "world")) ; -> "world"
+(clal-common-lisp '(coerce myarr (quote list)))   ; -> ("hello" "world" NIL)
+
+(setvar "CLAUTOLISPDROP" 0)
+(clal-common-lisp '(princ myarr)) ; autolisp error "COMMON-LISP is not available"
+#+end_example
