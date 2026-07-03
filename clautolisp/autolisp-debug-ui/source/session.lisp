@@ -16,7 +16,11 @@
   current-hit
   (selected-frame 0 :type fixnum)
   inspector
-  (last-step :over))
+  (last-step :over)
+  ;; The function-debug-metadata the navigator is currently retargeted to
+  ;; (via `g NAME' / CLAL-NAV-FUNCTION), or NIL to navigate the stopped frame.
+  ;; Reset at every stop. (aldo-pre-debug.issue)
+  nav-target)
 
 ;;; --- accessors the spec names session-* (kept distinct from the
 ;;;     defstruct's debugger-session-* to match §17 vocabulary) --------
@@ -29,6 +33,9 @@
 (defun session-selected-frame (session) (debugger-session-selected-frame session))
 (defun session-inspector (session) (debugger-session-inspector session))
 (defun session-last-step (session) (debugger-session-last-step session))
+(defun session-nav-target (session) (debugger-session-nav-target session))
+(defun (setf session-nav-target) (value session)
+  (setf (debugger-session-nav-target session) value))
 
 (defun current-snapshot (session)
   "The snapshot at the current stopping point, or NIL when running."
@@ -84,11 +91,19 @@ directive interpreted by APPLY-RESUME-DIRECTIVE."
     (ui-breakpoint-added (debugger-session-ui session) bp)
     bp))
 
+(defun nav-or-current-metadata (session)
+  "The function the user is currently focused on for browsing/breakpointing: the
+`g NAME' / CLAL-NAV-FUNCTION target if set, else the stopped frame's function.
+Lets `b LINE' set a breakpoint on a function navigated to before it is ever
+called (aldo-pre-debug.issue)."
+  (or (session-nav-target session) (current-metadata session)))
+
 (defun cmd-set-breakpoint-at-line (session line &key (when :before) (steady t))
-  "Set a breakpoint at the poll point on LINE in the currently-stopped
-function (spec §17.3 click/line → poll point). Returns the breakpoint or
-NIL if LINE has none."
-  (let ((metadata (current-metadata session)))
+  "Set a breakpoint at the poll point on LINE in the function currently focused
+for browsing — the `g'/nav target if any, else the stopped function (spec §17.3
+click/line → poll point; aldo-pre-debug.issue). Returns the breakpoint or NIL if
+LINE has none."
+  (let ((metadata (nav-or-current-metadata session)))
     (when metadata
       (let ((form-id (find-form-id-at-line metadata line)))
         (when form-id
@@ -278,7 +293,9 @@ resume directive."
   (setf (debugger-session-snapshot session) (hit-snapshot hit)
         (debugger-session-current-hit session) hit
         (debugger-session-selected-frame session) 0
-        (debugger-session-inspector session) nil)
+        (debugger-session-inspector session) nil
+        ;; a fresh stop navigates the stopped frame until `g'/nav retargets it
+        (debugger-session-nav-target session) nil)
   (let ((ui (debugger-session-ui session))
         (reason (hit-stop-reason hit)))
     (case reason

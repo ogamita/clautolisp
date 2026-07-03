@@ -174,3 +174,47 @@ note 2: displaying the whole contents of a directory could activate
            ...
 
         and scroll as we navigate forward or backward.
+
+-- STATUS (clautolisp 1.4.5) ----------------------------------------------
+
+DONE — sexp navigation of a named function, and pre-set breakpoints:
+
+  * (clal-nav-function fname) — new builtin. fname is a symbol or a string.
+    Enters the aldo debugger and opens the navigator on fname's source form,
+    even if fname has never been called: the function is INSTRUMENTED ON
+    DEMAND (ensure-metadata-for-name). Returns nil; a no-op with no session.
+
+  * `g NAME' (goto) now works on any defined/loaded function — no longer only
+    already-called ones — and RETARGETS the navigator: `g fact' then `nav' now
+    walks fact's source (the issue's "attendu"), instead of the <toplevel>
+    wrapper frame (the "obtenu"). Fixed the two root causes: goto required an
+    instrumented function, and nav read the stopped frame, ignoring goto.
+    The navigator honours the retarget via a new session slot NAV-TARGET
+    (reset at each stop); nav shows the verbatim source (1.4.4).
+
+  * `b LINE' / `b LINE.K' / `b LINE:COL' now set the breakpoint on the
+    NAVIGATED / goto'd function (NAV-OR-CURRENT-METADATA), so you can set a
+    breakpoint on a function before it is ever called and have it fire when
+    the function later runs — the issue's core "how do we put breakpoints?".
+    Verified: load fact.lsp; (clal-invoke-debugger ""); g fact; b 4; c;
+    (fact 3) -> stops at FACT line 4 (x=3, then x=2).
+
+Implementation: runtime hook *debug-nav-function-hook* (api.lisp) +
+CLAL-NAV-FUNCTION builtin; engine *pending-nav-function* / request-nav-function
+and ensure-metadata-for-name (poll.lisp / instrument.lisp); session NAV-TARGET
++ nav-or-current-metadata (session.lisp); dumb-ui current-source-form /
+browse-to-name / goto-cmd / set-breakpoint / ui-await-command wiring. Tests:
+autolisp-debug ensure-metadata (112/112), dumb-ui goto message (310/310).
+
+NOT DONE (deferred — larger, net-new subsystems), tracked here:
+
+  * (clal-nav-file path [line]) and virtual/deferred breakpoints (recorded with
+    toplevel-form-relative positions, armed when the file is loaded). No
+    deferred-breakpoint store or load-time arming hook exists yet.
+  * (clal-nav-directory [path]) — a filesystem-browsing navigation mode, the
+    `u'-at-function-root -> directory listing behaviour, the DIRECTORY-LISTING
+    (LONG/COLUMN/SHORT) and DIRECTORY-WINDOW settings, and the pager windowing.
+    No directory reader or file-nav mode exists yet.
+  * (clal-select-file path line) — select the current file:line for `ls'.
+  * Setting a breakpoint from inside the `nav' sub-loop (a `b' key on the
+    selected node). Today breakpoints are set from the DBG prompt by line/ppN.

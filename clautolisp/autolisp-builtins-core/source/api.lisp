@@ -4491,6 +4491,22 @@ Returns nil."
     (funcall clautolisp.autolisp-runtime:*debug-break-hook* message))
   nil)
 
+(defun builtin-clal-nav-function (name)
+  "Enter the aldo debugger navigating the source form of the global function
+NAME — a symbol or a string (pre-debug navigation, aldo-pre-debug.issue). Lets
+you observe a function and set breakpoints before it is ever called; the
+function is instrumented on demand. A no-op (returns nil) unless a debug session
+is active."
+  (let ((string (cond
+                  ((typep name 'autolisp-symbol) (autolisp-symbol-name name))
+                  ((typep name 'autolisp-string) (autolisp-string-value name))
+                  (t (signal-builtin-argument-error
+                      :bad-argument "CLAL-NAV-FUNCTION"
+                      "Expected a function-name symbol or string, got ~S." name)))))
+    (when clautolisp.autolisp-runtime:*debug-nav-function-hook*
+      (funcall clautolisp.autolisp-runtime:*debug-nav-function-hook* string)))
+  nil)
+
 (defun builtin-clal-define-debugger-command (names function &optional doc)
   "Register an AutoLISP debugger command (command reference §8). NAMES is a list
 (KEY WORD…) of strings (the key must be the word initials, §0); FUNCTION is the
@@ -8126,6 +8142,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-OPTIMIZE"         #'builtin-clal-optimize)
    (make-core-builtin-subr "CLAL-COMPILE"          #'builtin-clal-compile)
    (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
+   (make-core-builtin-subr "CLAL-NAV-FUNCTION"     #'builtin-clal-nav-function)
    (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
    (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)
    (make-core-builtin-subr "CLAL-ENABLE-ENC-DIAGNOSTIC"   #'builtin-clal-enable-enc-diagnostic)

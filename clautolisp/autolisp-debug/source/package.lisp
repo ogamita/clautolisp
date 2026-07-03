@@ -76,8 +76,12 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:poll-point-location
    ;; instrumentation (§3a / spec §5)
    #:instrument-usubr
+   #:ensure-metadata-for-name
    #:instrumentedp
    #:reset-function-id-registry
+   ;; pre-debug navigation (aldo-pre-debug.issue)
+   #:*pending-nav-function*
+   #:request-nav-function
    ;; thread-debug-info + breakpoints (spec §8 / §12)
    #:thread-debug-info
    #:make-thread-debug-info

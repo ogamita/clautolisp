@@ -26,7 +26,8 @@ UI refines.")
                 #:set-breakpoint-action
                 #:poll-point-id #:poll-point-location
                 #:*break-on-error* #:*break-on-caught-error*
-                #:metadata-for-name #:all-function-metadata #:functions-matching
+                #:metadata-for-name #:ensure-metadata-for-name #:*pending-nav-function*
+                #:all-function-metadata #:functions-matching
                 #:function-debug-metadata-function-id #:function-debug-metadata-usubr
                 #:function-debug-metadata-name #:function-debug-metadata-source-position
                 #:function-debug-metadata-poll-point-count #:form-id-position)

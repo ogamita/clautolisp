@@ -74,6 +74,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:debugger-session-p
    #:session-ui #:session-thread-info #:session-context #:session-workspace
    #:session-snapshot #:session-selected-frame #:session-inspector #:session-last-step
+   #:session-nav-target
    ;; UI → debugger (commands)
    #:cmd-continue #:cmd-step #:cmd-advance #:cmd-abort #:cmd-return #:cmd-jump
    #:cmd-set-breakpoint #:cmd-set-breakpoint-at-line #:cmd-advance-at-line

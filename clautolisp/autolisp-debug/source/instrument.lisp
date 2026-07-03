@@ -161,6 +161,20 @@ USUBR's body conses must have been recorded by a tracked load
           (register-metadata metadata)
           metadata))))
 
+(defun ensure-metadata-for-name
+    (name &optional (context (clautolisp.autolisp-runtime:current-evaluation-context)))
+  "The function-debug-metadata for the global function NAME (case-insensitive),
+instrumenting its usubr ON DEMAND when it was defined/loaded but never called
+(so pre-debug navigation and breakpoints work without first hitting the
+function — aldo-pre-debug.issue). Resolves NAME in CONTEXT. Returns the metadata,
+or NIL when NAME is not a user-defined (usubr) function. Source positions resolve
+only if NAME was loaded under source tracking (a debug-UI run binds it on)."
+  (or (metadata-for-name name)
+      (let* ((symbol (intern-autolisp-symbol (string-upcase name)))
+             (function (clautolisp.autolisp-runtime:lookup-function symbol context)))
+        (when (typep function 'autolisp-usubr)
+          (instrument-usubr function)))))
+
 ;;; Dependency inversion: let the runtime weave instrumented forks (lazily, on a
 ;;; function's first call under a debug session) without depending on this layer.
 ;;; The evaluator's two-bodies dispatch calls this hook (clautolisp-debugger

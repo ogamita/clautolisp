@@ -115,6 +115,21 @@ stop. Returns NIL."
 ;; depending on the debug system.
 (setf clautolisp.autolisp-runtime:*debug-break-hook* #'invoke-debugger-break)
 
+(defvar *pending-nav-function* nil
+  "Set by REQUEST-NAV-FUNCTION to the name of a function the UI should navigate
+on its next stop (pre-debug navigation, aldo-pre-debug.issue). The UI command
+loop reads and clears it. NIL when there is no pending navigation request.")
+
+(defun request-nav-function (name)
+  "CLAL-NAV-FUNCTION entry: record NAME as the pending navigation target and
+break into the debugger, so the UI opens the navigator on NAME's source. A no-op
+(and the pending target is cleared) when no debug session is active."
+  (setf *pending-nav-function* name)
+  (unwind-protect (invoke-debugger-break nil)
+    (setf *pending-nav-function* nil)))
+
+(setf clautolisp.autolisp-runtime:*debug-nav-function-hook* #'request-nav-function)
+
 (defun apply-resume-directive (ti directive)
   "Interpret the handler's return value, arming the next stop. :ABORT
 unwinds the whole evaluation to the session's CLAL-ABORT catch (the same

@@ -1364,6 +1364,12 @@ reference §1). The aldo debugger installs it when its system is loaded; it is a
 no-op (returns without stopping) unless a debug session is active on the
 thread. NIL when the debug system is absent, making CLAL-BREAK a no-op.")
 
+(defparameter *debug-nav-function-hook* nil
+  "When non-nil, a function (NAME) the CLAL-NAV-FUNCTION builtin calls to enter
+the aldo debugger navigating the source of the global function NAME (a string) —
+pre-debug navigation (aldo-pre-debug.issue). The aldo debugger UI installs it;
+NIL (a no-op) when the debug-ui layer is absent or no debug session is active.")
+
 (defparameter *instrument-usubr-hook* nil
   "When non-nil, a function (USUBR) that weaves USUBR's instrumented fork and
 debug-metadata in place (clautolisp.debug:instrument-usubr). The aldo debugger

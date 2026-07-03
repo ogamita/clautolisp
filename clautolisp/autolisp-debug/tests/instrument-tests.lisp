@@ -54,3 +54,26 @@
                     (eval-call context "Q"))))
       (is (equal '("A" "B" "C")
                  (mapcar #'clautolisp.autolisp-runtime:autolisp-symbol-name result))))))
+
+;;; --- ensure-metadata-for-name: instrument on demand (aldo-pre-debug.issue) ---
+
+(test ensure-metadata-instruments-a-loaded-but-uncalled-function
+  ;; A function defined/loaded but never called has no metadata yet;
+  ;; ensure-metadata-for-name must instrument it on demand so pre-debug
+  ;; navigation and breakpoints work.
+  (let ((context (fresh-context)))
+    (load-tracked context +frob-source+)
+    (let ((usubr (usubr-named context "FROB")))
+      (is (not (clautolisp.debug:instrumentedp usubr)))       ; not yet instrumented
+      (is (null (clautolisp.debug:metadata-for-name "FROB"))) ; not registered
+      (let ((metadata (clautolisp.debug:ensure-metadata-for-name "FROB" context)))
+        (is (not (null metadata)))
+        (is (clautolisp.debug:instrumentedp usubr))            ; now instrumented
+        (is (eq metadata (clautolisp.debug:metadata-for-name "FROB")))
+        ;; case-insensitive, and idempotent (returns the same metadata)
+        (is (eq metadata (clautolisp.debug:ensure-metadata-for-name "frob" context)))))))
+
+(test ensure-metadata-returns-nil-for-unknown-name
+  (let ((context (fresh-context)))
+    (load-tracked context +frob-source+)
+    (is (null (clautolisp.debug:ensure-metadata-for-name "NOSUCHFN" context)))))

@@ -634,7 +634,7 @@
       (is (contains output "TWO:"))                        ; definition displayed TWO
       (is (contains output "0: TWO"))                      ; history, innermost first
       (is (contains output "back to ID"))                  ; back popped to ID
-      (is (contains output "no instrumented function named NOPE")))))
+      (is (contains output "no function named NOPE")))))
 
 (test dumb-ui-break-line-dot-k-and-line-col
   ;; `b LINE.K' and `b LINE:COL' designate a specific poll point on a line

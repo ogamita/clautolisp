@@ -211,6 +211,14 @@ navigation-history-max setting (command reference §3)."
 
 (defmethod ui-await-command ((ui dumb-ui) session hit)
   (record-navigation-state ui)
+  ;; CLAL-NAV-FUNCTION requested a stop to navigate a specific function: open
+  ;; the navigator on it immediately, then fall into the normal command loop so
+  ;; the user can set breakpoints and continue (aldo-pre-debug.issue).
+  (when *pending-nav-function*
+    (let ((name *pending-nav-function*))
+      (setf *pending-nav-function* nil)
+      (when (browse-to-name ui session name)
+        (nav-loop ui session))))
   (loop
     (out ui "~&~A" (dumb-ui-prompt ui))
     (let ((line (read-line (dumb-ui-input ui) nil :eof)))
@@ -651,17 +659,22 @@ that numbering is settled — design-notes register.)"
                       (out ui "DBG> deleted breakpoint pp~D~%" pp))
                (out ui "DBG> no breakpoint pp~A~%" arg)))))))
 
+(defun source-form-of-metadata (metadata)
+  "Reconstruct =(defun NAME LAMBDA-LIST BODY…)= from METADATA's usubr, or NIL."
+  (when metadata
+    (let ((usubr (function-debug-metadata-usubr metadata)))
+      (when usubr
+        (list* (intern-autolisp-symbol "DEFUN")
+               (intern-autolisp-symbol (autolisp-usubr-name usubr))
+               (autolisp-usubr-lambda-list usubr)
+               (autolisp-usubr-body usubr))))))
+
 (defun current-source-form (session)
-  "Reconstruct the current function's source form =(defun NAME LAMBDA-LIST
-BODY…)= for structural navigation, or NIL if there is no current function."
-  (let ((metadata (current-metadata session)))
-    (when metadata
-      (let ((usubr (function-debug-metadata-usubr metadata)))
-        (when usubr
-          (list* (intern-autolisp-symbol "DEFUN")
-                 (intern-autolisp-symbol (autolisp-usubr-name usubr))
-                 (autolisp-usubr-lambda-list usubr)
-                 (autolisp-usubr-body usubr)))))))
+  "The source form =(defun NAME LAMBDA-LIST BODY…)= the navigator should show:
+the function `g NAME' / CLAL-NAV-FUNCTION retargeted to (SESSION-NAV-TARGET) if
+any, else the stopped frame's function (aldo-pre-debug.issue). NIL if neither."
+  (source-form-of-metadata (or (session-nav-target session)
+                               (current-metadata session))))
 
 (defun nav-loop (ui session)
   "`nav' — a navigation sub-mode over the current function (command reference §3).
@@ -752,20 +765,25 @@ browse stack changes only what is displayed — never execution or bindings."
       (ui-show-source ui position)
       (out ui "DBG>   (no source position recorded)~%")))
 
-(defun browse-to-name (ui name)
-  "Resolve NAME to an instrumented function and browse to it; T on success."
-  (let ((md (metadata-for-name name)))
+(defun browse-to-name (ui session name)
+  "Resolve NAME to a function and browse to it, retargeting the navigator to it
+(SESSION-NAV-TARGET) so a following `nav' walks NAME's source. The function is
+instrumented ON DEMAND when it was defined/loaded but never called
+(aldo-pre-debug.issue). T on success. Frame and bindings are untouched."
+  (let ((md (ensure-metadata-for-name name)))
     (cond
-      ((null md) (out ui "DBG> no instrumented function named ~A~%" name) nil)
-      (t (browse-push-and-show ui (function-debug-metadata-name md)
+      ((null md) (out ui "DBG> no function named ~A (define or load it first)~%" name) nil)
+      (t (when session (setf (session-nav-target session) md))
+         (browse-push-and-show ui (function-debug-metadata-name md)
                                (function-debug-metadata-source-position md))
          t))))
 
 (defun goto-cmd (ui session arg)
-  "`goto NAME' (=g=) — browse to the definition of the global function NAME
-(command reference §3). v1: a global function name; qualified local paths,
+  "`goto NAME' (=g=) — browse to the definition of the global function NAME and
+retarget the navigator to it, so `g NAME' then `nav' walks NAME's source
+(command reference §3; aldo-pre-debug.issue). NAME need not have been called —
+it is instrumented on demand. v1: a global function name; qualified local paths,
 FILE:LINE, and the object idiom (DN-12) are not yet implemented."
-  (declare (ignore session))
   (let ((name (and arg (string-trim " " arg))))
     (cond
       ((or (null name) (zerop (length name)))
@@ -774,18 +792,17 @@ FILE:LINE, and the object idiom (DN-12) are not yet implemented."
        (out ui "DBG> goto: FILE:LINE not yet supported (v1: goto NAME)~%"))
       ((find #\Space name)
        (out ui "DBG> goto: qualified local paths not yet supported (v1: goto NAME)~%"))
-      (t (browse-to-name ui name)))))
+      (t (browse-to-name ui session name)))))
 
 (defun definition-cmd (ui session arg)
   "`definition NAME' (=.=) — follow the call graph by name to NAME's definition
 and browse it, crossing files if need be (command reference §3). The cursor form
 (=.= on the selected call) belongs to the keystroke UIs; the dumb terminal takes
 the name explicitly. Does not move the current frame."
-  (declare (ignore session))
   (let ((name (and arg (string-trim " " arg))))
     (if (or (null name) (zerop (length name)))
         (out ui "DBG> definition: usage: definition NAME~%")
-        (browse-to-name ui name))))
+        (browse-to-name ui session name))))
 
 (defun back-cmd (ui session)
   "`back' — pop the source-browse stack to the previous position and redisplay
@@ -1163,7 +1180,7 @@ the breakpoint is volatile — removed on first hit (`break once' / `bo', §2)."
                 (out ui "DBG> breakpoint pp~D set~A~%"
                      (breakpoint-pp (cmd-set-breakpoint session fid form-id :steady steady)) kind)
                 (out ui "DBG> no poll point pp~D~%" pp))))
-      (t (let* ((metadata (current-metadata session))
+      (t (let* ((metadata (or (session-nav-target session) (current-metadata session)))
                 (form-id (and metadata (resolve-line-spec metadata tok))))
            (if form-id
                (let ((bp (cmd-set-breakpoint
