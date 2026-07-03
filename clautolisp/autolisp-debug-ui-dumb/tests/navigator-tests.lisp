@@ -139,3 +139,43 @@
     (setf (clautolisp.debug.ui:navigator-path nav) '(1 0))   ; test (p x)
     (is (eq :code (clautolisp.debug.ui:nav-selected-role nav)))
     (setf (clautolisp.debug.ui:navigator-path nav) '(1 1)))) ; body (g x)
+
+;;; --- code-aware motions: skip non-expression sub-forms (aldo-pre-debug) ---
+
+(test nav-code-motions-skip-non-code-parts
+  (let ((nav (clautolisp.debug.ui:make-navigator '(defun fact (x) (if (= 1 x) 1 (* x y))))))
+    ;; down from the root skips defun / the name / the arg-list -> first body form
+    (clautolisp.debug.ui:nav-code-down nav)
+    (is (equal '(if (= 1 x) 1 (* x y)) (clautolisp.debug.ui:nav-selected nav)))
+    ;; down into the IF skips the IF operator -> the test expression
+    (clautolisp.debug.ui:nav-code-down nav)
+    (is (equal '(= 1 x) (clautolisp.debug.ui:nav-selected nav)))
+    ;; forward steps through the code siblings (then / else)
+    (clautolisp.debug.ui:nav-code-forward nav)
+    (is (eql 1 (clautolisp.debug.ui:nav-selected nav)))
+    (clautolisp.debug.ui:nav-code-forward nav)
+    (is (equal '(* x y) (clautolisp.debug.ui:nav-selected nav)))
+    (clautolisp.debug.ui:nav-code-forward nav)          ; clamp at the last code sibling
+    (is (equal '(* x y) (clautolisp.debug.ui:nav-selected nav)))
+    ;; first / last / backward are code-aware too
+    (clautolisp.debug.ui:nav-code-first nav)
+    (is (equal '(= 1 x) (clautolisp.debug.ui:nav-selected nav)))
+    (clautolisp.debug.ui:nav-code-last nav)
+    (is (equal '(* x y) (clautolisp.debug.ui:nav-selected nav)))
+    (clautolisp.debug.ui:nav-code-backward nav)
+    (is (eql 1 (clautolisp.debug.ui:nav-selected nav)))))
+
+(test nav-code-down-noop-when-no-code-child
+  ;; a bare call (just the operator) has no navigable child -> stay put
+  (let ((nav (clautolisp.debug.ui:make-navigator '(foo))))
+    (clautolisp.debug.ui:nav-code-down nav)
+    (is (equal '(foo) (clautolisp.debug.ui:nav-selected nav)))))
+
+(test nav-code-skip-is-code-aware
+  (let ((nav (clautolisp.debug.ui:make-navigator '(if a b c))))
+    (clautolisp.debug.ui:nav-code-down nav)             ; -> a (index 1, skipping IF)
+    (is (eq 'a (clautolisp.debug.ui:nav-selected nav)))
+    (clautolisp.debug.ui:nav-code-skip nav 2)           ; a -> c (over b)
+    (is (eq 'c (clautolisp.debug.ui:nav-selected nav)))
+    (clautolisp.debug.ui:nav-code-skip nav -1)          ; c -> b
+    (is (eq 'b (clautolisp.debug.ui:nav-selected nav)))))

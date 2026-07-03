@@ -261,3 +261,27 @@ STILL NOT DONE (deferred):
     u d << < > >> — added everywhere in the nav sub-loop (sexp, file, directory)
     alongside the originals; no conflicts (the sub-loop only used d u > < << >>
     ±N q). nav-key= maps them.
+
+-- STATUS (clautolisp 1.4.8) — breakpoints in nav + skip non-code -------------
+
+  * `b' now works inside the `nav' sub-loop: it sets a breakpoint on the
+    SELECTED form (nav-set-breakpoint maps the selection's source position ->
+    poll-point form-id via form-id-at-line-col on the navigated function's
+    metadata, then cmd-set-breakpoint). The source listing gains a `*'
+    breakpoint marker in the gutter (nav-source-listing takes the bp lines;
+    nav-breakpoint-lines derives them from the thread's breakpoints). Verified:
+    g fact; nav; d; b -> "breakpoint pp7 set", `*' on the form's line, and
+    (fact 3) then stops there. (Needs a loaded/instrumented function — the
+    metadata; a breakpoint on a merely-browsed file still needs the function
+    loaded, i.e. virtual breakpoints, which remain deferred.)
+  * Navigation now SKIPS non-expression sub-forms: the code-aware motions
+    (nav-code-down/-forward/-backward/-first/-last/-skip) step only onto
+    :code / :group positions, skipping a form's operator, DEFUN's name and
+    arg-list, QUOTE's datum, SETQ's variables, etc. So `d' on a defun lands on
+    the first body form (not `defun'), and descending an (if …) skips the IF
+    operator. The role classification (role-at-path) already knew code vs
+    non-code; the motions now honour it.
+
+  (Removed from the deferred list: the `b'-in-nav item is done. Still deferred:
+   virtual/deferred breakpoints for an unloaded file; a multi-column :column
+   directory listing.)

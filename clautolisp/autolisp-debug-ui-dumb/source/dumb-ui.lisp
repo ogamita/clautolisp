@@ -737,6 +737,7 @@ of the structural sexp tree. Keys: =d=/=>= next, =u=/=<= prev, =<<= first,
   ;; :sexp — a navigator over ONE form (a function, or one of a file's top forms)
   navigator
   file                    ; source file namestring the form belongs to, or NIL
+  metadata                ; function-debug-metadata when navigating a function (for `b')
   parent-loc              ; :file loc to return to on `u' at the root; NIL -> directory
   ;; :file — a file's top-level forms, one shown at a time
   file-forms              ; simple-vector of top-level forms (may be empty)
@@ -770,7 +771,8 @@ frame — or NIL when there is none. `u' at its root ascends to the file's direc
                     (let ((p (function-debug-metadata-source-position metadata)))
                       (and p (source-position-file p))))))
     (when form
-      (make-nav-loc :kind :sexp :navigator (make-navigator form) :file file))))
+      (make-nav-loc :kind :sexp :navigator (make-navigator form)
+                    :file file :metadata metadata))))
 
 ;;; --- reading a file's top-level forms (with source positions) -------------
 
@@ -923,11 +925,23 @@ omitted — never above the first form or below the last. An empty file shows NI
             (if listing (out ui "~A" listing) (out ui "   ~A~%" (nav-render nav))))
           (when (< i (1- n)) (out ui "   ...~%"))))))
 
-(defun nav-render-loc (ui loc)
+(defun nav-breakpoint-lines (session metadata)
+  "The source line numbers carrying a breakpoint in METADATA's function, for the
+navigator's * decoration (aldo-pre-debug.issue). NIL when either is missing."
+  (when (and session metadata)
+    (let ((fid (function-debug-metadata-function-id metadata)))
+      (loop for bp in (list-breakpoints (session-thread-info session))
+            for pos = (and (eql (breakpoint-fid bp) fid)
+                           (form-id-position metadata (breakpoint-form-id bp)))
+            when (source-position-p pos)
+              collect (source-position-start-line pos)))))
+
+(defun nav-render-loc (ui session loc)
   (ecase (nav-loc-kind loc)
     (:sexp
      (let* ((nav (nav-loc-navigator loc))
-            (listing (nav-source-listing nav)))
+            (bp-lines (nav-breakpoint-lines session (nav-loc-metadata loc)))
+            (listing (nav-source-listing nav bp-lines)))
        (if listing
            (out ui "~&~Asel> ~A~%" listing (nav-render nav))
            (out ui "~&NAV> ~A~%" (nav-render nav)))
@@ -953,24 +967,47 @@ message and NIL when there is no source file."
   (nav-make-dir-loc (namestring (uiop:pathname-directory-pathname (nav-loc-file loc)))
                     (file-namestring (nav-loc-file loc))))
 
-(defun nav-dispatch-sexp (ui loc cmd signed)
-  "Handle one key in a :SEXP location; return (values NEXT-LOC LEAVE-P)."
+(defun nav-set-breakpoint (ui session loc)
+  "`b' in nav — set a breakpoint on the selected form. Needs a loaded/
+instrumented function (a function navigation); breakpoints on a merely-browsed
+file need the function loaded (aldo-pre-debug.issue)."
+  (let ((md (nav-loc-metadata loc))
+        (nav (nav-loc-navigator loc)))
+    (cond
+      ((not (and session md))
+       (out ui "NAV> breakpoints need a loaded function — nav one with `g NAME' or (clal-nav-function …)~%"))
+      (t (let* ((pos (position-of (nav-selected nav)))
+                (form-id (and (source-position-p pos)
+                              (form-id-at-line-col
+                               md (source-position-start-line pos)
+                               (source-position-start-column pos)))))
+           (if form-id
+               (let ((bp (cmd-set-breakpoint
+                          session (function-debug-metadata-function-id md) form-id)))
+                 (out ui "NAV> breakpoint pp~D set on the selected form~%" (breakpoint-pp bp)))
+               (out ui "NAV> the selected form has no poll point (pick an evaluated sub-form)~%")))))))
+
+(defun nav-dispatch-sexp (ui session loc cmd signed)
+  "Handle one key in a :SEXP location; return (values NEXT-LOC LEAVE-P). Motions
+skip non-code sub-forms (a form's operator, DEFUN's name/arg-list, quoted data);
+`b' sets a breakpoint on the selected form."
   (let ((nav (nav-loc-navigator loc)))
     (cond
       ((string= cmd "") nil)
-      ((nav-key= cmd :down) (nav-down nav) nil)
+      ((nav-key= cmd :down) (nav-code-down nav) nil)
       ((nav-key= cmd :up)
        (if (navigator-path nav)
            (progn (nav-up nav) nil)
            ;; at the root: back to the file (if descended from one), else the dir
            (or (nav-loc-parent-loc loc) (nav-ascend-to-dir ui loc))))
-      ((nav-key= cmd :next) (nav-forward nav) nil)
-      ((nav-key= cmd :prev) (nav-backward nav) nil)
-      ((nav-key= cmd :first) (nav-first nav) nil)
-      ((nav-key= cmd :last) (nav-last nav) nil)
-      (signed (nav-skip nav signed) nil)
+      ((nav-key= cmd :next) (nav-code-forward nav) nil)
+      ((nav-key= cmd :prev) (nav-code-backward nav) nil)
+      ((nav-key= cmd :first) (nav-code-first nav) nil)
+      ((nav-key= cmd :last) (nav-code-last nav) nil)
+      (signed (nav-code-skip nav signed) nil)
+      ((string= cmd "b") (nav-set-breakpoint ui session loc) nil)
       ((nav-key= cmd :quit) (values nil t))
-      (t (out ui "NAV> ? keys: d down  u up  > < siblings  << >> ends  ±N skip  q  (i k jj j l ll)~%")
+      (t (out ui "NAV> ? keys: d down  u up  > < siblings  << >> ends  ±N  b break  q  (i k jj j l ll)~%")
          nil))))
 
 (defun nav-dispatch-file (ui loc cmd signed)
@@ -1032,9 +1069,8 @@ among top-level forms shows only the selected one; `d' descends into it."
 (defun nav-browse (ui session loc)
   "Run the modal navigation loop from LOC until the user leaves (`q'/EOF)
 (aldo-pre-debug.issue)."
-  (declare (ignore session))
   (loop
-    (nav-render-loc ui loc)
+    (nav-render-loc ui session loc)
     (let ((line (read-line (dumb-ui-input ui) nil :eof)))
       (when (eq line :eof) (return))
       (let* ((cmd (string-trim " " line))
@@ -1043,7 +1079,7 @@ among top-level forms shows only the selected one; `d' descends into it."
                           (ignore-errors (parse-integer cmd)))))
         (multiple-value-bind (next leave)
             (ecase (nav-loc-kind loc)
-              (:sexp (nav-dispatch-sexp ui loc cmd signed))
+              (:sexp (nav-dispatch-sexp ui session loc cmd signed))
               (:file (nav-dispatch-file ui loc cmd signed))
               (:dir  (nav-dispatch-dir ui loc cmd signed)))
           (when leave (return))

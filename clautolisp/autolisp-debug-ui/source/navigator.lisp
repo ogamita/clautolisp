@@ -197,6 +197,67 @@ LET binding variable is :non-code even though it is nested two lists deep."
 poll-pointable. Non-code data/names and structural groups return NIL."
   (eq :code (nav-selected-role nav)))
 
+;;; --- code-aware motions (debugger: skip non-expression sub-forms) -----
+;;;
+;;; The structural motions above land on every child, including non-code ones —
+;;; a form's operator, DEFUN's name and arg-list, QUOTE's datum, SETQ's
+;;; variables. The debugger navigator uses these variants instead: they step
+;;; only onto navigable positions (:code / :group — the evaluated sub-forms you
+;;; can breakpoint), skipping :non-code parts (aldo-pre-debug.issue).
+
+(defun %nav-navigable-p (nav path)
+  "True when the node at PATH is a navigable (non-:non-code) position."
+  (not (eq :non-code (role-at-path (navigator-root nav) path))))
+
+(defun %nav-navigable-child-indices (nav base)
+  "Indices of the navigable (code/group) children of the node at BASE."
+  (let ((node (path-ref (navigator-root nav) base)))
+    (when (consp node)
+      (loop for i from 0 below (length node)
+            when (%nav-navigable-p nav (append base (list i)))
+              collect i))))
+
+(defun nav-code-down (nav)
+  "Descend to the first navigable child of the selection, skipping leading
+non-code parts (no-op on an atom or a form with no navigable child)."
+  (let* ((base (navigator-path nav))
+         (indices (and (consp (nav-selected nav))
+                       (%nav-navigable-child-indices nav base))))
+    (when indices
+      (setf (navigator-path nav) (append base (list (first indices))))))
+  nav)
+
+(defun %nav-code-sibling (nav pick)
+  "Move to the navigable sibling PICK selects from (CURRENT-INDEX INDICES); NAV."
+  (let* ((i (nav-index nav))
+         (indices (%nav-navigable-child-indices nav (butlast (navigator-path nav))))
+         (target (and i indices (funcall pick i indices))))
+    (when target (%set-last-index nav target)))
+  nav)
+
+(defun nav-code-forward (nav)
+  "Select the next navigable sibling (no-op if none)."
+  (%nav-code-sibling nav (lambda (i idxs) (find-if (lambda (j) (> j i)) idxs))))
+
+(defun nav-code-backward (nav)
+  "Select the previous navigable sibling (no-op if none)."
+  (%nav-code-sibling nav (lambda (i idxs) (find-if (lambda (j) (< j i)) (reverse idxs)))))
+
+(defun nav-code-first (nav)
+  "Select the first navigable sibling (no-op if none)."
+  (%nav-code-sibling nav (lambda (i idxs) (declare (ignore i)) (first idxs))))
+
+(defun nav-code-last (nav)
+  "Select the last navigable sibling (no-op if none)."
+  (%nav-code-sibling nav (lambda (i idxs) (declare (ignore i)) (car (last idxs)))))
+
+(defun nav-code-skip (nav n)
+  "Skip N navigable siblings forward (N>0) or backward (N<0), clamped."
+  (%nav-code-sibling nav
+                     (lambda (i idxs)
+                       (let ((pos (position i idxs)))
+                         (and pos (nth (max 0 (min (1- (length idxs)) (+ pos n))) idxs))))))
+
 ;;; --- rendering --------------------------------------------------------
 
 (defun %render-marked (sexp path open close stream)
@@ -270,11 +331,12 @@ walking up the path lands on a positioned enclosing form.)"
       (when (null path) (return nil))
       (setf path (butlast path)))))
 
-(defun %nav-listing-for-node (nav node)
+(defun %nav-listing-for-node (nav node &optional breakpoint-lines)
   "A verbatim source listing of NODE (a sub-tree of NAV's root) — the file's own
-lines spanning NODE, each with its line number and original indentation, the
-selected node's line flagged with a >> gutter — or NIL when no source text is
-available (not read under source tracking, or the file is unreadable)."
+lines spanning NODE, each with its line number and original indentation. The
+selected node's line is flagged with a >> gutter; a line in BREAKPOINT-LINES
+gets a * breakpoint marker. NIL when no source text is available (not read under
+source tracking, or the file is unreadable)."
   (let ((positions (%nav-collect-positions node '())))
     (when positions
       (let* ((file (%nav-dominant-file positions))
@@ -294,10 +356,13 @@ available (not read under source tracking, or the file is unreadable)."
             (with-output-to-string (stream)
               (loop for n from (max 1 start) to (min (length lines) end)
                     for text = (aref lines (1- n))
-                    do (format stream "~A~3D:   ~A~%"
-                               (if (eql n target) ">> " "   ") n text)))))))))
+                    do (format stream "~A~A~3D:   ~A~%"
+                               (if (member n breakpoint-lines) "*" " ")
+                               (if (eql n target) ">>" "  ")
+                               n text)))))))))
 
-(defun nav-source-listing (nav)
+(defun nav-source-listing (nav &optional breakpoint-lines)
   "Verbatim source listing spanning NAV's whole root form (the whole function),
-selection flagged >>. NIL when no source text is available."
-  (%nav-listing-for-node nav (navigator-root nav)))
+the selection flagged >> and any BREAKPOINT-LINES flagged *. NIL when no source
+text is available."
+  (%nav-listing-for-node nav (navigator-root nav) breakpoint-lines))

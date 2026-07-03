@@ -21,6 +21,7 @@ UI refines.")
                 #:snapshot-function-name #:snapshot-source-position
                 #:snapshot-call-stack #:snapshot-visible-names #:snapshot-catch-stack
                 #:stack-frame-function-name #:stack-frame-source-position
+                #:list-breakpoints
                 #:breakpoint-id #:breakpoint-fid #:breakpoint-form-id #:breakpoint-when
                 #:breakpoint-enabled-p #:set-breakpoint-enabled #:breakpoint-condition
                 #:breakpoint-steady-p #:breakpoint-action #:breakpoint-trace-p
