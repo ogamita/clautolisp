@@ -39,6 +39,34 @@ Changes:
   - Tests: builtin-level cr-flag tests added in autolisp-builtins-core
     (getstring-*-terminates-at-first-blank / cr-flag-keeps-blanks).
 
-The original report's "just returns nil" no longer applies: the default
-mock-host reads the line; the remaining gap was the ignored `cr` flag,
-now honored.
+Follow-up (clautolisp 1.4.13): interactive REPL was still returning nil
+--------------------------------------------------------------------
+
+The 1.4.12 fix made the `cr` flag correct, but running getstring in the
+plain REPL still returned nil (even `(getstring t ...)`):
+
+    _$ (getstring "\nVotre tir : ")
+    nil
+
+Root cause: the MockHost's prompt-stream is nil unless --mock-input is
+given, and read-prompt-line returns :eof on a nil stream, so EVERY get*
+(getstring, getint, getreal, getpoint, getkword, …) read EOF and
+returned nil interactively. The REPL never wired the host to the
+terminal, and prompt text went to an in-memory buffer nobody drained.
+
+Fix (tools/clautolisp/source/main.lisp): when entering an interactive
+REPL with a MockHost and no --mock-input, point the host's prompt-stream
+at *standard-input* and its prompt-output at *standard-output* (via
+synonym streams, so they track dynamic rebinding). MOCK-HOST-WRITE-PROMPT
+now finish-outputs so the prompt reaches the screen before the blocking
+read. Verified against the built CLI:
+
+    _$ (getstring "\nTir (ex B7) : ")
+    Tir (ex B7) : B7 ignored tail        -> "B7"      (cr nil: space ends it)
+    _$ (getstring t "\nNom complet : ")
+    Nom complet : Gary Indiana Jones     -> "Gary Indiana Jones"
+    _$ (getstring)
+    solo                                 -> "solo"
+
+The deterministic test path (nil prompt-stream -> nil) is unchanged, so
+--mock-input scripts and the empty-input-returns-nil contract still hold.

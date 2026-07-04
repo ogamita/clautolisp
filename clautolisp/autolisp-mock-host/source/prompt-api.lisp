@@ -41,7 +41,13 @@ initget is issued."
 
 (defun mock-host-write-prompt (host string)
   (let ((sink (mock-host-prompt-output host)))
-    (when (and string sink) (write-string string sink))))
+    (when (and string sink)
+      (write-string string sink)
+      ;; When the sink is a live terminal (interactive REPL) the prompt
+      ;; must reach the screen before the following blocking read; on a
+      ;; string-output-stream (the deterministic test path) this is a
+      ;; harmless no-op.
+      (finish-output sink))))
 
 (defun read-prompt-line (host)
   "Read one line from HOST's prompt-stream, returning the line as a

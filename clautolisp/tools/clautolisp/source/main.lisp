@@ -539,11 +539,31 @@ instrumentable/steppable."
          (autolisp-eval-progn forms context)))
    context))
 
+(defun wire-mock-host-to-terminal (context)
+  "In an interactive REPL the MockHost has no prompt-stream, so every
+get* (GETSTRING, GETINT, …) reads EOF and returns nil. Point the
+host's prompt input at *standard-input* and its prompt output at
+*standard-output* — via synonym streams so the wiring follows any
+dynamic rebinding of those specials — so interactive get* calls read
+the line the user types after the form. Only applies when the active
+host is a MockHost that has no prompt-stream yet (i.e. --mock-input was
+not supplied)."
+  (let ((host (clautolisp.autolisp-runtime:runtime-session-host
+               (evaluation-context-session context))))
+    (when (and (typep host 'clautolisp.autolisp-mock-host:mock-host)
+               (null (clautolisp.autolisp-mock-host:mock-host-prompt-stream host)))
+      (setf (clautolisp.autolisp-mock-host:mock-host-prompt-stream host)
+            (make-synonym-stream '*standard-input*)
+            (clautolisp.autolisp-mock-host:mock-host-prompt-output host)
+            (make-synonym-stream '*standard-output*)))))
+
 (defun repl-loop (dialect context &key quiet-p mock-input gui trace-p
                                         session break-on-error)
   (unless quiet-p
     (emit-repl-banner dialect context
                       :mock-input mock-input :gui gui :trace-p trace-p))
+  (unless mock-input
+    (wire-mock-host-to-terminal context))
   (%repl-init-history context)
   (loop
     (multiple-value-bind (source eofp)
