@@ -291,6 +291,47 @@ Both axes are independent.
                             deterministic answers to interactive
                             scripts.
 
+** Interactive user input (~get*~ functions)
+AutoCAD and BricsCAD gather the answers to the interactive input
+functions — ~getstring~, ~getint~, ~getreal~, ~getpoint~, ~getcorner~,
+~getdist~, ~getangle~, ~getorient~, ~getkword~ — through the graphical
+drawing editor: a command-line prompt combined with pointer and keyboard
+interaction in the drawing window. That is implicitly a GUI.
+
+clautolisp is a terminal program with no drawing editor. Under the
+MockHost (the default) each ~get*~ call writes its prompt to standard
+output and reads one line of text from standard input — a TUI
+interaction. In the interactive REPL that line is what you type at the
+terminal after the calling form; with ~--mock-input PATH~ the lines are
+read from PATH instead, so scripted runs stay deterministic. Invalid
+input returns ~nil~ rather than triggering the GUI host's retry prompt,
+and end-of-input (EOF) also returns ~nil~ (AutoLISP's cancellation
+convention). A future ~live~ host will restore the native GUI behavior.
+
+This is a clautolisp implementation deviation; it does not change the
+language-level contract of these functions. The per-function pages of the
+AutoLISP specification carry the same note in their ~clautolisp~ section.
+
+Input formats read on the TUI:
+- ~getstring~ :: the whole line; the ~cr~ flag applies as specified (a
+                 blank ends the input when ~cr~ is nil).
+- ~getint~ :: an integer.
+- ~getreal~ / ~getdist~ :: a real number (~getdist~ does not support
+                 two-point picking on the TUI).
+- ~getpoint~ / ~getcorner~ :: whitespace-separated coordinates, ~X Y~ or
+                 ~X Y Z~; a 2D entry gets Z = 0.0. No crosshair,
+                 rubber-band, or direct-distance entry.
+- ~getangle~ / ~getorient~ :: an angle, returned in radians. Accepted
+                 forms: a bare number (radians, e.g. ~0.5~); degrees
+                 (~45 deg~, ~45.3321 degree~); degrees-minutes-seconds
+                 (~43 deg 23' 15"~, where ~'~ = minutes and ~"~ =
+                 seconds, summed in any order); and radians (~2.34 rd~,
+                 ~pi rd~, ~2pi rd~, ~4/3 pi rd~, ~-3/2 pi rd~ — an
+                 integer, decimal or rational magnitude, optionally
+                 multiplied by ~pi~).
+- ~getkword~ :: matched against the keywords set by the preceding
+                 ~initget~; a non-matching line returns ~nil~.
+
 ** Colour output
 ~clautolisp~ accents AutoLISP-symbol names in error messages,
 backtraces, and trace output with an ANSI colour when standard

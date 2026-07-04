@@ -62041,6 +62041,19 @@ Autodesk explicitly notes that the user cannot enter another AutoLISP expression
 - [getstring (BricsCAD Developer Reference, V22)](https://developer.bricsys.com/bricscad/help/en_US/V22/DevRef/source/getstring.htm)
 - Status: documented for both vendors; `cr` semantics verified against both references.
 
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above. AutoCAD and BricsCAD collect this response through
+the graphical drawing editor: a command-line prompt combined with
+keyboard interaction in the drawing window (implicitly a GUI). clautolisp
+has no drawing editor — it writes the prompt to the standard output and
+reads the response as one line of text from the standard input (a TUI
+interaction). Interactively this is the REPL's terminal; for scripted,
+deterministic runs it is the file attached with ~--mock-input~. A live
+CAD host, when connected, restores the native GUI behavior. The `cr`
+flag is applied to the typed line exactly as specified above (a blank
+ends the input when `cr` is nil).
+
 #+LATEX: \newpage
 
 ** Function Entry: GETPOINT
@@ -62086,6 +62099,21 @@ Host-interaction-specific; point representation remains ordinary list data.
 *** Notes
 - Autodesk documents that if `pt` is present as a point, the host draws a rubber-band line from that point to the current crosshair position.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
+
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above. AutoCAD and BricsCAD collect this point through the
+graphical drawing editor: a command-line prompt combined with
+pointer/keyboard interaction in the drawing window (implicitly a GUI).
+clautolisp has no drawing editor — it writes the prompt to the standard
+output and reads the answer as one line of text from the standard input
+(a TUI interaction). Interactively this is the REPL's terminal; for
+scripted, deterministic runs it is the file attached with ~--mock-input~.
+A live CAD host, when connected, restores the native GUI behavior. On the
+TUI the point is typed as whitespace-separated coordinates — `X Y` or
+`X Y Z`; a 2D entry gets Z = 0.0. There is no crosshair, rubber-band
+line, or direct-distance entry; invalid input returns ~nil~ rather than
+re-prompting.
 
 #+LATEX: \newpage
 
@@ -63218,6 +63246,31 @@ Part of the standard user-input family and closely related to angle conversion f
 - Autodesk documents that zero direction is ANGBASE, with positive angles increasing counterclockwise.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
 
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above. AutoCAD and BricsCAD collect this angle through the
+graphical drawing editor: a command-line prompt combined with
+pointer/keyboard interaction in the drawing window (implicitly a GUI).
+clautolisp has no drawing editor — it writes the prompt to the standard
+output and reads the answer as one line of text from the standard input
+(a TUI interaction). Interactively this is the REPL's terminal; for
+scripted, deterministic runs it is the file attached with ~--mock-input~.
+A live CAD host, when connected, restores the native GUI behavior.
+
+On the TUI the angle is typed as text and returned in radians. Accepted
+forms:
+- a bare number — taken as radians (e.g. `0.5`);
+- degrees — `deg` / `degree` / `degrees` (e.g. `45 deg`, `45.3321 degree`);
+- degrees-minutes-seconds — `'` for minutes and `"` for seconds, summed
+  with the degrees, markers accepted in any order (e.g. `43 deg 23' 15"`);
+- radians — `rd` / `rad` / `radian` / `radians`, where the magnitude may
+  be an integer, a decimal, or a rational (`a/b`) and may be multiplied
+  by `pi` (e.g. `2.34 rd`, `pi rd`, `2pi rd`, `4/3 pi rd`, `-3/2 pi rd`).
+
+Unrecognized text returns ~nil~ rather than re-prompting. (Angles are
+parsed textually; the optional base point `pt` is accepted but not
+used to derive the angle graphically on the TUI.)
+
 #+LATEX: \newpage
 
 ** Function Entry: GETDIST
@@ -63268,6 +63321,19 @@ Part of the standard user-input family.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
 - Autodesk documents that the result is always a real, even when the user enters values in architectural units.
 
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above. AutoCAD and BricsCAD collect this distance through
+the graphical drawing editor: a command-line prompt combined with
+pointer/keyboard interaction in the drawing window (implicitly a GUI).
+clautolisp has no drawing editor — it writes the prompt to the standard
+output and reads the answer as one line of text from the standard input
+(a TUI interaction). Interactively this is the REPL's terminal; for
+scripted, deterministic runs it is the file attached with ~--mock-input~.
+A live CAD host, when connected, restores the native GUI behavior. On the
+TUI a distance is typed as a single real number; picking two points is
+not available. Invalid input returns ~nil~ rather than re-prompting.
+
 #+LATEX: \newpage
 
 ** Function Entry: GETINT
@@ -63311,6 +63377,18 @@ Invalid input, cancel, or interactive state errors are host-dependent.
 - Autodesk documents that invalid non-integer input causes a retry prompt with a diagnostic message.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
 
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above. AutoCAD and BricsCAD collect this integer through
+the graphical drawing editor's command line (implicitly a GUI).
+clautolisp has no drawing editor — it writes the prompt to the standard
+output and reads the answer as one line of text from the standard input
+(a TUI interaction). Interactively this is the REPL's terminal; for
+scripted, deterministic runs it is the file attached with ~--mock-input~.
+A live CAD host, when connected, restores the native GUI behavior. On the
+TUI the line must parse as an integer; non-integer input returns ~nil~
+rather than issuing the GUI host's retry prompt.
+
 #+LATEX: \newpage
 
 ** Function Entry: GETREAL
@@ -63351,6 +63429,18 @@ This function is an important bridge between textual/numeric input and the host'
 
 *** Notes
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
+
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above. AutoCAD and BricsCAD collect this real through the
+graphical drawing editor's command line (implicitly a GUI). clautolisp
+has no drawing editor — it writes the prompt to the standard output and
+reads the answer as one line of text from the standard input (a TUI
+interaction). Interactively this is the REPL's terminal; for scripted,
+deterministic runs it is the file attached with ~--mock-input~. A live
+CAD host, when connected, restores the native GUI behavior. On the TUI
+the line is read as a real number; input that is not a number returns
+~nil~ rather than re-prompting.
 
 #+LATEX: \newpage
 
@@ -63398,6 +63488,20 @@ Closely tied to `initget`.
 - Autodesk documents that `getkword` also returns `nil` if it is called without a preceding `initget` that establishes keywords.
 - Autodesk documents that invalid keyword input causes a warning and a re-prompt.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
+
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above. AutoCAD and BricsCAD collect this keyword through
+the graphical drawing editor's command line (implicitly a GUI).
+clautolisp has no drawing editor — it writes the prompt to the standard
+output and reads the answer as one line of text from the standard input
+(a TUI interaction). Interactively this is the REPL's terminal; for
+scripted, deterministic runs it is the file attached with ~--mock-input~.
+A live CAD host, when connected, restores the native GUI behavior. On the
+TUI the typed line is matched against the keywords set by the preceding
+`initget`; a non-matching entry returns ~nil~ rather than warning and
+re-prompting, and (as documented) `getkword` returns ~nil~ when no
+`initget` established keywords.
 
 #+LATEX: \newpage
 
@@ -63489,6 +63593,20 @@ Point list or `nil`.
 *** Notes
 - Autodesk documents that `getcorner` obtains the opposite corner of a box.
 - Autodesk documents that it honors keywords established by `initget`.
+
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above. AutoCAD and BricsCAD collect this corner through the
+graphical drawing editor, rubber-banding a box from `pt` under pointer
+control (implicitly a GUI). clautolisp has no drawing editor — it writes
+the prompt to the standard output and reads the answer as one line of
+text from the standard input (a TUI interaction). Interactively this is
+the REPL's terminal; for scripted, deterministic runs it is the file
+attached with ~--mock-input~. A live CAD host, when connected, restores
+the native GUI behavior. On the TUI the opposite corner is typed as
+whitespace-separated coordinates — `X Y` or `X Y Z` (Z defaults to 0.0);
+the base point `pt` is accepted but no box is rubber-banded. Invalid
+input returns ~nil~ rather than re-prompting.
 
 #+LATEX: \newpage
 
@@ -63583,6 +63701,21 @@ Closely related to `getangle`, but documented separately.
 - Autodesk documents that `getorient` returns radians measured counterclockwise from the right (east), ignoring `ANGBASE` and `ANGDIR` in the returned value.
 - Autodesk documents that the user cannot respond with another AutoLISP expression.
 - Autodesk explicitly distinguishes `getorient` from `getangle`: `getorient` is for an absolute orientation, `getangle` for a rotation amount.
+
+*** clautolisp
+clautolisp implementation deviation — not part of the normative
+specification above. AutoCAD and BricsCAD collect this orientation
+through the graphical drawing editor (implicitly a GUI). clautolisp has
+no drawing editor — it writes the prompt to the standard output and reads
+the answer as one line of text from the standard input (a TUI
+interaction). Interactively this is the REPL's terminal; for scripted,
+deterministic runs it is the file attached with ~--mock-input~. A live
+CAD host, when connected, restores the native GUI behavior. On the TUI
+the orientation is typed as text and returned in radians, using exactly
+the same angle syntax as `getangle` (bare number = radians; `deg` /
+`degree(s)`; degrees-minutes-seconds with `'` and `"`; `rd` / `rad` /
+`radian(s)` with an optional `pi` factor — e.g. `90 deg`, `pi rd`,
+`4/3 pi rd`). Unrecognized text returns ~nil~.
 
 #+LATEX: \newpage
 
