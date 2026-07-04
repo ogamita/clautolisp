@@ -67,6 +67,55 @@ stream containing LINES (one per get* read)."
   (let ((mock (mock-host-with-input '("0.5"))))
     (is (= 0.5d0 (clautolisp.autolisp-host:host-getangle mock nil)))))
 
+(defun %angle= (mock expected)
+  "Read an angle from MOCK's host-getangle and compare it to EXPECTED
+radians within a small tolerance (single->double coercion of decimal
+degrees is not bit-exact)."
+  (let ((got (clautolisp.autolisp-host:host-getangle mock nil)))
+    (and (numberp got) (< (abs (- got expected)) 1d-9))))
+
+(test host-getangle-degrees-explicit-unit
+  (is (%angle= (mock-host-with-input '("45 deg")) (/ pi 4)))
+  (is (%angle= (mock-host-with-input '("45 degree")) (/ pi 4)))
+  (is (%angle= (mock-host-with-input '("90 degrees")) (/ pi 2))))
+
+(test host-getangle-degrees-decimal
+  (is (%angle= (mock-host-with-input '("45.3321 deg"))
+               (* 45.3321d0 (/ pi 180)))))
+
+(test host-getangle-degrees-minutes-seconds
+  ;; 43 deg 23 min 15 sec, markers ' (minute) and " (second). Order of
+  ;; the minute/second markers is irrelevant to the sum.
+  (let ((expected (* (+ 43 (/ 23 60) (/ 15 3600)) (/ pi 180))))
+    (is (%angle= (mock-host-with-input '("43 deg 23' 15\"")) expected))
+    (is (%angle= (mock-host-with-input '("43 deg 15\" 23'")) expected))))
+
+(test host-getangle-radians-decimal
+  (is (%angle= (mock-host-with-input '("2.34 rd")) 2.34d0)))
+
+(test host-getangle-radians-pi-expressions
+  (is (%angle= (mock-host-with-input '("pi rd")) pi))
+  (is (%angle= (mock-host-with-input '("2pi rd")) (* 2 pi)))
+  (is (%angle= (mock-host-with-input '("2 pi rd")) (* 2 pi)))
+  (is (%angle= (mock-host-with-input '("4/3 pi rd")) (* 4/3 pi)))
+  (is (%angle= (mock-host-with-input '("-3/2 pi rd")) (* -3/2 pi)))
+  ;; pi with no explicit rd is still radians.
+  (is (%angle= (mock-host-with-input '("pi")) pi)))
+
+(test host-getangle-bare-number-is-radians
+  ;; Back-compat: an un-united number is taken as radians.
+  (is (%angle= (mock-host-with-input '("0.5")) 0.5d0)))
+
+(test host-getangle-rejects-garbage
+  (is (null (clautolisp.autolisp-host:host-getangle
+             (mock-host-with-input '("banana")) nil))))
+
+(test host-getorient-shares-the-angle-parser
+  (is (%angle= (mock-host-with-input '("90 deg")) (/ pi 2)))
+  (let ((got (clautolisp.autolisp-host:host-getorient
+              (mock-host-with-input '("90 deg")) nil)))
+    (is (and (numberp got) (< (abs (- got (/ pi 2))) 1d-9)))))
+
 (test host-getkword-matches-keyword
   (let ((mock (mock-host-with-input '("Yes"))))
     (clautolisp.autolisp-host:host-initget mock 0 '("Yes" "No" "Maybe"))

@@ -70,6 +70,96 @@ CL string or :eof on end of stream / when no input was configured."
   (let ((trimmed (string-trim '(#\Space #\Tab #\Return) text)))
     (handler-case (parse-integer trimmed) (error () nil))))
 
+(defun %angle-number-char-p (c)
+  "True for the characters that make up a numeric magnitude in an
+angle expression: digits, a decimal point, and a rational slash. The
+CL reader turns \"4/3\" straight into the ratio 4/3, so we let those
+tokens flow through unchanged."
+  (or (digit-char-p c) (char= c #\.) (char= c #\/)))
+
+(defun parse-angle (text)
+  "Parse an angle from TEXT and return its value in RADIANS as a
+double-float, or NIL when TEXT is not a recognizable angle.
+
+Accepted forms (case-insensitive, whitespace-flexible):
+  - a bare number            -> taken as radians (\"0.5\", back-compat)
+  - radians  rd|rad|radian(s) -> \"2.34 rd\", \"pi rd\", \"2pi rd\",
+                                 \"4/3 pi rd\", \"-3/2 pi rd\"
+  - degrees  deg|degree(s)    -> \"45 deg\", \"45.3321 degree\"
+  - D-M-S    ' = minutes, \" = seconds, summed with the degrees:
+                                 \"43 deg 23' 15\\\"\" (markers in any order)
+
+A magnitude may be an integer, decimal, or rational (a/b), optionally
+followed by PI (\"pi\", \"2pi\", \"4/3 pi\") which multiplies it by pi and
+makes the term a radian term. Degree, minute and second terms are
+summed as degrees; radian and pi terms are summed as radians; the two
+running totals are combined at the end."
+  (let ((s (string-downcase
+            (string-trim '(#\Space #\Tab #\Return #\Newline) text))))
+    (when (plusp (length s))
+      (let ((i 0) (n (length s))
+            (components '()) (pending nil) (bad nil))
+        (loop while (and (< i n) (not bad)) do
+          (let ((c (char s i)))
+            (cond
+              ((member c '(#\Space #\Tab)) (incf i))
+              ;; numeric magnitude, with an optional leading sign
+              ((or (%angle-number-char-p c)
+                   (and (member c '(#\+ #\-))
+                        (< (1+ i) n)
+                        (%angle-number-char-p (char s (1+ i)))))
+               (let ((start i))
+                 (when (member c '(#\+ #\-)) (incf i))
+                 (loop while (and (< i n) (%angle-number-char-p (char s i)))
+                       do (incf i))
+                 (let ((value (ignore-errors
+                               ;; read decimals as double-float so
+                               ;; "45.3321" keeps full precision.
+                               (let ((*read-default-float-format* 'double-float))
+                                 (read-from-string (subseq s start i) nil nil)))))
+                   (if (realp value) (setf pending value) (setf bad t)))))
+              ;; minute / second markers
+              ((char= c #\') (push (cons (or pending 1) :min) components)
+                             (setf pending nil) (incf i))
+              ((char= c #\") (push (cons (or pending 1) :sec) components)
+                             (setf pending nil) (incf i))
+              ;; alphabetic unit word
+              ((alpha-char-p c)
+               (let ((start i))
+                 (loop while (and (< i n) (alpha-char-p (char s i))) do (incf i))
+                 (let ((word (subseq s start i)))
+                   (cond
+                     ((member word '("deg" "degree" "degrees" "d") :test #'string=)
+                      (push (cons (or pending 1) :deg) components) (setf pending nil))
+                     ((member word '("rad" "radian" "radians" "rd" "r") :test #'string=)
+                      ;; A magnitude before rd/rad IS the radian value; a
+                      ;; bare rd/rad after a pi term just confirms the unit.
+                      (when pending
+                        (push (cons pending :rad) components) (setf pending nil)))
+                     ((string= word "pi")
+                      (push (cons (or pending 1) :pi) components) (setf pending nil))
+                     (t (setf bad t))))))
+              (t (setf bad t)))))
+        (cond
+          (bad nil)
+          ;; a lone number with no unit: radians, preserving the old
+          ;; MockHost contract.
+          ((and (null components) pending) (coerce pending 'double-float))
+          ((null components) nil)
+          ;; a number left dangling with no unit alongside united terms
+          ;; is ambiguous -> reject rather than guess.
+          (pending nil)
+          (t (let ((total-deg 0) (total-rad 0))
+               (dolist (comp components)
+                 (destructuring-bind (mag . unit) comp
+                   (ecase unit
+                     (:deg (incf total-deg mag))
+                     (:min (incf total-deg (/ mag 60)))
+                     (:sec (incf total-deg (/ mag 3600)))
+                     (:rad (incf total-rad mag))
+                     (:pi  (incf total-rad (* mag pi))))))
+               (coerce (+ total-rad (* total-deg (/ pi 180))) 'double-float))))))))
+
 (defun parse-coordinate-list (text)
   "Parse a whitespace-separated list of numbers from TEXT. Returns
 nil if fewer than 2 valid numbers are present or any token is
@@ -163,9 +253,9 @@ non-numeric."
         (t (parse-real line))))))
 
 (defmethod host-getangle ((host mock-host) prompt &key base controls)
-  ;; Headless: same as getreal, but the result is taken as radians.
-  ;; Real AutoCAD interprets numeric input under the active angle
-  ;; mode (UNITS); MockHost is dialect-neutral and returns radians.
+  ;; Parse the entered angle and return it in RADIANS. A bare number is
+  ;; radians (MockHost's dialect-neutral default); an explicit unit
+  ;; (deg / rd) or a D-M-S expression is honored -- see PARSE-ANGLE.
   (declare (ignore base controls))
   (multiple-value-bind (bits kwords) (mock-host-take-initget host)
     (declare (ignore bits kwords))
@@ -173,7 +263,7 @@ non-numeric."
     (let ((line (read-prompt-line host)))
       (cond
         ((eq line :eof) nil)
-        (t (parse-real line))))))
+        (t (parse-angle line))))))
 
 (defmethod host-getorient ((host mock-host) prompt &key base controls)
   (host-getangle host prompt :base base :controls controls))
