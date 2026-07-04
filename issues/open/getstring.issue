@@ -1,0 +1,5 @@
+autolisp-spec: the page on funciton getstring doesn't explain the meaning of the cr parameter (its possible values and effects).
+
+clautolisp: doesn't implement getstring (it just returns nil).
+
+Your mission, if you accept it, is to go fetch autocad and bricscad reference, find what values can the cr parameter take and to what effect, and update the autolisp-spec, and implement it in clautolisp.
