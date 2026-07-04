@@ -1829,6 +1829,55 @@ calls) under a mock host and return the resulting CL string."
   (autolisp-string-value
    (run-autolisp-string form-source :setup-fn #'%install-mock-host-and-core)))
 
+(defun %getstring-with-input (form-source input-line)
+  "Evaluate FORM-SOURCE (a GETSTRING call) under a mock host whose
+prompt-stream yields INPUT-LINE, returning the CL string result (or
+NIL when GETSTRING returns nil)."
+  (let ((mock (clautolisp.autolisp-mock-host:make-mock-host)))
+    (setf (clautolisp.autolisp-mock-host:mock-host-prompt-stream mock)
+          (make-string-input-stream (format nil "~A~%" input-line)))
+    (let ((result
+            (run-autolisp-string
+             form-source
+             :setup-fn
+             (lambda (context)
+               (install-core-into context)
+               (setf (clautolisp.autolisp-runtime.internal::runtime-session-host
+                      (clautolisp.autolisp-runtime:evaluation-context-session context))
+                     mock)))))
+      (if (typep result 'autolisp-string)
+          (autolisp-string-value result)
+          result))))
+
+;;; --- getstring CR flag (getstring.issue) --------------------------
+;;; A nil/omitted CR flag makes a blank terminate the input, so the
+;;; returned string cannot contain spaces; a non-nil CR flag keeps the
+;;; blanks and only Enter terminates. Cross-checked against AutoCAD 2026
+;;; and BricsCAD V22 getstring references.
+
+(test getstring-no-cr-terminates-at-first-blank
+  (reset-autolisp-symbol-table)
+  (is (string= "Gary"
+               (%getstring-with-input "(getstring \"Name: \")"
+                                      "Gary Indiana Jones"))))
+
+(test getstring-no-args-terminates-at-first-blank
+  (reset-autolisp-symbol-table)
+  (is (string= "hello"
+               (%getstring-with-input "(getstring)" "hello world"))))
+
+(test getstring-cr-flag-keeps-blanks
+  (reset-autolisp-symbol-table)
+  (is (string= "Gary Indiana Jones"
+               (%getstring-with-input "(getstring T \"Name: \")"
+                                      "Gary Indiana Jones"))))
+
+(test getstring-spaceless-input-is-unchanged-either-way
+  (reset-autolisp-symbol-table)
+  (is (string= "solo" (%getstring-with-input "(getstring)" "solo")))
+  (reset-autolisp-symbol-table)
+  (is (string= "solo" (%getstring-with-input "(getstring T)" "solo"))))
+
 (test rtos-precision-defaults-to-luprec
   ;; PRECISION omitted -> LUPREC; MODE omitted -> LUNITS (2 = decimal).
   (reset-autolisp-symbol-table)

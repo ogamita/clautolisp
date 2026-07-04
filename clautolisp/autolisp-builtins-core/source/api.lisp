@@ -5031,19 +5031,43 @@ issues/open/clautolisp-module-app-extensions.issue."
         (push (subseq value start) result))
       (nreverse result))))
 
+(defun getstring-terminate-at-space (result)
+  ;; AutoLISP getstring with a nil CR flag terminates the input at the
+  ;; first blank: (getstring) reading "hello world" yields "hello".
+  ;; Line-oriented hosts (e.g. the MockHost) hand back the whole line,
+  ;; so we replicate the space-terminates-input semantics here. This is
+  ;; a no-op for a live host that already stopped reading at the blank.
+  (if (typep result 'autolisp-string)
+      (let* ((value (autolisp-string-value result))
+             (stop  (position-if (lambda (c) (or (char= c #\Space)
+                                                 (char= c #\Tab)))
+                                 value)))
+        (if stop
+            (make-autolisp-string (subseq value 0 stop))
+            result))
+      result))
+
 (defun builtin-getstring (&optional read-spaces-or-prompt prompt)
-  ;; (getstring [PROMPT])              ; one-shot, no spaces
-  ;; (getstring CRSPACES [PROMPT])     ; CRSPACES non-nil to allow spaces
-  ;; The MockHost always reads a whole line, so the CRSPACES flag is
-  ;; permissive for now.
-  (let ((effective-prompt
-         (cond
-           ((null read-spaces-or-prompt) prompt)
-           ((typep read-spaces-or-prompt 'autolisp-string) read-spaces-or-prompt)
-           (t prompt))))
-    (host-getstring (current-evaluation-host)
-                    (and effective-prompt
-                         (optional-prompt-string effective-prompt "GETSTRING")))))
+  ;; (getstring)                       ; no prompt, spaces terminate input
+  ;; (getstring MSG)                   ; MSG is a string prompt, no spaces
+  ;; (getstring CR)                    ; CR non-nil flag, no prompt
+  ;; (getstring CR MSG)                ; CR flag + prompt string
+  ;;
+  ;; CR (the "carriage return" flag): when supplied and non-nil the
+  ;; response may contain blanks and is only terminated by Enter; when
+  ;; nil or omitted a blank terminates the input just like Enter, so the
+  ;; returned string cannot contain spaces. See AutoCAD 2026 and
+  ;; BricsCAD V22+ getstring references.
+  (let* ((first-is-prompt (typep read-spaces-or-prompt 'autolisp-string))
+         (read-spaces      (and read-spaces-or-prompt (not first-is-prompt) t))
+         (effective-prompt (if first-is-prompt read-spaces-or-prompt prompt))
+         (result (host-getstring (current-evaluation-host)
+                                 (and effective-prompt
+                                      (optional-prompt-string effective-prompt "GETSTRING"))
+                                 :controls (list :read-spaces read-spaces))))
+    (if read-spaces
+        result
+        (getstring-terminate-at-space result))))
 
 (defun builtin-getint (&optional prompt)
   (host-getint (current-evaluation-host)

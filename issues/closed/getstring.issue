@@ -1,0 +1,44 @@
+autolisp-spec: the page on funciton getstring doesn't explain the meaning of the cr parameter (its possible values and effects).
+
+clautolisp: doesn't implement getstring (it just returns nil).
+
+Your mission, if you accept it, is to go fetch autocad and bricscad reference, find what values can the cr parameter take and to what effect, and update the autolisp-spec, and implement it in clautolisp.
+
+Resolution (clautolisp 1.4.12)
+------------------------------
+
+Researched the AutoCAD 2026 and BricsCAD V22 getstring references. The
+`cr` flag (the "carriage return" flag) is boolean-style — only its
+nil / non-nil nature matters:
+
+  - omitted or nil : a blank terminates the input just like Enter, so
+    the returned string cannot contain spaces. "Gary Indiana Jones"
+    yields "Gary".
+  - any non-nil value (conventionally T): blanks are kept and only
+    Enter terminates. "Gary Indiana Jones" yields "Gary Indiana Jones".
+
+The function returns the entered string, or nil if the user just
+presses Enter. AutoCAD caps the response at 132 characters; BricsCAD
+documents no fixed limit.
+
+  References:
+  - AutoCAD 2026 AutoLISP Reference, getstring
+    (GUID-B139EFBD-74B7-4276-B422-D2186F7D8D0A)
+  - BricsCAD V22 Developer Reference, getstring
+    https://developer.bricsys.com/bricscad/help/en_US/V22/DevRef/source/getstring.htm
+
+Changes:
+  - autolisp-spec: the GETSTRING entry now spells out the possible
+    values of `cr` and their exact effects, and cites both vendors.
+  - clautolisp: builtin-getstring was already reaching the host but
+    ignored `cr` (the whole line came back regardless). It now parses
+    the four calling conventions, passes the read-spaces flag to the
+    host via :controls, and — for line-oriented hosts such as the
+    MockHost — terminates the result at the first blank when `cr` is
+    nil. A live host that already stopped at the blank sees a no-op.
+  - Tests: builtin-level cr-flag tests added in autolisp-builtins-core
+    (getstring-*-terminates-at-first-blank / cr-flag-keeps-blanks).
+
+The original report's "just returns nil" no longer applies: the default
+mock-host reads the line; the remaining gap was the ignored `cr` flag,
+now honored.

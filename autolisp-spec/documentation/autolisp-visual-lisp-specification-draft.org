@@ -61997,14 +61997,28 @@ Function
 #+end_example
 
 *** Arguments and Values
-- `cr`: optional flag controlling acceptance of spaces
-- `msg`: optional prompt string
+- `cr`: optional flag (the "carriage return" flag) that selects how the
+  input is terminated and therefore whether the response may contain
+  blanks. It is a boolean-style flag, so only its nil / non-nil nature
+  matters:
+  - omitted or `nil`: a blank (space) terminates the input just like
+    pressing Enter, so the returned string cannot contain spaces. Typing
+    `Gary Indiana Jones` yields `"Gary"`.
+  - any non-`nil` value (conventionally `T`): blanks are accepted as
+    part of the string and the input is terminated only by pressing
+    Enter. Typing `Gary Indiana Jones` yields `"Gary Indiana Jones"`.
+- `msg`: optional prompt string. When `cr` is supplied it is the second
+  argument; when `cr` is omitted a lone string argument is the prompt.
 
 *** Description
-Prompts the user for a string response.
+Prompts the user for a string response. The `cr` flag governs blank
+handling (see Arguments and Values). The user cannot answer with another
+AutoLISP expression; the response is taken as literal text.
 
 *** Return Values
-Returns the entered string.
+Returns the entered string, or `nil` if the user presses Enter without
+typing anything. AutoCAD limits the response to 132 characters; BricsCAD
+does not document a fixed limit.
 
 *** Side Effects
 - prompts at the command line
@@ -62018,12 +62032,14 @@ Autodesk explicitly notes that the user cannot enter another AutoLISP expression
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- BricsCAD V22+: documented; the `cr`/CrLf flag has the same nil vs
+  non-nil semantics as AutoCAD.
+- Status: documented for both AutoCAD and BricsCAD.
 
 *** Source Notes
 - [getstring (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/FRA/AutoCAD-LT-AutoLISP-Reference/files/GUID-B139EFBD-74B7-4276-B422-D2186F7D8D0A.htm)
-- Status: documented.
+- [getstring (BricsCAD Developer Reference, V22)](https://developer.bricsys.com/bricscad/help/en_US/V22/DevRef/source/getstring.htm)
+- Status: documented for both vendors; `cr` semantics verified against both references.
 
 #+LATEX: \newpage
 
