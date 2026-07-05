@@ -121,6 +121,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:nav-parent #:nav-index
    #:nav-down #:nav-up #:nav-forward #:nav-backward #:nav-first #:nav-last
    #:nav-skip #:nav-render #:nav-source-listing #:nav-selected-position
+   #:nav-select-source-position
    #:nav-form-span #:nav-selected-bounds
    #:nav-code-down #:nav-code-forward #:nav-code-backward
    #:nav-code-first #:nav-code-last #:nav-code-skip

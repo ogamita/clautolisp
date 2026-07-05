@@ -116,7 +116,13 @@ separate binary for tool integrators.
 ** aldo debugger — form navigator (=clautolisp/documentation/clautolisp-sedit-spec.org=)
 
 - Entering the form navigator (=nav=, =g NAME=, =(clal-nav-function 'NAME)=)
-  now selects the function's *first poll-point*, not the whole ~defun~ head.
+  now selects the function's *first poll-point*, not the whole ~defun~ head —
+  and, when entered on a *break*, re-anchors to the *current* poll-point (the
+  form the debugger stopped on), not the first (sedit-spec §7 re-entry).
+- The form navigator's prompt is now plain =NAV>= in every case, never
+  =NAV[code]>= / =NAV[non-code]>= — one prompt per mode (=DBG>= debugger, =NAV>=
+  navigator, =SEDIT>= editor; sedit-spec §6). A bare form evaluated at the =NAV>=
+  prompt is echoed with =NAV>= too, not =DBG>=.
 - In navigation mode the navigator keys (=d u > < << >> ±N=) are stacked over
   the full debugger dictionary: every non-motion command — =c i n o a r j=,
   the breakpoint / frame / inspection verbs — dispatches directly, and =?=

@@ -711,7 +711,7 @@ poll-point lines flatly. Returns a resume directive when a debugger command
 issued from NAV resumes execution, else NIL."
   (if (eq (ignore-errors (get-aldo-setting :navigator)) :line)
       (nav-line-loop ui session)
-      (let ((loc (nav-function-loc session)))
+      (let ((loc (nav-function-loc session hit)))
         (if loc
             (nav-browse ui session hit loc)
             (progn (out ui "DBG> nav: no current function~%") nil)))))
@@ -792,21 +792,29 @@ of the structural sexp tree. Keys: =d=/=>= next, =u=/=<= prev, =<<= first,
                 (:quit  '("q" "quit")))
           :test #'string=))
 
-(defun nav-function-loc (session)
+(defun nav-function-loc (session &optional hit)
   "A :SEXP location over the current function — the `g'/nav target or the stopped
 frame — or NIL when there is none. `u' at its root ascends to the file's directory.
 
-The initial selection is the function's *first poll-point* (nav-down of the whole
-form, skipping the non-evaluable `defun' head — name and lambda list), not the
-whole toplevel form, per sedit spec §4 (bug-aldo-nav-entry-and-breakpoint-flow)."
+The initial selection re-anchors to the *current* poll-point when HIT stopped
+inside this function — the form the debugger stopped on (sedit spec §7 re-entry).
+Failing that (no HIT, or its position is not found — e.g. `g NAME' with no
+break), it is the function's *first poll-point* (nav-down of the whole form,
+skipping the non-evaluable `defun' head), not the whole toplevel form, per sedit
+spec §4 (bug-aldo-nav-entry-and-breakpoint-flow)."
   (let* ((metadata (or (session-nav-target session) (current-metadata session)))
          (form (and metadata (source-form-of-metadata metadata)))
          (file (and metadata
                     (let ((p (function-debug-metadata-source-position metadata)))
-                      (and p (source-position-file p))))))
+                      (and p (source-position-file p)))))
+         (stop (and hit (hit-source-position hit))))
     (when form
       (let ((nav (make-navigator form)))
-        (nav-code-down nav)             ; select the first poll-point, not the defun head
+        (unless (and stop
+                     (nav-select-source-position
+                      nav (source-position-start-line stop)
+                      (source-position-start-column stop)))
+          (nav-code-down nav))          ; first poll-point when the stop form isn't located
         (make-nav-loc :kind :sexp :navigator nav
                       :file file :metadata metadata)))))
 
@@ -1114,7 +1122,10 @@ text is available (so the caller can fall back)."
      (let ((nav (nav-loc-navigator loc)))
        (unless (nav-render-sexp-source ui session loc)
          (out ui "~&NAV> ~A~%" (nav-render nav)))   ; no source text: fall back
-       (out ui "NAV[~A]> " (if (nav-code-p nav) "code" "non-code"))))
+       ;; one prompt per mode (sedit-spec §6): the sexp form navigator is NAV>,
+       ;; never NAV[code]>/NAV[non-code]> — whether the selection is evaluable
+       ;; code is shown by the poll-point decoration, not the prompt.
+       (out ui "NAV> ")))
     (:file
      (nav-render-file ui loc)
      (out ui "NAV[file]> "))
@@ -1347,8 +1358,9 @@ is dispatched as a debugger command (bug-aldo-nav-command-dictionary)."
                           (ignore-errors (parse-integer cmd)))))
         (if (and (plusp (length trimmed)) (char= (char trimmed 0) #\())
             ;; a Lisp form at the prompt evaluates in the current frame and
-            ;; prints, like the REPL (in NAV as well as at DBG)
-            (eval-and-print ui session trimmed)
+            ;; prints, like the REPL (in NAV as well as at DBG) — echoed with the
+            ;; navigator's own prompt, not DBG> (sedit-spec §6)
+            (eval-and-print ui session trimmed "NAV> ")
             (multiple-value-bind (next leave directive)
                 (ecase (nav-loc-kind loc)
                   (:sexp (nav-dispatch-sexp ui session hit loc cmd arg signed))
@@ -1680,10 +1692,13 @@ princ form."
            (out ui "DBG> unknown setting ~S (,settings lists them all)~%"
                 (string-downcase (string arg)))))))
 
-(defun eval-and-print (ui session form-string)
+(defun eval-and-print (ui session form-string &optional (prompt "DBG> "))
+  "Evaluate FORM-STRING in the stopped frame and echo the value, prefixed by the
+current mode's PROMPT (sedit-spec §6: DBG> at the debugger, NAV> in the form
+navigator, so the echo matches where the form was typed)."
   (handler-case
-      (out ui "DBG> ~A~%" (preview (cmd-eval session form-string)))
-    (error (e) (out ui "DBG> eval error: ~A~%" e))))
+      (out ui "~A~A~%" prompt (preview (cmd-eval session form-string)))
+    (error (e) (out ui "~Aeval error: ~A~%" prompt e))))
 
 (defun print-variable-cmd (ui session arg)
   (if (and arg (plusp (length arg)))
