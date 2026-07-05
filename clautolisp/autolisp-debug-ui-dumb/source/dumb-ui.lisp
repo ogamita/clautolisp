@@ -1146,11 +1146,76 @@ file need the function loaded (aldo-pre-debug.issue)."
                       (breakpoint-pp bp) new-p))
                (out ui "NAV> the selected form has no poll point (pick an evaluated sub-form)~%")))))))
 
+;;; --- NAV -> EDIT: bridge into the sedit structural editor (spec §7) --------
+
+(defparameter +nav-editing-words+
+  '("edit" "insert" "add" "replace" "wrap" "slurp" "barf" "splice" "split" "join"
+    "cut" "copy" "paste" "undo")
+  "Editing commands recognised in NAV by their WORD (§1.3): typing one enters the
+sedit structural editor. Single-letter editing keys would collide with debugger
+keys, so only the words switch modes.")
+
+(defun nav-editing-word-p (cmd) (member cmd +nav-editing-words+ :test #'string=))
+
+(defun nav-form-source-text (nav)
+  "The verbatim source text of the whole navigated form, or NIL when its source
+file / line span is unavailable (a reconstructed form with no file)."
+  (multiple-value-bind (file start end) (nav-form-span nav)
+    (when (and file start end)
+      (let ((lines (ignore-errors (lines-of file))))
+        (when (and lines (<= 1 start) (<= start (length lines)))
+          (with-output-to-string (s)
+            (loop for n from (max 1 start) to (min (length lines) end)
+                  for first = t then nil
+                  do (unless first (terpri s))
+                     (write-string (aref lines (1- n)) s))))))))
+
+(defun nav-edit-session (ui session hit loc cmd arg)
+  "NAV -> EDIT (spec §7): open the current form's source in the sedit editor, run
+it on the debugger's terminal, and install the edited definition (evaluate it in
+the running system) on return, dropping the cached metadata so the navigator
+re-instruments. From EDIT, `debug'/`aldo' CMD reach the debugger. Stays in NAV."
+  (let* ((nav (nav-loc-navigator loc))
+         (text (nav-form-source-text nav)))
+    (if (not text)
+        (out ui "NAV> can't edit here: no source text for this form~%")
+        (let ((sedit (clautolisp.sedit:sedit-open (clautolisp.sedit:parse-form text))))
+          (setf (clautolisp.sedit:sedit-state-mode
+                 (clautolisp.sedit:sedit-session-state sedit)) :edit)
+          ;; perform the triggering editing command (unless it was bare `edit')
+          (unless (string= cmd "edit")
+            (clautolisp.sedit:sedit-command
+             sedit (if arg (format nil "~A ~A" cmd arg) cmd)))
+          (let ((result
+                  (clautolisp.sedit:sedit-run
+                   sedit :input (dumb-ui-input ui) :output (dumb-ui-output ui)
+                         :debug-hook (lambda (line) (nav-run-debug-line ui session hit line)))))
+            (nav-install-edited-form ui session result loc))))))
+
+(defun nav-run-debug-line (ui session hit line)
+  "Run a debugger command LINE reached from EDIT via the `debug'/`aldo' prefix."
+  (let ((sp (position #\Space line)))
+    (run-command ui session hit
+                 (if sp (subseq line 0 sp) line)
+                 (and sp (string-trim " " (subseq line sp))))))
+
+(defun nav-install-edited-form (ui session result loc)
+  "Install the edited form RESULT by evaluating it in the stopped context (spec
+§7), then drop the cached metadata so `b' / the display re-instrument."
+  (if (and result session)
+      (handler-case
+          (progn (cmd-eval session (clautolisp.sedit:unparse result))
+                 (setf (nav-loc-metadata loc) nil)
+                 (out ui "NAV> installed the edited definition~%"))
+        (error (e) (out ui "NAV> could not install the edit: ~A~%" e)))
+      (out ui "NAV> left the editor (nothing installed)~%")))
+
 (defun nav-dispatch-sexp (ui session hit loc cmd arg signed)
   "Handle one command in a :SEXP location; return (values NEXT-LOC LEAVE-P
 DIRECTIVE). Motions (d u > < << >> ±N) skip non-code sub-forms (a form's
 operator, DEFUN's name/arg-list, quoted data). Bare `b' sets a breakpoint on the
-selected form; every other token is dispatched as a debugger command through the
+selected form; an editing WORD (edit/insert/wrap/…) enters the sedit editor
+(spec §7); every other token is dispatched as a debugger command through the
 stacked dictionary (bug-aldo-nav-command-dictionary), so c i n o a r j, the
 breakpoint/frame/inspection verbs, etc. are directly reachable. A command that
 returns a resume directive (continue / step / …) leaves NAV, carrying it up."
@@ -1172,6 +1237,8 @@ returns a resume directive (continue / step / …) leaves NAV, carrying it up."
       ;; bare `b' breakpoints the selection; `b LOC' (and every other verb) goes
       ;; to the debugger dictionary below.
       ((and (string= cmd "b") (null arg)) (nav-set-breakpoint ui session loc) nil)
+      ;; an editing word switches into the sedit structural editor (spec §7)
+      ((nav-editing-word-p cmd) (nav-edit-session ui session hit loc cmd arg) nil)
       ((member cmd '("h" "?" "help") :test #'string=) (nav-help ui) nil)
       ;; stacked dispatch: not a navigator command — run it as a debugger command.
       (t (let ((directive (run-command ui session hit cmd arg)))
@@ -1181,6 +1248,7 @@ returns a resume directive (continue / step / …) leaves NAV, carrying it up."
   "`?'/`h' in NAV: the navigator motion keys plus the stacked debugger dictionary
 (bug-aldo-nav-command-dictionary — help is the union of the active dictionaries)."
   (out ui "NAV> motion: d down  u up  > < siblings  << >> ends  ±N skip  b break (selection)  q leave~%")
+  (out ui "NAV> edit (or insert/add/replace/wrap/…): open the sedit structural editor~%")
   (out ui "NAV> all debugger commands are also available directly:~%")
   (print-help ui))
 

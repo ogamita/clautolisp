@@ -605,6 +605,10 @@ not supplied)."
                  ;; recorded — same convention as SLIME / Allegro's
                  ;; repl bookkeeping.
                  (this-form (car (last forms))))
+            ;; Record this turn's source for sedit recall (spec §3): the raw
+            ;; SOURCE text (runtime forms drop their spans), so `(clal-sedit
+            ;; 'NAME)' can recall a REPL-defined function/variable's form.
+            (ignore-errors (clautolisp.sedit:record-source source "<repl>"))
             ;; Bind :- BEFORE eval so the user's form can reference
             ;; what they just typed via (print :-), etc.
             (%repl-bind-dash this-form context)

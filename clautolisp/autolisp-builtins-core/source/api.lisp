@@ -4558,6 +4558,93 @@ an optional help string. A no-op (returns nil) unless the debugger UI is loaded.
              (and doc (clautolisp.autolisp-runtime:autolisp-string-value doc))))
   nil)
 
+;;; --- CLAL-SEDIT + CLAL-CLIPBOARD-* (sedit spec §2, §5.4) -------------
+;;;
+;;; The AutoLISP surface of the sedit structural editor and its clipboard.
+;;; An AutoLISP value is bridged to a sedit adorned tree through its SOURCE
+;;; TEXT — AUTOLISP-VALUE->STRING to print it, CLAUTOLISP.SEDIT:PARSE-FORM to
+;;; read it as a tree, CLAUTOLISP.SEDIT:UNPARSE + AUTOLISP-READ-FROM-STRING to
+;;; get a value back — so sedit stays a self-contained, runtime-free library.
+
+(defun %clal-value->node (value)
+  "The sedit adorned tree for an AutoLISP VALUE, via its source text."
+  (clautolisp.sedit:parse-form (autolisp-value->string value nil)))
+
+(defun %clal-node->value (node)
+  "The AutoLISP value a sedit NODE denotes (read from its source text; never
+evaluated), or nil for a null node."
+  (and node
+       (clautolisp.autolisp-runtime:autolisp-read-from-string (clautolisp.sedit:unparse node))))
+
+(defun %clal-sedit-target (object)
+  "Resolve the CLAL-SEDIT argument OBJECT to what SEDIT-OPEN expects (spec §2):
+NIL -> a stand-alone nil; an AutoLISP symbol -> its (recorded) name to recall; an
+AutoLISP string -> a file/directory path; any other value -> a sexp to edit."
+  (cond
+    ((null object) nil)
+    ((typep object 'clautolisp.autolisp-runtime:autolisp-symbol)
+     (intern (string-upcase (clautolisp.autolisp-runtime:autolisp-symbol-name object)) :keyword))
+    ((typep object 'clautolisp.autolisp-runtime:autolisp-string)
+     (clautolisp.autolisp-runtime:autolisp-string-value object))
+    (t (%clal-value->node object))))
+
+(defun %clal-sedit-eval-hook (node)
+  "EVAL / MACROEXPAND callback for sedit: evaluate NODE's form in the running
+system and return the result as a node."
+  (let ((value (clautolisp.autolisp-runtime:autolisp-eval
+                (clautolisp.autolisp-runtime:autolisp-read-from-string
+                 (clautolisp.sedit:unparse node))
+                (clautolisp.autolisp-runtime:current-evaluation-context))))
+    (%clal-value->node value)))
+
+(defun %clal-sedit-load-hook (path)
+  "LOAD callback for sedit: evaluate the forms of file PATH into the running
+system (installing an edited definition, spec §5.7)."
+  (let ((ctx (clautolisp.autolisp-runtime:current-evaluation-context)))
+    (dolist (form (clautolisp.autolisp-runtime:read-runtime-from-string (uiop:read-file-string path)))
+      (clautolisp.autolisp-runtime:autolisp-eval form ctx))))
+
+(defun builtin-clal-sedit (&optional object)
+  "Edit OBJECT with the sedit structural editor (spec §2): no argument -> a
+stand-alone form starting at nil; a symbol -> recall its recorded definition; a
+string -> a file or directory path; any other value -> edited as a sexp. Runs the
+interactive editor on the terminal and returns the edited object. Sets
+CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
+  (let* ((session (clautolisp.sedit:sedit-open (%clal-sedit-target object)
+                                               :recording (clautolisp.sedit:sedit-recording)))
+         (result (clautolisp.sedit:sedit-run session
+                                             :input *standard-input* :output *standard-output*
+                                             :eval-hook #'%clal-sedit-eval-hook
+                                             :load-hook #'%clal-sedit-load-hook)))
+    (%clal-node->value result)))
+
+(defun builtin-clal-clipboard-put-text (string)
+  "Set the system clipboard to STRING (clipboard-interface.org). Returns T on
+success, nil otherwise."
+  (if (clautolisp.sedit:clipboard-put-text
+       (%clal-nav-name-string string "CLAL-CLIPBOARD-PUT-TEXT"))
+      (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")
+      nil))
+
+(defun builtin-clal-clipboard-get-text ()
+  "Return the system clipboard contents as a string, or nil when it is empty or
+unreadable."
+  (let ((text (clautolisp.sedit:clipboard-get-text)))
+    (and text (clautolisp.autolisp-runtime:make-autolisp-string text))))
+
+(defun builtin-clal-clipboard-copy-sexp (value)
+  "Copy VALUE to the clipboard (spec §5.4): its source text goes to the system
+clipboard and the object to *clal-clipboard*. Returns nil."
+  (clautolisp.sedit:clipboard-copy-node (%clal-value->node value))
+  nil)
+
+(defun builtin-clal-clipboard-paste-sexp ()
+  "Return the clipboard contents parsed back into an AutoLISP object (never
+evaluated — a foreign #.() cannot run): the system clipboard when available, else
+the in-process *clipboard* (clipboard-interface.org §Public API). Nil when both
+are empty."
+  (%clal-node->value (clautolisp.sedit:clipboard-paste-node clautolisp.sedit:*clipboard*)))
+
 ;;; --- CLAL-OPTIMIZE / CLAL-OPTIMIZATION -------------------------------
 ;;;
 ;;; The optimization qualities (debugger-public-interface issue Part A) gate
@@ -8208,6 +8295,11 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-NAV-FILE"         #'builtin-clal-nav-file)
    (make-core-builtin-subr "CLAL-NAV-DIRECTORY"    #'builtin-clal-nav-directory)
    (make-core-builtin-subr "CLAL-SELECT-FILE"      #'builtin-clal-select-file)
+   (make-core-builtin-subr "CLAL-SEDIT"                #'builtin-clal-sedit)
+   (make-core-builtin-subr "CLAL-CLIPBOARD-PUT-TEXT"   #'builtin-clal-clipboard-put-text)
+   (make-core-builtin-subr "CLAL-CLIPBOARD-GET-TEXT"   #'builtin-clal-clipboard-get-text)
+   (make-core-builtin-subr "CLAL-CLIPBOARD-COPY-SEXP"  #'builtin-clal-clipboard-copy-sexp)
+   (make-core-builtin-subr "CLAL-CLIPBOARD-PASTE-SEXP" #'builtin-clal-clipboard-paste-sexp)
    (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
    (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)
    (make-core-builtin-subr "CLAL-ENABLE-ENC-DIAGNOSTIC"   #'builtin-clal-enable-enc-diagnostic)

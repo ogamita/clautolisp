@@ -200,6 +200,7 @@
   :depends-on ("clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-dcl"
+               "clautolisp/autolisp-sedit"
                "uiop")
   :serial t
   :components
@@ -614,7 +615,8 @@
   :description "Dumb-terminal debugger UI (debugger §18)."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-debug-ui")
+  :depends-on ("clautolisp/autolisp-debug-ui"
+               "clautolisp/autolisp-sedit")
   :serial t
   :components
   ((:file "autolisp-debug-ui-dumb/source/package")

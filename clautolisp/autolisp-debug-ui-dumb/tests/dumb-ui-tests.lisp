@@ -387,6 +387,23 @@
       (is (contains output "pp"))             ; `lb' listed a breakpoint by pp
       (is (contains output "7")))))           ; `p x' printed the parameter
 
+(test dumb-ui-nav-edit-word-bridges-into-sedit
+  ;; spec §7: the `edit' word (and insert/wrap/…) in NAV enters the sedit
+  ;; structural editor. Here the test source has no on-disk file, so the bridge
+  ;; reports it can't fetch the source — which confirms the word reached the
+  ;; bridge (not the debugger fall-through), then `c' resumes.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%edit~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))                           ; `c' resumed after the bridge
+      (is (contains output "no source text")))))    ; `edit' reached nav-edit-session
+
 (test dumb-ui-nav-help-lists-debugger-commands
   ;; bug-aldo-nav-command-dictionary: `?' in NAV derives from the union of the
   ;; active dictionaries — the motion keys AND the debugger commands.

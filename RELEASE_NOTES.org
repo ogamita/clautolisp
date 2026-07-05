@@ -78,6 +78,24 @@ separate binary for tool integrators.
   ~"UTF-8-BOM"~ / ~"UTF-16-LE"~ / ~"UTF-16-BE"~ / ~"UTF-32-LE"~ /
   ~"UTF-32-BE"~ / ~"ANSI"~. See § /clautolisp Extensions/.
 
+** sedit — structural editor + clipboard (=clautolisp/documentation/clautolisp-sedit-spec.org=)
+
+- ~(clal-sedit [object])~ — edit a form with the *sedit* structural editor: no
+  argument starts at ~nil~; a symbol recalls its recorded definition; a string
+  is a file or directory path; any other value is edited as a sexp. Two-mode
+  (navigate / edit) with motions, insert/add/replace, wrap/slurp/barf/splice/
+  split/join, one-level undo, and byte-preserving formatting. Returns the edited
+  object. See the new manual chapter § /sedit and the aldo form navigator/.
+- The interactive REPL now records every top-level form it evaluates, so
+  ~(clal-sedit 'NAME)~ recalls a function/variable you defined at the prompt.
+- *Clipboard* (system-clipboard aware, degrades to in-process only):
+  ~(clal-clipboard-copy-sexp OBJ)~ / ~(clal-clipboard-paste-sexp)~ and the text
+  forms ~(clal-clipboard-put-text S)~ / ~(clal-clipboard-get-text)~. Paste never
+  evaluates its input. Providers: X11, Wayland, macOS, Windows, OSC 52, NULL.
+- From the aldo form navigator, an editing word (=edit=, =insert=, =wrap=, …)
+  opens the same editor on the current function; leaving it installs the edited
+  definition in the running system (spec §7).
+
 ** aldo debugger — form navigator (=clautolisp/documentation/clautolisp-sedit-spec.org=)
 
 - Entering the form navigator (=nav=, =g NAME=, =(clal-nav-function 'NAME)=)

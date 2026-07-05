@@ -16,6 +16,24 @@
   ;; the ordered session log — ALL top-level forms, most-recent first
   (log '() :type list))
 
+(defvar *sedit-recording* nil
+  "The process-wide REPL source recording (spec §3), created on first use. The
+interactive REPL records each top-level form it evaluates here, and
+`clal-sedit 'NAME' recalls a name's defining form from it.")
+
+(defun sedit-recording ()
+  "The current REPL source recording, creating it on first use."
+  (or *sedit-recording* (setf *sedit-recording* (make-recording))))
+
+(defun record-source (source &optional file)
+  "Record the top-level forms of the SOURCE text of one REPL turn into the
+process recording (spec §3), parsed losslessly. FILE names their origin.
+Convenience over PARSE-SOURCE + RECORD-FORM; returns the recording."
+  (let ((recording (sedit-recording)))
+    (dolist (form (file-node-children (parse-source source :file file)) recording)
+      (unless (comment-node-p form)
+        (record-form recording form)))))
+
 (defun %atom-name-string (node)
   "The upper-case name a symbol/string atom NODE denotes, or NIL."
   (and (atom-node-p node)

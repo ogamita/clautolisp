@@ -505,3 +505,81 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 1) ; must not re-save the builtin
     (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 0)
     (is (eq stub (clautolisp.autolisp-runtime:autolisp-symbol-value sym)))))
+
+;;; --- clal-clipboard-* + clal-sedit (sedit spec §2, §5.4) ----------
+
+(defun %mock-clipboard-provider (box)
+  (clautolisp.sedit:make-clipboard-provider
+   :mock :available-p (constantly t)
+   :put-text (lambda (s) (setf (car box) s) nil)
+   :get-text (lambda () (car box))))
+
+(defun %al-string (x) (clautolisp.autolisp-runtime:make-autolisp-string x))
+(defun %al->src (v) (clautolisp.autolisp-builtins-core:autolisp-value->string v nil))
+(defun %al-read (s) (clautolisp.autolisp-runtime:autolisp-read-from-string s))
+
+(test clal-clipboard-put-and-get-text-round-trip
+  (let* ((box (list nil))
+         (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
+    (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-put-text (%al-string "hi there"))
+    (is (equal "hi there" (car box)))
+    (let ((got (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-get-text)))
+      (is (typep got 'clautolisp.autolisp-runtime:autolisp-string))
+      (is (equal "hi there" (clautolisp.autolisp-runtime:autolisp-string-value got))))))
+
+(test clal-clipboard-copy-and-paste-sexp-round-trip
+  (setup-mock-host-context)
+  (let* ((box (list nil))
+         (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
+    ;; copy an AutoLISP list; its source text lands on the system clipboard
+    (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-copy-sexp (%al-read "(1 2 3)"))
+    (is (equal "(1 2 3)" (car box)))
+    ;; paste parses it back into an equivalent AutoLISP object (never evaluated)
+    (let ((pasted (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-paste-sexp)))
+      (is (equal "(1 2 3)" (%al->src pasted))))))
+
+(test clal-clipboard-copy-paste-round-trips-through-the-internal-clipboard
+  ;; with the :NULL provider the system clipboard is empty, so paste falls back
+  ;; to the in-process *clipboard* set by copy (clipboard-interface.org §Public API)
+  (setup-mock-host-context)
+  (let ((clautolisp.sedit:*clipboard-provider* :null))
+    (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-copy-sexp (%al-read "(a b c)"))
+    (let ((pasted (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-paste-sexp)))
+      (is (string-equal "(a b c)" (%al->src pasted))))))
+
+(test clal-clipboard-paste-does-not-evaluate-foreign-text
+  (setup-mock-host-context)
+  (let* ((box (list "#.(error \"boom\")"))
+         (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
+    ;; a malicious read-macro on the clipboard must not run (no error signalled)
+    (let ((pasted (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-paste-sexp)))
+      (is (not (null pasted))))))
+
+(test clal-sedit-quitting-immediately-returns-the-form
+  (setup-mock-host-context)
+  (let* ((*standard-input* (make-string-input-stream (format nil "q~%")))
+         (*standard-output* (make-string-output-stream))
+         (result (clautolisp.autolisp-builtins-core::builtin-clal-sedit
+                  (%al-read "(defun foo () 1)"))))
+    (is (string-equal "(defun foo nil 1)" (%al->src result)))
+    (is (not (null clautolisp.sedit:*clal-sedit-initial-form*)))))
+
+(test clal-sedit-recalls-a-recorded-definition
+  (setup-mock-host-context)
+  (let ((clautolisp.sedit:*sedit-recording* nil))
+    (clautolisp.sedit:record-source "(defun bar (x) (* x x))" "<test>")
+    (let* ((*standard-input* (make-string-input-stream (format nil "q~%")))
+           (*standard-output* (make-string-output-stream))
+           (result (clautolisp.autolisp-builtins-core::builtin-clal-sedit
+                    (clautolisp.autolisp-runtime:intern-autolisp-symbol "BAR"))))
+      (is (string-equal "(defun bar (x) (* x x))" (%al->src result))))))
+
+(test clal-sedit-edits-then-returns-the-modified-form
+  (setup-mock-host-context)
+  (let* ((*standard-input* (make-string-input-stream
+                            ;; select the body, replace it, then quit
+                            (format nil "d~%>>~%replace (* x 2)~%q~%")))
+         (*standard-output* (make-string-output-stream))
+         (result (clautolisp.autolisp-builtins-core::builtin-clal-sedit
+                  (%al-read "(defun foo (x) x)"))))
+    (is (string-equal "(defun foo (x) (* x 2))" (%al->src result)))))

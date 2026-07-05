@@ -428,3 +428,44 @@ REPL recording hook, bridging aldo =nav-browse= into a sedit EDIT session, and
 the =autolisp-debug-ui= → =autolisp-sedit= dependency (its own turn, to avoid
 regressing the aldo navigator's 390 dumb-UI tests). That turn also gets the
 RELEASE_NOTES entry (first user-visible surface).
+
+** 2026-07-05 — §7 RUNTIME/UI WIRING DONE (clautolisp 1.4.22, branch =sedit-nav=)
+
+The AutoLISP surface and the aldo integration — the whole issue is now
+implemented. =autolisp-builtins-core= and =autolisp-debug-ui-dumb= now depend on
+=autolisp-sedit=.
+
+- *Builtins* (=autolisp-builtins-core/source/api.lisp=): =CLAL-SEDIT= (interactive
+  editor: nil / symbol-recall / file-or-dir path / any value; runs on the
+  terminal, returns the edited value; sets =*CLAL-SEDIT-INITIAL-FORM*= /
+  =*CLAL-SEDIT-LAST-RESULT*=), =CLAL-CLIPBOARD-PUT-TEXT= / =-GET-TEXT= /
+  =-COPY-SEXP= / =-PASTE-SEXP=. AutoLISP value ↔ sedit tree is bridged through
+  SOURCE TEXT (=autolisp-value->string= ↔ =parse-form=, =unparse= ↔
+  =autolisp-read-from-string=), so sedit stays runtime-free. Paste never
+  evaluates; paste falls back to the in-process =*clipboard*=.
+- *REPL recording* (=tools/clautolisp/source/main.lisp= =repl-loop=): each turn's
+  raw source is parsed and recorded (=clautolisp.sedit:record-source= into the
+  process =*sedit-recording*=), so =(clal-sedit 'NAME)= recalls a REPL-defined
+  form — complementary to the existing file-metadata recall.
+- *Aldo NAV → EDIT bridge* (=autolisp-debug-ui-dumb/source/dumb-ui.lisp=): an
+  additive clause in =nav-dispatch-sexp= — an editing WORD (=edit=, =insert=,
+  =wrap=, …) opens the current form's verbatim source in a sedit session on the
+  debugger terminal (=debug=/=aldo= reach the debugger from EDIT); on leaving,
+  the edited definition is installed by evaluating it (=cmd-eval=) and the cached
+  metadata is dropped. Verified end-to-end in the built binary: =clal-nav-
+  function= → =edit= → replace the body → =q= → "installed the edited definition"
+  → the new definition runs.
+
+Docs: new user-manual chapter § /sedit and the aldo form navigator/; every
+public =clal-*= entry documented in autolisp-spec § /clautolisp Extensions/;
+RELEASE_NOTES updated.
+
+Tests (all green): autolisp-sedit 295/295, autolisp-builtins-core 1403/1403
+(+11 clipboard/sedit/recall), autolisp-debug-ui-dumb 392/392 (+2 bridge). No
+regressions.
+
+*The issue is complete.* Deferred refinements only: virtual/deferred breakpoints
+for unloaded files; a multi-column directory listing; refreshing the NAV source
+display from the redefined function after an in-place edit (today it re-reads the
+on-disk file); the =clal-set-breakpoint= / =clal-disable-breakpoint= programmatic
+API named in the §7 note (breakpoints are managed by the debugger's own commands).

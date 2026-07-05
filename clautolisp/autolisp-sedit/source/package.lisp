@@ -50,6 +50,7 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:recording-definitions #:recording-log
    #:record-form #:recorded-definition #:definition-name
    #:recording-forms #:session-source
+   #:*sedit-recording* #:sedit-recording #:record-source
    ;; --- storage: files, directories, save/load (§2.3–§2.4, §5.7–§5.9) ---
    #:sedit-load #:sedit-save #:read-directory
    #:sedit-fs-new-file #:sedit-fs-rename #:sedit-fs-delete
