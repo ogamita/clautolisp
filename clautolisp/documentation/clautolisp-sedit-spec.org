@@ -34,7 +34,7 @@ this document specifies only the *editor-facing* clipboard behaviour and refers
 to that document for the provider protocol. (That chapter, duplicated at the
 end of the old integration issue, is superseded by the standalone file.)
 
-The document version is *0.4 (draft)*; any change to it must bump this number.
+The document version is *0.5 (draft)*; any change to it must bump this number.
 
 * 1. The two modes
 
@@ -357,6 +357,7 @@ Availability column *SFD* = Sexp / File / Directory; *M* = mode
 | Structural | S   | E  | —              | join                       | Inverse of split — join two sibling lists. (¶)              |
 |------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
 | Evaluation | SFD | NE | =e=            | eval                       | Evaluate the selection (§5.6).                              |
+| Evaluation | SFD | NE | =(form)=       | (a bare form)              | Evaluate FORM and print the result, like the REPL (§5.6).   |
 | Evaluation | SF  | E  | =m=            | macroexpand                | Evaluate the selection and replace it by the result (§5.6). |
 |------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
 | File       | SF  | NE | =l=            | load                       | Load the current file, or FILE if given (§5.7).             |
@@ -554,8 +555,15 @@ reverts every kind of edit. The formal recording/restoration rules are §6.4.
 
 ** 5.6 =eval= and =macroexpand= — and the result/form history
 
-Both bind, for the duration of the evaluation, one *temporary dynamic*
-variables from the current context:
+*Evaluating a form at the prompt.* In *every* mode — the debugger (=DBG>=), the
+form navigator (=NAV>=) and the editor (=SEDIT>=) — a command line that is a bare
+Lisp *form* (it starts with =(=) is read, evaluated in the current context, and
+its result printed, exactly as at the top-level REPL. This is distinct from =e=
+=eval=, which evaluates the *selection*: the bare form evaluates whatever you
+type. The form is only READ and evaluated; it never mutates the edited tree.
+
+Both =e= and =macroexpand= bind, for the duration of the evaluation, one
+*temporary dynamic* variables from the current context:
 
 - =*selection*= — the selected object (for a directory, the selection's
   *path*);

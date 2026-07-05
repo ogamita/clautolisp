@@ -130,6 +130,32 @@
     (is (comment-node-p (loc-focus (sedit-state-loc (sedit-session-state s)))))
     (is (equal '(:a :b) (root-of s)))))                ; comment dropped from the sexp
 
+(test a-form-at-the-prompt-evaluates-via-the-eval-print-hook
+  (let ((s (sedit-open (parse-form "(a b)")))
+        (seen '()))
+    (multiple-value-bind (_ action)
+        (sedit-command s "(+ 1 2)"
+                       :eval-print-hook (lambda (node) (push (tree->sexp node) seen) "= 3"))
+      (declare (ignore _))
+      (is (equal '(:printed . "= 3") action))       ; the driver prints the string
+      (is (equal '((:+ 1 2)) seen)))                 ; the parsed form reached the hook
+    ;; `e' evaluates the current selection
+    (sedit-command s "d")                            ; -> a
+    (let ((got nil))
+      (multiple-value-bind (_ action)
+          (sedit-command s "e" :eval-print-hook (lambda (node) (setf got (tree->sexp node)) "OK"))
+        (declare (ignore _))
+        (is (equal '(:printed . "OK") action))
+        (is (eq :a got))))))                          ; the selection reached the hook
+
+(test sedit-run-evaluates-a-form-at-the-prompt
+  (let* ((s (sedit-open (parse-form "(a b)")))
+         (in (make-string-input-stream (format nil "(+ 2 3)~%q~%")))
+         (out (make-string-output-stream)))
+    (sedit-run s :input in :output out
+                 :eval-print-hook (lambda (node) (declare (ignore node)) "= 5"))
+    (is (search "= 5" (get-output-stream-string out)))))
+
 ;;; --- marked-selection render (§2/§5.2) ------------------------------------
 
 (test render-brackets-the-selection

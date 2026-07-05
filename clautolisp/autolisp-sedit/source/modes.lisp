@@ -107,11 +107,6 @@ EVAL-HOOK (node -> result-node); a no-op with a message otherwise."
     (let ((result (funcall eval-hook (loc-focus (sedit-state-loc state)))))
       (when result (sedit-replace state result)))))
 
-(defun %do-eval (state eval-hook)
-  "Evaluate the selection (spec §5.6). Non-mutating; returns the result via
-EVAL-HOOK, or NIL."
-  (and eval-hook (funcall eval-hook (loc-focus (sedit-state-loc state)))))
-
 ;;; --- file: load / save (§5.7–§5.8) ----------------------------------------
 
 (defun %do-load (session arg load-hook)
@@ -165,15 +160,29 @@ LOAD-HOOK. Not an editing command — the mode is unchanged (§6.6)."
 
 ;;; --- the transition machine (§6.6) ----------------------------------------
 
-(defun sedit-command (session line &key debug-hook eval-hook load-hook)
+(defun %form-line-p (line)
+  "True when LINE is a Lisp form typed at the prompt (starts with `(')."
+  (let ((s (string-trim '(#\Space #\Tab) line)))
+    (and (plusp (length s)) (char= (char s 0) #\())))
+
+(defun %eval-print (form-node eval-print-hook)
+  "Evaluate FORM-NODE via EVAL-PRINT-HOOK and return the (:printed . STRING)
+action the driver prints; STRING is NIL when there is no evaluator."
+  (cons :printed (and eval-print-hook (funcall eval-print-hook form-node))))
+
+(defun sedit-command (session line &key debug-hook eval-hook load-hook eval-print-hook)
   "Dispatch one command LINE against SESSION per the two-mode machine (§6.6).
 Returns (values SESSION ACTION): ACTION is NIL (keep editing), :QUIT, :HELP,
-:UNKNOWN, or a debugger resume directive from DEBUG-HOOK. Editing commands switch
-NAV->EDIT and run; `edit'/`nav' switch modes; `debug'/`aldo' CMD run a debugger
-command and return to NAV; a bare debugger command runs directly in NAV (the
-navigator dictionary is stacked over the debugger's); motions, eval and load keep
-the mode."
+:UNKNOWN, (:printed . STRING) for an evaluated form, or a debugger resume
+directive from DEBUG-HOOK. A Lisp form typed at the prompt is evaluated and
+printed (like the REPL). Editing commands switch NAV->EDIT and run; `edit'/`nav'
+switch modes; `debug'/`aldo' CMD run a debugger command and return to NAV; a bare
+debugger command runs directly in NAV (the navigator dictionary is stacked over
+the debugger's); motions, eval and load keep the mode."
   (let ((state (sedit-session-state session)))
+    (if (%form-line-p line)
+        (values session
+                (%eval-print (parse-form (string-trim '(#\Space #\Tab) line)) eval-print-hook))
     (multiple-value-bind (token arg) (%split-command line)
       (cond
         ((null token) (values session nil))
@@ -184,7 +193,7 @@ the mode."
         ((%motion-token-p token) (%do-motion state token) (values session nil))
         ((%signed-integer token) (sedit-skip state (%signed-integer token)) (values session nil))
         ((member token '("e" "eval") :test #'string=)
-         (%do-eval state eval-hook) (values session nil))
+         (values session (%eval-print (loc-focus (sedit-state-loc state)) eval-print-hook)))
         ((string= token "edit") (setf (sedit-state-mode state) :edit) (values session nil))
         ((string= token "nav") (setf (sedit-state-mode state) :nav) (values session nil))
         ((member token '("debug" "aldo") :test #'string=)
@@ -198,7 +207,7 @@ the mode."
         ((eq (sedit-state-mode state) :nav)
          ;; a bare debugger command in NAV — the stacked debugger dictionary
          (values session (and debug-hook (funcall debug-hook line))))
-        (t (values session :unknown))))))       ; EDIT: debugger needs the prefix
+        (t (values session :unknown)))))))       ; EDIT: debugger needs the prefix
 
 ;;; --- rendering the selection ----------------------------------------------
 
@@ -240,13 +249,14 @@ along the path to the focus so the markers can be placed; verbatim elsewhere."
   (format nil "commands (§5): d u  > (f) < (b)  << >>  ±N move | i a r insert/add/replace | ~
                ic ac rc comment | z undo | c x v copy/cut/paste | ~
                wrap slurp barf splice split join | e eval m macroexpand | ~
-               l load s save | edit nav | debug/aldo CMD | q quit | h help"))
+               l load s save | edit nav | debug/aldo CMD | (form) evaluate | q quit | h help"))
 
 (defun sedit-run (session &key (input *standard-input*) (output *standard-output*)
-                               debug-hook eval-hook load-hook)
+                               debug-hook eval-hook load-hook eval-print-hook)
   "Run the interactive editor loop on SESSION until `quit' / EOF, then return the
 §2 result (session-result). Each turn renders the marked selection and the mode
-prompt, reads a command line, and dispatches it (§6.6)."
+prompt, reads a command line, and dispatches it (§6.6). A Lisp form typed at the
+prompt is evaluated (via EVAL-PRINT-HOOK) and its result printed, like the REPL."
   (loop
     (format output "~&       ~A~%~A> "
             (render-selection (sedit-state-loc (sedit-session-state session)))
@@ -259,10 +269,12 @@ prompt, reads a command line, and dispatches it (§6.6)."
       (when (eq line :eof) (return))
       (multiple-value-bind (_ action)
           (sedit-command session line :debug-hook debug-hook :eval-hook eval-hook
-                                      :load-hook load-hook)
+                                      :load-hook load-hook :eval-print-hook eval-print-hook)
         (declare (ignore _))
-        (case action
-          (:quit (return))
-          (:help (format output "~A~%" (sedit-help-text)))
-          (:unknown (format output "? unknown command (h for help)~%"))))))
+        (cond
+          ((eq action :quit) (return))
+          ((eq action :help) (format output "~A~%" (sedit-help-text)))
+          ((eq action :unknown) (format output "? unknown command (h for help)~%"))
+          ((and (consp action) (eq (car action) :printed))
+           (format output "~&~A~%" (or (cdr action) "(no evaluator here)")))))))
   (session-result session))

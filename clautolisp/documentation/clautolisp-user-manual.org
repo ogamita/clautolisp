@@ -272,7 +272,9 @@ typing one enters EDIT and performs it.
 - *Clipboard* — ~copy~ (=c=), ~cut~ (=x=), ~paste~ (=v=); see /The clipboard/.
 - *Undo* — ~undo~ (=z=): one level; a second ~undo~ redoes.
 - *Evaluate* — ~eval~ (=e=) evaluates the selection; ~macroexpand~ (=m=)
-  replaces it by the result.
+  replaces it by the result. Typing a bare Lisp *form* (~(+ 1 2)~) at the
+  prompt evaluates it and prints the result, like the REPL — in every mode
+  (=DBG>=, =NAV>= and =SEDIT>=).
 - *Files & directories* — ~load~ (=l=) and ~save~ (=s=); in a directory,
   ~new~ (=n=), ~rename~ (=r=) and ~delete~ (=x=).
 

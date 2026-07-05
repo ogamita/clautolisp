@@ -4588,14 +4588,23 @@ AutoLISP string -> a file/directory path; any other value -> a sexp to edit."
      (clautolisp.autolisp-runtime:autolisp-string-value object))
     (t (%clal-value->node object))))
 
+(defun %clal-sedit-eval-value (node)
+  "Evaluate NODE's form in the running system and return the AutoLISP value."
+  (clautolisp.autolisp-runtime:autolisp-eval
+   (clautolisp.autolisp-runtime:autolisp-read-from-string (clautolisp.sedit:unparse node))
+   (clautolisp.autolisp-runtime:current-evaluation-context)))
+
 (defun %clal-sedit-eval-hook (node)
-  "EVAL / MACROEXPAND callback for sedit: evaluate NODE's form in the running
-system and return the result as a node."
-  (let ((value (clautolisp.autolisp-runtime:autolisp-eval
-                (clautolisp.autolisp-runtime:autolisp-read-from-string
-                 (clautolisp.sedit:unparse node))
-                (clautolisp.autolisp-runtime:current-evaluation-context))))
-    (%clal-value->node value)))
+  "EVAL / MACROEXPAND callback for sedit: evaluate NODE's form and return the
+result as a node (so macroexpand can replace the selection with it)."
+  (%clal-value->node (%clal-sedit-eval-value node)))
+
+(defun %clal-sedit-eval-print-hook (node)
+  "EVAL-at-the-prompt callback for sedit: evaluate NODE's form and return its
+result as a source string to print (or an error line)."
+  (handler-case
+      (format nil "= ~A" (autolisp-value->string (%clal-sedit-eval-value node) nil))
+    (error (e) (format nil "eval error: ~A" e))))
 
 (defun %clal-sedit-load-hook (path)
   "LOAD callback for sedit: evaluate the forms of file PATH into the running
@@ -4628,6 +4637,7 @@ CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
          (result (clautolisp.sedit:sedit-run session
                                              :input *standard-input* :output *standard-output*
                                              :eval-hook #'%clal-sedit-eval-hook
+                                             :eval-print-hook #'%clal-sedit-eval-print-hook
                                              :load-hook #'%clal-sedit-load-hook
                                              :debug-hook #'%clal-sedit-debug-hook)))
     (%clal-node->value result)))

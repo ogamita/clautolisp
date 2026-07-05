@@ -95,6 +95,10 @@ separate binary for tool integrators.
 - From the aldo form navigator, an editing word (=edit=, =insert=, =wrap=, …)
   opens the same editor on the current function; leaving it installs the edited
   definition in the running system (spec §7).
+- A bare Lisp *form* typed at any prompt — =DBG>=, the form navigator =NAV>=, or
+  the editor =SEDIT>= — is evaluated and its result printed, like the REPL.
+- =,settings NAME= now reports an error for an unknown setting name instead of
+  printing a bogus value.
 
 ** aldo debugger — form navigator (=clautolisp/documentation/clautolisp-sedit-spec.org=)
 

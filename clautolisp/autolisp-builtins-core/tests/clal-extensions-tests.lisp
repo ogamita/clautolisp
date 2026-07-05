@@ -603,3 +603,13 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
          (*standard-output* out))
     (clautolisp.autolisp-builtins-core::builtin-clal-sedit (%al-read "(a b)"))
     (is (search "no debugger attached" (get-output-stream-string out)))))
+
+(test clal-sedit-evaluates-a-lisp-form-at-the-prompt
+  ;; a (form) at the SEDIT/NAV prompt evaluates and prints, like the REPL
+  (setup-mock-host-context)
+  (let* ((out (make-string-output-stream))
+         ;; `quote' is a special form — no arithmetic builtins needed here
+         (*standard-input* (make-string-input-stream (format nil "(quote 30)~%q~%")))
+         (*standard-output* out))
+    (clautolisp.autolisp-builtins-core::builtin-clal-sedit (%al-read "(a b)"))
+    (is (search "30" (get-output-stream-string out)))))

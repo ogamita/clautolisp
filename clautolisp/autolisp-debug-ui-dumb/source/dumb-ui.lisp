@@ -1201,8 +1201,16 @@ re-instruments. From EDIT, `debug'/`aldo' CMD reach the debugger. Stays in NAV."
           (let ((result
                   (clautolisp.sedit:sedit-run
                    sedit :input (dumb-ui-input ui) :output (dumb-ui-output ui)
-                         :debug-hook (lambda (line) (nav-run-debug-line ui session hit line)))))
+                         :debug-hook (lambda (line) (nav-run-debug-line ui session hit line))
+                         :eval-print-hook (lambda (node) (nav-eval-node-string session node)))))
             (nav-install-edited-form ui session result loc))))))
+
+(defun nav-eval-node-string (session node)
+  "Evaluate a sedit NODE's form in the stopped context and return a printable
+result string (spec §7: a Lisp form at the editor prompt evaluates like the REPL)."
+  (handler-case
+      (format nil "= ~A" (preview (cmd-eval session (clautolisp.sedit:unparse node))))
+    (error (e) (format nil "eval error: ~A" e))))
 
 (defun nav-run-debug-line (ui session hit line)
   "Run a debugger command LINE reached from EDIT via the `debug'/`aldo' prefix."
@@ -1337,13 +1345,17 @@ is dispatched as a debugger command (bug-aldo-nav-command-dictionary)."
              (signed (and (>= (length cmd) 2)
                           (member (char cmd 0) '(#\+ #\-))
                           (ignore-errors (parse-integer cmd)))))
-        (multiple-value-bind (next leave directive)
-            (ecase (nav-loc-kind loc)
-              (:sexp (nav-dispatch-sexp ui session hit loc cmd arg signed))
-              (:file (nav-dispatch-file ui loc cmd signed))
-              (:dir  (nav-dispatch-dir ui loc cmd signed)))
-          (when leave (return directive))
-          (when next (setf loc next)))))))
+        (if (and (plusp (length trimmed)) (char= (char trimmed 0) #\())
+            ;; a Lisp form at the prompt evaluates in the current frame and
+            ;; prints, like the REPL (in NAV as well as at DBG)
+            (eval-and-print ui session trimmed)
+            (multiple-value-bind (next leave directive)
+                (ecase (nav-loc-kind loc)
+                  (:sexp (nav-dispatch-sexp ui session hit loc cmd arg signed))
+                  (:file (nav-dispatch-file ui loc cmd signed))
+                  (:dir  (nav-dispatch-dir ui loc cmd signed)))
+              (when leave (return directive))
+              (when next (setf loc next))))))))
 
 (defun nav-loc-for-request (ui session request)
   "Build the initial navigation location for a CLAL-NAV-* REQUEST — (:function
@@ -1663,7 +1675,10 @@ princ form."
                     (out ui "DBG> no configuration file found~%"))))))
        (error (e) (out ui "DBG> reload error: ~A~%" e))))
     (t (ignore-errors (sync-config-from-variable))
-       (out ui "  ~(~A~) = ~A~%" arg (format-setting-value (get-aldo-setting arg))))))
+       (if (setting-spec arg)
+           (out ui "  ~(~A~) = ~A~%" arg (format-setting-value (get-aldo-setting arg)))
+           (out ui "DBG> unknown setting ~S (,settings lists them all)~%"
+                (string-downcase (string arg)))))))
 
 (defun eval-and-print (ui session form-string)
   (handler-case

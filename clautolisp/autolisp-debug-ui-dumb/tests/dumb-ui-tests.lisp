@@ -404,6 +404,37 @@
       (is (eql 7 result))                           ; `c' resumed after the bridge
       (is (contains output "no source text")))))    ; `edit' reached nav-edit-session
 
+(test dumb-ui-nav-evaluates-a-lisp-form-at-the-prompt
+  ;; a (form) typed in NAV evaluates in the current frame and prints, like the REPL
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        ;; `quote' needs no builtins in the bare test runtime
+        (run-ui (format nil "nav~%(quote 99)~%q~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "99")))))                ; the form was evaluated
+
+(test dumb-ui-settings-unknown-name-is-reported
+  ;; asking for a setting that doesn't exist reports it (does not print a value)
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil ",settings list~%,settings navigator~%c~%") :context context
+                :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      (is (contains output "unknown setting"))       ; `list' is not a setting
+      (is (contains output "navigator = sexp")))))   ; a real one still works
+
 (test dumb-ui-run-command-runs-a-debugger-command-outside-a-stop
   ;; spec §7: ui-run-command drives a debugger command with no current stop, so
   ;; clal-sedit's debug/aldo prefix (via *debug-command-hook*) can reach `help'.
