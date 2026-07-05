@@ -58,4 +58,7 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:sedit-session #:sedit-session-p
    #:sedit-session-state #:sedit-session-origin #:sedit-session-initial
    #:sedit-open #:session-result #:sedit-result-node
-   #:*clal-sedit-initial-form* #:*clal-sedit-last-result*))
+   #:*clal-sedit-initial-form* #:*clal-sedit-last-result*
+   ;; --- modes, the transition machine, and the driver (§1, §5, §6.6) ---
+   #:sedit-command #:sedit-run #:render-selection
+   #:sedit-mode-prompt #:sedit-help-text))

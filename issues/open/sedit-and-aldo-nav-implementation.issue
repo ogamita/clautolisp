@@ -348,3 +348,39 @@ redefinition + session-source, =definition-name=, every =sedit-open= object kind
 (nil/node/symbol/file/dir over temp files), the §2 result for stand-alone and
 file, save/load byte-preserving round trip + overwrite guard, filesystem
 new/rename/delete + directory listing, and the auto-saving policy.
+
+** 2026-07-05 — Phase 5 (mode machine) DONE (clautolisp 1.4.20, branch =sedit-nav=)
+
+The two modes and their transition machine, plus the revised command set (§1,
+§5, §6.6), in a new =source/modes.lisp=. The runtime couplings are callbacks
+(DEBUG-HOOK / EVAL-HOOK / LOAD-HOOK), so this stays dependency-free; the aldo
+bridge and the AutoLISP =clal-sedit= builtin wire those hooks (see DEFERRED).
+
+- *Command set* (§5): motions =d u > < << >> ±N=; editing =i a r ic ac rc z=;
+  clipboard =c x v=; structural word commands =wrap slurp barf splice split
+  join=; =e eval= / =m macroexpand=; =l load= / =s save=; =edit=/=nav= and the
+  =debug=/=aldo= prefix; directory =n r x= object-exclusive with new/rename/
+  delete vs replace/cut, chosen by whether the selection is a file/dir entry.
+- *The machine* =sedit-command= (§6.6): an editing command (by word) switches
+  NAV→EDIT and runs; =edit=/=nav= switch explicitly; =debug=/=aldo= CMD run a
+  debugger command (via DEBUG-HOOK) and return to NAV; a *bare* debugger command
+  runs directly in NAV (the navigator dictionary stacked over the debugger's);
+  motions, =eval= and =load= keep the mode; =quit=/=help= are session commands.
+  In EDIT a bare debugger token without the prefix is :unknown.
+- *Rendering + driver*: =render-selection= wraps the selection in =[…]= within its
+  top-level form (e.g. =(list [nil])=, §2/§5.2); =sedit-run= is the interactive
+  loop (render → read → dispatch), returning the §2 =session-result=.
+
+Tests (=autolisp-sedit/tests=, now *265/265*, +38): every mode transition, the
+stacked-debugger hook in both modes, insert/add/replace/undo/clipboard/
+structural/comment commands, motions + signed skip, the marked render, a driven
+=sedit-run= session, and object-exclusive directory rename/new.
+
+*DEFERRED (the §7 runtime/UI wiring — its own turn to avoid regressing the aldo
+navigator's 390 dumb-UI tests):* the AutoLISP =clal-sedit= builtin + AutoLISP-
+value↔tree marshaling; installing the REPL recording hook; bridging the
+debugger's =nav-browse= into a sedit EDIT session (NAV→EDIT in aldo, =save=+=load=
+installs the edited definition, breakpoints carrying over by poll-point
+identity); and adding the =autolisp-debug-ui= → =autolisp-sedit= dependency.
+=set navigator sexp|line= already exists in the debug-ui settings. This is where
+the first user-visible surface and the RELEASE_NOTES entry land.
