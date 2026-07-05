@@ -219,7 +219,37 @@ built binary; the =bug-aldo-*= tickets can be closed.
    synthetic toplevel poll-point is shown.
 
 Tests: autolisp-debug 122/122, autolisp-debug-ui-dumb 390/390, emacs 27/27,
-ncurses 42/42. Deferred: Phases 1–6 (the =sedit= EDIT-mode editor — zipper,
-undo, adornment/pretty-printer, =clal-sedit= + REPL recording, modes/aldo
-integration, clipboard) are not yet started; the =autolisp-sedit= system is
-still to be created.
+ncurses 42/42.
+
+** 2026-07-05 — Phase 1 DONE (clautolisp 1.4.16, branch =sedit-nav=)
+
+The =sedit= core is implemented as a new, dependency-free system
+=clautolisp/autolisp-sedit= (registered next to =autolisp-inspect=; its
+=…/tests= system too), so it is reusable outside the debugger. Package
+=clautolisp.sedit=. Contents:
+
+- *Adorned-tree domain* (§6.1): =atom-node / list-node / comment-node /
+  file-node / dir-node=, each carrying an opaque adornment =α= (Phase 3 fills
+  it). Uniform =branch-node-p / node-children / node-with-children
+  (=PLATE) / node-level-of-children=, plus =sexp->tree= / =tree->sexp=.
+- *The Huet zipper* (§6.2): =loc = (focus, ctx)=; motions =loc-down/up/left/
+  right/first/last/skip=, O(1) and structure-sharing; =right= past the last
+  sibling and =left= before the first *ascend*, while =first/last/skip= stay at
+  the level and clamp. Level tag (=:sexp/:form/:file/:root=) derived from the
+  parent; =loc-root / loc-path / loc-follow=.
+- *Editing transitions* (§6.3): =edit-insert/add/replace/delete= and the
+  structural =edit-wrap/splice/slurp/barf/split/join=; each selects its result.
+  A mutation inside a =File= marks it modified (walks to the nearest enclosing
+  file-node, rebuilding only that spine). Editor state =sedit-state= (loc + clip
+  + mode) with =sedit-copy/cut/paste=.
+
+Tests (=autolisp-sedit/tests=, *95/95*): the §6.7 invariants — motion totality
+within a form, down/up and right/left inverse, and the =wrap↔splice=,
+=slurp↔barf=, =split↔join= round-trips — plus level tags, path round-trip,
+selection-after-mutation, and file-modified marking.
+
+Deferred: Phase 2 undo (§6.4, the one-slot swap), Phase 3 adornment/pretty-
+printer (§5.2–§5.3), Phase 4 =clal-sedit= + REPL recording (§2–§3), Phase 5
+modes/aldo integration (§1/§7 — this is where =autolisp-debug-ui= gains the
+=autolisp-sedit= dependency), Phase 6 clipboard providers (§5.4 +
+=clipboard-interface.org=).

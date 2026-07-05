@@ -15,6 +15,7 @@
                "clautolisp/autolisp-init-files"
                "clautolisp/autolisp-debug"
                "clautolisp/autolisp-inspect"
+               "clautolisp/autolisp-sedit"
                "clautolisp/autolisp-debug-ui"
                "clautolisp/autolisp-debug-ui-dumb"
                "clautolisp/autolisp-debug-ui-tui"
@@ -541,6 +542,39 @@
                          (uiop:symbol-call :clautolisp.inspect.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-sedit"
+  :description "sedit — S-expression structural editor core (sedit spec §6): the adorned-tree domain, the Huet zipper, and the editing transitions. No clautolisp dependencies, so it is reusable outside the debugger."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ()
+  :serial t
+  :components
+  ((:file "autolisp-sedit/source/package")
+   (:file "autolisp-sedit/source/adorn")
+   (:file "autolisp-sedit/source/zipper")
+   (:file "autolisp-sedit/source/edit"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-sedit/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-sedit/tests"
+  :description "FiveAM tests for the sedit zipper core (§6.1–§6.3, §6.7 invariants)."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-sedit" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-sedit/tests/package")
+   (:file "autolisp-sedit/tests/zipper-tests")
+   (:file "autolisp-sedit/tests/edit-tests")
+   (:file "autolisp-sedit/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.sedit.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/autolisp-debug-ui"
   :description "Debugger UI protocol + session lifecycle (debugger §17, §21–§24)."
   :author "Codex"
@@ -734,6 +768,7 @@
                "clautolisp/autolisp-init-files/tests"
                "clautolisp/autolisp-debug/tests"
                "clautolisp/autolisp-inspect/tests"
+               "clautolisp/autolisp-sedit/tests"
                "clautolisp/autolisp-debug-ui-dumb/tests"
                "clautolisp/autolisp-debug-ui-ncurses/tests"
                "clautolisp/autolisp-debug-ui-emacs/tests")
@@ -763,6 +798,8 @@
                            (uiop:symbol-call :clautolisp.debug.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.inspect.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.sedit.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.ui.dumb.tests
                                              :run-all-tests)
