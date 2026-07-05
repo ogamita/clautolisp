@@ -4604,6 +4604,19 @@ system (installing an edited definition, spec §5.7)."
     (dolist (form (clautolisp.autolisp-runtime:read-runtime-from-string (uiop:read-file-string path)))
       (clautolisp.autolisp-runtime:autolisp-eval form ctx))))
 
+(defun %clal-sedit-debug-hook (command)
+  "DEBUG/ALDO callback for sedit: run the debugger COMMAND (e.g. \"help\") in the
+attached session via *debug-command-hook* (spec §7). When no debugger is
+attached, print a note instead of silently doing nothing."
+  (if clautolisp.autolisp-runtime:*debug-command-hook*
+      (funcall clautolisp.autolisp-runtime:*debug-command-hook* command)
+      (progn
+        (format *standard-output*
+                "~&sedit: no debugger attached — `debug'/`aldo' commands need a ~
+                 session (run under --aldo-user-interface or --on-error debug)~%")
+        (finish-output *standard-output*)
+        nil)))
+
 (defun builtin-clal-sedit (&optional object)
   "Edit OBJECT with the sedit structural editor (spec §2): no argument -> a
 stand-alone form starting at nil; a symbol -> recall its recorded definition; a
@@ -4615,7 +4628,8 @@ CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
          (result (clautolisp.sedit:sedit-run session
                                              :input *standard-input* :output *standard-output*
                                              :eval-hook #'%clal-sedit-eval-hook
-                                             :load-hook #'%clal-sedit-load-hook)))
+                                             :load-hook #'%clal-sedit-load-hook
+                                             :debug-hook #'%clal-sedit-debug-hook)))
     (%clal-node->value result)))
 
 (defun builtin-clal-clipboard-put-text (string)

@@ -1378,6 +1378,13 @@ debug-ui layer is absent or no debug session is active.")
 the debugger's `ls' list-source command show FILE at LINE (aldo-pre-debug.issue).
 The aldo debugger installs it; NIL (a no-op) when the debug system is absent.")
 
+(defparameter *debug-command-hook* nil
+  "When non-nil, a function (COMMAND-STRING) that runs one aldo debugger command
+in the active debug session and returns its resume directive (or NIL). CLAL-SEDIT
+calls it for the editor's `debug'/`aldo' prefix, so debugger commands (e.g.
+`aldo help') work from within sedit. The tool installs it, bound to the running
+session's UI, while a debug session is attached; NIL (a no-op) otherwise.")
+
 (defparameter *instrument-usubr-hook* nil
   "When non-nil, a function (USUBR) that weaves USUBR's instrumented fork and
 debug-metadata in place (clautolisp.debug:instrument-usubr). The aldo debugger

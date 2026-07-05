@@ -404,6 +404,18 @@
       (is (eql 7 result))                           ; `c' resumed after the bridge
       (is (contains output "no source text")))))    ; `edit' reached nav-edit-session
 
+(test dumb-ui-run-command-runs-a-debugger-command-outside-a-stop
+  ;; spec §7: ui-run-command drives a debugger command with no current stop, so
+  ;; clal-sedit's debug/aldo prefix (via *debug-command-hook*) can reach `help'.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (output (make-string-output-stream))
+         (ui (clautolisp.ui.dumb:make-dumb-ui :input (make-string-input-stream "")
+                                              :output output))
+         (session (clautolisp.debug.ui:start-session :ui ui :thread-info ti :context context)))
+    (clautolisp.debug.ui:ui-run-command ui session "help")
+    (is (contains (get-output-stream-string output) "continue"))))
+
 (test dumb-ui-nav-help-lists-debugger-commands
   ;; bug-aldo-nav-command-dictionary: `?' in NAV derives from the union of the
   ;; active dictionaries — the motion keys AND the debugger commands.

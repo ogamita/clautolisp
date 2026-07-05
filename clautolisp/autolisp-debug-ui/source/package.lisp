@@ -70,6 +70,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:ui-show-source #:ui-show-message
    #:ui-await-command
    #:ui-open-navigation-request
+   #:ui-run-command
    ;; session object
    #:debugger-session
    #:debugger-session-p

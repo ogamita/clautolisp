@@ -586,7 +586,14 @@ not supplied)."
   (unless mock-input
     (wire-mock-host-to-terminal context))
   (%repl-init-history context)
-  (loop
+  ;; Route sedit's `debug'/`aldo' prefix to the attached session's UI, so
+  ;; debugger commands (e.g. `aldo help') work from inside (clal-sedit …).
+  (let ((clautolisp.autolisp-runtime:*debug-command-hook*
+          (when session
+            (lambda (command)
+              (clautolisp.debug.ui:ui-run-command
+               (clautolisp.debug.ui:session-ui session) session command)))))
+   (loop
     (multiple-value-bind (source eofp)
         (read-balanced-source-from-stream
          *standard-input* "_$ " "   " dialect)
@@ -633,7 +640,7 @@ not supplied)."
           (report-runtime-error condition))
         (autolisp-termination (condition)
           (report-termination condition)
-          (return))))))
+          (return)))))))
 
 (defun encoding-keyword (encoding-string)
   "Map a CLI encoding string to the Lisp keyword external-format.

@@ -583,3 +583,23 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
          (result (clautolisp.autolisp-builtins-core::builtin-clal-sedit
                   (%al-read "(defun foo (x) x)"))))
     (is (string-equal "(defun foo (x) (* x 2))" (%al->src result)))))
+
+(test clal-sedit-debug-prefix-routes-to-the-debug-command-hook
+  ;; spec §7: `debug'/`aldo' CMD in the editor runs CMD in the attached session
+  ;; via *debug-command-hook* (so `aldo help' shows the debugger help)
+  (setup-mock-host-context)
+  (let* ((calls '())
+         (clautolisp.autolisp-runtime:*debug-command-hook* (lambda (c) (push c calls) nil))
+         (*standard-input* (make-string-input-stream (format nil "nav~%aldo help~%q~%")))
+         (*standard-output* (make-string-output-stream)))
+    (clautolisp.autolisp-builtins-core::builtin-clal-sedit (%al-read "(a b)"))
+    (is (equal '("help") calls))))
+
+(test clal-sedit-debug-prefix-without-a-debugger-notes-it
+  (setup-mock-host-context)
+  (let* ((clautolisp.autolisp-runtime:*debug-command-hook* nil)
+         (out (make-string-output-stream))
+         (*standard-input* (make-string-input-stream (format nil "aldo help~%q~%")))
+         (*standard-output* out))
+    (clautolisp.autolisp-builtins-core::builtin-clal-sedit (%al-read "(a b)"))
+    (is (search "no debugger attached" (get-output-stream-string out)))))
