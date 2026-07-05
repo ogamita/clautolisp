@@ -278,3 +278,38 @@ Tests (=autolisp-sedit/tests=, now *140/140*, +45): recording vs. non-mutating,
 the §6.7 "undo restores location + selection, and is self-inverse" over every
 mutation kind, navigation-between-mutation-and-undo transparency, empty-slot
 no-op, one-level overwrite, cut/undo, and file-modified revert/re-apply.
+
+** 2026-07-05 — Phase 3 DONE (clautolisp 1.4.18, branch =sedit-nav=)
+
+Formatting: the pretty-printer and comment objects (§5.2–§5.3), meeting the §6.7
+formatting-fidelity invariant. Two new files in =autolisp-sedit=:
+=source/format.lisp= (printer + comments + config) and =source/parse.lisp= (a
+self-contained lossless reader).
+
+- *Fidelity model.* An =adornment= carries a node's verbatim source =text=.
+  =unparse= emits that text for a clean node — so a =parse-source= → =unparse=
+  round trip is *byte-preserving* — and falls back to structural layout for a
+  node without text. =node-with-children= drops the adornment (a rebuilt node's
+  text is stale); =loc-up= keeps the ORIGINAL parent when the children are
+  unchanged (=%same-list-p=), so pure navigation preserves verbatim text while a
+  mutation re-lays-out only the touched form (untouched leaves keep theirs). The
+  file-modified marker likewise drops the whole-file text.
+- *Parser* (=parse-source= / =parse-form=): whitespace, =;= / =;| |;= comments
+  (kept as comment nodes, dropped by =tree->sexp=), strings with escapes, and
+  =' ` , ,@= sugar (→ a =(quote/… x)= list whose verbatim text is the sugar).
+  No reader dependency; symbols read as keywords (structure only — printing uses
+  the verbatim text).
+- *Pretty-printer* (=unparse=): one line when it fits =*print-width*=, else the
+  =*special-indent*= table (DEFUN/LAMBDA/IF/WHILE/FOREACH/COND/… distinguished-
+  argument counts) puts the operator + its distinguished args on the header line
+  and body-indents the rest two spaces (AutoLISP's finite operator set makes
+  indentation determined, §5.2).
+- *Comment objects*: =comment-level= / =comment-line-level= (;- ;;- ;;;- ;;;;-,
+  capped 4) / =comment-block-p= (=;| |;=), and =merge-comments= coalescing a run
+  of same-level line comments into one multi-line unit (§5.2/§5.3). Config
+  =*comment-column*= (40), =*text-editor*= (:editor/:visual/path), =*print-width*=.
+
+Tests (=autolisp-sedit/tests=, now *176/176*, +36): byte-preserving round trip
+over varied source, per-node verbatim text + structure, navigation-preserves-
+text, edit-reflows-only-the-touched-form, structural layout by the indent rules,
+comment classification, and comment merging.

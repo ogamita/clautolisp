@@ -20,9 +20,10 @@ there is no File — is shared unchanged (returned EQ)."
     ((file-node-p (ctx-parent ctx))
      (if (file-node-modified (ctx-parent ctx))
          ctx
+         ;; A modified file's whole-file verbatim text is stale: drop the
+         ;; adornment so UNPARSE re-lays-out (§6.7).
          (make-ctx (make-file-node (file-node-name (ctx-parent ctx))
                                    (file-node-children (ctx-parent ctx))
-                                   :adornment (node-adornment (ctx-parent ctx))
                                    :modified t)
                    (ctx-left ctx) (ctx-right ctx) (ctx-up ctx))))
     (t (let ((up (%mark-enclosing-file-modified (ctx-up ctx))))
@@ -32,10 +33,10 @@ there is no File — is shared unchanged (returned EQ)."
 
 (defun %mark-file (focus)
   "If FOCUS is an unmodified File (e.g. after deleting its last form), a copy
-marked modified; else FOCUS unchanged."
+marked modified (verbatim text dropped, as it is now stale); else FOCUS
+unchanged."
   (if (and (file-node-p focus) (not (file-node-modified focus)))
-      (make-file-node (file-node-name focus) (file-node-children focus)
-                      :adornment (node-adornment focus) :modified t)
+      (make-file-node (file-node-name focus) (file-node-children focus) :modified t)
       focus))
 
 (defun %mutated (loc)

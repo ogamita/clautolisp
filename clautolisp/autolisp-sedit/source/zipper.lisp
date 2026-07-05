@@ -44,14 +44,22 @@ inside a file, :file inside a directory, or :root at the top."
           (make-loc (first children)
                     (make-ctx node '() (rest children) (loc-ctx loc))))))))
 
+(defun %same-list-p (a b)
+  "True when lists A and B have the same elements in order (EQ elementwise)."
+  (and (= (length a) (length b)) (every #'eq a b)))
+
 (defun loc-up (loc)
-  "Ascend to the parent, reconstructed with the current focus; NIL at the root."
+  "Ascend to the parent; NIL at the root. When the children are unchanged (pure
+navigation) the ORIGINAL parent node is returned, so its verbatim text survives;
+only a real change rebuilds it (dropping the now-stale text, §6.7)."
   (let ((ctx (loc-ctx loc)))
     (when ctx
-      (make-loc (node-with-children
-                 (ctx-parent ctx)
-                 (revappend (ctx-left ctx) (cons (loc-focus loc) (ctx-right ctx))))
-                (ctx-up ctx)))))
+      (let* ((parent (ctx-parent ctx))
+             (children (revappend (ctx-left ctx) (cons (loc-focus loc) (ctx-right ctx)))))
+        (make-loc (if (%same-list-p children (node-children parent))
+                      parent
+                      (node-with-children parent children))
+                  (ctx-up ctx))))))
 
 (defun loc-right (loc)
   "Select the next sibling; past the last one, ascend to the parent (spec §6.2)."

@@ -13,6 +13,7 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
   (:export
    ;; --- adorned-tree domain (§6.1) ---
    #:node #:node-p #:node-adornment
+   #:adornment #:adornment-p #:make-adornment #:adornment-text #:node-text
    #:atom-node #:atom-node-p #:make-atom-node #:atom-node-value
    #:list-node #:list-node-p #:make-list-node #:list-node-children
    #:comment-node #:comment-node-p #:make-comment-node #:comment-node-text
@@ -21,6 +22,10 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:dir-node #:dir-node-p #:make-dir-node #:dir-node-name #:dir-node-entries
    #:branch-node-p #:node-children #:node-with-children #:node-level-of-children
    #:sexp->tree #:tree->sexp
+   ;; --- formatting: parser + pretty-printer + comments (§5.2–§5.3, §6.7) ---
+   #:parse-source #:parse-form #:unparse
+   #:comment-level #:comment-line-level #:comment-block-p #:merge-comments
+   #:*comment-column* #:*text-editor* #:*print-width* #:*special-indent*
    ;; --- the zipper (§6.2) ---
    #:loc #:loc-p #:make-loc #:loc-focus #:loc-ctx #:node->loc
    #:loc-at-root-p #:loc-level #:loc-root #:loc-path #:loc-follow

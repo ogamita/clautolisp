@@ -551,6 +551,8 @@
   :components
   ((:file "autolisp-sedit/source/package")
    (:file "autolisp-sedit/source/adorn")
+   (:file "autolisp-sedit/source/format")
+   (:file "autolisp-sedit/source/parse")
    (:file "autolisp-sedit/source/zipper")
    (:file "autolisp-sedit/source/edit")
    (:file "autolisp-sedit/source/state"))
@@ -571,6 +573,7 @@
    (:file "autolisp-sedit/tests/zipper-tests")
    (:file "autolisp-sedit/tests/edit-tests")
    (:file "autolisp-sedit/tests/undo-tests")
+   (:file "autolisp-sedit/tests/format-tests")
    (:file "autolisp-sedit/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
