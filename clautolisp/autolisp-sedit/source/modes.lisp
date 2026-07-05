@@ -248,6 +248,10 @@ prompt, reads a command line, and dispatches it (§6.6)."
     (format output "~&       ~A~%~A> "
             (render-selection (sedit-state-loc (sedit-session-state session)))
             (sedit-mode-prompt session))
+    ;; Flush the (newline-less) prompt to the terminal BEFORE reading, so it is
+    ;; shown ahead of the echoed input rather than after it (a general rule:
+    ;; finish-output the output stream before reading its paired input stream).
+    (finish-output output)
     (let ((line (read-line input nil :eof)))
       (when (eq line :eof) (return))
       (multiple-value-bind (_ action)
