@@ -652,3 +652,14 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (is (string-equal "(quote 30)" (v "*CLAL-FORM*")))
     (is (string-equal "(quote 20)" (v "*CLAL-FORM-1*")))
     (is (string-equal "(sexp (quote 30) \"(quote 30)\")" (v "*CLAL-SOURCE-FORM*")))))
+
+(test clal-clipboard-put-text-sets-the-autolisp-variable
+  ;; put-text records the string in *clal-clipboard* so the variable reflects it
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (clautolisp.autolisp-builtins-core:install-core-builtins)
+  (let ((clautolisp.sedit:*clipboard-provider* :null))
+    (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-put-text (%al-string "Hello World"))
+    (is (equal "Hello World"
+               (clautolisp.autolisp-runtime:autolisp-string-value
+                (clautolisp.autolisp-runtime:autolisp-symbol-value
+                 (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-CLIPBOARD*")))))))

@@ -126,6 +126,14 @@ calls =clipboard-paste-sexp=.  Their existing observable behaviour is
 unchanged when =*system-clipboard-enabled*= is =NIL= or the active
 provider is =:NULL=.
 
+The AutoLISP-facing wrappers keep the AutoLISP variable =*clal-clipboard*=
+in step with every write, so it reflects the clipboard's content regardless
+of how it was set (and remains a reliable record even when the system
+clipboard is unavailable or — as with an X11 selection under no clipboard
+manager — does not persist across helper processes):
+=(clal-clipboard-put-text S)= sets =*clal-clipboard*= to the string =S=, and
+=(clal-clipboard-copy-sexp X)= sets it to the adorned =(SEXP X text)= object.
+
 ** Sexp ↔ text serialization
 
 *Copy* renders the object so that a foreign application sees ordinary Lisp

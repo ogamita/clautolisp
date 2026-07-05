@@ -4679,12 +4679,16 @@ CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
     (%clal-node->value result)))
 
 (defun builtin-clal-clipboard-put-text (string)
-  "Set the system clipboard to STRING (clipboard-interface.org). Returns T on
-success, nil otherwise."
-  (if (clautolisp.sedit:clipboard-put-text
-       (%clal-nav-name-string string "CLAL-CLIPBOARD-PUT-TEXT"))
-      (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")
-      nil))
+  "Set the system clipboard to STRING, and record STRING in *clal-clipboard* so
+the AutoLISP variable reflects the write — including when the system clipboard is
+unavailable or does not persist the value (clipboard-interface.org). Returns T
+on success, nil otherwise."
+  (let ((text (%clal-nav-name-string string "CLAL-CLIPBOARD-PUT-TEXT")))
+    (%clal-set-autolisp-var "*CLAL-CLIPBOARD*"
+                            (clautolisp.autolisp-runtime:make-autolisp-string text))
+    (if (clautolisp.sedit:clipboard-put-text text)
+        (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")
+        nil)))
 
 (defun builtin-clal-clipboard-get-text ()
   "Return the system clipboard contents as a string, or nil when it is empty or

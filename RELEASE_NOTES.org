@@ -104,7 +104,9 @@ separate binary for tool integrators.
   =*clal-result*= / =*clal-source-form*= eval-history trio and their =-1= / =-2=
   generations, =*clal-on-error*=, =*clal-aldo-configuration*=) are now *bound* at
   startup, so AutoLISP code can read them and =(alref-apropos "*CLAL-")= lists
-  them; =clal-clipboard-copy-sexp= sets =*clal-clipboard*= and =clal-sedit= sets
+  them; =clal-clipboard-copy-sexp= and =clal-clipboard-put-text= both set
+  =*clal-clipboard*= (so it reflects the write even when the system clipboard is
+  unavailable or does not persist the value), and =clal-sedit= sets
   the sedit variables. Each sedit evaluation (=e=, =macroexpand=, or a bare form
   at the prompt) *shifts* the history variables (spec §5.6): =*clal-form*= /
   =*clal-source-form*= / =*clal-result*= hold the most recent, with the =-1= /
