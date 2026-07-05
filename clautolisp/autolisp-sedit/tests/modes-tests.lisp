@@ -45,13 +45,15 @@
   (let* ((calls '())
          (hook (lambda (cmd) (push cmd calls) nil))
          (s (set-nav (sedit-open (sexp->tree '(a))))))
-    (sedit-command s "b 5" :debug-hook hook)          ; not a sedit command -> debugger
-    (is (equal '("b 5") calls))
+    ;; `lb' (list breakpoints) is a debugger command, not a sedit one (note `b'
+    ;; alone is now sedit's backward motion)
+    (sedit-command s "lb" :debug-hook hook)           ; not a sedit command -> debugger
+    (is (equal '("lb") calls))
     (is (eq :nav (mode-of s)))))                       ; stays in NAV
 
 (test bare-debugger-command-in-edit-needs-the-prefix
   (let ((s (sedit-open (sexp->tree '(a)))))            ; EDIT
-    (multiple-value-bind (_ action) (sedit-command s "b 5")
+    (multiple-value-bind (_ action) (sedit-command s "lb")
       (declare (ignore _))
       (is (eq :unknown action)))))
 
@@ -111,6 +113,15 @@
     (sedit-command s "<<") (is (eq :a (focus-of s)))
     (sedit-command s ">>") (is (eq :e (focus-of s)))
     (sedit-command s "-2") (is (eq :c (focus-of s)))))
+
+(test f-and-b-alias-forward-and-backward
+  ;; f / b are aliases for > / < (§5)
+  (let ((s (sedit-open (parse-form "(a b c)"))))
+    (sedit-command s "d")                              ; -> a
+    (sedit-command s "f") (is (eq :b (focus-of s)))    ; forward
+    (sedit-command s "f") (is (eq :c (focus-of s)))
+    (sedit-command s "b") (is (eq :b (focus-of s)))    ; backward
+    (sedit-command s "b") (is (eq :a (focus-of s)))))
 
 (test comment-insert-command
   (let ((s (sedit-open (parse-form "(a b)"))))

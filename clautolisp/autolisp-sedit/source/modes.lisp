@@ -13,8 +13,11 @@
 ;;; --- the command vocabulary (§5) ------------------------------------------
 
 (defparameter +motion-tokens+
-  '("d" "down" "u" "up" ">" "forward" "<" "backward" "<<" "first" ">>" "last")
-  "The both-mode motion keys/words (§5): d u > < << >>; ±N is handled separately.")
+  '("d" "down" "u" "up"
+    ">" "f" "forward" "<" "b" "backward"
+    "<<" "first" ">>" "last")
+  "The both-mode motion keys/words (§5): d u > < << >>; =f= / =b= alias =>= / =<=
+(forward / backward); ±N is handled separately.")
 
 (defparameter +editing-tokens+
   '("i" "insert" "a" "add" "r" "replace" "ic" "ac" "rc" "z" "undo"
@@ -62,8 +65,8 @@ so r means rename, x delete, and n new (spec §5, object-exclusive)."
   (cond
     ((member token '("d" "down") :test #'string=) (sedit-down state))
     ((member token '("u" "up") :test #'string=) (sedit-up state))
-    ((member token '(">" "forward") :test #'string=) (sedit-right state))
-    ((member token '("<" "backward") :test #'string=) (sedit-left state))
+    ((member token '(">" "f" "forward") :test #'string=) (sedit-right state))
+    ((member token '("<" "b" "backward") :test #'string=) (sedit-left state))
     ((member token '("<<" "first") :test #'string=) (sedit-first state))
     ((member token '(">>" "last") :test #'string=) (sedit-last state))))
 
@@ -234,7 +237,7 @@ along the path to the focus so the markers can be placed; verbatim elsewhere."
 ;;; --- the interactive driver -----------------------------------------------
 
 (defun sedit-help-text ()
-  (format nil "commands (§5): d u > < << >> ±N move | i a r insert/add/replace | ~
+  (format nil "commands (§5): d u  > (f) < (b)  << >>  ±N move | i a r insert/add/replace | ~
                ic ac rc comment | z undo | c x v copy/cut/paste | ~
                wrap slurp barf splice split join | e eval m macroexpand | ~
                l load s save | edit nav | debug/aldo CMD | q quit | h help"))

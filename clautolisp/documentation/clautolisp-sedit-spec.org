@@ -34,7 +34,7 @@ this document specifies only the *editor-facing* clipboard behaviour and refers
 to that document for the provider protocol. (That chapter, duplicated at the
 end of the old integration issue, is superseded by the standalone file.)
 
-The document version is *0.3 (draft)*; any change to it must bump this number.
+The document version is *0.4 (draft)*; any change to it must bump this number.
 
 * 1. The two modes
 
@@ -304,7 +304,9 @@ table (=p= previous/splice, =u= up/slurp, =l= enlist, =r= replace/rename,
 
 - *Motion* adopts the tui-spec navigator keys =d u > < << >> ±N=; the issue's
   =next= / =previous= become =forward= (=>=) / =backward= (=<=). This alone
-  frees =n= and =p=.
+  frees =n= and =p=. =forward= / =backward= also accept the letter aliases =f= /
+  =b= (free in the editor's command set — unlike the debugger's own navigator,
+  where =f= is =frame= and =b= is =break=, so the aliases are sedit-only).
 - *=l= is reassigned to =load=* (§5.7, the new command); the old =l= =enlist=
   is renamed *=wrap=*.
 - *Structural* commands (=wrap slurp barf splice split join=) are *word
@@ -331,8 +333,8 @@ Availability column *SFD* = Sexp / File / Directory; *M* = mode
 |------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
 | Navigation | SFD | NE | =d=            | down                       | Enter the selected node.                                    |
 | Navigation | SFD | NE | =u=            | up                         | Ascend to the containing node.                              |
-| Navigation | SFD | NE | =>=            | forward                    | Next sibling (skip to next poll-point in NAV). (†)          |
-| Navigation | SFD | NE | =<=            | backward                   | Previous sibling. (†)                                       |
+| Navigation | SFD | NE | =>= / =f=      | forward                    | Next sibling (skip to next poll-point in NAV). (†)          |
+| Navigation | SFD | NE | =<= / =b=      | backward                   | Previous sibling. (†)                                       |
 | Navigation | SFD | NE | =<<= / =>>=    | first / last               | First / last sibling.                                       |
 | Navigation | SFD | NE | =±N=           | skip                       | Move N siblings (clamped).                                  |
 | Navigation | SFD | NE | =N=            | designate                  | Select poll-point N directly (NAV).                         |

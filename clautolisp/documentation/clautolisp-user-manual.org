@@ -250,7 +250,7 @@ switching:
 | Key / word          | Effect                                                    |
 |---------------------+-----------------------------------------------------------|
 | =d= =u=             | descend into / ascend out of the selection                |
-| =>= =<=             | next / previous sibling (=<<= =>>= first / last, =±N= skip)|
+| =>= =<= (=f= =b=)    | next / previous sibling (=<<= =>>= first / last, =±N= skip)|
 | ~edit~              | switch to EDIT (an editing command by *word* also does)   |
 | ~nav~               | switch back to NAV                                         |
 | ~debug CMD~ / ~aldo CMD~ | from EDIT, run a debugger command CMD, then return to NAV |
