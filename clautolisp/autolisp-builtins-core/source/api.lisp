@@ -4576,6 +4576,12 @@ evaluated), or nil for a null node."
   (and node
        (clautolisp.autolisp-runtime:autolisp-read-from-string (clautolisp.sedit:unparse node))))
 
+(defun %clal-set-autolisp-var (name value)
+  "Set the AutoLISP global variable NAME (a string) to VALUE, so AutoLISP code
+sees the operation's result (sedit spec §2/§5.4)."
+  (clautolisp.autolisp-runtime:set-autolisp-symbol-value
+   (clautolisp.autolisp-runtime:intern-autolisp-symbol name) value))
+
 (defun %clal-sedit-target (object)
   "Resolve the CLAL-SEDIT argument OBJECT to what SEDIT-OPEN expects (spec §2):
 NIL -> a stand-alone nil; an AutoLISP symbol -> its (recorded) name to recall; an
@@ -4640,6 +4646,10 @@ CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
                                              :eval-print-hook #'%clal-sedit-eval-print-hook
                                              :load-hook #'%clal-sedit-load-hook
                                              :debug-hook #'%clal-sedit-debug-hook)))
+    ;; publish the session's initial / final forms to the AutoLISP variables
+    (%clal-set-autolisp-var "*CLAL-SEDIT-INITIAL-FORM*"
+                            (%clal-node->value clautolisp.sedit:*clal-sedit-initial-form*))
+    (%clal-set-autolisp-var "*CLAL-SEDIT-LAST-RESULT*" (%clal-node->value result))
     (%clal-node->value result)))
 
 (defun builtin-clal-clipboard-put-text (string)
@@ -4658,8 +4668,15 @@ unreadable."
 
 (defun builtin-clal-clipboard-copy-sexp (value)
   "Copy VALUE to the clipboard (spec §5.4): its source text goes to the system
-clipboard and the object to *clal-clipboard*. Returns nil."
-  (clautolisp.sedit:clipboard-copy-node (%clal-value->node value))
+clipboard, and the AutoLISP variable *clal-clipboard* is set to the adorned
+object (SEXP value text). Returns nil."
+  (let ((node (%clal-value->node value)))
+    (clautolisp.sedit:clipboard-copy-node node)
+    (%clal-set-autolisp-var
+     "*CLAL-CLIPBOARD*"
+     (list (clautolisp.autolisp-runtime:intern-autolisp-symbol "SEXP")
+           value
+           (clautolisp.autolisp-runtime:make-autolisp-string (clautolisp.sedit:unparse node)))))
   nil)
 
 (defun builtin-clal-clipboard-paste-sexp ()
@@ -8842,8 +8859,40 @@ docstring above the def for the upgrade-path reference.")
         :key #'autolisp-subr-name
         :test #'string=))
 
+(defparameter +clal-extension-variables+
+  '("*CLAL-CLIPBOARD*"
+    "*CLAL-SEDIT-INITIAL-FORM*" "*CLAL-SEDIT-LAST-RESULT*"
+    "*CLAL-FORM*" "*CLAL-FORM-1*" "*CLAL-FORM-2*"
+    "*CLAL-RESULT*" "*CLAL-RESULT-1*" "*CLAL-RESULT-2*"
+    "*CLAL-SOURCE-FORM*" "*CLAL-SOURCE-FORM-1*" "*CLAL-SOURCE-FORM-2*")
+  "The public clautolisp extension *variables* (sedit spec §2/§5.4/§5.6) that are
+bound to nil at startup so AutoLISP code can read them, and so `alref-apropos'
+finds them (it lists only BOUND symbols); operations then set them.")
+
+(defun install-clal-extension-variables ()
+  "Bind the public *clal-* extension variables in the current namespace so they
+are AVAILABLE before any operation sets them (sedit spec §2/§5.4/§5.6). Each is
+left untouched if already bound (so a user value / a prior session survives)."
+  (dolist (name +clal-extension-variables+)
+    (let ((sym (intern-autolisp-symbol name)))
+      (unless (autolisp-symbol-value-bound-p sym)
+        (%clal-set-autolisp-var name nil))))
+  ;; *CLAL-ON-ERROR* mirrors the runtime error policy as an AutoLISP symbol
+  (let ((sym (intern-autolisp-symbol "*CLAL-ON-ERROR*")))
+    (unless (autolisp-symbol-value-bound-p sym)
+      (%clal-set-autolisp-var
+       "*CLAL-ON-ERROR*"
+       (intern-autolisp-symbol
+        (string-upcase (symbol-name clautolisp.autolisp-runtime:*clal-on-error*))))))
+  ;; *CLAL-ALDO-CONFIGURATION* — seed the default so it too is visible at once
+  (let ((sym (aldo-config-symbol)))
+    (unless (autolisp-symbol-value-bound-p sym)
+      (clautolisp.autolisp-runtime:set-autolisp-symbol-value sym (default-aldo-configuration-value))))
+  t)
+
 (defun install-core-builtins ()
   (dolist (builtin (core-builtins))
     (let ((symbol (intern-autolisp-symbol (autolisp-subr-name builtin))))
       (set-autolisp-symbol-function symbol builtin)))
+  (install-clal-extension-variables)
   t)

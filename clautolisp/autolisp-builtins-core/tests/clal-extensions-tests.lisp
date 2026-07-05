@@ -613,3 +613,27 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
          (*standard-output* out))
     (clautolisp.autolisp-builtins-core::builtin-clal-sedit (%al-read "(a b)"))
     (is (search "30" (get-output-stream-string out)))))
+
+;;; --- the public *clal-* extension variables are bound + updated ---
+
+(test clal-extension-variables-are-bound-after-install
+  ;; install-core-builtins binds the spec's public *clal-* variables so AutoLISP
+  ;; code can read them and alref-apropos (which lists only BOUND symbols) finds
+  ;; them (sedit spec §2/§5.4/§5.6)
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (clautolisp.autolisp-builtins-core:install-core-builtins)
+  (flet ((bound (n) (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p
+                     (clautolisp.autolisp-runtime:intern-autolisp-symbol n))))
+    (dolist (n '("*CLAL-CLIPBOARD*" "*CLAL-SEDIT-INITIAL-FORM*" "*CLAL-SEDIT-LAST-RESULT*"
+                 "*CLAL-FORM*" "*CLAL-RESULT*" "*CLAL-SOURCE-FORM*"
+                 "*CLAL-ON-ERROR*" "*CLAL-ALDO-CONFIGURATION*"))
+      (is (bound n) "expected ~A to be bound" n))))
+
+(test clal-clipboard-copy-sexp-sets-the-autolisp-variable
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (clautolisp.autolisp-builtins-core:install-core-builtins)
+  (let ((clautolisp.sedit:*clipboard-provider* :null))
+    (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-copy-sexp (%al-read "(a b c)"))
+    (let ((v (clautolisp.autolisp-runtime:autolisp-symbol-value
+              (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-CLIPBOARD*"))))
+      (is (string-equal "(sexp (a b c) \"(a b c)\")" (%al->src v))))))

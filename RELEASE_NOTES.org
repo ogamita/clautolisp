@@ -99,6 +99,13 @@ separate binary for tool integrators.
   the editor =SEDIT>= — is evaluated and its result printed, like the REPL.
 - =,settings NAME= now reports an error for an unknown setting name instead of
   printing a bogus value.
+- The public =*clal-*= extension variables (=*clal-clipboard*=,
+  =*clal-sedit-initial-form*= / =*clal-sedit-last-result*=, the =*clal-form*= /
+  =*clal-result*= / =*clal-source-form*= eval-history trio and their =-1= / =-2=
+  generations, =*clal-on-error*=, =*clal-aldo-configuration*=) are now *bound* at
+  startup, so AutoLISP code can read them and =(alref-apropos "*CLAL-")= lists
+  them; =clal-clipboard-copy-sexp= sets =*clal-clipboard*= and =clal-sedit= sets
+  the sedit variables.
 
 ** aldo debugger — form navigator (=clautolisp/documentation/clautolisp-sedit-spec.org=)
 
