@@ -552,7 +552,8 @@
   ((:file "autolisp-sedit/source/package")
    (:file "autolisp-sedit/source/adorn")
    (:file "autolisp-sedit/source/zipper")
-   (:file "autolisp-sedit/source/edit"))
+   (:file "autolisp-sedit/source/edit")
+   (:file "autolisp-sedit/source/state"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-sedit/tests")))
   :perform (asdf:test-op (op system)
@@ -569,6 +570,7 @@
   ((:file "autolisp-sedit/tests/package")
    (:file "autolisp-sedit/tests/zipper-tests")
    (:file "autolisp-sedit/tests/edit-tests")
+   (:file "autolisp-sedit/tests/undo-tests")
    (:file "autolisp-sedit/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

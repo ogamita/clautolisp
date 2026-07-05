@@ -25,10 +25,18 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:loc #:loc-p #:make-loc #:loc-focus #:loc-ctx #:node->loc
    #:loc-at-root-p #:loc-level #:loc-root #:loc-path #:loc-follow
    #:loc-down #:loc-up #:loc-left #:loc-right #:loc-first #:loc-last #:loc-skip
-   ;; --- editing transitions (§6.3) ---
+   ;; --- editing transitions (§6.3): pure Loc -> Loc algebra ---
    #:edit-insert #:edit-add #:edit-replace #:edit-delete
    #:edit-wrap #:edit-splice #:edit-slurp #:edit-barf #:edit-split #:edit-join
-   ;; --- the editor state + clipboard (§6.3/§6.5) ---
+   ;; --- the editor machine state (§6.5) + undo (§6.4) ---
    #:sedit-state #:sedit-state-p #:make-sedit-state
-   #:sedit-state-loc #:sedit-state-clip #:sedit-state-mode #:state-focus
-   #:sedit-copy #:sedit-cut #:sedit-paste))
+   #:sedit-state-loc #:sedit-state-clip #:sedit-state-mode #:sedit-state-undo
+   #:state-focus
+   #:undo-record #:undo-record-p #:make-undo-record #:undo-record-op #:undo-record-loc
+   #:undo-op-name #:sedit-can-undo-p #:sedit-undo-description #:sedit-undo
+   ;; state-level commands: mutations record undo, motions / copy do not
+   #:sedit-insert #:sedit-add #:sedit-replace #:sedit-delete
+   #:sedit-wrap #:sedit-splice #:sedit-slurp #:sedit-barf #:sedit-split #:sedit-join
+   #:sedit-copy #:sedit-cut #:sedit-paste
+   #:sedit-down #:sedit-up #:sedit-left #:sedit-right
+   #:sedit-first #:sedit-last #:sedit-skip))

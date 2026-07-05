@@ -253,3 +253,28 @@ printer (§5.2–§5.3), Phase 4 =clal-sedit= + REPL recording (§2–§3), Phas
 modes/aldo integration (§1/§7 — this is where =autolisp-debug-ui= gains the
 =autolisp-sedit= dependency), Phase 6 clipboard providers (§5.4 +
 =clipboard-interface.org=).
+
+** 2026-07-05 — Phase 2 DONE (clautolisp 1.4.17, branch =sedit-nav=)
+
+Single-level undo (§6.4), added as the machine-state layer of =autolisp-sedit=
+in a new file =source/state.lisp= (the pure §6.3 =edit-*= algebra is untouched).
+
+- The machine state =sedit-state= = (loc, mode, clip, undo) (§6.5). The undo slot
+  is =NIL= (Empty) or an =undo-record (op loc)= (Saved) — =op= the operation
+  descriptor (=(:insert σ)=, =(:cut)=, …) for the status line, =loc= the
+  pre-mutation location.
+- Every state-level mutation (=sedit-insert/add/replace/delete/wrap/splice/slurp/
+  barf/split/join=, and =sedit-cut/paste=) records the descriptor + the current
+  loc BEFORE mutating; motions (=sedit-down/up/left/right/first/last/skip=) and
+  =sedit-copy= leave the slot untouched (§6.4 recording rule).
+- =sedit-undo= is the SWAP: exchange the live loc with the saved one and store
+  the just-undone loc back, keeping the descriptor — so it is self-inverse (a
+  second =undo= redoes; one level, a new mutation overwrites the slot). Because
+  the tree is persistent the snapshot is O(1) and the file-modified marker rides
+  along with it, reverting/re-applying on the swap. Helpers: =sedit-can-undo-p=,
+  =sedit-undo-description=.
+
+Tests (=autolisp-sedit/tests=, now *140/140*, +45): recording vs. non-mutating,
+the §6.7 "undo restores location + selection, and is self-inverse" over every
+mutation kind, navigation-between-mutation-and-undo transparency, empty-slot
+no-op, one-level overwrite, cut/undo, and file-modified revert/re-apply.

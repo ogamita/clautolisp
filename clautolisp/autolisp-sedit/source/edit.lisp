@@ -190,35 +190,3 @@ the focus selected inside the merge. Signals when there is no adjacent list."
                               (make-ctx (ctx-parent ctx2) (rest (ctx-left ctx2))
                                         (ctx-right ctx2) (ctx-up ctx2)))))))
       (t (error "join: no adjacent sibling list to join")))))
-
-;;; --- editor state + clipboard (§6.3 copy/cut/paste, §6.5 state) -----------
-
-(defstruct (sedit-state (:constructor make-sedit-state (loc &key clip (mode :edit))))
-  loc                          ; the current location
-  (clip nil)                   ; the editor clipboard: an adorned node, or NIL
-  (mode :edit))                ; :edit | :nav — Phase 5 switches; Phase 1 is :edit
-
-(defun state-focus (state)
-  "The selected node of STATE."
-  (loc-focus (sedit-state-loc state)))
-
-(defun sedit-copy (state)
-  "Copy the selection to the clipboard (spec §6.3). Non-mutating; returns STATE."
-  (setf (sedit-state-clip state) (loc-focus (sedit-state-loc state)))
-  state)
-
-(defun sedit-cut (state)
-  "Cut the selection to the clipboard, then delete it — selecting the next
-sibling (spec §6.3). Returns STATE."
-  (setf (sedit-state-clip state) (loc-focus (sedit-state-loc state))
-        (sedit-state-loc state) (edit-delete (sedit-state-loc state)))
-  state)
-
-(defun sedit-paste (state)
-  "Replace the selection with the clipboard contents (spec §6.3). The tree is
-immutable, so the pasted node may be shared. Signals on an empty clipboard;
-returns STATE."
-  (let ((clip (sedit-state-clip state)))
-    (unless clip (error "paste: the clipboard is empty"))
-    (setf (sedit-state-loc state) (edit-replace (sedit-state-loc state) clip)))
-  state)
