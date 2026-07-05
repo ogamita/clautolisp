@@ -313,3 +313,38 @@ Tests (=autolisp-sedit/tests=, now *176/176*, +36): byte-preserving round trip
 over varied source, per-node verbatim text + structure, navigation-preserves-
 text, edit-reflows-only-the-touched-form, structural layout by the indent rules,
 comment classification, and comment merging.
+
+** 2026-07-05 — Phase 4 (model) DONE (clautolisp 1.4.19, branch =sedit-nav=)
+
+The sedit session, REPL source recording, storage, and filesystem model (§2, §3,
+§5.7–§5.9), in a new =source/session.lisp=. =autolisp-sedit= now depends on UIOP
+(file I/O only — still no clautolisp dependency). The remaining Phase-4 items —
+the interactive =clal-sedit= AutoLISP builtin, the command loop, and the runtime
+recording hook — are runtime coupling and land with the Phase-5 mode/aldo wiring.
+
+- *REPL recording* (§3): =recording= holds the definition dictionary (name→form,
+  from =setq/defun/defun-q= — =definition-name= extracts the bound name) and the
+  ordered session log. =record-form= appends to the log and (re)binds the name;
+  =recorded-definition= recalls (case-insensitive); =recording-forms= is the log
+  in order; =session-source= replays it with each name kept only at its LAST
+  (re-)definition's position.
+- *Session entry* (§2): =sedit-open= resolves NIL (stand-alone nil), a node
+  (edit it), a symbol (recall from the recording, else a fresh nil), a file-path
+  string (parse it, first top-level form selected), or a directory-path string
+  (list it, first entry selected). =sedit-session= (state + origin + initial);
+  =*clal-sedit-initial-form*=. =session-result= / =sedit-result-node= return the
+  §2 result — the whole top-level form the final selection is in (ascend out of
+  nested lists, stop at the file/dir boundary or root) — into
+  =*clal-sedit-last-result*=.
+- *Storage* (§5.7–§5.8): =sedit-load= (parse a file, verbatim), =sedit-save=
+  (=unparse= to disk; =:if-exists= guards overwrite), byte-preserving on clean
+  source. Save-on-leave: =*auto-saving*= (:sexp/:file/:disable) + =should-auto-
+  save-p=.
+- *Filesystem* (§5.9): =read-directory= (a dir-node of '..', sub-dirs, files),
+  =sedit-fs-new-file= / =sedit-fs-rename= / =sedit-fs-delete= (act on disk).
+
+Tests (=autolisp-sedit/tests=, now *227/227*, +51): recording + recall +
+redefinition + session-source, =definition-name=, every =sedit-open= object kind
+(nil/node/symbol/file/dir over temp files), the §2 result for stand-alone and
+file, save/load byte-preserving round trip + overwrite guard, filesystem
+new/rename/delete + directory listing, and the auto-saving policy.

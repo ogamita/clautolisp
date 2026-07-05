@@ -44,4 +44,18 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:sedit-wrap #:sedit-splice #:sedit-slurp #:sedit-barf #:sedit-split #:sedit-join
    #:sedit-copy #:sedit-cut #:sedit-paste
    #:sedit-down #:sedit-up #:sedit-left #:sedit-right
-   #:sedit-first #:sedit-last #:sedit-skip))
+   #:sedit-first #:sedit-last #:sedit-skip
+   ;; --- REPL source recording (§3) ---
+   #:recording #:recording-p #:make-recording
+   #:recording-definitions #:recording-log
+   #:record-form #:recorded-definition #:definition-name
+   #:recording-forms #:session-source
+   ;; --- storage: files, directories, save/load (§2.3–§2.4, §5.7–§5.9) ---
+   #:sedit-load #:sedit-save #:read-directory
+   #:sedit-fs-new-file #:sedit-fs-rename #:sedit-fs-delete
+   #:*auto-saving* #:should-auto-save-p
+   ;; --- the session and its §2 result ---
+   #:sedit-session #:sedit-session-p
+   #:sedit-session-state #:sedit-session-origin #:sedit-session-initial
+   #:sedit-open #:session-result #:sedit-result-node
+   #:*clal-sedit-initial-form* #:*clal-sedit-last-result*))
