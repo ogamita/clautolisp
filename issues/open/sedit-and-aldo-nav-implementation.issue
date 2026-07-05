@@ -186,3 +186,40 @@ reusable outside the debugger (=clal-sedit= at the REPL). Register it in
 
 Phase 0 (ship the bug fixes) → 1 → 2 → 3 → 4 → 5 → 6. Each phase is testable on
 its own; keep commits small and the version bumped per change.
+
+* STATUS
+
+** 2026-07-05 — Phase 0 DONE (clautolisp 1.4.15, branch =sedit-nav=)
+
+All three prerequisite bugs are fixed, tested, and verified end-to-end in the
+built binary; the =bug-aldo-*= tickets can be closed.
+
+1. *Duplicate breakpoint* (=bug-aldo-duplicate-breakpoint=). =add-breakpoint=
+   (autolisp-debug/breakpoints.lisp) is now idempotent for a *plain* breakpoint
+   (steady, no condition/action): it returns =(values BP NEW-P)= and reuses the
+   existing breakpoint on a poll-point that already carries one — no duplicate,
+   no doubled glyph. =cmd-set-breakpoint= propagates NEW-P; the =b= paths report
+   "already set". Conditioned/action/volatile breakpoints are still distinct.
+
+2. *Nav command dictionary* (=bug-aldo-nav-command-dictionary=). In the =:sexp=
+   navigator the motion keys (=d u > < << >> ±N=, spec §5) are handled first and
+   every other token falls through to =run-command= (the global debugger
+   dispatch): =c i n o a r j=, the breakpoint/frame/inspection verbs, etc. are
+   reachable bare; a resume directive (continue/step) leaves NAV carrying it up.
+   =?= prints the motion keys *and* the debugger help. The colliding letter
+   aliases =i k jj j l ll= were retired (they shadowed =into=/=jump=/=list-locals=).
+
+3. *Nav entry + breakpoint flow* (=bug-aldo-nav-entry-and-breakpoint-flow=).
+   (a) =nav-function-loc= descends to the *first poll-point* on entry (nav-down
+   of the whole form), not the whole =defun=. (b) =(clal-nav-function 'NAME)= at
+   the REPL opens the navigator *without a fake break*: =request-nav= gains
+   =*defer-nav-request*= (bound by the REPL turn) so it only queues; the REPL
+   drains the request after the turn via the new UI generic
+   =ui-open-navigation-request=, resolving NAME in the session context. No
+   synthetic toplevel poll-point is shown.
+
+Tests: autolisp-debug 122/122, autolisp-debug-ui-dumb 390/390, emacs 27/27,
+ncurses 42/42. Deferred: Phases 1–6 (the =sedit= EDIT-mode editor — zipper,
+undo, adornment/pretty-printer, =clal-sedit= + REPL recording, modes/aldo
+integration, clipboard) are not yet started; the =autolisp-sedit= system is
+still to be created.

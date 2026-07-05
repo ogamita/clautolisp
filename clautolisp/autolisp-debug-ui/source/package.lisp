@@ -69,6 +69,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:ui-breakpoint-added #:ui-breakpoint-removed
    #:ui-show-source #:ui-show-message
    #:ui-await-command
+   #:ui-open-navigation-request
    ;; session object
    #:debugger-session
    #:debugger-session-p

@@ -81,6 +81,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:reset-function-id-registry
    ;; pre-debug navigation (aldo-pre-debug.issue)
    #:*pending-nav-request*
+   #:*defer-nav-request*
    #:request-nav
    #:*selected-source*
    #:select-source

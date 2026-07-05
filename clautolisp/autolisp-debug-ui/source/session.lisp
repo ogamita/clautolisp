@@ -85,11 +85,17 @@ directive interpreted by APPLY-RESUME-DIRECTIVE."
 
 (defun cmd-set-breakpoint (session fid form-id &key (when :before) (steady t)
                                                     condition action (trace t))
-  (let ((bp (add-breakpoint (debugger-session-thread-info session)
-                            fid form-id :when when :steady steady
-                            :condition condition :action action :trace trace)))
-    (ui-breakpoint-added (debugger-session-ui session) bp)
-    bp))
+  "Set a breakpoint at poll point (FID, FORM-ID). Returns (values BREAKPOINT
+NEW-P): a plain breakpoint on a poll point that already carries one is
+idempotent (NEW-P NIL, no duplicate; bug-aldo-duplicate-breakpoint). The UI is
+notified only for a freshly created breakpoint."
+  (multiple-value-bind (bp new-p)
+      (add-breakpoint (debugger-session-thread-info session)
+                      fid form-id :when when :steady steady
+                      :condition condition :action action :trace trace)
+    (when new-p
+      (ui-breakpoint-added (debugger-session-ui session) bp))
+    (values bp new-p)))
 
 (defun nav-or-current-metadata (session)
   "The function the user is currently focused on for browsing/breakpointing: the

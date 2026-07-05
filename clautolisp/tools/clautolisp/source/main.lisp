@@ -532,12 +532,33 @@ instrumentable/steppable."
   (call-with-autolisp-error-handler
    (lambda ()
      (if session
-         (run-under-session-debugging
-          session
-          (lambda () (autolisp-eval-toplevel-progn forms context))
-          break-on-error)
+         ;; Defer any CLAL-NAV-* request queued this turn to the post-turn
+         ;; drain, so (clal-nav-function 'NAME) opens the navigator without a
+         ;; fake break (bug-aldo-nav-entry-and-breakpoint-flow).
+         (let ((clautolisp.debug:*defer-nav-request* t))
+           (run-under-session-debugging
+            session
+            (lambda () (autolisp-eval-toplevel-progn forms context))
+            break-on-error))
          (autolisp-eval-progn forms context)))
    context))
+
+(defun %repl-drain-navigation-request (session)
+  "After a REPL turn, if evaluating it queued a CLAL-NAV-* request (e.g.
+(clal-nav-function 'NAME), (clal-nav-file \"f.lsp\")) and a debug SESSION is
+attached, open the navigator now. This is the pre-debug entry that needs no
+fake break: the request was queued during the turn but no stop occurred to
+consume it (bug-aldo-nav-entry-and-breakpoint-flow)."
+  (let ((request (and session clautolisp.debug:*pending-nav-request*)))
+    (when request
+      (setf clautolisp.debug:*pending-nav-request* nil)
+      ;; The turn's dynamic context binding is gone; re-establish the session's
+      ;; context so the navigator resolves the named function (ensure-metadata-
+      ;; for-name defaults to the active evaluation context).
+      (let ((clautolisp.autolisp-runtime.internal:*active-evaluation-context*
+              (clautolisp.debug.ui:session-context session)))
+        (clautolisp.debug.ui:ui-open-navigation-request
+         (clautolisp.debug.ui:session-ui session) session request)))))
 
 (defun wire-mock-host-to-terminal (context)
   "In an interactive REPL the MockHost has no prompt-stream, so every
@@ -592,7 +613,11 @@ not supplied)."
               ;; not an AutoLISP value — so skip printing/history for it.
               (unless (eq result :aborted)
                 (format t "~A~%" (autolisp-value->string result nil))
-                (%repl-rotate-history result context))))
+                (%repl-rotate-history result context)))
+            ;; A turn that called (clal-nav-function 'NAME) etc. queued a
+            ;; navigation request but never stopped; open the navigator now,
+            ;; without faking a break (bug-aldo-nav-entry-and-breakpoint-flow).
+            (%repl-drain-navigation-request session))
         (simple-error (condition)
           (let ((diagnostic (simple-error-diagnostic condition)))
             (if diagnostic

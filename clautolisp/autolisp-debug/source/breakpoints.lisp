@@ -121,22 +121,49 @@ bits are not cleared on individual removal, only rebuilt in bulk)."
 
 ;;;; --- breakpoint management (spec §12) ------------------------------
 
+(defun existing-plain-breakpoint (ti fid form-id when)
+  "An existing steady, unconditioned, action-free breakpoint at poll point
+(FID, FORM-ID) whose WHEN matches — the target a repeated plain `b' would
+duplicate (bug-aldo-duplicate-breakpoint). NIL if none. Read-only; the caller
+must already hold TI's lock."
+  (find-if (lambda (bp)
+             (and (breakpoint-steady-p bp)
+                  (null (breakpoint-condition bp))
+                  (null (breakpoint-action bp))
+                  (let ((bw (breakpoint-when bp)))
+                    (or (eq bw when) (eq bw :both) (eq when :both)))))
+           (gethash (combined-key fid form-id) (thread-debug-info-breakpoints ti))))
+
 (defun add-breakpoint (ti fid form-id &key (when :before) (steady t) condition action (trace t))
-  "Set a breakpoint at poll point (FID, FORM-ID) on TI and return it.
+  "Set a breakpoint at poll point (FID, FORM-ID) on TI. Returns
+(values BREAKPOINT NEW-P): NEW-P is T when a fresh breakpoint was created, NIL
+when an equivalent one was already present.
+
+Breakpoint identity is the poll-point number, so setting a *plain* breakpoint
+(steady, no condition, no action) on a poll point that already carries one is
+idempotent — the existing breakpoint is returned and no duplicate is created
+(spec: \"at most one breakpoint per poll-point\"; bug-aldo-duplicate-breakpoint).
+Conditioned / action / volatile breakpoints are not deduplicated, since they
+express distinct behaviours on the same poll point.
+
 WHEN is :before, :after, or :both. A non-steady breakpoint is volatile
 and is removed the first time any breakpoint fires (§6). When ACTION is
 supplied, TRACE governs its disposition: T (default) auto-continues after
 the action (a tracepoint, §6.4); NIL runs the action then stops (bpcmd, §2)."
   (bordeaux-threads:with-lock-held ((thread-debug-info-lock ti))
-    (let ((bp (make-breakpoint :id (incf *breakpoint-id-counter*)
-                               :fid fid :form-id form-id :when when
-                               :steady-p steady :condition condition :action action
-                               :trace-p trace))
-          (key (combined-key fid form-id)))
-      (push bp (gethash key (thread-debug-info-breakpoints ti)))
-      (unless steady (push bp (thread-debug-info-volatile ti)))
-      (summary-set ti fid form-id)
-      bp)))
+    (let ((existing (and steady (null condition) (null action)
+                         (existing-plain-breakpoint ti fid form-id when))))
+      (if existing
+          (values existing nil)
+          (let ((bp (make-breakpoint :id (incf *breakpoint-id-counter*)
+                                     :fid fid :form-id form-id :when when
+                                     :steady-p steady :condition condition :action action
+                                     :trace-p trace))
+                (key (combined-key fid form-id)))
+            (push bp (gethash key (thread-debug-info-breakpoints ti)))
+            (unless steady (push bp (thread-debug-info-volatile ti)))
+            (summary-set ti fid form-id)
+            (values bp t))))))
 
 (defun add-breakpoint-in (ti usubr form-id &rest keys)
   "Like ADD-BREAKPOINT but resolves the function-id from an instrumented

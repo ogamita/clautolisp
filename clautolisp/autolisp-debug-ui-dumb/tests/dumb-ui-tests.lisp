@@ -349,6 +349,102 @@
       (is (contains output "DEFUN"))        ; reconstructed source form shown
       (is (contains output "【")))))         ; selection bracket
 
+(test dumb-ui-nav-enters-at-first-poll-point
+  ;; bug-aldo-nav-entry-and-breakpoint-flow §1: entering the form navigator
+  ;; selects the FIRST poll-point (the first body form), not the whole defun.
+  ;; FROB's first body form is (setq z (id x)) on line 3.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)  ; stop at entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%q~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))
+      ;; The in-memory test source has no file on disk, so the navigator renders
+      ;; the reconstructed form with prin1 (upper-cased). The selection bracket
+      ;; wraps the first body form (SETQ …), never the whole DEFUN.
+      (is (contains output "【(SETQ"))          ; selection is the first body form
+      (is (not (contains output "【(DEFUN")))))) ; not the whole toplevel form
+
+(test dumb-ui-nav-reaches-debugger-commands
+  ;; bug-aldo-nav-command-dictionary: in NAV the navigator dictionary is stacked
+  ;; over the global debugger dictionary — non-motion tokens dispatch as debugger
+  ;; commands. `lb' lists breakpoints from NAV (staying in NAV), and `c'
+  ;; (continue) resumes execution straight from NAV.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%lb~%p x~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))                     ; `c' from NAV resumed and finished
+      (is (contains output "pp"))             ; `lb' listed a breakpoint by pp
+      (is (contains output "7")))))           ; `p x' printed the parameter
+
+(test dumb-ui-nav-help-lists-debugger-commands
+  ;; bug-aldo-nav-command-dictionary: `?' in NAV derives from the union of the
+  ;; active dictionaries — the motion keys AND the debugger commands.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%?~%q~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      (is (contains output "motion:"))          ; the navigator motion keys
+      (is (contains output "continue")))))       ; and the debugger vocabulary
+
+(test dumb-ui-nav-breakpoint-idempotent
+  ;; bug-aldo-duplicate-breakpoint: `b' twice on the same selected poll-point
+  ;; keeps one breakpoint and one decoration; the second reports "already set".
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%b~%b~%c~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      ;; The first `b' sets it; the second reports "already set" — printed only
+      ;; when cmd-set-breakpoint found the existing breakpoint and created no
+      ;; duplicate (the engine-level count invariant is checked by
+      ;; IDEMPOTENT-BREAKPOINT-KEEPS-ONE-PER-POLL-POINT; breakpoints here are
+      ;; cleared on session teardown so a post-run count is unusable).
+      (is (contains output "set on the selected form"))          ; first `b'
+      (is (contains output "already set on the selected form"))))) ; second `b'
+
+(test dumb-ui-open-navigation-request-browses-without-a-stop
+  ;; bug-aldo-nav-entry-and-breakpoint-flow §2: ui-open-navigation-request opens
+  ;; the navigator on a function with NO stop — the (clal-nav-function 'NAME)
+  ;; pre-debug entry the REPL drives after a turn, resolving NAME in the session
+  ;; context (no fake break, no synthetic toplevel poll-point).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (output (make-string-output-stream))
+         (input (make-string-input-stream (format nil "q~%")))
+         (ui (clautolisp.ui.dumb:make-dumb-ui :input input :output output))
+         (session (clautolisp.debug.ui:start-session
+                   :ui ui :thread-info ti :context context)))
+    (declare (ignore metas))
+    (let ((clautolisp.autolisp-runtime.internal:*active-evaluation-context* context))
+      (clautolisp.debug.ui:ui-open-navigation-request ui session '(:function "FROB")))
+    (let ((out (get-output-stream-string output)))
+      (is (contains out "FROB"))              ; browsed to FROB's source
+      (is (contains out "NAV"))               ; opened the navigator
+      (is (not (contains out "Hit breakpoint")))))) ; no fake break was staged
+
 (test dumb-ui-break-once
   ;; `break once' / `bo' set a volatile breakpoint (removed on first hit)
   (let* ((context (fresh-context))
@@ -850,16 +946,25 @@
              (is (= 1 (clautolisp.ui.dumb::nav-form-index-for-line forms 4)))))  ; line 4 -> second
       (ignore-errors (delete-file path)))))
 
-(test nav-key-aliases-map-i-k-jj-j-l-ll
+(test nav-motion-keys-are-canonical-and-collision-free
+  ;; The letter aliases i/k/jj/j/l/ll were retired: they shadowed debugger verbs
+  ;; (i into, j jump, ll list-locals), which NAV must now reach directly through
+  ;; the stacked dictionary (bug-aldo-nav-command-dictionary). Only the sedit
+  ;; spec §5 motion keys (d u > < << >> ±N q) are navigator keys.
   (flet ((k (c) (loop for key in '(:up :down :prev :next :first :last :quit)
                       when (clautolisp.ui.dumb::nav-key= c key) return key)))
-    (is (eq :up    (k "u")))  (is (eq :up    (k "i")))
-    (is (eq :down  (k "d")))  (is (eq :down  (k "k")))
-    (is (eq :prev  (k "<")))  (is (eq :prev  (k "j")))
-    (is (eq :next  (k ">")))  (is (eq :next  (k "l")))
-    (is (eq :first (k "<<"))) (is (eq :first (k "jj")))
-    (is (eq :last  (k ">>"))) (is (eq :last  (k "ll")))
+    (is (eq :up    (k "u")))
+    (is (eq :down  (k "d")))
+    (is (eq :prev  (k "<")))
+    (is (eq :next  (k ">")))
+    (is (eq :first (k "<<")))
+    (is (eq :last  (k ">>")))
     (is (eq :quit  (k "q")))
+    (is (eq :quit  (k "quit")))
+    ;; the retired letter aliases are no longer navigator keys — they fall
+    ;; through to the debugger dictionary
+    (is (null (k "i")))  (is (null (k "j")))  (is (null (k "ll")))
+    (is (null (k "k")))  (is (null (k "l")))  (is (null (k "jj")))
     (is (null (k "z")))))
 
 (test nav-make-file-loc-is-a-file-location-selecting-line
