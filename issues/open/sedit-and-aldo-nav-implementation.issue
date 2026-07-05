@@ -384,3 +384,47 @@ installs the edited definition, breakpoints carrying over by poll-point
 identity); and adding the =autolisp-debug-ui= → =autolisp-sedit= dependency.
 =set navigator sexp|line= already exists in the debug-ui settings. This is where
 the first user-visible surface and the RELEASE_NOTES entry land.
+
+** 2026-07-05 — Phase 6 DONE (clautolisp 1.4.21, branch =sedit-nav=)
+
+The clipboard (§5.4 + =clipboard-interface.org=, normative), in a new
+=source/clipboard.lisp=. Two clipboards kept in sync by cut/copy/paste — the
+INTERNAL node (source of truth) and the SYSTEM textual clipboard — so the feature
+only ever ADDS reach and degrades to =:NULL=.
+
+- *Provider protocol*: =clipboard-provider= (a struct of closures: name /
+  available-p / put-text / get-text). Concrete providers =:X11= (xclip/xsel),
+  =:WAYLAND= (wl-copy/paste), =:MACOS= (pbcopy/paste), =:WINDOWS= (PowerShell
+  Set/Get-Clipboard), =:OSC52= (write ESC]52 to the tty, base64, tmux-wrapped;
+  write-mostly), =:NULL=. Subprocess providers use a FIXED argv (no shell), UTF-8,
+  via =uiop:run-program=; availability probes the tool on PATH + the relevant env
+  var, so a headless run resolves to =:NULL=.
+- *Selection + fallback*: =active-provider= auto-selects the first available in
+  preference order (Windows > macOS > Wayland > X11 > OSC52 > NULL), lazily and
+  cached; a transport failure demotes the active provider to =:NULL= for the
+  session and warns once (=*clipboard-demoted*=).
+- *Text + node layers*: =clipboard-put-text= / =clipboard-get-text= (the provider
+  API); =clipboard-copy-node= mirrors a node's source to the system, =clipboard-
+  paste-node= reads the system and parses it back (SECURE — the reader never
+  evals, so a foreign =#.(…)= cannot run; unparseable text pastes as a string).
+  =*clal-clipboard*= holds the §5.4 adorned object ((:SEXP …)/(:COMMENT …)) via
+  =node->clip-object= / =clip-object->node=.
+- =sedit-copy= / =sedit-cut= now mirror to the system clipboard; =sedit-paste=
+  reads the system first, else the session's internal clip — behaviour is
+  unchanged under =:NULL= or when =*system-clipboard-enabled*= is NIL. Config:
+  =*system-clipboard-enabled*= (t), =*clipboard-provider*= (nil=auto),
+  =*clipboard-providers*=, =*clipboard-x11-also-primary*= (nil),
+  =*clipboard-osc52-enabled*= (t).
+
+Tests (=autolisp-sedit/tests=, now *295/295*, +30; the runner pins =:NULL= for
+determinism): provider protocol, auto-selection, forcing, demote-on-error +
+warn-once, disable, copy/paste node round trip, fallback, non-lisp→string, the
+no-eval security property, clip-object round trip, base64 vectors, and the
+cross-session sedit copy/paste via a mock system clipboard.
+
+*Only remaining piece of the whole issue* — the §7 runtime/UI wiring: the
+AutoLISP =clal-sedit= / =clal-clipboard-*= builtins + value↔tree marshaling, the
+REPL recording hook, bridging aldo =nav-browse= into a sedit EDIT session, and
+the =autolisp-debug-ui= → =autolisp-sedit= dependency (its own turn, to avoid
+regressing the aldo navigator's 390 dumb-UI tests). That turn also gets the
+RELEASE_NOTES entry (first user-visible surface).

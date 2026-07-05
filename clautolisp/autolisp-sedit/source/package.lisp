@@ -61,4 +61,16 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:*clal-sedit-initial-form* #:*clal-sedit-last-result*
    ;; --- modes, the transition machine, and the driver (§1, §5, §6.6) ---
    #:sedit-command #:sedit-run #:render-selection
-   #:sedit-mode-prompt #:sedit-help-text))
+   #:sedit-mode-prompt #:sedit-help-text
+   ;; --- clipboard (§5.4 + clipboard-interface.org) ---
+   #:clipboard-provider #:clipboard-provider-p #:make-clipboard-provider
+   #:clipboard-provider-name #:clipboard-provider-available-p
+   #:clipboard-provider-put-text #:clipboard-provider-get-text
+   #:make-null-provider #:make-x11-provider #:make-wayland-provider
+   #:make-macos-provider #:make-windows-provider #:make-osc52-provider
+   #:default-clipboard-providers #:active-provider #:reset-clipboard-selection
+   #:clipboard-put-text #:clipboard-get-text
+   #:clipboard-copy-node #:clipboard-paste-node #:node->clip-object #:clip-object->node
+   #:*clipboard* #:*clal-clipboard*
+   #:*system-clipboard-enabled* #:*clipboard-provider* #:*clipboard-providers*
+   #:*clipboard-x11-also-primary* #:*clipboard-osc52-enabled* #:*clipboard-demoted*))

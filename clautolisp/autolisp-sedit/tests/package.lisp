@@ -12,10 +12,13 @@
   :description "clautolisp.sedit Phase 1: adorned trees, the Huet zipper, and the editing transitions.")
 
 (defun run-all-tests ()
-  (let ((results (run 'sedit-suite)))
-    (explain! results)
-    (unless (results-status results)
-      (error "clautolisp.sedit tests failed."))))
+  ;; Force the :NULL clipboard provider so tests never touch a real system
+  ;; clipboard (deterministic, no subprocesses); clipboard tests bind their own.
+  (let ((clautolisp.sedit:*clipboard-provider* :null))
+    (let ((results (run 'sedit-suite)))
+      (explain! results)
+      (unless (results-status results)
+        (error "clautolisp.sedit tests failed.")))))
 
 ;;; --- fixtures -------------------------------------------------------------
 

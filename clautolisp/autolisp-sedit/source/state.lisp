@@ -101,24 +101,30 @@ Saved is overwritten — one level. Returns STATE."
 ;;; --- clipboard: copy is non-mutating; cut/paste record undo (§6.3/§6.4) ---
 
 (defun sedit-copy (state)
-  "Copy the selection to the clipboard (spec §6.3). Non-mutating — it leaves the
-undo slot untouched. Returns STATE."
-  (setf (sedit-state-clip state) (loc-focus (sedit-state-loc state)))
+  "Copy the selection to the clipboard (spec §6.3): the session's internal clip
+and, when enabled, the system clipboard (clipboard-interface.org). Non-mutating —
+it leaves the undo slot untouched. Returns STATE."
+  (let ((node (loc-focus (sedit-state-loc state))))
+    (setf (sedit-state-clip state) node)
+    (clipboard-copy-node node))
   state)
 
 (defun sedit-cut (state)
   "Cut the selection to the clipboard, then delete it — selecting the next
 sibling (spec §6.3). Records an undo point; the swap restores the Loc but not
 the clipboard (§6.4). Returns STATE."
-  (setf (sedit-state-clip state) (loc-focus (sedit-state-loc state)))
+  (let ((node (loc-focus (sedit-state-loc state))))
+    (setf (sedit-state-clip state) node)
+    (clipboard-copy-node node))
   (%record-and-apply state (list :cut) #'edit-delete))
 
 (defun sedit-paste (state)
-  "Replace the selection with the clipboard contents (spec §6.3). Records an undo
+  "Replace the selection with the clipboard contents (spec §6.3): the system
+clipboard parsed if available, else the session's internal clip. Records an undo
 point. Signals on an empty clipboard; returns STATE."
-  (let ((clip (sedit-state-clip state)))
-    (unless clip (error "paste: the clipboard is empty"))
-    (%record-and-apply state (list :paste clip) (lambda (loc) (edit-replace loc clip)))))
+  (let ((node (clipboard-paste-node (sedit-state-clip state))))
+    (unless node (error "paste: the clipboard is empty"))
+    (%record-and-apply state (list :paste node) (lambda (loc) (edit-replace loc node)))))
 
 ;;; --- motions: never touch the undo slot (§6.4) ----------------------------
 
