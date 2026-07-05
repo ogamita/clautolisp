@@ -4594,22 +4594,48 @@ AutoLISP string -> a file/directory path; any other value -> a sexp to edit."
      (clautolisp.autolisp-runtime:autolisp-string-value object))
     (t (%clal-value->node object))))
 
-(defun %clal-sedit-eval-value (node)
-  "Evaluate NODE's form in the running system and return the AutoLISP value."
-  (clautolisp.autolisp-runtime:autolisp-eval
-   (clautolisp.autolisp-runtime:autolisp-read-from-string (clautolisp.sedit:unparse node))
-   (clautolisp.autolisp-runtime:current-evaluation-context)))
+(defun %clal-var-value (name)
+  "The value of AutoLISP variable NAME, or nil when it is unbound."
+  (let ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol name)))
+    (and (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p sym)
+         (clautolisp.autolisp-runtime:autolisp-symbol-value sym))))
+
+(defun %clal-shift-var-history (base new-value)
+  "Shift a three-generation AutoLISP history for BASE (a name stem like
+\"*CLAL-FORM\"): BASE-2* <- BASE-1*, BASE-1* <- BASE*, BASE* <- NEW-VALUE, so the
+newest value is BASE* and older ones age into the -1/-2 generations (spec §5.6)."
+  (%clal-set-autolisp-var (format nil "~A-2*" base) (%clal-var-value (format nil "~A-1*" base)))
+  (%clal-set-autolisp-var (format nil "~A-1*" base) (%clal-var-value (format nil "~A*" base)))
+  (%clal-set-autolisp-var (format nil "~A*" base) new-value))
+
+(defun %clal-sedit-eval (node)
+  "Evaluate NODE's form (spec §5.6) and record the eval history: shift the form
+and source-form variables BEFORE evaluating, shift the result variables AFTER, so
+=*clal-form*= / =*clal-source-form*= / =*clal-result*= (and their -1/-2
+generations) track the last three evaluations. Returns the AutoLISP result."
+  (let* ((text (clautolisp.sedit:unparse node))
+         (form (clautolisp.autolisp-runtime:autolisp-read-from-string text))
+         (source (list (clautolisp.autolisp-runtime:intern-autolisp-symbol "SEXP")
+                       form
+                       (clautolisp.autolisp-runtime:make-autolisp-string text))))
+    (%clal-shift-var-history "*CLAL-FORM" form)          ; forms + source before eval
+    (%clal-shift-var-history "*CLAL-SOURCE-FORM" source)
+    (let ((result (clautolisp.autolisp-runtime:autolisp-eval
+                   form (clautolisp.autolisp-runtime:current-evaluation-context))))
+      (%clal-shift-var-history "*CLAL-RESULT" result)     ; results after eval
+      result)))
 
 (defun %clal-sedit-eval-hook (node)
-  "EVAL / MACROEXPAND callback for sedit: evaluate NODE's form and return the
-result as a node (so macroexpand can replace the selection with it)."
-  (%clal-value->node (%clal-sedit-eval-value node)))
+  "EVAL / MACROEXPAND callback for sedit: evaluate NODE's form (recording the
+§5.6 history) and return the result as a node (so macroexpand can replace the
+selection with it)."
+  (%clal-value->node (%clal-sedit-eval node)))
 
 (defun %clal-sedit-eval-print-hook (node)
-  "EVAL-at-the-prompt callback for sedit: evaluate NODE's form and return its
-result as a source string to print (or an error line)."
+  "EVAL-at-the-prompt callback for sedit: evaluate NODE's form (recording the
+§5.6 history) and return its result as a source string to print (or an error)."
   (handler-case
-      (format nil "= ~A" (autolisp-value->string (%clal-sedit-eval-value node) nil))
+      (format nil "= ~A" (autolisp-value->string (%clal-sedit-eval node) nil))
     (error (e) (format nil "eval error: ~A" e))))
 
 (defun %clal-sedit-load-hook (path)

@@ -637,3 +637,18 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (let ((v (clautolisp.autolisp-runtime:autolisp-symbol-value
               (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-CLIPBOARD*"))))
       (is (string-equal "(sexp (a b c) \"(a b c)\")" (%al->src v))))))
+
+(test clal-sedit-eval-shifts-the-history-variables
+  ;; §5.6: each sedit evaluation shifts *clal-result*/-1/-2 and *clal-form*/-1/-2
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (clautolisp.autolisp-builtins-core:install-core-builtins)
+  (flet ((ev (s) (clautolisp.autolisp-builtins-core::%clal-sedit-eval
+                  (clautolisp.sedit:parse-form s)))
+         (v (n) (%al->src (clautolisp.autolisp-builtins-core::%clal-var-value n))))
+    (ev "(quote 10)") (ev "(quote 20)") (ev "(quote 30)")
+    (is (equal "30" (v "*CLAL-RESULT*")))
+    (is (equal "20" (v "*CLAL-RESULT-1*")))
+    (is (equal "10" (v "*CLAL-RESULT-2*")))
+    (is (string-equal "(quote 30)" (v "*CLAL-FORM*")))
+    (is (string-equal "(quote 20)" (v "*CLAL-FORM-1*")))
+    (is (string-equal "(sexp (quote 30) \"(quote 30)\")" (v "*CLAL-SOURCE-FORM*")))))
