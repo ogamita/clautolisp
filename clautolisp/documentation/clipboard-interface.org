@@ -1,0 +1,253 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: sedit — System Clipboard Interface
+#+AUTHOR: Pascal J. Bourguignon
+
+* System Clipboard Interface
+
+This section specifies how =sedit= (and the debugger TUI built on it)
+integrates its =cut= / =copy= / =paste= commands with the *system*
+clipboard, in addition to the in-process =*clipboard*= it already uses.
+
+The goal is interoperation: a sub-expression cut or copied in =sedit=
+becomes available to other applications (an editor, a REPL, a browser),
+and text copied elsewhere can be pasted into =sedit= and parsed back into
+a sub-expression — without =sedit= itself depending on any GUI toolkit.
+
+** Two clipboards
+
+=sedit= keeps *two* clipboards, kept in sync by the =cut= / =copy= /
+=paste= commands:
+
+1. The *internal clipboard* =*clipboard*= — holds the live Lisp object
+   (via =copy-tree=).  It preserves full structural fidelity (shared
+   structure aside) and non-printable objects.  It is the source of truth
+   for a =sedit=→=sedit= round trip.
+
+2. The *system clipboard* — holds a *textual* rendering of the object.
+   It is what other applications see, and what a foreign =paste= reads.
+
+On =copy= / =cut=, both are written.  On =paste=, the system clipboard is
+read and parsed; if it is empty, unreadable, or system integration is
+disabled, =sedit= falls back to the internal =*clipboard*=.  This way the
+feature only ever *adds* reach and never breaks the existing behaviour.
+
+** Provider protocol
+
+A *provider* is a backend that can move text to and from one concrete
+system clipboard.  A provider is a plain structure of closures, so
+providers can be registered without CLOS and detected at run time:
+
+#+begin_src lisp
+(defstruct clipboard-provider
+  name          ; a keyword, e.g. :X11, :MACOS, :OSC52, :NULL
+  available-p   ; (lambda () -> generalized-boolean)   can we use it now?
+  put-text      ; (lambda (string) -> nil)             set the clipboard
+  get-text)     ; (lambda () -> (or string null))      read it, NIL if none/unsupported
+#+end_src
+
+The two operations are text-only and UTF-8 (see [[*Encoding and line endings]]):
+
+- =put-text= replaces the clipboard contents with =string=.
+- =get-text= returns the current contents, or =NIL= when the clipboard is
+  empty or the provider cannot read (some providers are write-only, see
+  =:OSC52=).
+
+Providers must not signal on a merely-unavailable backend; they report
+that through =available-p= / a =NIL= from =get-text=.  A genuine transport
+error (subprocess crash) is signalled and handled centrally
+([[*Errors and fallback]]).
+
+** Provider registry and selection
+
+#+begin_src lisp
+(defvar *clipboard-providers* '()
+  "Providers in *preference order* (most preferred first).")
+
+(defvar *clipboard-provider* nil
+  "The active provider.  NIL means: auto-select on first use.
+Bind or SETF to a keyword or a CLIPBOARD-PROVIDER to force one.")
+
+(defvar *system-clipboard-enabled* t
+  "When NIL, sedit uses only the in-process *CLIPBOARD*.")
+#+end_src
+
+Auto-selection picks the first provider whose =available-p= returns true,
+in this order and for these reasons:
+
+| Order | Provider          | Selected when (detection)                                    |
+|-------+-------------------+--------------------------------------------------------------|
+|     1 | =:WINDOWS=        | running on Windows                                           |
+|     2 | =:MACOS=          | =pbcopy=/=pbpaste= present (Darwin, local session)          |
+|     3 | =:WAYLAND=        | =WAYLAND_DISPLAY= set and =wl-copy= present                  |
+|     4 | =:X11=            | =DISPLAY= set and =xclip= or =xsel= present (incl. X11 fwd)  |
+|     5 | =:OSC52=          | interactive tty and OSC 52 enabled (works over plain SSH)    |
+|     6 | =:NULL=           | always — in-process only, no system integration             |
+
+Rationale: a *native local* GUI clipboard is preferred when there is one;
+=:X11= is placed before =:OSC52= because a forwarded =DISPLAY= gives a
+true two-way clipboard whereas =:OSC52= is typically write-only; =:NULL=
+guarantees the list is never empty.  The optional D-Bus providers
+([[*Optional: D-Bus clipboard managers]]) are *not* in the default order —
+they are opt-in.
+
+** Backends
+
+| Provider   | =put-text= (copy)                     | =get-text= (paste)          | Notes                                                        |
+|------------+---------------------------------------+-----------------------------+-------------------------------------------------------------|
+| =:X11=     | =xclip -selection clipboard= / =xsel -b -i= | =xclip -o=/=xsel -b -o= | Two-way.  See [[*X11 selections]] re PRIMARY.               |
+| =:WAYLAND= | =wl-copy=                             | =wl-paste -n=               | Two-way.  =-n= = no trailing newline.                        |
+| =:MACOS=   | =pbcopy=                              | =pbpaste=                   | Two-way.  UTF-8.                                             |
+| =:WINDOWS= | =Set-Clipboard= (PowerShell)          | =Get-Clipboard= (PowerShell)| Prefer PowerShell over =clip.exe= — =clip= is write-only and codepage-bound. |
+| =:OSC52=   | write =ESC ] 52;c;<base64> BEL= to the tty | OSC 52 query (rarely answered) → usually =NIL= | *Write-mostly.*  Reaches the *local* terminal over SSH.  See [[*Security considerations]]. |
+| =:NULL=    | no-op                                 | =NIL=                       | Fallback; the internal =*clipboard*= still works.           |
+
+All subprocess providers invoke a *fixed argument vector* (no shell), read
+=get-text= from the child's stdout, and feed =put-text= on the child's
+stdin.
+
+** Public API
+
+The commands use only this small surface; the provider layer is hidden.
+
+#+begin_src lisp
+;; Text level (the provider layer):
+(clipboard-put-text  string)      ; -> nil
+(clipboard-get-text)              ; -> (or string null)
+
+;; Sexp level (what sedit-cut/copy/paste call):
+(clipboard-copy-sexp  sexp)       ; *CLIPBOARD* <- (copy-tree sexp)
+                                  ; and, if enabled, system <- (render sexp)
+(clipboard-paste-sexp)            ; -> a sexp: parse the system clipboard,
+                                  ;    else fall back to *CLIPBOARD*
+#+end_src
+
+=sedit-copy= and =sedit-cut= call =clipboard-copy-sexp=; =sedit-paste=
+calls =clipboard-paste-sexp=.  Their existing observable behaviour is
+unchanged when =*system-clipboard-enabled*= is =NIL= or the active
+provider is =:NULL=.
+
+** Sexp ↔ text serialization
+
+*Copy* renders the object so that a foreign application sees ordinary Lisp
+source:
+
+#+begin_src lisp
+(let ((*print-readably* nil)   ; don't error on unreadable objects
+      (*print-circle*   t)     ; tolerate shared / circular structure
+      (*print-pretty*   nil)
+      (*package*        <the form's package>))
+  (prin1-to-string sexp))
+#+end_src
+
+*Paste* parses the clipboard text back into a sexp, defensively:
+
+- read with =*read-eval*= bound to =NIL= (never evaluate =#.= from foreign
+  text — see [[*Security considerations]]) and a private, standard
+  =*readtable*=;
+- read the *first* complete form; ignore trailing text;
+- if the text does not parse as a Lisp form, paste it *as a string object*
+  (so pasting arbitrary text is still useful and never errors);
+- if =get-text= returns =NIL=, use the internal =*clipboard*=.
+
+This gives the two useful cross-application flows: a =sedit= sub-expression
+pastes into an editor as source text, and a region yanked from an editor
+pastes into =sedit= as a parsed sub-expression.
+
+** Encoding and line endings
+
+- All provider I/O is *UTF-8*.  Subprocess providers set the child's
+  external format to UTF-8 explicitly.
+- =put-text= sends the string verbatim, *without* adding a trailing
+  newline; =get-text= returns contents verbatim (=wl-paste -n=, and callers
+  do not strip) so a round trip is byte-preserving where the backend allows.
+- On Windows, using =Set-Clipboard=/=Get-Clipboard= keeps Unicode intact;
+  =clip.exe= is avoided because it is limited to the console codepage.
+
+** X11 selections
+
+X11 has three selections; =sedit= uses *CLIPBOARD* (the Ctrl-C/Ctrl-V one)
+for both directions.  Optionally it may *also* publish =copy= to *PRIMARY*
+(the highlight / middle-click selection):
+
+#+begin_src lisp
+(defvar *clipboard-x11-also-primary* nil
+  "When true, the :X11 provider also sets the PRIMARY selection on copy.")
+#+end_src
+
+Because X11 keeps the data in the owning process, =xclip=/=xsel= fork a
+short-lived owner; a running clipboard manager is what makes the copied
+text survive after that helper exits.  =sedit= does not manage that.
+
+** Optional: D-Bus clipboard managers
+
+D-Bus is not itself a clipboard, but clipboard *managers* expose one over
+it, which additionally gives access to clipboard *history*.  These are
+*opt-in* providers (not in the default selection order), useful on their
+respective desktops:
+
+| Provider   | Bus / object                    | put / get                                             |
+|------------+---------------------------------+-------------------------------------------------------|
+| =:KLIPPER= | =org.kde.klipper= =/klipper=    | =setClipboardContents= / =getClipboardContents=       |
+| =:GPASTE=  | =org.gnome.GPaste=              | =Add= / =GetElement= (history-aware)                  |
+
+They are invoked via =qdbus= / =gdbus=.  They are subject to the same
+session limitation as the GUI tools (a D-Bus *session* bus requires a
+local graphical login and does not tunnel over plain SSH), so they add
+history integration on KDE/GNOME but do not replace the baseline.
+
+Enable one explicitly, e.g.:
+
+#+begin_src lisp
+(push (make-klipper-provider) *clipboard-providers*)   ; make it preferred
+(setf *clipboard-provider* :klipper)                   ; or force it
+#+end_src
+
+** Errors and fallback
+
+- Provider selection is *lazy and cached*: chosen on first use, re-checked
+  if =*clipboard-provider*= or =*clipboard-providers*= changes.
+- A transport failure in the active provider (missing tool discovered late,
+  subprocess non-zero exit, =get-text= timeout) is caught, reported *once*
+  as a warning, and the active provider is demoted to =:NULL= for the rest
+  of the session.  =cut= / =copy= / =paste= keep working through the
+  internal =*clipboard*=.
+- =get-text= uses a short timeout so a hung helper (notably an =:OSC52=
+  read on a terminal that never answers) cannot block the editor.
+
+** Security considerations
+
+- =:OSC52= transmits clipboard data *in band* to the terminal emulator.
+  Over SSH that means the data lands on the *local* machine's clipboard —
+  convenient, but it is a data-egress path; it is gated by
+  =*clipboard-osc52-enabled*= and many terminals disable OSC 52 *read* for
+  exactly this reason (hence =:OSC52= is write-mostly).
+- *Paste* never evaluates its input: reading is done with =*read-eval*= =NIL=
+  and a standard readtable, so a malicious =#.(…)= on the clipboard cannot
+  execute code; at worst it fails to parse and is pasted as a string.
+- Subprocess providers pass a fixed argv (never a shell command line), so
+  clipboard contents cannot be interpreted as shell syntax.
+
+** Configuration summary
+
+| Variable                        | Default | Meaning                                             |
+|---------------------------------+---------+-----------------------------------------------------|
+| =*system-clipboard-enabled*=    | =t=     | mirror to / from the system clipboard at all        |
+| =*clipboard-provider*=          | =nil=   | force a provider; =nil= = auto-select               |
+| =*clipboard-providers*=         | (list)  | registry, in preference order                       |
+| =*clipboard-x11-also-primary*=  | =nil=   | :X11 also sets PRIMARY on copy                       |
+| =*clipboard-osc52-enabled*=     | =t=     | allow the :OSC52 provider                            |
+
+** Implementation notes
+
+- Subprocesses: portably via =uiop:run-program= (=:input= a string,
+  =:output :string=, =:external-format :utf-8=), or the implementation's
+  own =run-program=.  Availability detection = "is the executable on
+  =PATH=" plus the relevant environment variable.
+- =:OSC52= writes to the *controlling terminal* stream (not necessarily
+  =*standard-output*=), base64-encoding the UTF-8 bytes; it honours the
+  =screen-=/=tmux-= passthrough wrapping when those multiplexers are
+  detected.
+- No backend is a build dependency; every provider probes its tools at
+  run time and degrades to =:NULL=.
+
+# THE END

@@ -1,0 +1,188 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: Implement sedit + aldo form-navigator integration (and fix the three nav bugs)
+#+AUTHOR: Pascal J. Bourguignon
+
+* Goal
+
+Implement the =sedit= S-expression structural editor and its integration with
+the *aldo* debugger's form navigator, per the specification, and fix the three
+outstanding navigation bugs it references.
+
+*Normative specification* (read it first, in full):
+=clautolisp/documentation/clautolisp-sedit-spec.org= — "sedit and the aldo Form
+Navigator". It is layered on, and does not restate:
+
+- =clautolisp/documentation/clautolisp-debugger-tui-spec.org= (decorations,
+  numbered poll-points, partial printing, the two navigators, the two stacks,
+  stacked command dictionaries);
+- =clautolisp/documentation/clautolisp-debugger-command-reference.org= (§0 the
+  NORMATIVE command-naming rule; §3 Navigation; §8 dictionaries / settings).
+
+*Bugs to fix* (they are prerequisites and good warm-ups):
+
+- =issues/open/bug-aldo-duplicate-breakpoint.issue=
+- =issues/open/bug-aldo-nav-command-dictionary.issue=
+- =issues/open/bug-aldo-nav-entry-and-breakpoint-flow.issue=
+
+*Related:* =clautolisp/documentation/clipboard-interface.org= (system clipboard);
+=issues/open/aldo-pre-debug.issue= (=clal-nav-function= entry API).
+
+* Branch and conventions
+
+- Work on the *=sedit-nav= implementation branch* (off =master=). The =sedit=
+  branch is *experimental* and is *not* the base — do not build on it. You may
+  *read* its =sedit/sedit.lisp= / =dbgsim.lisp= as prior art, but the reference
+  model is now §6 of the spec, not that code.
+- Follow =AGENTS.md=. Common Lisp sources are LF + UTF-8.
+- Naming ([[clautolisp_naming]] conventions): =clal-= prefix for the AutoLISP
+  extension functions/commands (=clal-sedit=, =clal-nav-function=,
+  =clal-clipboard-*=); =*clal-…*= for the AutoLISP-visible variables
+  (=*clal-clipboard*=, =*clal-result*=, =*clal-sedit-initial-form*=, …). CL-side
+  internals live in the existing =clautolisp.debug.*= / =clautolisp.ui.*=
+  packages.
+- *Version bump:* every change to clautolisp sources must bump =*version*= in
+  =clautolisp/tools/clautolisp/source/version.lisp= (MAJOR.MINOR.DEVELOP —
+  bump DEVELOP), and add a one-line entry to =RELEASE_NOTES.org=.
+- Tests use =fiveam=, one =…/tests/= tree per ASDF system, with a =run.lisp=.
+  Every new behaviour gets tests; the §6.7 invariants are the acceptance suite.
+
+* Where the code lives (ground truth)
+
+The debugger is already substantially built; NAV mode largely *exists*. Extend
+it, do not restart.
+
+| concern                              | system / file                                                        |
+|--------------------------------------+----------------------------------------------------------------------|
+| breakpoints (duplicate-bp bug)       | =clautolisp/autolisp-debug/source/breakpoints.lisp= (=add-breakpoint=)|
+| poll-points / instrument / source↔instrumented | =autolisp-debug/source/{poll,instrument}.lisp=, =autolisp-source-map/= |
+| *form navigator (NAV, non-mutating)* | =autolisp-debug-ui/source/navigator.lisp= (path-based; motions exist) |
+| stacked command dictionaries         | =autolisp-debug-ui/source/command-table.lisp=                        |
+| decorations / theme                  | =autolisp-debug-ui/source/decorations.lisp=                          |
+| settings (=navigator=, add =sedit …=)| =autolisp-debug-ui/source/settings.lisp=                             |
+| UI protocol / session                | =autolisp-debug-ui/source/{protocol,session}.lisp=                   |
+| dumb-terminal UI + its tests         | =autolisp-debug-ui-dumb/=                                             |
+| TUI screen protocol (ncurses/mock)   | =autolisp-debug-ui-tui/source/tui.lisp=                              |
+| inspector (sibling mode dictionary)  | =autolisp-inspect/=                                                   |
+
+New EDIT-mode editor code should live in its *own* system (e.g.
+=clautolisp/autolisp-sedit=, =autolisp-sedit/source/{package,zipper,adorn,edit,
+clipboard,fs,sedit}.lisp=) that =autolisp-debug-ui= depends on, so =sedit= is
+reusable outside the debugger (=clal-sedit= at the REPL). Register it in
+=clautolisp/clautolisp.asd= next to =autolisp-inspect=, with a
+=…/autolisp-sedit/tests= system.
+
+* Phase 0 — fix the three bugs (small, independently shippable)
+
+1. *Duplicate breakpoint* (=bug-aldo-duplicate-breakpoint=). In
+   =add-breakpoint= (and the =b= command path), make setting a breakpoint on a
+   poll-point that already carries one *idempotent*: keep the single breakpoint
+   (or report "breakpoint already set on ppN"); never append, never double the
+   glyph. Test: two =b= on the same selection ⇒ one breakpoint, one decoration.
+
+2. *Nav command dictionary* (=bug-aldo-nav-command-dictionary=). Make navigation
+   mode actually *stack* the navigator dictionary over the global debugger
+   dictionary (=command-table.lisp=), so all non-shadowed debugger verbs are
+   directly reachable in NAV; derive the =?= help line from the *union* of the
+   active dictionaries, not a literal. Test: from NAV, =c i n o a r j b bo f
+   fi… p t v l*= dispatch; =?= lists them.
+
+3. *Nav entry + breakpoint flow* (=bug-aldo-nav-entry-and-breakpoint-flow=).
+   (a) On entering the form navigator on a form, the initial selection is the
+   *first poll-point* (=nav-down= of the whole form, §4/§6.4-skip), not the
+   whole =defun=. (b) Provide =clal-nav-function= (see =aldo-pre-debug.issue=)
+   so a breakpoint can be placed *without* first faking a break, and hide the
+   =clal-invoke-debugger= synthetic toplevel poll-point in that flow. Tests:
+   entry selection = first pp; =clal-nav-function= opens NAV with no fake stop.
+
+* Phase 1 — sedit core (EDIT mode): the zipper (spec §6.1–§6.3)
+
+- Adorned-tree domain (§6.1): =Atom / List α / Comment α / File / Dir=, with
+  adornment =α= (newlines, attached comments, column info) separate from
+  structure.
+- The Huet zipper =Loc = (t, C)= (§6.2): =down up right left first last skip=,
+  O(1), structure-sharing, with the *level tag* advancing across sexp→form→
+  file→dir boundaries.
+- Editing transitions (§6.3): =insert add replace=, =copy cut paste=, and the
+  structural =wrap slurp barf splice split join=; each selects its result; a
+  form-level mutation inside a =File= marks it modified.
+- Property tests from §6.7: split/join, wrap/splice, slurp/barf round-trips;
+  motion totality/inverse.
+
+* Phase 2 — undo (spec §6.4)
+
+- Add the single =undo-save= slot =Empty | Saved op Loc=. *Record* the
+  descriptor + pre-mutation =Loc= before each mutation of §6.3; leave it
+  untouched on non-mutating commands. *Restore* by the *swap* rule so =undo= is
+  self-inverse (second =undo= = redo). Tests: the §6.7 "undo restores, and is
+  self-inverse" invariant, incl. navigation between mutation and undo, and
+  file-modified-marker recomputation after a swap.
+
+* Phase 3 — adornment, formatting, comments (spec §5.2–§5.3, §5.8)
+
+- Pretty-printer that, given =sexp + NEWLINES + indent rules=, reproduces the
+  source =TEXT= (§6.7 formatting fidelity). AutoLISP has a finite special-
+  operator set, so indentation is fully determined; comments indent by level
+  (=;-= column / =;;-= subform / =;;;- ;;;;-= flush-left; =;| |;= blocks).
+- Comment objects, contiguous-comment merging, and deferral of multi-line
+  comment *text* editing to =$VISUAL=/=$EDITOR= (a =set= option).
+
+* Phase 4 — =clal-sedit=, storage, REPL recording (spec §2, §3, §5.7–§5.9)
+
+- =clal-sedit [object]= entry points: =nil= (stand-alone), a sexp, a symbol
+  (recall its recorded/File form), a *file path*, a *directory path*; the
+  initial-selection / final-selection / result table (§2) and
+  =*clal-sedit-initial-form*= / =*clal-sedit-last-result*=.
+- REPL source recording (§3): the *definition dictionary* (name→form, from
+  =setq/defun/defun-q=) and the ordered *session log* (all toplevel forms);
+  =clal-sedit 'NAME= recalls; re-eval updates.
+- Filesystem level (§5.9): =new rename delete=, minimalist directory nav.
+- =save= + =load= (§5.7–§5.8): =save=-on-leave with the =set sedit auto-saving
+  sexp|file|disable= setting and the confirmation prompts; =load [FILE]= (=l=),
+  in both modes, re-installing edited definitions.
+
+* Phase 5 — modes, transitions, and aldo integration (spec §1, §5, §7)
+
+- The revised command set and keys (spec §5 table), registered *per dictionary*
+  through =command-table.lisp='s registrar (which enforces §0). Note the
+  reassignments: =next/prev→forward/backward= (=> <=), old =enlist→wrap=, =l=
+  is now =load=, CUA =x c v= as conventional clipboard keys, =z= undo,
+  =ic/ac/rc= comment variants, dir =r=/=x=/=n= object-exclusive.
+- The *two modes* and the transition machine (§1.3, §6.6): editing command (by
+  *word*) or =edit= switches NAV→EDIT; =debug CMD= / =aldo CMD= (synonyms) or
+  =nav= returns to NAV; =load= changes neither. In EDIT the debugger dict is
+  reached only through the =debug=/=aldo= prefix.
+- Integration (§7): =clal-nav-function= opens NAV at the first poll-point;
+  re-entry re-anchors to the current poll-point; editing a function then
+  =save=+=load= installs the new definition, breakpoints carrying over by
+  poll-point identity; =set navigator sexp|line= selects the presentation
+  (the =line= navigator is the flat alternative, mostly already present).
+
+* Phase 6 — clipboard (spec §5.4 + clipboard-interface.org)
+
+- Editor-facing lisp clipboard =*clal-clipboard*= with adorned =(SEXP …)= /
+  =(COMMENT …)= objects; =clal-clipboard-{put,get}-text= /
+  =clal-clipboard-{copy,paste}-sexp=.
+- The system-clipboard *provider* layer (X11/Wayland/macOS/Windows/OSC52/NULL),
+  serialization, and security exactly per =clipboard-interface.org= (that
+  document is normative for this phase). Degrade to =:NULL= with no build deps.
+
+* Acceptance
+
+- The three bug tests pass, and the behaviours are visible in the dumb UI.
+- The §6.7 invariants are encoded as fiveam tests and green:
+  motion totality/inverse, split/join & wrap/splice & slurp/barf round-trips,
+  idempotent designation (+ idempotent breakpoint), undo restores & is
+  self-inverse, mode preservation, formatting fidelity.
+- =clal-sedit= works at the REPL for all §2 argument kinds; a =load=/=save=
+  round trip on clean source is byte-preserving.
+- In the debugger: enter NAV at the first poll-point, all debugger verbs reach
+  directly; edit a function (NAV→EDIT), =save=, =load=, =aldo continue= (→NAV),
+  and the new definition runs at the next call.
+- Docs kept in sync: bump the sedit spec version for any spec change made while
+  implementing; note the work in =RELEASE_NOTES.org=; update the debugger
+  implementation-plan org if module boundaries shift.
+
+* Suggested order
+
+Phase 0 (ship the bug fixes) → 1 → 2 → 3 → 4 → 5 → 6. Each phase is testable on
+its own; keep commits small and the version bumped per change.

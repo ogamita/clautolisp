@@ -1,0 +1,50 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: aldo bug/UX — entering nav re-selects the whole function; breakpoints need `invoke-debugger' first
+#+AUTHOR: Pascal J. Bourguignon
+
+Split out of =aldo-sedit-integration.issue= (§2). The specification of the
+navigator and its integration is in
+=clautolisp/documentation/clautolisp-sedit-spec.org=; these are the
+remaining *behaviour/UX bugs*.
+
+* 1. Entering navigation mode re-selects the whole toplevel form
+
+After =g NAME=, the debugger displays the function source and correctly
+puts =>>= on the first poll-point. But entering navigation with =nav= then
+resets the selection to the *whole* function again:
+
+#+begin_example
+DBG> g bn-place-fleet
+BN-PLACE-FLEET:
+   145:   (defun bn-place-fleet (ships fleet / id size done idx dir)
+>> 147:     (foreach f fleet          ; <- first poll-point selected, good
+DBG> nav
+ >>145:  【(defun bn-place-fleet …)   ; <- selection jumped back to the whole form, bad
+#+end_example
+
+*Expected:* on entering the form navigator, the initial selection is the
+*first poll-point* of the form (the same node =>>= already points at), not
+the whole toplevel form. (Form-navigation mode selects only *evaluable*
+sub-forms; the =defun= head as a whole is not a navigation target — see
+the sedit spec, "Form navigation vs sexp editing".)
+
+* 2. Setting a breakpoint should not require invoking the debugger first
+
+Today one must =(clal-invoke-debugger "")= to get into the navigator to
+place a breakpoint. Placing a breakpoint on a known function is a normal,
+non-error activity and should be reachable directly, e.g.
+
+#+begin_example
+(clal-nav-function 'bn-place-fleet)    ; open the form navigator on a function
+#+end_example
+
+without pretending an error/break happened. The =clal-invoke-debugger=
+internals (the synthetic toplevel poll-point it creates) should not be
+shown to the user in this flow. See =aldo-pre-debug.issue= for the
+navigation-entry API (=clal-nav-function=), and the sedit spec entry
+points (=clal-sedit=, =clal-nav-function=).
+
+Note: the =file:line= identity of breakpoints is old-fashioned and not
+lispy; the poll-point/selection-based designation (sedit spec) is the
+intended primary interface, with =clal-set-breakpoint= / =clal-disable-breakpoint=
+as the programmatic API for custom debugger commands.

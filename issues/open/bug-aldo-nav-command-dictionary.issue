@@ -1,0 +1,47 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: aldo bug — navigation mode exposes only `break', not the full debugger dictionary
+#+AUTHOR: Pascal J. Bourguignon
+
+Split out of =aldo-sedit-integration.issue= (§1). The design of the
+*cascading (stacked) command dictionaries* is already specified — see the
+debugger TUI spec, "Command dictionaries (stacked dispatch)", and the
+command reference §8. The two-mode model (form-navigation vs sexp-editing)
+is specified in =clautolisp/documentation/clautolisp-sedit-spec.org=. This
+issue is the remaining *implementation bug*: the running navigation mode
+does not yet stack the dictionaries as specified.
+
+* Symptom
+
+In navigation mode, the help line advertises only =break= from the
+debugger, instead of all the (non-shadowed) debugger commands:
+
+#+begin_example
+NAV[code]> ?
+NAV> ? keys: d down  u up  > < siblings  << >> ends  ±N  b break  q  (i k jj j l ll)
+#+end_example
+
+* Expected
+
+Per the stacked-dispatch design, in navigation mode the *navigator*
+dictionary is layered *over* the global debugger dictionary; both are
+active, and the navigator is designed collision-free against the global
+set. So from navigation mode the user must reach *all* the debugger verbs
+directly, no prefix:
+
+- execution: =c i n o a r j= (continue, into, next, out, advance, return, jump),
+- breakpoints: =b bo= and the breakpoint words (condition, ignore,
+  enable, disable, delete/clear, …),
+- frames: =f fi fo ft fb=, inspection =p t v= and =l*=,
+- go-to / browse: =. g back history search=.
+
+Shadowing concerns abbreviations only; apart from =quit=, two commands
+with the same *name* doing different things in the navigator and in the
+debugger would be surprising.
+
+* Fix
+
+Implement the stacked command lookup for navigation mode (navigator
+dictionary over global debugger dictionary, first match wins), and derive
+the =?= help line from the *union* of the active dictionaries rather than
+from a hand-written literal. See the sedit spec, "Command dictionaries and
+modes", and the command reference §8 for the normative dispatch rules.
