@@ -436,6 +436,45 @@
       (is (eql 7 result))
       (is (contains output "99")))))                ; the form was evaluated
 
+(test dumb-ui-nav-pretty-prints-a-sourceless-form
+  ;; a navigated form with no source file (in-memory source) is laid out by the
+  ;; AutoLISP indentation rules with the selection marked — not one flat line
+  (let* ((context (fresh-context))
+         (source (format nil "(defun id (a) a)~%(defun lng (x)~%  (setq aaaaaaaaaaaa (id x))~%  (setq bbbbbbbbbbbb (id x))~%  (id x))"))
+         (metas (load-and-instrument context source "LNG" "ID"))
+         (lng (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti lng 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "q~%q~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "LNG") 7) context)))
+      (declare (ignore result))
+      ;; header line + 2-space-indented body lines, the first poll-point marked
+      (is (contains output (format nil "(DEFUN LNG (X)~%")))
+      (is (contains output (format nil "~%  【(SETQ AAAAAAAAAAAA (ID X))】~%")))
+      (is (contains output (format nil "~%  (SETQ BBBBBBBBBBBB (ID X))~%"))))))
+
+(test dumb-ui-nav-no-redisplay-after-an-output-command
+  ;; an output-only turn (a stacked debugger command like `lb') must not repeat
+  ;; the whole navigator view (the duplicate display); a bare RET redisplays
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        ;; the stop auto-opens NAV (renders once); `lb' outputs without
+        ;; re-rendering; the empty line forces one redisplay; `q' `c' finish
+        (run-ui (format nil "lb~%~%q~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))
+      (is (= 2 (loop with start = 0 with n = 0
+                     for pos = (search "(DEFUN FROB" output :start2 start)
+                     while pos do (incf n) (setf start (1+ pos))
+                     finally (return n)))))))
+
 (test dumb-ui-settings-unknown-name-is-reported
   ;; asking for a setting that doesn't exist reports it (does not print a value)
   (let* ((context (fresh-context))

@@ -214,10 +214,12 @@ the debugger's); motions, eval and load keep the mode."
 (defun render-selection (loc &key (open "[") (close "]"))
   "The top-level form the selection at LOC is in, with the selected node wrapped
 in OPEN…CLOSE (spec §2/§5.2 examples, e.g. (list [nil])). Rendered structurally
-along the path to the focus so the markers can be placed; verbatim elsewhere."
+along the path to the focus so the markers can be placed — laid out by the §5.2
+indentation rules where it does not fit one line (FORMAT-MARKED); verbatim
+elsewhere."
   (let* ((top (loc-focus (%top-level-loc loc)))
          (rel (nthcdr (length (loc-path (%top-level-loc loc))) (loc-path loc))))
-    (%emit-marked top rel 0 open close)))
+    (format-marked top rel :open open :close close)))
 
 (defun %top-level-loc (loc)
   "Ascend out of nested lists to the top-level form's location."
@@ -226,18 +228,6 @@ along the path to the focus so the markers can be placed; verbatim elsewhere."
           while (and ctx (list-node-p (ctx-parent ctx)))
           do (setf l (loc-up l)))
     l))
-
-(defun %emit-marked (node path col open close)
-  (cond
-    ((null path) (concatenate 'string open (%emit node col) close))
-    ((list-node-p node)
-     (let* ((children (list-node-children node)) (idx (first path)))
-       (format nil "(~{~A~^ ~})"
-               (loop for c in children for i from 0
-                     collect (if (= i idx)
-                                 (%emit-marked c (rest path) (1+ col) open close)
-                                 (%emit c (1+ col)))))))
-    (t (%emit node col))))
 
 (defun sedit-mode-prompt (session)
   "The mode prompt for SESSION: SEDIT> in EDIT, NAV> in NAV."

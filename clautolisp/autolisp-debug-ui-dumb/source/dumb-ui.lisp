@@ -1133,22 +1133,42 @@ text is available (so the caller can fall back)."
                           n (%nav-weave-line text 3 before after)))
             t))))))
 
-(defun nav-render-loc (ui session loc)
+(defun nav-render-pretty (ui nav)
+  "Render a navigated form that has *no* source text (e.g. a clal-compile'd
+function) laid out from the AutoLISP indentation rules — sedit spec §5.2, the
+same layout sedit gives it — with the selection marked, instead of one flat
+line. Falls back to the flat render when the printed form cannot be re-parsed."
+  (let* ((text (let ((*print-pretty* nil))
+                 (prin1-to-string (navigator-root nav))))
+         (node (ignore-errors (clautolisp.sedit:parse-form text)))
+         (open  (or (aldo-decoration-glyph :selection :open) "【"))
+         (close (or (aldo-decoration-glyph :selection :close) "】")))
+    (if node
+        (out ui "~&~A~%" (clautolisp.sedit:format-marked
+                          (clautolisp.sedit:reflow node)
+                          (navigator-path nav) :open open :close close))
+        (out ui "~&NAV> ~A~%" (nav-render nav)))))
+
+(defun nav-render-display (ui session loc)
+  "The navigator's view of LOC — the marked source (or the reflowed form when it
+has none), the selected top-level form of a file, or the directory listing."
   (ecase (nav-loc-kind loc)
     (:sexp
      (let ((nav (nav-loc-navigator loc)))
        (unless (nav-render-sexp-source ui session loc)
-         (out ui "~&NAV> ~A~%" (nav-render nav)))   ; no source text: fall back
-       ;; one prompt per mode (sedit-spec §6): the sexp form navigator is NAV>,
-       ;; never NAV[code]>/NAV[non-code]> — whether the selection is evaluable
-       ;; code is shown by the poll-point decoration, not the prompt.
-       (out ui "NAV> ")))
-    (:file
-     (nav-render-file ui loc)
-     (out ui "NAV[file]> "))
-    (:dir
-     (nav-render-dir ui loc)
-     (out ui "NAV[dir]> "))))
+         (nav-render-pretty ui nav))))
+    (:file (nav-render-file ui loc))
+    (:dir  (nav-render-dir ui loc))))
+
+(defun nav-prompt (ui loc)
+  "The navigator prompt. One prompt per mode (sedit-spec §6): the sexp form
+navigator is NAV>, never NAV[code]>/NAV[non-code]> — whether the selection is
+evaluable code is shown by the poll-point decoration, not the prompt."
+  (out ui "~&~A" (ecase (nav-loc-kind loc)
+                   (:sexp "NAV> ")
+                   (:file "NAV[file]> ")
+                   (:dir  "NAV[dir]> ")))
+  (finish-output (dumb-ui-output ui)))
 
 (defun nav-ascend-to-dir (ui loc)
   "Ascend from a :SEXP location to its file's directory, the file selected; or a
@@ -1260,7 +1280,7 @@ result string (spec §7: a Lisp form at the editor prompt evaluates like the REP
 
 (defun nav-dispatch-sexp (ui session hit loc cmd arg signed)
   "Handle one command in a :SEXP location; return (values NEXT-LOC LEAVE-P
-DIRECTIVE). Motions (d u > < << >> ±N) skip non-code sub-forms (a form's
+DIRECTIVE NO-REDRAW). Motions (d u > < << >> ±N) skip non-code sub-forms (a form's
 operator, DEFUN's name/arg-list, quoted data). Bare `b' sets a breakpoint on the
 selected form; an editing WORD (edit/insert/wrap/…) enters the sedit editor
 (spec §7); every other token is dispatched as a debugger command through the
@@ -1287,10 +1307,13 @@ returns a resume directive (continue / step / …) leaves NAV, carrying it up."
       ((and (string= cmd "b") (null arg)) (nav-set-breakpoint ui session loc) nil)
       ;; an editing word switches into the sedit structural editor (spec §7)
       ((nav-editing-word-p cmd) (nav-edit-session ui session hit loc cmd arg) nil)
-      ((member cmd '("h" "?" "help") :test #'string=) (nav-help ui) nil)
+      ((member cmd '("h" "?" "help") :test #'string=)
+       (nav-help ui) (values nil nil nil t))       ; output only: no re-render
       ;; stacked dispatch: not a navigator command — run it as a debugger command.
+      ;; Its output stands alone; the unchanged view is not repeated after it
+      ;; (the duplicate display) — a bare RET redisplays.
       (t (let ((directive (run-command ui session hit cmd arg)))
-           (values nil (and directive t) directive))))))
+           (values nil (and directive t) directive t))))))
 
 (defun nav-help (ui)
   "`?'/`h' in NAV: the navigator motion keys plus the stacked debugger dictionary
@@ -1362,29 +1385,40 @@ debugger command issued in NAV resumes execution. Returns the resume directive
 (or NIL). In a :SEXP location the navigator dictionary is stacked over the global
 debugger dictionary: a motion key (d u > < << >> ±N) navigates, everything else
 is dispatched as a debugger command (bug-aldo-nav-command-dictionary)."
-  (loop
-    (nav-render-loc ui session loc)
-    (let ((line (read-line (dumb-ui-input ui) nil :eof)))
-      (when (eq line :eof) (return nil))
-      (let* ((trimmed (string-trim " 	" line))
-             (space (position #\Space trimmed))
-             (cmd (subseq trimmed 0 (or space (length trimmed))))
-             (arg (and space (string-trim " " (subseq trimmed space))))
-             (signed (and (>= (length cmd) 2)
-                          (member (char cmd 0) '(#\+ #\-))
-                          (ignore-errors (parse-integer cmd)))))
-        (if (and (plusp (length trimmed)) (char= (char trimmed 0) #\())
-            ;; a Lisp form at the prompt evaluates in the current frame and
-            ;; prints, like the REPL (in NAV as well as at DBG) — echoed with the
-            ;; navigator's own prompt, not DBG> (sedit-spec §6)
-            (eval-and-print ui session trimmed "NAV> ")
-            (multiple-value-bind (next leave directive)
-                (ecase (nav-loc-kind loc)
-                  (:sexp (nav-dispatch-sexp ui session hit loc cmd arg signed))
-                  (:file (nav-dispatch-file ui loc cmd signed))
-                  (:dir  (nav-dispatch-dir ui loc cmd signed)))
-              (when leave (return directive))
-              (when next (setf loc next))))))))
+  (let ((redraw t))
+    (loop
+      (when redraw (nav-render-display ui session loc))
+      (setf redraw t)
+      (nav-prompt ui loc)
+      (let ((line (read-line (dumb-ui-input ui) nil :eof)))
+        (when (eq line :eof) (return nil))
+        (let* ((trimmed (string-trim " 	" line))
+               (space (position #\Space trimmed))
+               (cmd (subseq trimmed 0 (or space (length trimmed))))
+               (arg (and space (string-trim " " (subseq trimmed space))))
+               (signed (and (>= (length cmd) 2)
+                            (member (char cmd 0) '(#\+ #\-))
+                            (ignore-errors (parse-integer cmd)))))
+          (cond
+            ;; a bare RET redisplays; other output-only turns don't re-render the
+            ;; whole view over and over (the duplicate display)
+            ((string= trimmed ""))
+            ((char= (char trimmed 0) #\()
+             ;; a Lisp form at the prompt evaluates in the current frame and
+             ;; prints, like the REPL (in NAV as well as at DBG) — echoed with
+             ;; the navigator's own prompt, not DBG> (sedit-spec §6); the view
+             ;; did not change, so it is not repeated
+             (eval-and-print ui session trimmed "NAV> ")
+             (setf redraw nil))
+            (t
+             (multiple-value-bind (next leave directive no-redraw)
+                 (ecase (nav-loc-kind loc)
+                   (:sexp (nav-dispatch-sexp ui session hit loc cmd arg signed))
+                   (:file (nav-dispatch-file ui loc cmd signed))
+                   (:dir  (nav-dispatch-dir ui loc cmd signed)))
+               (when leave (return directive))
+               (when next (setf loc next))
+               (when no-redraw (setf redraw nil))))))))))
 
 (defun nav-loc-for-request (ui session request)
   "Build the initial navigation location for a CLAL-NAV-* REQUEST — (:function

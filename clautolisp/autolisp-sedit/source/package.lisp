@@ -23,7 +23,7 @@ clal-sedit (Phases 4–5), and the clipboard providers (Phase 6) come later.")
    #:branch-node-p #:node-children #:node-with-children #:node-level-of-children
    #:sexp->tree #:tree->sexp
    ;; --- formatting: parser + pretty-printer + comments (§5.2–§5.3, §6.7) ---
-   #:parse-source #:parse-form #:unparse
+   #:parse-source #:parse-form #:unparse #:reflow #:format-marked
    #:comment-level #:comment-line-level #:comment-block-p #:merge-comments
    #:*comment-column* #:*text-editor* #:*print-width* #:*special-indent*
    ;; --- the zipper (§6.2) ---

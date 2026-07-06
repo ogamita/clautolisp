@@ -148,3 +148,77 @@ arguments on the header line, the rest as a body indented two spaces (§5.2)."
   "A file's children laid out, one form per paragraph (blank line between)."
   (format nil "~{~A~^~2%~}"
           (mapcar (lambda (c) (%emit c 0)) (file-node-children node))))
+
+;;; --- reflowing a form -------------------------------------------------------
+
+(defun reflow (node)
+  "Discard NODE's recorded list layout, recursively, so UNPARSE / FORMAT-MARKED
+lay it out afresh from the indentation rules (§5.2). Atoms and comments keep
+their verbatim text (case, radix, string syntax). Returns NODE. Use on a form
+whose recorded text is not worth preserving — e.g. one flat line from PRIN1."
+  (when (list-node-p node)
+    (let ((a (node-adornment node)))
+      (when a (setf (adornment-text a) nil)))
+    (mapc #'reflow (list-node-children node)))
+  node)
+
+;;; --- rendering with a marked sub-node (the selection) ----------------------
+
+(defun %emit-marked (node path col open close)
+  "NODE rendered starting at column COL with the sub-node at element-index PATH
+wrapped in OPEN…CLOSE. The spine down to the mark is laid out by the same rules
+as %FORMAT-LIST — one line when it fits *PRINT-WIDTH*, else the §5.2 header/body
+layout — so a marked deep selection does not flatten the whole form."
+  (cond
+    ((null path) (concatenate 'string open (%emit node col) close))
+    ((and (list-node-p node)
+          (< -1 (first path) (length (list-node-children node))))
+     (let* ((children (list-node-children node))
+            (idx (first path))
+            (parts (unless (some #'comment-node-p children)
+                     (loop for c in children for i from 0
+                           collect (if (= i idx)
+                                       (%emit-marked c (rest path) 0 open close)
+                                       (%emit c 0))))))
+       (if (and parts
+                (notany (lambda (p) (find #\Newline p)) parts)
+                (<= (+ col 2 (1- (length parts))
+                       (reduce #'+ parts :key #'length))
+                    *print-width*))
+           (format nil "(~{~A~^ ~})" parts)
+           (%multiline-marked children idx (rest path) col open close))))
+    (t (%emit node col))))              ; unmarked or unreachable path: plain
+
+(defun %multiline-marked (children idx path col open close)
+  "%MULTILINE-LIST with the child at IDX rendered through %EMIT-MARKED (at its
+own column), carrying PATH down to the mark."
+  (let* ((dist (%distinguished-count (%operator-name (first children))))
+         (head-count (min (1+ dist) (length children)))
+         (open-col (1+ col))
+         (body-indent (+ col 2))
+         (out (make-string-output-stream)))
+    (write-char #\( out)
+    (loop for c in (subseq children 0 head-count)
+          for i from 0
+          for first = t then nil
+          do (unless first (write-char #\Space out))
+             (write-string (if (= i idx)
+                               (%emit-marked c path open-col open close)
+                               (%emit c open-col))
+                           out))
+    (loop for c in (nthcdr head-count children)
+          for i from head-count
+          do (write-char #\Newline out)
+             (dotimes (k body-indent) (write-char #\Space out))
+             (write-string (if (= i idx)
+                               (%emit-marked c path body-indent open close)
+                               (%emit c body-indent))
+                           out))
+    (write-char #\) out)
+    (get-output-stream-string out)))
+
+(defun format-marked (node path &key (open "[") (close "]") (column 0))
+  "NODE's text with the sub-node at element-index PATH wrapped in OPEN…CLOSE —
+verbatim where text is recorded, the §5.2 indentation rules elsewhere. Both
+RENDER-SELECTION and the debugger's form navigator display through this."
+  (%emit-marked node path column open close))

@@ -115,6 +115,16 @@ separate binary for tool integrators.
 
 ** aldo debugger — form navigator (=clautolisp/documentation/clautolisp-sedit-spec.org=)
 
+- A navigated form with *no source file* (e.g. one defined with
+  ~clal-compile~) is now laid out by the AutoLISP indentation rules — newlines
+  by special operator, two-space body indent (sedit-spec §5.2, the same layout
+  sedit gives it) — with the selection marked, instead of one flat line. The
+  same applies to sedit's own selection display: the spine down to a deep
+  selection keeps the layout instead of flattening (=format-marked=, =reflow=
+  in the =clautolisp.sedit= API).
+- The navigator no longer *re-renders the whole view after every command*: an
+  output-only turn (a stacked debugger command, an evaluated form, help) just
+  prints its output; a bare =RET= redisplays. Motions and edits still redraw.
 - With =set navigator sexp= (the default) *every stop* — breakpoint, step,
   error — now enters the sexp form navigator directly, anchored on the current
   poll-point (sedit-spec §7): no =nav= command needed. The flat source-line

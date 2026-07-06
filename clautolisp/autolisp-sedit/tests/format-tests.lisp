@@ -69,6 +69,30 @@
     (is (equal (format nil "(if test~%  then~%  else)")
                (unparse (sexp->tree '(if test then else)))))))
 
+(test format-marked-lays-the-spine-out-by-indent-rules
+  ;; the mark must not flatten a form that does not fit one line: the spine down
+  ;; to the marked node keeps the §5.2 header/body layout
+  (let ((*print-width* 20)
+        (tree (sexp->tree '(defun foo (a b) (setq s 1) (* s s)))))
+    (is (equal (format nil "(defun foo (a b)~%  [(setq s 1)]~%  (* s s))")
+               (format-marked tree '(3))))
+    ;; a mark deep inside: only the marked node is bracketed, layout kept
+    (is (equal (format nil "(defun foo (a b)~%  (setq s [1])~%  (* s s))")
+               (format-marked tree '(3 2))))))
+
+(test format-marked-fits-one-line-when-short
+  (is (equal "(+ [1] 2)" (format-marked (sexp->tree '(+ 1 2)) '(1)))))
+
+(test reflow-discards-recorded-list-layout
+  ;; a form parsed from one flat overlong line is re-laid-out after reflow;
+  ;; atoms keep their verbatim text (case preserved)
+  (let* ((*print-width* 20)
+         (node (parse-form "(DEFUN FOO (A B) (SETQ S 1) (* S S))")))
+    (is (equal "(DEFUN FOO (A B) (SETQ S 1) (* S S))" (unparse node)))  ; verbatim
+    (reflow node)
+    (is (equal (format nil "(DEFUN FOO (A B)~%  (SETQ S 1)~%  (* S S))")
+               (unparse node)))))
+
 ;;; --- comment objects (§5.3) -----------------------------------------------
 
 (test comment-level-classification
