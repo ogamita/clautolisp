@@ -184,6 +184,13 @@ configure how wide single-line value displays are (command reference §8)."
 
 ;;; --- source listing (spec §18.1) -----------------------------------
 
+(defmethod ui-show-stop-source-p ((ui dumb-ui))
+  "With `set navigator sexp' (the default) each stop opens the sexp form
+navigator, which renders the source itself with the selection marked — the flat
+line window must not also print (it is the *line* navigator's presentation;
+sedit-spec §7). With `set navigator line' the window is the stop display."
+  (not (eq (ignore-errors (get-aldo-setting :navigator)) :sexp)))
+
 (defmethod ui-show-source ((ui dumb-ui) position)
   (when (source-position-p position)
     (let* ((file (source-position-file position))
@@ -245,6 +252,16 @@ flow). There is no stop, so HIT is NIL and any resume directive is ignored."
           ;; prompt (bug-aldo-nav-command-dictionary).
           (let ((directive (nav-browse ui session hit loc)))
             (when directive (return-from ui-await-command directive)))))))
+  ;; `set navigator sexp' (the default): every stop enters the sexp form
+  ;; navigator directly, anchored on the current poll-point (sedit-spec §7 —
+  ;; "the debugger opens the sexp navigator on the top-level form containing
+  ;; the current poll-point on each stop"). A resume directive issued in NAV
+  ;; carries out; `q' drops to the flat DBG> command loop below.
+  (when (and hit (eq (ignore-errors (get-aldo-setting :navigator)) :sexp))
+    (let ((loc (nav-function-loc session hit)))
+      (when loc
+        (let ((directive (nav-browse ui session hit loc)))
+          (when directive (return-from ui-await-command directive))))))
   (loop
     (out ui "~&~A" (dumb-ui-prompt ui))
     (let ((line (read-line (dumb-ui-input ui) nil :eof)))

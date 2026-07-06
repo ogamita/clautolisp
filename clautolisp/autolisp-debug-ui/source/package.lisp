@@ -67,7 +67,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:ui-thread-hit #:ui-thread-unhandled-error #:ui-thread-caught-error
    #:ui-thread-resumed #:ui-thread-exited
    #:ui-breakpoint-added #:ui-breakpoint-removed
-   #:ui-show-source #:ui-show-message
+   #:ui-show-source #:ui-show-stop-source-p #:ui-show-message
    #:ui-await-command
    #:ui-open-navigation-request
    #:ui-run-command

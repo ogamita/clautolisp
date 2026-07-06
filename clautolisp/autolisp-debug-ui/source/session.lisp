@@ -290,6 +290,14 @@ opts in by defining a method on UI-PROTOCOL-VERSION returning its expected
 (defgeneric ui-protocol-version (ui)
   (:method (ui) (declare (ignore ui)) nil))
 
+(defgeneric ui-show-stop-source-p (ui)
+  (:documentation "Whether the stop handler should display the flat source-line
+window (UI-SHOW-SOURCE) at each stop. A UI that opens its own navigator on the
+stop (the sexp form navigator renders the source with the selection marked)
+answers NIL to avoid the duplicate display; the source remains reachable
+explicitly (`ls'). Default T.")
+  (:method (ui) (declare (ignore ui)) t))
+
 ;;; --- the stop handler: build per-stop state, run the UI loop -------
 
 (defun session-stop (session hit)
@@ -308,7 +316,8 @@ resume directive."
       (:unhandled-error (ui-thread-unhandled-error ui session hit))
       (:caught-error (ui-thread-caught-error ui session hit))
       (t (ui-thread-hit ui session hit)))
-    (when (hit-source-position hit)
+    (when (and (hit-source-position hit)
+               (ui-show-stop-source-p ui))
       (ui-show-source ui (hit-source-position hit)))
     (prog1 (ui-await-command ui session hit)
       (ui-thread-resumed ui session))))

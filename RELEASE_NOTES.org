@@ -115,6 +115,12 @@ separate binary for tool integrators.
 
 ** aldo debugger — form navigator (=clautolisp/documentation/clautolisp-sedit-spec.org=)
 
+- With =set navigator sexp= (the default) *every stop* — breakpoint, step,
+  error — now enters the sexp form navigator directly, anchored on the current
+  poll-point (sedit-spec §7): no =nav= command needed. The flat source-line
+  window (the *line* navigator's display) no longer also prints there; =q=
+  drops to the flat =DBG>= command loop. With =set navigator line= the stop
+  keeps the flat window at =DBG>=.
 - Entering the form navigator (=nav=, =g NAME=, =(clal-nav-function 'NAME)=)
   now selects the function's *first poll-point*, not the whole ~defun~ head —
   and, when entered on a *break*, re-anchors to the *current* poll-point (the

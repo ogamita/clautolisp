@@ -119,12 +119,29 @@
   (let* ((context (fresh-context))
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
     (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    ;; the stop auto-opens the sexp navigator (navigator=sexp, the default):
+    ;; the first `q' leaves NAV for the flat DBG> loop, the second aborts.
     (multiple-value-bind (result output)
-        (run-ui (format nil "q~%") :context context :thread-info ti
+        (run-ui (format nil "q~%q~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "BOOM")) context)))
       (is (eq :aborted result))
       (is (contains output "Error")))))
+
+(test stop-auto-opens-sexp-navigator
+  ;; sedit-spec §7: with `set navigator sexp' (the default) each stop enters the
+  ;; sexp form navigator directly, anchored on the current poll-point — no `nav'
+  ;; command needed; the flat line window (ui-show-source) does not also print.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    (multiple-value-bind (result output)
+        (run-ui (format nil "q~%q~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "BOOM")) context)))
+      (is (eq :aborted result))
+      (is (contains output "NAV> "))                       ; entered NAV unprompted
+      (is (contains output "【(NOSUCHFN 1)】")))))         ; anchored on the stop form
 
 (test return-value-from-error-stop
   (let* ((context (fresh-context))

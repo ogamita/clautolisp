@@ -34,7 +34,7 @@ this document specifies only the *editor-facing* clipboard behaviour and refers
 to that document for the provider protocol. (That chapter, duplicated at the
 end of the old integration issue, is superseded by the standalone file.)
 
-The document version is *0.5 (draft)*; any change to it must bump this number.
+The document version is *0.6 (draft)*; any change to it must bump this number.
 
 * 1. The two modes
 
@@ -1015,8 +1015,14 @@ debugger commands, and =word(cmd)= its word form:
   poll-point identity (tui-spec).
 - *Navigator choice.* =set navigator sexp= (this editor) / =set navigator line=
   (flat file:line) chooses the presentation of form-navigation mode (tui-spec /
-  command reference §8). A user who prefers "always navigating" simply keeps
-  the debugger in NAV; the debugger opens the sexp navigator on the top-level
-  form containing the current poll-point on each stop.
+  command reference §8), and thereby how each *stop* presents itself:
+  - =sexp= (the default): the debugger *enters the sexp navigator directly* on
+    each stop, on the top-level form containing the current poll-point, with
+    the current poll-point *selected* — prompt =NAV>=. The line navigator's
+    flat source window does *not* also print (its display belongs to
+    =navigator line=). =q= leaves NAV for the flat =DBG>= command loop.
+  - =line=: the stop shows the flat window of source lines around the current
+    line (=>>= marker), at the =DBG>= prompt; =nav= still opens the sexp
+    navigator on demand.
 
 # THE END
