@@ -1245,6 +1245,16 @@ returns a resume directive (continue / step / …) leaves NAV, carrying it up."
       ((and (string= cmd "b") (null arg)) (nav-set-breakpoint ui session loc) nil)
       ;; an editing word switches into the sedit structural editor (spec §7)
       ((nav-editing-word-p cmd) (nav-edit-session ui session hit loc cmd arg) nil)
+      ;; `aldo CMD' / `debug CMD': explicit routing to the debugger interactor
+      ;; (interactors design) — same prefix EDIT uses; reaches a debugger
+      ;; command NAV shadows (e.g. `aldo b LOC' while bare `b' breakpoints
+      ;; the selection).
+      ((and (member cmd '("aldo" "debug") :test #'string-equal) arg)
+       (let* ((sp (position #\Space arg))
+              (directive (run-command ui session hit
+                                      (subseq arg 0 (or sp (length arg)))
+                                      (and sp (string-trim " " (subseq arg sp))))))
+         (values nil (and directive t) directive t)))
       ((member cmd '("h" "?" "help") :test #'string=)
        (nav-help ui) (values nil nil nil t))       ; output only: no re-render
       ;; stacked dispatch: not a navigator command — run it as a debugger command.
@@ -1258,7 +1268,7 @@ returns a resume directive (continue / step / …) leaves NAV, carrying it up."
 (bug-aldo-nav-command-dictionary — help is the union of the active dictionaries)."
   (out ui "NAV> motion: d down  u up  > < siblings  << >> ends  ±N skip  b break (selection)  q leave~%")
   (out ui "NAV> edit (or insert/add/replace/wrap/…): open the sedit structural editor~%")
-  (out ui "NAV> all debugger commands are also available directly:~%")
+  (out ui "NAV> all debugger commands are also available directly (aldo/debug CMD forces the debugger's):~%")
   (print-help ui))
 
 (defun nav-dispatch-file (ui loc cmd signed)

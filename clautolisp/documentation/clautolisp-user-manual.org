@@ -88,6 +88,26 @@ The REPL accepts multi-line input: as long as the parser reports
 ~:unexpected-eof~, the REPL keeps reading continuation lines and
 appends them to the in-progress form before retrying.
 
+An empty line just re-prompts.
+
+*** REPL commands
+
+A line whose first non-blank character is a comma is a /REPL command/,
+not an expression (at a top-level read the comma is unambiguous —
+AutoLISP has no backquote). Each command has a short key and a word
+form:
+
+| ~,d~ / ~,date~   | print the current date and time (ISO 8601)     |
+| ~,u~ / ~,uptime~ | print how long this clautolisp process has run |
+| ~,h~ / ~,help~   | list the REPL commands                         |
+| ~,q~ / ~,quit~   | exit the REPL (useful when ~(quit)~ is not     |
+|                  | available in the active dialect)               |
+
+The commands live in a command dictionary of the REPL's /interactor/ —
+the same mechanism behind the debugger's command dictionaries — so the
+vocabulary can grow (and user commands can shadow it) uniformly across
+all the interaction loops.
+
 * Debugger
 
 Clautolisp ships an interactive source-level debugger, *aldo*. It steps
@@ -196,6 +216,12 @@ that runs from a sub-expression out to the file system:
 
 Browsing never changes what executes; ~print~, ~setq~ and friends always
 act in the current frame.
+
+In the navigator every debugger command is also available directly (the
+navigator's dictionary is stacked over the debugger's); ~aldo CMD~ /
+~debug CMD~ force the debugger's meaning of a command the navigator
+shadows (e.g. ~aldo b LOC~, while bare =b= breakpoints the selection) —
+the same prefix the sedit editor uses.
 
 ** Settings and configuration
 

@@ -33,6 +33,12 @@ separate binary for tool integrators.
 
 - Three modes: file (~clautolisp file.lsp~), expression (~-x EXPR~),
   and interactive REPL. See § /Modes of Operation/.
+- REPL comma-commands: a line starting with =,= is a command, not an
+  expression — =,d=/=,date=, =,u=/=,uptime=, =,h=/=,help=, =,q=/=,quit=
+  (exit even when ~(quit)~ is not available). An empty line just
+  re-prompts. Backed by the interactor framework's command dictionaries
+  (the debugger dictionary mechanism, generalised). See § /Modes of
+  Operation / Interactive REPL/.
 - Five dialects selectable via ~--strict~ / ~--autocad~ /
   ~--bricscad~ / ~--clautolisp~ / ~--lax~. The ~lax~ dialect silences
   every encoding-dispatch diagnostic globally. See § /Options /
@@ -144,6 +150,14 @@ separate binary for tool integrators.
   the breakpoint / frame / inspection verbs — dispatches directly, and =?=
   lists them. (The former =i k jj j l ll= letter aliases are retired: they
   shadowed debugger verbs.)
+- =aldo CMD= / =debug CMD= in the navigator force the *debugger's* meaning of
+  a command the navigator shadows (e.g. =aldo b LOC= while bare =b=
+  breakpoints the selection) — the same prefix the sedit editor uses
+  (interactor routing).
+- The debugger's built-in vocabulary is now itself a command dictionary
+  (the interactor framework): user commands (=clal-define-debugger-command=)
+  live in a separate dictionary layered over it, so they can shadow any
+  built-in, and =debugger TOKEN= always reaches the built-in meaning.
 - =(clal-nav-function 'NAME)= at the REPL opens the navigator *without* faking
   a break, so you can browse a function and place breakpoints before it runs.
 - Setting a breakpoint twice on one poll-point is idempotent — one breakpoint,

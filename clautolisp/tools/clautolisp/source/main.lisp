@@ -578,6 +578,58 @@ not supplied)."
             (clautolisp.autolisp-mock-host:mock-host-prompt-output host)
             (make-synonym-stream '*standard-output*)))))
 
+;;; --- the AUTOLISP interactor: REPL comma-commands -----------------------
+;;;
+;;; The Lisp REPL is the bottom interactor (interactors design,
+;;; issues/open/interactor-unification.issue): its reader takes a line
+;;; starting with a comma as a command — `,date', `,quit' — and anything
+;;; else as AutoLISP source. The comma keeps command names out of the
+;;; expression namespace (at a toplevel read it is unambiguous: no
+;;; backquote in AutoLISP).
+
+(define-interactor *autolisp*
+  :name "AUTOLISP"
+  :prompt "_$ "
+  :reader #'comma-command-read
+  :documentation "The clautolisp Lisp REPL: reads AutoLISP forms; a `,command' line runs a REPL command.")
+
+(define-command (*autolisp* d date) ()
+    "Print the current date and time (ISO 8601)."
+  (multiple-value-bind (se mi ho da mo ye)
+      (decode-universal-time (get-universal-time))
+    (format t "~&~4,'0D~2,'0D~2,'0DT~2,'0D~2,'0D~2,'0D~%"
+            ye mo da ho mi se)))
+
+(defvar *boot-time* nil
+  "When this clautolisp process started (set by MAIN); ,uptime reports from it.")
+
+(define-command (*autolisp* u uptime) ()
+    "Print how long this clautolisp process has been running."
+  (let* ((uptime (- (get-universal-time) (or *boot-time* (get-universal-time))))
+         (sec (mod uptime 60))
+         (min (mod (truncate uptime 60) 60))
+         (hou (mod (truncate uptime 3600) 24))
+         (day (truncate uptime 86400)))
+    (format t "~&~:[~*~;~D day~:*~P, ~]~2,'0D:~2,'0D:~2,'0D~%"
+            (plusp day) day hou min sec)))
+
+(define-command (*autolisp* h help) ()
+    "Print the REPL comma-commands."
+  (format t "~&REPL commands (a line starting with `,'; anything else evaluates):~%")
+  (dolist (dictionary (list (interactor-user-commands *autolisp*)
+                            (interactor-commands *autolisp*)))
+    (dolist (cmd (dictionary-commands dictionary))
+      (format t "  ,~A~@[ / ,~A~]~28T~A~%"
+              (command-key cmd)
+              (let ((phrase (command-phrase cmd)))
+                (and (plusp (length phrase)) phrase))
+              (command-docstring cmd))))
+  (format t "  Ctrl-D~28Texit the REPL~%"))
+
+(define-command (*autolisp* q quit) ()
+    "Exit the Lisp REPL (sometimes (quit) is not available)."
+  (throw '%repl-quit nil))
+
 (defun repl-loop (dialect context &key quiet-p mock-input gui trace-p
                                         session break-on-error)
   (unless quiet-p
@@ -592,55 +644,83 @@ not supplied)."
           (when session
             (lambda (command)
               (clautolisp.debug.ui:ui-run-command
-               (clautolisp.debug.ui:session-ui session) session command)))))
-   (loop
+               (clautolisp.debug.ui:session-ui session) session command))))
+        ;; The REPL is the bottom interactor: a `,command' line dispatches
+        ;; against *AUTOLISP*'s dictionaries; AutoLISP source evaluates.
+        (*interactor-stack* (list *autolisp*))
+        (input-context (make-input-context :stream *standard-input*)))
+    (catch '%repl-quit
+      (loop
+        (write-string "_$ ")
+        (finish-output)
+        (let ((input (comma-command-read input-context
+                                         (%repl-source-reader dialect))))
+          (cond
+            ((eq input :eof) (terpri) (return))
+            ((eq input :blank))                 ; empty line: just re-prompt
+            ((input-command-p input)
+             (find-and-run-command input :input-context input-context))
+            (t
+             (%repl-eval-source (second input) dialect context session
+                                break-on-error (lambda () (return))))))))))
+
+(defun %repl-source-reader (dialect)
+  "The sexp-reader COMMA-COMMAND-READ falls back to: read one whole,
+parser-balanced AutoLISP turn from the input context (the prompt is already
+printed; continuation lines get `   '). Returns (:SOURCE TEXT) or :EOF."
+  (lambda (input-context)
     (multiple-value-bind (source eofp)
         (read-balanced-source-from-stream
-         *standard-input* "_$ " "   " dialect)
-      (when eofp
-        (terpri)
-        (return))
-      (handler-case
-          (let* ((options (derive-reader-options-for-dialect
-                           dialect :source-name "<repl>"))
-                 (forms (read-runtime-from-string source :options options))
-                 ;; A turn evaluates the *last* form of the typed
-                 ;; sequence as the canonical "form being evaluated"
-                 ;; for the :- / :+ / :++ history. If the user typed
-                 ;; just one form (the common case) this is exactly
-                 ;; that form; multi-form turns get their final form
-                 ;; recorded — same convention as SLIME / Allegro's
-                 ;; repl bookkeeping.
-                 (this-form (car (last forms))))
-            ;; Record this turn's source for sedit recall (spec §3): the raw
-            ;; SOURCE text (runtime forms drop their spans), so `(clal-sedit
-            ;; 'NAME)' can recall a REPL-defined function/variable's form.
-            (ignore-errors (clautolisp.sedit:record-source source "<repl>"))
-            ;; Bind :- BEFORE eval so the user's form can reference
-            ;; what they just typed via (print :-), etc.
-            (%repl-bind-dash this-form context)
-            (let ((result (repl-eval-turn forms context session break-on-error)))
-              ;; An aborted (a/q) debug turn yields :ABORTED — a CL sentinel,
-              ;; not an AutoLISP value — so skip printing/history for it.
-              (unless (eq result :aborted)
-                (format t "~A~%" (autolisp-value->string result nil))
-                (%repl-rotate-history result context)))
-            ;; A turn that called (clal-nav-function 'NAME) etc. queued a
-            ;; navigation request but never stopped; open the navigator now,
-            ;; without faking a break (bug-aldo-nav-entry-and-breakpoint-flow).
-            (%repl-drain-navigation-request session))
-        (simple-error (condition)
-          (let ((diagnostic (simple-error-diagnostic condition)))
-            (if diagnostic
-                (format *error-output* "~&; reader error: ~A: ~A~%"
-                        (diagnostic-code diagnostic)
-                        condition)
-                (format *error-output* "~&; reader error: ~A~%" condition))))
-        (autolisp-runtime-error (condition)
-          (report-runtime-error condition))
-        (autolisp-termination (condition)
-          (report-termination condition)
-          (return)))))))
+         (input-context-stream input-context) "" "   " dialect)
+      (if (or eofp (null source))
+          :eof
+          (list :source source)))))
+
+(defun %repl-eval-source (source dialect context session break-on-error exit)
+  "Evaluate one REPL turn's SOURCE (the body of the historical repl-loop):
+read, record, bind :- , evaluate, print, rotate history, drain navigation.
+Calls EXIT (a closure returning from the REPL loop) on AUTOLISP-TERMINATION."
+  (handler-case
+      (let* ((options (derive-reader-options-for-dialect
+                       dialect :source-name "<repl>"))
+             (forms (read-runtime-from-string source :options options))
+             ;; A turn evaluates the *last* form of the typed
+             ;; sequence as the canonical "form being evaluated"
+             ;; for the :- / :+ / :++ history. If the user typed
+             ;; just one form (the common case) this is exactly
+             ;; that form; multi-form turns get their final form
+             ;; recorded — same convention as SLIME / Allegro's
+             ;; repl bookkeeping.
+             (this-form (car (last forms))))
+        ;; Record this turn's source for sedit recall (spec §3): the raw
+        ;; SOURCE text (runtime forms drop their spans), so `(clal-sedit
+        ;; 'NAME)' can recall a REPL-defined function/variable's form.
+        (ignore-errors (clautolisp.sedit:record-source source "<repl>"))
+        ;; Bind :- BEFORE eval so the user's form can reference
+        ;; what they just typed via (print :-), etc.
+        (%repl-bind-dash this-form context)
+        (let ((result (repl-eval-turn forms context session break-on-error)))
+          ;; An aborted (a/q) debug turn yields :ABORTED — a CL sentinel,
+          ;; not an AutoLISP value — so skip printing/history for it.
+          (unless (eq result :aborted)
+            (format t "~A~%" (autolisp-value->string result nil))
+            (%repl-rotate-history result context)))
+        ;; A turn that called (clal-nav-function 'NAME) etc. queued a
+        ;; navigation request but never stopped; open the navigator now,
+        ;; without faking a break (bug-aldo-nav-entry-and-breakpoint-flow).
+        (%repl-drain-navigation-request session))
+    (simple-error (condition)
+      (let ((diagnostic (simple-error-diagnostic condition)))
+        (if diagnostic
+            (format *error-output* "~&; reader error: ~A: ~A~%"
+                    (diagnostic-code diagnostic)
+                    condition)
+            (format *error-output* "~&; reader error: ~A~%" condition))))
+    (autolisp-runtime-error (condition)
+      (report-runtime-error condition))
+    (autolisp-termination (condition)
+      (report-termination condition)
+      (funcall exit))))
 
 (defun encoding-keyword (encoding-string)
   "Map a CLI encoding string to the Lisp keyword external-format.
@@ -882,6 +962,7 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
        (list (namestring cwd))))))
 
 (defun main (&rest argv)
+  (setf *boot-time* (get-universal-time))       ; ,uptime measures from here
   (handler-case
       (let* ((options (parse-arguments (rest argv))))
         ;; Resolve relative paths against the live launch directory,

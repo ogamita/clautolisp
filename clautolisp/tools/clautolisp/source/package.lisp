@@ -3,6 +3,14 @@
   (:import-from #:uiop
                 #:command-line-arguments
                 #:quit)
+  (:import-from #:clautolisp.interactor
+                #:define-interactor #:define-command
+                #:interactor-commands #:interactor-user-commands
+                #:dictionary-commands
+                #:command-key #:command-words #:command-phrase #:command-docstring
+                #:*interactor-stack*
+                #:make-input-context #:input-context-stream
+                #:comma-command-read #:input-command-p #:find-and-run-command)
   (:import-from #:clautolisp.autolisp-reader
                 #:autolisp-dialect
                 #:autolisp-dialect-name

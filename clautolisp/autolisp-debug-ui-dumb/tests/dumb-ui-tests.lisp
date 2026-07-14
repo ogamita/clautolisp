@@ -143,6 +143,20 @@
       (is (contains output "NAV> "))                       ; entered NAV unprompted
       (is (contains output "【(NOSUCHFN 1)】")))))         ; anchored on the stop form
 
+(test nav-aldo-prefix-routes-to-the-debugger
+  ;; `aldo CMD' / `debug CMD' in NAV route CMD to the debugger interactor
+  ;; explicitly (interactors design) — the same prefix EDIT uses; useful to
+  ;; reach a debugger command NAV shadows (bare `b').
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    (multiple-value-bind (result output)
+        (run-ui (format nil "aldo help~%q~%q~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "BOOM")) context)))
+      (is (eq :aborted result))
+      (is (contains output "DBG> commands:")))))           ; the debugger's help ran
+
 (test return-value-from-error-stop
   (let* ((context (fresh-context))
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))

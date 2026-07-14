@@ -1,0 +1,79 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: interactors — unify every interaction loop on INTERACTOR-LOOP
+#+AUTHOR: Pascal J. Bourguignon
+
+The general mechanism proposed in =issues/open/interactors.lisp= (now
+realised as the =clautolisp/autolisp-interactor= subsystem, package
+=clautolisp.interactor=) gives every interaction loop one implementation:
+a stack of INTERACTOR objects (name, status, prompt, reader, evaluator,
+system + user command dictionaries) driven by a single INTERACTOR-LOOP.
+Commands are searched down =*interactor-stack*= — user dictionaries first,
+inner loops shadowing outer loops — and =NAME CMD …= routes to the named
+interactor anywhere on the stack.
+
+* Done (1.4.33–1.4.35)
+
+- The framework itself: command dictionaries (moved out of
+  =autolisp-debug-ui='s command-table and generalised, with aliases and
+  the =(&whole arg)= raw-argument convention), the typed-token command
+  parser (=parse-command=: ident/integer/float/string/token, lenient
+  mode for raw arguments embedding Lisp forms), the two readers
+  (=comma-command-read=, =command-read=), the interactor struct + stack
+  + resolution (user-first, longest phrase, name routing),
+  =call-command= (marshaling, prompting for missing required
+  arguments), =interactor-loop= / =interactor-return=, and the
+  =define-interactor= / =define-command= / =define-user-command= sugar.
+  Unit-tested (=clautolisp/autolisp-interactor/tests=).
+- The ALDO vocabulary: every command-reference §0 built-in is a
+  dictionary command in =*aldo-commands*= (dumb-ui commands.lisp), with
+  the =,word= spellings as aliases; user commands live in the separate
+  global dictionary and may shadow built-ins; =debugger TOKEN= reaches
+  the built-in meaning.
+- The Lisp REPL is an interactor (=*autolisp*=, tools/clautolisp):
+  =,date= =,uptime= =,help= =,quit= comma-commands through
+  =comma-command-read= + =find-and-run-command=; the balanced AutoLISP
+  source reader is its sexp fallback.
+- NAV: =aldo CMD= / =debug CMD= route explicitly to the debugger (the
+  prefix EDIT already had).
+
+* Remaining
+
+- Drive the DBG> / NAV> / SEDIT> loops (dumb-ui =ui-await-command=,
+  =nav-browse=, sedit =sedit-run=) and the REPL's outer loop through
+  INTERACTOR-LOOP itself: define =*aldo*= / =*navi*= / =*lavi*= /
+  =*sedit*= interactor objects whose status functions render the mode's
+  view (navigator selection, sedit selection, redraw policy as status
+  state), push/pop them on =*interactor-stack*=, and carry resume
+  directives out with INTERACTOR-RETURN. The navigator/sedit motion
+  vocabularies then migrate into their interactors' dictionaries
+  (today they are dispatched positionally in =nav-dispatch-*= /
+  =sedit-command= ahead of the dictionary fall-through, which is
+  equivalent but not introspectable).
+- An inspector interactor (=v= / spec §18.2 sub-REPL) — same pattern.
+- Per-interactor *user* dictionaries exposed to AutoLISP:
+  =clal-define-debugger-command= targets the debugger's; a general
+  =(clal-define-command "INTERACTOR" …)= should target any.
+- Typed command arguments: =parse-command= classifies tokens
+  (ident/integer/float/string) but command functions receive plain
+  strings for compatibility; a declared lambda-list could request
+  converted values.
+- The =make-prompt-function= depth-prefixed prompt (=[2]LISP> =) is
+  available but unused: the spec'd prompts (=DBG>= / =NAV>= / =SEDIT>= /
+  =_$=) win; decide whether depth display is wanted (e.g. under
+  recursive debuggers).
+
+* Notes / deviations from the sketch
+
+- =input-command= is a struct, not a =(%command …)= list, so a command
+  can never be confused with a typed sexp.
+- =command-read= treats *every* line as a command except a =(= form
+  (the sketch sent non-alphabetic lines to the Lisp reader, which would
+  have broken the =.= =>>= =±N= keys); accordingly =parse-command=
+  accepts punctuation / signed-integer command names (only a string
+  cannot name one).
+- The phrase of a command is its words joined (=list breakpoints=), as
+  in the pre-existing dictionary code; the sketch's independent
+  "phrase" slot (=get me out=) was dropped.
+- Each interactor has an =evaluator= slot (the sketch had one global
+  =lisp-eval-print=): the REPL evaluates globally, the debugger in the
+  selected frame.

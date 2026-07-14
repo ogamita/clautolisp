@@ -283,6 +283,8 @@
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-init-files"
+               ;; REPL comma-commands (interactors): ,date ,uptime ,help ,quit
+               "clautolisp/autolisp-interactor"
                ;; aldo debugger: the run loop can start a debug session under
                ;; --aldo-user-interface / --on-error debug (debugger §10).
                "clautolisp/autolisp-debug"
