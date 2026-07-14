@@ -302,108 +302,46 @@ remainder as a list. So a command body receives its parsed positional args."
 (defun nreverse-then-append (front rest)
   (if rest (append front rest) front))
 
-(defun try-command-table (ui session hit cmd arg)
-  "If CMD names a command in the active dictionary stack, dispatch it — binding
-the debugger dynamic vars so the body can reach the session — and return
-(values RESULT t). Otherwise (values NIL NIL), so RUN-COMMAND falls back to the
-built-in dispatch (command reference §8 stacked dispatch)."
-  (let ((command (and (plusp (length cmd))
-                      (lookup-command cmd (active-command-dictionaries)))))
+(defvar *aldo-commands*
+  (clautolisp.interactor:make-command-dictionary "aldo")
+  "The built-in command-reference §0 vocabulary, as a command dictionary
+(interactors step 2): the system dictionary of the ALDO interactor. User /
+mode dictionaries (the active stack, with *GLOBAL-DICTIONARY*) layer over
+it, so a user command may shadow a built-in — `debugger TOKEN' reaches the
+built-in meaning regardless. The commands are registered in commands.lisp.")
+
+(defun dispatch-in-dictionaries (ui session hit dictionaries cmd arg)
+  "Look CMD up in DICTIONARIES (innermost-first) and dispatch it — binding the
+debugger dynamic vars so the body can reach the session. A raw (&WHOLE)
+command receives ARG untokenized; the others their parsed positional args
+(command reference §8). Returns the resume directive, or NIL; unknown
+commands report and keep the loop reading."
+  (let ((command (and (plusp (length cmd)) (lookup-command cmd dictionaries))))
     (if command
         (let ((*debugger-ui* ui) (*debugger-session* session) (*debugger-hit* hit))
-          (values (apply (command-function command)
-                         (%marshal-command-args (command-lambda-list command)
-                                                (%command-tokens arg)))
-                  t))
-        (values nil nil))))
+          (if (command-raw-argument-p command)
+              (funcall (command-function command) arg)
+              (apply (command-function command)
+                     (%marshal-command-args (command-lambda-list command)
+                                            (%command-tokens arg)))))
+        (progn (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil))))
 
 (defun run-command (ui session hit cmd arg)
   "Dispatch one command. The `debugger' escape word forces the BUILT-IN meaning
 of the following token (reaching a built-in that a user / mode command shadows);
 otherwise a command in the active dictionary stack (§8 stacked dispatch —
 user-defined commands, mode dictionaries) is tried first, then the built-in
-command-reference §0 vocabulary. Returns a resume directive, or NIL."
+command-reference §0 vocabulary (*ALDO-COMMANDS*). Returns a resume directive,
+or NIL."
   (if (string-equal cmd +debugger-escape-word+)
       (let* ((a (or arg "")) (sp (position #\Space a)))
-        (run-builtin-command ui session hit
-                             (subseq a 0 (or sp (length a)))
-                             (and sp (string-trim " " (subseq a sp)))))
-      (multiple-value-bind (result handled) (try-command-table ui session hit cmd arg)
-        (if handled
-            result
-            (run-builtin-command ui session hit cmd arg)))))
-
-(defun run-builtin-command (ui session hit cmd arg)
-  "The built-in command-reference §0 vocabulary (single keys + word forms)."
-  (let ((c (string-downcase cmd)))
-    (cond
-      ;; execution control (§1)
-      ((member c '("c" "continue") :test #'string=) (cmd-continue session))
-      ((member c '("i" "into") :test #'string=) (cmd-step session :into))
-      ((member c '("n" "next") :test #'string=) (cmd-step session :over))
-      ((member c '("o" "out") :test #'string=) (cmd-step session :out))
-      ((member c '("a" "advance") :test #'string=) (advance-cmd ui session arg))
-      ((member c '("j" "jump" ",jump") :test #'string=) (jump-cmd ui session hit arg))
-      ((member c '("r" "return") :test #'string=) (return-value-cmd ui session hit arg))
-      ((member c '("q" "quit") :test #'string=) (cmd-abort session))
-      ;; breakpoints (§2)
-      ((member c '("b" "break") :test #'string=)
-       ;; `break once LINE' (volatile) vs `break LINE'
-       (if (and arg (let ((a (string-left-trim " " arg)))
-                      (and (>= (length a) 5) (string-equal "once " (subseq a 0 5)))))
-           (set-breakpoint-cmd ui session
-                               (string-trim " " (subseq (string-left-trim " " arg) 4)) nil)
-           (set-breakpoint-cmd ui session arg))
-       nil)
-      ((string= c "bo") (set-breakpoint-cmd ui session arg nil) nil)  ; break once
-      ((member c '("rbreak" ",rbreak") :test #'string=) (rbreak-cmd ui session arg) nil)
-      ((string= c "lb") (list-breakpoints-cmd ui session) nil)
-      ((member c '(",delete" "delete" ",clear" "clear") :test #'string=)
-       (delete-cmd ui session arg) nil)
-      ((member c '(",enable" "enable") :test #'string=) (enable-cmd ui session arg t) nil)
-      ((member c '(",disable" "disable") :test #'string=) (enable-cmd ui session arg nil) nil)
-      ((member c '(",condition" "condition") :test #'string=) (condition-cmd ui session arg) nil)
-      ((member c '(",ignore" "ignore") :test #'string=) (ignore-cmd ui session arg) nil)
-      ((member c '(",bpcmd" "bpcmd") :test #'string=) (bpcmd-cmd ui session arg) nil)
-      ((member c '("trace" ",trace") :test #'string=) (trace-cmd ui session arg) nil)
-      ((member c '("untrace" ",untrace") :test #'string=) (untrace-cmd ui session arg) nil)
-      ((member c '("catch" ",catch") :test #'string=) (catch-cmd ui arg) nil)
-      ((member c '("watch" ",watch") :test #'string=) (watch-cmd ui session arg) nil)
-      ((member c '("unwatch" ",unwatch") :test #'string=) (unwatch-cmd ui session arg) nil)
-      ((string= c "lw") (list-watches-cmd ui session) nil)
-      ;; stack and frames (§3)
-      ((string= c "lf") (print-stack ui session) nil)
-      ((member c '("f" "frame") :test #'string=) (frame-cmd ui session arg) nil)
-      ((string= c "fi") (frame-cmd ui session "inner") nil)
-      ((string= c "fo") (frame-cmd ui session "outer") nil)
-      ((string= c "ft") (frame-cmd ui session "top") nil)
-      ((string= c "fb") (frame-cmd ui session "bottom") nil)
-      ((string= c "ll") (list-vars-cmd ui session "locals") nil)
-      ((string= c "lp") (list-vars-cmd ui session "parameters") nil)
-      ((string= c "lv") (list-vars-cmd ui session "variables") nil)
-      ;; data (§4)
-      ((member c '("p" "print") :test #'string=) (print-variable-cmd ui session arg) nil)
-      ((member c '("t" "type" ",type") :test #'string=) (type-cmd ui session arg) nil)
-      ((member c '("v" "visit") :test #'string=) (inspector-loop ui session arg) nil)
-      ;; source (§5) + structural navigation (§3)
-      ((string= c "ls") (relist-source ui session) nil)
-      ((member c '("nav" ",nav") :test #'string=) (nav-loop ui session hit))
-      ((member c '("g" "goto" ",goto") :test #'string=) (goto-cmd ui session arg) nil)
-      ((member c '("." "definition" ",definition") :test #'string=) (definition-cmd ui session arg) nil)
-      ((member c '("back" ",back") :test #'string=) (back-cmd ui session) nil)
-      ((member c '("history" ",history") :test #'string=) (history-cmd ui session) nil)
-      ((member c '("restore" ",restore") :test #'string=) (restore-cmd ui arg) nil)
-      ((member c '("search" ",search") :test #'string=) (search-cmd ui session arg) nil)
-      ;; spelled two-word "list X"
-      ((string= c "list") (list-sub-cmd ui session arg) nil)
-      ;; meta (§8)
-      ((string= c "set") (set-setting-cmd ui arg) nil)
-      ((member c '(",settings" "settings") :test #'string=) (settings-cmd ui arg) nil)
-      ((member c '(",display" "display") :test #'string=) (display-cmd ui arg) nil)
-      ((member c '(",undisplay" "undisplay") :test #'string=) (undisplay-cmd ui arg) nil)
-      ((member c '("h" "?" "help") :test #'string=) (print-help ui) nil)
-      ((member c '(",apropos" "apropos") :test #'string=) (apropos-cmd ui arg) nil)
-      (t (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil))))
+        (dispatch-in-dictionaries ui session hit (list *aldo-commands*)
+                                  (subseq a 0 (or sp (length a)))
+                                  (and sp (string-trim " " (subseq a sp)))))
+      (dispatch-in-dictionaries ui session hit
+                                (append (active-command-dictionaries)
+                                        (list *aldo-commands*))
+                                cmd arg)))
 
 ;;; poll-point-number (PP) designation (command reference §2 / DN-11) ---------
 

@@ -656,7 +656,8 @@
   :serial t
   :components
   ((:file "autolisp-debug-ui-dumb/source/package")
-   (:file "autolisp-debug-ui-dumb/source/dumb-ui"))
+   (:file "autolisp-debug-ui-dumb/source/dumb-ui")
+   (:file "autolisp-debug-ui-dumb/source/commands"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-debug-ui-dumb/tests")))
   :perform (asdf:test-op (op system)

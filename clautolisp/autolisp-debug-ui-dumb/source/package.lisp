@@ -7,6 +7,9 @@ streams with no cursor control. Works over a pipe, in a logfile-style
 shell, and in CI. Registered as :terminal / :dumb. It is the UI the
 implementer uses to bring the debugger up, and the baseline every richer
 UI refines.")
+  (:import-from #:clautolisp.interactor
+                #:bind-command #:bind-command-alias
+                #:command-raw-argument-p #:dictionary-commands)
   (:import-from #:clautolisp.source
                 #:source-position-p #:source-position-file
                 #:source-position-start-line #:source-position-start-column
