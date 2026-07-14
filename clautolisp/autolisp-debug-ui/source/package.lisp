@@ -8,6 +8,15 @@ calls CMD-* to drive the session. This layer is UI-agnostic — concrete
 UIs (dumb terminal, ncurses, Emacs) build on it. In-image terminal UIs
 run synchronously: at a stopping point the engine's *debug-hit-handler*
 calls UI-AWAIT-COMMAND, which returns a resume directive.")
+  ;; the generic command/dictionary machinery, moved to the interactor
+  ;; framework; re-exported below so debugger-UI users keep one package.
+  (:import-from #:clautolisp.interactor
+                #:command #:command-p #:command-key #:command-words
+                #:command-phrase #:command-lambda-list #:command-docstring
+                #:command-function #:command-arity
+                #:dictionary #:dictionary-name #:make-command-dictionary
+                #:bind-command #:unbind-command #:bind-command-alias
+                #:find-command #:lookup-command #:dictionary-commands)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-symbol
                 #:autolisp-symbol-name

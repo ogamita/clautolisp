@@ -16,6 +16,7 @@
                "clautolisp/autolisp-debug"
                "clautolisp/autolisp-inspect"
                "clautolisp/autolisp-sedit"
+               "clautolisp/autolisp-interactor"
                "clautolisp/autolisp-debug-ui"
                "clautolisp/autolisp-debug-ui-dumb"
                "clautolisp/autolisp-debug-ui-tui"
@@ -587,6 +588,40 @@
                          (uiop:symbol-call :clautolisp.sedit.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-interactor"
+  :description "The interactor framework (issues/open/interactors.lisp): one command loop for every interaction mode — command dictionaries, the command-line parser, the interactor stack, and INTERACTOR-LOOP. No clautolisp dependencies, so it is reusable outside the debugger."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :serial t
+  :components
+  ((:file "autolisp-interactor/source/package")
+   (:file "autolisp-interactor/source/command")
+   (:file "autolisp-interactor/source/parse")
+   (:file "autolisp-interactor/source/input")
+   (:file "autolisp-interactor/source/interactor"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-interactor/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-interactor/tests"
+  :description "FiveAM tests for the interactor framework."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-interactor" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-interactor/tests/package")
+   (:file "autolisp-interactor/tests/parse-tests")
+   (:file "autolisp-interactor/tests/command-tests")
+   (:file "autolisp-interactor/tests/interactor-tests")
+   (:file "autolisp-interactor/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.interactor.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/autolisp-debug-ui"
   :description "Debugger UI protocol + session lifecycle (debugger §17, §21–§24)."
   :author "Codex"
@@ -594,6 +629,7 @@
   :depends-on ("clautolisp/autolisp-runtime"
                "clautolisp/autolisp-debug"
                "clautolisp/autolisp-inspect"
+               "clautolisp/autolisp-interactor"
                "clautolisp/autolisp-source-map")
   :serial t
   :components
