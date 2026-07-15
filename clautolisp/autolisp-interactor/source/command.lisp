@@ -15,9 +15,15 @@
 (in-package #:clautolisp.interactor)
 
 (defstruct (command (:constructor %make-command))
+  ;; A command has two invocations: its KEY (short) and its PHRASE (long).
+  ;; WORDS is the *ordered* sequence of words making up the ONE phrase that
+  ;; is the command's long name — ("list" "breakpoints") names `list
+  ;; breakpoints' — NOT a set of alternative names. PHRASE is derived, never
+  ;; supplied: BIND-COMMAND computes it by joining the words with spaces.
+  ;; (Alternative spellings are separate BIND-COMMAND-ALIAS entries.)
   (key "" :type string)               ; the 1- or 2-letter (or punctuation) key
-  (words '() :type list)              ; the word(s), lower-cased strings
-  (phrase "" :type string)            ; the words joined with spaces
+  (words '() :type list)              ; ordered words of the long name, lower-cased
+  (phrase "" :type string)            ; derived: the words joined with spaces
   (lambda-list '() :type list)        ; arity for the reader; (&whole VAR) = raw
   (docstring "" :type string)
   (function nil))
@@ -48,10 +54,15 @@ rule is checked only when both the key and the word initials are alphabetic."
 ;;; --- registration -----------------------------------------------------
 
 (defun bind-command (dictionary names lambda-list docstring function)
-  "Register a command in DICTIONARY. NAMES is (KEY WORD [WORD2 …]); the key
-must be the initial(s) of the word(s) (§0). Signals an error on a clash *in
-the same dictionary* (clashes across dictionaries are fine — resolved by the
-stack). Returns the COMMAND."
+  "Register a command in DICTIONARY. NAMES is (KEY WORD [WORD2 …]): KEY is
+the short name, and the WORDs are the *ordered* sequence making up the
+command's single long name — one phrase (=list breakpoints=), not a set of
+alternatives. The phrase is derived here (the words joined with spaces) and
+is never supplied; the key must be the words' initials (§0). The command is
+invocable by its key and by its full phrase (use BIND-COMMAND-ALIAS for
+alternative spellings). Signals an error on a clash *in the same dictionary*
+\(clashes across dictionaries are fine — resolved by the stack). Returns the
+COMMAND."
   (destructuring-bind (key &rest words) names
     (let* ((key (string-downcase (string key)))
            (words (mapcar (lambda (w) (string-downcase (string w))) words))

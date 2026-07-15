@@ -42,10 +42,11 @@ here while active (command reference §8 stacked dispatch).")
 
 (defun bind-debugger-command (names lambda-list docstring function
                               &optional (dictionary *global-dictionary*))
-  "Register a command. NAMES is (KEY WORD [WORD2 …]); the key must be the
-initial(s) of the word(s) (§0). Signals an error on a clash *in the same
-dictionary* (clashes across dictionaries are fine — resolved by the stack).
-Returns the COMMAND."
+  "Register a command. NAMES is (KEY WORD [WORD2 …]): the WORDs are the
+ordered sequence of the command's single long name — one phrase, derived by
+joining them, not alternative names — and the key must be their initials
+(§0). Signals an error on a clash *in the same dictionary* (clashes across
+dictionaries are fine — resolved by the stack). Returns the COMMAND."
   (bind-command dictionary names lambda-list docstring function))
 
 (defun unbind-debugger-command (names-or-key &optional (dictionary *global-dictionary*))

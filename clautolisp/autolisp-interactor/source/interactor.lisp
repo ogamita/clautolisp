@@ -320,10 +320,11 @@ calling convention, whose function takes just (VAR)."
 
 (defmacro define-command ((interactor key &rest words) (&rest lambda-list)
                           docstring &body body)
-  "Register a system command of INTERACTOR: KEY its short name, WORDS its long
-name (§0: the key is the words' initials). The BODY receives the parsed
-argument strings bound to LAMBDA-LIST — or the raw argument string when
-LAMBDA-LIST is (&WHOLE VAR)."
+  "Register a system command of INTERACTOR: KEY its short name, WORDS the
+ordered words of its single long name — one phrase, whose derived join is
+the long invocation (§0: the key is the words' initials). The BODY receives
+the parsed argument strings bound to LAMBDA-LIST — or the raw argument
+string when LAMBDA-LIST is (&WHOLE VAR)."
   `(bind-command (interactor-commands ,interactor)
                  (list ',key ,@(mapcar (lambda (w) `',w) words))
                  ',lambda-list ,docstring

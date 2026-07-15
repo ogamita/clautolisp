@@ -16,10 +16,11 @@
 (setf *aldo-commands* (clautolisp.interactor:make-command-dictionary "aldo"))
 
 (defmacro define-aldo-command ((key &rest words) docstring &body body)
-  "Register a built-in in *ALDO-COMMANDS*: KEY the short name, WORDS the word
-form (§0: the key is the words' initials). BODY sees UI, SESSION, HIT and ARG
-(raw argument string or NIL) and returns a resume directive, or NIL to keep
-the command loop reading."
+  "Register a built-in in *ALDO-COMMANDS*: KEY the short name, WORDS the
+ordered words of its single long name — one phrase (§0: the key is their
+initials); alternative spellings are aliases. BODY sees UI, SESSION, HIT and
+ARG (raw argument string or NIL) and returns a resume directive, or NIL to
+keep the command loop reading."
   `(bind-command *aldo-commands*
                  (list ',key ,@(mapcar (lambda (w) `',w) words))
                  '(&whole arg) ,docstring

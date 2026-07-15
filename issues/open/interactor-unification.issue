@@ -78,9 +78,12 @@ interactor anywhere on the stack.
   have broken the =.= =>>= =±N= keys); accordingly =parse-command=
   accepts punctuation / signed-integer command names (only a string
   cannot name one).
-- The phrase of a command is its words joined (=list breakpoints=), as
-  in the pre-existing dictionary code; the sketch's independent
-  "phrase" slot (=get me out=) was dropped.
+- WORDS is the *ordered* word sequence of the command's single long
+  name — one phrase — and PHRASE is strictly derived (the words joined
+  with spaces) by BIND-COMMAND; no constructor or definer takes a
+  phrase argument. (Confirmed design, 2026-07-15: the sketch's separate
+  "phrase" parameter (=get me out=) was a misreading of words as
+  alternatives; alternative spellings are BIND-COMMAND-ALIAS entries.)
 - Each interactor has an =evaluator= slot (the sketch had one global
   =lisp-eval-print=): the REPL evaluates globally, the debugger in the
   selected frame.
