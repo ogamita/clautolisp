@@ -1,0 +1,82 @@
+In sedit, we have a toplevel form selected:
+
+       [(defun fact (x)
+  (if (= 1 x)
+      ;; base value
+      (/ 0)
+      ;; else
+      (* x (fact (- x 1)))))]
+
+1- Note the wrong indentation. the defun line is correctly indented,
+but we want the following lines to be indented with the same
+left-margin:
+
+       [(defun fact (x)
+          (if (= 1 x)
+              ;; base value
+              (/ 0)
+              ;; else
+              (* x (fact (- x 1)))))]
+
+
+SEDIT> u
+
+       [;; -*- mode: autocad-lisp; coding: iso-8859-1 -*-
+
+;|
+Computes the factorial of x
+@param x strictly positive integer
+@return: x!
+|;
+
+(defun fact (x)
+  (if (= 1 x)
+      ;; base value
+      (/ 0)
+      ;; else
+      (* x (fact (- x 1)))))
+
+;; fact]
+
+2- Oops! The up command from the toplevel form of a file should select
+   the file, not the whole file contents (imagine some sources files are
+   600KB+!)
+
+   Instead we should have had a view on the directory containing the
+   file, and the file name selected:
+
+    /Users/pjb/src/autolisp/ 
+         ...
+         bloc-dynamic.lsp
+         defun.lsp
+        [fact.lsp]
+         list-vlisp.lsp
+         make-loader.lsp
+         ...
+
+
+And if we try u again we're stuck at the file content level:
+
+SEDIT> u
+
+       [;; -*- mode: autocad-lisp; coding: iso-8859-1 -*-
+
+;|
+Computes the factorial of x
+@param x strictly positive integer
+@return: x!
+|;
+
+(defun fact (x)
+  (if (= 1 x)
+      ;; base value
+      (/ 0)
+      ;; else
+      (* x (fact (- x 1)))))
+
+;; fact]
+SEDIT>
+
+Of course, after the u that selects the file name, the following u
+entered from the directory view, would move up the directory hierarchy
+(/Users/pjb/src/ in this example).
