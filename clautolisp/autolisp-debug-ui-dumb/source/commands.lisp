@@ -11,26 +11,26 @@
 (in-package #:clautolisp.ui.dumb)
 
 ;; Re-loading this file redefines the whole vocabulary: start from a fresh
-;; dictionary so the registrations below never clash with their previous
-;; incarnation.
-(setf *aldo-commands* (clautolisp.interactor:make-command-dictionary "aldo"))
+;; dictionary — re-pointed on the *ALDO* template — so the registrations
+;; below never clash with their previous incarnation.
+(setf *aldo-commands* (clautolisp.interactor:make-command-dictionary "aldo")
+      (interactor-commands *aldo*) *aldo-commands*)
 
 (defmacro define-aldo-command ((key &rest words) docstring &body body)
-  "Register a built-in in *ALDO-COMMANDS*: KEY the short name, WORDS the
-ordered words of its single long name — one phrase (§0: the key is their
-initials); alternative spellings are aliases. BODY sees UI, SESSION, HIT and
-ARG (raw argument string or NIL) and returns a resume directive, or NIL to
-keep the command loop reading."
-  `(bind-command *aldo-commands*
-                 (list ',key ,@(mapcar (lambda (w) `',w) words))
-                 '(&whole arg) ,docstring
-                 (lambda (arg)
-                   (declare (ignorable arg))
-                   (let ((ui *debugger-ui*)
-                         (session *debugger-session*)
-                         (hit *debugger-hit*))
-                     (declare (ignorable ui session hit))
-                     ,@body))))
+  "Register a built-in of the *ALDO* interactor — sugar over the framework's
+DEFINE-COMMAND: KEY the short name, WORDS the ordered words of its single
+long name — one phrase (§0: the key is their initials); alternative
+spellings are aliases. BODY sees UI, SESSION, HIT and ARG (raw argument
+string or NIL) and returns a resume directive, or NIL to keep the command
+loop reading."
+  `(define-command (*aldo* ,key ,@words) (&whole arg)
+       ,docstring
+     (declare (ignorable arg))
+     (let ((ui *debugger-ui*)
+           (session *debugger-session*)
+           (hit *debugger-hit*))
+       (declare (ignorable ui session hit))
+       ,@body)))
 
 (defun %alias (token command-token)
   (bind-command-alias *aldo-commands* token command-token))
@@ -303,24 +303,24 @@ command loop reading. Returns T when refused."
 ;;; vocabulary (bug-aldo-nav-command-dictionary), and the motions are
 ;;; collision-free against it by design.
 
-(setf *navi-commands* (clautolisp.interactor:make-command-dictionary "navi"))
+(setf *navi-commands* (clautolisp.interactor:make-command-dictionary "navi")
+      (interactor-commands *navi*) *navi-commands*)
 
 (defmacro define-navi-command ((key &rest words) docstring &body body)
-  "Register a navigator command in *NAVI-COMMANDS*. BODY sees STATE (the
-NAVI-STATE), UI, SESSION, HIT, LOC and ARG (the raw argument string or NIL);
-a body that changes the view sets (NAVI-STATE-REDRAW STATE)."
-  `(bind-command *navi-commands*
-                 (list ',key ,@(mapcar (lambda (w) `',w) words))
-                 '(&whole arg) ,docstring
-                 (lambda (arg)
-                   (declare (ignorable arg))
-                   (let* ((state (%navi-state))
-                          (ui (navi-state-ui state))
-                          (session (navi-state-session state))
-                          (hit (navi-state-hit state))
-                          (loc (navi-state-loc state)))
-                     (declare (ignorable ui session hit loc))
-                     ,@body))))
+  "Register a command of the *NAVI* interactor — sugar over the framework's
+DEFINE-COMMAND. BODY sees STATE (the NAVI-STATE), UI, SESSION, HIT, LOC and
+ARG (the raw argument string or NIL); a body that changes the view sets
+(NAVI-STATE-REDRAW STATE)."
+  `(define-command (*navi* ,key ,@words) (&whole arg)
+       ,docstring
+     (declare (ignorable arg))
+     (let* ((state (%navi-state))
+            (ui (navi-state-ui state))
+            (session (navi-state-session state))
+            (hit (navi-state-hit state))
+            (loc (navi-state-loc state)))
+       (declare (ignorable ui session hit loc))
+       ,@body)))
 
 (defmacro define-navi-motion ((key &rest words) motion docstring)
   "A motion command: apply MOTION (a NAVI-MOVE key) and redisplay."
@@ -382,19 +382,18 @@ a body that changes the view sets (NAVI-STATE-REDRAW STATE)."
 ;;;
 ;;; LAVI — the flat line navigator's vocabulary (`set navigator line').
 
-(setf *lavi-commands* (clautolisp.interactor:make-command-dictionary "lavi"))
+(setf *lavi-commands* (clautolisp.interactor:make-command-dictionary "lavi")
+      (interactor-commands *lavi*) *lavi-commands*)
 
 (defmacro define-lavi-command ((key &rest words) docstring &body body)
-  "Register a line-navigator command in *LAVI-COMMANDS*. BODY sees STATE (the
-LAVI-STATE) and ARG."
-  `(bind-command *lavi-commands*
-                 (list ',key ,@(mapcar (lambda (w) `',w) words))
-                 '(&whole arg) ,docstring
-                 (lambda (arg)
-                   (declare (ignorable arg))
-                   (let ((state (%lavi-state)))
-                     (declare (ignorable state))
-                     ,@body))))
+  "Register a command of the *LAVI* interactor — sugar over the framework's
+DEFINE-COMMAND. BODY sees STATE (the LAVI-STATE) and ARG."
+  `(define-command (*lavi* ,key ,@words) (&whole arg)
+       ,docstring
+     (declare (ignorable arg))
+     (let ((state (%lavi-state)))
+       (declare (ignorable state))
+       ,@body)))
 
 (define-lavi-command (d down) "Next poll-point line."
   (lavi-skip state 1) nil)
@@ -423,21 +422,20 @@ LAVI-STATE) and ARG."
 ;;; shadowing the global =break=; every unshadowed debugger verb remains
 ;;; directly reachable while inspecting.
 
-(setf *inspi-commands* (clautolisp.interactor:make-command-dictionary "inspect"))
+(setf *inspi-commands* (clautolisp.interactor:make-command-dictionary "inspect")
+      (interactor-commands *inspi*) *inspi-commands*)
 
 (defmacro define-inspi-command ((key &rest words) docstring &body body)
-  "Register an inspector command in *INSPI-COMMANDS*. BODY sees STATE (the
-INSPI-STATE), UI, SESSION and ARG."
-  `(bind-command *inspi-commands*
-                 (list ',key ,@(mapcar (lambda (w) `',w) words))
-                 '(&whole arg) ,docstring
-                 (lambda (arg)
-                   (declare (ignorable arg))
-                   (let* ((state (%inspi-state))
-                          (ui (inspi-state-ui state))
-                          (session (inspi-state-session state)))
-                     (declare (ignorable ui session))
-                     ,@body))))
+  "Register a command of the *INSPI* interactor — sugar over the framework's
+DEFINE-COMMAND. BODY sees STATE (the INSPI-STATE), UI, SESSION and ARG."
+  `(define-command (*inspi* ,key ,@words) (&whole arg)
+       ,docstring
+     (declare (ignorable arg))
+     (let* ((state (%inspi-state))
+            (ui (inspi-state-ui state))
+            (session (inspi-state-session state)))
+       (declare (ignorable ui session))
+       ,@body)))
 
 (define-inspi-command (q quit) "Leave the inspector (a blank line too)."
   (pop-interactor)

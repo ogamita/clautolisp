@@ -12,7 +12,12 @@ UI refines.")
                 #:command-raw-argument-p #:dictionary-commands
                 #:+system-command-word+
                 ;; the unified loop (interactor-unification.issue)
-                #:make-interactor #:interactor-state #:*command-interactor*
+                #:define-interactor #:define-command
+                #:make-interactor #:copy-interactor
+                #:interactor-commands #:interactor-user-commands
+                #:interactor-prompt #:interactor-reader #:interactor-evaluator
+                #:interactor-status #:interactor-on-result
+                #:interactor-state #:*command-interactor*
                 #:*interactor-stack* #:push-interactor #:pop-interactor
                 #:interactor-loop #:interactor-return
                 #:command-read #:read-line-from-input-context

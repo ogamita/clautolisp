@@ -56,6 +56,13 @@ interactor anywhere on the stack.
   mode it was typed in; directives cascade through nested loops), and
   the loop's :FLOOR (the auto-opened navigator pops back to the DBG>
   prompt within the same loop).
+- Every interactor is now DECLARED with the framework forms (1.4.41):
+  DEFINE-INTERACTOR templates =*aldo*= (alias =debug=) / =*navi*= /
+  =*lavi*= / =*inspi*= in dumb-ui (and =*autolisp*= in the tool);
+  entering a mode COPY-INTERACTORs its template and fills the per-entry
+  slots (state, closures over the UI/stop); the DEFINE-*-COMMAND mode
+  macros are sugar over the framework's DEFINE-COMMAND on those
+  templates.
 - The NAVI / LAVI motion vocabularies and the INSPECT commands are real
   dictionaries (dumb-ui commands.lisp) stacked over the debugger's:
   fall-through, =aldo CMD= routing and =command CMD= user-skipping now
