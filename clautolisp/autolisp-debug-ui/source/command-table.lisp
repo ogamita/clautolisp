@@ -16,8 +16,11 @@
   "The global debugger command dictionary; mode dictionaries layer over it.")
 
 (defparameter +debugger-escape-word+ "debugger"
-  "The escape prefix: in a mode, `debugger TOKEN' routes TOKEN to the global
-dictionary, reaching a command the mode shadows (command reference §8).")
+  "The historical escape prefix: `debugger TOKEN' routes TOKEN to the built-in
+dictionary, reaching a command a user / mode command shadows (command
+reference §8). The systematic form is the interactor framework's
+CLAUTOLISP.INTERACTOR:+SYSTEM-COMMAND-WORD+ — `command TOKEN', like bash's
+`command' — which the dispatcher accepts equally.")
 
 (defvar *active-command-dictionaries* nil
   "The dictionary stack the UI dispatcher consults, innermost-first; NIL means

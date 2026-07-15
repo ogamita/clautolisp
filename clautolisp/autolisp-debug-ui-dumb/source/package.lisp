@@ -9,7 +9,8 @@ implementer uses to bring the debugger up, and the baseline every richer
 UI refines.")
   (:import-from #:clautolisp.interactor
                 #:bind-command #:bind-command-alias
-                #:command-raw-argument-p #:dictionary-commands)
+                #:command-raw-argument-p #:dictionary-commands
+                #:+system-command-word+)
   (:import-from #:clautolisp.source
                 #:source-position-p #:source-position-file
                 #:source-position-start-line #:source-position-start-column

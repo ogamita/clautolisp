@@ -50,7 +50,8 @@ implementations, not here.")
    #:input-command-raw-arguments
    ;; interactors
    #:interactor #:make-interactor #:interactor-p
-   #:interactor-name #:interactor-status #:interactor-prompt
+   #:interactor-name #:interactor-alias
+   #:interactor-status #:interactor-prompt
    #:interactor-reader #:interactor-evaluator
    #:interactor-commands #:interactor-user-commands
    #:interactor-documentation
@@ -58,7 +59,7 @@ implementations, not here.")
    #:push-interactor #:pop-interactor #:find-interactor
    #:make-prompt-function
    #:find-invocation-in-interactor #:find-invocation-in-stack
-   #:find-interactor-command
+   #:find-interactor-command #:+system-command-word+
    #:call-command #:find-and-run-command
    #:interactor-loop #:interactor-return
    #:define-interactor #:define-command #:define-user-command))

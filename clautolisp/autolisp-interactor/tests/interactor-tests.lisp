@@ -58,7 +58,7 @@
 (defun test-stack ()
   "Two stacked interactors: NAVI over ALDO, with a user command shadowing an
 ALDO system command."
-  (let ((aldo (make-interactor :name "ALDO"))
+  (let ((aldo (make-interactor :name "ALDO" :alias "debug"))
         (navi (make-interactor :name "NAVI")))
     (bind-command (interactor-commands aldo) '(b break) '(&whole arg) "Break." (constantly :aldo-break))
     (bind-command (interactor-commands aldo) '(c continue) '() "Continue." (constantly :aldo-continue))
@@ -97,6 +97,33 @@ ALDO system command."
       (is (eq :navi-break (funcall (command-function cmd))))
       (is (equal '((ident . "foo")) args))
       (is (= 1 skip)))))
+
+(test the-alias-routes-like-the-name
+  ;; `aldo' and `debug' are name and alias of the one debugger interactor
+  (let ((stack (test-stack)))
+    (multiple-value-bind (cmd args skip interactor) (resolve "debug b 42" stack)
+      (is (eq :aldo-break (funcall (command-function cmd))))
+      (is (equal '((integer . "42")) args))
+      (is (= 2 skip))
+      (is (equal "ALDO" (interactor-name interactor))))))
+
+(test the-command-word-skips-the-user-dictionaries
+  ;; like bash's `command foo': reach a system command a user command shadows
+  (let ((stack (test-stack)))
+    ;; normally the user c shadows the system c …
+    (is (eq :user-continue (funcall (command-function (resolve "c" stack)))))
+    (is (eq :user-continue (funcall (command-function (resolve "aldo c" stack)))))
+    ;; … `command c' / `NAME command c' reach the system one
+    (is (eq :aldo-continue (funcall (command-function (resolve "command c" stack)))))
+    (is (eq :aldo-continue (funcall (command-function (resolve "aldo command c" stack)))))
+    (is (eq :aldo-continue (funcall (command-function (resolve "debug command c" stack)))))
+    ;; the consumed-words count keeps raw arguments aligned
+    (multiple-value-bind (cmd args skip) (resolve "aldo command b 42" stack)
+      (is (eq :aldo-break (funcall (command-function cmd))))
+      (is (equal '((integer . "42")) args))
+      (is (= 3 skip)))
+    ;; the word alone resolves nothing (it is reserved)
+    (is (null (resolve "command" stack)))))
 
 (test unresolved-commands-return-nil
   (is (null (resolve "nosuch" (test-stack)))))

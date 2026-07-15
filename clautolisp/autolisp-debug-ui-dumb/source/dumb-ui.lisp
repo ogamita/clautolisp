@@ -327,13 +327,15 @@ commands report and keep the loop reading."
         (progn (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil))))
 
 (defun run-command (ui session hit cmd arg)
-  "Dispatch one command. The `debugger' escape word forces the BUILT-IN meaning
-of the following token (reaching a built-in that a user / mode command shadows);
-otherwise a command in the active dictionary stack (§8 stacked dispatch —
-user-defined commands, mode dictionaries) is tried first, then the built-in
-command-reference §0 vocabulary (*ALDO-COMMANDS*). Returns a resume directive,
-or NIL."
-  (if (string-equal cmd +debugger-escape-word+)
+  "Dispatch one command. The `command' system word (interactors design; like
+bash's `command') forces the BUILT-IN meaning of the following token —
+reaching a built-in that a user / mode command shadows; `debugger' is its
+historical equivalent. Otherwise a command in the active dictionary stack
+(§8 stacked dispatch — user-defined commands, mode dictionaries) is tried
+first, then the built-in command-reference §0 vocabulary (*ALDO-COMMANDS*).
+Returns a resume directive, or NIL."
+  (if (or (string-equal cmd +system-command-word+)
+          (string-equal cmd +debugger-escape-word+))
       (let* ((a (or arg "")) (sp (position #\Space a)))
         (dispatch-in-dictionaries ui session hit (list *aldo-commands*)
                                   (subseq a 0 (or sp (length a)))

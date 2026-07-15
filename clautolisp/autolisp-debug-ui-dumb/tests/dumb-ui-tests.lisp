@@ -749,6 +749,27 @@
       (is (eql 7 result))                  ; `debugger c' reached the built-in continue
       (is (contains output "USER-C")))))   ; plain `c' ran the shadowing user command
 
+(test dumb-ui-command-word-reaches-builtin
+  ;; the systematic form of the escape: the interactor framework's `command'
+  ;; word (like bash's `command') skips the user dictionaries — `command c'
+  ;; reaches the built-in continue a user command shadows.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (clautolisp.debug.ui:*global-dictionary*
+           (clautolisp.debug.ui:make-command-dictionary "test")))
+    (clautolisp.debug.ui:define-debugger-command (c continue) () "shadow c."
+      (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "USER-C~%")
+      nil)
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "c~%command c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))                  ; `command c' reached the built-in continue
+      (is (contains output "USER-C")))))   ; plain `c' ran the shadowing user command
+
 (test dumb-ui-clal-break-enters-debugger
   ;; The programmatic entry INVOKE-DEBUGGER-BREAK (what the CLAL-BREAK /
   ;; CLAL-INVOKE-DEBUGGER builtins call via *debug-break-hook*) drops into the

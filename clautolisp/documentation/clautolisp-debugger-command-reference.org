@@ -1462,16 +1462,29 @@ at its own activation boundaries, and the dispatcher always consults the
 current top-of-stack first (above). Nothing else about the dictionaries (their
 names, how many, their internal representation) is normative.
 
-*Escape to an outer dictionary (exceptional).* Dictionaries are *designed to
+*Escape to a shadowed command (exceptional).* Dictionaries are *designed to
 avoid shadowing* global commands in the first place — a mode binds its own key
 over a global one only where it genuinely must (e.g. the inspector =b= =
 =bind=), and the navigator dictionaries shadow nothing — so reaching a
-shadowed global command is *rare*. When it is needed, the escape is simply the
-*word* =debugger= as a prefix: =debugger break= reaches =break= from inside the
-inspector. There is *no dedicated escape key* — the spelled-out word works in
-every UI and cannot clash (in particular it is not a bare =d=, which is the
-navigator's =down=). Because shadowing is the exception, this single word is
-enough.
+shadowed command is *rare*. When it is needed, the escape is systematic
+(the interactor framework):
+
+- =NAME CMD …= routes =CMD= to the interactor called (or aliased) =NAME=
+  anywhere on the stack — the debugger answers to =aldo= and =debug= (its
+  one alias) — dispatching normally: its *user* dictionary first, then its
+  *system* dictionary. So a user command shadowing a built-in still wins.
+- the word =command= — like bash's =command foo=, which bypasses shell
+  functions — *skips the user dictionaries*: =command CMD …= resolves =CMD=
+  through the system tables only, and =aldo command CMD …= through the
+  debugger's system table alone. This is how a *user command that shadows a
+  system command calls the system one*. The word is reserved: a command
+  named =command= would be unreachable.
+- =debugger CMD …= is the historical equivalent of =command CMD …= at the
+  debugger, kept for compatibility.
+
+There is *no dedicated escape key* — the spelled-out words work in every UI
+and cannot clash (in particular not a bare =d=, which is the navigator's
+=down=). Because shadowing is the exception, these words are enough.
 
 *Per-dictionary consistency.* The §0 naming-consistency rule and the
 collision check are enforced *within each dictionary*: =bind-debugger-command=

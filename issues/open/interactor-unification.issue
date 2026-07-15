@@ -35,6 +35,13 @@ interactor anywhere on the stack.
   source reader is its sexp fallback.
 - NAV: =aldo CMD= / =debug CMD= route explicitly to the debugger (the
   prefix EDIT already had).
+- Escape systematisation (1.4.36): interactors carry one optional *alias*
+  (=aldo= / =debug= are name and alias of the debugger); =NAME CMD=
+  dispatches normally (user table, then system table); the reserved word
+  =command= — bare or after the name, like bash's =command foo= — skips
+  the user tables (=command CMD=, =aldo command CMD=), which is how a
+  shadowing user command calls the system command. =debugger CMD= kept as
+  the historical equivalent.
 
 * Remaining
 

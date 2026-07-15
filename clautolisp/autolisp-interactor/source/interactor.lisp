@@ -15,6 +15,10 @@
 
 (defstruct (interactor (:constructor %make-interactor))
   (name          "interactor" :type string)
+  ;; ALIAS: one optional alternate name for `NAME CMD …' routing — the ALDO
+  ;; debugger answers to `aldo' and `debug'. One alias, not a list: keep the
+  ;; invocation namespace small.
+  (alias         nil          :type (or null string))
   ;; STATUS: (function (output-stream)) rendering the mode's view before each
   ;; prompt (the navigator's marked form, the editor's selection); NIL = none.
   (status        nil          :type (or null function-designator))
@@ -61,8 +65,14 @@ returns."
   (pop *interactor-stack*))
 
 (defun find-interactor (name &optional (stack *interactor-stack*))
-  "The interactor called NAME (case-insensitively) on STACK, or NIL."
-  (find (string name) stack :key #'interactor-name :test #'equalp))
+  "The interactor called (or aliased) NAME, case-insensitively, on STACK; NIL
+when none."
+  (let ((name (string name)))
+    (find-if (lambda (interactor)
+               (or (equalp name (interactor-name interactor))
+                   (and (interactor-alias interactor)
+                        (equalp name (interactor-alias interactor)))))
+             stack)))
 
 (defun make-prompt-function (who)
   "A prompt function printing `[DEPTH]WHO> ', DEPTH the interactor stack depth."
@@ -71,53 +81,83 @@ returns."
 
 ;;; --- finding a command invocation on the interactor stack ---------------
 
-(defun find-invocation-in-interactor (invocation interactor)
+(defparameter +system-command-word+ "command"
+  "The system-table escape word (like bash's `command', which bypasses shell
+functions): `command CMD …' resolves CMD in the system dictionaries only,
+skipping the user dictionaries — reaching a system command a user command
+shadows (a shadowing user command calls the system one this way). After an
+interactor name it scopes to that interactor: `aldo command CMD …'. The word
+is reserved: a command named `command' would be unreachable.")
+
+(defun %system-word-p (ident)
+  (string-equal ident +system-command-word+))
+
+(defun find-invocation-in-interactor (invocation interactor &optional system-only)
   "The command INVOCATION (a token string) names in INTERACTOR — its user
-dictionary first, so user commands shadow system commands."
-  (or (and (interactor-user-commands interactor)
+dictionary first, so user commands shadow system commands; with SYSTEM-ONLY,
+the system dictionary alone (the `command' escape)."
+  (or (and (not system-only)
+           (interactor-user-commands interactor)
            (find-command (interactor-user-commands interactor) invocation))
       (and (interactor-commands interactor)
            (find-command (interactor-commands interactor) invocation))))
 
-(defun find-invocation-in-stack (invocation &optional (stack *interactor-stack*))
+(defun find-invocation-in-stack (invocation &optional (stack *interactor-stack*)
+                                              system-only)
   "Search STACK innermost-first for INVOCATION (a token string).
 Returns (values COMMAND INTERACTOR) or NIL."
   (dolist (interactor stack nil)
-    (let ((command (find-invocation-in-interactor invocation interactor)))
+    (let ((command (find-invocation-in-interactor invocation interactor
+                                                  system-only)))
       (when command
         (return (values command interactor))))))
 
-(defun %find-longest-prefix (idents stack)
+(defun %find-longest-prefix (idents stack &optional system-only)
   "Resolve the longest prefix of IDENTS to a command, innermost interactor
 first: at each level `list breakpoints' is found before `list'.
 Returns (values COMMAND PREFIX-LENGTH INTERACTOR) or NIL."
   (dolist (interactor stack nil)
     (loop :for k :from (length idents) :downto 1
           :do (let* ((phrase (format nil "~{~A~^ ~}" (subseq idents 0 k)))
-                     (command (find-invocation-in-interactor phrase interactor)))
+                     (command (find-invocation-in-interactor phrase interactor
+                                                             system-only)))
                 (when command
                   (return-from %find-longest-prefix
                     (values command k interactor)))))))
 
 (defun find-interactor-command (input &optional (stack *interactor-stack*))
   "Resolve INPUT (an INPUT-COMMAND) against STACK. When the first ident names
-an interactor on the stack and a command follows, the command is looked up in
-that interactor only (`aldo break 42' runs the debugger's `break' from any
-inner loop); otherwise the longest ident prefix is resolved down the stack.
-Returns (values COMMAND ARGUMENT-TOKENS WORDS-CONSUMED INTERACTOR), or NIL
-when nothing matches."
+(or aliases) an interactor on the stack and a command follows, the command is
+looked up in that interactor only (`aldo break 42' runs the debugger's
+`break' from any inner loop); otherwise the longest ident prefix is resolved
+down the stack. The system word `command' — bare or after the interactor
+name — skips the user dictionaries: `command CMD …' / `aldo command CMD …'
+reach a system command a user command shadows. Returns (values COMMAND
+ARGUMENT-TOKENS WORDS-CONSUMED INTERACTOR), or NIL when nothing matches."
   (let ((invocation (input-command-invocation input))
         (tokens (input-command-tokens input)))
     (when invocation
-      ;; explicit routing: INTERACTOR-NAME COMMAND …
+      ;; explicit routing: INTERACTOR-NAME [command] CMD …
       (when (rest invocation)
         (let ((interactor (find-interactor (first invocation) stack)))
           (when interactor
-            (multiple-value-bind (command k)
-                (%find-longest-prefix (rest invocation) (list interactor))
-              (when command
-                (return-from find-interactor-command
-                  (values command (nthcdr (1+ k) tokens) (1+ k) interactor)))))))
+            (let* ((system-only (and (%system-word-p (second invocation))
+                                     (not (null (cddr invocation)))))
+                   (idents (if system-only (cddr invocation) (rest invocation)))
+                   (offset (if system-only 2 1)))
+              (multiple-value-bind (command k)
+                  (%find-longest-prefix idents (list interactor) system-only)
+                (when command
+                  (return-from find-interactor-command
+                    (values command (nthcdr (+ offset k) tokens) (+ offset k)
+                            interactor))))))))
+      ;; the system word alone: skip the user dictionaries down the stack
+      (when (and (%system-word-p (first invocation)) (rest invocation))
+        (multiple-value-bind (command k interactor)
+            (%find-longest-prefix (rest invocation) stack t)
+          (when command
+            (return-from find-interactor-command
+              (values command (nthcdr (1+ k) tokens) (1+ k) interactor)))))
       (multiple-value-bind (command k interactor)
           (%find-longest-prefix invocation stack)
         (when command
@@ -253,13 +293,15 @@ popped), or with INTERACTOR-RETURN's value."
 
 ;;; --- definition sugar -------------------------------------------------
 
-(defmacro define-interactor (varname &key name status prompt reader evaluator
-                                          commands user-commands documentation)
+(defmacro define-interactor (varname &key name alias status prompt reader
+                                          evaluator commands user-commands
+                                          documentation)
   "Define VARNAME as an interactor. NAME defaults to VARNAME without its
-earmuffs."
+earmuffs; ALIAS is the optional alternate routing name."
   `(defparameter ,varname
      (make-interactor
       :name ,(or name (string-trim "*" (string varname)))
+      ,@(when alias         `(:alias ,alias))
       ,@(when status        `(:status ,status))
       ,@(when prompt        `(:prompt ,prompt))
       ,@(when reader        `(:reader ,reader))

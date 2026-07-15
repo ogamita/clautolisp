@@ -218,10 +218,17 @@ Browsing never changes what executes; ~print~, ~setq~ and friends always
 act in the current frame.
 
 In the navigator every debugger command is also available directly (the
-navigator's dictionary is stacked over the debugger's); ~aldo CMD~ /
-~debug CMD~ force the debugger's meaning of a command the navigator
-shadows (e.g. ~aldo b LOC~, while bare =b= breakpoints the selection) —
-the same prefix the sedit editor uses.
+navigator's dictionary is stacked over the debugger's). Two escape words
+systematize reaching a shadowed command (~debug~ is the debugger
+interactor's alias — ~aldo~ and ~debug~ are interchangeable):
+
+- ~aldo CMD~ — route CMD to the debugger, dispatching normally: user
+  commands first, then the built-ins (e.g. ~aldo b LOC~, while bare =b=
+  breakpoints the selection). The same prefix the sedit editor uses.
+- ~command CMD~ (or ~aldo command CMD~) — like bash's ~command foo~:
+  skip the *user* commands and reach the built-in meaning; this is how a
+  user command that shadows a built-in calls the built-in. (~debugger
+  CMD~ is the historical spelling.)
 
 ** Settings and configuration
 
