@@ -1,0 +1,214 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: interactors — design revision: singleton interactors, activation state, stack manipulation
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-07-15
+
+Record of the design discussion revising the interactor implementation
+(follow-up of =interactor-unification.issue=; supersedes parts of what
+1.4.39–1.4.41 implemented). To be revised by pjb before implementation.
+
+* Purpose
+
+The interactor stack exists to SIMPLIFY code by systematizing behavior
+across the interaction modules (REPL, debugger, navigators, inspector,
+editor): one INTERACTOR-LOOP, one command-resolution rule over the
+stack, one read-eval-print. Changing the current interactor should in
+most cases be a *stack manipulation inside the running loop* — push,
+pop, swap — with a NEW (nested) loop only where the control flow is
+genuinely re-entrant (invoke-debugger, which must return a resume
+directive to the engine).
+
+* Decisions
+
+** D1. Interactors are singletons; no COPY-INTERACTOR.
+
+An interactor is *program*, not state: name, alias, dictionaries,
+reader/evaluator/prompt/status behavior, on-result convention. Commands
+— clautolisp-provided or user-defined — are functions ("compiled
+program"), not state data; mutating a user dictionary between two
+activations is program redefinition, not state. Nothing is copied per
+entry. (The 1.4.39 per-entry COPY-INTERACTOR instances and the STATE
+slot on the struct are to be removed; see T1 for where activation state
+goes.)
+
+** D2. Context flows through dynamic variables and one read-eval-print.
+
+- The UI / session / hit reach command bodies through the existing
+  thread-global dynamic variables (=*debugger-ui*= /
+  =*debugger-session*= / =*debugger-hit*=), not through closures stored
+  in interactor slots.
+- The dialect is NOT interactor state. It influences only the
+  read-eval-print. There is ONE read-eval-print entry (runtime),
+  consulting the session's *current* dialect at each use and
+  parameterized only by where to evaluate (globally vs in the selected
+  frame). Every interactor's sexp path routes through it: the REPL, a
+  =(FORM)= at DBG>/NAV>, the inspector's =e= and bare forms, sedit's
+  =e=. (Also fixes a pre-existing wart: repl-loop captures the dialect
+  lexically at entry, so a mid-session =*AUTOLISP-DIALECT*= change is
+  not honored by the reader; and cmd-eval's read does not obviously go
+  through the session dialect.)
+
+** D3. Names and aliases.
+
+- The bottom interactor is named "AUTOLISP" with alias "LISP".
+- The prompt is late-bound (the interactor's prompt function), so it
+  stays =_$= for now and can later e.g. indicate the current dialect.
+- ALDO keeps alias "debug".
+
+** D4. LAVI is a separate interactor.
+
+NAVI and LAVI are two interactors; the =navigator= setting decides
+which one a stop (or =nav=) pushes, and switching between them is a
+command that pops one and pushes the other — a stack manipulation in
+the SAME loop.
+
+** D5. Commands may reuse functions across interactors.
+
+Two interactors can attach commands to the same function — or to
+different functions under the same key: NAVI's motions skip to
+poll-points while SEDIT's traverse ALL sub-sexps, so the motions are
+DIFFERENT functions under the same keys; other commands can share one
+function. Registration must therefore accept a *function (designator)*
+as well as an inline body. (Note: =BIND-COMMAND= — the function-form
+registrar under =DEFINE-COMMAND= — already takes a function; what is
+missing is only the sugar, e.g. a =:function NAME= variant of
+DEFINE-COMMAND, and a documented calling convention shared functions
+can rely on; see T3.)
+
+** D6. User dictionaries are strictly per interactor.
+
+There is NO global user-command table. =*global-dictionary*= (which
+operationally always was ALDO's user dictionary) is retired into
+=(interactor-user-commands *aldo*)=. A "global" user command is simply
+one defined on the AUTOLISP interactor, which is always at the bottom
+of the stack.
+
+** D7. One AutoLISP registration API + a registry.
+
+- =(clal-define-command "INTERACTOR-NAME" NAMES FUNCTION [DOC])=
+  registers into the named interactor's user dictionary.
+  =clal-define-debugger-command= becomes a deprecated equivalent of
+  ="ALDO"=.
+- =(clal-list-interactor-names)= returns the names of ALL registered
+  interactors (e.g. ("AUTOLISP" "ALDO" "NAVI" "LAVI" "INSPECT"
+  "SEDIT")), whether stacked or not: commands are installed before
+  their interactor is activated.
+- DEFINE-INTERACTOR populates the name -> interactor registry.
+
+** D8. Routing is stack-only.
+
+=NAME CMD …= routes only to interactors ON the current stack. The
+stack is dynamic and an interactor may need activation state, so
+invoking a command of an inactive interactor is not meaningful. (The
+registry is for registration and listing, not routing.)
+
+** D9. Stack manipulation replaces nested loops where possible.
+
+- =clal-sedit= pushes SEDIT on the stack.
+- navi <-> lavi swap by pop+push.
+- =q= in a pushed mode pops it.
+- A NESTED loop remains only for invoke-debugger (=ui-await-command=
+  must return the resume directive to the engine; ON-RESULT +
+  INTERACTOR-RETURN carry a debugger command's non-nil value out from
+  however deep a mode it was issued).
+
+* Tensions and inconsistencies to resolve
+
+** T1. Same-loop mode switching vs dynamic-variable activation state.
+
+D2 (context via dynamics) and D9 (push/pop within the SAME loop)
+conflict for *mode-local* state: a command that pushes NAVI cannot
+LET-bind =*navi-state*= for the duration of the mode — the binding's
+extent ends when the command returns. Dynamic binding only brackets a
+mode when entering it runs a nested loop, which D9 wants to avoid.
+
+Yet some state is genuinely per-activation, not per-interactor: NAVI's
+current location + redraw flag, LAVI's line cursor — and a nested
+invoke-debugger can suspend one NAVI activation under another, so a
+mutable slot on the singleton would be clobbered.
+
+Proposed resolution: the stack holds ACTIVATIONS, not bare
+interactors — each entry pairs (INTERACTOR . STATE), like a call frame
+pairs a function with its locals. PUSH-INTERACTOR takes the optional
+initial state; the loop binds =*command-interactor*= (and the owning
+activation's state) around each command; prompt/status/reader/
+evaluator receive (or read dynamically) the current activation's
+state. Interactors stay singleton programs (D1), recursion is safe,
+and push/pop works in the same loop (D9). [pjb to confirm]
+
+** T2. Does the stack design retire sedit's internal NAV/EDIT modes?
+
+sedit-spec §6.6 defines sedit's own two-mode machine: NAV mode
+(motions only, prompt =NAV>=, deliberately collision-free so debugger
+verbs pass bare) vs EDIT mode (prompt =SEDIT>=, where =i a r c x v z
+m= are insert/add/replace/copy/cut/paste/undo/macroexpand — colliding
+with the debugger's into/advance/return/continue/visit; hence "the
+debugger needs the =debug=/=aldo= prefix" in EDIT).
+
+Under the stack model the mode distinction is naturally "which
+interactor is on top", and the prefix rule falls out of shadowing +
+=aldo CMD= routing — no special machinery. But D5 says SEDIT's motions
+are its own commands (all-sub-sexp traversal), so SEDIT-the-interactor
+plausibly carries motions AND editing keys in one dictionary. Then:
+
+- Option A — ONE SEDIT interactor (motions + editing keys together,
+  prompt =SEDIT>= always). Simple; but =i a r c v= then ALWAYS shadow
+  the debugger while sedit is stacked — sedit-NAV's collision-free
+  property (and the =NAV>= prompt inside sedit) disappears; §6.6 would
+  be amended accordingly.
+- Option B — TWO stacked interactors (=*sedit-nav*= motions-only,
+  collision-free; =*sedit*= editing); =edit=/=nav= push/pop between
+  them. Preserves §6.6 semantics exactly as stack behavior.
+
+The discussion so far leans A (the two-mode machine dissolves into the
+stack) but §6/§6.6 of the sedit spec then needs a normative amendment.
+[pjb to decide]
+
+** T3. Shared command functions need one fixed calling convention.
+
+D5's reuse of one function by several interactors' commands requires
+that the function get its context uniformly — it cannot rely on a
+mode-specific wrapper macro. Convention to fix: a command function
+receives its parsed arguments per its declared lambda-list (or the raw
+string under =(&whole arg)=), and reaches everything else through
+dynamics — =*debugger-ui*= / =*debugger-session*= / =*debugger-hit*=
+and the owning activation's state (T1). The DEFINE-*-COMMAND mode
+macros remain as sugar producing such functions inline.
+
+** T4. Leaving ALDO is not a pop.
+
+=q= uniformly pops a pushed mode (NAVI/LAVI/INSPECT/SEDIT). But ALDO's
+activation is tied to a STOP: leaving it means resolving the stop with
+a directive (=q= -> abort, =c=/=i=/… -> resume), carried out of the
+nested loop by ON-RESULT/INTERACTOR-RETURN — not popping. This
+asymmetry is intentional (D9) but must stay documented, or =aldo=
+lingering on a stack after its stop would be routable with a dead
+session.
+
+** T5. Tests currently rebind =*global-dictionary*=.
+
+With D6 the variable disappears; tests that rebind it to isolate user
+commands must instead swap =(interactor-user-commands *aldo*)= (or a
+with-fresh-user-dictionary helper). Mechanical, but part of the D6
+change, not separable.
+
+** T6. LAVI's name.
+
+D4 makes LAVI a peer interactor, but the name list in D7 needs it
+included (and its display name decided: "LAVI"?) so
+=clal-list-interactor-names= and =NAME CMD= routing agree. [pjb to
+confirm the name]
+
+* Implementation order (after revision)
+
+1. T1 resolution: activations on the stack; kill COPY-INTERACTOR uses
+   and the struct STATE slot; singleton templates keep everything else.
+2. D2: the unified read-eval-print with live dialect dispatch; all
+   evaluators route through it.
+3. D6/D7/D8: retire =*global-dictionary*=; registry; =clal-define-command=
+   + =clal-list-interactor-names=; deprecate =clal-define-debugger-command=.
+4. D3: AUTOLISP/LISP naming.
+5. D5/T3: =:function= registration sugar + the documented calling
+   convention.
+6. T2 decision, then SEDIT onto the stack (D9: =clal-sedit= pushes it),
+   with the sedit-spec amendment.
