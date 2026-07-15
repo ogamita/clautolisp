@@ -173,6 +173,13 @@ separate binary for tool integrators.
   code still breaks into a nested debugger stop first.
 - =r='s expression is now *mandatory* (every AutoLISP function returns
   something): a bare =r= prompts =return value?=; a blank answer cancels.
+- Correctness after a *caught* error
+  (=issues/closed/usubr-arity-error-pops-callers-frame.issue=): a caught
+  wrong-number-of-arguments error (=vl-catch-all-apply=, a debugger
+  resume) used to pop the *caller's* dynamic frame, so the caller's
+  variables silently resolved to stale outer values from then on (the
+  reported infinite =fact= recursion). The frame push/pop now pairs
+  exactly.
 - One loop for every interaction mode (=issues/open/interactor-unification.issue=):
   the debugger prompt, the form navigator, the line navigator, the
   inspector and the REPL all run on the interactor framework's single
