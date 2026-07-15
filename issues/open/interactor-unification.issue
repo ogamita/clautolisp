@@ -43,31 +43,55 @@ interactor anywhere on the stack.
   shadowing user command calls the system command. =debugger CMD= kept as
   the historical equivalent.
 
+* Done (continued) — the loop unification (1.4.39)
+
+- INTERACTOR-LOOP now drives the debugger stop loop (DBG>), the form
+  navigator (NAVI), the flat line navigator (LAVI), the inspector
+  (INSPECT>) and the REPL's outer loop. Framework additions: a per-
+  instance STATE slot (dictionaries stay shared singletons; entering a
+  mode pushes a fresh instance — recursion-safe), *COMMAND-INTERACTOR*
+  (a command body reaches its mode's state), ON-RESULT on the OWNING
+  interactor (the debugger's carries a command's non-NIL value — a
+  resume directive — out with INTERACTOR-RETURN, from however deep a
+  mode it was typed in; directives cascade through nested loops), and
+  the loop's :FLOOR (the auto-opened navigator pops back to the DBG>
+  prompt within the same loop).
+- The NAVI / LAVI motion vocabularies and the INSPECT commands are real
+  dictionaries (dumb-ui commands.lisp) stacked over the debugger's:
+  fall-through, =aldo CMD= routing and =command CMD= user-skipping now
+  come from the framework resolution, not hand-coded arms. ±N reads as
+  the =skip= command. The inspector implements the §8 example: its =b=
+  (bind) shadows the global break; unshadowed debugger verbs (including
+  =c=) work while inspecting, and a bare =(FORM)= evaluates with =$=.
+- The REPL: ,quit / (quit) leave via INTERACTOR-RETURN; EOF prints the
+  fresh line; a CL error escaping a turn is reported by the loop
+  instead of crashing the REPL.
+
 * Remaining
 
-- Drive the DBG> / NAV> / SEDIT> loops (dumb-ui =ui-await-command=,
-  =nav-browse=, sedit =sedit-run=) and the REPL's outer loop through
-  INTERACTOR-LOOP itself: define =*aldo*= / =*navi*= / =*lavi*= /
-  =*sedit*= interactor objects whose status functions render the mode's
-  view (navigator selection, sedit selection, redraw policy as status
-  state), push/pop them on =*interactor-stack*=, and carry resume
-  directives out with INTERACTOR-RETURN. The navigator/sedit motion
-  vocabularies then migrate into their interactors' dictionaries
-  (today they are dispatched positionally in =nav-dispatch-*= /
-  =sedit-command= ahead of the dictionary fall-through, which is
-  equivalent but not introspectable).
-- An inspector interactor (=v= / spec §18.2 sub-REPL) — same pattern.
-- Per-interactor *user* dictionaries exposed to AutoLISP:
-  =clal-define-debugger-command= targets the debugger's; a general
-  =(clal-define-command "INTERACTOR" …)= should target any.
+- SEDIT as an interactor: =sedit-run= / =sedit-command= still drive
+  their own two-mode loop (autolisp-sedit is dependency-free; making it
+  use clautolisp.interactor — itself dependency-free — is acceptable,
+  and its editing vocabulary then migrates into a dictionary). The
+  NAV->EDIT bridge (=nav-edit-session=) would push a SEDIT instance
+  instead of calling =sedit-run=.
+- Per-interactor *user* dictionaries exposed to AutoLISP: the user
+  dictionaries exist per interactor (=*navi-user-commands*= etc.) and
+  shadow the system ones, but =clal-define-debugger-command= only
+  targets the debugger's; a general =(clal-define-command "INTERACTOR"
+  …)= needs an interactor-name -> user-dictionary registry and a
+  runtime hook like =*debug-define-command-hook*=.
 - Typed command arguments: =parse-command= classifies tokens
   (ident/integer/float/string) but command functions receive plain
   strings for compatibility; a declared lambda-list could request
   converted values.
 - The =make-prompt-function= depth-prefixed prompt (=[2]LISP> =) is
-  available but unused: the spec'd prompts (=DBG>= / =NAV>= / =SEDIT>= /
-  =_$=) win; decide whether depth display is wanted (e.g. under
-  recursive debuggers).
+  available but unused — DECIDED for now: the spec'd prompts (=DBG>= /
+  =NAV>= / =SEDIT>= / =_$=) win; revisit only if recursive debugger
+  stops prove confusing.
+- Command arguments are now uniformly whitespace-separated: the
+  inspector's historical glued forms (=d0=, =e(+ 1 2)=) require the
+  space (=d 0=, =e (+ 1 2)=).
 
 * Notes / deviations from the sketch
 

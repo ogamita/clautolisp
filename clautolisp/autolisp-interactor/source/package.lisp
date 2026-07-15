@@ -49,12 +49,13 @@ implementations, not here.")
    #:input-command-invocation #:input-command-arguments
    #:input-command-raw-arguments
    ;; interactors
-   #:interactor #:make-interactor #:interactor-p
+   #:interactor #:make-interactor #:copy-interactor #:interactor-p
    #:interactor-name #:interactor-alias
    #:interactor-status #:interactor-prompt
    #:interactor-reader #:interactor-evaluator
    #:interactor-commands #:interactor-user-commands
-   #:interactor-documentation
+   #:interactor-state #:interactor-on-result
+   #:interactor-documentation #:*command-interactor*
    #:*interactor-stack*
    #:push-interactor #:pop-interactor #:find-interactor
    #:make-prompt-function

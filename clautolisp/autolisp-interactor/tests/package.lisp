@@ -19,7 +19,7 @@
 
 ;;; --- fixtures -------------------------------------------------------------
 
-(defun run-loop-on-script (script &key interactors)
+(defun run-loop-on-script (script &key interactors floor)
   "Push INTERACTORS (outermost first), run INTERACTOR-LOOP over SCRIPT (a
 string of input lines), and return (values OUTPUT LOOP-VALUE ERRORS)."
   (let ((*interactor-stack* (reverse interactors))
@@ -28,7 +28,8 @@ string of input lines), and return (values OUTPUT LOOP-VALUE ERRORS)."
         (errors (make-string-output-stream)))
     (let ((value (with-input-from-string (input script)
                    (interactor-loop :input input :output output
-                                    :error-output errors))))
+                                    :error-output errors
+                                    :floor (or floor (length interactors))))))
       (values (get-output-stream-string output)
               value
               (get-output-stream-string errors)))))

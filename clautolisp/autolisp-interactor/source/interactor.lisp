@@ -33,6 +33,19 @@
   (evaluator     nil          :type (or null function-designator))
   (commands      nil          :type (or null dictionary))
   (user-commands nil          :type (or null dictionary))
+  ;; STATE: the mode's mutable state — the navigator's location, the editor's
+  ;; session, the debugger's stop. Dictionaries are shared singletons; a mode
+  ;; ENTERS by pushing a fresh instance (COPY-INTERACTOR of its template, or
+  ;; a maker) carrying its state, so recursive entries (a nested
+  ;; invoke-debugger) stack cleanly. A command body reaches its mode's state
+  ;; as (INTERACTOR-STATE *COMMAND-INTERACTOR*).
+  (state         nil)
+  ;; ON-RESULT: (function (result)) applied to each command's return value —
+  ;; on the interactor whose dictionary OWNED the command, wherever it was
+  ;; typed. The debugger's calls (INTERACTOR-RETURN result) on non-NIL: a
+  ;; debugger command's non-NIL value is a resume directive and ends the
+  ;; loop, even when issued from an inner navigator. NIL ignores results.
+  (on-result     nil          :type (or null function-designator))
   (documentation nil          :type (or null string)))
 
 (defun make-interactor (&rest initargs &key (name "interactor") commands user-commands
@@ -210,19 +223,32 @@ command's value (commands that resume an outer loop use INTERACTOR-RETURN)."
       (format error-output "~&Error while executing the command: ~A~%" err)
       (values))))
 
+(defvar *command-interactor* nil
+  "The interactor whose dictionary held the command being executed — bound by
+FIND-AND-RUN-COMMAND around the call, so a command body reaches its mode's
+mutable state as (INTERACTOR-STATE *COMMAND-INTERACTOR*). Note this is the
+command's OWNER, not necessarily the top of the stack: `aldo break' typed in
+the navigator runs with the debugger interactor here.")
+
 (defun find-and-run-command (input
                              &key (stack *interactor-stack*)
                                   (output *standard-output*)
                                   (error-output *error-output*) input-context)
-  "Resolve INPUT (an INPUT-COMMAND) on STACK and run it; an unknown command is
-reported on OUTPUT. Returns the command's value, or NIL."
-  (multiple-value-bind (command arguments skip)
+  "Resolve INPUT (an INPUT-COMMAND) on STACK and run it — *COMMAND-INTERACTOR*
+bound to the owning interactor — then apply that interactor's ON-RESULT to the
+command's value (which may INTERACTOR-RETURN out of the running loop). An
+unknown command is reported on OUTPUT. Returns the command's value, or NIL."
+  (multiple-value-bind (command arguments skip interactor)
       (find-interactor-command input stack)
     (if command
-        (call-command command arguments
-                      :raw (input-command-raw-arguments input skip)
-                      :output output :error-output error-output
-                      :input-context input-context)
+        (let* ((*command-interactor* interactor)
+               (result (call-command command arguments
+                                     :raw (input-command-raw-arguments input skip)
+                                     :output output :error-output error-output
+                                     :input-context input-context)))
+          (let ((on-result (and interactor (interactor-on-result interactor))))
+            (when on-result (funcall on-result result)))
+          result)
         (format output "~&? unknown command ~S~%"
                 (first (input-command-invocation input))))))
 
@@ -235,20 +261,21 @@ computation that entered the loop (continue/step in the debugger)."
 
 (defun interactor-loop (&key (input *standard-input*)
                              (output *standard-output*)
-                             (error-output *error-output*))
+                             (error-output *error-output*)
+                             (floor (length *interactor-stack*)))
   "The single interaction loop: each turn takes the top of *INTERACTOR-STACK*,
 prints its status and prompt, reads with its reader, and either runs the
 command (searched down the stack, with `NAME CMD …' routing to the named
 interactor) or hands the sexp to its evaluator. Returns at EOF, when the
-stack shrinks below its depth at entry (the interactors present at entry were
-popped), or with INTERACTOR-RETURN's value."
+stack shrinks below FLOOR interactors (default: its depth at entry — the
+caller may pass a smaller FLOOR to let inner interactors pop back to an
+outer one within the same loop), or with INTERACTOR-RETURN's value."
   (assert *interactor-stack* (*interactor-stack*)
           "The interactor stack must not be empty.")
-  (let ((input-context (make-input-context :stream input))
-        (entry-depth (length *interactor-stack*)))
+  (let ((input-context (make-input-context :stream input)))
     (catch '%interactor-loop
       (loop
-        (when (< (length *interactor-stack*) entry-depth)
+        (when (< (length *interactor-stack*) floor)
           (return))
         (let ((top (first *interactor-stack*)))
           ;; status
@@ -295,7 +322,7 @@ popped), or with INTERACTOR-RETURN's value."
 
 (defmacro define-interactor (varname &key name alias status prompt reader
                                           evaluator commands user-commands
-                                          documentation)
+                                          state on-result documentation)
   "Define VARNAME as an interactor. NAME defaults to VARNAME without its
 earmuffs; ALIAS is the optional alternate routing name."
   `(defparameter ,varname
@@ -308,6 +335,8 @@ earmuffs; ALIAS is the optional alternate routing name."
       ,@(when evaluator     `(:evaluator ,evaluator))
       ,@(when commands      `(:commands ,commands))
       ,@(when user-commands `(:user-commands ,user-commands))
+      ,@(when state         `(:state ,state))
+      ,@(when on-result     `(:on-result ,on-result))
       ,@(when documentation `(:documentation ,documentation)))
      ,@(when documentation (list documentation))))
 

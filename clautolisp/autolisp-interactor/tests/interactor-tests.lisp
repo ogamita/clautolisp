@@ -245,6 +245,58 @@ ALDO system command."
     (is (search "Cannot read a sexp or command" errors))
     (is (search "pong" output))))
 
+(test on-result-carries-directives-out-of-the-loop
+  ;; an ALDO-style interactor: a command's non-nil value is a resume
+  ;; directive; ON-RESULT carries it out of the loop with INTERACTOR-RETURN
+  (let ((aldo (make-echo-interactor :name "ALDO")))
+    (setf (interactor-on-result aldo)
+          (lambda (result) (when result (interactor-return result))))
+    (bind-command (interactor-commands aldo) '(c continue) '() "Continue."
+                  (constantly :continue))
+    (multiple-value-bind (output value)
+        (run-loop-on-script (format nil "ping~%c~%ping~%")
+                            :interactors (list aldo))
+      (is (eq :continue value))
+      (is (= 1 (count-substring "pong" output))))))   ; nothing ran after c
+
+(test on-result-belongs-to-the-owning-interactor
+  ;; a debugger command typed at an inner mode (routed or fallen through)
+  ;; still carries its directive out: the OWNER's on-result applies
+  (let ((aldo (make-echo-interactor :name "ALDO"))
+        (navi (make-echo-interactor :name "NAVI")))
+    (setf (interactor-on-result aldo)
+          (lambda (result) (when result (interactor-return result))))
+    (bind-command (interactor-commands aldo) '(c continue) '() "Continue."
+                  (constantly :continue))
+    (multiple-value-bind (output value)
+        (run-loop-on-script (format nil "aldo c~%") :interactors (list aldo navi))
+      (declare (ignore output))
+      (is (eq :continue value)))))
+
+(test command-bodies-reach-their-mode-state
+  ;; *COMMAND-INTERACTOR* is the command's owner: its body reads the mode's
+  ;; mutable state from the interactor instance
+  (let ((navi (make-interactor :name "NAVI" :state (list 0))))
+    (bind-command (interactor-commands navi) '(m more) '() "Count."
+                  (lambda ()
+                    (incf (first (interactor-state *command-interactor*)))
+                    (format t "count=~D~%" (first (interactor-state *command-interactor*)))))
+    (multiple-value-bind (output)
+        (run-loop-on-script (format nil "m~%m~%") :interactors (list navi))
+      (is (search "count=1" output))
+      (is (search "count=2" output)))))
+
+(test the-floor-lets-inner-interactors-pop-within-the-loop
+  ;; stack (INNER over OUTER) with floor 1: q pops INNER and the SAME loop
+  ;; continues at OUTER (the auto-opened navigator dropping to the debugger)
+  (let ((outer (make-echo-interactor :name "OUTER"))
+        (inner (make-echo-interactor :name "INNER")))
+    (multiple-value-bind (output)
+        (run-loop-on-script (format nil "q~%ping~%")
+                            :interactors (list outer inner) :floor 1)
+      (is (search "INNER> " output))
+      (is (search (format nil "OUTER> pong") output)))))
+
 (test comma-commands-at-a-repl-interactor
   (let ((repl (make-interactor
                :name "LISP"

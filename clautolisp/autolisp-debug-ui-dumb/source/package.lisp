@@ -10,7 +10,14 @@ UI refines.")
   (:import-from #:clautolisp.interactor
                 #:bind-command #:bind-command-alias
                 #:command-raw-argument-p #:dictionary-commands
-                #:+system-command-word+)
+                #:+system-command-word+
+                ;; the unified loop (interactor-unification.issue)
+                #:make-interactor #:interactor-state #:*command-interactor*
+                #:*interactor-stack* #:push-interactor #:pop-interactor
+                #:interactor-loop #:interactor-return
+                #:command-read #:read-line-from-input-context
+                #:input-command-p #:make-input-command
+                #:input-command-raw #:input-command-tokens #:ident)
   (:import-from #:clautolisp.source
                 #:source-position-p #:source-position-file
                 #:source-position-start-line #:source-position-start-column

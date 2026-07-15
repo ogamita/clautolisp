@@ -214,7 +214,10 @@
         (run-ui (format nil "z~%c~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "FROB") 7) context)))
-      (is (contains output "error while executing z"))
+      ;; the framework's CALL-COMMAND reports it ("Error while executing the
+      ;; command: zap exploded") and the stop keeps reading
+      (is (contains output "hile executing"))
+      (is (contains output "zap exploded"))
       (is (eql 7 result)))))                ; the stop survived; c continued
 
 (test inspector-navigation-and-path
@@ -1150,17 +1153,19 @@
   ;; The letter aliases i/k/jj/j/l/ll were retired: they shadowed debugger verbs
   ;; (i into, j jump, ll list-locals), which NAV must now reach directly through
   ;; the stacked dictionary (bug-aldo-nav-command-dictionary). Only the sedit
-  ;; spec §5 motion keys (d u > < << >> ±N q) are navigator keys.
-  (flet ((k (c) (loop for key in '(:up :down :prev :next :first :last :quit)
-                      when (clautolisp.ui.dumb::nav-key= c key) return key)))
-    (is (eq :up    (k "u")))
-    (is (eq :down  (k "d")))
-    (is (eq :prev  (k "<")))
-    (is (eq :next  (k ">")))
-    (is (eq :first (k "<<")))
-    (is (eq :last  (k ">>")))
-    (is (eq :quit  (k "q")))
-    (is (eq :quit  (k "quit")))
+  ;; spec §5 motion keys (d u > < << >> ±N q) are navigator keys — now real
+  ;; commands of the NAVI dictionary (interactor-unification).
+  (flet ((k (c) (clautolisp.debug.ui:find-command
+                 clautolisp.ui.dumb::*navi-commands* c)))
+    (is (not (null (k "u"))))
+    (is (not (null (k "d"))))
+    (is (not (null (k "<"))))
+    (is (not (null (k ">"))))
+    (is (not (null (k "<<"))))
+    (is (not (null (k ">>"))))
+    (is (not (null (k "q"))))
+    (is (not (null (k "quit"))))
+    (is (not (null (k "skip"))))                    ; ±N reads as the skip motion
     ;; the retired letter aliases are no longer navigator keys — they fall
     ;; through to the debugger dictionary
     (is (null (k "i")))  (is (null (k "j")))  (is (null (k "ll")))

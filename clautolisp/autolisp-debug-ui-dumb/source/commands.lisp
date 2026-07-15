@@ -197,9 +197,8 @@ command loop reading. Returns T when refused."
   (type-cmd ui session arg)
   nil)
 
-(define-aldo-command (v visit) "visit EXPR: inspect EXPR (the inspector sub-REPL)."
-  (inspector-loop ui session arg)
-  nil)
+(define-aldo-command (v visit) "visit EXPR: inspect EXPR (the INSPECT interactor)."
+  (inspector-loop ui session arg))
 
 ;;; --- source (§5) + structural navigation (§3) -------------------------
 
@@ -294,3 +293,178 @@ command loop reading. Returns T when refused."
 (%alias ",display" "display")
 (%alias ",undisplay" "undisplay")
 (%alias ",apropos" "apropos")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; NAVI — the form navigator's vocabulary (sedit spec §5 motions).
+;;;
+;;; These stack over the debugger's dictionary while the navigator is
+;;; entered: every non-navigator token falls through to the full debugger
+;;; vocabulary (bug-aldo-nav-command-dictionary), and the motions are
+;;; collision-free against it by design.
+
+(setf *navi-commands* (clautolisp.interactor:make-command-dictionary "navi"))
+
+(defmacro define-navi-command ((key &rest words) docstring &body body)
+  "Register a navigator command in *NAVI-COMMANDS*. BODY sees STATE (the
+NAVI-STATE), UI, SESSION, HIT, LOC and ARG (the raw argument string or NIL);
+a body that changes the view sets (NAVI-STATE-REDRAW STATE)."
+  `(bind-command *navi-commands*
+                 (list ',key ,@(mapcar (lambda (w) `',w) words))
+                 '(&whole arg) ,docstring
+                 (lambda (arg)
+                   (declare (ignorable arg))
+                   (let* ((state (%navi-state))
+                          (ui (navi-state-ui state))
+                          (session (navi-state-session state))
+                          (hit (navi-state-hit state))
+                          (loc (navi-state-loc state)))
+                     (declare (ignorable ui session hit loc))
+                     ,@body))))
+
+(defmacro define-navi-motion ((key &rest words) motion docstring)
+  "A motion command: apply MOTION (a NAVI-MOVE key) and redisplay."
+  `(define-navi-command (,key ,@words) ,docstring
+     (navi-move state ,motion)
+     (setf (navi-state-redraw state) t)
+     nil))
+
+(define-navi-motion (d down)      :down  "Descend into the selected node.")
+(define-navi-motion (u up)        :up    "Ascend — sub-form -> form -> file -> directory.")
+(define-navi-motion (|>| next)    :next  "Select the next sibling (code positions only).")
+(define-navi-motion (|<| previous) :prev "Select the previous sibling.")
+(define-navi-motion (|<<| first)  :first "Select the first sibling.")
+(define-navi-motion (|>>| last)   :last  "Select the last sibling.")
+(bind-command-alias *navi-commands* "enter" "d")
+
+(define-navi-command (skip) "skip ±N: move N siblings forward (+) or back (-)."
+  (let ((count (and arg (ignore-errors (parse-integer arg)))))
+    (if count
+        (progn (navi-move state :skip count)
+               (setf (navi-state-redraw state) t))
+        (out ui "NAV> skip needs a signed count (±N)~%")))
+  nil)
+
+(define-navi-command (b) "Set a breakpoint on the selected form; `b LOC' is the debugger's break."
+  ;; bare `b' breakpoints the selection; with an argument it is the
+  ;; debugger's break (as when it falls through the stacked dictionaries)
+  (if arg
+      (funcall (command-function (find-command *aldo-commands* "b")) arg)
+      (progn (nav-set-breakpoint ui session loc)
+             (setf (navi-state-redraw state) t)
+             nil)))
+
+(define-navi-command (q quit) "Leave the navigator."
+  (pop-interactor)
+  nil)
+
+(define-navi-command (h help) "The motions plus the stacked debugger dictionary."
+  (nav-help ui)                                 ; output only: no re-render
+  nil)
+(bind-command-alias *navi-commands* "?" "h")
+
+;; The editing words (§1.3): each opens the sedit structural editor on the
+;; selected form, performing itself as the first editing command (spec §7).
+(dolist (word +nav-editing-words+)
+  (bind-command *navi-commands* (list word) '(&whole arg)
+                (format nil "~A: open the sedit structural editor on the form." word)
+                (let ((word word))
+                  (lambda (arg)
+                    (let* ((state (%navi-state))
+                           (ui (navi-state-ui state)))
+                      (nav-edit-session ui (navi-state-session state)
+                                        (navi-state-hit state)
+                                        (navi-state-loc state) word arg)
+                      (setf (navi-state-redraw state) t)
+                      nil)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; LAVI — the flat line navigator's vocabulary (`set navigator line').
+
+(setf *lavi-commands* (clautolisp.interactor:make-command-dictionary "lavi"))
+
+(defmacro define-lavi-command ((key &rest words) docstring &body body)
+  "Register a line-navigator command in *LAVI-COMMANDS*. BODY sees STATE (the
+LAVI-STATE) and ARG."
+  `(bind-command *lavi-commands*
+                 (list ',key ,@(mapcar (lambda (w) `',w) words))
+                 '(&whole arg) ,docstring
+                 (lambda (arg)
+                   (declare (ignorable arg))
+                   (let ((state (%lavi-state)))
+                     (declare (ignorable state))
+                     ,@body))))
+
+(define-lavi-command (d down) "Next poll-point line."
+  (lavi-skip state 1) nil)
+(define-lavi-command (u up) "Previous poll-point line."
+  (lavi-skip state -1) nil)
+(define-lavi-command (|<<| first) "First poll-point line."
+  (lavi-skip state most-negative-fixnum) nil)
+(define-lavi-command (|>>| last) "Last poll-point line."
+  (lavi-skip state most-positive-fixnum) nil)
+(define-lavi-command (skip) "skip ±N: move N lines forward (+) or back (-)."
+  (let ((count (and arg (ignore-errors (parse-integer arg)))))
+    (if count
+        (lavi-skip state count)
+        (out (lavi-state-ui state) "NAV> skip needs a signed count (±N)~%")))
+  nil)
+(define-lavi-command (q quit) "Leave the line navigator."
+  (pop-interactor) nil)
+(bind-command-alias *lavi-commands* ">" "d")
+(bind-command-alias *lavi-commands* "<" "u")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; INSPECT — the inspector's vocabulary (spec §18.2).
+;;;
+;;; The §8 stacked-dispatch example: the inspector's =b= is its own =bind=,
+;;; shadowing the global =break=; every unshadowed debugger verb remains
+;;; directly reachable while inspecting.
+
+(setf *inspi-commands* (clautolisp.interactor:make-command-dictionary "inspect"))
+
+(defmacro define-inspi-command ((key &rest words) docstring &body body)
+  "Register an inspector command in *INSPI-COMMANDS*. BODY sees STATE (the
+INSPI-STATE), UI, SESSION and ARG."
+  `(bind-command *inspi-commands*
+                 (list ',key ,@(mapcar (lambda (w) `',w) words))
+                 '(&whole arg) ,docstring
+                 (lambda (arg)
+                   (declare (ignorable arg))
+                   (let* ((state (%inspi-state))
+                          (ui (inspi-state-ui state))
+                          (session (inspi-state-session state)))
+                     (declare (ignorable ui session))
+                     ,@body))))
+
+(define-inspi-command (q quit) "Leave the inspector (a blank line too)."
+  (pop-interactor)
+  nil)
+
+(define-inspi-command (u up) "Ascend to the containing value."
+  (cmd-inspector-up session)
+  nil)
+
+(define-inspi-command (p path) "Copy the path expression to the selection."
+  (print-path ui session)
+  nil)
+
+(define-inspi-command (d descend) "d N: descend into component N."
+  (if arg
+      (descend ui session arg)
+      (out ui "INSPECT> d needs a component number~%"))
+  nil)
+
+(define-inspi-command (e eval) "e FORM: evaluate FORM ($ is the selection); a bare (FORM) evaluates too."
+  (if arg
+      (inspector-eval ui session arg)
+      (out ui "INSPECT> e needs a form~%"))
+  nil)
+
+(define-inspi-command (b bind) "b $|NAME: bind the selection in the workspace."
+  (if arg
+      (inspector-bind ui session arg)
+      (out ui "INSPECT> b needs $ or a name~%"))
+  nil)

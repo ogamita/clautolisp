@@ -10,7 +10,10 @@
                 #:command-key #:command-words #:command-phrase #:command-docstring
                 #:*interactor-stack*
                 #:make-input-context #:input-context-stream
-                #:comma-command-read #:input-command-p #:find-and-run-command)
+                #:comma-command-read #:input-command-p #:find-and-run-command
+                #:copy-interactor #:interactor-prompt #:interactor-reader
+                #:interactor-evaluator
+                #:interactor-loop #:interactor-return)
   (:import-from #:clautolisp.autolisp-reader
                 #:autolisp-dialect
                 #:autolisp-dialect-name

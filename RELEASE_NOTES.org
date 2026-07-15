@@ -173,6 +173,17 @@ separate binary for tool integrators.
   code still breaks into a nested debugger stop first.
 - =r='s expression is now *mandatory* (every AutoLISP function returns
   something): a bare =r= prompts =return value?=; a blank answer cancels.
+- One loop for every interaction mode (=issues/open/interactor-unification.issue=):
+  the debugger prompt, the form navigator, the line navigator, the
+  inspector and the REPL all run on the interactor framework's single
+  INTERACTOR-LOOP, with their vocabularies as stacked command
+  dictionaries. User-visible effects: from the *line* navigator and the
+  *inspector* every unshadowed debugger command now works directly (the
+  spec §8 stacked dispatch — e.g. =c= continues from inside the
+  inspector; its =b= stays =bind=), a bare =(FORM)= evaluates in the
+  inspector too, ±N is the =skip= command everywhere, and =aldo CMD= /
+  =command CMD= routing works in every mode. Inspector arguments are
+  whitespace-separated (=d 0=, =e (+ 1 2)= — no glued =d0=).
 - =(clal-nav-function 'NAME)= at the REPL opens the navigator *without* faking
   a break, so you can browse a function and place breakpoints before it runs.
 - Setting a breakpoint twice on one poll-point is idempotent — one breakpoint,
