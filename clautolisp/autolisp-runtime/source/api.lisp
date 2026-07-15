@@ -1964,10 +1964,19 @@ flag only."
                                     (cons (or (autolisp-usubr-name function) "<lambda>")
                                           arguments))
                               *autolisp-call-stack*)))
+                   ;; BIND-USUBR-FRAME signals its wrong-number-of-arguments
+                   ;; error BEFORE pushing the frame, so it must stay OUTSIDE
+                   ;; the unwind-protect: with it inside, an unwind from that
+                   ;; error popped a frame that was never pushed — the
+                   ;; CALLER's — silently dropping the caller's bindings, so
+                   ;; after a *caught* arity error (vl-catch-all-apply, or a
+                   ;; debugger resume) the caller's variables resolved to
+                   ;; stale outer values (the infinite fact recursion,
+                   ;; error-while-debugging follow-up). Once it returns, the
+                   ;; frame provably exists and the pop pairs with it.
+                   (bind-usubr-frame function arguments context)
                    (unwind-protect
-                        (progn
-                          (bind-usubr-frame function arguments context)
-                          (autolisp-eval-progn selected-body context))
+                        (autolisp-eval-progn selected-body context)
                      (pop-dynamic-frame context)))))
               (t
                (signal-autolisp-runtime-error
