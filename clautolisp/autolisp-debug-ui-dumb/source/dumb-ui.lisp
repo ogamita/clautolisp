@@ -319,11 +319,21 @@ commands report and keep the loop reading."
   (let ((command (and (plusp (length cmd)) (lookup-command cmd dictionaries))))
     (if command
         (let ((*debugger-ui* ui) (*debugger-session* session) (*debugger-hit* hit))
-          (if (command-raw-argument-p command)
-              (funcall (command-function command) arg)
-              (apply (command-function command)
-                     (%marshal-command-args (command-lambda-list command)
-                                            (%command-tokens arg)))))
+          ;; An error escaping a command body must not unwind the stop — a
+          ;; debugging state may represent a lot of processing and is only
+          ;; dropped on an explicit q/abort (error-while-debugging.issue).
+          ;; An AutoLISP error signaled while the command evaluates user code
+          ;; still re-enters the debugger first (the session's handler-bind
+          ;; runs before this unwinds); whatever propagates lands here.
+          (handler-case
+              (if (command-raw-argument-p command)
+                  (funcall (command-function command) arg)
+                  (apply (command-function command)
+                         (%marshal-command-args (command-lambda-list command)
+                                                (%command-tokens arg))))
+            (error (e)
+              (out ui "DBG> error while executing ~A: ~A~%" cmd e)
+              nil)))
         (progn (out ui "DBG> ? unknown command ~S (h for help)~%" cmd) nil))))
 
 (defun run-command (ui session hit cmd arg)
@@ -1836,21 +1846,37 @@ the breakpoint is volatile — removed on first hit (`break once' / `bo', §2)."
                       (breakpoint-pp bp) new-p (location-label tok) kind))
                (out ui "DBG> no poll point at ~A~%" tok)))))))
 
+(defun prompt-for-command-argument (ui prompt)
+  "Prompt for a missing mandatory command argument and read one line from the
+UI's input. Returns the trimmed answer, or NIL on EOF / a blank answer — the
+command is cancelled (error-while-debugging.issue)."
+  (out ui "~A" prompt)
+  (finish-output (dumb-ui-output ui))
+  (let ((line (read-line (dumb-ui-input ui) nil :eof)))
+    (unless (eq line :eof)
+      (let ((trimmed (string-trim " 	" line)))
+        (when (plusp (length trimmed)) trimmed)))))
+
 (defun return-value-cmd (ui session hit arg)
-  "r [FORM] — continue-with-return (command reference §1 / spec §10.1): make the
-innermost instrumented form return FORM's value (nil with no FORM). Works at any
-stop that an instrumented form encloses — a breakpoint/step stop as well as an
-error stop."
+  "r FORM — continue-with-return (command reference §1 / spec §10.1): make the
+innermost instrumented form return FORM's value. Works at any stop that an
+instrumented form encloses — a breakpoint/step stop as well as an error stop.
+The expression is MANDATORY — AutoLISP has no multiple-values / no-value, so
+every function returns something (error-while-debugging.issue): a bare =r=
+prompts for the value; a blank answer cancels."
   (declare (ignore hit))
-  (handler-case
-      (let ((value (cmd-eval session (or arg "nil"))))
-        (cmd-return session value))
-    (error (e) (out ui "DBG> return error: ~A~%" e) nil)))
+  (let ((arg (or arg (prompt-for-command-argument ui "DBG> return value? "))))
+    (if (null arg)
+        (progn (out ui "DBG> r needs a return-value expression — cancelled~%") nil)
+        (handler-case
+            (let ((value (cmd-eval session arg)))
+              (cmd-return session value))
+          (error (e) (out ui "DBG> return error: ~A~%" e) nil)))))
 
 (defun help-text ()
   "The one-screen command summary (command reference §0 vocabulary)."
   (format nil "DBG> commands: (command reference §0 vocabulary)~%~
-            DBG>   c continue   i into   n next   o out   a LINE advance   j LINE|ppN jump   r [FORM] return   q quit~%~
+            DBG>   c continue   i into   n next   o out   a LINE advance   j LINE|ppN jump   r FORM return   q quit~%~
             DBG>   b LINE|LINE.K|LINE:COL|ppN break   bo break once   rbreak PATTERN   lb list breakpoints   delete [ppN] / clear~%~
             DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT~%~
             DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]   catch error|caught on|off~%~

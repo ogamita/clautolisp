@@ -163,6 +163,16 @@ separate binary for tool integrators.
   commands — how a shadowing user command calls the system one. =debugger
   CMD= remains as the historical spelling. See the command reference §8
   /Command dictionaries (stacked dispatch)/.
+- A wrong command no longer drops the debugger
+  (=issues/closed/error-while-debugging.issue=): at an *error stop*,
+  =i=/=n=/=o=/=a=/=j= refuse with the §10.1 guidance instead of silently
+  declining the stop (which let the error unwind to the toplevel handler);
+  an error escaping any command body is reported (=error while executing
+  CMD=) and the stop keeps reading — a debugging state is only dropped by
+  an explicit =q=. An AutoLISP error raised while a command evaluates user
+  code still breaks into a nested debugger stop first.
+- =r='s expression is now *mandatory* (every AutoLISP function returns
+  something): a bare =r= prompts =return value?=; a blank answer cancels.
 - =(clal-nav-function 'NAME)= at the REPL opens the navigator *without* faking
   a break, so you can browse a function and place breakpoints before it runs.
 - Setting a breakpoint twice on one poll-point is idempotent — one breakpoint,

@@ -37,23 +37,39 @@ keep the command loop reading."
 
 ;;; --- execution control (§1) -------------------------------------------
 
+(defun %refuse-at-error-stop (ui hit what)
+  "At an error stop the erroring form never completes, so there is nothing to
+step / advance / jump into: an unrecognised resume directive would silently
+DECLINE the stop and let the error unwind out of the debugger
+(error-while-debugging.issue). Print the §10.1 guidance instead and keep the
+command loop reading. Returns T when refused."
+  (when (and hit (eq (hit-when hit) :error))
+    (out ui "DBG> can't ~A from an error stop — q abort, r FORM return a value, c continue/run *error*~%"
+         what)
+    t))
+
 (define-aldo-command (c continue) "Resume execution."
   (cmd-continue session))
 
 (define-aldo-command (i into) "Step to the next poll point, entering calls."
-  (cmd-step session :into))
+  (unless (%refuse-at-error-stop ui hit "step")
+    (cmd-step session :into)))
 
 (define-aldo-command (n next) "Step to the next poll point, over calls."
-  (cmd-step session :over))
+  (unless (%refuse-at-error-stop ui hit "step")
+    (cmd-step session :over)))
 
 (define-aldo-command (o out) "Step out of the current function."
-  (cmd-step session :out))
+  (unless (%refuse-at-error-stop ui hit "step")
+    (cmd-step session :out)))
 
 (define-aldo-command (a advance) "advance LINE: run to LINE, once."
-  (advance-cmd ui session arg))
+  (unless (%refuse-at-error-stop ui hit "advance")
+    (advance-cmd ui session arg)))
 
 (define-aldo-command (j jump) "jump LINE|ppN: move the point of execution."
-  (jump-cmd ui session hit arg))
+  (unless (%refuse-at-error-stop ui hit "jump")
+    (jump-cmd ui session hit arg)))
 
 (define-aldo-command (r return) "return [FORM]: return FORM's value from the current function."
   (return-value-cmd ui session hit arg))

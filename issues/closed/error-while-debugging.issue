@@ -103,3 +103,35 @@ Good.
         clautolisp: runtime error: INVALID-NUMBER-ARGUMENT: * expects a number, got NIL.
         AutoLISP backtrace (most recent call first, 22 frames):
 
+
+* Resolution (1.4.38)
+
+1. =r= takes a *mandatory* expression (AutoLISP has no multiple values /
+   no-value — every function returns something): a bare =r= now prompts
+   =return value?= and reads it from the debugger input; a blank answer or
+   EOF cancels the command. =h= documents =r FORM=.
+
+2. The unwind in the transcript: at an *error stop*, =i=/=n=/=o= (and
+   =a=/=j=) produced a step/advance/jump directive that
+   APPLY-ERROR-DIRECTIVE does not recognise, which silently *declined* the
+   stop and let the error propagate to the toplevel handler. These commands
+   now refuse at an error stop with the §10.1 guidance (=q= abort, =r FORM=
+   return a value, =c= continue/run =*error*=) and the command loop keeps
+   reading — the debugging state is only dropped by an explicit =q=/abort.
+
+3. General error handling while debugging: the command dispatcher
+   (DISPATCH-IN-DICTIONARIES, the single choke point through which every
+   built-in / user / mode command body runs) now catches errors escaping a
+   command, reports =error while executing CMD=, and keeps the stop. An
+   AutoLISP error signaled *while a command evaluates user code* still
+   re-enters the debugger first — the session's §10 HANDLER-BIND is
+   installed around the whole turn and runs before any unwind — giving the
+   nested invoke-debugger the issue asks for; whatever the user lets
+   propagate from that nested stop is then caught at the dispatcher and the
+   outer stop survives. The clautolisp toplevel runtime-error report remains
+   as the last resort — reached only when the user explicitly declines an
+   error stop (=c= with no =*error*= set), which is its specified meaning.
+
+Tests: bare-r-prompts-for-the-return-value,
+step-at-an-error-stop-does-not-quit-the-debugger,
+a-failing-command-keeps-the-debugger-alive (dumb-ui suite, 415/415).

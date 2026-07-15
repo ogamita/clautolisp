@@ -168,6 +168,55 @@
       (declare (ignore output))
       (is (eql 42 result)))))
 
+(test bare-r-prompts-for-the-return-value
+  ;; the r expression is mandatory (AutoLISP functions always return
+  ;; something): a bare `r' prompts for the value instead of returning nil
+  ;; silently (error-while-debugging.issue).
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    (multiple-value-bind (result output)
+        (run-ui (format nil "r~%42~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "BOOM")) context)))
+      (is (contains output "return value? "))
+      (is (eql 42 result)))))
+
+(test step-at-an-error-stop-does-not-quit-the-debugger
+  ;; `i' at an error stop used to DECLINE the stop (an unrecognised error
+  ;; directive) and let the error unwind out of the debugger; now it refuses
+  ;; with the §10.1 guidance and the loop keeps reading
+  ;; (error-while-debugging.issue).
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    (multiple-value-bind (result output)
+        (run-ui (format nil "i~%q~%q~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "BOOM")) context)))
+      (is (contains output "can't step from an error stop"))
+      (is (eq :aborted result)))))          ; still in the debugger; q aborted
+
+(test a-failing-command-keeps-the-debugger-alive
+  ;; an error escaping a command body is reported and the stop keeps reading —
+  ;; a debugging state is only dropped by an explicit q/abort
+  ;; (error-while-debugging.issue).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (clautolisp.debug.ui:*global-dictionary*
+           (clautolisp.debug.ui:make-command-dictionary "test")))
+    (clautolisp.debug.ui:define-debugger-command (z zap) () "boom."
+      (error "zap exploded"))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "z~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (contains output "error while executing z"))
+      (is (eql 7 result)))))                ; the stop survived; c continued
+
 (test inspector-navigation-and-path
   (let* ((context (fresh-context))
          (metas (load-and-instrument context
