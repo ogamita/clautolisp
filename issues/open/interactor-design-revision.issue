@@ -136,6 +136,8 @@ evaluator receive (or read dynamically) the current activation's
 state. Interactors stay singleton programs (D1), recursion is safe,
 and push/pop works in the same loop (D9). [pjb to confirm]
 
+PJB => Ok to hold ACTIVATIONS on the stack.
+
 ** T2. Does the stack design retire sedit's internal NAV/EDIT modes?
 
 sedit-spec §6.6 defines sedit's own two-mode machine: NAV mode
@@ -164,6 +166,18 @@ The discussion so far leans A (the two-mode machine dissolves into the
 stack) but §6/§6.6 of the sedit spec then needs a normative amendment.
 [pjb to decide]
 
+PJB => Yes, sedit-nav disappear, it's pure sedit, only we may call the
+       debugger command with the aldo prefix. (Option A).
+
+       The NAVI interactor doesn't have mutating editing commands, so
+       it doesn't shadows the debugger commands.
+
+       NAVI is consistent with the debugger: its navigation commands
+       skip from one poll-point to the next.  SEDIT navigation commands
+       skip from one sexp to the other, inconsiderate of the debugger,
+       so it may as well shadow the debugger commands.
+       
+
 ** T3. Shared command functions need one fixed calling convention.
 
 D5's reuse of one function by several interactors' commands requires
@@ -175,6 +189,23 @@ dynamics — =*debugger-ui*= / =*debugger-session*= / =*debugger-hit*=
 and the owning activation's state (T1). The DEFINE-*-COMMAND mode
 macros remain as sugar producing such functions inline.
 
+PJB ==> Ok. So lambda-list declared in define-command is either:
+             (&whole arguments-string)
+        or:
+             (mandatory-arg1 … mandatory-argN [ &rest other-args ])
+
+        In the first case, the actual lambda-list of function is:
+             (arguments-string)
+
+        (functions lambda-lists don't have a &whole, only macro
+        lambda lists).
+
+        Also, we may provide two dynamic variables:
+        - =*command-line*= bound to the whole command line (string),
+        - =*command-arguments-text*= bound to the arguments-string &whole argument.
+        in addition to =*debugger-ui*= / =*debugger-session*= / =*debugger-hit*=.
+        
+
 ** T4. Leaving ALDO is not a pop.
 
 =q= uniformly pops a pushed mode (NAVI/LAVI/INSPECT/SEDIT). But ALDO's
@@ -185,6 +216,20 @@ asymmetry is intentional (D9) but must stay documented, or =aldo=
 lingering on a stack after its stop would be routable with a dead
 session.
 
+PJB ==> correct.
+        Let's implement the q/quit command of NAVI like this:
+
+        - print a warning that q/quit from the debugger aborts the
+          execution and reverts to the toplevel, and that there are other
+          options (continue, step, next, finish, etc).
+        - ask for confirmation y-or-n-p
+        - if confirmed, call the command aldo quit
+          else do nothing.
+
+        Also, the quit of sedit returns normally from a (clal-sedit) call.
+        But when sedit runs above the debugger, its quit command should
+        do the same as NAVI.
+        
 ** T5. Tests currently rebind =*global-dictionary*=.
 
 With D6 the variable disappears; tests that rebind it to isolate user
@@ -192,12 +237,17 @@ commands must instead swap =(interactor-user-commands *aldo*)= (or a
 with-fresh-user-dictionary helper). Mechanical, but part of the D6
 change, not separable.
 
+PJB ==> OK.
+
+
 ** T6. LAVI's name.
 
 D4 makes LAVI a peer interactor, but the name list in D7 needs it
 included (and its display name decided: "LAVI"?) so
 =clal-list-interactor-names= and =NAME CMD= routing agree. [pjb to
 confirm the name]
+
+PJB ==> Yes, LAVI for the file:line navigator.
 
 * Implementation order (after revision)
 
