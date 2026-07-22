@@ -178,6 +178,19 @@ separate binary for tool integrators.
   dispatches from =DBG>= / =NAV>= by fall-through, and =lisp CMD= /
   =autolisp CMD= route to it from any inner mode (at the REPL itself,
   invoke it as =,CMD=).
+- sedit is the =SEDIT= interactor (sedit-spec §6.6 amendment, Option A):
+  ONE dictionary — motions over *all* sub-sexps plus the editing
+  commands — under a single =SEDIT>= prompt; the internal NAV/EDIT
+  two-mode machine is gone. =(clal-sedit …)= pushes it over the REPL
+  and returns the edited object when =q= pops it; an editing word at
+  =NAV>= pushes it over the navigator and the stop. SEDIT's keys shadow
+  same-key debugger verbs (=aldo CMD= reaches them); unshadowed
+  commands fall through; =aldo c= from inside the editor resumes.
+- Quitting *at a stop* now asks: =q= at =NAV>= or =SEDIT>= above the
+  debugger warns that quitting aborts the debugged execution, lists the
+  resume alternatives, and asks =really abort? (y/n)= — =y= runs the
+  debugger's own =quit=, anything else keeps debugging
+  (interactor-design-revision.issue T4).
 - The =command= word (like bash's =command foo=) is the systematic escape to
   a shadowed built-in: =command CMD= / =aldo command CMD= skip the user
   commands — how a shadowing user command calls the system one. =debugger

@@ -547,10 +547,10 @@
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-sedit"
-  :description "sedit — S-expression structural editor core (sedit spec §6): the adorned-tree domain, the Huet zipper, the editing transitions, undo, formatting, and the session/storage model. No clautolisp dependencies (only UIOP, for file I/O), so it is reusable outside the debugger."
+  :description "sedit — S-expression structural editor core (sedit spec §6): the adorned-tree domain, the Huet zipper, the editing transitions, undo, formatting, the session/storage model, and the SEDIT interactor. No clautolisp dependencies (only UIOP for file I/O and the equally dependency-free interactor framework), so it is reusable outside the debugger."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
-  :depends-on ("uiop")
+  :depends-on ("uiop" "clautolisp/autolisp-interactor")
   :serial t
   :components
   ((:file "autolisp-sedit/source/package")
@@ -562,7 +562,8 @@
    (:file "autolisp-sedit/source/edit")
    (:file "autolisp-sedit/source/state")
    (:file "autolisp-sedit/source/session")
-   (:file "autolisp-sedit/source/modes"))
+   (:file "autolisp-sedit/source/modes")
+   (:file "autolisp-sedit/source/interactor"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-sedit/tests")))
   :perform (asdf:test-op (op system)

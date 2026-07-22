@@ -315,3 +315,28 @@ PJB ==> Yes, LAVI for the file:line navigator.
    Convention documented in the command reference §8.
 6. T2 decision, then SEDIT onto the stack (D9: =clal-sedit= pushes it),
    with the sedit-spec amendment.
+   DONE 1.4.47 (Option A): the =*SEDIT*= interactor lives in the sedit
+   system (which now depends on the equally dependency-free interactor
+   framework) — one dictionary (all-sub-sexp motions + editing commands
+   over the modes.lisp machinery), prompt =SEDIT>= always, runtime
+   couplings still injected as hooks in the activation state.
+   SEDIT-ENTER pushes it over the current stack and drives a nested
+   loop (the mid-evaluation case, like invoke-debugger); CLAL-SEDIT and
+   the NAV editing words go through it. NAVI's and SEDIT's =q= above a
+   stop warn + confirm + run =aldo quit= (T4); =(clal-sedit …)='s =q=
+   pops and the call returns the result. =aldo c= inside the editor
+   resumes: NAVI carries directives via ON-RESULT now. Spec §1.3/§6.6
+   amended; the legacy SEDIT-RUN / SEDIT-COMMAND two-mode driver
+   remains as the standalone library loop (still tested).
+
+   Open point from T4's answer: with =q= above a stop meaning
+   abort-or-nothing, the §7 install-on-return flow (edit at a stop,
+   return to NAV with the definition installed) has no trigger left —
+   installing now happens only on the normal (clal-sedit) quit, on EOF,
+   or explicitly (=u=/=<<= to the top then =e=, or =l=/=s=). Does the
+   stop-side SEDIT need an explicit =install=/=done= command that
+   installs and pops back to NAVI? [pjb to decide]
+
+   Also filed while testing: issues/open/nav-edit-span-atom-tail.issue
+   (NAV-FORM-SPAN truncates a function whose last body form is a bare
+   atom — =edit= then fails with "sedit parse: unterminated list").

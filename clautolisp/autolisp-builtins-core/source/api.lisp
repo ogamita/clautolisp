@@ -4702,22 +4702,25 @@ attached, print a note instead of silently doing nothing."
 (defun builtin-clal-sedit (&optional object)
   "Edit OBJECT with the sedit structural editor (spec §2): no argument -> a
 stand-alone form starting at nil; a symbol -> recall its recorded definition; a
-string -> a file or directory path; any other value -> edited as a sexp. Runs the
-interactive editor on the terminal and returns the edited object. Sets
+string -> a file or directory path; any other value -> edited as a sexp. Pushes
+the SEDIT interactor over the current stack (design-revision D9) and drives it
+until `q' pops it, then returns the edited object. Sets
 CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
-  (let* ((session (clautolisp.sedit:sedit-open (%clal-sedit-target object)
-                                               :recording (clautolisp.sedit:sedit-recording)))
-         (result (clautolisp.sedit:sedit-run session
-                                             :input *standard-input* :output *standard-output*
-                                             :eval-hook #'%clal-sedit-eval-hook
-                                             :eval-print-hook #'%clal-sedit-eval-print-hook
-                                             :load-hook #'%clal-sedit-load-hook
-                                             :debug-hook #'%clal-sedit-debug-hook)))
-    ;; publish the session's initial / final forms to the AutoLISP variables
-    (%clal-set-autolisp-var "*CLAL-SEDIT-INITIAL-FORM*"
-                            (%clal-node->value clautolisp.sedit:*clal-sedit-initial-form*))
-    (%clal-set-autolisp-var "*CLAL-SEDIT-LAST-RESULT*" (%clal-node->value result))
-    (%clal-node->value result)))
+  (let ((session (clautolisp.sedit:sedit-open (%clal-sedit-target object)
+                                              :recording (clautolisp.sedit:sedit-recording))))
+    (multiple-value-bind (result directive)
+        (clautolisp.sedit:sedit-enter session
+                                      :input *standard-input* :output *standard-output*
+                                      :eval-hook #'%clal-sedit-eval-hook
+                                      :eval-print-hook #'%clal-sedit-eval-print-hook
+                                      :load-hook #'%clal-sedit-load-hook
+                                      :debug-hook #'%clal-sedit-debug-hook)
+      (declare (ignore directive))
+      ;; publish the session's initial / final forms to the AutoLISP variables
+      (%clal-set-autolisp-var "*CLAL-SEDIT-INITIAL-FORM*"
+                              (%clal-node->value clautolisp.sedit:*clal-sedit-initial-form*))
+      (%clal-set-autolisp-var "*CLAL-SEDIT-LAST-RESULT*" (%clal-node->value result))
+      (%clal-node->value result))))
 
 (defun builtin-clal-clipboard-put-text (string)
   "Set the system clipboard to STRING, and record STRING in *clal-clipboard* so

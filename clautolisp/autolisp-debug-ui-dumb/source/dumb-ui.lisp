@@ -312,6 +312,10 @@ value is a resume directive, carried out of the loop.")
   :evaluator '%navi-evaluate
   :commands *navi-commands*
   :user-commands *navi-user-commands*
+  ;; a NAVI command's non-nil value is a resume directive too: the editing
+  ;; words return the directive that unwound a stacked SEDIT (`aldo c'
+  ;; issued inside the editor), which must cascade out of the stop's loop.
+  :on-result '%directive-on-result
   :documentation "The structural form navigator (sedit spec §5): motions over
 a :SEXP / :FILE / :DIR location, stacked over the debugger's vocabulary.")
 
@@ -1382,27 +1386,30 @@ file / line span is unavailable (a reconstructed form with no file)."
                      (write-string (aref lines (1- n)) s))))))))
 
 (defun nav-edit-session (ui session hit loc cmd arg)
-  "NAV -> EDIT (spec §7): open the current form's source in the sedit editor, run
-it on the debugger's terminal, and install the edited definition (evaluate it in
-the running system) on return, dropping the cached metadata so the navigator
-re-instruments. From EDIT, `debug'/`aldo' CMD reach the debugger. Stays in NAV."
+  "NAV -> SEDIT (spec §7): open the current form's source in the SEDIT
+interactor, stacked over the navigator and the debugger (design-revision T2
+Option A — one SEDIT> prompt, no internal NAV/EDIT modes), and install the
+edited definition (evaluate it in the running system) when it quits,
+dropping the cached metadata so the navigator re-instruments. SEDIT's keys
+shadow the debugger's; `aldo CMD' reaches them; a resume directive issued
+inside (`aldo c', the confirmed quit) is returned to be propagated."
   (let* ((nav (nav-loc-navigator loc))
          (text (nav-form-source-text nav)))
     (if (not text)
-        (out ui "NAV> can't edit here: no source text for this form~%")
+        (progn (out ui "NAV> can't edit here: no source text for this form~%") nil)
         (let ((sedit (clautolisp.sedit:sedit-open (clautolisp.sedit:parse-form text))))
-          (setf (clautolisp.sedit:sedit-state-mode
-                 (clautolisp.sedit:sedit-session-state sedit)) :edit)
           ;; perform the triggering editing command (unless it was bare `edit')
           (unless (string= cmd "edit")
             (clautolisp.sedit:sedit-command
              sedit (if arg (format nil "~A ~A" cmd arg) cmd)))
-          (let ((result
-                  (clautolisp.sedit:sedit-run
-                   sedit :input (dumb-ui-input ui) :output (dumb-ui-output ui)
-                         :debug-hook (lambda (line) (nav-run-debug-line ui session hit line))
-                         :eval-print-hook (lambda (node) (nav-eval-node-string session node)))))
-            (nav-install-edited-form ui session result loc))))))
+          (multiple-value-bind (result directive)
+              (clautolisp.sedit:sedit-enter
+               sedit :input (dumb-ui-input ui) :output (dumb-ui-output ui)
+                     :debug-hook (lambda (line) (nav-run-debug-line ui session hit line))
+                     :eval-print-hook (lambda (node) (nav-eval-node-string session node)))
+            (cond
+              (directive directive)
+              (t (nav-install-edited-form ui session result loc) nil)))))))
 
 (defun nav-eval-node-string (session node)
   "Evaluate a sedit NODE's form in the stopped context and return a printable

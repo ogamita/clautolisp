@@ -354,8 +354,23 @@ ARG (the raw argument string or NIL); a body that changes the view sets
              (setf (navi-state-redraw state) t)
              nil)))
 
-(define-navi-command (q quit) "Leave the navigator."
-  (pop-interactor)
+(define-navi-command (q quit)
+    "Leave the navigator; at a stop, quitting aborts the debugged execution (asks first)."
+  ;; At a stop, NAV> IS the debugger surface — leaving it means resolving
+  ;; the stop (design-revision T4): warn, confirm, and delegate to the
+  ;; debugger's own quit (whose abort directive cascades out of the loop);
+  ;; declined, do nothing. Browsing outside a stop, q just pops the mode.
+  (if (and session hit)
+      (progn
+        (out ui "NAV> q from the debugger aborts the execution and returns to the toplevel~%")
+        (out ui "NAV> (resume instead with: c continue, i into, n next, o out, a advance, r FORM return)~%")
+        (out ui "NAV> really abort? (y/n) ")
+        (let ((answer (read-line *standard-input* nil :eof)))
+          (when (and (stringp answer)
+                     (member (string-trim " " answer) '("y" "yes")
+                             :test #'string-equal))
+            (clautolisp.interactor:run-command-line "aldo quit"))))
+      (pop-interactor))
   nil)
 
 (define-navi-command (h help) "The motions plus the stacked debugger dictionary."
@@ -363,20 +378,24 @@ ARG (the raw argument string or NIL); a body that changes the view sets
   nil)
 (bind-command-alias *navi-commands* "?" "h")
 
-;; The editing words (§1.3): each opens the sedit structural editor on the
+;; The editing words (§1.3): each opens the SEDIT interactor on the
 ;; selected form, performing itself as the first editing command (spec §7).
+;; The value is a resume directive when one unwound the editor (`aldo c'
+;; inside SEDIT, the confirmed quit above the stop) — NAVI's ON-RESULT
+;; carries it out of the stop's loop.
 (dolist (word +nav-editing-words+)
   (bind-command *navi-commands* (list word) '(&whole arg)
                 (format nil "~A: open the sedit structural editor on the form." word)
                 (let ((word word))
                   (lambda (arg)
                     (let* ((state (%navi-state))
-                           (ui (navi-state-ui state)))
-                      (nav-edit-session ui (navi-state-session state)
-                                        (navi-state-hit state)
-                                        (navi-state-loc state) word arg)
+                           (ui (navi-state-ui state))
+                           (directive (nav-edit-session
+                                       ui (navi-state-session state)
+                                       (navi-state-hit state)
+                                       (navi-state-loc state) word arg)))
                       (setf (navi-state-redraw state) t)
-                      nil)))))
+                      directive)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;

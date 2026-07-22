@@ -120,12 +120,13 @@
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
     (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
     ;; the stop auto-opens the sexp navigator (navigator=sexp, the default):
-    ;; the first `q' leaves NAV for the flat DBG> loop, the second aborts.
+    ;; `q' at a stop asks for confirmation, `y' aborts (design-revision T4).
     (multiple-value-bind (result output)
-        (run-ui (format nil "q~%q~%") :context context :thread-info ti
+        (run-ui (format nil "q~%y~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "BOOM")) context)))
       (is (eq :aborted result))
+      (is (contains output "really abort?"))
       (is (contains output "Error")))))
 
 (test stop-auto-opens-sexp-navigator
@@ -136,7 +137,7 @@
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
     (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
     (multiple-value-bind (result output)
-        (run-ui (format nil "q~%q~%") :context context :thread-info ti
+        (run-ui (format nil "q~%y~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "BOOM")) context)))
       (is (eq :aborted result))
@@ -151,7 +152,7 @@
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
     (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
     (multiple-value-bind (result output)
-        (run-ui (format nil "aldo help~%q~%q~%") :context context :thread-info ti
+        (run-ui (format nil "aldo help~%q~%y~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "BOOM")) context)))
       (is (eq :aborted result))
@@ -191,7 +192,7 @@
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
     (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
     (multiple-value-bind (result output)
-        (run-ui (format nil "i~%q~%q~%") :context context :thread-info ti
+        (run-ui (format nil "i~%q~%y~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "BOOM")) context)))
       (is (contains output "can't step from an error stop"))
@@ -423,7 +424,7 @@
     (clautolisp.debug:add-breakpoint
      ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
     (multiple-value-bind (result output)
-        (run-ui (format nil "nav~%d~%>~%q~%c~%") :context context :thread-info ti
+        (run-ui (format nil "nav~%d~%>~%c~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "FROB") 7) context)))
       (is (eql 7 result))
@@ -441,7 +442,7 @@
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
     (clautolisp.debug:add-breakpoint ti frob 0 :when :before)  ; stop at entry
     (multiple-value-bind (result output)
-        (run-ui (format nil "nav~%q~%c~%") :context context :thread-info ti
+        (run-ui (format nil "nav~%c~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "FROB") 7) context)))
       (is (eql 7 result))
@@ -486,6 +487,33 @@
       (is (eql 7 result))                           ; `c' resumed after the bridge
       (is (contains output "no source text")))))    ; `edit' reached nav-edit-session
 
+(test nav-edit-enters-the-sedit-interactor
+  ;; design-revision T2 Option A: the editing words enter ONE SEDIT
+  ;; interactor (prompt SEDIT>, no internal NAV/EDIT modes) stacked over the
+  ;; navigator and the stop; its `q' above the debugger asks before aborting
+  ;; (T4), and `aldo c' from inside resumes — the directive cascades out.
+  ;; (the function's last body form is a LIST: a bare-atom tail trips the
+  ;; span bug filed as issues/open/nav-edit-span-atom-tail.issue)
+  (let* ((context (fresh-context))
+         (source (format nil "(defun id (a) a)~%(defun grob (x)~%  (id (id x)))"))
+         (metas (load-and-instrument context source "GROB" "ID"))
+         (grob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (with-open-file (out "frob.lsp" :direction :output :if-exists :supersede)
+      (write-string source out))
+    (unwind-protect
+         (progn
+           (clautolisp.debug:add-breakpoint ti grob 0 :when :before)
+           (multiple-value-bind (result output)
+               (run-ui (format nil "edit~%q~%n~%aldo c~%")
+                       :context context :thread-info ti
+                       :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                          (list (rt-sym "GROB") 7) context)))
+             (is (eql 7 result))                     ; `aldo c' resumed from SEDIT
+             (is (contains output "SEDIT> "))        ; one SEDIT interactor
+             (is (contains output "really abort?")))) ; q above a stop asks (T4)
+      (ignore-errors (delete-file "frob.lsp")))))
+
 (test dumb-ui-nav-evaluates-a-lisp-form-at-the-prompt
   ;; a (form) typed in NAV evaluates in the current frame and prints, like the REPL
   (let* ((context (fresh-context))
@@ -495,7 +523,7 @@
     (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
     (multiple-value-bind (result output)
         ;; `quote' needs no builtins in the bare test runtime
-        (run-ui (format nil "nav~%(quote 99)~%q~%c~%") :context context :thread-info ti
+        (run-ui (format nil "nav~%(quote 99)~%c~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "FROB") 7) context)))
       (is (eql 7 result))
@@ -511,7 +539,7 @@
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
     (clautolisp.debug:add-breakpoint ti lng 0 :when :before)
     (multiple-value-bind (result output)
-        (run-ui (format nil "q~%q~%") :context context :thread-info ti
+        (run-ui (format nil "q~%y~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "LNG") 7) context)))
       (declare (ignore result))
@@ -530,8 +558,8 @@
     (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
     (multiple-value-bind (result output)
         ;; the stop auto-opens NAV (renders once); `lb' outputs without
-        ;; re-rendering; the empty line forces one redisplay; `q' `c' finish
-        (run-ui (format nil "lb~%~%q~%c~%") :context context :thread-info ti
+        ;; re-rendering; the empty line forces one redisplay; `c' resumes
+        (run-ui (format nil "lb~%~%c~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "FROB") 7) context)))
       (is (eql 7 result))
@@ -577,7 +605,7 @@
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
     (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
     (multiple-value-bind (result output)
-        (run-ui (format nil "nav~%?~%q~%c~%") :context context :thread-info ti
+        (run-ui (format nil "nav~%?~%c~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "FROB") 7) context)))
       (declare (ignore result))

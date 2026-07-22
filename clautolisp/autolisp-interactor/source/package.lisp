@@ -69,6 +69,6 @@ implementations, not here.")
    #:make-prompt-function
    #:find-invocation-in-interactor #:find-invocation-in-stack
    #:find-interactor-command #:+system-command-word+
-   #:call-command #:find-and-run-command
+   #:call-command #:find-and-run-command #:run-command-line
    #:interactor-loop #:interactor-return
    #:define-interactor #:define-command #:define-user-command))

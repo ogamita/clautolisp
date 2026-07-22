@@ -108,6 +108,21 @@ Rationale: navigation and editing want *different, overlapping* single-key
 maps; rather than cram both into one dictionary, the mode owns the single
 keys, and the *word* form plus the two prefixes bridge the modes deterministically.
 
+*Amendment (interactor-design-revision.issue, clautolisp 1.4.47 — Option A).*
+The two modes are no longer an internal machine of sedit: they are *which
+interactor is on top of the stack*. NAV mode is the *NAVI* interactor (the
+debugger's form navigator: poll-point-filtered motions, stacked over the
+debugger dictionary), EDIT mode is the *SEDIT* interactor — ONE dictionary
+of motions (traversing *all* sub-sexps) plus the editing commands, prompt
+=SEDIT>= always. An editing word typed in NAVI pushes SEDIT over it; while
+SEDIT is stacked its keys (=i a r c x v z m s n …=) *shadow* the same-key
+debugger verbs — =aldo CMD= / =debug CMD= route to the debugger explicitly,
+and every *unshadowed* command still falls through the stack. There is no
+=nav= command: leaving SEDIT is =q= — which, entered from =(clal-sedit …)=,
+pops the editor and returns the §2 result; *above a debugger stop* it asks
+for confirmation and, confirmed, aborts the debugged execution (the
+debugger's own =quit=), like NAVI's =q= at a stop.
+
 *Note on the dumb terminal:* every command is a typed token + =RET= there
 (command reference §0), so "word-only" commands and the prefixes cost nothing;
 single-letter keys matter only for the ncurses / aldb keystroke UIs.
@@ -975,6 +990,16 @@ debugger commands, and =word(cmd)= its word form:
 - =load= (§5.7) is in neither =E= nor =D=: it runs in place and does *not*
   change =mode=.
 - =quit= exits =clal-sedit= (returning the §2 result) from either mode.
+
+*Amendment (interactor-design-revision.issue, clautolisp 1.4.47 — Option A).*
+The transition machine above is *superseded by the interactor stack*: the
+=mode= component drops out of =S= — NAV is the NAVI interactor, EDIT the
+SEDIT interactor, and the transitions are stack operations (an editing word
+pushes SEDIT; =q= pops it or, above a stop, resolves the stop after
+confirmation). §6.5's =evaluable= filter remains normative for NAVI's
+motions; SEDIT's motions are the bare §6.2 algebra. The legacy library
+driver (=sedit-run= / =sedit-command=) still implements this §6.6 machine
+for embedders that want a standalone editor loop.
 
 ** 6.7 Properties (invariants to test)
 

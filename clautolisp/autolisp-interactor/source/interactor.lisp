@@ -331,6 +331,18 @@ on OUTPUT. Returns the command's value, or NIL."
         (format output "~&? unknown command ~S~%"
                 (first (input-command-invocation input))))))
 
+(defun run-command-line (line &key (stack *interactor-stack*)
+                                   (output *standard-output*)
+                                   (error-output *error-output*) input-context)
+  "Parse LINE as one command invocation and FIND-AND-RUN-COMMAND it on STACK —
+how a command body delegates to another interactor's command with full
+routing and ON-RESULT semantics (e.g. NAVI's confirmed quit running `aldo
+quit', whose abort directive then cascades out of the loop)."
+  (find-and-run-command (make-input-command :raw line
+                                            :tokens (parse-command line :lenient t))
+                        :stack stack :output output :error-output error-output
+                        :input-context input-context))
+
 ;;; --- the INTERACTOR-LOOP --------------------------------------------------
 
 (defun interactor-return (&optional value)
