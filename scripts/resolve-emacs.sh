@@ -1,8 +1,12 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+# POSIX sh — the Makefiles invoke this as `$(shell sh scripts/resolve-emacs.sh)`,
+# which is dash on Debian (and the GitLab CI image): no bashisms here.
+# `pipefail` was unused (no pipes) and is what broke the doc pipeline
+# (dash: "set: Illegal option -o pipefail" -> empty $(EMACS) -> "--batch:
+# not found").
+set -eu
 
 prefer_native_windows_emacs() {
-  local candidate
   for candidate in \
     /mingw64/bin/emacs \
     /ucrt64/bin/emacs \
