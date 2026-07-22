@@ -14,11 +14,18 @@ RUN apt-get update \
       bzip2 \
       ca-certificates \
       curl \
+      emacs-nox \
       git \
+      graphviz \
       make \
       m4 \
       sbcl \
       tar \
+      texinfo \
+      texlive \
+      texlive-latex-extra \
+      texlive-plain-generic \
+      texlive-xetex \
       xz-utils \
       zip \
  && rm -rf /var/lib/apt/lists/*

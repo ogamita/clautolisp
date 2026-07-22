@@ -226,7 +226,9 @@ documentation:
     paths:
       - autolisp-spec/build/
   before_script:
-    - apt-get update && apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo graphviz
+    # doc tooling is baked into the CI image; install only what's missing
+    # (a fallback for a stale :latest right after the Dockerfile change).
+    - pkgs=""; command -v emacs >/dev/null || pkgs="$pkgs emacs-nox"; command -v xelatex >/dev/null || pkgs="$pkgs texlive texlive-latex-extra texlive-xetex texlive-plain-generic"; command -v makeinfo >/dev/null || pkgs="$pkgs texinfo"; command -v dot >/dev/null || pkgs="$pkgs graphviz"; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
     - command -v emacs makeinfo xelatex dot >/dev/null
   script:
     - make release-documentation      # build-documentation + package the share/doc tarball
@@ -321,7 +323,9 @@ release:documentation:
     GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
   before_script:
     # Emacs (autolisp-spec paged split), TeX/xelatex (PDFs), makeinfo (Info).
-    - apt-get update && apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo graphviz
+    # doc tooling is baked into the CI image; install only what's missing
+    # (a fallback for a stale :latest right after the Dockerfile change).
+    - pkgs=""; command -v emacs >/dev/null || pkgs="$pkgs emacs-nox"; command -v xelatex >/dev/null || pkgs="$pkgs texlive texlive-latex-extra texlive-xetex texlive-plain-generic"; command -v makeinfo >/dev/null || pkgs="$pkgs texinfo"; command -v dot >/dev/null || pkgs="$pkgs graphviz"; [ -z "$pkgs" ] || { apt-get update && apt-get install -y $pkgs; }
     - command -v emacs makeinfo xelatex dot >/dev/null
   script:
     - make release-documentation
