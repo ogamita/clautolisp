@@ -45,3 +45,7 @@ Acceptance
   it become visible after the shadowing frame returns.
 - `cmd-set-variable` on the innermost binding behaves like setq at the point.
 - FiveAM tests; `*version*` bumped.
+
+* Resolution (triage 2026-07-23)
+
+Shipped: autolisp-debug snapshot.lisp + stepping.lisp (into/over/out, advance, jump).
