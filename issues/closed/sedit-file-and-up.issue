@@ -80,3 +80,15 @@ SEDIT>
 Of course, after the u that selects the file name, the following u
 entered from the directory view, would move up the directory hierarchy
 (/Users/pjb/src/ in this example).
+
+* Resolution (fix-sedit-file-and-up, 1.5.5)
+
+1. The SEDIT status indents continuation lines to the 7-space margin
+   (%SEDIT-INDENT-BLOCK), so a multi-line selection keeps one left
+   margin.
+2. `u` from a FILE session's toplevel form re-roots the session on the
+   file's DIRECTORY with the file selected (never the whole file
+   contents), guarding unsaved edits like quit does; `u` from a
+   directory view climbs to the parent directory with the old
+   directory selected. Session origin follows (:dir PATH), so the
+   directory operations (n/rename/delete) work after the climb.
