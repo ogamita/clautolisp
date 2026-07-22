@@ -56,3 +56,7 @@ Acceptance
 - `function-debug-metadata` round-trips for a representative `defun` (nested
   if/while/foreach, /-locals).
 - FiveAM tests in a new `.../tests` system; `*version*` bumped.
+
+* Resolution (triage 2026-07-23)
+
+Shipped: clautolisp/autolisp-source-map (position-of, function-debug-metadata, form-id spans) with its test suite.
