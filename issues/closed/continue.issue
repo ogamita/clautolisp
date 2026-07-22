@@ -201,3 +201,7 @@ Rules:
 Report progress after each task with the file:line of what changed and the
 commit hash, and surface the open questions (plan tasks 4–5) for me to decide.
 #+end_src
+
+* Resolution (triage 2026-07-23)
+
+Obsolete handoff note: both target documents exist (clautolisp-debugger-command-reference.org, clautolisp-debugger-tui-spec.org) and aldo was implemented from them.
