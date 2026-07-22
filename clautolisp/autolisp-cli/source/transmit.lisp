@@ -248,6 +248,8 @@ See issues/open/clautolisp-mock-host-getvar.issue."
         (clautolisp.autolisp-host:host-set-derived-sysvar
          host "PROGRAM" (launch-program-name frontend-name))
         (clautolisp.autolisp-host:host-set-derived-sysvar
+         host "PRODUCT" "clautolisp")
+        (clautolisp.autolisp-host:host-set-derived-sysvar
          host "VENDORNAME" "clautolisp")
         (clautolisp.autolisp-host:host-set-derived-sysvar
          host "PLATFORM" "clautolisp")

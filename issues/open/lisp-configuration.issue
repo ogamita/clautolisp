@@ -38,3 +38,15 @@ configurations STACK like the interactors do.
   write-to-the-active-layer semantics.
 - Route the CLAL-SEDIT builtin's :on-quit thunk through the stacked
   lookup instead of the built-in default.
+
+* On hold (2026-07-23)
+
+Implementation question for pjb before this can be done right: the
+aldo-over-lisp fall-through needs "present in aldo.conf" to be
+distinguishable from "aldo built-in default" — but *ALDO-CONFIGURATION*
+is seeded from the defaults, so every common key always looks present
+on the aldo layer and the lisp layer would never be consulted at DBG>.
+Options: (a) track explicitly-set keys per layer (a set alongside the
+alist), (b) make the layers hold only EXPLICIT settings and resolve
+defaults at lookup time (defaults become a third, bottom layer).
+(b) matches the stacking model best. [pjb to confirm]
