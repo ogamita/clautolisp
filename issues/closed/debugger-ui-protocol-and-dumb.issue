@@ -45,3 +45,7 @@ Acceptance
   usable in CI and over a pipe.
 - Conformance per spec §26 MUST items satisfied.
 - FiveAM tests; `*version*` bumped.
+
+* Resolution (triage 2026-07-23)
+
+Shipped: autolisp-debug-ui protocol.lisp + the dumb terminal UI, 400+ tests; the interactor framework now drives its loops.
