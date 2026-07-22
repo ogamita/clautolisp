@@ -39,3 +39,7 @@ Acceptance
 - SLDB-parity feel for break/step/inspect from Emacs against an in-image
   session; source overlays placed from debug metadata; workspace buffer works.
 - `*version*` bumped (CL side); elisp linted/byte-compiled clean.
+
+* Resolution (triage 2026-07-23)
+
+Shipped: autolisp-debug-ui-emacs (socket UI) + emacs/aldb.el (aldb-connect, SLDB-style keymap).
