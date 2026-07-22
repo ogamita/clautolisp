@@ -112,7 +112,7 @@ test: run-smoke
 .PHONY: run-smoke
 run-smoke: $(CLAUTOLISP_SBCL)
 	@echo "[autolisp-benchmark] smoke run ($(BENCH_SMOKE_SECONDS)s/class)"
-	"$(CLAUTOLISP_SBCL)" -x '$(BENCH_SMOKE_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" --no-init -x '$(BENCH_SMOKE_SNIPPET)'
 
 # --- The standalone clautolisp executable --------------------------
 
@@ -125,35 +125,42 @@ $(CLAUTOLISP_CCL): $(CLAUTOLISP_SOURCES)
 build-clautolisp-sbcl: $(CLAUTOLISP_SBCL)
 build-clautolisp-ccl:  $(CLAUTOLISP_CCL)
 
+# Every engine invocation below (clautolisp and alfe alike) passes
+# --no-init: a scripted run must not load user rc files — they can
+# skew the measurement, and an rc error (e.g. a setvar of a sysvar
+# that a dialect makes read-only) would abort the run before the
+# suite even loads. The TRUSTEDPATHS setup the suite needs is done
+# explicitly in BENCH_SNIPPET_template instead.
+
 # The canonical run: clautolisp via SBCL, default dialect.
 run: run-clautolisp-sbcl
 
 run-clautolisp-sbcl: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" -x '$(BENCH_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" --no-init -x '$(BENCH_SNIPPET)'
 
 run-clautolisp-ccl: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" -x '$(BENCH_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" --no-init -x '$(BENCH_SNIPPET)'
 
 # Dialect variants. The benchmark uses only cross-dialect operators, so
 # the dialect should not change timings; these exist for completeness so
 # a run can be pinned to the same dialect as a CAD comparison.
 run-clautolisp-sbcl-strict: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect strict -x '$(BENCH_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" --no-init --dialect strict -x '$(BENCH_SNIPPET)'
 
 run-clautolisp-sbcl-bricscad: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect bricscad-v26 -x '$(BENCH_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" --no-init --dialect bricscad-v26 -x '$(BENCH_SNIPPET)'
 
 run-clautolisp-sbcl-autocad: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect autocad-2026 -x '$(BENCH_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" --no-init --dialect autocad-2026 -x '$(BENCH_SNIPPET)'
 
 run-clautolisp-ccl-strict: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect strict -x '$(BENCH_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" --no-init --dialect strict -x '$(BENCH_SNIPPET)'
 
 run-clautolisp-ccl-bricscad: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect bricscad-v26 -x '$(BENCH_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" --no-init --dialect bricscad-v26 -x '$(BENCH_SNIPPET)'
 
 run-clautolisp-ccl-autocad: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect autocad-2026 -x '$(BENCH_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" --no-init --dialect autocad-2026 -x '$(BENCH_SNIPPET)'
 
 # --- Real CAD via alfe ---------------------------------------------
 # Drive the benchmark inside a real BricsCAD / AutoCAD engine via alfe's
@@ -174,15 +181,15 @@ ALFE_ACTIONS      = $(ALFE_DEBUG_FLAGS) $(ALFE_SET_ROOT) $(ALFE_SET_SECONDS) $(A
 
 run-bricscad-macos:
 	@$(call require-os-darwin,$@); \
-	 "$(ALFE_SBCL)" --bricscad $(ALFE_ACTIONS)
+	 "$(ALFE_SBCL)" --no-init --bricscad $(ALFE_ACTIONS)
 
 run-bricscad-windows:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --bricscad $(ALFE_ACTIONS)
+	 "$(ALFE_SBCL)" --no-init --bricscad $(ALFE_ACTIONS)
 
 run-autocad-windows:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --autocad $(ALFE_ACTIONS)
+	 "$(ALFE_SBCL)" --no-init --autocad $(ALFE_ACTIONS)
 
 # Very large org docs can exceed TeX's default main_memory and abort with "TeX
 # capacity exceeded". A repo-local web2c/texmf.cnf raises the memory parameters;
