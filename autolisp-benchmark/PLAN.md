@@ -47,6 +47,19 @@ across implementations.
 - The clock is `(getvar "MILLISECS")` when live, else `(getvar
   "DATE")` scaled to milliseconds. See `harness/timer.lsp`.
 
+## Versioning
+
+The suite has its own version, `*autolisp-benchmark-version*` in
+`harness/version.lsp` (format MAJOR.MINOR.DEVELOP, mirroring
+`clautolisp/tools/clautolisp/source/version.lisp`). Every change to
+the benchmark sources (`harness/*.lsp`, `benchmarks/*.lsp`) bumps the
+DEVELOP counter of this version — and only this one: a benchmark
+change does not bump the clautolisp or alfe versions, and clautolisp
+or alfe work does not bump the suite. The version is printed in the
+report banner because timing numbers are only comparable across runs
+of the same suite version (a workload change changes what an
+"iteration" means).
+
 ## Current Status
 
 - Harness implemented: `timer.lsp`, `bench.lsp`, `manifest.lsp`,

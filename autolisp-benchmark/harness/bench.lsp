@@ -223,6 +223,11 @@ of result alists."
   (bench--nl)
   (bench--out "  AutoLISP benchmark suite")
   (bench--nl)
+  (bench--out (strcat "  suite version  : "
+                      (if (boundp '*autolisp-benchmark-version*)
+                          *autolisp-benchmark-version*
+                          "unknown")))
+  (bench--nl)
   (bench--out (strcat "  implementation : " (bench--impl-name)))
   (bench--nl)
   (bench--out (strcat "  platform       : " (bench--platform-name)))

@@ -36,6 +36,7 @@
 (defun autolisp-benchmark--load (relative)
   (load (strcat *autolisp-benchmark-root* relative)))
 
+(autolisp-benchmark--load "harness/version.lsp")
 (autolisp-benchmark--load "harness/timer.lsp")
 (autolisp-benchmark--load "harness/bench.lsp")
 (autolisp-benchmark--load "harness/manifest.lsp")
