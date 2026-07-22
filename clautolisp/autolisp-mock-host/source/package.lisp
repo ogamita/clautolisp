@@ -86,6 +86,8 @@
                 #:host-define-sysvar
                 #:host-undefine-sysvar
                 #:host-sysvar-names
+                #:host-registry-read #:host-registry-write
+                #:host-registry-delete #:host-registry-descendents
                 #:host-command
                 #:host-prompt
                 #:host-initget
@@ -116,6 +118,7 @@
    ;; Class hierarchy
    #:mock-host
    #:make-mock-host
+   #:*mock-registry-path*
    ;; Drawing value object (re-exported from clautolisp.drawing) +
    ;; the host's active-drawing accessor.
    #:drawing

@@ -48,6 +48,8 @@
    #:host-define-sysvar
    #:host-undefine-sysvar
    #:host-sysvar-names
+   #:host-registry-read #:host-registry-write
+   #:host-registry-delete #:host-registry-descendents
    ;; --- Command dispatch -----------------------------------------
    #:host-command
    ;; --- Interactive prompts (autolisp-spec ch.18) ---------------

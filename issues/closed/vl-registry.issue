@@ -1,0 +1,16 @@
+Implement in mock host VL-REGISTRY-WRITE VL-REGISTRY-DELETE VL-REGISTRY-READ VL-REGISTRY-DESCENDENTS.
+They're specified to work on Windows, and on MacOS (using defaults, NSDefaults).
+
+
+* Resolution (fix-vl-registry, 1.5.1)
+
+New host-protocol generics HOST-REGISTRY-READ/-WRITE/-DELETE/
+-DESCENDENTS; the mock host implements them over one persistent
+per-user store — $XDG_CONFIG_HOME/clautolisp/registry.sexp, loaded on
+first use, saved (prin1, readable strings) on every write/delete —
+emulating both the Windows registry and macOS defaults. Keys are
+case-insensitive backslash paths; nil value-name is the key's default
+value; vl-registry-descendents returns immediate SUB-KEYS by default
+and value names with the flag (the old session-hash returned value
+names in both cases and never persisted). Builtins delegate to the
+host; live CAD backends will map these to the real registry/defaults.

@@ -153,6 +153,8 @@
                 #:host-getvar
                 #:host-setvar
                 #:host-sysvar-names
+                #:host-registry-read #:host-registry-write
+                #:host-registry-delete #:host-registry-descendents
                 #:host-prompt
                 #:host-initget
                 #:host-getstring

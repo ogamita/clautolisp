@@ -164,6 +164,7 @@
    (:file "autolisp-mock-host/source/selection-api")
    (:file "autolisp-mock-host/source/table-api")
    (:file "autolisp-mock-host/source/sysvar-api")
+   (:file "autolisp-mock-host/source/registry-api")
    (:file "autolisp-mock-host/source/bricscad-sysvar-overrides")
    (:file "autolisp-mock-host/source/prompt-api")
    (:file "autolisp-mock-host/source/com-progids")

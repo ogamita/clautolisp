@@ -7851,13 +7851,6 @@ name strings."
 
 ;;; ---- Session-state M5 (record-only registry / cfg) ----
 
-(defparameter *vl-registry* (make-hash-table :test 'equal)
-  "In-memory session-table backing VL-REGISTRY-* calls. Keyed by
-the full registry path (a string); values are autolisp-strings.
-Survives only for the running process — see
-deferred-stubbed-functions.issue § VL-REGISTRY-* for the
-JSON-backed persistent upgrade path.")
-
 (defparameter *acad-cfg* (make-hash-table :test 'equal)
   "In-memory session-table backing GETCFG / SETCFG. Keyed by the
 full ACAD-style path string; values are autolisp-strings.
@@ -7866,63 +7859,51 @@ deferred-stubbed-functions.issue § GETCFG/SETCFG for the file-
 backed persistent upgrade path.")
 
 (defun builtin-vl-registry-read (key &optional value-name)
-  ;; (vl-registry-read key [valuename]) — read a Windows-registry
-  ;; key. clautolisp keeps a per-session hash backing; the
-  ;; "[valuename]" sub-key is concatenated to the path for our
-  ;; lookup, mirroring how VL-REGISTRY-WRITE encodes it.
+  "(vl-registry-read reg-key [val-name]) — read the string stored at
+VAL-NAME (the key's default value when omitted) under REG-KEY, or nil.
+Delegates to the host (vl-registry.issue): the mock host emulates the
+Windows registry / macOS defaults with a persistent per-user store."
   (let* ((k (autolisp-string-value (require-string key "VL-REGISTRY-READ")))
          (v (and value-name
                  (autolisp-string-value
                   (require-string value-name "VL-REGISTRY-READ"))))
-         (full (if v (format nil "~A|~A" k v) k))
-         (stored (gethash full *vl-registry*)))
-    (or stored nil)))
+         (stored (host-registry-read (current-evaluation-host) k v)))
+    (and stored (make-autolisp-string stored))))
 
-(defun builtin-vl-registry-write (key value-name value)
-  ;; (vl-registry-write key valuename value) — write to the
-  ;; registry. Stored in *vl-registry*; returns VALUE on success.
+(defun builtin-vl-registry-write (key &optional value-name value)
+  "(vl-registry-write reg-key [val-name val-data]) — store VAL-DATA (a
+string) at VAL-NAME under REG-KEY (nil VAL-NAME = the key's default
+value; creates the key). Returns the stored value, nil on failure."
   (let* ((k (autolisp-string-value (require-string key "VL-REGISTRY-WRITE")))
-         (v (autolisp-string-value (require-string value-name "VL-REGISTRY-WRITE")))
-         (data (require-string value "VL-REGISTRY-WRITE"))
-         (full (format nil "~A|~A" k v)))
-    (setf (gethash full *vl-registry*) data)
-    data))
+         (v (and value-name
+                 (autolisp-string-value
+                  (require-string value-name "VL-REGISTRY-WRITE"))))
+         (data (if value
+                   (autolisp-string-value (require-string value "VL-REGISTRY-WRITE"))
+                   "")))                ; key-only write: create with an empty default
+    (make-autolisp-string
+     (host-registry-write (current-evaluation-host) k v data))))
 
 (defun builtin-vl-registry-delete (key &optional value-name)
-  ;; (vl-registry-delete key [valuename]) — delete a key or value.
-  ;; Returns T on success, NIL when the key wasn't present.
+  "(vl-registry-delete reg-key [val-name]) — delete the VAL-NAME value
+under REG-KEY, or the whole key (and its values) when VAL-NAME is
+omitted. Returns T when something was deleted, nil otherwise."
   (let* ((k (autolisp-string-value (require-string key "VL-REGISTRY-DELETE")))
          (v (and value-name
                  (autolisp-string-value
-                  (require-string value-name "VL-REGISTRY-DELETE"))))
-         (full (if v (format nil "~A|~A" k v) k)))
-    (cond
-      ((gethash full *vl-registry*)
-       (remhash full *vl-registry*)
-       (autolisp-true))
-      (t nil))))
+                  (require-string value-name "VL-REGISTRY-DELETE")))))
+    (if (host-registry-delete (current-evaluation-host) k v)
+        (autolisp-true)
+        nil)))
 
 (defun builtin-vl-registry-descendents (key &optional value-names-p)
-  ;; (vl-registry-descendents key [valuenames]) — list immediate
-  ;; sub-keys (or value-names) at KEY. We do a prefix scan over
-  ;; the in-memory table.
+  "(vl-registry-descendents reg-key [val-names]) — the immediate sub-key
+names of REG-KEY, or — with a non-nil VAL-NAMES — the value names stored
+under it. A list of strings, nil when the key is absent or empty."
   (let* ((k (autolisp-string-value (require-string key "VL-REGISTRY-DESCENDENTS")))
-         (prefix (concatenate 'string k "|"))
-         (results '()))
-    (maphash (lambda (full _)
-               (declare (ignore _))
-               (when (and (>= (length full) (length prefix))
-                          (string= prefix full :end2 (length prefix)))
-                 (push (subseq full (length prefix)) results)))
-             *vl-registry*)
-    (cond
-      ((null results) nil)
-      (t (mapcar #'make-autolisp-string
-                 (if value-names-p
-                     (sort (remove-duplicates results :test #'string=)
-                           #'string<)
-                     (sort (remove-duplicates results :test #'string=)
-                           #'string<)))))))
+         (names (host-registry-descendents (current-evaluation-host) k
+                                           (and value-names-p t))))
+    (mapcar #'make-autolisp-string names)))
 
 (defun builtin-getcfg (path)
   ;; (getcfg path) — read a value from the AppData section.
