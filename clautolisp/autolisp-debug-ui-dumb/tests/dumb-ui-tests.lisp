@@ -487,6 +487,31 @@
       (is (eql 7 result))                           ; `c' resumed after the bridge
       (is (contains output "no source text")))))    ; `edit' reached nav-edit-session
 
+(test nav-edit-spans-a-bare-atom-tail
+  ;; nav-edit-span-atom-tail.issue: FROB's last body form is the bare atom
+  ;; `z' (interned symbols carry no per-occurrence position), so the span
+  ;; used to stop at line 3 and `edit' fed sedit "(defun frob (x / z)\n
+  ;; (setq z (id x))" — an unterminated list. The paren-balancing end scan
+  ;; now recovers the true extent; `edit' must reach SEDIT>.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (with-open-file (out "frob.lsp" :direction :output :if-exists :supersede)
+      (write-string +frob-source+ out))
+    (unwind-protect
+         (progn
+           (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+           (multiple-value-bind (result output)
+               (run-ui (format nil "edit~%aldo c~%")
+                       :context context :thread-info ti
+                       :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                          (list (rt-sym "FROB") 7) context)))
+             (is (eql 7 result))
+             (is (contains output "SEDIT> "))
+             (is (not (contains output "unterminated")))))
+      (ignore-errors (delete-file "frob.lsp")))))
+
 (test nav-edit-enters-the-sedit-interactor
   ;; design-revision T2 Option A: the editing words enter ONE SEDIT
   ;; interactor (prompt SEDIT>, no internal NAV/EDIT modes) stacked over the
