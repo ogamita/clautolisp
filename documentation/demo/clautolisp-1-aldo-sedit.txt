@@ -1,0 +1,208 @@
+DBG> clautolisp debugger attached (h for help)
+clautolisp 1.4.48 — REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+_$ (load "~/src/public/autolisp/fact.lsp")
+FACT
+_$ (fact 3)
+
+DBG> Error at FACT line 4 col 7 — Division by zero in /.
+DBG>   X = 1
+DBG>   <stack: FACT ← FACT ← FACT ← <toplevel> ← top>
+DBG>   (q abort, r <form> return a value, c continue/run *error*)
+     1:   (defun fact (x)
+     2:     (if (= 1 x)
+     3:         ;; base value
+ >>  4:       【⏵(/ 0)】
+     5:         ;; else
+     6:         (* x (fact (- x 1)))))
+NAV> ?
+NAV> motion: d down  u up  > < siblings  << >> ends  ±N skip  b break (selection)  q leave
+NAV> edit (or insert/add/replace/wrap/…): open the sedit structural editor
+NAV> all debugger commands are also available directly (aldo/debug CMD forces the debugger's):
+DBG> commands: (command reference §0 vocabulary)
+DBG>   c continue   i into   n next   o out   a LINE advance   j LINE|ppN jump   r FORM return   q quit
+DBG>   b LINE|LINE.K|LINE:COL|ppN break   bo break once   rbreak PATTERN   lb list breakpoints   delete [ppN] / clear
+DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT
+DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]   catch error|caught on|off
+DBG>   watch VAR [FORM]   unwatch [VAR]   lw list watches
+DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom
+DBG>   ll/lp/lv list locals/parameters/variables   list polls
+DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source
+DBG>   nav (structural navigation: d u > < << >> ±N q)
+DBG>   g/goto NAME   . /definition NAME   back   history   restore N   search PATTERN
+DBG>   set NAME VALUE   ,settings [NAME|save|reload]
+DBG>   display FORM   undisplay [N]
+DBG>   (form...) evaluate in the current frame   h/? help   apropos WORD
+NAV> 
+     1:   (defun fact (x)
+     2:     (if (= 1 x)
+     3:         ;; base value
+ >>  4:       【⏵(/ 0)】
+     5:         ;; else
+     6:         (* x (fact (- x 1)))))
+NAV> p x 
+DBG> 1
+NAV> (print x)
+
+1 NAV> 1
+NAV> ,settings
+  navigator = sexp
+  directory-listing = off
+  directory-window = off
+  navigation-history-max = 1000
+  sedit-on-quit = off
+  break-on-caught = off
+  source-window-height = 24
+  value-line-width = 72
+  pager = on
+  pager-height = 24
+  theme = unicode
+  default-user-interface = tui
+  default-aldb-listening-address = 127.0.0.1
+  default-aldb-listening-port = 4301
+NAV> set sedit-on-quit save
+DBG> set error: value "save" is not one of auto-save | do-not-save | ask
+NAV> set sedit-on-quit auto-save
+DBG> sedit-on-quit = auto-save
+NAV> aldo save
+
+? unknown command "aldo"
+NAV> settings save
+DBG> saved /Users/pjb/.config/clautolisp/aldo.conf
+NAV> h
+NAV> motion: d down  u up  > < siblings  << >> ends  ±N skip  b break (selection)  q leave
+NAV> edit (or insert/add/replace/wrap/…): open the sedit structural editor
+NAV> all debugger commands are also available directly (aldo/debug CMD forces the debugger's):
+DBG> commands: (command reference §0 vocabulary)
+DBG>   c continue   i into   n next   o out   a LINE advance   j LINE|ppN jump   r FORM return   q quit
+DBG>   b LINE|LINE.K|LINE:COL|ppN break   bo break once   rbreak PATTERN   lb list breakpoints   delete [ppN] / clear
+DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT
+DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]   catch error|caught on|off
+DBG>   watch VAR [FORM]   unwatch [VAR]   lw list watches
+DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom
+DBG>   ll/lp/lv list locals/parameters/variables   list polls
+DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source
+DBG>   nav (structural navigation: d u > < << >> ±N q)
+DBG>   g/goto NAME   . /definition NAME   back   history   restore N   search PATTERN
+DBG>   set NAME VALUE   ,settings [NAME|save|reload]
+DBG>   display FORM   undisplay [N]
+DBG>   (form...) evaluate in the current frame   h/? help   apropos WORD
+NAV> u
+     1:   (defun fact (x)
+ >>  2:    【(if (= 1 x)
+     3:         ;; base value
+     4:        ⏵(/ 0)
+     5:         ;; else
+     6:         (* x (fact (- x 1))))】)
+NAV> d
+     1:   (defun fact (x)
+ >>  2:     (if【(= 1 x)】
+     3:         ;; base value
+     4:        ⏵(/ 0)
+     5:         ;; else
+     6:         (* x (fact (- x 1)))))
+NAV> r
+DBG> return value? 1
+6
+_$ (fact 6)
+
+DBG> Error at FACT line 4 col 7 — Division by zero in /.
+DBG>   X = 1
+DBG>   <stack: FACT ← FACT ← FACT ← FACT ← FACT ← FACT ← <toplevel> ← top>
+DBG>   (q abort, r <form> return a value, c continue/run *error*)
+     1:   (defun fact (x)
+     2:     (if (= 1 x)
+     3:         ;; base value
+ >>  4:       【⏵(/ 0)】
+     5:         ;; else
+     6:         (* x (fact (- x 1)))))
+NAV> edit
+
+       [(defun fact (x)
+  (if (= 1 x)
+      ;; base value
+      (/ 0)
+      ;; else
+      (* x (fact (- x 1)))))]
+SEDIT> d
+
+       ([defun] fact (x)
+  (if (= 1 x)
+      ;; base value
+      (/ 0)
+      ;; else
+      (* x (fact (- x 1)))))
+SEDIT> +3
+
+       (defun fact (x)
+  [(if (= 1 x)
+      ;; base value
+      (/ 0)
+      ;; else
+      (* x (fact (- x 1))))])
+SEDIT> d
+
+       (defun fact (x)
+  ([if] (= 1 x)
+    ;; base value
+    (/ 0)
+    ;; else
+    (* x (fact (- x 1)))))
+SEDIT> +2
+
+       (defun fact (x)
+  (if (= 1 x)
+    [;; base value]
+    (/ 0)
+    ;; else
+    (* x (fact (- x 1)))))
+SEDIT> >
+
+       (defun fact (x)
+  (if (= 1 x)
+    ;; base value
+    [(/ 0)]
+    ;; else
+    (* x (fact (- x 1)))))
+SEDIT> r 1
+
+       (defun fact (x)
+  (if (= 1 x)
+    ;; base value
+    [1]
+    ;; else
+    (* x (fact (- x 1)))))
+SEDIT> save
+
+       (defun fact (x)
+  (if (= 1 x)
+    ;; base value
+    [1]
+    ;; else
+    (* x (fact (- x 1)))))
+SEDIT> q
+NAV> installed the edited definition
+SEDIT> q from the debugger aborts the execution and returns to the toplevel
+SEDIT> (resume instead with: c continue, i into, n next, o out, a advance, r FORM return)
+SEDIT> really abort? (y/n) n
+
+       (defun fact (x)
+  (if (= 1 x)
+    ;; base value
+    [1]
+    ;; else
+    (* x (fact (- x 1)))))
+SEDIT> r 1
+
+       (defun fact (x)
+  (if (= 1 x)
+    ;; base value
+    [1]
+    ;; else
+    (* x (fact (- x 1)))))
+SEDIT> aldo r 1
+720
+_$ (fact 6)
+720
+_$ (fact 10)
+3628800
+_$ 
