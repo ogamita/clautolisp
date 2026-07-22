@@ -59,3 +59,9 @@ The new CAD probe harness (probes/, make probe). This is the first
 parity finding the baseline column surfaced; the AutoCAD / BricsCAD
 PRODUCT columns (run make probe on those hosts) will confirm the
 correct per-dialect value.
+
+* Resolution (fix-clautolisp-host-product, 1.5.6)
+
+APPLY-CLAUTOLISP-HOST-IDENTITY now stamps PRODUCT = "clautolisp"
+alongside PROGRAM / VENDORNAME / PLATFORM / ACADVER. Verified live:
+(getvar "PRODUCT") -> "clautolisp".
