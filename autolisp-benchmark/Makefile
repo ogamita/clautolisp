@@ -59,11 +59,15 @@ BENCH_SMOKE_SECONDS ?= 0.2
 
 # Inline AutoLISP snippet a standalone clautolisp executable evaluates
 # to run the whole suite. Sets the suite root and the per-class budget,
-# loads run.lsp, then invokes (autolisp-benchmark-run-all). Detection of
-# the implementation is automatic via (ver), so nothing else is needed.
+# trusts the suite tree (TRUSTEDPATHS, recursively via "/...") so the
+# loads don't trip the SECURELOAD gate — vl-catch-all-apply because the
+# sysvar is read-only under the bricscad dialect — then loads run.lsp
+# and invokes (autolisp-benchmark-run-all). Detection of the
+# implementation is automatic via (ver), so nothing else is needed.
 define BENCH_SNIPPET_template
   (setq *autolisp-benchmark-root* "$(ROOT_DIR)/") \
   (setq *bench-seconds* $(1)) \
+  (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-benchmark-root* "..."))) \
   (load (strcat *autolisp-benchmark-root* "harness/run.lsp")) \
   (autolisp-benchmark-run-all)
 endef
