@@ -36,3 +36,24 @@ vl-registry must be implemented in different ways on the 3 different target plat
 
   vl-registry can be implemented using $XDG_CONFIG_HOME/clautolisp/registry.sexp
   as described above.
+
+* Status (fix-vl-registry-platforms, 1.5.7)
+
+Platform backends implemented, feature-gated in
+autolisp-mock-host/source/registry-api.lisp:
+
+- windows: the real Windows registry through reg.exe (query/add/delete,
+  /v NAME, /ve for the default value; sub-keys vs value names parsed
+  from reg query). NOTE: the "win32" quicklisp library named in the
+  re-open is NOT in the quicklisp dist (only cl-win32-errors); reg.exe
+  is the stable documented interface present on every Windows — point
+  at the exact FFI system and it can be swapped in.
+- darwin: the macOS defaults database (NSUserDefaults) through
+  /usr/bin/defaults, domain org.clautolisp.vl-registry, flat keys
+  "REGPATH|VALUENAME" (BricsCAD-style plist mapping); enumeration via
+  defaults export XML.
+- unix (not darwin): the persistent sexp store (unchanged, tested).
+
+REMAINS: verify on the Windows PC and on thalassa (macOS) — the linux
+CI cannot exercise these paths. Issue stays open for that
+verification (and the FFI-library decision).
