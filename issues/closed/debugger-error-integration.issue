@@ -45,3 +45,7 @@ Acceptance
 - A vl-catch-all-apply frame appears in the snapshot's catch-stack; break-on-
   caught fires when enabled.
 - FiveAM tests; `*version*` bumped.
+
+* Resolution (triage 2026-07-23)
+
+Shipped: error.lisp/session.lisp — :continue-with-return, break-on-caught, the catch stack, §10 handler integration; hardened further by error-while-debugging.issue (closed).
