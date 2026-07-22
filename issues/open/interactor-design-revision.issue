@@ -337,6 +337,32 @@ PJB ==> Yes, LAVI for the file:line navigator.
    stop-side SEDIT need an explicit =install=/=done= command that
    installs and pops back to NAVI? [pjb to decide]
 
+PJB ==> This requires more reflection, indeed. So we'll leave at it is
+        for now. (fork an issue to revise it later: interactor-state-diagram-revision.issue).
+
+        One point we can resolve immediately, about sedit. Both when called
+        from lisp and from debug or navi: when quitting sedit, if there
+        have been modification to the sexp, and depending on two settings,
+        one for lisp sedit invocations, and one for debug sedit invocations,
+        quit must ask confirmation, to save, not save, or cancel quit.
+            set sedit-on-quit auto-save|do-not-save|ask
+        We'd also need a set of settings (configuration) for lisp.
+        The first setting on lisp.conf would be the same:
+            set sedit-on-quit auto-save|do-not-save|ask
+        And configuration can be stacked too. Ie. in lisp interactor,
+        we only have the lisp.conf active, but in the debugger, we
+        have both aldo.conf and lisp.conf stacked and active, and if
+        a configuration is not present in aldo.conf, but it is present
+        in lisp.conf then it's taken from lisp.conf (for common settings).
+        aldo settings are still written in aldo conf, and lisp settings in
+        lisp conf even when stacked. But during aldo interactor, setting
+        sedit-on-quit only modifies aldo configuration, not lisp (it shadows
+        it even if it wasn't already present in the aldo configuration).
+
+        With this behavior for sedit quit, we can leave the rest as it
+        is for now, and I'll refine the stated diagram we want between
+        all the interactors later.
+        
    Also filed while testing: issues/open/nav-edit-span-atom-tail.issue
    (NAV-FORM-SPAN truncates a function whose last body form is a bare
    atom — =edit= then fails with "sedit parse: unterminated list").
