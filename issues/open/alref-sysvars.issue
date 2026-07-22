@@ -1,3 +1,0 @@
-Inclure dans les résultats de ALREF-APROPOS et ALREF-APROPOS-LIST les
-sysvars, avec une indication "sysvar" dans la sortie de ALREF-APROPOS,
-et comme pour "variable", la valeur de la sysvar.

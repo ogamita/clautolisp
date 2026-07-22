@@ -16,6 +16,7 @@
 ;;;;   (alref-apropos "pattern")       -- print one symbol per line
 ;;;;                                      with its current live state:
 ;;;;                                        NAME<TAB>Function
+;;;;                                        NAME<TAB>Sysvar<TAB>VALUE
 ;;;;                                        NAME<TAB>Variable<TAB>VALUE
 ;;;;                                        NAME<TAB>Variable<TAB>NIL
 ;;;;                                      (matching the user-spec
@@ -222,6 +223,20 @@ runtime symbol table changes with each defun / setq)."
     (if s (setq acc (cons (strcase s) acc))))
   (reverse acc))
 
+(defun alref-sysvar-names-matching (pattern / acc name)
+  "Return the uppercased names of the host's system variables whose
+name contains PATTERN (case-insensitive substring), or nil when the
+host cannot enumerate them. Uses the clautolisp extension
+CLAL-SYSVAR-APROPOS when present (probed with boundp, the CLAL-
+convention — autolisp-spec ch.16); AutoCAD / BricsCAD expose no
+sysvar enumeration, so there the sysvar pass contributes nothing
+(issues/open/alref-sysvars.issue)."
+  (setq acc nil)
+  (if (boundp 'clal-sysvar-apropos)
+    (foreach name (clal-sysvar-apropos pattern)
+      (setq acc (cons (strcase name) acc))))
+  (reverse acc))
+
 (defun alref-spec-symbol-p (uppercased-name / )
   "T iff UPPERCASED-NAME is present in the documented spec catalog
 (`pages/symbols.txt')."
@@ -231,8 +246,10 @@ runtime symbol table changes with each defun / setq)."
 
 (defun alref-apropos-list (pattern / matches entry name)
   "Return the list of symbol names matching PATTERN (case-insensitive
-substring), drawing from BOTH the documented spec catalog AND the
-live AutoLISP image's bound symbols (`(atoms-family 1)'). Spec
+substring), drawing from the documented spec catalog AND the live
+AutoLISP image's bound symbols (`(atoms-family 1)') AND the host's
+system variables (when the host can enumerate them —
+alref-sysvar-names-matching). Spec
 matches are listed first, in the order pages/symbols.txt emitted
 them (chapter-major, walking order within each chapter). Runtime-
 only matches follow in atoms-family order, with the union
@@ -253,6 +270,11 @@ NIL or define it to make it findable."
   (foreach name (alref-runtime-symbol-names)
     (if (and (alref-string-contains-p pattern name)
              (not (member name matches)))
+      (setq matches (cons name matches))))
+  ;; Pass 3: system variables not already in matches (already
+  ;; pattern-filtered by alref-sysvar-names-matching).
+  (foreach name (alref-sysvar-names-matching pattern)
+    (if (not (member name matches))
       (setq matches (cons name matches))))
   (reverse matches))
 
@@ -277,11 +299,14 @@ portable across AutoCAD / BricsCAD / clautolisp."
       (= kind 'EXSUBR)
       (= kind 'EXTSUBR)))
 
-(defun alref-apropos (pattern / matches name sym)
+(defun alref-apropos (pattern / matches sysvars name sym)
   "Print every symbol matching PATTERN with its current live
 state in the AutoLISP runtime:
 
     NAME<TAB>Function                — bound to a callable.
+    NAME<TAB>Sysvar<TAB>VALUE        — a host system variable and its
+                                       (getvar) value; a name bound to
+                                       a callable stays Function.
     NAME<TAB>Variable<TAB>VALUE      — bound to a non-callable value.
     NAME<TAB>Variable<TAB>NIL        — symbol present but unbound.
 
@@ -298,11 +323,17 @@ functions makes them show up as Function on the next call.
 
 Returns the count of matches printed."
   (setq matches (alref-apropos-list pattern))
+  (setq sysvars (alref-sysvar-names-matching pattern))
   (foreach name matches
     (setq sym (read name))
     (princ name)
     (princ "\t")
     (cond
+      ((and (boundp sym) (alref-function-value-p (eval sym)))
+       (princ "Function"))
+      ((member (strcase name) sysvars)
+       (princ "Sysvar\t")
+       (prin1 (getvar name)))
       ((not (boundp sym))
        ;; AutoLISP conflates unbound with bound-to-nil in much of its
        ;; surface (READ of an unbound symbol returns nil, etc.); we
@@ -310,8 +341,6 @@ Returns the count of matches printed."
        ;; a separate `Unbound' kind because the user-facing distinction
        ;; is "no value" — same display either way.
        (princ "Variable\tNIL"))
-      ((alref-function-value-p (eval sym))
-       (princ "Function"))
       (t
        (princ "Variable\t")
        (prin1 (eval sym))))

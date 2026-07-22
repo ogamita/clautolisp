@@ -1,0 +1,14 @@
+Inclure dans les résultats de ALREF-APROPOS et ALREF-APROPOS-LIST les
+sysvars, avec une indication "sysvar" dans la sortie de ALREF-APROPOS,
+et comme pour "variable", la valeur de la sysvar.
+
+* Resolution (fix-alref-sysvars)
+
+ALREF-APROPOS-LIST gains a third pass: the host's system variables
+matching the pattern, enumerated through the clautolisp extension
+CLAL-SYSVAR-APROPOS (probed with boundp per the CLAL- convention;
+AutoCAD/BricsCAD cannot enumerate sysvars, so the pass contributes
+nothing there and alref stays portable). ALREF-APROPOS classifies a
+sysvar name as `NAME<TAB>Sysvar<TAB>VALUE` with the live (getvar)
+value — a name bound to a callable stays Function. Verified live:
+ANGBASE -> Sysvar 0.0, LUNITS -> Sysvar 2, user setq stays Variable.
