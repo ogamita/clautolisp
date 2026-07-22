@@ -20,6 +20,7 @@ UI refines.")
                 #:interactor-status #:interactor-on-result
                 #:make-activation #:activation-state #:find-activation
                 #:*command-interactor* #:*command-activation*
+                #:*command-line* #:*command-arguments-text*
                 #:*interactor-stack* #:push-interactor #:pop-interactor
                 #:interactor-loop #:interactor-return
                 #:command-read #:read-line-from-input-context

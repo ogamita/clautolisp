@@ -335,6 +335,41 @@ ALDO system command."
       ;; without the comma, `help' is a sexp (a variable), not a command
       (is (search "= HELP" output)))))
 
+(defun %shared-test-command (arg)
+  "A named command function shared by several interactors' commands (D5):
+reports its owner and the raw argument."
+  (format t "shared:~A:~A~%" (interactor-name *command-interactor*) arg)
+  nil)
+
+(test define-command-registers-a-shared-named-function
+  ;; the :function form of DEFINE-COMMAND: two interactors attach commands
+  ;; to the SAME named function; *COMMAND-INTERACTOR* tells them apart
+  (let ((navi (make-echo-interactor :name "NAVI"))
+        (sedit (make-echo-interactor :name "SEDIT")))
+    (define-command (navi m mark) (&whole arg)
+        "Mark." :function '%shared-test-command)
+    (define-command (sedit m mark) (&whole arg)
+        "Mark." :function '%shared-test-command)
+    (multiple-value-bind (output)
+        (run-loop-on-script (format nil "m here~%sedit m there~%")
+                            :interactors (list sedit navi))
+      (is (search "shared:NAVI:here" output))
+      (is (search "shared:SEDIT:there" output)))))
+
+(test command-line-and-arguments-text-are-bound
+  ;; the T3 calling convention: any command function reaches the verbatim
+  ;; input through *COMMAND-LINE* / *COMMAND-ARGUMENTS-TEXT*
+  (let ((navi (make-echo-interactor :name "NAVI")))
+    (bind-command (interactor-commands navi) '(z zap) '(count &rest more) "Zap."
+                  (lambda (count &rest more)
+                    (declare (ignore count more))
+                    (format t "line=[~A] args=[~A]~%"
+                            *command-line* *command-arguments-text*)))
+    (multiple-value-bind (output)
+        (run-loop-on-script (format nil "zap 3 (> x 2)~%")
+                            :interactors (list navi))
+      (is (search "line=[zap 3 (> x 2)] args=[3 (> x 2)]" output)))))
+
 (test the-status-renders-before-each-prompt
   (let ((interactor (make-echo-interactor :name "NAVI")))
     (setf (interactor-status interactor)

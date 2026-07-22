@@ -59,6 +59,7 @@ implementations, not here.")
    #:activation #:make-activation #:activation-p
    #:activation-interactor #:activation-state
    #:*command-interactor* #:*command-activation*
+   #:*command-line* #:*command-arguments-text*
    #:*interactor-stack*
    #:push-interactor #:pop-interactor
    #:find-interactor #:find-activation

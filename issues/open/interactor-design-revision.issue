@@ -303,5 +303,15 @@ PJB ==> Yes, LAVI for the file:line navigator.
    no ALDO is active.
 5. D5/T3: =:function= registration sugar + the documented calling
    convention.
+   DONE 1.4.46: DEFINE-COMMAND / DEFINE-USER-COMMAND accept a body of
+   =:function FORM= to register a named function shared across
+   interactors; the declared lambda-list is =(&whole ARGUMENTS-STRING)=
+   (function lambda-list =(ARGUMENTS-STRING)= — no &whole in function
+   lambda-lists) or positional =(REQ… [&rest MORE])=. New dynamics
+   =*COMMAND-LINE*= (the whole input line) and
+   =*COMMAND-ARGUMENTS-TEXT*= (the raw argument text) bound around
+   every command call, alongside =*COMMAND-INTERACTOR*= /
+   =*COMMAND-ACTIVATION*= and the debugger's UI/session/hit variables.
+   Convention documented in the command reference §8.
 6. T2 decision, then SEDIT onto the stack (D9: =clal-sedit= pushes it),
    with the sedit-spec amendment.

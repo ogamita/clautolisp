@@ -292,6 +292,17 @@ execution, and by INTERACTOR-LOOP to the TOP activation around the status /
 prompt / reader / evaluator calls. Interactor functions and command bodies
 reach their mode's per-entry state as (ACTIVATION-STATE *COMMAND-ACTIVATION*).")
 
+(defvar *command-line* nil
+  "The whole input line (a string) of the command being executed — bound by
+FIND-AND-RUN-COMMAND around the call. Part of the fixed calling convention
+(design-revision T3) shared command functions rely on.")
+
+(defvar *command-arguments-text* nil
+  "The raw, untokenized argument text of the command being executed — the
+same string a (&WHOLE VAR) command receives as VAR; NIL when there is none.
+Bound by FIND-AND-RUN-COMMAND around the call, so a positional command
+function can still reach the verbatim text (design-revision T3).")
+
 (defun find-and-run-command (input
                              &key (stack *interactor-stack*)
                                   (output *standard-output*)
@@ -305,10 +316,13 @@ on OUTPUT. Returns the command's value, or NIL."
       (find-interactor-command input stack)
     (if command
         (let* ((interactor (and activation (activation-interactor activation)))
+               (raw-arguments (input-command-raw-arguments input skip))
                (*command-interactor* interactor)
                (*command-activation* activation)
+               (*command-line* (input-command-raw input))
+               (*command-arguments-text* raw-arguments)
                (result (call-command command arguments
-                                     :raw (input-command-raw-arguments input skip)
+                                     :raw raw-arguments
                                      :output output :error-output error-output
                                      :input-context input-context)))
           (let ((on-result (and interactor (interactor-on-result interactor))))
@@ -413,22 +427,43 @@ LIST-INTERACTOR-NAMES and named user-command registration see it."
 
 (defun %function-lambda-list (lambda-list)
   "The lambda-list of the command's function: (&WHOLE VAR) declares the raw
-calling convention, whose function takes just (VAR)."
+calling convention, whose function takes just (VAR) — function lambda-lists
+have no &WHOLE, only the declaration does (design-revision T3)."
   (if (and (= 2 (length lambda-list)) (eq (first lambda-list) '&whole))
       (rest lambda-list)
       lambda-list))
+
+(defun %command-function-form (lambda-list body)
+  "The function form DEFINE-COMMAND registers: a body of exactly
+(:FUNCTION FORM) yields FORM — a function (designator) shared across
+commands and interactors (design-revision D5) — otherwise an inline lambda
+over BODY."
+  (if (and (= 2 (length body)) (eq (first body) :function))
+      (second body)
+      `(lambda ,(%function-lambda-list lambda-list) ,@body)))
 
 (defmacro define-command ((interactor key &rest words) (&rest lambda-list)
                           docstring &body body)
   "Register a system command of INTERACTOR: KEY its short name, WORDS the
 ordered words of its single long name — one phrase, whose derived join is
-the long invocation (§0: the key is the words' initials). The BODY receives
-the parsed argument strings bound to LAMBDA-LIST — or the raw argument
-string when LAMBDA-LIST is (&WHOLE VAR)."
+the long invocation (§0: the key is the words' initials).
+
+The calling convention (design-revision T3): LAMBDA-LIST is either
+(&WHOLE VAR) — the function receives the raw, untokenized argument string
+as its single parameter VAR (its actual lambda-list is (VAR): &WHOLE
+belongs to the declaration only) — or positional,
+(REQUIRED… [&REST REST]), receiving the parsed argument strings. BODY is
+the function's body; a body of exactly =:function FORM= registers FORM's
+value (a function designator) instead, so several interactors' commands
+can share one named function (D5). Every command function reaches its
+context through dynamic variables: *COMMAND-INTERACTOR* /
+*COMMAND-ACTIVATION* (owner and its per-entry state), *COMMAND-LINE* /
+*COMMAND-ARGUMENTS-TEXT* (the verbatim input), plus the client's own
+(e.g. the debugger's UI / session / hit variables)."
   `(bind-command (interactor-commands ,interactor)
                  (list ',key ,@(mapcar (lambda (w) `',w) words))
                  ',lambda-list ,docstring
-                 (lambda ,(%function-lambda-list lambda-list) ,@body)))
+                 ,(%command-function-form lambda-list body)))
 
 (defmacro define-user-command ((interactor key &rest words) (&rest lambda-list)
                                docstring &body body)
@@ -437,4 +472,4 @@ system commands)."
   `(bind-command (interactor-user-commands ,interactor)
                  (list ',key ,@(mapcar (lambda (w) `',w) words))
                  ',lambda-list ,docstring
-                 (lambda ,(%function-lambda-list lambda-list) ,@body)))
+                 ,(%command-function-form lambda-list body)))

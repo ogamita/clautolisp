@@ -425,7 +425,9 @@ command receives ARG untokenized; the others their parsed positional args
 commands report and keep the loop reading."
   (let ((command (and (plusp (length cmd)) (lookup-command cmd dictionaries))))
     (if command
-        (let ((*debugger-ui* ui) (*debugger-session* session) (*debugger-hit* hit))
+        (let ((*debugger-ui* ui) (*debugger-session* session) (*debugger-hit* hit)
+              (*command-line* (format nil "~A~@[ ~A~]" cmd arg))
+              (*command-arguments-text* arg))
           ;; An error escaping a command body must not unwind the stop — a
           ;; debugging state may represent a lot of processing and is only
           ;; dropped on an explicit q/abort (error-while-debugging.issue).
