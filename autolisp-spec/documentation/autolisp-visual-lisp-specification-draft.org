@@ -11176,6 +11176,10 @@ funcalls the runtime's define-command hook with the unwrapped
 name strings, the resolved function, and the doc string. A no-op
 (returns ~nil~) unless the debugger UI is loaded.
 
+DEPRECATED: the equivalent of
+~(clal-define-command "ALDO" names function [doc])~ — new code
+names the interactor with ~clal-define-command~.
+
 *** Return Values
 Always ~nil~.
 
@@ -11207,6 +11211,123 @@ resolving ~function~; otherwise none.
 *** Source Notes
 - clautolisp-only extension; the command protocol is specified by
   the aldo debugger command reference. See this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-DEFINE-COMMAND
+*** Name
+~clal-define-command~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-define-command interactor-name names function [doc])
+#+end_example
+
+*** Arguments and Values
+- ~interactor-name~ — a string or symbol naming a registered
+  interactor (or its alias — ~"debug"~ for ALDO); see
+  ~clal-list-interactor-names~.
+- ~names~ — a list ~(key word …)~ of strings; the key must be the
+  word initials (debugger command reference §0).
+- ~function~ — a function designator; the command body, applied to
+  the command's parsed string arguments at dispatch.
+- ~doc~ — optional help string.
+
+*** Description
+Register an AutoLISP user command of the named interactor's user
+dictionary (debugger command reference §8; the interactor design's
+single registration API). The command shadows the interactor's
+system commands while that interactor is on the stack — ~command
+CMD~ reaches a shadowed system command — and installs whether or
+not the interactor is currently active: registration precedes
+activation. A no-op (returns ~nil~) unless the debugger UI is
+loaded.
+
+*** Return Values
+Always ~nil~.
+
+*** Side Effects
+When the debugger UI is loaded, adds a command to the named
+interactor's user dictionary; otherwise none.
+
+*** Affected By
+- Whether the aldo debugger UI is loaded.
+- The set of registered interactors.
+
+*** Exceptional Situations
+Signals an error when ~interactor-name~ names no registered
+interactor; argument-type errors propagate from unwrapping ~names~
+and resolving ~function~.
+
+*** Examples
+#+begin_example
+(clal-define-command "NAVI"
+  '("wa" "watch-around")
+  (lambda (arg) (princ arg))
+  "watch-around N — print the neighbourhood")
+=> nil
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.44.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; the command protocol is specified by
+  the aldo debugger command reference. See this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-LIST-INTERACTOR-NAMES
+*** Name
+~clal-list-interactor-names~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-list-interactor-names)
+#+end_example
+
+*** Arguments and Values
+None.
+
+*** Description
+The names of every registered interactor, as a list of strings —
+the valid first arguments of ~clal-define-command~. All registered
+interactors are listed, stacked or not.
+
+*** Return Values
+A list of strings, e.g.
+~("ALDO" "NAVI" "LAVI" "INSPECT" "AUTOLISP")~; ~nil~ unless the
+debugger UI is loaded.
+
+*** Side Effects
+None.
+
+*** Affected By
+- Whether the aldo debugger UI is loaded.
+- The set of registered interactors.
+
+*** Exceptional Situations
+None.
+
+*** Examples
+#+begin_example
+(clal-list-interactor-names)
+=> ("ALDO" "NAVI" "LAVI" "INSPECT" "AUTOLISP")
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.44.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see this chapter's Overview.
 
 #+LATEX: \newpage
 ** Function Entry: CLAL-SEDIT

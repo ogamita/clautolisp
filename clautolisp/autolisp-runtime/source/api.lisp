@@ -1354,7 +1354,22 @@ break-on-caught is enabled; NIL by default (off).")
 builtin calls to register an AutoLISP-defined debugger command (command
 reference §8). NAMES is a CL list (KEY WORD…) of strings, FUNCTION the AutoLISP
 command body, DOC a string or NIL. The aldo debugger UI installs it; NIL (a
-no-op) when the debug-ui layer is absent.")
+no-op) when the debug-ui layer is absent. CLAL-DEFINE-DEBUGGER-COMMAND is the
+deprecated equivalent of (CLAL-DEFINE-COMMAND \"ALDO\" …), which goes through
+*DEFINE-INTERACTOR-COMMAND-HOOK*.")
+
+(defparameter *define-interactor-command-hook* nil
+  "When non-nil, a function (INTERACTOR-NAME NAMES FUNCTION DOC) the
+CLAL-DEFINE-COMMAND builtin calls to register an AutoLISP-defined user
+command of the NAMED interactor (interactor-design-revision.issue D7).
+INTERACTOR-NAME and the NAMES list (KEY WORD…) are CL strings, FUNCTION the
+AutoLISP command body, DOC a string or NIL. The debugger UI installs it; NIL
+(a no-op) when that layer is absent.")
+
+(defparameter *list-interactor-names-hook* nil
+  "When non-nil, a thunk returning the CL list of registered interactor name
+strings, for the CLAL-LIST-INTERACTOR-NAMES builtin. The debugger UI
+installs it; NIL (an empty list) when that layer is absent.")
 
 (defparameter *debug-break-hook* nil
   "When non-nil, a function of one optional MESSAGE argument that the

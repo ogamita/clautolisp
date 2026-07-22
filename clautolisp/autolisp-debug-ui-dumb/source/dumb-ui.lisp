@@ -256,9 +256,10 @@ one Lisp form to evaluate in the current frame, returned as (:EVAL LINE)."
   (clautolisp.interactor:make-command-dictionary "aldo")
   "The built-in command-reference §0 vocabulary, as a command dictionary
 (interactors step 2): the system dictionary of the ALDO interactor. User /
-mode dictionaries (the active stack, with *GLOBAL-DICTIONARY*) layer over
-it, so a user command may shadow a built-in — `debugger TOKEN' reaches the
-built-in meaning regardless. The commands are registered in commands.lisp.")
+mode dictionaries (the active stack, with ALDO's own user dictionary) layer
+over it, so a user command may shadow a built-in — `command TOKEN' (or the
+historical `debugger TOKEN') reaches the built-in meaning regardless. The
+commands are registered in commands.lisp.")
 
 (defvar *navi-commands* (clautolisp.interactor:make-command-dictionary "navi")
   "The form navigator's system dictionary: the motions (d u > < << >> skip),
@@ -298,7 +299,6 @@ p/path, q/quit. Registered in commands.lisp.")
   :reader '%line-command-read
   :evaluator '%aldo-evaluate
   :commands *aldo-commands*
-  :user-commands *global-dictionary*
   :on-result '%directive-on-result
   :documentation "The ALDO debugger (command reference §0/§8): every line is a
 command — `(FORM)' evaluates in the current frame — and a command's non-nil
@@ -450,8 +450,8 @@ Returns a resume directive, or NIL."
                                   (subseq a 0 (or sp (length a)))
                                   (and sp (string-trim " " (subseq a sp)))))
       (dispatch-in-dictionaries ui session hit
-                                (append (active-command-dictionaries)
-                                        (list *aldo-commands*))
+                                (list (interactor-user-commands *aldo*)
+                                      *aldo-commands*)
                                 cmd arg)))
 
 ;;; poll-point-number (PP) designation (command reference §2 / DN-11) ---------

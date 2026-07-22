@@ -116,10 +116,11 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:command #:command-p #:command-key #:command-words #:command-phrase
    #:command-lambda-list #:command-docstring #:command-function #:command-arity
    #:dictionary #:dictionary-name #:make-command-dictionary
-   #:*global-dictionary* #:+debugger-escape-word+
-   #:*active-command-dictionaries* #:active-command-dictionaries
+   #:+debugger-escape-word+
    #:*debugger-ui* #:*debugger-session* #:*debugger-hit*
+   #:interactor-user-dictionary
    #:bind-debugger-command #:unbind-debugger-command #:define-debugger-command
+   #:register-interactor-command
    #:find-command #:lookup-command
    ;; config bridge to the canonical AutoLISP *CLAL-ALDO-CONFIGURATION*
    #:aldo-config-variable-symbol #:autolisp->cl-config #:cl-config->autolisp

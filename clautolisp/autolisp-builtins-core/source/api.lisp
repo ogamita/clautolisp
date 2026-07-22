@@ -4549,7 +4549,9 @@ directory when omitted), so you can walk the file system and enter files
   "Register an AutoLISP debugger command (command reference §8). NAMES is a list
 (KEY WORD…) of strings (the key must be the word initials, §0); FUNCTION is the
 command body, applied to the command's parsed string arguments at dispatch; DOC
-an optional help string. A no-op (returns nil) unless the debugger UI is loaded."
+an optional help string. A no-op (returns nil) unless the debugger UI is loaded.
+DEPRECATED: the equivalent of (CLAL-DEFINE-COMMAND \"ALDO\" NAMES FUNCTION [DOC])
+— use that (interactor-design-revision.issue D7)."
   (when clautolisp.autolisp-runtime:*debug-define-command-hook*
     (funcall clautolisp.autolisp-runtime:*debug-define-command-hook*
              (mapcar (lambda (s) (clautolisp.autolisp-runtime:autolisp-string-value s))
@@ -4557,6 +4559,45 @@ an optional help string. A no-op (returns nil) unless the debugger UI is loaded.
              (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function)
              (and doc (clautolisp.autolisp-runtime:autolisp-string-value doc))))
   nil)
+
+(defun %clal-interactor-name-string (name which)
+  "Coerce NAME (an AutoLISP string or symbol) to a CL interactor-name string."
+  (typecase name
+    (clautolisp.autolisp-runtime:autolisp-symbol
+     (clautolisp.autolisp-runtime:autolisp-symbol-name name))
+    (t (handler-case (clautolisp.autolisp-runtime:autolisp-string-value name)
+         (error ()
+           (signal-builtin-argument-error
+            :bad-argument which
+            "INTERACTOR-NAME must be a string or symbol, got ~S." name))))))
+
+(defun builtin-clal-define-command (interactor-name names function &optional doc)
+  "Register an AutoLISP user command of the NAMED interactor
+(interactor-design-revision.issue D7): (clal-define-command \"NAVI\" '(\"z\"
+\"zap\") FUNCTION [DOC]). INTERACTOR-NAME is one of
+(clal-list-interactor-names) — commands install whether or not the
+interactor is currently active; NAMES is a list (KEY WORD…) of strings (the
+key must be the word initials, §0); FUNCTION is the command body, applied to
+the command's parsed string arguments at dispatch; DOC an optional help
+string. User commands shadow the interactor's system commands (`command
+CMD' reaches a shadowed system command). A no-op (returns nil) unless the
+debugger UI is loaded."
+  (when clautolisp.autolisp-runtime:*define-interactor-command-hook*
+    (funcall clautolisp.autolisp-runtime:*define-interactor-command-hook*
+             (%clal-interactor-name-string interactor-name "CLAL-DEFINE-COMMAND")
+             (mapcar (lambda (s) (clautolisp.autolisp-runtime:autolisp-string-value s))
+                     names)
+             (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function)
+             (and doc (clautolisp.autolisp-runtime:autolisp-string-value doc))))
+  nil)
+
+(defun builtin-clal-list-interactor-names ()
+  "The names of every registered interactor, as a list of strings — e.g.
+(\"ALDO\" \"NAVI\" \"LAVI\" \"INSPECT\" \"AUTOLISP\"): the valid first
+arguments of CLAL-DEFINE-COMMAND. Nil unless the debugger UI is loaded."
+  (when clautolisp.autolisp-runtime:*list-interactor-names-hook*
+    (mapcar #'clautolisp.autolisp-runtime:make-autolisp-string
+            (funcall clautolisp.autolisp-runtime:*list-interactor-names-hook*))))
 
 ;;; --- CLAL-SEDIT + CLAL-CLIPBOARD-* (sedit spec §2, §5.4) -------------
 ;;;
@@ -8362,6 +8403,8 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-OPTIMIZE"         #'builtin-clal-optimize)
    (make-core-builtin-subr "CLAL-COMPILE"          #'builtin-clal-compile)
    (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
+   (make-core-builtin-subr "CLAL-DEFINE-COMMAND" #'builtin-clal-define-command)
+   (make-core-builtin-subr "CLAL-LIST-INTERACTOR-NAMES" #'builtin-clal-list-interactor-names)
    (make-core-builtin-subr "CLAL-NAV-FUNCTION"     #'builtin-clal-nav-function)
    (make-core-builtin-subr "CLAL-NAV-FILE"         #'builtin-clal-nav-file)
    (make-core-builtin-subr "CLAL-NAV-DIRECTORY"    #'builtin-clal-nav-directory)

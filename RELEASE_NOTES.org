@@ -160,9 +160,18 @@ separate binary for tool integrators.
   dispatching normally, user commands first (e.g. =aldo b LOC= while bare
   =b= breakpoints the selection) — the same prefix the sedit editor uses.
 - The debugger's built-in vocabulary is now itself a command dictionary
-  (the interactor framework): user commands (=clal-define-debugger-command=)
-  live in a separate dictionary layered over it, so they can shadow any
-  built-in.
+  (the interactor framework): user commands live in a separate dictionary
+  layered over it, so they can shadow any built-in.
+- One AutoLISP registration API for every interaction mode
+  (~issues/open/interactor-design-revision.issue~ D6/D7):
+  =(clal-define-command "INTERACTOR" NAMES FN [DOC])= registers a user
+  command of the named interactor's user dictionary —
+  =(clal-list-interactor-names)= lists the valid names (=ALDO=, =NAVI=,
+  =LAVI=, =INSPECT=, =AUTOLISP=) — and commands install before their
+  interactor is activated. There is no global user table: a "global"
+  command is one defined on the =AUTOLISP= interactor at the bottom of
+  the stack. =clal-define-debugger-command= is deprecated, the
+  equivalent of =(clal-define-command "ALDO" …)=.
 - The =command= word (like bash's =command foo=) is the systematic escape to
   a shadowed built-in: =command CMD= / =aldo command CMD= skip the user
   commands — how a shadowing user command calls the system one. =debugger

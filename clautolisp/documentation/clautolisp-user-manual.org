@@ -1133,8 +1133,12 @@ programmatically; ~(clal-nav-function 'NAME)~,
 ~(clal-nav-file PATH [LINE])~ and ~(clal-nav-directory [PATH])~ open
 the form navigator on a function, a file, or a directory *before* the
 code runs; ~(clal-select-file PATH LINE)~ points ~list source~ at a
-location; ~(clal-define-debugger-command NAMES FN [DOC])~ registers a
-custom debugger command. See /Debugger/ above.
+location; ~(clal-define-command "INTERACTOR" NAMES FN [DOC])~ registers
+a custom user command of the named interactor —
+~(clal-list-interactor-names)~ lists the valid names (~"ALDO"~,
+~"NAVI"~, ~"LAVI"~, ~"INSPECT"~, ~"AUTOLISP"~) —
+and ~(clal-define-debugger-command NAMES FN [DOC])~ is its deprecated
+ALDO-only equivalent. See /Debugger/ above.
 
 The full normative entries for these functions live in
 ~autolisp-spec~ §16 *clautolisp Extensions*; this section is a

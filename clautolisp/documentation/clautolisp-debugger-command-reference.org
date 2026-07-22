@@ -1311,7 +1311,7 @@ pre-populated by the same mechanism.
 
 #+begin_src lisp
   (defun bind-debugger-command (names lambda-list docstring function
-                                &optional (dictionary *global-dictionary*)) ...)
+                                &optional dictionary) ...)
 #+end_src
 
 - =NAMES= — =(KEY WORD [WORD2])=: a 1- or 2-letter key symbol followed by
@@ -1330,12 +1330,13 @@ pre-populated by the same mechanism.
   =defun=. It may call the built-in commands (the =clal-*= functions) and
   read the snapshot.
 - =DICTIONARY= — which command dictionary to register in; defaults to the
-  *global* debugger dictionary. The others are the *mode* dictionaries (the
-  navigator dictionaries and the inspector dictionary; their concrete names are
-  an *implementation choice*, see *Command dictionaries (stacked dispatch)*
-  below). A user adds an inspector-only or navigator-only command by passing
-  the relevant dictionary; omitting it keeps the historical single-table
-  behaviour.
+  *ALDO interactor's user dictionary*. There is NO global user table
+  (interactor-design-revision.issue D6): every user dictionary belongs to an
+  interactor — ALDO, NAVI, LAVI, INSPECT, AUTOLISP — and a "global" user
+  command is simply one defined on the AUTOLISP interactor, always at the
+  bottom of the stack. Name the interactor instead of passing a dictionary
+  object with =clal-define-command= (below), or obtain the dictionary with
+  =(interactor-user-dictionary "NAME")=.
 
 Because there is no macro layer here, the function is passed *explicitly*
 (a value) and the lambda-list *as data*, so the registration is itself an
@@ -1346,12 +1347,32 @@ function; the built-in table is just this primitive applied many times at
 boot.
 
 A companion =(unbind-debugger-command names-or-key &optional dictionary)=
-removes a command (from =DICTIONARY=, default global), pairing with
+removes a command (from =DICTIONARY=, default ALDO's user dictionary),
+pairing with
 =bind-debugger-command= (built-ins are protected). The AutoLISP side exposes
 it as =(undefine-debugger-command names-or-key &optional dictionary)=, pairing
 with =define-debugger-command=.
 
-*** AutoLISP convenience: =define-debugger-command=
+*** Naming the interactor: =clal-define-command= / =clal-list-interactor-names=
+
+The systematic AutoLISP registration names the target interactor
+(interactor-design-revision.issue D7):
+
+#+begin_src lisp
+  (clal-define-command "INTERACTOR-NAME" NAMES FUNCTION [DOC])
+  (clal-list-interactor-names)   ; -> ("ALDO" "NAVI" "LAVI" "INSPECT" "AUTOLISP" ...)
+#+end_src
+
+=INTERACTOR-NAME= is any name (or alias — ="debug"= works for ALDO) from
+=clal-list-interactor-names=; the command lands in that interactor's *user*
+dictionary, shadowing its system commands while it is on the stack
+(=command CMD= reaches a shadowed system command). Commands are installed
+whether or not the interactor is currently active — registration precedes
+activation; routing (=NAME CMD …=), by contrast, reaches only interactors
+*on* the stack (D8). =clal-define-debugger-command= (below) is the
+*deprecated* equivalent of =(clal-define-command "ALDO" …)=.
+
+*** AutoLISP convenience: =define-debugger-command= (deprecated)
 
 For user commands written in AutoLISP, =define-debugger-command= is the same
 primitive — AutoLISP has no macros, so it is *also a function*, identical to
@@ -1409,9 +1430,10 @@ for the arity, =DOCSTRING= passed through, and the =BODY= wrapped in a
 =lambda= (the docstring kept as the lambda's documentation). Note the macro
 exists only in CL — it is sugar over the primitive; the AutoLISP function
 form is the canonical one and what the two-language table is keyed on. The
-macro targets the *global* dictionary; to register a built-in into a mode
-dictionary, call the =bind-debugger-command= primitive directly with its
-=DICTIONARY= argument.
+macro targets ALDO's user dictionary; to register a command into another
+interactor's dictionary, call the =bind-debugger-command= primitive directly
+with its =DICTIONARY= argument (or, from AutoLISP, =clal-define-command=
+with the interactor's name).
 
 - backing: =[new]= — a command table the =check-commands= step consults,
   mapping each (key . words) to a (lambda-list . docstring . function)

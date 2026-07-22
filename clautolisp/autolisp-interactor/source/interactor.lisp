@@ -104,6 +104,43 @@ STACK; NIL when none."
   (let ((activation (find-activation name stack)))
     (and activation (activation-interactor activation))))
 
+;;; --- the interactor registry ---------------------------------------------
+;;;
+;;; For registration and listing, NOT routing (design-revision D7/D8):
+;;; (CLAL-DEFINE-COMMAND "NAME" …) registers a user command into the named
+;;; interactor's user dictionary whether or not it is active — commands are
+;;; installed before their interactor is stacked — and
+;;; (CLAL-LIST-INTERACTOR-NAMES) lists every registered interactor. `NAME
+;;; CMD …' routing, by contrast, reaches only interactors ON the stack.
+
+(defvar *interactors* '()
+  "The registered interactors, registration order (oldest first).
+DEFINE-INTERACTOR populates this.")
+
+(defun register-interactor (interactor)
+  "Register INTERACTOR (replacing any same-name entry — a reload).
+Returns INTERACTOR."
+  (setf *interactors*
+        (append (remove (interactor-name interactor) *interactors*
+                        :key #'interactor-name :test #'equalp)
+                (list interactor)))
+  interactor)
+
+(defun find-registered-interactor (name)
+  "The registered interactor called (or aliased) NAME, case-insensitively;
+NIL when none."
+  (let ((name (string name)))
+    (find-if (lambda (interactor)
+               (or (equalp name (interactor-name interactor))
+                   (and (interactor-alias interactor)
+                        (equalp name (interactor-alias interactor)))))
+             *interactors*)))
+
+(defun list-interactor-names ()
+  "The names of every registered interactor, registration order — stacked or
+not: commands are installed before their interactor is activated."
+  (mapcar #'interactor-name *interactors*))
+
 (defun make-prompt-function (who)
   "A prompt function printing `[DEPTH]WHO> ', DEPTH the interactor stack depth."
   (lambda (stream)
@@ -356,9 +393,12 @@ outer one within the same loop), or with INTERACTOR-RETURN's value."
                                           on-result documentation)
   "Define VARNAME as an interactor — a singleton: per-entry state belongs to
 the ACTIVATION pushed on the stack, not to the interactor. NAME defaults to
-VARNAME without its earmuffs; ALIAS is the optional alternate routing name."
+VARNAME without its earmuffs; ALIAS is the optional alternate routing name.
+The interactor is added to the registry (REGISTER-INTERACTOR), so
+LIST-INTERACTOR-NAMES and named user-command registration see it."
   `(defparameter ,varname
-     (make-interactor
+     (register-interactor
+      (make-interactor
       :name ,(or name (string-trim "*" (string varname)))
       ,@(when alias         `(:alias ,alias))
       ,@(when status        `(:status ,status))
@@ -368,7 +408,7 @@ VARNAME without its earmuffs; ALIAS is the optional alternate routing name."
       ,@(when commands      `(:commands ,commands))
       ,@(when user-commands `(:user-commands ,user-commands))
       ,@(when on-result     `(:on-result ,on-result))
-      ,@(when documentation `(:documentation ,documentation)))
+      ,@(when documentation `(:documentation ,documentation))))
      ,@(when documentation (list documentation))))
 
 (defun %function-lambda-list (lambda-list)

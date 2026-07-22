@@ -279,6 +279,18 @@ PJB ==> Yes, LAVI for the file:line navigator.
    CMD-EVAL in the selected frame.
 3. D6/D7/D8: retire =*global-dictionary*=; registry; =clal-define-command=
    + =clal-list-interactor-names=; deprecate =clal-define-debugger-command=.
+   DONE 1.4.44: =*GLOBAL-DICTIONARY*= and the (dead)
+   =*ACTIVE-COMMAND-DICTIONARIES*= are gone — ALDO's user-dictionary
+   slot IS the dictionary, and BIND-/UNBIND-DEBUGGER-COMMAND default to
+   =(INTERACTOR-USER-DICTIONARY "ALDO")= resolved at call time.
+   DEFINE-INTERACTOR populates the framework registry
+   (=*INTERACTORS*=, REGISTER-INTERACTOR, FIND-REGISTERED-INTERACTOR,
+   LIST-INTERACTOR-NAMES). New builtins CLAL-DEFINE-COMMAND (via
+   =*DEFINE-INTERACTOR-COMMAND-HOOK*=) and CLAL-LIST-INTERACTOR-NAMES
+   (via =*LIST-INTERACTOR-NAMES-HOOK*=);
+   CLAL-DEFINE-DEBUGGER-COMMAND is documented deprecated ≡
+   =(clal-define-command "ALDO" …)=. Spec function entries, command
+   reference §8, user manual and release notes updated.
 4. D3: AUTOLISP/LISP naming.
 5. D5/T3: =:function= registration sugar + the documented calling
    convention.

@@ -59,15 +59,13 @@ and output is captured. Returns (values result output-string)."
 
 (defmacro with-fresh-user-dictionary (&body body)
   "Swap a fresh user dictionary onto the singleton *ALDO* interactor — the
-live dictionary the stop loop dispatches through — AND bind the
-*GLOBAL-DICTIONARY* special the registration API defaults to, for BODY's
-extent (interactor-design-revision.issue T5: interactors are singletons, so
-rebinding the special alone no longer isolates a test's user commands)."
+live dictionary the stop loop dispatches through and the registration API
+targets — for BODY's extent (interactor-design-revision.issue T5/D6: there
+is no global user table; ALDO's slot IS the dictionary)."
   (let ((dict (gensym "DICT")) (saved (gensym "SAVED")))
-    `(let* ((,dict (clautolisp.debug.ui:make-command-dictionary "test"))
-            (,saved (clautolisp.interactor:interactor-user-commands
-                     clautolisp.ui.dumb::*aldo*))
-            (clautolisp.debug.ui:*global-dictionary* ,dict))
+    `(let ((,dict (clautolisp.debug.ui:make-command-dictionary "test"))
+           (,saved (clautolisp.interactor:interactor-user-commands
+                    clautolisp.ui.dumb::*aldo*)))
        (setf (clautolisp.interactor:interactor-user-commands
               clautolisp.ui.dumb::*aldo*)
              ,dict)

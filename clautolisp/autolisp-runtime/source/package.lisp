@@ -189,6 +189,8 @@
    #:*autolisp-caught-error-hook*
    #:*debug-break-hook*
    #:*debug-define-command-hook*
+   #:*define-interactor-command-hook*
+   #:*list-interactor-names-hook*
    #:*debug-nav-hook*
    #:*debug-select-file-hook*
    #:*debug-command-hook*

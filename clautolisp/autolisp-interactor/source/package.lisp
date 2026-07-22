@@ -62,6 +62,9 @@ implementations, not here.")
    #:*interactor-stack*
    #:push-interactor #:pop-interactor
    #:find-interactor #:find-activation
+   ;; the registry: registration + listing, never routing (D7/D8)
+   #:*interactors* #:register-interactor
+   #:find-registered-interactor #:list-interactor-names
    #:make-prompt-function
    #:find-invocation-in-interactor #:find-invocation-in-stack
    #:find-interactor-command #:+system-command-word+
