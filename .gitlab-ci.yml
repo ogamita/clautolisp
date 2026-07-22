@@ -383,12 +383,16 @@ release:linux:arm64:
 # arm64, by contrast, has a threaded SBCL and builds fine under qemu.
 release:linux:arm32:
   extends: .release-common
-  tags: [linux, arm32, docker]    # NATIVE arm32 docker host (e.g. a Pi) — NOT the qemu runner
+  tags: [linux, arm32, qemu]      # poseidon qemu (pjb adds the arm32 tag); native Pi welcome later
   image: $ARMV7_BASE              # buildpack-deps bookworm, armv7/armhf (digest-pinned)
   variables:
-    RELEASE_LISPS: "ccl"          # CCL only — armhf SBCL has no threads (see above)
+    # SBCL only: armhf SBCL is thread-less (Debian), which clautolisp
+    # tolerates — the default debugger is synchronous in-image; only the
+    # threaded aldb session mode would error if used. CCL armcl FAULTS
+    # under qemu-user (tested on poseidon), so it stays off this lane.
+    RELEASE_LISPS: "sbcl"
   rules:
-    - when: manual                # never auto-run (no native arm32 runner yet) and never block
+    - when: manual                # manual + never block: first qemu/sbcl try is an experiment
       allow_failure: true
   # Cache the libredwg cmake build dir (see arm64 lane) — the emulated armv7
   # C compile is the slowest step; reusing objects across runs is the (b)
@@ -406,6 +410,7 @@ release:linux:arm32:
     # CCL v1.13 32-bit ARM: the linuxarm tarball holds armcl/armcl.image at its
     # ROOT (no ccl/ prefix), so extract INTO /opt/ccl; `ccl` wrapper on PATH.
     - |
+      case " $RELEASE_LISPS " in *" ccl "*) ;; *) echo "ccl not in RELEASE_LISPS — skipping CCL install"; exit 0;; esac
       curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 -4 \
            -o /tmp/linuxarm.tar.gz \
            https://github.com/Clozure/ccl/releases/download/v1.13/linuxarm.tar.gz
