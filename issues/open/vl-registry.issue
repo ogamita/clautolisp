@@ -14,3 +14,25 @@ value; vl-registry-descendents returns immediate SUB-KEYS by default
 and value names with the flag (the old session-hash returned value
 names in both cases and never persisted). Builtins delegate to the
 host; live CAD backends will map these to the real registry/defaults.
+
+
+* RE-OPEN the issue.
+
+vl-registry must be implemented in different ways on the 3 different target platforms.
+
+- on windows #+(or (and sbcl win32)  (and ccl windows))
+
+  vl-registry must be implemented exactly like autocad or bricscad
+  implement it (as documented in the reference documentation) using the
+  MS-Windows REGISTRY, thru the win32 quicklisp library system.
+
+- on macos   #+darwin
+
+  vl-registry must be implemented exactly like bricscad
+  implements it (asf documented in the reference documentation) using the
+  macOS defaults database. (NSDefaults)
+ 
+- on unix    #+(and unix (not darwin))
+
+  vl-registry can be implemented using $XDG_CONFIG_HOME/clautolisp/registry.sexp
+  as described above.
