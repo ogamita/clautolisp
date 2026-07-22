@@ -717,7 +717,7 @@ could be displayed as:
 or with more en-i…en+i if we have space.
 The same treatment can be given to surrounding forms:
 
-#+begin_src
+#+begin_example
 (defun foo
    #
    (#
@@ -728,7 +728,7 @@ The same treatment can be given to surrounding forms:
          en+1
          #)
       #))
-#+end_src
+#+end_example
 
 The subforms that are elided would be re-evaluated each time we
 re-pretty-print the form, with a different selection.
