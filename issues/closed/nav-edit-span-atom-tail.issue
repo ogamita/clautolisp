@@ -40,3 +40,11 @@ lines 2–3 — an unterminated =(defun= — and =sedit parse= rejects it.
   real close.
 - Or record an explicit end position for the toplevel form at read time
   (the reader knows it) in the function metadata.
+
+* Resolution (fix-nav-edit-span-atom-tail, 1.5.4)
+
+NAV-FORM-SOURCE-TEXT re-derives the real end line by balancing parens
+from the form start with %NAV-FORM-END (the scanner already used for
+the selection close bracket), so a bare-atom tail no longer truncates
+the extracted source. Regression test: edit at a stop in FROB (bare z
+tail) reaches SEDIT> instead of "sedit parse: unterminated list".

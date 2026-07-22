@@ -1374,11 +1374,21 @@ keys, so only the words switch modes. Registered in *NAVI-COMMANDS*
 
 (defun nav-form-source-text (nav)
   "The verbatim source text of the whole navigated form, or NIL when its source
-file / line span is unavailable (a reconstructed form with no file)."
+file / line span is unavailable (a reconstructed form with no file). The
+span's END-LINE is computed from POSITIONED sub-nodes, which misses a
+bare-atom tail (interned symbols carry no per-occurrence position): a
+function ending in a bare `z' spanned short and `edit' fed sedit an
+unterminated list (nav-edit-span-atom-tail.issue). Re-derive the real end
+by balancing parens from the form's start with %NAV-FORM-END."
   (multiple-value-bind (file start end) (nav-form-span nav)
     (when (and file start end)
       (let ((lines (ignore-errors (lines-of file))))
         (when (and lines (<= 1 start) (<= start (length lines)))
+          (let ((balanced-end
+                  (nth-value 0 (%nav-form-end
+                                lines start
+                                (%nav-first-nonspace-col (aref lines (1- start)))))))
+            (setf end (min (length lines) (max end balanced-end))))
           (with-output-to-string (s)
             (loop for n from (max 1 start) to (min (length lines) end)
                   for first = t then nil
