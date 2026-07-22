@@ -76,18 +76,18 @@ interactor anywhere on the stack.
 
 * Remaining
 
-- SEDIT as an interactor: =sedit-run= / =sedit-command= still drive
-  their own two-mode loop (autolisp-sedit is dependency-free; making it
-  use clautolisp.interactor — itself dependency-free — is acceptable,
-  and its editing vocabulary then migrates into a dictionary). The
-  NAV->EDIT bridge (=nav-edit-session=) would push a SEDIT instance
-  instead of calling =sedit-run=.
-- Per-interactor *user* dictionaries exposed to AutoLISP: the user
-  dictionaries exist per interactor (=*navi-user-commands*= etc.) and
-  shadow the system ones, but =clal-define-debugger-command= only
-  targets the debugger's; a general =(clal-define-command "INTERACTOR"
-  …)= needs an interactor-name -> user-dictionary registry and a
-  runtime hook like =*debug-define-command-hook*=.
+- SEDIT as an interactor — DONE 1.4.47
+  (interactor-design-revision.issue step 6): the =*SEDIT*= interactor
+  lives in autolisp-sedit (now depending on clautolisp.interactor);
+  =sedit-enter= pushes it; CLAL-SEDIT and the NAV->EDIT bridge go
+  through it. =sedit-run= / =sedit-command= remain the standalone
+  library driver.
+- =(clal-define-command "INTERACTOR" …)= — DONE 1.4.44
+  (interactor-design-revision.issue step 3): the DEFINE-INTERACTOR
+  registry, the =*define-interactor-command-hook*= /
+  =*list-interactor-names-hook*= runtime hooks, and the
+  CLAL-DEFINE-COMMAND / CLAL-LIST-INTERACTOR-NAMES builtins;
+  =clal-define-debugger-command= deprecated.
 - Typed command arguments: =parse-command= classifies tokens
   (ident/integer/float/string) but command functions receive plain
   strings for compatibility; a declared lambda-list could request
