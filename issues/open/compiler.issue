@@ -250,3 +250,81 @@ References (file:line at 1.3.0)
   api.lisp:2280     %CLAL-POLL poll-point operator
   model.lisp:186    autolisp-usubr INSTRUMENTED-BODY slot
   autolisp-runtime/source/api.lisp  autolisp-load-file-in-context (read+eval)
+
+
+Addendum 2026-07-23 — state update at 1.5.1 + measured Tier-2
+performance evidence and targets
+-------------------------------------------------------------
+
+State delta since the 1.3.0 draft (part of Tier 1 has landed):
+
+  - CLAL-OPTIMIZATION / CLAL-OPTIMIZE / CLAL-COMPILE are now DEFINED
+    and registered (1.2.59, debugger-clal-eval branch):
+    autolisp-builtins-core/source/api.lisp:8408-8410, implementation
+    :4769-4880. CLAL-COMPILE builds an interpreted usubr and weaves
+    the instrumented fork under DEBUG>0; SPEED remains pinned at 0
+    (api.lisp:4835 "pinned until Tier 2").
+  - Still absent: CLAL-COMPILE-FILE, CLAL-COMPILED-FILE-OPTIMIZATION,
+    CLAL-FUNCTION-OPTIMIZATION, the fasl format, and VLISP-COMPILE is
+    still the nil stub.
+
+Performance evidence (why Tier 2, quantified). The autolisp-benchmark
+suite (1.0.0) run on clautolisp 1.5.1 and BricsCAD V26 on the SAME
+macOS machine (benchmark-results.org, 2026-07-22) puts the interpreter
+behind LispEx exactly where per-form dispatch dominates, and ahead
+where the runtime library dominates (us/iteration):
+
+  class          clautolisp  BricsCAD  ratio
+  arithmetic        7.23       0.53    13.7x behind
+  lists             6.37       0.87     7.4x behind
+  strings           9.14       5.39     1.7x behind
+  file-io          177.9      114.6     1.6x behind
+  serialization    23.17      41.40     1.8x AHEAD
+  entity           12.79      23.69     1.9x AHEAD
+
+Ceiling measurement: hand-transpiling the two losing workloads to CL
+exactly as Tier-2 codegen would emit them, compiled under SBCL on the
+same machine (companion file compiler-transpile-probe.lisp — runnable,
+results recorded in its header):
+
+  workload    interpreter  BricsCAD  conservative(A)  optimising(B)
+  arithmetic     7.23        0.53        0.11-0.14      0.017-0.024
+  lists          6.37        0.87        0.12-0.15      0.12-0.14
+
+Strategy consequences for Tier-2 codegen (the tuning):
+
+  1. Conservative-first is enough for parity and probably the win.
+     Variant A keeps every AutoLISP local dynamically scoped (CL
+     specials) and all arithmetic generic/boxed, and still beats
+     LispEx 4-6x. Dynamic scoping is NOT the bottleneck — SBCL
+     special access is cheap. Escape analysis / lexical promotion /
+     type declamation (Variant B: another 6x on arithmetic, nil on
+     lists) is a later optimisation pass, not a prerequisite.
+  2. The margin to protect is BUILTIN CALL OVERHEAD. The probe maps
+     AutoLISP ops onto raw CL ops; codegen that instead full-calls the
+     closed runtime builtins (argument list consing + checks per op)
+     erodes the 4-6x margin by an estimated 3-5x, i.e. down to bare
+     parity. Tier 2 must therefore open-code the hot core operators
+     as inline CL carrying AutoLISP semantics — at least:
+     + - * / 1+ 1- < <= > >= = /= car cdr cons list setq-refs, and
+     the list walkers (nth member assoc length reverse append) —
+     falling back to the runtime builtins for the long tail.
+  3. Where the compiler will NOT move the needle (set expectations in
+     the acceptance): file-io (syscall/buffer-bound), memory-gc
+     (SBCL's collector, not dispatch), serialization/entity (already
+     ahead; library-bound).
+
+Tier-2 quantitative acceptance (extends the qualitative sketch above;
+instrument = autolisp-benchmark suite 1.0.0 — numbers are only
+comparable at the same suite version — via `make -C autolisp-benchmark
+run` vs `run-bricscad-macos` on one machine; the CAD run needs
+alfe-request-timeout-aborts-long-eval fixed first):
+
+  - arithmetic and lists at or below BricsCAD V26 us/iter on the same
+    hardware (floor: parity; target: 2x+ ahead, i.e. <= ~0.4 us/iter
+    arithmetic, <= ~0.5 us/iter lists on the reference machine).
+  - strings within 1.2x of BricsCAD (from 1.7x behind).
+  - no regression on serialization / entity / file-io vs the
+    interpreter baseline in benchmark-results.org.
+  - benchmark suite version bumped if any workload changes; record
+    before/after tables in benchmark-results.org.

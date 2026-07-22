@@ -112,7 +112,9 @@ BLOCKED / EXTERNAL (hardware, CAD product, or pjb decision):
 
 Not issues (companion files, keep): alfe.plan, opendcl.plan,
 missing-functions-plan.md, note-secureload.txt,
-source-aware-defun-documentation.lsp, test-1252.lsp
+source-aware-defun-documentation.lsp, test-1252.lsp,
+compiler-transpile-probe.lisp (Tier-2 ceiling measurement; see
+  compiler.issue 2026-07-23 addendum)
 
 
 === Historical batches (processed) ===
