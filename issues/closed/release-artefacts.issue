@@ -264,3 +264,7 @@ Acceptance criteria
     binaries artefact carries the man / info / pdf for the binaries; the
     libraries artefact carries the libdwg native binaries + sources +
     the library docs.
+
+* Resolution (triage 2026-07-23)
+
+Merged as the release pipeline (28f762e): Makefile release-* targets, dispatch.sh/libexec layout, GitLab release stage + GitHub release.yml matrix. Caveat noted: confirm one tag run produces artefacts on the intermittent macOS/Windows runners.
