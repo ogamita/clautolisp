@@ -4376,6 +4376,7 @@ under another."
 
 (defparameter +default-aldo-configuration-source+
   "((navigator . sexp)
+    (sedit-on-quit . ask)
     (navigation-history-max . 1000)
     (break-on-caught . nil)
     (source-window-height . 24)
@@ -4458,11 +4459,13 @@ $XDG_CONFIG_DIRS, or NIL."
 
 (defun save-aldo-configuration-to (path)
   "Write *CLAL-ALDO-CONFIGURATION* to PATH as an AutoLISP sexp (UTF-8); return
-the path string (an AutoLISP string)."
+the path string (an AutoLISP string). PRIN1 semantics (PRINCP nil): the file
+must READ back — a princ'd string glyph like ^ or [ is not a string when
+re-read (aldo-conf-princ-serialisation bug)."
   (ensure-directories-exist path)
   (with-open-file (out path :direction :output :if-exists :supersede
                             :if-does-not-exist :create :external-format :utf-8)
-    (write-string (autolisp-value->string (aldo-configuration-value) t) out)
+    (write-string (autolisp-value->string (aldo-configuration-value) nil) out)
     (terpri out))
   (make-autolisp-string (namestring path)))
 

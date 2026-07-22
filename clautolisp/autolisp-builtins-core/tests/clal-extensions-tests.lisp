@@ -365,6 +365,27 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
                                                       (clautolisp.autolisp-runtime:autolisp-symbol-value sym)))))))
       (ignore-errors (delete-file path)))))
 
+(test aldo-config-strings-survive-the-save-load-roundtrip
+  ;; the saved file must READ back: the ASCII decoration glyphs ("^" "["
+  ;; "]") and the listening address are STRINGS and must be written quoted
+  ;; (prin1 semantics). The bug: the save used princ semantics, writing
+  ;; (selection ascii [ ]) — not readable back as strings.
+  (setup-mock-host-context)
+  (let ((path (merge-pathnames "aldo-core-strings.conf" (uiop:temporary-directory)))
+        (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-runtime:set-variable
+            sym (clautolisp.autolisp-builtins-core::default-aldo-configuration-value))
+           (clautolisp.autolisp-builtins-core::save-aldo-configuration-to path)
+           (let ((text (uiop:read-file-string path)))
+             (is (search "\"^\"" text))              ; glyph written as a string
+             (is (search "\"127.0.0.1\"" text)))     ; address too
+           (let ((loaded (clautolisp.autolisp-builtins-core::load-aldo-configuration-from path)))
+             (is (typep (%aldo-config-assoc "DEFAULT-ALDB-LISTENING-ADDRESS" loaded)
+                        'clautolisp.autolisp-runtime:autolisp-string))))
+      (ignore-errors (delete-file path)))))
+
 (test aldo-config-file-is-ascii-friendly
   (setup-mock-host-context)
   (let ((path (merge-pathnames "aldo-core-ascii.conf" (uiop:temporary-directory)))
