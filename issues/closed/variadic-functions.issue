@@ -146,3 +146,7 @@ emitting a diagnostic. The right move is:
 
 Tracking the dialect-warning piece in the umbrella issue
 `bricscad-undocumented-clisms.issue'.
+
+* Resolution (triage 2026-07-23)
+
+Shipped 1.1.16 (&rest usubrs through apply/mapcar/eval paths); the once-pending out-of-dialect warning exists ([lambda-list-extension], runtime api.lisp) and is tested in evaluator-tests.
