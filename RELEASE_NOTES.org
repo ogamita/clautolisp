@@ -49,6 +49,13 @@ separate binary for tool integrators.
   ~issues/open/interactor-design-revision.issue~ D2), so a mid-session
   switch takes effect on the very next line.
 - Host backend selectable via ~--host mock|null~ (default mock).
+- ~vl-registry-read/-write/-delete/-descendents~ are host-backed and
+  *persistent* on the mock host ($XDG_CONFIG_HOME/clautolisp/
+  registry.sexp — the Windows-registry / macOS-defaults emulation):
+  values survive across runs, keys are case-insensitive backslash
+  paths, a nil value-name is the key's default value, and
+  ~vl-registry-descendents~ returns immediate sub-keys by default
+  (value names with the flag).
   Mock-host carries the full 1836-entry vendor sysvar catalogue.
 - Under ~--bricscad~ the sysvar *set* matches BricsCAD: the 382
   catalogue variables BricsCAD does not define (confirmed by both the

@@ -1,3 +1,0 @@
-Implement in mock host VL-REGISTRY-WRITE VL-REGISTRY-DELETE VL-REGISTRY-READ VL-REGISTRY-DESCENDENTS.
-They're specified to work on Windows, and on MacOS (using defaults, NSDefaults).
-

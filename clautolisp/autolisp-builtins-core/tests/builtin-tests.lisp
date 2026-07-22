@@ -3538,41 +3538,48 @@ reactors."
     (is (true-p "(acdimenableupdate nil)"))))
 
 (test m5-vl-registry-roundtrip
-  "VL-REGISTRY-WRITE / READ / DELETE round-trip through the
-session table; DESCENDENTS lists value-names."
+  "VL-REGISTRY-* delegate to the host: the mock host emulates the
+Windows registry / macOS defaults with a persistent per-user store
+(vl-registry.issue). Round-trip, default value, sub-key vs value-name
+descendents, delete, and persistence across a fresh store load."
   (reset-autolisp-symbol-table)
-  (clrhash clautolisp.autolisp-builtins-core::*vl-registry*)
-  ;; Write + read
-  (let ((written (run-autolisp-string
-                  "(vl-registry-write \"HKLM/test\" \"k1\" \"v1\")"
-                  :setup-fn #'install-core-into)))
-    (is (typep written 'autolisp-string))
-    (is (string= "v1" (autolisp-string-value written))))
-  (let ((read-back (run-autolisp-string
-                    "(vl-registry-read \"HKLM/test\" \"k1\")"
-                    :setup-fn #'install-core-into)))
-    (is (typep read-back 'autolisp-string))
-    (is (string= "v1" (autolisp-string-value read-back))))
-  ;; Descendents
-  (run-autolisp-string "(vl-registry-write \"HKLM/test\" \"k2\" \"v2\")"
-                       :setup-fn #'install-core-into)
-  (let ((children (run-autolisp-string
-                   "(vl-registry-descendents \"HKLM/test\" t)"
-                   :setup-fn #'install-core-into)))
-    (is (consp children))
-    (is (= 2 (length children)))
-    (is (string= "k1" (autolisp-string-value (first  children))))
-    (is (string= "k2" (autolisp-string-value (second children)))))
-  ;; Delete + miss-on-read
-  (let ((deleted (run-autolisp-string
-                  "(vl-registry-delete \"HKLM/test\" \"k1\")"
-                  :setup-fn #'install-core-into)))
-    (is (typep deleted 'autolisp-symbol))
-    (is (string= "T" (autolisp-symbol-name deleted))))
-  (is (null (run-autolisp-string "(vl-registry-read \"HKLM/test\" \"k1\")"
-                                 :setup-fn #'install-core-into)))
-  ;; Cleanup
-  (clrhash clautolisp.autolisp-builtins-core::*vl-registry*))
+  (uiop:with-temporary-file (:pathname path :type "sexp")
+    (let ((clautolisp.autolisp-mock-host:*mock-registry-path* path)
+          (clautolisp.autolisp-mock-host::*mock-registry* nil))
+      (flet ((run-al (form) (run-autolisp-string
+                             form :setup-fn #'%install-mock-host-and-core))
+             (s= (expect v) (and (typep v 'autolisp-string)
+                                 (string= expect (autolisp-string-value v)))))
+        ;; Write + read (named value), and the key's DEFAULT value
+        (is (s= "v1" (run-al "(vl-registry-write \"HKCU\\\\Soft\\\\App\" \"k1\" \"v1\")")))
+        (is (s= "v1" (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\" \"k1\")")))
+        (run-al "(vl-registry-write \"HKCU\\\\Soft\\\\App\" nil \"dflt\")")
+        (is (s= "dflt" (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\")")))
+        ;; Descendents: value names with the flag …
+        (run-al "(vl-registry-write \"HKCU\\\\Soft\\\\App\" \"k2\" \"v2\")")
+        (let ((names (run-al "(vl-registry-descendents \"HKCU\\\\Soft\\\\App\" t)")))
+          (is (= 3 (length names)))           ; "" k1 k2
+          (is (s= "k1" (second names)))
+          (is (s= "k2" (third names))))
+        ;; … and immediate SUB-KEYS without it (the old code returned
+        ;; value names in both cases and never sub-keys)
+        (run-al "(vl-registry-write \"HKCU\\\\Soft\\\\App\\\\Sub1\" \"x\" \"1\")")
+        (run-al "(vl-registry-write \"HKCU\\\\Soft\\\\App\\\\Sub2\\\\Deep\" \"y\" \"2\")")
+        (let ((subs (run-al "(vl-registry-descendents \"HKCU\\\\Soft\\\\App\")")))
+          (is (= 2 (length subs)))            ; Sub1, Sub2 — not Deep
+          (is (s= "Sub1" (first subs)))
+          (is (s= "Sub2" (second subs))))
+        ;; Case-insensitive like the Windows registry
+        (is (s= "v1" (run-al "(vl-registry-read \"hkcu\\\\soft\\\\app\" \"K1\")")))
+        ;; Delete a value, then the whole key
+        (is (run-al "(vl-registry-delete \"HKCU\\\\Soft\\\\App\" \"k1\")"))
+        (is (null (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\" \"k1\")")))
+        (is (run-al "(vl-registry-delete \"HKCU\\\\Soft\\\\App\")"))
+        (is (null (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\")")))
+        ;; Persistence: drop the in-memory table — the next call reloads
+        ;; the store file written by the last write
+        (setf clautolisp.autolisp-mock-host::*mock-registry* nil)
+        (is (s= "1" (run-al "(vl-registry-read \"HKCU\\\\Soft\\\\App\\\\Sub1\" \"x\")")))))))
 
 (test m5-getcfg-setcfg-roundtrip
   "SETCFG / GETCFG round-trip through the session table."

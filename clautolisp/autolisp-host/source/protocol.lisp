@@ -105,6 +105,13 @@ not implement OPERATION."
 (defgeneric host-undefine-sysvar (host name) (:documentation "Remove the system-variable cell NAME from HOST at launch time, so a later host-getvar returns nil (unknown name) and host-setvar signals unknown-sysvar — exactly as a real CAD does for a variable it does not have. Used to apply the bricscad dialect's sysvar overlay, which drops the catalogue entries (the catalogue is AutoCAD-2026-derived) for the variables BricsCAD does not define. No-op when NAME is unknown. Returns T when a cell was removed, nil otherwise. Reached only by the clautolisp engine (mock-host); live CAD backends silently no-op."))
 (defgeneric host-sysvar-names (host)                  (:documentation "Return a list of upcased system-variable name strings known to HOST. Live backends ask the engine; mock-host returns the keys of its sysvar table. Used by the CLAL-SYSVAR-LIST / CLAL-SYSVAR-APROPOS clautolisp extensions."))
 
+;; Registry (vl-registry-*: Windows registry / macOS defaults; the mock
+;; host emulates them with a per-user persistent store)
+(defgeneric host-registry-read (host key value-name) (:documentation "Return the string stored under registry KEY at VALUE-NAME (NIL = the key's default value), or NIL when absent."))
+(defgeneric host-registry-write (host key value-name value) (:documentation "Store the string VALUE under registry KEY at VALUE-NAME (NIL = the default value); create the key as needed. Returns VALUE."))
+(defgeneric host-registry-delete (host key value-name) (:documentation "With VALUE-NAME, delete that value under KEY; with NIL, delete the whole KEY and its values. Returns true when something was deleted."))
+(defgeneric host-registry-descendents (host key value-names-p) (:documentation "With VALUE-NAMES-P, the value names stored under KEY; otherwise KEY's immediate sub-key names. A list of strings, or NIL."))
+
 ;; Command dispatch
 (defgeneric host-command (host arguments)             (:documentation "Issue an AutoLISP (command ...) sequence."))
 
@@ -181,6 +188,10 @@ not implement OPERATION."
 (defmethod host-define-sysvar ((host host) name kind value read-only-p) (declare (ignore name kind value read-only-p)) (signal-host-not-supported host 'define-sysvar))
 (defmethod host-undefine-sysvar ((host host) name)        (declare (ignore name)) (signal-host-not-supported host 'undefine-sysvar))
 (defmethod host-sysvar-names ((host host))                (signal-host-not-supported host 'sysvar-names))
+(defmethod host-registry-read ((host host) key value-name) (declare (ignore key value-name)) (signal-host-not-supported host 'registry-read))
+(defmethod host-registry-write ((host host) key value-name value) (declare (ignore key value-name value)) (signal-host-not-supported host 'registry-write))
+(defmethod host-registry-delete ((host host) key value-name) (declare (ignore key value-name)) (signal-host-not-supported host 'registry-delete))
+(defmethod host-registry-descendents ((host host) key value-names-p) (declare (ignore key value-names-p)) (signal-host-not-supported host 'registry-descendents))
 (defmethod host-command ((host host) arguments)           (declare (ignore arguments)) (signal-host-not-supported host 'command))
 (defmethod host-prompt    ((host host) string)            (declare (ignore string)) (signal-host-not-supported host 'prompt))
 (defmethod host-initget   ((host host) bits keywords)     (declare (ignore bits keywords)) (signal-host-not-supported host 'initget))

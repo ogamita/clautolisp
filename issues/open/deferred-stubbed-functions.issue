@@ -250,10 +250,11 @@ preserve API round-trip semantics within a session but state
 doesn't survive process exit. Each is one upgrade step away
 from full persistence.
 
-  * VL-REGISTRY-{READ,WRITE,DELETE,DESCENDENTS} — currently
-    backed by `*vl-registry*` (CL hash table). Upgrade: serialise
-    to/from `~/.config/clautolisp/registry.json` on every write
-    + load on first use.
+  * VL-REGISTRY-{READ,WRITE,DELETE,DESCENDENTS} — RESOLVED 1.5.1
+    (vl-registry.issue): host-registry-* protocol generics; the mock
+    host persists to $XDG_CONFIG_HOME/clautolisp/registry.sexp
+    (load on first use, save on write/delete); descendents now
+    returns sub-keys vs value names per the spec.
   * GETCFG / SETCFG — currently backed by `*acad-cfg*`. Upgrade:
     serialise to/from `~/.config/clautolisp/cfg.ini`.
 
