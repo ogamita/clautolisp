@@ -25,26 +25,13 @@ Current list of issues to resolve:
 
 === Triage 2026-07-22 (post-1.5.0; validated against the tree) ===
 
-In flight (fix branches pushed, pending validation + merge to master):
-  P0  alref-sysvars.issue     fix-alref-sysvars   (sysvars in alref-apropos)      -> closed/ on branch
-  P0  vl-registry.issue       fix-vl-registry     (persistent host registry, 1.5.1) -> closed/ on branch
-
-CLOSABLE — verified implemented/obsolete; move to closed/ with a one-line
-resolution as we touch them (evidence checked against v1.5.0):
-  bug-aldo-duplicate-breakpoint, bug-aldo-nav-command-dictionary,
-  bug-aldo-nav-entry-and-breakpoint-flow, aldo-debug-nav,
-  aldo-sedit-integration, sedit-and-aldo-nav-implementation,
-  interactor-design-revision (steps 1-6 DONE; residue forked),
-  debugger-source-map, debugger-instrumentation,
-  debugger-snapshot-stepping, debugger-error-integration,
-  debugger-inspector, debugger-ui-protocol-and-dumb,
-  debugger-ui-ncurses (PDCurses/Windows deferred, platform-bound),
-  debugger-ui-emacs-aldb, clautolisp-debugger (parent),
-  continue (obsolete handoff), autolisp-load-pathname (dup of closed/),
-  strict-dialect-autolisp-divergences (dup of closed/),
-  source-aware-defun-documentation, variadic-functions,
-  drawing-codec-libredwg-submodule,
-  release-artefacts (confirm one tag run on mac/windows runners first).
+Processed 2026-07-23:
+  alref-sysvars.issue and vl-registry.issue merged to master
+  (fix-alref-sysvars, fix-vl-registry 1.5.3); the 23 CLOSABLE issues
+  each closed on a fix-* branch merged to master — see issues/closed/
+  and the merge history. Two were stale open duplicates of already-
+  closed issues (autolisp-load-pathname, strict-dialect-autolisp-
+  divergences) and were removed.
 
 SMALL — process next, in this order:
 
