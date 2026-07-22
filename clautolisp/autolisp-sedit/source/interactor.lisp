@@ -28,8 +28,63 @@ shadowing *SEDIT-COMMANDS*.")
 
 (defstruct sedit-interactor-state
   "The SEDIT activation's per-entry state: the editing SESSION plus the
-runtime-coupling hooks (the same callbacks the legacy SEDIT-RUN takes)."
-  session debug-hook eval-hook load-hook eval-print-hook)
+runtime-coupling hooks (the same callbacks the legacy SEDIT-RUN takes).
+SAVE-HOOK persists the edited result where a file path is not the target
+(the debugger bridge installs the definition); ON-QUIT is a thunk yielding
+the sedit-on-quit policy (:auto-save / :do-not-save / :ask) consulted when
+quitting a MODIFIED session (interactor-design-revision.issue, point-6
+answer)."
+  session debug-hook eval-hook load-hook eval-print-hook
+  save-hook (on-quit (constantly :ask)))
+
+(defun %loc-root-node (loc)
+  "The whole tree LOC is in (ascend to the very root — past the file / dir
+boundary SEDIT-RESULT-NODE stops at)."
+  (let ((l loc))
+    (loop while (loc-ctx l) do (setf l (loc-up l)))
+    (loc-focus l)))
+
+(defun sedit-modified-p (session)
+  "True when SESSION's whole tree differs from the one it was opened on.
+Conservatively NIL when the trees cannot be unparsed (a directory listing —
+whose operations act on disk immediately, nothing pending to save)."
+  (handler-case
+      (not (equal (unparse (sedit-session-initial session))
+                  (unparse (%loc-root-node
+                            (sedit-state-loc (sedit-session-state session))))))
+    (error () nil)))
+
+(defun %sedit-save-on-quit (istate)
+  "Persist the edits on quit: through SAVE-HOOK when given (the debugger
+bridge installing the definition), else to the session's file (s/save)."
+  (let ((session (sedit-interactor-state-session istate))
+        (save-hook (sedit-interactor-state-save-hook istate)))
+    (if save-hook
+        (funcall save-hook session)
+        (%do-save session nil))))
+
+(defun %sedit-quit-guard (istate)
+  "The sedit-on-quit guard: when the session is modified and there is
+somewhere to save to, apply the policy — :AUTO-SAVE saves, :DO-NOT-SAVE
+discards, :ASK offers save / don't save / cancel. Returns NIL to CANCEL the
+quit, true to proceed."
+  (let ((session (sedit-interactor-state-session istate)))
+    (if (not (and (sedit-modified-p session)
+                  (or (sedit-interactor-state-save-hook istate)
+                      (%session-file session))))
+        t
+        (ecase (funcall (sedit-interactor-state-on-quit istate))
+          (:auto-save   (%sedit-save-on-quit istate) t)
+          (:do-not-save t)
+          (:ask
+           (format t "~&SEDIT> the form was modified — save it? (y save / n discard / c cancel quit) ")
+           (finish-output)
+           (let ((answer (string-trim " " (string (or (read-line *standard-input* nil "c") "c")))))
+             (cond
+               ((member answer '("y" "yes") :test #'string-equal)
+                (%sedit-save-on-quit istate) t)
+               ((member answer '("n" "no") :test #'string-equal) t)
+               (t (format t "~&SEDIT> quit cancelled~%") nil))))))))
 
 (defun %sedit-istate ()
   (clautolisp.interactor:activation-state
@@ -199,7 +254,10 @@ aldo CMD forces the debugger's meaning of a shadowed key"))
 (clautolisp.interactor:bind-command-alias *sedit-commands* "?" "h")
 
 (%define-sedit-command (q quit)
-    "Leave the editor; above a debugger stop, quitting aborts the debugged execution (asks first)."
+    "Leave the editor (asking to save modifications per the sedit-on-quit
+setting); above a debugger stop, quitting aborts the debugged execution
+(asks first)."
+  (when (%sedit-quit-guard (%sedit-istate))
   (if (clautolisp.interactor:find-activation "ALDO")
       ;; above the debugger (T4): leaving is resolving the stop — warn,
       ;; confirm, and delegate to the debugger's own quit (whose abort
@@ -216,12 +274,13 @@ aldo CMD forces the debugger's meaning of a shadowed key"))
             (clautolisp.interactor:run-command-line "aldo quit"))))
       ;; a (clal-sedit …) editor: quit pops SEDIT and the call returns
       ;; normally with the edited result (T4)
-      (clautolisp.interactor:pop-interactor))
+      (clautolisp.interactor:pop-interactor)))
   nil)
 
 ;;; --- entering the editor ---------------------------------------------------
 
 (defun sedit-enter (session &key debug-hook eval-hook load-hook eval-print-hook
+                                 save-hook (on-quit (constantly :ask))
                                  (input *standard-input*)
                                  (output *standard-output*)
                                  (error-output output))
@@ -235,7 +294,8 @@ propagate."
   (let* ((state (make-sedit-interactor-state
                  :session session
                  :debug-hook debug-hook :eval-hook eval-hook
-                 :load-hook load-hook :eval-print-hook eval-print-hook))
+                 :load-hook load-hook :eval-print-hook eval-print-hook
+                 :save-hook save-hook :on-quit on-quit))
          (clautolisp.interactor:*interactor-stack*
            (cons (clautolisp.interactor:make-activation *sedit* state)
                  clautolisp.interactor:*interactor-stack*)))

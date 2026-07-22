@@ -1406,7 +1406,21 @@ inside (`aldo c', the confirmed quit) is returned to be propagated."
               (clautolisp.sedit:sedit-enter
                sedit :input (dumb-ui-input ui) :output (dumb-ui-output ui)
                      :debug-hook (lambda (line) (nav-run-debug-line ui session hit line))
-                     :eval-print-hook (lambda (node) (nav-eval-node-string session node)))
+                     :eval-print-hook (lambda (node) (nav-eval-node-string session node))
+                     ;; the sedit-on-quit guard (design-revision point-6
+                     ;; answer): saving here means installing the edited
+                     ;; definition in the running system; the policy comes
+                     ;; from the aldo configuration (a lisp-interactor
+                     ;; configuration stacks under it —
+                     ;; issues/open/lisp-configuration.issue).
+                     :save-hook (lambda (sedit-session)
+                                  (nav-install-edited-form
+                                   ui session
+                                   (clautolisp.sedit:session-result sedit-session)
+                                   loc))
+                     :on-quit (lambda ()
+                                (or (ignore-errors (get-aldo-setting :sedit-on-quit))
+                                    :ask)))
             (cond
               (directive directive)
               (t (nav-install-edited-form ui session result loc) nil)))))))

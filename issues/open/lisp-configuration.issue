@@ -1,0 +1,40 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: a lisp-interactor configuration (lisp.conf), stacked under aldo.conf
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-07-22
+
+From pjb's point-6 answer in =interactor-design-revision.issue=: the
+LISP (REPL) interactor needs its own persistent configuration, and
+configurations STACK like the interactors do.
+
+* Design (pjb)
+
+- A lisp configuration file (lisp.conf), like aldo.conf; its first
+  setting is the same =sedit-on-quit auto-save|do-not-save|ask= —
+  governing =(clal-sedit …)= invocations from the REPL, while the aldo
+  setting of the same name governs debugger-side invocations.
+- Stacking: at the LISP interactor only lisp.conf is active; in the
+  debugger both aldo.conf AND lisp.conf are active, aldo over lisp — a
+  setting absent from aldo.conf but present in lisp.conf is taken from
+  lisp.conf (for common settings).
+- Writes go to the ACTIVE interactor's own configuration: =set
+  sedit-on-quit …= at the debugger modifies only the aldo
+  configuration (shadowing lisp's even when the key was not previously
+  present in aldo.conf); at the REPL it modifies lisp.conf.
+
+* Current state (1.4.48)
+
+- =sedit-on-quit= exists as an ALDO setting (default =ask=) and is
+  consulted by the NAV->SEDIT bridge; the REPL-side =(clal-sedit …)=
+  uses the built-in default (=ask=) — no lisp.conf yet, no REPL =,set=
+  command, no stacked lookup.
+
+* To do
+
+- A settings table + conf file for the LISP interactor (XDG path like
+  aldo's), with =sedit-on-quit= as its first key.
+- A REPL =,set NAME VALUE= / =,settings= command pair over it.
+- The stacked lookup (aldo over lisp) for common settings, and
+  write-to-the-active-layer semantics.
+- Route the CLAL-SEDIT builtin's :on-quit thunk through the stacked
+  lookup instead of the built-in default.

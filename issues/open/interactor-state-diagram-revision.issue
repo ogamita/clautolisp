@@ -1,0 +1,31 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: interactors — revise the state diagram between all the interactors
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-07-22
+
+Forked from =interactor-design-revision.issue= (pjb's point-6 answer):
+the transitions between the interactors need a full state diagram to be
+designed by pjb, rather than more ad-hoc rules.
+
+* Known questions for the diagram
+
+- The §7 install-on-return flow: with =q= above a stop meaning
+  confirmed-abort-or-nothing (T4), returning from SEDIT to NAVI with
+  the edited definition installed has no dedicated transition. The
+  sedit-on-quit save guard (1.4.48) covers the SAVE half (the confirmed
+  quit can install), but there is no "install and go back to NAV
+  without resolving the stop" edge. An =install=/=done= command? A
+  plain =nav= pop?
+- Leaving ALDO is a directive, not a pop (T4) — the one asymmetry;
+  where does it sit in the diagram?
+- navi <-> lavi swapping (D4) is specified as pop+push in the same
+  loop but not yet implemented as commands.
+- Which modes may stack over which (SEDIT over INSPECT? INSPECT over
+  SEDIT?), and what =q= means at each level.
+
+* Current state (1.4.48)
+
+One INTERACTOR-LOOP; activations on =*interactor-stack*=; nested loops
+only for invoke-debugger (ui-await-command) and mid-evaluation entries
+(sedit-enter, %interactor-mode-loop); directives cascade via ON-RESULT
++ INTERACTOR-RETURN.

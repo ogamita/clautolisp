@@ -362,6 +362,21 @@ PJB ==> This requires more reflection, indeed. So we'll leave at it is
         With this behavior for sedit quit, we can leave the rest as it
         is for now, and I'll refine the stated diagram we want between
         all the interactors later.
+
+   PROCESSED 1.4.48: forked
+   =issues/open/interactor-state-diagram-revision.issue= (the diagram)
+   and =issues/open/lisp-configuration.issue= (lisp.conf + stacked
+   configurations). Implemented now: SEDIT-MODIFIED-P (whole-tree
+   compare vs the opened form) and the quit guard in SEDIT's =q= —
+   when modified and there is a save target (the session's file, or
+   the debugger bridge's install hook), the =sedit-on-quit= policy
+   applies: =auto-save= saves, =do-not-save= discards, =ask= offers
+   =y save / n discard / c cancel quit= (cancel keeps editing; the
+   guard runs BEFORE the T4 abort confirmation). The policy is a
+   thunk in the activation state: the NAV bridge reads the new ALDO
+   setting =sedit-on-quit= (default =ask=; "save" there installs the
+   edited definition via NAV-INSTALL-EDITED-FORM); the REPL's
+   CLAL-SEDIT uses the built-in =ask= default until lisp.conf exists.
         
    Also filed while testing: issues/open/nav-edit-span-atom-tail.issue
    (NAV-FORM-SPAN truncates a function whose last body form is a bare
