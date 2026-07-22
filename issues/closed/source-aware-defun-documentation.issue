@@ -482,3 +482,7 @@ defun captured, line comments between block and defun, second block
 clobbers first, form-without-block, block at top of file). The
 behaviour is exercised end-to-end by the above; the reader-unit layer
 is a nice-to-have.
+
+* Resolution (triage 2026-07-23)
+
+STATUS: done 2026-06-23 — preceding-comment docstrings implemented; the corpus test lives in autolisp-test/tests/documentation/preceding-doc.lsp. Companion source-aware-defun-documentation.lsp moved alongside.
