@@ -1,0 +1,85 @@
+entmakex-returns-list — (entmakex) returns the DXF list instead of the ename
+=============================================================================
+
+Found while building autolisp-benchmark/ (the entity-operations
+workload). The AutoLISP / Visual LISP contract is:
+
+  - (entmake  DATA) -> the entity DATA list on success, nil on failure.
+  - (entmakex DATA) -> the *entity name* (ename) of the new entity on
+                       success, nil on failure.
+
+The distinguishing feature of ENTMAKEX is exactly that it hands back
+an ename you can feed straight into entget / entmod / entdel without a
+follow-up (entlast). clautolisp collapses the two: ENTMAKEX returns the
+same DXF list ENTMAKE does.
+
+Symptom
+-------
+
+  $ clautolisp -x '(type (entmakex (list (cons 0 "LINE") (cons 8 "0") \
+        (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 1.0 0.0)))))'
+  LIST                      ; expected: ENAME
+
+Downstream, the natural idiom breaks:
+
+  (setq en (entmakex ...))
+  (entget en)               ; -> INVALID-ENAME: ENTGET expects an ENAME,
+                            ;    got ((-1 . <Entity name: ...>) (0 . "LINE") ...)
+
+Repro
+-----
+
+  clautolisp -x '(progn
+     (setq r (entmakex (list (cons 0 "LINE") (cons 8 "0")
+                             (cons 10 (list 0.0 0.0 0.0))
+                             (cons 11 (list 1.0 1.0 0.0)))))
+     (princ (type r)))'
+  ;; prints LIST; on AutoCAD / BricsCAD this prints ENAME.
+
+Cause
+-----
+
+host-entmakex simply delegates to host-entmake, which returns
+(entity->al-view entity) — the entget-style DXF list:
+
+  clautolisp/autolisp-mock-host/source/entity-api.lisp:154-157
+    (defmethod host-entmakex ((host mock-host) data)
+      ;; MockHost does not yet distinguish graphical from non-graphical
+      ;; entities for storage purposes.
+      (host-entmake host data))
+
+  clautolisp/autolisp-mock-host/source/entity-api.lisp:139-152
+    (defmethod host-entmake ((host mock-host) data)
+      ... (entity->al-view entity))          ; <- list, for both paths
+
+host-entmake already computes the ename locally
+(`(ename (handle->ename (entity-handle-id entity)))`) for the
+VLR-OBJECTAPPENDED event, so ENTMAKEX has the ename in hand; it just
+returns the wrong thing.
+
+Fix sketch
+----------
+
+Split the two host methods so ENTMAKEX returns the ename:
+
+  - Give host-entmake an internal worker that returns (values view ename).
+  - host-entmake returns VIEW (unchanged behaviour).
+  - host-entmakex returns ENAME.
+
+Then update the ENTMAKEX builtin's contract note
+(clautolisp/autolisp-builtins-core/source/api.lisp:3431-3437) and add a
+regression test alongside the existing entity-api tests
+(clautolisp/autolisp-mock-host/tests/entity-api-tests.lisp) asserting
+(autolisp-ename-p (host-entmakex ...)). Add an autolisp-test case under
+tests/ that (type (entmakex ...)) is ENAME. Cross-check the ENTMAKE
+return value against the vendor spec too: AutoCAD/BricsCAD return the
+input DATA list from ENTMAKE (no -1 pair), whereas clautolisp returns
+the entget-style view with a leading (-1 . ename); confirm whether that
+divergence also needs correcting or is acceptable.
+
+Workaround
+----------
+
+Portable code (and the autolisp-benchmark entity workload) uses
+(entmake ...) followed by (entlast), which returns an ename on every
+target and so does not depend on the ENTMAKEX return type.

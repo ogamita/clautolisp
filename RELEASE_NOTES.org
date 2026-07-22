@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.3.0 / alfe 1.3.0). For the
+master at the top of the file (clautolisp 1.5.1 / alfe 1.5.1). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
 
@@ -372,6 +372,27 @@ file or COM), and forwards the workload.
 
 ---
 
+* autolisp-benchmark — performance suite (=autolisp-benchmark/documentation/autolisp-benchmark-user-manual.org=)
+
+- A pure-AutoLISP benchmark suite that times seven operation classes —
+  arithmetic, lists, strings, serialization (object <-> string),
+  file-io, entity (CAD create/modify/delete), and memory-gc — each for
+  about five seconds, and reports throughput (iterations/second) and
+  cost (microseconds/iteration) per class plus an overall total.
+- Loaded into any engine on the same hardware for a direct comparison:
+  ~clautolisp -l autolisp-benchmark/harness/run.lsp -x
+  '(autolisp-benchmark-run-all)'~, or via ~alfe --bricscad~ /
+  ~--autocad~ / ~--clautolisp~. Convenience targets: ~make -C
+  autolisp-benchmark run~ (clautolisp), ~run-bricscad-*~,
+  ~run-autocad-*~; per-class budget via ~BENCH_SECONDS=~.
+- Auto-detects the implementation via ~(ver)~ and the clock via
+  ~(getvar "MILLISECS")~ (with a ~DATE~ fallback), relying on the live
+  timer sysvars of the clautolisp 1.3.x line, so results are labelled
+  and comparable across targets. Installed under
+  ~$PREFIX/libexec/autolisp-benchmark/~ (harness + benchmarks + docs).
+
+---
+
 * Where things land on disk (=make install=)
 
 | Subproject       | Bin / libexec                                            | Docs                              |
@@ -380,5 +401,6 @@ file or COM), and forwards the workload.
 | alfe             | =$PREFIX/bin/alfe= (+ -sbcl / -ccl)                      | share/doc/alfe/                   |
 | autolisp-spec    | (docs only — HTML, Info, pages, .org, .pdf)              | share/doc/autolisp-spec/          |
 | autolisp-test    | libexec/autolisp-test/{harness,tests}                    | share/doc/autolisp-test/          |
+| autolisp-benchmark | libexec/autolisp-benchmark/{harness,benchmarks}        | share/doc/autolisp-benchmark/     |
 
 Override ~$PREFIX~ on the make line (default ~/opt/local~) to relocate.

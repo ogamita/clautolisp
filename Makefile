@@ -1,4 +1,4 @@
-SUBPROJECTS := autolisp-spec clautolisp autolisp-test autolisp-front-end
+SUBPROJECTS := autolisp-spec clautolisp autolisp-test autolisp-front-end autolisp-benchmark
 CLAUTOLISP_CI_IMAGE ?= registry.gitlab.com/ogamita/clautolisp/clautolisp-ci:latest
 CLAUTOLISP_CI_DOCKERFILE ?= clautolisp/docker/Dockerfile
 CLAUTOLISP_CI_PLATFORM ?= linux/amd64
@@ -108,11 +108,15 @@ autolisp-test:  ## Build the autolisp-test conformance harness subproject.
 autolisp-front-end:  ## Build the autolisp-front-end (alfe) subproject — unified CLI front-end for clautolisp + CAD-resident REPLs.
 	$(MAKE) -C autolisp-front-end all
 
+autolisp-benchmark:  ## Build the autolisp-benchmark subproject (AutoLISP performance suite; docs only — the suite is loaded into an engine).
+	$(MAKE) -C autolisp-benchmark all
+
 documentation:  ## Rebuild every subproject's PDF documentation (org → LaTeX → PDF) + the top-level diagrams (dot → svg/png).
 	$(MAKE) -C autolisp-spec documentation
 	$(MAKE) -C clautolisp documentation
 	$(MAKE) -C autolisp-test documentation
 	$(MAKE) -C autolisp-front-end documentation
+	$(MAKE) -C autolisp-benchmark documentation
 	$(MAKE) -C documentation diagrams
 
 build: build-programs build-libraries  ## Build the program binaries + native libraries (NO docs). Run this WITHOUT sudo, then `sudo make install`. Documentation is a separate phase: `make build-documentation`.
@@ -129,6 +133,7 @@ test:  ## Run the clautolisp test suite plus the autolisp-test conformance corpu
 	$(MAKE) -C clautolisp test
 	$(MAKE) -C autolisp-test test
 	$(MAKE) -C autolisp-front-end test
+	$(MAKE) -C autolisp-benchmark test
 
 # --- CAD ground-truth probes (see probes/README.org) -------------------
 #
@@ -299,6 +304,7 @@ clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources
 	$(MAKE) -C clautolisp clean-pdf
 	$(MAKE) -C autolisp-test clean-pdf
 	$(MAKE) -C autolisp-front-end clean-pdf
+	$(MAKE) -C autolisp-benchmark clean-pdf
 
 clean:: clean-diagrams
 clean-diagrams:  ## Remove the rendered top-level diagrams (keeps the .dot sources).
@@ -337,6 +343,7 @@ install-programs: build-programs  ## Install only the program binaries (clautoli
 	$(MAKE) -C clautolisp         install-programs $(INSTALL_VARS)
 	$(MAKE) -C autolisp-test      install-programs $(INSTALL_VARS)
 	$(MAKE) -C autolisp-front-end install-programs $(INSTALL_VARS)
+	$(MAKE) -C autolisp-benchmark install-programs $(INSTALL_VARS)
 
 install-libraries: build-libraries  ## Install only the native libraries (the drawing/drawing-dwg native libdwg + CFFI shim).
 	$(MAKE) -C clautolisp         install-libraries $(INSTALL_VARS)
@@ -346,12 +353,14 @@ install-documentation: build-documentation  ## Install only the documentation (t
 	$(MAKE) -C clautolisp         install-documentation $(INSTALL_VARS)
 	$(MAKE) -C autolisp-test      install-documentation $(INSTALL_VARS)
 	$(MAKE) -C autolisp-front-end install-documentation $(INSTALL_VARS)
+	$(MAKE) -C autolisp-benchmark install-documentation $(INSTALL_VARS)
 
 uninstall:  ## Remove every subproject's install from $$PREFIX.
 	$(MAKE) -C autolisp-spec      uninstall $(INSTALL_VARS)
 	$(MAKE) -C clautolisp         uninstall $(INSTALL_VARS)
 	$(MAKE) -C autolisp-test      uninstall $(INSTALL_VARS)
 	$(MAKE) -C autolisp-front-end uninstall $(INSTALL_VARS)
+	$(MAKE) -C autolisp-benchmark uninstall $(INSTALL_VARS)
 
 # ---------------------------------------------------------------------
 # Forwarded fine-grained test targets (see issues/closed/test-targets.issue).
