@@ -3,9 +3,13 @@
 ;;;; An interactor bundles what distinguishes one command loop from another:
 ;;;; a name, a status display, a prompt, a reader (how the input line is
 ;;;; parsed), an evaluator (what a bare Lisp form means there), and its two
-;;;; command dictionaries. INTERACTOR-LOOP drives whichever interactor is on
-;;;; top of *INTERACTOR-STACK*; commands may push a new interactor (entering
-;;;; a mode within the same loop), pop one (leaving it), call INTERACTOR-LOOP
+;;;; command dictionaries. Interactors are SINGLETONS — pure program, never
+;;;; copied (interactor-design-revision.issue D1): what varies per entry is
+;;;; the ACTIVATION, the stack entry pairing the interactor with the state of
+;;;; one activation of it — like a call frame pairing a function with its
+;;;; locals. INTERACTOR-LOOP drives whichever activation is on top of
+;;;; *INTERACTOR-STACK*; commands may push an interactor (entering a mode
+;;;; within the same loop), pop one (leaving it), call INTERACTOR-LOOP
 ;;;; recursively (e.g. invoke-debugger, which is specified as a recursive
 ;;;; REPL), or INTERACTOR-RETURN a value out of the innermost loop.
 
@@ -13,7 +17,7 @@
 
 (deftype function-designator () `(or symbol function))
 
-(defstruct (interactor (:constructor %make-interactor))
+(defstruct (interactor (:constructor %make-interactor) (:copier nil))
   (name          "interactor" :type string)
   ;; ALIAS: one optional alternate name for `NAME CMD …' routing — the ALDO
   ;; debugger answers to `aldo' and `debug'. One alias, not a list: keep the
@@ -33,13 +37,6 @@
   (evaluator     nil          :type (or null function-designator))
   (commands      nil          :type (or null dictionary))
   (user-commands nil          :type (or null dictionary))
-  ;; STATE: the mode's mutable state — the navigator's location, the editor's
-  ;; session, the debugger's stop. Dictionaries are shared singletons; a mode
-  ;; ENTERS by pushing a fresh instance (COPY-INTERACTOR of its template, or
-  ;; a maker) carrying its state, so recursive entries (a nested
-  ;; invoke-debugger) stack cleanly. A command body reaches its mode's state
-  ;; as (INTERACTOR-STATE *COMMAND-INTERACTOR*).
-  (state         nil)
   ;; ON-RESULT: (function (result)) applied to each command's return value —
   ;; on the interactor whose dictionary OWNED the command, wherever it was
   ;; typed. The debugger's calls (INTERACTOR-RETURN result) on non-NIL: a
@@ -61,31 +58,51 @@ fresh ones named after it."
                            (make-command-dictionary
                             (concatenate 'string (string name) "-user")))))))
 
+(defstruct (activation (:constructor make-activation (interactor &optional state)))
+  "One entry of *INTERACTOR-STACK*: the (singleton) INTERACTOR paired with the
+STATE of this activation of it — like a call frame pairing a function with
+its locals (interactor-design-revision.issue T1). The state is whatever the
+mode needs per entry: the navigator's location and redraw flag, the
+debugger's UI/session/stop. Recursive entries (a nested invoke-debugger
+suspending one navigator under another) each carry their own state over the
+same interactor."
+  (interactor nil :type (or null interactor))
+  (state      nil))
+
 (defvar *interactor-stack* '()
-  "The stack of live interactors, innermost first. Commands are searched down
+  "The stack of live ACTIVATIONs, innermost first. Commands are searched down
 this stack — user dictionaries before system dictionaries at each level — so
 user commands shadow system commands and inner loops shadow outer loops.")
 
-(defun push-interactor (interactor)
-  "Enter INTERACTOR: subsequent turns of the running INTERACTOR-LOOP read its
-prompt and dictionaries. Returns INTERACTOR."
-  (push interactor *interactor-stack*)
-  interactor)
+(defun push-interactor (interactor &optional state)
+  "Enter INTERACTOR with this activation's STATE: subsequent turns of the
+running INTERACTOR-LOOP read its prompt and dictionaries. Returns the
+ACTIVATION."
+  (let ((activation (make-activation interactor state)))
+    (push activation *interactor-stack*)
+    activation))
 
 (defun pop-interactor ()
-  "Leave the top interactor. A loop whose stack shrinks below its entry depth
+  "Leave the top activation. A loop whose stack shrinks below its entry depth
 returns."
   (pop *interactor-stack*))
 
-(defun find-interactor (name &optional (stack *interactor-stack*))
-  "The interactor called (or aliased) NAME, case-insensitively, on STACK; NIL
-when none."
+(defun find-activation (name &optional (stack *interactor-stack*))
+  "The activation whose interactor is called (or aliased) NAME,
+case-insensitively, on STACK; NIL when none."
   (let ((name (string name)))
-    (find-if (lambda (interactor)
-               (or (equalp name (interactor-name interactor))
-                   (and (interactor-alias interactor)
-                        (equalp name (interactor-alias interactor)))))
+    (find-if (lambda (activation)
+               (let ((interactor (activation-interactor activation)))
+                 (or (equalp name (interactor-name interactor))
+                     (and (interactor-alias interactor)
+                          (equalp name (interactor-alias interactor))))))
              stack)))
+
+(defun find-interactor (name &optional (stack *interactor-stack*))
+  "The interactor called (or aliased) NAME, case-insensitively, active on
+STACK; NIL when none."
+  (let ((activation (find-activation name stack)))
+    (and activation (activation-interactor activation))))
 
 (defun make-prompt-function (who)
   "A prompt function printing `[DEPTH]WHO> ', DEPTH the interactor stack depth."
@@ -117,26 +134,28 @@ the system dictionary alone (the `command' escape)."
 
 (defun find-invocation-in-stack (invocation &optional (stack *interactor-stack*)
                                               system-only)
-  "Search STACK innermost-first for INVOCATION (a token string).
-Returns (values COMMAND INTERACTOR) or NIL."
-  (dolist (interactor stack nil)
-    (let ((command (find-invocation-in-interactor invocation interactor
-                                                  system-only)))
+  "Search STACK (of activations) innermost-first for INVOCATION (a token
+string). Returns (values COMMAND ACTIVATION) or NIL."
+  (dolist (activation stack nil)
+    (let ((command (find-invocation-in-interactor
+                    invocation (activation-interactor activation)
+                    system-only)))
       (when command
-        (return (values command interactor))))))
+        (return (values command activation))))))
 
 (defun %find-longest-prefix (idents stack &optional system-only)
-  "Resolve the longest prefix of IDENTS to a command, innermost interactor
+  "Resolve the longest prefix of IDENTS to a command, innermost activation
 first: at each level `list breakpoints' is found before `list'.
-Returns (values COMMAND PREFIX-LENGTH INTERACTOR) or NIL."
-  (dolist (interactor stack nil)
+Returns (values COMMAND PREFIX-LENGTH ACTIVATION) or NIL."
+  (dolist (activation stack nil)
     (loop :for k :from (length idents) :downto 1
           :do (let* ((phrase (format nil "~{~A~^ ~}" (subseq idents 0 k)))
-                     (command (find-invocation-in-interactor phrase interactor
-                                                             system-only)))
+                     (command (find-invocation-in-interactor
+                               phrase (activation-interactor activation)
+                               system-only)))
                 (when command
                   (return-from %find-longest-prefix
-                    (values command k interactor)))))))
+                    (values command k activation)))))))
 
 (defun find-interactor-command (input &optional (stack *interactor-stack*))
   "Resolve INPUT (an INPUT-COMMAND) against STACK. When the first ident names
@@ -146,35 +165,35 @@ looked up in that interactor only (`aldo break 42' runs the debugger's
 down the stack. The system word `command' — bare or after the interactor
 name — skips the user dictionaries: `command CMD …' / `aldo command CMD …'
 reach a system command a user command shadows. Returns (values COMMAND
-ARGUMENT-TOKENS WORDS-CONSUMED INTERACTOR), or NIL when nothing matches."
+ARGUMENT-TOKENS WORDS-CONSUMED ACTIVATION), or NIL when nothing matches."
   (let ((invocation (input-command-invocation input))
         (tokens (input-command-tokens input)))
     (when invocation
       ;; explicit routing: INTERACTOR-NAME [command] CMD …
       (when (rest invocation)
-        (let ((interactor (find-interactor (first invocation) stack)))
-          (when interactor
+        (let ((activation (find-activation (first invocation) stack)))
+          (when activation
             (let* ((system-only (and (%system-word-p (second invocation))
                                      (not (null (cddr invocation)))))
                    (idents (if system-only (cddr invocation) (rest invocation)))
                    (offset (if system-only 2 1)))
               (multiple-value-bind (command k)
-                  (%find-longest-prefix idents (list interactor) system-only)
+                  (%find-longest-prefix idents (list activation) system-only)
                 (when command
                   (return-from find-interactor-command
                     (values command (nthcdr (+ offset k) tokens) (+ offset k)
-                            interactor))))))))
+                            activation))))))))
       ;; the system word alone: skip the user dictionaries down the stack
       (when (and (%system-word-p (first invocation)) (rest invocation))
-        (multiple-value-bind (command k interactor)
+        (multiple-value-bind (command k activation)
             (%find-longest-prefix (rest invocation) stack t)
           (when command
             (return-from find-interactor-command
-              (values command (nthcdr (1+ k) tokens) (1+ k) interactor)))))
-      (multiple-value-bind (command k interactor)
+              (values command (nthcdr (1+ k) tokens) (1+ k) activation)))))
+      (multiple-value-bind (command k activation)
           (%find-longest-prefix invocation stack)
         (when command
-          (values command (nthcdr k tokens) k interactor))))))
+          (values command (nthcdr k tokens) k activation))))))
 
 ;;; --- executing a command with parameters ---------------------------------
 
@@ -225,23 +244,32 @@ command's value (commands that resume an outer loop use INTERACTOR-RETURN)."
 
 (defvar *command-interactor* nil
   "The interactor whose dictionary held the command being executed — bound by
-FIND-AND-RUN-COMMAND around the call, so a command body reaches its mode's
-mutable state as (INTERACTOR-STATE *COMMAND-INTERACTOR*). Note this is the
-command's OWNER, not necessarily the top of the stack: `aldo break' typed in
-the navigator runs with the debugger interactor here.")
+FIND-AND-RUN-COMMAND around the call. Note this is the command's OWNER, not
+necessarily the top of the stack: `aldo break' typed in the navigator runs
+with the debugger interactor here.")
+
+(defvar *command-activation* nil
+  "The activation on whose behalf interactor code is currently running: bound
+by FIND-AND-RUN-COMMAND to the OWNING activation around a command's
+execution, and by INTERACTOR-LOOP to the TOP activation around the status /
+prompt / reader / evaluator calls. Interactor functions and command bodies
+reach their mode's per-entry state as (ACTIVATION-STATE *COMMAND-ACTIVATION*).")
 
 (defun find-and-run-command (input
                              &key (stack *interactor-stack*)
                                   (output *standard-output*)
                                   (error-output *error-output*) input-context)
   "Resolve INPUT (an INPUT-COMMAND) on STACK and run it — *COMMAND-INTERACTOR*
-bound to the owning interactor — then apply that interactor's ON-RESULT to the
-command's value (which may INTERACTOR-RETURN out of the running loop). An
-unknown command is reported on OUTPUT. Returns the command's value, or NIL."
-  (multiple-value-bind (command arguments skip interactor)
+/ *COMMAND-ACTIVATION* bound to the owning interactor and activation — then
+apply that interactor's ON-RESULT to the command's value (which may
+INTERACTOR-RETURN out of the running loop). An unknown command is reported
+on OUTPUT. Returns the command's value, or NIL."
+  (multiple-value-bind (command arguments skip activation)
       (find-interactor-command input stack)
     (if command
-        (let* ((*command-interactor* interactor)
+        (let* ((interactor (and activation (activation-interactor activation)))
+               (*command-interactor* interactor)
+               (*command-activation* activation)
                (result (call-command command arguments
                                      :raw (input-command-raw-arguments input skip)
                                      :output output :error-output error-output
@@ -263,11 +291,13 @@ computation that entered the loop (continue/step in the debugger)."
                              (output *standard-output*)
                              (error-output *error-output*)
                              (floor (length *interactor-stack*)))
-  "The single interaction loop: each turn takes the top of *INTERACTOR-STACK*,
-prints its status and prompt, reads with its reader, and either runs the
-command (searched down the stack, with `NAME CMD …' routing to the named
-interactor) or hands the sexp to its evaluator. Returns at EOF, when the
-stack shrinks below FLOOR interactors (default: its depth at entry — the
+  "The single interaction loop: each turn takes the top activation of
+*INTERACTOR-STACK*, prints its interactor's status and prompt, reads with its
+reader, and either runs the command (searched down the stack, with `NAME CMD
+…' routing to the named interactor) or hands the sexp to its evaluator —
+*COMMAND-ACTIVATION* bound to the top activation around those calls, so the
+interactor's functions reach this activation's state. Returns at EOF, when
+the stack shrinks below FLOOR activations (default: its depth at entry — the
 caller may pass a smaller FLOOR to let inner interactors pop back to an
 outer one within the same loop), or with INTERACTOR-RETURN's value."
   (assert *interactor-stack* (*interactor-stack*)
@@ -277,7 +307,8 @@ outer one within the same loop), or with INTERACTOR-RETURN's value."
       (loop
         (when (< (length *interactor-stack*) floor)
           (return))
-        (let ((top (first *interactor-stack*)))
+        (let* ((*command-activation* (first *interactor-stack*))
+               (top (activation-interactor *command-activation*)))
           ;; status
           (let ((status (interactor-status top)))
             (when status
@@ -322,9 +353,10 @@ outer one within the same loop), or with INTERACTOR-RETURN's value."
 
 (defmacro define-interactor (varname &key name alias status prompt reader
                                           evaluator commands user-commands
-                                          state on-result documentation)
-  "Define VARNAME as an interactor. NAME defaults to VARNAME without its
-earmuffs; ALIAS is the optional alternate routing name."
+                                          on-result documentation)
+  "Define VARNAME as an interactor — a singleton: per-entry state belongs to
+the ACTIVATION pushed on the stack, not to the interactor. NAME defaults to
+VARNAME without its earmuffs; ALIAS is the optional alternate routing name."
   `(defparameter ,varname
      (make-interactor
       :name ,(or name (string-trim "*" (string varname)))
@@ -335,7 +367,6 @@ earmuffs; ALIAS is the optional alternate routing name."
       ,@(when evaluator     `(:evaluator ,evaluator))
       ,@(when commands      `(:commands ,commands))
       ,@(when user-commands `(:user-commands ,user-commands))
-      ,@(when state         `(:state ,state))
       ,@(when on-result     `(:on-result ,on-result))
       ,@(when documentation `(:documentation ,documentation)))
      ,@(when documentation (list documentation))))

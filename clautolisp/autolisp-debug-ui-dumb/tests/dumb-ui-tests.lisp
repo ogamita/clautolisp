@@ -201,24 +201,23 @@
   ;; an error escaping a command body is reported and the stop keeps reading —
   ;; a debugging state is only dropped by an explicit q/abort
   ;; (error-while-debugging.issue).
-  (let* ((context (fresh-context))
-         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
-         (frob (fid-of (first metas)))
-         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
-         (clautolisp.debug.ui:*global-dictionary*
-           (clautolisp.debug.ui:make-command-dictionary "test")))
-    (clautolisp.debug.ui:define-debugger-command (z zap) () "boom."
-      (error "zap exploded"))
-    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
-    (multiple-value-bind (result output)
-        (run-ui (format nil "z~%c~%") :context context :thread-info ti
-                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
-                                   (list (rt-sym "FROB") 7) context)))
-      ;; the framework's CALL-COMMAND reports it ("Error while executing the
-      ;; command: zap exploded") and the stop keeps reading
-      (is (contains output "hile executing"))
-      (is (contains output "zap exploded"))
-      (is (eql 7 result)))))                ; the stop survived; c continued
+  (with-fresh-user-dictionary
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+           (frob (fid-of (first metas)))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+      (clautolisp.debug.ui:define-debugger-command (z zap) () "boom."
+        (error "zap exploded"))
+      (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+      (multiple-value-bind (result output)
+          (run-ui (format nil "z~%c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        ;; the framework's CALL-COMMAND reports it ("Error while executing the
+        ;; command: zap exploded") and the stop keeps reading
+        (is (contains output "hile executing"))
+        (is (contains output "zap exploded"))
+        (is (eql 7 result))))))              ; the stop survived; c continued
 
 (test inspector-navigation-and-path
   (let* ((context (fresh-context))
@@ -735,92 +734,88 @@
   ;; a user command registered via define-debugger-command dispatches through
   ;; the command table in the dumb UI, receives its parsed arg, and reaches the
   ;; session via the *debugger-ui* dynamic var (command reference §8).
-  (let* ((context (fresh-context))
-         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
-         (frob (fid-of (first metas)))
-         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
-         (clautolisp.debug.ui:*global-dictionary*
-           (clautolisp.debug.ui:make-command-dictionary "test")))
-    (clautolisp.debug.ui:define-debugger-command (z zap) (n) "zap N."
-      (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "ZAPPED ~A~%" n)
-      nil)
-    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
-    (multiple-value-bind (result output)
-        (run-ui (format nil "zap 42~%c~%") :context context :thread-info ti
-                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
-                                   (list (rt-sym "FROB") 7) context)))
-      (is (eql 7 result))                  ; user cmd returned nil → kept reading → c resumed
-      (is (contains output "ZAPPED 42"))))) ; dispatched + parsed arg + reached the UI
+  (with-fresh-user-dictionary
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+           (frob (fid-of (first metas)))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+      (clautolisp.debug.ui:define-debugger-command (z zap) (n) "zap N."
+        (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "ZAPPED ~A~%" n)
+        nil)
+      (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+      (multiple-value-bind (result output)
+          (run-ui (format nil "zap 42~%c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        (is (eql 7 result))                  ; user cmd returned nil → kept reading → c resumed
+        (is (contains output "ZAPPED 42")))))) ; dispatched + parsed arg + reached the UI
 
 (test dumb-ui-autolisp-defined-command
   ;; an AutoLISP function registered as a command (the AutoLISP-side
   ;; define-debugger-command, command reference §8) dispatches in the dumb UI,
   ;; receives its parsed arg as an AutoLISP string, and runs in the stop context.
-  (let* ((context (fresh-context))
-         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
-         (frob (fid-of (first metas)))
-         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
-         (clautolisp.debug.ui:*global-dictionary*
-           (clautolisp.debug.ui:make-command-dictionary "test"))
-         ;; the command body: (lambda (n) (setq zz n)) — records its arg in ZZ
-         (fnval (clautolisp.autolisp-runtime:autolisp-eval
-                 (first (clautolisp.autolisp-runtime:read-runtime-from-string
-                         "(lambda (n) (setq zz n))"))
-                 context)))
-    (clautolisp.debug.ui::register-autolisp-command '("z" "zap") fnval nil)
-    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
-    (multiple-value-bind (result output)
-        (run-ui (format nil "zap hello~%c~%") :context context :thread-info ti
-                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
-                                   (list (rt-sym "FROB") 7) context)))
-      (declare (ignore output))
-      (is (eql 7 result))
-      ;; the AutoLISP command body set ZZ to the passed arg "hello"
-      (is (string= "hello"
-                   (clautolisp.autolisp-runtime:autolisp-string-value
-                    (nth-value 0 (clautolisp.autolisp-runtime:lookup-variable
-                                  (rt-sym "ZZ") context))))))))
+  (with-fresh-user-dictionary
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+           (frob (fid-of (first metas)))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+           ;; the command body: (lambda (n) (setq zz n)) — records its arg in ZZ
+           (fnval (clautolisp.autolisp-runtime:autolisp-eval
+                   (first (clautolisp.autolisp-runtime:read-runtime-from-string
+                           "(lambda (n) (setq zz n))"))
+                   context)))
+      (clautolisp.debug.ui::register-autolisp-command '("z" "zap") fnval nil)
+      (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+      (multiple-value-bind (result output)
+          (run-ui (format nil "zap hello~%c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        (declare (ignore output))
+        (is (eql 7 result))
+        ;; the AutoLISP command body set ZZ to the passed arg "hello"
+        (is (string= "hello"
+                     (clautolisp.autolisp-runtime:autolisp-string-value
+                      (nth-value 0 (clautolisp.autolisp-runtime:lookup-variable
+                                    (rt-sym "ZZ") context)))))))))
 
 (test dumb-ui-escape-word-reaches-builtin
   ;; the `debugger' escape word forces the built-in meaning of a token a user
   ;; command shadows (command reference §8).
-  (let* ((context (fresh-context))
-         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
-         (frob (fid-of (first metas)))
-         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
-         (clautolisp.debug.ui:*global-dictionary*
-           (clautolisp.debug.ui:make-command-dictionary "test")))
-    (clautolisp.debug.ui:define-debugger-command (c continue) () "shadow c."
-      (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "USER-C~%")
-      nil)
-    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
-    (multiple-value-bind (result output)
-        (run-ui (format nil "c~%debugger c~%") :context context :thread-info ti
-                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
-                                   (list (rt-sym "FROB") 7) context)))
-      (is (eql 7 result))                  ; `debugger c' reached the built-in continue
-      (is (contains output "USER-C")))))   ; plain `c' ran the shadowing user command
+  (with-fresh-user-dictionary
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+           (frob (fid-of (first metas)))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+      (clautolisp.debug.ui:define-debugger-command (c continue) () "shadow c."
+        (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "USER-C~%")
+        nil)
+      (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+      (multiple-value-bind (result output)
+          (run-ui (format nil "c~%debugger c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        (is (eql 7 result))                  ; `debugger c' reached the built-in continue
+        (is (contains output "USER-C"))))))  ; plain `c' ran the shadowing user command
 
 (test dumb-ui-command-word-reaches-builtin
   ;; the systematic form of the escape: the interactor framework's `command'
   ;; word (like bash's `command') skips the user dictionaries — `command c'
   ;; reaches the built-in continue a user command shadows.
-  (let* ((context (fresh-context))
-         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
-         (frob (fid-of (first metas)))
-         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
-         (clautolisp.debug.ui:*global-dictionary*
-           (clautolisp.debug.ui:make-command-dictionary "test")))
-    (clautolisp.debug.ui:define-debugger-command (c continue) () "shadow c."
-      (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "USER-C~%")
-      nil)
-    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
-    (multiple-value-bind (result output)
-        (run-ui (format nil "c~%command c~%") :context context :thread-info ti
-                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
-                                   (list (rt-sym "FROB") 7) context)))
-      (is (eql 7 result))                  ; `command c' reached the built-in continue
-      (is (contains output "USER-C")))))   ; plain `c' ran the shadowing user command
+  (with-fresh-user-dictionary
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+           (frob (fid-of (first metas)))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+      (clautolisp.debug.ui:define-debugger-command (c continue) () "shadow c."
+        (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "USER-C~%")
+        nil)
+      (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+      (multiple-value-bind (result output)
+          (run-ui (format nil "c~%command c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        (is (eql 7 result))                  ; `command c' reached the built-in continue
+        (is (contains output "USER-C"))))))  ; plain `c' ran the shadowing user command
 
 (test dumb-ui-clal-break-enters-debugger
   ;; The programmatic entry INVOKE-DEBUGGER-BREAK (what the CLAL-BREAK /

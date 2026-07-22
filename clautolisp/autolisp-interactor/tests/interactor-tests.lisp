@@ -56,7 +56,7 @@
 ;;; --- resolution on the interactor stack -------------------------------------
 
 (defun test-stack ()
-  "Two stacked interactors: NAVI over ALDO, with a user command shadowing an
+  "Two stacked activations: NAVI over ALDO, with a user command shadowing an
 ALDO system command."
   (let ((aldo (make-interactor :name "ALDO" :alias "debug"))
         (navi (make-interactor :name "NAVI")))
@@ -65,7 +65,7 @@ ALDO system command."
     (bind-command (interactor-commands aldo) '(lb list breakpoints) '() "List." (constantly :aldo-lb))
     (bind-command (interactor-user-commands aldo) '(c cont-mine) '() "User c." (constantly :user-continue))
     (bind-command (interactor-commands navi) '(b breakpoint) '() "NAV break." (constantly :navi-break))
-    (list navi aldo)))
+    (list (make-activation navi) (make-activation aldo))))
 
 (defun resolve (line stack)
   (find-interactor-command
@@ -81,11 +81,11 @@ ALDO system command."
 
 (test explicit-interactor-routing-reaches-a-shadowed-command
   (let ((stack (test-stack)))
-    (multiple-value-bind (cmd args skip interactor) (resolve "aldo b 42" stack)
+    (multiple-value-bind (cmd args skip activation) (resolve "aldo b 42" stack)
       (is (eq :aldo-break (funcall (command-function cmd))))
       (is (equal '((integer . "42")) args))
       (is (= 2 skip))
-      (is (equal "ALDO" (interactor-name interactor))))))
+      (is (equal "ALDO" (interactor-name (activation-interactor activation)))))))
 
 (test longest-phrase-wins-and-the-rest-are-arguments
   (let ((stack (test-stack)))
@@ -101,11 +101,11 @@ ALDO system command."
 (test the-alias-routes-like-the-name
   ;; `aldo' and `debug' are name and alias of the one debugger interactor
   (let ((stack (test-stack)))
-    (multiple-value-bind (cmd args skip interactor) (resolve "debug b 42" stack)
+    (multiple-value-bind (cmd args skip activation) (resolve "debug b 42" stack)
       (is (eq :aldo-break (funcall (command-function cmd))))
       (is (equal '((integer . "42")) args))
       (is (= 2 skip))
-      (is (equal "ALDO" (interactor-name interactor))))))
+      (is (equal "ALDO" (interactor-name (activation-interactor activation)))))))
 
 (test the-command-word-skips-the-user-dictionaries
   ;; like bash's `command foo': reach a system command a user command shadows
@@ -274,17 +274,39 @@ ALDO system command."
       (is (eq :continue value)))))
 
 (test command-bodies-reach-their-mode-state
-  ;; *COMMAND-INTERACTOR* is the command's owner: its body reads the mode's
-  ;; mutable state from the interactor instance
-  (let ((navi (make-interactor :name "NAVI" :state (list 0))))
+  ;; *COMMAND-ACTIVATION* is the command's owning activation: its body reads
+  ;; the mode's per-entry mutable state from the activation, not from the
+  ;; (singleton) interactor
+  (let ((navi (make-interactor :name "NAVI")))
     (bind-command (interactor-commands navi) '(m more) '() "Count."
                   (lambda ()
-                    (incf (first (interactor-state *command-interactor*)))
-                    (format t "count=~D~%" (first (interactor-state *command-interactor*)))))
+                    (incf (first (activation-state *command-activation*)))
+                    (format t "count=~D~%" (first (activation-state *command-activation*)))))
     (multiple-value-bind (output)
-        (run-loop-on-script (format nil "m~%m~%") :interactors (list navi))
+        (run-loop-on-script (format nil "m~%m~%")
+                            :interactors (list (make-activation navi (list 0))))
       (is (search "count=1" output))
       (is (search "count=2" output)))))
+
+(test recursive-activations-of-one-interactor-keep-separate-states
+  ;; the same singleton interactor active twice: each activation counts its
+  ;; own state (a nested invoke-debugger suspending one navigator under
+  ;; another must not clobber the outer one's state)
+  (let ((navi (make-interactor :name "NAVI")))
+    (bind-command (interactor-commands navi) '(m more) '() "Count."
+                  (lambda ()
+                    (incf (first (activation-state *command-activation*)))
+                    (format t "count=~D~%" (first (activation-state *command-activation*)))))
+    (bind-command (interactor-commands navi) '(again) '() "Re-enter."
+                  (lambda () (push-interactor *command-interactor* (list 10))))
+    (bind-command (interactor-commands navi) '(q quit) '() "Leave."
+                  (lambda () (pop-interactor)))
+    (multiple-value-bind (output)
+        (run-loop-on-script (format nil "m~%again~%m~%q~%m~%")
+                            :interactors (list (make-activation navi (list 0))))
+      (is (search "count=1" output))     ; outer activation
+      (is (search "count=11" output))    ; inner activation, its own state
+      (is (search "count=2" output)))))  ; back out: the outer state survived
 
 (test the-floor-lets-inner-interactors-pop-within-the-loop
   ;; stack (INNER over OUTER) with floor 1: q pops INNER and the SAME loop
@@ -322,7 +344,7 @@ ALDO system command."
       (is (= 2 (count-substring "[view]" output))))))    ; before each of 2 prompts
 
 (test make-prompt-function-shows-the-stack-depth
-  (let ((*interactor-stack* (list (make-interactor :name "A"))))
+  (let ((*interactor-stack* (list (make-activation (make-interactor :name "A")))))
     (let ((prompt (with-output-to-string (s)
                     (funcall (make-prompt-function "LISP") s))))
       (is (search "[1]LISP> " prompt)))))

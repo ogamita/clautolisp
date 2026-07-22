@@ -56,3 +56,22 @@ and output is captured. Returns (values result output-string)."
 
 (defun contains (haystack needle)
   (and (search needle haystack) t))
+
+(defmacro with-fresh-user-dictionary (&body body)
+  "Swap a fresh user dictionary onto the singleton *ALDO* interactor — the
+live dictionary the stop loop dispatches through — AND bind the
+*GLOBAL-DICTIONARY* special the registration API defaults to, for BODY's
+extent (interactor-design-revision.issue T5: interactors are singletons, so
+rebinding the special alone no longer isolates a test's user commands)."
+  (let ((dict (gensym "DICT")) (saved (gensym "SAVED")))
+    `(let* ((,dict (clautolisp.debug.ui:make-command-dictionary "test"))
+            (,saved (clautolisp.interactor:interactor-user-commands
+                     clautolisp.ui.dumb::*aldo*))
+            (clautolisp.debug.ui:*global-dictionary* ,dict))
+       (setf (clautolisp.interactor:interactor-user-commands
+              clautolisp.ui.dumb::*aldo*)
+             ,dict)
+       (unwind-protect (progn ,@body)
+         (setf (clautolisp.interactor:interactor-user-commands
+                clautolisp.ui.dumb::*aldo*)
+               ,saved)))))

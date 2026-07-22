@@ -251,67 +251,6 @@ one Lisp form to evaluate in the current frame, returned as (:EVAL LINE)."
                         :eof
                         (list :eval (string-trim " 	" line)))))))
 
-(defun make-aldo-interactor (ui session hit)
-  "A fresh instance of the *ALDO* template for one stop: the UI's prompt, the
-stop's frame evaluator and UI/SESSION/HIT state, and the user
-*GLOBAL-DICTIONARY* captured now (so tests may rebind it per stop)."
-  (let ((aldo (copy-interactor *aldo*)))
-    (setf (interactor-prompt aldo) (dumb-ui-prompt ui)
-          (interactor-evaluator aldo)
-          (lambda (input) (eval-and-print ui session (second input)))
-          (interactor-user-commands aldo) *global-dictionary*
-          (interactor-state aldo) (list ui session hit))
-    aldo))
-
-(defmethod ui-await-command ((ui dumb-ui) session hit)
-  (record-navigation-state ui)
-  (let* ((aldo (make-aldo-interactor ui session hit))
-         (*interactor-stack* (list aldo))
-         (*debugger-ui* ui) (*debugger-session* session) (*debugger-hit* hit))
-    ;; CLAL-NAV-* requested a stop to open a navigator (a function's source, a
-    ;; file's forms, or a directory): open it on top of the stop's stack
-    ;; (aldo-pre-debug.issue). A debugger command issued from NAV (e.g.
-    ;; `continue') resumes: its directive cascades out through ON-RESULT
-    ;; (bug-aldo-nav-command-dictionary).
-    (when *pending-nav-request*
-      (let ((request *pending-nav-request*))
-        (setf *pending-nav-request* nil)
-        (let ((loc (nav-loc-for-request ui session request)))
-          (when loc
-            (push-interactor (make-navi-interactor ui session hit loc))))))
-    ;; `set navigator sexp' (the default): every stop enters the sexp form
-    ;; navigator directly, anchored on the current poll-point (sedit-spec §7).
-    ;; `q' pops the navigator and drops to the flat DBG> prompt — the FLOOR 1
-    ;; keeps the same loop running on the debugger interactor.
-    (when (and hit
-               (null (rest *interactor-stack*))     ; no navigator opened above
-               (eq (ignore-errors (get-aldo-setting :navigator)) :sexp))
-      (let ((loc (nav-function-loc session hit)))
-        (when loc
-          (push-interactor (make-navi-interactor ui session hit loc)))))
-    (or (interactor-loop :input (dumb-ui-input ui) :output (dumb-ui-output ui)
-                         :error-output (dumb-ui-output ui) :floor 1)
-        :continue)))                                 ; EOF ⇒ continue (CI/pipe)
-
-(defun %command-tokens (arg)
-  "ARG split into whitespace-separated tokens (empties dropped)."
-  (and arg (remove "" (uiop:split-string (string-trim " " arg) :separator '(#\Space #\Tab))
-                   :test #'string=)))
-
-(defun %marshal-command-args (lambda-list tokens)
-  "Map TOKENS (strings) onto LAMBDA-LIST for APPLY: each required / &optional
-parameter takes the next token (or NIL when exhausted); &rest collects the
-remainder as a list. So a command body receives its parsed positional args."
-  (let ((args '()) (toks tokens) (rest-p nil))
-    (dolist (item lambda-list)
-      (cond
-        ((eq item '&optional))
-        ((eq item '&rest) (setf rest-p t) (return))
-        (t (push (pop toks) args))))
-    (nreverse-then-append (nreverse args) (when rest-p (list toks)))))
-
-(defun nreverse-then-append (front rest)
-  (if rest (append front rest) front))
 
 (defvar *aldo-commands*
   (clautolisp.interactor:make-command-dictionary "aldo")
@@ -343,19 +282,21 @@ p/path, q/quit. Registered in commands.lisp.")
 (defvar *inspi-user-commands* (clautolisp.interactor:make-command-dictionary "inspect-user")
   "User commands of the inspector, shadowing *INSPI-COMMANDS*.")
 
-;;; The interactor TEMPLATES (interactor-unification.issue): the singletons
-;;; declaring each mode's identity — name, alias, dictionaries, conventions.
-;;; Entering a mode COPY-INTERACTORs its template and fills the per-entry
-;;; slots (state, prompt/status/reader/evaluator closures over the UI and the
-;;; stop), so recursive entries stack fresh instances over the shared
-;;; dictionaries. The vocabularies are registered on these templates with
-;;; DEFINE-*-COMMAND (commands.lisp), sugar over the framework's
-;;; DEFINE-COMMAND.
+;;; The interactors (interactor-design-revision.issue D1): SINGLETONS — pure
+;;; program, never copied — declaring each mode's identity: name, alias,
+;;; dictionaries, prompt/status/reader/evaluator functions, conventions.
+;;; Entering a mode pushes an ACTIVATION pairing the interactor with this
+;;; entry's state (the navigator's location, the stop's UI/session/hit), so
+;;; recursive entries stack cleanly; the interactor functions reach that
+;;; state as (ACTIVATION-STATE *COMMAND-ACTIVATION*). The vocabularies are
+;;; registered on these interactors with DEFINE-*-COMMAND (commands.lisp),
+;;; sugar over the framework's DEFINE-COMMAND.
 
 (define-interactor *aldo*
   :name "ALDO" :alias "debug"
-  :prompt "DBG> "
+  :prompt '%aldo-prompt
   :reader '%line-command-read
+  :evaluator '%aldo-evaluate
   :commands *aldo-commands*
   :user-commands *global-dictionary*
   :on-result '%directive-on-result
@@ -365,6 +306,10 @@ value is a resume directive, carried out of the loop.")
 
 (define-interactor *navi*
   :name "NAVI"
+  :status '%navi-status
+  :prompt '%navi-prompt
+  :reader '%navi-reader
+  :evaluator '%navi-evaluate
   :commands *navi-commands*
   :user-commands *navi-user-commands*
   :documentation "The structural form navigator (sedit spec §5): motions over
@@ -372,7 +317,10 @@ a :SEXP / :FILE / :DIR location, stacked over the debugger's vocabulary.")
 
 (define-interactor *lavi*
   :name "LAVI"
+  :status '%lavi-status
   :prompt "NAV> "
+  :reader '%lavi-reader
+  :evaluator '%lavi-evaluate
   :commands *lavi-commands*
   :user-commands *lavi-user-commands*
   :documentation "The flat line navigator (`set navigator line'): a cursor
@@ -380,13 +328,86 @@ over the current function's poll-point lines, stacked over the debugger.")
 
 (define-interactor *inspi*
   :name "INSPECT"
+  :status '%inspi-status
   :prompt "INSPECT> "
   :reader '%inspi-read
+  :evaluator '%inspi-evaluate
   :commands *inspi-commands*
   :user-commands *inspi-user-commands*
   :documentation "The value inspector (spec §18.2): the §8 stacked-dispatch
 example — its `b' is `bind', shadowing the global `break'; unshadowed
 debugger verbs fall through.")
+
+(defstruct aldo-state
+  "The ALDO activation's per-stop state: the UI at the stop, the session, and
+the HIT (NIL outside a stop)."
+  ui session hit)
+
+(defun %aldo-state () (activation-state *command-activation*))
+
+(defun %aldo-prompt (stream)
+  "The *ALDO* template's prompt: the stop UI's configured prompt string."
+  (format stream "~&~A" (dumb-ui-prompt (aldo-state-ui (%aldo-state)))))
+
+(defun %aldo-evaluate (input)
+  "The *ALDO* template's evaluator: a `(FORM)' line evaluates in the current
+frame and echoes with the DBG> prefix."
+  (let ((state (%aldo-state)))
+    (eval-and-print (aldo-state-ui state) (aldo-state-session state)
+                    (second input))))
+
+(defmethod ui-await-command ((ui dumb-ui) session hit)
+  (record-navigation-state ui)
+  (let* ((*interactor-stack*
+           (list (make-activation *aldo* (make-aldo-state :ui ui :session session
+                                                          :hit hit))))
+         (*debugger-ui* ui) (*debugger-session* session) (*debugger-hit* hit))
+    ;; CLAL-NAV-* requested a stop to open a navigator (a function's source, a
+    ;; file's forms, or a directory): open it on top of the stop's stack
+    ;; (aldo-pre-debug.issue). A debugger command issued from NAV (e.g.
+    ;; `continue') resumes: its directive cascades out through ON-RESULT
+    ;; (bug-aldo-nav-command-dictionary).
+    (when *pending-nav-request*
+      (let ((request *pending-nav-request*))
+        (setf *pending-nav-request* nil)
+        (let ((loc (nav-loc-for-request ui session request)))
+          (when loc
+            (push-interactor *navi* (make-navi-state :ui ui :session session
+                                                     :hit hit :loc loc))))))
+    ;; `set navigator sexp' (the default): every stop enters the sexp form
+    ;; navigator directly, anchored on the current poll-point (sedit-spec §7).
+    ;; `q' pops the navigator and drops to the flat DBG> prompt — the FLOOR 1
+    ;; keeps the same loop running on the debugger interactor.
+    (when (and hit
+               (null (rest *interactor-stack*))     ; no navigator opened above
+               (eq (ignore-errors (get-aldo-setting :navigator)) :sexp))
+      (let ((loc (nav-function-loc session hit)))
+        (when loc
+          (push-interactor *navi* (make-navi-state :ui ui :session session
+                                                   :hit hit :loc loc)))))
+    (or (interactor-loop :input (dumb-ui-input ui) :output (dumb-ui-output ui)
+                         :error-output (dumb-ui-output ui) :floor 1)
+        :continue)))                                 ; EOF ⇒ continue (CI/pipe)
+
+(defun %command-tokens (arg)
+  "ARG split into whitespace-separated tokens (empties dropped)."
+  (and arg (remove "" (uiop:split-string (string-trim " " arg) :separator '(#\Space #\Tab))
+                   :test #'string=)))
+
+(defun %marshal-command-args (lambda-list tokens)
+  "Map TOKENS (strings) onto LAMBDA-LIST for APPLY: each required / &optional
+parameter takes the next token (or NIL when exhausted); &rest collects the
+remainder as a list. So a command body receives its parsed positional args."
+  (let ((args '()) (toks tokens) (rest-p nil))
+    (dolist (item lambda-list)
+      (cond
+        ((eq item '&optional))
+        ((eq item '&rest) (setf rest-p t) (return))
+        (t (push (pop toks) args))))
+    (nreverse-then-append (nreverse args) (when rest-p (list toks)))))
+
+(defun nreverse-then-append (front rest)
+  (if rest (append front rest) front))
 
 (defun dispatch-in-dictionaries (ui session hit dictionaries cmd arg)
   "Look CMD up in DICTIONARIES (innermost-first) and dispatch it — binding the
@@ -765,7 +786,7 @@ debugger command issued from the navigator resumes execution, else NIL."
 
 (defstruct lavi-state ui session pps lines (index 0))
 
-(defun %lavi-state () (interactor-state *command-interactor*))
+(defun %lavi-state () (activation-state *command-activation*))
 
 (defun lavi-skip (state n)
   (setf (lavi-state-index state)
@@ -783,18 +804,22 @@ poll points carries a breakpoint."
     (out (lavi-state-ui state) "~&NAV(line ~D/~D)> line ~D~:[~; *breakpoint~]~%"
          (1+ i) (length lines) line bp)))
 
-(defun make-lavi-interactor (ui session hit pps lines)
-  "A fresh instance of the *LAVI* template: the line cursor as state."
-  (declare (ignorable hit))
-  (let ((lavi (copy-interactor *lavi*))
-        (state (make-lavi-state :ui ui :session session :pps pps :lines lines)))
-    (setf (interactor-status lavi)
-          (lambda (stream) (declare (ignore stream)) (lavi-show state))
-          (interactor-reader lavi) (lambda (ic) (%navi-read nil ic))
-          (interactor-evaluator lavi)
-          (lambda (input) (eval-and-print ui session (second input) "NAV> "))
-          (interactor-state lavi) state)
-    lavi))
+(defun %lavi-status (stream)
+  "The *LAVI* singleton's status: the selected poll-point line."
+  (declare (ignore stream))
+  (lavi-show (%lavi-state)))
+
+(defun %lavi-reader (input-context)
+  "The *LAVI* singleton's reader: like NAVI's, but the status always reprints
+so a blank line needs no redraw state."
+  (%navi-read nil input-context))
+
+(defun %lavi-evaluate (input)
+  "The *LAVI* singleton's evaluator: a `(FORM)' line evaluates in the current
+frame, echoed with the NAV> prefix."
+  (let ((state (%lavi-state)))
+    (eval-and-print (lavi-state-ui state) (lavi-state-session state)
+                    (second input) "NAV> ")))
 
 (defun lavi-enter (ui session hit)
   "`nav' in LINE mode (the `navigator line' setting): a flat cursor over the
@@ -807,8 +832,9 @@ debugger command is also reachable directly (stacked dictionaries)."
          (lines (sort (remove-duplicates (mapcar #'second pps)) #'<)))
     (if (null lines)
         (progn (out ui "DBG> nav: no poll points in the current function~%") nil)
-        (%interactor-mode-loop ui session hit
-                               (make-lavi-interactor ui session hit pps lines)))))
+        (%interactor-mode-loop ui session hit *lavi*
+                               (make-lavi-state :ui ui :session session
+                                                :pps pps :lines lines)))))
 
 ;;; ===== unified navigation: function/file source + directory browsing =====
 ;;;
@@ -847,7 +873,7 @@ when it changed; a bare RET forces a redisplay (sedit-spec; the duplicate
 display fix)."
   ui session hit loc (redraw t))
 
-(defun %navi-state () (interactor-state *command-interactor*))
+(defun %navi-state () (activation-state *command-activation*))
 
 (defun %navi-set-file-index (state j)
   (let* ((loc (navi-state-loc state))
@@ -1441,45 +1467,56 @@ otherwise a command, or a `(' form to evaluate in the current frame."
           :tokens (list (cons 'ident "skip") (cons 'integer count)))))
       (t input))))
 
-(defun make-navi-interactor (ui session hit loc)
-  "A fresh instance of the *NAVI* template over LOC: the location + redraw
-policy as state, the kind-specific NAV> prompt, and the frame evaluator
-echoing with NAV> (sedit-spec §6)."
-  (let ((navi (copy-interactor *navi*))
-        (state (make-navi-state :ui ui :session session :hit hit :loc loc)))
-    (setf (interactor-prompt navi)
-          (lambda (stream)
-            (declare (ignore stream))
-            (nav-prompt ui (navi-state-loc state)))
-          (interactor-status navi)
-          (lambda (stream)
-            (declare (ignore stream))
-            (when (navi-state-redraw state)
-              (setf (navi-state-redraw state) nil)
-              (nav-render-display ui session (navi-state-loc state))))
-          (interactor-reader navi) (lambda (ic) (%navi-read state ic))
-          (interactor-evaluator navi)
-          (lambda (input) (eval-and-print ui session (second input) "NAV> "))
-          (interactor-state navi) state)
-    navi))
+(defun %navi-prompt (stream)
+  "The *NAVI* singleton's prompt: the kind-specific NAV> prompt over this
+activation's location (sedit-spec §6)."
+  (declare (ignore stream))
+  (let ((state (%navi-state)))
+    (nav-prompt (navi-state-ui state) (navi-state-loc state))))
 
-(defun %interactor-mode-loop (ui session hit interactor)
-  "Drive INTERACTOR pushed over the current stack in a nested INTERACTOR-LOOP —
-adding a base debugger interactor when entered outside a stop's loop
-(ui-run-command, the sedit debug hook), so the debugger vocabulary and
-`aldo …' routing reach down. Returns when the mode pops (q) or at EOF (NIL),
-or with a resume directive a debugger command issued inside carried out."
+(defun %navi-status (stream)
+  "The *NAVI* singleton's status: re-render the view when it changed — a bare
+RET forces a redisplay (the duplicate-display fix)."
+  (declare (ignore stream))
+  (let ((state (%navi-state)))
+    (when (navi-state-redraw state)
+      (setf (navi-state-redraw state) nil)
+      (nav-render-display (navi-state-ui state) (navi-state-session state)
+                          (navi-state-loc state)))))
+
+(defun %navi-reader (input-context)
+  "The *NAVI* singleton's reader over this activation's state."
+  (%navi-read (%navi-state) input-context))
+
+(defun %navi-evaluate (input)
+  "The *NAVI* singleton's evaluator: a `(FORM)' line evaluates in the current
+frame, echoed with the NAV> prefix (sedit-spec §6)."
+  (let ((state (%navi-state)))
+    (eval-and-print (navi-state-ui state) (navi-state-session state)
+                    (second input) "NAV> ")))
+
+(defun %interactor-mode-loop (ui session hit interactor state)
+  "Drive INTERACTOR — activated with this entry's STATE — pushed over the
+current stack in a nested INTERACTOR-LOOP, adding a base debugger activation
+when entered outside a stop's loop (ui-run-command, the sedit debug hook), so
+the debugger vocabulary and `aldo …' routing reach down. Returns when the
+mode pops (q) or at EOF (NIL), or with a resume directive a debugger command
+issued inside carried out."
   (let ((*interactor-stack*
-          (cons interactor
+          (cons (make-activation interactor state)
                 (or *interactor-stack*
-                    (list (make-aldo-interactor ui session hit))))))
+                    (list (make-activation
+                           *aldo*
+                           (make-aldo-state :ui ui :session session :hit hit)))))))
     (interactor-loop :input (dumb-ui-input ui) :output (dumb-ui-output ui)
                      :error-output (dumb-ui-output ui)
                      :floor (length *interactor-stack*))))
 
 (defun navi-enter (ui session hit loc)
   "Enter the form navigator over LOC; see %INTERACTOR-MODE-LOOP."
-  (%interactor-mode-loop ui session hit (make-navi-interactor ui session hit loc)))
+  (%interactor-mode-loop ui session hit *navi*
+                         (make-navi-state :ui ui :session session
+                                          :hit hit :loc loc)))
 
 (defun nav-loc-for-request (ui session request)
   "Build the initial navigation location for a CLAL-NAV-* REQUEST — (:function
@@ -2010,7 +2047,7 @@ document themselves uniformly."
 
 (defstruct inspi-state ui session)
 
-(defun %inspi-state () (interactor-state *command-interactor*))
+(defun %inspi-state () (activation-state *command-activation*))
 
 (defun %inspi-read (input-context)
   "The inspector reader: a blank line leaves the inspector (§18.2)."
@@ -2019,19 +2056,18 @@ document themselves uniformly."
         (make-input-command :raw "q" :tokens (list (cons 'ident "q")))
         input)))
 
-(defun make-inspi-interactor (ui session)
-  "A fresh instance of the *INSPI* template (spec §18.2): the page renderer
-as status, the $-evaluator, and the UI/SESSION as state."
-  (let ((inspi (copy-interactor *inspi*))
-        (state (make-inspi-state :ui ui :session session)))
-    (setf (interactor-status inspi)
-          (lambda (stream)
-            (declare (ignore stream))
-            (render-inspector-page ui session))
-          (interactor-evaluator inspi)
-          (lambda (input) (inspector-eval ui session (second input)))
-          (interactor-state inspi) state)
-    inspi))
+(defun %inspi-status (stream)
+  "The *INSPI* singleton's status: render the inspector page (spec §18.2)."
+  (declare (ignore stream))
+  (let ((state (%inspi-state)))
+    (render-inspector-page (inspi-state-ui state) (inspi-state-session state))))
+
+(defun %inspi-evaluate (input)
+  "The *INSPI* singleton's evaluator: a bare `(FORM)' evaluates with $ bound
+to the selection (spec §18.2)."
+  (let ((state (%inspi-state)))
+    (inspector-eval (inspi-state-ui state) (inspi-state-session state)
+                    (second input))))
 
 (defun inspector-loop (ui session arg)
   "Open the inspector on ARG (a form evaluated in-frame) or the first visible
@@ -2041,7 +2077,8 @@ debugger command issued inside resumes execution (§8 stacked dispatch)."
   (let ((value (handler-case (cmd-eval session (or arg "nil"))
                  (error (e) (out ui "INSPECT> eval error: ~A~%" e) (return-from inspector-loop)))))
     (cmd-inspect session value :origin (and arg (first (read-runtime-from-string arg))))
-    (%interactor-mode-loop ui session nil (make-inspi-interactor ui session))))
+    (%interactor-mode-loop ui session nil *inspi*
+                           (make-inspi-state :ui ui :session session))))
 
 (defun render-inspector-page (ui session)
   (let ((page (session-page (session-inspector session))))

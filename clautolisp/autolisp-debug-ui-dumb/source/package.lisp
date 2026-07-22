@@ -11,13 +11,15 @@ UI refines.")
                 #:bind-command #:bind-command-alias
                 #:command-raw-argument-p #:dictionary-commands
                 #:+system-command-word+
-                ;; the unified loop (interactor-unification.issue)
+                ;; the unified loop (interactor-unification.issue) over
+                ;; singleton interactors + activations (design-revision T1)
                 #:define-interactor #:define-command
-                #:make-interactor #:copy-interactor
+                #:make-interactor
                 #:interactor-commands #:interactor-user-commands
                 #:interactor-prompt #:interactor-reader #:interactor-evaluator
                 #:interactor-status #:interactor-on-result
-                #:interactor-state #:*command-interactor*
+                #:make-activation #:activation-state
+                #:*command-interactor* #:*command-activation*
                 #:*interactor-stack* #:push-interactor #:pop-interactor
                 #:interactor-loop #:interactor-return
                 #:command-read #:read-line-from-input-context

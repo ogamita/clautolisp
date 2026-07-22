@@ -590,7 +590,8 @@ not supplied)."
 (define-interactor *autolisp*
   :name "AUTOLISP"
   :prompt "_$ "
-  :reader #'comma-command-read
+  :reader '%autolisp-reader
+  :evaluator '%autolisp-evaluate
   :documentation "The clautolisp Lisp REPL: reads AutoLISP forms; a `,command' line runs a REPL command.")
 
 (define-command (*autolisp* d date) ()
@@ -646,30 +647,43 @@ not supplied)."
               (clautolisp.debug.ui:ui-run-command
                (clautolisp.debug.ui:session-ui session) session command))))
         ;; The REPL is the bottom interactor: the single INTERACTOR-LOOP
-        ;; drives it — a `,command' line dispatches against *AUTOLISP*'s
-        ;; dictionaries, AutoLISP source goes to the evaluator.
+        ;; drives the *AUTOLISP* singleton, this run's dialect / context /
+        ;; session as the activation's state — a `,command' line dispatches
+        ;; against *AUTOLISP*'s dictionaries, AutoLISP source goes to the
+        ;; evaluator.
         (*interactor-stack*
-          (list (%make-repl-interactor dialect context session break-on-error))))
+          (list (make-activation *autolisp*
+                                 (make-repl-state :dialect dialect
+                                                  :context context
+                                                  :session session
+                                                  :break-on-error break-on-error)))))
     (when (null (interactor-loop))
       ;; EOF (Ctrl-D): a fresh line before leaving. ,quit / (quit) return
       ;; markers through INTERACTOR-RETURN and print nothing extra.
       (terpri))))
 
-(defun %make-repl-interactor (dialect context session break-on-error)
-  "A fresh instance of the *AUTOLISP* interactor for one REPL run: the shared
-comma-command dictionaries, the balanced AutoLISP source reader for this
-DIALECT, and the turn evaluator over CONTEXT/SESSION."
-  (let ((repl (copy-interactor *autolisp*)))
-    (setf (interactor-prompt repl) "_$ "
-          (interactor-reader repl)
-          (lambda (input-context)
-            (comma-command-read input-context (%repl-source-reader dialect)))
-          (interactor-evaluator repl)
-          (lambda (input)
-            (%repl-eval-source (second input) dialect context session
-                               break-on-error
-                               (lambda () (interactor-return :terminated)))))
-    repl))
+(defstruct repl-state
+  "The AUTOLISP activation's per-run state: the dialect the reader follows,
+the evaluation context, and the attached debug session (if any)."
+  dialect context session break-on-error)
+
+(defun %autolisp-reader (input-context)
+  "The *AUTOLISP* singleton's reader: a `,command' line dispatches, anything
+else reads as one balanced AutoLISP turn for this activation's dialect."
+  (let ((state (activation-state *command-activation*)))
+    (comma-command-read input-context
+                        (%repl-source-reader (repl-state-dialect state)))))
+
+(defun %autolisp-evaluate (input)
+  "The *AUTOLISP* singleton's evaluator: one REPL turn over this activation's
+context and session."
+  (let ((state (activation-state *command-activation*)))
+    (%repl-eval-source (second input)
+                       (repl-state-dialect state)
+                       (repl-state-context state)
+                       (repl-state-session state)
+                       (repl-state-break-on-error state)
+                       (lambda () (interactor-return :terminated)))))
 
 (defun %repl-source-reader (dialect)
   "The sexp-reader COMMA-COMMAND-READ falls back to: read one whole,

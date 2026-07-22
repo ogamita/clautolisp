@@ -48,16 +48,20 @@ implementations, not here.")
    #:input-command-raw #:input-command-tokens
    #:input-command-invocation #:input-command-arguments
    #:input-command-raw-arguments
-   ;; interactors
-   #:interactor #:make-interactor #:copy-interactor #:interactor-p
+   ;; interactors (singletons) and their activations on the stack
+   #:interactor #:make-interactor #:interactor-p
    #:interactor-name #:interactor-alias
    #:interactor-status #:interactor-prompt
    #:interactor-reader #:interactor-evaluator
    #:interactor-commands #:interactor-user-commands
-   #:interactor-state #:interactor-on-result
-   #:interactor-documentation #:*command-interactor*
+   #:interactor-on-result
+   #:interactor-documentation
+   #:activation #:make-activation #:activation-p
+   #:activation-interactor #:activation-state
+   #:*command-interactor* #:*command-activation*
    #:*interactor-stack*
-   #:push-interactor #:pop-interactor #:find-interactor
+   #:push-interactor #:pop-interactor
+   #:find-interactor #:find-activation
    #:make-prompt-function
    #:find-invocation-in-interactor #:find-invocation-in-stack
    #:find-interactor-command #:+system-command-word+

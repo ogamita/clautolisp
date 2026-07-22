@@ -20,9 +20,14 @@
 ;;; --- fixtures -------------------------------------------------------------
 
 (defun run-loop-on-script (script &key interactors floor)
-  "Push INTERACTORS (outermost first), run INTERACTOR-LOOP over SCRIPT (a
-string of input lines), and return (values OUTPUT LOOP-VALUE ERRORS)."
-  (let ((*interactor-stack* (reverse interactors))
+  "Push INTERACTORS (outermost first; an entry may be a ready-made ACTIVATION
+to carry state), run INTERACTOR-LOOP over SCRIPT (a string of input lines),
+and return (values OUTPUT LOOP-VALUE ERRORS)."
+  (let ((*interactor-stack* (mapcar (lambda (entry)
+                                      (if (activation-p entry)
+                                          entry
+                                          (make-activation entry)))
+                                    (reverse interactors)))
         (*package* (find-package '#:clautolisp.interactor.tests))
         (output (make-string-output-stream))
         (errors (make-string-output-stream)))

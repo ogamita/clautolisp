@@ -253,6 +253,18 @@ PJB ==> Yes, LAVI for the file:line navigator.
 
 1. T1 resolution: activations on the stack; kill COPY-INTERACTOR uses
    and the struct STATE slot; singleton templates keep everything else.
+   DONE 1.4.42: the stack holds ACTIVATION structs (INTERACTOR . STATE);
+   PUSH-INTERACTOR takes the initial state; the loop binds
+   =*COMMAND-ACTIVATION*= to the top activation around status / prompt /
+   reader / evaluator and FIND-AND-RUN-COMMAND rebinds it to the OWNING
+   activation around each command. COPY-INTERACTOR and the struct STATE
+   slot are gone; ALDO / NAVI / LAVI / INSPI / AUTOLISP are singletons
+   whose functions read (ACTIVATION-STATE *COMMAND-ACTIVATION*) —
+   per-entry state structs ALDO-STATE / NAVI-STATE / LAVI-STATE /
+   INSPI-STATE / REPL-STATE. Tests that rebound =*GLOBAL-DICTIONARY*=
+   now swap =(INTERACTOR-USER-COMMANDS *ALDO*)= via the
+   WITH-FRESH-USER-DICTIONARY fixture (T5's first half; the variable
+   itself is retired in step 3).
 2. D2: the unified read-eval-print with live dialect dispatch; all
    evaluators route through it.
 3. D6/D7/D8: retire =*global-dictionary*=; registry; =clal-define-command=
