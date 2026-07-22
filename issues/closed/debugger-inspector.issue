@@ -48,3 +48,7 @@ Acceptance
   `(cdr (assoc 10 (entget EN)))`, bind to `$4`, then eval `(distance $4 $5)`.
 - :opaque descent yields a partial path + offers a workspace binding.
 - FiveAM tests; `*version*` bumped.
+
+* Resolution (triage 2026-07-23)
+
+Shipped: clautolisp/autolisp-inspect (pages, session ops, workspace binds, frame-aware setq) + the INSPECT interactor.
