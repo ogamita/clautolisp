@@ -186,7 +186,6 @@ autolisp-test-recap-crash-got-t.issue -- NEW 2026-06-24 (found while
 
 
 
-==== STOP HERE, Wait for further specification of the debugger UI and the rest of issues.
 
 ---  almost done, soon to be closed --- skip it for now.
 alfe.plan -- remains to be tested with the CADs on macOS and MS-Windows
