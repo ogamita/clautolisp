@@ -120,3 +120,60 @@ Definition of done
 - Control-channel sentinels remain line-terminated and still parse.
 - A regression test pins the byte-level output of a multi-call form.
 - alfe version bumped per project convention.
+
+Addendum 2026-07-22 — reconfirmed on alfe 1.5.0 / BricsCAD V26 macOS;
+locations moved; one more defect
+---------------------------------------------------------------------
+
+Fresh evidence: the autolisp-benchmark suite run via
+`make -C autolisp-benchmark run-bricscad-macos` — see
+benchmark-results.org. The report banner comes out with ~4 blank lines
+between logical lines, and every table row is exploded into one line
+per column (the harness prints a row as five `(princ column)` calls,
+then `(princ "\n")`; see autolisp-benchmark/harness/bench.lsp:133-135,
+bench--out / bench--nl). Byte accounting for one
+`(bench--out text) (bench--nl)` pair — i.e.
+`(princ text) (princ) (princ "\n") (princ)`:
+
+  (princ text) -> "text\n"     per-call newline           [original bug]
+  (princ)      -> "\n"         spurious blank line        [NEW defect]
+  (princ "\n") -> "\n\n"       content + per-call newline
+  (princ)      -> "\n"         spurious blank line        [NEW defect]
+
+= the observed 1 output line + 4 blank lines.
+
+NEW defect: bare `(princ)` emits a newline. The bootstrap rewrites
+`(princ)` to `(autolisp-princ-newline)`
+(runtime/autolisp-bootstrap.lsp:632-648) and autolisp-princ-newline
+(:925) emits an empty LINE when capturing. AutoLISP semantics: no-arg
+`(princ)` prints NOTHING (it exists for the silent-return idiom).
+The fix-direction bullet above saying "terpri / (princ) / (print)
+no-arg -> the only newline producers" is wrong for (princ): only
+terpri (and explicit "\n" content, and print's leading newline)
+produce newlines; no-arg princ/prin1 must emit nothing.
+
+The shadows now live in TWO layers, both to fix (the old
+file-protocol.lisp:1186 refs are stale):
+
+  - staged runtime file
+    autolisp-front-end/source/runtime/autolisp-bootstrap.lsp:
+      princ shadow :909, prin1 :918, print :899,
+      autolisp-princ-newline :925,
+      autolisp-emit-user-line :185 / autolisp-emit-user-out :178
+      (both -> autolisp-write-line, +\n);
+    transport autolisp-remote-io.lsp:7-12
+      (autolisp-protocol-write-line = write-line, +\n per chunk),
+      write-stdout :47.
+  - variadic shadows installed when the host supports &rest
+    ("[CAD] host supports &rest; installing variadic shadows"),
+    format-embedded in autolisp-front-end/source/file-protocol.lisp
+    (:1189 princ, :1197/:1229 -> autolisp-emit-user-line) — these are
+    the ACTIVE ones on BricsCAD V26 and share the same line-oriented
+    emitters.
+
+Additional verification: `make -C autolisp-benchmark
+run-bricscad-macos` (with the timeout issue
+alfe-request-timeout-aborts-long-eval fixed or --timeout raised)
+renders the banner and the result table with the same layout as the
+clautolisp run — one row per line, columns aligned, no blank-line
+padding.

@@ -93,7 +93,12 @@ BIG — each gets its own long-lived branch (like debugger / sedit-nav):
 
 BLOCKED / EXTERNAL (hardware, CAD product, or pjb decision):
   BricsCAD/macOS needed: alfe-bricscad-open, alfe-large-form-load-limit,
-    alfe-princ-prin1-spurious-newlines (fix localised in file-protocol.lisp),
+    alfe-princ-prin1-spurious-newlines (reconfirmed 1.5.0 by the benchmark
+      run; fix spans file-protocol.lisp variadic shadows + runtime/
+      autolisp-bootstrap.lsp — see the 2026-07-22 addendum),
+    alfe-request-timeout-aborts-long-eval (30 s cap kills the benchmark
+      EVAL mid-suite; --timeout parsed but unplumbed — plumbing is
+      headless-testable, final verification needs BricsCAD),
     cad-load-encoding-macos, cad-path-dotdot-resolution,
     cad-vl-filename-directory-and-load, deferred-bricscad-setq-nil-returns-2,
     bricscad-undocumented-clisms, bricscad-dialect-sysvar-parity (phase 2 harvest),

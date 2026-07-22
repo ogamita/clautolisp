@@ -1,0 +1,113 @@
+alfe-request-timeout-aborts-long-eval — fixed 30 s request-timeout aborts a long-running EVAL despite RUNNING status; --timeout is parsed but never plumbed
+==========================================================================================================================================================
+
+Affected: alfe 1.5.0/1.5.1, CAD protocol backends (--bricscad confirmed
+on BricsCAD V26 / macOS; --autocad shares the same drive loop).
+
+Found running the benchmark suite: `make -C autolisp-benchmark
+run-bricscad-macos` "breaks after the entity benchmark" — the suite is
+one `(autolisp-benchmark-run-all)` EVAL that legitimately takes ~7
+classes x (5 s budget + calibration) ≈ 40-45 s, and the driver kills
+the plan at 30 s. Which class the visible output stops at depends only
+on where the 30 s cutoff lands (entity in a plain run, file-io under
+ALFE_DEBUG=1); the CAD side is still computing when the driver gives
+up. See benchmark-results.org for both transcripts.
+
+Symptom
+-------
+
+  $ make -C autolisp-benchmark run-bricscad-macos ALFE_DEBUG=1
+  ...
+  alfe[debug]: cad-common: action EVAL payload "(autolisp-benchmark-run-all)"
+  alfe[debug]: protocol: wait-for-status-prefix "DONE 4" (timeout 30 s)
+  alfe[debug]: protocol: status now "RUNNING 4" (elapsed 0.06 s)
+  alfe[debug]: protocol: timeout after 30.04 s (last status "RUNNING 4")
+  ...partial results drained...
+  alfe[verbose]: cli: plan finished status=:ABORTED exit=1 elapsed=42.15s
+  make: *** [run-bricscad-macos] Error 1
+
+The engine had ACCEPTED the request and reported RUNNING 4; it was
+aborted anyway, purely on wall-clock.
+
+Cause
+-----
+
+Three cooperating defects:
+
+1. Hardcoded default. drive-protocol-actions defaults request-timeout
+   to 30 s and the backends never override it:
+
+     autolisp-front-end/source/backend-cad-common.lisp:268
+       (defun drive-protocol-actions (protocol-session plan
+                                      &key (request-timeout 30) ...)
+
+     autolisp-front-end/source/backend-bricscad.lisp:640  (eval-plan)
+     autolisp-front-end/source/backend-autocad.lisp:650   (eval-plan)
+       (drive-protocol-actions (...-session-protocol-session session)
+                               plan)          ; <- no :request-timeout
+
+2. Dead CLI plumbing. The CLI parses --timeout (cli.lisp:430) and the
+   $AUTOLISP_WAIT_SECS env default (cli.lisp:180, 308) into
+   cli-options-timeout — but nothing outside cli.lisp ever reads
+   cli-options-timeout. `alfe --timeout 120` is accepted and silently
+   ignored; there is no way for the user to lengthen the request
+   window at all.
+
+3. Timeout semantics. wait-for-status-prefix
+   (file-protocol.lisp:439-479) measures elapsed time from a fixed
+   START and returns failure when it exceeds TIMEOUT — regardless of
+   the status file having progressed to "RUNNING N", i.e. regardless
+   of proof that the engine took the request and is working. A
+   request-timeout should measure UNRESPONSIVENESS (no status
+   transition, dead process, stale heartbeat), not DURATION of a
+   legitimately long computation. Note the protocol already has a
+   heartbeat channel (autolisp-remote-io.lsp:
+   autolisp-protocol-pulse-heartbeat) that wait-for-status-prefix
+   never consults — though the CAD side does not pulse it while stuck
+   inside a long (eval ...) either, so heartbeat alone cannot carry
+   liveness for this case without a CAD-side change.
+
+Fix sketch
+----------
+
+- Plumb the option: eval-plan (both CAD backends) passes a
+  request-timeout taken from the session/backend options, which the
+  CLI fills from --timeout / $AUTOLISP_WAIT_SECS. Keep 30 s as the
+  default when unspecified.
+- Better semantics (can be a second step): once the status for request
+  N has been observed to transition to "RUNNING N", either suspend the
+  deadline while the spawned CAD process is still alive (process-alive
+  check exists in the backends) or switch to a separate, longer
+  "running" timeout. The hard timeout then only guards the
+  READY->RUNNING handshake and a dead/hung engine, and --timeout (or a
+  dedicated --request-timeout) caps the total as an explicit user
+  choice.
+- autolisp-benchmark/Makefile: once --timeout works, pass one derived
+  from the budget to the CAD run targets, e.g.
+  `--timeout $$((7 * BENCH_SECONDS * 2 + 60))`-ish — the suite knows
+  its own expected duration.
+
+Verification
+------------
+
+- `alfe --bricscad --timeout 120 -x '(autolisp-benchmark-run-all)'`
+  (with root/budget set) completes all 7 classes; exit 0.
+- With the RUNNING-aware semantics: the same run completes with NO
+  --timeout at all, while a killed CAD process (kill -9 the spawned
+  pid mid-run) still aborts promptly.
+- `alfe --timeout 1 -x '(long-eval)'` still aborts (the option must
+  restrict as well as extend).
+- `make -C autolisp-benchmark run-bricscad-macos` passes end-to-end on
+  BricsCAD V26 / macOS.
+
+Definition of done
+------------------
+
+- --timeout / $AUTOLISP_WAIT_SECS reaches drive-protocol-actions on
+  both CAD backends (a test pins the plumbing).
+- A long-running EVAL that the engine has acknowledged (RUNNING N) is
+  not killed by the default timeout while the CAD process is alive —
+  or, minimally, the documented --timeout escape hatch works and the
+  benchmark Makefile uses it.
+- benchmark run-bricscad-macos completes all 7 classes.
+- alfe version bumped per project convention.
