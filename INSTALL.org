@@ -17,6 +17,7 @@ sudo dnf install -y \
   texlive-ulem      \
   texlive-capt-of   \
   texinfo           \
+  graphviz          \
   make              \
   git               \
   curl
@@ -31,6 +32,7 @@ sudo dnf install -y \
 | texlive-ulem      | ulem.sty                    |
 | texlive-capt-of   | capt-of.sty                 |
 | texinfo           | makeinfo (.texi → .info)    |
+| graphviz          | dot (top-level diagrams)     |
 | make              | Build driver                |
 | git               | Source control               |
 | curl              | Quicklisp download           |
@@ -51,6 +53,7 @@ sudo apt install -y \
   texlive-xetex       \
   texlive-latex-extra \
   texinfo             \
+  graphviz            \
   cmake               \
   qt6-base-dev        \
   pkg-config          \
@@ -66,6 +69,7 @@ sudo apt install -y \
 | texlive-xetex          | xelatex (PDF from .org)           |
 | texlive-latex-extra    | wrapfig, ulem, capt-of, etc.      |
 | texinfo                | makeinfo (.texi → .info)          |
+| graphviz               | dot (top-level diagrams)           |
 | cmake                  | C++ build system (Qt GUI)         |
 | qt6-base-dev           | Qt 6 Core + Widgets (GUI)         |
 | pkg-config             | Probe tool for Qt6 detection      |

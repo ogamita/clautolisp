@@ -1,0 +1,73 @@
+autolisp-test-results-corrupted-to-t — pin the root cause behind rurban's report-generation workaround (engine dynamic-binding bug vs harness or-pattern)
+===========================================================================================================================================================
+
+Context: GitHub PR #5/#6 (Reini Urban, 2026-06-17/18, merged 2026-07-23)
+worked around a crash in the conformance corpus's report generation:
+after test execution, `results` / `descriptor` arrived as `T` inside
+matrix / write-sexp-report / print-recap:
+
+  [autolisp-test] no expectations file at: .../expectations/CLAUTOLISP/0.x/unknown.lsp
+  [autolisp-test] matrix raised: FOREACH list argument must evaluate to a proper list, got T.
+  [autolisp-test] write-sexp-report raised: FOREACH list argument must evaluate to a proper list, got T.
+  [autolisp-test] print-recap raised: LENGTH expects a proper list, got T.
+
+Reproduced on master (clautolisp 1.5.1) on 2026-07-23 immediately
+before merging the workaround; gone after. The workaround
+(autolisp-test/harness/run.lsp autolisp-test--guarded-apply +
+`listp` guard + parameter renames in profiles.lsp / report.lsp) makes
+the harness robust, but the PR calls the underlying behaviour a
+"clautolisp dynamic-binding bug" and that claim is neither confirmed
+nor refuted — this issue is the investigation.
+
+What we know (probed 2026-07-23 on 1.5.1, --no-init):
+
+  1. Core dynamic scoping is CORRECT:
+       (setq v 'global)
+       (defun callee ( / ) v)
+       (defun caller ( / v) (setq v 'local) (callee))
+       (caller)  =>  LOCAL                          ; ok
+  2. Constructed list-lambdas see the caller's locals too:
+       (defun caller2 ( / v) (setq v 'local2)
+         (vl-catch-all-apply (list 'lambda nil 'v) nil))
+       (caller2) =>  LOCAL2                         ; ok
+  3. So the simple engine-bug hypothesis does not reproduce in
+     isolation. Yet pre-workaround report generation DID receive T.
+
+Prime suspect (harness logic, not the engine): the old run.lsp step-2
+pattern
+
+  (setq results (or (autolisp-test--guarded "apply-expectations"
+                      (list 'lambda nil (list 'autolisp-test-apply-expectations
+                                              'results 'overlay)))
+                    results))
+
+lets ANY non-nil non-list return value of apply-expectations (or of
+the missing-expectations path — note the "no expectations file"
+message right before the corruption; princ returns its argument)
+overwrite `results` with T, which then flows into matrix /
+write-sexp-report / print-recap. That is exactly the hole the PR's
+`listp` guard closes, and it requires no engine misbehaviour at all.
+
+To do:
+
+  - Check out the pre-workaround harness (parent of the 2026-07-23
+    merge of PR commits, harness at 8207b6d state), instrument step 2
+    of autolisp-test-run-all, and capture WHAT returned T and WHY
+    (expected: autolisp-test-load-expectations /
+    autolisp-test-apply-expectations return path on the
+    missing-expectations branch).
+  - If it is purely the or-pattern: close this issue recording that
+    the "dynamic-binding bug" label was a misdiagnosis, that the
+    engine is exonerated (probes 1-2 above), and that the workaround
+    is simply better harness code — then also fix
+    autolisp-test-apply-expectations to return a list on every path,
+    so the guard never fires.
+  - If a test file's global (setq results ...) DOES leak through a
+    binding boundary somewhere (e.g. through vl-catch-all-apply's
+    argument evaluation, or usubr locals under the debugger
+    instrumentation fork): minimal repro, then fix in the engine, and
+    add a conformance test pinning AutoLISP dynamic-scoping semantics
+    (caller locals visible in callees and in constructed lambdas).
+  - Either way: the expectations path prints "unknown.lsp" because
+    the descriptor's version field is unknown under --no-init; check
+    whether that fallback is intended.

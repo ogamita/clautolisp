@@ -63,6 +63,7 @@ SMALL — process next, in this order:
   8  deferred-command-special-form.issue           COMMAND special form (mock token queue)
   9  dribble.issue                                 dribble builtin + CLI option
   10 autolisp-test-recap-crash-got-t.issue         merge with deferred-autolisp-test-matrix-bug (same bug filed twice) and fix
+  10b autolisp-test-results-corrupted-to-t.issue   pin root cause behind rurban's PR#5/#6 workaround (likely same family as 10; engine exonerated by probes so far)
 
   -- D: dialect warnings + spec pages (12-13 and 15-16 coordinate)
   12 clautolisp-dialect-portability-warnings.issue dedup + escalation knob + ch.25 DoD
