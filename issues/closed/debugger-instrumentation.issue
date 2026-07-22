@@ -60,3 +60,7 @@ Acceptance
 - Bloom filter demonstrably skips the overwhelming majority of non-breakpoint
   poll points (microbenchmark or counter).
 - FiveAM tests; `*version*` bumped.
+
+* Resolution (triage 2026-07-23)
+
+Shipped: autolisp-debug instrument.lisp / breakpoints.lisp / poll.lisp (Bloom fast path), 122 engine tests.
