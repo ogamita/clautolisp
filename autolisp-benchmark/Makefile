@@ -165,7 +165,12 @@ ALFE_SET_ROOT    := -x "(setq *autolisp-benchmark-root* \"$(ROOT_DIR)/\")"
 ALFE_SET_SECONDS := -x "(setq *bench-seconds* $(BENCH_SECONDS))"
 ALFE_LOAD        := -l "$(ROOT_DIR)/harness/run.lsp"
 ALFE_RUN         := -x "(autolisp-benchmark-run-all)"
-ALFE_ACTIONS      = $(ALFE_SET_ROOT) $(ALFE_SET_SECONDS) $(ALFE_LOAD) $(ALFE_RUN)
+# alfe debug instrumentation for the CAD runs. Off by default; enable
+# on the make command line (any value but empty or 0):
+#   make run-bricscad-macos ALFE_DEBUG=1
+ALFE_DEBUG       ?=
+ALFE_DEBUG_FLAGS := $(if $(filter-out 0,$(ALFE_DEBUG)),--verbose --keep-workdir --debug)
+ALFE_ACTIONS      = $(ALFE_DEBUG_FLAGS) $(ALFE_SET_ROOT) $(ALFE_SET_SECONDS) $(ALFE_LOAD) $(ALFE_RUN)
 
 run-bricscad-macos:
 	@$(call require-os-darwin,$@); \
