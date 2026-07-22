@@ -45,3 +45,7 @@ dictionary over global debugger dictionary, first match wins), and derive
 the =?= help line from the *union* of the active dictionaries rather than
 from a hand-written literal. See the sedit spec, "Command dictionaries and
 modes", and the command reference §8 for the normative dispatch rules.
+
+* Resolution (triage 2026-07-23)
+
+Fixed 1.4.15 (stacked dispatch) and superseded by the interactor framework's real dictionary stacking (1.4.39-1.4.41): in NAV every unshadowed debugger command dispatches directly.
