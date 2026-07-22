@@ -170,3 +170,51 @@
   (is (should-auto-save-p :file :file))
   (is (not (should-auto-save-p :sexp :disable)))
   (is (not (should-auto-save-p :file :disable))))
+
+;;; --- sedit-file-and-up.issue: margin + u climbs the hierarchy -------------
+
+(test sedit-status-indents-continuation-lines-to-the-margin
+  (let* ((session (sedit-open (parse-form (format nil "(defun f (x)~%  (id x))"))))
+         (output (with-output-to-string (out)
+                   (with-input-from-string (in (format nil "q~%"))
+                     (sedit-enter session :input in :output out)))))
+    (let ((line (find-if (lambda (l) (search "(id x)" l))
+                         (uiop:split-string output :separator '(#\Newline)))))
+      (is (not (null line)))
+      (is (string= "       " (subseq line 0 7))))))     ; the 7-space margin
+
+(test sedit-up-from-toplevel-form-selects-the-file-in-its-directory
+  (uiop:with-temporary-file (:pathname f :type "lsp" :keep t)
+    (unwind-protect
+         (progn
+           (with-open-file (out f :direction :output :if-exists :supersede)
+             (write-string "(defun fact (x) x)" out))
+           (let ((session (sedit-open (namestring f))))
+             (with-output-to-string (out)
+               (with-input-from-string (in (format nil "u~%q~%"))
+                 (sedit-enter session :input in :output out)))
+             ;; u from the (selected) toplevel form re-rooted on the directory
+             (is (equal :dir (first (sedit-session-origin session))))
+             (let ((focus (loc-focus (sedit-state-loc (sedit-session-state session)))))
+               (is (file-node-p focus))
+               (is (equal (file-namestring f) (file-node-name focus))))))
+      (ignore-errors (delete-file f)))))
+
+(test sedit-up-from-directory-view-climbs-to-the-parent
+  (uiop:with-temporary-file (:pathname f :type "lsp" :keep t)
+    (unwind-protect
+         (progn
+           (with-open-file (out f :direction :output :if-exists :supersede)
+             (write-string "(defun fact (x) x)" out))
+           (let* ((dir (uiop:pathname-directory-pathname f))
+                  (session (sedit-open (namestring dir))))
+             (with-output-to-string (out)
+               (with-input-from-string (in (format nil "u~%q~%"))
+                 (sedit-enter session :input in :output out)))
+             (is (equal :dir (first (sedit-session-origin session))))
+             ;; re-rooted on the PARENT, with the old directory selected
+             (is (equal (namestring (uiop:pathname-parent-directory-pathname dir))
+                        (second (sedit-session-origin session))))
+             (let ((focus (loc-focus (sedit-state-loc (sedit-session-state session)))))
+               (is (dir-node-p focus)))))
+      (ignore-errors (delete-file f)))))

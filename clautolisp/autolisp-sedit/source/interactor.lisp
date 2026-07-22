@@ -92,10 +92,43 @@ quit, true to proceed."
 
 (defun %sedit-isession () (sedit-interactor-state-session (%sedit-istate)))
 
+(defun %sedit-indent-block (text margin)
+  "TEXT with every line after the first prefixed by MARGIN, so a multi-line
+selection keeps one left margin (sedit-file-and-up.issue point 1)."
+  (with-output-to-string (out)
+    (loop for start = 0 then (1+ nl)
+          for nl = (position #\Newline text :start start)
+          for first = t then nil
+          do (unless first (write-string margin out))
+             (write-string text out :start start :end (or nl (length text)))
+             (when nl (write-char #\Newline out))
+          while nl)))
+
 (defun %sedit-status (stream)
-  "Render the marked selection before each prompt (spec §5.2)."
+  "Render the marked selection before each prompt (spec §5.2), continuation
+lines indented to the same left margin."
   (format stream "~&       ~A~%"
-          (render-selection (sedit-state-loc (sedit-session-state (%sedit-isession))))))
+          (%sedit-indent-block
+           (render-selection (sedit-state-loc (sedit-session-state (%sedit-isession))))
+           "       ")))
+
+(defun %sedit-entry-name (node)
+  (cond ((file-node-p node) (file-node-name node))
+        ((dir-node-p node) (dir-node-name node))
+        (t nil)))
+
+(defun %sedit-up-to-directory (session dir select-name)
+  "Re-root SESSION on the directory DIR with the entry named SELECT-NAME
+selected (sedit-file-and-up.issue point 2): `u' from a file's toplevel form
+climbs to the directory view — never selecting the whole file contents —
+and `u' from a directory view climbs to the parent directory."
+  (let* ((dirnode (read-directory dir))
+         (loc (%first-child-loc dirnode)))
+    (loop while (and loc (not (equal select-name (%sedit-entry-name (loc-focus loc)))))
+          do (setf loc (loc-right loc)))
+    (setf (sedit-session-origin session) (list :dir (namestring (uiop:ensure-directory-pathname dir))))
+    (setf (sedit-state-loc (sedit-session-state session))
+          (or loc (%first-child-loc dirnode) (node->loc dirnode)))))
 
 (defun %sedit-signed-skip-p (input)
   "An INPUT-COMMAND whose whole line is ±N — the skip motion."
@@ -165,7 +198,34 @@ STATE (its editing state) and ARG (the raw argument string or NIL)."
      nil))
 
 (%define-sedit-motion (d down)      "d"  "Descend into the selection (all sub-sexps, not just code).")
-(%define-sedit-motion (u up)        "u"  "Ascend to the containing form.")
+(%define-sedit-command (u up)
+    "Ascend to the containing form; from a file's toplevel form, to the
+file's directory (the file selected); from a directory view, to the parent
+directory (sedit-file-and-up.issue)."
+  (let* ((loc (sedit-state-loc state))
+         (parent (and (loc-ctx loc) (loc-up loc)))
+         (pfocus (and parent (loc-focus parent))))
+    (cond
+      ;; at a toplevel form of a FILE session: up = the file's directory,
+      ;; this file selected — guarding unsaved edits like quit does
+      ((and pfocus (file-node-p pfocus) (null (loc-ctx parent))
+            (%session-file session))
+       (when (%sedit-quit-guard (%sedit-istate))
+         (let ((file (%session-file session)))
+           (%sedit-up-to-directory
+            session
+            (namestring (uiop:pathname-directory-pathname file))
+            (file-namestring file)))))
+      ;; at an entry of a DIRECTORY view: up = the parent directory, the
+      ;; current directory selected
+      ((and pfocus (dir-node-p pfocus) (null (loc-ctx parent))
+            (%session-dir session))
+       (let* ((dirpath (uiop:ensure-directory-pathname (%session-dir session)))
+              (parent-path (uiop:pathname-parent-directory-pathname dirpath)))
+         (%sedit-up-to-directory session (namestring parent-path)
+                                 (%dir-display-name dirpath))))
+      (t (sedit-up state))))
+  nil)
 (%define-sedit-motion (|>| forward) ">"  "Select the next sibling.")
 (%define-sedit-motion (|<| backward) "<" "Select the previous sibling.")
 (%define-sedit-motion (|<<| first)  "<<" "Select the first sibling.")
