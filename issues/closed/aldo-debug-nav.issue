@@ -113,3 +113,7 @@ NAV[code]> b
    150:     )
 
 NAV[code]>
+
+* Resolution (triage 2026-07-23)
+
+Shipped 1.4.9/1.4.11/1.4.32: the navigator prints the source ONCE with the decorations woven in (selection brackets, poll-point glyphs) — autolisp-debug-ui/source/decorations.lisp + navigator.lisp.
