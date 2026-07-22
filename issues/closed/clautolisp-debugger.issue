@@ -91,3 +91,7 @@ compiled to common lisp code (the instrumentalisation required).
 
 Be sure to quote Robert Strand works, papers and sources, and (bibtex
 like stuff).
+
+* Resolution (triage 2026-07-23)
+
+Parent tracking issue: phases 0-7 shipped (engine, session, UIs, inspector, navigators); the deferred phases have their own tickets (deferred-debugger-compiler-two-bodies, deferred-debugger-remote-cad).
