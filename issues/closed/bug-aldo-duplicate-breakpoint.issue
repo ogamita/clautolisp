@@ -37,3 +37,7 @@ never be doubled.
 poll-point already carries a breakpoint and no-op / report rather than
 appending. The double glyph is a direct consequence and disappears with
 the fix.
+
+* Resolution (triage 2026-07-23)
+
+Fixed 1.4.15: ADD-BREAKPOINT is idempotent — at most one breakpoint per poll-point (autolisp-debug/source/breakpoints.lisp), with the navi 'already set' report and a regression test.
