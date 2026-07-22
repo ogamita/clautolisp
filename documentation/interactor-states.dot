@@ -1,0 +1,104 @@
+// -*- mode:graphviz-dot;coding:utf-8 -*-
+// clautolisp toplevel interactors — state diagram (as of 1.4.47).
+// Each state box shows the interactor name, its prompt, and the
+// interactor stack at that point (top first, AUTOLISP at the bottom).
+// Edges are labelled with the commands that perform the transition.
+// The two SEDIT states are the same *SEDIT* interactor pushed over
+// different stacks (quit returns the form vs installs the definition).
+// Render with:  dot -Tsvg interactor-states.dot -o interactor-states.svg
+
+digraph interactors {
+    rankdir  = LR;
+    fontname = "Helvetica";
+    node [fontname="Helvetica", shape=none, margin=0];
+    edge [fontname="Helvetica", fontsize=10];
+
+    // ---------------------------------------------------------------- states
+
+    lisp [label=<
+      <table border="0" cellborder="1" cellspacing="0" cellpadding="4">
+        <tr><td bgcolor="#f1efe8"><b>AUTOLISP</b><br/>toplevel repl<br/><font face="Courier">_$</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">AUTOLISP</font></td></tr>
+      </table>>];
+
+    sedit_repl [label=<
+      <table border="0" cellborder="1" cellspacing="0" cellpadding="4">
+        <tr><td bgcolor="#faece7"><b>SEDIT</b><br/>structural editor<br/><font face="Courier">SEDIT&gt;</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">SEDIT</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">AUTOLISP</font></td></tr>
+      </table>>];
+
+    aldo [label=<
+      <table border="0" cellborder="1" cellspacing="0" cellpadding="4">
+        <tr><td bgcolor="#eeedfe"><b>ALDO</b><br/>the debugger (alias: debug)<br/><font face="Courier">DBG&gt;</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">ALDO</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">AUTOLISP</font></td></tr>
+      </table>>];
+
+    navi [label=<
+      <table border="0" cellborder="1" cellspacing="0" cellpadding="4">
+        <tr><td bgcolor="#e1f5ee"><b>NAVI</b><br/>form navigator<br/><font face="Courier">NAV&gt;</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">NAVI</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">ALDO</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">AUTOLISP</font></td></tr>
+      </table>>];
+
+    lavi [label=<
+      <table border="0" cellborder="1" cellspacing="0" cellpadding="4">
+        <tr><td bgcolor="#e1f5ee"><b>LAVI</b><br/>flat line navigator<br/><font face="Courier">NAV(line i/n)&gt;</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">LAVI</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">ALDO</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">AUTOLISP</font></td></tr>
+      </table>>];
+
+    sedit_nav [label=<
+      <table border="0" cellborder="1" cellspacing="0" cellpadding="4">
+        <tr><td bgcolor="#faece7"><b>SEDIT</b><br/>structural editor, over the stop<br/><font face="Courier">SEDIT&gt;</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">SEDIT</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">NAVI</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">ALDO</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">AUTOLISP</font></td></tr>
+      </table>>];
+
+    inspi [label=<
+      <table border="0" cellborder="1" cellspacing="0" cellpadding="4">
+        <tr><td bgcolor="#e1f5ee"><b>INSPECT</b><br/>the inspector<br/><font face="Courier">INSPECT&gt;</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">INSPECT</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">(NAVI | LAVI)?</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">ALDO</font></td></tr>
+        <tr><td bgcolor="#ffffff"><font point-size="9">AUTOLISP</font></td></tr>
+      </table>>];
+
+    // ----------------------------------------------------------- transitions
+
+    // repl <-> editor (spec §2)
+    lisp -> sedit_repl [label="(clal-sedit name-or-form)"];
+    sedit_repl -> lisp [label="q — returns the edited form"];
+
+    // repl <-> debugger
+    lisp -> aldo [label="stop: breakpoint, (clal-break),\nerror with *clal-on-error* = DEBUG"];
+    aldo -> lisp [label="resume: c, i, n, o, a, j, r return —\nor q / quit: abort to the toplevel"];
+
+    // pre-debug browsing (aldo-pre-debug.issue): a synthetic stop that
+    // opens the navigator directly, no breakpoint needed
+    lisp -> navi [style=dashed,
+                  label="(clal-nav-function \"F\") /\n(clal-nav-file), (clal-nav-directory)\n— pre-debug browse"];
+
+    // debugger <-> form navigator (auto-opened at each stop with
+    // «set navigator sexp», the default)
+    aldo -> navi [label="nav\n(also auto at every stop,\nnavigator = sexp)"];
+    navi -> aldo [label="q\n(browsing pops; at a stop it\nconfirms, then aborts via aldo quit)"];
+
+    // debugger <-> flat line navigator
+    aldo -> lavi [label="nav — with\nset navigator line"];
+    lavi -> aldo [label="q"];
+
+    // form navigator <-> editor (spec §7, +nav-editing-words+)
+    navi -> sedit_nav [label="edit, insert, add, replace, wrap,\nslurp, barf, splice, split, join,\ncut, copy, paste, undo"];
+    sedit_nav -> navi [label="q — installs the edited definition\n(above the stop it confirms,\nthen aborts via aldo quit)"];
+
+    // inspector, reachable from any debug-side prompt through the
+    // stacked dictionaries (v is an ALDO command)
+    aldo -> inspi [label="v EXPR (visit)\n— from DBG>, NAV>, or the line nav"];
+    inspi -> aldo [label="q or a blank line\n— back where it was"];
+}

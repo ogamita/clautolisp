@@ -48,7 +48,7 @@ DEFAULT_LISP ?=
 # the top level should carry a `## ...` description so it appears in
 # `make help`.
 
-.PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf docker-build-clautolisp-ci docker-push-clautolisp-ci install install-programs install-libraries install-documentation uninstall $(SUBPROJECTS) \
+.PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf clean-diagrams docker-build-clautolisp-ci docker-push-clautolisp-ci install install-programs install-libraries install-documentation uninstall $(SUBPROJECTS) \
         build-documentation build-programs build-libraries \
         release release-sources release-documentation release-programs release-libraries \
         probe probe-autocad probe-bricscad probe-clautolisp
@@ -108,11 +108,12 @@ autolisp-test:  ## Build the autolisp-test conformance harness subproject.
 autolisp-front-end:  ## Build the autolisp-front-end (alfe) subproject — unified CLI front-end for clautolisp + CAD-resident REPLs.
 	$(MAKE) -C autolisp-front-end all
 
-documentation:  ## Rebuild every subproject's PDF documentation (org → LaTeX → PDF).
+documentation:  ## Rebuild every subproject's PDF documentation (org → LaTeX → PDF) + the top-level diagrams (dot → svg/png).
 	$(MAKE) -C autolisp-spec documentation
 	$(MAKE) -C clautolisp documentation
 	$(MAKE) -C autolisp-test documentation
 	$(MAKE) -C autolisp-front-end documentation
+	$(MAKE) -C documentation diagrams
 
 build: build-programs build-libraries  ## Build the program binaries + native libraries (NO docs). Run this WITHOUT sudo, then `sudo make install`. Documentation is a separate phase: `make build-documentation`.
 
@@ -298,6 +299,10 @@ clean-pdf:  ## Remove every generated PDF across subprojects (keeps .org sources
 	$(MAKE) -C clautolisp clean-pdf
 	$(MAKE) -C autolisp-test clean-pdf
 	$(MAKE) -C autolisp-front-end clean-pdf
+
+clean:: clean-diagrams
+clean-diagrams:  ## Remove the rendered top-level diagrams (keeps the .dot sources).
+	$(MAKE) -C documentation clean
 
 clean:: clean-backups
 clean-backups:

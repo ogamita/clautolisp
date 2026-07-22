@@ -164,6 +164,12 @@ clautolisp/drawing-dwg/source/clal_dwg.so
 # so large org docs don't exceed TeX's default main_memory. Generated, local.
 .cache/
 
+# Rendered Graphviz diagrams (make -C documentation diagrams): the canonical
+# source is the .dot; the svg/png are generated. The png rule is per-diagram
+# because documentation/ also holds hand-made pngs (logos) that ARE tracked.
+/documentation/*.svg
+/documentation/interactor-states.png
+
 # Rendered documentation is a build artefact, never tracked: the doc Makefiles
 # render every .org into a PDF (+ Info/HTML) under each subproject's build/
 # (already ignored above). The blanket *.pdf rule keeps a stray in-place render
