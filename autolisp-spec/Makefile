@@ -24,6 +24,15 @@ PDF_FILES := $(patsubst %.org,$(BUILD_DIR)/%.pdf,$(ORG_FILES))
 
 # Source-of-truth org file the paged builds slice up.
 SPEC_ORG := documentation/autolisp-visual-lisp-specification-draft.org
+
+# The spec version from the org header (#+VERSION: X.Y.Z). The spec PDF is
+# also produced under a VERSIONED basename (…-draft-$(SPEC_VERSION).pdf) so
+# an installed / downloaded copy is self-identifying
+# (autolisp-spec-pdf-versioned-filename.issue); the unversioned name stays
+# for existing tooling — install ships both.
+SPEC_VERSION := $(shell sed -n 's/^\#+VERSION:[[:space:]]*//p' $(SPEC_ORG) | head -1)
+SPEC_PDF := $(BUILD_DIR)/documentation/autolisp-visual-lisp-specification-draft.pdf
+SPEC_PDF_VERSIONED := $(BUILD_DIR)/documentation/autolisp-visual-lisp-specification-draft-$(SPEC_VERSION).pdf
 PAGES_DIR := $(BUILD_DIR)/pages
 HTML_DIR  := $(BUILD_DIR)/html
 INFO_DIR  := $(BUILD_DIR)/info
@@ -50,7 +59,10 @@ all: documentation
 # own UID where caches stay in $HOME.
 build: paged documentation  ## Build PDFs + paged HTML/Info derivatives (everything `install` ships).
 
-documentation: $(PDF_FILES)
+documentation: $(PDF_FILES) $(SPEC_PDF_VERSIONED)
+
+$(SPEC_PDF_VERSIONED): $(SPEC_PDF)
+	cp -f $< $@
 
 # ---------------------------------------------------------------------
 # Paged spec build — splits the canonical org file into per-section
@@ -167,6 +179,7 @@ install-documentation: install-alref-libs  ## Install the autolisp-spec docs (.o
 	fi
 	@for f in documentation/autolisp-visual-lisp-specification-draft.org \
 	          $(BUILD_DIR)/documentation/autolisp-visual-lisp-specification-draft.pdf \
+	          $(SPEC_PDF_VERSIONED) \
 	          documentation/autolisp-reference-notes.org \
 	          $(BUILD_DIR)/documentation/autolisp-reference-notes.pdf \
 	          documentation/autolisp-spec-user-manual.org; do \

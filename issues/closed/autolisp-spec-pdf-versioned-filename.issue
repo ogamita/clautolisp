@@ -70,3 +70,12 @@ Spawned from the autolisp-spec-paged-version close-out
 audit: the PDF filename was the one unmet line item from
 that issue's deliverable list, called out as worth either
 fixing or accepting-as-deviation.
+
+* Resolution (fix-autolisp-spec-pdf-versioned-filename)
+
+SPEC_VERSION is extracted from the org header (#+VERSION:) and the
+spec PDF is also produced as
+build/documentation/autolisp-visual-lisp-specification-draft-$(SPEC_VERSION).pdf;
+install-documentation ships BOTH the versioned and the unversioned
+names (the latter for existing tooling). Verified: make documentation
+produces …-draft-0.9.2.pdf.
