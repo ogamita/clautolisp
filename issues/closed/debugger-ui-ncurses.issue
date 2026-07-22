@@ -40,3 +40,7 @@ Acceptance
   marker colours correct; inspector pane push/pop works.
 - New cl-charms dependency wired into the system.
 - FiveAM tests where feasible (logic layer); `*version*` bumped.
+
+* Resolution (triage 2026-07-23)
+
+Shipped: four-pane ncurses-ui.lisp + tui/tui-charms layers with inspector pane and tests. The PDCurses/Windows backend stays deferred (platform-bound, tracked in the windows packaging work).
