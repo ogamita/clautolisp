@@ -46,3 +46,7 @@ It covers, revised and completed:
 - =issues/open/clipboard-interface.org= — the System Clipboard Interface
   (provider protocol, backends, security). The copy of that chapter formerly at
   the end of this issue is superseded by that standalone file.
+
+* Resolution (triage 2026-07-23)
+
+Formalised into clautolisp-sedit-spec.org; every split-out bug fixed; SEDIT is on the interactor stack since 1.4.47.
