@@ -86,3 +86,7 @@ Acceptance criteria
     for the claimed version subset.
   - DWG round-trip fidelity tests pass in CI on at least one lane.
   - The licence note in the issue is resolved and recorded.
+
+* Resolution (triage 2026-07-23)
+
+Shipped (Phase 17e): pinned libredwg 0.13.3 submodule, CFFI shim clal_dwg.c, dwg-read/write-drawing in drawing-dwg/source/codec.lisp, tests + CI lanes + the Windows DLL shim (1.2.3).
