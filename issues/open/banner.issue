@@ -1,0 +1,9 @@
+Unless -q|--quiet is given, print a banner formatted as such:
+
+Welcome to clautolisp Version 9.9.9
+Copyright 2026-2026 Ogamita Ltd
+Licensed under AGPL; source codes available at:
+http://gitlab.com/ogamita/clautolisp/
+AUTOLISP REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+
+_$
