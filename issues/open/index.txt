@@ -23,6 +23,95 @@ Rules of Processing Issues
 
 Current list of issues to resolve:
 
+=== Triage 2026-07-22 (post-1.5.0; validated against the tree) ===
+
+In flight (fix branches pushed, pending validation + merge to master):
+  P0  alref-sysvars.issue     fix-alref-sysvars   (sysvars in alref-apropos)      -> closed/ on branch
+  P0  vl-registry.issue       fix-vl-registry     (persistent host registry, 1.5.1) -> closed/ on branch
+
+CLOSABLE — verified implemented/obsolete; move to closed/ with a one-line
+resolution as we touch them (evidence checked against v1.5.0):
+  bug-aldo-duplicate-breakpoint, bug-aldo-nav-command-dictionary,
+  bug-aldo-nav-entry-and-breakpoint-flow, aldo-debug-nav,
+  aldo-sedit-integration, sedit-and-aldo-nav-implementation,
+  interactor-design-revision (steps 1-6 DONE; residue forked),
+  debugger-source-map, debugger-instrumentation,
+  debugger-snapshot-stepping, debugger-error-integration,
+  debugger-inspector, debugger-ui-protocol-and-dumb,
+  debugger-ui-ncurses (PDCurses/Windows deferred, platform-bound),
+  debugger-ui-emacs-aldb, clautolisp-debugger (parent),
+  continue (obsolete handoff), autolisp-load-pathname (dup of closed/),
+  strict-dialect-autolisp-divergences (dup of closed/),
+  source-aware-defun-documentation, variadic-functions,
+  drawing-codec-libredwg-submodule,
+  release-artefacts (confirm one tag run on mac/windows runners first).
+
+SMALL — process next, in this order:
+
+  -- A: sedit/nav/interactor follow-ups (same code area, freshest)
+  1  nav-edit-span-atom-tail.issue      NAV-FORM-SPAN truncation (blocks edit at a stop)
+  2  sedit-file-and-up.issue            toplevel indentation + u -> file-in-directory
+  3  lisp-configuration.issue           lisp.conf + stacked settings + REPL ,set
+  4  interactor-unification.issue       only typed command arguments remain
+  5  aldo-pre-debug.issue               virtual breakpoints + :column dir grid leftovers
+
+  -- B: debugger user surface
+  6  debugger-public-interface-and-on-error.issue  Parts B-D: --on-interrupt/--debugger-ui/--aldb-* CLI options
+
+  -- C: engine smalls
+  7  clautolisp-host-product-still-bricscad.issue  stamp PRODUCT in host identity (one-liner + test)
+  8  deferred-command-special-form.issue           COMMAND special form (mock token queue)
+  9  dribble.issue                                 dribble builtin + CLI option
+  10 autolisp-test-recap-crash-got-t.issue         merge with deferred-autolisp-test-matrix-bug (same bug filed twice) and fix
+
+  -- D: dialect warnings + spec pages (12-13 and 15-16 coordinate)
+  12 clautolisp-dialect-portability-warnings.issue dedup + escalation knob + ch.25 DoD
+  13 autolisp-spec-defun-rest-parameter.issue      amend the one remaining sentence
+  14 autolisp-spec-and-or-return-value.issue       rewrite AND page to OR standard
+  15 autolisp-spec-equality-operators.issue        fold = /= into Equality Predicates
+  16 autolisp-spec-comparison-operators-chapter-placement.issue
+  17 autolisp-spec-eval-misleading-examples.issue
+  18 autolisp-spec-type-designators-and-nil-bottom.issue
+
+  -- E: build/CI polish
+  19 autolisp-spec-pdf-versioned-filename.issue
+  20 tex-pdf-characters.issue
+  21 nice-make-output.issue
+  22 ci-github-ccl-lane.issue
+  23 test-file-encodings.issue          parts 1/3 doable; CAD parity stays blocked
+
+BIG — each gets its own long-lived branch (like debugger / sedit-nav):
+  compiler.issue (flagship; + deferred-debugger-compiler-two-bodies gated on it)
+  complete-unit-tests.issue (coverage backfill to >=95%)
+  deferred-clautolisp-out-of-dialect-warnings.issue (availability bitmap)
+  deferred-stubbed-functions.issue (umbrella; registry section RESOLVED 1.5.1)
+  dialect-platform-version-axis.issue
+  alfe-plugin-model.issue (3 open design decisions)
+  drawing-database-api.issue (17f multi-document, 17g ObjectDBX, 17h)
+  system-variables.issue (coupling backlog; partly gated on 17f)
+  opendcl-* (7 issues, one epic per opendcl.plan; no code exists yet)
+
+BLOCKED / EXTERNAL (hardware, CAD product, or pjb decision):
+  BricsCAD/macOS needed: alfe-bricscad-open, alfe-large-form-load-limit,
+    alfe-princ-prin1-spurious-newlines (fix localised in file-protocol.lisp),
+    cad-load-encoding-macos, cad-path-dotdot-resolution,
+    cad-vl-filename-directory-and-load, deferred-bricscad-setq-nil-returns-2,
+    bricscad-undocumented-clisms, bricscad-dialect-sysvar-parity (phase 2 harvest),
+    autolisp-spec-questions (COND edges), deferred-spec-research
+  Windows needed: clautolisp-windows-pathname-mapping
+  Gated on other work: deferred-debugger-compiler-two-bodies (compiler),
+    deferred-debugger-remote-cad (REQ-T1 transport + CAD)
+  pjb decision: deferred-document-lifecycle-command-semantics,
+    salve-environment (no implementation until approved),
+    interactor-state-diagram-revision
+
+Not issues (companion files, keep): alfe.plan, opendcl.plan,
+missing-functions-plan.md, note-secureload.txt,
+source-aware-defun-documentation.lsp, test-1252.lsp
+
+
+=== Historical batches (processed) ===
+
 
 ===  cadaptor-portability batch (filed 2026-06; triaged + processed in priority order)
 
