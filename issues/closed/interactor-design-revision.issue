@@ -381,3 +381,7 @@ PJB ==> This requires more reflection, indeed. So we'll leave at it is
    Also filed while testing: issues/open/nav-edit-span-atom-tail.issue
    (NAV-FORM-SPAN truncates a function whose last body form is a bare
    atom — =edit= then fails with "sedit parse: unterminated list").
+
+* Resolution (triage 2026-07-23)
+
+All six implementation steps DONE 1.4.42-1.4.48 (activations, live-dialect read entry, registry + clal-define-command, AUTOLISP/LISP, :function sugar + T3 convention, SEDIT on the stack + T4 quit + sedit-on-quit guard). Residue forked: interactor-state-diagram-revision.issue, lisp-configuration.issue, nav-edit-span-atom-tail.issue.
