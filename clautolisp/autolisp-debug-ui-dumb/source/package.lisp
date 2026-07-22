@@ -54,6 +54,7 @@ UI refines.")
                 #:function-debug-metadata-poll-point-count #:form-id-position)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-symbol-name #:read-runtime-from-string
+                #:read-current-source
                 #:autolisp-eval #:current-evaluation-context #:*debugging*
                 #:intern-autolisp-symbol #:autolisp-usubr-name
                 #:autolisp-usubr-lambda-list #:autolisp-usubr-body

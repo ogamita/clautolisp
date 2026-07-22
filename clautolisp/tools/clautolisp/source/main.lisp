@@ -653,8 +653,7 @@ not supplied)."
         ;; evaluator.
         (*interactor-stack*
           (list (make-activation *autolisp*
-                                 (make-repl-state :dialect dialect
-                                                  :context context
+                                 (make-repl-state :context context
                                                   :session session
                                                   :break-on-error break-on-error)))))
     (when (null (interactor-loop))
@@ -663,23 +662,25 @@ not supplied)."
       (terpri))))
 
 (defstruct repl-state
-  "The AUTOLISP activation's per-run state: the dialect the reader follows,
-the evaluation context, and the attached debug session (if any)."
-  dialect context session break-on-error)
+  "The AUTOLISP activation's per-run state: the evaluation context and the
+attached debug session (if any). The dialect is NOT here — it is consulted
+live at each read (CURRENT-EVALUATION-DIALECT, design-revision D2), so a
+mid-session =(setq *AUTOLISP-DIALECT* 'lax)= takes effect immediately."
+  context session break-on-error)
 
 (defun %autolisp-reader (input-context)
   "The *AUTOLISP* singleton's reader: a `,command' line dispatches, anything
-else reads as one balanced AutoLISP turn for this activation's dialect."
+else reads as one balanced AutoLISP turn under the dialect in force NOW."
   (let ((state (activation-state *command-activation*)))
     (comma-command-read input-context
-                        (%repl-source-reader (repl-state-dialect state)))))
+                        (%repl-source-reader
+                         (current-evaluation-dialect (repl-state-context state))))))
 
 (defun %autolisp-evaluate (input)
   "The *AUTOLISP* singleton's evaluator: one REPL turn over this activation's
 context and session."
   (let ((state (activation-state *command-activation*)))
     (%repl-eval-source (second input)
-                       (repl-state-dialect state)
                        (repl-state-context state)
                        (repl-state-session state)
                        (repl-state-break-on-error state)
@@ -697,14 +698,14 @@ printed; continuation lines get `   '). Returns (:SOURCE TEXT) or :EOF."
           :eof
           (list :source source)))))
 
-(defun %repl-eval-source (source dialect context session break-on-error exit)
+(defun %repl-eval-source (source context session break-on-error exit)
   "Evaluate one REPL turn's SOURCE (the body of the historical repl-loop):
-read, record, bind :- , evaluate, print, rotate history, drain navigation.
+read — under the dialect in force NOW (READ-CURRENT-SOURCE, design-revision
+D2) — record, bind :- , evaluate, print, rotate history, drain navigation.
 Calls EXIT (a closure returning from the REPL loop) on AUTOLISP-TERMINATION."
   (handler-case
-      (let* ((options (derive-reader-options-for-dialect
-                       dialect :source-name "<repl>"))
-             (forms (read-runtime-from-string source :options options))
+      (let* ((forms (read-current-source source :source-name "<repl>"
+                                                :context context))
              ;; A turn evaluates the *last* form of the typed
              ;; sequence as the canonical "form being evaluated"
              ;; for the :- / :+ / :++ history. If the user typed

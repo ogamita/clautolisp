@@ -502,7 +502,8 @@ no FORM, clear the condition (command reference §2)."
         ((null bp) (out ui "DBG> condition: no breakpoint pp~A~%" (or pp arg)))
         ((null form) (setf (breakpoint-condition bp) nil)
                      (out ui "DBG> breakpoint pp~D condition cleared~%" pp))
-        (t (let ((rform (ignore-errors (first (read-runtime-from-string form)))))
+        (t (let ((rform (ignore-errors (first (read-current-source form :source-name "<debugger>"
+                                                                  :context (session-context session))))))
              (if (null rform)
                  (out ui "DBG> condition: cannot read form ~S~%" form)
                  (progn (setf (breakpoint-condition bp) (make-condition-predicate rform))
@@ -547,7 +548,8 @@ FORM is evaluated and shown, then the debugger stops as usual (command reference
         ((null bp) (out ui "DBG> bpcmd: no breakpoint pp~A~%" (or pp arg)))
         ((null form) (set-breakpoint-action bp nil)
                      (out ui "DBG> breakpoint pp~D command cleared~%" pp))
-        (t (let ((rform (ignore-errors (first (read-runtime-from-string form)))))
+        (t (let ((rform (ignore-errors (first (read-current-source form :source-name "<debugger>"
+                                                                  :context (session-context session))))))
              (if (null rform)
                  (out ui "DBG> bpcmd: cannot read form ~S~%" form)
                  (progn
@@ -580,7 +582,8 @@ FN's entry poll point."
                ((null metadata)
                 (out ui "DBG> trace: ~A is not instrumented~%" name))
                (t (let* ((fid (function-debug-metadata-function-id metadata))
-                         (rform (and form (ignore-errors (first (read-runtime-from-string form))))))
+                         (rform (and form (ignore-errors (first (read-current-source form :source-name "<debugger>"
+                                                                  :context (session-context session)))))))
                     (when (and form (null rform))
                       (out ui "DBG> trace: cannot read form ~S (tracing entry only)~%" form))
                     (when (find-trace-breakpoint session fid)
@@ -681,7 +684,8 @@ with debugging off."
         ((or (null name) (zerop (length name)))
          (out ui "DBG> watch: usage: watch VAR [FORM]~%"))
         (t (let* ((symbol (intern-autolisp-symbol (string-upcase name)))
-                  (rform (and form (ignore-errors (first (read-runtime-from-string form)))))
+                  (rform (and form (ignore-errors (first (read-current-source form :source-name "<debugger>"
+                                                                  :context (session-context session))))))
                   (predicate (and rform
                                   (lambda ()
                                     (let ((*debugging* nil))
@@ -2076,7 +2080,8 @@ inspector pops (q / blank / EOF), or a resume directive when an unshadowed
 debugger command issued inside resumes execution (§8 stacked dispatch)."
   (let ((value (handler-case (cmd-eval session (or arg "nil"))
                  (error (e) (out ui "INSPECT> eval error: ~A~%" e) (return-from inspector-loop)))))
-    (cmd-inspect session value :origin (and arg (first (read-runtime-from-string arg))))
+    (cmd-inspect session value :origin (and arg (first (read-current-source arg :source-name "<debugger>"
+                                                             :context (session-context session)))))
     (%interactor-mode-loop ui session nil *inspi*
                            (make-inspi-state :ui ui :session session))))
 
@@ -2108,7 +2113,8 @@ debugger command issued inside resumes execution (§8 stacked dispatch)."
   (handler-case
       (out ui "INSPECT> ~A~%"
            (preview (session-eval (session-inspector session)
-                                  (first (read-runtime-from-string form-string)))
+                                  (first (read-current-source form-string :source-name "<debugger>"
+                                          :context (session-context session))))
                     200))
     (error (e) (out ui "INSPECT> eval error: ~A~%" e))))
 

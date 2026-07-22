@@ -2666,6 +2666,21 @@ through. Used by the standalone evaluator's load path."
   (clautolisp.autolisp-reader:reader-options-from-dialect
    dialect :source-name source-name))
 
+(defun read-current-source (text &key source-name
+                                      (context (current-evaluation-context)))
+  "THE reader entry for interactively typed AutoLISP source
+(interactor-design-revision.issue D2): read TEXT under the dialect in force
+NOW — CURRENT-EVALUATION-DIALECT, so a mid-session
+=(setq *AUTOLISP-DIALECT* 'lax)= takes effect immediately — and return the
+list of runtime forms. Every interactor's sexp path reads through here: the
+REPL turn, a `(FORM)' at DBG> / NAV>, the inspector's =e=, sedit's =e=. The
+dialect is NOT interactor state; it influences only this read."
+  (read-runtime-from-string
+   text
+   :options (derive-reader-options-for-dialect
+             (current-evaluation-dialect context)
+             :source-name (or source-name "<interactive>"))))
+
 (defun make-default-runtime-context (&key dialect)
   "Create a fresh runtime session under DIALECT, install it as the
 default evaluation context, and return the context. Use this when a

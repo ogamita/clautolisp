@@ -267,6 +267,16 @@ PJB ==> Yes, LAVI for the file:line navigator.
    itself is retired in step 3).
 2. D2: the unified read-eval-print with live dialect dispatch; all
    evaluators route through it.
+   DONE 1.4.43: READ-CURRENT-SOURCE (runtime) is THE reader entry for
+   interactively typed source — it consults CURRENT-EVALUATION-DIALECT
+   (the =*AUTOLISP-DIALECT*= variable over the session dialect) at each
+   call. The REPL's balanced-line reader and turn evaluator, CMD-EVAL
+   (every `(FORM)' at DBG>/NAV>, sedit's =e= via the eval hook), the
+   inspector's =e= / origin, and the form-reading debugger commands
+   (condition / bpcmd / trace / watch) all read through it; REPL-STATE
+   no longer carries the dialect. The evaluate half stays
+   parameterized by where: the REPL turn evaluates globally,
+   CMD-EVAL in the selected frame.
 3. D6/D7/D8: retire =*global-dictionary*=; registry; =clal-define-command=
    + =clal-list-interactor-names=; deprecate =clal-define-debugger-command=.
 4. D3: AUTOLISP/LISP naming.

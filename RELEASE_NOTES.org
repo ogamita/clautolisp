@@ -43,6 +43,11 @@ separate binary for tool integrators.
   ~--bricscad~ / ~--clautolisp~ / ~--lax~. The ~lax~ dialect silences
   every encoding-dispatch diagnostic globally. See § /Options /
   Dialect selection/.
+- ~(setq *AUTOLISP-DIALECT* 'DIALECT)~ switches the dialect live: the
+  REPL reader and the debugger's / inspector's form reads consult the
+  variable at each read (one shared reader entry,
+  ~issues/open/interactor-design-revision.issue~ D2), so a mid-session
+  switch takes effect on the very next line.
 - Host backend selectable via ~--host mock|null~ (default mock).
   Mock-host carries the full 1836-entry vendor sysvar catalogue.
 - Under ~--bricscad~ the sysvar *set* matches BricsCAD: the 382

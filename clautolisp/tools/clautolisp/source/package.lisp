@@ -49,6 +49,8 @@
                 #:autolisp-exit-status
                 #:call-with-autolisp-error-handler
                 #:derive-reader-options-for-dialect
+                #:read-current-source
+                #:current-evaluation-dialect
                 #:intern-autolisp-symbol
                 #:lookup-variable
                 #:make-autolisp-string

@@ -44,6 +44,31 @@ session has been installed."
     (is (eq :strict
             (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))))
 
+(test read-current-source-honours-the-live-dialect-variable
+  "READ-CURRENT-SOURCE (the one interactive reader entry,
+interactor-design-revision.issue D2) consults the dialect in force at each
+call: after (setq *AUTOLISP-DIALECT* 'bricscad-v26) in a STRICT session, the
+BricsCAD =\\U+XXXX= string escape reads as the code point."
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string "(setq x 1)")          ; installs a strict session
+  (let ((context (default-evaluation-context)))
+    (flet ((first-string (text)
+             (clautolisp.autolisp-runtime:autolisp-string-value
+              (first (clautolisp.autolisp-runtime:read-current-source
+                      text :context context))))
+           (eval-in-context (text)
+             (clautolisp.autolisp-runtime:autolisp-eval-progn
+              (clautolisp.autolisp-runtime:read-runtime-from-string text)
+              context)))
+      ;; strict: \U+0041 is no escape — the backslash sequence stays verbatim
+      (is (not (string= "A" (first-string "\"\\U+0041\""))))
+      ;; switch the dialect LIVE, through the runtime variable
+      (eval-in-context "(setq *AUTOLISP-DIALECT* 'bricscad-v26)")
+      (is (string= "A" (first-string "\"\\U+0041\"")))
+      ;; and back
+      (eval-in-context "(setq *AUTOLISP-DIALECT* 'strict)")
+      (is (not (string= "A" (first-string "\"\\U+0041\"")))))))
+
 (test run-autolisp-file-loads-and-evaluates-from-disk
   "run-autolisp-file reads a file, evaluates each form, and returns the
 value of the last expression."

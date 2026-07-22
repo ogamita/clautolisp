@@ -589,6 +589,15 @@ the alfe-side counterpart.
 - ~*AUTOLISP-DIALECT*~          :: The active dialect's canonical
                                    name as a symbol — ~STRICT~,
                                    ~AUTOCAD-2026~, ~BRICSCAD-V26~.
+                                   Bound at launch, but *writable*:
+                                   ~(setq *AUTOLISP-DIALECT* 'lax)~
+                                   switches the dialect immediately
+                                   for every dialect-sensitive
+                                   operation — including the REPL
+                                   reader and the debugger's and
+                                   inspector's form reads, which
+                                   consult the variable at each
+                                   read.
 - ~*AUTOLISP-HOST*~             :: The HAL backend's name as a symbol
                                    — ~MOCK-HOST~, ~NULL-HOST~, or nil.
 - ~*AUTOLISP-MOCK-INPUT*~       :: Pathname (string) passed to

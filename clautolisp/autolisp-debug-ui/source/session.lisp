@@ -165,10 +165,14 @@ a PREDICATE thunk — when the predicate goes false→true. Returns the watch."
 
 (defun cmd-eval (session form)
   "Evaluate FORM in the stopping context (innermost frame; spec §17.2).
-FORM may be a string (read first) or a runtime form."
+FORM may be a string — read under the dialect in force NOW
+(READ-CURRENT-SOURCE, interactor-design-revision.issue D2) — or a runtime
+form."
   (let ((snapshot (debugger-session-snapshot session))
         (parsed (if (stringp form)
-                    (first (read-runtime-from-string form))
+                    (first (clautolisp.autolisp-runtime:read-current-source
+                            form :source-name "<debugger>"
+                            :context (debugger-session-context session)))
                     form)))
     (eval-in-frame snapshot parsed :frame-index 0)))
 
