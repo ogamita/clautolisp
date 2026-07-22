@@ -469,3 +469,7 @@ for unloaded files; a multi-column directory listing; refreshing the NAV source
 display from the redefined function after an in-place edit (today it re-reads the
 on-disk file); the =clal-set-breakpoint= / =clal-disable-breakpoint= programmatic
 API named in the §7 note (breakpoints are managed by the debugger's own commands).
+
+* Resolution (triage 2026-07-23)
+
+Self-declared complete (STATUS through 1.4.22); the remaining items are duplicated in aldo-pre-debug.issue, which stays open.
