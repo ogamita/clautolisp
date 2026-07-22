@@ -270,7 +270,7 @@ collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the c
 	  [ -f "$$t" ] || continue; echo "merge $$(basename "$$t")"; tar -C "$$bstage" -xjf "$$t"; n=$$((n+1)); \
 	done; \
 	if [ "$$n" -gt 0 ]; then \
-	  tar -C "$$bstage" -cjf "$$out/clautolisp-$$ver-binaries.tar.bz2" .; \
+	  tar -C "$$bstage" --exclude='._*' --owner=0 --group=0 --numeric-owner -cjf "$$out/clautolisp-$$ver-binaries.tar.bz2" .; \
 	  echo "wrote $$out/clautolisp-$$ver-binaries.tar.bz2 (from $$n target(s))"; \
 	else echo "WARNING: no per-target binaries artefacts in $$in"; fi; \
 	rm -rf "$$bstage"; \
@@ -279,7 +279,7 @@ collect-artefacts:  ## Union the per-target artefacts from COLLECT_IN into the c
 	  [ -f "$$t" ] || continue; echo "merge $$(basename "$$t")"; tar -C "$$lstage" -xjf "$$t"; n=$$((n+1)); \
 	done; \
 	if [ "$$n" -gt 0 ]; then \
-	  tar -C "$$lstage" -cjf "$$out/clautolisp-$$ver-libraries.tar.bz2" .; \
+	  tar -C "$$lstage" --exclude='._*' --owner=0 --group=0 --numeric-owner -cjf "$$out/clautolisp-$$ver-libraries.tar.bz2" .; \
 	  echo "wrote $$out/clautolisp-$$ver-libraries.tar.bz2 (from $$n target(s))"; \
 	else echo "WARNING: no per-target libraries artefacts in $$in"; fi; \
 	rm -rf "$$lstage"; \
