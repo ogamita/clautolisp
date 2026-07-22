@@ -8,6 +8,15 @@ calls CMD-* to drive the session. This layer is UI-agnostic — concrete
 UIs (dumb terminal, ncurses, Emacs) build on it. In-image terminal UIs
 run synchronously: at a stopping point the engine's *debug-hit-handler*
 calls UI-AWAIT-COMMAND, which returns a resume directive.")
+  ;; the generic command/dictionary machinery, moved to the interactor
+  ;; framework; re-exported below so debugger-UI users keep one package.
+  (:import-from #:clautolisp.interactor
+                #:command #:command-p #:command-key #:command-words
+                #:command-phrase #:command-lambda-list #:command-docstring
+                #:command-function #:command-arity
+                #:dictionary #:dictionary-name #:make-command-dictionary
+                #:bind-command #:unbind-command #:bind-command-alias
+                #:find-command #:lookup-command #:dictionary-commands)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-symbol
                 #:autolisp-symbol-name
@@ -67,8 +76,10 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:ui-thread-hit #:ui-thread-unhandled-error #:ui-thread-caught-error
    #:ui-thread-resumed #:ui-thread-exited
    #:ui-breakpoint-added #:ui-breakpoint-removed
-   #:ui-show-source #:ui-show-message
+   #:ui-show-source #:ui-show-stop-source-p #:ui-show-message
    #:ui-await-command
+   #:ui-open-navigation-request
+   #:ui-run-command
    ;; session object
    #:debugger-session
    #:debugger-session-p
@@ -105,10 +116,11 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:command #:command-p #:command-key #:command-words #:command-phrase
    #:command-lambda-list #:command-docstring #:command-function #:command-arity
    #:dictionary #:dictionary-name #:make-command-dictionary
-   #:*global-dictionary* #:+debugger-escape-word+
-   #:*active-command-dictionaries* #:active-command-dictionaries
+   #:+debugger-escape-word+
    #:*debugger-ui* #:*debugger-session* #:*debugger-hit*
+   #:interactor-user-dictionary
    #:bind-debugger-command #:unbind-debugger-command #:define-debugger-command
+   #:register-interactor-command
    #:find-command #:lookup-command
    ;; config bridge to the canonical AutoLISP *CLAL-ALDO-CONFIGURATION*
    #:aldo-config-variable-symbol #:autolisp->cl-config #:cl-config->autolisp
@@ -119,6 +131,7 @@ calls UI-AWAIT-COMMAND, which returns a resume directive.")
    #:nav-parent #:nav-index
    #:nav-down #:nav-up #:nav-forward #:nav-backward #:nav-first #:nav-last
    #:nav-skip #:nav-render #:nav-source-listing #:nav-selected-position
+   #:nav-select-source-position
    #:nav-form-span #:nav-selected-bounds
    #:nav-code-down #:nav-code-forward #:nav-code-backward
    #:nav-code-first #:nav-code-last #:nav-code-skip

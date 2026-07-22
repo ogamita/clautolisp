@@ -1,0 +1,115 @@
+Here is what we have currently while navigating in the debugger:
+
+We get a listing of the current function (I assume it's the text from
+the source), each line prefixed with the line number and the selection
+line indicated with ">>"; followed, by "sel> " and a printed form of
+the function on a single line (we lost the formatting and indenting
+that was bad, and for which I asked to get the file sources).  When we
+set a breakpoint, there's no decoration.
+
+NAV[file]> k
+
+ >>142:   (defun vlisp-project-name (vlisp-project-alist / pair value)
+   143:     (setq value nil)
+   144:     (foreach pair vlisp-project-alist
+   145:              (if (= (strcase (vl-prin1-to-string (car pair))) ":NAME")
+   146:                  (setq value (cdr pair))
+   147:                  )
+   148:              )
+   149:     value
+   150:     )
+sel> 【(DEFUN VLISP-PROJECT-NAME (VLISP-PROJECT-ALIST / PAIR VALUE) (SETQ VALUE NIL) (FOREACH PAIR VLISP-PROJECT-ALIST (IF (= (STRCASE (VL-PRIN1-TO-STRING (CAR PAIR))) ":NAME") (SETQ VALUE (CDR PAIR)))) VALUE)】
+NAV[code]> k
+
+   142:   (defun vlisp-project-name (vlisp-project-alist / pair value)
+ >>143:     (setq value nil)
+   144:     (foreach pair vlisp-project-alist
+   145:              (if (= (strcase (vl-prin1-to-string (car pair))) ":NAME")
+   146:                  (setq value (cdr pair))
+   147:                  )
+   148:              )
+   149:     value
+   150:     )
+sel> (DEFUN VLISP-PROJECT-NAME (VLISP-PROJECT-ALIST / PAIR VALUE) 【(SETQ VALUE NIL)】 (FOREACH PAIR VLISP-PROJECT-ALIST (IF (= (STRCASE (VL-PRIN1-TO-STRING (CAR PAIR))) ":NAME") (SETQ VALUE (CDR PAIR)))) VALUE)
+NAV[code]> b
+NAV> breakpoints need a loaded function — nav one with `g NAME' or (clal-nav-function …)
+   142:   (defun vlisp-project-name (vlisp-project-alist / pair value)
+ >>143:     (setq value nil)
+   144:     (foreach pair vlisp-project-alist
+   145:              (if (= (strcase (vl-prin1-to-string (car pair))) ":NAME")
+   146:                  (setq value (cdr pair))
+   147:                  )
+   148:              )
+   149:     value
+   150:     )
+sel> (DEFUN VLISP-PROJECT-NAME (VLISP-PROJECT-ALIST / PAIR VALUE) 【(SETQ VALUE NIL)】 (FOREACH PAIR VLISP-PROJECT-ALIST (IF (= (STRCASE (VL-PRIN1-TO-STRING (CAR PAIR))) ":NAME") (SETQ VALUE (CDR PAIR)))) VALUE)
+NAV[code]> lb
+
+
+
+What we want instead:
+
+- print the toplevel form once, using the lines from the source file.
+  Prefix the lines with the line numbers, indicate where the selection
+  is with ">>".
+  But modify the lines printed inserting the decorations:
+
+  ┌─────────────────────┬────────────┬───────┐
+  │  poll-point state   │  Unicode   │ ASCII │
+  ├─────────────────────┼────────────┼───────┤
+  │ enabled breakpoint  │ ⏸ (U+23F8) │ ^     │
+  ├─────────────────────┼────────────┼───────┤
+  │ disabled breakpoint │ ⏯ (U+23EF) │ _     │
+  ├─────────────────────┼────────────┼───────┤
+  │ current poll-point  │ ⏵ (U+23F5) │ >     │
+  ├─────────────────────┼────────────┼───────┤
+  │ selected subform    │ 【…】      │ […]   │
+  └─────────────────────┴────────────┴───────┘
+
+  (The actual characters are in the aldo configuration and can be
+  inspected and modified by the user using the setting / set
+  commands).
+
+  Therefore, print the form only once.
+
+  For example (note in the example, the judicious use of the
+  preceeding spaces to print the decorations):
+ 
+
+NAV[file]> k
+
+ >>142:  【(defun vlisp-project-name (vlisp-project-alist / pair value)
+   143:     (setq value nil)
+   144:     (foreach pair vlisp-project-alist
+   145:              (if (= (strcase (vl-prin1-to-string (car pair))) ":NAME")
+   146:                  (setq value (cdr pair))
+   147:                  )
+   148:              )
+   149:     value
+   150:     )】
+
+NAV[code]> k
+
+   142:   (defun vlisp-project-name (vlisp-project-alist / pair value)
+ >>143:    【(setq value nil)】
+   144:     (foreach pair vlisp-project-alist
+   145:              (if (= (strcase (vl-prin1-to-string (car pair))) ":NAME")
+   146:                  (setq value (cdr pair))
+   147:                  )
+   148:              )
+   149:     value
+   150:     )
+
+NAV[code]> b
+
+   142:   (defun vlisp-project-name (vlisp-project-alist / pair value)
+ >>143:   【⏸(setq value nil)】
+   144:     (foreach pair vlisp-project-alist
+   145:              (if (= (strcase (vl-prin1-to-string (car pair))) ":NAME")
+   146:                  (setq value (cdr pair))
+   147:                  )
+   148:              )
+   149:     value
+   150:     )
+
+NAV[code]>

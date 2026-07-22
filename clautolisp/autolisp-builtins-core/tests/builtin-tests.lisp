@@ -462,6 +462,28 @@
     (is (not (null result))
         "control returned past the vl-catch-all-apply")))
 
+(test caught-arity-error-keeps-the-callers-frame
+  ;; Regression (the infinite (fact 3) recursion; error-while-debugging
+  ;; follow-up): BIND-USUBR-FRAME signals its wrong-number-of-arguments error
+  ;; BEFORE pushing the callee's dynamic frame. With the frame pop in an
+  ;; unwind-protect AROUND the bind, an unwind from that error popped a frame
+  ;; that was never pushed — the CALLER's — so after a *caught* arity error
+  ;; (vl-catch-all-apply, or a debugger resume) the caller's variables
+  ;; resolved to stale outer values.
+  (reset-autolisp-symbol-table)
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (install-core-builtins)
+  (let ((context (clautolisp.autolisp-runtime:current-evaluation-context)))
+    (flet ((eval-source (source)
+             (clautolisp.autolisp-runtime:autolisp-eval-progn
+              (clautolisp.autolisp-runtime:read-runtime-from-string source)
+              context)))
+      (eval-source "(defun one (n) n)")
+      (eval-source "(setq x 42)")             ; the stale outer value
+      (eval-source "(defun g (x) (vl-catch-all-apply 'one '(1 2 3)) x)")
+      ;; G's x must still be 7 after the caught arity error, not the global 42
+      (is (eql 7 (eval-source "(g 7)"))))))
+
 (test reverse-empty-list-cases
   ;; (reverse '()) and (reverse nil) both yield nil — both spellings
   ;; of the empty list flow through to the same value.

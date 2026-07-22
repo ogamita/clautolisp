@@ -7,6 +7,25 @@ streams with no cursor control. Works over a pipe, in a logfile-style
 shell, and in CI. Registered as :terminal / :dumb. It is the UI the
 implementer uses to bring the debugger up, and the baseline every richer
 UI refines.")
+  (:import-from #:clautolisp.interactor
+                #:bind-command #:bind-command-alias
+                #:command-raw-argument-p #:dictionary-commands
+                #:+system-command-word+
+                ;; the unified loop (interactor-unification.issue) over
+                ;; singleton interactors + activations (design-revision T1)
+                #:define-interactor #:define-command
+                #:make-interactor
+                #:interactor-commands #:interactor-user-commands
+                #:interactor-prompt #:interactor-reader #:interactor-evaluator
+                #:interactor-status #:interactor-on-result
+                #:make-activation #:activation-state #:find-activation
+                #:*command-interactor* #:*command-activation*
+                #:*command-line* #:*command-arguments-text*
+                #:*interactor-stack* #:push-interactor #:pop-interactor
+                #:interactor-loop #:interactor-return
+                #:command-read #:read-line-from-input-context
+                #:input-command-p #:make-input-command
+                #:input-command-raw #:input-command-tokens #:ident)
   (:import-from #:clautolisp.source
                 #:source-position-p #:source-position-file
                 #:source-position-start-line #:source-position-start-column
@@ -36,6 +55,7 @@ UI refines.")
                 #:function-debug-metadata-poll-point-count #:form-id-position)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-symbol-name #:read-runtime-from-string
+                #:read-current-source
                 #:autolisp-eval #:current-evaluation-context #:*debugging*
                 #:intern-autolisp-symbol #:autolisp-usubr-name
                 #:autolisp-usubr-lambda-list #:autolisp-usubr-body

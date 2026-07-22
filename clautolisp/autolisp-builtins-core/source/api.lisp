@@ -4376,6 +4376,7 @@ under another."
 
 (defparameter +default-aldo-configuration-source+
   "((navigator . sexp)
+    (sedit-on-quit . ask)
     (navigation-history-max . 1000)
     (break-on-caught . nil)
     (source-window-height . 24)
@@ -4458,11 +4459,13 @@ $XDG_CONFIG_DIRS, or NIL."
 
 (defun save-aldo-configuration-to (path)
   "Write *CLAL-ALDO-CONFIGURATION* to PATH as an AutoLISP sexp (UTF-8); return
-the path string (an AutoLISP string)."
+the path string (an AutoLISP string). PRIN1 semantics (PRINCP nil): the file
+must READ back — a princ'd string glyph like ^ or [ is not a string when
+re-read (aldo-conf-princ-serialisation bug)."
   (ensure-directories-exist path)
   (with-open-file (out path :direction :output :if-exists :supersede
                             :if-does-not-exist :create :external-format :utf-8)
-    (write-string (autolisp-value->string (aldo-configuration-value) t) out)
+    (write-string (autolisp-value->string (aldo-configuration-value) nil) out)
     (terpri out))
   (make-autolisp-string (namestring path)))
 
@@ -4549,7 +4552,9 @@ directory when omitted), so you can walk the file system and enter files
   "Register an AutoLISP debugger command (command reference §8). NAMES is a list
 (KEY WORD…) of strings (the key must be the word initials, §0); FUNCTION is the
 command body, applied to the command's parsed string arguments at dispatch; DOC
-an optional help string. A no-op (returns nil) unless the debugger UI is loaded."
+an optional help string. A no-op (returns nil) unless the debugger UI is loaded.
+DEPRECATED: the equivalent of (CLAL-DEFINE-COMMAND \"ALDO\" NAMES FUNCTION [DOC])
+— use that (interactor-design-revision.issue D7)."
   (when clautolisp.autolisp-runtime:*debug-define-command-hook*
     (funcall clautolisp.autolisp-runtime:*debug-define-command-hook*
              (mapcar (lambda (s) (clautolisp.autolisp-runtime:autolisp-string-value s))
@@ -4557,6 +4562,206 @@ an optional help string. A no-op (returns nil) unless the debugger UI is loaded.
              (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function)
              (and doc (clautolisp.autolisp-runtime:autolisp-string-value doc))))
   nil)
+
+(defun %clal-interactor-name-string (name which)
+  "Coerce NAME (an AutoLISP string or symbol) to a CL interactor-name string."
+  (typecase name
+    (clautolisp.autolisp-runtime:autolisp-symbol
+     (clautolisp.autolisp-runtime:autolisp-symbol-name name))
+    (t (handler-case (clautolisp.autolisp-runtime:autolisp-string-value name)
+         (error ()
+           (signal-builtin-argument-error
+            :bad-argument which
+            "INTERACTOR-NAME must be a string or symbol, got ~S." name))))))
+
+(defun builtin-clal-define-command (interactor-name names function &optional doc)
+  "Register an AutoLISP user command of the NAMED interactor
+(interactor-design-revision.issue D7): (clal-define-command \"NAVI\" '(\"z\"
+\"zap\") FUNCTION [DOC]). INTERACTOR-NAME is one of
+(clal-list-interactor-names) — commands install whether or not the
+interactor is currently active; NAMES is a list (KEY WORD…) of strings (the
+key must be the word initials, §0); FUNCTION is the command body, applied to
+the command's parsed string arguments at dispatch; DOC an optional help
+string. User commands shadow the interactor's system commands (`command
+CMD' reaches a shadowed system command). A no-op (returns nil) unless the
+debugger UI is loaded."
+  (when clautolisp.autolisp-runtime:*define-interactor-command-hook*
+    (funcall clautolisp.autolisp-runtime:*define-interactor-command-hook*
+             (%clal-interactor-name-string interactor-name "CLAL-DEFINE-COMMAND")
+             (mapcar (lambda (s) (clautolisp.autolisp-runtime:autolisp-string-value s))
+                     names)
+             (clautolisp.autolisp-runtime:resolve-autolisp-function-designator function)
+             (and doc (clautolisp.autolisp-runtime:autolisp-string-value doc))))
+  nil)
+
+(defun builtin-clal-list-interactor-names ()
+  "The names of every registered interactor, as a list of strings — e.g.
+(\"ALDO\" \"NAVI\" \"LAVI\" \"INSPECT\" \"AUTOLISP\"): the valid first
+arguments of CLAL-DEFINE-COMMAND. Nil unless the debugger UI is loaded."
+  (when clautolisp.autolisp-runtime:*list-interactor-names-hook*
+    (mapcar #'clautolisp.autolisp-runtime:make-autolisp-string
+            (funcall clautolisp.autolisp-runtime:*list-interactor-names-hook*))))
+
+;;; --- CLAL-SEDIT + CLAL-CLIPBOARD-* (sedit spec §2, §5.4) -------------
+;;;
+;;; The AutoLISP surface of the sedit structural editor and its clipboard.
+;;; An AutoLISP value is bridged to a sedit adorned tree through its SOURCE
+;;; TEXT — AUTOLISP-VALUE->STRING to print it, CLAUTOLISP.SEDIT:PARSE-FORM to
+;;; read it as a tree, CLAUTOLISP.SEDIT:UNPARSE + AUTOLISP-READ-FROM-STRING to
+;;; get a value back — so sedit stays a self-contained, runtime-free library.
+
+(defun %clal-value->node (value)
+  "The sedit adorned tree for an AutoLISP VALUE, via its source text."
+  (clautolisp.sedit:parse-form (autolisp-value->string value nil)))
+
+(defun %clal-node->value (node)
+  "The AutoLISP value a sedit NODE denotes (read from its source text; never
+evaluated), or nil for a null node."
+  (and node
+       (clautolisp.autolisp-runtime:autolisp-read-from-string (clautolisp.sedit:unparse node))))
+
+(defun %clal-set-autolisp-var (name value)
+  "Set the AutoLISP global variable NAME (a string) to VALUE, so AutoLISP code
+sees the operation's result (sedit spec §2/§5.4)."
+  (clautolisp.autolisp-runtime:set-autolisp-symbol-value
+   (clautolisp.autolisp-runtime:intern-autolisp-symbol name) value))
+
+(defun %clal-sedit-target (object)
+  "Resolve the CLAL-SEDIT argument OBJECT to what SEDIT-OPEN expects (spec §2):
+NIL -> a stand-alone nil; an AutoLISP symbol -> its (recorded) name to recall; an
+AutoLISP string -> a file/directory path; any other value -> a sexp to edit."
+  (cond
+    ((null object) nil)
+    ((typep object 'clautolisp.autolisp-runtime:autolisp-symbol)
+     (intern (string-upcase (clautolisp.autolisp-runtime:autolisp-symbol-name object)) :keyword))
+    ((typep object 'clautolisp.autolisp-runtime:autolisp-string)
+     (clautolisp.autolisp-runtime:autolisp-string-value object))
+    (t (%clal-value->node object))))
+
+(defun %clal-var-value (name)
+  "The value of AutoLISP variable NAME, or nil when it is unbound."
+  (let ((sym (clautolisp.autolisp-runtime:intern-autolisp-symbol name)))
+    (and (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p sym)
+         (clautolisp.autolisp-runtime:autolisp-symbol-value sym))))
+
+(defun %clal-shift-var-history (base new-value)
+  "Shift a three-generation AutoLISP history for BASE (a name stem like
+\"*CLAL-FORM\"): BASE-2* <- BASE-1*, BASE-1* <- BASE*, BASE* <- NEW-VALUE, so the
+newest value is BASE* and older ones age into the -1/-2 generations (spec §5.6)."
+  (%clal-set-autolisp-var (format nil "~A-2*" base) (%clal-var-value (format nil "~A-1*" base)))
+  (%clal-set-autolisp-var (format nil "~A-1*" base) (%clal-var-value (format nil "~A*" base)))
+  (%clal-set-autolisp-var (format nil "~A*" base) new-value))
+
+(defun %clal-sedit-eval (node)
+  "Evaluate NODE's form (spec §5.6) and record the eval history: shift the form
+and source-form variables BEFORE evaluating, shift the result variables AFTER, so
+=*clal-form*= / =*clal-source-form*= / =*clal-result*= (and their -1/-2
+generations) track the last three evaluations. Returns the AutoLISP result."
+  (let* ((text (clautolisp.sedit:unparse node))
+         (form (clautolisp.autolisp-runtime:autolisp-read-from-string text))
+         (source (list (clautolisp.autolisp-runtime:intern-autolisp-symbol "SEXP")
+                       form
+                       (clautolisp.autolisp-runtime:make-autolisp-string text))))
+    (%clal-shift-var-history "*CLAL-FORM" form)          ; forms + source before eval
+    (%clal-shift-var-history "*CLAL-SOURCE-FORM" source)
+    (let ((result (clautolisp.autolisp-runtime:autolisp-eval
+                   form (clautolisp.autolisp-runtime:current-evaluation-context))))
+      (%clal-shift-var-history "*CLAL-RESULT" result)     ; results after eval
+      result)))
+
+(defun %clal-sedit-eval-hook (node)
+  "EVAL / MACROEXPAND callback for sedit: evaluate NODE's form (recording the
+§5.6 history) and return the result as a node (so macroexpand can replace the
+selection with it)."
+  (%clal-value->node (%clal-sedit-eval node)))
+
+(defun %clal-sedit-eval-print-hook (node)
+  "EVAL-at-the-prompt callback for sedit: evaluate NODE's form (recording the
+§5.6 history) and return its result as a source string to print (or an error)."
+  (handler-case
+      (format nil "= ~A" (autolisp-value->string (%clal-sedit-eval node) nil))
+    (error (e) (format nil "eval error: ~A" e))))
+
+(defun %clal-sedit-load-hook (path)
+  "LOAD callback for sedit: evaluate the forms of file PATH into the running
+system (installing an edited definition, spec §5.7)."
+  (let ((ctx (clautolisp.autolisp-runtime:current-evaluation-context)))
+    (dolist (form (clautolisp.autolisp-runtime:read-runtime-from-string (uiop:read-file-string path)))
+      (clautolisp.autolisp-runtime:autolisp-eval form ctx))))
+
+(defun %clal-sedit-debug-hook (command)
+  "DEBUG/ALDO callback for sedit: run the debugger COMMAND (e.g. \"help\") in the
+attached session via *debug-command-hook* (spec §7). When no debugger is
+attached, print a note instead of silently doing nothing."
+  (if clautolisp.autolisp-runtime:*debug-command-hook*
+      (funcall clautolisp.autolisp-runtime:*debug-command-hook* command)
+      (progn
+        (format *standard-output*
+                "~&sedit: no debugger attached — `debug'/`aldo' commands need a ~
+                 session (run under --aldo-user-interface or --on-error debug)~%")
+        (finish-output *standard-output*)
+        nil)))
+
+(defun builtin-clal-sedit (&optional object)
+  "Edit OBJECT with the sedit structural editor (spec §2): no argument -> a
+stand-alone form starting at nil; a symbol -> recall its recorded definition; a
+string -> a file or directory path; any other value -> edited as a sexp. Pushes
+the SEDIT interactor over the current stack (design-revision D9) and drives it
+until `q' pops it, then returns the edited object. Sets
+CLAUTOLISP.SEDIT:*CLAL-SEDIT-INITIAL-FORM* / *CLAL-SEDIT-LAST-RESULT*."
+  (let ((session (clautolisp.sedit:sedit-open (%clal-sedit-target object)
+                                              :recording (clautolisp.sedit:sedit-recording))))
+    (multiple-value-bind (result directive)
+        (clautolisp.sedit:sedit-enter session
+                                      :input *standard-input* :output *standard-output*
+                                      :eval-hook #'%clal-sedit-eval-hook
+                                      :eval-print-hook #'%clal-sedit-eval-print-hook
+                                      :load-hook #'%clal-sedit-load-hook
+                                      :debug-hook #'%clal-sedit-debug-hook)
+      (declare (ignore directive))
+      ;; publish the session's initial / final forms to the AutoLISP variables
+      (%clal-set-autolisp-var "*CLAL-SEDIT-INITIAL-FORM*"
+                              (%clal-node->value clautolisp.sedit:*clal-sedit-initial-form*))
+      (%clal-set-autolisp-var "*CLAL-SEDIT-LAST-RESULT*" (%clal-node->value result))
+      (%clal-node->value result))))
+
+(defun builtin-clal-clipboard-put-text (string)
+  "Set the system clipboard to STRING, and record STRING in *clal-clipboard* so
+the AutoLISP variable reflects the write — including when the system clipboard is
+unavailable or does not persist the value (clipboard-interface.org). Returns T
+on success, nil otherwise."
+  (let ((text (%clal-nav-name-string string "CLAL-CLIPBOARD-PUT-TEXT")))
+    (%clal-set-autolisp-var "*CLAL-CLIPBOARD*"
+                            (clautolisp.autolisp-runtime:make-autolisp-string text))
+    (if (clautolisp.sedit:clipboard-put-text text)
+        (clautolisp.autolisp-runtime:intern-autolisp-symbol "T")
+        nil)))
+
+(defun builtin-clal-clipboard-get-text ()
+  "Return the system clipboard contents as a string, or nil when it is empty or
+unreadable."
+  (let ((text (clautolisp.sedit:clipboard-get-text)))
+    (and text (clautolisp.autolisp-runtime:make-autolisp-string text))))
+
+(defun builtin-clal-clipboard-copy-sexp (value)
+  "Copy VALUE to the clipboard (spec §5.4): its source text goes to the system
+clipboard, and the AutoLISP variable *clal-clipboard* is set to the adorned
+object (SEXP value text). Returns nil."
+  (let ((node (%clal-value->node value)))
+    (clautolisp.sedit:clipboard-copy-node node)
+    (%clal-set-autolisp-var
+     "*CLAL-CLIPBOARD*"
+     (list (clautolisp.autolisp-runtime:intern-autolisp-symbol "SEXP")
+           value
+           (clautolisp.autolisp-runtime:make-autolisp-string (clautolisp.sedit:unparse node)))))
+  nil)
+
+(defun builtin-clal-clipboard-paste-sexp ()
+  "Return the clipboard contents parsed back into an AutoLISP object (never
+evaluated — a foreign #.() cannot run): the system clipboard when available, else
+the in-process *clipboard* (clipboard-interface.org §Public API). Nil when both
+are empty."
+  (%clal-node->value (clautolisp.sedit:clipboard-paste-node clautolisp.sedit:*clipboard*)))
 
 ;;; --- CLAL-OPTIMIZE / CLAL-OPTIMIZATION -------------------------------
 ;;;
@@ -8204,10 +8409,17 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-OPTIMIZE"         #'builtin-clal-optimize)
    (make-core-builtin-subr "CLAL-COMPILE"          #'builtin-clal-compile)
    (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
+   (make-core-builtin-subr "CLAL-DEFINE-COMMAND" #'builtin-clal-define-command)
+   (make-core-builtin-subr "CLAL-LIST-INTERACTOR-NAMES" #'builtin-clal-list-interactor-names)
    (make-core-builtin-subr "CLAL-NAV-FUNCTION"     #'builtin-clal-nav-function)
    (make-core-builtin-subr "CLAL-NAV-FILE"         #'builtin-clal-nav-file)
    (make-core-builtin-subr "CLAL-NAV-DIRECTORY"    #'builtin-clal-nav-directory)
    (make-core-builtin-subr "CLAL-SELECT-FILE"      #'builtin-clal-select-file)
+   (make-core-builtin-subr "CLAL-SEDIT"                #'builtin-clal-sedit)
+   (make-core-builtin-subr "CLAL-CLIPBOARD-PUT-TEXT"   #'builtin-clal-clipboard-put-text)
+   (make-core-builtin-subr "CLAL-CLIPBOARD-GET-TEXT"   #'builtin-clal-clipboard-get-text)
+   (make-core-builtin-subr "CLAL-CLIPBOARD-COPY-SEXP"  #'builtin-clal-clipboard-copy-sexp)
+   (make-core-builtin-subr "CLAL-CLIPBOARD-PASTE-SEXP" #'builtin-clal-clipboard-paste-sexp)
    (make-core-builtin-subr "CLAL-FILE-ENCODING"       #'builtin-clal-file-encoding)
    (make-core-builtin-subr "CLAL-SUPPRESS-ENC-DIAGNOSTIC" #'builtin-clal-suppress-enc-diagnostic)
    (make-core-builtin-subr "CLAL-ENABLE-ENC-DIAGNOSTIC"   #'builtin-clal-enable-enc-diagnostic)
@@ -8726,8 +8938,40 @@ docstring above the def for the upgrade-path reference.")
         :key #'autolisp-subr-name
         :test #'string=))
 
+(defparameter +clal-extension-variables+
+  '("*CLAL-CLIPBOARD*"
+    "*CLAL-SEDIT-INITIAL-FORM*" "*CLAL-SEDIT-LAST-RESULT*"
+    "*CLAL-FORM*" "*CLAL-FORM-1*" "*CLAL-FORM-2*"
+    "*CLAL-RESULT*" "*CLAL-RESULT-1*" "*CLAL-RESULT-2*"
+    "*CLAL-SOURCE-FORM*" "*CLAL-SOURCE-FORM-1*" "*CLAL-SOURCE-FORM-2*")
+  "The public clautolisp extension *variables* (sedit spec §2/§5.4/§5.6) that are
+bound to nil at startup so AutoLISP code can read them, and so `alref-apropos'
+finds them (it lists only BOUND symbols); operations then set them.")
+
+(defun install-clal-extension-variables ()
+  "Bind the public *clal-* extension variables in the current namespace so they
+are AVAILABLE before any operation sets them (sedit spec §2/§5.4/§5.6). Each is
+left untouched if already bound (so a user value / a prior session survives)."
+  (dolist (name +clal-extension-variables+)
+    (let ((sym (intern-autolisp-symbol name)))
+      (unless (autolisp-symbol-value-bound-p sym)
+        (%clal-set-autolisp-var name nil))))
+  ;; *CLAL-ON-ERROR* mirrors the runtime error policy as an AutoLISP symbol
+  (let ((sym (intern-autolisp-symbol "*CLAL-ON-ERROR*")))
+    (unless (autolisp-symbol-value-bound-p sym)
+      (%clal-set-autolisp-var
+       "*CLAL-ON-ERROR*"
+       (intern-autolisp-symbol
+        (string-upcase (symbol-name clautolisp.autolisp-runtime:*clal-on-error*))))))
+  ;; *CLAL-ALDO-CONFIGURATION* — seed the default so it too is visible at once
+  (let ((sym (aldo-config-symbol)))
+    (unless (autolisp-symbol-value-bound-p sym)
+      (clautolisp.autolisp-runtime:set-autolisp-symbol-value sym (default-aldo-configuration-value))))
+  t)
+
 (defun install-core-builtins ()
   (dolist (builtin (core-builtins))
     (let ((symbol (intern-autolisp-symbol (autolisp-subr-name builtin))))
       (set-autolisp-symbol-function symbol builtin)))
+  (install-clal-extension-variables)
   t)

@@ -331,6 +331,35 @@ walking up the path lands on a positioned enclosing form.)"
       (when (null path) (return nil))
       (setf path (butlast path)))))
 
+(defun %nav-paths-to-position (sexp line col)
+  "Every element-index path from SEXP to a cons whose recorded SOURCE-POSITION
+starts at LINE/COL, pre-order (so a longer path is a form nested deeper)."
+  (let ((paths '()))
+    (labels ((walk (node path)
+               (when (consp node)
+                 (let ((pos (clautolisp.source:position-of node)))
+                   (when (and pos
+                              (eql (clautolisp.source:source-position-start-line pos) line)
+                              (eql (clautolisp.source:source-position-start-column pos) col))
+                     (push (reverse path) paths)))
+                 (loop for rest on node
+                       for i from 0
+                       do (walk (car rest) (cons i path))))))
+      (walk sexp '()))
+    (nreverse paths)))
+
+(defun nav-select-source-position (nav line col)
+  "Move NAV's selection to the innermost navigated form starting at LINE/COL — the
+current poll-point, when re-anchoring the navigator on a break (sedit-spec §7
+re-entry). Returns NAV on success, or NIL (selection unchanged) when no form
+starts there."
+  (when (and line col)
+    (let ((paths (%nav-paths-to-position (navigator-root nav) line col)))
+      (when paths
+        ;; the deepest (longest) path is the innermost form at that position
+        (setf (navigator-path nav) (first (sort (copy-list paths) #'> :key #'length)))
+        nav))))
+
 (defun %nav-listing-for-node (nav node &optional breakpoint-lines (bp-glyph "^"))
   "A verbatim source listing of NODE (a sub-tree of NAV's root) — the file's own
 lines spanning NODE, each with its line number and original indentation. The

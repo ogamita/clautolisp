@@ -33,10 +33,21 @@ separate binary for tool integrators.
 
 - Three modes: file (~clautolisp file.lsp~), expression (~-x EXPR~),
   and interactive REPL. See § /Modes of Operation/.
+- REPL comma-commands: a line starting with =,= is a command, not an
+  expression — =,d=/=,date=, =,u=/=,uptime=, =,h=/=,help=, =,q=/=,quit=
+  (exit even when ~(quit)~ is not available). An empty line just
+  re-prompts. Backed by the interactor framework's command dictionaries
+  (the debugger dictionary mechanism, generalised). See § /Modes of
+  Operation / Interactive REPL/.
 - Five dialects selectable via ~--strict~ / ~--autocad~ /
   ~--bricscad~ / ~--clautolisp~ / ~--lax~. The ~lax~ dialect silences
   every encoding-dispatch diagnostic globally. See § /Options /
   Dialect selection/.
+- ~(setq *AUTOLISP-DIALECT* 'DIALECT)~ switches the dialect live: the
+  REPL reader and the debugger's / inspector's form reads consult the
+  variable at each read (one shared reader entry,
+  ~issues/open/interactor-design-revision.issue~ D2), so a mid-session
+  switch takes effect on the very next line.
 - Host backend selectable via ~--host mock|null~ (default mock).
   Mock-host carries the full 1836-entry vendor sysvar catalogue.
 - Under ~--bricscad~ the sysvar *set* matches BricsCAD: the 382
@@ -77,6 +88,147 @@ separate binary for tool integrators.
 - ~clal-file-encoding PATH~ — sniff the BOM, return one of
   ~"UTF-8-BOM"~ / ~"UTF-16-LE"~ / ~"UTF-16-BE"~ / ~"UTF-32-LE"~ /
   ~"UTF-32-BE"~ / ~"ANSI"~. See § /clautolisp Extensions/.
+
+** sedit — structural editor + clipboard (=clautolisp/documentation/clautolisp-sedit-spec.org=)
+
+- ~(clal-sedit [object])~ — edit a form with the *sedit* structural editor: no
+  argument starts at ~nil~; a symbol recalls its recorded definition; a string
+  is a file or directory path; any other value is edited as a sexp. Two-mode
+  (navigate / edit) with motions, insert/add/replace, wrap/slurp/barf/splice/
+  split/join, one-level undo, and byte-preserving formatting. Returns the edited
+  object. See the new manual chapter § /sedit and the aldo form navigator/.
+- The interactive REPL now records every top-level form it evaluates, so
+  ~(clal-sedit 'NAME)~ recalls a function/variable you defined at the prompt.
+- *Clipboard* (system-clipboard aware, degrades to in-process only):
+  ~(clal-clipboard-copy-sexp OBJ)~ / ~(clal-clipboard-paste-sexp)~ and the text
+  forms ~(clal-clipboard-put-text S)~ / ~(clal-clipboard-get-text)~. Paste never
+  evaluates its input. Providers: X11, Wayland, macOS, Windows, OSC 52, NULL.
+- From the aldo form navigator, an editing word (=edit=, =insert=, =wrap=, …)
+  opens the same editor on the current function; leaving it installs the edited
+  definition in the running system (spec §7).
+- A bare Lisp *form* typed at any prompt — =DBG>=, the form navigator =NAV>=, or
+  the editor =SEDIT>= — is evaluated and its result printed, like the REPL.
+- =,settings NAME= now reports an error for an unknown setting name instead of
+  printing a bogus value.
+- The public =*clal-*= extension variables (=*clal-clipboard*=,
+  =*clal-sedit-initial-form*= / =*clal-sedit-last-result*=, the =*clal-form*= /
+  =*clal-result*= / =*clal-source-form*= eval-history trio and their =-1= / =-2=
+  generations, =*clal-on-error*=, =*clal-aldo-configuration*=) are now *bound* at
+  startup, so AutoLISP code can read them and =(alref-apropos "*CLAL-")= lists
+  them; =clal-clipboard-copy-sexp= and =clal-clipboard-put-text= both set
+  =*clal-clipboard*= (so it reflects the write even when the system clipboard is
+  unavailable or does not persist the value), and =clal-sedit= sets
+  the sedit variables. Each sedit evaluation (=e=, =macroexpand=, or a bare form
+  at the prompt) *shifts* the history variables (spec §5.6): =*clal-form*= /
+  =*clal-source-form*= / =*clal-result*= hold the most recent, with the =-1= /
+  =-2= generations holding the two before — a clautolisp analogue of Common
+  Lisp's =+= / =*= REPL variables.
+
+** aldo debugger — form navigator (=clautolisp/documentation/clautolisp-sedit-spec.org=)
+
+- A navigated form with *no source file* (e.g. one defined with
+  ~clal-compile~) is now laid out by the AutoLISP indentation rules — newlines
+  by special operator, two-space body indent (sedit-spec §5.2, the same layout
+  sedit gives it) — with the selection marked, instead of one flat line. The
+  same applies to sedit's own selection display: the spine down to a deep
+  selection keeps the layout instead of flattening (=format-marked=, =reflow=
+  in the =clautolisp.sedit= API).
+- The navigator no longer *re-renders the whole view after every command*: an
+  output-only turn (a stacked debugger command, an evaluated form, help) just
+  prints its output; a bare =RET= redisplays. Motions and edits still redraw.
+- With =set navigator sexp= (the default) *every stop* — breakpoint, step,
+  error — now enters the sexp form navigator directly, anchored on the current
+  poll-point (sedit-spec §7): no =nav= command needed. The flat source-line
+  window (the *line* navigator's display) no longer also prints there; =q=
+  drops to the flat =DBG>= command loop. With =set navigator line= the stop
+  keeps the flat window at =DBG>=.
+- Entering the form navigator (=nav=, =g NAME=, =(clal-nav-function 'NAME)=)
+  now selects the function's *first poll-point*, not the whole ~defun~ head —
+  and, when entered on a *break*, re-anchors to the *current* poll-point (the
+  form the debugger stopped on), not the first (sedit-spec §7 re-entry).
+- The form navigator's prompt is now plain =NAV>= in every case, never
+  =NAV[code]>= / =NAV[non-code]>= — one prompt per mode (=DBG>= debugger, =NAV>=
+  navigator, =SEDIT>= editor; sedit-spec §6). A bare form evaluated at the =NAV>=
+  prompt is echoed with =NAV>= too, not =DBG>=.
+- In navigation mode the navigator keys (=d u > < << >> ±N=) are stacked over
+  the full debugger dictionary: every non-motion command — =c i n o a r j=,
+  the breakpoint / frame / inspection verbs — dispatches directly, and =?=
+  lists them. (The former =i k jj j l ll= letter aliases are retired: they
+  shadowed debugger verbs.)
+- Interactor routing in the navigator: =aldo CMD= / =debug CMD= (=debug= is
+  the debugger interactor's alias) route CMD to the debugger explicitly —
+  dispatching normally, user commands first (e.g. =aldo b LOC= while bare
+  =b= breakpoints the selection) — the same prefix the sedit editor uses.
+- The debugger's built-in vocabulary is now itself a command dictionary
+  (the interactor framework): user commands live in a separate dictionary
+  layered over it, so they can shadow any built-in.
+- One AutoLISP registration API for every interaction mode
+  (~issues/open/interactor-design-revision.issue~ D6/D7):
+  =(clal-define-command "INTERACTOR" NAMES FN [DOC])= registers a user
+  command of the named interactor's user dictionary —
+  =(clal-list-interactor-names)= lists the valid names (=ALDO=, =NAVI=,
+  =LAVI=, =INSPECT=, =AUTOLISP=) — and commands install before their
+  interactor is activated. There is no global user table: a "global"
+  command is one defined on the =AUTOLISP= interactor at the bottom of
+  the stack. =clal-define-debugger-command= is deprecated, the
+  equivalent of =(clal-define-command "ALDO" …)=.
+- The REPL is the =AUTOLISP= interactor (alias =LISP=), and it really
+  is at the bottom of the stack: at a debugger stop the whole ambient
+  stack stays reachable, so a user command registered on =AUTOLISP=
+  dispatches from =DBG>= / =NAV>= by fall-through, and =lisp CMD= /
+  =autolisp CMD= route to it from any inner mode (at the REPL itself,
+  invoke it as =,CMD=).
+- sedit is the =SEDIT= interactor (sedit-spec §6.6 amendment, Option A):
+  ONE dictionary — motions over *all* sub-sexps plus the editing
+  commands — under a single =SEDIT>= prompt; the internal NAV/EDIT
+  two-mode machine is gone. =(clal-sedit …)= pushes it over the REPL
+  and returns the edited object when =q= pops it; an editing word at
+  =NAV>= pushes it over the navigator and the stop. SEDIT's keys shadow
+  same-key debugger verbs (=aldo CMD= reaches them); unshadowed
+  commands fall through; =aldo c= from inside the editor resumes.
+- Quitting *at a stop* now asks: =q= at =NAV>= or =SEDIT>= above the
+  debugger warns that quitting aborts the debugged execution, lists the
+  resume alternatives, and asks =really abort? (y/n)= — =y= runs the
+  debugger's own =quit=, anything else keeps debugging
+  (interactor-design-revision.issue T4).
+- The =command= word (like bash's =command foo=) is the systematic escape to
+  a shadowed built-in: =command CMD= / =aldo command CMD= skip the user
+  commands — how a shadowing user command calls the system one. =debugger
+  CMD= remains as the historical spelling. See the command reference §8
+  /Command dictionaries (stacked dispatch)/.
+- A wrong command no longer drops the debugger
+  (=issues/closed/error-while-debugging.issue=): at an *error stop*,
+  =i=/=n=/=o=/=a=/=j= refuse with the §10.1 guidance instead of silently
+  declining the stop (which let the error unwind to the toplevel handler);
+  an error escaping any command body is reported (=error while executing
+  CMD=) and the stop keeps reading — a debugging state is only dropped by
+  an explicit =q=. An AutoLISP error raised while a command evaluates user
+  code still breaks into a nested debugger stop first.
+- =r='s expression is now *mandatory* (every AutoLISP function returns
+  something): a bare =r= prompts =return value?=; a blank answer cancels.
+- Correctness after a *caught* error
+  (=issues/closed/usubr-arity-error-pops-callers-frame.issue=): a caught
+  wrong-number-of-arguments error (=vl-catch-all-apply=, a debugger
+  resume) used to pop the *caller's* dynamic frame, so the caller's
+  variables silently resolved to stale outer values from then on (the
+  reported infinite =fact= recursion). The frame push/pop now pairs
+  exactly.
+- One loop for every interaction mode (=issues/open/interactor-unification.issue=):
+  the debugger prompt, the form navigator, the line navigator, the
+  inspector and the REPL all run on the interactor framework's single
+  INTERACTOR-LOOP, with their vocabularies as stacked command
+  dictionaries. User-visible effects: from the *line* navigator and the
+  *inspector* every unshadowed debugger command now works directly (the
+  spec §8 stacked dispatch — e.g. =c= continues from inside the
+  inspector; its =b= stays =bind=), a bare =(FORM)= evaluates in the
+  inspector too, ±N is the =skip= command everywhere, and =aldo CMD= /
+  =command CMD= routing works in every mode. Inspector arguments are
+  whitespace-separated (=d 0=, =e (+ 1 2)= — no glued =d0=).
+- =(clal-nav-function 'NAME)= at the REPL opens the navigator *without* faking
+  a break, so you can browse a function and place breakpoints before it runs.
+- Setting a breakpoint twice on one poll-point is idempotent — one breakpoint,
+  one decoration ("already set" on the repeat). See the three
+  =issues/open/bug-aldo-*= tickets.
 
 ** Exit-status channel (portable pass/fail for batch scripts)
 

@@ -121,13 +121,25 @@ stop — (:function NAME) / (:file PATH LINE) / (:directory PATH) (pre-debug
 navigation, aldo-pre-debug.issue). The UI command loop reads and clears it. NIL
 when there is no pending navigation request.")
 
+(defvar *defer-nav-request* nil
+  "When true, REQUEST-NAV only *queues* the navigation request and returns,
+leaving it for a caller to open — the interactive REPL binds this and opens the
+navigator after the turn, so (clal-nav-function 'NAME) needs no fake break and
+never exposes a synthetic toplevel poll-point (bug-aldo-nav-entry-and-breakpoint-
+flow). When NIL (batch / embedded), REQUEST-NAV breaks so the running UI opens
+the navigator at the resulting stop.")
+
 (defun request-nav (request)
-  "CLAL-NAV-* entry: record REQUEST as the pending navigation and break into the
-debugger, so the UI opens the corresponding navigator. A no-op (and the pending
-request is cleared) when no debug session is active."
+  "CLAL-NAV-* entry: record REQUEST as the pending navigation. Unless
+*DEFER-NAV-REQUEST* is set, break into the debugger so the UI opens the
+corresponding navigator (clearing the request afterwards); a no-op when no debug
+session is active. With *DEFER-NAV-REQUEST* set the request is left pending for
+the REPL to open without a fake break."
   (setf *pending-nav-request* request)
-  (unwind-protect (invoke-debugger-break nil)
-    (setf *pending-nav-request* nil)))
+  (unless *defer-nav-request*
+    (unwind-protect (invoke-debugger-break nil)
+      (setf *pending-nav-request* nil)))
+  nil)
 
 (setf clautolisp.autolisp-runtime:*debug-nav-hook* #'request-nav)
 

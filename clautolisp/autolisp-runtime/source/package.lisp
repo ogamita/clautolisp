@@ -189,8 +189,11 @@
    #:*autolisp-caught-error-hook*
    #:*debug-break-hook*
    #:*debug-define-command-hook*
+   #:*define-interactor-command-hook*
+   #:*list-interactor-names-hook*
    #:*debug-nav-hook*
    #:*debug-select-file-hook*
+   #:*debug-command-hook*
    #:autolisp-current-directory
    #:set-autolisp-current-directory
    #:autolisp-support-paths
@@ -241,6 +244,7 @@
    #:*default-runtime-host*
    #:current-evaluation-dialect
    #:derive-reader-options-for-dialect
+   #:read-current-source
    #:make-default-runtime-context
    #:run-autolisp-file
    #:run-autolisp-string

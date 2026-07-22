@@ -365,6 +365,27 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
                                                       (clautolisp.autolisp-runtime:autolisp-symbol-value sym)))))))
       (ignore-errors (delete-file path)))))
 
+(test aldo-config-strings-survive-the-save-load-roundtrip
+  ;; the saved file must READ back: the ASCII decoration glyphs ("^" "["
+  ;; "]") and the listening address are STRINGS and must be written quoted
+  ;; (prin1 semantics). The bug: the save used princ semantics, writing
+  ;; (selection ascii [ ]) — not readable back as strings.
+  (setup-mock-host-context)
+  (let ((path (merge-pathnames "aldo-core-strings.conf" (uiop:temporary-directory)))
+        (sym (clautolisp.autolisp-builtins-core::aldo-config-symbol)))
+    (unwind-protect
+         (progn
+           (clautolisp.autolisp-runtime:set-variable
+            sym (clautolisp.autolisp-builtins-core::default-aldo-configuration-value))
+           (clautolisp.autolisp-builtins-core::save-aldo-configuration-to path)
+           (let ((text (uiop:read-file-string path)))
+             (is (search "\"^\"" text))              ; glyph written as a string
+             (is (search "\"127.0.0.1\"" text)))     ; address too
+           (let ((loaded (clautolisp.autolisp-builtins-core::load-aldo-configuration-from path)))
+             (is (typep (%aldo-config-assoc "DEFAULT-ALDB-LISTENING-ADDRESS" loaded)
+                        'clautolisp.autolisp-runtime:autolisp-string))))
+      (ignore-errors (delete-file path)))))
+
 (test aldo-config-file-is-ascii-friendly
   (setup-mock-host-context)
   (let ((path (merge-pathnames "aldo-core-ascii.conf" (uiop:temporary-directory)))
@@ -505,3 +526,161 @@ with DWG-CODEPAGE and return the captured enc-* diagnostic string."
     (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 1) ; must not re-save the builtin
     (clautolisp.autolisp-builtins-core::%apply-clautolisp-drop 0)
     (is (eq stub (clautolisp.autolisp-runtime:autolisp-symbol-value sym)))))
+
+;;; --- clal-clipboard-* + clal-sedit (sedit spec §2, §5.4) ----------
+
+(defun %mock-clipboard-provider (box)
+  (clautolisp.sedit:make-clipboard-provider
+   :mock :available-p (constantly t)
+   :put-text (lambda (s) (setf (car box) s) nil)
+   :get-text (lambda () (car box))))
+
+(defun %al-string (x) (clautolisp.autolisp-runtime:make-autolisp-string x))
+(defun %al->src (v) (clautolisp.autolisp-builtins-core:autolisp-value->string v nil))
+(defun %al-read (s) (clautolisp.autolisp-runtime:autolisp-read-from-string s))
+
+(test clal-clipboard-put-and-get-text-round-trip
+  (let* ((box (list nil))
+         (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
+    (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-put-text (%al-string "hi there"))
+    (is (equal "hi there" (car box)))
+    (let ((got (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-get-text)))
+      (is (typep got 'clautolisp.autolisp-runtime:autolisp-string))
+      (is (equal "hi there" (clautolisp.autolisp-runtime:autolisp-string-value got))))))
+
+(test clal-clipboard-copy-and-paste-sexp-round-trip
+  (setup-mock-host-context)
+  (let* ((box (list nil))
+         (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
+    ;; copy an AutoLISP list; its source text lands on the system clipboard
+    (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-copy-sexp (%al-read "(1 2 3)"))
+    (is (equal "(1 2 3)" (car box)))
+    ;; paste parses it back into an equivalent AutoLISP object (never evaluated)
+    (let ((pasted (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-paste-sexp)))
+      (is (equal "(1 2 3)" (%al->src pasted))))))
+
+(test clal-clipboard-copy-paste-round-trips-through-the-internal-clipboard
+  ;; with the :NULL provider the system clipboard is empty, so paste falls back
+  ;; to the in-process *clipboard* set by copy (clipboard-interface.org §Public API)
+  (setup-mock-host-context)
+  (let ((clautolisp.sedit:*clipboard-provider* :null))
+    (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-copy-sexp (%al-read "(a b c)"))
+    (let ((pasted (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-paste-sexp)))
+      (is (string-equal "(a b c)" (%al->src pasted))))))
+
+(test clal-clipboard-paste-does-not-evaluate-foreign-text
+  (setup-mock-host-context)
+  (let* ((box (list "#.(error \"boom\")"))
+         (clautolisp.sedit:*clipboard-provider* (%mock-clipboard-provider box)))
+    ;; a malicious read-macro on the clipboard must not run (no error signalled)
+    (let ((pasted (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-paste-sexp)))
+      (is (not (null pasted))))))
+
+(test clal-sedit-quitting-immediately-returns-the-form
+  (setup-mock-host-context)
+  (let* ((*standard-input* (make-string-input-stream (format nil "q~%")))
+         (*standard-output* (make-string-output-stream))
+         (result (clautolisp.autolisp-builtins-core::builtin-clal-sedit
+                  (%al-read "(defun foo () 1)"))))
+    (is (string-equal "(defun foo nil 1)" (%al->src result)))
+    (is (not (null clautolisp.sedit:*clal-sedit-initial-form*)))))
+
+(test clal-sedit-recalls-a-recorded-definition
+  (setup-mock-host-context)
+  (let ((clautolisp.sedit:*sedit-recording* nil))
+    (clautolisp.sedit:record-source "(defun bar (x) (* x x))" "<test>")
+    (let* ((*standard-input* (make-string-input-stream (format nil "q~%")))
+           (*standard-output* (make-string-output-stream))
+           (result (clautolisp.autolisp-builtins-core::builtin-clal-sedit
+                    (clautolisp.autolisp-runtime:intern-autolisp-symbol "BAR"))))
+      (is (string-equal "(defun bar (x) (* x x))" (%al->src result))))))
+
+(test clal-sedit-edits-then-returns-the-modified-form
+  (setup-mock-host-context)
+  (let* ((*standard-input* (make-string-input-stream
+                            ;; select the body, replace it, then quit
+                            (format nil "d~%>>~%replace (* x 2)~%q~%")))
+         (*standard-output* (make-string-output-stream))
+         (result (clautolisp.autolisp-builtins-core::builtin-clal-sedit
+                  (%al-read "(defun foo (x) x)"))))
+    (is (string-equal "(defun foo (x) (* x 2))" (%al->src result)))))
+
+(test clal-sedit-debug-prefix-routes-to-the-debug-command-hook
+  ;; spec §7: `debug'/`aldo' CMD in the editor runs CMD in the attached session
+  ;; via *debug-command-hook* (so `aldo help' shows the debugger help)
+  (setup-mock-host-context)
+  (let* ((calls '())
+         (clautolisp.autolisp-runtime:*debug-command-hook* (lambda (c) (push c calls) nil))
+         (*standard-input* (make-string-input-stream (format nil "nav~%aldo help~%q~%")))
+         (*standard-output* (make-string-output-stream)))
+    (clautolisp.autolisp-builtins-core::builtin-clal-sedit (%al-read "(a b)"))
+    (is (equal '("help") calls))))
+
+(test clal-sedit-debug-prefix-without-a-debugger-notes-it
+  (setup-mock-host-context)
+  (let* ((clautolisp.autolisp-runtime:*debug-command-hook* nil)
+         (out (make-string-output-stream))
+         (*standard-input* (make-string-input-stream (format nil "aldo help~%q~%")))
+         (*standard-output* out))
+    (clautolisp.autolisp-builtins-core::builtin-clal-sedit (%al-read "(a b)"))
+    (is (search "no debugger attached" (get-output-stream-string out)))))
+
+(test clal-sedit-evaluates-a-lisp-form-at-the-prompt
+  ;; a (form) at the SEDIT/NAV prompt evaluates and prints, like the REPL
+  (setup-mock-host-context)
+  (let* ((out (make-string-output-stream))
+         ;; `quote' is a special form — no arithmetic builtins needed here
+         (*standard-input* (make-string-input-stream (format nil "(quote 30)~%q~%")))
+         (*standard-output* out))
+    (clautolisp.autolisp-builtins-core::builtin-clal-sedit (%al-read "(a b)"))
+    (is (search "30" (get-output-stream-string out)))))
+
+;;; --- the public *clal-* extension variables are bound + updated ---
+
+(test clal-extension-variables-are-bound-after-install
+  ;; install-core-builtins binds the spec's public *clal-* variables so AutoLISP
+  ;; code can read them and alref-apropos (which lists only BOUND symbols) finds
+  ;; them (sedit spec §2/§5.4/§5.6)
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (clautolisp.autolisp-builtins-core:install-core-builtins)
+  (flet ((bound (n) (clautolisp.autolisp-runtime:autolisp-symbol-value-bound-p
+                     (clautolisp.autolisp-runtime:intern-autolisp-symbol n))))
+    (dolist (n '("*CLAL-CLIPBOARD*" "*CLAL-SEDIT-INITIAL-FORM*" "*CLAL-SEDIT-LAST-RESULT*"
+                 "*CLAL-FORM*" "*CLAL-RESULT*" "*CLAL-SOURCE-FORM*"
+                 "*CLAL-ON-ERROR*" "*CLAL-ALDO-CONFIGURATION*"))
+      (is (bound n) "expected ~A to be bound" n))))
+
+(test clal-clipboard-copy-sexp-sets-the-autolisp-variable
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (clautolisp.autolisp-builtins-core:install-core-builtins)
+  (let ((clautolisp.sedit:*clipboard-provider* :null))
+    (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-copy-sexp (%al-read "(a b c)"))
+    (let ((v (clautolisp.autolisp-runtime:autolisp-symbol-value
+              (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-CLIPBOARD*"))))
+      (is (string-equal "(sexp (a b c) \"(a b c)\")" (%al->src v))))))
+
+(test clal-sedit-eval-shifts-the-history-variables
+  ;; §5.6: each sedit evaluation shifts *clal-result*/-1/-2 and *clal-form*/-1/-2
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (clautolisp.autolisp-builtins-core:install-core-builtins)
+  (flet ((ev (s) (clautolisp.autolisp-builtins-core::%clal-sedit-eval
+                  (clautolisp.sedit:parse-form s)))
+         (v (n) (%al->src (clautolisp.autolisp-builtins-core::%clal-var-value n))))
+    (ev "(quote 10)") (ev "(quote 20)") (ev "(quote 30)")
+    (is (equal "30" (v "*CLAL-RESULT*")))
+    (is (equal "20" (v "*CLAL-RESULT-1*")))
+    (is (equal "10" (v "*CLAL-RESULT-2*")))
+    (is (string-equal "(quote 30)" (v "*CLAL-FORM*")))
+    (is (string-equal "(quote 20)" (v "*CLAL-FORM-1*")))
+    (is (string-equal "(sexp (quote 30) \"(quote 30)\")" (v "*CLAL-SOURCE-FORM*")))))
+
+(test clal-clipboard-put-text-sets-the-autolisp-variable
+  ;; put-text records the string in *clal-clipboard* so the variable reflects it
+  (clautolisp.autolisp-runtime:reset-default-evaluation-context)
+  (clautolisp.autolisp-builtins-core:install-core-builtins)
+  (let ((clautolisp.sedit:*clipboard-provider* :null))
+    (clautolisp.autolisp-builtins-core::builtin-clal-clipboard-put-text (%al-string "Hello World"))
+    (is (equal "Hello World"
+               (clautolisp.autolisp-runtime:autolisp-string-value
+                (clautolisp.autolisp-runtime:autolisp-symbol-value
+                 (clautolisp.autolisp-runtime:intern-autolisp-symbol "*CLAL-CLIPBOARD*")))))))

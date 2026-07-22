@@ -88,6 +88,26 @@ The REPL accepts multi-line input: as long as the parser reports
 ~:unexpected-eof~, the REPL keeps reading continuation lines and
 appends them to the in-progress form before retrying.
 
+An empty line just re-prompts.
+
+*** REPL commands
+
+A line whose first non-blank character is a comma is a /REPL command/,
+not an expression (at a top-level read the comma is unambiguous —
+AutoLISP has no backquote). Each command has a short key and a word
+form:
+
+| ~,d~ / ~,date~   | print the current date and time (ISO 8601)     |
+| ~,u~ / ~,uptime~ | print how long this clautolisp process has run |
+| ~,h~ / ~,help~   | list the REPL commands                         |
+| ~,q~ / ~,quit~   | exit the REPL (useful when ~(quit)~ is not     |
+|                  | available in the active dialect)               |
+
+The commands live in a command dictionary of the REPL's /interactor/ —
+the same mechanism behind the debugger's command dictionaries — so the
+vocabulary can grow (and user commands can shadow it) uniformly across
+all the interaction loops.
+
 * Debugger
 
 Clautolisp ships an interactive source-level debugger, *aldo*. It steps
@@ -174,6 +194,16 @@ target form and the command takes the form at point.
 
 ** Navigating the source
 
+The ~navigator~ setting chooses how each *stop* (a breakpoint, a step, an
+error) presents itself:
+
+- =sexp= (the default) — the debugger enters the *form navigator* directly:
+  the source is shown with the current poll-point selected (~【…】~), the
+  prompt is =NAV>=, and the motion keys below apply at once. =q= drops to
+  the flat =DBG>= command loop.
+- =line= — the flat presentation: a window of source lines around the
+  current line (marked =>>=), at the =DBG>= prompt.
+
 Beyond stepping, you can browse the source structurally — over one tree
 that runs from a sub-expression out to the file system:
 
@@ -186,6 +216,19 @@ that runs from a sub-expression out to the file system:
 
 Browsing never changes what executes; ~print~, ~setq~ and friends always
 act in the current frame.
+
+In the navigator every debugger command is also available directly (the
+navigator's dictionary is stacked over the debugger's). Two escape words
+systematize reaching a shadowed command (~debug~ is the debugger
+interactor's alias — ~aldo~ and ~debug~ are interchangeable):
+
+- ~aldo CMD~ — route CMD to the debugger, dispatching normally: user
+  commands first, then the built-ins (e.g. ~aldo b LOC~, while bare =b=
+  breakpoints the selection). The same prefix the sedit editor uses.
+- ~command CMD~ (or ~aldo command CMD~) — like bash's ~command foo~:
+  skip the *user* commands and reach the built-in meaning; this is how a
+  user command that shadows a built-in calls the built-in. (~debugger
+  CMD~ is the historical spelling.)
 
 ** Settings and configuration
 
@@ -222,6 +265,113 @@ turn it =off= under an Emacs ~shell~, which scrolls). The pager accepts
 the familiar =less= keys (=SPACE=/=f= forward, =b= back, =q= quit). The
 ncurses interface uses a scrollable window instead, and aldb relies on
 Emacs's own buffer scrolling.
+
+* sedit and the aldo form navigator
+
+Clautolisp includes *sedit*, an S-expression *structural* editor: you edit
+a program as a tree of forms rather than as characters. It is the same tool
+in two guises — a standalone editor you call from AutoLISP with
+~(clal-sedit …)~, and the *form navigator* the aldo debugger opens over live
+code. This section is an orientation; the normative specification is
+=clautolisp/documentation/clautolisp-sedit-spec.org=.
+
+** Two modes: navigate and edit
+
+sedit is always in one of two modes.
+
+- *Navigate* (NAV) — the selection moves over the *evaluable* sub-forms of a
+  program (the same poll-points the debugger stops at); structure is not
+  changed. This is the mode the debugger uses; its keys are the ones in
+  /Debugger → Navigating the source/ above (=d= =u= descend/ascend, =>= =<=
+  siblings, =<<= =>>= first/last, =±N= skip).
+- *Edit* (EDIT) — the selection moves over *every* sub-form and comment, and
+  the full editing command set is available.
+
+The selection is shown in brackets, e.g. ~(list [nil])~. Motion and mode
+switching:
+
+| Key / word          | Effect                                                    |
+|---------------------+-----------------------------------------------------------|
+| =d= =u=             | descend into / ascend out of the selection                |
+| =>= =<= (=f= =b=)    | next / previous sibling (=<<= =>>= first / last, =±N= skip)|
+| ~edit~              | switch to EDIT (an editing command by *word* also does)   |
+| ~nav~               | switch back to NAV                                         |
+| ~debug CMD~ / ~aldo CMD~ | from EDIT, run a debugger command CMD, then return to NAV |
+| =q=                 | leave the editor, returning the edited object             |
+| =h= / =?=           | help                                                      |
+
+Because single letters mean different things in the debugger and the editor,
+an editing command is recognised in NAV *by its word* (~insert~, ~wrap~, …):
+typing one enters EDIT and performs it.
+
+** Editing commands (EDIT)
+
+- *Insert / replace* — ~insert σ~ (before the selection), ~add σ~ (after),
+  ~replace σ~ (in place); each reads the new form σ after the command and
+  selects it. Comment variants ~ic~ / ~ac~ / ~rc~ attach a comment.
+- *Structural* — ~wrap~ (put the selection in a new list), ~splice~ (its
+  inverse), ~slurp~ / ~barf~ (pull the next sibling in / push the last out),
+  ~split~ / ~join~.
+- *Clipboard* — ~copy~ (=c=), ~cut~ (=x=), ~paste~ (=v=); see /The clipboard/.
+- *Undo* — ~undo~ (=z=): one level; a second ~undo~ redoes.
+- *Evaluate* — ~eval~ (=e=) evaluates the selection; ~macroexpand~ (=m=)
+  replaces it by the result. Typing a bare Lisp *form* (~(+ 1 2)~) at the
+  prompt evaluates it and prints the result, like the REPL — in every mode
+  (=DBG>=, =NAV>= and =SEDIT>=).
+- *Files & directories* — ~load~ (=l=) and ~save~ (=s=); in a directory,
+  ~new~ (=n=), ~rename~ (=r=) and ~delete~ (=x=).
+
+sedit preserves *formatting*: an unmodified form is written back byte-for-byte
+(comments and layout intact), and a form you edit is re-indented by AutoLISP's
+own rules.
+
+** Starting sedit from AutoLISP
+
+#+begin_example
+(clal-sedit)                 ; a fresh stand-alone form, starting at nil
+(clal-sedit 'foo)            ; recall and edit the definition of FOO
+(clal-sedit "prog.lsp")      ; edit a file (its first top-level form selected)
+(clal-sedit "~/src/")        ; browse a directory
+(clal-sedit '(+ 1 2))        ; edit a value as a sexp
+#+end_example
+
+~clal-sedit~ runs the editor on the terminal and returns the edited object.
+Recall by name works because the interactive REPL *records* every top-level
+form you evaluate, so ~(clal-sedit 'foo)~ finds the ~defun~ / ~setq~ you
+typed. The initial and final forms are left in ~*clal-sedit-initial-form*~ and
+~*clal-sedit-last-result*~.
+
+** Editing while debugging
+
+From the aldo form navigator, issuing an editing word (~edit~, ~insert~,
+~wrap~, …) opens sedit on the *current function's* source. Edit it, then
+leave the editor (=q=): the new definition is *installed* in the running
+system, so the next call runs the edited code. Breakpoints set by poll-point
+identity carry across the redefinition. While editing, ~debug CMD~ / ~aldo
+CMD~ still reach the debugger, and ~nav~ returns to plain navigation.
+
+** The clipboard
+
+sedit keeps *two* clipboards in sync: an in-process one (full structural
+fidelity, the source of truth) and the *system* clipboard (a textual
+rendering other applications see). Copy/cut write both; paste reads the
+system clipboard and parses it back into a form, falling back to the
+in-process clipboard when the system one is empty. The AutoLISP surface:
+
+| Function                          | Effect                                        |
+|-----------------------------------+-----------------------------------------------|
+| ~(clal-clipboard-copy-sexp OBJ)~  | copy OBJ (internal + system as source text)   |
+| ~(clal-clipboard-paste-sexp)~     | the clipboard parsed back to a form, or ~nil~ |
+| ~(clal-clipboard-put-text S)~     | set the system clipboard to string S          |
+| ~(clal-clipboard-get-text)~       | the system clipboard as a string, or ~nil~    |
+
+Paste *never evaluates* its input (a foreign ~#.(…)~ on the clipboard cannot
+run code). The system clipboard is reached through a provider that
+auto-selects among X11, Wayland, macOS, Windows and OSC 52, and degrades to
+in-process only when none is available — clautolisp needs no GUI-toolkit
+dependency. Providers, serialization and security are specified in
+=clautolisp/documentation/clipboard-interface.org=. Toggle the system
+mirroring off by binding ~*system-clipboard-enabled*~ to ~nil~.
 
 * Options
 All options begin with two dashes except for ~-x~. They may appear in
@@ -480,6 +630,15 @@ the alfe-side counterpart.
 - ~*AUTOLISP-DIALECT*~          :: The active dialect's canonical
                                    name as a symbol — ~STRICT~,
                                    ~AUTOCAD-2026~, ~BRICSCAD-V26~.
+                                   Bound at launch, but *writable*:
+                                   ~(setq *AUTOLISP-DIALECT* 'lax)~
+                                   switches the dialect immediately
+                                   for every dialect-sensitive
+                                   operation — including the REPL
+                                   reader and the debugger's and
+                                   inspector's form reads, which
+                                   consult the variable at each
+                                   read.
 - ~*AUTOLISP-HOST*~             :: The HAL backend's name as a symbol
                                    — ~MOCK-HOST~, ~NULL-HOST~, or nil.
 - ~*AUTOLISP-MOCK-INPUT*~       :: Pathname (string) passed to
@@ -990,6 +1149,37 @@ A nonexistent ~PATH~ returns ~nil~ and sets ~ERRNO~ 73, matching
 $ clautolisp -x "(clal-file-encoding \"~/.autolisp\")"
 "ANSI"
 #+END_SRC
+
+*** ~CLAL-SEDIT~ -- the structural editor
+~(clal-sedit [OBJECT])~ opens the *sedit* S-expression editor
+(see /sedit and the aldo form navigator/) and returns the edited
+object. With no argument it starts a stand-alone form at ~nil~; a
+symbol recalls its recorded ~defun~/~setq~; a string is a file or
+directory path; any other value is edited as a sexp. The initial and
+final forms are left in ~*clal-sedit-initial-form*~ /
+~*clal-sedit-last-result*~.
+
+*** ~CLAL-CLIPBOARD-*~ -- the editor clipboard
+~(clal-clipboard-copy-sexp OBJ)~ / ~(clal-clipboard-paste-sexp)~ copy
+and paste a form through the in-process and system clipboards;
+~(clal-clipboard-put-text S)~ / ~(clal-clipboard-get-text)~ are the
+plain-text forms. Paste never evaluates its input. The system
+clipboard auto-selects an X11 / Wayland / macOS / Windows / OSC 52
+backend and degrades to in-process only
+(=clautolisp/documentation/clipboard-interface.org=).
+
+*** ~CLAL-NAV-*~ / ~CLAL-BREAK~ -- the debugger surface
+~(clal-break)~ and ~(clal-invoke-debugger [MSG])~ enter aldo
+programmatically; ~(clal-nav-function 'NAME)~,
+~(clal-nav-file PATH [LINE])~ and ~(clal-nav-directory [PATH])~ open
+the form navigator on a function, a file, or a directory *before* the
+code runs; ~(clal-select-file PATH LINE)~ points ~list source~ at a
+location; ~(clal-define-command "INTERACTOR" NAMES FN [DOC])~ registers
+a custom user command of the named interactor —
+~(clal-list-interactor-names)~ lists the valid names (~"ALDO"~,
+~"NAVI"~, ~"LAVI"~, ~"INSPECT"~, ~"AUTOLISP"~) —
+and ~(clal-define-debugger-command NAMES FN [DOC])~ is its deprecated
+ALDO-only equivalent. See /Debugger/ above.
 
 The full normative entries for these functions live in
 ~autolisp-spec~ §16 *clautolisp Extensions*; this section is a

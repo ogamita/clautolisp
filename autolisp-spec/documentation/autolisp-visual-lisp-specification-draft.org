@@ -10831,6 +10831,1335 @@ four-byte UTF-32 BOM.
 
 #+LATEX: \newpage
 
+** Function Entry: CLAL-BREAK
+*** Name
+~clal-break~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-break)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Drop into the aldo debugger at the current poll point, from
+AutoLISP code, when a debug session is active (debugger command
+reference §1, programmatic entry). It funcalls the runtime's
+debug-break hook with no message. When no debug session is
+running the hook is unbound, so the call is a plain no-op.
+
+*** Return Values
+Always ~nil~ (both when it stopped and when it was a no-op).
+
+*** Side Effects
+When a debug session is active, transfers control to the aldo
+debugger at the next poll point; otherwise none.
+
+*** Affected By
+- Whether a debug session (aldo) is currently active — i.e.
+  whether the runtime debug-break hook is installed.
+
+*** Exceptional Situations
+None. No arguments to validate; a no-op outside a debug session.
+
+*** Examples
+#+begin_example
+(defun f (x) (clal-break) (* x x))
+(f 7)   ; stops in aldo before the multiply when a session is active
+=> 49
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; the debugger surface is specified by
+  the aldo debugger command reference. See this chapter's Overview
+  for the CLAL-* probing convention.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-INVOKE-DEBUGGER
+*** Name
+~clal-invoke-debugger~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-invoke-debugger [message])
+#+end_example
+
+*** Arguments and Values
+- ~message~ — optional; a message shown at the stop (typically a
+  string). Omitted for a plain break.
+
+*** Description
+Like ~clal-break~, but display ~message~ when the debugger stops
+(debugger command reference §1). It funcalls the runtime's
+debug-break hook with ~message~. A no-op when no debug session is
+active (the hook is unbound).
+
+*** Return Values
+Always ~nil~.
+
+*** Side Effects
+When a debug session is active, stops in the aldo debugger showing
+~message~; otherwise none.
+
+*** Affected By
+- Whether a debug session (aldo) is currently active.
+
+*** Exceptional Situations
+None.
+
+*** Examples
+#+begin_example
+(if (< bal 0)
+    (clal-invoke-debugger "negative balance"))
+=> nil
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see this chapter's Overview for the
+  rationale and probing convention.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-NAV-FUNCTION
+*** Name
+~clal-nav-function~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-nav-function name)
+#+end_example
+
+*** Arguments and Values
+- ~name~ — a symbol or a string naming a global function.
+
+*** Description
+Enter the aldo debugger navigating the source form of the global
+function ~name~ (pre-debug navigation). This lets you observe a
+function and set breakpoints before it is ever called; the
+function is instrumented on demand. A no-op unless a debug session
+is active (it funcalls the runtime's debug-nav hook with
+~(:function name)~).
+
+*** Return Values
+Always ~nil~.
+
+*** Side Effects
+When a debug session is active, navigates the debugger to the
+function's source and instruments it; otherwise none.
+
+*** Affected By
+- Whether a debug session (aldo) is currently active.
+
+*** Exceptional Situations
+Signals ~:bad-argument~ when ~name~ is neither a symbol nor a
+string.
+
+*** Examples
+#+begin_example
+(clal-nav-function 'my-command)
+(clal-nav-function "MY-COMMAND")
+=> nil
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; pre-debug navigation is specified by
+  the aldo debugger. See this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-NAV-FILE
+*** Name
+~clal-nav-file~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-nav-file path [line])
+#+end_example
+
+*** Arguments and Values
+- ~path~ — a string (or symbol) naming a file.
+- ~line~ — optional integer; the form on or containing this line
+  is the starting point. Omitted starts at the first form.
+
+*** Description
+Enter the aldo debugger navigating the top-level forms of file
+~path~, starting at the form on or containing ~line~ when given
+(pre-debug navigation). A no-op unless a debug session is active
+(it funcalls the runtime's debug-nav hook with ~(:file path line)~).
+
+*** Return Values
+Always ~nil~.
+
+*** Side Effects
+When a debug session is active, navigates the debugger to the
+file's forms; otherwise none.
+
+*** Affected By
+- Whether a debug session (aldo) is currently active.
+
+*** Exceptional Situations
+Signals ~:bad-argument~ when ~path~ is neither a symbol nor a
+string, or when ~line~ is supplied and is not an integer.
+
+*** Examples
+#+begin_example
+(clal-nav-file "/home/me/lib/util.lsp")
+(clal-nav-file "/home/me/lib/util.lsp" 42)
+=> nil
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see this chapter's Overview for the
+  rationale and probing convention.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-NAV-DIRECTORY
+*** Name
+~clal-nav-directory~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-nav-directory [path])
+#+end_example
+
+*** Arguments and Values
+- ~path~ — optional string (or symbol) naming a directory; the
+  current directory when omitted.
+
+*** Description
+Enter the aldo debugger browsing the directory ~path~ so you can
+walk the file system and enter files (pre-debug navigation). A
+no-op unless a debug session is active (it funcalls the runtime's
+debug-nav hook with ~(:directory path)~, ~path~ being ~nil~ when
+omitted).
+
+*** Return Values
+Always ~nil~.
+
+*** Side Effects
+When a debug session is active, opens the debugger's directory
+browser; otherwise none.
+
+*** Affected By
+- Whether a debug session (aldo) is currently active.
+
+*** Exceptional Situations
+Signals ~:bad-argument~ when ~path~ is supplied and is neither a
+symbol nor a string.
+
+*** Examples
+#+begin_example
+(clal-nav-directory)
+(clal-nav-directory "/home/me/lib/")
+=> nil
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see this chapter's Overview for the
+  rationale and probing convention.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-SELECT-FILE
+*** Name
+~clal-select-file~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-select-file path line)
+#+end_example
+
+*** Arguments and Values
+- ~path~ — a string (or symbol) naming a file.
+- ~line~ — an integer line number.
+
+*** Description
+Select ~path:line~ as the source the debugger's ~ls~ command
+shows (pre-debug navigation). A no-op unless the debugger's
+select-file hook is installed (it funcalls that runtime hook with
+~path~ and ~line~).
+
+*** Return Values
+Always ~nil~.
+
+*** Side Effects
+When the debugger is active, changes which source location its
+~ls~ command displays; otherwise none.
+
+*** Affected By
+- Whether a debug session (aldo) is currently active.
+
+*** Exceptional Situations
+Signals ~:bad-argument~ when ~path~ is neither a symbol nor a
+string, or when ~line~ is not an integer.
+
+*** Examples
+#+begin_example
+(clal-select-file "/home/me/lib/util.lsp" 42)
+=> nil
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see this chapter's Overview for the
+  rationale and probing convention.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-DEFINE-DEBUGGER-COMMAND
+*** Name
+~clal-define-debugger-command~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-define-debugger-command names function [doc])
+#+end_example
+
+*** Arguments and Values
+- ~names~ — a list ~(key word …)~ of strings; the key must be the
+  word initials (debugger command reference §0).
+- ~function~ — a function designator; the command body, applied to
+  the command's parsed string arguments at dispatch.
+- ~doc~ — optional help string.
+
+*** Description
+Register an AutoLISP debugger command (command reference §8). It
+funcalls the runtime's define-command hook with the unwrapped
+name strings, the resolved function, and the doc string. A no-op
+(returns ~nil~) unless the debugger UI is loaded.
+
+DEPRECATED: the equivalent of
+~(clal-define-command "ALDO" names function [doc])~ — new code
+names the interactor with ~clal-define-command~.
+
+*** Return Values
+Always ~nil~.
+
+*** Side Effects
+When the debugger UI is loaded, adds a command to the debugger's
+command table; otherwise none.
+
+*** Affected By
+- Whether the aldo debugger UI is loaded.
+
+*** Exceptional Situations
+Argument-type errors propagate from unwrapping ~names~ and
+resolving ~function~; otherwise none.
+
+*** Examples
+#+begin_example
+(clal-define-debugger-command
+  '("wa" "watch")
+  (lambda (arg) (princ arg))
+  "watch VAR — print VAR at each stop")
+=> nil
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; the command protocol is specified by
+  the aldo debugger command reference. See this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-DEFINE-COMMAND
+*** Name
+~clal-define-command~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-define-command interactor-name names function [doc])
+#+end_example
+
+*** Arguments and Values
+- ~interactor-name~ — a string or symbol naming a registered
+  interactor (or its alias — ~"debug"~ for ALDO); see
+  ~clal-list-interactor-names~.
+- ~names~ — a list ~(key word …)~ of strings; the key must be the
+  word initials (debugger command reference §0).
+- ~function~ — a function designator; the command body, applied to
+  the command's parsed string arguments at dispatch.
+- ~doc~ — optional help string.
+
+*** Description
+Register an AutoLISP user command of the named interactor's user
+dictionary (debugger command reference §8; the interactor design's
+single registration API). The command shadows the interactor's
+system commands while that interactor is on the stack — ~command
+CMD~ reaches a shadowed system command — and installs whether or
+not the interactor is currently active: registration precedes
+activation. A no-op (returns ~nil~) unless the debugger UI is
+loaded.
+
+*** Return Values
+Always ~nil~.
+
+*** Side Effects
+When the debugger UI is loaded, adds a command to the named
+interactor's user dictionary; otherwise none.
+
+*** Affected By
+- Whether the aldo debugger UI is loaded.
+- The set of registered interactors.
+
+*** Exceptional Situations
+Signals an error when ~interactor-name~ names no registered
+interactor; argument-type errors propagate from unwrapping ~names~
+and resolving ~function~.
+
+*** Examples
+#+begin_example
+(clal-define-command "NAVI"
+  '("wa" "watch-around")
+  (lambda (arg) (princ arg))
+  "watch-around N — print the neighbourhood")
+=> nil
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.44.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; the command protocol is specified by
+  the aldo debugger command reference. See this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-LIST-INTERACTOR-NAMES
+*** Name
+~clal-list-interactor-names~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-list-interactor-names)
+#+end_example
+
+*** Arguments and Values
+None.
+
+*** Description
+The names of every registered interactor, as a list of strings —
+the valid first arguments of ~clal-define-command~. All registered
+interactors are listed, stacked or not.
+
+*** Return Values
+A list of strings, e.g.
+~("ALDO" "NAVI" "LAVI" "INSPECT" "AUTOLISP")~; ~nil~ unless the
+debugger UI is loaded.
+
+*** Side Effects
+None.
+
+*** Affected By
+- Whether the aldo debugger UI is loaded.
+- The set of registered interactors.
+
+*** Exceptional Situations
+None.
+
+*** Examples
+#+begin_example
+(clal-list-interactor-names)
+=> ("ALDO" "NAVI" "LAVI" "INSPECT" "AUTOLISP")
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.44.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-SEDIT
+*** Name
+~clal-sedit~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-sedit [object])
+#+end_example
+
+*** Arguments and Values
+- ~object~ — optional. Resolves as follows: omitted or ~nil~ ->
+  a stand-alone form starting at ~nil~; a symbol -> recall its
+  recorded definition (by name); a string -> a file or directory
+  path; any other value -> edited as a sexp.
+
+*** Description
+Edit ~object~ with the interactive sedit structural editor
+(sedit spec §2). It runs the editor on the terminal
+(~*standard-input*~ / ~*standard-output*~), bridging the value to
+and from sedit through its source text, and installs EVAL and LOAD
+hooks so edited definitions can be evaluated or loaded into the
+running system. See the user-manual chapter "sedit and the aldo
+form navigator" and the normative
+~clautolisp/documentation/clautolisp-sedit-spec.org~.
+
+*** Return Values
+The edited object, read back from the editor's final tree (never
+by evaluation). Also sets ~clautolisp.sedit:*clal-sedit-initial-form*~
+and ~clautolisp.sedit:*clal-sedit-last-result*~.
+
+*** Side Effects
+Runs an interactive terminal session; updates the two
+~clautolisp.sedit~ special variables above; may evaluate or load
+forms into the running system if you invoke the editor's eval/load
+commands.
+
+*** Affected By
+- The sedit recording state (used to recall a symbol's definition).
+- ~*standard-input*~ / ~*standard-output*~.
+
+*** Exceptional Situations
+Parse/read errors from the edited source text propagate as
+AutoLISP errors.
+
+*** Examples
+#+begin_example
+(clal-sedit '(defun f (x) (* x x)))
+=> (DEFUN F (X) (* X X))          ; after editing on the terminal
+(clal-sedit "/home/me/lib/util.lsp")   ; edit a file
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension. Normative behaviour:
+  ~clautolisp/documentation/clautolisp-sedit-spec.org~; tutorial:
+  user-manual chapter "sedit and the aldo form navigator".
+
+#+LATEX: \newpage
+** Function Entry: CLAL-CLIPBOARD-PUT-TEXT
+*** Name
+~clal-clipboard-put-text~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-clipboard-put-text string)
+#+end_example
+
+*** Arguments and Values
+- ~string~ — a string (or symbol) whose text is placed on the
+  system clipboard.
+
+*** Description
+Set the system clipboard to ~string~ through sedit's clipboard
+provider layer (~clipboard-interface.org~).
+
+*** Return Values
+~T~ on success, ~nil~ when the clipboard write failed (e.g. no
+usable provider).
+
+*** Side Effects
+Replaces the system clipboard contents.
+
+*** Affected By
+- Availability of a system clipboard provider on the host.
+
+*** Exceptional Situations
+Argument-type errors propagate when ~string~ is neither a string
+nor a symbol.
+
+*** Examples
+#+begin_example
+(clal-clipboard-put-text "hello")
+=> T
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; the provider layer and its security
+  model are specified in
+  ~clautolisp/documentation/clipboard-interface.org~.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-CLIPBOARD-GET-TEXT
+*** Name
+~clal-clipboard-get-text~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-clipboard-get-text)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Return the current system clipboard contents as a string
+(~clipboard-interface.org~).
+
+*** Return Values
+An AutoLISP string with the clipboard text, or ~nil~ when the
+clipboard is empty or unreadable.
+
+*** Side Effects
+None.
+
+*** Affected By
+- The system clipboard contents and the availability of a provider.
+
+*** Exceptional Situations
+None.
+
+*** Examples
+#+begin_example
+(clal-clipboard-put-text "hello")
+(clal-clipboard-get-text)
+=> "hello"
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see
+  ~clautolisp/documentation/clipboard-interface.org~.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-CLIPBOARD-COPY-SEXP
+*** Name
+~clal-clipboard-copy-sexp~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-clipboard-copy-sexp value)
+#+end_example
+
+*** Arguments and Values
+- ~value~ — any AutoLISP value.
+
+*** Description
+Copy ~value~ to the clipboard as a sexp (sedit spec §5.4): its
+source text is placed on the system clipboard, and the object is
+retained in the in-process ~*clipboard*~. The counterpart
+~clal-clipboard-paste-sexp~ reads it back.
+
+*** Return Values
+Always ~nil~.
+
+*** Side Effects
+Replaces the system clipboard text and the in-process
+~*clipboard*~ node.
+
+*** Affected By
+- Availability of a system clipboard provider on the host.
+
+*** Exceptional Situations
+Errors printing ~value~ to source text propagate.
+
+*** Examples
+#+begin_example
+(clal-clipboard-copy-sexp '(1 2 (3 . 4)))
+=> nil
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see the sedit spec §5.4 and
+  ~clautolisp/documentation/clipboard-interface.org~.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-CLIPBOARD-PASTE-SEXP
+*** Name
+~clal-clipboard-paste-sexp~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-clipboard-paste-sexp)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Return the clipboard contents parsed back into an AutoLISP object
+(sedit spec §5.4). The text is only READ, never evaluated — a
+foreign ~#.()~ read-macro cannot run — for security. Prefers the
+system clipboard when available, else falls back to the in-process
+~*clipboard*~.
+
+*** Return Values
+The parsed AutoLISP object, or ~nil~ when both the system
+clipboard and the in-process ~*clipboard*~ are empty.
+
+*** Side Effects
+None.
+
+*** Affected By
+- The system clipboard contents and provider availability;
+  the in-process ~clautolisp.sedit:*clipboard*~.
+
+*** Exceptional Situations
+Parse errors on malformed clipboard source text propagate.
+
+*** Examples
+#+begin_example
+(clal-clipboard-copy-sexp '(1 2 3))
+(clal-clipboard-paste-sexp)
+=> (1 2 3)
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; the no-evaluate paste rule and the
+  provider layer are specified in
+  ~clautolisp/documentation/clipboard-interface.org~ (§Public API).
+
+#+LATEX: \newpage
+** Function Entry: CLAL-COMMON-LISP
+*** Name
+~clal-common-lisp~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-common-lisp)
+(clal-common-lisp form)
+#+end_example
+
+*** Arguments and Values
+- ~form~ — optional. A string is READ as one Common Lisp form and
+  evaluated; any other AutoLISP value is structurally converted to
+  a CL form and evaluated. Omitted: run an interactive CL REPL.
+
+*** Description
+Drop from AutoLISP into Common Lisp (the ~cl-debugging~ facility).
+With no argument it runs an interactive CL REPL in
+~COMMON-LISP-USER~ (leave it with ~(clal-back [value])~). With a
+string it READs and EVALs one CL form; with any other value it
+converts the AutoLISP object to a CL form and EVALs it. The
+primary value is converted back to an AutoLISP object. This
+builtin is only bound to the AutoLISP name ~CLAL-COMMON-LISP~ when
+the ~CLAUTOLISPDROP~ sysvar gates it on — writing a non-zero
+~CLAUTOLISPDROP~ shadows the symbol with this builtin (saving any
+user binding), and ~0~ restores the previous binding.
+
+*** Return Values
+The primary CL value converted to an AutoLISP object (integers in
+range pass through, floats become double-floats, strings wrap,
+keywords/symbols intern as AutoLISP symbols, conses convert
+recursively). ~nil~ from an empty REPL / ~clal-back~ with no value.
+
+*** Side Effects
+Evaluates arbitrary Common Lisp; the REPL reads from
+~*standard-input*~ and prints to ~*standard-output*~.
+
+*** Affected By
+- ~CLAUTOLISPDROP~ (sysvar) — gates whether the name is bound.
+- ~*clal-on-error*~ (and its CL twin
+  ~common-lisp-user::*clal-on-error*~) — the unhandled-error
+  policy: ~:debug~ (default) native CL debugger, ~:error~ a
+  catchable AutoLISP error, ~:ignore~ returns ~nil~, any other
+  value is returned.
+- The current CL ~*package*~ / ~*readtable*~ (symbol re-reading).
+
+*** Exceptional Situations
+On an unhandled CL error (including a result that cannot be
+converted), behaviour follows ~*clal-on-error*~. An out-of-range
+integer or a circular structure cannot be converted back and
+raises a CL error.
+
+*** Examples
+#+begin_example
+(clal-common-lisp "(+ 1 2)")
+=> 3
+(clal-common-lisp)     ; interactive CL REPL; (clal-back) to return
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since an earlier
+  clautolisp release.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension. Companions in ~COMMON-LISP-USER~:
+  ~clal-back~ (leave the dropped REPL) and ~clal-common-lisp~; the
+  gate sysvar is ~CLAUTOLISPDROP~. See the ~cl-debugging~ issue.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-OPTIMIZATION
+*** Name
+~clal-optimization~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-optimization)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Return the current optimization qualities as an AutoLISP list
+~((DEBUG n) (SPACE n) (SPEED n))~ (debugger public interface, Part
+A). These qualities gate how EVAL and ~clal-compile~ build a
+function's forks: ~DEBUG~ > 0 weaves the instrumented fork that
+stepping and breakpoints ride on; ~SPACE~ trades it away for size.
+~SPEED~ is pinned at ~0~ until the compiler-to-CL (Tier 2) lands.
+
+*** Return Values
+A three-element list ~((DEBUG n) (SPACE n) (SPEED n))~, each ~n~ an
+integer 0..3.
+
+*** Side Effects
+None.
+
+*** Affected By
+- The current setting made by ~clal-optimize~.
+
+*** Exceptional Situations
+None.
+
+*** Examples
+#+begin_example
+(clal-optimization)
+=> ((DEBUG 3) (SPACE 0) (SPEED 0))
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since an earlier
+  clautolisp release.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see the debugger-public-interface
+  issue (Part A) and this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-OPTIMIZE
+*** Name
+~clal-optimize~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-optimize qualities)
+#+end_example
+
+*** Arguments and Values
+- ~qualities~ — a proper list; each element is a bare quality
+  symbol (~DEBUG~ / ~SPACE~ / ~SPEED~, meaning level 3) or a list
+  ~(SYMBOL LEVEL)~ with ~LEVEL~ an integer 0..3.
+
+*** Description
+Set the optimization qualities (debugger public interface, Part
+A). Unmentioned qualities keep their current level. ~SPEED~ is
+always forced to ~0~ (Tier 2, no compiler-to-CL yet). Setting
+~DEBUG~ also drives the runtime instrumentation gate: ~DEBUG~ > 0
+weaves instrumented forks under a session, ~DEBUG~ 0 runs plain.
+
+*** Return Values
+The new qualities as ~((DEBUG n) (SPACE n) (SPEED n))~.
+
+*** Side Effects
+Updates the process-wide optimization alist and the runtime
+instrumentation-enabled flag.
+
+*** Affected By
+- The previous ~clal-optimize~ setting (unmentioned qualities are
+  preserved).
+
+*** Exceptional Situations
+Signals ~:bad-argument~ on an element that is neither a quality
+symbol nor ~(SYMBOL LEVEL)~, on an unknown quality name, or on a
+level outside 0..3. Signals from ~require-proper-list~ when
+~qualities~ is not a proper list.
+
+*** Examples
+#+begin_example
+(clal-optimize '((debug 0) space))
+=> ((DEBUG 0) (SPACE 3) (SPEED 0))
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since an earlier
+  clautolisp release.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see the debugger-public-interface
+  issue (Part A).
+
+#+LATEX: \newpage
+** Function Entry: CLAL-COMPILE
+*** Name
+~clal-compile~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-compile name lambda-expression)
+#+end_example
+
+*** Arguments and Values
+- ~name~ — ~nil~ (anonymous) or a symbol naming the function.
+- ~lambda-expression~ — a ~(lambda lambda-list . body)~ form.
+
+*** Description
+Compile ~lambda-expression~ into an applicable function object
+(debugger public interface, Part A — the compiled-eval core),
+weaving its instrumented fork when the current ~clal-optimization~
+has ~DEBUG~ > 0.
+
+*** Return Values
+The compiled function object (a usubr).
+
+*** Side Effects
+Builds a function object; when ~DEBUG~ > 0 and the instrument hook
+is installed, instruments it (errors from instrumentation are
+ignored).
+
+*** Affected By
+- The current ~clal-optimization~ ~DEBUG~ level.
+- Whether the runtime instrument-usubr hook is installed.
+
+*** Exceptional Situations
+Signals ~:bad-argument~ when ~lambda-expression~ is not a
+~(lambda …)~ form, or when ~name~ is neither ~nil~ nor a symbol.
+
+*** Examples
+#+begin_example
+(setq sq (clal-compile 'sq '(lambda (x) (* x x))))
+(sq 9)
+=> 81
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since an earlier
+  clautolisp release.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see the debugger-public-interface
+  issue (Part A).
+
+#+LATEX: \newpage
+** Function Entry: CLAL-LINT-ENCODING-EXTENSIONS
+*** Name
+~clal-lint-encoding-extensions~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-lint-encoding-extensions form)
+#+end_example
+
+*** Arguments and Values
+- ~form~ — a parsed AutoLISP s-expression (a form tree).
+
+*** Description
+Walk ~form~ and emit encoding-dispatch diagnostics for every
+encoding-extension call site it contains — ~(load … encoding)~,
+~(open … encoding)~, ~(open … 'ccs=…')~, and ~getvar~ / ~setvar~
+of ~"LISPSYS"~. The usual dialect / pragma / ~--lax~ gates apply.
+User code can pipe a file's parsed form tree through this builtin
+before evaluation to catch encoding-extension uses statically; a
+clean tree emits nothing.
+
+*** Return Values
+~T~ (per the AutoLISP convention that linters return ~T~ on
+completion); the diagnostics are the user-visible output.
+
+*** Side Effects
+Emits encoding diagnostics to the diagnostic stream.
+
+*** Affected By
+- The active dialect, pragmas, and ~--lax~ gating.
+- The per-code suppression list (see
+  ~clal-suppress-enc-diagnostic~).
+
+*** Exceptional Situations
+None beyond ordinary form-tree traversal.
+
+*** Examples
+#+begin_example
+(clal-lint-encoding-extensions
+  '(load "util.lsp" "UTF-8"))
+=> T          ; plus an encoding-extension diagnostic
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since an earlier
+  clautolisp release.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; part of the encoding-diagnostics
+  family. See this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-SUPPRESS-ENC-DIAGNOSTIC
+*** Name
+~clal-suppress-enc-diagnostic~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-suppress-enc-diagnostic [code …])
+#+end_example
+
+*** Arguments and Values
+- ~code~ — zero or more string designators (strings or symbols);
+  each is canonicalised to a ~:enc-NAME~ code.
+
+*** Description
+Add each ~code~ to the active per-code encoding-diagnostic
+suppression list. Subsequent diagnostic signals with a matching
+code emit nothing. The suppression is dynamically scoped to the
+running AutoLISP session and persists across ~load~ / ~open~ until
+re-enabled with ~clal-enable-enc-diagnostic~. Typically used as a
+pragma at the top of a source file.
+
+*** Return Values
+The (possibly extended) list of currently-suppressed codes, as a
+list of AutoLISP strings (downcased code names).
+
+*** Side Effects
+Mutates the session's encoding-diagnostic suppression list.
+
+*** Affected By
+- The current suppression list (codes are unioned in).
+
+*** Exceptional Situations
+Argument-type errors propagate when a ~code~ is not a valid string
+designator.
+
+*** Examples
+#+begin_example
+(clal-suppress-enc-diagnostic 'enc-extension-used 'enc-foreign-dialect)
+=> ("enc-foreign-dialect" "enc-extension-used")
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since an earlier
+  clautolisp release.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; part of the encoding-diagnostics
+  family. See this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-ENABLE-ENC-DIAGNOSTIC
+*** Name
+~clal-enable-enc-diagnostic~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-enable-enc-diagnostic [code …])
+#+end_example
+
+*** Arguments and Values
+- ~code~ — zero or more string designators (strings or symbols).
+  With no arguments, re-enable every code.
+
+*** Description
+Undo ~clal-suppress-enc-diagnostic~ for each ~code~, removing it
+from the session's suppression list. Called with no arguments, it
+clears the entire suppression list (re-enable everything).
+
+*** Return Values
+The (possibly empty) list of still-suppressed codes, as a list of
+AutoLISP strings.
+
+*** Side Effects
+Mutates the session's encoding-diagnostic suppression list.
+
+*** Affected By
+- The current suppression list.
+
+*** Exceptional Situations
+Argument-type errors propagate when a ~code~ is not a valid string
+designator.
+
+*** Examples
+#+begin_example
+(clal-enable-enc-diagnostic 'enc-extension-used)
+=> ("enc-foreign-dialect")
+(clal-enable-enc-diagnostic)
+=> nil
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since an earlier
+  clautolisp release.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; part of the encoding-diagnostics
+  family. See this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-MODULE-EXTENSION
+*** Name
+~clal-module-extension~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-module-extension kind)
+#+end_example
+
+*** Arguments and Values
+- ~kind~ — a string, matched case-insensitively: ~"compiled-app"~
+  or ~"native-module"~.
+
+*** Description
+Return, as a string with leading dot, the file extension
+clautolisp uses for a packaged-artefact ~kind~ on the current
+host, so portability layers query clautolisp instead of hard-coding
+a guess. ~"compiled-app"~ yields ~".lap"~ (the clautolisp analogue
+of AutoCAD ~.vlx~ / BricsCAD ~.des~). ~"native-module"~ yields the
+host OS shared-library extension, resolved at run time
+(~".dll"~ Windows, ~".dylib"~ macOS, ~".so"~ elsewhere).
+
+*** Return Values
+An AutoLISP string, the extension including its leading dot.
+
+*** Side Effects
+None.
+
+*** Affected By
+- The running host OS (for ~"native-module"~).
+
+*** Exceptional Situations
+Signals ~:invalid-module-kind~ for any ~kind~ other than
+~"compiled-app"~ or ~"native-module"~.
+
+*** Examples
+#+begin_example
+(clal-module-extension "compiled-app")
+=> ".lap"
+(clal-module-extension "native-module")
+=> ".so"          ; on Linux
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see
+  issues/open/clautolisp-module-app-extensions.issue.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-LOAD-ALDO-CONFIGURATION
+*** Name
+~clal-load-aldo-configuration~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-load-aldo-configuration)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Read the aldo configuration from the available XDG ~aldo.conf~ and
+set ~*clal-aldo-configuration*~ from it.
+
+*** Return Values
+The new configuration value, or ~nil~ when no configuration file
+was found.
+
+*** Side Effects
+Sets ~*clal-aldo-configuration*~ when a file is found.
+
+*** Affected By
+- The XDG configuration search path (~aldo.conf~ location).
+
+*** Exceptional Situations
+File / read errors from a malformed ~aldo.conf~ propagate.
+
+*** Examples
+#+begin_example
+(clal-load-aldo-configuration)
+=> ((...))        ; nil when no aldo.conf is present
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; the aldo configuration is part of the
+  aldo debugger/navigator. See this chapter's Overview.
+
+#+LATEX: \newpage
+** Function Entry: CLAL-SAVE-ALDO-CONFIGURATION
+*** Name
+~clal-save-aldo-configuration~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-save-aldo-configuration)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Write the current ~*clal-aldo-configuration*~ to
+~$XDG_CONFIG_HOME/clautolisp/aldo.conf~ as an AutoLISP sexp
+(UTF-8).
+
+*** Return Values
+The path string of the file written.
+
+*** Side Effects
+Creates or overwrites the ~aldo.conf~ file.
+
+*** Affected By
+- ~XDG_CONFIG_HOME~ (the save location).
+- The current ~*clal-aldo-configuration*~ value.
+
+*** Exceptional Situations
+File-write errors propagate.
+
+*** Examples
+#+begin_example
+(clal-save-aldo-configuration)
+=> "/home/me/.config/clautolisp/aldo.conf"
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.4.x.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; the aldo configuration is part of the
+  aldo debugger/navigator. See this chapter's Overview.
+
+#+LATEX: \newpage
+
 ** Function Entry: AUTOLISP-SET-STATUS
 *** Name
 ~autolisp-set-status~

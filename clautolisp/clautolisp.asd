@@ -15,6 +15,8 @@
                "clautolisp/autolisp-init-files"
                "clautolisp/autolisp-debug"
                "clautolisp/autolisp-inspect"
+               "clautolisp/autolisp-sedit"
+               "clautolisp/autolisp-interactor"
                "clautolisp/autolisp-debug-ui"
                "clautolisp/autolisp-debug-ui-dumb"
                "clautolisp/autolisp-debug-ui-tui"
@@ -199,6 +201,7 @@
   :depends-on ("clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
                "clautolisp/autolisp-dcl"
+               "clautolisp/autolisp-sedit"
                "uiop")
   :serial t
   :components
@@ -280,6 +283,8 @@
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
                "clautolisp/autolisp-init-files"
+               ;; REPL comma-commands (interactors): ,date ,uptime ,help ,quit
+               "clautolisp/autolisp-interactor"
                ;; aldo debugger: the run loop can start a debug session under
                ;; --aldo-user-interface / --on-error debug (debugger §10).
                "clautolisp/autolisp-debug"
@@ -541,6 +546,85 @@
                          (uiop:symbol-call :clautolisp.inspect.tests
                                            :run-all-tests)))
 
+(asdf:defsystem "clautolisp/autolisp-sedit"
+  :description "sedit — S-expression structural editor core (sedit spec §6): the adorned-tree domain, the Huet zipper, the editing transitions, undo, formatting, the session/storage model, and the SEDIT interactor. No clautolisp dependencies (only UIOP for file I/O and the equally dependency-free interactor framework), so it is reusable outside the debugger."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("uiop" "clautolisp/autolisp-interactor")
+  :serial t
+  :components
+  ((:file "autolisp-sedit/source/package")
+   (:file "autolisp-sedit/source/adorn")
+   (:file "autolisp-sedit/source/format")
+   (:file "autolisp-sedit/source/parse")
+   (:file "autolisp-sedit/source/clipboard")
+   (:file "autolisp-sedit/source/zipper")
+   (:file "autolisp-sedit/source/edit")
+   (:file "autolisp-sedit/source/state")
+   (:file "autolisp-sedit/source/session")
+   (:file "autolisp-sedit/source/modes")
+   (:file "autolisp-sedit/source/interactor"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-sedit/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-sedit/tests"
+  :description "FiveAM tests for the sedit zipper core (§6.1–§6.3, §6.7 invariants)."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-sedit" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-sedit/tests/package")
+   (:file "autolisp-sedit/tests/zipper-tests")
+   (:file "autolisp-sedit/tests/edit-tests")
+   (:file "autolisp-sedit/tests/undo-tests")
+   (:file "autolisp-sedit/tests/format-tests")
+   (:file "autolisp-sedit/tests/session-tests")
+   (:file "autolisp-sedit/tests/modes-tests")
+   (:file "autolisp-sedit/tests/clipboard-tests")
+   (:file "autolisp-sedit/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.sedit.tests
+                                           :run-all-tests)))
+
+(asdf:defsystem "clautolisp/autolisp-interactor"
+  :description "The interactor framework (issues/open/interactors.lisp): one command loop for every interaction mode — command dictionaries, the command-line parser, the interactor stack, and INTERACTOR-LOOP. No clautolisp dependencies, so it is reusable outside the debugger."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :serial t
+  :components
+  ((:file "autolisp-interactor/source/package")
+   (:file "autolisp-interactor/source/command")
+   (:file "autolisp-interactor/source/parse")
+   (:file "autolisp-interactor/source/input")
+   (:file "autolisp-interactor/source/interactor"))
+  :in-order-to ((asdf:test-op
+                 (asdf:test-op "clautolisp/autolisp-interactor/tests")))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         :success))
+
+(asdf:defsystem "clautolisp/autolisp-interactor/tests"
+  :description "FiveAM tests for the interactor framework."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-interactor" "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-interactor/tests/package")
+   (:file "autolisp-interactor/tests/parse-tests")
+   (:file "autolisp-interactor/tests/command-tests")
+   (:file "autolisp-interactor/tests/interactor-tests")
+   (:file "autolisp-interactor/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.interactor.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/autolisp-debug-ui"
   :description "Debugger UI protocol + session lifecycle (debugger §17, §21–§24)."
   :author "Codex"
@@ -548,6 +632,7 @@
   :depends-on ("clautolisp/autolisp-runtime"
                "clautolisp/autolisp-debug"
                "clautolisp/autolisp-inspect"
+               "clautolisp/autolisp-interactor"
                "clautolisp/autolisp-source-map")
   :serial t
   :components
@@ -569,11 +654,13 @@
   :description "Dumb-terminal debugger UI (debugger §18)."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-debug-ui")
+  :depends-on ("clautolisp/autolisp-debug-ui"
+               "clautolisp/autolisp-sedit")
   :serial t
   :components
   ((:file "autolisp-debug-ui-dumb/source/package")
-   (:file "autolisp-debug-ui-dumb/source/dumb-ui"))
+   (:file "autolisp-debug-ui-dumb/source/dumb-ui")
+   (:file "autolisp-debug-ui-dumb/source/commands"))
   :in-order-to ((asdf:test-op
                  (asdf:test-op "clautolisp/autolisp-debug-ui-dumb/tests")))
   :perform (asdf:test-op (op system)
@@ -734,6 +821,7 @@
                "clautolisp/autolisp-init-files/tests"
                "clautolisp/autolisp-debug/tests"
                "clautolisp/autolisp-inspect/tests"
+               "clautolisp/autolisp-sedit/tests"
                "clautolisp/autolisp-debug-ui-dumb/tests"
                "clautolisp/autolisp-debug-ui-ncurses/tests"
                "clautolisp/autolisp-debug-ui-emacs/tests")
@@ -763,6 +851,8 @@
                            (uiop:symbol-call :clautolisp.debug.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.inspect.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.sedit.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.ui.dumb.tests
                                              :run-all-tests)

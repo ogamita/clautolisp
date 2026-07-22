@@ -1,0 +1,48 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: aldo sedit integration — index (formalised)
+#+AUTHOR: Pascal J. Bourguignon
+
+The design content of this issue has been *formalised into a specification*
+and its pure-bug items *split into their own issues*. This file is now only an
+index.
+
+* Specification
+
+=clautolisp/documentation/clautolisp-sedit-spec.org= —
+"clautolisp — sedit and the aldo Form Navigator — Specification".
+
+It covers, revised and completed:
+
+- the *two modes* — form-navigation (=NAV=) vs sexp-editing (=EDIT=): in NAV
+  the selection ranges only over *evaluable* sub-expressions (poll-points) and
+  the debugger dictionary is stacked directly; in EDIT everything is selectable
+  and editable;
+- the *mode transitions*: an editing command (or =edit=) switches NAV → EDIT
+  (losing direct debugger keys); =debug=/=aldo CMD= (or =nav=) runs a debugger
+  command and returns to NAV;
+- the new =load= command (=l=), loading the current file or a named file;
+- the *revised command names and abbreviations* (obeying the command-reference
+  naming rule per dictionary; resolves the =p=/=u=/=l=/=r=/=x=/=f= collisions of
+  the original table — e.g. old =enlist= → =wrap=, freeing =l= for =load=);
+- =clal-sedit= entry points, REPL source recording, objects (dir/file/sexp/
+  comment), the clipboard, and every per-command section — all TODOs completed
+  (=previous=/=backward=, insert/replace/add examples, the eval result/form
+  history =*clal-result*= … / =*clal-form*= …);
+- a *formal semantics* model (a zipper over adorned trees, the motion algebra,
+  the editing transitions, and the mode/skip overlay).
+
+* Split-out bug issues
+
+- =issues/open/bug-aldo-duplicate-breakpoint.issue= (was §5) — two breakpoints
+  on the same poll-point.
+- =issues/open/bug-aldo-nav-command-dictionary.issue= (was §1) — nav mode
+  exposes only =break= instead of the full stacked debugger dictionary.
+- =issues/open/bug-aldo-nav-entry-and-breakpoint-flow.issue= (was §2) — entering
+  nav re-selects the whole form (should be the first poll-point); setting a
+  breakpoint should not require =invoke-debugger= first.
+
+* Already split
+
+- =issues/open/clipboard-interface.org= — the System Clipboard Interface
+  (provider protocol, backends, security). The copy of that chapter formerly at
+  the end of this issue is superseded by that standalone file.

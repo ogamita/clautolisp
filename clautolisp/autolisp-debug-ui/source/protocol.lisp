@@ -34,6 +34,26 @@
   (:method (ui level format-string &rest args)
     (declare (ignore ui level format-string args)) nil))
 
+;;; Pre-debug navigation entry (bug-aldo-nav-entry-and-breakpoint-flow): open the
+;;; navigator for a queued CLAL-NAV-* request WITHOUT a stop, so
+;;; (clal-nav-function 'NAME) at the REPL browses NAME and sets breakpoints
+;;; without faking a break. The REPL calls this after a turn whose evaluation
+;;; queued a request. Default: no-op (a UI with no interactive navigator).
+(defgeneric ui-open-navigation-request (ui session request)
+  (:documentation
+   "Open the navigator for a queued CLAL-NAV-* REQUEST (see
+clautolisp.debug:*pending-nav-request*) outside a stop. Returns NIL.")
+  (:method (ui session request) (declare (ignore ui session request)) nil))
+
+;;; Run one debugger command from outside the stop loop (spec §7): CLAL-SEDIT's
+;;; `debug'/`aldo' prefix routes here through *debug-command-hook* so the editor
+;;; can reach debugger commands (e.g. `aldo help'). Default: no-op.
+(defgeneric ui-run-command (ui session command)
+  (:documentation
+   "Run the debugger COMMAND string in SESSION and return its resume directive
+(or NIL). Used outside a stop, so there is no HIT.")
+  (:method (ui session command) (declare (ignore ui session command)) nil))
+
 ;;; The command loop. UI returns a resume directive.
 (defgeneric ui-await-command (ui session hit)
   (:documentation

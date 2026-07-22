@@ -1,0 +1,1053 @@
+Cc-d# -*- mode:org;coding:utf-8 -*-
+#+TITLE: clautolisp — sedit and the aldo Form Navigator — Specification
+#+AUTHOR: Pascal J. Bourguignon
+
+* Scope and relation to the other documents
+
+This document specifies =sedit=, the S-expression structural editor, and its
+integration with the *aldo* debugger as the *form navigator*. It formalises
+the material of the (now retired) issue =aldo-sedit-integration.issue=, whose
+pure-bug items were split into separate issues:
+
+- =issues/open/bug-aldo-duplicate-breakpoint.issue= — two breakpoints on one
+  poll-point;
+- =issues/open/bug-aldo-nav-command-dictionary.issue= — nav mode exposes only
+  =break=;
+- =issues/open/bug-aldo-nav-entry-and-breakpoint-flow.issue= — nav re-selects
+  the whole form; breakpoints need =invoke-debugger= first.
+
+It is *layered on* two existing normative documents, and does not restate them:
+
+- =clautolisp-debugger-tui-spec.org= — the debugger TUI: poll-point
+  decorations, numbered poll-points, partial printing, the two navigators
+  (sexp / line), the two stacks, and the *stacked command-dictionary* dispatch.
+  *Decorations, poll-point numbering and partial printing are defined there;
+  this document references them.*
+- =clautolisp-debugger-command-reference.org= — the command registry and the
+  *command-naming consistency rule* (§0, NORMATIVE): a command is named by one
+  or two words, its key is the initial(s) of those word(s), keys are
+  collision-free *per dictionary*, and the registrar enforces it.
+
+The *system-clipboard* backend is specified separately in
+=clipboard-interface.org= (=sedit — System Clipboard Interface=);
+this document specifies only the *editor-facing* clipboard behaviour and refers
+to that document for the provider protocol. (That chapter, duplicated at the
+end of the old integration issue, is superseded by the standalone file.)
+
+The document version is *0.6 (draft)*; any change to it must bump this number.
+
+* 1. The two modes
+
+=sedit= runs in one of *two modes*. The distinction is the crux of the aldo
+integration and governs both *what the selection may point at* and *which
+commands are directly available*.
+
+** 1.1 Form-navigation mode (=NAV=)
+
+Used by the debugger to walk *live code under debugging*. It is
+structure-aware in the *evaluation* sense:
+
+- *The selection ranges only over evaluable sub-expressions* — the
+  *poll-points*. Motion *skips* non-evaluated positions: an operator symbol,
+  a =defun= name and its lambda list, the variable list of =setq=, quoted
+  data, the grouping list of a =cond= clause, and so on (§4, the
+  argument-role table). You cannot select what will never be evaluated.
+- The *navigator dictionary* is *stacked over the global debugger dictionary*
+  (tui-spec, "Command dictionaries"). Every non-shadowed debugger verb is
+  *directly reachable* — =c i n o a r j= (execution), =b bo= and the
+  breakpoint words, =f fi fo ft fb= (frames), =p t v l*= (inspection),
+  =. g back history search= (browse). No prefix.
+- It does *not mutate structure*. It navigates, designates poll-points, and
+  sets *debugging decorations* (breakpoints, conditions, pre/post-expressions
+  — the source-located operations of the command reference).
+
+The =line= navigator (flat =file:line= view, tui-spec) is the *alternative*
+presentation of this same mode, selected by =set navigator line=; it reuses
+the same motion keys over a flat rendering. This document specifies the =sexp=
+navigator; both are form-navigation mode.
+
+** 1.2 Sexp-editing mode (=EDIT=)
+
+The general-purpose editor, over *any* readable Lisp data — code or plain
+=.sexp= data, files, and directories:
+
+- *The selection ranges over all sub-expressions and adornments* (including
+  comments); *nothing is skipped and everything is editable*.
+- The full editing / clipboard / structural / file / directory command set is
+  active (§5).
+- The *debugger dictionary is not directly stacked*. Debugger verbs are
+  reached only through the =debug= (or =aldo=) *prefix* (§1.3). This is the
+  same escape mechanism the command reference §8 uses for the word =debugger=,
+  specialised to the editor.
+
+** 1.3 Mode transitions
+
+#+begin_example
+                 editing command (by word),  or  `edit'
+        NAV  ───────────────────────────────────────────────►  EDIT
+             ◄───────────────────────────────────────────────
+                 `debug CMD' / `aldo CMD',   or  `nav'
+#+end_example
+
+- *NAV → EDIT.* Merely *issuing an editing command switches to EDIT* and
+  performs it. Because the single-letter editing keys (=i a r c x v s w …=)
+  would collide with debugger keys in NAV, an editing command is recognised in
+  NAV *by its word* (=insert=, =replace=, =wrap=, =slurp=, =cut=, …); typing
+  one enters EDIT and executes it. The explicit form is =edit= (enter EDIT with
+  no operation). *Consequence:* in EDIT the debugger verbs are no longer
+  directly typed — they need the =debug=/=aldo= prefix.
+- *EDIT → NAV.* Issuing a *debugger command through the prefix* — =debug CMD=
+  or =aldo CMD= (e.g. =debug next=, =aldo break=) — runs =CMD= and *returns to
+  NAV*, restoring the direct-access debugger dictionary. The explicit form is
+  =nav= (return to NAV with no operation).
+- The prefixes =debug= and =aldo= are *synonyms*. In NAV they are optional
+  no-op prefixes (a debugger command already works bare), so =debug next= =
+  =next= there; they matter only from EDIT.
+
+Rationale: navigation and editing want *different, overlapping* single-key
+maps; rather than cram both into one dictionary, the mode owns the single
+keys, and the *word* form plus the two prefixes bridge the modes deterministically.
+
+*Amendment (interactor-design-revision.issue, clautolisp 1.4.47 — Option A).*
+The two modes are no longer an internal machine of sedit: they are *which
+interactor is on top of the stack*. NAV mode is the *NAVI* interactor (the
+debugger's form navigator: poll-point-filtered motions, stacked over the
+debugger dictionary), EDIT mode is the *SEDIT* interactor — ONE dictionary
+of motions (traversing *all* sub-sexps) plus the editing commands, prompt
+=SEDIT>= always. An editing word typed in NAVI pushes SEDIT over it; while
+SEDIT is stacked its keys (=i a r c x v z m s n …=) *shadow* the same-key
+debugger verbs — =aldo CMD= / =debug CMD= route to the debugger explicitly,
+and every *unshadowed* command still falls through the stack. There is no
+=nav= command: leaving SEDIT is =q= — which, entered from =(clal-sedit …)=,
+pops the editor and returns the §2 result; *above a debugger stop* it asks
+for confirmation and, confirmed, aborts the debugged execution (the
+debugger's own =quit=), like NAVI's =q= at a stop.
+
+*Note on the dumb terminal:* every command is a typed token + =RET= there
+(command reference §0), so "word-only" commands and the prefixes cost nothing;
+single-letter keys matter only for the ncurses / aldb keystroke UIs.
+
+* 2. The =clal-sedit= entry point
+
+#+begin_example
+(clal-sedit [object]) --> modified-object
+#+end_example
+
+=clal-sedit= starts the editor in EDIT mode (the debugger enters NAV mode
+through =clal-nav-function= / re-entry instead; §7). The initial selection and
+the returned object depend on =object=:
+
+| argument  | initial selection | final selection      | result                                                       |
+|-----------+-------------------+----------------------+--------------------------------------------------------------|
+| =nil=     | =nil=             | any position         | the whole sexp the final selection is in, or contains.       |
+| sexp      | that sexp         | inside it            | the sexp (the initial selection).                            |
+| sexp      | that sexp         | inside another form  | the whole other form.                                        |
+| symbol    | its REPL form     | inside the REPL form | the whole REPL form.                                         |
+| symbol    | its REPL form     | inside another form  | the whole other form.                                        |
+| symbol    | its File form     | inside the File form | the whole File form.                                         |
+| symbol    | its File form     | inside another form  | the whole other form.                                        |
+| file path | first top form    | (as for File forms)  | as above.                                                    |
+| dir path  | first entry       | (as for the objects) | as above.                                                    |
+
+Two Lisp variables record the session:
+
+- =*clal-sedit-initial-form*= — the initial form;
+- =*clal-sedit-last-result*= — the result returned by =clal-sedit=.
+
+** 2.1 =nil= — a stand-alone sexp initialised to =nil=
+
+#+begin_example
+       【nil】
+SEDIT>
+#+end_example
+
+Editing starts in *stand-alone* mode (no file backing).
+
+** 2.2 A function or variable name — recall a recorded form
+
+A symbol edits the *top-level* form that defined it — the =defun= /
+=defun-q= for a function, the =setq= for a variable — recalled from the REPL
+recording (§3) or from a loaded file.
+
+If the form was given at the REPL, sedit works *stand-alone*:
+
+#+begin_example
+_$ (defun foo () 'hi)
+_$ (setq voo (+ 1 (length (remove 'foo *funny-names*))))
+
+_$ (clal-sedit 'foo)
+       [(defun foo ()
+          'hi)]
+SEDIT> q
+
+_$ (clal-sedit 'voo)
+       [(setq voo (+ 1 (length (remove 'foo *funny-names*))))]
+SEDIT>
+#+end_example
+
+If the form came from a loaded file, sedit works *storage-backed*, and the
+source file and line numbers are shown:
+
+#+begin_example
+_$ (clal-sedit 'foo)
+/Users/pjb/src/public/autolisp/foovoo.lisp
+   ...
+   004: [(defun foo ()
+   005:    'hi)]
+   ...
+SEDIT>
+#+end_example
+
+** 2.3 A file path — edit a file
+
+The first top-level form is selected and shown (storage-backed):
+
+#+begin_example
+_$ (clal-sedit "~/src/public/autolisp/batnav/src/batnav.lsp")
+/Users/pjb/src/public/autolisp/batnav/src/batnav.lsp
+
+   039: 【(setq *bn-seed* 1.0)                    ; PRNG state, always in [1 , 2147483646]】
+   ...
+SEDIT>
+#+end_example
+
+No "..." precedes the first form's line number — only file comments precede it.
+In all cases comments may be *attached* to the form; the source view shows
+them, and they can be added, deleted, or edited with the comment commands (§5).
+
+** 2.4 A directory path — edit a directory
+
+The first Lisp/sexp file is selected, else the first sub-directory, else
+"..". Storage-backed: creating a file writes the directory in the filesystem.
+
+#+begin_example
+_$ (clal-sedit "~/src/public/autolisp")
+/Users/pjb/src/public/autolisp/
+        ../
+        batnav/
+       [bloc-dynamic.lsp]
+        defun.lsp
+        ...
+SEDIT>
+#+end_example
+
+* 3. REPL source recording
+
+To let sedit recall and re-evaluate forms typed at the REPL, the REPL records
+the *source* of the forms it evaluates. Two structures (resolving the issue's
+"do we record other forms?" TODO):
+
+1. *The definition dictionary* — keys are the *defined names*, values are the
+   source forms. The recorded definition forms are =setq=, =defun=, and
+   =defun-q= (the forms that *bind a name*). =(clal-sedit 'NAME)= looks a name
+   up here. Re-evaluating an edited form *updates* this entry.
+
+2. *The session log* — the *ordered* list of *all* top-level forms given to
+   the REPL (not only definitions: =load=, program-building calls, etc.), in
+   evaluation order. This is what reconstructs a working program.
+
+Saving the recorded REPL state (§5, =save= on a stand-alone form, or a future
+=clal-save-session=) writes the *session log in order*, so the file replays
+the session. The user may of course edit the saved file afterwards — just as
+one can build a program from a dribble. A definition appears in the file at the
+position of its *last* (re-)definition, preserving the working order.
+
+* 4. Structure model — evaluable positions and the skip rule
+
+Form-navigation mode restricts the selection to *evaluable* positions. This
+section defines that restriction; it is what §5's motion commands consult in
+NAV, and what the argument-role table in =dbgsim.lisp= implements.
+
+For a form =(op a1 … an)=, each argument position has a *role*. Only positions
+whose role is *evaluated* are poll-points and thus NAV-selectable. The roles:
+
+| role         | meaning                                    | NAV-selectable |
+|--------------+--------------------------------------------+----------------|
+| =eval=       | the sub-form is evaluated                  | yes            |
+| =symbol=     | a name used literally (not evaluated)      | no             |
+| =lambda-list=| a parameter list (incl. =/= locals)        | no             |
+| =quoted=     | quoted / unevaluated datum                 | no             |
+| =clause-list=| a grouping list (e.g. a =cond= clause)     | no (its evaluated members are) |
+| =body=       | an implicit-progn body: each element =eval=| its elements   |
+
+Per-operator table (AutoLISP special operators; ordinary function calls
+evaluate the operator position — a symbol — and *all* arguments):
+
+| operator          | position roles                                             |
+|-------------------+-----------------------------------------------------------|
+| =quote=           | =(quote quoted)=                                           |
+| =function=        | =(function symbol)=                                        |
+| =setq=            | =(setq symbol eval symbol eval …)= — names skipped         |
+| =defun=           | =(defun symbol lambda-list body…)=                         |
+| =defun-q=         | as =defun=                                                 |
+| =lambda=          | =(lambda lambda-list body…)=                               |
+| =if=              | =(if eval eval eval?)= — test, then, optional else         |
+| =cond=            | =(cond clause-list…)=; each clause =(eval body…)=          |
+| =while=           | =(while eval body…)=                                       |
+| =repeat=          | =(repeat eval body…)= — count evaluated                    |
+| =foreach=         | =(foreach symbol eval body…)= — loop var skipped           |
+| =progn=           | =(progn body…)=                                            |
+| =and= / =or=      | =(and eval…)= / =(or eval…)=                               |
+| function call     | operator =symbol=; every argument =eval=                  |
+
+The *skip rule*. Let =edit-next= be the plain zipper "next sibling, else up"
+(§6). Then
+
+#+begin_example
+nav-next(loc)  =  the first location reachable by iterating edit-next
+                  from loc whose role is `eval' (a poll-point);
+                  if none remains in the parent, nav-up(loc).
+#+end_example
+
+and symmetrically =nav-prev=, =nav-down= (descend to the first *evaluable*
+child), =nav-up= (ascend to the nearest *evaluable* ancestor — which for a
+top-level form is the form itself). EDIT mode uses the plain zipper motions
+with no skip. *This single predicate is the entire behavioural difference
+between the two modes' navigation.*
+
+Consequence for the entry bug (=bug-aldo-nav-entry-and-breakpoint-flow=): on
+entering the form navigator on a =defun=, the initial selection is
+=nav-down= of the whole form = its *first poll-point* (the first =body=
+element), never the un-selectable =defun= head.
+
+* 5. Commands — the revised set
+
+The command names and keys are revised to obey the command-reference naming
+rule *per dictionary*, and to remove the collisions of the original issue
+table (=p= previous/splice, =u= up/slurp, =l= enlist, =r= replace/rename,
+=x= cut/delete, =f= barf/new). The revisions:
+
+- *Motion* adopts the tui-spec navigator keys =d u > < << >> ±N=; the issue's
+  =next= / =previous= become =forward= (=>=) / =backward= (=<=). This alone
+  frees =n= and =p=. =forward= / =backward= also accept the letter aliases =f= /
+  =b= (free in the editor's command set — unlike the debugger's own navigator,
+  where =f= is =frame= and =b= is =break=, so the aliases are sedit-only).
+- *=l= is reassigned to =load=* (§5.7, the new command); the old =l= =enlist=
+  is renamed *=wrap=*.
+- *Structural* commands (=wrap slurp barf splice split join=) are *word
+  commands* (no default single key) — power features, typed in full in the
+  dumb terminal; the ncurses / aldb UIs may bind convenient keys (e.g.
+  paredit-style chords). (=wrap='s initial =w= is free and may serve as its
+  ncurses/aldb key; it is left unbound by default so the family stays uniform.)
+- *Clipboard* keeps the universal *CUA triad* =x c v= as *conventional keys*
+  (=copy= is also its own initial =c=); =cut= (=x=) and =paste= (=v=) are
+  documented conventional keys, in the same spirit as =?= = help and =.= =
+  definition in the global set.
+- *=undo=* is a word command with the conventional key =z= (=u= is =up=).
+- *Comment variants* are two-word: =insert comment= (=ic=), =add comment=
+  (=ac=), =replace comment= (=rc=).
+- *Directory* =rename= reuses =r= and =delete= reuses =x=; these are *object
+  -exclusive* with =replace= / =cut= (a directory selection never takes
+  =replace=, a sexp never takes =rename=), so they do not collide. =new= takes
+  the free key =n=.
+
+Availability column *SFD* = Sexp / File / Directory; *M* = mode
+(N = NAV, E = EDIT, NE = both).
+
+| Category   | SFD | M  | Key            | Command                    | Effect                                                      |
+|------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
+| Navigation | SFD | NE | =d=            | down                       | Enter the selected node.                                    |
+| Navigation | SFD | NE | =u=            | up                         | Ascend to the containing node.                              |
+| Navigation | SFD | NE | =>= / =f=      | forward                    | Next sibling (skip to next poll-point in NAV). (†)          |
+| Navigation | SFD | NE | =<= / =b=      | backward                   | Previous sibling. (†)                                       |
+| Navigation | SFD | NE | =<<= / =>>=    | first / last               | First / last sibling.                                       |
+| Navigation | SFD | NE | =±N=           | skip                       | Move N siblings (clamped).                                  |
+| Navigation | SFD | NE | =N=            | designate                  | Select poll-point N directly (NAV).                         |
+|------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
+| Editing    | S   | E  | =i=            | insert                     | Insert a new sexp before the selection. (‡)                 |
+| Editing    | S   | E  | =a=            | add                        | Add a new sexp after the selection. (‡)                     |
+| Editing    | S   | E  | =r=            | replace                    | Replace the selection with a new sexp. (‡)                  |
+| Editing    | S   | E  | =ic=/=ac=/=rc= | insert/add/replace comment | as above, for a comment.                                    |
+| Editing    | SFD | E  | =z=            | undo                       | Undo the last mutation (§5.5).                              |
+|------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
+| Clipboard  | S   | E  | =c=            | copy                       | Copy the selection to the clipboard.                        |
+| Clipboard  | S   | E  | =x=            | cut                        | Cut the selection to the clipboard.                         |
+| Clipboard  | S   | E  | =v=            | paste                      | Paste, replacing the selection.                             |
+|------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
+| Structural | S   | E  | —              | wrap                       | Wrap the selection in a new list (old =enlist=).            |
+| Structural | S   | E  | —              | slurp                      | Extend the selection with the following sexp.               |
+| Structural | S   | E  | —              | barf                       | Expel the last element out of the selection.                |
+| Structural | S   | E  | —              | splice                     | Splice the selected list into its parent.                   |
+| Structural | S   | E  | —              | split                      | Split the parent list before the selection. (¶)             |
+| Structural | S   | E  | —              | join                       | Inverse of split — join two sibling lists. (¶)              |
+|------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
+| Evaluation | SFD | NE | =e=            | eval                       | Evaluate the selection (§5.6).                              |
+| Evaluation | SFD | NE | =(form)=       | (a bare form)              | Evaluate FORM and print the result, like the REPL (§5.6).   |
+| Evaluation | SF  | E  | =m=            | macroexpand                | Evaluate the selection and replace it by the result (§5.6). |
+|------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
+| File       | SF  | NE | =l=            | load                       | Load the current file, or FILE if given (§5.7).             |
+| File       | SF  | E  | =s=            | save                       | Save the edited sexp / file (§5.8). (⚘)                     |
+|------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
+| Mode       | SFD | NE | —              | edit / nav                 | Switch mode (§1.3).                                         |
+| Mode       | SFD | E  | —              | debug / aldo               | Run a debugger command, return to NAV (§1.3).               |
+|------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
+| Session    | SFD | NE | =q=            | quit                       | Return the modified sexp from sedit.                        |
+| Session    | SFD | NE | =h= / =?=      | help                       | Print the help for the active dictionaries.                 |
+|------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
+| Directory  | D   | E  | =n=            | new                        | Create a new file; it is selected (=d= to enter).           |
+| Directory  | D   | E  | =r=            | rename                     | Rename the selected entry.                                  |
+| Directory  | D   | E  | =x=            | delete                     | Delete a file or empty directory (confirmation asked).      |
+|------------+-----+----+----------------+----------------------------+-------------------------------------------------------------|
+
+(†): =forward= past the last element of a list selects the containing list
+(same as =up=); in a file that is the last top-level form, this triggers the
+save-on-leave check (§5.8). In NAV, =forward= / =backward= move between
+*poll-points*, skipping non-evaluated positions (§4).
+
+(‡): the new sexp is read from the terminal, or given *after* the command on
+the same line. When given, comments may accompany it and are attached
+(examples in §5.3).
+
+(¶): split / join, so split-then-join round-trips:
+#+begin_example
+(a b c [d] e f g) split -> (a b c) ([d] e f g)
+(a b c) ([d] e f g) join -> (a b c [d] e f g)
+(a b c) [(d e f g)] join -> [(a b c d e f g)]   ; selection not first: normal join
+#+end_example
+
+(⚘): a file needs no explicit "open" — =down= into it from the directory opens
+it. =eval (load "file.lsp")= loads but does not edit.
+
+** 5.1 Motion — =down= =up= =forward= =backward= =first= =last=
+
+These act at *every level of the one containment tree* (sexp → form → file →
+directory; tui-spec, "One tree"). =up= from a top-level form lands on the
+file's form list, =up= again on the directory, where the same keys walk files
+and sub-directories until =down= into a file returns among top-level forms.
+
+The directory / file examples of the original issue (moving among entries,
+into a file's first form, out of a file) are unchanged and normative; they are
+the level-lifting of the zipper motions of §6.
+
+*=backward= (completing the issue's =previous= TODO).* =backward= is the
+mirror of =forward=: it selects the previous sibling; at the first element of a
+list it ascends to the containing list (mirror of =forward= at the last
+element). In NAV it lands on the previous *poll-point*, skipping non-evaluated
+positions. At the *directory* level it selects the previous entry; at the
+*file* level the previous top-level form. When it ascends out of a file that
+has modified forms, the save-on-leave check (§5.8) fires, exactly as for
+=forward= / =up=.
+
+#+begin_example
+File: /a/b/c/bar.lsp
+     ...
+     [(nth toplevel form)]
+     ...
+--backward-->
+File: /a/b/c/bar.lsp
+     ...
+     [(nth-1 toplevel form)]     ; the previous one
+     ...
+#+end_example
+
+#+begin_example
+File: /a/b/c/bar.lsp
+     [(first toplevel form)]     ; backward from the first form ...
+     ...
+--backward-->
+Directory: /a/b/c/               ; ... ascends to the directory (save check first)
+    foo.lsp
+   [bar.lsp]
+    quux.lsp
+#+end_example
+
+** 5.2 Editing — =insert= =add= =replace= (and comment variants)
+
+- =insert= puts the new object *before* the selection; =add= *after*;
+  =replace= *in place of* it. All three *select the new object* afterwards.
+- If the selection is alone on its line(s), or is a comment, insert/add happen
+  on a *new line*; otherwise inline. The one exception is =add comment= (=ac=)
+  of a =;-= (line) comment onto a sexp selection: it is appended on the *same*
+  (last) line of the sexp.
+- If the selection is a *top-level form in a file*, the file gains the new
+  object and becomes subject to saving (§5.8).
+
+Examples (arguments given on the command line):
+
+#+begin_example
+       (list [nil])
+SEDIT> replace (a b c)
+       (list [(a b c)])
+SEDIT> insert (1 2 3)
+       (list [(1 2 3)] (a b c))
+SEDIT> add hello
+       (list (1 2 3) [HELLO] (a b c))
+#+end_example
+
+Comment placement and merging (completing the issue's "TODO: examples"):
+
+#+begin_example
+     (a b [c] e f)            (a b [c] e f)            (a b [c] e f)
+--> add comment ; a c    --> add comment ;; sexp   --> add comment ;;; section
+     (a b c   [; a c]         (a b c                   (a b c
+      e f)                    [;; sexp]              [;;; section]
+                              e f)                     e f)
+#+end_example
+
+Comments are indented by their level: =;;;;-= / =;;;-= flush left, =;;-= like a
+sub-form, =;-= on the comment column (a =set= option, default 40) or one space
+past the line's last sexp. When an inserted =;;;;-= / =;;;-= / =;;-= comment
+abuts a preceding comment of the *same* level, the two *merge* into one
+multi-line comment object, and the selection covers the whole block.
+
+#+begin_example
+set comment-column 40
+#+end_example
+
+** 5.3 Comments as objects, and deferral to $EDITOR
+
+sedit edits *adorned* nodes: sexps, and *comment objects*. Contiguous
+top-level or sexp comments form a single multi-line unit. sedit does not edit
+free text: to edit the *body* of a multi-line comment it defers to =$VISUAL= /
+=$EDITOR= (or a =set=-selected editor). Indentation of sexps and comments is
+computed by sedit (AutoLISP has a finite set of special operators, so every
+form's indentation is known); block comments =;| … |;= are flushed left and
+their interior indented by the docstring rules (=@=-keywords).
+
+#+begin_example
+set text-editor EDITOR                # runs $EDITOR
+set text-editor VISUAL                # runs $VISUAL 
+set text-editor /path/to/some/editor  # runs /path/to/some/editor
+#+end_example
+
+if the editor cannot be launched, an error message is displayed and
+nothing is done.
+
+** 5.4 Clipboard — =copy= =cut= =paste=
+
+The *lisp clipboard* is the AutoLISP variable =*clal-clipboard*=. Objects
+stored by sedit are *adorned*:
+
+#+begin_example
+(SEXP    object         [formatting-info])
+(COMMENT comment-string [formatting-info])
+#+end_example
+
+or a *plain* Lisp object (=paste= of an arbitrary value). =formatting-info= is
+an a-list with =FILE=, =LINE=, =START-POSITION=, =END-POSITION=, =TEXT= (the
+source text), and =NEWLINES= (the newline placement); =sexp + NEWLINES +
+indenting = TEXT=. The comment-string runs from the first comment character to
+the end of comment (excluding the final newline); multi-line comments carry no
+indentation. (Full grammar and examples: the original issue's clipboard
+section; kept normative.)
+
+- =copy= puts the (adorned) selection on the clipboard.
+- =cut= = =copy=, then move the selection as =forward=, then delete the old
+  selection.
+- =paste= replaces the selection with the clipboard contents.
+
+*System clipboard.* In addition, cut/copy/paste mirror to and from the system
+clipboard, so a sub-expression is available to other applications and pasted
+text is parsed back into a sub-expression. The provider protocol, backends
+(X11, Wayland, macOS, Windows, OSC 52, …), serialization, and security are
+specified in =clipboard-interface.org=. The autolisp-facing API:
+
+| Common Lisp API                | AutoLISP (clautolisp extension)     |
+|--------------------------------+-------------------------------------|
+| =(clipboard-put-text string)=  | =(clal-clipboard-put-text string)=  |
+| =(clipboard-get-text)=         | =(clal-clipboard-get-text)=         |
+| =(clipboard-copy-sexp sexp)=   | =(clal-clipboard-copy-sexp sexp)=   |
+| =(clipboard-paste-sexp)=       | =(clal-clipboard-paste-sexp)=       |
+| =*CLIPBOARD*=                  | =*clal-clipboard*=                  |
+
+** 5.5 =undo=
+
+Undo the last *mutating* operation and restore the selection to where it was
+before it (so =undo= after =undo= redoes). Navigation is not recorded and does
+not block undo of the prior mutation. One level of undo (redo via a second
+=undo=).
+
+sedit keeps a *single undo slot*. Before it mutates, every editing command
+saves into that slot both *what it is about to do* — the operation descriptor
+(its name and the objects it consumed, e.g. =insert σ=, =cut=, =wrap=) — and
+*the whole editor state as it stands* — the location (focus, context, and
+selection) just before the change. =undo= then *swaps*: it makes the saved
+location current again and stores the just-undone (post-mutation) location back
+in the slot, so a second =undo= swaps once more and *redoes*. Because the edited
+tree is a persistent immutable structure, the saved location shares all
+unchanged structure with the live one, so the slot is cheap and one mechanism
+reverts every kind of edit. The formal recording/restoration rules are §6.4.
+
+** 5.6 =eval= and =macroexpand= — and the result/form history
+
+*Evaluating a form at the prompt.* In *every* mode — the debugger (=DBG>=), the
+form navigator (=NAV>=) and the editor (=SEDIT>=) — a command line that is a bare
+Lisp *form* (it starts with =(=) is read, evaluated in the current context, and
+its result printed, exactly as at the top-level REPL. This is distinct from =e=
+=eval=, which evaluates the *selection*: the bare form evaluates whatever you
+type. The form is only READ and evaluated; it never mutates the edited tree.
+
+Both =e= and =macroexpand= bind, for the duration of the evaluation, one
+*temporary dynamic* variables from the current context:
+
+- =*selection*= — the selected object (for a directory, the selection's
+  *path*);
+
+and set six global variables:
+- =*clal-source-form-2*= set to the old value of =*clal-source-form-1*=.
+- =*clal-source-form-1*= set to the old value of =*clal-source-form*=.
+- =*clal-source-form*= — set to the selection in *clipboard (adorned)* form.
+- =*clal-form-2*= set to the old value of =*clal-form-1*=.
+- =*clal-form-1*= set to the old value of =*clal-form*=.
+- =*clal-form*= — set to the form to evaluate (the selection; for a directory,
+  a form the user is prompted for).
+
+Three other global variables are available and set by eval and macroexpand:
+- =*clal-result-2*=
+- =*clal-result-1*=
+- =*clal-result*=
+  
+=eval= then evaluates and prints:
+#+begin_example
+(progn (print (setq *current-result* (eval *clal-form*)
+                    *clal-result-2*  *clal-result-1*
+                    *clal-result-1*  *clal-result*
+                    *clal-result*    *current-result*))
+       (terpri))
+#+end_example
+
+=macroexpand= evaluates and *replaces the selection by the result*:
+#+begin_example
+[(mapcar (lambda (f i) (list 'defun f '(obj) (list 'nth i 'obj)))
+         '(pt-x pt-y pt-z) '(0 1 2))]
+SEDIT> macroexpand
+[((defun pt-x (obj) (nth 0 obj))
+  (defun pt-y (obj) (nth 1 obj))
+  (defun pt-z (obj) (nth 2 obj)))]
+SEDIT> splice
+[(defun pt-x (obj) (nth 0 obj))]
+   ...
+#+end_example
+On a mistake, =*clal-form*= still holds the pre-expansion adorned
+selection, so =replace *clal-form-1*= then =macroexpand= recovers it.
+
+*Result and form history (resolving the two eval TODOs).* 
+Only *selection* and *current-result* are bound temporarily.
+The nine other variables
+=*clal-source-form-2*=, =*clal-source-form-1*=, =*clal-source-form*=,
+=*clal-form-2*=, =*clal-form-1*=, =*clal-form*=,
+=*clal-result-2*=, =*clal-result-1*=, =*clal-result*= are global variables
+that are set by the eval and macroexpand commands.
+
+| CL    | clautolisp             | holds                                               |
+|-------+------------------------+-----------------------------------------------------|
+| =*=   | =*clal-result*=        | most recent evaluation result                       |
+| =**=  | =*clal-result-1*=      | the one before                                      |
+| =***= | =*clal-result-2*=      | the one before that                                 |
+| =+=   | =*clal-form*=          | most recent evaluated form                          |
+| =++=  | =*clal-form-1*=        | the one before                                      |
+| =+++= | =*clal-form-2*=        | the one before that                                 |
+|       | =*clal-source-form*=   | most recent evaluated form - clipboard adorned form |
+|       | =*clal-source-form-1*= | the one before - clipboard adorned form             |
+|       | =*clal-source-form-2*= | the one before that - clipboard adorned form        |
+
+Each =eval= / =macroexpand= evaluate the expression first, then shifts
+the results (=*clal-result-2*= ← =*clal-result-1*= ← =*clal-result*= ←
+new) and the forms likewise, before setting =*clal-result*= to the new
+result. These are ordinary persistent globals, so a later =insert
+*clal-result-1*= / =macroexpand= reuses an earlier value.
+
+Editing commands do not evaluate the text they're given, they just
+READ it.  Evaluating an expression to insert their value must be done
+explicitely with macroexpand.  Hence the insertion of
+=*clal-result-1*= and not =*clal-result*=, since the new macroexpand
+will shift the results once more.
+
+** 5.7 =load= — the new command
+
+=load= (key =l=, available in *both* modes) loads a file into the running
+AutoLISP system:
+
+- =load= with no argument loads the *current file* — the file backing the
+  current top-level form (storage-backed) or the file the navigator is showing.
+- =load FILE= loads =FILE=.
+
+This is the intended way, from NAV, to *re-install an edited definition and
+continue*: edit the function (switching to EDIT), =save=, then =load= (or
+=debug continue=). Because breakpoints are poll-point identities, breakpoints
+in reused forms carry over per the tui-spec re-mapping note. =load= is not an
+editing command, so issuing it does *not* switch NAV → EDIT.
+
+Note: at one time we may have several definition for the same function
+name alive on the stack.
+
+Assume we have a file fact.lsp containing:
+
+#+begin_src lisp
+(defun fact (x)
+   (if (< x 3)
+       1
+       (* x (fact (- x 3))))))
+#+end_src
+| REPL                          | binding of FACT                 | X |                             |
+|-------------------------------+---------------------------------+---+-----------------------------|
+| CLAUTOLISP> (load "fact.lsp") |                                 |   |                             |
+|                               | (lambda (x)                     |   |                             |
+|                               | __(if (< x 3)                   |   |                             |
+|                               | ____1                           |   |                             |
+|                               | ____(* x (fact (- x 3))))))     |   |                             |
+| (clal-set-breakpoint 'fact)   |                                 |   |                             |
+|                               | (lambda (x)                     |   |                             |
+|                               | _^(if (< x 3)                   |   |                             |
+|                               | ____1                           |   |                             |
+|                               | ____(* x (fact (- x 3))))))     |   |                             |
+| (fact 3)                      |                                 |   |                             |
+| ALDO>                         |                                 |   | aldo shows the              |
+|                               | (lambda (x)                     | 3 | function that is            |
+|                               | >^(if (< x 3)                   |   | on the stack                |
+|                               | ____1                           |   |                             |
+|                               | ____(* x (fact (- x 3))))))     |   |                             |
+| ALDO> EDIT                    |                                 |   | The user replaces           |
+|                               |                                 |   | (< x 3) by (< x 2)          |
+| EDIT> save                    |                                 |   |                             |
+| EDIT> load                    |                                 |   | But on the stack            |
+|                               |                                 |   | we still have:              |
+|                               | (lambda (x)                     | 3 | (lambda (x)                 |
+| (breakpoints copied to the    | _^(if (< x 2)                   |   | >^(if (< x 3)               |
+| new function)                 | ____1                           |   | ____1                       |
+|                               | ____(* x (fact (- x 3))))))     |   | ____(* x (fact (- x 3)))))) |
+|                               |                                 |   | and this is what ALDO       |
+|                               |                                 |   | will show for the current   |
+|                               |                                 |   | frame.                      |
+| EDIT> continue                |                                 |   |                             |
+| ALDO>                         |                                 |   | aldo shows the second       |
+|                               | (lambda (x)                     | 2 | function body that is       |
+|                               | >^(if (< x 2)                   |   | on the stack.               |
+|                               | ____1                           |   |                             |
+|                               | ____(* x (fact (- x 3))))))     |   |                             |
+|                               |                                 |   |                             |
+| and so on.                    | We'll have several different    |   |                             |
+|                               | definitions of fact on the      |   |                             |
+|                               | stack.                          |   |                             |
+|                               |                                 |   |                             |
+|                               | When popping up, while stepping |   |                             |
+|                               | aldo will show the previous     |   |                             |
+|                               | versions until we exit all the  |   |                             |
+|                               | frames.                         |   |                             |
+
+When using the commands goto, definition, and back, the navigator can
+only show what's bound to the function name in memory or in the files,
+not the lambda that remain on the stack or in data structures.
+
+TODO: clal-set-breakpoint could take a lambda and put a breakpoint in
+it even if it has no name.  Some relative addressing can be given to
+set the breakpoint further than the initial poll-point.
+
+
+** 5.8 =save= and save-on-leave
+
+=save= writes the file containing (or being) the selection. Each object is
+formatted and written: a documentation comment first, then the object's clean
+source text if it has one, else the object split over lines, indented, and its
+comment objects rendered as comment text.
+
+| selection      | argument     | effect                                                  |
+|----------------+--------------+---------------------------------------------------------|
+| file           | none         | save the file                                           |
+| file           | file path    | save the file as the given path (1)                     |
+| form in a file | none         | save the file                                           |
+| form           | file path    | save the enclosing top-level form to the given path (2) |
+
+(1) if the path exists: =File "…" exists. Overwrite (yes, cancel)?=
+(2) if the path exists: =File "…" exists. (overwrite, append, cancel)?=
+
+A modified file shows =*N= (N modified top-level forms) in its file line. When
+motion (=up= / =forward= / =backward=) *leaves* a file with modified forms,
+the =set sedit auto-saving= setting decides:
+
+| =set sedit auto-saving sexp=    | save when leaving the modified sexp   |
+| =set sedit auto-saving file=    | save when leaving the modified file   |
+| =set sedit auto-saving disable= | never auto-save; ask on leave         |
+
+With auto-saving disabled, leaving a modified file asks:
+=File contains N modified forms. Save it (yes, no, cancel)?=
+
+The =save "file.lsp"= command is also how a *stand-alone* sexp transitions to
+*storage-backed* editing.
+
+** 5.9 Directory commands — =new= =rename= =delete=
+
+A directory is edited as *minimalist navigation*, not a file manager: =down= /
+=up= / =forward= / =backward= walk the tree, =new NAME= creates a file (then
+=down= to enter it), =rename NAME= renames the selected entry, =delete= removes
+a file or *empty* directory (=rmdir=), with confirmation. Structural commands
+are not extended to directories (that would need naming parameters — out of
+scope).
+
+* 6. Formal semantics
+
+The editor state is a *zipper* (Huet) over adorned trees, one uniform
+structure spanning sexps, forms, files, and directories. This section gives
+the state, the motion algebra, the editing transitions, undo, and the mode/skip
+overlay. It is the reference model =sedit.lisp= / =dbgsim.lisp= realise.
+
+** 6.1 Domain
+
+Adorned trees (the =Comment= leaf and per-node adornment =α= — newlines,
+attached comments, column info — carry formatting without affecting structure):
+
+#+begin_example
+Tree  t  ::=  Atom a                         ; symbol, number, string, …
+           |  List [t] α                     ; ordered children + adornment
+           |  Comment k α                    ; comment object
+           |  File name [t] α                ; children = top-level forms/comments
+           |  Dir  name [entry]              ; children = files + sub-dirs + ".."
+#+end_example
+
+A =File= and a =Dir= are trees too: this is the single tree of tui-spec. =Dir=
+children include the =..= pseudo-entry (shown only when the directory is empty;
+=down= on =..= ascends).
+
+** 6.2 The zipper — location and context
+
+A *location* is =Loc = (t, C)= where =t= is the *focus* (the selection) and =C=
+is the *context* (the path back to the root):
+
+#+begin_example
+Context  C ::= Top
+            |  Ctx lev ls C rs          ; lev = level tag (sexp|form|file|dir),
+                                        ; ls = left siblings (reversed),
+                                        ; rs = right siblings
+#+end_example
+
+The primitive motions (partial functions on =Loc=); =plate= reconstructs the
+parent node from a context frame and a focus:
+
+#+begin_example
+plate(t, Ctx lev ls C rs)      = (node lev (rev ls ++ [t] ++ rs), C)
+
+down (List (x:xs) α, C)        = (x, Ctx sexp []      C xs)     ; and File/Dir alike
+down (Atom _ , _)              = ⊥                              ; leaves: no descent
+up   (t, Ctx lev ls C rs)      = plate(t, Ctx lev ls C rs)
+up   (t, Top)                  = ⊥                              ; already at root
+right(t, Ctx lev ls C (r:rs))  = (r, Ctx lev (t:ls) C rs)
+right(t, Ctx lev ls C [])      = up(t, Ctx lev ls C [])         ; past last ⇒ ascend
+left (t, Ctx lev (l:ls) C rs)  = (l, Ctx lev ls C (t:rs))
+left (t, Ctx lev [] C rs)      = up(t, Ctx lev [] C rs)         ; before first ⇒ ascend
+first(t, Ctx lev ls C rs)      = (last' , Ctx lev [] C (rest))  ; leftmost sibling
+last (t, Ctx lev ls C rs)      = (…      , Ctx lev (…) C [])    ; rightmost sibling
+skip(n)                        = right∘…∘right (n>0) | left∘…∘left (n<0), clamped
+#+end_example
+
+These are O(1) and preserve structure sharing. The level tag advances as motion
+crosses a containment boundary: =up= from a =form= frame yields a =file= focus,
+=up= from a =file= frame a =dir= focus, and =down= the reverse.
+
+** 6.3 Editing transitions
+
+Each mutation is a partial function =Loc → Loc=; the mutated location's focus
+becomes the new selection (all editing commands select their result). Writing
+=σ= for the new object read from the user:
+
+#+begin_example
+insert σ (t, Ctx lev ls C rs)  = (σ, Ctx lev ls       C (t:rs))   ; σ before t, select σ
+add    σ (t, Ctx lev ls C rs)  = (σ, Ctx lev (t:ls)   C rs)       ; σ after  t, select σ
+replace σ(t, Ctx lev ls C rs)  = (σ, Ctx lev ls       C rs)       ; select σ
+copy     (t, C)                = (t, C)  with  clip := adorn(t)
+cut      (t, C)                = delete(t, C) with clip := adorn(t) ; then move as `right'
+paste    (t, Ctx lev ls C rs)  = (obj(clip), Ctx lev ls C rs)     ; replace by clipboard
+
+wrap     (t, C)                = (List [t] α₀, C)                  ; (… a …) → (… (a) …)
+splice   (List xs α, Ctx lev ls C rs)
+                               = (x₁, Ctx lev ls C (x₂…xₙ ++ rs))  ; drop one level
+slurp    (List xs α, Ctx lev ls C (r:rs))
+                               = (List (xs ++ [r]) α, Ctx lev ls C rs)
+slurp    (t, Ctx … (r:rs))     = slurp(wrap(t), …)                 ; non-list ⇒ wrap first
+barf     (List (xs⁺[z]) α, Ctx lev ls C rs)
+                               = (List xs α, Ctx lev ls C (z:rs))  ; expel last, keep sel
+split    (t, Ctx lev ls C rs)  = ((rev ls==[] ? nil), (List (t:rs)))  ; parent → two lists
+join     ( (List p) , (List q) sibling )
+                               = (List (p ++ q))                   ; inverse of split
+undo                           = swap in the saved pre-mutation Loc (§6.4)
+#+end_example
+
+=delete(t,C)= removes the focus, selecting the next sibling (=right=) or, if
+none, the parent. A mutation at =lev = form= inside a =File= marks that file
+modified (=save=-on-leave, §5.8). Directory mutations (=new=/=rename=/=delete=)
+act on the filesystem immediately (storage-backed, §2.4).
+
+*Each of the mutations above records an undo point before it runs* — it saves
+the current location and its own descriptor into the undo slot (§6.4). The
+non-mutating rows (=copy=, and all motion) do not.
+
+** 6.4 Undo — recording and restoration
+
+The =undo-save= component of the machine state (§6.5) is the *undo slot*. It
+holds, for the one most recent mutation, *the operation* and *the context* it
+ran in:
+
+#+begin_example
+UndoSlot  U ::=  Empty
+             |   Saved op Loc          ; op  = the operation descriptor
+                                       ; Loc = the location just before op ran
+#+end_example
+
+- =op= is the *operation descriptor* — the mutating command's name together
+  with the objects it consumed: =insert σ=, =add σ=, =replace σ=, =cut=,
+  =paste=, =wrap=, =slurp=, =barf=, =splice=, =split=, =join=. It is recorded
+  for the status line ("undo insert") and is the audit of what a subsequent
+  =undo= will revert.
+- =Loc= is the *pre-mutation location* — the entire zipper =(t, C)= of §6.2:
+  focus, context back to the root, and therefore the selection — exactly as it
+  stood *immediately before* =op= mutated it.
+
+*Recording.* Let =M= be any mutation of §6.3 and =descr(M)= its descriptor.
+Each =M= is instrumented to fill the slot with the current location *before*
+mutating (=clip'= is the clipboard, changed only by =cut=/=copy=/=paste=):
+
+#+begin_example
+                 M                                     record the pre-state ↓
+  (Loc, mode, clip, U)   ───────►   (M(Loc), mode, clip', Saved descr(M) Loc)
+#+end_example
+
+So the slot always holds the state *before* the latest mutation; the previous
+=Saved= is overwritten (one level). *Non-mutating* commands — every motion,
+=eval=, =load=, designation, and the mode switches — *leave =undo-save=
+untouched*, which is why navigating between a mutation and its =undo= is
+transparent (§5.5).
+
+*Restoration (swap).* =undo= exchanges the live location with the saved one and
+keeps the descriptor:
+
+#+begin_example
+undo (Loc, mode, clip, Saved op Loc0)  =  (Loc0, mode, clip, Saved op Loc)
+undo (Loc, mode, clip, Empty)          =  (Loc, mode, clip, Empty)   ; nothing to undo
+#+end_example
+
+=undo= restores =Loc0= as the current location — focus, context, and selection
+revert together — and puts the *post-mutation* =Loc= back into the slot.
+Therefore =undo= is *self-inverse*: a second =undo= swaps again and *redoes*
+the operation (the "redo via a second =undo=" of §5.5) — no separate redo
+command, and no per-operation inverse to compute. =op= rides along unchanged so
+the status line can read "undo op" / "redo op" on alternating presses.
+
+*Why a snapshot rather than an inverse edit.* Because the tree and its zipper
+are *persistent and immutable* (§6.2), =Loc0= is held by a single reference and
+*shares all unchanged structure* with =Loc=, so the one-slot snapshot costs
+O(1) time and space. One mechanism reverts *every* mutation uniformly —
+insert / replace / cut / paste and the six structural ops — with no inverse
+function per operation to write and keep correct. (Recording an *inverse edit*
+per operation is the design for *multi-level* undo; the present spec is one
+level, so the swap slot suffices. Multi-level undo generalises =undo-save= from
+one slot to a *stack* of =Saved op Loc= records — =undo= popping, a then-needed
+=redo= pushing — noted as a future refinement.)
+
+*File state.* The saved =Loc= includes the =File= node and its top-level form
+list, so undoing a mutation inside a file also restores that file's forms; the
+"=*N= modified forms" marker (§5.8) is derived from the tree and recomputed
+after the swap, so it tracks correctly.
+
+** 6.5 The mode overlay and the skip predicate
+
+The machine state is
+
+#+begin_example
+S = (Loc, mode, clip, undo-save)      mode ∈ {NAV, EDIT}
+#+end_example
+
+Let =role(Loc)= be the argument role of the focus within its parent form (§4).
+Define
+
+#+begin_example
+evaluable(Loc)  ⟺  role(Loc) = eval  ∨  Loc is a whole top-level form
+#+end_example
+
+*NAV motion is EDIT motion filtered by =evaluable=:*
+
+#+begin_example
+nav-right(Loc)  =  (right)⁺ Loc until evaluable, else nav-up(Loc)
+nav-left (Loc)  =  (left)⁺  Loc until evaluable, else nav-up(Loc)
+nav-down (Loc)  =  down Loc then (right)* to the first evaluable child
+nav-up   (Loc)  =  (up)⁺ Loc until evaluable
+#+end_example
+
+EDIT motion is the bare §6.2 algebra (no filter). This filter is the *only*
+navigational difference between the modes.
+
+** 6.6 Mode-transition rules
+
+With =E= = the set of editing/structural/clipboard commands, =D= = the global
+debugger commands, and =word(cmd)= its word form:
+
+#+begin_example
+                      cmd ∈ E                          (do cmd in EDIT semantics)
+   (Loc, NAV, …)  ───────────────────►  (cmd(Loc), EDIT, …)          [NAV→EDIT]
+                      word `edit'
+   (Loc, NAV, …)  ───────────────────►  (Loc, EDIT, …)               [enter EDIT]
+
+                      `debug'|`aldo'  cmd,   cmd ∈ D    (run cmd in the debugger)
+   (Loc, EDIT, …) ───────────────────►  (Loc', NAV, …)               [EDIT→NAV]
+                      word `nav'
+   (Loc, EDIT, …) ───────────────────►  (Loc, NAV, …)                [enter NAV]
+
+                      cmd ∈ D  (bare)                   (directly, dict stacked)
+   (Loc, NAV, …)  ───────────────────►  (Loc', NAV, …)               [debugger in NAV]
+#+end_example
+
+- In NAV a bare debugger command runs directly (the navigator dictionary is
+  stacked over the debugger dictionary, tui-spec §8) — this is
+  =bug-aldo-nav-command-dictionary= once implemented.
+- =load= (§5.7) is in neither =E= nor =D=: it runs in place and does *not*
+  change =mode=.
+- =quit= exits =clal-sedit= (returning the §2 result) from either mode.
+
+*Amendment (interactor-design-revision.issue, clautolisp 1.4.47 — Option A).*
+The transition machine above is *superseded by the interactor stack*: the
+=mode= component drops out of =S= — NAV is the NAVI interactor, EDIT the
+SEDIT interactor, and the transitions are stack operations (an editing word
+pushes SEDIT; =q= pops it or, above a stop, resolves the stop after
+confirmation). §6.5's =evaluable= filter remains normative for NAVI's
+motions; SEDIT's motions are the bare §6.2 algebra. The legacy library
+driver (=sedit-run= / =sedit-command=) still implements this §6.6 machine
+for embedders that want a standalone editor loop.
+
+** 6.7 Properties (invariants to test)
+
+- *Motion totality within a form.* From any =Loc= inside a top-level form,
+  =nav-right= / =nav-left= visit exactly the poll-points, in reading order, and
+  are inverse where both defined.
+- *Round-trips.* =split= then =join= = identity on the affected siblings;
+  =wrap= then =splice= = identity; =slurp= then =barf= = identity when the
+  selection was already a list.
+- *Idempotent designation.* Selecting poll-point =N= then =N= again is the
+  identity (and, in the debugger, setting a breakpoint on an already-broken
+  poll-point is the identity — =bug-aldo-duplicate-breakpoint=).
+- *Undo restores, and is self-inverse.* For any mutation =M= applied at =Loc=,
+  =undo= immediately after returns the location to =Loc= (focus, context, and
+  selection); and =undo ∘ undo = identity= on the state (a second =undo= redoes
+  =M=). Navigation between =M= and =undo= does not change the outcome.
+- *Mode preservation.* Every command in =E= leaves =mode = EDIT=; every
+  =debug=/=aldo= command leaves =mode = NAV=; =load= and motion preserve
+  =mode=.
+- *Formatting fidelity.* For a storage-backed form with clean source, a
+  =load=/=save= round trip with no mutation is byte-preserving (adornment =α=
+  reproduces =TEXT=).
+
+* 7. Debugger integration
+
+- *Entry.* =clal-nav-function 'NAME= (see =aldo-pre-debug.issue=) opens the
+  form navigator (NAV) on =NAME='s source, with the initial selection at the
+  *first poll-point* (§4), *without* faking a break — resolving
+  =bug-aldo-nav-entry-and-breakpoint-flow=. The debugger's own re-entry
+  (after =continue= / =next= / =step=) re-anchors NAV to the new current
+  poll-point (tui-spec, "Re-entry").
+- *Decorations.* Poll-point state glyphs (current =⏵=, enabled =⏸=, disabled
+  =⏯=, selected =【…】=), numbering, and partial printing are defined in the
+  tui-spec and are *not* redefined here; NAV renders through them.
+- *Editing while debugging.* From NAV, editing a function switches to EDIT
+  (§1.3); after =save= + =load= (or =eval= of the =defun=), the new definition
+  is used at the next call. Breakpoints on reused forms carry over by
+  poll-point identity (tui-spec).
+- *Navigator choice.* =set navigator sexp= (this editor) / =set navigator line=
+  (flat file:line) chooses the presentation of form-navigation mode (tui-spec /
+  command reference §8), and thereby how each *stop* presents itself:
+  - =sexp= (the default): the debugger *enters the sexp navigator directly* on
+    each stop, on the top-level form containing the current poll-point, with
+    the current poll-point *selected* — prompt =NAV>=. The line navigator's
+    flat source window does *not* also print (its display belongs to
+    =navigator line=). =q= leaves NAV for the flat =DBG>= command loop.
+  - =line=: the stop shows the flat window of source lines around the current
+    line (=>>= marker), at the =DBG>= prompt; =nav= still opens the sexp
+    navigator on demand.
+
+# THE END

@@ -3,6 +3,18 @@
   (:import-from #:uiop
                 #:command-line-arguments
                 #:quit)
+  (:import-from #:clautolisp.interactor
+                #:define-interactor #:define-command
+                #:interactor-commands #:interactor-user-commands
+                #:dictionary-commands
+                #:command-key #:command-words #:command-phrase #:command-docstring
+                #:*interactor-stack*
+                #:make-input-context #:input-context-stream
+                #:comma-command-read #:input-command-p #:find-and-run-command
+                #:interactor-prompt #:interactor-reader
+                #:interactor-evaluator
+                #:make-activation #:activation-state #:*command-activation*
+                #:interactor-loop #:interactor-return)
   (:import-from #:clautolisp.autolisp-reader
                 #:autolisp-dialect
                 #:autolisp-dialect-name
@@ -37,6 +49,8 @@
                 #:autolisp-exit-status
                 #:call-with-autolisp-error-handler
                 #:derive-reader-options-for-dialect
+                #:read-current-source
+                #:current-evaluation-dialect
                 #:intern-autolisp-symbol
                 #:lookup-variable
                 #:make-autolisp-string

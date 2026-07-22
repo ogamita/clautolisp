@@ -1,0 +1,52 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: runtime bug — a caught usubr arity error pops the CALLER's dynamic frame
+#+AUTHOR: Pascal J. Bourguignon
+
+Follow-up of =error-while-debugging.issue=: the reported infinite
+recursion of a sedit-round-tripped =fact= (control stack exhausted, the
+body of =fact(41)= reading =X = 42=).
+
+* Symptom
+
+After an AutoLISP error is *caught* (=vl-catch-all-apply=, or handled by
+a debugger stop and resumed), the function that was executing around the
+erroring call loses its parameter/local bindings: its variables resolve
+to stale outer (global) values. In the reported session the reinstalled
+=fact='s recursion read the stale global =x= (42, the value probed with
+=e= during the sedit session) on every level — =(fact (- 42 1))= calling
+=fact(41)= forever with the body still seeing 42 — until the control
+stack was exhausted. Symbol interning was NOT at fault: the sedit q/e
+paths read the edited text back through the real reader.
+
+* Repro (before the fix)
+
+        (defun fact (x) (if (= 1 x) 1 (* x (fact (- x 1)))))
+        (setq x 42)
+        (defun g (x) (vl-catch-all-apply 'fact '(1 2 3)) x)
+        (g 7)
+        --> 42        ; must be 7
+
+* Cause
+
+In CALL-AUTOLISP-FUNCTION-IN-CONTEXT (autolisp-runtime api.lisp), the
+usubr branch was
+
+        (unwind-protect
+             (progn
+               (bind-usubr-frame function arguments context)
+               (autolisp-eval-progn selected-body context))
+          (pop-dynamic-frame context))
+
+but BIND-USUBR-FRAME signals its wrong-number-of-arguments error BEFORE
+PUSH-DYNAMIC-FRAME. An unwind from that error therefore ran the cleanup
+and popped a frame that was never pushed — the CALLER's — silently
+dropping the caller's bindings from the context.
+
+* Fix (1.4.40)
+
+BIND-USUBR-FRAME moved OUT of the unwind-protect: if it signals, nothing
+was pushed and nothing is popped; once it returns, the frame provably
+exists and the pop pairs with it exactly.
+
+Regression test: =caught-arity-error-keeps-the-callers-frame=
+(builtins-core suite).

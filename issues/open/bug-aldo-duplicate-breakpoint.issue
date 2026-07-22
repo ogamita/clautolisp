@@ -1,0 +1,39 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: aldo bug — two breakpoints can be set on the same poll-point
+#+AUTHOR: Pascal J. Bourguignon
+
+Split out of =aldo-sedit-integration.issue= (§5). The specification of
+the sedit / form-navigator integration is now in
+=clautolisp/documentation/clautolisp-sedit-spec.org=; this is the
+remaining behaviour *bug*.
+
+* Symptom
+
+Issuing =b= (set breakpoint) twice on the same selected poll-point sets
+two breakpoints on it, and the decoration is drawn twice:
+
+#+begin_example
+NAV[code]> b
+NAV> breakpoint pp5 set on the selected form
+ >>148:     【⏸(setq id (car f) size (caddr f) done nil)】
+NAV[code]> b
+NAV> breakpoint pp5 set on the selected form
+ >>148:     【⏸⏸(setq id (car f) size (caddr f) done nil)】
+#+end_example
+
+* Expected
+
+Breakpoint identity is the poll-point number: *at most one breakpoint per
+poll-point* (see the debugger TUI spec, "Numbered Poll-Points — the
+breakpoint number is the poll-point number"). Setting =b= on a poll-point
+that already carries a breakpoint must be *idempotent*: it either does
+nothing (leaving the single breakpoint), or reports "breakpoint already
+set on pp5" — it must never create a second one, and the decoration must
+never be doubled.
+
+* Fix
+
+=set-breakpoint= (and the =b= command) must check whether the target
+poll-point already carries a breakpoint and no-op / report rather than
+appending. The double glyph is a direct consequence and disappears with
+the fix.

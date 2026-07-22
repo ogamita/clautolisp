@@ -1354,7 +1354,22 @@ break-on-caught is enabled; NIL by default (off).")
 builtin calls to register an AutoLISP-defined debugger command (command
 reference §8). NAMES is a CL list (KEY WORD…) of strings, FUNCTION the AutoLISP
 command body, DOC a string or NIL. The aldo debugger UI installs it; NIL (a
-no-op) when the debug-ui layer is absent.")
+no-op) when the debug-ui layer is absent. CLAL-DEFINE-DEBUGGER-COMMAND is the
+deprecated equivalent of (CLAL-DEFINE-COMMAND \"ALDO\" …), which goes through
+*DEFINE-INTERACTOR-COMMAND-HOOK*.")
+
+(defparameter *define-interactor-command-hook* nil
+  "When non-nil, a function (INTERACTOR-NAME NAMES FUNCTION DOC) the
+CLAL-DEFINE-COMMAND builtin calls to register an AutoLISP-defined user
+command of the NAMED interactor (interactor-design-revision.issue D7).
+INTERACTOR-NAME and the NAMES list (KEY WORD…) are CL strings, FUNCTION the
+AutoLISP command body, DOC a string or NIL. The debugger UI installs it; NIL
+(a no-op) when that layer is absent.")
+
+(defparameter *list-interactor-names-hook* nil
+  "When non-nil, a thunk returning the CL list of registered interactor name
+strings, for the CLAL-LIST-INTERACTOR-NAMES builtin. The debugger UI
+installs it; NIL (an empty list) when that layer is absent.")
 
 (defparameter *debug-break-hook* nil
   "When non-nil, a function of one optional MESSAGE argument that the
@@ -1377,6 +1392,13 @@ debug-ui layer is absent or no debug session is active.")
   "When non-nil, a function (FILE LINE) the CLAL-SELECT-FILE builtin calls to make
 the debugger's `ls' list-source command show FILE at LINE (aldo-pre-debug.issue).
 The aldo debugger installs it; NIL (a no-op) when the debug system is absent.")
+
+(defparameter *debug-command-hook* nil
+  "When non-nil, a function (COMMAND-STRING) that runs one aldo debugger command
+in the active debug session and returns its resume directive (or NIL). CLAL-SEDIT
+calls it for the editor's `debug'/`aldo' prefix, so debugger commands (e.g.
+`aldo help') work from within sedit. The tool installs it, bound to the running
+session's UI, while a debug session is attached; NIL (a no-op) otherwise.")
 
 (defparameter *instrument-usubr-hook* nil
   "When non-nil, a function (USUBR) that weaves USUBR's instrumented fork and
@@ -1957,10 +1979,19 @@ flag only."
                                     (cons (or (autolisp-usubr-name function) "<lambda>")
                                           arguments))
                               *autolisp-call-stack*)))
+                   ;; BIND-USUBR-FRAME signals its wrong-number-of-arguments
+                   ;; error BEFORE pushing the frame, so it must stay OUTSIDE
+                   ;; the unwind-protect: with it inside, an unwind from that
+                   ;; error popped a frame that was never pushed — the
+                   ;; CALLER's — silently dropping the caller's bindings, so
+                   ;; after a *caught* arity error (vl-catch-all-apply, or a
+                   ;; debugger resume) the caller's variables resolved to
+                   ;; stale outer values (the infinite fact recursion,
+                   ;; error-while-debugging follow-up). Once it returns, the
+                   ;; frame provably exists and the pop pairs with it.
+                   (bind-usubr-frame function arguments context)
                    (unwind-protect
-                        (progn
-                          (bind-usubr-frame function arguments context)
-                          (autolisp-eval-progn selected-body context))
+                        (autolisp-eval-progn selected-body context)
                      (pop-dynamic-frame context)))))
               (t
                (signal-autolisp-runtime-error
@@ -2649,6 +2680,21 @@ so a value written and read back under the same encoding round-trips."
 through. Used by the standalone evaluator's load path."
   (clautolisp.autolisp-reader:reader-options-from-dialect
    dialect :source-name source-name))
+
+(defun read-current-source (text &key source-name
+                                      (context (current-evaluation-context)))
+  "THE reader entry for interactively typed AutoLISP source
+(interactor-design-revision.issue D2): read TEXT under the dialect in force
+NOW — CURRENT-EVALUATION-DIALECT, so a mid-session
+=(setq *AUTOLISP-DIALECT* 'lax)= takes effect immediately — and return the
+list of runtime forms. Every interactor's sexp path reads through here: the
+REPL turn, a `(FORM)' at DBG> / NAV>, the inspector's =e=, sedit's =e=. The
+dialect is NOT interactor state; it influences only this read."
+  (read-runtime-from-string
+   text
+   :options (derive-reader-options-for-dialect
+             (current-evaluation-dialect context)
+             :source-name (or source-name "<interactive>"))))
 
 (defun make-default-runtime-context (&key dialect)
   "Create a fresh runtime session under DIALECT, install it as the

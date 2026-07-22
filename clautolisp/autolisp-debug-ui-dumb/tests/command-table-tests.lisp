@@ -75,15 +75,36 @@
                                 "b" (list global)))))))))
 
 (test cmdtab-unbind-and-macro
-  (let ((clautolisp.debug.ui:*global-dictionary* (fresh-dict "global")))
-    ;; the CL macro registers into the (here rebound) global dictionary
-    (clautolisp.debug.ui:define-debugger-command (t throw-test) () "t."
-      :thrown)
-    (is (eq :thrown (funcall (clautolisp.debug.ui:command-function
-                              (clautolisp.debug.ui:find-command
-                               clautolisp.debug.ui:*global-dictionary* "t")))))
-    (is (clautolisp.debug.ui:unbind-debugger-command "t"))
-    (is (null (clautolisp.debug.ui:find-command
-               clautolisp.debug.ui:*global-dictionary* "t")))
-    (is (null (clautolisp.debug.ui:find-command
-               clautolisp.debug.ui:*global-dictionary* "throw-test")))))
+  (with-fresh-user-dictionary
+    ;; the CL macro registers into the default dictionary — the ALDO
+    ;; singleton's user dictionary (D6: no global user table)
+    (let ((aldo-user (clautolisp.debug.ui:interactor-user-dictionary "ALDO")))
+      (clautolisp.debug.ui:define-debugger-command (t throw-test) () "t."
+        :thrown)
+      (is (eq :thrown (funcall (clautolisp.debug.ui:command-function
+                                (clautolisp.debug.ui:find-command aldo-user "t")))))
+      (is (clautolisp.debug.ui:unbind-debugger-command "t"))
+      (is (null (clautolisp.debug.ui:find-command aldo-user "t")))
+      (is (null (clautolisp.debug.ui:find-command aldo-user "throw-test"))))))
+
+(test cmdtab-interactor-registry-and-named-registration
+  ;; interactor-design-revision.issue D6/D7: no global user table — the
+  ;; registry lists every DEFINE-INTERACTOR-defined interactor, and the
+  ;; CLAL-DEFINE-COMMAND hook registers an AutoLISP-style command into any
+  ;; NAMED interactor's user dictionary, active or not.
+  (let ((names (clautolisp.interactor:list-interactor-names)))
+    (dolist (expected '("ALDO" "NAVI" "LAVI" "INSPECT"))
+      (is (member expected names :test #'string-equal))))
+  ;; alias resolution: "debug" names ALDO's dictionary too
+  (is (eq (clautolisp.debug.ui:interactor-user-dictionary "ALDO")
+          (clautolisp.debug.ui:interactor-user-dictionary "debug")))
+  ;; an unknown interactor name is an error
+  (fiveam:signals error (clautolisp.debug.ui:interactor-user-dictionary "NOSUCH"))
+  ;; named registration into an INACTIVE interactor's user dictionary
+  (let ((dict (clautolisp.debug.ui:interactor-user-dictionary "NAVI")))
+    (clautolisp.debug.ui:bind-debugger-command
+     '(z zap) '() "zap." (constantly :zap) dict)
+    (unwind-protect
+         (is (eq :zap (funcall (clautolisp.debug.ui:command-function
+                                (clautolisp.debug.ui:find-command dict "z")))))
+      (clautolisp.debug.ui:unbind-debugger-command "z" dict))))

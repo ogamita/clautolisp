@@ -62,6 +62,50 @@ hit. Returns (values result hits-in-order)."
     (clautolisp.debug:clear-breakpoints ti)
     (is (null (clautolisp.debug:list-breakpoints ti)))))
 
+(test idempotent-breakpoint-keeps-one-per-poll-point
+  ;; bug-aldo-duplicate-breakpoint: setting a plain breakpoint twice on the same
+  ;; poll point keeps a single breakpoint (returned again, reported not-new),
+  ;; never a duplicate. A conditioned breakpoint on the same point IS distinct.
+  (let* ((context (fresh-context))
+         (frob-meta (first (define-and-instrument context +frob-source+ "FROB" "ID")))
+         (fid (fid-of frob-meta))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (multiple-value-bind (bp1 new1)
+        (clautolisp.debug:add-breakpoint ti fid 1 :when :before)
+      (is (not (null bp1)))
+      (is (eq t new1))
+      (multiple-value-bind (bp2 new2)
+          (clautolisp.debug:add-breakpoint ti fid 1 :when :before)
+        (is (eq bp1 bp2))            ; the same breakpoint is returned
+        (is (null new2))             ; and reported as not newly created
+        (is (= 1 (length (clautolisp.debug:list-breakpoints ti))))))
+    ;; a conditioned breakpoint on the same poll point is a distinct behaviour
+    (clautolisp.debug:add-breakpoint ti fid 1 :when :before
+                                     :condition (lambda (hit) (declare (ignore hit)) t))
+    (is (= 2 (length (clautolisp.debug:list-breakpoints ti))))))
+
+(test request-nav-defers-without-a-fake-break
+  ;; bug-aldo-nav-entry-and-breakpoint-flow §2: with *defer-nav-request* set,
+  ;; REQUEST-NAV only queues the request and does NOT break (so the REPL opens it
+  ;; afterwards, no synthetic toplevel poll-point). Without deferral it breaks
+  ;; (the legacy path) and clears the request.
+  (let* ((ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (broke nil)
+         (clautolisp.debug::*thread-debug-info* ti)
+         (clautolisp.debug:*debug-hit-handler*
+           (lambda (hit) (declare (ignore hit)) (setf broke t) :continue))
+         (clautolisp.debug:*pending-nav-request* nil))
+    ;; deferred: queue only, no break
+    (let ((clautolisp.debug:*defer-nav-request* t))
+      (clautolisp.debug:request-nav '(:function "FOO")))
+    (is (equal '(:function "FOO") clautolisp.debug:*pending-nav-request*))
+    (is (null broke))
+    ;; not deferred: break, and the request is cleared afterwards
+    (setf clautolisp.debug:*pending-nav-request* nil)
+    (clautolisp.debug:request-nav '(:function "BAR"))
+    (is (eq t broke))
+    (is (null clautolisp.debug:*pending-nav-request*))))
+
 (test bloom-summary-discriminates
   (let* ((context (fresh-context))
          (frob-meta (first (define-and-instrument context +frob-source+ "FROB" "ID")))

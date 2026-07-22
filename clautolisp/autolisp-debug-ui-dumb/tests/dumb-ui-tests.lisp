@@ -119,12 +119,44 @@
   (let* ((context (fresh-context))
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
     (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    ;; the stop auto-opens the sexp navigator (navigator=sexp, the default):
+    ;; `q' at a stop asks for confirmation, `y' aborts (design-revision T4).
     (multiple-value-bind (result output)
-        (run-ui (format nil "q~%") :context context :thread-info ti
+        (run-ui (format nil "q~%y~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "BOOM")) context)))
       (is (eq :aborted result))
+      (is (contains output "really abort?"))
       (is (contains output "Error")))))
+
+(test stop-auto-opens-sexp-navigator
+  ;; sedit-spec §7: with `set navigator sexp' (the default) each stop enters the
+  ;; sexp form navigator directly, anchored on the current poll-point — no `nav'
+  ;; command needed; the flat line window (ui-show-source) does not also print.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    (multiple-value-bind (result output)
+        (run-ui (format nil "q~%y~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "BOOM")) context)))
+      (is (eq :aborted result))
+      (is (contains output "NAV> "))                       ; entered NAV unprompted
+      (is (contains output "【(NOSUCHFN 1)】")))))         ; anchored on the stop form
+
+(test nav-aldo-prefix-routes-to-the-debugger
+  ;; `aldo CMD' / `debug CMD' in NAV route CMD to the debugger interactor
+  ;; explicitly (interactors design) — the same prefix EDIT uses; useful to
+  ;; reach a debugger command NAV shadows (bare `b').
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    (multiple-value-bind (result output)
+        (run-ui (format nil "aldo help~%q~%y~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "BOOM")) context)))
+      (is (eq :aborted result))
+      (is (contains output "DBG> commands:")))))           ; the debugger's help ran
 
 (test return-value-from-error-stop
   (let* ((context (fresh-context))
@@ -136,6 +168,57 @@
                                    (list (rt-sym "BOOM")) context)))
       (declare (ignore output))
       (is (eql 42 result)))))
+
+(test bare-r-prompts-for-the-return-value
+  ;; the r expression is mandatory (AutoLISP functions always return
+  ;; something): a bare `r' prompts for the value instead of returning nil
+  ;; silently (error-while-debugging.issue).
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    (multiple-value-bind (result output)
+        (run-ui (format nil "r~%42~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "BOOM")) context)))
+      (is (contains output "return value? "))
+      (is (eql 42 result)))))
+
+(test step-at-an-error-stop-does-not-quit-the-debugger
+  ;; `i' at an error stop used to DECLINE the stop (an unrecognised error
+  ;; directive) and let the error unwind out of the debugger; now it refuses
+  ;; with the §10.1 guidance and the loop keeps reading
+  ;; (error-while-debugging.issue).
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (load-and-instrument context "(defun boom () (nosuchfn 1))" "BOOM")
+    (multiple-value-bind (result output)
+        (run-ui (format nil "i~%q~%y~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "BOOM")) context)))
+      (is (contains output "can't step from an error stop"))
+      (is (eq :aborted result)))))          ; still in the debugger; q aborted
+
+(test a-failing-command-keeps-the-debugger-alive
+  ;; an error escaping a command body is reported and the stop keeps reading —
+  ;; a debugging state is only dropped by an explicit q/abort
+  ;; (error-while-debugging.issue).
+  (with-fresh-user-dictionary
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+           (frob (fid-of (first metas)))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+      (clautolisp.debug.ui:define-debugger-command (z zap) () "boom."
+        (error "zap exploded"))
+      (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+      (multiple-value-bind (result output)
+          (run-ui (format nil "z~%c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        ;; the framework's CALL-COMMAND reports it ("Error while executing the
+        ;; command: zap exploded") and the stop keeps reading
+        (is (contains output "hile executing"))
+        (is (contains output "zap exploded"))
+        (is (eql 7 result))))))              ; the stop survived; c continued
 
 (test inspector-navigation-and-path
   (let* ((context (fresh-context))
@@ -341,13 +424,235 @@
     (clautolisp.debug:add-breakpoint
      ti frob (clautolisp.debug:find-form-id-at-line (first metas) 3) :when :before)
     (multiple-value-bind (result output)
-        (run-ui (format nil "nav~%d~%>~%q~%c~%") :context context :thread-info ti
+        (run-ui (format nil "nav~%d~%>~%c~%") :context context :thread-info ti
                 :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
                                    (list (rt-sym "FROB") 7) context)))
       (is (eql 7 result))
       (is (contains output "NAV"))          ; entered the nav sub-mode
       (is (contains output "DEFUN"))        ; reconstructed source form shown
       (is (contains output "【")))))         ; selection bracket
+
+(test dumb-ui-nav-enters-at-first-poll-point
+  ;; bug-aldo-nav-entry-and-breakpoint-flow §1: entering the form navigator
+  ;; selects the FIRST poll-point (the first body form), not the whole defun.
+  ;; FROB's first body form is (setq z (id x)) on line 3.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)  ; stop at entry
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))
+      ;; The in-memory test source has no file on disk, so the navigator renders
+      ;; the reconstructed form with prin1 (upper-cased). The selection bracket
+      ;; wraps the first body form (SETQ …), never the whole DEFUN.
+      (is (contains output "【(SETQ"))          ; selection is the first body form
+      (is (not (contains output "【(DEFUN")))))) ; not the whole toplevel form
+
+(test dumb-ui-nav-reaches-debugger-commands
+  ;; bug-aldo-nav-command-dictionary: in NAV the navigator dictionary is stacked
+  ;; over the global debugger dictionary — non-motion tokens dispatch as debugger
+  ;; commands. `lb' lists breakpoints from NAV (staying in NAV), and `c'
+  ;; (continue) resumes execution straight from NAV.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%lb~%p x~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))                     ; `c' from NAV resumed and finished
+      (is (contains output "pp"))             ; `lb' listed a breakpoint by pp
+      (is (contains output "7")))))           ; `p x' printed the parameter
+
+(test dumb-ui-nav-edit-word-bridges-into-sedit
+  ;; spec §7: the `edit' word (and insert/wrap/…) in NAV enters the sedit
+  ;; structural editor. Here the test source has no on-disk file, so the bridge
+  ;; reports it can't fetch the source — which confirms the word reached the
+  ;; bridge (not the debugger fall-through), then `c' resumes.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%edit~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))                           ; `c' resumed after the bridge
+      (is (contains output "no source text")))))    ; `edit' reached nav-edit-session
+
+(test nav-edit-enters-the-sedit-interactor
+  ;; design-revision T2 Option A: the editing words enter ONE SEDIT
+  ;; interactor (prompt SEDIT>, no internal NAV/EDIT modes) stacked over the
+  ;; navigator and the stop; its `q' above the debugger asks before aborting
+  ;; (T4), and `aldo c' from inside resumes — the directive cascades out.
+  ;; (the function's last body form is a LIST: a bare-atom tail trips the
+  ;; span bug filed as issues/open/nav-edit-span-atom-tail.issue)
+  (let* ((context (fresh-context))
+         (source (format nil "(defun id (a) a)~%(defun grob (x)~%  (id (id x)))"))
+         (metas (load-and-instrument context source "GROB" "ID"))
+         (grob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (with-open-file (out "frob.lsp" :direction :output :if-exists :supersede)
+      (write-string source out))
+    (unwind-protect
+         (progn
+           (clautolisp.debug:add-breakpoint ti grob 0 :when :before)
+           (multiple-value-bind (result output)
+               (run-ui (format nil "edit~%q~%n~%aldo c~%")
+                       :context context :thread-info ti
+                       :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                          (list (rt-sym "GROB") 7) context)))
+             (is (eql 7 result))                     ; `aldo c' resumed from SEDIT
+             (is (contains output "SEDIT> "))        ; one SEDIT interactor
+             (is (contains output "really abort?")))) ; q above a stop asks (T4)
+      (ignore-errors (delete-file "frob.lsp")))))
+
+(test dumb-ui-nav-evaluates-a-lisp-form-at-the-prompt
+  ;; a (form) typed in NAV evaluates in the current frame and prints, like the REPL
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        ;; `quote' needs no builtins in the bare test runtime
+        (run-ui (format nil "nav~%(quote 99)~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))
+      (is (contains output "99")))))                ; the form was evaluated
+
+(test dumb-ui-nav-pretty-prints-a-sourceless-form
+  ;; a navigated form with no source file (in-memory source) is laid out by the
+  ;; AutoLISP indentation rules with the selection marked — not one flat line
+  (let* ((context (fresh-context))
+         (source (format nil "(defun id (a) a)~%(defun lng (x)~%  (setq aaaaaaaaaaaa (id x))~%  (setq bbbbbbbbbbbb (id x))~%  (id x))"))
+         (metas (load-and-instrument context source "LNG" "ID"))
+         (lng (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti lng 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "q~%y~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "LNG") 7) context)))
+      (declare (ignore result))
+      ;; header line + 2-space-indented body lines, the first poll-point marked
+      (is (contains output (format nil "(DEFUN LNG (X)~%")))
+      (is (contains output (format nil "~%  【(SETQ AAAAAAAAAAAA (ID X))】~%")))
+      (is (contains output (format nil "~%  (SETQ BBBBBBBBBBBB (ID X))~%"))))))
+
+(test dumb-ui-nav-no-redisplay-after-an-output-command
+  ;; an output-only turn (a stacked debugger command like `lb') must not repeat
+  ;; the whole navigator view (the duplicate display); a bare RET redisplays
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        ;; the stop auto-opens NAV (renders once); `lb' outputs without
+        ;; re-rendering; the empty line forces one redisplay; `c' resumes
+        (run-ui (format nil "lb~%~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (is (eql 7 result))
+      (is (= 2 (loop with start = 0 with n = 0
+                     for pos = (search "(DEFUN FROB" output :start2 start)
+                     while pos do (incf n) (setf start (1+ pos))
+                     finally (return n)))))))
+
+(test dumb-ui-settings-unknown-name-is-reported
+  ;; asking for a setting that doesn't exist reports it (does not print a value)
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil ",settings list~%,settings navigator~%c~%") :context context
+                :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      (is (contains output "unknown setting"))       ; `list' is not a setting
+      (is (contains output "navigator = sexp")))))   ; a real one still works
+
+(test dumb-ui-run-command-runs-a-debugger-command-outside-a-stop
+  ;; spec §7: ui-run-command drives a debugger command with no current stop, so
+  ;; clal-sedit's debug/aldo prefix (via *debug-command-hook*) can reach `help'.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (output (make-string-output-stream))
+         (ui (clautolisp.ui.dumb:make-dumb-ui :input (make-string-input-stream "")
+                                              :output output))
+         (session (clautolisp.debug.ui:start-session :ui ui :thread-info ti :context context)))
+    (clautolisp.debug.ui:ui-run-command ui session "help")
+    (is (contains (get-output-stream-string output) "continue"))))
+
+(test dumb-ui-nav-help-lists-debugger-commands
+  ;; bug-aldo-nav-command-dictionary: `?' in NAV derives from the union of the
+  ;; active dictionaries — the motion keys AND the debugger commands.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%?~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      (is (contains output "motion:"))          ; the navigator motion keys
+      (is (contains output "continue")))))       ; and the debugger vocabulary
+
+(test dumb-ui-nav-breakpoint-idempotent
+  ;; bug-aldo-duplicate-breakpoint: `b' twice on the same selected poll-point
+  ;; keeps one breakpoint and one decoration; the second reports "already set".
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (multiple-value-bind (result output)
+        (run-ui (format nil "nav~%b~%b~%c~%c~%") :context context :thread-info ti
+                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                   (list (rt-sym "FROB") 7) context)))
+      (declare (ignore result))
+      ;; The first `b' sets it; the second reports "already set" — printed only
+      ;; when cmd-set-breakpoint found the existing breakpoint and created no
+      ;; duplicate (the engine-level count invariant is checked by
+      ;; IDEMPOTENT-BREAKPOINT-KEEPS-ONE-PER-POLL-POINT; breakpoints here are
+      ;; cleared on session teardown so a post-run count is unusable).
+      (is (contains output "set on the selected form"))          ; first `b'
+      (is (contains output "already set on the selected form"))))) ; second `b'
+
+(test dumb-ui-open-navigation-request-browses-without-a-stop
+  ;; bug-aldo-nav-entry-and-breakpoint-flow §2: ui-open-navigation-request opens
+  ;; the navigator on a function with NO stop — the (clal-nav-function 'NAME)
+  ;; pre-debug entry the REPL drives after a turn, resolving NAME in the session
+  ;; context (no fake break, no synthetic toplevel poll-point).
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (output (make-string-output-stream))
+         (input (make-string-input-stream (format nil "q~%")))
+         (ui (clautolisp.ui.dumb:make-dumb-ui :input input :output output))
+         (session (clautolisp.debug.ui:start-session
+                   :ui ui :thread-info ti :context context)))
+    (declare (ignore metas))
+    (let ((clautolisp.autolisp-runtime.internal:*active-evaluation-context* context))
+      (clautolisp.debug.ui:ui-open-navigation-request ui session '(:function "FROB")))
+    (let ((out (get-output-stream-string output)))
+      (is (contains out "FROB"))              ; browsed to FROB's source
+      (is (contains out "NAV"))               ; opened the navigator
+      (is (not (contains out "Hit breakpoint")))))) ; no fake break was staged
 
 (test dumb-ui-break-once
   ;; `break once' / `bo' set a volatile breakpoint (removed on first hit)
@@ -457,71 +762,112 @@
   ;; a user command registered via define-debugger-command dispatches through
   ;; the command table in the dumb UI, receives its parsed arg, and reaches the
   ;; session via the *debugger-ui* dynamic var (command reference §8).
-  (let* ((context (fresh-context))
-         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
-         (frob (fid-of (first metas)))
-         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
-         (clautolisp.debug.ui:*global-dictionary*
-           (clautolisp.debug.ui:make-command-dictionary "test")))
-    (clautolisp.debug.ui:define-debugger-command (z zap) (n) "zap N."
-      (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "ZAPPED ~A~%" n)
-      nil)
-    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
-    (multiple-value-bind (result output)
-        (run-ui (format nil "zap 42~%c~%") :context context :thread-info ti
-                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
-                                   (list (rt-sym "FROB") 7) context)))
-      (is (eql 7 result))                  ; user cmd returned nil → kept reading → c resumed
-      (is (contains output "ZAPPED 42"))))) ; dispatched + parsed arg + reached the UI
+  (with-fresh-user-dictionary
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+           (frob (fid-of (first metas)))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+      (clautolisp.debug.ui:define-debugger-command (z zap) (n) "zap N."
+        (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "ZAPPED ~A~%" n)
+        nil)
+      (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+      (multiple-value-bind (result output)
+          (run-ui (format nil "zap 42~%c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        (is (eql 7 result))                  ; user cmd returned nil → kept reading → c resumed
+        (is (contains output "ZAPPED 42")))))) ; dispatched + parsed arg + reached the UI
 
 (test dumb-ui-autolisp-defined-command
   ;; an AutoLISP function registered as a command (the AutoLISP-side
   ;; define-debugger-command, command reference §8) dispatches in the dumb UI,
   ;; receives its parsed arg as an AutoLISP string, and runs in the stop context.
-  (let* ((context (fresh-context))
-         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
-         (frob (fid-of (first metas)))
-         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
-         (clautolisp.debug.ui:*global-dictionary*
-           (clautolisp.debug.ui:make-command-dictionary "test"))
-         ;; the command body: (lambda (n) (setq zz n)) — records its arg in ZZ
-         (fnval (clautolisp.autolisp-runtime:autolisp-eval
-                 (first (clautolisp.autolisp-runtime:read-runtime-from-string
-                         "(lambda (n) (setq zz n))"))
-                 context)))
-    (clautolisp.debug.ui::register-autolisp-command '("z" "zap") fnval nil)
-    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
-    (multiple-value-bind (result output)
-        (run-ui (format nil "zap hello~%c~%") :context context :thread-info ti
-                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
-                                   (list (rt-sym "FROB") 7) context)))
-      (declare (ignore output))
-      (is (eql 7 result))
-      ;; the AutoLISP command body set ZZ to the passed arg "hello"
-      (is (string= "hello"
-                   (clautolisp.autolisp-runtime:autolisp-string-value
-                    (nth-value 0 (clautolisp.autolisp-runtime:lookup-variable
-                                  (rt-sym "ZZ") context))))))))
+  (with-fresh-user-dictionary
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+           (frob (fid-of (first metas)))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+           ;; the command body: (lambda (n) (setq zz n)) — records its arg in ZZ
+           (fnval (clautolisp.autolisp-runtime:autolisp-eval
+                   (first (clautolisp.autolisp-runtime:read-runtime-from-string
+                           "(lambda (n) (setq zz n))"))
+                   context)))
+      (clautolisp.debug.ui::register-autolisp-command '("z" "zap") fnval nil)
+      (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+      (multiple-value-bind (result output)
+          (run-ui (format nil "zap hello~%c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        (declare (ignore output))
+        (is (eql 7 result))
+        ;; the AutoLISP command body set ZZ to the passed arg "hello"
+        (is (string= "hello"
+                     (clautolisp.autolisp-runtime:autolisp-string-value
+                      (nth-value 0 (clautolisp.autolisp-runtime:lookup-variable
+                                    (rt-sym "ZZ") context)))))))))
 
 (test dumb-ui-escape-word-reaches-builtin
   ;; the `debugger' escape word forces the built-in meaning of a token a user
   ;; command shadows (command reference §8).
+  (with-fresh-user-dictionary
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+           (frob (fid-of (first metas)))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+      (clautolisp.debug.ui:define-debugger-command (c continue) () "shadow c."
+        (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "USER-C~%")
+        nil)
+      (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+      (multiple-value-bind (result output)
+          (run-ui (format nil "c~%debugger c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        (is (eql 7 result))                  ; `debugger c' reached the built-in continue
+        (is (contains output "USER-C"))))))  ; plain `c' ran the shadowing user command
+
+(test dumb-ui-command-word-reaches-builtin
+  ;; the systematic form of the escape: the interactor framework's `command'
+  ;; word (like bash's `command') skips the user dictionaries — `command c'
+  ;; reaches the built-in continue a user command shadows.
+  (with-fresh-user-dictionary
+    (let* ((context (fresh-context))
+           (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+           (frob (fid-of (first metas)))
+           (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+      (clautolisp.debug.ui:define-debugger-command (c continue) () "shadow c."
+        (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "USER-C~%")
+        nil)
+      (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+      (multiple-value-bind (result output)
+          (run-ui (format nil "c~%command c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        (is (eql 7 result))                  ; `command c' reached the built-in continue
+        (is (contains output "USER-C"))))))  ; plain `c' ran the shadowing user command
+
+(test a-command-on-the-ambient-bottom-interactor-is-reachable-at-a-stop
+  ;; interactor-design-revision.issue D3/D6: the stop's ALDO stacks OVER the
+  ;; ambient stack (the REPL's AUTOLISP bottom interactor), so a user
+  ;; command registered on the bottom interactor — the "global" user
+  ;; command — dispatches from DBG>, and `NAME CMD' routes to it.
   (let* ((context (fresh-context))
          (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
          (frob (fid-of (first metas)))
          (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
-         (clautolisp.debug.ui:*global-dictionary*
-           (clautolisp.debug.ui:make-command-dictionary "test")))
-    (clautolisp.debug.ui:define-debugger-command (c continue) () "shadow c."
-      (clautolisp.ui.dumb::out clautolisp.debug.ui:*debugger-ui* "USER-C~%")
-      nil)
+         (bottom (clautolisp.interactor:make-interactor :name "BOTTOM" :alias "lisp")))
+    (clautolisp.interactor:bind-command
+     (clautolisp.interactor:interactor-user-commands bottom)
+     '(gg) '() "gg." (lambda () (format t "GG-RAN~%") nil))
     (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
-    (multiple-value-bind (result output)
-        (run-ui (format nil "c~%debugger c~%") :context context :thread-info ti
-                :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
-                                   (list (rt-sym "FROB") 7) context)))
-      (is (eql 7 result))                  ; `debugger c' reached the built-in continue
-      (is (contains output "USER-C")))))   ; plain `c' ran the shadowing user command
+    (let ((clautolisp.interactor:*interactor-stack*
+            (list (clautolisp.interactor:make-activation bottom))))
+      (multiple-value-bind (result output)
+          (run-ui (format nil "gg~%lisp gg~%c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        (is (eql 7 result))
+        ;; bare fall-through AND alias routing both reached the bottom command
+        (is (eql 2 (count-substring output "GG-RAN")))))))
 
 (test dumb-ui-clal-break-enters-debugger
   ;; The programmatic entry INVOKE-DEBUGGER-BREAK (what the CLAL-BREAK /
@@ -850,16 +1196,27 @@
              (is (= 1 (clautolisp.ui.dumb::nav-form-index-for-line forms 4)))))  ; line 4 -> second
       (ignore-errors (delete-file path)))))
 
-(test nav-key-aliases-map-i-k-jj-j-l-ll
-  (flet ((k (c) (loop for key in '(:up :down :prev :next :first :last :quit)
-                      when (clautolisp.ui.dumb::nav-key= c key) return key)))
-    (is (eq :up    (k "u")))  (is (eq :up    (k "i")))
-    (is (eq :down  (k "d")))  (is (eq :down  (k "k")))
-    (is (eq :prev  (k "<")))  (is (eq :prev  (k "j")))
-    (is (eq :next  (k ">")))  (is (eq :next  (k "l")))
-    (is (eq :first (k "<<"))) (is (eq :first (k "jj")))
-    (is (eq :last  (k ">>"))) (is (eq :last  (k "ll")))
-    (is (eq :quit  (k "q")))
+(test nav-motion-keys-are-canonical-and-collision-free
+  ;; The letter aliases i/k/jj/j/l/ll were retired: they shadowed debugger verbs
+  ;; (i into, j jump, ll list-locals), which NAV must now reach directly through
+  ;; the stacked dictionary (bug-aldo-nav-command-dictionary). Only the sedit
+  ;; spec §5 motion keys (d u > < << >> ±N q) are navigator keys — now real
+  ;; commands of the NAVI dictionary (interactor-unification).
+  (flet ((k (c) (clautolisp.debug.ui:find-command
+                 clautolisp.ui.dumb::*navi-commands* c)))
+    (is (not (null (k "u"))))
+    (is (not (null (k "d"))))
+    (is (not (null (k "<"))))
+    (is (not (null (k ">"))))
+    (is (not (null (k "<<"))))
+    (is (not (null (k ">>"))))
+    (is (not (null (k "q"))))
+    (is (not (null (k "quit"))))
+    (is (not (null (k "skip"))))                    ; ±N reads as the skip motion
+    ;; the retired letter aliases are no longer navigator keys — they fall
+    ;; through to the debugger dictionary
+    (is (null (k "i")))  (is (null (k "j")))  (is (null (k "ll")))
+    (is (null (k "k")))  (is (null (k "l")))  (is (null (k "jj")))
     (is (null (k "z")))))
 
 (test nav-make-file-loc-is-a-file-location-selecting-line

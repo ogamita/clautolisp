@@ -1,0 +1,42 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: nav edit: "sedit parse: unterminated list" when the function's last body form is a bare atom
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-07-22
+
+* Symptom
+
+At a stop in a function whose LAST body form is a bare atom, an editing
+word (=edit=, =replace=, …) in the navigator fails with
+
+: Error while executing the command: sedit parse: unterminated list
+
+instead of opening the editor.
+
+* Repro
+
+: (defun id (a) a)
+: (defun frob (x / z)
+:   (setq z (id x))
+:   z)                      ; <- bare-atom tail
+
+Load instrumented (with source tracking, file on disk), break at FROB's
+entry, then type =edit= at the NAV> prompt.
+
+* Cause
+
+=NAV-FORM-SPAN= (autolisp-debug-ui/source/navigator.lisp) computes the
+root form's verbatim extent from the positions of its POSITIONED
+sub-nodes. Interned runtime symbols are shared singletons and carry no
+per-occurrence source position, so a bare-atom tail (the =z= on line 4)
+contributes nothing and the computed end-line stops at the last
+positioned LIST form (line 3). =NAV-FORM-SOURCE-TEXT= then extracts
+lines 2–3 — an unterminated =(defun= — and =sedit parse= rejects it.
+
+* Fix ideas
+
+- Scan forward from the span's last line with the same
+  paren/string/comment balancer =%NAV-FORM-END= already uses for the
+  selection's closing bracket, and extend the end-line to the form's
+  real close.
+- Or record an explicit end position for the toplevel form at read time
+  (the reader knows it) in the function metadata.

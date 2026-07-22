@@ -1,0 +1,137 @@
+
+        _$ (load "~/src/public/autolisp/fact.lsp")
+        FACT
+        _$ (fact 3)
+
+        DBG> Error at FACT line 13 col 7 — Division by zero in /.
+        DBG>   X = 1
+        DBG>   <stack: FACT ← FACT ← FACT ← <toplevel> ← top>
+        DBG>   (q abort, r <form> return a value, c continue/run *error*)
+            10:   (defun fact (x)
+            11:     (if (= 1 x)
+            12:         ;; base value
+         >> 13:       【⏵(/ 0)】
+            14:         ;; else
+            15:         (* x (fact (- x 1)))))
+        NAV> r
+
+I wanted SEDIT r, but got ALDO r.  In autolisp since we don't have
+explicitely multiple-values (and no-value), all functions should
+return something. So we should make an expression argument mandatory
+to the aldo r command.  In that case, when it's not given on the r
+command line, the command processing should ask the user for a return
+value.
+
+        DBG> Error at FACT line 15 col 12 — * expects a number, got NIL.
+        DBG>   X = 2
+        DBG>   <stack: FACT ← FACT ← <toplevel> ← top>
+        DBG>   (q abort, r <form> return a value, c continue/run *error*)
+            10:   (defun fact (x)
+            11:     (if (= 1 x)
+            12:         ;; base value
+            13:         (/ 0)
+            14:         ;; else
+         >> 15:         (* x【⏵(fact (- x 1))】)))
+Good.
+
+        NAV> h
+        NAV> motion: d down  u up  > < siblings  << >> ends  ±N skip  b break (selection)  q leave
+        NAV> edit (or insert/add/replace/wrap/…): open the sedit structural editor
+        NAV> all debugger commands are also available directly (aldo/debug CMD forces the debugger's):
+        DBG> commands: (command reference §0 vocabulary)
+        DBG>   c continue   i into   n next   o out   a LINE advance   j LINE|ppN jump   r [FORM] return   q quit
+        DBG>   b LINE|LINE.K|LINE:COL|ppN break   bo break once   rbreak PATTERN   lb list breakpoints   delete [ppN] / clear
+        DBG>   enable [ppN]   disable [ppN]   condition ppN [FORM]   ignore ppN COUNT
+        DBG>   bpcmd ppN [FORM]   trace FN [FORM]   untrace [FN]   catch error|caught on|off
+        DBG>   watch VAR [FORM]   unwatch [VAR]   lw list watches
+        DBG>   lf list frames   f N frame   fi/fo inner/outer   ft/fb top/bottom
+        DBG>   ll/lp/lv list locals/parameters/variables   list polls
+        DBG>   p EXPR print   t EXPR type   v EXPR visit   ls list source
+        DBG>   nav (structural navigation: d u > < << >> ±N q)
+        DBG>   g/goto NAME   . /definition NAME   back   history   restore N   search PATTERN
+        DBG>   set NAME VALUE   ,settings [NAME|save|reload]
+        DBG>   display FORM   undisplay [N]
+        DBG>   (form...) evaluate in the current frame   h/? help   apropos WORD
+        NAV> p x
+        DBG> 2
+        NAV> i
+        clautolisp: runtime error: INVALID-NUMBER-ARGUMENT: * expects a number, got NIL.
+        AutoLISP backtrace (most recent call first, 22 frames):
+          in SUBR *: (2 nil)
+          in EVAL: (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1)))))
+          in EVAL: (%CLAL-POLL 5 4 (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1))))))
+          in EVAL: (IF (%CLAL-POLL 5 2 (= 1 X)) (%CLAL-POLL 5 3 (/ 0)) (%CLAL-POLL 5 4 (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1)))))))
+          in EVAL: (%CLAL-POLL 5 1 (IF (%CLAL-POLL 5 2 (= 1 X)) (%CLAL-POLL 5 3 (/ 0)) (%CLAL-POLL 5 4 (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1))))))))
+          in EVAL: (PROGN (%CLAL-POLL 5 1 (IF (%CLAL-POLL 5 2 (= 1 X)) (%CLAL-POLL 5 3 (/ 0)) (%CLAL-POLL 5 4 (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1)))))))))
+          in EVAL: (%CLAL-POLL 5 0 (PROGN (%CLAL-POLL 5 1 (IF (%CLAL-POLL 5 2 (= 1 X)) (%CLAL-POLL 5 3 (/ 0)) (%CLAL-POLL 5 4 (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1))))))))))
+          in USUBR FACT: (2)
+          in EVAL: (FACT (%CLAL-POLL 5 6 (- X 1)))
+          in EVAL: (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1))))
+          in EVAL: (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1)))))
+          in EVAL: (%CLAL-POLL 5 4 (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1))))))
+          in EVAL: (IF (%CLAL-POLL 5 2 (= 1 X)) (%CLAL-POLL 5 3 (/ 0)) (%CLAL-POLL 5 4 (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1)))))))
+          in EVAL: (%CLAL-POLL 5 1 (IF (%CLAL-POLL 5 2 (= 1 X)) (%CLAL-POLL 5 3 (/ 0)) (%CLAL-POLL 5 4 (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1))))))))
+          in EVAL: (PROGN (%CLAL-POLL 5 1 (IF (%CLAL-POLL 5 2 (= 1 X)) (%CLAL-POLL 5 3 (/ 0)) (%CLAL-POLL 5 4 (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1)))))))))
+          in EVAL: (%CLAL-POLL 5 0 (PROGN (%CLAL-POLL 5 1 (IF (%CLAL-POLL 5 2 (= 1 X)) (%CLAL-POLL 5 3 (/ 0)) (%CLAL-POLL 5 4 (* X (%CLAL-POLL 5 5 (FACT (%CLAL-POLL 5 6 (- X 1))))))))))
+          in USUBR FACT: (3)
+          in EVAL: (FACT 3)
+          in EVAL: (%CLAL-POLL 4 1 (FACT 3))
+          in EVAL: (PROGN (%CLAL-POLL 4 1 (FACT 3)))
+          in EVAL: (%CLAL-POLL 4 0 (PROGN (%CLAL-POLL 4 1 (FACT 3))))
+          in USUBR <toplevel>: ()
+        _$ 
+
+1- We were in the debugger, and gave a "wrong" command, ie the command
+   "i" that lead to an error. The first thing is that this should not
+   make the debugger quit.  A debugging state embodied by a
+   invoke-debugger invocation, may represent a lot of processing time,
+   and should not be dropped unless the user explicitely requests it.
+   So all errors should be handled properly from the debugger (and
+   navi/sedit/inspect on the interactor stack) so that we don't leave
+   the debugger.
+
+2- We need a general error handling. The fact that the same error is
+   signaled by the same form (* 2 nil), doesn't matter much. If we had
+   given a jump command to a poll-point that would signal immediately an
+   error, we'd be in the same situation: we should be back in the
+   debugger (with a new invoke-debugger call I suppose). So I think
+   the problem here is that it's the clautolisp layer that caught the error a
+   a time where the debugger is not ready to re-enter. This path shouldn't exist
+   (or rather it should exist for last-ressort case, but when aldo is installed
+   it should be invoked).
+   
+        clautolisp: runtime error: INVALID-NUMBER-ARGUMENT: * expects a number, got NIL.
+        AutoLISP backtrace (most recent call first, 22 frames):
+
+
+* Resolution (1.4.38)
+
+1. =r= takes a *mandatory* expression (AutoLISP has no multiple values /
+   no-value — every function returns something): a bare =r= now prompts
+   =return value?= and reads it from the debugger input; a blank answer or
+   EOF cancels the command. =h= documents =r FORM=.
+
+2. The unwind in the transcript: at an *error stop*, =i=/=n=/=o= (and
+   =a=/=j=) produced a step/advance/jump directive that
+   APPLY-ERROR-DIRECTIVE does not recognise, which silently *declined* the
+   stop and let the error propagate to the toplevel handler. These commands
+   now refuse at an error stop with the §10.1 guidance (=q= abort, =r FORM=
+   return a value, =c= continue/run =*error*=) and the command loop keeps
+   reading — the debugging state is only dropped by an explicit =q=/abort.
+
+3. General error handling while debugging: the command dispatcher
+   (DISPATCH-IN-DICTIONARIES, the single choke point through which every
+   built-in / user / mode command body runs) now catches errors escaping a
+   command, reports =error while executing CMD=, and keeps the stop. An
+   AutoLISP error signaled *while a command evaluates user code* still
+   re-enters the debugger first — the session's §10 HANDLER-BIND is
+   installed around the whole turn and runs before any unwind — giving the
+   nested invoke-debugger the issue asks for; whatever the user lets
+   propagate from that nested stop is then caught at the dispatcher and the
+   outer stop survives. The clautolisp toplevel runtime-error report remains
+   as the last resort — reached only when the user explicitly declines an
+   error stop (=c= with no =*error*= set), which is its specified meaning.
+
+Tests: bare-r-prompts-for-the-return-value,
+step-at-an-error-stop-does-not-quit-the-debugger,
+a-failing-command-keeps-the-debugger-alive (dumb-ui suite, 415/415).

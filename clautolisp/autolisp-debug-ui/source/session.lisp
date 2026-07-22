@@ -85,11 +85,17 @@ directive interpreted by APPLY-RESUME-DIRECTIVE."
 
 (defun cmd-set-breakpoint (session fid form-id &key (when :before) (steady t)
                                                     condition action (trace t))
-  (let ((bp (add-breakpoint (debugger-session-thread-info session)
-                            fid form-id :when when :steady steady
-                            :condition condition :action action :trace trace)))
-    (ui-breakpoint-added (debugger-session-ui session) bp)
-    bp))
+  "Set a breakpoint at poll point (FID, FORM-ID). Returns (values BREAKPOINT
+NEW-P): a plain breakpoint on a poll point that already carries one is
+idempotent (NEW-P NIL, no duplicate; bug-aldo-duplicate-breakpoint). The UI is
+notified only for a freshly created breakpoint."
+  (multiple-value-bind (bp new-p)
+      (add-breakpoint (debugger-session-thread-info session)
+                      fid form-id :when when :steady steady
+                      :condition condition :action action :trace trace)
+    (when new-p
+      (ui-breakpoint-added (debugger-session-ui session) bp))
+    (values bp new-p)))
 
 (defun nav-or-current-metadata (session)
   "The function the user is currently focused on for browsing/breakpointing: the
@@ -159,10 +165,14 @@ a PREDICATE thunk — when the predicate goes false→true. Returns the watch."
 
 (defun cmd-eval (session form)
   "Evaluate FORM in the stopping context (innermost frame; spec §17.2).
-FORM may be a string (read first) or a runtime form."
+FORM may be a string — read under the dialect in force NOW
+(READ-CURRENT-SOURCE, interactor-design-revision.issue D2) — or a runtime
+form."
   (let ((snapshot (debugger-session-snapshot session))
         (parsed (if (stringp form)
-                    (first (read-runtime-from-string form))
+                    (first (clautolisp.autolisp-runtime:read-current-source
+                            form :source-name "<debugger>"
+                            :context (debugger-session-context session)))
                     form)))
     (eval-in-frame snapshot parsed :frame-index 0)))
 
@@ -284,6 +294,14 @@ opts in by defining a method on UI-PROTOCOL-VERSION returning its expected
 (defgeneric ui-protocol-version (ui)
   (:method (ui) (declare (ignore ui)) nil))
 
+(defgeneric ui-show-stop-source-p (ui)
+  (:documentation "Whether the stop handler should display the flat source-line
+window (UI-SHOW-SOURCE) at each stop. A UI that opens its own navigator on the
+stop (the sexp form navigator renders the source with the selection marked)
+answers NIL to avoid the duplicate display; the source remains reachable
+explicitly (`ls'). Default T.")
+  (:method (ui) (declare (ignore ui)) t))
+
 ;;; --- the stop handler: build per-stop state, run the UI loop -------
 
 (defun session-stop (session hit)
@@ -302,7 +320,8 @@ resume directive."
       (:unhandled-error (ui-thread-unhandled-error ui session hit))
       (:caught-error (ui-thread-caught-error ui session hit))
       (t (ui-thread-hit ui session hit)))
-    (when (hit-source-position hit)
+    (when (and (hit-source-position hit)
+               (ui-show-stop-source-p ui))
       (ui-show-source ui (hit-source-position hit)))
     (prog1 (ui-await-command ui session hit)
       (ui-thread-resumed ui session))))
