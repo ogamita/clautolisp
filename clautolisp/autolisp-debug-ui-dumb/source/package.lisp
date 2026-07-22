@@ -18,7 +18,7 @@ UI refines.")
                 #:interactor-commands #:interactor-user-commands
                 #:interactor-prompt #:interactor-reader #:interactor-evaluator
                 #:interactor-status #:interactor-on-result
-                #:make-activation #:activation-state
+                #:make-activation #:activation-state #:find-activation
                 #:*command-interactor* #:*command-activation*
                 #:*interactor-stack* #:push-interactor #:pop-interactor
                 #:interactor-loop #:interactor-return

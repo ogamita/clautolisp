@@ -292,6 +292,15 @@ PJB ==> Yes, LAVI for the file:line navigator.
    =(clal-define-command "ALDO" …)=. Spec function entries, command
    reference §8, user manual and release notes updated.
 4. D3: AUTOLISP/LISP naming.
+   DONE 1.4.45: the bottom interactor is "AUTOLISP" with alias "LISP"
+   (prompt stays the late-bound =_$=). And the bottom is now REAL: a
+   stop's ALDO activation stacks OVER the ambient stack instead of
+   hiding it — UI-AWAIT-COMMAND conses onto *INTERACTOR-STACK* and
+   floors the loop at its own depth — so a user command registered on
+   AUTOLISP (the "global" user command, D6) dispatches from DBG>/NAV>
+   by fall-through, and =lisp CMD= / =autolisp CMD= route to it from
+   any inner mode. %INTERACTOR-MODE-LOOP adds its base ALDO only when
+   no ALDO is active.
 5. D5/T3: =:function= registration sugar + the documented calling
    convention.
 6. T2 decision, then SEDIT onto the stack (D9: =clal-sedit= pushes it),

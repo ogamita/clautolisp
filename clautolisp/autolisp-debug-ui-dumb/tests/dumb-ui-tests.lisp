@@ -817,6 +817,30 @@
         (is (eql 7 result))                  ; `command c' reached the built-in continue
         (is (contains output "USER-C"))))))  ; plain `c' ran the shadowing user command
 
+(test a-command-on-the-ambient-bottom-interactor-is-reachable-at-a-stop
+  ;; interactor-design-revision.issue D3/D6: the stop's ALDO stacks OVER the
+  ;; ambient stack (the REPL's AUTOLISP bottom interactor), so a user
+  ;; command registered on the bottom interactor — the "global" user
+  ;; command — dispatches from DBG>, and `NAME CMD' routes to it.
+  (let* ((context (fresh-context))
+         (metas (load-and-instrument context +frob-source+ "FROB" "ID"))
+         (frob (fid-of (first metas)))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (bottom (clautolisp.interactor:make-interactor :name "BOTTOM" :alias "lisp")))
+    (clautolisp.interactor:bind-command
+     (clautolisp.interactor:interactor-user-commands bottom)
+     '(gg) '() "gg." (lambda () (format t "GG-RAN~%") nil))
+    (clautolisp.debug:add-breakpoint ti frob 0 :when :before)
+    (let ((clautolisp.interactor:*interactor-stack*
+            (list (clautolisp.interactor:make-activation bottom))))
+      (multiple-value-bind (result output)
+          (run-ui (format nil "gg~%lisp gg~%c~%") :context context :thread-info ti
+                  :thunk (lambda () (clautolisp.autolisp-runtime:autolisp-eval
+                                     (list (rt-sym "FROB") 7) context)))
+        (is (eql 7 result))
+        ;; bare fall-through AND alias routing both reached the bottom command
+        (is (eql 2 (count-substring output "GG-RAN")))))))
+
 (test dumb-ui-clal-break-enters-debugger
   ;; The programmatic entry INVOKE-DEBUGGER-BREAK (what the CLAL-BREAK /
   ;; CLAL-INVOKE-DEBUGGER builtins call via *debug-break-hook*) drops into the

@@ -588,11 +588,17 @@ not supplied)."
 ;;; backquote in AutoLISP).
 
 (define-interactor *autolisp*
-  :name "AUTOLISP"
+  :name "AUTOLISP" :alias "LISP"
   :prompt "_$ "
   :reader '%autolisp-reader
   :evaluator '%autolisp-evaluate
-  :documentation "The clautolisp Lisp REPL: reads AutoLISP forms; a `,command' line runs a REPL command.")
+  :documentation "The clautolisp Lisp REPL — the bottom interactor, always
+under every stacked mode (design-revision D3): reads AutoLISP forms; a
+`,command' line runs a REPL command. Routable as `autolisp CMD' or `lisp
+CMD' from any inner mode; a user command registered here
+((clal-define-command \"AUTOLISP\" …)) is reachable everywhere — the
+\"global\" user command (D6). The prompt is late-bound (an indication of
+the current dialect can come later).")
 
 (define-command (*autolisp* d date) ()
     "Print the current date and time (ISO 8601)."

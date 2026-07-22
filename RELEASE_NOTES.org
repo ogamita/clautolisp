@@ -172,6 +172,12 @@ separate binary for tool integrators.
   command is one defined on the =AUTOLISP= interactor at the bottom of
   the stack. =clal-define-debugger-command= is deprecated, the
   equivalent of =(clal-define-command "ALDO" …)=.
+- The REPL is the =AUTOLISP= interactor (alias =LISP=), and it really
+  is at the bottom of the stack: at a debugger stop the whole ambient
+  stack stays reachable, so a user command registered on =AUTOLISP=
+  dispatches from =DBG>= / =NAV>= by fall-through, and =lisp CMD= /
+  =autolisp CMD= route to it from any inner mode (at the REPL itself,
+  invoke it as =,CMD=).
 - The =command= word (like bash's =command foo=) is the systematic escape to
   a shadowed built-in: =command CMD= / =aldo command CMD= skip the user
   commands — how a shadowing user command calls the system one. =debugger

@@ -358,9 +358,17 @@ frame and echoes with the DBG> prefix."
 
 (defmethod ui-await-command ((ui dumb-ui) session hit)
   (record-navigation-state ui)
+  ;; The stop's ALDO activation stacks OVER whatever was active — the REPL's
+  ;; AUTOLISP bottom interactor, a suspended navigator of an outer stop — so
+  ;; the whole stack stays reachable (stacked dispatch, and D6: a user
+  ;; command on AUTOLISP is reachable everywhere). FLOOR is the depth WITH
+  ;; this ALDO: an inner navigator can pop back to DBG> within the same
+  ;; loop, but leaving ALDO itself is a resume directive, never a pop (T4).
   (let* ((*interactor-stack*
-           (list (make-activation *aldo* (make-aldo-state :ui ui :session session
-                                                          :hit hit))))
+           (cons (make-activation *aldo* (make-aldo-state :ui ui :session session
+                                                          :hit hit))
+                 *interactor-stack*))
+         (floor (length *interactor-stack*))
          (*debugger-ui* ui) (*debugger-session* session) (*debugger-hit* hit))
     ;; CLAL-NAV-* requested a stop to open a navigator (a function's source, a
     ;; file's forms, or a directory): open it on top of the stop's stack
@@ -376,17 +384,17 @@ frame and echoes with the DBG> prefix."
                                                      :hit hit :loc loc))))))
     ;; `set navigator sexp' (the default): every stop enters the sexp form
     ;; navigator directly, anchored on the current poll-point (sedit-spec §7).
-    ;; `q' pops the navigator and drops to the flat DBG> prompt — the FLOOR 1
-    ;; keeps the same loop running on the debugger interactor.
+    ;; `q' pops the navigator and drops to the flat DBG> prompt — the FLOOR
+    ;; (the stop's ALDO depth) keeps the same loop running on the debugger.
     (when (and hit
-               (null (rest *interactor-stack*))     ; no navigator opened above
+               (= (length *interactor-stack*) floor) ; no navigator opened above
                (eq (ignore-errors (get-aldo-setting :navigator)) :sexp))
       (let ((loc (nav-function-loc session hit)))
         (when loc
           (push-interactor *navi* (make-navi-state :ui ui :session session
                                                    :hit hit :loc loc)))))
     (or (interactor-loop :input (dumb-ui-input ui) :output (dumb-ui-output ui)
-                         :error-output (dumb-ui-output ui) :floor 1)
+                         :error-output (dumb-ui-output ui) :floor floor)
         :continue)))                                 ; EOF ⇒ continue (CI/pipe)
 
 (defun %command-tokens (arg)
@@ -1502,16 +1510,18 @@ frame, echoed with the NAV> prefix (sedit-spec §6)."
 (defun %interactor-mode-loop (ui session hit interactor state)
   "Drive INTERACTOR — activated with this entry's STATE — pushed over the
 current stack in a nested INTERACTOR-LOOP, adding a base debugger activation
-when entered outside a stop's loop (ui-run-command, the sedit debug hook), so
-the debugger vocabulary and `aldo …' routing reach down. Returns when the
-mode pops (q) or at EOF (NIL), or with a resume directive a debugger command
-issued inside carried out."
+when no ALDO is active (ui-run-command, the sedit debug hook, a mode entered
+straight from the REPL), so the debugger vocabulary and `aldo …' routing
+reach down. Returns when the mode pops (q) or at EOF (NIL), or with a
+resume directive a debugger command issued inside carried out."
   (let ((*interactor-stack*
           (cons (make-activation interactor state)
-                (or *interactor-stack*
-                    (list (make-activation
+                (if (find-activation "ALDO")
+                    *interactor-stack*
+                    (cons (make-activation
                            *aldo*
-                           (make-aldo-state :ui ui :session session :hit hit)))))))
+                           (make-aldo-state :ui ui :session session :hit hit))
+                          *interactor-stack*)))))
     (interactor-loop :input (dumb-ui-input ui) :output (dumb-ui-output ui)
                      :error-output (dumb-ui-output ui)
                      :floor (length *interactor-stack*))))
