@@ -48,3 +48,7 @@ Note: the =file:line= identity of breakpoints is old-fashioned and not
 lispy; the poll-point/selection-based designation (sedit spec) is the
 intended primary interface, with =clal-set-breakpoint= / =clal-disable-breakpoint=
 as the programmatic API for custom debugger commands.
+
+* Resolution (triage 2026-07-23)
+
+Fixed 1.4.15: entering the navigator selects the first poll-point (not the whole defun), and clal-nav-function opens it without a fake break.
