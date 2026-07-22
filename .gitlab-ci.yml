@@ -226,8 +226,8 @@ documentation:
     paths:
       - autolisp-spec/build/
   before_script:
-    - apt-get update && apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo
-    - command -v emacs makeinfo xelatex >/dev/null
+    - apt-get update && apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo graphviz
+    - command -v emacs makeinfo xelatex dot >/dev/null
   script:
     - make release-documentation      # build-documentation + package the share/doc tarball
   artifacts:
@@ -321,8 +321,8 @@ release:documentation:
     GIT_SUBMODULE_STRATEGY: none      # docs need no native submodule
   before_script:
     # Emacs (autolisp-spec paged split), TeX/xelatex (PDFs), makeinfo (Info).
-    - apt-get update && apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo
-    - command -v emacs makeinfo xelatex >/dev/null
+    - apt-get update && apt-get install -y emacs-nox texlive texlive-latex-extra texlive-xetex texlive-plain-generic texinfo graphviz
+    - command -v emacs makeinfo xelatex dot >/dev/null
   script:
     - make release-documentation
   artifacts:
