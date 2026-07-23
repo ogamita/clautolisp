@@ -177,6 +177,10 @@
    #:*instrument-usubr-hook*
    #:*debug-instrumentation-enabled*
    #:*clal-on-error*
+   #:*clal-on-interrupt*
+   #:*clal-on-quit*
+   #:*clal-debugger-ui*
+   #:*clal-aldb-listen*
    #:register-special-operator
    #:unregister-special-operator
    #:known-special-operator-p

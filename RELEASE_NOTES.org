@@ -258,6 +258,26 @@ separate binary for tool integrators.
 - Setting a breakpoint twice on one poll-point is idempotent — one breakpoint,
   one decoration ("already set" on the repeat). See the three
   =issues/open/bug-aldo-*= tickets.
+- *Debugger CLI options* (=issues/open/debugger-public-interface-and-on-error.issue=
+  Parts B-D; user manual § /Options / Debugger (aldo)/): the three event
+  policies =--on-error quit|debug|ignore= (default: =debug= at the
+  interactive REPL, =quit= in batch), =--on-interrupt debug|ignore|quit=
+  (default =debug=: Control-C breaks into aldo at the interrupt point;
+  =ignore= resumes; =quit= exits 130; a second C-c while one is handled
+  exits immediately), and =--on-quit debug|quit= (default =quit=; =debug=
+  enters aldo from ~(quit)~ / ~(exit)~ *before* the stack unwinds —
+  continue quits, abort cancels). Each is mirrored by an AutoLISP
+  variable — =*clal-on-error*=, =*clal-on-interrupt*=, =*clal-on-quit*= —
+  and the interrupt / quit policies are re-read *live*, so ~(setq …)~
+  overrides the CLI at runtime.
+- *Debugger UI selection*: =--debugger-ui tui|ncurses|aldb= is the per-run
+  override of the persisted =default-user-interface= aldo setting
+  (=aldo.conf= is now consulted at launch); =--aldb-listen [HOST:]PORT= /
+  =--aldb-stdio= configure the aldb (Emacs) channel and imply
+  =--debugger-ui aldb= (the aldb RPC transport itself is still pending —
+  selecting it fails with a clear message). These REPLACE the former
+  =--aldo-user-interface= / =--aldb-listening-address= /
+  =--aldb-listening-port= spellings (no aliases kept).
 
 ** Exit-status channel (portable pass/fail for batch scripts)
 

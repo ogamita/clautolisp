@@ -202,8 +202,14 @@ Clautolisp is *always debugging*: the aldo thread is ready for the
 lifetime of the process, so there is no "run" or "start" step. Control
 reaches the debugger in one of three ways:
 
-- *interrupt* — pressing =C-c= asks aldo to stop at the next instrumented
-  form; a second =C-c= forces an immediate abort, skipping the debugger.
+- *interrupt* — pressing =C-c= breaks into aldo at the current poll
+  point; a second =C-c= while the first is being handled exits the
+  process immediately, skipping the debugger. The behaviour is the
+  ~--on-interrupt debug|ignore|quit~ policy (default =debug=), mirrored
+  by the AutoLISP variable ~*CLAL-ON-INTERRUPT*~ which is re-read *live*
+  at each interrupt — ~(setq *CLAL-ON-INTERRUPT* 'IGNORE)~ makes =C-c=
+  a no-op from then on. With no debug session active, =debug= degrades
+  to =quit= (exit status 130).
 - *programmatic* — the AutoLISP forms ~(clal-break)~ and
   ~(clal-invoke-debugger [message])~ drop into aldo from your own code
   (the analogues of Common Lisp ~break~ / ~invoke-debugger~).
@@ -211,6 +217,11 @@ reaches the debugger in one of three ways:
   error policy asks for it. The policy is the ~--on-error
   quit|debug|ignore~ option (and the ~*clal-on-error*~ variable your
   code may rebind).
+- *on quit* — with ~--on-quit debug~ (default =quit=), a ~(quit)~ /
+  ~(exit)~ call enters the debugger *before* the stack unwinds:
+  =continue= resumes the quit, =quit=/abort cancels it and returns to
+  the toplevel REPL. Mirrored by ~*CLAL-ON-QUIT*~, also re-read live at
+  each call; the QUIT event cannot be ignored.
 
 Only *instrumented* functions can be stepped into or stopped in;
 instrument exactly what you want to debug (uninstrumented code runs at
@@ -237,14 +248,17 @@ interfaces; a feature available in one is available in all.
   mark ring.
 
 *Choosing the interface.* The default is the ~default-user-interface~
-setting (=tui=, =ncurses= or =aldb=). A single run can override it on
-the command line, without changing the saved default:
+setting (=tui=, =ncurses= or =aldb=; persisted in =aldo.conf=). A single
+run can override it on the command line with ~--debugger-ui~, without
+changing the saved default; the aldb channel is configured with
+~--aldb-listen [HOST:]PORT~ (HOST defaults to 127.0.0.1; port 0 picks a
+free port) or ~--aldb-stdio~ (the process's stdin/stdout become the RPC
+channel — incompatible with ~--interactive~). An aldb channel option
+implies ~--debugger-ui aldb~:
 
 #+begin_example
-  clautolisp --aldo-user-interface ncurses  program.lsp
-  clautolisp --aldo-user-interface aldb \
-             --aldb-listening-address 127.0.0.1 \
-             --aldb-listening-port 4301          program.lsp
+  clautolisp --debugger-ui ncurses          program.lsp
+  clautolisp --aldb-listen 127.0.0.1:4301   program.lsp
 #+end_example
 
 When aldb is selected and Emacs is not yet connected, aldo prints the
@@ -505,6 +519,39 @@ code 1.
                             records: ~t~ for all, or a comma-separated
                             list of names (default: ~AUTOLISP~ only).
                             Also sets ~*clal-dribble-interactors*~.
+
+** Debugger (aldo)
+See § /Debugger/ for the semantics; the options in brief:
+
+- ~--on-error POLICY~    :: ~quit~ (report and exit — the batch
+                            default), ~debug~ (break into aldo — the
+                            interactive-REPL default), or ~ignore~ (run
+                            the AutoLISP ~*error*~ handler). Sets
+                            ~*CLAL-ON-ERROR*~.
+- ~--on-interrupt POLICY~ :: What =C-c= (SIGINT) does: ~debug~ (break
+                            into aldo at the interrupt point — the
+                            default), ~ignore~ (execution resumes), or
+                            ~quit~ (exit 130). Sets
+                            ~*CLAL-ON-INTERRUPT*~, re-read *live* at
+                            each interrupt. A second =C-c= while one is
+                            being handled exits immediately.
+- ~--on-quit POLICY~     :: What ~(quit)~ / ~(exit)~ does: ~quit~ (the
+                            default) or ~debug~ (break into aldo before
+                            the stack unwinds; continue quits, abort
+                            cancels). Sets ~*CLAL-ON-QUIT*~, re-read
+                            live at each call. Cannot be ~ignore~-d.
+- ~--debugger-ui UI~     :: Debugger front-end for this run: ~tui~,
+                            ~ncurses~ or ~aldb~. Overrides the
+                            persisted ~default-user-interface~ setting
+                            (default ~tui~) without saving it.
+- ~--aldb-listen [HOST:]PORT~ :: Bind the aldb (Emacs) listener; HOST
+                            defaults to 127.0.0.1, PORT 0 picks a free
+                            port, a service name is accepted. Implies
+                            ~--debugger-ui aldb~.
+- ~--aldb-stdio~         :: Use stdin/stdout as the aldb RPC channel;
+                            implies ~--debugger-ui aldb~; mutually
+                            exclusive with ~--interactive~ and
+                            ~--aldb-listen~.
 
 ** Host backend
 The Host Abstraction Layer (HAL, Phase 8 of the implementation

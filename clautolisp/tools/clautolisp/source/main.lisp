@@ -37,14 +37,30 @@
   (format t "                         indented by call depth. Output goes to *trace-output* (stderr).~%")
   (format t "Debugger (aldo):~%")
   (format t "  --on-error POLICY      What to do when an uncaught AutoLISP error reaches the top~%")
-  (format t "                         level: quit (report and exit, the default), debug (break into~%")
-  (format t "                         the aldo debugger), or ignore (run the AutoLISP *error* handler).~%")
-  (format t "                         Sets *CLAL-ON-ERROR*, which code may rebind.~%")
-  (format t "  --aldo-user-interface UI  Debugger front-end: tui (the line/terminal UI, default),~%")
-  (format t "                         ncurses, or aldb (the Emacs front-end). Selecting one runs the~%")
-  (format t "                         program under a debug session.~%")
-  (format t "  --aldb-listening-address ADDR  Address the aldb listener binds (with --aldo-user-interface aldb).~%")
-  (format t "  --aldb-listening-port PORT     Port (or service name) the aldb listener binds.~%")
+  (format t "                         level: quit (report and exit, the default for a batch run),~%")
+  (format t "                         debug (break into the aldo debugger, the default for the~%")
+  (format t "                         interactive REPL), or ignore (run the AutoLISP *error*~%")
+  (format t "                         handler). Sets *CLAL-ON-ERROR*, which code may rebind.~%")
+  (format t "  --on-interrupt POLICY  What Control-C (SIGINT) does: debug (break into the aldo~%")
+  (format t "                         debugger at the interrupt point, the default), ignore~%")
+  (format t "                         (execution resumes), or quit (exit with status 130). Sets~%")
+  (format t "                         *CLAL-ON-INTERRUPT*, re-read LIVE at each interrupt, so~%")
+  (format t "                         (setq *CLAL-ON-INTERRUPT* 'POLICY) overrides it at runtime.~%")
+  (format t "                         A second Control-C while one is being handled exits at once.~%")
+  (format t "  --on-quit POLICY       What (quit) / (exit) does: quit (the default), or debug —~%")
+  (format t "                         break into the debugger BEFORE the stack unwinds; continuing~%")
+  (format t "                         resumes the quit, aborting cancels it. Sets *CLAL-ON-QUIT*,~%")
+  (format t "                         re-read LIVE at each (quit)/(exit) call.~%")
+  (format t "  --debugger-ui UI       Debugger front-end: tui (the line/terminal UI), ncurses, or~%")
+  (format t "                         aldb (the Emacs front-end). Selecting one runs the program~%")
+  (format t "                         under a debug session. Per-run override of the persisted~%")
+  (format t "                         default-user-interface aldo setting (aldo.conf), default tui.~%")
+  (format t "  --aldb-listen [HOST:]PORT  Address the aldb (Emacs) listener binds; HOST defaults~%")
+  (format t "                         to 127.0.0.1, PORT is a number (0 = pick a free port) or a~%")
+  (format t "                         service name. Implies --debugger-ui aldb.~%")
+  (format t "  --aldb-stdio           Use the process's stdin/stdout as the aldb RPC channel.~%")
+  (format t "                         Implies --debugger-ui aldb; mutually exclusive with~%")
+  (format t "                         --interactive and --aldb-listen.~%")
   (format t "Dribble:~%")
   (format t "  --dribble              Record the REPL interactions (input, output, errors,~%")
   (format t "                         conditions) into ~~/.local/state/clautolisp/dribbles/~%")
@@ -190,27 +206,40 @@ front-end."
              :handler (lambda (opts value name)
                         (declare (ignore value name))
                         (setf (clautolisp.autolisp-cli:cli-options-trace-p opts) t)))
-            ;; --- debugger (aldo) options (debugger §10) ---
+            ;; --- debugger (aldo) options (debugger §10,
+            ;; debugger-public-interface-and-on-error.issue Parts B-D) ---
             (clautolisp.autolisp-cli:make-option-spec
              :longs '("--on-error") :shorts nil :takes-arg-p t
              :handler (lambda (opts value name)
                         (setf (clautolisp.autolisp-cli:cli-options-on-error opts)
                               (clautolisp.autolisp-cli:parse-on-error value name))))
             (clautolisp.autolisp-cli:make-option-spec
-             :longs '("--aldo-user-interface") :shorts nil :takes-arg-p t
+             :longs '("--on-interrupt") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (setf (clautolisp.autolisp-cli:cli-options-on-interrupt opts)
+                              (clautolisp.autolisp-cli:parse-on-interrupt value name))))
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--on-quit") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (setf (clautolisp.autolisp-cli:cli-options-on-quit opts)
+                              (clautolisp.autolisp-cli:parse-on-quit value name))))
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--debugger-ui") :shorts nil :takes-arg-p t
              :handler (lambda (opts value name)
                         (setf (clautolisp.autolisp-cli:cli-options-user-interface opts)
                               (clautolisp.autolisp-cli:parse-user-interface value name))))
             (clautolisp.autolisp-cli:make-option-spec
-             :longs '("--aldb-listening-address") :shorts nil :takes-arg-p t
+             :longs '("--aldb-listen") :shorts nil :takes-arg-p t
              :handler (lambda (opts value name)
-                        (declare (ignore name))
-                        (setf (clautolisp.autolisp-cli:cli-options-aldb-address opts) value)))
+                        (multiple-value-bind (host port)
+                            (clautolisp.autolisp-cli:parse-aldb-listen value name)
+                          (setf (clautolisp.autolisp-cli:cli-options-aldb-address opts) host
+                                (clautolisp.autolisp-cli:cli-options-aldb-port opts) port))))
             (clautolisp.autolisp-cli:make-option-spec
-             :longs '("--aldb-listening-port") :shorts nil :takes-arg-p t
+             :longs '("--aldb-stdio") :shorts nil :takes-arg-p nil
              :handler (lambda (opts value name)
-                        (declare (ignore name))
-                        (setf (clautolisp.autolisp-cli:cli-options-aldb-port opts) value)))
+                        (declare (ignore value name))
+                        (setf (clautolisp.autolisp-cli:cli-options-aldb-stdio-p opts) t)))
             ;; --- dribble options (dribble.issue) ---
             ;; --dribble takes an OPTIONAL value: bare `--dribble' (VALUE
             ;; nil) records into the default timestamped file;
@@ -227,7 +256,46 @@ front-end."
                         (setf (clautolisp.autolisp-cli:cli-options-dribble-interactors opts)
                               (clautolisp.autolisp-cli:parse-dribble-interactors
                                value name))))))))
-    (clautolisp.autolisp-cli:parse-arguments-with-spec specs arguments)))
+    (let ((options (clautolisp.autolisp-cli:parse-arguments-with-spec specs arguments)))
+      (validate-debugger-options options)
+      options)))
+
+(defun validate-debugger-options (options)
+  "Cross-option validation for the aldb channel options
+(debugger-public-interface-and-on-error.issue C.2): --aldb-stdio turns the
+process's stdin/stdout into the aldb RPC channel, so it is mutually
+exclusive with --interactive (the REPL would fight the RPC for stdio) and
+with --aldb-listen (one transport at a time). Signals a cli-usage-error."
+  (when (clautolisp.autolisp-cli:cli-options-aldb-stdio-p options)
+    (when (clautolisp.autolisp-cli:cli-options-interactive-p options)
+      (error 'clautolisp.autolisp-cli:cli-usage-error
+             :option "--aldb-stdio"
+             :message "--aldb-stdio and --interactive are mutually exclusive (stdio becomes the aldb RPC channel)"))
+    (when (or (clautolisp.autolisp-cli:cli-options-aldb-address options)
+              (clautolisp.autolisp-cli:cli-options-aldb-port options))
+      (error 'clautolisp.autolisp-cli:cli-usage-error
+             :option "--aldb-stdio"
+             :message "--aldb-stdio and --aldb-listen are mutually exclusive (pick one aldb transport)")))
+  options)
+
+(defun effective-user-interface (options)
+  "The --debugger-ui selection from OPTIONS, with the aldb-channel
+implication (debugger-public-interface-and-on-error.issue C.3): an aldb
+transport option (--aldb-listen / --aldb-stdio) implies the aldb UI unless
+an explicit --debugger-ui says otherwise. NIL when no UI was requested."
+  (or (clautolisp.autolisp-cli:cli-options-user-interface options)
+      (and (or (clautolisp.autolisp-cli:cli-options-aldb-address options)
+               (clautolisp.autolisp-cli:cli-options-aldb-port options)
+               (clautolisp.autolisp-cli:cli-options-aldb-stdio-p options))
+           :aldb)))
+
+(defun resolve-default-debugger-ui ()
+  "The persisted default-user-interface aldo setting (command reference §8;
+$XDG_CONFIG_HOME/clautolisp/aldo.conf), :tui when unset — the value an
+explicit --debugger-ui overrides for this run only."
+  (ignore-errors (clautolisp.debug.ui:load-aldo-configuration))
+  (or (ignore-errors (clautolisp.debug.ui:get-aldo-setting :default-user-interface))
+      :tui))
 
 (defun prepend-init-file-actions (actions no-init-p)
   "Walk the user's init-file stem list and prepend a (:FILE PATH)
@@ -886,12 +954,84 @@ is handled separately by the REPL wrapper in RUN-WITH-INPUT."
     (usage)))
 
 (defun debug-ui-designator (ui-keyword)
-  "Map a --aldo-user-interface keyword to a registered UI designator
+  "Map a --debugger-ui keyword to a registered UI designator
 (register-ui name). :tui is the dumb/terminal UI."
   (ecase ui-keyword
     (:tui :terminal)
     (:ncurses :ncurses)
     (:aldb :aldb)))
+
+;;; --- SIGINT / --on-interrupt (debugger-public-interface-and-on-error
+;;; Part B) -------------------------------------------------------------
+
+(defvar *interrupt-in-progress* nil
+  "True while a Control-C is being handled under the :DEBUG interrupt
+policy (e.g. the aldo debugger is up at the interrupt point). A second
+SIGINT while it is set means the user wants out NOW, forgoing the
+debugger: the process exits immediately with status 130. A global (not a
+dynamic binding) because the raw signal handler may run on another
+thread.")
+
+(defun handle-interrupt ()
+  "The main-thread part of the SIGINT handler: apply the LIVE
+*CLAL-ON-INTERRUPT* policy (the AutoLISP variable overrides the CLI-set
+default). :IGNORE returns, which resumes the interrupted computation;
+:QUIT exits with status 130 (128+SIGINT, the shell convention); :DEBUG
+breaks into the aldo debugger at the current poll point — continuing
+resumes the program, aborting unwinds to the toplevel REPL. With no
+active debug session :DEBUG degrades to :QUIT (there is no debugger to
+enter)."
+  (let ((policy (clautolisp.autolisp-builtins-core:live-event-policy
+                 "*CLAL-ON-INTERRUPT*"
+                 clautolisp.autolisp-runtime:*clal-on-interrupt*
+                 '(:debug :ignore :quit))))
+    (case policy
+      (:ignore nil)
+      (:quit
+       (format *error-output* "~&clautolisp: interrupted.~%")
+       (finish-output *error-output*)
+       (quit 130))
+      (otherwise                        ; :debug
+       (cond
+         ((and clautolisp.autolisp-runtime:*debugging*
+               clautolisp.autolisp-runtime:*debug-break-hook*)
+          (setf *interrupt-in-progress* t)
+          (unwind-protect
+               (funcall clautolisp.autolisp-runtime:*debug-break-hook*
+                        "interrupt (Control-C)")
+            (setf *interrupt-in-progress* nil)))
+         (t
+          (format *error-output*
+                  "~&clautolisp: interrupted (no debug session active; ~
+                   the debug interrupt policy degrades to quit).~%")
+          (finish-output *error-output*)
+          (quit 130)))))))
+
+(defun install-interrupt-handler ()
+  "Install the process SIGINT handler implementing --on-interrupt /
+*CLAL-ON-INTERRUPT* (Part B). The raw handler only forwards to
+HANDLE-INTERRUPT on the thread that installed it (the main AutoLISP
+thread), where the interruption runs at the next safe point — returning
+from it resumes the interrupted computation, which is how :IGNORE and the
+debugger's `continue' work. A second SIGINT while one is being handled
+exits immediately (status 130). Returns T when a handler was installed;
+NIL on implementations where the native Control-C behaviour is kept."
+  #+sbcl
+  (let ((thread sb-thread:*current-thread*))
+    (sb-sys:enable-interrupt
+     sb-unix:sigint
+     (lambda (signal info context)
+       (declare (ignore signal info context))
+       (if *interrupt-in-progress*
+           (progn
+             (ignore-errors
+              (format *error-output* "~&clautolisp: second interrupt — exiting.~%")
+              (finish-output *error-output*))
+             (sb-ext:exit :code 130 :abort t))
+           (sb-thread:interrupt-thread thread #'handle-interrupt))))
+    t)
+  #-sbcl
+  nil)
 
 (defun run-under-session-debugging (session thunk break-on-error)
   "Run THUNK with debugging active under an already-attached SESSION (debugger
@@ -950,6 +1090,9 @@ machinery, not user intent)."
              (*error-output*    (make-dribble-output-tee *error-output*    "E"))
              (*standard-input*  (make-dribble-input-echo *standard-input*)))
         (clautolisp.autolisp-cli:install-transmit-variables context bindings)
+        ;; Control-C now follows the *CLAL-ON-INTERRUPT* policy
+        ;; (--on-interrupt, Part B), read live at each interrupt.
+        (install-interrupt-handler)
         ;; --dribble-interactors=IS also sets the AutoLISP variable
         ;; *CLAL-DRIBBLE-INTERACTORS* (dribble.issue: the option is the
         ;; CLI spelling of (setq *clal-dribble-interactors* 'IS)), so a
@@ -966,7 +1109,7 @@ machinery, not user intent)."
                      (let ((start (get-internal-real-time)))
                        (eval-action-in-context context action dialect)
                        (maybe-summarise-action (car action) (cdr action) start))))))
-          ;; --on-error debug / --aldo-user-interface attach ONE debugger
+          ;; --on-error debug / --debugger-ui attach ONE debugger
           ;; session (debugger §10) for the whole program:
           ;;  • batch program (-l/-x, non-interactive): run the actions as one
           ;;    debugging extent so an uncaught error breaks into the UI;
@@ -1109,23 +1252,71 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                ;; --on-error always wins.
                (on-error  (or (clautolisp.autolisp-cli:cli-options-on-error options)
                               (if effective-interactive-p :debug :quit)))
-               (user-interface (clautolisp.autolisp-cli:cli-options-user-interface options))
-               ;; Debug the program when --on-error debug or a UI was selected.
-               (debug-ui  (when (or (eq on-error :debug) user-interface)
-                            (or user-interface :tui))))
-          ;; The aldb (Emacs) front-end speaks over a TCP socket; the listener
-          ;; is not yet implemented (debugger §10). Fail clearly rather than
-          ;; silently doing nothing.
+               ;; --on-interrupt / --on-quit (Part B): the CLI supplies the
+               ;; initial policy; the AutoLISP *CLAL-ON-INTERRUPT* /
+               ;; *CLAL-ON-QUIT* variables override it LIVE.
+               (on-interrupt (or (clautolisp.autolisp-cli:cli-options-on-interrupt options)
+                                 :debug))
+               (on-quit   (or (clautolisp.autolisp-cli:cli-options-on-quit options)
+                              :quit))
+               ;; --debugger-ui, with the aldb-channel implication (Part C);
+               ;; when absent, the persisted default-user-interface aldo
+               ;; setting decides (a per-run override of aldo.conf).
+               (user-interface (effective-user-interface options))
+               (effective-ui (or user-interface (resolve-default-debugger-ui)))
+               ;; Debug the program when --on-error debug or a UI was
+               ;; selected — or when an EXPLICIT --on-quit/--on-interrupt
+               ;; debug asks for a debugger (the raw slots, not the
+               ;; defaults: the interrupt default is debug and must not
+               ;; arm a session for every run; without a session those
+               ;; policies degrade as documented).
+               (debug-ui  (when (or (eq on-error :debug) user-interface
+                                    (eq :debug (clautolisp.autolisp-cli:cli-options-on-quit
+                                                options))
+                                    (eq :debug (clautolisp.autolisp-cli:cli-options-on-interrupt
+                                                options)))
+                            effective-ui))
+               ;; --aldb-listen / --aldb-stdio (Part C/D): recorded and
+               ;; mirrored to *CLAL-ALDB-LISTEN*; the transport itself is
+               ;; pending (see below).
+               (aldb-listen
+                 (cond ((clautolisp.autolisp-cli:cli-options-aldb-stdio-p options)
+                        :stdio)
+                       ((or (clautolisp.autolisp-cli:cli-options-aldb-address options)
+                            (clautolisp.autolisp-cli:cli-options-aldb-port options))
+                        (format nil "~A:~A"
+                                (or (clautolisp.autolisp-cli:cli-options-aldb-address options)
+                                    "127.0.0.1")
+                                (clautolisp.autolisp-cli:cli-options-aldb-port options))))))
+          ;; The aldb (Emacs) front-end speaks over a TCP socket (or stdio);
+          ;; the listener is not yet implemented (debugger §10). Fail clearly
+          ;; when aldb was requested on the command line; when it merely is
+          ;; the persisted default-user-interface, warn and fall back to tui
+          ;; so the tool stays usable.
           (when (eq debug-ui :aldb)
-            (format *error-output*
-                    "~&clautolisp: --aldo-user-interface aldb is not yet implemented ~
-                     (the aldb TCP listener is pending); use tui or ncurses.~%")
-            (finish-output *error-output*)
-            (quit 2))
+            (cond
+              ((eq user-interface :aldb)
+               (format *error-output*
+                       "~&clautolisp: --debugger-ui aldb is not yet implemented ~
+                        (the aldb RPC listener is pending); use tui or ncurses.~%")
+               (finish-output *error-output*)
+               (quit 2))
+              (t
+               (format *error-output*
+                       "~&clautolisp: the persisted default-user-interface ~
+                        aldb is not yet implemented; using tui.~%")
+               (finish-output *error-output*)
+               (setf debug-ui :tui effective-ui :tui))))
           (let ((*verbose-p* verbose-p)
                 (*debug-p* debug-p)
-                ;; The error policy (debugger §10): user code may rebind it.
+                ;; The event policies (debugger §10 / Part B): user code may
+                ;; rebind the CL variables; the AutoLISP mirrors of the
+                ;; interrupt / quit policies are re-read live.
                 (clautolisp.autolisp-runtime:*clal-on-error* on-error)
+                (clautolisp.autolisp-runtime:*clal-on-interrupt* on-interrupt)
+                (clautolisp.autolisp-runtime:*clal-on-quit* on-quit)
+                (clautolisp.autolisp-runtime:*clal-debugger-ui* effective-ui)
+                (clautolisp.autolisp-runtime:*clal-aldb-listen* aldb-listen)
                 ;; Colour policy is computed exactly once per CLI run
                 ;; against the LIVE *standard-output*. NIL means "no
                 ;; colour"; a keyword is the accent the symbol

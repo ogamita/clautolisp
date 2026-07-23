@@ -1,5 +1,74 @@
 * debugger-public-interface-and-on-error — AutoLISP-facing debugger API + --on-error CLI option (+ aldb connection options)
 
+** STATUS (2026-07-23, clautolisp 1.6.3, branch fix-debugger-cli-options)
+
+Part A (clal-* builtins, *CLAL-ON-ERROR*, --on-error) was DONE earlier.
+Parts B-D CLI surface is now implemented:
+
+- --on-interrupt debug|ignore|quit (default DEBUG): a process SIGINT
+  handler (SBCL; other implementations keep native C-c behaviour)
+  applies the policy at the interrupt point — DEBUG breaks into aldo via
+  the *debug-break-hook* poll-point entry (continue resumes, abort
+  unwinds to the REPL; degrades to quit + exit 130 when no debug session
+  is active), IGNORE resumes, QUIT exits 130. A second C-c while one is
+  being handled exits immediately (the issue's confirmation prompt was
+  simplified to an immediate exit — [pjb] say if the y/n confirmation is
+  wanted instead). Variable *CLAL-ON-INTERRUPT* is mirrored to AutoLISP
+  and re-read LIVE at each interrupt (variables override the CLI, as
+  specified).
+- --on-quit debug|quit (default QUIT): (quit)/(exit) consult the LIVE
+  *CLAL-ON-QUIT* policy in %TERMINATE-WITH-STATUS; under DEBUG the
+  debugger is entered BEFORE unwinding — continue proceeds with the
+  quit, abort cancels it. The QUIT event cannot be ignored.
+- --on-error: unchanged from Part A; NOTE the implemented default is
+  context-dependent (DEBUG at the interactive REPL, QUIT for a batch
+  run), deliberately diverging from this issue's flat DEBUG default —
+  batch/CI stays deterministic. *CLAL-ON-ERROR* remains a launch-time
+  mirror (not live), as before.
+- --debugger-ui tui|ncurses|aldb: the per-run override of the persisted
+  default-user-interface aldo setting; aldo.conf is now loaded at launch
+  to resolve the default (previously hardwired :tui).
+- --aldb-listen [HOST:]PORT (HOST defaults to 127.0.0.1; port 0 = pick a
+  free port; service names accepted; [::1]:PORT works) and --aldb-stdio
+  (mutually exclusive with --interactive and --aldb-listen): parsed,
+  validated, stored (cli-options aldb-address/aldb-port/aldb-stdio-p),
+  mirrored to *CLAL-ALDB-LISTEN* ("HOST:PORT" string / STDIO / nil), and
+  they imply --debugger-ui aldb per C.3.
+
+Naming reconciliation (this issue is authoritative for the OPTION names;
+the command reference is authoritative for the VALUE names):
+
+- --debugger-ui replaces the interim --aldo-user-interface; UI values
+  stay tui|ncurses|aldb per the command reference §10 ("TUI is the
+  user-facing name"), with terminal/dumb accepted for tui and emacs for
+  aldb — so this issue's `terminal' value works.
+- --aldb-listen [HOST:]PORT + --aldb-stdio replace the interim
+  --aldb-listening-address / --aldb-listening-port pair.
+- Per the CLI convention (no legacy aliases) the interim spellings are
+  GONE, not aliased; the command reference / user manual / man page /
+  release notes were updated.
+- The default listen address/port stay the persisted
+  default-aldb-listening-address/-port settings (127.0.0.1:4301), NOT
+  this issue's random-4000-4099 sketch — [pjb] confirm.
+
+Remaining (this issue stays open for):
+
+- The aldb transport itself (deliverable 3): the TCP listener /
+  stdio-framed RPC binding the emacs-ui streams, the §10 "waiting for
+  aldb to connect" prompt, port-0 free-port printing. Until it lands,
+  --debugger-ui aldb (explicit or implied by an aldb channel option)
+  fails with a clear "not yet implemented" message (exit 2); a
+  persisted default-user-interface=aldb falls back to tui with a
+  warning.
+- Sharing the options with alfe (the issue's tables say both tools; the
+  options currently stay clautolisp-specific like --on-error before
+  them) — needs the alfe debugger story (CAD backends have no aldo)
+  [pjb decide: promote to *common-option-specs* now, or when alfe can
+  debug].
+- --aldb-swank (explicitly deferred in C.2).
+- --on-interrupt on CCL (the SIGINT handler is SBCL-only; CCL keeps its
+  native break-loop behaviour).
+
 See also: ::
 
 - clautolisp/documentation/clautolisp-debugger-spec.org (§10 *error*, §18 dumb UI, §20 emacs UI, §21 start-session)

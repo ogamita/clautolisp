@@ -10,7 +10,8 @@
 (in-package #:clautolisp.tools.clautolisp.tests)
 
 (def-suite clautolisp-tool-suite
-  :description "The clautolisp tool: the dribble tee/echo streams and start/stop/toggle logic.")
+  :description "The clautolisp tool: the dribble tee/echo streams and
+start/stop/toggle logic, and the debugger (aldo) CLI options.")
 
 (defun run-all-tests ()
   (let ((results (run 'clautolisp-tool-suite)))

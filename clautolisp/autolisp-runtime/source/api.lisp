@@ -1314,6 +1314,38 @@ debugger). Set by the clautolisp CLI's --on-error option; user code and init
 files may rebind it (e.g. (let ((*clal-on-error* :debug)) …)) to shadow it
 around a suspect region.")
 
+(defparameter *clal-on-interrupt* :debug
+  "The interrupt policy when the process receives SIGINT (Control-C)
+(debugger-public-interface-and-on-error.issue Part B): one of :DEBUG (break
+into the aldo debugger at the interrupt point — the default), :IGNORE (the
+interrupt is ignored and execution resumes), or :QUIT (the process quits,
+exit status 130). Set by the clautolisp CLI's --on-interrupt option; the
+AutoLISP variable *CLAL-ON-INTERRUPT* mirrors it and is consulted LIVE at
+each interrupt, so user code may change the policy at runtime.")
+
+(defparameter *clal-on-quit* :quit
+  "The QUIT-event policy when (quit) / (exit) is called
+(debugger-public-interface-and-on-error.issue Part B): :QUIT (the process
+quits — the default) or :DEBUG (the aldo debugger is entered from QUIT
+before the stack unwinds; continuing resumes the quit, aborting cancels
+it). The QUIT event cannot be ignored. Set by the clautolisp CLI's
+--on-quit option; the AutoLISP variable *CLAL-ON-QUIT* mirrors it and is
+consulted LIVE at each (quit) / (exit) call.")
+
+(defparameter *clal-debugger-ui* :tui
+  "The debugger user-interface selection (debugger command reference §10):
+:TUI (the line/terminal UI), :NCURSES, or :ALDB (the Emacs front-end). Set
+by the clautolisp CLI's --debugger-ui option, defaulting to the persisted
+default-user-interface aldo setting. Mirrored to the AutoLISP variable
+*CLAL-DEBUGGER-UI*.")
+
+(defparameter *clal-aldb-listen* nil
+  "The aldb (Emacs UI) transport requested on the CLI
+(debugger-public-interface-and-on-error.issue Part C/D): an \"ADDRESS:PORT\"
+string (--aldb-listen), :STDIO (--aldb-stdio), or NIL — no explicit request;
+the default-aldb-listening-address / -port aldo settings apply. Mirrored to
+the AutoLISP variable *CLAL-ALDB-LISTEN*.")
+
 (defparameter *debugging* nil
   "Non-nil iff a debug session is active on the executing thread. It is
 set once by the debugger's session entry and is NOT rebound per call.

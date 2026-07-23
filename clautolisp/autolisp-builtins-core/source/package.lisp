@@ -180,4 +180,5 @@
    #:find-core-builtin
    #:install-core-builtins
    #:autolisp-value->string
+   #:live-event-policy
    #:apply-dialect-trust-sysvar-defaults))
