@@ -10,6 +10,9 @@ UI refines.")
   (:import-from #:clautolisp.interactor
                 #:bind-command #:bind-command-alias
                 #:command-raw-argument-p #:dictionary-commands
+                ;; typed command arguments (interactor-unification): the
+                ;; legacy dispatch converts exactly like CALL-COMMAND
+                #:convert-command-argument #:command-argument-error
                 #:+system-command-word+
                 ;; the unified loop (interactor-unification.issue) over
                 ;; singleton interactors + activations (design-revision T1)

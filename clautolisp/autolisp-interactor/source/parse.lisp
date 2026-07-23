@@ -62,15 +62,6 @@ Examples:
                (error 'command-syntax-error
                       :command command
                       :position position))
-             (identp (text)
-               ;; /[A-Za-z][-A-Za-z0-9]*/
-               (and (plusp (length text))
-                    (ascii-letter-p (char text 0))
-                    (every (lambda (ch)
-                             (or (ascii-letter-p ch)
-                                 (ascii-digit-p ch)
-                                 (char= ch #\-)))
-                           text)))
              (integerp* (text)
                ;; /[-+]?[0-9]+/
                (let ((n (length text)) (i 0))
@@ -111,7 +102,9 @@ Examples:
              (classify (text)
                ;; The order matters: integer before float, because "42"
                ;; matches both the integer and the (looser) float regexp.
-               (cond ((identp text)    'ident)
+               ;; The ident rule /[A-Za-z][-A-Za-z0-9]*/ is IDENT-TEXT-P
+               ;; (command.lisp), shared with the IDENT argument conversion.
+               (cond ((ident-text-p text) 'ident)
                      ((integerp* text) 'integer)
                      ((floatp* text)   'float)
                      (t                'token)))

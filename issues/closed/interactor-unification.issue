@@ -2,6 +2,12 @@
 #+TITLE: interactors — unify every interaction loop on INTERACTOR-LOOP
 #+AUTHOR: Pascal J. Bourguignon
 
+CLOSED 1.6.1 — every interaction loop runs on INTERACTOR-LOOP (framework
+1.4.33–35, loop unification 1.4.39/41, registry + clal-define-command
+1.4.44, SEDIT 1.4.47) and the last item, typed command arguments
+((NAME TYPE) lambda-list sublists converted by the framework), landed in
+1.6.1; the depth-prefixed prompt stays DECIDED-against.
+
 The general mechanism proposed in =issues/open/interactors.lisp= (now
 realised as the =clautolisp/autolisp-interactor= subsystem, package
 =clautolisp.interactor=) gives every interaction loop one implementation:
@@ -74,7 +80,7 @@ interactor anywhere on the stack.
   fresh line; a CL error escaping a turn is reported by the loop
   instead of crashing the REPL.
 
-* Remaining
+* Remaining — all resolved (issue closed 1.6.1)
 
 - SEDIT as an interactor — DONE 1.4.47
   (interactor-design-revision.issue step 6): the =*SEDIT*= interactor
@@ -88,10 +94,19 @@ interactor anywhere on the stack.
   =*list-interactor-names-hook*= runtime hooks, and the
   CLAL-DEFINE-COMMAND / CLAL-LIST-INTERACTOR-NAMES builtins;
   =clal-define-debugger-command= deprecated.
-- Typed command arguments: =parse-command= classifies tokens
-  (ident/integer/float/string) but command functions receive plain
-  strings for compatibility; a declared lambda-list could request
-  converted values.
+- Typed command arguments — DONE 1.6.1: a declared lambda-list parameter
+  may be a =(NAME TYPE)= sublist, TYPE one of string / integer / float /
+  ident / sexp (=+command-argument-types+=); =call-command= AND the dumb
+  UI's legacy dictionary dispatch convert through the one exported
+  =convert-command-argument= before the call. A token that does not
+  convert reports (=the skip command needs a integer for count, got
+  \"x\"=) and skips the call, keeping the loop alive; prompted answers
+  convert (and cancel) the same way; =(&rest (VAR TYPE))= converts each
+  element; the function's real lambda-list uses just the names (like
+  =&whole=, the types belong to the declaration only, and the two are
+  mutually exclusive — enforced at registration by
+  =check-command-lambda-list=). NAVI's and SEDIT's =skip= are the first
+  typed commands (=((count integer))=, hand-rolled parse-integer gone).
 - The =make-prompt-function= depth-prefixed prompt (=[2]LISP> =) is
   available but unused — DECIDED for now: the spec'd prompts (=DBG>= /
   =NAV>= / =SEDIT>= / =_$=) win; revisit only if recursive debugger

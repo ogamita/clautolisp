@@ -406,20 +406,28 @@ frame and echoes with the DBG> prefix."
   (and arg (remove "" (uiop:split-string (string-trim " " arg) :separator '(#\Space #\Tab))
                    :test #'string=)))
 
-(defun %marshal-command-args (lambda-list tokens)
-  "Map TOKENS (strings) onto LAMBDA-LIST for APPLY: each required / &optional
-parameter takes the next token (or NIL when exhausted); &rest collects the
-remainder as a list. So a command body receives its parsed positional args."
-  (let ((args '()) (toks tokens) (rest-p nil))
-    (dolist (item lambda-list)
-      (cond
-        ((eq item '&optional))
-        ((eq item '&rest) (setf rest-p t) (return))
-        (t (push (pop toks) args))))
-    (nreverse-then-append (nreverse args) (when rest-p (list toks)))))
-
-(defun nreverse-then-append (front rest)
-  (if rest (append front rest) front))
+(defun %marshal-command-args (command tokens)
+  "Map TOKENS (strings) onto COMMAND's declared lambda-list for APPLY: each
+required / &optional parameter takes the next token (or NIL when exhausted);
+&rest collects the remainder as a list. Each value is converted to its
+parameter's declared type first when the parameter is a (NAME TYPE) sublist
+\(CONVERT-COMMAND-ARGUMENT — the interactor framework's typed command
+arguments), so this legacy dispatch converts exactly like CALL-COMMAND."
+  (let ((args '()) (toks tokens) (rest-spec nil)
+        (items (command-lambda-list command)))
+    (loop :while items
+          :do (let ((item (pop items)))
+                (cond
+                  ((eq item '&optional))
+                  ((eq item '&rest) (setf rest-spec (or (pop items) t))
+                                    (setf items '()))
+                  (t (push (convert-command-argument command item (pop toks))
+                           args)))))
+    (append (nreverse args)
+            (when rest-spec
+              (list (mapcar (lambda (tok)
+                              (convert-command-argument command rest-spec tok))
+                            toks))))))
 
 (defun dispatch-in-dictionaries (ui session hit dictionaries cmd arg)
   "Look CMD up in DICTIONARIES (innermost-first) and dispatch it — binding the
@@ -442,8 +450,12 @@ commands report and keep the loop reading."
               (if (command-raw-argument-p command)
                   (funcall (command-function command) arg)
                   (apply (command-function command)
-                         (%marshal-command-args (command-lambda-list command)
-                                                (%command-tokens arg))))
+                         (%marshal-command-args command (%command-tokens arg))))
+            (command-argument-error (e)
+              ;; a token that does not convert to its declared type: report,
+              ;; skip the call, keep the loop reading.
+              (out ui "DBG> ~A~%" e)
+              nil)
             (error (e)
               (out ui "DBG> error while executing ~A: ~A~%" cmd e)
               nil)))

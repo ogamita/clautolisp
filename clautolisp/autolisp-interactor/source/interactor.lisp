@@ -235,8 +235,9 @@ ARGUMENT-TOKENS WORDS-CONSUMED ACTIVATION), or NIL when nothing matches."
 ;;; --- executing a command with parameters ---------------------------------
 
 (defun %prompt-for-argument (parameter output input-context)
-  "Prompt for a missing required PARAMETER and read one token; NIL at EOF."
-  (format output "~A? " (string-downcase (string parameter)))
+  "Prompt for a missing required PARAMETER (its declared spec — a symbol or
+a (NAME TYPE) sublist) and read one token; NIL at EOF."
+  (format output "~A? " (string-downcase (string (command-parameter-name parameter))))
   (finish-output output)
   (let ((line (if input-context
                   (read-line-from-input-context input-context)
@@ -252,11 +253,16 @@ ARGUMENT-TOKENS WORDS-CONSUMED ACTIVATION), or NIL when nothing matches."
                      &key raw (output *standard-output*)
                           (error-output *error-output*) input-context)
   "Apply COMMAND to ARGUMENTS ((TYPE . TEXT) conses from PARSE-COMMAND); the
-function receives the token texts (strings). A raw (&WHOLE) command receives
-RAW — the untokenized argument string — instead. Missing required arguments
-are prompted for; extra arguments warn and are dropped unless &rest collects
-them. An error during execution is reported on ERROR-OUTPUT; returns the
-command's value (commands that resume an outer loop use INTERACTOR-RETURN)."
+function receives the token texts (strings), each CONVERTED first when its
+parameter is declared as a (NAME TYPE) sublist (CONVERT-COMMAND-ARGUMENT —
+typed command arguments; (&rest (VAR TYPE)) converts each collected
+element). A raw (&WHOLE) command receives RAW — the untokenized argument
+string — instead. Missing required arguments are prompted for, the answer
+converted the same way; a text that does not convert reports on
+ERROR-OUTPUT and cancels the call, keeping the loop alive. Extra arguments
+warn and are dropped unless &rest collects them. An error during execution
+is reported on ERROR-OUTPUT; returns the command's value (commands that
+resume an outer loop use INTERACTOR-RETURN)."
   (handler-case
       (if (command-raw-argument-p command)
           (funcall (command-function command) raw)
@@ -274,7 +280,13 @@ command's value (commands that resume an outer loop use INTERACTOR-RETURN)."
               (warn "Too many arguments given, ~{~A~^ ~} are ignored"
                     (subseq texts maximum))
               (setf texts (subseq texts 0 maximum)))
-            (apply (command-function command) texts)))
+            (apply (command-function command)
+                   (convert-command-arguments command texts))))
+    (command-argument-error (err)
+      ;; a token that does not convert to its declared type: report, skip
+      ;; the call — the loop stays alive (same choke-point as below).
+      (format error-output "~&~A~%" err)
+      (values))
     (error (err)
       (format error-output "~&Error while executing the command: ~A~%" err)
       (values))))
@@ -440,10 +452,12 @@ LIST-INTERACTOR-NAMES and named user-command registration see it."
 (defun %function-lambda-list (lambda-list)
   "The lambda-list of the command's function: (&WHOLE VAR) declares the raw
 calling convention, whose function takes just (VAR) — function lambda-lists
-have no &WHOLE, only the declaration does (design-revision T3)."
+have no &WHOLE, only the declaration does (design-revision T3) — and a typed
+\(NAME TYPE) sublist contributes just NAME: the types too belong to the
+declaration only."
   (if (and (= 2 (length lambda-list)) (eq (first lambda-list) '&whole))
       (rest lambda-list)
-      lambda-list))
+      (mapcar #'command-parameter-name lambda-list)))
 
 (defun %command-function-form (lambda-list body)
   "The function form DEFINE-COMMAND registers: a body of exactly
@@ -464,7 +478,14 @@ The calling convention (design-revision T3): LAMBDA-LIST is either
 (&WHOLE VAR) — the function receives the raw, untokenized argument string
 as its single parameter VAR (its actual lambda-list is (VAR): &WHOLE
 belongs to the declaration only) — or positional,
-(REQUIRED… [&REST REST]), receiving the parsed argument strings. BODY is
+(REQUIRED… [&REST REST]), receiving the parsed argument strings. A
+positional parameter may be a (NAME TYPE) sublist — TYPE one of STRING /
+INTEGER / FLOAT / IDENT / SEXP (+COMMAND-ARGUMENT-TYPES+) — receiving the
+CONVERTED value instead of the text; (&REST (VAR TYPE)) converts each
+collected element. Like &WHOLE, the types belong to the declaration only:
+the function's lambda-list uses just the names. A token that does not
+convert cancels the command with a report and the loop continues
+\(mutually exclusive with (&WHOLE VAR), which stays all-raw). BODY is
 the function's body; a body of exactly =:function FORM= registers FORM's
 value (a function designator) instead, so several interactors' commands
 can share one named function (D5). Every command function reaches its

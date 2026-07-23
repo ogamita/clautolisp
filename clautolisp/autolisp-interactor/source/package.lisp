@@ -26,6 +26,14 @@ implementations, not here.")
    #:command-key #:command-words #:command-phrase
    #:command-lambda-list #:command-docstring #:command-function
    #:command-arity #:command-raw-argument-p #:command-required-parameters
+   ;; typed command arguments: (NAME TYPE) lambda-list sublists, TYPE one
+   ;; of STRING / INTEGER / FLOAT / IDENT / SEXP (matched by name)
+   #:+command-argument-types+ #:check-command-lambda-list
+   #:command-parameter-name #:command-parameter-type
+   #:convert-command-argument #:convert-command-arguments #:ident-text-p
+   #:command-argument-error #:command-argument-error-command
+   #:command-argument-error-parameter #:command-argument-error-text
+   #:sexp
    ;; dictionaries
    #:dictionary #:dictionary-p #:dictionary-name
    #:make-command-dictionary

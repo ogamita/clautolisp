@@ -24,7 +24,10 @@
   (key "" :type string)               ; the 1- or 2-letter (or punctuation) key
   (words '() :type list)              ; ordered words of the long name, lower-cased
   (phrase "" :type string)            ; derived: the words joined with spaces
-  (lambda-list '() :type list)        ; arity for the reader; (&whole VAR) = raw
+  ;; LAMBDA-LIST: arity for the reader; (&whole VAR) = raw; a parameter may
+  ;; be a (NAME TYPE) sublist declaring a converted argument (typed command
+  ;; arguments — see +COMMAND-ARGUMENT-TYPES+).
+  (lambda-list '() :type list)
   (docstring "" :type string)
   (function nil))
 
@@ -51,6 +54,59 @@ rule is checked only when both the key and the word initials are alphabetic."
       (error "command key ~S is not the initials of ~{~A~^ ~} (§0 naming rule)"
              key (mapcar #'string words)))))
 
+;;; --- typed parameters (interactor-unification: typed command arguments) --
+
+(defparameter +command-argument-types+ '(string integer float ident sexp)
+  "The declarable command parameter types. A lambda-list entry may be a
+(NAME TYPE) sublist instead of a bare symbol; the argument marshaling
+\(CALL-COMMAND, and the dumb UI's legacy dispatch) then CONVERTS the token's
+text before the call:
+  STRING  — the token's text, unchanged (what a bare NAME means too);
+  INTEGER — the text parsed as an integer (the whole token must parse);
+  FLOAT   — a Lisp real read from the text;
+  IDENT   — the text, which must be an identifier token;
+  SEXP    — the text read as one Lisp form, *READ-EVAL* disabled.
+Types are matched by name, so a client package need not import IDENT / SEXP.")
+
+(defun command-parameter-name (parameter)
+  "The name of the declared lambda-list PARAMETER: a bare symbol names a
+plain STRING parameter, a (NAME TYPE) sublist a converted one."
+  (if (consp parameter) (first parameter) parameter))
+
+(defun command-parameter-type (parameter)
+  "The declared type of the lambda-list PARAMETER — one of
++COMMAND-ARGUMENT-TYPES+ (canonicalized, matched by name); STRING for a
+bare symbol."
+  (if (consp parameter)
+      (or (find (second parameter) +command-argument-types+ :test #'string-equal)
+          (error "unknown command parameter type ~S in ~S (one of ~{~A~^/~} expected)"
+                 (second parameter) parameter +command-argument-types+))
+      'string))
+
+(defun check-command-lambda-list (lambda-list)
+  "Validate a command's declared LAMBDA-LIST at registration: either exactly
+\(&WHOLE VAR) — the raw convention, exclusive of everything else, typed
+entries included — or positional entries that are bare symbols (lambda-list
+keywords included) or (NAME TYPE) sublists, TYPE one of
++COMMAND-ARGUMENT-TYPES+. Returns LAMBDA-LIST; signals an error otherwise."
+  (if (member '&whole lambda-list)
+      (unless (and (= 2 (length lambda-list))
+                   (eq '&whole (first lambda-list))
+                   (symbolp (second lambda-list)))
+        (error "&whole in a command lambda-list must be exactly (&whole VAR), got ~S"
+               lambda-list))
+      (dolist (parameter lambda-list)
+        (unless (or (symbolp parameter)
+                    (and (consp parameter)
+                         (= 2 (length parameter))
+                         (symbolp (first parameter))
+                         (find (second parameter) +command-argument-types+
+                               :test #'string-equal)))
+          (error "invalid command lambda-list entry ~S in ~S: NAME or (NAME TYPE) ~
+                  expected, TYPE one of ~{~A~^/~}"
+                 parameter lambda-list +command-argument-types+))))
+  lambda-list)
+
 ;;; --- registration -----------------------------------------------------
 
 (defun bind-command (dictionary names lambda-list docstring function)
@@ -69,6 +125,7 @@ COMMAND."
            (phrase (format nil "~{~A~^ ~}" words))
            (table (dictionary-table dictionary)))
       (check-naming-rule key words)
+      (check-command-lambda-list lambda-list)
       (dolist (tok (list key phrase))
         (when (and (plusp (length tok)) (gethash tok table))
           (error "command token ~S already bound in dictionary ~A"
@@ -141,7 +198,9 @@ parse their own argument, e.g. one embedding a Lisp form."
 
 (defun command-required-parameters (command)
   "The required parameters of COMMAND — those the reader prompts for when
-missing. Empty for a raw-argument (&WHOLE) command."
+missing. The declared specs: a typed parameter stays a (NAME TYPE) sublist
+\(COMMAND-PARAMETER-NAME / COMMAND-PARAMETER-TYPE take them apart). Empty
+for a raw-argument (&WHOLE) command."
   (let ((ll (command-lambda-list command)))
     (if (command-raw-argument-p command)
         '()
@@ -151,6 +210,98 @@ missing. Empty for a raw-argument (&WHOLE) command."
 
 (defun command-arity (command)
   "How many arguments the reader should read after COMMAND (ignoring &optional
-/ &rest markers, which simply allow fewer / more)."
+/ &rest markers, which simply allow fewer / more). A (NAME TYPE) sublist
+counts like a bare NAME."
   (count-if-not (lambda (s) (and (symbolp s) (char= #\& (char (symbol-name s) 0))))
                 (command-lambda-list command)))
+
+;;; --- argument conversion (typed command arguments) ----------------------
+
+(defun ident-text-p (text)
+  "True when TEXT matches the command parser's ident token:
+/[A-Za-z][-A-Za-z0-9]*/ (parse-command's classification)."
+  (flet ((letterp (ch) (or (char<= #\A ch #\Z) (char<= #\a ch #\z)))
+         (digitp (ch) (char<= #\0 ch #\9)))
+    (and (plusp (length text))
+         (letterp (char text 0))
+         (every (lambda (ch) (or (letterp ch) (digitp ch) (char= ch #\-)))
+                text))))
+
+(define-condition command-argument-error (error)
+  ((command   :initarg :command   :reader command-argument-error-command)
+   (parameter :initarg :parameter :reader command-argument-error-parameter)
+   (text      :initarg :text      :reader command-argument-error-text))
+  (:documentation
+   "An argument token's text does not convert to its parameter's declared
+type. The marshalers (CALL-COMMAND, the dumb UI dispatch) report it and skip
+the call, keeping the command loop alive.")
+  (:report (lambda (condition stream)
+             (let ((command (command-argument-error-command condition))
+                   (parameter (command-argument-error-parameter condition)))
+               (format stream "the ~A command needs a ~(~A~) for ~(~A~), got ~S"
+                       (if (plusp (length (command-phrase command)))
+                           (command-phrase command)
+                           (command-key command))
+                       (command-parameter-type parameter)
+                       (command-parameter-name parameter)
+                       (command-argument-error-text condition))))))
+
+(defun %read-argument-form (text)
+  "TEXT read as one Lisp form, *READ-EVAL* disabled, the whole text consumed.
+Returns (values FORM T), or (values NIL NIL) when it does not read."
+  (handler-case
+      (let ((*read-eval* nil))
+        (multiple-value-bind (form position) (read-from-string text)
+          (if (>= position (length text))
+              (values form t)
+              (values nil nil))))
+    (error () (values nil nil))))
+
+(defun convert-command-argument (command parameter text)
+  "Convert TEXT — one argument token's text, a string, or NIL for a missing
+argument — to PARAMETER's declared type (COMMAND-PARAMETER-TYPE; a bare
+symbol declares STRING, the text unchanged). NIL stays NIL. Signals
+COMMAND-ARGUMENT-ERROR when TEXT does not convert."
+  (let ((type (command-parameter-type parameter)))
+    (flet ((fail ()
+             (error 'command-argument-error
+                    :command command :parameter parameter :text text)))
+      (cond
+        ((null text) nil)
+        ((eq type 'string) text)
+        ((eq type 'integer)
+         (multiple-value-bind (value position)
+             (parse-integer text :junk-allowed t)
+           (if (and value (= position (length text))) value (fail))))
+        ((eq type 'float)
+         (multiple-value-bind (form okp) (%read-argument-form text)
+           (if (and okp (realp form)) form (fail))))
+        ((eq type 'ident)
+         (if (ident-text-p text) text (fail)))
+        ((eq type 'sexp)
+         (multiple-value-bind (form okp) (%read-argument-form text)
+           (if okp form (fail))))))))
+
+(defun %positional-and-rest-parameters (lambda-list)
+  "The positional parameter specs of LAMBDA-LIST and its &rest spec (NIL when
+none) as two values — (NAME TYPE) sublists kept whole, lambda-list keywords
+dropped."
+  (let ((positional '()) (rest nil) (items lambda-list))
+    (loop :while items
+          :do (let ((item (pop items)))
+                (cond ((eq item '&rest) (setf rest (pop items)))
+                      ((and (symbolp item) (member item lambda-list-keywords)))
+                      (t (push item positional)))))
+    (values (nreverse positional) rest)))
+
+(defun convert-command-arguments (command texts)
+  "TEXTS (the argument tokens' texts) converted per COMMAND's declared
+lambda-list, positionally; the texts beyond the positional parameters
+convert per the &rest spec — (&rest (VAR TYPE)) converts each collected
+element, an untyped &rest leaves them strings. Signals
+COMMAND-ARGUMENT-ERROR on a text that does not convert."
+  (multiple-value-bind (positional rest)
+      (%positional-and-rest-parameters (command-lambda-list command))
+    (loop :for text :in texts
+          :collect (convert-command-argument
+                    command (if positional (pop positional) rest) text))))

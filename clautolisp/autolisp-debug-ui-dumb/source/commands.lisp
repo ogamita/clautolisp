@@ -337,12 +337,15 @@ ARG (the raw argument string or NIL); a body that changes the view sets
 (define-navi-motion (|>>| last)   :last  "Select the last sibling.")
 (bind-command-alias *navi-commands* "enter" "d")
 
-(define-navi-command (skip) "skip ±N: move N siblings forward (+) or back (-)."
-  (let ((count (and arg (ignore-errors (parse-integer arg)))))
-    (if count
-        (progn (navi-move state :skip count)
-               (setf (navi-state-redraw state) t))
-        (out ui "NAV> skip needs a signed count (±N)~%")))
+;; A typed command (interactor-unification): COUNT arrives as a fixnum —
+;; the framework converts (and reports `the skip command needs a integer
+;; for count' on a non-integer token, keeping the loop alive), so no
+;; hand-rolled parse-integer. The ±N reader rewrite feeds `skip N'.
+(define-command (*navi* skip) ((count integer))
+    "skip ±N: move N siblings forward (+) or back (-)."
+  (let ((state (%navi-state)))
+    (navi-move state :skip count)
+    (setf (navi-state-redraw state) t))
   nil)
 
 (define-navi-command (b) "Set a breakpoint on the selected form; `b LOC' is the debugger's break."
