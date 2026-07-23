@@ -487,6 +487,11 @@ release:windows:x86-64:
 .platform-test-common:
   stage: test
   rules:
+    # automatic on master pushes (allow_failure: the runners are
+    # intermittent laptops and must never block); manual elsewhere
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+      allow_failure: true
     - when: manual
       allow_failure: true
   variables:

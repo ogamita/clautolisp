@@ -1,0 +1,27 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: look for on-demand macOS and windows cloud runners
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-07-23
+
+The macOS (thalassa) and ms-windows (PC) runners are intermittent
+laptops. The platform test lanes (test:clautolisp:{macos,windows},
+verify:vl-registry:{macos,windows}) proved their worth on day one —
+five genuine platform bugs — so reliable capacity is wanted.
+
+* Task (pjb)
+
+Survey cloud runner options usable on demand from gitlab.com CI:
+
+- macOS: GitLab SaaS macOS runners (premium tiers), MacStadium/Orka,
+  AWS EC2 Mac instances, Scaleway Apple silicon — pricing per job
+  minute vs a reserved instance; arm64 (Apple silicon) preferred to
+  match thalassa.
+- windows: GitLab SaaS windows runners, a small always-on VM (Azure /
+  Hetzner / OVH) with gitlab-runner as a service, shell = powershell.
+- Requirements either way: sbcl + quicklisp installable at job time or
+  baked into an image; tags to keep: [macos, arm64, shell] /
+  [windows, amd64, shell] so the existing lanes pick them up
+  unchanged; cost gate (manual trigger or scheduled) acceptable.
+
+When one is adopted, consider promoting the platform lanes from
+allow_failure to blocking on release tags.
