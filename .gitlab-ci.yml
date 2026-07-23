@@ -497,14 +497,14 @@ test:clautolisp:macos:
   tags: [macos, arm64, shell]
   script:
     - make -C clautolisp test-sbcl
-    - sbcl --non-interactive --load scripts/verify-vl-registry.lisp
+    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
 test:clautolisp:windows:
   extends: .platform-test-common
   tags: [windows, amd64, shell]
   script:
     - make -C clautolisp test-sbcl
-    - sbcl --non-interactive --load scripts/verify-vl-registry.lisp
+    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
 .verify-registry-common:
   stage: test
@@ -518,13 +518,13 @@ verify:vl-registry:macos:
   extends: .verify-registry-common
   tags: [macos, arm64, shell]
   script:
-    - sbcl --non-interactive --load scripts/verify-vl-registry.lisp
+    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
 verify:vl-registry:windows:
   extends: .verify-registry-common
   tags: [windows, amd64, shell]
   script:
-    - sbcl --non-interactive --load scripts/verify-vl-registry.lisp
+    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
 # --- collect: union the per-target artefacts into the combined set -----
 #
