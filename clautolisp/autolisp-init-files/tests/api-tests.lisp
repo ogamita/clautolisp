@@ -46,18 +46,28 @@ on teardown."
 (defun touch-with-older-mtime (path content seconds-older)
   "Touch PATH then back-date its mtime by SECONDS-OLDER seconds.
 Used to construct fixtures where one file is provably older than
-another. Falls back to the unmodified mtime on Lisps without the
-SB-POSIX UTIME hook."
+another. SB-POSIX on ms-windows does not provide UTIME — the symbol is
+probed with FBOUNDP (and spelled with :: so the file READS everywhere);
+there the mtime is set through PowerShell instead. Falls back to the
+unmodified mtime when neither path applies."
   (let ((p (touch path content)))
-    #+sbcl
-    (let* ((now (get-universal-time))
-           (target (- now seconds-older))
-           ;; sb-posix:utime takes Unix epoch seconds; CL's
-           ;; get-universal-time is offset by 2208988800.
-           (target-unix (- target 2208988800)))
-      (handler-case (sb-posix:utime (namestring p)
-                                    target-unix target-unix)
-        (error () nil)))
+    (cond
+      #+sbcl
+      ((fboundp 'sb-posix::utime)
+       (let* ((now (get-universal-time))
+              (target (- now seconds-older))
+              ;; sb-posix:utime takes Unix epoch seconds; CL's
+              ;; get-universal-time is offset by 2208988800.
+              (target-unix (- target 2208988800)))
+         (handler-case (funcall 'sb-posix::utime (namestring p)
+                                target-unix target-unix)
+           (error () nil))))
+      ((uiop:os-windows-p)
+       (ignore-errors
+         (uiop:run-program
+          (list "powershell" "-NoProfile" "-Command"
+                (format nil "(Get-Item '~A').LastWriteTime = (Get-Date).AddSeconds(-~D)"
+                        (namestring p) seconds-older))))))
     p))
 
 ;;; --- env-true-p ----------------------------------------------------
