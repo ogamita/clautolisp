@@ -49,6 +49,9 @@
   (mock-input       nil)              ; C   --mock-input PATH (string)
   (gui              nil)              ; C   --gui CMD          (string)
   (trace-p          nil)              ; C   --trace
+  ;; Dribble (dribble.issue; clautolisp today, alfe planned)
+  (dribble          nil)              ; C   --dribble / --dribble=FILE → t / FILE (string)
+  (dribble-interactors nil)           ; C   --dribble-interactors=IS → :all / list of name strings
   ;; Debugger (clautolisp-only): error policy + UI selection (debugger §10)
   (on-error         nil)              ; C   --on-error quit|debug|ignore  → :quit/:debug/:ignore
   (user-interface   nil)              ; C   --aldo-user-interface tui|ncurses|aldb → :tui/:ncurses/:aldb
@@ -153,6 +156,31 @@ debugger), or ignore (let the user *error* / default handler run)."
                   :option option
                   :message
                   (format nil "Unknown --on-error policy ~S (expected quit/debug/ignore)" value)))))
+
+(defun parse-dribble-interactors (value option)
+  "The --dribble-interactors=IS value (dribble.issue): `t' (any case) means
+every interactor (:ALL); otherwise IS is a comma-separated list of interactor
+names/aliases, yielding the list of name strings."
+  (cond ((or (null value) (zerop (length value)))
+         (error 'cli-usage-error
+                :option option
+                :message
+                (format nil "~A needs a value: t, or a comma-separated list of interactor names" option)))
+        ((string-equal value "t") :all)
+        (t (let ((names '()) (start 0))
+             (loop
+               (let ((comma (position #\, value :start start)))
+                 (let ((name (string-trim " " (subseq value start comma))))
+                   (when (plusp (length name))
+                     (push name names)))
+                 (unless comma (return))
+                 (setf start (1+ comma))))
+             (unless names
+               (error 'cli-usage-error
+                      :option option
+                      :message
+                      (format nil "~A got no interactor names in ~S" option value)))
+             (nreverse names)))))
 
 (defun parse-user-interface (value option)
   "The --aldo-user-interface selection: tui (the line/terminal UI), ncurses, or

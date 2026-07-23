@@ -23,6 +23,11 @@
   (longs nil :type list)
   (shorts nil :type list)
   (takes-arg-p nil :type boolean)
+  ;; When TAKES-ARG-P and OPTIONAL-ARG-P are both true the option's
+  ;; value comes ONLY from the `--opt=VALUE` embedded form; a bare
+  ;; `--opt` does not consume the following argv element and the
+  ;; handler receives VALUE = nil (e.g. `--dribble` / `--dribble=FILE`).
+  (optional-arg-p nil :type boolean)
   (handler nil :type (or null function)))
 
 (defparameter *verbosity-rank*

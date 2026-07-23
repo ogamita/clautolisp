@@ -154,3 +154,30 @@ variable is *CLAL-DRIBBLE-INTERACTORS* as specified above. The bare
 ~/.autolisp rc file — clautolisp itself registers only CLAL-DRIBBLE.
 The CLI options stay --dribble / --dribble=FILE /
 --dribble-interactors=IS.
+
+* Status
+
+** DONE clautolisp half (clautolisp 1.5.11)
+
+Implemented on the interactor stack: CLAL-DRIBBLE builtin (via the
+runtime *DRIBBLE-HOOK*), *CLAL-DRIBBLE-INTERACTORS*, --dribble /
+--dribble=FILE / --dribble-interactors=IS, the O/E tee streams +
+raw input echo (trivial-gray-streams) with the line-interleaving
+rule and write-time interactor filtering, ;; C: condition lines,
+XDG_STATE_HOME default path, ;; H: header. Documented in the spec
+(Function Entry: CLAL-DRIBBLE), the clautolisp user manual, and
+RELEASE_NOTES.org. FiveAM tests in clautolisp/clautolisp-tool/tests.
+
+Two deliberate refinements over the example above:
+- the error report + backtrace lines are recorded as ~;; E:~ (they
+  go to the error output; the example's ~;; O:~ contradicted the
+  format's own O/E rule);
+- prompts are not recorded: a partial output line still open when an
+  input line completes is prompt text and is dropped, not emitted.
+
+** Remaining: alfe
+
+The alfe half (--dribble on the alfe CLI, the
+";; H: alfe $alfe_version $backend $cad_version" header, the
+${XDG_STATE_HOME}/alfe/dribbles/${BACKEND}/ default path) is not
+implemented yet.

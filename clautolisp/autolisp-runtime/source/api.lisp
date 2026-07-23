@@ -1400,6 +1400,17 @@ calls it for the editor's `debug'/`aldo' prefix, so debugger commands (e.g.
 `aldo help') work from within sedit. The tool installs it, bound to the running
 session's UI, while a debug session is attached; NIL (a no-op) otherwise.")
 
+(defparameter *dribble-hook* nil
+  "When non-nil, a function (PATH INTERACTORS) the CLAL-DRIBBLE builtin calls
+to toggle/redirect the REPL dribble (dribble.issue). PATH is a CL string or
+NIL (NIL toggles: start on the default path when off, stop when on);
+INTERACTORS is :ALL, a CL list of interactor name strings, or NIL (NIL means
+consult the AutoLISP variable *CLAL-DRIBBLE-INTERACTORS* — the hook
+implementation reads it from the current evaluation context). Returns the
+absolute namestring of the dribble file it opened, or NIL when it stopped
+dribbling. The clautolisp tool installs it; NIL (a no-op) when no
+dribble-capable front-end is attached.")
+
 (defparameter *instrument-usubr-hook* nil
   "When non-nil, a function (USUBR) that weaves USUBR's instrumented fork and
 debug-metadata in place (clautolisp.debug:instrument-usubr). The aldo debugger

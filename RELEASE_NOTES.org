@@ -39,6 +39,16 @@ separate binary for tool integrators.
   re-prompts. Backed by the interactor framework's command dictionaries
   (the debugger dictionary mechanism, generalised). See § /Modes of
   Operation / Interactive REPL/.
+- Session dribble: ~--dribble~ / ~--dribble=FILE~ (or ~(clal-dribble
+  [file [interactors]])~ at runtime, a toggle) records the REPL
+  interactions into an append-mode log — input raw, output/error
+  lines as =;; O:= / =;; E:=, condition reports as =;; C:=, under a
+  =;; H: clautolisp VERSION= header. Filtered by interactor:
+  ~AUTOLISP~ only by default (a debugger/sedit stop pauses the
+  recording); ~--dribble-interactors=t|NAMES~ /
+  ~*CLAL-DRIBBLE-INTERACTORS*~ widen the set. Default file:
+  =$XDG_STATE_HOME/clautolisp/dribbles/YYYYMMDDTHHMMSS.log=. See
+  § /Modes of Operation / Interactive REPL / Recording the session/.
 - Five dialects selectable via ~--strict~ / ~--autocad~ /
   ~--bricscad~ / ~--clautolisp~ / ~--lax~. The ~lax~ dialect silences
   every encoding-dispatch diagnostic globally. See § /Options /

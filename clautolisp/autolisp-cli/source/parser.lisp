@@ -67,7 +67,8 @@ test-only knobs); the default is a fresh struct."
                  ((option-spec-takes-arg-p spec)
                   (let ((value
                           (or embedded-value
-                              (%pop-arg-value head remaining))))
+                              (unless (option-spec-optional-arg-p spec)
+                                (%pop-arg-value head remaining)))))
                     (funcall (option-spec-handler spec) options value head))
                   t)
                  (t

@@ -4594,6 +4594,48 @@ debugger UI is loaded."
              (and doc (clautolisp.autolisp-runtime:autolisp-string-value doc))))
   nil)
 
+(defun %clal-dribble-interactors (interactors)
+  "Convert the CLAL-DRIBBLE INTERACTORS argument to what the dribble hook
+expects: NIL -> NIL (consult *CLAL-DRIBBLE-INTERACTORS*); the symbol T ->
+:ALL (every interactor); a list of strings/symbols -> the CL list of name
+strings."
+  (cond
+    ((null interactors) nil)
+    ((and (typep interactors 'clautolisp.autolisp-runtime:autolisp-symbol)
+          (string-equal "T" (clautolisp.autolisp-runtime:autolisp-symbol-name
+                             interactors)))
+     :all)
+    ((consp interactors)
+     (mapcar (lambda (name)
+               (%clal-interactor-name-string name "CLAL-DRIBBLE"))
+             interactors))
+    (t (signal-builtin-argument-error
+        :bad-argument "CLAL-DRIBBLE"
+        "INTERACTORS must be nil, T, or a list of interactor names, got ~S."
+        interactors))))
+
+(defun builtin-clal-dribble (&optional path interactors)
+  "Toggle / redirect the REPL dribble (dribble.issue). Without PATH, starts
+dribbling on the default file when off, or stops it when on. With PATH (a
+string), closes any active dribble and starts one appending to PATH.
+INTERACTORS is nil (consult *CLAL-DRIBBLE-INTERACTORS*), the symbol T (every
+interactor), or a list of interactor names/aliases (strings or symbols).
+Returns the absolute path of the dribble file just opened, or nil when it
+just stopped dribbling. A no-op (returns nil) unless a dribble-capable
+front-end (the clautolisp REPL) is attached."
+  (when clautolisp.autolisp-runtime:*dribble-hook*
+    (let ((result
+            (funcall clautolisp.autolisp-runtime:*dribble-hook*
+                     (and path
+                          (handler-case
+                              (clautolisp.autolisp-runtime:autolisp-string-value path)
+                            (error ()
+                              (signal-builtin-argument-error
+                               :bad-argument "CLAL-DRIBBLE"
+                               "PATH must be a string, got ~S." path))))
+                     (%clal-dribble-interactors interactors))))
+      (and result (clautolisp.autolisp-runtime:make-autolisp-string result)))))
+
 (defun builtin-clal-list-interactor-names ()
   "The names of every registered interactor, as a list of strings — e.g.
 (\"ALDO\" \"NAVI\" \"LAVI\" \"INSPECT\" \"AUTOLISP\"): the valid first
@@ -8392,6 +8434,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "CLAL-DEFINE-DEBUGGER-COMMAND" #'builtin-clal-define-debugger-command)
    (make-core-builtin-subr "CLAL-DEFINE-COMMAND" #'builtin-clal-define-command)
    (make-core-builtin-subr "CLAL-LIST-INTERACTOR-NAMES" #'builtin-clal-list-interactor-names)
+   (make-core-builtin-subr "CLAL-DRIBBLE"          #'builtin-clal-dribble)
    (make-core-builtin-subr "CLAL-NAV-FUNCTION"     #'builtin-clal-nav-function)
    (make-core-builtin-subr "CLAL-NAV-FILE"         #'builtin-clal-nav-file)
    (make-core-builtin-subr "CLAL-NAV-DIRECTORY"    #'builtin-clal-nav-directory)
