@@ -144,3 +144,13 @@ produces a driible file =trace.sexp=:
 (dribble)
 #+end_src
 
+
+* Naming (decided 2026-07-23)
+
+Per the ch.16 CLAL- convention for clautolisp-only extensions: the
+function is CLAL-DRIBBLE (not clautolisp-dribble, not dribble); the
+variable is *CLAL-DRIBBLE-INTERACTORS* as specified above. The bare
+(dribble) in the example stands for a user-defined alias from the
+~/.autolisp rc file — clautolisp itself registers only CLAL-DRIBBLE.
+The CLI options stay --dribble / --dribble=FILE /
+--dribble-interactors=IS.
