@@ -11,8 +11,13 @@
   (when (probe-file ql) (load ql)))
 (handler-case
     (progn
-      (asdf:load-asd (truename (merge-pathnames "clautolisp/clautolisp.asd"
-                                                (uiop:getcwd))))
+      ;; resolve the repo root from $CI_PROJECT_DIR when set (a userinit or
+      ;; runner shell may have moved the cwd), else the cwd
+      (asdf:load-asd (truename (merge-pathnames
+                                "clautolisp/clautolisp.asd"
+                                (uiop:ensure-directory-pathname
+                                 (or (uiop:getenv "CI_PROJECT_DIR")
+                                     (uiop:getcwd))))))
       (asdf:load-system "clautolisp/autolisp-mock-host"))
   (error (e) (format t "~&LOAD FAILED: ~A~%" e) (uiop:quit 2)))
 (let* ((root "HKCU\\Software\\clautolisp-vlreg-test")
