@@ -52,6 +52,7 @@
    #:host-registry-delete #:host-registry-descendents
    ;; --- Command dispatch -----------------------------------------
    #:host-command
+   #:host-command-log
    ;; --- Interactive prompts (autolisp-spec ch.18) ---------------
    #:host-prompt
    #:host-initget

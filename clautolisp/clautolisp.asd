@@ -167,6 +167,7 @@
    (:file "autolisp-mock-host/source/registry-api")
    (:file "autolisp-mock-host/source/bricscad-sysvar-overrides")
    (:file "autolisp-mock-host/source/prompt-api")
+   (:file "autolisp-mock-host/source/command-api")
    (:file "autolisp-mock-host/source/com-progids")
    (:file "autolisp-mock-host/source/vlax-api"))
   :in-order-to ((asdf:test-op
@@ -394,6 +395,7 @@
    (:file "autolisp-mock-host/tests/entity-api-tests")
    (:file "autolisp-mock-host/tests/selection-tests")
    (:file "autolisp-mock-host/tests/prompt-tests")
+   (:file "autolisp-mock-host/tests/command-tests")
    (:file "autolisp-mock-host/tests/vlax-tests")
    (:file "autolisp-mock-host/tests/reactor-tests")
    (:file "autolisp-mock-host/tests/sysvar-catalogue-tests")

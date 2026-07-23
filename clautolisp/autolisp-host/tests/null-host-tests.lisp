@@ -74,6 +74,10 @@
   (is (eq :host-not-supported
           (expect-not-supported (lambda () (host-command *null-host* '("LINE")))))))
 
+(test null-host-command-log-signals-host-not-supported
+  (is (eq :host-not-supported
+          (expect-not-supported (lambda () (host-command-log *null-host*))))))
+
 (test null-host-prompt-signals-host-not-supported
   (is (eq :host-not-supported
           (expect-not-supported (lambda () (host-prompt *null-host* "go ahead"))))))

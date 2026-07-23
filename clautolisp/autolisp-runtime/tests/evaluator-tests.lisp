@@ -640,3 +640,100 @@ the innermost binding of NAME (uppercased string). Returns nil,
 ;| second |;
 (defun foo () 1)")
   (is (equal '(:function " second ") (%doc "FOO"))))
+
+;;;; ----- COMMAND / COMMAND-S special forms -------------------------
+;;;; (deferred-command-special-form issue). The runtime evaluates the
+;;;; arguments, normalizes each value to a command-line token string,
+;;;; and routes the sequence through *HOST-COMMAND-FUNCTION*. These
+;;;; tests replace that hook with a recorder — no host system needed.
+
+(defun call-with-command-recorder (thunk)
+  "Run THUNK with the COMMAND routing hook replaced by a recorder and
+a non-nil dummy default host. Returns (values result routed-calls)
+where ROUTED-CALLS is the list of token lists, oldest first."
+  (let ((calls '()))
+    (let ((clautolisp.autolisp-runtime:*host-command-function*
+            (lambda (host tokens)
+              (declare (ignore host))
+              (push tokens calls)
+              nil))
+          (clautolisp.autolisp-runtime:*default-runtime-host*
+            :fake-command-host))
+      (values (funcall thunk) (reverse calls)))))
+
+(test command-routes-normalized-tokens-and-returns-nil
+  "(command \"._LINE\" pt1 pt2 \"\") evaluates its arguments, formats
+points as comma-separated coordinates, keeps strings verbatim
+(including the \"\" RETURN token), and returns nil."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result calls)
+      (call-with-command-recorder
+       (lambda ()
+         (run-autolisp-string
+          "(setq p1 '(0.0 0.0 0.0))
+           (command \"._LINE\" p1 '(10.0 10.0 0.0) \"\")")))
+    (is (null result))
+    (is (equal '(("._LINE" "0.0,0.0,0.0" "10.0,10.0,0.0" ""))
+               calls))))
+
+(test command-formats-integers-reals-2d-points-and-pause
+  "Integer tokens print in decimal, reals in AutoLISP princ spelling,
+2D points as X,Y; the one-backslash PAUSE string passes through."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result calls)
+      (call-with-command-recorder
+       (lambda ()
+         (run-autolisp-string
+          "(command \"._CIRCLE\" '(1 2) 5.5 42 \"\\\\\")")))
+    (is (null result))
+    (is (equal '(("._CIRCLE" "1,2" "5.5" "42" "\\"))
+               calls))))
+
+(test command-with-no-arguments-routes-empty-sequence
+  "(command) — the vendor-documented cancel — routes an empty token
+sequence to the host."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result calls)
+      (call-with-command-recorder
+       (lambda () (run-autolisp-string "(command)")))
+    (is (null result))
+    (is (equal '(()) calls))))
+
+(test command-s-shares-routing-and-returns-nil
+  "(command-s ...) shares COMMAND's token routing (the in-process
+engine is already synchronous) and returns nil."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result calls)
+      (call-with-command-recorder
+       (lambda () (run-autolisp-string "(command-s \"._REGEN\")")))
+    (is (null result))
+    (is (equal '(("._REGEN")) calls))))
+
+(test command-rejects-values-without-command-input-reading
+  "nil and non-point lists have no command-line spelling —
+:invalid-command-argument."
+  (reset-autolisp-symbol-table)
+  (dolist (source '("(command \"._LINE\" nil)"
+                    "(command '(\"a\" \"b\"))"))
+    (let ((signalled-code nil))
+      (handler-case
+          (call-with-command-recorder
+           (lambda () (run-autolisp-string source)))
+        (autolisp-runtime-error (condition)
+          (setf signalled-code (autolisp-runtime-error-code condition))))
+      (is (eq :invalid-command-argument signalled-code)
+          "~A should signal :invalid-command-argument, got ~S"
+          source signalled-code))))
+
+(test command-without-host-signals-host-not-supported
+  "With no HAL backend attached (and no routing hook installed),
+COMMAND fails loudly with :host-not-supported."
+  (reset-autolisp-symbol-table)
+  (let ((clautolisp.autolisp-runtime:*host-command-function* nil)
+        (clautolisp.autolisp-runtime:*default-runtime-host* nil)
+        (signalled-code nil))
+    (handler-case
+        (run-autolisp-string "(command \"._LINE\")")
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :host-not-supported signalled-code))))

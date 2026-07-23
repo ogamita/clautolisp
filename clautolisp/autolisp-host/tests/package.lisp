@@ -32,6 +32,7 @@
                 #:host-getvar
                 #:host-setvar
                 #:host-command
+                #:host-command-log
                 #:host-prompt
                 #:host-getstring
                 #:host-grdraw

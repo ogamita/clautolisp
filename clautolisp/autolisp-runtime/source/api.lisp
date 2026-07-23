@@ -2205,6 +2205,115 @@ returning the last form's value. Outside a session this is AUTOLISP-EVAL-PROGN."
          (setf last-symbol arg))
        last-symbol))))
 
+;;; --- COMMAND / COMMAND-S (deferred-command-special-form issue) ------
+;;;
+;;; Autodesk classifies COMMAND as a special form (autolisp-spec ch.3,
+;;; "Special Form Entry: COMMAND"): it is the canonical channel from
+;;; AutoLISP into the host CAD's command engine. clautolisp evaluates
+;;; every argument, normalizes each value to a command-line *token
+;;; string* per the spec's input rules, and routes the whole token
+;;; sequence through the active HAL backend's HOST-COMMAND method.
+;;;
+;;; Token normalization ("as a user types it at the CAD prompt"):
+;;;   string   -> itself, verbatim. "" is the RETURN token and the
+;;;               one-backslash string "\\" is the PAUSE token — both
+;;;               pass through unchanged; the backend interprets them.
+;;;   integer  -> its decimal spelling ("42").
+;;;   real     -> its AutoLISP princ spelling ("3.14", no CL marker).
+;;;   point    -> a proper list of 2 or 3 numbers, formatted as the
+;;;               comma-separated coordinates a user would type
+;;;               ("1.0,2.0" / "1.0,2.0,3.0").
+;;;   ename    -> the entity handle text (entity-selection input).
+;;;   others   -> :invalid-command-argument (nil included: vendor
+;;;               AutoLISP rejects nil command input too).
+;;;
+;;; The runtime cannot name the HOST-COMMAND generic directly — the
+;;; autolisp-host system depends on autolisp-runtime, not the other
+;;; way around — so routing goes through *HOST-COMMAND-FUNCTION*, a
+;;; funcallable of (host token-list) the autolisp-host module installs
+;;; at load time (same pattern as *default-runtime-host*).
+
+(defparameter *host-command-function* nil
+  "Funcallable of (HOST TOKEN-LIST) that delivers a normalized
+COMMAND token sequence to the HAL backend HOST. The autolisp-host
+module installs #'HOST-COMMAND here when loaded; tests may rebind
+it to capture routed tokens without a host system.")
+
+(defun format-command-number (value)
+  "Format the number VALUE as a CAD command-line token: integers in
+decimal, reals in their AutoLISP princ spelling (no CL float marker)."
+  (if (integerp value)
+      (format nil "~D" value)
+      (let ((*read-default-float-format* 'double-float))
+        (princ-to-string (coerce value 'double-float)))))
+
+(defun command-point-p (value)
+  "True iff VALUE is an AutoLISP point usable as command input: a
+proper list of 2 or 3 CL reals (the runtime representation of
+AutoLISP 2D/3D points)."
+  (and (consp value)
+       (let ((length (list-length value)))     ; nil on dotted/circular
+         (and length (<= 2 length 3)))
+       (every (lambda (element)
+                (or (typep element '(signed-byte 32))
+                    (typep element 'double-float)))
+              value)))
+
+(defun command-token-from-value (value)
+  "Normalize the evaluated COMMAND argument VALUE to its command-line
+token string. Signals :invalid-command-argument for values that have
+no command-input reading (nil, symbols, nested lists, functions, …)."
+  (cond
+    ((typep value 'autolisp-string)
+     (autolisp-string-value value))
+    ((or (typep value '(signed-byte 32))
+         (typep value 'double-float))
+     (format-command-number value))
+    ((command-point-p value)
+     (format nil "~{~A~^,~}" (mapcar #'format-command-number value)))
+    ((typep value 'autolisp-ename)
+     (format nil "~A" (autolisp-ename-value value)))
+    (t
+     (signal-autolisp-runtime-error
+      :invalid-command-argument
+      "COMMAND argument must be a string, number, point list, or entity name, got ~S."
+      value))))
+
+(defun dispatch-autolisp-command (values &optional (context (current-evaluation-context)))
+  "Normalize the evaluated argument VALUES to command tokens and route
+them through the active host's command channel in a single call.
+Returns the host's result. Signals :host-not-supported when no HAL
+backend (or no host module) is attached. Shared by the COMMAND /
+COMMAND-S special forms and the VL-CMDF builtin."
+  (let ((tokens (mapcar #'command-token-from-value values))
+        (host   (current-evaluation-host context))
+        (router *host-command-function*))
+    (unless (and host router)
+      (signal-autolisp-runtime-error
+       :host-not-supported
+       "No host backend is attached; COMMAND requires a CAD host."))
+    (funcall router host tokens)))
+
+(defun eval-command-form (arguments context)
+  ;; (command "._LINE" pt1 pt2 "") — evaluate every argument, then
+  ;; send the normalized token sequence to the host command engine.
+  ;; Returns nil (the documented COMMAND return-value rule).
+  ;; (command) with no arguments sends the empty sequence — the
+  ;; vendor-documented "cancel the current command" call.
+  (dispatch-autolisp-command
+   (mapcar (lambda (argument) (autolisp-eval argument context)) arguments)
+   context)
+  nil)
+
+(defun eval-command-s-form (arguments context)
+  ;; (command-s ...) — the synchronous variant. In the in-process
+  ;; clautolisp engine every HOST-COMMAND call already completes
+  ;; before returning, so COMMAND-S shares COMMAND's routing
+  ;; unchanged; it exists so vendor code calling it runs. Returns
+  ;; nil on success per Autodesk's page; failures surface as
+  ;; runtime errors (the *error* channel).
+  (eval-command-form arguments context))
+
 (defun eval-progn-form (arguments context)
   (autolisp-eval-progn arguments context))
 
@@ -2446,7 +2555,9 @@ malformed cases surface at call-time via `bind-usubr-frame')."
         (cons "DEFUN-Q" #'eval-defun-q-form)
         (cons "DEFUN" #'eval-defun-form)
         (cons "TRACE" #'eval-trace-form)
-        (cons "UNTRACE" #'eval-untrace-form)))
+        (cons "UNTRACE" #'eval-untrace-form)
+        (cons "COMMAND" #'eval-command-form)
+        (cons "COMMAND-S" #'eval-command-s-form)))
 
 (defun special-operator-function (operator)
   (cdr (assoc (special-operator-name operator)

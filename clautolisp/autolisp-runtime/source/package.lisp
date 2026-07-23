@@ -247,6 +247,10 @@
    #:set-runtime-session-host
    #:current-evaluation-host
    #:*default-runtime-host*
+   ;; COMMAND special form (deferred-command-special-form issue)
+   #:*host-command-function*
+   #:command-token-from-value
+   #:dispatch-autolisp-command
    #:current-evaluation-dialect
    #:derive-reader-options-for-dialect
    #:read-current-source
