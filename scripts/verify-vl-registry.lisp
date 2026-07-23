@@ -28,8 +28,23 @@
            (format t "~&~:[FAIL~;ok  ~]  ~A~%" ok label)
            (unless ok (incf fails))))
     (clautolisp.autolisp-host:host-registry-write host key "k1" "v1")
-    (chk "write/read round trip"
-         (equal "v1" (clautolisp.autolisp-host:host-registry-read host key "k1")))
+    (let ((got (clautolisp.autolisp-host:host-registry-read host key "k1")))
+      (chk "write/read round trip" (equal "v1" got))
+      (unless (equal "v1" got)
+        ;; diagnose: the exact value (readably), its char codes, and the raw
+        ;; platform-tool output the backend parsed
+        (format t "  got: ~S~@[  codes: ~S~]~%"
+                got (and (stringp got) (map 'list #'char-code got)))
+        #+(or win32 windows mswindows os-windows)
+        (format t "  raw reg query: ~S~%"
+                (uiop:run-program (list "reg" "query" key "/v" "k1")
+                                  :output :string :ignore-error-status t))
+        #+darwin
+        (format t "  raw defaults read: ~S~%"
+                (uiop:run-program (list "defaults" "read"
+                                        "org.clautolisp.vl-registry"
+                                        (format nil "~A|k1" key))
+                                  :output :string :ignore-error-status t))))
     (chk "value names list k1"
          (member "k1" (clautolisp.autolisp-host:host-registry-descendents host key t)
                  :test #'string-equal))
