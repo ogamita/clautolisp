@@ -142,11 +142,15 @@ the aldo.conf princ-serialisation lesson), sorted for stable diffs."
                       into names
                   finally (return (sort (delete-duplicates names :test #'string-equal)
                                         #'string-lessp)))
+            ;; reg query echoes EXPANDED key paths (HKEY_CURRENT_USER\…,
+            ;; not HKCU\…) and, without /s, lists only immediate sub-keys:
+            ;; collect the last path segment of each key line.
             (loop for line in lines
-                  when (and (> (length line) (1+ (length key)))
-                            (string-equal key line :end2 (length key))
-                            (char= #\\ (char line (length key))))
-                    collect (subseq line (1+ (length key))) into subs
+                  when (and (> (length line) 5)
+                            (string-equal "HKEY_" line :end2 5)
+                            (find #\\ line))
+                    collect (subseq line (1+ (position #\\ line :from-end t)))
+                      into subs
                   finally (return (sort (delete-duplicates subs :test #'string-equal)
                                         #'string-lessp))))))))
 
