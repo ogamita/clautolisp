@@ -10,4 +10,4 @@
 ;;;; so the numbering tracks clautolisp's, off by enough that the
 ;;;; two are independently identifiable in bug reports.
 
-(defparameter *version* "1.5.0")
+(defparameter *version* "1.6.0")

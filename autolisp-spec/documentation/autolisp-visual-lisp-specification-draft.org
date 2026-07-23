@@ -11339,6 +11339,107 @@ None.
 - clautolisp-only extension; see this chapter's Overview.
 
 #+LATEX: \newpage
+** Function Entry: CLAL-DRIBBLE
+*** Name
+~clal-dribble~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-dribble [path [interactors]])
+#+end_example
+
+*** Arguments and Values
+- ~path~ — optional string: the dribble file. When the file exists
+  it is appended to. Without ~path~, the call is a toggle: it starts
+  a dribble on the default file
+  (=${XDG_STATE_HOME:-~/.local/state}/clautolisp/dribbles/YYYYMMDDTHHMMSS.log=,
+  the timestamp being the start of the dribble in ISO-8601 basic
+  format) when dribbling is off, or stops the active dribble.
+- ~interactors~ — optional: ~nil~ (consult
+  ~*clal-dribble-interactors*~), the symbol ~T~ (record every
+  interactor), or a list of interactor names/aliases (strings or
+  symbols) superseding ~*clal-dribble-interactors*~ for this
+  dribble.
+
+*** Description
+Record the REPL interactions into a log file. The file starts with
+a header line ~;; H: clautolisp VERSION~, followed by interaction
+blocks: the input line raw (unprefixed), each standard-output line
+prefixed ~;; O:~, each error-output line prefixed ~;; E:~, and, when
+an evaluation signals, the condition report on ~;; C:~ lines (which
+may be redundant with the error report that follows on the output
+streams; that redundancy is intended). If output from one stream is
+interrupted by the other before its newline, the open line is
+terminated in the dribble first.
+
+Recording is filtered by interactor: by default only the
+~AUTOLISP~ (~LISP~) REPL is recorded, so entering the debugger, the
+inspector, navi or sedit pauses the dribble — their entry call and
+its result are still recorded — and returning to the REPL resumes
+it. The set of recorded interactors is the ~interactors~ argument
+when given, else the value of ~*clal-dribble-interactors*~: ~nil~
+for the default ~("AUTOLISP")~, a list of interactor
+names/aliases, or ~T~ for all of them. The set is captured when the
+dribble starts; changing ~*clal-dribble-interactors*~ while a
+dribble is active does not affect it (stop and restart to apply a
+new value).
+
+With ~path~, any active dribble is closed first and a new one is
+started appending to ~path~. The CLI options ~--dribble~,
+~--dribble=FILE~ and ~--dribble-interactors=IS~ start a dribble
+from the command line (after the banner, before the first prompt);
+~--dribble-interactors=IS~ also sets
+~*clal-dribble-interactors*~ (~IS~ is ~t~ or a comma-separated
+list of names).
+
+*** Return Values
+The absolute path (a string) of the dribble file just opened, or
+~nil~ when the call just stopped dribbling.
+
+*** Side Effects
+Opens/closes the dribble file (creating its directories as
+needed); subsequent REPL interactions are appended to it.
+
+*** Affected By
+- ~*clal-dribble-interactors*~ — the interactor set used when the
+  ~interactors~ argument is ~nil~ or omitted (read at start time
+  only).
+- =XDG_STATE_HOME= — the default dribble directory root.
+- The ~--dribble~ / ~--dribble=FILE~ / ~--dribble-interactors=IS~
+  command-line options.
+
+*** Exceptional Situations
+Signals an error when ~path~ is not a string or ~interactors~ is
+not ~nil~, ~T~, or a list; file errors propagate when the dribble
+file cannot be opened.
+
+*** Examples
+#+begin_example
+(clal-dribble)                          ; toggle on, default file
+=> "/home/user/.local/state/clautolisp/dribbles/20260723T101500.log"
+(clal-dribble)                          ; toggle off
+=> nil
+(clal-dribble "trace.sexp" 'T)          ; record every interactor
+=> "/home/user/project/trace.sexp"
+(setq *clal-dribble-interactors* '("AUTOLISP" "ALDO"))
+(clal-dribble "trace.sexp")             ; REPL + debugger
+=> "/home/user/project/trace.sexp"
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since clautolisp 1.5.11.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension (=issues/open/dribble.issue=). The bare
+  ~(dribble)~ alias seen in examples is user-defined (e.g. in
+  =~/.autolisp=); clautolisp registers only ~clal-dribble~.
+
+#+LATEX: \newpage
 ** Function Entry: CLAL-SEDIT
 *** Name
 ~clal-sedit~

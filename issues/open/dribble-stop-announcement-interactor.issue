@@ -1,0 +1,43 @@
+# -*- mode:org; coding:utf-8 -*-
+
+PJB: This is very low priority, I'm not sure it needs to be changed.
+
+* Debugger stop announcement precedes the ALDO activation push
+
+** Symptom
+
+With a dribble active on the default interactor set (AUTOLISP only), a
+debugger stop's announcement lines leak into the dribble:
+
+    (clal-break)
+    ;; O: DBG> Break at <toplevel> line 1 col 1
+    ;; O: DBG>   <stack: <toplevel> ← top>
+    ;; O: nil
+
+The DBG>/NAV> *interaction* (the command lines, the navigator display)
+is correctly not recorded; only the stop announcement leaks.
+
+** Repro
+
+    printf '(clal-break)\nc\n,quit\n' | \
+      clautolisp-sbcl -norc --dribble=/tmp/t.log
+    cat /tmp/t.log
+
+** Cause
+
+The dribble filter checks the top of
+clautolisp.interactor:*interactor-stack* at write time (dribble.issue).
+SESSION-STOP (clautolisp/autolisp-debug-ui/source/session.lisp) calls
+UI-THREAD-HIT — which prints the "Break at" / stack-line announcement —
+BEFORE UI-AWAIT-COMMAND (clautolisp/autolisp-debug-ui-dumb/source/
+dumb-ui.lisp) pushes the stop's ALDO activation. At announcement time
+the top interactor is therefore still AUTOLISP, so the announcement
+passes the filter.
+
+** Fix idea
+
+Stack the stop's ALDO activation around the WHOLE stop — announcement
+included — e.g. push it (dynamically) in SESSION-STOP before the
+UI-THREAD-* notification, or have the dumb UI announce from inside
+UI-AWAIT-COMMAND after the push. Needs care: SESSION-STOP is the
+UI-agnostic layer; the activation state types live in the dumb UI.

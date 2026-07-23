@@ -293,12 +293,30 @@
                "clautolisp/autolisp-debug-ui"
                "clautolisp/autolisp-debug-ui-dumb"
                "clautolisp/autolisp-debug-ui-ncurses"
+               ;; dribble tee/echo streams (dribble.issue)
+               "trivial-gray-streams"
                "uiop")
   :serial t
   :components
   ((:file "tools/clautolisp/source/package")
    (:file "tools/clautolisp/source/version")
+   (:file "tools/clautolisp/source/dribble")
    (:file "tools/clautolisp/source/main")))
+
+(asdf:defsystem "clautolisp/clautolisp-tool/tests"
+  :description "FiveAM tests for the clautolisp tool (dribble streams and logic)."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/clautolisp-tool" "fiveam")
+  :serial t
+  :components
+  ((:file "tools/clautolisp/tests/package")
+   (:file "tools/clautolisp/tests/dribble-tests")
+   (:file "tools/clautolisp/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.tools.clautolisp.tests
+                                           :run-all-tests)))
 
 (asdf:defsystem "clautolisp/run-file-compat"
   :description "Command-line compatibility runner for file scenarios."
@@ -825,7 +843,8 @@
                "clautolisp/autolisp-sedit/tests"
                "clautolisp/autolisp-debug-ui-dumb/tests"
                "clautolisp/autolisp-debug-ui-ncurses/tests"
-               "clautolisp/autolisp-debug-ui-emacs/tests")
+               "clautolisp/autolisp-debug-ui-emacs/tests"
+               "clautolisp/clautolisp-tool/tests")
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          (progn
@@ -860,4 +879,6 @@
                            (uiop:symbol-call :clautolisp.ui.ncurses.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.ui.emacs.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.tools.clautolisp.tests
                                              :run-all-tests))))

@@ -108,6 +108,85 @@ the same mechanism behind the debugger's command dictionaries — so the
 vocabulary can grow (and user commands can shadow it) uniformly across
 all the interaction loops.
 
+*** Recording the session: the dribble
+
+The REPL can record its interactions — input lines, standard output,
+error output, and condition reports — into an append-mode log file,
+the /dribble/.
+
+Activation:
+- ~--dribble~ :: start recording into
+  =${XDG_STATE_HOME:-~/.local/state}/clautolisp/dribbles/YYYYMMDDTHHMMSS.log=
+  (the timestamp is the start of the dribble, ISO-8601 basic format;
+  directories are created as needed).
+- ~--dribble=FILE~ :: start recording into FILE (appended to when it
+  exists). Both forms take effect after the banner, before the first
+  prompt.
+- ~(clal-dribble [path [interactors]])~ :: at runtime. Without
+  arguments it toggles: on (default file) when off, off when on. With
+  a ~path~ it closes any active dribble and starts one appending to
+  ~path~. Returns the absolute path of the file just opened, or ~nil~
+  when it just stopped. A bare ~(dribble)~ is *not* predefined — if
+  you want it, alias it in your =~/.autolisp= init file:
+  ~(defun dribble (/ ) (clal-dribble))~.
+
+Interactor filtering: by default only the ~AUTOLISP~ (~LISP~) REPL
+is recorded. Functions that stack another interactor —
+~(clal-break)~ → the ~ALDO~ debugger, ~(clal-sedit …)~, the
+inspector, navi — pause the recording for their interaction (their
+call and result are still recorded), and popping back to the REPL
+resumes it. To record more, set the interactor list:
+- ~--dribble-interactors=IS~ :: ~IS~ is ~t~ (record every
+  interactor) or a comma-separated list of interactor
+  names/aliases, e.g. ~AUTOLISP,ALDO~. Also sets the AutoLISP
+  variable ~*clal-dribble-interactors*~.
+- ~*clal-dribble-interactors*~ :: ~nil~ (default: ~AUTOLISP~ only),
+  a list of names/aliases, or ~T~ for all. Consulted when a dribble
+  *starts* and captured for its duration — changing it while a
+  dribble is active does not change the active set; stop and
+  restart to apply. The optional second argument of ~clal-dribble~
+  supersedes it.
+
+File format: a header line, then interaction blocks — the input
+line raw, each output line prefixed by its source (~O~ standard
+output, ~E~ error output), and condition reports on ~;; C:~ lines
+(possibly redundant with the error report that follows; that is
+intended). Prompts are not recorded.
+
+#+begin_example
+$ clautolisp --dribble-interactors=t --dribble=trace.sexp
+clautolisp 1.5.11 — REPL (STRICT dialect, mock-host host) — Ctrl-D to exit.
+_$ (+ 1 2 3)
+6
+_$ (/ 0)
+clautolisp: runtime error: DIVISION-BY-ZERO: Division by zero in /.
+AutoLISP backtrace (most recent call first, 2 frames):
+  in SUBR /: (0)
+  in EVAL: (/ 0)
+_$ (clal-dribble)
+nil
+_$ (- 1 2 3)
+-4
+#+end_example
+
+produces a dribble file =trace.sexp=:
+
+#+begin_example
+;; H: clautolisp 1.5.11
+(+ 1 2 3)
+;; O: 6
+(/ 0)
+;; C: DIVISION-BY-ZERO: Division by zero in /.
+;; E: clautolisp: runtime error: DIVISION-BY-ZERO: Division by zero in /.
+;; E: AutoLISP backtrace (most recent call first, 2 frames):
+;; E:   in SUBR /: (0)
+;; E:   in EVAL: (/ 0)
+(clal-dribble)
+#+end_example
+
+Nothing after the ~(clal-dribble)~ line: the toggle closed the file
+before its own result was printed.
+
 * Debugger
 
 Clautolisp ships an interactive source-level debugger, *aldo*. It steps
@@ -417,6 +496,15 @@ code 1.
 ** REPL behaviour
 - ~--quiet~              :: Suppress the REPL banner; only the prompt
                             is shown. No effect outside REPL mode.
+- ~--dribble[=FILE]~     :: Record the REPL interactions into FILE, or
+                            into a timestamped file under
+                            =$XDG_STATE_HOME/clautolisp/dribbles/=.
+                            See § /Modes of Operation / Interactive
+                            REPL / Recording the session/.
+- ~--dribble-interactors=IS~ :: Which interactors the dribble
+                            records: ~t~ for all, or a comma-separated
+                            list of names (default: ~AUTOLISP~ only).
+                            Also sets ~*clal-dribble-interactors*~.
 
 ** Host backend
 The Host Abstraction Layer (HAL, Phase 8 of the implementation

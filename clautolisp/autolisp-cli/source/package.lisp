@@ -46,6 +46,8 @@
    #:cli-options-user-interface  ; C — clautolisp --aldo-user-interface
    #:cli-options-aldb-address    ; C — clautolisp --aldb-listening-address
    #:cli-options-aldb-port       ; C — clautolisp --aldb-listening-port
+   #:cli-options-dribble         ; C — --dribble / --dribble=FILE (t / string)
+   #:cli-options-dribble-interactors ; C — --dribble-interactors=IS (:all / names)
    #:cli-options-positional      ; both — positional FILE arguments
 
    ;; value parsers (one per option-value vocabulary)
@@ -58,6 +60,7 @@
    #:parse-timeout
    #:parse-on-error
    #:parse-user-interface
+   #:parse-dribble-interactors
 
    ;; option-spec + parser
    #:option-spec
@@ -65,6 +68,7 @@
    #:option-spec-longs
    #:option-spec-shorts
    #:option-spec-takes-arg-p
+   #:option-spec-optional-arg-p
    #:option-spec-handler
    #:*common-option-specs*
    #:parse-arguments-with-spec

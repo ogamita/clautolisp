@@ -45,6 +45,15 @@
   (format t "                         program under a debug session.~%")
   (format t "  --aldb-listening-address ADDR  Address the aldb listener binds (with --aldo-user-interface aldb).~%")
   (format t "  --aldb-listening-port PORT     Port (or service name) the aldb listener binds.~%")
+  (format t "Dribble:~%")
+  (format t "  --dribble              Record the REPL interactions (input, output, errors,~%")
+  (format t "                         conditions) into ~~/.local/state/clautolisp/dribbles/~%")
+  (format t "                         ($XDG_STATE_HOME honoured), timestamped .log file.~%")
+  (format t "  --dribble=FILE         Record into FILE (appended when it exists).~%")
+  (format t "  --dribble-interactors=IS  Which interactors are recorded: t for all, or a~%")
+  (format t "                         comma-separated list of names (default: AUTOLISP only).~%")
+  (format t "                         Also settable as *CLAL-DRIBBLE-INTERACTORS*; toggle at~%")
+  (format t "                         runtime with (clal-dribble [FILE [INTERACTORS]]).~%")
   (format t "REPL and diagnostics:~%")
   (format t "  -q, --quiet            Suppress the REPL banner.~%")
   (format t "  -v, --verbose          Print extra diagnostic information (banner, summary, …).~%")
@@ -201,7 +210,23 @@ front-end."
              :longs '("--aldb-listening-port") :shorts nil :takes-arg-p t
              :handler (lambda (opts value name)
                         (declare (ignore name))
-                        (setf (clautolisp.autolisp-cli:cli-options-aldb-port opts) value)))))))
+                        (setf (clautolisp.autolisp-cli:cli-options-aldb-port opts) value)))
+            ;; --- dribble options (dribble.issue) ---
+            ;; --dribble takes an OPTIONAL value: bare `--dribble' (VALUE
+            ;; nil) records into the default timestamped file;
+            ;; `--dribble=FILE' records into FILE.
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--dribble") :shorts nil :takes-arg-p t :optional-arg-p t
+             :handler (lambda (opts value name)
+                        (declare (ignore name))
+                        (setf (clautolisp.autolisp-cli:cli-options-dribble opts)
+                              (or value t))))
+            (clautolisp.autolisp-cli:make-option-spec
+             :longs '("--dribble-interactors") :shorts nil :takes-arg-p t
+             :handler (lambda (opts value name)
+                        (setf (clautolisp.autolisp-cli:cli-options-dribble-interactors opts)
+                              (clautolisp.autolisp-cli:parse-dribble-interactors
+                               value name))))))))
     (clautolisp.autolisp-cli:parse-arguments-with-spec specs arguments)))
 
 (defun prepend-init-file-actions (actions no-init-p)
@@ -638,34 +663,47 @@ the current dialect can come later).")
   (interactor-return :quit))
 
 (defun repl-loop (dialect context &key quiet-p mock-input gui trace-p
-                                        session break-on-error)
+                                        session break-on-error
+                                        dribble dribble-interactors)
   (unless quiet-p
     (emit-repl-banner dialect context
                       :mock-input mock-input :gui gui :trace-p trace-p))
   (unless mock-input
     (wire-mock-host-to-terminal context))
   (%repl-init-history context)
-  ;; Route sedit's `debug'/`aldo' prefix to the attached session's UI, so
-  ;; debugger commands (e.g. `aldo help') work from inside (clal-sedit …).
-  (let ((clautolisp.autolisp-runtime:*debug-command-hook*
-          (when session
-            (lambda (command)
-              (clautolisp.debug.ui:ui-run-command
-               (clautolisp.debug.ui:session-ui session) session command))))
-        ;; The REPL is the bottom interactor: the single INTERACTOR-LOOP
-        ;; drives the *AUTOLISP* singleton, this run's dialect / context /
-        ;; session as the activation's state — a `,command' line dispatches
-        ;; against *AUTOLISP*'s dictionaries, AutoLISP source goes to the
-        ;; evaluator.
-        (*interactor-stack*
-          (list (make-activation *autolisp*
-                                 (make-repl-state :context context
-                                                  :session session
-                                                  :break-on-error break-on-error)))))
-    (when (null (interactor-loop))
-      ;; EOF (Ctrl-D): a fresh line before leaving. ,quit / (quit) return
-      ;; markers through INTERACTOR-RETURN and print nothing extra.
-      (terpri))))
+  ;; The dribble tee/echo streams were installed by RUN-WITH-INPUT
+  ;; (before the debug session captured its streams); they are pure
+  ;; pass-throughs until a dribble starts.
+  (progn
+    ;; --dribble / --dribble=FILE: start recording now — after the
+    ;; banner, before the first prompt.
+    (when dribble
+      (clal-dribble (if (stringp dribble) dribble nil) dribble-interactors))
+    (unwind-protect
+         ;; Route sedit's `debug'/`aldo' prefix to the attached session's UI, so
+         ;; debugger commands (e.g. `aldo help') work from inside (clal-sedit …).
+         (let ((clautolisp.autolisp-runtime:*debug-command-hook*
+                 (when session
+                   (lambda (command)
+                     (clautolisp.debug.ui:ui-run-command
+                      (clautolisp.debug.ui:session-ui session) session command))))
+               ;; The REPL is the bottom interactor: the single INTERACTOR-LOOP
+               ;; drives the *AUTOLISP* singleton, this run's dialect / context /
+               ;; session as the activation's state — a `,command' line dispatches
+               ;; against *AUTOLISP*'s dictionaries, AutoLISP source goes to the
+               ;; evaluator.
+               (*interactor-stack*
+                 (list (make-activation *autolisp*
+                                        (make-repl-state :context context
+                                                         :session session
+                                                         :break-on-error break-on-error)))))
+           (when (null (interactor-loop))
+             ;; EOF (Ctrl-D): a fresh line before leaving. ,quit / (quit) return
+             ;; markers through INTERACTOR-RETURN and print nothing extra.
+             (terpri)))
+      ;; Leaving the REPL closes any active dribble (flushing a pending
+      ;; partial output line).
+      (dribble-stop))))
 
 (defstruct repl-state
   "The AUTOLISP activation's per-run state: the evaluation context and the
@@ -738,6 +776,7 @@ Calls EXIT (a closure returning from the REPL loop) on AUTOLISP-TERMINATION."
         ;; without faking a break (bug-aldo-nav-entry-and-breakpoint-flow).
         (%repl-drain-navigation-request session))
     (simple-error (condition)
+      (dribble-condition condition)
       (let ((diagnostic (simple-error-diagnostic condition)))
         (if diagnostic
             (format *error-output* "~&; reader error: ~A: ~A~%"
@@ -745,8 +784,10 @@ Calls EXIT (a closure returning from the REPL loop) on AUTOLISP-TERMINATION."
                     condition)
             (format *error-output* "~&; reader error: ~A~%" condition))))
     (autolisp-runtime-error (condition)
+      (dribble-condition condition)
       (report-runtime-error condition))
     (autolisp-termination (condition)
+      (dribble-condition condition)
       (report-termination condition)
       (funcall exit))))
 
@@ -870,7 +911,8 @@ abort returns to the prompt rather than unwinding the whole loop."
                             interactive-p host mock-input gui trace-p
                             load-encoding io-encoding
                             no-init-p no-color-p
-                            debug-ui on-error-policy)
+                            debug-ui on-error-policy
+                            dribble dribble-interactors)
   "Build a shared evaluation context, install the CLI-derived
 *AUTOLISP-…* globals from CLI-OPTIONS via the shared
 clautolisp.autolisp-cli installer, run every action in ACTIONS in
@@ -896,8 +938,28 @@ machinery, not user intent)."
                         :backend "CLAUTOLISP"
                         :frontend "CLAUTOLISP"
                         :usage-text (usage-string)
-                        :version-text *version*)))
+                        :version-text *version*))
+             ;; The dribble tee/echo streams (dribble.issue) are
+             ;; installed UNCONDITIONALLY — pure pass-throughs while no
+             ;; dribble is active, so (clal-dribble) can start recording
+             ;; at any time. Installed HERE, before the debug session is
+             ;; started, because the session's UI captures the ambient
+             ;; streams at creation — this is what lets a DBG>/NAV>
+             ;; interaction be recorded under --dribble-interactors=t.
+             (*standard-output* (make-dribble-output-tee *standard-output* "O"))
+             (*error-output*    (make-dribble-output-tee *error-output*    "E"))
+             (*standard-input*  (make-dribble-input-echo *standard-input*)))
         (clautolisp.autolisp-cli:install-transmit-variables context bindings)
+        ;; --dribble-interactors=IS also sets the AutoLISP variable
+        ;; *CLAL-DRIBBLE-INTERACTORS* (dribble.issue: the option is the
+        ;; CLI spelling of (setq *clal-dribble-interactors* 'IS)), so a
+        ;; later (clal-dribble) restart keeps the requested set.
+        (when dribble-interactors
+          (set-variable (intern-autolisp-symbol "*CLAL-DRIBBLE-INTERACTORS*")
+                        (if (eq dribble-interactors :all)
+                            (intern-autolisp-symbol "T")
+                            (mapcar #'make-autolisp-string dribble-interactors))
+                        context))
         (flet ((run-actions ()
                  (dolist (action actions)
                    (unless (eq :interactive (car action))
@@ -931,7 +993,9 @@ machinery, not user intent)."
                                    :gui gui
                                    :trace-p trace-p
                                    :session session
-                                   :break-on-error break)))))
+                                   :break-on-error break
+                                   :dribble dribble
+                                   :dribble-interactors dribble-interactors)))))
               (when session
                 (clautolisp.debug.ui:ui-detached (clautolisp.debug.ui:session-ui session))))))
         ;; Normal completion: exit with the status a script recorded via
@@ -991,6 +1055,9 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
 
 (defun main (&rest argv)
   (setf *boot-time* (get-universal-time))       ; ,uptime measures from here
+  ;; The CLAL-DRIBBLE builtin reaches the tool's dribble implementation
+  ;; through the runtime hook (dribble.issue).
+  (setf clautolisp.autolisp-runtime:*dribble-hook* #'clal-dribble)
   (handler-case
       (let* ((options (parse-arguments (rest argv))))
         ;; Resolve relative paths against the live launch directory,
@@ -1022,6 +1089,9 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                (io-encoding   (clautolisp.autolisp-cli:cli-options-io-encoding options))
                (no-init-p (clautolisp.autolisp-cli:cli-options-no-init-p options))
                (no-color-p (clautolisp.autolisp-cli:cli-options-no-color-p options))
+               (dribble   (clautolisp.autolisp-cli:cli-options-dribble options))
+               (dribble-interactors
+                 (clautolisp.autolisp-cli:cli-options-dribble-interactors options))
                ;; -i, or no -l/-x/positional action, means the REPL is the
                ;; effective request. `actions' is the raw CLI queue here
                ;; (init-file loads are prepended later), so its emptiness is
@@ -1090,7 +1160,9 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                                     :no-init-p no-init-p
                                     :no-color-p no-color-p
                                     :debug-ui debug-ui
-                                    :on-error-policy on-error))))
+                                    :on-error-policy on-error
+                                    :dribble dribble
+                                    :dribble-interactors dribble-interactors))))
               (finish-output)
               ;; RUN-WITH-INPUT returns the effective process exit status
               ;; (autolisp-set-status / (quit N) / error → 1 / file → 2).

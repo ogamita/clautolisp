@@ -194,6 +194,7 @@
    #:*debug-nav-hook*
    #:*debug-select-file-hook*
    #:*debug-command-hook*
+   #:*dribble-hook*
    #:autolisp-current-directory
    #:set-autolisp-current-directory
    #:autolisp-support-paths
