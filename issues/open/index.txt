@@ -20,6 +20,19 @@ Rules of Processing Issues
   for the current issue then it must be fixed in the frame of the
   current issue. (can be separate commit).
 
+- bug issues should be implemented in a branch named fix-$issue_name ;
+  feature issue should be implemented in a branch named feature-$issue_name ;
+  once validated, the branch can be merged back into the master branch.
+
+  For epic issues (big issues involving a sequence of sub-issues), they
+  can be implemented sequentially in the single branch of the epic
+  issue.
+
+  Several epic issues may be worked on in parallel each in their own branch.
+  
+- before merging, we should fetch and synchronize the repository, and
+  if need be, rebase the branch before merging.
+
 
 Current list of issues to resolve:
 
