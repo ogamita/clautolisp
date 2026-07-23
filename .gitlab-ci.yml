@@ -476,6 +476,36 @@ release:windows:x86-64:
 # scripts/verify-vl-registry.lisp against the REAL platform store on the
 # intermittent native runners (needs sbcl on the machine). allow_failure:
 # the runners are laptops with intermittent connectivity.
+# --- platform test jobs: the full suite on the native runners --------------
+#
+# The linux docker lanes cover amd64; these MANUAL jobs run the same
+# clautolisp test suite natively on the intermittent macOS / Windows
+# runners, so platform-specific behavior (pathnames, encodings, registry,
+# process spawning) gets validated on the real OS. They use the machine's
+# own sbcl + ~/quicklisp (both runners build releases, so the toolchain is
+# there). allow_failure: intermittent laptops must never block a pipeline.
+.platform-test-common:
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+
+test:clautolisp:macos:
+  extends: .platform-test-common
+  tags: [macos, arm64, shell]
+  script:
+    - make -C clautolisp test-sbcl
+    - sbcl --non-interactive --load scripts/verify-vl-registry.lisp
+
+test:clautolisp:windows:
+  extends: .platform-test-common
+  tags: [windows, amd64, shell]
+  script:
+    - make -C clautolisp test-sbcl
+    - sbcl --non-interactive --load scripts/verify-vl-registry.lisp
+
 .verify-registry-common:
   stage: test
   rules:
