@@ -57,3 +57,14 @@ autolisp-mock-host/source/registry-api.lisp:
 REMAINS: verify on the Windows PC and on thalassa (macOS) — the linux
 CI cannot exercise these paths. Issue stays open for that
 verification (and the FFI-library decision).
+
+* Verification jobs (fix-vl-registry-ci-verification, 1.5.8)
+
+Manual CI jobs verify:vl-registry:macos / :windows run
+scripts/verify-vl-registry.lisp on the native runners against the real
+platform store (write/read, value-names, sub-keys, delete, cleanup).
+Also fixed before any platform run: reg query echoes EXPANDED key
+paths (HKEY_CURRENT_USER\..., not HKCU\...), so the sub-key parser now
+collects the last path segment of each HKEY_ line instead of
+prefix-matching the query key. Trigger the two jobs manually from a
+pipeline to validate, then this issue can close.

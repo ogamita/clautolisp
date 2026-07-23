@@ -469,6 +469,33 @@ release:windows:x86-64:
     paths: [dist/]
     expire_in: 30 days
 
+# --- platform verification: the vl-registry backends (vl-registry.issue) ---
+#
+# The Windows-registry and macOS-defaults backends cannot be exercised on
+# the linux CI (they are feature-gated out); these MANUAL jobs run
+# scripts/verify-vl-registry.lisp against the REAL platform store on the
+# intermittent native runners (needs sbcl on the machine). allow_failure:
+# the runners are laptops with intermittent connectivity.
+.verify-registry-common:
+  stage: test
+  rules:
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+
+verify:vl-registry:macos:
+  extends: .verify-registry-common
+  tags: [macos, arm64, shell]
+  script:
+    - sbcl --non-interactive --load scripts/verify-vl-registry.lisp
+
+verify:vl-registry:windows:
+  extends: .verify-registry-common
+  tags: [windows, amd64, shell]
+  script:
+    - sbcl --non-interactive --load scripts/verify-vl-registry.lisp
+
 # --- collect: union the per-target artefacts into the combined set -----
 #
 # Gathers the per-target release jobs' dist/ (binaries-<os>-<arch>,
