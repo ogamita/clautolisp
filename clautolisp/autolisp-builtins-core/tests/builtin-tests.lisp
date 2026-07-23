@@ -2442,19 +2442,27 @@ var is set in the running process — PATH is essentially always set."
 variable is undefined. A defined-but-empty variable returns the
 empty string \"\" — useful for flag-style env vars (NO_COLOR
 etc.) where presence with any value, including empty, is the
-signal."
+signal.
+
+On ms-windows the distinction DOES NOT EXIST: the Win32 environment
+cannot hold a defined-but-empty variable — setting one to \"\" deletes
+it — so (getenv) returning nil there is the native behavior (AutoCAD
+on Windows behaves the same); the empty-string half is skipped."
   (reset-autolisp-symbol-table)
-  ;; Set the var to the empty string, then read it back.
-  (setf (uiop:getenv "CLAUTOLISP_TEST_M2_EMPTY") "")
-  (unwind-protect
-       (let ((result (run-autolisp-string
-                      "(getenv \"CLAUTOLISP_TEST_M2_EMPTY\")"
-                      :setup-fn #'install-core-into)))
-         (is (typep result 'autolisp-string))
-         (is (string= "" (autolisp-string-value result))))
-    ;; Cleanup — unsetting is impl-specific; setting to nil works
-    ;; on both SBCL/UIOP and CCL/UIOP for our purposes.
-    (ignore-errors (setf (uiop:getenv "CLAUTOLISP_TEST_M2_EMPTY") nil))))
+  (if (uiop:os-windows-p)
+      (fiveam:skip "the Windows environment cannot represent a defined-but-empty variable")
+      (progn
+        ;; Set the var to the empty string, then read it back.
+        (setf (uiop:getenv "CLAUTOLISP_TEST_M2_EMPTY") "")
+        (unwind-protect
+             (let ((result (run-autolisp-string
+                            "(getenv \"CLAUTOLISP_TEST_M2_EMPTY\")"
+                            :setup-fn #'install-core-into)))
+               (is (typep result 'autolisp-string))
+               (is (string= "" (autolisp-string-value result))))
+          ;; Cleanup — unsetting is impl-specific; setting to nil works
+          ;; on both SBCL/UIOP and CCL/UIOP for our purposes.
+          (ignore-errors (setf (uiop:getenv "CLAUTOLISP_TEST_M2_EMPTY") nil))))))
 
 (test m2-getpid-returns-positive-integer
   "(getpid) returns the running process's PID as a positive integer."
