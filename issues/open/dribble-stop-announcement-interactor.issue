@@ -1,5 +1,7 @@
 # -*- mode:org; coding:utf-8 -*-
 
+PJB: This is very low priority, I'm not sure it needs to be changed.
+
 * Debugger stop announcement precedes the ALDO activation push
 
 ** Symptom
