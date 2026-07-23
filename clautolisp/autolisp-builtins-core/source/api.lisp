@@ -4270,6 +4270,16 @@ never overwritten by a redundant (setvar \"CLAUTOLISPDROP\" 1)."
   (mapcar #'make-autolisp-string
           (host-sysvar-names (current-evaluation-host))))
 
+(defun builtin-clal-command-log ()
+  "Return the host's recorded (command ...) token sequences, oldest
+first: a list of token lists, each token an AutoLISP string exactly
+as routed to the host command channel (\"\" = RETURN, \"\\\\\" =
+PAUSE). Under MockHost this is the session's full COMMAND record;
+backends without a command log raise :host-not-supported."
+  (mapcar (lambda (tokens)
+            (mapcar #'make-autolisp-string tokens))
+          (host-command-log (current-evaluation-host))))
+
 (defun builtin-clal-sysvar-apropos (pattern)
   "Return the subset of (clal-sysvar-list) whose names contain
 PATTERN as a case-insensitive substring. PATTERN is an AutoLISP
@@ -7871,12 +7881,13 @@ name strings."
 ;;; session-table impls that preserve API round-trip semantics
 ;;; even though state doesn't yet survive process exit.
 ;;;
-;;; CVUNIT, COMMAND-S, and UNTIL stay deferred per
-;;; missing-functions-plan.md (CVUNIT needs the acad.unt unit-
-;;; definitions file; COMMAND-S waits on the COMMAND host work;
-;;; UNTIL needs Autodesk-side verification — Bricsys may or may
-;;; not ship it). SPEC-UNCERTAIN markers point at
-;;; deferred-spec-research.issue for the open questions.
+;;; CVUNIT and UNTIL stay deferred per missing-functions-plan.md
+;;; (CVUNIT needs the acad.unt unit-definitions file; UNTIL needs
+;;; Autodesk-side verification — Bricsys may or may not ship it).
+;;; COMMAND / COMMAND-S ship as runtime special forms and VL-CMDF as
+;;; a real wrapper since deferred-command-special-form was resolved.
+;;; SPEC-UNCERTAIN markers point at deferred-spec-research.issue for
+;;; the open questions.
 
 ;;; ---- Native M5 ----
 
@@ -8037,7 +8048,24 @@ under it. A list of strings, nil when the key is absent or empty."
 (defun builtin-vl-list-exported-functions (&optional name) (declare (ignore name)) nil)
 (defun builtin-vl-vbaload  (file) (declare (ignore file)) nil)
 (defun builtin-vl-vbarun   (proc) (declare (ignore proc)) nil)
-(defun builtin-vl-cmdf     (&rest _) (declare (ignore _)) nil)
+(defun builtin-vl-cmdf (&rest arguments)
+  ;; (vl-cmdf ...) — the Visual LISP COMMAND wrapper. As an ordinary
+  ;; subr its arguments arrive already evaluated — exactly Autodesk's
+  ;; documented contrast with COMMAND ("vl-cmdf evaluates all
+  ;; arguments before command execution begins"). Shares the
+  ;; runtime's token normalization + HAL routing
+  ;; (deferred-command-special-form issue) and returns T on success.
+  ;; When the active backend has no command channel (the bare
+  ;; NullHost) it returns nil instead of surfacing
+  ;; :host-not-supported — the documented T / nil success contract.
+  (handler-case
+      (progn
+        (dispatch-autolisp-command arguments)
+        (autolisp-true))
+    (autolisp-runtime-error (condition)
+      (if (eq :host-not-supported (autolisp-runtime-error-code condition))
+          nil
+          (error condition)))))
 (defun builtin-vl-acad-defun   (sym ns) (declare (ignore sym ns)) (autolisp-true))
 (defun builtin-vl-acad-undefun (sym ns) (declare (ignore sym ns)) (autolisp-true))
 (defun builtin-vl-get-resource (name)   (declare (ignore name)) nil)
@@ -8448,6 +8476,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "AUTOLISP-STATUS"     #'builtin-autolisp-status)
    ;; clautolisp extensions (CLAL-*): not documented by Autodesk or
    ;; Bricsys; see autolisp-spec §16 ~clautolisp Extensions~.
+   (make-core-builtin-subr "CLAL-COMMAND-LOG"    #'builtin-clal-command-log)
    (make-core-builtin-subr "CLAL-SYSVAR-LIST"    #'builtin-clal-sysvar-list)
    (make-core-builtin-subr "CLAL-SYSVAR-APROPOS" #'builtin-clal-sysvar-apropos)
    (make-core-builtin-subr "CLAL-SYSTEM-CODEPAGE"     #'builtin-clal-system-codepage)
@@ -9045,9 +9074,20 @@ left untouched if already bound (so a user value / a prior session survives)."
       (clautolisp.autolisp-runtime:set-autolisp-symbol-value sym (default-aldo-configuration-value))))
   t)
 
+(defun install-predefined-variables ()
+  "Bind the vendor-predefined AutoLISP variables. PAUSE is the
+one-backslash string \"\\\\\" — the token that hands control to the
+user inside a (command ...) sequence (autolisp-spec, Special Form
+Entry: COMMAND). Left untouched when already bound, matching the
+extension-variable convention below."
+  (let ((sym (intern-autolisp-symbol "PAUSE")))
+    (unless (autolisp-symbol-value-bound-p sym)
+      (%clal-set-autolisp-var "PAUSE" (make-autolisp-string "\\")))))
+
 (defun install-core-builtins ()
   (dolist (builtin (core-builtins))
     (let ((symbol (intern-autolisp-symbol (autolisp-subr-name builtin))))
       (set-autolisp-symbol-function symbol builtin)))
+  (install-predefined-variables)
   (install-clal-extension-variables)
   t)

@@ -113,7 +113,8 @@ not implement OPERATION."
 (defgeneric host-registry-descendents (host key value-names-p) (:documentation "With VALUE-NAMES-P, the value names stored under KEY; otherwise KEY's immediate sub-key names. A list of strings, or NIL."))
 
 ;; Command dispatch
-(defgeneric host-command (host arguments)             (:documentation "Issue an AutoLISP (command ...) sequence."))
+(defgeneric host-command (host arguments)             (:documentation "Issue an AutoLISP (command ...) sequence. ARGUMENTS is the normalized token-string list produced by the runtime's COMMAND special form: each element is command-line input text; the empty string \"\" is the RETURN token and the one-backslash string \"\\\\\" is the PAUSE token. Returns nil on success."))
+(defgeneric host-command-log (host)                   (:documentation "Return the session's recorded (command ...) token sequences, oldest first — a list of token-string lists as passed to HOST-COMMAND. Backends without a command log signal :host-not-supported. Consumed by the CLAL-COMMAND-LOG clautolisp extension."))
 
 ;; Interactive prompts
 (defgeneric host-prompt    (host string)              (:documentation "Display a prompt string."))
@@ -193,6 +194,7 @@ not implement OPERATION."
 (defmethod host-registry-delete ((host host) key value-name) (declare (ignore key value-name)) (signal-host-not-supported host 'registry-delete))
 (defmethod host-registry-descendents ((host host) key value-names-p) (declare (ignore key value-names-p)) (signal-host-not-supported host 'registry-descendents))
 (defmethod host-command ((host host) arguments)           (declare (ignore arguments)) (signal-host-not-supported host 'command))
+(defmethod host-command-log ((host host))                 (signal-host-not-supported host 'command-log))
 (defmethod host-prompt    ((host host) string)            (declare (ignore string)) (signal-host-not-supported host 'prompt))
 (defmethod host-initget   ((host host) bits keywords)     (declare (ignore bits keywords)) (signal-host-not-supported host 'initget))
 (defmethod host-getstring ((host host) prompt &key controls) (declare (ignore prompt controls)) (signal-host-not-supported host 'getstring))

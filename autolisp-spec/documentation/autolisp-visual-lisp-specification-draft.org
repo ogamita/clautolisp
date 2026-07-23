@@ -1442,6 +1442,40 @@ Command failure, invalid input, and command-loop state errors are host-dependent
 *** Notes
 This is one of the clearest examples of an AutoLISP construct that cannot be reduced to pure Lisp evaluation semantics.
 
+*** clautolisp
+
+clautolisp registers ~command~ as a special operator in the runtime
+(alongside ~trace~ / ~untrace~) and implements it against the Host
+Abstraction Layer: every argument is evaluated, each value is
+normalized to the command-line *token string* a user would type at
+the CAD prompt, and the whole token sequence is routed through the
+active backend's command channel in one call. Normalization rules:
+
+- a string passes verbatim; ~""~ is the RETURN token and the
+  one-backslash string ~"\\"~ is the PAUSE token (the predefined
+  variable ~pause~ is bound to it);
+- an integer prints in decimal, a real in its AutoLISP ~princ~
+  spelling (no Common Lisp float marker);
+- a 2D/3D point (a list of two or three numbers) prints as the
+  comma-separated coordinates ~"X,Y"~ / ~"X,Y,Z"~;
+- an entity name passes as its handle text;
+- any other value (including ~nil~) raises
+  ~:invalid-command-argument~.
+
+Because all arguments are evaluated before the sequence is sent,
+clautolisp's ~command~ shares ~vl-cmdf~'s evaluate-first behavior:
+there is no vendor-style partial execution before an
+argument-evaluation error.
+
+Under the in-process backends there is no CAD command engine.
+MockHost (the default) *records* each routed token sequence on a
+per-session command log — readable through the ~clal-command-log~
+extension — echoes a ~Command: ...~ line to its prompt output, and
+returns ~nil~; ~(command)~ with no arguments records an empty
+sequence (the vendor "cancel" call). The bare NullHost signals
+~:host-not-supported~. A live CAD backend routes the same token
+sequence through its SendCommand / script analog.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
@@ -8531,6 +8565,16 @@ Closely related to `command`, but documented separately by Autodesk. Precise seq
 - Autodesk documents that an empty string is equivalent to pressing Enter.
 - Autodesk documents that failure to complete successfully is reported through `*error*`.
 
+*** clautolisp
+
+clautolisp registers ~command-s~ as a special operator sharing
+~command~'s token normalization and host routing unchanged: the
+in-process engine completes every host command call before
+returning, so the synchronous variant needs no separate machinery.
+Returns ~nil~ on success; failures surface as runtime errors (the
+~*error*~ channel). See the ~command~ entry's clautolisp section
+for the token rules and the MockHost recording semantics.
+
 *** Compatibility
 Supported on Windows and macOS in current Autodesk documentation.
 
@@ -8575,6 +8619,18 @@ Part of the Visual LISP command layer and related to `command` and `command-s`.
 - Autodesk documents that `vl-cmdf` evaluates all arguments before command execution begins.
 - Autodesk contrasts this with `command`, which may partially execute before an argument-evaluation error is detected.
 - Autodesk documents that an empty string is equivalent to pressing Enter, and a no-argument call is equivalent to pressing Esc for most commands.
+
+*** clautolisp
+
+~vl-cmdf~ is an ordinary subr sharing ~command~'s token
+normalization and host routing (its arguments are evaluated by the
+ordinary calling convention — exactly the documented
+evaluate-first contrast with ~command~). It returns ~T~ on
+success. When the active backend has no command channel (the bare
+NullHost) it returns ~nil~ instead of surfacing
+~:host-not-supported~ — the T / nil success contract; other
+failures surface as runtime errors. See the ~command~ entry's
+clautolisp section for the token rules.
 
 *** Compatibility
 Supported on Windows, macOS, and Web in current Autodesk documentation.
@@ -10413,6 +10469,68 @@ extension when available should probe with ~boundp~ before calling:
   inventory at ~autolisp-spec/documentation/system-variables-
   inventory.sexp~, and the host-side implementation under
   ~clautolisp/autolisp-builtins-core/source/api.lisp~.
+
+#+LATEX: \newpage
+
+** Function Entry: CLAL-COMMAND-LOG
+*** Name
+~clal-command-log~
+
+*** Class
+clautolisp Extension Function
+
+*** Syntax
+#+begin_example
+(clal-command-log)
+#+end_example
+
+*** Arguments and Values
+No arguments.
+
+*** Description
+Return the token sequences that ~command~ / ~command-s~ /
+~vl-cmdf~ calls have routed through the active host's command
+channel in this session, oldest first. Each element is a list of
+strings — the normalized command-line tokens exactly as sent:
+~""~ is the RETURN token, the one-backslash string ~"\\"~ the
+PAUSE token, points are ~"X,Y[,Z]"~ coordinate spellings.
+
+Under MockHost (the default backend, which has no command engine)
+this log *is* the whole observable effect of a ~command~ call; it
+is the deterministic assertion surface for headless test rigs.
+
+*** Return Values
+A proper list of lists of AutoLISP strings; ~nil~ when no command
+has been issued.
+
+*** Side Effects
+None.
+
+*** Affected By
+- The selected host backend (NullHost / MockHost / LiveHost).
+- Prior ~command~ / ~command-s~ / ~vl-cmdf~ calls in the session.
+
+*** Exceptional Situations
+Raises ~:host-not-supported~ when the active backend keeps no
+command log (e.g. the bare NullHost).
+
+*** Examples
+#+begin_example
+(command "._LINE" (list 0.0 0.0 0.0) (list 10.0 10.0 0.0) "")
+=> nil
+(clal-command-log)
+=> (("._LINE" "0.0,0.0,0.0" "10.0,10.0,0.0" ""))
+#+end_example
+
+*** Availability
+- clautolisp: documented (this entry); implemented since
+  clautolisp 1.6.4.
+- AutoCAD: NOT present.
+- BricsCAD: NOT present.
+
+*** Source Notes
+- clautolisp-only extension; see this chapter's Overview for the
+  rationale and probing convention.
 
 #+LATEX: \newpage
 

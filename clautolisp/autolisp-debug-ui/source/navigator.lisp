@@ -103,9 +103,10 @@ empty list)."
 ;;; role: :code (an evaluated form), :non-code (a datum / name / variable), or
 ;;; :group (a structural list — e.g. a COND clause — whose own elements follow
 ;;; ordinary rules). Operators absent here are ordinary forms: every argument is
-;;; :code. (The 17 runtime special operators of
+;;; :code. (The 19 runtime special operators of
 ;;; clautolisp.autolisp-runtime::*special-operator-dispatch* are covered; the
-;;; all-:code ones — SET, PROGN, IF, AND, OR, WHILE, REPEAT — need no entry.)
+;;; all-:code ones — SET, PROGN, IF, AND, OR, WHILE, REPEAT, COMMAND,
+;;; COMMAND-S — need no entry.)
 
 ;;; Each grammar entry is a function (FORM INDEX) → (values ROLE CHILD-CONTEXT):
 ;;; ROLE classifies the child at INDEX; CHILD-CONTEXT is the grammar context to

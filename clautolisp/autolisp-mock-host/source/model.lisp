@@ -63,6 +63,14 @@ mode. Set by tests and the CLI's --mock-input flag.")
                              :accessor mock-host-prompt-output
                              :documentation "Sink that the prompt
 builtin and the get* prompts write to. Tests inspect it.")
+   (command-log              :initform '()
+                             :accessor mock-host-command-log
+                             :documentation "Reverse-order list of
+recorded (command ...) token sequences — each element is the
+normalized token-string list one HOST-COMMAND call received.
+MockHost has no command engine; recording the tokens (and echoing
+them to PROMPT-OUTPUT) is the whole mock semantics. Read oldest-
+first through HOST-COMMAND-LOG / the CLAL-COMMAND-LOG extension.")
    (display-log              :initform '()
                              :accessor mock-host-display-log
                              :documentation "Reverse-order list of

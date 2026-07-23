@@ -89,6 +89,7 @@
                 #:host-registry-read #:host-registry-write
                 #:host-registry-delete #:host-registry-descendents
                 #:host-command
+                #:host-command-log
                 #:host-prompt
                 #:host-initget
                 #:host-getstring
@@ -179,6 +180,7 @@
    #:mock-host-sysvars
    #:mock-host-prompt-stream
    #:mock-host-prompt-output
+   #:mock-host-command-log
    #:mock-host-display-log
    #:mock-host-pickfirst
    ;; Pre-population helpers

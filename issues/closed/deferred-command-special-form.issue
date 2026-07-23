@@ -1,0 +1,98 @@
+Implement the COMMAND special form.
+
+Deferred from missing-functions-plan.md milestone M1.
+
+COMMAND sends a sequence of tokens to the active drawing
+context's command line, where each token is interpreted as a
+user types it in the CAD's prompt:
+
+    (command "LINE" pt1 pt2 "")
+
+Each token may be a string (literal text), a 2D/3D point list
+(coordinates with the host's current units), or any AutoLISP
+value that prints as a CAD-acceptable token. The empty string ""
+acts as RETURN; pause (\\\\) hands control to the user.
+
+Why deferred:
+
+  * COMMAND is the canonical channel from AutoLISP into the host
+    CAD's command engine. The clautolisp in-process backend has
+    no CAD: there's no command engine to queue tokens onto.
+  * The MockHost has a prompt-stream contract but no command
+    parser — MOCK consumes prompts for GETSTRING / GETPOINT,
+    not for command-name dispatch.
+  * The right home for COMMAND's real semantics is the
+    HAL/MockHost work tracked in
+    `clautolisp/implementation-roadmap.org` phases 8-16 (entity
+    DB + command-engine stubs).
+
+Acceptance for this issue:
+
+  * COMMAND special operator registered (eval-command-form in
+    autolisp-runtime/source/api.lisp, dispatch entry alongside
+    SET / TRACE / UNTRACE).
+  * Token evaluation rules per AutoLISP Spec § Function Entry: COMMAND
+    (strings literal, points formatted via the dialect's
+    default point-printer, "" → RETURN, "\\\\" → PAUSE).
+  * Each token is routed through the active host's command
+    channel. Under the in-process clautolisp + MockHost, tokens
+    are recorded to a per-session log and the call returns nil
+    (matching the documented "returns nil" rule).
+  * Under a CAD backend, tokens go through the host's
+    SendCommand / Run-Script analog.
+  * Tests under autolisp-front-end/tests/scenarios/clautolisp/
+    asserting the recorded-token log under MockHost. CAD tests
+    deferred to alfe-backend-{bricscad,autocad} tracks.
+
+Companion functions:
+
+  * COMMAND-S — synchronous form (waits for command completion).
+    Stub at the same time, sharing the routing logic.
+  * VL-CMDF — Visual LISP COMMAND wrapper that returns T / nil
+    on success. Trivial wrapper over COMMAND once it exists.
+
+-- STATUS (clautolisp 1.6.4) ----------------------------------------------
+
+DONE — COMMAND / COMMAND-S special operators + VL-CMDF on the HAL:
+
+  * eval-command-form / eval-command-s-form in
+    autolisp-runtime/source/api.lisp, dispatch entries in
+    *special-operator-dispatch* alongside SET / TRACE / UNTRACE.
+    Arguments evaluate; each value normalizes to a command-line
+    token string: strings verbatim ("" = RETURN, "\\" = PAUSE),
+    integers decimal, reals princ-spelled, 2D/3D points as
+    comma-separated "X,Y[,Z]", enames as handle text; anything
+    else (nil included) raises :invalid-command-argument. All
+    arguments evaluate before dispatch (the vl-cmdf-documented
+    evaluate-first behavior; no partial execution — recorded in
+    the spec's *** clautolisp sections). Returns nil.
+  * Routing: the runtime funcalls *HOST-COMMAND-FUNCTION* (host
+    token-list); the autolisp-host module installs #'HOST-COMMAND
+    there at load (same pattern as *default-runtime-host* — the
+    runtime sits below autolisp-host in the dependency order).
+  * MockHost: host-command records the token list on a per-session
+    COMMAND-LOG slot, echoes "Command: ..." to prompt-output
+    (<RETURN>/<PAUSE>/*Cancel* spellings), returns nil. New
+    HOST-COMMAND-LOG generic reads it back oldest-first; the
+    CLAL-COMMAND-LOG extension exposes it to AutoLISP
+    (documented: spec Function Entry + user manual). NullHost
+    signals :host-not-supported for both.
+  * PAUSE is now a predefined variable bound to "\\"
+    (install-predefined-variables in builtins-core).
+  * COMMAND-S shares the routing verbatim (the in-process engine is
+    synchronous); VL-CMDF is a real subr over the same routing,
+    returns T on success, nil when the backend has no command
+    channel (keeps the NullHost stub contract).
+  * (command) with no arguments routes the empty sequence (the
+    vendor "cancel" call); MockHost logs () and echoes *Cancel*.
+  * Tests: runtime (token rules via a recorder hook), host
+    (NullHost signals), mock-host (log + echo), builtins-core
+    (end-to-end on MockHost, vl-cmdf T/nil, clal-command-log,
+    pause), + conformance scenario
+    autolisp-front-end/tests/scenarios/clautolisp/command-mock-log.sexp.
+
+Deferred (as this issue itself specified): live CAD routing — a
+LiveHost (Phase 16) implements the HOST-COMMAND generic with its
+SendCommand / script analog; nothing further is owed here. The alfe
+bricscad/autocad backends run AutoLISP inside the CAD, where COMMAND
+is native (alfe-backend-{bricscad,autocad} tracks).

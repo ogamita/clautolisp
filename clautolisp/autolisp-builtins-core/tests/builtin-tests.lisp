@@ -4924,3 +4924,82 @@ character code. The opens are diagnostic-suppressed."
           (is nil "negative length should have signalled"))
       (autolisp-runtime-error (c)
         (is (eq :invalid-substr-length (autolisp-runtime-error-code c)))))))
+
+;;;; ----- COMMAND / COMMAND-S / VL-CMDF / CLAL-COMMAND-LOG -----------
+;;;; (deferred-command-special-form issue) — the full stack on a
+;;;; MockHost: the runtime special form normalizes tokens, the HAL
+;;;; routes them, MockHost records them, CLAL-COMMAND-LOG reads them
+;;;; back as AutoLISP values.
+
+(defun run-on-mock-command-host (source)
+  "Evaluate SOURCE with the core builtins installed and the default
+session pointed at a fresh MockHost. Returns (values result mock)."
+  (let ((mock (clautolisp.autolisp-mock-host:make-mock-host)))
+    (values
+     (run-autolisp-string
+      source
+      :setup-fn (lambda (context)
+                  (clautolisp.autolisp-runtime:set-runtime-session-host
+                   (clautolisp.autolisp-runtime:evaluation-context-session context)
+                   mock)
+                  (install-core-builtins)))
+     mock)))
+
+(test command-special-form-records-tokens-on-mock-host
+  "(command \"._LINE\" pt1 pt2 \"\") returns nil and lands on the
+MockHost command log as normalized token strings."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result mock)
+      (run-on-mock-command-host
+       "(command \"._LINE\" (list 0.0 0.0 0.0) (list 10.0 10.0 0.0) \"\")")
+    (is (null result))
+    (is (equal '(("._LINE" "0.0,0.0,0.0" "10.0,10.0,0.0" ""))
+               (clautolisp.autolisp-host:host-command-log mock)))))
+
+(test command-pause-variable-is-predefined
+  "PAUSE is bound to the one-backslash string and flows into the
+token sequence."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result mock)
+      (run-on-mock-command-host "(command \"._ZOOM\" pause)")
+    (is (null result))
+    (is (equal '(("._ZOOM" "\\"))
+               (clautolisp.autolisp-host:host-command-log mock)))))
+
+(test vl-cmdf-returns-t-on-mock-host-and-shares-the-log
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result mock)
+      (run-on-mock-command-host "(vl-cmdf \"._REGEN\")")
+    (is (typep result 'clautolisp.autolisp-runtime:autolisp-symbol))
+    (is (string= "T" (clautolisp.autolisp-runtime:autolisp-symbol-name result)))
+    (is (equal '(("._REGEN"))
+               (clautolisp.autolisp-host:host-command-log mock)))))
+
+(test vl-cmdf-returns-nil-when-host-lacks-command-channel
+  "Under the default NullHost VL-CMDF swallows :host-not-supported
+and returns nil (the documented T / nil success contract); COMMAND
+itself fails loudly."
+  (reset-autolisp-symbol-table)
+  (is (null (run-autolisp-string "(vl-cmdf \"._REGEN\")"
+                                 :setup-fn #'install-core-into)))
+  (let ((signalled-code nil))
+    (handler-case
+        (run-autolisp-string "(command \"._REGEN\")"
+                             :setup-fn #'install-core-into)
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :host-not-supported signalled-code))))
+
+(test clal-command-log-returns-token-lists-oldest-first
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result mock)
+      (run-on-mock-command-host
+       "(command \"._LINE\" (list 0.0 0.0) (list 1.0 1.0) \"\")
+        (command \"._CIRCLE\" (list 1 2) 5.5)
+        (clal-command-log)")
+    (declare (ignore mock))
+    (is (equal '(("._LINE" "0.0,0.0" "1.0,1.0" "")
+                 ("._CIRCLE" "1,2" "5.5"))
+               (mapcar (lambda (tokens)
+                         (mapcar #'autolisp-string-value tokens))
+                       result)))))

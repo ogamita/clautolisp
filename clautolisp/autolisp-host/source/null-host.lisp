@@ -171,6 +171,9 @@ backend share this instance.")
   (declare (ignore arguments))
   (signal-host-not-supported host 'command))
 
+(defmethod host-command-log ((host null-host))
+  (signal-host-not-supported host 'command-log))
+
 ;; Interactive prompts
 (defmethod host-prompt ((host null-host) string)
   (declare (ignore string))
@@ -244,3 +247,10 @@ backend share this instance.")
 ;;; on load. Downstream code may rebind *default-runtime-host* to
 ;;; switch — this is just the universal fallback.
 (setf clautolisp.autolisp-runtime:*default-runtime-host* *null-host*)
+
+;;; Wire the runtime's COMMAND special form to the HAL command
+;;; channel. The runtime cannot name HOST-COMMAND itself (it sits
+;;; below this system in the dependency order), so it routes through
+;;; this hook — installed once here, alongside the default-backend
+;;; install above.
+(setf clautolisp.autolisp-runtime:*host-command-function* #'host-command)

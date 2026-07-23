@@ -97,6 +97,12 @@ separate binary for tool integrators.
 
 ** clautolisp-only helpers (CLAL-* prefix)
 
+- ~clal-command-log~ — the ~command~ / ~command-s~ / ~vl-cmdf~ token
+  sequences routed to the host this session, oldest first. Under the
+  MockHost (no command engine) the recorded log is the whole
+  observable effect of a ~command~ call — the deterministic
+  assertion surface for headless rigs. See § /clautolisp
+  Extensions/.
 - ~clal-sysvar-list~, ~clal-sysvar-apropos~ — discover the active
   host's system variables.
 - ~clal-system-codepage~, ~clal-drawing-codepage~,
@@ -316,6 +322,13 @@ separate binary for tool integrators.
 
 ** Other AutoLISP semantics matches
 
+- ~command~ / ~command-s~ are real special forms routed through the
+  Host Abstraction Layer: arguments evaluate, values normalize to
+  command-line token strings (points as ~"X,Y[,Z]"~, ~""~ = RETURN,
+  ~"\\"~ = PAUSE — the predefined ~pause~ variable is bound), and
+  the sequence lands on the host command channel; MockHost records
+  it and returns nil. ~vl-cmdf~ shares the routing and returns T on
+  success. See the user manual § /Host backend/.
 - ~(quit)~ and ~(exit)~ are catchable by ~VL-CATCH-ALL-APPLY~ — the
   vendor surface, needed by test frameworks like test-unitaire.lsp.
 - Source-level ~'NIL~ normalises to CL nil so ~(a b c . NIL)~ is a

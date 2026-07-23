@@ -66,6 +66,7 @@
                 #:set-autolisp-symbol-function
                 #:current-evaluation-dialect
                 #:current-evaluation-host
+                #:dispatch-autolisp-command
                 #:autolisp-ename
                 #:autolisp-ename-value
                 #:make-autolisp-ename
@@ -153,6 +154,7 @@
                 #:host-getvar
                 #:host-setvar
                 #:host-sysvar-names
+                #:host-command-log
                 #:host-registry-read #:host-registry-write
                 #:host-registry-delete #:host-registry-descendents
                 #:host-prompt

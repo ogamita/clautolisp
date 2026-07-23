@@ -576,6 +576,18 @@ Both axes are independent.
                             deterministic answers to interactive
                             scripts.
 
+The ~command~ special form (and ~command-s~ / ~vl-cmdf~) routes its
+token sequence through the selected backend's command channel. The
+MockHost has no CAD command engine: it *records* each normalized
+token sequence — strings verbatim, numbers and points in their
+command-line spellings (~"X,Y[,Z]"~ for points), ~""~ as the RETURN
+token, ~"\\"~ (the predefined variable ~pause~) as the PAUSE token —
+on a per-session log, echoes a ~Command: ...~ line, and returns
+~nil~. Read the log back with ~(clal-command-log)~ (see the
+~CLAL-~ extensions below). Under ~--host null~ every ~command~ call
+signals ~:host-not-supported~ (~vl-cmdf~ instead returns ~nil~, per
+its T / nil success contract).
+
 ** Interactive user input (~get*~ functions)
 AutoCAD and BricsCAD gather the answers to the interactive input
 functions — ~getstring~, ~getint~, ~getreal~, ~getpoint~, ~getcorner~,
@@ -1184,6 +1196,22 @@ The probing convention for portable code:
     ;; vendor fallback -- there isn't one; either accept that the
     ;; query is unavailable or fall back to the SETVAR command.
     nil)
+#+END_SRC
+
+*** ~CLAL-COMMAND-LOG~ -- the recorded ~command~ token sequences
+~(clal-command-log)~ returns the token sequences that ~command~ /
+~command-s~ / ~vl-cmdf~ have routed through the host's command
+channel in this session, oldest first — a list of lists of strings,
+exactly as sent (~""~ = RETURN, ~"\\"~ = PAUSE, points as
+~"X,Y[,Z]"~). Under the MockHost, which has no command engine, this
+log is the whole observable effect of a ~command~ call — the
+deterministic assertion surface for headless test rigs. Raises
+~:host-not-supported~ under a backend without a command log
+(~--host null~).
+
+#+BEGIN_SRC autolisp
+$ clautolisp -x "(progn (command \"._LINE\" (list 0.0 0.0 0.0) (list 10.0 10.0 0.0) \"\") (print (clal-command-log)))"
+(("._LINE" "0.0,0.0,0.0" "10.0,10.0,0.0" ""))
 #+END_SRC
 
 *** ~CLAL-SYSVAR-LIST~ -- list every sysvar known to the host
