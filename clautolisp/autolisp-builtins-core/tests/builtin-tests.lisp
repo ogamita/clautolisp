@@ -3545,7 +3545,11 @@ descendents, delete, and persistence across a fresh store load."
   (reset-autolisp-symbol-table)
   (uiop:with-temporary-file (:pathname path :type "sexp")
     (let ((clautolisp.autolisp-mock-host:*mock-registry-path* path)
-          (clautolisp.autolisp-mock-host::*mock-registry* nil))
+          (clautolisp.autolisp-mock-host::*mock-registry* nil)
+          ;; force the sexp store: this unit test is about the :unix
+          ;; backend — on darwin/windows the default backend talks to the
+          ;; REAL platform store (covered by the verify:vl-registry jobs)
+          (clautolisp.autolisp-mock-host::*vl-registry-backend* :unix))
       (flet ((run-al (form) (run-autolisp-string
                              form :setup-fn #'%install-mock-host-and-core))
              (s= (expect v) (and (typep v 'autolisp-string)

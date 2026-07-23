@@ -198,7 +198,7 @@ test-sbcl:
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(ASD_FILE)")' \
+		--eval '(asdf:load-asd (merge-pathnames "$(ASD_FILE)" (uiop:getcwd)))' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
 
 test-ccl:
@@ -207,7 +207,7 @@ test-ccl:
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(ASD_FILE)")' \
+		--eval '(asdf:load-asd (merge-pathnames "$(ASD_FILE)" (uiop:getcwd)))' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)' \
 		--eval '(ccl:quit)'
 

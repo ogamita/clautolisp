@@ -105,7 +105,6 @@ the aldo.conf princ-serialisation lesson), sorted for stable diffs."
                 '())
             code)))
 
-#+(or win32 windows mswindows os-windows)
 (progn
   (defun %reg-read (key value-name)
     (multiple-value-bind (lines code)
@@ -156,7 +155,6 @@ the aldo.conf princ-serialisation lesson), sorted for stable diffs."
                   finally (return (sort (delete-duplicates subs :test #'string-equal)
                                         #'string-lessp))))))))
 
-#+darwin
 (progn
   (defparameter +defaults-domain+ "org.clautolisp.vl-registry")
   (defun %dflt-key (key value-name)
@@ -211,52 +209,58 @@ the aldo.conf princ-serialisation lesson), sorted for stable diffs."
                                  names :test #'string-equal)))))))))
       (sort names #'string-lessp))))
 
+(defvar *vl-registry-backend*
+  #+(or win32 windows mswindows os-windows) :windows
+  #+(and darwin (not (or win32 windows mswindows os-windows))) :darwin
+  #-(or win32 windows mswindows os-windows darwin) :unix
+  "Which vl-registry store the mock host talks to: :WINDOWS (the real
+registry via reg.exe), :DARWIN (the defaults database), :UNIX (the
+persistent sexp file). Defaults to the platform; RUNTIME-dispatched so
+the unit tests can bind :UNIX and exercise the sexp store on any
+platform (the platform verify jobs cover the other two).")
+
 (defmethod host-registry-read ((host mock-host) key value-name)
-  #+(or win32 windows mswindows os-windows) (%reg-read key value-name)
-  #-(or win32 windows mswindows os-windows)
-  (progn
-    #+darwin (%dflt-read key value-name)
-    #-darwin
-    (let ((values (gethash key (%registry))))
-      (and values (gethash (%registry-value-name value-name) values)))))
+  (ecase *vl-registry-backend*
+    (:windows (%reg-read key value-name))
+    (:darwin (%dflt-read key value-name))
+    (:unix
+     (let ((values (gethash key (%registry))))
+       (and values (gethash (%registry-value-name value-name) values))))))
 
 (defmethod host-registry-write ((host mock-host) key value-name value)
-  #+(or win32 windows mswindows os-windows) (%reg-write key value-name value)
-  #-(or win32 windows mswindows os-windows)
-  (progn
-    #+darwin (%dflt-write key value-name value)
-    #-darwin
-    (let* ((registry (%registry))
+  (ecase *vl-registry-backend*
+    (:windows (%reg-write key value-name value))
+    (:darwin (%dflt-write key value-name value))
+    (:unix
+     (let* ((registry (%registry))
            (values (or (gethash key registry)
                        (setf (gethash key registry)
                              (make-hash-table :test #'equalp)))))
-      (setf (gethash (%registry-value-name value-name) values) value)
-      (%registry-save)
-      value)))
+       (setf (gethash (%registry-value-name value-name) values) value)
+       (%registry-save)
+       value))))
 
 (defmethod host-registry-delete ((host mock-host) key value-name)
-  #+(or win32 windows mswindows os-windows) (%reg-delete key value-name)
-  #-(or win32 windows mswindows os-windows)
-  (progn
-    #+darwin (%dflt-delete key value-name)
-    #-darwin
-    (let* ((registry (%registry))
+  (ecase *vl-registry-backend*
+    (:windows (%reg-delete key value-name))
+    (:darwin (%dflt-delete key value-name))
+    (:unix
+     (let* ((registry (%registry))
            (values (gethash key registry))
            (deleted
              (cond
                ((null values) nil)
                (value-name (remhash value-name values))
                (t (remhash key registry)))))
-      (when deleted (%registry-save))
-      deleted)))
+       (when deleted (%registry-save))
+       deleted))))
 
 (defmethod host-registry-descendents ((host mock-host) key value-names-p)
-  #+(or win32 windows mswindows os-windows) (%reg-descendents key value-names-p)
-  #-(or win32 windows mswindows os-windows)
-  (progn
-    #+darwin (%dflt-descendents key value-names-p)
-    #-darwin
-    (let ((registry (%registry)))
+  (ecase *vl-registry-backend*
+    (:windows (%reg-descendents key value-names-p))
+    (:darwin (%dflt-descendents key value-names-p))
+    (:unix
+     (let ((registry (%registry)))
       (if value-names-p
           (let ((values (gethash key registry)) (names '()))
             (when values
@@ -276,4 +280,4 @@ the aldo.conf princ-serialisation lesson), sorted for stable diffs."
                         (segment (subseq rest 0 (position #\\ rest))))
                    (pushnew segment subkeys :test #'string-equal))))
              registry)
-            (sort subkeys #'string-lessp))))))
+            (sort subkeys #'string-lessp)))))))
