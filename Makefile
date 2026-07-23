@@ -444,8 +444,9 @@ docker-push-clautolisp-ci: docker-build-clautolisp-ci  ## Build and push the CI 
 	docker push "$(CLAUTOLISP_CI_IMAGE)"
 
 save-sysvars: ## Dumps the sysvars of various implementations and configuration in sysvars-*.txt files.
-	for backend in clautolisp autocad bricscad ; do \
-		alfe --$$backend --mode batch \
+	for backend in clautolisp bricscad autocad ; do \
+		alfe --$$backend --dialect=$$backend --mode batch \
+			-e Windows-1252 \
 			-norc \
 			-l autolisp-spec/autolisp/dump-sysvars.lsp \
 			-x "(dump-sysvars \"sysvars-alfe-$$(uname)-$${backend}.txt\")"  || true ;\
