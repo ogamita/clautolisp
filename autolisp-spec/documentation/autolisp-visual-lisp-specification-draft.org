@@ -9172,6 +9172,15 @@ None.
 - BricsCAD V26: presumed compatible.
 - Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
 
+*** clautolisp
+
+On unix platforms clautolisp distinguishes a defined-but-empty
+variable (returns ~""~) from an undefined one (returns ~nil~). On
+ms-windows this distinction does not exist at the OS level: the Win32
+environment cannot hold a variable with an empty value — setting one
+to the empty string deletes it — so ~(getenv)~ returns ~nil~ there,
+exactly as AutoCAD on Windows does.
+
 *** Source Notes
 - [getenv (AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-0796D4FE-C07B-4DB6-9C01-9D772CAFA2C0.htm)
 - Status: documented (Phase 3 body fill).
