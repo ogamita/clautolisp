@@ -13,6 +13,10 @@ MAKEINFO       ?= makeinfo
 INSTALL_INFO   ?= install-info
 LATEX_COMPILER ?= xelatex
 ROOT_DIR := $(shell pwd)
+# NOTE: never interpolate $(ROOT_DIR)-derived absolute paths into Lisp
+# forms — under the Windows runner's MSYS shell `pwd` yields /c/… which
+# SBCL cannot parse; the test targets merge the bare file name against
+# (uiop:getcwd), which is always spelled natively (c:/… on Windows).
 ASD_FILE := $(ROOT_DIR)/clautolisp.asd
 XDG_CACHE_HOME ?= $(ROOT_DIR)/.cache
 
@@ -198,7 +202,7 @@ test-sbcl:
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd (merge-pathnames "$(ASD_FILE)" (uiop:getcwd)))' \
+		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
 
 test-ccl:
@@ -207,7 +211,7 @@ test-ccl:
 		--eval '(let ((ql (merge-pathnames #P"quicklisp/setup.lisp" (user-homedir-pathname)))) (when (probe-file ql) (load ql)))' \
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd (merge-pathnames "$(ASD_FILE)" (uiop:getcwd)))' \
+		--eval '(asdf:load-asd (merge-pathnames "clautolisp.asd" (uiop:getcwd)))' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)' \
 		--eval '(ccl:quit)'
 
