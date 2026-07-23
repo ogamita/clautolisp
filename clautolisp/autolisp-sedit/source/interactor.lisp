@@ -233,11 +233,13 @@ directory (sedit-file-and-up.issue)."
 (clautolisp.interactor:bind-command-alias *sedit-commands* "f" ">")
 (clautolisp.interactor:bind-command-alias *sedit-commands* "b" "<")
 
-(%define-sedit-command (skip) "skip ±N: move N siblings forward (+) or back (-)."
-  (let ((count (and arg (ignore-errors (parse-integer arg)))))
-    (if count
-        (sedit-skip state count)
-        (format t "~&SEDIT> skip needs a signed count (±N)~%")))
+;; A typed command (interactor-unification): COUNT arrives as a fixnum —
+;; the framework converts (and reports `the skip command needs a integer
+;; for count' on a non-integer token, keeping the loop alive), so no
+;; hand-rolled parse-integer. The %SEDIT-READ ±N rewrite feeds `skip N'.
+(clautolisp.interactor:define-command (*sedit* skip) ((count integer))
+    "skip ±N: move N siblings forward (+) or back (-)."
+  (sedit-skip (sedit-session-state (%sedit-isession)) count)
   nil)
 
 (defmacro %define-sedit-editing ((key &rest words) token docstring)

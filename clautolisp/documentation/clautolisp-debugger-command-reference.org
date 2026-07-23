@@ -1367,6 +1367,24 @@ mode-specific wrapper; the convention is fixed
   belongs to the declaration only, function lambda-lists have none) — or
   positional =(REQUIRED… [&rest OTHER-ARGS])=, receiving the parsed
   argument strings.
+- *Typed command arguments.* A positional parameter may be declared as a
+  =(NAME TYPE)= sublist to receive a *converted* value instead of the
+  token's text. =TYPE= is one of =string= (the text unchanged — what a
+  bare =NAME= means too), =integer= (the token parsed as an integer),
+  =float= (a Lisp real read from the text), =ident= (the text, which must
+  be an identifier token) or =sexp= (the text read as one Lisp form,
+  =*read-eval*= disabled — for commands taking a form); types are matched
+  by name. =(&rest (NAME TYPE))= converts each collected element; a bare
+  =&rest NAME= stays a list of texts. Like =&whole= (with which typed
+  entries are mutually exclusive), the types belong to the *declaration*
+  only: the function's own lambda-list uses just the names. A token that
+  does not convert *cancels the command* with a report — =the skip
+  command needs a integer for count, got "x"= — and the loop keeps
+  reading; an answer prompted for a missing required argument converts
+  (and cancels) the same way. Example: NAVI's and SEDIT's =skip= declare
+  =((count integer))= and receive a fixnum. Both the interactor loop
+  (=call-command=) and the dumb UI's legacy dictionary dispatch convert
+  identically (=convert-command-argument=).
 - Everything else arrives through dynamic variables:
   =*command-interactor*= / =*command-activation*= (the owning interactor
   and its per-entry activation state), =*command-line*= (the whole input

@@ -164,6 +164,88 @@ ALDO system command."
       (is (equal '("a" "b" "c")
                  (call-command many '((ident . "a") (ident . "b") (ident . "c"))))))))
 
+;;; --- typed command arguments -------------------------------------------
+
+(test call-command-converts-typed-arguments
+  (let ((d (make-command-dictionary "test")))
+    (let ((cmd (bind-command d '(z zar) '((count integer) (ratio float)
+                                          (name ident) (form sexp))
+                             "Zar." #'list))
+          (*package* (find-package '#:clautolisp.interactor.tests)))
+      (is (equal '(3 1.5 "foo" (list 1 2))
+                 (call-command cmd '((integer . "3") (float . "1.5")
+                                     (ident . "foo") (string . "(list 1 2)"))))))))
+
+(test call-command-converts-a-typed-rest
+  (let ((d (make-command-dictionary "test")))
+    (let ((cmd (bind-command d '(s sum) '(&rest (numbers integer)) "Sum."
+                             (lambda (&rest numbers) (apply #'+ numbers)))))
+      (is (= 6 (call-command cmd '((integer . "1") (integer . "2") (integer . "3")))))
+      ;; an untyped &rest still receives the plain texts
+      (let ((cat (bind-command d '(c cat) '(&rest texts) "Cat."
+                               (lambda (&rest texts) (apply #'concatenate 'string texts)))))
+        (is (equal "12" (call-command cat '((integer . "1") (integer . "2")))))))))
+
+(test call-command-reports-a-mismatch-and-skips-the-call
+  (let ((d (make-command-dictionary "test"))
+        (errors (make-string-output-stream))
+        (called nil))
+    (let ((cmd (bind-command d '(s skip) '((count integer)) "Skip."
+                             (lambda (count) (setf called count)))))
+      (is (null (call-command cmd '((ident . "x")) :error-output errors)))
+      (is (null called))
+      (is (search "the skip command needs a integer for count, got \"x\""
+                  (get-output-stream-string errors))))))
+
+(test typed-mismatch-keeps-the-loop-alive
+  (let ((echo (make-echo-interactor)))
+    (bind-command (interactor-commands echo) '(s skip) '((count integer)) "Skip."
+                  (lambda (count) (format t "skipped ~D~%" (* 2 count))))
+    (multiple-value-bind (output value errors)
+        (run-loop-on-script (format nil "skip x~%skip 21~%ping~%")
+                            :interactors (list echo))
+      (declare (ignore value))
+      (is (search "the skip command needs a integer for count, got \"x\"" errors))
+      (is (search "skipped 42" output))
+      (is (search "pong" output)))))                ; the loop went on
+
+(test prompting-converts-the-answer
+  (let ((d (make-command-dictionary "test"))
+        (output (make-string-output-stream)))
+    (let ((cmd (bind-command d '(s skip) '((count integer)) "Skip."
+                             (lambda (count) (list :count count)))))
+      (with-input-from-string (input (format nil "7~%"))
+        (let ((context (make-input-context :stream input)))
+          (is (equal '(:count 7)
+                     (call-command cmd '() :output output :input-context context)))))
+      (is (search "count? " (get-output-stream-string output))))))
+
+(test a-prompted-answer-that-does-not-convert-cancels-the-command
+  (let ((d (make-command-dictionary "test"))
+        (output (make-string-output-stream))
+        (errors (make-string-output-stream))
+        (called nil))
+    (let ((cmd (bind-command d '(s skip) '((count integer)) "Skip."
+                             (lambda (count) (setf called count)))))
+      (with-input-from-string (input (format nil "x~%"))
+        (let ((context (make-input-context :stream input)))
+          (is (null (call-command cmd '() :output output :error-output errors
+                                          :input-context context)))))
+      (is (null called))
+      (is (search "the skip command needs a integer for count, got \"x\""
+                  (get-output-stream-string errors))))))
+
+(test define-command-accepts-typed-parameters
+  ;; the macro: the function's lambda-list uses just the names, the
+  ;; declaration keeps the types, and the body receives converted values
+  (let ((navi (make-echo-interactor :name "NAVI")))
+    (define-command (navi s skip) ((count integer))
+        "Skip."
+      (format t "count=~S~%" (* 2 count)))
+    (multiple-value-bind (output)
+        (run-loop-on-script (format nil "skip 21~%") :interactors (list navi))
+      (is (search "count=42" output)))))
+
 (test call-command-reports-execution-errors
   (let ((d (make-command-dictionary "test"))
         (errors (make-string-output-stream)))
