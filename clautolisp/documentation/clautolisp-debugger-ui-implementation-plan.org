@@ -48,7 +48,7 @@ Status (refreshed): the *TUI (dumb)* surface now implements essentially the
 whole vocabulary — the ✔ / ✔* column. The ✔* items are scoped: =goto= is by
 global name, =search= is a name search, =jump= is forward-only, poll-point
 designation is =ppN= (not yet =LINE.K= / =LINE:COL=), and UI selection wires
-=--on-error= / =--aldo-user-interface tui|ncurses= (the aldb TCP listener is
+=--on-error= / =--debugger-ui tui|ncurses= (the aldb TCP listener is
 deferred). The one TUI ✦ left is routing dispatch through the *stacked command
 dictionaries* (the table layer exists and is tested, but the dumb UI still
 dispatches via a hand-written table). *ncurses* and *aldb* remain thin
@@ -145,7 +145,7 @@ policy. Used by the TUI listing, the ncurses source pane, and (faces) aldb.
 2. Navigation/history delegated to Emacs (buffers + =xref= + mark ring);
    re-anchor point to the current poll-point on re-entry.
 3. UI selection (=aldb=) + the listener: =default-aldb-listening-address= /
-   =-port=, the =--aldb-listening-address= / =-port= CLI options, the
+   =-port=, the =--aldb-listen [HOST:]PORT= / =--aldb-stdio= CLI options, the
    not-connected connect prompt and the already-connected message
    (command-reference §10).
 

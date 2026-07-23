@@ -325,11 +325,13 @@ keystroke-UI cursor form and the typed form — under this rule.
   aldo.
 - The *user-visible entry into the debugger* is therefore not a "start"
   command but =invoke-debugger=, fired from a *poll point*:
-  - *interrupt* — C-c sets a "stop at the next poll point" flag; at the next
-    poll point the main thread calls =invoke-debugger=, handing control to
-    the always-ready aldo thread (the two alternate through a mutex). A
-    second C-c while the flag is set forces an immediate non-local exit,
-    forgoing the debugger (see the issue's interrupt design).
+  - *interrupt* — C-c breaks into the debugger at the current poll point;
+    the =--on-interrupt debug|ignore|quit= CLI option (default =debug=)
+    picks the behaviour, and the AutoLISP variable =*CLAL-ON-INTERRUPT*=
+    mirrors it and is re-read LIVE at each interrupt. A second C-c while
+    one is being handled exits the process immediately (status 130),
+    forgoing the debugger. With no debug session active, =debug=
+    degrades to =quit=.
   - *programmatic* — the AutoLISP user API =(clal-break)= and
     =(clal-invoke-debugger [message])= drop into the debugger at the
     current poll point from the program itself (the analogue of CL
@@ -342,15 +344,18 @@ keystroke-UI cursor form and the typed form — under this rule.
     backed by a dynamic variable =*clal-on-error*= that the option sets and
     that user code / init files may rebind to shadow it (e.g.
     =(let ((*clal-on-error* :debug)) …)= around a suspect region).
+  - *on quit* — with =--on-quit debug= (default =quit=; mirrored by
+    =*CLAL-ON-QUIT*=, re-read live) a =(quit)= / =(exit)= call enters the
+    debugger BEFORE the stack unwinds: =continue= resumes the quit,
+    aborting cancels it. The QUIT event cannot be ignored.
   - The debugger's *other* CLI options select the UI and configure the aldb
-    listener — =--aldo-user-interface=, =--aldb-listening-address=,
-    =--aldb-listening-port= (§10 *Selecting the user interface*).
+    channel — =--debugger-ui=, =--aldb-listen=, =--aldb-stdio= (§10
+    *Selecting the user interface*).
 - backing: =[have]= for the engine entry (=*debug-hit-handler*= +
   poll-point dispatch already implement "invoke the debugger at a poll
-  point"); =[new]= for the =clal-break= / =clal-invoke-debugger= builtins,
-  the C-c/SIGINT flag plumbing, and =*clal-on-error*= / =--on-error= (all
-  specified in
-  =debugger-public-interface-and-on-error.issue=).
+  point"), the =clal-break= / =clal-invoke-debugger= builtins,
+  =*clal-on-error*= / =--on-error=, and the =--on-interrupt= /
+  =--on-quit= policies (debugger-public-interface-and-on-error.issue).
 
 ** jump LINE   =[new]=
 - aldb / ncurses: cursor on the target form + =j= (location from the cursor,
@@ -1103,10 +1108,11 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
     being saved. See §10 *Selecting the user interface*.
   - =default-aldb-listening-address= — the address aldb listens on for the
     Emacs client: an IPv4 / IPv6 address or a domain name. Persisted default;
-    the CLI =--aldb-listening-address= sets the current value.
+    the CLI =--aldb-listen [HOST:]PORT= sets the current value (its HOST part;
+    127.0.0.1 when omitted).
   - =default-aldb-listening-port= — the aldb listening port: a port number or a
-    service name. Persisted default; the CLI =--aldb-listening-port= sets the
-    current value.
+    service name. Persisted default; the CLI =--aldb-listen= sets the current
+    value (its PORT part; 0 = pick a free port).
 - backing: =[new]= (a small per-session options plist; the colour =theme=s
   reuse the runtime colour policy, and =*navigation-history-max*= the
   navigation history). The =default-aldb-listening-*= keys configure the aldb
@@ -1712,9 +1718,14 @@ The choice has a *persisted default* and a *current* (per-run) override:
   but are *not* saved into =*clal-aldo-configuration*=, so =,settings save=
   never persists a one-off run choice.
 - *Command-line options* set the current values (values case-insensitive):
-  - =--aldo-user-interface tui|ncurses|aldb=
-  - =--aldb-listening-address IPV4address|IPV6address|domain-name=
-  - =--aldb-listening-port PORTNUMBER|service-name=
+  - =--debugger-ui tui|ncurses|aldb= (=terminal= and =emacs= are accepted
+    spellings of =tui= and =aldb=)
+  - =--aldb-listen [HOST:]PORT= — HOST an IPv4 / IPv6 address or a domain
+    name, 127.0.0.1 when omitted; PORT a port number (0 = pick a free
+    port) or a service name. Implies =--debugger-ui aldb=.
+  - =--aldb-stdio= — the process's stdin/stdout become the aldb RPC
+    channel; implies =--debugger-ui aldb=; mutually exclusive with
+    =--interactive= and =--aldb-listen=.
 
   They join =--on-error= (§1) as the debugger's CLI options (the
   public-interface issue owns the option plumbing).

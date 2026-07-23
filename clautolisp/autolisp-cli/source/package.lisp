@@ -43,9 +43,12 @@
    #:cli-options-gui             ; C — clautolisp DCL subprocess renderer
    #:cli-options-trace-p         ; C — clautolisp --trace
    #:cli-options-on-error        ; C — clautolisp --on-error policy
-   #:cli-options-user-interface  ; C — clautolisp --aldo-user-interface
-   #:cli-options-aldb-address    ; C — clautolisp --aldb-listening-address
-   #:cli-options-aldb-port       ; C — clautolisp --aldb-listening-port
+   #:cli-options-on-interrupt    ; C — clautolisp --on-interrupt policy
+   #:cli-options-on-quit         ; C — clautolisp --on-quit policy
+   #:cli-options-user-interface  ; C — clautolisp --debugger-ui
+   #:cli-options-aldb-address    ; C — clautolisp --aldb-listen HOST part
+   #:cli-options-aldb-port       ; C — clautolisp --aldb-listen PORT part
+   #:cli-options-aldb-stdio-p    ; C — clautolisp --aldb-stdio
    #:cli-options-dribble         ; C — --dribble / --dribble=FILE (t / string)
    #:cli-options-dribble-interactors ; C — --dribble-interactors=IS (:all / names)
    #:cli-options-positional      ; both — positional FILE arguments
@@ -59,7 +62,10 @@
    #:parse-bootstrap-phase
    #:parse-timeout
    #:parse-on-error
+   #:parse-on-interrupt
+   #:parse-on-quit
    #:parse-user-interface
+   #:parse-aldb-listen
    #:parse-dribble-interactors
 
    ;; option-spec + parser

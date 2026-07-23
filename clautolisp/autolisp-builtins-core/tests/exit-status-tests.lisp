@@ -115,3 +115,81 @@ captured string afterwards."
               (autolisp-termination () nil)))))
     (is (search "exit-status-extension" warned))
     (is (zerop (length silent)))))
+
+;;; --- the *CLAL-ON-QUIT* policy (--on-quit; ------------------------
+;;; debugger-public-interface-and-on-error.issue Part B): under :DEBUG
+;;; the debugger break hook fires from (quit)/(exit) BEFORE the stack
+;;; unwinds; the AutoLISP variable overrides the CL-side default LIVE.
+
+(defmacro %with-recording-break-hook ((calls-var) &body body)
+  "Run BODY with *DEBUG-BREAK-HOOK* bound to a recorder; CALLS-VAR holds
+the list of messages the hook received (most recent last)."
+  `(let* ((,calls-var '())
+          (clautolisp.autolisp-runtime:*debug-break-hook*
+            (lambda (message) (setf ,calls-var (append ,calls-var (list message))))))
+     ,@body))
+
+(test on-quit-default-policy-does-not-call-the-break-hook
+  (%exit-status-context :clautolisp)
+  (reset-autolisp-symbol-table)         ; *CLAL-ON-QUIT* unbound → CL var rules
+  (%with-recording-break-hook (calls)
+    (let ((clautolisp.autolisp-runtime:*clal-on-quit* :quit))
+      (handler-case
+          (progn (clautolisp.autolisp-builtins-core::builtin-quit)
+                 (is nil "expected quit to signal termination"))
+        (autolisp-termination () nil)))
+    (is (null calls))))
+
+(test on-quit-debug-policy-breaks-before-unwinding-then-quits
+  (%exit-status-context :clautolisp)
+  (reset-autolisp-symbol-table)         ; *CLAL-ON-QUIT* unbound → CL var rules
+  (%with-recording-break-hook (calls)
+    (let ((clautolisp.autolisp-runtime:*clal-on-quit* :debug))
+      (handler-case
+          (progn (clautolisp.autolisp-builtins-core::builtin-quit)
+                 (is nil "expected quit to signal termination"))
+        (autolisp-termination (c)
+          (is (eq :quit (autolisp-termination-kind c))))))
+    ;; the hook fired exactly once, before the termination signal.
+    (is (= 1 (length calls)))
+    (is (search "continue to quit" (first calls)))))
+
+(test on-quit-autolisp-variable-overrides-the-runtime-default
+  ;; (setq *CLAL-ON-QUIT* 'DEBUG) wins over the CLI-set :quit — the
+  ;; policy is read live at each (quit)/(exit) call.
+  (%exit-status-context :clautolisp)
+  (reset-autolisp-symbol-table)
+  (set-autolisp-symbol-value (intern-autolisp-symbol "*CLAL-ON-QUIT*")
+                             (intern-autolisp-symbol "DEBUG"))
+  (%with-recording-break-hook (calls)
+    (let ((clautolisp.autolisp-runtime:*clal-on-quit* :quit))
+      (handler-case
+          (clautolisp.autolisp-builtins-core::builtin-exit 5)
+        (autolisp-termination (c)
+          (is (eql 5 (autolisp-termination-status c))))))
+    (is (= 1 (length calls)))))
+
+(test on-quit-autolisp-variable-can-restore-quit
+  ;; …and (setq *CLAL-ON-QUIT* 'QUIT) turns the debug policy back off.
+  (%exit-status-context :clautolisp)
+  (reset-autolisp-symbol-table)
+  (set-autolisp-symbol-value (intern-autolisp-symbol "*CLAL-ON-QUIT*")
+                             (intern-autolisp-symbol "QUIT"))
+  (%with-recording-break-hook (calls)
+    (let ((clautolisp.autolisp-runtime:*clal-on-quit* :debug))
+      (handler-case
+          (clautolisp.autolisp-builtins-core::builtin-quit)
+        (autolisp-termination () nil)))
+    (is (null calls))))
+
+(test live-event-policy-falls-back-on-bogus-variable-values
+  (%exit-status-context :clautolisp)
+  (reset-autolisp-symbol-table)
+  (set-autolisp-symbol-value (intern-autolisp-symbol "*CLAL-ON-QUIT*")
+                             (make-autolisp-string "not-a-policy"))
+  (is (eq :debug (clautolisp.autolisp-builtins-core:live-event-policy
+                  "*CLAL-ON-QUIT*" :debug '(:debug :quit))))
+  (set-autolisp-symbol-value (intern-autolisp-symbol "*CLAL-ON-QUIT*")
+                             (intern-autolisp-symbol "DEBUG"))
+  (is (eq :debug (clautolisp.autolisp-builtins-core:live-event-policy
+                  "*CLAL-ON-QUIT*" :quit '(:debug :quit)))))

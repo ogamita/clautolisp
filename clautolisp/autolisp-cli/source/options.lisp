@@ -52,11 +52,15 @@
   ;; Dribble (dribble.issue; clautolisp today, alfe planned)
   (dribble          nil)              ; C   --dribble / --dribble=FILE → t / FILE (string)
   (dribble-interactors nil)           ; C   --dribble-interactors=IS → :all / list of name strings
-  ;; Debugger (clautolisp-only): error policy + UI selection (debugger §10)
-  (on-error         nil)              ; C   --on-error quit|debug|ignore  → :quit/:debug/:ignore
-  (user-interface   nil)              ; C   --aldo-user-interface tui|ncurses|aldb → :tui/:ncurses/:aldb
-  (aldb-address     nil)              ; C   --aldb-listening-address ADDR (string)
-  (aldb-port        nil))             ; C   --aldb-listening-port PORT|service (string)
+  ;; Debugger (clautolisp-only): event policies + UI selection (debugger §10,
+  ;; debugger-public-interface-and-on-error.issue Parts B-D)
+  (on-error         nil)              ; C   --on-error quit|debug|ignore     → :quit/:debug/:ignore
+  (on-interrupt     nil)              ; C   --on-interrupt debug|ignore|quit → :debug/:ignore/:quit
+  (on-quit          nil)              ; C   --on-quit debug|quit             → :debug/:quit
+  (user-interface   nil)              ; C   --debugger-ui tui|ncurses|aldb   → :tui/:ncurses/:aldb
+  (aldb-address     nil)              ; C   --aldb-listen [HOST:]PORT — the HOST part (string)
+  (aldb-port        nil)              ; C   --aldb-listen [HOST:]PORT — the PORT part (integer or service-name string)
+  (aldb-stdio-p     nil))             ; C   --aldb-stdio → t
 
 ;;; --- value parsers ----------------------------------------------------
 ;;;
@@ -144,18 +148,68 @@ is shell-loop friendly: `for d in $(clautolisp --list-dialects); do …`."
              (format nil "Timeout must be a positive integer (got ~S)" value)))
     parsed))
 
-;;; --- debugger option parsers (debugger §10) --------------------------
+;;; --- debugger option parsers (debugger §10, ---------------------------
+;;; debugger-public-interface-and-on-error.issue Parts B-D)
+
+(defun %parse-event-policy (value option allowed)
+  "Shared body of the --on-<event> POLICY parsers: VALUE names one of the
+ALLOWED policy keywords (case-insensitive); anything else is a
+cli-usage-error naming OPTION."
+  (or (find value allowed :test #'string-equal :key #'symbol-name)
+      (error 'cli-usage-error
+             :option option
+             :message
+             (format nil "Unknown ~A policy ~S (expected ~{~(~A~)~^/~})"
+                     option value allowed))))
 
 (defun parse-on-error (value option)
   "The --on-error policy: quit (abort the program), debug (break into the
 debugger), or ignore (let the user *error* / default handler run)."
-  (cond ((string-equal value "quit")   :quit)
-        ((string-equal value "debug")  :debug)
-        ((string-equal value "ignore") :ignore)
-        (t (error 'cli-usage-error
-                  :option option
-                  :message
-                  (format nil "Unknown --on-error policy ~S (expected quit/debug/ignore)" value)))))
+  (%parse-event-policy value option '(:quit :debug :ignore)))
+
+(defun parse-on-interrupt (value option)
+  "The --on-interrupt policy: debug (break into the debugger at the interrupt
+point), ignore (the interrupt is ignored), or quit (the process quits)."
+  (%parse-event-policy value option '(:debug :ignore :quit)))
+
+(defun parse-on-quit (value option)
+  "The --on-quit policy: quit (the process quits — the default) or debug (the
+debugger is entered from QUIT before unwinding). The QUIT event cannot be
+ignored (debugger-public-interface-and-on-error.issue Part B)."
+  (%parse-event-policy value option '(:quit :debug)))
+
+(defun parse-aldb-listen (value option)
+  "Parse the --aldb-listen [HOST:]PORT value into (values HOST PORT): a bare
+PORT leaves HOST nil (the 127.0.0.1 default applies downstream); HOST:PORT
+splits at the LAST colon so a bracketed IPv6 literal ([::1]:4301) works —
+the brackets are stripped. PORT is validated: a decimal integer must be in
+0..65535 (0 = pick a free port); anything else non-empty is kept as a
+service-name string."
+  (let* ((value (string value))
+         (colon (position #\: value :from-end t))
+         (host (and colon (string-trim "[]" (subseq value 0 colon))))
+         (port-string (if colon (subseq value (1+ colon)) value)))
+    (when (and colon (zerop (length host)))
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "~A got an empty HOST in ~S (expected [HOST:]PORT)"
+                              option value)))
+    (when (zerop (length port-string))
+      (error 'cli-usage-error
+             :option option
+             :message (format nil "~A got an empty PORT in ~S (expected [HOST:]PORT)"
+                              option value)))
+    (multiple-value-bind (n end) (parse-integer port-string :junk-allowed t)
+      (let ((port (if (and n (= end (length port-string)))
+                      (if (<= 0 n 65535)
+                          n
+                          (error 'cli-usage-error
+                                 :option option
+                                 :message
+                                 (format nil "~A port ~D is out of range 0..65535"
+                                         option n)))
+                      port-string)))    ; a service name
+        (values host port)))))
 
 (defun parse-dribble-interactors (value option)
   "The --dribble-interactors=IS value (dribble.issue): `t' (any case) means
@@ -183,8 +237,9 @@ names/aliases, yielding the list of name strings."
              (nreverse names)))))
 
 (defun parse-user-interface (value option)
-  "The --aldo-user-interface selection: tui (the line/terminal UI), ncurses, or
-aldb (the Emacs front-end)."
+  "The --debugger-ui selection: tui (the line/terminal UI; `terminal' and
+`dumb' are accepted spellings), ncurses, or aldb (the Emacs front-end;
+`emacs' is an accepted spelling)."
   (cond ((string-equal value "tui")     :tui)
         ((or (string-equal value "terminal") (string-equal value "dumb")) :tui)
         ((string-equal value "ncurses") :ncurses)
@@ -192,4 +247,5 @@ aldb (the Emacs front-end)."
         (t (error 'cli-usage-error
                   :option option
                   :message
-                  (format nil "Unknown --aldo-user-interface ~S (expected tui/ncurses/aldb)" value)))))
+                  (format nil "Unknown ~A value ~S (expected tui/ncurses/aldb)"
+                          option value)))))

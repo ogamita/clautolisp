@@ -68,6 +68,52 @@ Subprocess command speaking the DCL sexp wire protocol.
 .TP
 .B \-\-trace
 Print every AutoLISP call (entry args + exit value) on stderr.
+.SS Debugger (aldo)
+.TP
+.BR \-\-on-error " " \fIPOLICY\fR
+What an uncaught AutoLISP error does:
+.BR quit " (report and exit — the batch default), " debug
+(break into the aldo debugger — the interactive-REPL default), or
+.BR ignore .
+Sets
+.BR *CLAL-ON-ERROR* .
+.TP
+.BR \-\-on-interrupt " " \fIPOLICY\fR
+What Control-C (SIGINT) does:
+.BR debug " (break into the debugger at the interrupt point — the default),"
+.BR ignore " (execution resumes), or " quit " (exit 130)."
+Sets
+.BR *CLAL-ON-INTERRUPT* ,
+re-read live at each interrupt. A second Control-C while one is being
+handled exits immediately.
+.TP
+.BR \-\-on-quit " " \fIPOLICY\fR
+What
+.BR (quit) " / " (exit)
+does:
+.BR quit " (default) or " debug
+(break into the debugger before the stack unwinds; continue quits,
+abort cancels). Sets
+.BR *CLAL-ON-QUIT* ,
+re-read live at each call.
+.TP
+.BR \-\-debugger-ui " " \fIUI\fR
+Debugger front-end:
+.BR tui ", " ncurses ", or " aldb
+(Emacs). Per-run override of the persisted
+.B default-user-interface
+aldo setting (default tui).
+.TP
+.BR \-\-aldb-listen " " \fR[\fIHOST\fR:]\fIPORT\fR
+Bind the aldb (Emacs) listener; HOST defaults to 127.0.0.1, PORT 0
+picks a free port. Implies
+.BR "\-\-debugger-ui aldb" .
+.TP
+.B \-\-aldb-stdio
+Use stdin/stdout as the aldb RPC channel; implies
+.BR "\-\-debugger-ui aldb" ;
+mutually exclusive with
+.BR \-\-interactive " and " \-\-aldb-listen .
 .SS REPL and diagnostics
 .TP
 .BR \-q ", " \-\-quiet

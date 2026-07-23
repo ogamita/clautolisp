@@ -822,12 +822,33 @@ STATUSFILE write)."
     (emit-exit-status-extension-warning "(autolisp-status)"))
   (autolisp-exit-status))
 
+(defun live-event-policy (variable-name runtime-value allowed)
+  "The LIVE policy of the event mirrored by the AutoLISP variable named
+VARIABLE-NAME (debugger-public-interface-and-on-error.issue Part B: setting
+the variable overrides the CLI option, which only supplies its initial
+value): the variable's value when it is bound to a symbol naming one of the
+ALLOWED policy keywords, else RUNTIME-VALUE (the CL-side dynamic variable
+the CLI option set)."
+  (let* ((sym (intern-autolisp-symbol variable-name))
+         (value (and (autolisp-symbol-value-bound-p sym)
+                     (clautolisp.autolisp-runtime:autolisp-symbol-value sym))))
+    (or (and (typep value 'autolisp-symbol)
+             (find (autolisp-symbol-name value) allowed
+                   :test #'string-equal :key #'symbol-name))
+        runtime-value)))
+
 (defun %terminate-with-status (kind operator form status-supplied-p status)
   "Shared body of (exit [status]) / (quit [status]). When STATUS is
 supplied it becomes the process exit status (recorded via the same slot
 as autolisp-set-status, after the out-of-dialect check); otherwise the
 session's already-stored autolisp-status is used. Signals
-autolisp-termination carrying the effective status."
+autolisp-termination carrying the effective status.
+
+The QUIT event honours the *CLAL-ON-QUIT* policy (--on-quit; the AutoLISP
+variable overrides the CLI-set default LIVE): under :DEBUG the aldo
+debugger is entered HERE, before the stack unwinds — continuing resumes
+the quit, aborting cancels it and returns to the toplevel REPL. A no-op
+when no debug session is active (the hook declines)."
   (let ((effective
           (if status-supplied-p
               (progn
@@ -837,6 +858,14 @@ autolisp-termination carrying the effective status."
                   (set-autolisp-exit-status value)
                   value))
               (autolisp-exit-status))))
+    (when (and (eq :debug (live-event-policy
+                           "*CLAL-ON-QUIT*"
+                           clautolisp.autolisp-runtime:*clal-on-quit*
+                           '(:debug :quit)))
+               clautolisp.autolisp-runtime:*debug-break-hook*)
+      (funcall clautolisp.autolisp-runtime:*debug-break-hook*
+               (format nil "(~(~A~)~@[ ~D~]) — continue to quit, abort to cancel"
+                       operator (and status-supplied-p effective))))
     (error 'autolisp-termination :kind kind :status effective)))
 
 (defun builtin-exit (&optional (status nil status-supplied-p))
@@ -4740,7 +4769,7 @@ attached, print a note instead of silently doing nothing."
       (progn
         (format *standard-output*
                 "~&sedit: no debugger attached — `debug'/`aldo' commands need a ~
-                 session (run under --aldo-user-interface or --on-error debug)~%")
+                 session (run under --debugger-ui or --on-error debug)~%")
         (finish-output *standard-output*)
         nil)))
 
@@ -8980,13 +9009,36 @@ left untouched if already bound (so a user value / a prior session survives)."
     (let ((sym (intern-autolisp-symbol name)))
       (unless (autolisp-symbol-value-bound-p sym)
         (%clal-set-autolisp-var name nil))))
-  ;; *CLAL-ON-ERROR* mirrors the runtime error policy as an AutoLISP symbol
-  (let ((sym (intern-autolisp-symbol "*CLAL-ON-ERROR*")))
+  ;; *CLAL-ON-ERROR* / *CLAL-ON-INTERRUPT* / *CLAL-ON-QUIT* /
+  ;; *CLAL-DEBUGGER-UI* mirror the runtime event policies and the UI
+  ;; selection as AutoLISP symbols (debugger-public-interface-and-on-error
+  ;; Part B/C: the CLI options seed the runtime variables, these mirrors
+  ;; expose them; *CLAL-ON-INTERRUPT* and *CLAL-ON-QUIT* are re-read LIVE
+  ;; at each event, so setting them overrides the CLI option).
+  (loop :for (name value)
+          :in (list (list "*CLAL-ON-ERROR*"
+                          clautolisp.autolisp-runtime:*clal-on-error*)
+                    (list "*CLAL-ON-INTERRUPT*"
+                          clautolisp.autolisp-runtime:*clal-on-interrupt*)
+                    (list "*CLAL-ON-QUIT*"
+                          clautolisp.autolisp-runtime:*clal-on-quit*)
+                    (list "*CLAL-DEBUGGER-UI*"
+                          clautolisp.autolisp-runtime:*clal-debugger-ui*))
+        :do (let ((sym (intern-autolisp-symbol name)))
+              (unless (autolisp-symbol-value-bound-p sym)
+                (%clal-set-autolisp-var
+                 name
+                 (intern-autolisp-symbol (string-upcase (symbol-name value)))))))
+  ;; *CLAL-ALDB-LISTEN* — an "ADDRESS:PORT" string, the symbol STDIO, or nil
+  ;; (no explicit CLI request; the default-aldb-listening-* settings apply).
+  (let ((sym (intern-autolisp-symbol "*CLAL-ALDB-LISTEN*")))
     (unless (autolisp-symbol-value-bound-p sym)
       (%clal-set-autolisp-var
-       "*CLAL-ON-ERROR*"
-       (intern-autolisp-symbol
-        (string-upcase (symbol-name clautolisp.autolisp-runtime:*clal-on-error*))))))
+       "*CLAL-ALDB-LISTEN*"
+       (let ((listen clautolisp.autolisp-runtime:*clal-aldb-listen*))
+         (cond ((stringp listen) (make-autolisp-string listen))
+               ((eq listen :stdio) (intern-autolisp-symbol "STDIO"))
+               (t nil))))))
   ;; *CLAL-ALDO-CONFIGURATION* — seed the default so it too is visible at once
   (let ((sym (aldo-config-symbol)))
     (unless (autolisp-symbol-value-bound-p sym)

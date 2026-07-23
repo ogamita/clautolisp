@@ -287,7 +287,7 @@
                ;; REPL comma-commands (interactors): ,date ,uptime ,help ,quit
                "clautolisp/autolisp-interactor"
                ;; aldo debugger: the run loop can start a debug session under
-               ;; --aldo-user-interface / --on-error debug (debugger §10).
+               ;; --debugger-ui / --on-error debug (debugger §10).
                "clautolisp/autolisp-debug"
                "clautolisp/autolisp-inspect"
                "clautolisp/autolisp-debug-ui"
@@ -312,6 +312,7 @@
   :components
   ((:file "tools/clautolisp/tests/package")
    (:file "tools/clautolisp/tests/dribble-tests")
+   (:file "tools/clautolisp/tests/debugger-options-tests")
    (:file "tools/clautolisp/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
