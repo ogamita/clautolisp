@@ -1303,3 +1303,142 @@
                         (list (sym "DEFUN-Q") (sym "BAR") '()))))
     (is (null (clautolisp.ui.dumb::nav-defun-name (list (sym "SETQ") (sym "X") 1))))
     (is (null (clautolisp.ui.dumb::nav-defun-name '(1 2 3))))))
+
+;;; --- virtual breakpoints on a not-yet-loaded file (aldo-pre-debug.issue) ---
+
+(test dumb-ui-virtual-breakpoint-on-a-not-loaded-file
+  ;; Browse a file that was never loaded, select a body form, `b': a VIRTUAL
+  ;; breakpoint is recorded (no metadata exists). `lb' lists it. Loading the
+  ;; file and instrumenting the function arms it as a real breakpoint on the
+  ;; session's thread-debug-info, at the recorded form.
+  (let ((path (merge-pathnames "clal-vb-test.lsp" (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (s path :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (write-string (format nil "(defun vbfn (x)~%  (setq x (+ x 1))~%  x)~%") s))
+           (let* ((context (fresh-context))
+                  (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+                  (output (make-string-output-stream))
+                  (input (make-string-input-stream (format nil "d~%d~%b~%lb~%q~%")))
+                  (ui (clautolisp.ui.dumb:make-dumb-ui :input input :output output))
+                  (session (clautolisp.debug.ui:start-session
+                            :ui ui :thread-info ti :context context))
+                  (file (namestring (truename path))))
+             ;; browse the (unloaded) file: d into the defun, d onto the
+             ;; first body form, b -> virtual breakpoint, lb lists it right
+             ;; from the navigator (the fall-through built-ins must see the
+             ;; UI outside a stop), q leave
+             (let ((clautolisp.autolisp-runtime.internal:*active-evaluation-context* context))
+               (clautolisp.debug.ui:ui-open-navigation-request
+                ui session (list :file file 1)))
+             (let ((out (get-output-stream-string output)))
+               (is (contains out "virtual breakpoint vb"))
+               (is (contains out "armed when the file is loaded"))
+               (is (contains out "virtual — arms when the file is loaded")))
+             (is (= 1 (length (clautolisp.debug:list-virtual-breakpoints))))
+             (is (null (clautolisp.debug:list-breakpoints ti)))
+             ;; `lb' shows the pending virtual breakpoint
+             (clautolisp.debug.ui:ui-run-command ui session "lb")
+             (is (contains (get-output-stream-string output)
+                           "virtual — arms when the file is loaded"))
+             ;; now LOAD the file (tracked) and instrument, as the first call
+             ;; under the debug session would: the virtual breakpoint arms.
+             (clautolisp.source:with-source-tracking ()
+               (dolist (form (clautolisp.autolisp-runtime:read-runtime-from-string
+                              (uiop:read-file-string file) :source-name file))
+                 (clautolisp.autolisp-runtime:autolisp-eval form context)))
+             (let ((md (clautolisp.debug:instrument-usubr
+                        (clautolisp.autolisp-runtime:lookup-function
+                         (rt-sym "VBFN") context))))
+               (is (null (clautolisp.debug:list-virtual-breakpoints)))
+               (let ((bps (clautolisp.debug:list-breakpoints ti)))
+                 (is (= 1 (length bps)))
+                 (let ((pos (clautolisp.debug:form-id-position
+                             md (clautolisp.debug:breakpoint-form-id (first bps)))))
+                   ;; armed on the selected (setq …) — line 2
+                   (is (= 2 (clautolisp.source:source-position-start-line pos))))))))
+      (ignore-errors (delete-file path)))))
+
+(test dumb-ui-delete-removes-a-virtual-breakpoint
+  ;; `delete vbN' drops a pending virtual breakpoint; a bare `delete'
+  ;; clears them along with the real ones.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (output (make-string-output-stream))
+         (ui (clautolisp.ui.dumb:make-dumb-ui :input (make-string-input-stream "")
+                                              :output output))
+         (session (clautolisp.debug.ui:start-session
+                   :ui ui :thread-info ti :context context))
+         (vb (clautolisp.debug:add-virtual-breakpoint ti "x.lsp" "F" 2 3 2)))
+    (clautolisp.debug.ui:ui-run-command
+     ui session (format nil "delete vb~D" (clautolisp.debug:virtual-breakpoint-id vb)))
+    (is (contains (get-output-stream-string output) "deleted virtual breakpoint"))
+    (is (null (clautolisp.debug:list-virtual-breakpoints)))
+    ;; a bare delete clears pending virtual breakpoints too
+    (clautolisp.debug:add-virtual-breakpoint ti "x.lsp" "F" 2 3 2)
+    (clautolisp.debug.ui:ui-run-command ui session "delete")
+    (is (null (clautolisp.debug:list-virtual-breakpoints)))))
+
+;;; --- DIRECTORY-LISTING :column — the ls -C grid (aldo-pre-debug.issue) ---
+
+(test nav-render-dir-column-mode-is-a-grid
+  ;; :column lays the windowed names out in an ls -C-like column-major grid
+  ;; (issue note 1: LONG (ls -l), COLUMN (ls -C), SHORT (ls -1)); the
+  ;; selection keeps its `>' marker.
+  (let ((entries (coerce (mapcar (lambda (n) (list :name n :path n :dir-p nil :lsp-p t))
+                                 '("../" "alpha.lsp" "beta.lsp" "gamma.lsp"
+                                   "delta.lsp" "epsilon.lsp"))
+                         'simple-vector)))
+    (unwind-protect
+         (progn
+           (clautolisp.debug.ui:config-set :directory-listing :column)
+           (let* ((output (make-string-output-stream))
+                  (ui (clautolisp.ui.dumb:make-dumb-ui
+                       :input (make-string-input-stream "") :output output))
+                  (loc (clautolisp.ui.dumb::make-nav-loc
+                        :kind :dir :dir "/tmp/" :entries entries :index 2)))
+             (clautolisp.ui.dumb::nav-render-dir ui loc)
+             (let* ((out (get-output-stream-string output))
+                    (lines (remove "" (uiop:split-string out :separator '(#\Newline))
+                                   :test #'string=)))
+               ;; the selection is marked
+               (is (contains out "> beta.lsp"))
+               ;; a grid: fewer entry lines than entries, i.e. at least one
+               ;; line carries several names
+               (is (< (length lines) (1+ (length entries))))
+               (is (some (lambda (line)
+                           (and (search "alpha.lsp" line)
+                                (or (search "beta.lsp" line)
+                                    (search "gamma.lsp" line)
+                                    (search "delta.lsp" line)
+                                    (search "epsilon.lsp" line)
+                                    (search "../" line))))
+                         lines)))))
+      (clautolisp.debug.ui:reset-aldo-configuration))))
+
+(test nav-render-dir-column-mode-honours-the-window
+  ;; :column still applies DIRECTORY-WINDOW: only the windowed entries are
+  ;; laid out, with the `...' markers.
+  (let ((entries (coerce (loop for i from 1 to 9
+                               collect (list :name (format nil "f~D.lsp" i)
+                                             :path "x" :dir-p nil :lsp-p t))
+                         'simple-vector)))
+    (unwind-protect
+         (progn
+           (clautolisp.debug.ui:config-set :directory-listing :column)
+           (clautolisp.debug.ui:config-set :directory-window 1)
+           (let* ((output (make-string-output-stream))
+                  (ui (clautolisp.ui.dumb:make-dumb-ui
+                       :input (make-string-input-stream "") :output output))
+                  (loc (clautolisp.ui.dumb::make-nav-loc
+                        :kind :dir :dir "/tmp/" :entries entries :index 4)))
+             (clautolisp.ui.dumb::nav-render-dir ui loc)
+             (let ((out (get-output-stream-string output)))
+               (is (contains out "..."))            ; both ends elided
+               (is (contains out "f4.lsp"))
+               (is (contains out "> f5.lsp"))
+               (is (contains out "f6.lsp"))
+               (is (not (contains out "f1.lsp")))
+               (is (not (contains out "f9.lsp"))))))
+      (clautolisp.debug.ui:reset-aldo-configuration))))

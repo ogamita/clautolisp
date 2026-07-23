@@ -1261,7 +1261,14 @@ backend and degrades to in-process only
 programmatically; ~(clal-nav-function 'NAME)~,
 ~(clal-nav-file PATH [LINE])~ and ~(clal-nav-directory [PATH])~ open
 the form navigator on a function, a file, or a directory *before* the
-code runs; ~(clal-select-file PATH LINE)~ points ~list source~ at a
+code runs — ~b~ on a form of a file that is *not loaded yet* records a
+*virtual breakpoint* (listed by ~lb~ as ~vbN~, removed by
+~delete vbN~), kept relative to its ~defun~ so it survives the file
+being edited above it, and armed automatically when the file is loaded
+and the function instrumented; the directory browser's listing obeys
+the ~directory-listing~ setting (~short~ / ~long~ / ~column~, an
+ls -C-style grid) and ~directory-window~ (context lines around the
+selection). ~(clal-select-file PATH LINE)~ points ~list source~ at a
 location; ~(clal-define-command "INTERACTOR" NAMES FN [DOC])~ registers
 a custom user command of the named interactor —
 ~(clal-list-interactor-names)~ lists the valid names (~"ALDO"~,

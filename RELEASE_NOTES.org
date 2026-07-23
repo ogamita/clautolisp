@@ -243,6 +243,18 @@ separate binary for tool integrators.
   whitespace-separated (=d 0=, =e (+ 1 2)= — no glued =d0=).
 - =(clal-nav-function 'NAME)= at the REPL opens the navigator *without* faking
   a break, so you can browse a function and place breakpoints before it runs.
+- *Virtual breakpoints* on a file *not loaded yet*: browsing such a file
+  (=(clal-nav-file PATH)=, or descending from =(clal-nav-directory)=) and
+  pressing =b= on a form records a virtual breakpoint — kept *relative to its
+  top-level =defun=* so it survives the file being edited above the form —
+  that is *armed automatically* when the file is loaded and the function
+  instrumented, firing on the very first post-load run. =lb= lists pending
+  records as =vbN=; =delete vbN= removes one. See the command reference §2
+  /Virtual breakpoints/.
+- The directory browser's =directory-listing= setting now honours =column=:
+  an ls -C-style column-major grid (=short= = ls -1 and =long= = ls -l as
+  before), still under =directory-window= elision. See the command
+  reference §8.
 - Setting a breakpoint twice on one poll-point is idempotent — one breakpoint,
   one decoration ("already set" on the repeat). See the three
   =issues/open/bug-aldo-*= tickets.

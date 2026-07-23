@@ -30,6 +30,7 @@
 
 (defun fresh-context ()
   (clautolisp.debug:reset-function-id-registry)
+  (clautolisp.debug:clear-virtual-breakpoints)
   (clautolisp.source:clear-source-positions)
   (clautolisp.autolisp-runtime:make-default-runtime-context))
 

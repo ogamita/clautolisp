@@ -555,6 +555,33 @@ terminal can always /name/ any poll point — but the natural gesture is to
   "Numbered Poll-Points").
 - backing: =[have]= =cmd-set-breakpoint-at-line= / =cmd-set-breakpoint=.
 
+** Virtual breakpoints — a file not loaded yet   =[done]=
+- dumb / navigator: browse the file (=(clal-nav-file PATH)= or descend from
+  =(clal-nav-directory)=), select a form, =b=.
+- desc: a breakpoint requested on a form of a file that is *not loaded*: no
+  usubr, no metadata, no poll point exists yet, so the request is recorded as
+  a *virtual breakpoint* instead — keyed by the file and the enclosing
+  =(defun NAME …)= top-level form, the target position kept *relative to that
+  top-level form* (anchored to its first body form's line), so the record
+  survives the top-level forms *moving* in the file between browsing and
+  loading (aldo-pre-debug.issue). When the function is later instrumented —
+  the file is loaded and the function first runs under the debugger, or it is
+  reached by =g NAME= / =(clal-nav-function …)= — the record is resolved
+  against the fresh metadata (the anchor delta re-derives the line, exact
+  =LINE:COL= first, the innermost poll point on the line as fallback) and
+  *armed* as an ordinary breakpoint; instrumentation precedes the first poll
+  point, so it fires on the very first post-load execution. A record that
+  does not resolve stays pending (it may match a later redefinition).
+- listing / removal: =lb= shows pending records as
+  =vbN FILE:LINE (FN) virtual — arms when the file is loaded=;
+  =delete vbN= removes one, a bare =delete= clears them with the real
+  breakpoints. While browsing the not-yet-loaded file, the navigator weaves
+  the enabled-breakpoint decoration (⏸ / =^=) at the recorded position.
+- backing: engine =virtual-breakpoint= records +
+  =materialize-virtual-breakpoints= (called by =instrument-usubr=);
+  navigator-side entry =nav-virtual-breakpoint=
+  (=autolisp-debug/source/virtual-breakpoints.lisp=).
+
 ** break once LINE  (gdb tbreak)
 - aldb / ncurses: cursor on the form + =bo= (location from the cursor, §0);
   dumb / explicit: =bo LINE=  | =,break once LINE=  | =,break once ppN=
@@ -1030,6 +1057,17 @@ There is therefore *no* private =$N= workspace namespace and *no* =,ws= /
   - =*navigation-history-max*= — cap on saved navigation states (the browse
     stack + selection pushed on each debugger re-entry, §3 *Navigation*);
     oldest dropped beyond the limit. Default *1000* (essentially unbounded).
+  - =directory-listing= — how the navigator's directory browser
+    (=(clal-nav-directory)=, or =u= out of a file) lists entries
+    (aldo-pre-debug.issue note 1): =short= (default; one name per line,
+    ls -1), =long= (adds size and mtime, ls -l), or =column= (an ls -C-like
+    column-major multi-column grid — as many columns as the line width
+    accommodates, =$COLUMNS= when usable, else 80). The selected entry always
+    carries the =>= marker.
+  - =directory-window= — an *integer*: show only N context entries on each
+    side of the directory browser's selection, with =...= marking the elided
+    ends (aldo-pre-debug.issue note 2); *0* (default) shows the whole
+    listing. Applies to all three =directory-listing= modes.
   - =theme= — the decoration *theme*, one of =unicode= | =ascii= |
     =white-on-black= | =black-on-white= | =green-on-black= | =attributes=
     (=set theme ascii=). One choice selects *both* the glyph repertoire and the

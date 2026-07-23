@@ -765,15 +765,28 @@ breakpoint stays in the list but does not fire."
 
 (defun delete-cmd (ui session arg)
   "`delete [N]' / `clear' — remove breakpoint N (the number shown by `lb'), or
-all breakpoints when no number is given (command reference §2). (The designator
-is the breakpoint id `lb' displays; it aligns to the poll-point number once
-that numbering is settled — design-notes register.)"
-  (let ((bps (cmd-list-breakpoints session)))
+all breakpoints when no number is given (command reference §2). `delete vbN'
+removes a pending VIRTUAL breakpoint; a bare `delete' drops those too
+(aldo-pre-debug.issue). (The designator is the breakpoint id `lb' displays; it
+aligns to the poll-point number once that numbering is settled — design-notes
+register.)"
+  ;; SESSION may be NIL outside a stop (pre-debug navigation): virtual
+  ;; breakpoints can still be listed / deleted there.
+  (let ((bps (and session (cmd-list-breakpoints session)))
+        (vbs (list-virtual-breakpoints)))
     (cond
-      ((null bps) (out ui "DBG>   no breakpoints~%"))
+      ((and (null bps) (null vbs)) (out ui "DBG>   no breakpoints~%"))
       ((null arg)
        (dolist (bp bps) (cmd-remove-breakpoint session bp))
+       (clautolisp.debug:clear-virtual-breakpoints)
        (out ui "DBG> deleted all breakpoints~%"))
+      ((and (>= (length arg) 3) (string-equal "vb" (subseq arg 0 2)))
+       (let* ((id (ignore-errors (parse-integer (subseq arg 2) :junk-allowed t)))
+              (vb (and id (find-virtual-breakpoint id))))
+         (if vb
+             (progn (remove-virtual-breakpoint vb)
+                    (out ui "DBG> deleted virtual breakpoint vb~D~%" id))
+             (out ui "DBG> no virtual breakpoint ~A~%" arg))))
       (t (let* ((pp (parse-pp-token arg))
                 (bp (find-bp-by-pp session pp)))
            (if bp
@@ -1101,7 +1114,8 @@ file, else the first subdirectory, else `..' (index 0)."
 
 (defun nav-entry-label (entry mode)
   "The display text for a directory ENTRY under the DIRECTORY-LISTING MODE
-(:long adds size + mtime; :short / :column show the name only)."
+(:long adds size + mtime; :short and :column show the name only — :column lays
+the names out in an ls -C-like grid, see NAV-RENDER-DIR-COLUMNS)."
   (let ((name (getf entry :name)))
     (if (eq mode :long)
         (let* ((path (getf entry :path))
@@ -1120,6 +1134,37 @@ WINDOW context entries on each side of INDEX (aldo-pre-debug.issue note 2)."
       (values (max 0 (- index window)) (min n (+ index window 1)))
       (values 0 n)))
 
+(defun nav-listing-width ()
+  "The line width the :column directory listing fills: $COLUMNS when it parses
+as a usable integer (the terminal size is often unavailable on a dumb
+terminal), else 80 (ls -C's own fallback)."
+  (let* ((v (uiop:getenv "COLUMNS"))
+         (n (and v (ignore-errors (parse-integer v :junk-allowed t)))))
+    (if (and n (> n 20)) n 80)))
+
+(defun nav-render-dir-columns (ui entries lo hi index)
+  "The DIRECTORY-LISTING :column mode (ls -C; aldo-pre-debug.issue note 1):
+the windowed entries [LO, HI) in a column-major multi-column grid, as many
+columns as NAV-LISTING-WIDTH accommodates, the selection marked with `>'."
+  (let* ((names (loop for i from lo below hi
+                      collect (nav-entry-label (aref entries i) :column)))
+         (n (length names))
+         (cellw (+ 2 (reduce #'max names :key #'length :initial-value 1)))
+         (gap 2)
+         (cols (max 1 (min n (floor (+ (nav-listing-width) gap) (+ cellw gap)))))
+         (rows (ceiling n cols)))
+    (dotimes (r rows)
+      (let ((line
+              (with-output-to-string (s)
+                (dotimes (c cols)
+                  (let ((k (+ r (* c rows))))
+                    (when (< k n)
+                      (format s "~VA" (+ cellw gap)
+                              (format nil "~A~A"
+                                      (if (= (+ lo k) index) "> " "  ")
+                                      (nth k names)))))))))
+        (out ui " ~A~%" (string-right-trim " " line))))))
+
 (defun nav-render-dir (ui loc)
   (let* ((entries (nav-loc-entries loc))
          (n (length entries))
@@ -1129,9 +1174,11 @@ WINDOW context entries on each side of INDEX (aldo-pre-debug.issue note 2)."
     (out ui "~&NAV: directory ~A~%" (nav-loc-dir loc))
     (multiple-value-bind (lo hi) (nav-window-bounds index n window)
       (when (> lo 0) (out ui "   ...~%"))
-      (loop for i from lo below hi
-            for e = (aref entries i)
-            do (out ui "~A~A~%" (if (= i index) " > " "   ") (nav-entry-label e mode)))
+      (if (and (eq mode :column) (> hi lo))
+          (nav-render-dir-columns ui entries lo hi index)
+          (loop for i from lo below hi
+                for e = (aref entries i)
+                do (out ui "~A~A~%" (if (= i index) " > " "   ") (nav-entry-label e mode))))
       (when (< hi n) (out ui "   ...~%")))))
 
 ;;; --- the modal loop -------------------------------------------------------
@@ -1187,25 +1234,34 @@ such function is loaded (aldo-pre-debug.issue)."
 (defun nav-decoration-points (session md file)
   "A list of (LINE COL . GLYPH) poll-point decorations for MD's function that lie
 in FILE: enabled / disabled breakpoints and the current poll point (TUI spec
-decoration table)."
-  (when (and session md)
-    (let ((fid (function-debug-metadata-function-id md))
-          (points '()))
-      (flet ((add (pos glyph)
-               (when (and (source-position-p pos) glyph (plusp (length glyph))
-                          (equal (source-position-file pos) file))
-                 (push (list* (source-position-start-line pos)
-                              (source-position-start-column pos) glyph)
-                       points))))
-        (dolist (bp (list-breakpoints (session-thread-info session)))
-          (when (eql (breakpoint-fid bp) fid)
-            (add (form-id-position md (breakpoint-form-id bp))
-                 (aldo-decoration-glyph (if (breakpoint-enabled-p bp)
-                                            :enabled-bp :disabled-bp)))))
-        (let* ((snap (session-snapshot session))
-               (pos (and snap (snapshot-source-position snap))))
-          (add pos (aldo-decoration-glyph :current-pp))))
-      points)))
+decoration table), plus the PENDING VIRTUAL breakpoints recorded on FILE at
+their record-time positions — the browsed source of a not-yet-loaded file shows
+them before the load (aldo-pre-debug.issue)."
+  (let ((points '()))
+    (when (and session md)
+      (let ((fid (function-debug-metadata-function-id md)))
+        (flet ((add (pos glyph)
+                 (when (and (source-position-p pos) glyph (plusp (length glyph))
+                            (equal (source-position-file pos) file))
+                   (push (list* (source-position-start-line pos)
+                                (source-position-start-column pos) glyph)
+                         points))))
+          (dolist (bp (list-breakpoints (session-thread-info session)))
+            (when (eql (breakpoint-fid bp) fid)
+              (add (form-id-position md (breakpoint-form-id bp))
+                   (aldo-decoration-glyph (if (breakpoint-enabled-p bp)
+                                              :enabled-bp :disabled-bp)))))
+          (let* ((snap (session-snapshot session))
+                 (pos (and snap (snapshot-source-position snap))))
+            (add pos (aldo-decoration-glyph :current-pp))))))
+    (when file
+      (let ((glyph (aldo-decoration-glyph :enabled-bp)))
+        (when (and glyph (plusp (length glyph)))
+          (dolist (vb (virtual-breakpoints-for-file file))
+            (push (list* (virtual-breakpoint-line vb)
+                         (virtual-breakpoint-col vb) glyph)
+                  points)))))
+    points))
 
 (defun %nav-first-nonspace-col (text)
   (1+ (or (position #\Space text :test-not #'char=) 0)))
@@ -1352,13 +1408,48 @@ message and NIL when there is no source file."
   (nav-make-dir-loc (namestring (uiop:pathname-directory-pathname (nav-loc-file loc)))
                     (file-namestring (nav-loc-file loc))))
 
+(defun nav-virtual-breakpoint (ui session loc)
+  "`b' in nav on a browsed form whose function is NOT loaded: record a VIRTUAL
+breakpoint (aldo-pre-debug.issue) — keyed by the file and the enclosing
+(defun NAME …), the selected form's position anchored to the top-level form
+(its first body form's line, the position the instrumenter later publishes as
+the metadata's SOURCE-POSITION) so it survives the defun moving in the file.
+It is armed as a real breakpoint when the function is loaded and instrumented
+(engine MATERIALIZE-VIRTUAL-BREAKPOINTS)."
+  (let* ((nav (nav-loc-navigator loc))
+         (root (navigator-root nav))
+         (file (nav-loc-file loc))
+         (name (nav-defun-name root))
+         (pos (position-of (nav-selected nav)))
+         (first-body (let ((f (first (cdddr root)))) ; (DEFUN NAME ARGS . BODY)
+                       (and (consp f) (position-of f))))
+         (ti (session-thread-info session)))
+    (cond
+      ((null name)
+       (out ui "NAV> virtual breakpoints need a (defun NAME …) top-level form~%"))
+      ((not (source-position-p pos))
+       (out ui "NAV> the selected form has no source position (pick a sub-form)~%"))
+      ((not (source-position-p first-body))
+       (out ui "NAV> cannot anchor a virtual breakpoint: the defun has no positioned body form~%"))
+      (t (multiple-value-bind (vb new-p)
+             (add-virtual-breakpoint ti file name
+                                     (source-position-start-line pos)
+                                     (source-position-start-column pos)
+                                     (source-position-start-line first-body))
+           (out ui "NAV> virtual breakpoint vb~D ~:[already set~;set~] on ~A:~D (~A) — armed when the file is loaded~%"
+                (virtual-breakpoint-id vb) new-p
+                (file-namestring file) (source-position-start-line pos) name))))))
+
 (defun nav-set-breakpoint (ui session loc)
-  "`b' in nav — set a breakpoint on the selected form. Needs a loaded/
-instrumented function (a function navigation); breakpoints on a merely-browsed
-file need the function loaded (aldo-pre-debug.issue)."
+  "`b' in nav — set a breakpoint on the selected form. With a loaded/
+instrumented function it is a real breakpoint; on a browsed file whose
+function is not loaded yet it records a VIRTUAL breakpoint, armed when the
+file is loaded (aldo-pre-debug.issue)."
   (let ((md (nav-ensure-loc-metadata loc))
         (nav (nav-loc-navigator loc)))
     (cond
+      ((and session (null md) (nav-loc-file loc))
+       (nav-virtual-breakpoint ui session loc))
       ((not (and session md))
        (out ui "NAV> breakpoints need a loaded function — nav one with `g NAME' or (clal-nav-function …)~%"))
       (t (let* ((pos (position-of (nav-selected nav)))
@@ -1566,7 +1657,16 @@ resume directive a debugger command issued inside carried out."
                     (cons (make-activation
                            *aldo*
                            (make-aldo-state :ui ui :session session :hit hit))
-                          *interactor-stack*)))))
+                          *interactor-stack*))))
+        ;; The debugger vocabulary reads its UI/session/hit from these
+        ;; dispatch vars. UI-AWAIT-COMMAND binds them at a stop; a mode
+        ;; entered OUTSIDE one (pre-debug navigation — where `lb' must
+        ;; list the virtual breakpoints, `set' the settings, …) must
+        ;; bind them too, or the fall-through built-ins see a NIL ui
+        ;; (aldo-pre-debug.issue).
+        (*debugger-ui* ui)
+        (*debugger-session* session)
+        (*debugger-hit* hit))
     (interactor-loop :input (dumb-ui-input ui) :output (dumb-ui-output ui)
                      :error-output (dumb-ui-output ui)
                      :floor (length *interactor-stack*))))
@@ -1978,13 +2078,25 @@ conditional, once, traced, bpcmd state (command reference §2)."
       (write-string (if (breakpoint-trace-p bp) " (traced)" " (bpcmd)") s))))
 
 (defun list-breakpoints-cmd (ui session)
-  (let ((bps (cmd-list-breakpoints session)))
-    (if bps
-        (dolist (bp bps)
-          (out ui "DBG>   pp~D fid ~D form ~D ~A~A~%"
-               (breakpoint-pp bp) (breakpoint-fid bp)
-               (breakpoint-form-id bp) (breakpoint-when bp)
-               (breakpoint-annotations bp)))
+  ;; SESSION may be NIL outside a stop (pre-debug navigation, where the
+  ;; pending VIRTUAL breakpoints are exactly what one asks about).
+  (let ((bps (and session (cmd-list-breakpoints session)))
+        (vbs (list-virtual-breakpoints)))
+    (if (or bps vbs)
+        (progn
+          (dolist (bp bps)
+            (out ui "DBG>   pp~D fid ~D form ~D ~A~A~%"
+                 (breakpoint-pp bp) (breakpoint-fid bp)
+                 (breakpoint-form-id bp) (breakpoint-when bp)
+                 (breakpoint-annotations bp)))
+          ;; pending virtual breakpoints — recorded on a not-yet-loaded
+          ;; file, armed at load (aldo-pre-debug.issue)
+          (dolist (vb vbs)
+            (out ui "DBG>   vb~D ~A:~D (~A) virtual — arms when the file is loaded~%"
+                 (virtual-breakpoint-id vb)
+                 (file-namestring (virtual-breakpoint-file vb))
+                 (virtual-breakpoint-line vb)
+                 (virtual-breakpoint-function-name vb))))
         (out ui "DBG>   no breakpoints~%"))))
 
 (defun location-label (token)

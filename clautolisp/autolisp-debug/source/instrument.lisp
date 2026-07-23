@@ -159,6 +159,11 @@ USUBR's body conses must have been recorded by a tracked load
           (setf (autolisp-usubr-instrumented-body usubr) instrumented-body
                 (autolisp-usubr-debug-metadata usubr) metadata)
           (register-metadata metadata)
+          ;; Arm any virtual breakpoints recorded on this function before
+          ;; its file was loaded (aldo-pre-debug.issue). Instrumentation
+          ;; runs before any of the function's poll points, so the
+          ;; breakpoint fires on the very first post-load execution.
+          (materialize-virtual-breakpoints metadata)
           metadata))))
 
 (defun ensure-metadata-for-name
