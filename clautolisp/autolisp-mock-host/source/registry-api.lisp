@@ -98,7 +98,10 @@ the aldo.conf princ-serialisation lesson), sorted for stable diffs."
                                 :error-output nil :ignore-error-status t)
     (declare (ignore err))
     (values (if (and out (plusp (length out)))
-                (uiop:split-string out :separator '(#\Newline))
+                ;; strip the CR of CRLF line endings (reg.exe output on
+                ;; Windows), else parsed values come back as "v1\r"
+                (mapcar (lambda (line) (string-right-trim '(#\Return) line))
+                        (uiop:split-string out :separator '(#\Newline)))
                 '())
             code)))
 
@@ -137,8 +140,7 @@ the aldo.conf princ-serialisation lesson), sorted for stable diffs."
                   for pos = (search "    REG_" line)
                   when (and pos (plusp (length trimmed))
                             (not (string-equal key trimmed)))
-                    collect (string-trim '(#\Space #\Tab)
-                                         (subseq line 0 (position #\R line :test #'char=)))
+                    collect (string-trim '(#\Space #\Tab) (subseq line 0 pos))
                       into names
                   finally (return (sort (delete-duplicates names :test #'string-equal)
                                         #'string-lessp)))
