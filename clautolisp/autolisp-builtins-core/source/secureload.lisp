@@ -147,13 +147,25 @@ equal to) DIR. Both are :ABSOLUTE component lists."
 trusted by ENTRY, a (DIRECTORY . RECURSIVE-P) cons from
 PARSE-TRUSTED-PATH-SPEC. Non-recursive: the file's containing directory
 must equal the trusted folder. Recursive: the trusted folder must be
-the containing directory or an ancestor of it."
-  (let ((file-dir (%directory-component-list abs-file-path))
-        (trust-dir (%directory-component-list (car entry) :as-directory t)))
-    (and file-dir trust-dir
-         (if (cdr entry)
-             (%directory-prefix-p trust-dir file-dir)
-             (equal trust-dir file-dir)))))
+the containing directory or an ancestor of it. Both sides are ALSO
+compared through TRUENAME when they resolve, so a symlinked spelling —
+macOS's $TMPDIR /var/folders/… vs /private/var/folders/… — still
+matches whichever form the user wrote in TRUSTEDPATHS."
+  (flet ((match (file-dir trust-dir)
+           (and file-dir trust-dir
+                (if (cdr entry)
+                    (%directory-prefix-p trust-dir file-dir)
+                    (equal trust-dir file-dir)))))
+    (let* ((file-dir  (%directory-component-list abs-file-path))
+           (trust-dir (%directory-component-list (car entry) :as-directory t))
+           (tfile (ignore-errors (truename abs-file-path)))
+           (tdir  (ignore-errors (truename (uiop:ensure-directory-pathname (car entry)))))
+           (cfile-dir  (and tfile (%directory-component-list tfile)))
+           (ctrust-dir (and tdir (%directory-component-list tdir :as-directory t))))
+      (or (match file-dir trust-dir)
+          (and cfile-dir ctrust-dir (match cfile-dir ctrust-dir))
+          (and cfile-dir (match cfile-dir trust-dir))
+          (and ctrust-dir (match file-dir ctrust-dir))))))
 
 (defun path-trusted-p (abs-file-path trusted-entries)
   "True when ABS-FILE-PATH is trusted by any entry in TRUSTED-ENTRIES
