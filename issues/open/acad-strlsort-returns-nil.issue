@@ -1,0 +1,100 @@
+acad-strlsort-returns-nil — implement string-list sorting instead of the M6 nil stub
+================================================================================
+
+See also:
+  - clautolisp/autolisp-builtins-core/source/api.lisp, `*m6-stub-names*`
+    (`ACAD_STRLSORT` is currently registered as a nil-returning stub).
+  - issues/open/deferred-stubbed-functions.issue.
+  - SCHMS+ reproducer: `dev/lisp/test-sorts-imbriques.lsp` in the SCHMS+
+    repository.
+
+Context
+-------
+
+`ACAD_STRLSORT` is callable in clautolisp 1.3.0, but its implementation is
+the generic M6 stub and therefore always returns nil. Unlike UI- or
+database-dependent M6 functions, string-list sorting is a pure operation and
+can be implemented completely in the headless runtime.
+
+This was found while investigating a possible BricsCAD crash caused by calling
+`ACAD_STRLSORT` from a `VL-SORT` comparator. The clautolisp result is a separate
+compatibility defect: the standalone call already returns nil, before any
+nested sort is attempted.
+
+Minimal reproduction
+--------------------
+
+Run with clautolisp 1.3.0 in strict mode:
+
+    (acad_strlsort '("ELEMENT-2" "ELEMENT-1"))
+
+Actual result:
+
+    nil
+
+Expected AutoLISP result:
+
+    ("ELEMENT-1" "ELEMENT-2")
+
+A downstream comparator consequently always returns nil:
+
+    (defun compare-with-strlsort (a b / sorted)
+      (setq sorted (acad_strlsort (list a b)))
+      (and (/= a b)
+           (= (car sorted) a)))
+
+    (vl-sort '("ELEMENT-2" "ELEMENT-1") 'compare-with-strlsort)
+
+Actual clautolisp result:
+
+    ("ELEMENT-2" "ELEMENT-1")
+
+Expected result:
+
+    ("ELEMENT-1" "ELEMENT-2")
+
+The larger SCHMS+ reproducer confirms that a non-nested reference comparator
+succeeds for 512 strings and 20 repetitions, while the `ACAD_STRLSORT`
+comparator preserves the original descending list because every inner call
+returns nil.
+
+Scope of work
+-------------
+
+1. Remove `ACAD_STRLSORT` from `*m6-stub-names*`.
+2. Implement it as a pure builtin over a proper list of strings.
+3. Preserve the input list and return a newly sorted list, unless vendor probes
+   prove destructive behaviour.
+4. Match the host ordering rules, including case handling and non-ASCII text.
+5. Match the host behaviour for invalid elements, improper lists, nil, and
+   lists exceeding the `MAXSORT` system-variable limit.
+6. Add an inline implementation comment with vendor evidence for any behaviour
+   not already normative in the AutoLISP specification.
+
+Tests
+-----
+
+Add deterministic regression coverage for at least:
+
+  - `(acad_strlsort nil)`;
+  - one string;
+  - two strings in reverse order;
+  - an already sorted list;
+  - duplicate strings;
+  - case differences;
+  - accented/non-ASCII strings;
+  - invalid non-string elements;
+  - input-list preservation;
+  - invocation from a `VL-SORT` comparator;
+  - behaviour immediately below, at, and above `MAXSORT`.
+
+Acceptance criteria
+-------------------
+
+  - The minimal reproduction returns `("ELEMENT-1" "ELEMENT-2")`.
+  - The nested-comparator reproduction returns the same order as a direct
+    lexical comparator.
+  - Behaviour and errors match at least one live AutoCAD or BricsCAD probe.
+  - The implementation passes under both SBCL and CCL.
+  - `ACAD_STRLSORT` is no longer catalogued as a nil-returning M6 stub.
+  - User-visible implementation work is recorded in `RELEASE_NOTES.org`.

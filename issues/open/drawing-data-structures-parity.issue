@@ -1,0 +1,56 @@
+schms-drawing-data-structures-parity — support SCHMS XData, dictionaries, XRecords and tables
+================================================================================================
+
+Context
+-------
+
+The initial SCHMS non-regression corpus covers not only graphical entities but
+also drawing-resident data: registered applications and XData, dictionaries,
+XRecords, symbol tables and selected system variables.  The same scenarios
+must run headlessly in clautolisp and in AutoCAD/BricsCAD.
+
+The long-term architecture is tracked by `drawing-database-api.issue`.  This
+issue defines the minimum observable AutoLISP surface required by the first
+SCHMS test tranche.
+
+Required subset
+---------------
+
+Inventory the exact SCHMS calls and complete the necessary behaviour for:
+
+  - REGAPP records and XData read/write through ENTGET/ENTMOD;
+  - NAMEDOBJDICT, DICTADD, DICTSEARCH, DICTNEXT and DICTREMOVE;
+  - XRECORD creation, mutation, enumeration and deletion;
+  - TBLSEARCH, TBLNEXT and TBLobjNAME for layers, linetypes, blocks and any
+    other table selected by the SCHMS inventory;
+  - GETVAR/SETVAR for the batch scenarios' drawing-scoped variables;
+  - ownership/reactor group codes needed to preserve these structures.
+
+Semantics and fidelity
+----------------------
+
+Preserve group multiplicity and meaningful ordering inside XData and XRecords.
+Do not normalize data in the host merely to make snapshot comparison easier;
+normalization belongs to the SCHMS test helper.  Match vendor nil/error and
+duplicate-name behaviour using portable probes.
+
+Acceptance
+----------
+
+  - A portable scenario creates, reads, updates and removes an XData payload.
+  - A portable scenario performs the same lifecycle for a dictionary/XRecord.
+  - Required symbol-table records can be created or discovered and enumerated
+    with vendor-compatible results.
+  - Drawing-scoped system variables used by the corpus are isolated between
+    fresh test sessions.
+  - Snapshot-visible values match AutoCAD and BricsCAD after normalization.
+  - Missing structures fail or return nil as the selected CAD dialect does;
+    no Common Lisp condition leaks into AutoLISP.
+  - Existing suites remain green on SBCL and CCL.
+
+Out of scope
+------------
+
+DWG/DXF persistence, COM/ObjectDBX, multi-document lifecycle, UI state and
+rendering.
+

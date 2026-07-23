@@ -1,0 +1,59 @@
+schms-selection-and-snapshot-parity — deterministic enumeration for portable drawing snapshots
+================================================================================================
+
+Context
+-------
+
+SCHMS regression tests need to snapshot all relevant entities, or a filtered
+subset, after a batch operation.  The snapshot normalizer belongs to SCHMS,
+but clautolisp must expose the same observable entity set and filtering
+semantics as AutoCAD and BricsCAD.
+
+This issue is a focused dependency of the SCHMS regression corpus and is
+related to, but smaller than, `drawing-database-api.issue`.
+
+Required subset
+---------------
+
+Audit and complete:
+
+  - `(ssget "X" ...)` over the active in-memory drawing;
+  - filters used by SCHMS, initially entity type (0), layer (8), handle (5),
+    block name (2), layout/model space indicators and XData/regapp filters;
+  - SSLENGTH, SSNAME, SSADD, SSDEL and membership/duplicate behaviour needed by
+    the test helpers;
+  - traversal with ENTNEXT/ENTLAST when selection sets do not expose a required
+    non-graphical object;
+  - deterministic tests that distinguish semantic set equality from accidental
+    iteration order.
+
+The runtime need not promise the same raw enumeration order across engines.
+It must provide the same membership and data, allowing the SCHMS normalizer to
+sort by semantic keys.
+
+Vendor probes
+-------------
+
+Create portable probes for filter conjunction, absent groups, erased entities,
+subentities, paperspace/modelspace, XData filters and malformed filter lists.
+Record dialect differences explicitly.
+
+Acceptance
+----------
+
+  - The initial SCHMS snapshot helper obtains the same logical entity
+    membership under AutoCAD, BricsCAD and clautolisp.
+  - Supported filters have portable conformance tests and documented error
+    behaviour.
+  - Erased entities and subentities are included or excluded consistently with
+    the selected CAD profile.
+  - Tests do not rely on mock-host insertion order unless vendor behaviour
+    makes that order contractual.
+  - Existing suites remain green on SBCL and CCL.
+
+Out of scope
+------------
+
+Interactive selection (`ssget` point/window prompts), graphical hit testing,
+viewport rendering and pixel comparisons.
+

@@ -1,0 +1,67 @@
+schms-entity-mutation-parity — complete the entity mutation subset needed by SCHMS regression tests
+====================================================================================================
+
+Context
+-------
+
+SCHMS is preparing one portable batch regression corpus to run unchanged under
+AutoCAD, BricsCAD and clautolisp.  Its first tranche deliberately excludes UI
+and rendering.  It creates, reads, modifies and deletes drawing entities, then
+compares a normalized snapshot of the resulting drawing state.
+
+The parent `drawing-database-api.issue` defines the long-term drawing value and
+public Common Lisp API.  This issue is the narrower compatibility milestone
+needed to run the first SCHMS corpus against the current in-memory mock host.
+It does not replace that parent issue.
+
+Required subset
+---------------
+
+Audit against AutoCAD and BricsCAD, then implement or correct:
+
+  - ENTMAKE and ENTMAKEX for the graphical and non-graphical entity kinds used
+    by the selected SCHMS corpus;
+  - ENTGET, including requested application XData;
+  - ENTMOD with replacement/removal of ordinary DXF groups and XData;
+  - ENTDEL deletion and documented restore semantics;
+  - ENTNEXT, ENTlast and stable traversal of main and subentities;
+  - block/attribute and polyline/subentity ownership relationships;
+  - handle/ename validity before and after mutation.
+
+`entmakex-returns-list.issue` is an already known defect and remains the
+specific issue for ENTMAKEX's return value.
+
+Tests
+-----
+
+Add tests at three levels where applicable:
+
+  1. pure host/model unit tests;
+  2. AutoLISP builtin tests;
+  3. portable `.lsp` conformance scenarios also runnable in the CAD products.
+
+Include at least one create -> read -> modify -> read -> delete scenario for
+each entity family required by the initial SCHMS inventory.  Probe ambiguous
+vendor behaviour rather than encoding a convenient mock-host behaviour.
+
+Acceptance
+----------
+
+  - The agreed SCHMS entity-mutation inventory is recorded in this issue.
+  - All selected scenarios run without engine-specific branches in their
+    assertions.
+  - Returned DXF data and error behaviour match the selected CAD dialect
+    profile.
+  - Deleted entities, subentities and ownership links have vendor-compatible
+    visibility and validity.
+  - Existing clautolisp tests remain green on SBCL and CCL.
+  - Any deliberately deferred entity family has its own named issue and is
+    reported as skipped, not silently accepted.
+
+Out of scope
+------------
+
+Interactive selection, commands requiring a graphical session, rendering,
+DWG persistence, and the full multi-document work from
+`drawing-database-api.issue`.
+
