@@ -48,6 +48,14 @@ UI refines.")
                 #:breakpoint-enabled-p #:set-breakpoint-enabled #:breakpoint-condition
                 #:breakpoint-steady-p #:breakpoint-action #:breakpoint-trace-p
                 #:set-breakpoint-action
+                ;; virtual breakpoints on a not-yet-loaded file
+                ;; (aldo-pre-debug.issue)
+                #:add-virtual-breakpoint #:list-virtual-breakpoints
+                #:find-virtual-breakpoint #:remove-virtual-breakpoint
+                #:virtual-breakpoints-for-file
+                #:virtual-breakpoint-id #:virtual-breakpoint-file
+                #:virtual-breakpoint-function-name
+                #:virtual-breakpoint-line #:virtual-breakpoint-col
                 #:poll-point-id #:poll-point-location
                 #:*break-on-error* #:*break-on-caught-error*
                 #:metadata-for-name #:ensure-metadata-for-name

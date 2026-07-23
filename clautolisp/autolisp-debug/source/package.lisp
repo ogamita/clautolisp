@@ -43,6 +43,7 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
                 #:source-position
                 #:source-position-p
                 #:source-position-equal
+                #:source-position-file
                 #:source-position-start-line
                 #:source-position-start-column
                 #:source-position-end-line)
@@ -119,6 +120,24 @@ Bloom-filter fast path (spec §11), the per-thread breakpoint table
    #:list-breakpoints
    #:clear-breakpoints
    #:rebuild-summary
+   ;; virtual (deferred) breakpoints on a not-yet-loaded file
+   ;; (aldo-pre-debug.issue)
+   #:virtual-breakpoint
+   #:virtual-breakpoint-p
+   #:virtual-breakpoint-id
+   #:virtual-breakpoint-file
+   #:virtual-breakpoint-function-name
+   #:virtual-breakpoint-line
+   #:virtual-breakpoint-col
+   #:virtual-breakpoint-anchor-line
+   #:virtual-breakpoint-ti
+   #:add-virtual-breakpoint
+   #:list-virtual-breakpoints
+   #:find-virtual-breakpoint
+   #:remove-virtual-breakpoint
+   #:clear-virtual-breakpoints
+   #:virtual-breakpoints-for-file
+   #:materialize-virtual-breakpoints
    ;; software watchpoints (command reference §2 watch)
    #:watch #:watch-p
    #:watch-symbol #:watch-name #:watch-last-value #:watch-prev-value

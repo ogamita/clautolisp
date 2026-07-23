@@ -101,7 +101,7 @@ command loop reading. Returns T when refused."
   (list-breakpoints-cmd ui session)
   nil)
 
-(define-aldo-command (delete) "delete [ppN]: delete breakpoints (all, or at ppN)."
+(define-aldo-command (delete) "delete [ppN|vbN]: delete breakpoints (all, at ppN, or the virtual vbN)."
   (delete-cmd ui session arg)
   nil)
 

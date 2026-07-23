@@ -193,3 +193,85 @@ hit. Returns (values result hits-in-order)."
         (is (eql 7 result))
         (is (= 1 (length traced)))    ; the trace action ran
         (is (null stops))))))         ; but the program never stopped
+
+;;; --- virtual (deferred) breakpoints — a not-yet-loaded file ---------
+;;; (aldo-pre-debug.issue: recorded with top-level-form-relative
+;;; positions, armed when the file is loaded / the function
+;;; instrumented.)
+
+(test virtual-breakpoint-arms-when-the-function-is-instrumented
+  ;; Record a virtual breakpoint on FROB's (setq z (id x)) — line 3 col 3
+  ;; of frob.lsp, anchored to the first body form (also line 3) — with
+  ;; the file "not loaded" (no metadata). Instrumenting FROB must arm a
+  ;; real breakpoint at that poll point on the recorded ti, drop the
+  ;; pending record, and the breakpoint must fire.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (multiple-value-bind (vb new-p)
+        (clautolisp.debug:add-virtual-breakpoint ti "frob.lsp" "FROB" 3 3 3)
+      (is (eq t new-p))
+      (is (= 1 (length (clautolisp.debug:list-virtual-breakpoints))))
+      ;; re-recording the same target is idempotent
+      (multiple-value-bind (vb2 new2-p)
+          (clautolisp.debug:add-virtual-breakpoint ti "frob.lsp" "FROB" 3 3 3)
+        (is (eq vb vb2))
+        (is (null new2-p))))
+    (is (null (clautolisp.debug:list-breakpoints ti)))
+    ;; "load" the file and instrument (as the first call under a debug
+    ;; session would): the virtual breakpoint materializes.
+    (load-tracked context +frob-source+ :source-name "frob.lsp")
+    (let ((frob-meta (clautolisp.debug:instrument-usubr (usubr-named context "FROB"))))
+      (is (null (clautolisp.debug:list-virtual-breakpoints)))       ; armed + dropped
+      (let ((bps (clautolisp.debug:list-breakpoints ti)))
+        (is (= 1 (length bps)))
+        (is (= (fid-of frob-meta) (clautolisp.debug:breakpoint-fid (first bps))))
+        (is (eql (clautolisp.debug:form-id-at-line-col frob-meta 3 3)
+                 (clautolisp.debug:breakpoint-form-id (first bps)))))
+      ;; and it fires
+      (multiple-value-bind (result hits) (run-collecting context ti "FROB" 7)
+        (is (eql 7 result))
+        (is (= 1 (length hits)))
+        (is (= 3 (clautolisp.source:source-position-start-line
+                  (clautolisp.debug:hit-source-position (first hits)))))))))
+
+(test virtual-breakpoint-survives-toplevel-forms-moving
+  ;; The issue's core requirement: the record is RELATIVE to its
+  ;; top-level form. Record against the original +frob-source+ layout
+  ;; (target 3:3, anchor 3 — the first body form's line), then load a
+  ;; file where the text above the defun changed (two comment lines
+  ;; replace the one-line id defun): the whole form moved down by 1.
+  ;; The anchor delta (new first-body-form line 4 - recorded 3)
+  ;; re-derives the target as 4:3, which must resolve and arm — even
+  ;; though the body form itself changed.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t))
+         (moved-source (format nil ";; two lines were~%;; inserted above~%(defun frob (x / z)~%  (setq z (+ x 1))~%  z)")))
+    (clautolisp.debug:add-virtual-breakpoint ti "frob.lsp" "FROB" 3 3 3)
+    (load-tracked context moved-source :source-name "frob.lsp")
+    (let ((frob-meta (clautolisp.debug:instrument-usubr (usubr-named context "FROB"))))
+      (is (null (clautolisp.debug:list-virtual-breakpoints)))
+      (let ((bps (clautolisp.debug:list-breakpoints ti)))
+        (is (= 1 (length bps)))
+        ;; the armed poll point is the (setq …) on the MOVED line 4
+        (let ((pos (clautolisp.debug:form-id-position
+                    frob-meta (clautolisp.debug:breakpoint-form-id (first bps)))))
+          (is (= 4 (clautolisp.source:source-position-start-line pos)))
+          (is (= 3 (clautolisp.source:source-position-start-column pos))))))))
+
+(test virtual-breakpoint-for-another-function-stays-pending
+  ;; A record naming a function OTHER than the one being instrumented
+  ;; (or recorded on another file) must stay pending.
+  (let* ((context (fresh-context))
+         (ti (clautolisp.debug:make-thread-debug-info :debug-flag t)))
+    (clautolisp.debug:add-virtual-breakpoint ti "other.lsp" "MISSING" 3 3 3)
+    (load-tracked context +frob-source+ :source-name "frob.lsp")
+    (clautolisp.debug:instrument-usubr (usubr-named context "FROB"))
+    (is (= 1 (length (clautolisp.debug:list-virtual-breakpoints))))
+    (is (null (clautolisp.debug:list-breakpoints ti)))
+    ;; and the helpers see it
+    (is (= 1 (length (clautolisp.debug:virtual-breakpoints-for-file "other.lsp"))))
+    (let ((vb (first (clautolisp.debug:list-virtual-breakpoints))))
+      (is (eq vb (clautolisp.debug:find-virtual-breakpoint
+                  (clautolisp.debug:virtual-breakpoint-id vb))))
+      (clautolisp.debug:remove-virtual-breakpoint vb)
+      (is (null (clautolisp.debug:list-virtual-breakpoints))))))

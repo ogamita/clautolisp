@@ -324,3 +324,49 @@ STILL NOT DONE (deferred):
 
   New: aldo-decoration-glyph gained a :open/:close part arg (for 【 / 】);
   nav-form-span / nav-selected-bounds (navigator). Tests: dumb-ui 376/376.
+
+-- STATUS (clautolisp 1.6.2) — the two remaining items; issue CLOSED ----------
+
+DONE — virtual / deferred breakpoints for a not-yet-loaded file:
+
+  * `b' in the navigator on a form of a browsed file whose function is NOT
+    loaded records a VIRTUAL breakpoint instead of failing: keyed by the file
+    and the enclosing (defun NAME …) top-level form, the target position kept
+    RELATIVE to that top-level form — anchored to its first body form's line,
+    the very position the instrumenter later publishes as the metadata's
+    SOURCE-POSITION — so the record survives the top-level forms MOVING in
+    the file between browsing and loading (the issue's "toplevel
+    form-relative positions" requirement).
+  * Arming: INSTRUMENT-USUBR calls MATERIALIZE-VIRTUAL-BREAKPOINTS after
+    registering fresh metadata. When the file is loaded and the function
+    first runs under the debugger (lazy instrumentation precedes the first
+    poll point), or it is reached by `g NAME' / (clal-nav-function …), the
+    record's position is shifted by the anchor delta, resolved to a poll
+    point (exact LINE:COL, else the innermost on the line) and armed as an
+    ordinary breakpoint on the recorded thread-debug-info — it fires on the
+    very first post-load execution. An unresolved record stays pending.
+  * Surface: `lb' lists pending records ("vbN FILE:LINE (FN) virtual — arms
+    when the file is loaded"); `delete vbN' removes one, bare `delete'
+    clears them too; the browsed source weaves the enabled-bp decoration at
+    the recorded position before the load.
+  * Implementation: engine autolisp-debug/source/virtual-breakpoints.lisp
+    (virtual-breakpoint records, add/list/find/remove/clear,
+    virtual-breakpoints-for-file, materialize-virtual-breakpoints) +
+    the instrument-usubr call; dumb-ui nav-virtual-breakpoint (the `b'
+    fallback in nav-set-breakpoint), nav-decoration-points,
+    list-breakpoints-cmd, delete-cmd. Docs: command reference §2 "Virtual
+    breakpoints", user manual CLAL-NAV-*, RELEASE_NOTES.
+    Tests: autolisp-debug 143/143 (arming, the moved-form scenario, pending
+    isolation), dumb-ui 453/453 (UI flow, lb/delete vbN, decorations).
+
+DONE — DIRECTORY-LISTING :column (note 1):
+
+  * :column now renders an ls -C-like column-major multi-column grid (was
+    treated as :short): as many columns as the line width accommodates
+    ($COLUMNS when usable, else 80), the selection keeping its `>' marker,
+    still under the DIRECTORY-WINDOW elision. nav-render-dir-columns /
+    nav-listing-width in dumb-ui.lisp; documented in command reference §8
+    (directory-listing / directory-window were also added to the settings
+    list there).
+
+Nothing remains; moved to issues/closed/.
