@@ -68,3 +68,19 @@ paths (HKEY_CURRENT_USER\..., not HKCU\...), so the sub-key parser now
 collects the last path segment of each HKEY_ line instead of
 prefix-matching the query key. Trigger the two jobs manually from a
 pipeline to validate, then this issue can close.
+
+* CLOSED (2026-07-23)
+
+Validated on all three platforms:
+- macos: verify:vl-registry:macos green against the real defaults
+  database (NSUserDefaults via /usr/bin/defaults).
+- ms-windows: 4/5 checks passed against the real registry on the first
+  run (job 15492818157: write, value names, sub-keys, delete); the
+  round-trip parse was the CRLF bug fixed in 1.5.9, and the full
+  native suite is green after 1.5.10/getenv (job series through
+  15493840513, then success).
+- unix: the sexp store, covered by the m5 unit test on every platform
+  (runtime-dispatched :unix backend) and the verify script (5/5).
+
+Remaining idea recorded: swap reg.exe for FFI bindings if pjb names
+the exact win32 library system.
