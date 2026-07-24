@@ -23,7 +23,8 @@
          (session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:default-evaluation-context))))
     (clautolisp.autolisp-runtime:set-runtime-session-host session mock)
-    (let* ((data (host-entmake mock (list (cons 0 "LINE") (cons 8 "0"))))
+    (let* ((data (host-entmake mock (list (cons 0 "LINE") (cons 8 "0")
+                                          (cons 10 '(0 0 0)) (cons 11 '(1 1 0)))))
            (ename (cdr (first data)))
            (records (clautolisp.autolisp-runtime:call-with-event-trace
                      session
@@ -72,7 +73,8 @@
       (clautolisp.autolisp-runtime:add-reactor-to-document document reactor))
     (let ((clautolisp.autolisp-runtime.internal::*active-evaluation-context*
            context))
-      (let* ((data (host-entmake mock (list (cons 0 "LINE") (cons 8 "0"))))
+      (let* ((data (host-entmake mock (list (cons 0 "LINE") (cons 8 "0")
+                                            (cons 10 '(0 0 0)) (cons 11 '(1 1 0)))))
              (ename (cdr (first data))))
         (host-entmod mock
                       (cons (cons -1 ename)

@@ -107,6 +107,7 @@
    (:file "drawing/source/model")
    (:file "drawing/source/conditions")
    (:file "drawing/source/api")
+   (:file "drawing/source/entity-families")
    (:file "drawing/source/persistence")
    (:file "drawing/source/dxf"))
   :in-order-to ((asdf:test-op

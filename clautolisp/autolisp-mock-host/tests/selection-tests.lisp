@@ -7,9 +7,17 @@
 (defun ent-of (handle) (cdr (first handle)))
 
 (defun seed-three-lines (mock)
-  (let ((a (host-entmake mock (list (cons 0 "LINE") (cons 8 "L1"))))
-        (b (host-entmake mock (list (cons 0 "LINE") (cons 8 "L2"))))
-        (c (host-entmake mock (list (cons 0 "CIRCLE") (cons 8 "L1")))))
+  ;; Supply the vendor-required geometry codes so ENTMAKE's family
+  ;; validation accepts these entities (LINE needs 10/11; CIRCLE 10/40).
+  (let ((a (host-entmake mock (list (cons 0 "LINE") (cons 8 "L1")
+                                    (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                    (cons 11 '(1.0d0 1.0d0 0.0d0)))))
+        (b (host-entmake mock (list (cons 0 "LINE") (cons 8 "L2")
+                                    (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                    (cons 11 '(2.0d0 2.0d0 0.0d0)))))
+        (c (host-entmake mock (list (cons 0 "CIRCLE") (cons 8 "L1")
+                                    (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                    (cons 40 1.0d0)))))
     (values (ent-of a) (ent-of b) (ent-of c))))
 
 ;;; ssget -----------------------------------------------------------

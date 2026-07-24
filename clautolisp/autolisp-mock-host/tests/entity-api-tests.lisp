@@ -125,12 +125,49 @@
     (is (null (host-entupd mock ename)))))
 
 (test entmake-rejects-data-without-group-zero
+  ;; Vendor parity: ENTMAKE on a group-code list that does not describe
+  ;; a creatable entity (here: no (0 . "TYPE") marker) returns nil — it
+  ;; does NOT raise. The builtin maps that nil to ERRNO 36.
   (let ((mock (make-mock-host)))
-    (handler-case
-        (host-entmake mock '((8 . "0") (10 0 0 0)))
-      (autolisp-runtime-error (condition)
-        (is (eq :invalid-entity-data
-                (autolisp-runtime-error-code condition)))))))
+    (is (null (host-entmake mock '((8 . "0") (10 0 0 0)))))))
+
+(test entmake-rejects-family-missing-required-code
+  ;; CIRCLE requires the 40 (radius) group; omitting it fails the create.
+  (let ((mock (make-mock-host)))
+    (is (null (host-entmake mock (list (cons 0 "CIRCLE")
+                                       (cons 10 '(0.0d0 0.0d0 0.0d0))))))
+    ;; With the radius it succeeds.
+    (is (consp (host-entmake mock (list (cons 0 "CIRCLE")
+                                        (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                        (cons 40 1.0d0)))))))
+
+(test entmakex-returns-ename-not-list
+  ;; The distinguishing ENTMAKEX contract (issue entmakex-returns-list):
+  ;; ENTMAKEX hands back the new entity's ENAME, feedable straight into
+  ;; entget / entmod / entdel — NOT the entget-style DXF list.
+  (let* ((mock (make-mock-host))
+         (result (host-entmakex mock (make-line-data))))
+    (is (typep result 'autolisp-ename))
+    ;; The ename resolves: entget on it round-trips a data list.
+    (is (consp (host-entget mock result)))
+    ;; It is the same entity entlast reports.
+    (is (string= (autolisp-ename-value result)
+                 (autolisp-ename-value (host-entlast mock))))))
+
+(test entmakex-defaults-layer-and-stamps-subclass
+  ;; ENTMAKEX normalises: a LINE with no (8 . layer) gets the "0"
+  ;; default, and the AcDbEntity/AcDbLine subclass markers appear.
+  (let* ((mock (make-mock-host))
+         (ename (host-entmakex mock (list (cons 0 "LINE")
+                                          (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                          (cons 11 '(1.0d0 1.0d0 0.0d0)))))
+         (data (host-entget mock ename)))
+    (is (string= "0" (autolisp-string-value (cdr (assoc 8 data)))))
+    (is (member "AcDbLine"
+                (loop for (code . val) in data
+                      when (and (eql code 100) (typep val 'autolisp-string))
+                        collect (autolisp-string-value val))
+                :test #'string=))))
 
 (test entget-rejects-non-ename
   (let ((mock (make-mock-host)))

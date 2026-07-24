@@ -2170,36 +2170,39 @@ NIL when GETSTRING returns nil)."
          (session (clautolisp.autolisp-runtime:evaluation-context-session
                    (clautolisp.autolisp-runtime:default-evaluation-context))))
     (clautolisp.autolisp-runtime:set-runtime-session-host session mock)
-    (let* ((entmake-fn (autolisp-symbol-function (find-autolisp-symbol "ENTMAKE")))
-           (entget-fn  (autolisp-symbol-function (find-autolisp-symbol "ENTGET")))
-           (entlast-fn (autolisp-symbol-function (find-autolisp-symbol "ENTLAST")))
-           (handent-fn (autolisp-symbol-function (find-autolisp-symbol "HANDENT")))
-           (data (call-autolisp-function entmake-fn
-                                         (list (cons 0 "LINE")
-                                               (cons 8 "0")
-                                               (cons 10 '(0.0d0 0.0d0 0.0d0))
-                                               (cons 11 '(1.0d0 1.0d0 0.0d0))))))
-      (is (consp data))
-      ;; (-1 . ENAME) head injected by entmake.
-      (is (eql -1 (car (first data))))
-      (is (typep (cdr (first data))
-                 'clautolisp.autolisp-runtime:autolisp-ename))
-      ;; entlast returns the same ename's hex handle.
+    (let* ((entmake-fn  (autolisp-symbol-function (find-autolisp-symbol "ENTMAKE")))
+           (entmakex-fn (autolisp-symbol-function (find-autolisp-symbol "ENTMAKEX")))
+           (entget-fn   (autolisp-symbol-function (find-autolisp-symbol "ENTGET")))
+           (entlast-fn  (autolisp-symbol-function (find-autolisp-symbol "ENTLAST")))
+           (handent-fn  (autolisp-symbol-function (find-autolisp-symbol "HANDENT")))
+           (input (list (cons 0 "LINE")
+                        (cons 8 "0")
+                        (cons 10 '(0.0d0 0.0d0 0.0d0))
+                        (cons 11 '(1.0d0 1.0d0 0.0d0))))
+           (data (call-autolisp-function entmake-fn input)))
+      ;; Vendor parity: (entmake DATA) echoes the supplied list on
+      ;; success (no injected (-1 . ename) head).
+      (is (eq input data))
+      ;; entlast returns the new entity's ename.
       (let ((last-ename (call-autolisp-function entlast-fn)))
-        (is (string=
-             (clautolisp.autolisp-runtime:autolisp-ename-value (cdr (first data)))
-             (clautolisp.autolisp-runtime:autolisp-ename-value last-ename)))
-        ;; entget against that ename round-trips the data list.
-        (is (consp (call-autolisp-function entget-fn last-ename))))
-      ;; handent on the recorded handle string returns an ename. The
-      ;; host wraps code-5 as an autolisp-string at the boundary
-      ;; (REVIEW-1), so it is already a HANDENT-ready string.
-      (let* ((handle-cell (second data))
-             (handle (cdr handle-cell)))
-        (is (typep (call-autolisp-function handent-fn handle)
-                   'clautolisp.autolisp-runtime:autolisp-ename))
-        (is (null (call-autolisp-function handent-fn
-                                          (make-autolisp-string "DEADBEEF"))))))))
+        (is (typep last-ename 'clautolisp.autolisp-runtime:autolisp-ename))
+        ;; entget against that ename round-trips a data list whose head
+        ;; is the (-1 . ename) the host synthesises.
+        (let ((got (call-autolisp-function entget-fn last-ename)))
+          (is (consp got))
+          (is (eql -1 (car (first got))))
+          (is (typep (cdr (first got))
+                     'clautolisp.autolisp-runtime:autolisp-ename))
+          ;; handent on the (5 . handle) string resolves to an ename.
+          (let ((handle (cdr (assoc 5 got))))
+            (is (typep (call-autolisp-function handent-fn handle)
+                       'clautolisp.autolisp-runtime:autolisp-ename)))))
+      ;; (entmakex DATA) returns the new entity's ENAME directly.
+      (let ((ename (call-autolisp-function entmakex-fn input)))
+        (is (typep ename 'clautolisp.autolisp-runtime:autolisp-ename))
+        (is (consp (call-autolisp-function entget-fn ename))))
+      (is (null (call-autolisp-function handent-fn
+                                        (make-autolisp-string "DEADBEEF")))))))
 
 (test phase13-vlax-builtins-on-mock-host
   ;; Round-trip a VLA-object create -> get-property -> put-property

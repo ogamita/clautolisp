@@ -3821,14 +3821,21 @@ most recent first."
 
 (defun builtin-entmake (data)
   ;; Documented to set ERRNO on failure. Code 36 = "Bad entity type".
+  ;; AutoCAD / BricsCAD return the SUPPLIED entity-definition list on
+  ;; success (verbatim, without the injected (-1 . ename) / (5 . handle)
+  ;; the host stores) and nil on failure. We echo DATA, keeping ENTMAKE
+  ;; conformant; the resolved entity (with defaults + handle + ename) is
+  ;; obtained with (entget (entlast)) — or, directly, via ENTMAKEX.
   (require-proper-list data "ENTMAKE")
   (let ((result (host-entmake (current-evaluation-host) data)))
     (if result
-        (errno-and-return 0 result)
+        (errno-and-return 0 data)
         (errno-and-return 36 nil))))
 
 (defun builtin-entmakex (data)
-  ;; Same ERRNO contract as ENTMAKE.
+  ;; Same ERRNO contract as ENTMAKE, but the return value is the new
+  ;; entity's ENAME (not the DXF list): the ename feeds straight into
+  ;; entget / entmod / entdel. See issues/closed/entmakex-returns-list.
   (require-proper-list data "ENTMAKEX")
   (let ((result (host-entmakex (current-evaluation-host) data)))
     (if result

@@ -136,25 +136,50 @@ such entity exists or it has been deleted."
          (entity (safe-find-entity (mock-host-active-drawing host) handle)))
     (and entity (entity->al-view entity))))
 
+(defun %host-add-entity (host data operator-name)
+  "Shared worker for HOST-ENTMAKE / HOST-ENTMAKEX. Validate + normalise
+DATA against the entity-family registry (clautolisp.drawing), add the
+entity to the active drawing, fire the object-appended reactor events,
+and return (values ENTITY ENAME). Returns (values NIL NIL) when the
+data does not describe a creatable entity — the vendor ENTMAKE/ENTMAKEX
+contract is to return nil (and set ERRNO), NOT to raise, on a bad
+group-code list. Only a genuinely non-list argument raises, and that is
+caught upstream in the builtin (REQUIRE-PROPER-LIST)."
+  (let* ((pure (al-data->pure data operator-name))
+         (drawing (mock-host-active-drawing host)))
+    (multiple-value-bind (normalised reason)
+        (clautolisp.drawing:validate-entity-dxf pure)
+      (declare (ignore reason))
+      (if (null normalised)
+          (values nil nil)
+          (let* ((entity (handler-case
+                             (clautolisp.drawing:add-entity drawing normalised)
+                           (clautolisp.drawing:drawing-error () nil))))
+            (if (null entity)
+                (values nil nil)
+                (let ((ename (handle->ename (entity-handle-id entity)))
+                      (document (current-document)))
+                  (clautolisp.autolisp-runtime:signal-document-event
+                   document :acdb :vlr-objectappended (list ename))
+                  (clautolisp.autolisp-runtime:signal-document-event
+                   document :acdb :vlr-objectreappended (list ename))
+                  (values entity ename))))))))
+
 (defmethod host-entmake ((host mock-host) data)
-  (let* ((pure (al-data->pure data 'entmake))
-         (drawing (mock-host-active-drawing host))
-         (entity (handler-case (clautolisp.drawing:add-entity drawing pure)
-                   (clautolisp.drawing:drawing-error (c)
-                     (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
-                      :invalid-entity-data "~A" c))))
-         (ename (handle->ename (entity-handle-id entity)))
-         (document (current-document)))
-    (clautolisp.autolisp-runtime:signal-document-event
-     document :acdb :vlr-objectappended (list ename))
-    (clautolisp.autolisp-runtime:signal-document-event
-     document :acdb :vlr-objectreappended (list ename))
-    (entity->al-view entity)))
+  ;; ENTMAKE returns the entget-style view (the (-1 . ename) head +
+  ;; wrapped data) on success, nil on failure. The AutoLISP builtin
+  ;; layer decides what the user ultimately sees (see BUILTIN-ENTMAKE).
+  (multiple-value-bind (entity ename) (%host-add-entity host data 'entmake)
+    (declare (ignore ename))
+    (and entity (entity->al-view entity))))
 
 (defmethod host-entmakex ((host mock-host) data)
-  ;; MockHost does not yet distinguish graphical from non-graphical
-  ;; entities for storage purposes.
-  (host-entmake host data))
+  ;; ENTMAKEX's distinguishing contract: return the new entity's ENAME
+  ;; (feedable straight into entget/entmod/entdel), not the DXF list.
+  ;; See issues/closed/entmakex-returns-list.issue.
+  (multiple-value-bind (entity ename) (%host-add-entity host data 'entmakex)
+    (declare (ignore entity))
+    ename))
 
 (defmethod host-entmod ((host mock-host) data)
   (let* ((handle (extract-modified-handle data 'entmod))

@@ -83,3 +83,27 @@ Workaround
 Portable code (and the autolisp-benchmark entity workload) uses
 (entmake ...) followed by (entlast), which returns an ename on every
 target and so does not depend on the ENTMAKEX return type.
+
+* Resolution (schms-parity 2026-07-24, clautolisp 1.6.5)
+
+Fixed. HOST-ENTMAKE and HOST-ENTMAKEX no longer collapse into one:
+a shared worker `%host-add-entity` (autolisp-mock-host/source/
+entity-api.lisp) returns (values ENTITY ENAME); HOST-ENTMAKE returns
+the entget-style view, HOST-ENTMAKEX returns the ENAME. At the builtin
+boundary (autolisp-builtins-core/source/api.lisp):
+
+  - (entmake DATA)  -> the supplied DATA list on success, nil on failure
+                       (vendor echo; the injected -1/5 pairs are NOT
+                       added — this also corrects the divergence the
+                       "Cause" section flagged), ERRNO 36 on failure.
+  - (entmakex DATA) -> the new entity's ENAME on success, nil on
+                       failure. (type (entmakex '((0 . "LINE") ...)))
+                       is now ENAME, and the ename feeds straight into
+                       entget / entmod / entdel.
+
+Regression tests: host level — ENTMAKEX-RETURNS-ENAME-NOT-LIST,
+ENTMAKEX-DEFAULTS-LAYER-AND-STAMPS-SUBCLASS (autolisp-mock-host/tests/
+entity-api-tests.lisp); builtin level — PHASE10-ENTITY-BUILTINS-ON-
+MOCK-HOST rewritten for the vendor echo + ENTMAKEX ename (autolisp-
+builtins-core/tests/builtin-tests.lisp); portable — the entity
+lifecycle .lsp probes assert (= (type (entmakex ...)) 'ENAME).
