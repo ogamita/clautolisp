@@ -539,3 +539,125 @@ file or COM), and forwards the workload.
 | autolisp-benchmark | libexec/autolisp-benchmark/{harness,benchmarks}        | share/doc/autolisp-benchmark/     |
 
 Override ~$PREFIX~ on the make line (default ~/opt/local~) to relocate.
+
+** Installing never builds as root
+
+Installing is two halves, split so that no compiler ever runs with
+root privileges — a build run as root leaves root-owned fasls, cmake
+trees and PDFs inside the working checkout that you can no longer
+overwrite:
+
+1. *stage* (unprivileged): ~make stage~ builds each artefact kind and
+   lays it out under ~dist/stage/<kind>/~ exactly as it must appear
+   below ~$PREFIX~. Split as ~stage-programs~, ~stage-libraries~,
+   ~stage-documentation~.
+2. *install* (privileged): ~sudo make install~ copies those trees into
+   ~$DESTDIR$PREFIX~ and does nothing else. Split the same way:
+   ~install-programs~, ~install-libraries~, ~install-documentation~.
+
+~sudo make install~ is still a valid one-liner: when the install half
+finds itself running as root under ~sudo~ it re-runs the staging half
+as ~$SUDO_USER~ first. Set ~STAGE~ to relocate the staging area.
+
+The global ~make install~ now covers all three phases, documentation
+included. A host without the documentation toolchain (Emacs +
+TeX/xelatex + makeinfo) installs the other two explicitly:
+~sudo make install-programs install-libraries~.
+
+The release artefacts are packaged from the same staged trees
+(~release-libraries~ and ~release-documentation~ tar up
+~dist/stage/libraries~ and ~dist/stage/documentation~), so what you
+install and what a release ships cannot drift apart. The one
+exception is the binaries artefact: it ships a ~bin/~ of dispatch
+wrappers over ~libexec/clautolisp/binaries/<os>/<arch>/~ so CI can
+union several platforms into one archive, whereas ~install-programs~
+installs this host's binaries directly into ~bin/~ along with the
+harnesses and helpers no end-user tarball carries.
+
+** Libraries (=make install-libraries=)
+
+Besides the executables, the libraries phase installs clautolisp as an
+ASDF-loadable Common Lisp library:
+
+| What                       | Where                                           |
+|----------------------------+-------------------------------------------------|
+| ASDF systems (.lisp, .asd) | =$PREFIX/share/common-lisp/source/clautolisp/=  |
+| system index symlink       | =$PREFIX/share/common-lisp/systems/clautolisp.asd= |
+| ASDF source-registry fragment | =$PREFIX/etc/common-lisp/source-registry.conf.d/50-clautolisp.conf= |
+| native DWG codec libraries | =$PREFIX/lib/clautolisp/<os>/<arch>/=           |
+| libredwg public header     | =$PREFIX/include/clautolisp/dwg.h=              |
+| drawing spec + libredwg licence | =$PREFIX/share/doc/clautolisp/=            |
+
+~make install-libraries~ installs exactly what the
+=clautolisp-<ver>-libraries-<os>-<arch>.tar.bz2= artefact packages —
+same files, same paths — so installing from source and unpacking the
+release tarball are interchangeable.
+
+With ~$PREFIX/share/common-lisp/~ on ASDF's source-registry (the
+default system registry already covers ~/opt/local~, ~/usr/local~ and
+~/usr~), ~(asdf:load-system "clautolisp")~ works from any Lisp image —
+and the ~drawing-dwg~ shim finds the installed native libraries by
+deriving ~$PREFIX~ from its own installed source directory. For a
+~$PREFIX~ outside that default set, the phase installs a
+~source-registry.conf.d~ fragment for exactly that case:
+
+#+BEGIN_EXAMPLE
+$PREFIX/etc/common-lisp/source-registry.conf.d/50-clautolisp.conf
+#+END_EXAMPLE
+
+It registers ~$PREFIX/share/common-lisp/source/~ by a path relative to
+its own directory (ASDF's ~:here~), so the installed tree stays
+relocatable and the staged tree carries no ~$PREFIX~ inside it. ASDF
+reads it once ~$PREFIX/etc~ is on ~XDG_CONFIG_DIRS~ — already true for
+~/etc~; for the ~/opt/local~ default:
+
+#+BEGIN_EXAMPLE
+export XDG_CONFIG_DIRS=/opt/local/etc:${XDG_CONFIG_DIRS:-/etc/xdg}
+#+END_EXAMPLE
+
+Note that a user configuration saying
+~:ignore-inherited-configuration~ — e.g. a one-line
+~~/.config/common-lisp/source-registry.conf~ — discards the defaults
+*and* every system-level fragment, this one included, and with them
+everything installed under ~$PREFIX~. That is the configuration's
+prerogative; the way back in is a ~conf.d~ file of one's own:
+
+#+BEGIN_EXAMPLE
+;; ~/.config/common-lisp/source-registry.conf.d/50-local.conf
+(:tree "/opt/local/share/common-lisp/source/")
+#+END_EXAMPLE
+
+*** One .asd file, many systems
+
+The whole library is *two* ~.asd~ files, which is expected, not a
+truncated install: ~clautolisp.asd~ defines the primary system
+~clautolisp~ *and* all 44 of its subsystems —
+~clautolisp/autolisp-reader~, ~clautolisp/autolisp-runtime~,
+~clautolisp/drawing~, ~clautolisp/drawing-dwg~,
+~clautolisp/read-autolisp~, the ~/tests~ systems, … ASDF calls these
+*secondary systems*: for a name of the form ~primary/secondary~ it
+searches the registry for the *primary* name only, loads
+~clautolisp.asd~, and looks the secondary system up inside it. So
+~(asdf:load-system "clautolisp/drawing-dwg")~ needs no
+~clautolisp-drawing-dwg.asd~ anywhere — and there is deliberately no
+per-subsystem ~.asd~ to install.
+
+The whole source tree ships as the library: every tracked ~.lisp~ and
+~.asd~ (242 + 2 at 1.6.11), not a curated "public" subset. Drawing a
+library / non-library line would be arbitrary — the tools reuse the
+same subsystems callers do (~read-autolisp~ is
+~clautolisp/read-autolisp~) — and clautolisp is AGPL, so the sources
+travel with it anyway.
+
+The second file, ~autolisp-debug-ui-tui-charms/clautolisp-charms.asd~,
+is the exception that proves the rule: it defines
+~clautolisp/autolisp-debug-ui-tui-charms~, whose primary name is
+~clautolisp~, so ASDF will never find it by name from any registry. It
+is kept out of ~clautolisp.asd~ on purpose — it needs cl-charms /
+libncurses and a real terminal, which must never be required to build
+or test clautolisp — and is loaded explicitly:
+
+#+BEGIN_EXAMPLE
+(asdf:load-asd #p"$PREFIX/share/common-lisp/source/clautolisp/autolisp-debug-ui-tui-charms/clautolisp-charms.asd")
+(asdf:load-system "clautolisp/autolisp-debug-ui-tui-charms")
+#+END_EXAMPLE

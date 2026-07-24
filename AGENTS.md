@@ -196,7 +196,12 @@ Common Lisp developer integrating the library).
 **On the `dir` update.** `make install` runs `install-info` after
 copying the `.info` files so `info <doc>` works against the
 standard top-level dir node. The accompanying `make uninstall`
-runs `install-info --remove` to clean up.
+runs `install-info --remove` to clean up. The staged tree carries a
+`share/info/dir` of its own (staging goes through the same
+`install-documentation` recipe); `install-documentation` excludes it
+from the copy — it names only our manuals, so overwriting `$PREFIX`'s
+would drop every other package's entries — and re-registers each
+manual in the real dir node instead.
 
 ## Change Discipline
 

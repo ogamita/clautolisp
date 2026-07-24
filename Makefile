@@ -7,6 +7,13 @@ CLAUTOLISP_CI_PLATFORM ?= linux/amd64
 #   make install PREFIX=/usr/local
 #   make install DESTDIR=/staging PREFIX=/opt/local      # packager use
 #
+# Installing is a two-step flow — build+stage as yourself, copy as root
+# (see "Staging + install" below). `sudo make install' does both, the
+# first as $SUDO_USER; the explicit form is:
+#
+#   make stage                                          # unprivileged
+#   sudo make install                                   # pure copy
+#
 # Repo-wide install convention (every subproject's Makefile honours
 # the same layout):
 #
@@ -24,12 +31,23 @@ CLAUTOLISP_CI_PLATFORM ?= linux/amd64
 #                                                    (autolisp-spec pages/)
 #   $(DESTDIR)$(PREFIX)/share/emacs/site-lisp/<…>/   Emacs libraries
 #   $(DESTDIR)$(PREFIX)/share/autolisp/site-lisp/<…>/  AutoLISP libraries
+#   $(DESTDIR)$(PREFIX)/share/common-lisp/source/<subproject>/  ASDF systems
+#                                                    (.lisp + .asd, tree layout)
+#   $(DESTDIR)$(PREFIX)/share/common-lisp/systems/   .asd symlinks for ASDF's
+#                                                    default source-registry
+#   $(DESTDIR)$(PREFIX)/lib/<subproject>/<os>/<arch>/  native shared libraries
+#   $(DESTDIR)$(PREFIX)/include/<subproject>/        public C headers
+#
+# The libraries phase is kept in lockstep with the release-libraries
+# artefact: `make install-libraries' and unpacking
+# clautolisp-<ver>-libraries-<os>-<arch>.tar.bz2 produce the same tree.
 #
 # /opt/local matches the MacPorts hierarchy; /usr/local and
 # /usr are the common alternatives the override accepts.
 
 PREFIX ?= /opt/local
 DESTDIR ?=
+INSTALL_INFO ?= install-info
 
 # Which CL implementation the bare `clautolisp' / `read-autolisp' /
 # `alfe' symlinks under $(PREFIX)/bin point at after install.
@@ -50,6 +68,7 @@ DEFAULT_LISP ?=
 
 .PHONY: help all clean build build-sbcl build-ccl documentation test clean-pdf clean-diagrams docker-build-clautolisp-ci docker-push-clautolisp-ci install install-programs install-libraries install-documentation uninstall $(SUBPROJECTS) \
         build-documentation build-programs build-libraries \
+        stage stage-programs stage-libraries stage-documentation clean-stage \
         release release-sources release-documentation release-programs release-libraries \
         probe probe-autocad probe-bricscad probe-clautolisp
 
@@ -119,7 +138,7 @@ documentation:  ## Rebuild every subproject's PDF documentation (org → LaTeX �
 	$(MAKE) -C autolisp-benchmark documentation
 	$(MAKE) -C documentation diagrams
 
-build: build-programs build-libraries  ## Build the program binaries + native libraries (NO docs). Run this WITHOUT sudo, then `sudo make install`. Documentation is a separate phase: `make build-documentation`.
+build: build-programs build-libraries  ## Build the program binaries + native libraries (NO docs). `make stage` goes one step further and lays them out ready to install. Documentation is a separate phase: `make build-documentation`.
 
 build-sbcl:  ## Strictly build SBCL images across subprojects (errors if sbcl is missing).
 	$(MAKE) -C clautolisp         build-sbcl
@@ -192,15 +211,21 @@ release-sources:  ## Produce the source tarball + zip (tracked files incl. submo
 	echo "wrote $(DIST)/$$prefix-sources.tar.bz2"; \
 	echo "wrote $(DIST)/$$prefix-sources.zip"
 
-release-documentation: build-documentation  ## Package the documentation artefact for EVERY subproject (pdf/org/info + the spec's paged HTML/info/pages + alref), structured exactly like install-documentation (share/doc/<sub>/…, share/info/…). Unpacks into $PREFIX.
+release-documentation: stage-documentation  ## Package the documentation artefact for EVERY subproject (pdf/org/info + the spec's paged HTML/info/pages + alref), from the same $(STAGE)/documentation tree install-documentation installs. Unpacks into $PREFIX.
 	@mkdir -p "$(DIST)"
-	@ver="$(VERSION)"; stage=$$(mktemp -d); \
-	$(MAKE) install-documentation DESTDIR="$$stage" PREFIX= >/dev/null; \
-	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-documentation.tar.bz2" .; \
-	rm -rf "$$stage"; \
+	@ver="$(VERSION)"; \
+	tar -C "$(STAGE_DOCUMENTATION)" -cjf "$(DIST)/clautolisp-$$ver-documentation.tar.bz2" .; \
 	echo "wrote $(DIST)/clautolisp-$$ver-documentation.tar.bz2"
 
-release-programs: build-programs  ## Build programs and package this host's per-target binaries artefact (unpacks into $PREFIX). CI unions the unix targets.
+# The one artefact whose layout is NOT the install tree: the binaries
+# tarball ships a bin/ of dispatch.sh wrappers over
+# libexec/clautolisp/binaries/<os>/<arch>/, so CI can union several
+# targets into one multi-platform archive (see collect-artefacts).
+# `make install-programs' installs this host's binaries directly into
+# bin/ instead, along with the pieces no end-user tarball carries (the
+# test/benchmark harnesses, run-file-compat, the GUI). Hence its own
+# staging, kept here rather than under $(STAGE).
+release-programs: build-programs  ## Build programs and package this host's per-target binaries artefact (dispatch-wrapper layout, unpacks into $PREFIX). CI unions the unix targets.
 	@mkdir -p "$(DIST)"
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
 	stage=$$(mktemp -d); \
@@ -235,28 +260,10 @@ release-programs: build-programs  ## Build programs and package this host's per-
 	rm -rf "$$stage"; \
 	echo "wrote $(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2"
 
-release-libraries: build-libraries  ## Build libraries and package this host's per-target libraries artefact (asd sources + native libdwg). CI unions the targets into clautolisp-<ver>-libraries.tar.bz2.
+release-libraries: stage-libraries  ## Package this host's per-target libraries artefact (ASDF systems + native libdwg + header) from the same $(STAGE)/libraries tree install-libraries installs. CI unions the targets into clautolisp-<ver>-libraries.tar.bz2.
 	@mkdir -p "$(DIST)"
 	@ver="$(VERSION)"; os="$(REL_OS)"; arch="$(REL_ARCH)"; \
-	stage=$$(mktemp -d); \
-	srcroot="$$stage/share/common-lisp/source/clautolisp"; mkdir -p "$$srcroot"; \
-	( cd clautolisp && git ls-files -z '*.lisp' '*.asd' | tar -cf - --null -T - ) | tar -C "$$srcroot" -xf -; \
-	mkdir -p "$$stage/share/common-lisp/systems"; \
-	( cd "$$stage/share/common-lisp/systems" && ln -sf ../source/clautolisp/clautolisp.asd clautolisp.asd ); \
-	libdir="$$stage/lib/clautolisp/$$os/$$arch"; mkdir -p "$$libdir"; \
-	cp clautolisp/third-party/libredwg/build/libredwg.dylib \
-	   clautolisp/third-party/libredwg/build/libredwg.so \
-	   clautolisp/third-party/libredwg/build/libredwg.dll "$$libdir"/ 2>/dev/null || true; \
-	cp clautolisp/drawing-dwg/source/clal_dwg.dylib \
-	   clautolisp/drawing-dwg/source/clal_dwg.so \
-	   clautolisp/drawing-dwg/source/clal_dwg.dll "$$libdir"/ 2>/dev/null || true; \
-	mkdir -p "$$stage/include/clautolisp"; \
-	cp clautolisp/third-party/libredwg/include/dwg.h "$$stage/include/clautolisp"/; \
-	docdir="$$stage/share/doc/clautolisp"; mkdir -p "$$docdir"; \
-	cp clautolisp/drawing/documentation/drawing-specifications.org "$$docdir"/ 2>/dev/null || true; \
-	cp clautolisp/third-party/libredwg/COPYING "$$docdir"/libredwg-COPYING 2>/dev/null || true; \
-	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2" .; \
-	rm -rf "$$stage"; \
+	tar -C "$(STAGE_LIBRARIES)" -cjf "$(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2" .; \
 	echo "wrote $(DIST)/clautolisp-$$ver-libraries-$$os-$$arch.tar.bz2"
 
 # CI collect phase: union the per-target artefacts (gathered by the
@@ -315,45 +322,148 @@ clean-backups:
 	@printf 'Cleaning backup files.\n'
 	@find . -name \*~ -exec rm -f {} \;
 
-# Forwards PREFIX, DESTDIR, and DEFAULT_LISP to every subproject so a
-# single CLI override (e.g. `make install DEFAULT_LISP=ccl') flows
-# through. When the user does not set DEFAULT_LISP, each subproject
-# falls back to its own (firstword $(AVAILABLE_IMPLEMENTATIONS)) —
-# so an SBCL-only host installs SBCL symlinks, etc.
-INSTALL_VARS := PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)
-ifneq ($(DEFAULT_LISP),)
-  INSTALL_VARS += DEFAULT_LISP=$(DEFAULT_LISP)
-endif
+# --- Staging + install -------------------------------------------------
+#
+# `make install' NEVER builds. A build run as root (the classic
+# `sudo make install' on a tree where something is missing) compiles
+# fasls, cmake trees and PDFs as root, right inside the working
+# checkout, and the user can no longer overwrite them. So the two
+# halves are separated:
+#
+#   1. STAGE — unprivileged. Build each artefact kind and lay it out
+#      under $(STAGE)/<kind>/ exactly as it must appear below $PREFIX.
+#      This is the same staging the release-* artefacts are packaged
+#      from, so what you install is what a release ships.
+#   2. INSTALL — privileged. Copy $(STAGE)/<kind>/ into
+#      $(DESTDIR)$(PREFIX)/. No compiler runs; nothing is written into
+#      the source tree.
+#
+# `sudo make install' remains the one-liner it was: when the install
+# half finds itself running as root under sudo it drops back to
+# $SUDO_USER to run the staging half.
+#
+# Both halves are split the same way — programs / libraries /
+# documentation — plus a global target (`stage', `install').
+STAGE ?= $(DIST)/stage
+STAGE_PROGRAMS      := $(STAGE)/programs
+STAGE_LIBRARIES     := $(STAGE)/libraries
+STAGE_DOCUMENTATION := $(STAGE)/documentation
 
-install: install-programs install-libraries  ## Install programs + libraries into $$PREFIX (default /opt/local; NO docs). Override the bare-name symlink target with DEFAULT_LISP=sbcl|ccl.
+# Forwards DEFAULT_LISP to every subproject so a single CLI override
+# (e.g. `make install DEFAULT_LISP=ccl') flows through. When the user
+# does not set DEFAULT_LISP, each subproject falls back to its own
+# (firstword $(AVAILABLE_IMPLEMENTATIONS)) — so an SBCL-only host
+# stages SBCL symlinks, etc. PREFIX is deliberately empty while
+# staging: nothing bakes it into installed content, and the stage is
+# a $PREFIX-rooted tree of its own.
+LISP_VARS := $(if $(DEFAULT_LISP),DEFAULT_LISP=$(DEFAULT_LISP))
+INSTALL_VARS := PREFIX=$(PREFIX) DESTDIR=$(DESTDIR) $(LISP_VARS)
+STAGE_VARS := STAGE=$(STAGE) RELEASE_LISPS='$(RELEASE_LISPS)' $(LISP_VARS)
+
+# Run a staging target unprivileged. Under sudo we know who to drop to
+# ($SUDO_USER); -H so the build's caches (ASDF fasls under
+# $XDG_CACHE_HOME, quicklisp) land in that user's home and not root's.
+# Bare root with no SUDO_USER is the packager/container case: there is
+# nobody to drop to and a root-owned tree is harmless there, so warn
+# and carry on rather than refuse.
+define stage-as-user
+if [ "$$(id -u)" != 0 ]; then \
+  $(MAKE) $(1) $(STAGE_VARS) ; \
+elif [ -n "$(SUDO_USER)" ] && [ "$(SUDO_USER)" != root ]; then \
+  echo "==> staging as $(SUDO_USER) (dropping root for the build half)" ; \
+  sudo -H -u "$(SUDO_USER)" $(MAKE) $(1) $(STAGE_VARS) ; \
+else \
+  echo "WARNING: running as root with no SUDO_USER; $(1) will build with root" ; \
+  echo "         privileges and leave root-owned artefacts in the source tree." ; \
+  echo "         In a working checkout, run 'make $(1)' as yourself first." ; \
+  $(MAKE) $(1) $(STAGE_VARS) ; \
+fi
+endef
+
+# Copy a staged tree into $(DESTDIR)$(PREFIX). tar rather than cp so
+# symlinks (bin/clautolisp -> clautolisp-sbcl, the systems/*.asd link)
+# and modes survive and the copy merges into an existing prefix;
+# --no-same-owner so the installed files belong to the installing user
+# (root), not to whoever staged them. $(2) is an optional --exclude.
+define copy-stage
+dest="$(DESTDIR)$(PREFIX)" ; \
+if [ -z "$$dest" ]; then \
+  echo "install: PREFIX and DESTDIR are both empty — nothing to install into" >&2 ; \
+  exit 1 ; \
+fi ; \
+if [ ! -d "$(1)" ]; then \
+  echo "install: staging area $(1) is missing (run the matching stage-* target)" >&2 ; \
+  exit 1 ; \
+fi ; \
+install -d "$$dest" ; \
+tar -C "$(1)" -cf - $(2) . | tar -C "$$dest" --no-same-owner -xf - ; \
+echo "installed: $(1)/ -> $$dest/"
+endef
+
+stage: stage-programs stage-libraries stage-documentation  ## Build + stage everything under $(STAGE)/ (unprivileged; this is the half that compiles).
+
+stage-programs: build-programs  ## Build the programs and stage them (bin/, libexec/, the harnesses and the alref libs) under $(STAGE)/programs.
+	rm -rf "$(STAGE_PROGRAMS)"
+	install -d "$(STAGE_PROGRAMS)"
+	$(MAKE) -C autolisp-spec      install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	$(MAKE) -C clautolisp         install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	$(MAKE) -C autolisp-test      install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	$(MAKE) -C autolisp-front-end install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	$(MAKE) -C autolisp-benchmark install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	@echo "staged: $(STAGE_PROGRAMS)"
+
+stage-libraries: build-libraries  ## Build the native libraries and stage them with the ASDF systems + header under $(STAGE)/libraries.
+	rm -rf "$(STAGE_LIBRARIES)"
+	install -d "$(STAGE_LIBRARIES)"
+	$(MAKE) -C clautolisp         install-libraries PREFIX= DESTDIR=$(STAGE_LIBRARIES) $(LISP_VARS)
+	@echo "staged: $(STAGE_LIBRARIES)"
+
+stage-documentation: build-documentation  ## Render the documentation and stage it (share/doc, share/info, share/man, the spec's HTML/pages) under $(STAGE)/documentation.
+	rm -rf "$(STAGE_DOCUMENTATION)"
+	install -d "$(STAGE_DOCUMENTATION)"
+	$(MAKE) -C autolisp-spec      install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	$(MAKE) -C clautolisp         install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	$(MAKE) -C autolisp-test      install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	$(MAKE) -C autolisp-front-end install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	$(MAKE) -C autolisp-benchmark install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	@echo "staged: $(STAGE_DOCUMENTATION)"
+
+install: install-programs install-libraries install-documentation  ## Install everything into $$PREFIX (default /opt/local) by copying the staged trees — stages first (as $$SUDO_USER when run under sudo), never builds as root.
 	@printf '\n'
-	@printf '  Programs and libraries installed.  Documentation is a SEPARATE phase\n'
-	@printf '  (it needs Emacs + TeX/xelatex + makeinfo, which a runtime host may lack):\n'
-	@printf '\n'
-	@printf '      make build-documentation        # render PDFs/Info/HTML into each build/\n'
-	@printf '      sudo make install-documentation  # copy them into $$PREFIX/share/doc, share/info\n'
+	@printf '  Installed from %s into %s\n' "$(STAGE)" "$(DESTDIR)$(PREFIX)"
 	@printf '\n'
 
-# Independent install phases mirroring build-programs / build-libraries /
-# build-documentation, so a consumer can install only what it needs. CI
+# Independent install phases mirroring stage-programs / stage-libraries /
+# stage-documentation, so a consumer can install only what it needs. CI
 # that exercises the programs uses `make install-programs' and skips the
-# slow documentation build+install entirely.
-install-programs: build-programs  ## Install only the program binaries (clautolisp/alfe/read-autolisp + the test harness) + the alref reference libs — no docs. The CI fast path.
-	$(MAKE) -C autolisp-spec      install-programs $(INSTALL_VARS)
-	$(MAKE) -C clautolisp         install-programs $(INSTALL_VARS)
-	$(MAKE) -C autolisp-test      install-programs $(INSTALL_VARS)
-	$(MAKE) -C autolisp-front-end install-programs $(INSTALL_VARS)
-	$(MAKE) -C autolisp-benchmark install-programs $(INSTALL_VARS)
+# slow documentation phase entirely — as must any host that lacks the
+# documentation toolchain (Emacs + TeX/xelatex + makeinfo), since the
+# global `install' target now covers all three phases.
+install-programs:  ## Install only the program binaries (clautolisp/alfe/read-autolisp + the test harness) + the alref reference libs — no docs. The CI fast path.
+	@$(call stage-as-user,stage-programs)
+	@$(call copy-stage,$(STAGE_PROGRAMS))
 
-install-libraries: build-libraries  ## Install only the native libraries (the drawing/drawing-dwg native libdwg + CFFI shim).
-	$(MAKE) -C clautolisp         install-libraries $(INSTALL_VARS)
+install-libraries:  ## Install only the libraries — the same tree release-libraries packages: ASDF systems (share/common-lisp), native libdwg/CFFI shim (lib/<os>/<arch>), libredwg header (include/), drawing spec + libredwg licence (share/doc).
+	@$(call stage-as-user,stage-libraries)
+	@$(call copy-stage,$(STAGE_LIBRARIES))
 
-install-documentation: build-documentation  ## Install only the documentation (the slow phase: PDFs + the autolisp-spec paged HTML/info/pages).
-	$(MAKE) -C autolisp-spec      install-documentation $(INSTALL_VARS)
-	$(MAKE) -C clautolisp         install-documentation $(INSTALL_VARS)
-	$(MAKE) -C autolisp-test      install-documentation $(INSTALL_VARS)
-	$(MAKE) -C autolisp-front-end install-documentation $(INSTALL_VARS)
-	$(MAKE) -C autolisp-benchmark install-documentation $(INSTALL_VARS)
+# share/info/dir is a shared index, not our file: the staged copy names
+# only our manuals, so copying it over $PREFIX's would drop every other
+# package's entries. Exclude it, then let install-info re-register each
+# manual in the real dir node.
+install-documentation:  ## Install only the documentation (the slow phase: PDFs + the autolisp-spec paged HTML/info/pages).
+	@$(call stage-as-user,stage-documentation)
+	@$(call copy-stage,$(STAGE_DOCUMENTATION),--exclude=./share/info/dir)
+	@for f in "$(STAGE_DOCUMENTATION)"/share/info/*.info; do \
+	  [ -f "$$f" ] || continue ; \
+	  installed="$(DESTDIR)$(PREFIX)/share/info/$$(basename "$$f")" ; \
+	  $(INSTALL_INFO) --info-dir="$(DESTDIR)$(PREFIX)/share/info" "$$installed" 2>/dev/null \
+	    || echo "[skip] install-info dir update for $$installed" ; \
+	done
+
+clean:: clean-stage
+clean-stage:  ## Remove the install staging area ($(STAGE)).
+	rm -rf "$(STAGE)"
 
 uninstall:  ## Remove every subproject's install from $$PREFIX.
 	$(MAKE) -C autolisp-spec      uninstall $(INSTALL_VARS)

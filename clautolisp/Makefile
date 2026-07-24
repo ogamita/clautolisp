@@ -402,6 +402,24 @@ clautolisp/tools/clautolisp-gui-qt/build/clautolisp-gui-qt:
 #   $(PREFIX)/libexec/clautolisp/                   support executables
 #                                                   run-file-compat (shell driver)
 #   $(PREFIX)/share/doc/clautolisp/                 .org + .pdf documentation
+#   $(PREFIX)/share/common-lisp/source/clautolisp/  the ASDF systems: every
+#                                                   tracked .lisp + .asd, in
+#                                                   the source tree's layout
+#   $(PREFIX)/share/common-lisp/systems/            clautolisp.asd symlink so
+#                                                   ASDF's default source-registry
+#                                                   finds the systems
+#   $(PREFIX)/etc/common-lisp/source-registry.conf.d/50-clautolisp.conf
+#                                                   ASDF fragment registering
+#                                                   the source tree above, for
+#                                                   prefixes ASDF does not
+#                                                   search by default
+#   $(PREFIX)/lib/clautolisp/<os>/<arch>/           native DWG codec libraries
+#   $(PREFIX)/include/clautolisp/                   libredwg public header
+#                                                   (dwg.h)
+#
+# The libraries phase (install-libraries) installs exactly what the
+# release-libraries artefact packages — same files, same paths — so
+# `make install-libraries' and unpacking the tarball are interchangeable.
 #
 # install depends on `build`, which builds for every CL
 # implementation found on the host (probe-check errors out if none
@@ -428,6 +446,43 @@ REL_OS   := $(shell uname | tr 'A-Z' 'a-z' | sed -e 's/^mingw.*/windows/' -e 's/
 REL_ARCH := $(shell uname -m | tr 'A-Z' 'a-z' | sed -e 's/^x86_64$$/x86-64/' -e 's/^amd64$$/x86-64/' -e 's/^aarch64$$/arm64/')
 LIB_INSTALL_DIR     := $(DESTDIR)$(PREFIX)/lib/$(SUBPROJECT_NAME)/$(REL_OS)/$(REL_ARCH)
 
+# The Lisp side of the libraries phase: the ASDF systems themselves.
+# Nothing but the binaries was installed before, so `(asdf:load-system
+# "clautolisp")' outside a git checkout could not work, and the
+# drawing-dwg shim resolver — which derives PREFIX from the marker
+# <PREFIX>/share/common-lisp/source/ in its own system-source-directory
+# (see drawing-dwg/source/bindings.lisp) — had no installed source dir
+# to derive it from. Same layout the release-libraries artefact stages.
+CL_SOURCE_INSTALL_DIR  := $(DESTDIR)$(PREFIX)/share/common-lisp/source/$(SUBPROJECT_NAME)
+CL_SYSTEMS_INSTALL_DIR := $(DESTDIR)$(PREFIX)/share/common-lisp/systems
+# Every component of every system is a plain `:file' (i.e. .lisp), so
+# .lisp + .asd is the complete set. `find' rather than `git ls-files'
+# so installing from an unpacked source tarball (no .git) works; the
+# two agree exactly on a clean checkout. build/ and .cache/ hold
+# generated artefacts, third-party/ is vendored C.
+LISP_SOURCE_FILES = $(shell find . \( -name '*.lisp' -o -name '*.asd' \) \
+                      -not -path './third-party/*' \
+                      -not -path './build/*' \
+                      -not -path '*/.cache/*' | sed -e 's|^\./||' | sort)
+
+# The rest of the libraries phase: the codec's public header and the
+# two documents that travel with it. Kept byte-for-byte in step with
+# the release-libraries artefact (root Makefile) — `make install-libraries'
+# and unpacking clautolisp-<ver>-libraries.tar.bz2 must yield the same tree.
+INCLUDE_INSTALL_DIR := $(DESTDIR)$(PREFIX)/include/$(SUBPROJECT_NAME)
+LIBREDWG_HEADER     := third-party/libredwg/include/dwg.h
+LIBREDWG_COPYING    := third-party/libredwg/COPYING
+DRAWING_SPEC_ORG    := drawing/documentation/drawing-specifications.org
+
+# ASDF source-registry fragment pointing at the systems we install, so
+# (asdf:load-system "clautolisp") needs no per-user configuration. The
+# file itself is $PREFIX-free — it locates the source tree relative to
+# its own directory — which keeps the staged tree relocatable and
+# independent of the PREFIX it will be installed under.
+CL_CONFD_INSTALL_DIR := $(DESTDIR)$(PREFIX)/etc/common-lisp/source-registry.conf.d
+CL_CONFD_FILE        := tools/packaging/source-registry.conf
+CL_CONFD_NAME        := 50-$(SUBPROJECT_NAME).conf
+
 CLAUTOLISP_GUI_QT_BIN := tools/clautolisp-gui-qt/build/clautolisp-gui-qt
 RUN_FILE_COMPAT_BIN   := $(RUN_FILE_COMPAT)
 
@@ -435,7 +490,8 @@ INSTALL_BINARIES_sbcl := $(CLAUTOLISP_SBCL) $(READ_AUTOLISP_SBCL)
 INSTALL_BINARIES_ccl  := $(CLAUTOLISP_CCL)  $(READ_AUTOLISP_CCL)
 INSTALL_BINARIES := $(foreach impl,$(AVAILABLE_IMPLEMENTATIONS),$(INSTALL_BINARIES_$(impl)))
 
-.PHONY: install install-programs install-documentation install-libraries uninstall
+.PHONY: install install-programs install-documentation install-libraries \
+        install-lisp-systems uninstall
 
 install: build  ## Install built executables + docs into $$PREFIX (build first; sudo-friendly). Native libraries are a separate `install-libraries' phase.
 	$(MAKE) install-programs
@@ -510,7 +566,7 @@ install-documentation:  ## Install just the clautolisp documentation (org/pdf/in
 	done
 	@echo "documentation installed: PREFIX=$(PREFIX) DESTDIR=$(DESTDIR)"
 
-install-libraries:  ## Install the native DWG codec libraries (libredwg + CFFI shim) into $$PREFIX/lib.
+install-libraries: install-lisp-systems  ## Install everything the release-libraries artefact ships: the ASDF systems (share/common-lisp), the native DWG codec libraries (lib/), the libredwg header (include/), and the drawing spec + libredwg licence (share/doc).
 	install -d $(LIB_INSTALL_DIR)
 	@for f in third-party/libredwg/build/libredwg.so \
 	          third-party/libredwg/build/libredwg.dylib \
@@ -523,9 +579,64 @@ install-libraries:  ## Install the native DWG codec libraries (libredwg + CFFI s
 	    echo "installed: $$f -> $(LIB_INSTALL_DIR)/" ; \
 	  fi ; \
 	done
+	@# The libredwg public header, for consumers that link the codec
+	@# directly rather than through the Lisp shim.
+	install -d $(INCLUDE_INSTALL_DIR)
+	@if [ -f "$(LIBREDWG_HEADER)" ]; then \
+	  install -m 0644 "$(LIBREDWG_HEADER)" $(INCLUDE_INSTALL_DIR)/ ; \
+	  echo "installed: $(LIBREDWG_HEADER) -> $(INCLUDE_INSTALL_DIR)/" ; \
+	else \
+	  echo "[skip]     $(LIBREDWG_HEADER) (libredwg not checked out)" ; \
+	fi
+	@# The two documents that belong to this phase rather than to
+	@# install-documentation: the drawing-subsystem specification (it
+	@# lives outside the documentation/ trees that phase globs) and
+	@# libredwg's licence, which ships with the binaries linking it.
+	install -d $(DOC_INSTALL_DIR)
+	@if [ -f "$(DRAWING_SPEC_ORG)" ]; then \
+	  install -m 0644 "$(DRAWING_SPEC_ORG)" $(DOC_INSTALL_DIR)/ ; \
+	  echo "installed: $(DRAWING_SPEC_ORG) -> $(DOC_INSTALL_DIR)/" ; \
+	fi
+	@if [ -f "$(LIBREDWG_COPYING)" ]; then \
+	  install -m 0644 "$(LIBREDWG_COPYING)" $(DOC_INSTALL_DIR)/libredwg-COPYING ; \
+	  echo "installed: $(LIBREDWG_COPYING) -> $(DOC_INSTALL_DIR)/libredwg-COPYING" ; \
+	fi
 	@echo "libraries installed: $(LIB_INSTALL_DIR)"
 
+install-lisp-systems:  ## Install just the ASDF systems (every .lisp + .asd, in tree layout) under $$PREFIX/share/common-lisp/{source,systems}.
+	install -d $(CL_SOURCE_INSTALL_DIR)
+	install -d $(CL_SYSTEMS_INSTALL_DIR)
+	@# Copied file-by-file (not `tar -T -') so the mode is normalised
+	@# to 0644 whatever the checkout's umask, and so directories are
+	@# created by install(1) — `install -D' is GNU-only, hence the
+	@# explicit `install -d' per directory.
+	@n=0 ; \
+	for f in $(LISP_SOURCE_FILES); do \
+	  d="$$(dirname "$$f")" ; \
+	  install -d "$(CL_SOURCE_INSTALL_DIR)/$$d" ; \
+	  install -m 0644 "$$f" "$(CL_SOURCE_INSTALL_DIR)/$$d/" ; \
+	  n=$$((n+1)) ; \
+	done ; \
+	echo "installed: $$n Lisp source/system files -> $(CL_SOURCE_INSTALL_DIR)/"
+	@# Relative link so the tree stays relocatable. ASDF's default
+	@# source-registry scans share/common-lisp/systems/ for .asd files,
+	@# which is what makes (asdf:load-system "clautolisp") work with no
+	@# per-user configuration.
+	ln -sf ../source/$(SUBPROJECT_NAME)/$(SUBPROJECT_NAME).asd \
+	       $(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd
+	@echo "linked:    $(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd"
+	@# The conf.d fragment reaches Lisp images whose source-registry
+	@# does not already cover $(PREFIX) — see the file's own header for
+	@# the XDG_CONFIG_DIRS it needs, and for the user configurations
+	@# that (deliberately) shadow it.
+	install -d $(CL_CONFD_INSTALL_DIR)
+	install -m 0644 $(CL_CONFD_FILE) $(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)
+	@echo "installed: $(CL_CONFD_FILE) -> $(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)"
+
 uninstall:  ## Remove the clautolisp install from $$PREFIX.
+	rm -rf $(CL_SOURCE_INSTALL_DIR)
+	rm -f $(CL_SYSTEMS_INSTALL_DIR)/$(SUBPROJECT_NAME).asd
+	rm -f $(CL_CONFD_INSTALL_DIR)/$(CL_CONFD_NAME)
 	rm -f $(BIN_INSTALL_DIR)/clautolisp $(BIN_INSTALL_DIR)/read-autolisp \
 	      $(BIN_INSTALL_DIR)/clautolisp-sbcl $(BIN_INSTALL_DIR)/clautolisp-ccl \
 	      $(BIN_INSTALL_DIR)/read-autolisp-sbcl $(BIN_INSTALL_DIR)/read-autolisp-ccl \
@@ -541,5 +652,9 @@ uninstall:  ## Remove the clautolisp install from $$PREFIX.
 	@for f in documentation/man/*.1; do \
 	  if [ -f "$$f" ]; then rm -f "$(MAN_INSTALL_DIR)/$$(basename $$f)" ; fi ; \
 	done
+	@# The rest of install-libraries: the native codec libs and the
+	@# header both live in directories that are ours alone. (The two
+	@# documents it installs go with $(DOC_INSTALL_DIR) below.)
+	rm -rf $(LIB_INSTALL_DIR) $(INCLUDE_INSTALL_DIR)
 	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
 
