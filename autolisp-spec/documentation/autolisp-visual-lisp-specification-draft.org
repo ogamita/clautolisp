@@ -74510,6 +74510,30 @@ Not documented in the current category page.
 - BricsCAD V26: not documented.
 - Status: AutoCAD-only.
 
+*** clautolisp
+clautolisp implements `acad_strlsort` as a pure, host-independent
+builtin (the Express Tools function is otherwise Windows-only). This
+note records the concrete headless behaviour; it is not normative for
+the vendor function.
+
+- Returns a *new* list holding the input strings in ascending order;
+  the input list is left unmodified and duplicate strings are kept.
+- Ordering is case-sensitive and *ordinal on character codes*: among
+  ASCII, digits < upper-case < lower-case, and code points above 127
+  (accented / non-ASCII letters) sort after the whole ASCII range.
+  This mirrors the Express Tools byte-ordinal sort over the active
+  ANSI code page (CP-1252 places the Latin-1 accented letters at
+  0xC0–0xFF, i.e. after A–Z / a–z).
+- The list is gated by the `MAXSORT` system variable (whose
+  Read/Written-By list names `acad_strlsort`): a list longer than
+  `MAXSORT` (default 1000) returns nil, unsorted.
+- Invalid input returns nil rather than raising: a non-list argument,
+  an improper (dotted) list, `nil` / the empty list, or any non-string
+  element all yield nil.
+- A live-CAD probe of the exact collation and failure modes is
+  pending (see `issues/closed/acad-strlsort-returns-nil.issue`); the
+  ordinal rule is the deterministic, spec-correct headless choice.
+
 *** Source Notes
 - [acad_strlsort (Express Tools, AutoLISP 2026)](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-AutoLISP-Reference/files/GUID-985B33C7-0A4B-4FBE-8DC2-7EE2E673CC49.htm)
 - Status: documented (Phase 3 body fill from the Express Tools category page).

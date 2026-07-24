@@ -105,3 +105,47 @@ The SCHMS+ AutoLISP call inventory is committed at
 issues/open/schms-call-inventory.md (acceptance item #1). It calibrates
 ordering/priority; per pjb the implementation targets the FULL AutoLISP
 spec + AutoCAD/BricsCAD reference, not only the SCHMS subset.
+
+Resolution (clautolisp 1.6.7, branch fix-acad-strlsort)
+-------------------------------------------------------
+Implemented `ACAD_STRLSORT` as a pure builtin (`BUILTIN-ACAD-STRLSORT`
+in clautolisp/autolisp-builtins-core/source/api.lisp) and removed it
+from `*m6-stub-names*`.
+
+Behaviour:
+  - Returns a NEW list of the input strings in ascending order; the
+    input list is left unmodified and duplicates are preserved
+    (copy-then-sort, VL-SORT style).
+  - Ordering is case-sensitive, ordinal on character codes (CL
+    STRING<): ASCII digits < upper < lower, and code points above 127
+    (accented / non-ASCII) sort after the ASCII range — mirroring the
+    Express Tools byte-ordinal sort over the CP-1252 ANSI code page,
+    where the Latin-1 accented letters occupy 0xC0-0xFF.
+  - MAXSORT gate: a list longer than the MAXSORT sysvar (default 1000)
+    returns nil, unsorted (spec §MAXSORT lists acad_strlsort under
+    Read/Written-By).
+  - Failure mode is nil, not an error: a non-list argument, an improper
+    list, nil / the empty list, or any non-string element all return
+    nil, so a defensive caller (e.g. the reported VL-SORT comparator)
+    never crashes.
+
+Acceptance criteria:
+  - [met] Minimal reproduction returns ("ELEMENT-1" "ELEMENT-2").
+  - [met] Nested-comparator reproduction returns the same order as a
+    direct lexical comparator (("ELEMENT-1" "ELEMENT-2")).
+  - [BLOCKED] "match at least one live AutoCAD / BricsCAD probe": no
+    CAD host is available in this environment. The headless behaviour
+    is spec-correct and documented (spec function entry *** clautolisp
+    note); a live-CAD probe of the exact collation remains pending.
+  - [met] Passes under both SBCL and CCL. New tests (15) all green on
+    both; the 4 pre-existing CCL-only float/encoding failures in
+    autolisp-builtins-core are unrelated and present on origin/master.
+  - [met] No longer catalogued as a nil-returning M6 stub.
+  - [met] User-visible work recorded in RELEASE_NOTES.org.
+
+Tests: clautolisp/autolisp-builtins-core/tests/builtin-tests.lisp
+(the ACAD_STRLSORT block) covers nil, one string, two reversed,
+already-sorted, duplicates, case differences, accented/non-ASCII,
+non-string element, improper list, non-list atom, input-list
+preservation, the VL-SORT comparator reproduction, and MAXSORT
+below/at/above.

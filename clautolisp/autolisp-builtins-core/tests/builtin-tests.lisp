@@ -5037,3 +5037,138 @@ itself fails loudly."
                (mapcar (lambda (tokens)
                          (mapcar #'autolisp-string-value tokens))
                        result)))))
+
+;;;; ====================================================================
+;;;; ACAD_STRLSORT — Express Tools string-list sort
+;;;; (issues/closed/acad-strlsort-returns-nil.issue)
+;;;;
+;;;; Previously an M6 nil-returning stub; now a pure builtin. Ordering
+;;;; is case-sensitive, ordinal on character codes (ASCII digits <
+;;;; upper < lower; code points > 127 after the ASCII range), duplicates
+;;;; preserved, input list untouched, and the whole result is nil for
+;;;; invalid input or a list longer than the MAXSORT sysvar.
+
+(defun %acad-strlsort-fn ()
+  (autolisp-symbol-function (find-autolisp-symbol "ACAD_STRLSORT")))
+
+(defun %al-strings (&rest strings)
+  "A proper list of autolisp-strings from CL STRINGS."
+  (mapcar #'make-autolisp-string strings))
+
+(defun %al-string-values (list)
+  "The CL string values of a list of autolisp-strings."
+  (mapcar #'autolisp-string-value list))
+
+(defun %call-acad-strlsort (arg)
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (call-autolisp-function (%acad-strlsort-fn) arg))
+
+(test acad-strlsort-is-a-real-subr-not-an-m6-stub
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((fn (%acad-strlsort-fn)))
+    (is (typep fn 'clautolisp.autolisp-runtime:autolisp-subr))
+    ;; A pure sort: a two-element reverse pair really gets ordered,
+    ;; which the old nil-returning stub could never do.
+    (is (equal '("A" "B")
+               (%al-string-values
+                (call-autolisp-function fn (%al-strings "B" "A")))))))
+
+(test acad-strlsort-nil-returns-nil
+  (is (null (%call-acad-strlsort nil))))
+
+(test acad-strlsort-single-string-returns-that-list
+  (is (equal '("ONE")
+             (%al-string-values (%call-acad-strlsort (%al-strings "ONE"))))))
+
+(test acad-strlsort-two-reversed-are-sorted
+  ;; The issue's minimal reproduction.
+  (is (equal '("ELEMENT-1" "ELEMENT-2")
+             (%al-string-values
+              (%call-acad-strlsort (%al-strings "ELEMENT-2" "ELEMENT-1"))))))
+
+(test acad-strlsort-already-sorted-keeps-order
+  (is (equal '("a" "b" "c" "d")
+             (%al-string-values
+              (%call-acad-strlsort (%al-strings "a" "b" "c" "d"))))))
+
+(test acad-strlsort-preserves-duplicates
+  ;; The vendor does not de-duplicate; every occurrence survives.
+  (is (equal '("a" "a" "b" "b" "b")
+             (%al-string-values
+              (%call-acad-strlsort (%al-strings "b" "a" "b" "a" "b"))))))
+
+(test acad-strlsort-is-case-sensitive-ordinal
+  ;; ASCII ordinal: 'A'(65) 'B'(66) < 'a'(97) 'b'(98); upper before
+  ;; lower, NOT a case-folded collation.
+  (is (equal '("A" "B" "a" "b")
+             (%al-string-values
+              (%call-acad-strlsort (%al-strings "a" "B" "A" "b"))))))
+
+(test acad-strlsort-accented-sort-after-ascii-by-code-point
+  ;; 'E'(69) 'e'(101) < 'É'(U+00C9=201) 'é'(U+00E9=233): accented
+  ;; Latin-1 letters land after the whole ASCII range, and order among
+  ;; themselves by code point — matching CP-1252 byte order.
+  (is (equal '("E" "e" "É" "é")
+             (%al-string-values
+              (%call-acad-strlsort (%al-strings "é" "e" "É" "E"))))))
+
+(test acad-strlsort-non-string-element-returns-nil
+  ;; Vendor failure mode: any non-string element collapses the whole
+  ;; result to nil rather than raising.
+  (is (null (%call-acad-strlsort
+             (list (make-autolisp-string "a") 42 (make-autolisp-string "b"))))))
+
+(test acad-strlsort-improper-list-returns-nil
+  (is (null (%call-acad-strlsort
+             (cons (make-autolisp-string "a") (make-autolisp-string "b"))))))
+
+(test acad-strlsort-non-list-atom-returns-nil
+  (is (null (%call-acad-strlsort (make-autolisp-string "abc")))))
+
+(test acad-strlsort-preserves-input-list
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((input (%al-strings "c" "a" "b"))
+         (result (call-autolisp-function (%acad-strlsort-fn) input)))
+    ;; Result is sorted...
+    (is (equal '("a" "b" "c") (%al-string-values result)))
+    ;; ...and the input list is untouched (same order, same cons cells).
+    (is (equal '("c" "a" "b") (%al-string-values input)))
+    (is (not (eq input result)))))
+
+(test acad-strlsort-from-vl-sort-comparator
+  ;; The issue's nested-comparator reproduction: a VL-SORT comparator
+  ;; that delegates its ordering decision to ACAD_STRLSORT. With the
+  ;; real builtin this yields the same order as a direct lexical
+  ;; comparator, instead of preserving the descending input.
+  (let ((result
+          (run-autolisp-string
+           "(defun compare-with-strlsort (a b / sorted)
+              (setq sorted (acad_strlsort (list a b)))
+              (and (/= a b) (= (car sorted) a)))
+            (vl-sort '(\"ELEMENT-2\" \"ELEMENT-1\") 'compare-with-strlsort)"
+           :setup-fn #'%install-mock-host-and-core)))
+    (is (equal '("ELEMENT-1" "ELEMENT-2")
+               (%al-string-values result)))))
+
+(test acad-strlsort-below-and-at-maxsort-sorts
+  ;; Length <= MAXSORT sorts normally. Set MAXSORT to 3 and feed a
+  ;; 3-element (== limit) reversed list; it must come back sorted.
+  (let ((result
+          (run-autolisp-string
+           "(setvar \"MAXSORT\" 3)
+            (acad_strlsort '(\"c\" \"b\" \"a\"))"
+           :setup-fn #'%install-mock-host-and-core)))
+    (is (equal '("a" "b" "c") (%al-string-values result)))))
+
+(test acad-strlsort-above-maxsort-returns-nil
+  ;; Length > MAXSORT: the Express Tools MAXSORT gate returns nil
+  ;; (list left unsorted). MAXSORT 2, a 3-element list -> nil.
+  (let ((result
+          (run-autolisp-string
+           "(setvar \"MAXSORT\" 2)
+            (acad_strlsort '(\"c\" \"b\" \"a\"))"
+           :setup-fn #'%install-mock-host-and-core)))
+    (is (null result))))

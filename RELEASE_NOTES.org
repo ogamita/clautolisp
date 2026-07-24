@@ -348,12 +348,20 @@ separate binary for tool integrators.
 
 ** Surface coverage of the AutoLISP / Visual LISP spec
 
-- 100% surface-bound: 548 real implementations plus 410 M6 stubs
+- 100% surface-bound: 549 real implementations plus 409 M6 stubs
   (nil-returning placeholders) under every documented identifier.
   Calling a stub returns nil; ~(boundp 'X)~ is ~T~. Real impls track
   through ~issues/open/deferred-stubbed-functions.issue~. ~ALERT~
   is now a real builtin (emits ~"WARNING: <message>"~ to stdout in
   the headless engine).
+- ~acad_strlsort~ now really sorts: it returns a *new* list of the
+  input strings in ascending, case-sensitive, ordinal order (upper
+  before lower; accented / non-ASCII letters after the ASCII range),
+  leaving the input list untouched and preserving duplicates. It was
+  a nil-returning stub before. Invalid input (a non-list, an improper
+  list, any non-string element) and a list longer than the ~MAXSORT~
+  system variable both return nil, matching the Express Tools failure
+  modes. See ~issues/closed/acad-strlsort-returns-nil.issue~.
 
 ** Other AutoLISP semantics matches
 
