@@ -1958,8 +1958,8 @@ AutoLISP exposes a practical runtime type system through the `type` function and
 Distinguished object
 
 *** Related Types
-- `LIST`
 - generalized boolean false
+- `listp` returns `T` for `nil`, but `(type nil)` returns `nil` — `nil` is *not* of type `LIST` (which is cons cells only; see "Type Entry: LIST" and the `listp`-vs-`LIST` note there).
 
 *** Description
 `nil` is a distinguished object in AutoLISP.
@@ -1969,10 +1969,23 @@ In documented AutoLISP behavior:
 - `nil` denotes falsity in conditional and predicate contexts,
 - `nil` is also the empty list,
 - `(type nil)` returns `nil`, not a distinct runtime type designator such as `NIL`,
-- `listp` returns `T` for `nil`,
+- `listp` returns `T` for `nil` (but `nil` is not of type `LIST`; the `LIST` designator covers cons cells only — `(type '())` is `nil`),
 - `null` and `not` return `T` for expressions that evaluate to `nil`.
 
 Accordingly, this specification does not treat `nil` as a separate runtime type in the same sense as `INT`, `REAL`, `STR`, `LIST`, or `SYM`.
+
+*** Discussion: nil as bottom (⊥)
+The otherwise-odd facts above cohere under a single reading: in AutoLISP `nil` serves as *bottom* (⊥). Every operation on bottom yields bottom, which explains, without special cases:
+
+#+begin_example
+(type nil)                  => nil    ; not SYM, not a distinct NIL designator
+(boundp 'nil)               => nil
+(not (eq 'sym (type 'nil)))          ; the type of nil is NOT the symbol SYM
+#+end_example
+
+If `nil` were an ordinary symbol that evaluates to `nil`, then `(boundp 'nil)` returning `nil` would be inconsistent — a self-evaluating symbol that is nonetheless reported unbound. The ⊥ reading makes the whole family coherent: `(quote ⊥) => ⊥`, `(boundp ⊥) => ⊥`, `(type ⊥) => ⊥`. The dual view — "there is a singleton type NIL whose sole inhabitant prints as `nil`" — is equivalent; either way `nil` must *not* be collapsed to the Common Lisp symbol/type model.
+
+The comparison predicates `=` `/=` `<` `<=` `>` `>=` are another manifestation of ⊥ propagation: they signal a type error on genuinely incompatible *non-`nil`* argument types, but return `nil` (not an error) when any argument is `nil` — e.g. `(< 1 nil) => nil`, `(< "abc" nil) => nil`, `(= nil nil) => nil`. See "The Comparison Operators =, /=, <, <=, >, >=" (chapter 5).
 
 *** Representation
 It is printed as `nil` in value position and corresponds semantically to the empty list `()`.
@@ -1998,9 +2011,9 @@ In particular, the Common Lisp type named `nil` is not an appropriate model for 
 
 #+LATEX: \newpage
 
-** Type Entry: Symbol
+** Type Entry: SYM (Symbol)
 *** Name
-Symbol
+`SYM` (prose name: Symbol)
 
 *** Class
 Type
@@ -2011,7 +2024,7 @@ Type
 - command names
 
 *** Description
-Symbols identify variables, functions, commands, and symbolic data.
+Symbols identify variables, functions, commands, and symbolic data. `(type sym)` returns the designator token `SYM`; the dictionary keys this entry by that token. (Note that `(type nil)` returns `nil`, not `SYM` — see "Distinguished Object Entry: NIL".)
 
 *** Representation
 Symbols are case-insensitive in the source language. Printed examples use uppercase.
@@ -2127,6 +2140,400 @@ A file descriptor returned by `open`.
 *** Source Notes
 - [open (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-089A323F-21FF-4337-99A9-375758E23BA4.htm)
 - Status: documented.
+
+#+LATEX: \newpage
+
+** Type Designator Catalogue (what =type= returns)
+The `type` function returns one designator symbol per value. The table
+below is the catalogue keyed by the exact token `type` returns. It is drawn
+from the `type` reference page plus AutoCAD 2026 / BricsCAD V26 probes; it
+is *non-exhaustive* and host-dependent — some designators (notably the
+function designators `SUBR` / `USUBR` / `EXSUBR` / `EXRXSUBR`) differ per
+host, as noted on the individual entries. A designator observed only in a
+probe, or only in the docs, is marked as such on its entry.
+
+Core data designators: `INT`, `REAL`, `STR`, `LIST`, `SYM` (see "Type Entry:
+SYM"); `nil` for the empty list / false (see "Distinguished Object Entry:
+NIL" — `type` returns `nil`, not a designator). Host object designators:
+`ENAME`, `PICKSET`, `FILE`. Function designators: `SUBR`, `USUBR`, `EXSUBR`,
+`EXRXSUBR`, `PAGETB`. ActiveX / automation designators: `VLA-OBJECT`,
+`SAFEARRAY`, `VARIANT`.
+
+#+LATEX: \newpage
+
+** Type Entry: INT
+*** Name
+`INT`
+
+*** Class
+Type
+
+*** Description
+The designator `type` returns for an integer.
+
+*** Representation
+A fixnum-range integer value printed in decimal.
+
+*** Valid Operations
+- integer arithmetic (`+`, `-`, `*`, `/`, `rem`, `1+`, `1-`, …)
+- `type`, `numberp`, `zerop`, `minusp`
+- the comparison operators `=` `/=` `<` `<=` `>` `>=`
+
+*** Availability
+- AutoCAD 2026: documented (per `type` reference page).
+- BricsCAD V26: documented; confirmed by probe.
+- Status: documented.
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented.
+
+#+LATEX: \newpage
+
+** Type Entry: REAL
+*** Name
+`REAL`
+
+*** Class
+Type
+
+*** Description
+The designator `type` returns for a real (floating-point) number.
+
+*** Representation
+A double-precision floating value printed with a decimal point.
+
+*** Valid Operations
+- real arithmetic and the transcendental functions (`sin`, `cos`, `sqrt`, …)
+- `type`, `numberp`, `zerop`, `minusp`, `float`, `fix`
+- the comparison operators `=` `/=` `<` `<=` `>` `>=`
+
+*** Availability
+- AutoCAD 2026: documented (per `type` reference page).
+- BricsCAD V26: documented; confirmed by probe.
+- Status: documented.
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented.
+
+#+LATEX: \newpage
+
+** Type Entry: STR
+*** Name
+`STR`
+
+*** Class
+Type
+
+*** Description
+The designator `type` returns for a string.
+
+*** Representation
+A sequence of characters printed between double quotes.
+
+*** Valid Operations
+- `strcat`, `strlen`, `substr`, `strcase`, `ascii`, `chr`
+- `type`, and the comparison operators `=` `/=` `<` `<=` `>` `>=` (strings compare by content / lexicographically — see chapter 5)
+
+*** Availability
+- AutoCAD 2026: documented (per `type` reference page).
+- BricsCAD V26: documented; confirmed by probe.
+- Status: documented.
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented.
+
+#+LATEX: \newpage
+
+** Type Entry: LIST
+*** Name
+`LIST`
+
+*** Class
+Type
+
+*** Description
+The designator `type` returns for a *cons cell*. The `LIST` type set is
+cons cells only — proper lists with at least one element *and* dotted /
+improper pairs. The *empty list* is NOT of type `LIST`:
+
+#+begin_example
+(type '(a . d)) => LIST
+(type '(1 2 3)) => LIST
+(type 'nil)     => nil
+(type '())      => nil
+#+end_example
+
+So `(type X)` returns `LIST` iff `X` is a cons; for the empty list it
+returns `nil`, not `LIST`.
+
+*** Normative note: the LIST designator vs the listp predicate
+`LIST` (the `type` designator) and `listp` (the predicate) do NOT cover the
+same set, and must not be conflated:
+
+- `listp` true set  = conses ∪ {`nil`} — `(listp nil)` returns `T`.
+- `LIST` type set    = conses only — `(type nil)` returns `nil`.
+
+Thus `nil` satisfies `listp` but is not of type `LIST`; this is consistent
+with `nil` being bottom / the empty list rather than a cons (see
+"Distinguished Object Entry: NIL").
+
+*** Representation
+A chain of cons cells; a dotted pair prints as `(a . d)`.
+
+*** Valid Operations
+- `car`, `cdr`, `cons`, `list`, `append`, `mapcar`, `foreach`, association-list operations
+- `type`, `listp` (but see the note above), `atom`
+
+*** Availability
+- AutoCAD 2026: documented (per `type` reference page).
+- BricsCAD V26: documented; conses-only behaviour confirmed by probe.
+- Status: documented.
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented (conses-only; empty list is `nil`).
+
+#+LATEX: \newpage
+
+** Type Entry: SUBR
+*** Name
+`SUBR`
+
+*** Class
+Type (function designator)
+
+*** Description
+A built-in / internal subroutine. On BricsCAD V26 the probe returns `SUBR`
+for built-in functions AND for user `lambda` values (`(type (function foo))`
+observed as `SUBR`).
+
+*** Representation
+An opaque callable object.
+
+*** Valid Operations
+- called in functional position; passed to `apply` / `mapcar`; `type`
+
+*** Compatibility
+Cross-vendor divergence for *user-defined* functions: BricsCAD V26 returns
+`SUBR` for a user lambda, whereas clautolisp returns `USUBR` (its printer
+shows `#<USUBR LAMBDA>`). See "Type Entry: USUBR". A program must not rely
+on a single designator for user functions across hosts.
+
+*** Availability
+- AutoCAD 2026: `SUBR` for built-ins (per `type` reference).
+- BricsCAD V26: `SUBR` for built-ins and, per probe, user lambdas.
+- Status: documented; user-function designator is host-divergent.
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented (built-ins); user-lambda designator from probe.
+
+#+LATEX: \newpage
+
+** Type Entry: USUBR
+*** Name
+`USUBR`
+
+*** Class
+Type (function designator)
+
+*** Description
+A user-defined subroutine (a function created by `defun` / `lambda`).
+clautolisp returns `USUBR` for a user lambda (`#<USUBR LAMBDA>` → `USUBR`).
+
+*** Representation
+An opaque callable object created by user code.
+
+*** Valid Operations
+- called in functional position; passed to `apply` / `mapcar`; `type`
+
+*** Compatibility
+Cross-vendor divergence: BricsCAD V26's probe returns `SUBR` (not `USUBR`)
+for a user lambda; clautolisp returns `USUBR`. See "Type Entry: SUBR".
+
+*** Availability
+- AutoCAD 2026: designator for user functions to be confirmed by probe.
+- BricsCAD V26: user lambdas observed as `SUBR`, not `USUBR`.
+- clautolisp: `USUBR` for user functions.
+- Status: host-divergent (SUBR vs USUBR); probe evidence.
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: probe-derived; cross-vendor divergence recorded.
+
+#+LATEX: \newpage
+
+** Type Entry: EXSUBR
+*** Name
+`EXSUBR`
+
+*** Class
+Type (function designator)
+
+*** Description
+An external subroutine — a function provided by an external application
+(ADS). `type` returns `EXSUBR` for such callables.
+
+*** Representation
+An opaque callable object backed by an external application.
+
+*** Valid Operations
+- called in functional position; `type`
+
+*** Availability
+- AutoCAD 2026: documented for external (ADS) functions (per `type` reference).
+- BricsCAD V26: to be confirmed by probe.
+- Status: documented in the `type` catalogue; presence per host to be probed.
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented in the catalogue.
+
+#+LATEX: \newpage
+
+** Type Entry: EXRXSUBR
+*** Name
+`EXRXSUBR`
+
+*** Class
+Type (function designator)
+
+*** Description
+An external ObjectARX (`.arx`) subroutine. `type` returns `EXRXSUBR` for
+functions registered by an ObjectARX module.
+
+*** Representation
+An opaque callable object backed by an ObjectARX module.
+
+*** Valid Operations
+- called in functional position; `type`
+
+*** Availability
+- AutoCAD 2026: documented for ObjectARX-provided functions (per `type` reference).
+- BricsCAD V26: to be confirmed by probe.
+- Status: documented in the `type` catalogue; presence per host to be probed.
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented in the catalogue.
+
+#+LATEX: \newpage
+
+** Type Entry: PAGETB
+*** Name
+`PAGETB`
+
+*** Class
+Type
+
+*** Description
+A function paging table — an internal structure used by the AutoLISP
+runtime for function paging. `type` returns `PAGETB` for such values.
+
+*** Representation
+Opaque runtime-managed structure.
+
+*** Valid Operations
+- `type` (few user-level operations)
+
+*** Availability
+- AutoCAD 2026: documented in the `type` catalogue.
+- BricsCAD V26: to be confirmed by probe.
+- Status: documented in the catalogue; rarely surfaced to user code.
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented in the catalogue.
+
+#+LATEX: \newpage
+
+** Type Entry: VLA-OBJECT
+*** Name
+`VLA-OBJECT`
+
+*** Class
+Host Type (ActiveX / automation)
+
+*** Description
+An ActiveX automation object handle (Visual LISP ActiveX), returned e.g. by
+`vlax-ename->vla-object` and the `vla-*` family. `type` returns
+`VLA-OBJECT`.
+
+*** Representation
+Opaque COM/automation object reference.
+
+*** Valid Operations
+- `vlax-get-property`, `vlax-put-property`, `vlax-invoke-method`, `vlax-release-object`, `type`
+
+*** Availability
+- AutoCAD 2026: documented (Visual LISP ActiveX; Windows-hosted).
+- BricsCAD V26: BricsCAD provides a compatible ActiveX/automation layer; confirm designator by probe.
+- Status: documented; platform-dependent (chapter 20 owns the semantics).
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented; see chapter 20 (ActiveX, COM, and Automation).
+
+#+LATEX: \newpage
+
+** Type Entry: SAFEARRAY
+*** Name
+`SAFEARRAY`
+
+*** Class
+Host Type (ActiveX / automation)
+
+*** Description
+A COM `SAFEARRAY` value used to pass array data across the automation
+boundary. `type` returns `SAFEARRAY`.
+
+*** Representation
+Opaque COM safe-array structure.
+
+*** Valid Operations
+- `vlax-make-safearray`, `vlax-safearray-put-element`, `vlax-safearray->list`, `type`
+
+*** Availability
+- AutoCAD 2026: documented (Visual LISP ActiveX).
+- BricsCAD V26: confirm designator by probe.
+- Status: documented; platform-dependent (chapter 20 owns the semantics).
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented; see chapter 20.
+
+#+LATEX: \newpage
+
+** Type Entry: VARIANT
+*** Name
+`VARIANT`
+
+*** Class
+Host Type (ActiveX / automation)
+
+*** Description
+A COM `VARIANT` value — a tagged automation value wrapping a typed payload.
+`type` returns `VARIANT`.
+
+*** Representation
+Opaque COM variant structure.
+
+*** Valid Operations
+- `vlax-make-variant`, `vlax-variant-value`, `vlax-variant-type`, `type`
+
+*** Availability
+- AutoCAD 2026: documented (Visual LISP ActiveX).
+- BricsCAD V26: confirm designator by probe.
+- Status: documented; platform-dependent (chapter 20 owns the semantics).
+
+*** Source Notes
+- [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
+- Status: documented; see chapter 20.
+
+#+LATEX: \newpage
 
 ** Source Notes
 - [type (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-506C9CC8-B0BD-4A4C-B4C2-006750504509.htm)
