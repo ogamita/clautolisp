@@ -46,6 +46,25 @@ Processed 2026-07-23:
   closed issues (autolisp-load-pathname, strict-dialect-autolisp-
   divergences) and were removed.
 
+=== SCHMS corpus enablement (triaged 2026-07-24) ===
+
+Enable the first portable SCHMS regression corpus (batch, no UI/rendering)
+to run headlessly. Most of the surface exists (entity-api/selection-api/
+table-api + builtins registered) — these AUDIT + COMPLETE it against the
+SCHMS call inventory. Two shared gates: (g1) each parity issue's first
+acceptance is "record the SCHMS call inventory" -> needs SCHMS/pjb to
+supply the exact call list; (g2) "match a live AutoCAD/BricsCAD probe" ->
+the vendor-verification tail is BLOCKED on CAD access; headless core +
+portable .lsp scenarios are doable now.
+
+  S0  acad-strlsort-returns-nil.issue        SMALL, standalone (pure string sort; not the drawing group) — do first
+  --- branch `schms-parity` (long-lived; shared mock-host entity model), trunk order:
+  S1  entmakex-returns-list.issue            prereq defect (ENTMAKEX return value)
+  S2  entity-mutation-parity.issue           FOUNDATION: ENTMAKE/X ENTGET ENTMOD ENTDEL ENTNEXT/LAST + ownership
+  S3  drawing-data-structures-parity.issue   REGAPP/XData (via ENTGET/ENTMOD), dicts, XRecords, tables, getvar/setvar
+  S4  selection-and-snapshot-parity.issue    ssget "X" + filters, SS*, traversal — enumerate the entity set
+  Parent epic (not replaced): drawing-database-api.issue (Phase 17f/g/h).
+
 SMALL — process next, in this order:
 
   -- A: sedit/nav/interactor follow-ups (same code area, freshest)
