@@ -100,7 +100,17 @@ AutoLISP-visible VLA-object wraps that id.")
    (next-com-counter         :initform 0
                              :accessor mock-host-next-com-counter
                              :documentation "Allocator state for
-COM-object ids."))
+COM-object ids.")
+   (open-complex-handle      :initform nil
+                             :accessor mock-host-open-complex-handle
+                             :documentation "The hex handle of the
+complex entity (a POLYLINE or an INSERT) whose subentity run is
+currently open, or NIL. When an entmake/entmakex creates a POLYLINE
+or an INSERT, its handle is recorded here; each following VERTEX /
+ATTRIB subentity gets its owner (group 330) set to this handle
+unless the caller supplied one, matching the AutoCAD/BricsCAD
+create-sequence contract. A SEQEND closes the run (clears the
+slot). This is session state, not drawing state."))
   (:default-initargs :name "mock-host")
   (:documentation "In-memory deterministic CAD-database substitute
 backend for clautolisp. Holds an active CLAUTOLISP.DRAWING:DRAWING

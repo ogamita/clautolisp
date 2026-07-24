@@ -248,8 +248,14 @@ note on ENTMAKE in the spec."
                      data))
                (with-defaults
                  (%inject-defaults with-layer (entity-family-defaults family)))
+               ;; Every DXF entity carries the AcDbEntity base subclass
+               ;; marker (AcDbObject for a non-graphical object) ahead of
+               ;; its per-class markers.
+               (base-marker
+                 (if (entity-family-graphical-p family) "AcDbEntity" "AcDbObject"))
                (with-subclasses
                  (append with-defaults
                          (mapcar (lambda (m) (cons 100 m))
-                                 (entity-family-subclasses family)))))
+                                 (cons base-marker
+                                       (entity-family-subclasses family))))))
           (values with-subclasses nil))))))

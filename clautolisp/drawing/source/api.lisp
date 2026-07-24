@@ -323,15 +323,54 @@ object. Returns NIL."
   (maphash function (drawing-objects drawing))
   nil)
 
+(defun %xdata-cell-p (pair)
+  "True iff PAIR is the (-3 . groups) xdata cell of an entity."
+  (and (consp pair) (%group-code= (car pair) -3)))
+
+(defun %xdata-cell (data)
+  "The (-3 . groups) xdata cell of DATA, or NIL."
+  (find-if #'%xdata-cell-p data))
+
+(defun %merge-xdata (existing-groups new-groups)
+  "Merge the per-application xdata NEW-GROUPS into EXISTING-GROUPS (each
+a list of (APPNAME . xdata-pairs)). An application present in NEW-GROUPS
+with a non-empty pair list replaces that application's group; present
+with an EMPTY pair list removes it; applications absent from NEW-GROUPS
+are preserved. This is the vendor ENTMOD xdata contract: xdata is edited
+per application, not wholesale."
+  (let ((result (copy-list existing-groups)))
+    (dolist (grp new-groups result)
+      (when (and (consp grp) (stringp (car grp)))
+        (let ((name (car grp)))
+          (setf result (remove name result
+                               :key (lambda (g) (and (consp g) (car g)))
+                               :test (lambda (a b) (and (stringp b) (string-equal a b)))))
+          (when (cdr grp)               ; non-empty -> add/replace
+            (setf result (append result (list grp)))))))))
+
 (defun modify-entity (drawing handle dxf)
-  "Replace the stored data of HANDLE with DXF, preserving the handle
-(re-injecting (5 . hex), stripping caller -1 / 5). NIL if no such live
-entity. Returns the ENTITY-HANDLE."
+  "Replace the ordinary group codes of the live entity HANDLE with those
+in DXF (the handle is preserved: (5 . hex) is re-injected, caller -1 / 5
+stripped). XData is edited per the vendor ENTMOD contract: when DXF
+carries a (-3 ...) xdata cell it is merged application-by-application
+(see %MERGE-XDATA); when DXF carries no xdata cell the entity's existing
+xdata is preserved untouched. NIL if no such live entity. Returns the
+ENTITY-HANDLE."
   (let* ((key (handle->key handle))
          (entity (gethash key (drawing-entities drawing))))
     (when (and entity (not (entity-handle-deleted-p entity)))
-      (setf (entity-handle-data entity)
-            (cons (cons 5 key) (%strip-codes dxf '(-1 5))))
+      (let* ((old-data      (entity-handle-data entity))
+             (old-xdata     (%xdata-cell old-data))
+             (new-xdata     (%xdata-cell dxf))
+             (new-ordinary  (%strip-codes (remove-if #'%xdata-cell-p dxf) '(-1 5)))
+             (merged-groups (if new-xdata
+                                (%merge-xdata (and old-xdata (cdr old-xdata))
+                                              (cdr new-xdata))
+                                (and old-xdata (cdr old-xdata)))))
+        (setf (entity-handle-data entity)
+              (append (list (cons 5 key))
+                      new-ordinary
+                      (when merged-groups (list (cons -3 merged-groups))))))
       entity)))
 
 (defun entity-deleted-status (drawing handle)

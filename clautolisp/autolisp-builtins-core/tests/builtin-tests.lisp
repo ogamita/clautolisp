@@ -2204,6 +2204,37 @@ NIL when GETSTRING returns nil)."
       (is (null (call-autolisp-function handent-fn
                                         (make-autolisp-string "DEADBEEF")))))))
 
+(test entget-applist-form-surfaces-xdata
+  ;; (entget ename) hides xdata; (entget ename '("APP")) appends it.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let* ((mock (clautolisp.autolisp-mock-host:make-mock-host))
+         (session (clautolisp.autolisp-runtime:evaluation-context-session
+                   (clautolisp.autolisp-runtime:default-evaluation-context))))
+    (clautolisp.autolisp-runtime:set-runtime-session-host session mock)
+    (let* ((entmakex-fn (autolisp-symbol-function (find-autolisp-symbol "ENTMAKEX")))
+           (entmod-fn   (autolisp-symbol-function (find-autolisp-symbol "ENTMOD")))
+           (entget-fn   (autolisp-symbol-function (find-autolisp-symbol "ENTGET")))
+           (ename (call-autolisp-function entmakex-fn
+                                          (list (cons 0 "CIRCLE")
+                                                (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                                (cons 40 1.0d0)))))
+      ;; Attach xdata.
+      (call-autolisp-function entmod-fn
+                              (list (cons -1 ename)
+                                    (cons 0 "CIRCLE")
+                                    (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                    (cons 40 1.0d0)
+                                    (cons -3 (list (list (make-autolisp-string "MYAPP")
+                                                         (cons 1000 (make-autolisp-string "x")))))))
+      ;; Plain entget -> no -3.
+      (let ((plain (call-autolisp-function entget-fn ename)))
+        (is (null (assoc -3 plain))))
+      ;; entget with applist -> -3 present.
+      (let ((withx (call-autolisp-function entget-fn ename
+                                           (list (make-autolisp-string "MYAPP")))))
+        (is (not (null (assoc -3 withx))))))))
+
 (test phase13-vlax-builtins-on-mock-host
   ;; Round-trip a VLA-object create -> get-property -> put-property
   ;; -> invoke-method, plus a SAFEARRAY round-trip and a VARIANT

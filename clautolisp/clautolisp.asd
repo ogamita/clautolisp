@@ -375,6 +375,7 @@
   ((:file "drawing/tests/package")
    (:file "drawing/tests/test-harness")
    (:file "drawing/tests/api-tests")
+   (:file "drawing/tests/entity-families-tests")
    (:file "drawing/tests/persistence-tests")
    (:file "drawing/tests/dxf-tests")
    (:file "drawing/tests/run"))

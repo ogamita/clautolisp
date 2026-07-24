@@ -29,8 +29,8 @@ backend share this instance.")
 ;;; xref readable and makes future per-method overrides cheap.
 
 ;; Entity API
-(defmethod host-entget ((host null-host) ename)
-  (declare (ignore ename))
+(defmethod host-entget ((host null-host) ename &optional applist)
+  (declare (ignore ename applist))
   (signal-host-not-supported host 'entget))
 
 (defmethod host-entmod ((host null-host) group-code-list)

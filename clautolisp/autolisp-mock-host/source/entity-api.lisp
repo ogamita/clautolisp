@@ -77,15 +77,64 @@ integer group code of each pair is kept; the value is converted."
                 pair))
           data))
 
-(defun entity->al-view (entity)
+;;; --- XData (extended data) helpers ------------------------------
+;;;
+;;; XData rides in an entity's group-code list as a single (-3 . groups)
+;;; cell (DXF group -3), where GROUPS is a list of per-application
+;;; groups, each an (APPNAME . xdata-pairs) list; the xdata pairs use
+;;; group codes >= 1000 (1000 string, 1001 appname, 1002 brace, 1005
+;;; handle, 1010 point, 1040 real, 1070 int16, 1071 int32, ...).
+;;;
+;;; The vendor contract: (entget ename) WITHOUT an application list
+;;; suppresses xdata entirely; (entget ename '("APP" ...)) appends only
+;;; the requested applications' xdata; the wildcard "*" requests all.
+
+(defun xdata-cell-p (pair)
+  "True iff PAIR is the (-3 . groups) xdata cell of an entity."
+  (and (consp pair) (group-code-equal-p (car pair) -3)))
+
+(defun %applist-names (applist)
+  "Unwrap the AutoLISP application-name list APPLIST (a list of strings
+/ autolisp-strings) to a list of CL strings. NIL yields NIL."
+  (loop for item in applist
+        collect (typecase item
+                  (clautolisp.autolisp-runtime:autolisp-string
+                   (clautolisp.autolisp-runtime:autolisp-string-value item))
+                  (string item)
+                  (t (princ-to-string item)))))
+
+(defun %filter-xdata-groups (groups names)
+  "GROUPS is the pure (APPNAME . pairs) list of an entity's xdata. Keep
+only those whose APPNAME is requested by NAMES (a list of CL strings);
+\"*\" requests all."
+  (if (member "*" names :test #'string=)
+      groups
+      (remove-if-not (lambda (grp)
+                       (and (consp grp) (stringp (car grp))
+                            (member (car grp) names :test #'string-equal)))
+                     groups)))
+
+(defun entity->al-view (entity &optional applist)
   "The AutoLISP entget / entmake view of a stored ENTITY-HANDLE: the
-(-1 . ename) head followed by the wrapped pure data."
-  (cons (cons -1 (handle->ename (entity-handle-id entity)))
-        (mapcar (lambda (pair)
-                  (if (consp pair)
-                      (cons (car pair) (pure->al-value (cdr pair)))
-                      pair))
-                (entity-handle-data entity))))
+(-1 . ename) head, the wrapped ordinary group codes, and — only when
+APPLIST (a list of registered application names) is supplied — the
+matching xdata appended as a trailing (-3 ...) cell. Without APPLIST
+the xdata is suppressed, matching the vendor ENTGET contract."
+  (let* ((data (entity-handle-data entity))
+         (ordinary (remove-if #'xdata-cell-p data))
+         (xdata-cell (find-if #'xdata-cell-p data))
+         (names (%applist-names applist))
+         (kept (and xdata-cell names
+                    (%filter-xdata-groups (cdr xdata-cell) names))))
+    (append
+     (list (cons -1 (handle->ename (entity-handle-id entity))))
+     (mapcar (lambda (pair)
+               (if (consp pair)
+                   (cons (car pair) (pure->al-value (cdr pair)))
+                   pair))
+             ordinary)
+     (when kept
+       (list (cons -3 (pure->al-value kept)))))))
 
 (defun extract-modified-handle (data operator-name)
   "Return the hex handle of the entity DATA refers to, from its
@@ -131,10 +180,10 @@ such entity exists or it has been deleted."
 
 ;;; --- Host method implementations ---------------------------------
 
-(defmethod host-entget ((host mock-host) ename)
+(defmethod host-entget ((host mock-host) ename &optional applist)
   (let* ((handle (ename->handle ename 'entget))
          (entity (safe-find-entity (mock-host-active-drawing host) handle)))
-    (and entity (entity->al-view entity))))
+    (and entity (entity->al-view entity applist))))
 
 (defun %host-add-entity (host data operator-name)
   "Shared worker for HOST-ENTMAKE / HOST-ENTMAKEX. Validate + normalise
@@ -152,18 +201,68 @@ caught upstream in the builtin (REQUIRE-PROPER-LIST)."
       (declare (ignore reason))
       (if (null normalised)
           (values nil nil)
-          (let* ((entity (handler-case
-                             (clautolisp.drawing:add-entity drawing normalised)
+          (let* ((owned (%link-subentity-owner host normalised))
+                 (entity (handler-case
+                             (clautolisp.drawing:add-entity drawing owned)
                            (clautolisp.drawing:drawing-error () nil))))
             (if (null entity)
                 (values nil nil)
                 (let ((ename (handle->ename (entity-handle-id entity)))
                       (document (current-document)))
+                  (%update-open-complex host entity normalised)
                   (clautolisp.autolisp-runtime:signal-document-event
                    document :acdb :vlr-objectappended (list ename))
                   (clautolisp.autolisp-runtime:signal-document-event
                    document :acdb :vlr-objectreappended (list ename))
                   (values entity ename))))))))
+
+;;; --- Complex-entity ownership (330 owner of subentities) --------
+;;;
+;;; A POLYLINE / INSERT opens a run of subentities (VERTEX / ATTRIB)
+;;; terminated by a SEQEND. When the run is open, each subentity's
+;;; owner (group 330) is the header's handle unless the caller supplied
+;;; one, matching the AutoCAD/BricsCAD create-sequence contract; the
+;;; SEQEND closes the run. ENTNEXT then walks header -> subentities ->
+;;; seqend naturally, since they are in creation order.
+
+(defun %data-type-string (data)
+  "The (0 . TYPE) string of the pure group-code list DATA, or NIL."
+  (dolist (pair data nil)
+    (when (and (consp pair) (group-code-equal-p (car pair) 0) (stringp (cdr pair)))
+      (return (cdr pair)))))
+
+(defun %data-has-code-p (data code)
+  (dolist (pair data nil)
+    (when (and (consp pair) (group-code-equal-p (car pair) code))
+      (return t))))
+
+(defun %link-subentity-owner (host normalised)
+  "If NORMALISED is a subentity (VERTEX / ATTRIB / SEQEND) created while
+a complex header's run is open, and it carries no explicit (330 . owner)
+group, append the header's handle as its owner. Returns the possibly
+augmented data."
+  (let* ((type (%data-type-string normalised))
+         (family (clautolisp.drawing:find-entity-family type))
+         (open (mock-host-open-complex-handle host)))
+    (if (and family
+             (clautolisp.drawing:entity-family-subentity-p family)
+             open
+             (not (%data-has-code-p normalised 330)))
+        (append normalised (list (cons 330 open)))
+        normalised)))
+
+(defun %update-open-complex (host entity normalised)
+  "Update the host's open-complex run state after ENTITY was created
+from NORMALISED: a POLYLINE / INSERT opens a run (records its handle);
+a SEQEND closes it."
+  (let* ((type (%data-type-string normalised))
+         (family (clautolisp.drawing:find-entity-family type)))
+    (cond
+      ((and family (clautolisp.drawing:entity-family-complex-p family))
+       (setf (mock-host-open-complex-handle host)
+             (clautolisp.drawing:entity-handle-id entity)))
+      ((and type (string-equal type "SEQEND"))
+       (setf (mock-host-open-complex-handle host) nil)))))
 
 (defmethod host-entmake ((host mock-host) data)
   ;; ENTMAKE returns the entget-style view (the (-1 . ename) head +

@@ -3799,12 +3799,19 @@ most recent first."
      operator-name object))
   object)
 
-(defun builtin-entget (ename)
+(defun builtin-entget (ename &optional applist)
   ;; Documented to set ERRNO on failure. Code 2 = "Invalid entity
   ;; or selection-set name" covers both the unknown-ename and
   ;; deleted-ename cases when the host returns nil.
+  ;;
+  ;; The optional APPLIST is the registered-application filter of the
+  ;; (entget ename '("APPNAME" ...)) form: when supplied, the matching
+  ;; applications' extended data (xdata) is appended to the result as a
+  ;; trailing (-3 ...) group. Without it, xdata is suppressed.
+  (when applist (require-proper-list applist "ENTGET"))
   (let ((result (host-entget (current-evaluation-host)
-                             (require-ename ename "ENTGET"))))
+                             (require-ename ename "ENTGET")
+                             applist)))
     (if result
         (errno-and-return 0 result)
         (errno-and-return 2 nil))))
