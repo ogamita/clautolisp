@@ -106,13 +106,192 @@ EQUAL."
 (defun group-code-equal-pair (code pair)
   (and (consp pair) (group-code-equal-p code (car pair))))
 
+;;; --- ssget filter grammar (full) ---------------------------------
+;;;
+;;; A filter list is a flat list of dotted pairs. Most pairs are
+;;; ordinary attribute tests (CODE . VALUE). Interspersed are:
+;;;
+;;;   -3  xdata application filter: value is a list of per-application
+;;;       sublists ((APPNAME . xdata-pairs) ...); an entity matches when
+;;;       it carries xdata registered under each requested application.
+;;;
+;;;   -4  a relational or logical operator, encoded as a string:
+;;;         relational: "=", "/=", "!=", "<", ">", "<=", ">=",
+;;;                     "&" (bit-AND non-zero), "&=" (masked-equal),
+;;;                     "*" (value present, any) — applies to the pair
+;;;                     that immediately follows.
+;;;         logical:    "<AND".."AND>", "<OR".."OR>", "<XOR".."XOR>",
+;;;                     "<NOT".."NOT>" — bracket a nested test sequence.
+;;;
+;;; Top-level tests combine with implicit AND. The grammar is parsed
+;;; into a tree of predicate closures once, then evaluated per entity.
+
+(defparameter *ss-logical-openers*
+  '(("<AND" . "AND>") ("<OR" . "OR>") ("<XOR" . "XOR>") ("<NOT" . "NOT>")))
+
+(defparameter *ss-relational-ops*
+  '("=" "/=" "!=" "<" ">" "<=" ">=" "&" "&=" "*"))
+
+(defun %ss-operator (pair)
+  "The operator string of a (-4 . \"OP\") cell, or NIL if PAIR is not one."
+  (and (consp pair) (group-code-equal-p (car pair) -4)
+       (mock-string-value (cdr pair))))
+
+(defun %entity-values-for-code (entity code)
+  "All values the entity carries under group CODE, in order (a code may
+repeat, e.g. multiple 10 vertices)."
+  (loop for pair in (entity-handle-data entity)
+        when (and (consp pair) (group-code-equal-p code (car pair)))
+          collect (cdr pair)))
+
+(defun %ss-numeric (x)
+  (and (numberp x) x))
+
+(defun %ss-relational-satisfied-p (op target-value actual-value)
+  "True iff ACTUAL-VALUE (a stored pure-CL value) satisfies OP against
+the filter TARGET-VALUE."
+  (cond
+    ((string= op "*") t)                ; presence: any value matches
+    ((or (string= op "=")) (filter-value-match-p target-value actual-value))
+    ((or (string= op "/=") (string= op "!="))
+     (not (filter-value-match-p target-value actual-value)))
+    ;; Numeric / ordered comparisons.
+    ((member op '("<" ">" "<=" ">=") :test #'string=)
+     (let ((tv (%ss-numeric target-value)) (av (%ss-numeric actual-value)))
+       (if (and tv av)
+           (cond ((string= op "<")  (< av tv))
+                 ((string= op ">")  (> av tv))
+                 ((string= op "<=") (<= av tv))
+                 ((string= op ">=") (>= av tv)))
+           ;; String ordering fallback.
+           (let ((ts (mock-string-value target-value))
+                 (as (mock-string-value actual-value)))
+             (and ts as
+                  (cond ((string= op "<")  (string< as ts))
+                        ((string= op ">")  (string> as ts))
+                        ((string= op "<=") (string<= as ts))
+                        ((string= op ">=") (string>= as ts))))))))
+    ;; Bitwise group tests (integer codes).
+    ((string= op "&")
+     (let ((tv (%ss-numeric target-value)) (av (%ss-numeric actual-value)))
+       (and tv av (integerp tv) (integerp av) (not (zerop (logand tv av))))))
+    ((string= op "&=")
+     (let ((tv (%ss-numeric target-value)) (av (%ss-numeric actual-value)))
+       (and tv av (integerp tv) (integerp av) (= (logand tv av) tv))))
+    (t nil)))
+
+(defun %ss-xdata-groups (entity)
+  "The entity's per-application xdata groups ((APPNAME . pairs) ...),
+or NIL."
+  (let ((cell (find-if #'xdata-cell-p (entity-handle-data entity))))
+    (and cell (cdr cell))))
+
+(defun %ss-xdata-matches-p (entity app-sublists)
+  "True iff ENTITY carries xdata satisfying every APP sublist in the -3
+filter APP-SUBLISTS. Each sublist is (APPNAME . xdata-pairs); the entity
+must have xdata under an application matching APPNAME (wildcard), and any
+extra xdata pairs in the sublist must be present under that application."
+  (let ((groups (%ss-xdata-groups entity)))
+    (every
+     (lambda (sub)
+       (let* ((name (mock-string-value (car sub)))
+              (match (and name
+                          (find-if (lambda (g)
+                                     (and (consp g) (stringp (car g))
+                                          (simple-wildcard-match-p (car g) name)))
+                                   groups))))
+         (and match
+              ;; Optional inner pair constraints (rarely used): each
+              ;; requested (code . value) pair must appear in the app's
+              ;; xdata.
+              (every (lambda (want)
+                       (and (consp want)
+                            (find-if (lambda (have)
+                                       (and (consp have)
+                                            (group-code-equal-p (car want) (car have))
+                                            (filter-value-match-p (cdr want) (cdr have))))
+                                     (cdr match))))
+                     (cdr sub)))))
+     app-sublists)))
+
+(defun %ss-plain-node (pair)
+  "A predicate for an ordinary (CODE . VALUE) filter pair. Group -3 is
+the xdata application filter; every other code is an attribute test that
+succeeds when any of the entity's pairs under CODE matches VALUE."
+  (let ((code (car pair)) (value (cdr pair)))
+    (if (group-code-equal-p code -3)
+        (let ((app-sublists (if (listp value) value (list value))))
+          (lambda (entity) (%ss-xdata-matches-p entity app-sublists)))
+        (lambda (entity)
+          (some (lambda (actual) (filter-value-match-p value actual))
+                (%entity-values-for-code entity code))))))
+
+(defun %ss-relational-node (op target-pair)
+  "A predicate applying relational OP to TARGET-PAIR (CODE . VALUE)."
+  (if (null target-pair)
+      (constantly nil)
+      (let ((code (car target-pair)) (value (cdr target-pair)))
+        (lambda (entity)
+          (let ((actuals (%entity-values-for-code entity code)))
+            (if (string= op "*")
+                (and actuals t)
+                (some (lambda (actual)
+                        (%ss-relational-satisfied-p op value actual))
+                      actuals)))))))
+
+(defun %ss-group-node (opener sub-nodes)
+  "A predicate combining SUB-NODES under the logical OPENER string."
+  (cond
+    ((string= opener "<AND")
+     (lambda (entity) (every (lambda (n) (funcall n entity)) sub-nodes)))
+    ((string= opener "<OR")
+     (lambda (entity) (some (lambda (n) (funcall n entity)) sub-nodes)))
+    ((string= opener "<XOR")
+     (lambda (entity)
+       (oddp (count-if (lambda (n) (funcall n entity)) sub-nodes))))
+    ((string= opener "<NOT")
+     (lambda (entity)
+       (not (every (lambda (n) (funcall n entity)) sub-nodes))))
+    (t (constantly nil))))
+
+(defun %parse-ss-tests (pairs closer)
+  "Parse PAIRS into a list of predicate closures until CLOSER (an
+operator string like \"AND>\") is consumed, or the list ends. Returns
+ (values NODES REMAINING-PAIRS)."
+  (let ((nodes '()))
+    (loop
+      (when (null pairs)
+        (return (values (nreverse nodes) nil)))
+      (let* ((pair (first pairs))
+             (op (%ss-operator pair)))
+        (cond
+          ((and closer op (string= op closer))
+           (return (values (nreverse nodes) (rest pairs))))
+          ((and op (assoc op *ss-logical-openers* :test #'string=))
+           (let ((sub-closer (cdr (assoc op *ss-logical-openers* :test #'string=))))
+             (multiple-value-bind (sub-nodes rest)
+                 (%parse-ss-tests (rest pairs) sub-closer)
+               (push (%ss-group-node op sub-nodes) nodes)
+               (setf pairs rest))))
+          ((and op (member op *ss-relational-ops* :test #'string=))
+           (push (%ss-relational-node op (second pairs)) nodes)
+           (setf pairs (cddr pairs)))
+          (op
+           ;; Unknown / stray -4 operator (including an unmatched closer):
+           ;; skip it rather than crash — vendor tolerates malformed tails.
+           (setf pairs (rest pairs)))
+          (t
+           (push (%ss-plain-node pair) nodes)
+           (setf pairs (rest pairs))))))))
+
 (defun entity-matches-filter-p (entity filter)
-  (every (lambda (filter-pair)
-           (let ((entity-pair (find (car filter-pair) (entity-handle-data entity)
-                                     :test #'group-code-equal-pair)))
-             (and entity-pair
-                  (filter-value-match-p (cdr filter-pair) (cdr entity-pair)))))
-         filter))
+  "True iff ENTITY satisfies the ssget FILTER list. Top-level tests
+combine with AND. Malformed filters degrade to a partial match rather
+than signalling (the builtin layer validates gross filter shape)."
+  (or (null filter)
+      (multiple-value-bind (nodes rest) (%parse-ss-tests filter nil)
+        (declare (ignore rest))
+        (every (lambda (node) (funcall node entity)) nodes))))
 
 ;;; --- Method definitions ------------------------------------------
 
@@ -133,7 +312,11 @@ EQUAL."
               (matches '()))
          (dolist (handle order)
            (let ((entity (gethash handle (mock-host-entities host))))
+             ;; The whole-database scan returns only graphical entities,
+             ;; exactly like the vendor: dictionaries, xrecords and other
+             ;; non-graphical objects are never selected by ssget.
              (when (and entity (not (entity-handle-deleted-p entity))
+                        (clautolisp.drawing:graphical-entity-p entity)
                         (or (null filter)
                             (entity-matches-filter-p entity filter)))
                (push entity matches))))

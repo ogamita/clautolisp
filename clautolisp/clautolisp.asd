@@ -164,6 +164,7 @@
    (:file "autolisp-mock-host/source/api")
    (:file "autolisp-mock-host/source/entity-api")
    (:file "autolisp-mock-host/source/selection-api")
+   (:file "autolisp-mock-host/source/dictionary-api")
    (:file "autolisp-mock-host/source/table-api")
    (:file "autolisp-mock-host/source/sysvar-api")
    (:file "autolisp-mock-host/source/registry-api")

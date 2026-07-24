@@ -96,6 +96,10 @@ not implement OPERATION."
                                                        (:documentation "Add an entry to a dictionary."))
 (defgeneric host-dictremove   (host dict-ename name)   (:documentation "Remove an entry from a dictionary."))
 (defgeneric host-dictrename   (host dict-ename old new)(:documentation "Rename an entry in a dictionary."))
+(defgeneric host-dictobjname  (host dict-ename name)   (:documentation "Return the ENAME of the object stored under NAME in the dictionary, or nil (like DICTSEARCH but returning the ename rather than the entget list)."))
+
+;; Registered applications (XData namespaces)
+(defgeneric host-regapp       (host name)              (:documentation "Register the application NAME for XData. Returns NAME on success, nil if already registered."))
 
 ;; System variables
 (defgeneric host-getvar (host name)                   (:documentation "Return the value of the named system variable."))
@@ -183,6 +187,8 @@ not implement OPERATION."
 (defmethod host-dictadd      ((host host) dict name object-ename) (declare (ignore dict name object-ename)) (signal-host-not-supported host 'dictadd))
 (defmethod host-dictremove   ((host host) dict name)      (declare (ignore dict name)) (signal-host-not-supported host 'dictremove))
 (defmethod host-dictrename   ((host host) dict old new)   (declare (ignore dict old new)) (signal-host-not-supported host 'dictrename))
+(defmethod host-dictobjname  ((host host) dict name)      (declare (ignore dict name)) (signal-host-not-supported host 'dictobjname))
+(defmethod host-regapp       ((host host) name)           (declare (ignore name)) (signal-host-not-supported host 'regapp))
 (defmethod host-getvar ((host host) name)                 (declare (ignore name)) (signal-host-not-supported host 'getvar))
 (defmethod host-setvar ((host host) name value)           (declare (ignore name value)) (signal-host-not-supported host 'setvar))
 (defmethod host-set-derived-sysvar ((host host) name value) (declare (ignore name value)) (signal-host-not-supported host 'set-derived-sysvar))

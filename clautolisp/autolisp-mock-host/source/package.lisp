@@ -80,6 +80,8 @@
                 #:host-dictadd
                 #:host-dictremove
                 #:host-dictrename
+                #:host-dictobjname
+                #:host-regapp
                 #:host-getvar
                 #:host-setvar
                 #:host-set-derived-sysvar
