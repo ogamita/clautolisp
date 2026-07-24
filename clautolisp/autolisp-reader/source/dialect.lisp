@@ -85,6 +85,7 @@
                  (hex-float-atof-p nil)
                  (open-ccs-mode-p nil)
                  (unbound-variable-mode :silent-nil)
+                 (portability-warning-mode :warn)
                  (default-source-encoding :iso-8859-1)
                  (default-file-encoding   :iso-8859-1))))
   (name :strict :type keyword)
@@ -95,6 +96,16 @@
   (hex-float-atof-p nil :type boolean)
   (open-ccs-mode-p nil :type boolean)
   (unbound-variable-mode :silent-nil :type keyword)
+  ;; Dialect portability warnings (autolisp-spec ch.25): when a program
+  ;; reaches a construct the dialect's target host lacks (e.g. `&REST'
+  ;; under :strict / :autocad-2026), clautolisp still runs it but emits
+  ;; an advisory warning. This knob is the optional warning->error
+  ;; escalation, mirroring `:unbound-variable-mode :strict-error':
+  ;;   :warn  (default) -- advisory, print once per occurrence, run on.
+  ;;   :error           -- signal an AutoLISP runtime error instead
+  ;;                      (non-conforming: changes whether the program
+  ;;                      runs; opt-in, never a dialect default).
+  (portability-warning-mode :warn :type keyword)
   (default-source-encoding :iso-8859-1 :type keyword)
   (default-file-encoding   :iso-8859-1 :type keyword))
 

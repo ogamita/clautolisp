@@ -76,6 +76,24 @@ separate binary for tool integrators.
   sysvars are unaffected. See
   ~issues/open/bricscad-dialect-sysvar-parity.issue~.
 
+** Dialect portability warnings (autolisp-spec ch.25)
+
+- A non-portable construct still *runs* under clautolisp but emits an
+  advisory ~[lambda-list-extension]~ WARNING to stderr when the active
+  dialect targets a host that lacks it. First consumer: a ~defun~ /
+  ~lambda~ ~&rest~ parameter (a BricsCAD extension AutoCAD does not
+  support) — silent under ~--bricscad~ / ~--clautolisp~ / ~--lax~,
+  warns under ~--strict~ / ~--autocad~.
+- Once per occurrence: each source site warns at most once per run, on
+  its first evaluation — a loop around the same ~defun~ warns once, a
+  guarded/never-evaluated ~defun~ never warns, and a *different* ~defun~
+  warns independently. Warnings go to stderr, which a normal run
+  surfaces.
+- Optional warning→error escalation via the dialect
+  ~:portability-warning-mode :error~ knob (default ~:warn~), mirroring
+  ~:unbound-variable-mode :strict-error~; off unless opted in.
+  See ~issues/open/clautolisp-dialect-portability-warnings.issue~.
+
 ** Encoding handling (issues/closed/encoding-dispatch.issue)
 
 - Launch chain: =LC_ALL → LANG → LC_CTYPE → -e= resolves the active
