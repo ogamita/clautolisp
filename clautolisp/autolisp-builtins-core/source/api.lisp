@@ -3303,6 +3303,49 @@ for a portable file newline, or --dialect clautolisp to silence.~%"
                     (autolisp-true-p
                      (call-autolisp-function function (cdr a) (cdr b))))))))
 
+(defun %acad-strlsort-maxsort ()
+  "The MAXSORT ceiling honoured by ACAD_STRLSORT. Read from the host
+system variable (spec §MAXSORT, whose Read/Written-By list names
+acad_strlsort); host-less unit-test contexts fall back to the vendor
+default of 1000."
+  (%host-sysvar-integer (ignore-errors (current-evaluation-host))
+                        "MAXSORT" 1000))
+
+(defun builtin-acad-strlsort (list)
+  ;; (acad_strlsort LST) — Express Tools string-list sort.
+  ;;
+  ;; Returns a NEW list holding LST's strings in ascending order,
+  ;; leaving LST itself unmodified (VL-SORT-style copy-then-sort).
+  ;; Ordering is case-sensitive and ordinal on the character codes
+  ;; (CL STRING<): among ASCII, digits < upper-case < lower-case, and
+  ;; code points above 127 (accented / non-ASCII letters) sort AFTER
+  ;; the whole ASCII range. This mirrors AutoCAD Express Tools, whose
+  ;; sort is a byte-ordinal comparison over the active ANSI code page —
+  ;; CP-1252 places the Latin-1 accented letters at 0xC0-0xFF, i.e.
+  ;; after A-Z / a-z — matching the code-point order used here for the
+  ;; Latin-1 block. See the acad_strlsort category page cited in the
+  ;; spec function entry (§ Function Entry: ACAD_STRLSORT). Duplicate
+  ;; strings are preserved: the vendor does not de-duplicate.
+  ;;
+  ;; A live-CAD probe of the exact collation and the failure modes is
+  ;; BLOCKED (no CAD host in this environment); the ordinal rule is the
+  ;; deterministic, spec-correct headless behaviour.
+  ;;
+  ;; Edge cases collapse to the vendor's documented failure mode of
+  ;; returning nil (rather than raising), so a defensive caller — e.g.
+  ;; the reported VL-SORT comparator — never crashes:
+  ;;   - nil / the empty list        -> nil
+  ;;   - a non-list atom             -> nil
+  ;;   - an improper (dotted) list   -> nil
+  ;;   - any non-string element      -> nil
+  ;;   - length greater than MAXSORT -> nil (Express Tools MAXSORT gate,
+  ;;                                         see %ACAD-STRLSORT-MAXSORT)
+  (when (and (proper-list-p list)
+             list
+             (every (lambda (x) (typep x 'autolisp-string)) list)
+             (<= (length list) (%acad-strlsort-maxsort)))
+    (sort (copy-list list) #'string< :key #'autolisp-string-value)))
+
 (defun builtin-distance (point-a point-b)
   ;; (distance P1 P2) -> 2D / 3D Euclidean distance between two
   ;; coordinate lists. Missing Z components default to 0.
@@ -8351,9 +8394,10 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "VL-LAYERSTATES-SETDESCRIPTION" "VL-LAYERSTATES-SETPROPERTYMASK"
     ;; ARX* (5)
     "ARX" "ARXLOAD" "ARXUNLOAD" "AUTOARXLOAD" "VL-ARX-IMPORT"
-    ;; ACAD* (7)
+    ;; ACAD* (6) — ACAD_STRLSORT is a real builtin (pure string-list
+    ;; sort, see BUILTIN-ACAD-STRLSORT), so it is NOT in this list.
     "ACAD-POP-DBMOD" "ACAD-PUSH-DBMOD" "ACAD_COLORDLG"
-    "ACAD_HELPDLG" "ACAD_STRLSORT" "ACAD_TRUECOLORCLI"
+    "ACAD_HELPDLG" "ACAD_TRUECOLORCLI"
     "ACAD_TRUECOLORDLG"
     ;; Entity / selection-set / table / dictionary database (14)
     "DICTADD" "DICTNEXT" "DICTOBJNAME" "DICTREMOVE" "DICTRENAME"
@@ -8431,6 +8475,8 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "REMOVE" #'builtin-remove)
    (make-core-builtin-subr "VL-SORT" #'builtin-vl-sort)
    (make-core-builtin-subr "VL-SORT-I" #'builtin-vl-sort-i)
+   ;; Express Tools string-list sort — a pure builtin, not an M6 stub.
+   (make-core-builtin-subr "ACAD_STRLSORT" #'builtin-acad-strlsort)
    ;; Phase 7 — geometry
    (make-core-builtin-subr "DISTANCE" #'builtin-distance)
    (make-core-builtin-subr "ANGLE" #'builtin-angle)
