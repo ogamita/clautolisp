@@ -648,6 +648,9 @@ AutoLISP defines the following equality predicates with the semantics observed i
 
 - ~(eq a b)~ — pointer-level identity for cons cells, distinguishes freshly-allocated objects, but returns ~T~ for two textually-identical string literals (the host *interns* string literals), and ~T~ for two textually-identical symbol literals (canonical case-folded name).
 - ~(equal a b)~ — structural equality over cons cells; numerically compares an integer to a real (~(equal 1 1.0)~ returns ~T~); compares strings by content.
+- ~(= a b ...)~ / ~(/= a b ...)~ — value equality / inequality over *numbers and strings only* (not the any-type domain of ~eq~/~equal~): numbers compare by value across the integer/real tower (~(= 1 1.0)~ returns ~T~), strings by content (~(= "abc" "abc")~ returns ~T~). One-or-more-argument variadic form.
+- ~(< a b ...)~ ~(<= a b ...)~ ~(> a b ...)~ ~(>= a b ...)~ — the relational family; same numbers-and-strings domain, with strings ordered *lexicographically* by character code point. Documented in full alongside this page as Function Entries in chapter 5 ("The Comparison Operators =, /=, <, <=, >, >=").
+- Domain / error rule for ~=~ ~/=~ ~<~ ~<=~ ~>~ ~>=~: genuinely incompatible *non-`nil`* argument types (a number against a string, e.g. ~(< 1 "a")~) signal a *type error*; but any argument that is ~nil~ makes the result ~nil~ without error — bottom (⊥) propagation, consistent with chapter 4 ("Distinguished Object Entry: NIL"): ~(< 1 nil) = nil~, ~(= nil nil) = nil~. This is the sense in which they are *more restrictive* than ~eq~/~equal~, which accept any type.
 - Truthiness: a value is *true* iff it is not ~nil~. ~0~, ~0.0~, ~""~ are *true*. ~nil~ is the unique false value.
 
 *** Vendor Evidence
@@ -655,10 +658,15 @@ BricsCAD V26 / macOS direct probe section H–J:
 - ~(equal "abc" "abc") = T~ ; ~(eq "abc" "abc") = T~ — string literals are interned.
 - ~(equal 1 1.0) = T~ — cross-type numeric equality.
 - ~(equal '(1 2) (list 1 2)) = T~ ; ~(eq '(1 2) (list 1 2)) = nil~ — structural vs identity.
+- ~(= 1 1.0) = T~ — numeric cross-type equality via ~=~.
+- ~(= "abc" "abc") = T~ ; ~(< "a" "b") = T~ — ~=~ and the relational operators compare strings (verified in BricsCAD V26).
+- ~(< 1 nil) = nil~ ; ~(< "abc" nil) = nil~ — a ~nil~ argument returns ~nil~, not a type error (⊥ propagation).
 - ~(if 0 'yes 'no) = YES~ ; ~(if 0.0 'yes 'no) = YES~ ; ~(if "" 'yes 'no) = YES~ ; ~(if '() 'yes 'no) = NO~.
 - ~(eq nil '()) = T~ ; ~(null nil) = T~ ; ~(null '()) = T~ — ~nil~ and the empty list are the same object.
 
 *** Cross-references
+- "The Comparison Operators =, /=, <, <=, >, >=" and Function Entries ~=~ ~/=~ ~<~ ~<=~ ~>~ ~>=~ (chapter 5) — the per-operator definitions and the shared argument-type domain.
+- "Distinguished Object Entry: NIL" (chapter 4) — the bottom (⊥) reading that governs the ~nil~-argument exception.
 - Compare *CLHS 14.5.1* — CL's ~eq~ is finer-grained (does not intern strings).
 - Compare *R7RS 6.1* — Scheme distinguishes ~eqv?~, ~eq?~, and ~equal?~.
 
@@ -2364,6 +2372,302 @@ None.
 
 #+LATEX: \newpage
 
+** The Comparison Operators =, /=, <, <=, >, >=
+The six comparison operators ~=~, ~/=~, ~<~, ~<=~, ~>~, and ~>=~ are documented here, next to ~eq~ and ~equal~, because they are general *comparison predicates*: they compare *numbers and strings*, not numbers only. (Chapter 8, "Numbers", carries a forward-reference to this location.) They differ from ~eq~ and ~equal~, which accept arguments of *any* type: the comparison operators carry a *more restrictive* argument-type domain — numbers and strings — with a type error on genuinely incompatible non-`nil` argument types.
+
+*** Accepted argument-type domain (shared rule)
+- *Numbers* compare by value across the integer/real tower — e.g. ~(= 1 1.0) => T~ — under the coercion rules of "Normative Rules: Number Tower and Division" (chapter 3 / chapter 8).
+- *Strings* compare by *content*, and the ordering operators (~<~ ~<=~ ~>~ ~>=~) order them *lexicographically* by character code point, left to right. String comparison was verified in BricsCAD V26.
+- *Mixed, genuinely incompatible non-`nil` types* — a number against a string, e.g. ~(< 1 "a")~ or ~(= 1 "1")~ — signal a *type error*.
+- *The `nil` / bottom (⊥) exception*: when any argument is ~nil~, the operator does *not* signal; it returns ~nil~ (⊥ in, ⊥ out). This is the same bottom-propagation rule tracked for the ~nil~ distinguished object in chapter 4 (see "Distinguished Object Entry: NIL"). Thus:
+  #+begin_example
+  (< 1 nil)      => nil        ; no error
+  (< "abc" nil)  => nil        ; no error
+  (= 1 nil)      => nil        ; no error
+  (>= nil 1)     => nil        ; no error
+  (= nil nil)    => nil        ; ⊥ in, ⊥ out (consistent with chapter 4)
+  (< 1 "a")      -> TYPE ERROR ; two incompatible non-nil types
+  #+end_example
+  The type-error check therefore fires only when *all* offending arguments are non-`nil`-but-incompatible; a `nil` anywhere short-circuits the chain to `nil`.
+- *Variadic chaining* holds for strings exactly as for numbers: ~(< "a" "b" "c")~ tests each argument against the one to its right, left to right.
+
+See also "Normative Rules: Equality Predicates" (chapter 3), which states these operators alongside ~eq~/~equal~.
+
+#+LATEX: \newpage
+
+** Function Entry: =
+*** Name
+`=`
+
+*** Class
+Function
+
+*** Syntax
+#+begin_example
+(= expr [expr ...])
+#+end_example
+
+*** Arguments and Values
+- one or more expressions, each a *number* or a *string* (see "The Comparison Operators" domain rule above); not restricted to numbers.
+
+*** Description
+Compares its arguments for equality. Numbers compare by value across the integer/real tower (~(= 1 1.0) => T~); strings compare by content (~(= "abc" "abc") => T~). Unlike ~eq~/~equal~, which accept any type, ~=~ is restricted to numbers and strings.
+
+*** Return Values
+- `T` if all arguments compare equal
+- `nil` otherwise, or if any argument is `nil` (bottom propagation)
+
+*** Side Effects
+Side effects are those of evaluating the argument expressions.
+
+*** Examples
+- `(= 1 1) => T`
+- `(= 1 1.0) => T` — cross-type numeric equality.
+- `(= "abc" "abc") => T` — strings compared by content.
+- `(= 1 1 1) => T` ; `(= 1 1 2) => nil`
+- `(= 1 nil) => nil` — no error (⊥ propagation).
+- `(= 1 "1")` signals a *type error* — two incompatible non-`nil` types.
+
+*** Compatibility
+A general equality predicate over numbers and strings, more restrictive than ~eq~/~equal~ (which accept any type). Cross-type non-`nil` arguments (number vs string) signal a type error; a `nil` argument yields `nil` without error. See "The Comparison Operators =, /=, <, <=, >, >=" and "Function Entry: EQ" / "Function Entry: EQUAL".
+
+*** Availability
+- AutoCAD 2026: documented (per Autodesk reference page).
+- BricsCAD V26: documented; string comparison verified by direct probe.
+- Status: string-comparison domain confirmed on BricsCAD V26; numeric-tower coercion per chapter 8.
+
+*** Source Notes
+- [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
+- [Equality and Conditional Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C6A7FC58-7A07-4650-9D59-12CAFD194FDA.htm)
+- Status: documented; numbers-and-strings domain confirmed (BricsCAD V26 probe).
+
+#+LATEX: \newpage
+
+** Function Entry: /=
+*** Name
+`/=`
+
+*** Class
+Function
+
+*** Syntax
+#+begin_example
+(/= expr [expr ...])
+#+end_example
+
+*** Arguments and Values
+- one or more expressions, each a *number* or a *string* (shared domain rule above).
+
+*** Description
+Compares its arguments for inequality over numbers and strings. As with ~=~, numbers compare by value and strings by content.
+
+*** Return Values
+- `T` if the arguments are unequal under the active semantics
+- `nil` otherwise, or if any argument is `nil` (bottom propagation)
+
+*** Side Effects
+Side effects are those of evaluating the arguments.
+
+*** Examples
+- `(/= 1 2) => T`
+- `(/= "a" "b") => T`
+- `(/= 1 nil) => nil` — no error (⊥ propagation).
+- `(/= 1 "1")` signals a *type error*.
+
+*** Compatibility
+The inequality counterpart of ~=~; same numbers-and-strings domain, same type-error-on-incompatible-non-`nil` and `nil`-returns-`nil` rules. See "The Comparison Operators =, /=, <, <=, >, >=".
+
+*** Availability
+- AutoCAD 2026: documented (per Autodesk reference page).
+- BricsCAD V26: documented; string comparison verified by direct probe.
+- Status: string-comparison domain confirmed on BricsCAD V26.
+
+*** Source Notes
+- [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
+- Status: documented; numbers-and-strings domain confirmed (BricsCAD V26 probe).
+
+#+LATEX: \newpage
+
+** Function Entry: <
+*** Name
+`<`
+
+*** Class
+Function
+
+*** Syntax
+#+begin_example
+(< expr [expr ...])
+#+end_example
+
+*** Arguments and Values
+- one or more expressions, each a *number* or a *string* (shared domain rule above). Strings are ordered lexicographically by code point.
+
+*** Description
+Returns `T` if each argument is less than the argument to its right — over numbers (by value) and strings (lexicographically).
+
+*** Return Values
+- `T` if the ordered comparison succeeds
+- `nil` otherwise, or if any argument is `nil` (bottom propagation)
+
+*** Side Effects
+Side effects are those of evaluating the arguments.
+
+*** Examples
+- `(< 1 2 3) => T`
+- `(< "a" "b") => T` ; `(< "a" "b" "c") => T`
+- `(< 1 nil) => nil` — no error (⊥ propagation).
+- `(< 1 "a")` signals a *type error*.
+
+*** Compatibility
+A comparison predicate over numbers and strings. Strings order lexicographically by character code point (case-sensitive; host code-point ordering). Cross-type non-`nil` arguments signal a type error; a `nil` argument yields `nil` without error. See "The Comparison Operators =, /=, <, <=, >, >=".
+
+*** Availability
+- AutoCAD 2026: documented (per Autodesk reference page).
+- BricsCAD V26: documented; string ordering verified by direct probe.
+- Status: string-comparison domain confirmed on BricsCAD V26.
+
+*** Source Notes
+- [< (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-67C8900F-0491-4D91-AA05-9136639E7424.htm)
+- Status: documented; numbers-and-strings domain confirmed (BricsCAD V26 probe).
+
+#+LATEX: \newpage
+
+** Function Entry: <=
+*** Name
+`<=`
+
+*** Class
+Function
+
+*** Syntax
+#+begin_example
+(<= expr [expr ...])
+#+end_example
+
+*** Arguments and Values
+- one or more expressions, each a *number* or a *string* (shared domain rule above).
+
+*** Description
+Returns `T` if each argument is less than or equal to the argument to its right — over numbers (by value) and strings (lexicographically).
+
+*** Return Values
+- `T` on success
+- `nil` otherwise, or if any argument is `nil` (bottom propagation)
+
+*** Side Effects
+Side effects are those of evaluating the arguments.
+
+*** Examples
+- `(<= 1 1 2) => T`
+- `(<= "a" "a" "b") => T`
+- `(<= 1 nil) => nil` — no error (⊥ propagation).
+- `(<= 1 "a")` signals a *type error*.
+
+*** Compatibility
+Like ~<~, over numbers and strings; strings order lexicographically by code point. Cross-type non-`nil` arguments signal a type error; a `nil` argument yields `nil`. See "The Comparison Operators =, /=, <, <=, >, >=".
+
+*** Availability
+- AutoCAD 2026: documented (per Autodesk reference page).
+- BricsCAD V26: documented; string ordering verified by direct probe.
+- Status: string-comparison domain confirmed on BricsCAD V26.
+
+*** Source Notes
+- [<= (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-66B7B146-E279-4C22-9C0A-1F312166C15B.htm)
+- Status: documented; numbers-and-strings domain confirmed (BricsCAD V26 probe).
+
+#+LATEX: \newpage
+
+** Function Entry: >
+*** Name
+`>`
+
+*** Class
+Function
+
+*** Syntax
+#+begin_example
+(> expr [expr ...])
+#+end_example
+
+*** Arguments and Values
+- one or more expressions, each a *number* or a *string* (shared domain rule above).
+
+*** Description
+Returns `T` if each argument is greater than the argument to its right — over numbers (by value) and strings (lexicographically).
+
+*** Return Values
+- `T` on success
+- `nil` otherwise, or if any argument is `nil` (bottom propagation)
+
+*** Side Effects
+Side effects are those of evaluating the arguments.
+
+*** Examples
+- `(> 3 2 1) => T`
+- `(> "b" "a") => T`
+- `(> 1 nil) => nil` — no error (⊥ propagation).
+- `(> 1 "a")` signals a *type error*.
+
+*** Compatibility
+Like ~<~, over numbers and strings; strings order lexicographically by code point. Cross-type non-`nil` arguments signal a type error; a `nil` argument yields `nil`. See "The Comparison Operators =, /=, <, <=, >, >=".
+
+*** Availability
+- AutoCAD 2026: documented (per Autodesk reference page).
+- BricsCAD V26: documented; string ordering verified by direct probe.
+- Status: string-comparison domain confirmed on BricsCAD V26.
+
+*** Source Notes
+- [> (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ITA/AutoCAD-LT-AutoLISP-Reference/files/GUID-DAB2660E-AB9D-425D-B0C5-C5774164ADCD.htm)
+- Status: documented; numbers-and-strings domain confirmed (BricsCAD V26 probe).
+
+#+LATEX: \newpage
+
+** Function Entry: >=
+*** Name
+`>=`
+
+*** Class
+Function
+
+*** Syntax
+#+begin_example
+(>= expr [expr ...])
+#+end_example
+
+*** Arguments and Values
+- one or more expressions, each a *number* or a *string* (shared domain rule above).
+
+*** Description
+Returns `T` if each argument is greater than or equal to the argument to its right — over numbers (by value) and strings (lexicographically).
+
+*** Return Values
+- `T` on success
+- `nil` otherwise, or if any argument is `nil` (bottom propagation)
+
+*** Side Effects
+Side effects are those of evaluating the arguments.
+
+*** Examples
+- `(>= 2 2 1) => T`
+- `(>= "b" "b" "a") => T`
+- `(>= nil 1) => nil` — no error (⊥ propagation).
+- `(>= 1 "a")` signals a *type error*.
+
+*** Compatibility
+Like ~<~, over numbers and strings; strings order lexicographically by code point. Cross-type non-`nil` arguments signal a type error; a `nil` argument yields `nil`. See "The Comparison Operators =, /=, <, <=, >, >=".
+
+*** Availability
+- AutoCAD 2026: documented (per Autodesk reference page).
+- BricsCAD V26: documented; string ordering verified by direct probe.
+- Status: string-comparison domain confirmed on BricsCAD V26.
+
+*** Source Notes
+- [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
+- Status: documented; numbers-and-strings domain confirmed (BricsCAD V26 probe).
+
+#+LATEX: \newpage
+
 
 * 6 Iteration
 ** Overview
@@ -3201,211 +3505,14 @@ Division by zero and invalid numeric arguments are erroneous.
 
 #+LATEX: \newpage
 
-** Function Entry: =
-*** Name
-`=`
-
-*** Class
-Function
-
-*** Syntax
-#+begin_example
-(= [expr ...])
-#+end_example
-
-*** Arguments and Values
-- one or more expressions acceptable to numeric/string comparison semantics
-
-*** Description
-Compares arguments for equality under AutoLISP comparison semantics.
-
-*** Return Values
-- `T` if all arguments compare equal
-- `nil` otherwise
-
-*** Side Effects
-Side effects are those of evaluating the argument expressions.
-
-*** Compatibility
-Autodesk comparison functions accept strings as well as numbers in documented summaries, so this should not be reduced to a purely numeric predicate without tighter source confirmation.
-
-*** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
-
-*** Source Notes
-- [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
-- [Equality and Conditional Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C6A7FC58-7A07-4650-9D59-12CAFD194FDA.htm)
-- Status: documented by family summary; exact domain rules should be tightened.
-
-#+LATEX: \newpage
-
-** Function Entry: /=
-*** Name
-`/=`
-
-*** Class
-Function
-
-*** Syntax
-#+begin_example
-(/= [expr ...])
-#+end_example
-
-*** Description
-Compares arguments for inequality under AutoLISP comparison semantics.
-
-*** Return Values
-- `T` if the arguments are pairwise unequal under the active semantics
-- `nil` otherwise
-
-*** Side Effects
-Side effects are those of evaluating the arguments.
-
-*** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
-
-*** Source Notes
-- [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
-- Status: documented by family summary.
-
-#+LATEX: \newpage
-
-** Function Entry: <
-*** Name
-`<`
-
-*** Class
-Function
-
-*** Syntax
-#+begin_example
-(< [expr ...])
-#+end_example
-
-*** Description
-Returns `T` if each argument is less than the argument to its right.
-
-*** Return Values
-- `T` if the ordered comparison succeeds
-- `nil` otherwise
-
-*** Side Effects
-Side effects are those of evaluating the arguments.
-
-*** Examples
-- `(< 1 2 3) => T`
-
-*** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
-
-*** Source Notes
-- [< (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP-Reference/files/GUID-67C8900F-0491-4D91-AA05-9136639E7424.htm)
-- Status: documented.
-
-#+LATEX: \newpage
-
-** Function Entry: <=
-*** Name
-`<=`
-
-*** Class
-Function
-
-*** Syntax
-#+begin_example
-(<= [expr ...])
-#+end_example
-
-*** Description
-Returns `T` if each argument is less than or equal to the argument to its right.
-
-*** Return Values
-- `T` on success
-- `nil` otherwise
-
-*** Side Effects
-Side effects are those of evaluating the arguments.
-
-*** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
-
-*** Source Notes
-- [<= (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-66B7B146-E279-4C22-9C0A-1F312166C15B.htm)
-- Status: documented.
-
-#+LATEX: \newpage
-
-** Function Entry: >
-*** Name
-`>`
-
-*** Class
-Function
-
-*** Syntax
-#+begin_example
-(> [expr ...])
-#+end_example
-
-*** Description
-Returns `T` if each argument is greater than the argument to its right.
-
-*** Return Values
-- `T` on success
-- `nil` otherwise
-
-*** Side Effects
-Side effects are those of evaluating the arguments.
-
-*** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
-
-*** Source Notes
-- [> (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/ITA/AutoCAD-LT-AutoLISP-Reference/files/GUID-DAB2660E-AB9D-425D-B0C5-C5774164ADCD.htm)
-- Status: documented.
-
-#+LATEX: \newpage
-
-** Function Entry: >=
-*** Name
-`>=`
-
-*** Class
-Function
-
-*** Syntax
-#+begin_example
-(>= [expr ...])
-#+end_example
-
-*** Description
-Returns `T` if each argument is greater than or equal to the argument to its right.
-
-*** Return Values
-- `T` on success
-- `nil` otherwise
-
-*** Side Effects
-Side effects are those of evaluating the arguments.
-
-*** Availability
-- AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
-
-*** Source Notes
-- [Non-alphabetic Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/KOR/AutoCAD-LT-AutoLISP-Reference/files/GUID-EBDC1072-48BF-4204-80B1-73430DBF58E1.htm)
-- Status: documented by family summary.
+** Comparison Operators (moved to Chapter 5)
+The comparison operators ~=~, ~/=~, ~<~, ~<=~, ~>~, and ~>=~ were formerly
+documented here as number functions. Because they compare *strings* as well
+as numbers, they are general comparison predicates and are now defined in
+chapter 5, "Data and Control Flow", next to ~eq~ and ~equal~. See "The
+Comparison Operators =, /=, <, <=, >, >=" and the individual Function Entries
+there. Their numeric behaviour follows "Normative Rules: Number Tower and
+Division".
 
 #+LATEX: \newpage
 
