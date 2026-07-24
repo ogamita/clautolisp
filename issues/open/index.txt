@@ -61,8 +61,8 @@ portable .lsp scenarios are doable now.
   --- branch `schms-parity` (long-lived; shared mock-host entity model), trunk order:
   S1  entmakex-returns-list.issue            DONE (1.6.5) — CLOSED, moved to issues/closed/
   S2  entity-mutation-parity.issue           FOUNDATION headless core DONE (1.6.5/1.6.6); OPEN as umbrella (deferred families + CAD-blocked verification)
-  S3  drawing-data-structures-parity.issue   REGAPP/XData (via ENTGET/ENTMOD), dicts, XRecords, tables, getvar/setvar
-  S4  selection-and-snapshot-parity.issue    ssget "X" + filters, SS*, traversal — enumerate the entity set
+  S3  drawing-data-structures-parity.issue   DONE headless (1.6.8-1.6.10): REGAPP/XData(full codes), dict tree, XRECORD, all std tables, sysvar isolation — OPEN (CAD verify)
+  S4  selection-and-snapshot-parity.issue    DONE headless (1.6.8-1.6.10): full ssget "X"/"_X" filter grammar (-3/-4), SS*, traversal — OPEN (CAD verify)
   Parent epic (not replaced): drawing-database-api.issue (Phase 17f/g/h).
   Deferred entity families spun off from S2 (each accepted permissively for now):
   S2a entity-family-annotation.issue          DIMENSION/LEADER/MLEADER/TOLERANCE/MLINE/MTEXT-adv
@@ -71,6 +71,10 @@ portable .lsp scenarios are doable now.
   S2d entity-family-tables-viewport-misc.issue ACAD_TABLE/VIEWPORT/SHAPE/LIGHT/SUN
   S2e entity-family-nongraphical-objects.issue DICTIONARY/GROUP/LAYOUT/PLOTSETTINGS/MATERIAL/*STYLE objects
   S2f ename-eq-identity.issue                  defect: same-entity ENAMEs not EQ (cross-cutting)
+  Found during S3/S4 (headless, no CAD needed):
+  S3a entmake-symbol-table-records.issue       (entmake) creation of table records
+  S3b xdroom-xdsize-not-implemented.issue      XDROOM/XDSIZE builtins
+  S4a entnext-nongraphical-enumeration.issue   ENTNEXT/ENTLAST reach dict/xrecord objects (vendor confines to OBJECTS)
 
 SMALL — process next, in this order:
 
