@@ -882,35 +882,40 @@ Computes the logical conjunction of a sequence of expressions.
 - if no expression evaluates to `nil`, all expressions are evaluated
 
 *** Return Values
-Vendor summary documentation describes `and` as returning the logical `AND` of the expressions.
-
-The exact return-value convention still needs dedicated per-function confirmation in this draft and therefore remains mildly under-specified.
+Returns only `T` or `nil`; never the value of any subexpression. `and` returns `T` if every expression evaluates to non-`nil` (and `T` for the zero-argument form `(and)`), and `nil` as soon as one expression evaluates to `nil`. The value of the last truthy subexpression is *not* returned.
 
 *** Side Effects
 Side effects are those of the expressions evaluated before short-circuiting stops evaluation, or of all expressions if none evaluates to `nil`.
+
+Expressions not reached because of short-circuiting are not evaluated and have no side effects.
 
 *** Exceptional Situations
 Malformed syntax is erroneous.
 
 *** Examples
 - `(and T T) => T`
-- `(and T nil)` yields false
+- `(and 1 2 3) => T` — *not* `3`; the last value does not flow through.
+- `(and T nil) => nil`
+- `(setq r (and 1 2))` stores `T` in `r`, *not* `2`.
 
 *** Compatibility
-Autodesk classifies `and` as a special form.
+This differs from Common Lisp `and`, which returns the value of the last subexpression when every test is true. AutoLISP `and` returns only `T` or `nil`. Confirmed against BricsCAD V26 by direct citation: the BricsCAD V26 `and` reference page documents the return as "T if all provided arguments evaluate as non-NIL; otherwise NIL". Because the truthy value does not flow through, `(and test expr)` is *not* a value-returning `when`: `(setq r (and ok (compute)))` stores `T`, not the computed value. Portable AutoLISP code that needs the computed value must use an explicit conditional, e.g. `(if ok (setq r (compute)))`.
 
-*** Notes
-Because Autodesk's summary page is brief, the exact value returned in non-trivial truthy cases should still be confirmed by dedicated vendor pages or tests.
+AutoLISP `and` and `or` are together the boolean special forms: both return only `T` or `nil` and neither returns a subexpression value, so neither can serve as Common Lisp `when` / `or-else` / `unless`. See "Special Form Entry: OR" for the companion rule, and issues/open/autolisp-spec-questions.issue ("AND, OR").
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
-- BricsCAD V26: presumed compatible (no contradicting page found).
-- Status: AutoCAD documented; BricsCAD presumed-both pending Phase 4 verification.
+- BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page, return: "T if all provided arguments evaluate as non-NIL; otherwise NIL").
+- Status: documented in both vendors. Behaviour confirmed identical (T / nil only) across both vendors; surfaced as a cross-language hazard for code ported from Common Lisp.
+
+*** See Also
+- "Special Form Entry: OR" — the companion boolean special form; the same `T`/`nil`-only return rule applies.
 
 *** Source Notes
 - [About Special Forms (AutoLISP)](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-AutoLISP/files/GUID-F992EAA3-AFFC-425D-B7C9-6A9CB0EA2768.htm)
 - [Equality and Conditional Functions Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-AutoLISP-Reference/files/GUID-C6A7FC58-7A07-4650-9D59-12CAFD194FDA.htm)
-- Status: documented as a special form and by summary; exact return convention still needs tighter confirmation.
+- [and (BricsCAD V26 DevRef)](https://developer.bricsys.com/bricscad/help/en_US/V26/DevRef/source/and.htm)
+- Status: documented (cross-vendor behaviour confirmed; T / nil only, no subexpression value).
 
 #+LATEX: \newpage
 
@@ -1175,12 +1180,15 @@ Expressions not reached because of short-circuiting are not evaluated and have n
 *** Compatibility
 This differs from Common Lisp `or`, which returns the first non-`nil` value. AutoLISP `or` returns only `T` or `nil`. Confirmed against BricsCAD V26 by direct citation: the BricsCAD V26 `or` reference page documents the return as "T if any provided argument evaluates as non-NIL; if all provided arguments evaluate as NIL, or if no argument is provided, NIL is returned" with examples `(or 123 nil) -> T`. Idioms ported from Common Lisp such as `(setq x (or x default))` *clobber* `x` with `T` rather than preserving the existing value; portable AutoLISP code must use `(if (not x) (setq x default))` instead.
 
+AutoLISP `and` and `or` are together the boolean special forms: both return only `T` or `nil` and neither returns a subexpression value, so neither can serve as Common Lisp `when` / `or-else` / `unless`. See "Special Form Entry: AND" for the companion rule, and issues/open/autolisp-spec-questions.issue ("AND, OR").
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: documented (BricsCAD V26 dedicated per-symbol page, return: "T if any provided argument evaluates as non-NIL; ... NIL otherwise").
 - Status: documented in both vendors. Phase-5 closure: behaviour confirmed identical (T / nil only) across both vendors; surfaced as a real cross-vendor *and* cross-language hazard for code ported from Common Lisp.
 
 *** See Also
+- "Special Form Entry: AND" — the companion boolean special form; the same `T`/`nil`-only return rule applies.
 - [[file:../sources/probe-core.lsp][probe-core.lsp]] — uses an `if`-guarded init pattern explicitly because AutoLISP's `or` does not return the first non-`nil` value (the original `(setq x (or x default))` idiom was discovered to clobber `x` with `T` against BricsCAD V26 during Phase 5).
 
 *** Source Notes
@@ -1627,7 +1635,7 @@ Special Form
 Defines a named function. Names beginning with `C:` define CAD commands callable at the command line.
 
 *** Evaluation Rules
-The parameter/local syntax is AutoLISP-specific and must not be replaced with Common Lisp lambda-list semantics.
+The parameter/local syntax is AutoLISP-specific: the ordinary parameters are required and positional, and the ~/ locals~ clause introduces local variables. Of the Common Lisp lambda-list keywords, only ~&rest~ is admitted — a single rest parameter that collects the remaining arguments into a list (see the =&rest= extension subsection below, native under BricsCAD V26 and clautolisp). The remainder of the Common Lisp lambda list — ~&optional~, ~&key~, ~&aux~, default-value forms, and supplied-p variables — is *not* available and must not be assumed. Apart from ~&rest~, the AutoLISP parameter/local syntax must not be replaced with Common Lisp lambda-list semantics.
 
 *** Return Values
 Under-specified in the current vendor corpus sampled here; implementations commonly return the function name, but this should be version-tested before being treated as normative.
@@ -2246,20 +2254,24 @@ Function
 - `expr`: any AutoLISP expression. Documented value types are integer, real, string, list, symbol, ename, `T`, or `nil`.
 
 *** Description
-Returns the result of evaluating an AutoLISP expression. Enables dynamic evaluation, including resolving a symbol bound through a value-cell to its current value.
+Returns the result of evaluating an AutoLISP expression. `eval` is an ordinary *function*, so evaluation happens in *two stages*: the argument form is first evaluated by the normal call-argument machinery of the caller, and the resulting value is then evaluated a *second* time by `eval`. The pedagogical point of `eval` is precisely this second evaluation; it only does observable work when the first evaluation yields an unevaluated *form* (a symbol to resolve, or a list to evaluate as a call). When the first evaluation yields a self-evaluating value (a number, string, `T`, or `nil`), the second evaluation returns it unchanged and `eval` appears to do nothing.
 
 *** Return Values
-Returns the value produced by evaluating `expr`. The return type follows the expression type and is one of integer, real, string, list, ename, `T`, or `nil`.
+Returns the value produced by the second evaluation of `expr`. The return type follows the resulting form and is one of integer, real, string, list, ename, `T`, or `nil`.
 
 *** Side Effects
 Side effects are those of the evaluated expression.
 
 *** Examples
 Given `(setq a 123)` and `(setq b 'a)`:
-- `(eval 4.0)` returns `4.0`.
-- `(eval (abs -10))` returns `10`.
-- `(eval a)` returns `123`.
-- `(eval b)` returns `123`, because `b` holds the symbol `a` which itself names the value `123`.
+
+Self-evaluating edge case (the second evaluation has no work to do):
+- `(eval 4.0)` returns `4.0`. `eval` receives `4.0` (the argument is already evaluated); `4.0` self-evaluates to `4.0`.
+
+Significative cases (the first evaluation yields a *form*, so the second evaluation does real work):
+- `(eval '(+ 1 2))` returns `3`. The argument `'(+ 1 2)` evaluates to the list `(+ 1 2)`; `eval` then evaluates that list as a form, giving `3`.
+- `(eval (list '+ 'a b))` returns `246`. `(list '+ 'a b)` evaluates to `(+ A A)` — because `'+` yields the symbol `+`, `'a` yields the symbol `A`, and `b` yields `A` (its value, the symbol `a`); `eval` then evaluates `(+ A A)`, and `A` is bound to `123`, giving `246`. Equivalent to `(eval '(+ A A))`.
+- `(eval b)` returns `123`. This is a two-step evaluation: the argument `b` evaluates to the symbol `A` (since `(setq b 'a)`), and `eval` then evaluates the symbol `A`, which is bound to `123`. Contrast `(eval a)`, whose argument `a` already evaluates to `123`, a self-evaluating number, so `eval` returns `123` without further work.
 
 *** Availability
 - AutoCAD 2026: documented.
