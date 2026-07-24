@@ -115,3 +115,44 @@ Definition of done
 - Warnings are demonstrably visible in a normal run; how to see them is
   documented.
 - DEVELOP bumped in tools/clautolisp/source/version.lisp.
+
+
+Progress (branch fix-spec-pages, clautolisp 1.6.5)
+--------------------------------------------------
+DONE — the run-time mechanism now matches ch.25 for the &rest consumer:
+  - Once-per-occurrence dedup: per-run table on the runtime-session,
+    keyed by source occurrence (lambda-list cons identity). Loop warns
+    once; distinct defuns warn independently; guarded/never-evaluated
+    defun never warns (emit is evaluation-tied). New slot
+    runtime-session-portability-warnings-seen in
+    autolisp-runtime/source/model.lisp; helper
+    %portability-warning-occurrence-seen-p in api.lisp.
+  - Escalation knob: new :portability-warning-mode dialect-descriptor
+    slot (default :warn) in autolisp-reader/source/dialect.lisp, exported
+    accessor autolisp-dialect-portability-warning-mode; :error signals a
+    :non-portable-construct AutoLISP runtime error (mirrors
+    :unbound-variable-mode :strict-error), off by default.
+  - Visibility: warnings go to *error-output* (stderr) — surfaced by a
+    normal clautolisp/alfe run; documented on the emitter and in
+    RELEASE_NOTES.
+  - Tests (autolisp-runtime/tests/evaluator-tests.lisp): loop-warns-once,
+    distinct-occurrences, guarded-silent, escalation-errors,
+    default-mode-no-error. autolisp-runtime suite 355/355; full
+    make test-sbcl 5293 checks, 0 failures. DEVELOP bumped to 1.6.5.
+
+REMAINING (issue stays OPEN):
+  - [pjb] Canonical message format. The emitter keeps the existing
+    "[lambda-list-extension] …" text (pinned by the pre-existing
+    variadic-warning tests). Spec ch.25 shows a *representative*
+    "DIALECT WARNING: DEFUN FOO with &REST only works in bricscad and
+    clautolisp" form. Deciding which is canonical — and whether to
+    include the function name — is a pjb call, since switching the format
+    means rewriting the existing tests. Not changed here.
+  - Shared knowledge base / catalogue (DoD 2 "one knowledge base", DoD
+    4 "enumerate other constructs"): only &rest is wired, coded inline
+    (dialect-name case in emit-lambda-list-extension-warning). Factoring
+    out a construct -> supporting-host/dialect + message catalogue, and
+    walking ch.24 (BricsCAD Extensions) to populate it, is deferred — the
+    issue itself asks to add entries incrementally as hazards are
+    confirmed. The static-analysis consumer remains explicitly out of
+    scope.

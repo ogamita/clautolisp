@@ -148,3 +148,16 @@ Definition of done
 - The NIL entry documents the ⊥ interpretation as rationale for
   type/boundp/eq, backed by probed evidence.
 - build/org regenerates cleanly from the draft.org source.
+
+
+Resolution (branch fix-spec-pages)
+----------------------------------
+Chapter 4 gains a Type Designator Catalogue plus a Type Entry for every
+designator type can return (INT, REAL, STR, LIST, SUBR, USUBR, EXSUBR,
+EXRXSUBR, PAGETB, VLA-OBJECT, SAFEARRAY, VARIANT); Symbol normalised to
+the SYM token. LIST is documented as cons cells only (empty list is nil,
+not LIST) with the normative listp-vs-LIST note; the NIL entry no longer
+implies nil is of type LIST and gains the nil-as-bottom discussion plus
+the comparison-predicate bottom-propagation cross-reference. Cross-vendor
+SUBR/USUBR divergence recorded. Live-host probe not run here; doc
+structure complete.

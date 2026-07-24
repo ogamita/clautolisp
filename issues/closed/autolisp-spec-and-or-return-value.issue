@@ -104,3 +104,13 @@ Definition of done
 - The AND Availability Status no longer says "pending Phase 4 verification".
 - AND and OR cross-reference each other and share the boolean-return rule.
 - build/org regenerates cleanly from the draft.org source.
+
+
+Resolution (branch fix-spec-pages)
+----------------------------------
+AND page rewritten to OR's Phase-5 boolean-return standard: returns only
+T or nil, never a subexpression value; CL `when' hazard + portable
+rewrite spelled out; bidirectional AND<->OR cross-reference and the
+shared boolean-return note added; Availability promoted off "pending
+Phase 4". OR page re-verified and given the reciprocal cross-reference.
+Org exports (PDF rebuilds clean).

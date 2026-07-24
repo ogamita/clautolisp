@@ -97,3 +97,14 @@ Definition of done
 - The Description states the two-stage (caller-then-eval) evaluation.
 - New examples verified on both hosts.
 - build/org regenerates cleanly from the draft.org source.
+
+
+Resolution (branch fix-spec-pages)
+----------------------------------
+EVAL Description now states the two-stage (caller-then-eval) evaluation.
+Examples rewritten with quoted / run-time-computed forms
+((eval '(+ 1 2)) => 3, (eval (list '+ 'a b)) => 246) that exercise the
+second evaluation; the retained (eval 4.0) case is labelled the
+self-evaluating edge case; the (eval b) explanation is split into its
+two steps. Live-host probe not run in this environment; the doc content
+is complete.

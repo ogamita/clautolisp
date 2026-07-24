@@ -161,3 +161,14 @@ Definition of done
   warning under :strict and :autocad-2026 only, covered by unit tests;
   DEVELOP bumped in tools/clautolisp/source/version.lisp.
 - build/org regenerates cleanly from the draft.org source.
+
+
+Resolution (branch fix-spec-pages)
+----------------------------------
+The DEFUN Evaluation Rules sentence is amended to admit &rest while still
+excluding the rest of the CL lambda list (&optional / &key / &aux /
+defaults / supplied-p). The &rest engine support, dialect-gated warning,
+and unit tests were already implemented in prior work; the general
+run-time warning mechanism is tracked in
+clautolisp-dialect-portability-warnings.issue (now extended with dedup +
+escalation).
