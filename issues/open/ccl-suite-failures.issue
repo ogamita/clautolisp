@@ -1,0 +1,43 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: pre-existing CCL test-suite failures (float printer, encoding, vle, rtos, init-files)
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-07-24
+
+Found (not caused) while implementing acad-strlsort: under CCL the
+suites have pre-existing failures that SBCL does not. Verified
+pre-existing on origin/master (same failures with the strlsort change
+stashed). CCL is a supported host, so these should be triaged and
+fixed — and they block a green CCL CI lane
+(see ci-github-ccl-lane.issue).
+
+* Symptoms (CCL)
+
+- clautolisp/autolisp-builtins-core, 4 failing tests:
+    FLOAT-PRINTER-OMITS-DOUBLE-FLOAT-MARKER
+    CROSS-DIALECT-ENCODING-ROUNDTRIP-TABLE
+    COVERAGE-VLE-APPEND-INT64TO32-STARTAPP
+    RTOS-SCIENTIFIC-MODE-AUTOCAD-STYLE-EXPONENT
+  All look like CCL float-printing / encoding / int64 differences vs SBCL.
+- make -C clautolisp test-ccl aborts even earlier on a pre-existing
+  clautolisp/autolisp-init-files CCL failure.
+
+* Repro
+
+    make -C clautolisp test-ccl
+  or per-system:
+    XDG_CACHE_HOME=$HOME/.cache/clautolisp-build ccl ... (asdf:test-system "clautolisp/autolisp-builtins-core")
+
+* Likely causes / leads
+
+- FLOAT-PRINTER / RTOS-SCIENTIFIC: CCL's float->string differs from
+  SBCL's; the AutoLISP rtos/float formatter must be made host-portable
+  (scale by the impl, don't assume SBCL print behaviour).
+- CROSS-DIALECT-ENCODING-ROUNDTRIP: CCL external-format / octet handling.
+- VLE-APPEND-INT64TO32: 64->32 truncation semantics under CCL fixnums.
+- init-files: investigate the specific failing assertion first (it
+  aborts the run).
+
+* Scope
+
+Headless, no CAD needed. Fix or XFAIL-quarantine each so the CCL lane
+can go green; prefer real fixes for the float/encoding portability.
