@@ -59,6 +59,23 @@ separate binary for tool integrators.
   ~issues/open/interactor-design-revision.issue~ D2), so a mid-session
   switch takes effect on the very next line.
 - Host backend selectable via ~--host mock|null~ (default mock).
+- *Entity model* (mock host): the low-level entity family works end to
+  end against an in-memory drawing database. ~entmakex~ returns the new
+  entity's ENAME (feedable straight into ~entget~/~entmod~/~entdel~),
+  ~entmake~ returns the supplied list (vendor echo) and both validate the
+  required DXF group codes of the modelled families — LINE, POINT,
+  CIRCLE, ARC, ELLIPSE, LWPOLYLINE, POLYLINE (+VERTEX/SEQEND), SPLINE,
+  TEXT, MTEXT, ATTDEF, ATTRIB, INSERT, 3DFACE, SOLID, TRACE, RAY, XLINE,
+  XRECORD — returning ~nil~ + ~ERRNO~ 36 on a bad create (never a raised
+  error), any other type accepted permissively. ~entget~ takes the
+  application filter (~(entget ename '("APP"))~) to surface xdata, which
+  is otherwise suppressed; ~entmod~ replaces ordinary codes and edits
+  xdata per application; ~entdel~ is the within-session delete/restore
+  toggle; ~entnext~/~entlast~ walk main entities and subentities, with a
+  POLYLINE/INSERT stamping its VERTEX/ATTRIB/SEQEND pieces' owner (group
+  330). A portable ~.lsp~ probe under
+  ~autolisp-front-end/tests/scenarios/entities/~ runs the full lifecycle
+  unchanged under clautolisp and (via alfe) on BricsCAD/AutoCAD.
 - ~vl-registry-read/-write/-delete/-descendents~ are host-backed and
   *persistent* on the mock host ($XDG_CONFIG_HOME/clautolisp/
   registry.sexp — the Windows-registry / macOS-defaults emulation):

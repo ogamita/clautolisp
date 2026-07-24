@@ -1,0 +1,25 @@
+entity-family-tables-viewport-misc — TABLE, VIEWPORT, and misc graphical
+========================================================================
+
+Status: DEFERRED (schms-parity 1.6.6). Parent: entity-mutation-parity.
+
+Not yet in the entity-family registry (accepted permissively):
+
+  - ACAD_TABLE / TABLE (+ TABLESTYLE object) — a block-reference-derived
+    grid; cells, row/column geometry.
+  - VIEWPORT — the paper-space viewport entity (68/69 status/id,
+    the frozen-layer 331 list, 90 flags). ENTMOD on VIEWPORT is
+    documented as unsupported (spec ENTMOD note) — model that.
+  - SHAPE (AcDbShape: 2 name, 39 thickness, 40 size).
+  - LIGHT / SUN / GEOPOSITIONMARKER / SECTIONOBJECT / CAMERA.
+  - ATTDEF/ATTRIB advanced (the MTEXT-attribute 71/72/74 alignment and
+    the multiline-attribute 340/70 codes; the base families ARE
+    registered with the minimal required set).
+
+Do
+--
+
+Register descriptors + dependent style/object records, honour the
+VIEWPORT ENTMOD restriction, add tests.
+
+Reference: AutoCAD DXF reference, ACAD_TABLE/VIEWPORT/SHAPE/LIGHT/SUN.

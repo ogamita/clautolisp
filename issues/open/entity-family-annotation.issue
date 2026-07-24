@@ -1,0 +1,36 @@
+entity-family-annotation — validate/default the annotation entity families
+==========================================================================
+
+Status: DEFERRED (schms-parity 1.6.6). Parent: entity-mutation-parity.
+
+The schms-parity pass registered and validated the 21 core entity
+families (LINE .. XLINE, XRECORD) in
+clautolisp/drawing/source/entity-families.lisp. The following
+annotation families are NOT yet in the registry and are therefore
+accepted PERMISSIVELY (pass-through, no required-code validation, no
+subclass-marker / default stamping) by ENTMAKE / ENTMAKEX:
+
+  - DIMENSION (all subtypes: rotated/aligned/angular/diametric/radial/
+    ordinate; the anonymous *D block reference it owns)
+  - LEADER, MLEADER, MULTILEADER (+ MLEADERSTYLE object)
+  - TOLERANCE
+  - MLINE (+ the MLINESTYLE object)
+  - MTEXT advanced fields (the family IS registered with the minimal
+    10/40/1 required set, but the column/inline-format/attachment codes
+    — 71/72/73/44/45/46/48/49/50/63/90/101 — are neither validated nor
+    defaulted)
+
+Do
+--
+
+Add EntityFamily descriptors with the DXF-reference required codes and
+subclass markers (AcDbDimension + per-subtype, AcDbLeader, AcDbMLeader,
+AcDbFcf, AcDbMline), plus the associated *STYLE symbol-table / object
+records where creation requires them. Add family + host lifecycle tests
+and extend the portable probe (DIMENSION/MLINE need style + block
+prerequisites — mirror the INSERT approach once entity-family-insert-
+block-sequence lands).
+
+Reference: AutoCAD DXF reference, ENTITIES section (DIMENSION, LEADER,
+MLEADER, TOLERANCE, MLINE) and OBJECTS section (MLEADERSTYLE,
+MLINESTYLE).

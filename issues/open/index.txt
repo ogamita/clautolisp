@@ -59,11 +59,18 @@ portable .lsp scenarios are doable now.
 
   S0  acad-strlsort-returns-nil.issue        SMALL, standalone (pure string sort; not the drawing group) — do first
   --- branch `schms-parity` (long-lived; shared mock-host entity model), trunk order:
-  S1  entmakex-returns-list.issue            prereq defect (ENTMAKEX return value)
-  S2  entity-mutation-parity.issue           FOUNDATION: ENTMAKE/X ENTGET ENTMOD ENTDEL ENTNEXT/LAST + ownership
+  S1  entmakex-returns-list.issue            DONE (1.6.5) — CLOSED, moved to issues/closed/
+  S2  entity-mutation-parity.issue           FOUNDATION headless core DONE (1.6.5/1.6.6); OPEN as umbrella (deferred families + CAD-blocked verification)
   S3  drawing-data-structures-parity.issue   REGAPP/XData (via ENTGET/ENTMOD), dicts, XRecords, tables, getvar/setvar
   S4  selection-and-snapshot-parity.issue    ssget "X" + filters, SS*, traversal — enumerate the entity set
   Parent epic (not replaced): drawing-database-api.issue (Phase 17f/g/h).
+  Deferred entity families spun off from S2 (each accepted permissively for now):
+  S2a entity-family-annotation.issue          DIMENSION/LEADER/MLEADER/TOLERANCE/MLINE/MTEXT-adv
+  S2b entity-family-hatch-image-boundary.issue HATCH/WIPEOUT/IMAGE/OLE2FRAME
+  S2c entity-family-3d-solids.issue            3DSOLID/REGION/BODY/SURFACE/MESH/POLYLINE-mesh/HELIX
+  S2d entity-family-tables-viewport-misc.issue ACAD_TABLE/VIEWPORT/SHAPE/LIGHT/SUN
+  S2e entity-family-nongraphical-objects.issue DICTIONARY/GROUP/LAYOUT/PLOTSETTINGS/MATERIAL/*STYLE objects
+  S2f ename-eq-identity.issue                  defect: same-entity ENAMEs not EQ (cross-cutting)
 
 SMALL — process next, in this order:
 

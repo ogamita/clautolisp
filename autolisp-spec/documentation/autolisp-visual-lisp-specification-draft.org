@@ -63873,6 +63873,20 @@ This is one of the central functions of the AutoLISP host database model.
 
 Autodesk explicitly notes that AutoLISP DXF group codes differ slightly from those in DXF files.
 
+*** clautolisp
+
+The returned list begins with the ~(-1 . <ename>)~ pair and carries the
+~(5 . "<handle>")~ pair, then the entity's group codes. Without the
+~applist~ argument, extended data (xdata) is *suppressed*; supply a list
+of registered application names — or the wildcard ~"*"~ — to append the
+matching applications' xdata as a trailing ~(-3 …)~ group, per the
+vendor contract. clautolisp stamps the well-known ~(100 . "AcDb…")~
+subclass markers and a ~(8 . "0")~ layer default at ~entmake~/~entmakex~
+time, so an ~entget~ right after a create surfaces more group codes than
+were supplied; the exact default-code set and marker ordering are being
+verified against AutoCAD/BricsCAD through the portable entity probes and
+are not normative.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
@@ -63934,6 +63948,17 @@ Semantically paired with `entget`.
 - Autodesk documents that changing entities inside a block definition affects all inserts of that block.
 - Autodesk documents special color behavior in AutoCAD 2004 and later: if true-color group `420` conflicts with ACI group `62`, the true-color value takes precedence.
 
+*** clautolisp
+
+~entmod~ replaces the entity's ordinary group codes with the supplied
+ones (the handle and type are preserved; the ~-1~/~5~ pairs are
+ignored), and edits extended data per application: an ~(-3 ("APP" …))~
+group with pairs replaces that application's xdata, one with no pairs
+removes it, applications not mentioned are preserved, and an ~entmod~
+whose list carries no ~(-3 …)~ group leaves existing xdata untouched. A
+list naming no live entity returns ~nil~ and sets ~ERRNO~ 2; no
+Common-Lisp condition is raised.
+
 #+LATEX: \newpage
 
 ** Function Entry: ENTMAKE
@@ -63969,6 +63994,23 @@ Invalid definitions may fail or be erroneous depending on host behavior.
 
 *** Compatibility
 One of the most characteristic AutoLISP functions because it exposes CAD entities through list structure.
+
+*** clautolisp
+
+On success ~entmake~ returns the *supplied* definition list verbatim —
+it does not inject the ~(-1 . <ename>)~ / ~(5 . "<handle>")~ pairs the
+database stores (obtain the resolved entity with ~(entget (entlast))~,
+or create with ~entmakex~ to get the ename directly). A group-code list
+that does not describe a creatable entity — a missing/non-string
+~(0 . "TYPE")~ marker, or a registered family missing a required group
+code — returns ~nil~ and sets ~ERRNO~ to 36; no Common-Lisp condition is
+raised. clautolisp validates the required codes of the modelled entity
+families (LINE, POINT, CIRCLE, ARC, ELLIPSE, LWPOLYLINE, POLYLINE +
+VERTEX/SEQEND, SPLINE, TEXT, MTEXT, ATTDEF, ATTRIB, INSERT, 3DFACE,
+SOLID, TRACE, RAY, XLINE, XRECORD) and accepts any other type
+permissively (pass-through). A POLYLINE/INSERT opens a subentity run
+whose VERTEX/ATTRIB/SEQEND pieces receive their ~(330 . <owner>)~ from
+the header unless one is supplied; the SEQEND closes the run.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -64576,6 +64618,15 @@ Part of the core object-handling family.
 - Autodesk documents that deleted entities are purged when the drawing is exited.
 - Autodesk documents that the function operates only on main entities, not attributes or polyline vertices independently.
 - Autodesk documents that entities within a block definition cannot be deleted with `entdel`.
+
+*** clautolisp
+
+~entdel~ is a within-session toggle: the first call flags the entity
+deleted (a subsequent ~entget~ returns ~nil~; ~entlast~/~entnext~ skip
+it), a second call restores it. It returns the ENAME either way and
+fires the ~:vlr-objecterased~ / ~:vlr-objectunerased~ reactor events. It
+operates on main entities; ~handent~ still resolves a session-deleted
+handle so the entity can be restored.
 
 #+LATEX: \newpage
 
@@ -65831,6 +65882,16 @@ Allocates a new entity in the current drawing.
 
 *** Examples
 - `(entmakex '((0 . "CIRCLE") (62 . 1) (10 4.0 3.0 0.0) (40 . 1.0)))` returns `<Entity name: 1d45558>`.
+
+*** clautolisp
+
+~entmakex~ returns the new entity's ENAME (never the definition list —
+see ~entmake~), feedable straight into ~entget~/~entmod~/~entdel~. It
+shares ~entmake~'s validation, family registry, layer/subclass
+defaulting and subentity-ownership behaviour, and likewise returns ~nil~
++ ~ERRNO~ 36 (no raised condition) when the data does not describe a
+creatable entity. (Historically clautolisp collapsed ~entmakex~ into
+~entmake~ and wrongly returned the list; fixed in clautolisp 1.6.5.)
 
 *** Availability
 - AutoCAD 2026: documented.
