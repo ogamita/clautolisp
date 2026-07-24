@@ -176,6 +176,10 @@ or NIL when the type is not in the registry."
   (register-entity-family "XRECORD"
     :required '()
     :subclasses '("AcDbXrecord")
+    :graphical-p nil)
+  (register-entity-family "DICTIONARY"
+    :required '()
+    :subclasses '("AcDbDictionary")
     :graphical-p nil))
 
 (%install-entity-families)

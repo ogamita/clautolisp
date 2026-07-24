@@ -118,8 +118,20 @@ entities never collide with loaded handles.")
 (case-folded string) to a SYMBOL-TABLE-RECORD.")
    (named-object-dictionary :initform (make-dictionary)
                             :accessor drawing-named-object-dictionary
-                            :documentation "Root named-object
-dictionary; sub-dictionaries hang off its entries.")
+                            :documentation "Legacy struct-based root
+named-object dictionary carrier. Superseded by the handle-addressed
+DICTIONARY-object representation reached through
+DRAWING-ROOT-DICTIONARY-HANDLE (dictionary.lisp): dictionaries and
+xrecords are stored as handle-bearing objects in the ENTITIES table so
+they round-trip through enames / ENTGET / ENTMOD. Kept only so
+COPY-DRAWING and older tests that referenced this slot keep working.")
+   (root-dictionary-handle :initform nil
+                           :accessor drawing-root-dictionary-handle
+                           :documentation "Hex handle string of the
+root named-object dictionary (the AutoLISP (namedobjdict) object), or
+NIL until first ensured. The root dictionary is a handle-addressed
+DICTIONARY object living in the ENTITIES table (see dictionary.lisp);
+this slot caches its handle so NAMEDOBJDICT is stable across calls.")
    (header-variables :initform (make-hash-table :test #'equalp)
                      :accessor drawing-header-variables
                      :documentation "Hash-table mapping a
