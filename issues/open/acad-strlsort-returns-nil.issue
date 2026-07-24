@@ -98,3 +98,10 @@ Acceptance criteria
   - The implementation passes under both SBCL and CCL.
   - `ACAD_STRLSORT` is no longer catalogued as a nil-returning M6 stub.
   - User-visible implementation work is recorded in `RELEASE_NOTES.org`.
+
+SCHMS call inventory (recorded 2026-07-24)
+------------------------------------------
+The SCHMS+ AutoLISP call inventory is committed at
+issues/open/schms-call-inventory.md (acceptance item #1). It calibrates
+ordering/priority; per pjb the implementation targets the FULL AutoLISP
+spec + AutoCAD/BricsCAD reference, not only the SCHMS subset.

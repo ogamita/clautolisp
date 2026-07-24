@@ -54,3 +54,10 @@ Out of scope
 DWG/DXF persistence, COM/ObjectDBX, multi-document lifecycle, UI state and
 rendering.
 
+
+SCHMS call inventory (recorded 2026-07-24)
+------------------------------------------
+The SCHMS+ AutoLISP call inventory is committed at
+issues/open/schms-call-inventory.md (acceptance item #1). It calibrates
+ordering/priority; per pjb the implementation targets the FULL AutoLISP
+spec + AutoCAD/BricsCAD reference, not only the SCHMS subset.

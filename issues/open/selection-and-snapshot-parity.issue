@@ -57,3 +57,10 @@ Out of scope
 Interactive selection (`ssget` point/window prompts), graphical hit testing,
 viewport rendering and pixel comparisons.
 
+
+SCHMS call inventory (recorded 2026-07-24)
+------------------------------------------
+The SCHMS+ AutoLISP call inventory is committed at
+issues/open/schms-call-inventory.md (acceptance item #1). It calibrates
+ordering/priority; per pjb the implementation targets the FULL AutoLISP
+spec + AutoCAD/BricsCAD reference, not only the SCHMS subset.
