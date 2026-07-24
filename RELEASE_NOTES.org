@@ -76,6 +76,36 @@ separate binary for tool integrators.
   330). A portable ~.lsp~ probe under
   ~autolisp-front-end/tests/scenarios/entities/~ runs the full lifecycle
   unchanged under clautolisp and (via alfe) on BricsCAD/AutoCAD.
+- *Drawing-data structures* (mock host): ~regapp~ registers an XData
+  application (APPID); XData round-trips losslessly through
+  ~entget~/~entmod~ across the full group-code set
+  (1000/1001/1002/1003/1004/1005/1010–1013/1040/1041/1042/1070/1071),
+  order and multiplicity preserved. The named-object-dictionary tree is
+  live — ~namedobjdict~, ~dictadd~, ~dictsearch~, ~dictnext~,
+  ~dictremove~, ~dictrename~, ~dictobjname~ — with XRECORD objects
+  created by ~entmakex~, mutated by ~entmod~, enumerated and deleted;
+  duplicate/absent keys fail soft (nil), never a raised error. The full
+  standard symbol-table set — LAYER, LTYPE, STYLE, BLOCK, VIEW, UCS,
+  VPORT, DIMSTYLE, APPID — answers ~tblsearch~/~tblnext~/~tblobjname~,
+  with record string values returned AutoLISP-wrapped so ~strcat~/~=~
+  accept them. Drawing-scoped system variables are isolated between
+  fresh sessions. A portable ~drawing-data-probe.lsp~ covers the whole
+  surface.
+- *Selection + snapshot* (mock host): the non-interactive whole-database
+  scan ~(ssget "X"/"_X" [filter])~ over the active drawing, returning
+  graphical entities only (dictionaries/xrecords excluded). Full filter
+  grammar: attribute tests on any code, WCMATCH wildcards and
+  comma-alternation (group 8 layer lists), the ~-3~ XData application
+  filter (wildcard app names), and the ~-4~ relational
+  (~= /= != < > <= >= & &= *~) and logical (~<AND>/<OR>/<NOT>/<XOR>~)
+  operators. ~sslength~/~ssname~/~ssadd~/~ssdel~/~ssmemb~ with
+  duplicate-safe membership; ~entnext~/~entlast~ as the traversal
+  fallback. Interactive/graphical modes ((ssget) pick, ~_C/_I/_W/_CP/
+  _WP/_F~, grip highlight) are out of scope and fail cleanly (a
+  catchable AutoLISP error), never a crash. A portable
+  ~selection-probe.lsp~ fences its assertions to its own entities via an
+  XData filter, so they hold on a non-empty drawing and test set
+  membership, not enumeration order.
 - ~vl-registry-read/-write/-delete/-descendents~ are host-backed and
   *persistent* on the mock host ($XDG_CONFIG_HOME/clautolisp/
   registry.sexp — the Windows-registry / macOS-defaults emulation):

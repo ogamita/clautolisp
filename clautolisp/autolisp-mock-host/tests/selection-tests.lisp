@@ -78,6 +78,104 @@
         (is (eq :unsupported-ssget-mode
                 (autolisp-runtime-error-code condition)))))))
 
+;;; ssget filter grammar: -4 relational / logical, -3 xdata ---------
+
+(defun ss-x (mock filter)
+  "Run (ssget \"X\" FILTER) on MOCK and return its member count (0 when
+the result is nil)."
+  (let ((set (host-ssget mock filter
+                         :mode (clautolisp.autolisp-runtime:make-autolisp-string "X"))))
+    (if set (host-sslength mock set) 0)))
+
+(defun seed-mixed (mock)
+  "Three LINEs with colour (62) 1/2/3 on layers WALL/WALL/DOOR, plus a
+CIRCLE with xdata under application MYAPP."
+  (host-entmake mock (list (cons 0 "LINE") (cons 8 "WALL") (cons 62 1)
+                           (cons 10 '(0.0d0 0.0d0 0.0d0)) (cons 11 '(1.0d0 0.0d0 0.0d0))))
+  (host-entmake mock (list (cons 0 "LINE") (cons 8 "WALL") (cons 62 2)
+                           (cons 10 '(0.0d0 0.0d0 0.0d0)) (cons 11 '(2.0d0 0.0d0 0.0d0))))
+  (host-entmake mock (list (cons 0 "LINE") (cons 8 "DOOR") (cons 62 3)
+                           (cons 10 '(0.0d0 0.0d0 0.0d0)) (cons 11 '(3.0d0 0.0d0 0.0d0))))
+  (let ((c (host-entmakex mock (list (cons 0 "CIRCLE") (cons 8 "DOOR")
+                                     (cons 10 '(5.0d0 5.0d0 0.0d0)) (cons 40 1.0d0)))))
+    (host-regapp mock (clautolisp.autolisp-runtime:make-autolisp-string "MYAPP"))
+    ;; entmod the vendor way: append xdata to the full entget list so no
+    ;; ordinary group code (here the layer 8) is dropped.
+    (host-entmod mock (append (host-entget mock c)
+                              (list (list -3 (list "MYAPP" (cons 1000 "tag")
+                                                   (cons 1070 7))))))
+    c))
+
+(test ssget-comma-layer-list-matches-any
+  (let ((mock (make-mock-host)))
+    (seed-mixed mock)
+    (is (= 2 (ss-x mock '((0 . "LINE") (8 . "WALL,SLAB")))))
+    (is (= 4 (ss-x mock '((8 . "WALL,DOOR")))))))
+
+(test ssget-or-logical-operator
+  (let ((mock (make-mock-host)))
+    (seed-mixed mock)
+    ;; colour 1 OR colour 3 -> two LINEs
+    (is (= 2 (ss-x mock (list (cons 0 "LINE")
+                              (cons -4 "<OR") (cons 62 1) (cons 62 3)
+                              (cons -4 "OR>")))))))
+
+(test ssget-and-not-logical-operators
+  (let ((mock (make-mock-host)))
+    (seed-mixed mock)
+    ;; LINEs that are NOT on layer WALL -> the single DOOR line
+    (is (= 1 (ss-x mock (list (cons 0 "LINE")
+                              (cons -4 "<NOT") (cons 8 "WALL") (cons -4 "NOT>")))))
+    ;; explicit AND of type + layer
+    (is (= 2 (ss-x mock (list (cons -4 "<AND") (cons 0 "LINE") (cons 8 "WALL")
+                              (cons -4 "AND>")))))))
+
+(test ssget-xor-logical-operator
+  (let ((mock (make-mock-host)))
+    (seed-mixed mock)
+    ;; XOR: on WALL xor colour 1. line1 (WALL,1)=T xor T = nil;
+    ;; line2 (WALL,2)=T xor nil = T; line3 (DOOR,3)=nil xor nil = nil;
+    ;; circle (DOOR) excluded by neither -> nil xor nil = nil.
+    (is (= 1 (ss-x mock (list (cons -4 "<XOR") (cons 8 "WALL") (cons 62 1)
+                              (cons -4 "XOR>")))))))
+
+(test ssget-relational-comparisons
+  (let ((mock (make-mock-host)))
+    (seed-mixed mock)
+    ;; colour > 1  -> colours 2 and 3
+    (is (= 2 (ss-x mock (list (cons 0 "LINE") (cons -4 ">") (cons 62 1)))))
+    ;; colour <= 2 -> colours 1 and 2
+    (is (= 2 (ss-x mock (list (cons 0 "LINE") (cons -4 "<=") (cons 62 2)))))
+    ;; colour != 2 -> colours 1 and 3
+    (is (= 2 (ss-x mock (list (cons 0 "LINE") (cons -4 "!=") (cons 62 2)))))))
+
+(test ssget-xdata-application-filter
+  (let ((mock (make-mock-host)))
+    (seed-mixed mock)
+    ;; -3 MYAPP -> only the circle carries xdata for MYAPP
+    (is (= 1 (ss-x mock (list (cons 0 "CIRCLE") (list -3 (list "MYAPP"))))))
+    ;; -3 with a wildcard app name
+    (is (= 1 (ss-x mock (list (list -3 (list "MY*"))))))
+    ;; -3 for an application nobody registered data under -> empty
+    (is (= 0 (ss-x mock (list (list -3 (list "OTHER"))))))))
+
+(test ssget-handle-filter
+  (let ((mock (make-mock-host)))
+    (let ((e (host-entmakex mock (list (cons 0 "LINE")
+                                       (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                       (cons 11 '(1.0d0 1.0d0 0.0d0))))))
+      (let* ((data (host-entget mock e))
+             (handle (autolisp-string-value (cdr (assoc 5 data)))))
+        (is (= 1 (ss-x mock (list (cons 5 handle)))))))))
+
+(test ssget-malformed-filter-tail-does-not-crash
+  (let ((mock (make-mock-host)))
+    (seed-mixed mock)
+    ;; a dangling operator with no operand degrades gracefully
+    (is (integerp (ss-x mock (list (cons 0 "LINE") (cons -4 ">")))))
+    ;; an unmatched closer is skipped
+    (is (= 3 (ss-x mock (list (cons 0 "LINE") (cons -4 "AND>")))))))
+
 ;;; ssadd / ssdel / ssname / sslength / ssmemb -----------------------
 
 (test ssadd-creates-and-extends-pickset
@@ -141,7 +239,8 @@
   (let ((mock (make-mock-host)))
     (let ((data (host-tblsearch mock "LAYER" "0")))
       (is (consp data))
-      (is (string= "0" (cdr (assoc 2 data)))))
+      ;; string values come back AutoLISP-wrapped (autolisp-string).
+      (is (string= "0" (autolisp-string-value (cdr (assoc 2 data))))))
     (is (null (host-tblsearch mock "LAYER" "Nope")))))
 
 (test tblnext-walks-and-rewinds
@@ -151,13 +250,13 @@
     (mock-host-add-table-record mock (make-symbol-table-record :kind :layer :name "Beta"
                                                                 :data '((0 . "LAYER") (2 . "Beta"))))
     (let ((first (host-tblnext mock "LAYER" :rewind t)))
-      (is (string= "Alpha" (cdr (assoc 2 first)))))
+      (is (string= "Alpha" (autolisp-string-value (cdr (assoc 2 first))))))
     (let ((second (host-tblnext mock "LAYER")))
-      (is (string= "Beta" (cdr (assoc 2 second)))))
+      (is (string= "Beta" (autolisp-string-value (cdr (assoc 2 second))))))
     (is (null (host-tblnext mock "LAYER")))
     ;; Rewind restarts.
     (let ((rewound (host-tblnext mock "LAYER" :rewind t)))
-      (is (string= "Alpha" (cdr (assoc 2 rewound)))))))
+      (is (string= "Alpha" (autolisp-string-value (cdr (assoc 2 rewound))))))))
 
 (test tblobjname-returns-an-ename-for-known-records
   (let ((mock (make-mock-host)))

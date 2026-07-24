@@ -40,6 +40,14 @@
                 #:host-tblsearch
                 #:host-tblnext
                 #:host-tblobjname
+                #:host-namedobjdict
+                #:host-dictsearch
+                #:host-dictnext
+                #:host-dictadd
+                #:host-dictremove
+                #:host-dictrename
+                #:host-dictobjname
+                #:host-regapp
                 #:host-getvar
                 #:host-setvar
                 #:host-set-derived-sysvar

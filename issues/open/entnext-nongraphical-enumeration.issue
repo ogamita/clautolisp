@@ -1,0 +1,30 @@
+entnext-nongraphical-enumeration — ENTNEXT/ENTLAST reach dictionary/xrecord objects
+====================================================================================
+
+Status: OPEN, verification BLOCKED on live CAD (schms-data-selection 1.6.8).
+Parent: drawing-data-structures-parity / selection-and-snapshot-parity.
+
+Model decision DICT-1 (drawing/source/dictionary.lisp): clautolisp stores
+dictionaries and xrecords as handle-bearing objects in the ENTITIES table,
+so their ENAMEs feed straight into ENTGET/ENTMOD/ENTDEL with no parallel
+code path. A consequence: ENTNEXT/ENTLAST, which walk the entity table in
+creation order, can enumerate these non-graphical objects.
+
+On AutoCAD/BricsCAD, dictionaries and xrecords live in the OBJECTS
+section, NOT the ENTITIES section, so ENTNEXT/ENTLAST do NOT return them
+(they walk model/paper-space graphical entities and their subentities).
+SSGET already matches the vendor (graphical-entity-p excludes them).
+
+Question to resolve on a live CAD, then reconcile:
+- Does the SCHMS corpus (or any portable probe) rely on ENTNEXT NOT
+  returning dictionary/xrecord objects? If yes, filter ENTNEXT/ENTLAST by
+  graphical-entity-p too (2-line change, host-entnext/host-entlast in
+  entity-api.lisp). If the corpus never observes the difference, document
+  the divergence and leave it.
+
+Cheap fix if verification says confine: wrap the host-entnext /
+host-entlast candidate test with clautolisp.drawing:graphical-entity-p,
+mirroring the ssget scan. Deferred only because it needs a CAD run to
+confirm the vendor contract for the exact SCHMS traversal idioms.
+
+Documented in the spec NAMEDOBJDICT *** clautolisp note.

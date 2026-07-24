@@ -64313,6 +64313,24 @@ This is a key dictionary-entry point into the drawing database.
 - [namedobjdict (AutoLISP)](https://help.autodesk.com/cloudhelp/2026/PLK/AutoCAD-LT-AutoLISP-Reference/files/GUID-A1E43B30-EF8C-452E-97F5-8AC201E310EE.htm)
 - Status: documented.
 
+*** clautolisp
+The named-object-dictionary tree is fully implemented in the in-memory
+model. ~namedobjdict~ lazily creates and then returns a stable ENAME for
+the root DICTIONARY object; ~dictadd~ / ~dictsearch~ / ~dictnext~ /
+~dictremove~ / ~dictrename~ / ~dictobjname~ operate on it and on any
+sub-dictionary. Dictionaries and their members (typically XRECORDs
+created with ~entmakex~) are handle-addressed objects, so the member
+enames feed straight back into ~entget~ / ~entmod~ / ~entdel~, and
+~dictsearch~ / ~dictnext~ return the same ~(-1 . ename)~-headed
+entget-style list. A duplicate key makes ~dictadd~ return nil; an
+absent key makes ~dictsearch~ return nil — no Common-Lisp condition
+leaks into AutoLISP. Deviation: because the in-memory model stores
+these objects in the same table as graphical entities, ~entnext~ /
+~entlast~ can enumerate them, whereas AutoCAD confines dictionary and
+xrecord objects to the OBJECTS section (out of the ~entnext~ walk);
+~ssget~ already excludes them. This divergence is flagged for
+verification on a live CAD.
+
 #+LATEX: \newpage
 
 ** Function Entry: TBLNEXT
@@ -64412,6 +64430,16 @@ time, so an ~entget~ right after a create surfaces more group codes than
 were supplied; the exact default-code set and marker ordering are being
 verified against AutoCAD/BricsCAD through the portable entity probes and
 are not normative.
+
+XData round-trips losslessly through ~entget~/~entmod~. The full group-code
+set is preserved verbatim — ~1000~ string, ~1001~ appname, ~1002~ control
+string ~{~/~}~ (nested), ~1003~ layer, ~1004~ binary, ~1005~ handle,
+~1010/1011/1012/1013~ points, ~1040~ real, ~1041/1042~ dist/scale, ~1070~
+int16, ~1071~ int32 — with *order and multiplicity within each
+application preserved* (the host never normalizes xdata). ~entmod~ edits
+xdata per application: an application present in the supplied ~(-3 …)~
+cell replaces that application's group; an application with an empty
+group is removed; applications absent from the cell are left untouched.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -64661,6 +64689,33 @@ The selection-method sublanguage should later be given its own dedicated specifi
 - [Error Codes Reference (AutoLISP)](https://help.autodesk.com/cloudhelp/2022/HUN/AutoCAD-AutoLISP/files/GUID-97327347-2A13-4CBC-BDBF-979C7F1CABD5.htm)
 - Status: documented in role and partially in detail; exhaustive selection-mode semantics still to be expanded.
 
+*** clautolisp
+clautolisp is a headless (model-only) engine. It implements the
+*non-interactive whole-database scan* fully, and treats every
+interactive/graphical selection method as out of scope:
+
+- Supported: ~(ssget "X" [filter])~ and ~(ssget "_X" [filter])~ — the
+  scan over the active in-memory drawing. Only *graphical* entities are
+  returned; dictionaries, xrecords and other non-graphical objects are
+  never selected (matching the vendor).
+- Full filter grammar: attribute tests on any group code; string values
+  match by the WCMATCH wildcard grammar and comma-alternation (so a
+  comma-joined layer list in group 8 matches any listed layer); the
+  ~-3~ XData application filter (with wildcard application names and
+  optional inner pair constraints); and the ~-4~ relational
+  (~= /= != < > <= >= & &= *~) and logical
+  (~<AND>/<OR>/<NOT>/<XOR>~) operators. Top-level tests combine with
+  AND. A malformed operator tail degrades to a partial match rather
+  than signalling.
+- Out of scope (fail *cleanly*, never crash): the interactive/graphical
+  methods — no method ((ssget) point pick), ~_C _I _W _CP _WP _F L P A~
+  and the grip/highlight paths (~ssgetfirst~/~sssetfirst~). A call that
+  needs one signals a catchable AutoLISP error (:host-not-supported /
+  :unsupported-ssget-mode), so guarded code (~vl-catch-all-apply~,
+  ~*error*~) recovers exactly as on a headless engine.
+- Enumeration order across engines is *not* contractual — assert
+  semantic set membership and data, never raw order.
+
 #+LATEX: \newpage
 
 ** Function Entry: SSNAME
@@ -64874,6 +64929,21 @@ Part of the core CAD database querying model.
 
 *** Notes
 - If `setnext` is supplied and non-`nil`, Autodesk documents that the next `tblnext` call returns the entry following the one found by `tblsearch`.
+
+*** clautolisp
+clautolisp seeds the full standard symbol-table set and answers
+~tblsearch~ / ~tblnext~ / ~tblobjname~ over all of them:
+~LAYER~, ~LTYPE~ (a.k.a. ~LINETYPE~), ~STYLE~ (a.k.a. ~TEXTSTYLE~),
+~BLOCK~ (the block-record table), ~VIEW~, ~UCS~, ~VPORT~, ~DIMSTYLE~,
+and ~APPID~ (also grown by ~regapp~). The string values in a returned
+table record are AutoLISP strings (so ~strcat~, ~=~ and ~type~ accept
+them directly, as on a real CAD). ~tblnext~ order is deterministic
+(name-sorted) but not contractually the vendor's order; assert
+membership, not iteration order. AutoLISP cannot *create* symbol-table
+records with ~entmake~ in clautolisp yet (a table record created that
+way is stored as an ordinary object, not a table row) — use ~regapp~
+for APPID; other tables are pre-seeded. This create-gap is tracked as a
+deferred item.
 
 #+LATEX: \newpage
 

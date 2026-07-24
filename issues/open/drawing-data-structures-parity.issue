@@ -61,3 +61,72 @@ The SCHMS+ AutoLISP call inventory is committed at
 issues/open/schms-call-inventory.md (acceptance item #1). It calibrates
 ordering/priority; per pjb the implementation targets the FULL AutoLISP
 spec + AutoCAD/BricsCAD reference, not only the SCHMS subset.
+
+
+STATUS (2026-07-24, branch schms-data-selection, clautolisp 1.6.8+)
+===================================================================
+Headless core: DONE.   Vendor verification: BLOCKED on live CAD access.
+
+Implemented (headless, green now)
+---------------------------------
+- REGAPP: real builtin (was an M6 nil-stub). Registers an APPID record;
+  returns the app name, or nil when already registered or when the name
+  fails SNVALID. host-regapp on the mock host; register-appid /
+  appid-registered-p in the drawing model.
+- XData read/write through ENTGET/ENTMOD across the FULL group-code set
+  (1000 string, 1001 appname, 1002 control {/} incl. nesting, 1003 layer,
+  1004 binary, 1005 handle, 1010/1011/1012/1013 points, 1040 real,
+  1041/1042 dist/scale, 1070 int16, 1071 int32). Order and multiplicity
+  preserved verbatim (the host never normalizes). ENTMOD edits xdata per
+  application (replace/remove/leave-untouched). ENTGET applist filtering
+  incl. multi-application lists and the "*" wildcard.
+- Named-object dictionary tree: NAMEDOBJDICT, DICTADD, DICTSEARCH,
+  DICTNEXT, DICTREMOVE, DICTRENAME, DICTOBJNAME — real builtins (were
+  M6 stubs). Duplicate-key DICTADD -> nil; absent-key DICTSEARCH -> nil;
+  no CL condition leaks. Sub-dictionary trees supported.
+- XRECORD objects: created with ENTMAKEX, mutated with ENTMOD, read via
+  DICTSEARCH/DICTNEXT (entget-style (-1 . ename)-headed list), deleted
+  via ENTDEL, detached via DICTREMOVE; ordered group codes preserved.
+- Symbol tables: TBLSEARCH/TBLNEXT/TBLOBJNAME over the FULL standard set
+  — LAYER, LTYPE(=LINETYPE), STYLE(=TEXTSTYLE), BLOCK(=block-record),
+  VIEW, UCS, VPORT, DIMSTYLE, APPID. FIX: table record string values are
+  now AutoLISP-wrapped (strcat/=/type accept them; previously raw CL
+  strings that those operators rejected — a latent foundation defect,
+  fixed here as part of table parity).
+- GETVAR/SETVAR isolation: each fresh MockHost owns a fresh drawing, so
+  drawing-scoped sysvars (and dictionaries, entities) do not leak between
+  sessions. Regression test dictionaries-are-isolated-between-fresh-hosts.
+- Ownership group codes: DICTADD stamps the member's owner (330) to the
+  dictionary; dictionaries carry 330 owner + 3/350 entry pairs.
+
+Model/representation decision (DICT-1)
+--------------------------------------
+Dictionaries and xrecords are stored as handle-bearing objects in the
+ENTITIES table (drawing/source/dictionary.lisp), so their enames feed
+straight into ENTGET/ENTMOD/ENTDEL with no parallel code path. ssget
+excludes non-graphical objects (graphical-entity-p), matching the vendor.
+Divergence to verify on CAD: ENTNEXT/ENTLAST can enumerate these objects
+here, whereas AutoCAD confines them to the OBJECTS section. Filed as
+entnext-nongraphical-enumeration.issue.
+
+Deferred (filed separately)
+---------------------------
+- Creating symbol-table records from AutoLISP via ENTMAKE (LAYER/LTYPE/
+  STYLE/BLOCK): today only APPID grows (via REGAPP); an ENTMAKE of a
+  table record is stored as an object, not a table row. See
+  entmake-symbol-table-records.issue.
+- XDROOM / XDSIZE (xdata room/size queries) remain nil M6 stubs — the
+  in-memory model does not bound xdata storage. See
+  xdroom-xdsize-not-implemented.issue.
+
+Tests
+-----
+- clautolisp/drawing/tests/dictionary-tests.lisp (pure model).
+- clautolisp/autolisp-mock-host/tests/dictionary-api-tests.lisp (+ table
+  wrapping asserts in selection-tests.lisp).
+- clautolisp/autolisp-builtins-core/tests/drawing-data-tests.lisp (E2E
+  AutoLISP through the evaluator).
+- Portable probe autolisp-front-end/tests/scenarios/entities/
+  drawing-data-probe.lsp with :clautolisp-only (green now) +
+  :bricscad-only / :autocad-only self-skipping scenarios.
+Full `test-system "clautolisp"`: 5482 checks, Fail 0.
