@@ -448,6 +448,89 @@ AutoLISP reference."
     (is (search "`&REST'" diag)
         "&REST should warn under :autocad-2026; got: ~S" diag)))
 
+;;; --- Dialect portability warnings: dedup + escalation (ch.25) ---
+;;;
+;;; The &rest lambda-list extension is the first concrete consumer of
+;;; the autolisp-spec ch.25 "Dialect Portability Warnings" mechanism.
+;;; These tests pin the three properties that the ch.25 model adds on
+;;; top of the plain dialect-gated emit: once-per-occurrence dedup,
+;;; evaluation-tied firing (guarded code stays silent), and the
+;;; optional warning->error escalation knob.
+
+(defun %count-substrings (needle haystack)
+  "Number of non-overlapping occurrences of NEEDLE in HAYSTACK."
+  (loop with n = 0 with start = 0
+        for pos = (search needle haystack :start2 start)
+        while pos
+        do (incf n) (setf start (+ pos (length needle)))
+        finally (return n)))
+
+(test portability-warning-loop-warns-once-per-occurrence
+  "autolisp-spec ch.25 once-per-occurrence: the SAME defun re-evaluated
+in a loop warns exactly once, not once per iteration — the dedup key is
+the source occurrence (the lambda-list cons identity)."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :strict
+                          "(repeat 3 (defun loopf (a &rest r) r))")
+    (declare (ignore result))
+    (is (= 1 (%count-substrings "[lambda-list-extension]" diag))
+        "Expected exactly one warning across 3 iterations; got: ~S" diag)))
+
+(test portability-warning-distinct-occurrences-warn-separately
+  "autolisp-spec ch.25: two DIFFERENT defuns each using &rest warn
+independently — the dedup key is the occurrence, not the construct class."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :strict
+                          "(defun occa (a &rest r) r)
+                           (defun occb (a &rest r) r)")
+    (declare (ignore result))
+    (is (= 2 (%count-substrings "[lambda-list-extension]" diag))
+        "Expected two independent warnings; got: ~S" diag)))
+
+(test portability-warning-guarded-occurrence-is-silent
+  "autolisp-spec ch.25 evaluation-tied: a defun guarded behind a false
+branch is never evaluated and therefore never warns."
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result diag)
+      (%run-under-dialect :strict
+                          "(if nil (defun guardedf (a &rest r) r))")
+    (declare (ignore result))
+    (is (null (search "lambda-list-extension" diag))
+        "A never-evaluated defun must not warn; got: ~S" diag)))
+
+(test portability-warning-escalation-signals-error
+  "autolisp-spec ch.25 escalation knob: with :portability-warning-mode
+:error the advisory becomes an AutoLISP runtime error
+(:non-portable-construct), changing program outcome. Off by default."
+  (reset-autolisp-symbol-table)
+  (let* ((escalating
+          (clautolisp.autolisp-reader:make-autolisp-dialect
+           :name :strict
+           :portability-warning-mode :error))
+         (signalled-code nil)
+         (*error-output* (make-string-output-stream)))
+    (handler-case
+        (run-autolisp-string "(defun escf (a &rest r) r)"
+                             :dialect escalating)
+      (autolisp-runtime-error (condition)
+        (setf signalled-code (autolisp-runtime-error-code condition))))
+    (is (eq :non-portable-construct signalled-code)
+        "Expected :non-portable-construct under escalation; got: ~S"
+        signalled-code)))
+
+(test portability-warning-default-mode-does-not-error
+  "The default :warn mode keeps &rest advisory — the defun still defines
+and the program runs (no error signalled), only a warning is printed."
+  (reset-autolisp-symbol-table)
+  (let ((*error-output* (make-string-output-stream)))
+    (is (equal '(2 3)
+               (run-autolisp-string
+                "(defun okf (a &rest r) r) (okf 1 2 3)"
+                :dialect (clautolisp.autolisp-reader:find-autolisp-dialect
+                          :strict))))))
+
 (test eval-set-form-with-quoted-symbol
   "(set 'foo 99) binds FOO to 99 and returns 99 — the canonical
 SET shape (Autodesk reference)."

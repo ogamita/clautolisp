@@ -95,6 +95,9 @@
 (defun autolisp-dialect-unbound-variable-mode (dialect)
   (clautolisp.autolisp-reader.internal::autolisp-dialect-unbound-variable-mode dialect))
 
+(defun autolisp-dialect-portability-warning-mode (dialect)
+  (clautolisp.autolisp-reader.internal::autolisp-dialect-portability-warning-mode dialect))
+
 (defun autolisp-dialect-default-source-encoding (dialect)
   (clautolisp.autolisp-reader.internal::autolisp-dialect-default-source-encoding dialect))
 

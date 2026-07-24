@@ -139,7 +139,17 @@ clautolisp-secureload-trust-model spec.")
   ;; the failure mode before this slot existed: the runtime
   ;; couldn't see the CLI's encoding because it ran far below the
   ;; CLI layer).
-  (default-source-encoding nil))
+  (default-source-encoding nil)
+  ;; Dialect portability warnings (autolisp-spec ch.25): the per-run
+  ;; once-per-occurrence dedup table. Keyed by the *source occurrence*
+  ;; (the lambda-list cons of a defun/lambda, i.e. object identity),
+  ;; NOT by construct class -- so `foo' and `bar' each warn on their own
+  ;; first evaluation, a loop around one `foo' warns only once, and a
+  ;; guarded/never-evaluated occurrence never warns. A fresh table is
+  ;; consed per session, so a new run (fresh process / fresh
+  ;; make-runtime-session) starts with a clean slate. See
+  ;; emit-lambda-list-extension-warning.
+  (portability-warnings-seen (make-hash-table :test #'eq)))
 
 (defstruct evaluation-context
   session

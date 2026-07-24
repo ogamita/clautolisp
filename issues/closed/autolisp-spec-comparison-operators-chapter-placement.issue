@@ -132,3 +132,14 @@ Definition of done
   EQ/EQUAL caveat explicit.
 - Placement is consistent with autolisp-spec-equality-operators.issue.
 - build/org regenerates cleanly from the draft.org source.
+
+
+Resolution (branch fix-spec-pages)
+----------------------------------
+= /= < <= > >= moved from ch8 (Numbers) to ch5 (Data and Control Flow)
+next to EQ/EQUAL. Each entry documents the numbers-and-strings domain,
+string (lexicographic) examples, the incompatible-non-nil TYPE ERROR,
+and the nil/bottom exception (nil argument -> nil, no error). A
+forward-reference stub is left in ch8; a shared "Comparison Operators"
+domain subsection states the rule once. Consistent with the
+equality-operators issue.

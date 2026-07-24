@@ -1721,10 +1721,31 @@ exact spelling the user wrote."
         ((string= "&REST" name) :and-rest)
         (t nil)))))
 
-(defun emit-lambda-list-extension-warning (spelling who)
+(defun %portability-warning-occurrence-seen-p (occurrence)
+  "T iff this OCCURRENCE (a source object identity — the lambda-list
+cons of the offending defun/lambda) has already produced a dialect
+portability warning in the current run. Records it as seen when it
+had not been. Keyed by EQ object identity in the active session's
+`portability-warnings-seen' table, so the dedup is once-per-source-
+occurrence and resets with a fresh session. When OCCURRENCE is NIL
+or no session is reachable, dedup is skipped (always emit)."
+  (let* ((context (ignore-errors (current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (table   (and session
+                       (clautolisp.autolisp-runtime.internal::runtime-session-portability-warnings-seen
+                        session))))
+    (cond
+      ((or (null occurrence) (null table)) nil)
+      ((gethash occurrence table) t)
+      (t (setf (gethash occurrence table) t) nil))))
+
+(defun emit-lambda-list-extension-warning (spelling who &optional occurrence)
   "When a defun/lambda lambda-list uses a rest-parameter separator,
-emit a `[lambda-list-extension]' warning unless the current
-dialect explicitly accepts that spelling.
+emit a `[lambda-list-extension]' dialect portability warning
+(autolisp-spec ch.25) unless the current dialect explicitly accepts
+that spelling.
 
 Per `issues/open/bricscad-undocumented-clisms.issue' and the user's
 2026-06-07 ruling:
@@ -1742,22 +1763,51 @@ Per `issues/open/bricscad-undocumented-clisms.issue' and the user's
   - :strict, :autocad-2026 — warn for both spellings (they are
     non-portable across vendors).
 
-The warning is informational only — the function is defined as
-usual and runs normally. WHO is a short string identifying the
-caller (e.g. \"DEFUN\" or \"LAMBDA\") for the diagnostic prefix."
+Once-per-occurrence (autolisp-spec ch.25): a warning fires at most
+once per run for each distinct source OCCURRENCE (the lambda-list
+cons identity). Re-evaluating the SAME defun/lambda — e.g. inside a
+loop — is silent after the first hit; a DIFFERENT defun warns on its
+own first evaluation. A never-reached (guarded) occurrence never
+warns because this function only runs when evaluation reaches it.
+
+Escalation knob (autolisp-spec ch.25): when the active dialect's
+`portability-warning-mode' is `:error' (default `:warn'), a
+non-silent occurrence signals an AutoLISP runtime error instead of
+printing — the opt-in `warning->error' knob mirroring
+`:unbound-variable-mode :strict-error'. It is non-conforming (it
+changes whether the program runs) and is never a dialect default.
+
+The advisory warning is informational only — the function is defined
+as usual and runs normally. WHO is a short string identifying the
+caller (e.g. \"DEFUN\" or \"LAMBDA\") for the diagnostic prefix.
+Warnings go to *ERROR-OUTPUT*, which a normal `clautolisp' / `alfe'
+run surfaces (stderr is not swallowed by the quiet/verbosity knobs)."
   (let* ((dialect (ignore-errors (current-evaluation-dialect)))
          (name (and dialect
                     (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+         (mode (or (and dialect
+                        (ignore-errors
+                         (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                          dialect)))
+                   :warn))
          (silent-p
            (case name
              ((:clautolisp :lax) t)
              ((:bricscad-v26) (eq spelling :and-rest))
-             (t nil))))
+             (t nil)))
+         (token (case spelling
+                  (:ampersand "&")
+                  (:and-rest  "&REST")
+                  (t "<rest-separator>"))))
     (unless silent-p
-      (let ((token (case spelling
-                     (:ampersand "&")
-                     (:and-rest  "&REST")
-                     (t "<rest-separator>"))))
+      (when (eq mode :error)
+        ;; Escalation: turn the advisory into a hard error. This runs
+        ;; before dedup — the first reached occurrence aborts the run.
+        (signal-autolisp-runtime-error
+         :non-portable-construct
+         "~A: `~A' is a clautolisp variadic-function extension, not portable to dialect ~(~A~); --portability-warning-mode error escalates it to an error."
+         who token (or name "default")))
+      (unless (%portability-warning-occurrence-seen-p occurrence)
         (format *error-output*
                 "~&[lambda-list-extension] ~A: `~A' is a clautolisp ~
 variadic-function extension; --dialect ~(~A~) flags it as ~
@@ -2426,7 +2476,7 @@ malformed cases surface at call-time via `bind-usubr-frame')."
     (dolist (element lambda-list)
       (let ((spelling (autolisp-ampersand-spelling element)))
         (when spelling
-          (emit-lambda-list-extension-warning spelling who)
+          (emit-lambda-list-extension-warning spelling who lambda-list)
           (return))))))
 
 (defun eval-lambda-form (arguments context)

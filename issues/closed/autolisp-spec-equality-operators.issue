@@ -105,3 +105,12 @@ Definition of done
 - = and /= Function Entries no longer say "pending Phase 4 verification"
   for the points the probe settled.
 - build/org regenerates cleanly from the draft.org source.
+
+
+Resolution (branch fix-spec-pages)
+----------------------------------
+The Equality Predicates normative page now names = /= < <= > >= alongside
+eq/equal, with the numbers-and-strings domain, string by-content rule,
+the nil/bottom exception, vendor-evidence rows, and cross-references to
+the per-operator Function Entries. Relational-operator placement
+coordinated with the chapter-placement issue (they live in ch5).
