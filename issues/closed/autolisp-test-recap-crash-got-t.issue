@@ -107,3 +107,35 @@ Related
 
 - Surfaced during system-variables.issue (rtos/distance float-format
   verification, clautolisp 1.2.13).
+
+Resolution (fix-test-recap-crash, 2026-07-24)
+---------------------------------------------
+
+Root cause (harness bug, two parts, both in
+autolisp-test/harness/platform-detect.lsp):
+
+1. `autolisp-test-detect-implementation' built IMPL-NAME with
+   `(or (autolisp-test--safe-getvar "PRODUCT") "unknown")'. AutoLISP
+   `or' returns T/nil — NOT the first non-nil value as in Common Lisp
+   — so once the fallback branch was reached IMPL-NAME became the
+   symbol T. `(strcat ... T ...)' in the "running N tests on ..." line
+   then aborted the run unguarded, and the T flowed into the matrix /
+   report / recap stages (hence "FOREACH/LENGTH ... got T").
+
+2. The fallback branch was reached because `--detect-impl' recognised
+   clautolisp ONLY via `(boundp '*clautolisp-version*)'. Paths that do
+   not pre-set that variable (the asdf driver, a bare `-x') fell
+   through, and since the PRODUCT identity fix (1.5.6) reports
+   PRODUCT="clautolisp" — matched by neither the "BricsCAD" nor the
+   "AutoCAD" arm — detection yielded `unknown'.
+
+Fix: `--detect-impl' now also detects clautolisp by PRODUCT
+(vl-string-search "clautolisp"), the portable mechanism it already
+uses for the vendors; and IMPL-NAME's fallback uses `cond' (value-
+returning) instead of `or'. Regression: autolisp-test/harness/self-
+test.lsp (`make harness-self-test', wired into `make test') asserts a
+string IMPL-NAME, clautolisp detection, and that the matrix survives an
+empty RUNTIMES list. Verified: full `run-all' and `make test-asdf-sbcl'
+now print a complete recap (Total/Pass/Fail + verdict matrix) and write
+a non-empty, well-formed report.sexp. Harness-only change; no version
+bump. Duplicate deferred-autolisp-test-matrix-bug.issue closed with it.

@@ -51,14 +51,15 @@ final unknown fallback."
     ;; symbol when it is present. The detection is opt-in so other
     ;; implementations are not affected.
     ((boundp '*clautolisp-version*) 'clautolisp)
-    ;; BricsCAD reports "BricsCAD" as the PRODUCT system variable.
-    ;; AutoCAD reports a string starting with "AutoCAD".
+    ;; Otherwise detect by the PRODUCT system variable: clautolisp
+    ;; reports "clautolisp", BricsCAD "BricsCAD", AutoCAD a string
+    ;; starting with "AutoCAD".
     (T (setq product (autolisp-test--safe-getvar "PRODUCT"))
        (cond ((null product) 'unknown)
-             ((and (eq (type product) 'str)
-                   (vl-string-search "BricsCAD" product)) 'bricscad)
-             ((and (eq (type product) 'str)
-                   (vl-string-search "AutoCAD" product)) 'autocad)
+             ((not (eq (type product) 'str)) 'unknown)
+             ((vl-string-search "clautolisp" product) 'clautolisp)
+             ((vl-string-search "BricsCAD" product) 'bricscad)
+             ((vl-string-search "AutoCAD" product) 'autocad)
              (T 'unknown)))))
 
 (defun autolisp-test--detect-version (/ s)
@@ -142,8 +143,11 @@ final unknown fallback."
               (cond ((eq impl 'clautolisp) "clautolisp")
                     ((eq impl 'autocad)    "AutoCAD")
                     ((eq impl 'bricscad)   "BricsCAD")
-                    (T (or (autolisp-test--safe-getvar "PRODUCT")
-                           "unknown"))))
+                    ;; AutoLISP `or' returns T/nil, not the first
+                    ;; non-nil value (unlike Common Lisp), so select
+                    ;; the fallback string with `cond', not `or'.
+                    (T (cond ((autolisp-test--safe-getvar "PRODUCT"))
+                             (T "unknown")))))
         (cons 'version (autolisp-test--detect-version))
         (cons 'platforms (autolisp-test--detect-platforms))
         (cons 'runtimes  (autolisp-test--detect-runtimes))
