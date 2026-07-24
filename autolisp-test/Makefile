@@ -105,7 +105,7 @@ CLAUTOLISP_SOURCES := \
 
 .PHONY: all build documentation test test-clautolisp-sbcl test-clautolisp-ccl \
         test-clautolisp-sbcl-debug test-clautolisp-ccl-debug \
-        test-asdf-sbcl test-asdf-ccl \
+        test-asdf-sbcl test-asdf-ccl harness-self-test \
         test-asdf-sbcl-debug test-asdf-ccl-debug \
         build-clautolisp-sbcl build-clautolisp-ccl clean-pdf \
         test-clautolisp-sbcl-strict test-clautolisp-sbcl-clautolisp \
@@ -132,7 +132,21 @@ documentation: $(PDF_FILES)
 # runs the canonical SBCL path (via the standalone executable) so the
 # implementation identification matches what AutoCAD and BricsCAD
 # would report when they load run.lsp themselves.
-test: test-clautolisp-sbcl
+test: harness-self-test test-clautolisp-sbcl
+
+# Harness self-test snippet: mirrors HARNESS_SNIPPET's path setup but
+# deliberately does NOT pre-set *clautolisp-version*, so detection is
+# exercised the way the asdf / bare -x paths hit it (the recap-crash
+# repro). Loads run.lsp then the self-test, which exits non-zero on
+# any failed check.
+HARNESS_SELFTEST_SNIPPET := \
+  (setq *autolisp-test-root* "$(ROOT_DIR)/") \
+  (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-test-root* "..."))) \
+  (load (strcat *autolisp-test-root* "harness/run.lsp")) \
+  (load (strcat *autolisp-test-root* "harness/self-test.lsp"))
+
+harness-self-test: $(CLAUTOLISP_SBCL)  ## Harness regression tests (detection + matrix; guards the recap-crash bug).
+	"$(CLAUTOLISP_SBCL)" -x '$(HARNESS_SELFTEST_SNIPPET)'
 
 # --- Path 1: the standalone clautolisp executable ------------------
 # The executables under clautolisp/tools/clautolisp/bin/ are built

@@ -72,3 +72,16 @@ Acceptance
 - ~print-recap~ no longer raises.
 - A regression test for the matrix function with an empty
   ~runtimes~ list lands alongside the fix.
+
+Resolution (2026-07-24) — DUPLICATE of autolisp-test-recap-crash-got-t
+---------------------------------------------------------------------
+
+Same bug, fixed on branch fix-test-recap-crash; see
+issues/closed/autolisp-test-recap-crash-got-t.issue for the full root
+cause and fix. Summary: harness bug in platform-detect.lsp — AutoLISP
+`or' returns T/nil not a value, so the IMPL-NAME fallback became T and
+cascaded into the matrix/recap "got T" crash; clautolisp was also
+mis-detected as `unknown'. Both acceptance criteria here (non-zero
+summary via `make test-asdf-sbcl'; non-empty parseable report.sexp;
+print-recap no longer raises; a regression test for the matrix on an
+empty runtimes list — harness/self-test.lsp) are met.
