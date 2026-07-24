@@ -89,3 +89,24 @@ exercised at the model/host unit-test level
 this portable probe, because a portable create needs block/regapp setup
 that differs subtly across vendors. See the deferred-families inventory
 in `issues/open/entity-mutation-parity.issue`.
+
+## SCHMS drawing-data + selection probes
+
+Two further portable probes, added on branch `schms-data-selection` for
+the `drawing-data-structures-parity` and `selection-and-snapshot-parity`
+issues, follow the same three-`.sexp`-per-probe pattern (a
+`:clautolisp-only` scenario that runs green now, plus self-skipping
+`:bricscad-only` / `:autocad-only` vendor-verification tails):
+
+| File                       | Role                                                                     |
+|----------------------------|--------------------------------------------------------------------------|
+| `drawing-data-probe.lsp`   | REGAPP; the full XData group-code set round-tripped through `entget`/`entmod`; multi-application xdata filtering; the named-object-dictionary tree with an XRECORD create/read/mutate/remove lifecycle; `tblsearch`/`tblnext` over LAYER/LTYPE/STYLE/APPID. Last line: `ALL DRAWING-DATA PROBES PASSED`. |
+| `selection-probe.lsp`      | `(ssget "X")` with the full filter grammar (type, comma-alternation, `-4` `<OR>/<AND>/<NOT>` and relational, `-3` XData app filter), the `sslength`/`ssname`/`ssadd`/`ssdel`/`ssmemb` membership functions, and `entnext`/`entlast`. Every scan is fenced to the probe's own entities by an XData filter, so it passes on a non-empty drawing and asserts set MEMBERSHIP, not order. Last line: `ALL SELECTION PROBES PASSED`. |
+| `drawing-data{,-bricscad,-autocad}.sexp` | The three scenarios embedding `drawing-data-probe.lsp`. |
+| `selection{,-bricscad,-autocad}.sexp`    | The three scenarios embedding `selection-probe.lsp`. |
+
+Regenerate the embedded copies after editing either `.lsp` with:
+
+```
+cd autolisp-front-end/tests/scenarios/entities && sbcl --script generate-schms-scenarios.lisp
+```

@@ -4053,6 +4053,62 @@ most recent first."
         (errno-and-return 0 result)
         result)))
 
+;;; --- Named-object dictionaries + REGAPP ---------------------------
+;;;
+;;; Thin wrappers over the HAL. NAMEDOBJDICT returns the root
+;;; dictionary's ename; DICTADD/DICTSEARCH/DICTNEXT/DICTREMOVE/
+;;; DICTRENAME/DICTOBJNAME operate on a dictionary named by its ename.
+;;; A nil host return is the vendor's soft failure (bad dict, absent
+;;; key, duplicate key) and returns nil to user code — no CL condition
+;;; leaks out. Non-ename / non-string arguments raise a normal AutoLISP
+;;; argument error, exactly as the vendor does.
+
+(defun builtin-namedobjdict ()
+  (host-namedobjdict (current-evaluation-host)))
+
+(defun builtin-dictsearch (dict-ename name &optional next-after)
+  (host-dictsearch (current-evaluation-host)
+                   (require-ename dict-ename "DICTSEARCH")
+                   (require-string name "DICTSEARCH")
+                   :next-after (autolisp-true-p next-after)))
+
+(defun builtin-dictnext (dict-ename &optional rewind)
+  (host-dictnext (current-evaluation-host)
+                 (require-ename dict-ename "DICTNEXT")
+                 :rewind (autolisp-true-p rewind)))
+
+(defun builtin-dictadd (dict-ename name object-ename)
+  (host-dictadd (current-evaluation-host)
+                (require-ename dict-ename "DICTADD")
+                (require-string name "DICTADD")
+                (require-ename object-ename "DICTADD")))
+
+(defun builtin-dictremove (dict-ename name)
+  (host-dictremove (current-evaluation-host)
+                   (require-ename dict-ename "DICTREMOVE")
+                   (require-string name "DICTREMOVE")))
+
+(defun builtin-dictrename (dict-ename old new)
+  (host-dictrename (current-evaluation-host)
+                   (require-ename dict-ename "DICTRENAME")
+                   (require-string old "DICTRENAME")
+                   (require-string new "DICTRENAME")))
+
+(defun builtin-dictobjname (dict-ename name)
+  (host-dictobjname (current-evaluation-host)
+                    (require-ename dict-ename "DICTOBJNAME")
+                    (require-string name "DICTOBJNAME")))
+
+(defun builtin-regapp (name)
+  ;; (regapp APPNAME) -> APPNAME on success, nil if already registered
+  ;; or the name is not a valid symbol-table name. Matches SNVALID's
+  ;; name grammar before touching the APPID table.
+  (let* ((app (require-string name "REGAPP"))
+         (app-string (autolisp-string-value app)))
+    (if (autolisp-true-p (builtin-snvalid app))
+        (host-regapp (current-evaluation-host) app-string)
+        nil)))
+
 ;;; --- Phase 11: sysvar access --------------------------------------
 
 (defun %dispatch-lispsys-foreign-dialect-diagnostic (operator-name)
@@ -8399,10 +8455,13 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "ACAD-POP-DBMOD" "ACAD-PUSH-DBMOD" "ACAD_COLORDLG"
     "ACAD_HELPDLG" "ACAD_TRUECOLORCLI"
     "ACAD_TRUECOLORDLG"
-    ;; Entity / selection-set / table / dictionary database (14)
-    "DICTADD" "DICTNEXT" "DICTOBJNAME" "DICTREMOVE" "DICTRENAME"
-    "DICTSEARCH" "ENTSEL" "NAMEDOBJDICT" "NENTSEL" "NENTSELP"
-    "REGAPP" "SSNAMEX" "XDROOM" "XDSIZE"
+    ;; Entity / selection-set / table / dictionary database.
+    ;; DICTADD/DICTNEXT/DICTOBJNAME/DICTREMOVE/DICTRENAME/DICTSEARCH/
+    ;; NAMEDOBJDICT/REGAPP are now real (drawing-data-structures parity);
+    ;; the ones left here stay nil stubs (interactive picking, or the
+    ;; xdata-room queries which the in-memory model does not bound).
+    "ENTSEL" "NENTSEL" "NENTSELP"
+    "SSNAMEX" "XDROOM" "XDSIZE"
     ;; DCL dialogs / tiles (3)
     "GET_ATTR" "INIT_DIALOG" "REDRAW_DIALOG"
     ;; Graphics primitives (GR*) (7)
@@ -8527,6 +8586,15 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "TBLSEARCH"  #'builtin-tblsearch)
    (make-core-builtin-subr "TBLNEXT"    #'builtin-tblnext)
    (make-core-builtin-subr "TBLOBJNAME" #'builtin-tblobjname)
+   ;; Named-object dictionaries + registered applications.
+   (make-core-builtin-subr "NAMEDOBJDICT" #'builtin-namedobjdict)
+   (make-core-builtin-subr "DICTSEARCH"   #'builtin-dictsearch)
+   (make-core-builtin-subr "DICTNEXT"     #'builtin-dictnext)
+   (make-core-builtin-subr "DICTADD"      #'builtin-dictadd)
+   (make-core-builtin-subr "DICTREMOVE"   #'builtin-dictremove)
+   (make-core-builtin-subr "DICTRENAME"   #'builtin-dictrename)
+   (make-core-builtin-subr "DICTOBJNAME"  #'builtin-dictobjname)
+   (make-core-builtin-subr "REGAPP"       #'builtin-regapp)
    (make-core-builtin-subr "GETVAR"     #'builtin-getvar)
    (make-core-builtin-subr "SETVAR"     #'builtin-setvar)
    ;; clautolisp exit-status channel: autolisp-set-status keeps the CAD

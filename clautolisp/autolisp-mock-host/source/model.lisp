@@ -86,6 +86,13 @@ pickfirst selection set, as set by ssgetfirst / sssetfirst.")
 state for tblnext. Maps a table-kind keyword to the remaining
 list of records that subsequent (tblnext KIND) calls will
 return. Cleared / reset when (tblnext KIND :rewind t).")
+   (dictnext-iterators       :initform (make-hash-table :test #'equal)
+                             :accessor mock-host-dictnext-iterators
+                             :documentation "Per-dictionary iterator
+state for dictnext. Maps a dictionary hex-handle string to the
+remaining list of (KEY . MEMBER-HANDLE) entries that subsequent
+ (dictnext DICT) calls will return. Rebuilt on first reference or on
+ (dictnext DICT :rewind t), matching the tblnext contract.")
    (pending-initget          :initform nil
                              :accessor mock-host-pending-initget
                              :documentation "Per-host scratch slot

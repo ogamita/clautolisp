@@ -64,3 +64,56 @@ The SCHMS+ AutoLISP call inventory is committed at
 issues/open/schms-call-inventory.md (acceptance item #1). It calibrates
 ordering/priority; per pjb the implementation targets the FULL AutoLISP
 spec + AutoCAD/BricsCAD reference, not only the SCHMS subset.
+
+
+STATUS (2026-07-24, branch schms-data-selection, clautolisp 1.6.8+)
+===================================================================
+Headless core: DONE.   Vendor verification: BLOCKED on live CAD access.
+
+Implemented (headless, green now)
+---------------------------------
+- (ssget "X" filter) / (ssget "_X" filter): whole-database scan over the
+  active in-memory drawing, returning GRAPHICAL entities only
+  (dictionaries/xrecords excluded, matching the vendor).
+- FULL ssget filter grammar (selection-api.lisp, parsed to a predicate
+  tree once, evaluated per entity):
+    * attribute tests on any group code (0 type, 2 block name, 5 handle,
+      8 layer, 62 colour, ...);
+    * string values: WCMATCH wildcard grammar + comma-alternation (so an
+      8-code comma-joined layer list matches any listed layer);
+    * -3 XData application filter: per-application sublists, wildcard
+      application names, optional inner (code . value) constraints;
+    * -4 relational operators: = /= != < > <= >= & (bit-AND) &=
+      (masked-eq) * (present);
+    * -4 logical operators: <AND>/<OR>/<NOT>/<XOR> (nestable); top-level
+      tests AND. A malformed operator tail degrades gracefully, no crash.
+- SSLENGTH, SSNAME, SSADD (0/1/2-arg), SSDEL, SSMEMB with duplicate-safe
+  membership (re-adding a member does not grow the set; ssdel of a
+  non-member returns nil).
+- ENTNEXT/ENTLAST traversal as the fallback path.
+- Tests assert semantic set MEMBERSHIP + data, not iteration order.
+
+Out of scope (documented; fail CLEANLY, never crash)
+----------------------------------------------------
+- Interactive ssget: no-mode (interactive pick), point/window forms, and
+  the graphical modes "_C" "_I" "_W" "_CP" "_WP" "_F" "L" "P" "A" —
+  signal a catchable AutoLISP error (:host-not-supported /
+  :unsupported-ssget-mode), recoverable by vl-catch-all-apply / *error*.
+- sssetfirst/ssgetfirst grip highlighting: modelled as plain pickfirst
+  storage, no graphics.
+- nentsel/entsel interactive picking: nil M6 stubs.
+These are inherent to a headless (model-only) engine; not defects.
+
+Tests
+-----
+- clautolisp/autolisp-mock-host/tests/selection-tests.lisp (grammar:
+  comma, OR/AND/NOT/XOR, relational, -3 xdata, handle, malformed tail).
+- clautolisp/autolisp-mock-host/tests/dictionary-api-tests.lisp
+  (ssget-x-excludes-non-graphical-objects).
+- clautolisp/autolisp-builtins-core/tests/drawing-data-tests.lisp (E2E
+  ssget filter grammar + membership ops + interactive-mode clean fail).
+- Portable probe autolisp-front-end/tests/scenarios/entities/
+  selection-probe.lsp (:clautolisp-only green now + :bricscad-only /
+  :autocad-only self-skipping). Every scan is fenced to the probe's own
+  entities by an XData filter, so assertions hold on a non-empty drawing.
+Full `test-system "clautolisp"`: 5482 checks, Fail 0.

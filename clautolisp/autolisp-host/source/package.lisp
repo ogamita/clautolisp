@@ -41,6 +41,8 @@
    #:host-dictadd
    #:host-dictremove
    #:host-dictrename
+   #:host-dictobjname
+   #:host-regapp
    ;; --- System variables -----------------------------------------
    #:host-getvar
    #:host-setvar

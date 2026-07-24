@@ -1,0 +1,24 @@
+xdroom-xdsize-not-implemented — XDROOM / XDSIZE are still nil stubs
+==================================================================
+
+Status: DEFERRED (schms-data-selection 1.6.8). Parent: drawing-data-structures-parity.
+
+XDROOM (remaining xdata capacity, in bytes, for an entity) and XDSIZE
+(the byte size a supplied xdata list would occupy) are registered as M6
+nil-returning stubs in autolisp-builtins-core/source/api.lisp
+(*m6-stub-names*). The full XData read/write path (regapp + the 1000..1071
+codec through entget/entmod) is implemented; only these two size-accounting
+queries are missing.
+
+To implement, the model would need a byte-cost function over an xdata
+group list (AutoCAD budgets ~16 KB per entity per application) and XDROOM
+= budget - used. The in-memory model does not currently bound xdata, so a
+faithful XDROOM needs the vendor's per-code byte sizes:
+  1000 string: 3 + strlen ; 1001 appname: 3 + strlen ; 1002 brace: 1 ;
+  1003 layer: 1+? ; 1004 binary: 1 + nbytes ; 1005 handle: like 1000 ;
+  1010/1011/1012/1013 point: 25 ; 1040/1041/1042 real: 9 ;
+  1070 int16: 3 ; 1071 int32: 5. Verify the exact table against the
+AutoCAD/BricsCAD reference before shipping numbers.
+
+SCHMS does not call XDROOM/XDSIZE (inventory: 0 sites), so this is low
+priority; filed so it is not silently skipped.

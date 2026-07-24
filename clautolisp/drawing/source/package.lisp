@@ -34,6 +34,7 @@ from the mock-host package before the Phase-17a extraction.")
    #:drawing-handle-seed
    #:drawing-tables
    #:drawing-named-object-dictionary
+   #:drawing-root-dictionary-handle
    #:drawing-header-variables
    #:drawing-classes
    ;; Data carrier: entity.
@@ -142,6 +143,18 @@ from the mock-host package before the Phase-17a extraction.")
    #:map-dictionary
    #:dictionary-put
    #:dictionary-remove
+   ;; Named-object-dictionary tree, xrecords, appid (dictionary.lisp).
+   #:graphical-entity-p
+   #:dictionary-entity-p
+   #:ensure-root-dictionary
+   #:find-dictionary
+   #:dictionary-object-entries
+   #:dictionary-member-handle
+   #:dictionary-add-entry
+   #:dictionary-remove-entry
+   #:dictionary-rename-entry
+   #:appid-registered-p
+   #:register-appid
    ;; Header-variable introspection.
    #:drawing-variable
    #:drawing-variable-cell

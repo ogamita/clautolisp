@@ -57,11 +57,24 @@ round-trip table identity through tblobjname."
 
 ;;; --- Method definitions ------------------------------------------
 
+;;; Table records store PURE Common-Lisp values (CL strings). The
+;;; AutoLISP view wraps every string value as an autolisp-string —
+;;; exactly like ENTITY->AL-VIEW does for entities — so that user code
+;;; can (strcat), (=) and (type) the values a tblsearch / tblnext record
+;;; yields. Without this wrap the raw CL strings would reject those
+;;; operators. Table records carry no (-1 . ename) head (tblobjname is
+;;; the way to an ename), so we wrap the data list as-is.
+
+(defun table-record->al-view (record)
+  "The AutoLISP tblsearch / tblnext view of a table RECORD: its
+group-code list with every string value wrapped as an autolisp-string."
+  (pure->al-value (symbol-table-record-data record)))
+
 (defmethod host-tblsearch ((host mock-host) kind name)
   (let ((record (mock-host-find-table-record host
                                               (resolve-table-kind kind 'tblsearch)
                                               (resolve-record-name name 'tblsearch))))
-    (and record (symbol-table-record-data record))))
+    (and record (table-record->al-view record))))
 
 (defmethod host-tblnext ((host mock-host) kind &key rewind)
   (let* ((k (resolve-table-kind kind 'tblnext))
@@ -86,7 +99,7 @@ round-trip table identity through tblobjname."
         (t
          (let ((next (first remaining)))
            (setf (gethash k iterators) (rest remaining))
-           (symbol-table-record-data next)))))))
+           (table-record->al-view next)))))))
 
 (defmethod host-tblobjname ((host mock-host) kind name)
   (let ((record (mock-host-find-table-record host

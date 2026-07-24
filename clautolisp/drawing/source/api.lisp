@@ -103,6 +103,8 @@ does not affect the original."
              (drawing-header-variables drawing))
     (setf (drawing-named-object-dictionary new)
           (%copy-dictionary-tree (drawing-named-object-dictionary drawing)))
+    (setf (drawing-root-dictionary-handle new)
+          (drawing-root-dictionary-handle drawing))
     (setf (drawing-classes new) (copy-tree (drawing-classes drawing)))
     (maphash (lambda (name header)
                (setf (gethash name (drawing-blocks new)) (copy-tree header)))
