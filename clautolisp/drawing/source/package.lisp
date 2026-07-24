@@ -156,4 +156,19 @@ from the mock-host package before the Phase-17a extraction.")
    #:set-drawing-variable
    #:ensure-drawing-variable
    #:add-table-record
-   #:remove-table-record))
+   #:remove-table-record
+   ;; Entity-family registry + ENTMAKE/ENTMAKEX validation.
+   #:entity-family
+   #:entity-family-p
+   #:entity-family-name
+   #:entity-family-kind
+   #:entity-family-required
+   #:entity-family-subclasses
+   #:entity-family-defaults
+   #:entity-family-graphical-p
+   #:entity-family-complex-p
+   #:entity-family-subentity-p
+   #:register-entity-family
+   #:find-entity-family
+   #:entity-family-names
+   #:validate-entity-dxf))

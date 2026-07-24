@@ -1,0 +1,27 @@
+entity-family-hatch-image-boundary — HATCH / raster / OLE entity families
+=========================================================================
+
+Status: DEFERRED (schms-parity 1.6.6). Parent: entity-mutation-parity.
+
+Not yet in the entity-family registry (accepted permissively by
+ENTMAKE/ENTMAKEX, unvalidated):
+
+  - HATCH / MPOLYGON — the boundary-path data model is elaborate:
+    92 boundary path type flag, 93 edge count, 72 edge type, the
+    per-edge geometry (line/arc/ellipse/spline), 97 source-boundary
+    count, 98 seed points, 75 hatch style, 76 pattern type, 52 angle,
+    41 scale, 47 pixel size, 78 pattern-definition line count, plus the
+    gradient codes (450/451/452/453/460/461/462/463/470).
+  - WIPEOUT / IMAGE (+ IMAGEDEF / IMAGEDEF_REACTOR objects) — needs the
+    boundary-vertex 14/13 codes, 340 imagedef handle, 70 display flags.
+  - OLE2FRAME.
+
+Do
+--
+
+Model the HATCH boundary-path structure faithfully (it is the hardest
+entity in the DXF reference), register the raster families with their
+IMAGEDEF object dependency, add tests, and extend the probe with a
+HATCH lifecycle once the boundary model exists.
+
+Reference: AutoCAD DXF reference, HATCH / IMAGE / WIPEOUT / OLE2FRAME.

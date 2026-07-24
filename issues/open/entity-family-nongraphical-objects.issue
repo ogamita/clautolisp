@@ -1,0 +1,30 @@
+entity-family-nongraphical-objects — the OBJECTS-section object families
+========================================================================
+
+Status: DEFERRED (schms-parity 1.6.6). Parent: entity-mutation-parity.
+
+ENTMAKEX (and dictadd) can create non-graphical OBJECTS-section objects.
+Only XRECORD is in the entity-family registry so far. The rest are
+accepted permissively (no validation / subclass stamping):
+
+  - DICTIONARY / DICTIONARYVAR / DICTIONARYWDFLT (the tree itself is
+    modelled in drawing/source/model.lisp, but ENTMAKEX-creating one
+    with proper AcDbDictionary markers + 280/281 flags is not).
+  - GROUP (+ the ACAD_GROUP dictionary), LAYER_FILTER / LAYER_INDEX,
+    SPATIAL_FILTER / SPATIAL_INDEX, SORTENTSTABLE, IDBUFFER.
+  - LAYOUT (+ PLOTSETTINGS), the ACAD_LAYOUT dictionary.
+  - MATERIAL, VISUALSTYLE, MLEADERSTYLE, MLINESTYLE, TABLESTYLE,
+    SCALE / ACAD_SCALELIST, FIELD / FIELDLIST, RASTERVARIABLES,
+    WIPEOUTVARIABLES, ACDBDICTIONARYWDFLT, ACAD_PROXY_OBJECT,
+    DATATABLE, GEODATA, SUNSTUDY, ACDBNAVISWORKSMODELDEF.
+
+Do
+--
+
+Register descriptors with the correct AcDbObject/AcDb<Type> subclass
+markers and required codes, ensure ownership (330) and the reactor
+(102 {ACAD_REACTORS} / 102 {ACAD_XDICTIONARY}) groups round-trip, add
+tests. These are model-only (no rendering, no persistence-format work
+beyond what drawing/source/dxf.lisp already round-trips).
+
+Reference: AutoCAD DXF reference, OBJECTS section.

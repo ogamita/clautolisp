@@ -125,12 +125,49 @@
     (is (null (host-entupd mock ename)))))
 
 (test entmake-rejects-data-without-group-zero
+  ;; Vendor parity: ENTMAKE on a group-code list that does not describe
+  ;; a creatable entity (here: no (0 . "TYPE") marker) returns nil — it
+  ;; does NOT raise. The builtin maps that nil to ERRNO 36.
   (let ((mock (make-mock-host)))
-    (handler-case
-        (host-entmake mock '((8 . "0") (10 0 0 0)))
-      (autolisp-runtime-error (condition)
-        (is (eq :invalid-entity-data
-                (autolisp-runtime-error-code condition)))))))
+    (is (null (host-entmake mock '((8 . "0") (10 0 0 0)))))))
+
+(test entmake-rejects-family-missing-required-code
+  ;; CIRCLE requires the 40 (radius) group; omitting it fails the create.
+  (let ((mock (make-mock-host)))
+    (is (null (host-entmake mock (list (cons 0 "CIRCLE")
+                                       (cons 10 '(0.0d0 0.0d0 0.0d0))))))
+    ;; With the radius it succeeds.
+    (is (consp (host-entmake mock (list (cons 0 "CIRCLE")
+                                        (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                        (cons 40 1.0d0)))))))
+
+(test entmakex-returns-ename-not-list
+  ;; The distinguishing ENTMAKEX contract (issue entmakex-returns-list):
+  ;; ENTMAKEX hands back the new entity's ENAME, feedable straight into
+  ;; entget / entmod / entdel — NOT the entget-style DXF list.
+  (let* ((mock (make-mock-host))
+         (result (host-entmakex mock (make-line-data))))
+    (is (typep result 'autolisp-ename))
+    ;; The ename resolves: entget on it round-trips a data list.
+    (is (consp (host-entget mock result)))
+    ;; It is the same entity entlast reports.
+    (is (string= (autolisp-ename-value result)
+                 (autolisp-ename-value (host-entlast mock))))))
+
+(test entmakex-defaults-layer-and-stamps-subclass
+  ;; ENTMAKEX normalises: a LINE with no (8 . layer) gets the "0"
+  ;; default, and the AcDbEntity/AcDbLine subclass markers appear.
+  (let* ((mock (make-mock-host))
+         (ename (host-entmakex mock (list (cons 0 "LINE")
+                                          (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                          (cons 11 '(1.0d0 1.0d0 0.0d0)))))
+         (data (host-entget mock ename)))
+    (is (string= "0" (autolisp-string-value (cdr (assoc 8 data)))))
+    (is (member "AcDbLine"
+                (loop for (code . val) in data
+                      when (and (eql code 100) (typep val 'autolisp-string))
+                        collect (autolisp-string-value val))
+                :test #'string=))))
 
 (test entget-rejects-non-ename
   (let ((mock (make-mock-host)))
@@ -139,3 +176,82 @@
       (autolisp-runtime-error (condition)
         (is (eq :invalid-ename
                 (autolisp-runtime-error-code condition)))))))
+
+;;; --- XData (extended data) filtering -----------------------------
+
+(defun %assoc-code (code data)
+  (find-if (lambda (p) (and (consp p) (eql code (car p)))) data))
+
+(test entget-suppresses-xdata-without-applist-and-returns-it-with
+  ;; entget without an application list hides xdata; with a matching
+  ;; application name it appends the (-3 ...) group; a non-matching name
+  ;; yields no xdata.
+  (let* ((mock (make-mock-host))
+         (ename (host-entmakex mock (make-line-data))))
+    ;; Attach xdata via entmod (the -1 head names the entity).
+    (host-entmod mock
+                 (list (cons -1 ename)
+                       (cons 0 "LINE")
+                       (cons 10 '(0.0d0 0.0d0 0.0d0))
+                       (cons 11 '(1.0d0 1.0d0 0.0d0))
+                       (cons -3 (list (list (make-autolisp-string "MYAPP")
+                                            (cons 1000 (make-autolisp-string "tag"))
+                                            (cons 1070 7))))))
+    ;; No applist -> no (-3 ...) cell.
+    (is (null (%assoc-code -3 (host-entget mock ename))))
+    ;; Matching applist -> the (-3 ...) cell appears.
+    (let* ((data (host-entget mock ename
+                              (list (make-autolisp-string "MYAPP"))))
+           (xd (%assoc-code -3 data)))
+      (is (not (null xd)))
+      (let ((grp (first (cdr xd))))
+        (is (string= "MYAPP" (autolisp-string-value (first grp))))
+        (is (string= "tag" (autolisp-string-value (cdr (assoc 1000 (rest grp))))))))
+    ;; Non-matching applist -> no xdata surfaced.
+    (is (null (%assoc-code -3 (host-entget mock ename
+                                           (list (make-autolisp-string "OTHER"))))))
+    ;; Wildcard "*" surfaces all.
+    (is (not (null (%assoc-code -3 (host-entget mock ename
+                                                (list (make-autolisp-string "*")))))))))
+
+;;; --- Complex-entity subentity ownership (group 330) --------------
+
+(test entmake-sequence-links-subentity-owners-and-entnext-walks-them
+  ;; A POLYLINE opens a run; its VERTEX subentities get their owner
+  ;; (330) set to the polyline handle; the SEQEND closes the run.
+  ;; ENTNEXT walks header -> vertices -> seqend in creation order.
+  (let* ((mock (make-mock-host))
+         (poly (host-entmakex mock (list (cons 0 "POLYLINE") (cons 70 1))))
+         (poly-handle (autolisp-ename-value poly))
+         (v1 (host-entmakex mock (list (cons 0 "VERTEX")
+                                       (cons 10 '(0.0d0 0.0d0 0.0d0)))))
+         (v2 (host-entmakex mock (list (cons 0 "VERTEX")
+                                       (cons 10 '(1.0d0 0.0d0 0.0d0)))))
+         (seq (host-entmakex mock (list (cons 0 "SEQEND")))))
+    ;; Each VERTEX's 330 owner is the polyline's handle.
+    (dolist (v (list v1 v2))
+      (let ((owner (cdr (assoc 330 (host-entget mock v)))))
+        (is (string= poly-handle (autolisp-string-value owner)))))
+    ;; SEQEND is owned by the polyline too.
+    (is (string= poly-handle
+                 (autolisp-string-value (cdr (assoc 330 (host-entget mock seq))))))
+    ;; A LINE created after the SEQEND does NOT get an owner (run closed).
+    (let ((line (host-entmakex mock (make-line-data))))
+      (is (null (assoc 330 (host-entget mock line)))))
+    ;; ENTNEXT walks the whole structure in creation order.
+    (is (string= poly-handle (autolisp-ename-value (host-entnext mock nil))))
+    (is (string= (autolisp-ename-value v1)
+                 (autolisp-ename-value (host-entnext mock poly))))
+    (is (string= (autolisp-ename-value seq)
+                 (autolisp-ename-value (host-entnext mock v2))))))
+
+(test entmake-explicit-owner-330-is-respected
+  ;; A caller-supplied 330 owner is not overwritten by the auto-linker.
+  (let* ((mock (make-mock-host))
+         (poly (host-entmakex mock (list (cons 0 "POLYLINE") (cons 70 1))))
+         (v (host-entmakex mock (list (cons 0 "VERTEX")
+                                      (cons 10 '(0.0d0 0.0d0 0.0d0))
+                                      (cons 330 (make-autolisp-string "FADE"))))))
+    (declare (ignore poly))
+    (is (string= "FADE"
+                 (autolisp-string-value (cdr (assoc 330 (host-entget mock v))))))))

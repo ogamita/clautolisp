@@ -65,3 +65,93 @@ Interactive selection, commands requiring a graphical session, rendering,
 DWG persistence, and the full multi-document work from
 `drawing-database-api.issue`.
 
+
+
+================================================================
+STATUS (schms-parity, clautolisp 1.6.5 / 1.6.6)
+================================================================
+
+Headless core: DONE. Vendor-probe verification: BLOCKED on real CAD.
+
+The entity CRUD foundation is implemented end to end (drawing model +
+mock-host adapter + AutoLISP builtins) and green across the SBCL suites
+(drawing 223, autolisp-host 30, autolisp-mock-host 686,
+autolisp-builtins-core 1453; alfe conformance clautolisp entity scenario
+PASS, CAD scenarios SKIPPED). Left OPEN as the umbrella tracking issue
+for the deferred families below and the CAD-blocked verification tail.
+
+ENT* verb coverage
+------------------
+
+  - ENTMAKE   — validates against the family registry; returns the
+                SUPPLIED list on success (vendor echo, no injected -1/5),
+                nil + ERRNO 36 on failure; no CL condition leaks.
+  - ENTMAKEX  — returns the new entity's ENAME (issue
+                entmakex-returns-list, now CLOSED); non-graphical ok.
+  - ENTGET    — + the (entget ename '("APP" ...)) application-xdata form;
+                xdata suppressed without an applist, "*" = all.
+  - ENTMOD    — replaces ordinary groups wholesale; edits xdata per
+                application (replace / empty-removes / preserve-unlisted /
+                no-(-3)-leaves-xdata-untouched).
+  - ENTDEL    — delete + within-session restore toggle.
+  - ENTNEXT / ENTLAST — stable creation-order traversal of main entities
+                AND subentities.
+  - HANDENT   — hex handle -> ename, incl. session-deleted entities.
+  - ENTUPD    — ename on a live entity, nil on a deleted one.
+
+Subentity ownership (group 330): a POLYLINE / INSERT opens a run; each
+following VERTEX / ATTRIB / SEQEND gets its 330 owner set to the header
+handle unless the caller supplied one; SEQEND closes the run. ENTNEXT
+walks header -> subentities -> seqend.
+
+Implemented + validated entity families (21)
+--------------------------------------------
+
+LINE POINT CIRCLE ARC ELLIPSE LWPOLYLINE POLYLINE VERTEX SEQEND SPLINE
+TEXT MTEXT ATTDEF ATTRIB INSERT 3DFACE SOLID TRACE RAY XLINE   (graphical)
+XRECORD                                                        (object)
+
+Each carries its DXF-reference required-code set, the AcDbEntity/
+AcDbObject + per-class (100) subclass markers, and a layer-"0" default.
+Registry + validation: clautolisp/drawing/source/entity-families.lisp.
+
+Known limitation on the registered families: only the REQUIRED codes are
+validated and only layer + subclass markers are defaulted. The deeper
+per-family optional-code defaulting the vendor applies (e.g. INSERT
+41/42/43 scale = 1, TEXT 72/73 alignment, ELLIPSE/SPLINE count
+consistency) is NOT yet enforced — it is exactly what the CAD probes are
+meant to pin down, so it is held until real-CAD verification is possible.
+
+Deferred families (each has its own issue)
+------------------------------------------
+
+Types outside the 21 above are accepted PERMISSIVELY by ENTMAKE/ENTMAKEX
+(pass-through, no validation) so no client is blocked, and are tracked
+for full modelling by:
+
+  - entity-family-annotation.issue          DIMENSION, LEADER, MLEADER,
+                                             TOLERANCE, MLINE, MTEXT-adv
+  - entity-family-hatch-image-boundary.issue HATCH/MPOLYGON, WIPEOUT,
+                                             IMAGE, OLE2FRAME
+  - entity-family-3d-solids.issue            3DSOLID, REGION, BODY,
+                                             SURFACE, MESH, POLYLINE-mesh,
+                                             HELIX
+  - entity-family-tables-viewport-misc.issue ACAD_TABLE, VIEWPORT, SHAPE,
+                                             LIGHT, SUN, etc.
+  - entity-family-nongraphical-objects.issue DICTIONARY, GROUP, LAYOUT,
+                                             PLOTSETTINGS, MATERIAL,
+                                             *STYLE objects, etc.
+
+Related defect found during this pass:
+
+  - ename-eq-identity.issue — two ENAMEs for the same entity are not EQ
+    (vendor: they are). Cross-cutting; deferred.
+
+Vendor-probe verification (BLOCKED)
+-----------------------------------
+
+autolisp-front-end/tests/scenarios/entities/ holds a portable
+entity-lifecycle probe + three alfe scenarios. The :clautolisp-only one
+runs green now; the :bricscad-only / :autocad-only ones self-skip until a
+BricsCAD / AutoCAD host is reachable. Running them there is the
+verification tail that closes this issue.

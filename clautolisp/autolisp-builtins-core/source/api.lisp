@@ -3799,12 +3799,19 @@ most recent first."
      operator-name object))
   object)
 
-(defun builtin-entget (ename)
+(defun builtin-entget (ename &optional applist)
   ;; Documented to set ERRNO on failure. Code 2 = "Invalid entity
   ;; or selection-set name" covers both the unknown-ename and
   ;; deleted-ename cases when the host returns nil.
+  ;;
+  ;; The optional APPLIST is the registered-application filter of the
+  ;; (entget ename '("APPNAME" ...)) form: when supplied, the matching
+  ;; applications' extended data (xdata) is appended to the result as a
+  ;; trailing (-3 ...) group. Without it, xdata is suppressed.
+  (when applist (require-proper-list applist "ENTGET"))
   (let ((result (host-entget (current-evaluation-host)
-                             (require-ename ename "ENTGET"))))
+                             (require-ename ename "ENTGET")
+                             applist)))
     (if result
         (errno-and-return 0 result)
         (errno-and-return 2 nil))))
@@ -3821,14 +3828,21 @@ most recent first."
 
 (defun builtin-entmake (data)
   ;; Documented to set ERRNO on failure. Code 36 = "Bad entity type".
+  ;; AutoCAD / BricsCAD return the SUPPLIED entity-definition list on
+  ;; success (verbatim, without the injected (-1 . ename) / (5 . handle)
+  ;; the host stores) and nil on failure. We echo DATA, keeping ENTMAKE
+  ;; conformant; the resolved entity (with defaults + handle + ename) is
+  ;; obtained with (entget (entlast)) — or, directly, via ENTMAKEX.
   (require-proper-list data "ENTMAKE")
   (let ((result (host-entmake (current-evaluation-host) data)))
     (if result
-        (errno-and-return 0 result)
+        (errno-and-return 0 data)
         (errno-and-return 36 nil))))
 
 (defun builtin-entmakex (data)
-  ;; Same ERRNO contract as ENTMAKE.
+  ;; Same ERRNO contract as ENTMAKE, but the return value is the new
+  ;; entity's ENAME (not the DXF list): the ename feeds straight into
+  ;; entget / entmod / entdel. See issues/closed/entmakex-returns-list.
   (require-proper-list data "ENTMAKEX")
   (let ((result (host-entmakex (current-evaluation-host) data)))
     (if result

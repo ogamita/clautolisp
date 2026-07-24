@@ -107,6 +107,7 @@
    (:file "drawing/source/model")
    (:file "drawing/source/conditions")
    (:file "drawing/source/api")
+   (:file "drawing/source/entity-families")
    (:file "drawing/source/persistence")
    (:file "drawing/source/dxf"))
   :in-order-to ((asdf:test-op
@@ -374,6 +375,7 @@
   ((:file "drawing/tests/package")
    (:file "drawing/tests/test-harness")
    (:file "drawing/tests/api-tests")
+   (:file "drawing/tests/entity-families-tests")
    (:file "drawing/tests/persistence-tests")
    (:file "drawing/tests/dxf-tests")
    (:file "drawing/tests/run"))

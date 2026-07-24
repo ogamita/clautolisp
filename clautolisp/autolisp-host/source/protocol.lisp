@@ -61,7 +61,7 @@ not implement OPERATION."
 ;;; the implementation roadmap.
 
 ;; Entity API (autolisp-spec ch.16)
-(defgeneric host-entget    (host ename)               (:documentation "Return the DXF group-code list for ENAME, or nil."))
+(defgeneric host-entget    (host ename &optional applist) (:documentation "Return the DXF group-code list for ENAME, or nil. With APPLIST (a list of registered application names, or the wildcard \"*\"), the matching xdata is appended as a trailing (-3 ...) cell; without it the xdata is suppressed."))
 (defgeneric host-entmod    (host group-code-list)     (:documentation "Apply changes to an existing entity from a DXF group-code list."))
 (defgeneric host-entmake   (host group-code-list)     (:documentation "Create a new graphical entity from a DXF group-code list."))
 (defgeneric host-entmakex  (host group-code-list)     (:documentation "Create a non-graphical entity (XRECORD etc.) from a DXF list."))
@@ -157,7 +157,7 @@ not implement OPERATION."
 ;;; not-supported method for the rest. NullHost overrides every
 ;;; method explicitly to pin its behaviour.
 
-(defmethod host-entget    ((host host) ename)             (declare (ignore ename)) (signal-host-not-supported host 'entget))
+(defmethod host-entget    ((host host) ename &optional applist) (declare (ignore ename applist)) (signal-host-not-supported host 'entget))
 (defmethod host-entmod    ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmod))
 (defmethod host-entmake   ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmake))
 (defmethod host-entmakex  ((host host) glist)             (declare (ignore glist)) (signal-host-not-supported host 'entmakex))
