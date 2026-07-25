@@ -124,6 +124,18 @@
     (is (cli-options-quit-p opts-q))
     (is (find :quit (cli-options-actions opts-q) :key #'action-kind))))
 
+(test cli-keep-and-write-workdir-flags
+  "--keep-workdir flips the flag; --write-workdir-path (space or =) records
+the sidecar file so a caller can locate a kept workdir without scraping stdout."
+  (is (cli-options-keep-workdir-p (parse-arguments '("--keep-workdir"))))
+  (is (string= "/tmp/wd.txt"
+               (cli-options-write-workdir-path
+                (parse-arguments '("--write-workdir-path" "/tmp/wd.txt")))))
+  (is (string= "/tmp/wd.txt"
+               (cli-options-write-workdir-path
+                (parse-arguments '("--write-workdir-path=/tmp/wd.txt")))))
+  (is (null (cli-options-write-workdir-path (parse-arguments '())))))
+
 (test cli-encoding-flags-stick
   "-e and -E set their respective encoding slots; -l after -e inherits
 the load encoding. Per encoding.issue the parser canonicalises the

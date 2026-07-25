@@ -20,7 +20,10 @@ param(
   [string]$Dwg = "c:/gitlab-runner/dwg/empty.dwg",
   # When 1 (default), pass --debug --verbose --keep-workdir to alfe and
   # copy each kept protocol workdir into the artifacts for inspection.
-  [string]$Debug = "1"
+  # NB: must NOT be named -Debug -- that collides with PowerShell's reserved
+  # -Debug common parameter and the script fails to bind before it runs
+  # (ParameterNameAlreadyExistsForCommand), producing zero artifacts.
+  [string]$KeepWorkdir = "1"
 )
 
 $ErrorActionPreference = "Continue"
@@ -84,8 +87,16 @@ foreach ($p in $probes) {
     $probeDwg = Join-Path $tmpBase ("vp-{0}-{1}-{2}.dwg" -f $Backend, $p.Name, [guid]::NewGuid().ToString("N"))
     Copy-Item -Force $Dwg $probeDwg
   }
+  # When keeping the workdir, ask alfe to write its absolute path to a
+  # sidecar file (--write-workdir-path). That is authoritative: the script
+  # reads the path from the file instead of scraping stdout, which is
+  # brittle across encodings and log truncation.
   $dbg = @()
-  if ($Debug -eq "1") { $dbg = @("--debug", "--verbose", "--keep-workdir") }
+  $wdPathFile = $null
+  if ($KeepWorkdir -eq "1") {
+    $wdPathFile = Join-Path $tmpBase ("vp-wd-{0}-{1}-{2}.txt" -f $Backend, $p.Name, [guid]::NewGuid().ToString("N"))
+    $dbg = @("--debug", "--verbose", "--keep-workdir", "--write-workdir-path", $wdPathFile)
+  }
   try {
     if ($Backend -eq "autocad" -and $probeDwg) {
       # explicit batch + drawing selection for accoreconsole
@@ -100,19 +111,32 @@ foreach ($p in $probes) {
   }
   # With --keep-workdir the protocol files (run.scr, run-common.lsp, the
   # staged runtime/bootstrap, the status/stdout/stderr channel files)
-  # survive; find that workdir in the log and copy it into the artifacts.
-  if ($Debug -eq "1" -and (Test-Path $log)) {
-    $logText = Get-Content -Raw $log
-    $rx = "[A-Za-z]:[\/][^\s`"']*alfe-$Backend-[0-9]+-[A-Za-z0-9]+"
-    $seen = @{}
-    foreach ($mm in [regex]::Matches($logText, $rx)) {
-      $wd = $mm.Value
-      if ($seen.ContainsKey($wd)) { continue }
-      $seen[$wd] = $true
-      if (Test-Path $wd) {
-        $dest = Join-Path $outDir ("{0}-workdir" -f $p.Name)
-        Copy-Item -Recurse -Force $wd $dest -ErrorAction SilentlyContinue
-        Write-Host "kept workdir copied -> $dest"
+  # survive; copy that workdir into the artifacts. The path comes from the
+  # --write-workdir-path sidecar file first (authoritative); if that is
+  # missing (older alfe, or the run died before preparing the workdir) fall
+  # back to scraping the log.
+  if ($KeepWorkdir -eq "1") {
+    $dest = Join-Path $outDir ("{0}-workdir" -f $p.Name)
+    $wd = $null
+    if ($wdPathFile -and (Test-Path $wdPathFile)) {
+      $wd = (Get-Content -Raw $wdPathFile).Trim()
+      Remove-Item -Force $wdPathFile -ErrorAction SilentlyContinue
+    }
+    if ($wd -and (Test-Path $wd)) {
+      Copy-Item -Recurse -Force $wd $dest -ErrorAction SilentlyContinue
+      Write-Host "kept workdir copied -> $dest (from sidecar)"
+    } elseif (Test-Path $log) {
+      $logText = Get-Content -Raw $log
+      $rx = "[A-Za-z]:[\/][^\s`"']*alfe-$Backend-[0-9]+-[A-Za-z0-9]+"
+      $seen = @{}
+      foreach ($mm in [regex]::Matches($logText, $rx)) {
+        $w = $mm.Value
+        if ($seen.ContainsKey($w)) { continue }
+        $seen[$w] = $true
+        if (Test-Path $w) {
+          Copy-Item -Recurse -Force $w $dest -ErrorAction SilentlyContinue
+          Write-Host "kept workdir copied -> $dest (from log scrape)"
+        }
       }
     }
   }

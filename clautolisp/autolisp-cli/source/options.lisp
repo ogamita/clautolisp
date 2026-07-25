@@ -45,6 +45,10 @@
   (no-init-p        nil)              ; AC
   (no-color-p       nil)              ; AC
   (keep-workdir-p   nil)              ; A
+  (write-workdir-path nil)            ; A   --write-workdir-path FILE: after the
+                                      ;     workdir is prepared, write its
+                                      ;     absolute path to FILE (for CI to
+                                      ;     locate a --keep-workdir workdir).
   ;; Clautolisp-only
   (mock-input       nil)              ; C   --mock-input PATH (string)
   (gui              nil)              ; C   --gui CMD          (string)

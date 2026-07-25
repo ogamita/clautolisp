@@ -65,6 +65,8 @@
                 #:cli-options-epure-p
                 #:cli-options-bootstrap-phase
                 #:cli-options-workdir
+                #:cli-options-keep-workdir-p
+                #:cli-options-write-workdir-path
                 #:cli-options-timeout
                 #:cli-options-positional
                 #:cli-options-no-init-p

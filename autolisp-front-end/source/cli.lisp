@@ -103,6 +103,7 @@
                 #:cli-options-no-init-p
                 #:cli-options-no-color-p
                 #:cli-options-keep-workdir-p
+                #:cli-options-write-workdir-path
                 #:cli-options-main
                 #:cli-options-positional
                 #:make-option-spec
@@ -145,6 +146,7 @@
            #:cli-options-no-init-p
            #:cli-options-no-color-p
            #:cli-options-keep-workdir-p
+           #:cli-options-write-workdir-path
            #:cli-options-main
            #:cli-options-positional
            ;; usage + version (so the executable's main can re-use)
@@ -190,6 +192,7 @@
     (:bricscad-install . "BRICSCAD_INSTALL")
     (:bricscad-version . "BRICSCAD_VERSION")
     (:keep-workdir     . "AUTOLISP_KEEP_WORKDIR")
+    (:write-workdir-path . "AUTOLISP_WRITE_WORKDIR_PATH")
     (:override         . "ALFE_BACKEND_OVERRIDE"))
   "Mapping from logical option key to the environment variable name
 documented in the spec. The CLI consults this table before consuming
@@ -255,6 +258,11 @@ Bootstrap and runtime:
                          blue on light).
   --keep-workdir         Keep the engine workdir at end of run (do not delete).
                          Mirrors $AUTOLISP_KEEP_WORKDIR.
+  --write-workdir-path FILE
+                         After the workdir is prepared, write its absolute path
+                         to FILE (one line). Lets a caller (e.g. a CI script)
+                         locate a --keep-workdir workdir without scraping stdout.
+                         Mirrors $AUTOLISP_WRITE_WORKDIR_PATH.
   --dry-run              Print the resolved action plan and exit 0.
 
 Diagnostics:
@@ -301,7 +309,8 @@ argument parsing so explicit CLI options always win."
         (env-bootstrap (env-default :bootstrap-phase))
         (env-dwg     (env-default :dwg))
         (env-epure   (env-default :epure))
-        (env-keep-workdir (env-default :keep-workdir)))
+        (env-keep-workdir (env-default :keep-workdir))
+        (env-write-workdir-path (env-default :write-workdir-path)))
     (when env-workdir
       (setf (cli-options-workdir options) env-workdir))
     (when env-timeout
@@ -325,7 +334,9 @@ argument parsing so explicit CLI options always win."
     (when env-epure
       (setf (cli-options-epure-p options) t))
     (when env-keep-workdir
-      (setf (cli-options-keep-workdir-p options) t)))
+      (setf (cli-options-keep-workdir-p options) t))
+    (when env-write-workdir-path
+      (setf (cli-options-write-workdir-path options) env-write-workdir-path)))
   options)
 
 ;; PARSE-MODE, PARSE-BACKEND-SYMBOL, PARSE-BACKEND-VARIANT,
@@ -352,8 +363,8 @@ parser's mutual-exclusion semantics for --bricscad/--autocad/
 
 (defun %make-alfe-option-specs ()
   "Build the alfe-only option-spec list: --mode/--backend/--dwg/
---epure/--workdir/--keep-workdir/--timeout/--bootstrap-phase/
---dry-run/--main/--quit. Also wraps the common dialect-shorthand
+--epure/--workdir/--keep-workdir/--write-workdir-path/--timeout/
+--bootstrap-phase/--dry-run/--main/--quit. Also wraps the common dialect-shorthand
 specs (--autocad/--bricscad/--clautolisp) with conflict-checking
 handlers so a `--bricscad --autocad` invocation signals cli-usage-
 error rather than silently last-winning."
@@ -440,7 +451,12 @@ error rather than silently last-winning."
     :longs '("--keep-workdir") :takes-arg-p nil
     :handler (lambda (opts value name)
                (declare (ignore value name))
-               (setf (cli-options-keep-workdir-p opts) t)))))
+               (setf (cli-options-keep-workdir-p opts) t)))
+   (make-option-spec
+    :longs '("--write-workdir-path") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-write-workdir-path opts) value)))))
 
 (defparameter *alfe-option-specs* (%make-alfe-option-specs))
 
@@ -826,6 +842,20 @@ takes effect regardless of option order."
     ;; slot defaults to :strict when the user gave no --dialect.
     (t (cli-options-dialect options))))
 
+(defun %write-workdir-path-file (options workdir)
+  "If --write-workdir-path FILE was given, write WORKDIR's absolute path to
+FILE (one line). Best-effort: a write failure is logged, never fatal — the
+run must proceed even if the caller's path-capture file is unwritable."
+  (let ((path (cli-options-write-workdir-path options)))
+    (when path
+      (handler-case
+          (with-open-file (out path :direction :output
+                                    :if-exists :supersede
+                                    :if-does-not-exist :create)
+            (write-line (namestring (truename workdir)) out))
+        (error (e)
+          (log-verbose "cli: could not write workdir path to ~S: ~A" path e))))))
+
 (defun run-plan (options backend &key version-text)
   "Drive a real backend through the action plan. Returns the exit code.
 VERSION-TEXT propagates the alfe version string from RUN so backends
@@ -835,8 +865,10 @@ engine."
                (cli-options-load-encoding options)
                (cli-options-io-encoding options))
   (let* ((started-at (get-internal-real-time))
-         (workdir (prepare-workdir backend
-                                   (cli-options-workdir options)))
+         (workdir (let ((wd (prepare-workdir backend
+                                             (cli-options-workdir options))))
+                    (%write-workdir-path-file options wd)
+                    wd))
          (session (start-engine backend workdir
                                 :dialect (effective-dialect options)
                                 :host (cli-options-host options)
