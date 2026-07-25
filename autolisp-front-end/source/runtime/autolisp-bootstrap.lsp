@@ -956,10 +956,34 @@
     (setq lines (cdr lines)))
   acc)
 
+;; Probe whether a function NAME (a string) is actually bound on this host.
+;; vl-catch-all-apply CANNOT trap the error raised when a symbol has no
+;; function definition at all: that error is signalled while resolving the
+;; symbol to an applicable subr, before the guard is established, so it
+;; escapes the guard (this is why calling an undefined vlax-sleep through
+;; vl-catch-all-apply let "fonction incorrecte: VLAX-SLEEP" propagate on
+;; AutoCAD's accoreconsole). atoms-family probes the symbol table directly:
+;; given a symlist it returns the supplied names that exist, nil in the slot
+;; for those that do not.
+(defun autolisp-host-has-fn (name / hit)
+  (setq hit (atoms-family 1 (list (strcase name))))
+  (if (and hit (car hit)) T nil))
+
+;; Real-time yield primitive that does NOT depend on vlax-sleep (absent on
+;; AutoCAD -- it is a BricsCAD extension, and vl-load-com does not add it).
+;; Prefer the DELAY command; if that too is rejected, return immediately and
+;; let the caller's poll loop spin (correct, if more CPU-hungry).
+(defun autolisp-delay-ms (ms)
+  (vl-catch-all-apply 'command (list "_DELAY" ms))
+  nil)
+
 (defun autolisp-sleep-ms (ms / r)
-  (setq r (vl-catch-all-apply 'vlax-sleep (list ms)))
-  (if (vl-catch-all-error-p r)
-    (vl-catch-all-apply 'command (list "_DELAY" ms)))
+  (if (autolisp-host-has-fn "VLAX-SLEEP")
+    (progn
+      (setq r (vl-catch-all-apply 'vlax-sleep (list ms)))
+      (if (vl-catch-all-error-p r)
+        (autolisp-delay-ms ms)))
+    (autolisp-delay-ms ms))
   nil)
 
 (defun autolisp-repl-reset-counters ()

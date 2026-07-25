@@ -1,0 +1,79 @@
+-*- coding:utf-8 -*-
+
+autocad-runtime-vlax-sleep-and-rest — the CAD-side protocol runtime crashed under AutoCAD accoreconsole
+=======================================================================================================
+
+Reported from: the Windows vendor-probe CI job
+(gitlab job 15534582489, vendor:probes:autocad) against AutoCAD 2022
+accoreconsole batch. All three probes reported "no verdict (backend
+unreachable or crashed)". The --keep-workdir / --write-workdir-path
+artifacts captured the exact protocol channel files.
+
+Diagnosis (from the kept workdir)
+---------------------------------
+
+logs/debug.log:
+    [CAD] runtime LOAD succeeded
+    [CAD] host lacks &rest; keeping bootstrap 1-arg shadows + walk-rewriting normalize
+    [CAD] entering autolisp-protocol-server-loop
+    [CAD] server-loop CAUGHT error: nombre d'arguments insuffisants
+
+protocol/stderr.txt (twice):
+    ERROR protocol read: fonction incorrecte: VLAX-SLEEP
+
+protocol/status.txt: STOPPED ; status.txt: 99
+
+Two AutoCAD-specific runtime-portability bugs, both masked on BricsCAD:
+
+1. vlax-sleep is undefined on AutoCAD.
+   `vlax-sleep` is a BricsCAD extension; AutoCAD's AutoLISP has no such
+   function (and `(vl-load-com)` does not add it). The runtime's
+   sleep/yield primitive wrapped the call in `vl-catch-all-apply` — but
+   vl-catch-all-apply CANNOT trap the error raised when a symbol has NO
+   function definition at all: that error fires while resolving the
+   symbol to an applicable subr, before the guard is established, so it
+   escapes. The default yield mode is "VLAX-SLEEP", so the very first
+   poll-yield in the server loop's read path threw, was caught by the
+   loop's outer "ERROR protocol read:" handler, set status FAILED READ,
+   and stopped the loop before it ever served a request.
+
+2. `(princ "")` is a 1-arg call against a 2-arg shadow.
+   The bootstrap shadows print/princ/prin1 with two required params
+   `(obj file)`. On BricsCAD the template rewrites them to `(&rest args)`
+   variadic; on AutoCAD (no &rest) the fixed 2-arg shadows are kept and a
+   code-walker rewrites *user* `(princ x)` -> `(princ x nil)`. But the
+   runtime's OWN loop tails `(princ "")` (autolisp-remote-io.lsp, the
+   server loop and the selftest loop) are not user code and not walked,
+   so they call the 2-arg shadow with one arg -> "nombre d'arguments
+   insuffisants". This fired AFTER the loop had already set STOPPED
+   (hence the mystery numeric status 99), inside the run-common outer
+   catch.
+
+Fix (alfe 1.6.4 / clautolisp 1.6.15)
+------------------------------------
+
+autolisp-front-end/source/runtime/autolisp-bootstrap.lsp
+  * new `autolisp-host-has-fn` (probes the symbol table via atoms-family
+    — the reliable way to test function existence, since
+    vl-catch-all-apply can't trap an unbound-symbol error)
+  * new `autolisp-delay-ms` (DELAY-command yield, no vlax dependency)
+  * `autolisp-sleep-ms` now probes VLAX-SLEEP first, degrading to
+    autolisp-delay-ms on hosts that lack it (AutoCAD)
+
+autolisp-front-end/source/runtime/autolisp-remote-io.lsp
+  * `autolisp-protocol-sleep-ms` gets the same probe-first guard
+  * both loop tails `(princ "")` -> `nil` (the return value is discarded
+    by the run-common outer catch)
+
+No backend conditioning is needed: the fixes degrade gracefully on any
+host by capability, so BricsCAD/clautolisp behaviour is unchanged. The
+SBCL suite (303 checks) is unaffected — these .lsp files execute only
+inside the CAD host.
+
+Status
+------
+
+OPEN pending confirmation on the next vendor:probes:autocad CI run
+(needs the Windows + AutoCAD 2022 runner). Once the AutoCAD probes reach
+READY and produce verdicts, close this and reconcile any genuine
+clautolisp-vs-AutoCAD divergences the probes then surface.

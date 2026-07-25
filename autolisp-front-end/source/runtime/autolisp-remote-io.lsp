@@ -181,10 +181,17 @@
       (setq acc (strcat acc "\n" line))))
   (autolisp-protocol-read-from-text acc))
 
+;; See autolisp-host-has-fn / autolisp-delay-ms in the bootstrap (loaded
+;; first): probe vlax-sleep's existence rather than trusting
+;; vl-catch-all-apply to trap an undefined-symbol error, which it cannot.
+;; On AutoCAD (no vlax-sleep) this degrades to the DELAY command.
 (defun autolisp-protocol-sleep-ms (ms / r)
-  (setq r (vl-catch-all-apply 'vlax-sleep (list ms)))
-  (if (vl-catch-all-error-p r)
-    (vl-catch-all-apply 'command (list "_DELAY" ms)))
+  (if (autolisp-host-has-fn "VLAX-SLEEP")
+    (progn
+      (setq r (vl-catch-all-apply 'vlax-sleep (list ms)))
+      (if (vl-catch-all-error-p r)
+        (autolisp-delay-ms ms)))
+    (autolisp-delay-ms ms))
   nil)
 
 (defun autolisp-protocol-yield-ms ()
@@ -296,7 +303,12 @@
               (autolisp-protocol-set-status
                 (strcat "DONE " (itoa req-id) " OK"))))))))
   (autolisp-protocol-set-status "STOPPED")
-  (princ ""))
+  ;; Return nil, NOT (princ "") -- under AutoCAD the host lacks &rest so the
+  ;; bootstrap keeps the fixed 2-arg `princ' shadow (obj file); a 1-arg
+  ;; (princ "") then raises "nombre d'arguments insuffisants" and aborts the
+  ;; loop after it had already set STOPPED (giving the mystery status 99).
+  ;; The loop's return value is discarded by the run-common outer catch.
+  nil)
 
 (defun autolisp-protocol-selftest-loop (/ keep control line form)
   (setq *AUTOLISP_PROTOCOL_INPUT_QUEUE* nil)
@@ -324,7 +336,12 @@
             (autolisp-protocol-set-status "READY"))
           (setq keep nil)))))
   (autolisp-protocol-set-status "STOPPED")
-  (princ ""))
+  ;; Return nil, NOT (princ "") -- under AutoCAD the host lacks &rest so the
+  ;; bootstrap keeps the fixed 2-arg `princ' shadow (obj file); a 1-arg
+  ;; (princ "") then raises "nombre d'arguments insuffisants" and aborts the
+  ;; loop after it had already set STOPPED (giving the mystery status 99).
+  ;; The loop's return value is discarded by the run-common outer catch.
+  nil)
 
 (defun C:AUTOLISP-PROTOCOL-SELFTEST ()
   (autolisp-protocol-selftest-loop))
