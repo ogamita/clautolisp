@@ -25,9 +25,12 @@
 ;;;;     (Linux automation is deferred per the issue.)
 ;;;;
 ;;;;   Windows, batch mode (default, when bricscad.exe is found):
-;;;;     bricscad.exe <template> /b WORKDIR/run.scr
+;;;;     bricscad.exe <template> [/p <profile>] /b WORKDIR/run.scr
 ;;;;     Same GUI-exe + script mechanism as macOS/Linux — no COM. NB the
-;;;;     Windows CLI takes /b (AutoCAD-lineage), not the Unix -B.
+;;;;     Windows CLI takes /p and /b (AutoCAD-lineage), not the Unix -P/-B.
+;;;;     $AUTOLISP_BRICSCAD_PROFILE names the profile; a CLEAN profile is
+;;;;     required for pure-CAD runs, else the runner's default profile
+;;;;     auto-loads a vertical app whose startup blocks the /b script.
 ;;;;
 ;;;;   Windows, automation mode (--mode automation, or :auto with no exe):
 ;;;;     cscript //nologo WORKDIR/bridge-bricscad.vbs
@@ -126,7 +129,9 @@ the user-overridden one via --dwg / $AUTOLISP_DWG).")
     :accessor bricscad-backend-profile
     :initform nil
     :documentation
-    "Optional profile name to pass via -P (macOS only)."))
+    "Optional user-profile name, passed via /p (Windows) or -P (Unix).
+Resolved from $AUTOLISP_BRICSCAD_PROFILE. A clean profile keeps a
+pure-CAD run from auto-loading a vertical application."))
   (:default-initargs
    :name :bricscad
    :display-name "BricsCAD"))
@@ -202,6 +207,20 @@ finally NIL (the backend will launch without an explicit template)."
                      "~/Library/Application Support/Bricsys/BricsCAD/V26x64/en_US/Templates/Default-m.dwt"
                      "/Library/Application Support/Bricsys/BricsCAD/V26x64/Templates/Default-mm.dwt")))))
 
+(defun discover-bricscad-profile ()
+  "Resolve the BricsCAD user profile to launch with (the /p or -P switch).
+Named by $AUTOLISP_BRICSCAD_PROFILE (or $BRICSCAD_PROFILE); NIL means
+launch with the default/last-used profile.
+
+This matters because on this runner the DEFAULT profile has the EPURE /
+SCHMS+ vertical application loaded (its ribbon shows even for a bare
+bricscad.exe), and that on-startup app-load blocks the /b script. A
+pure-CAD run must therefore name a CLEAN profile explicitly (e.g. the
+unnamed \"<<Profil sans nom>>\") rather than trust the default."
+  (let ((p (or (uiop:getenv "AUTOLISP_BRICSCAD_PROFILE")
+               (uiop:getenv "BRICSCAD_PROFILE"))))
+    (if (and p (plusp (length p))) p nil)))
+
 ;;; --- DETECT --------------------------------------------------------
 
 (defmethod detect ((backend bricscad-backend) &key)
@@ -223,7 +242,9 @@ finally NIL (the backend will launch without an explicit template)."
                                ((windows-p) "/c/Program Files*/Bricsys/*/bricscad.exe"))))))
     (setf (bricscad-backend-executable-path backend) binary
           (bricscad-backend-template-path backend)
-          (discover-bricscad-template))
+          (discover-bricscad-template)
+          (bricscad-backend-profile backend)
+          (discover-bricscad-profile))
     backend))
 
 ;;; --- emitter: run.scr (batch mode) --------------------------------
@@ -500,7 +521,14 @@ typically hands it to UIOP:LAUNCH-PROGRAM."
              (profile (bricscad-backend-profile backend)))
          (append (list binary)
                  (when template (list (namestring template)))
-                 (when (and profile (macos-p)) (list "-P" profile))
+                 ;; User profile: the /p (Windows) or -P (Unix) switch. This
+                 ;; is how a pure-CAD run avoids the runner's default profile
+                 ;; auto-loading a heavy vertical application (EPURE/SCHMS+),
+                 ;; whose on-startup load runs on the single LISP/UI thread
+                 ;; and blocks the /b script from ever running (the "stuck at
+                 ;; BOOTING, run.scr never executes" symptom). Point it at a
+                 ;; clean profile with an empty Startup Suite.
+                 (when profile (list (if (windows-p) "/p" "-P") profile))
                  ;; Script switch is platform-specific: Unix builds take
                  ;; -B, the Windows (AutoCAD-lineage) CLI takes /b. Passing
                  ;; -B on Windows opens the GUI but silently ignores the

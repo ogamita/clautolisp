@@ -170,9 +170,44 @@ by-name kill -- the runner has an interactive BricsCAD).
 process-info is the cscript, not the COM-server BricsCAD -- but batch is
 the default now and owns its process directly.)
 
+Root of the BOOTING stall: default profile auto-loads a vertical app (1.6.11)
+-----------------------------------------------------------------------------
+
+Job 15534916618 (batch /b, 1.6.10): BricsCAD launched but sat at BOOTING the
+full 180 s, then start-engine terminated it (no orphan -- 1.6.10 works). The
+kept workdir had NO run-scr-started.txt and an EMPTY logs/ -> run.scr never
+executed at all. pjb observed the BricsCAD window come up with the EPURE /
+ES / SCHMS+ ribbon, panels, and a Drawing Recovery Manager -- i.e. the runner's
+DEFAULT/last-used profile auto-loads the EPURE vertical application (its ribbon
+shows even for a bare bricscad.exe). That on-startup app-load runs on the single
+LISP/UI thread and blocks the /b script from ever starting.
+
+pjb's launch aliases gave the mechanism: /p Epure loads the app; /p
+"<<Profil sans nom>>" is a CLEAN unnamed profile with no app.
+
+Design (agreed): two test categories --
+  * pure-CAD (these probes, clautolisp conformance): launch a CLEAN profile,
+    no application;
+  * application-context CI (opt-in, later): load the app (e.g. c:/epure2022)
+    before the test script.
+
+Fix (pure-CAD half, alfe 1.6.11):
+  * backend gains profile resolution ($AUTOLISP_BRICSCAD_PROFILE /
+    $BRICSCAD_PROFILE) via discover-bricscad-profile, set in DETECT.
+  * build-launch-argv passes it as /p (Windows) or -P (Unix), on ALL
+    platforms (was macOS-only); launch becomes
+    `bricscad.exe <dwg> /p <profile> /b run.scr`.
+  * run-vendor-probes.ps1 sets AUTOLISP_BRICSCAD_PROFILE="<<Profil sans nom>>"
+    for bricscad (override: $BRICSCAD_PROFILE_CLEAN).
+
+Deferred: the application-context category (--load-app / wire the stub
+--epure to inject the app-load into run.scr) -- after pure-CAD is green.
+
 Status
 ------
 
-OPEN pending the next vendor:probes:bricscad run. The launch works; expect
-either real probe verdicts or a FAILED <msg> status naming whatever the
-loop hit after READY 0 -- and no leftover BricsCAD either way.
+OPEN pending the next vendor:probes:bricscad run, now launched with the clean
+profile. Expect run.scr to finally execute (run-scr-started.txt appears,
+debug.log fills) and reach READY -> real verdicts, or a named FAILED <msg>.
+(If the Drawing Recovery Manager -- a byproduct of earlier forced kills --
+still blocks, clean the recovery files / disable it next.)

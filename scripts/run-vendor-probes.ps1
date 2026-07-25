@@ -37,6 +37,18 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 # the explicit AutoCAD form and wins where supported.
 if ($Dwg) { $env:AUTOLISP_DWG = $Dwg }
 
+# These are PURE-CAD probes: launch BricsCAD with a CLEAN profile so it does
+# not auto-load the runner's vertical application (EPURE/SCHMS+). Its default
+# profile has EPURE loaded -- its ribbon shows even for a bare bricscad.exe --
+# and that on-startup app-load blocks the /b script from ever running (run.scr
+# never executes, stuck at BOOTING). "<<Profil sans nom>>" is the clean unnamed
+# profile. alfe passes it as /p on Windows. Override with $BRICSCAD_PROFILE_CLEAN.
+if ($Backend -eq "bricscad") {
+  $cleanProfile = if ($env:BRICSCAD_PROFILE_CLEAN) { $env:BRICSCAD_PROFILE_CLEAN } else { "<<Profil sans nom>>" }
+  $env:AUTOLISP_BRICSCAD_PROFILE = $cleanProfile
+  Write-Host "AUTOLISP_BRICSCAD_PROFILE = $env:AUTOLISP_BRICSCAD_PROFILE"
+}
+
 # Point alfe at the CAD-side runtime/bootstrap LSP shipped in the repo.
 # alfe is built-not-installed on the runner, and the vendored-asset
 # lookup (asdf:system-relative-pathname) is unreliable from a frozen
