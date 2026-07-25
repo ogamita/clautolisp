@@ -531,6 +531,44 @@ verify:vl-registry:windows:
   script:
     - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
+# --- vendor verification: alfe probes on real BricsCAD / AutoCAD ------------
+#
+# The Windows runner has BricsCAD and AutoCAD installed and runs in an open
+# desktop session, so alfe can drive them. These MANUAL jobs run the portable
+# entity / drawing-data / selection conformance probes
+# (autolisp-front-end/tests/scenarios/entities/*probe.lsp) — byte-identical to
+# the ones clautolisp passes headlessly — against each real product, capture
+# every probe's output as an artifact (dist/vendor-probes/<backend>/), and fail
+# on any probe FAIL or unreachable backend. This is the automated form of the
+# entity-mutation / drawing-data-structures / selection vendor-verification
+# tail. Manual + allow_failure: launching GUI CAD is heavy and the runner is
+# intermittent; trigger on demand, download the artifacts, feed FAILs back.
+.vendor-probe-common:
+  stage: test
+  tags: [windows, amd64, shell]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  rules:
+    - when: manual
+      allow_failure: true
+  before_script:
+    - make -C autolisp-front-end build-alfe-sbcl
+  artifacts:
+    name: "vendor-probes-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/vendor-probes/]
+    expire_in: 30 days
+
+vendor:probes:bricscad:
+  extends: .vendor-probe-common
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad
+
+vendor:probes:autocad:
+  extends: .vendor-probe-common
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad
+
 # --- collect: union the per-target artefacts into the combined set -----
 #
 # Gathers the per-target release jobs' dist/ (binaries-<os>-<arch>,
