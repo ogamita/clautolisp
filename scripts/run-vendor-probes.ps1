@@ -12,7 +12,12 @@
 param(
   [Parameter(Mandatory=$true)]
   [ValidateSet("bricscad","autocad")]
-  [string]$Backend
+  [string]$Backend,
+  # Drawing to open for the probes. AutoCAD batch (accoreconsole) needs one
+  # or it stops with NO-DWG; empty.dwg is the clean canvas the create/delete
+  # probes want. Overridden by the PROBE_DWG CI variable. A content drawing
+  # (e.g. 2018.dwg) can be passed for read-oriented probes later.
+  [string]$Dwg = "c:/gitlab-runner/dwg/empty.dwg"
 )
 
 $ErrorActionPreference = "Continue"
@@ -21,6 +26,10 @@ $alfe = Join-Path $root "autolisp-front-end/tools/alfe/bin/alfe-sbcl"
 $probeDir = Join-Path $root "autolisp-front-end/tests/scenarios/entities"
 $outDir = Join-Path $root "dist/vendor-probes/$Backend"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+# AUTOLISP_DWG is consulted by both backends' batch paths; --dwg (below) is
+# the explicit AutoCAD form and wins where supported.
+if ($Dwg) { $env:AUTOLISP_DWG = $Dwg }
 
 if (-not (Test-Path $alfe)) {
   Write-Host "alfe binary not found at $alfe (build it: make -C autolisp-front-end build-alfe-sbcl)"
@@ -34,12 +43,17 @@ $probes = @(
 )
 
 $failed = 0
-$summary = @("vendor probes: $Backend", "alfe: $alfe", "")
+$summary = @("vendor probes: $Backend", "alfe: $alfe", "dwg: $Dwg", "")
 foreach ($p in $probes) {
   $probePath = Join-Path $probeDir $p.File
   $log = Join-Path $outDir ("{0}.log" -f $p.Name)
   Write-Host "=== $Backend : $($p.Name) ==="
-  & $alfe "--$Backend" -l $probePath 2>&1 | Tee-Object -FilePath $log
+  if ($Backend -eq "autocad" -and $Dwg) {
+    # explicit batch + drawing selection for accoreconsole
+    & $alfe "--autocad" "--mode" "batch" "--dwg" $Dwg -l $probePath 2>&1 | Tee-Object -FilePath $log
+  } else {
+    & $alfe "--$Backend" -l $probePath 2>&1 | Tee-Object -FilePath $log
+  }
   $content = ""
   if (Test-Path $log) { $content = Get-Content -Raw $log }
   if ($content -match [regex]::Escape($p.Pass)) {
