@@ -290,9 +290,11 @@ Resolved tail.
 
 ## Release tags and branches
 
-The normative rules live in [`version-rules.md`](version-rules.md) —
-read it before cutting a release. What follows is the summary and the
-parts specific to this repository.
+The normative rules are shared across projects and live in
+[`version-rules.md`](https://gitlab.com/informatimago/rules/-/blob/master/version-rules.md)
+(repository: <https://gitlab.com/informatimago/rules>) — read it before
+cutting a release. What follows is the summary and the parts specific
+to this repository.
 
 **The three kinds of ref, never mixed:**
 
@@ -332,7 +334,7 @@ tag formats are **deprecated**. The existing tags stay (they are
 published immutable refs), but no new ones are created — a program
 version is read from its source.
 
-**Cutting a release** (full procedure in version-rules.md § 5):
+**Cutting a release** (full procedure in `version-rules.md` § 5):
 
 1. bump the shipped programs' stamps, update `RELEASE_NOTES.org`, commit;
 2. `git tag -a release-M.m.d`;
@@ -354,4 +356,4 @@ as immutable aliases of the corresponding `release-M.m.d` tags: that
 format is **deprecated**, not deleted — use `release-M.m.d` for every
 new release. `release-1.3.1` not being an ancestor of
 `release-1.4.0` is correct, not damage: it is a maintenance release cut
-in parallel with trunk development (version-rules.md I4).
+in parallel with trunk development (`version-rules.md` I4).

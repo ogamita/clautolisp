@@ -1,5 +1,6 @@
 #!/bin/sh
-# POSIX sh — audit the repository against version-rules.md.
+# POSIX sh — audit the repository against the shared version rules:
+# https://gitlab.com/informatimago/rules/-/blob/master/version-rules.md
 #
 # Checks the topological invariants: I1 (release-* is a tag-only
 # namespace, tags annotated), I3 (ancestry order within a series),
@@ -154,5 +155,6 @@ if [ $fail -eq 0 ]; then
            "$(echo "$series"   | wc -l | tr -d ' ')"
     exit 0
 fi
-printf 'check-versions: %s violation(s) — see version-rules.md.\n' "$fail"
+printf 'check-versions: %s violation(s) — see\n  %s\n' "$fail" \
+       "https://gitlab.com/informatimago/rules/-/blob/master/version-rules.md"
 exit 1
