@@ -304,10 +304,17 @@ parts specific to this repository.
   committed on them; they are only fast-forwarded onto a commit that
   carries a `release-*` tag, so checking one out always yields a
   released state. `version-1.6` is what a user tracking "1.6" follows.
-- `master`, `maint-M.m` — **development lines**, the only branches
-  commits land on. `maint-M.m` is created on demand at the newest
-  `release-M.m.d` when a fix must ship for a frozen series without
-  dragging in trunk work.
+- `master`, `maint-M.m`, `dev-M.m` — **development lines**, the only
+  branches commits land on. `maint-M.m` is created on demand at the
+  newest `release-M.m.d` when a fix must ship for a frozen series
+  without dragging in trunk work; `dev-M.m` names a development line
+  for an unreleased version when more than one future is in flight.
+- `fix-<slug>`, `feat-<slug>` — **work branches**. Every change gets
+  one, forked from the *oldest* line that could need it, one concern
+  per branch, deleted once merged. This is what lets the destination be
+  chosen at the end: a fix may ship in `release-1.2.3` while the
+  feature it needed also goes to `dev-1.3`. Merges only ever flow
+  forward, from older line to newer.
 
 **Version numbers:** `M` = incompatible change, `m` = user-visible
 feature change, `d` = bug fixes and changes with no user-visible
@@ -321,8 +328,9 @@ Each shipped program keeps its own version (clautolisp's
 changed within a series must have `A.B = M.m`, and a program that has
 not changed may stay at an older `A.B` and still ship. Programs are
 **not** tagged separately: the `clautolisp-v*`, `alfe-*` and `alref-v*`
-tags are retired, kept only as historical markers, and no new ones are
-created.
+tag formats are **deprecated**. The existing tags stay (they are
+published immutable refs), but no new ones are created — a program
+version is read from its source.
 
 **Cutting a release** (full procedure in version-rules.md § 5):
 
@@ -342,7 +350,8 @@ pass on master at all times.
 **Legacy refs.** Releases up to 1.6.11 were originally marked `vM.m.d`
 with `release-M.m.d` / `release-M.m` *branches*; the branches are gone,
 replaced by the tags and pointers above. The old `vM.m.d` tags are kept
-as immutable aliases of the corresponding `release-M.m.d` tags — do not
-create new ones. `release-1.3.1` not being an ancestor of
+as immutable aliases of the corresponding `release-M.m.d` tags: that
+format is **deprecated**, not deleted — use `release-M.m.d` for every
+new release. `release-1.3.1` not being an ancestor of
 `release-1.4.0` is correct, not damage: it is a maintenance release cut
 in parallel with trunk development (version-rules.md I4).

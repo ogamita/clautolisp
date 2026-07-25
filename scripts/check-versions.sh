@@ -126,7 +126,8 @@ done
 # --- I7: no orphaned release -----------------------------------------
 lines=$(git for-each-ref --format='%(refname)' \
             'refs/heads/master' 'refs/remotes/origin/master' \
-            'refs/heads/maint-*' 'refs/remotes/origin/maint-*')
+            'refs/heads/maint-*' 'refs/remotes/origin/maint-*' \
+            'refs/heads/dev-*' 'refs/remotes/origin/dev-*')
 for t in $releases; do
     c=$(git rev-parse "$t^{commit}")
     found=no
@@ -136,6 +137,14 @@ for t in $releases; do
     [ "$found" = yes ] || bad "I7: $t is not reachable from master or any maint-* branch"
 done
 ok "I7: every release is reachable from a development line"
+
+# --- informational: deprecated tag formats (version-rules.md § 3.2) ---
+# Not a violation: existing vM.m.d / <program>-vA.B.C tags are published
+# refs and stay. Reported so nobody starts creating them again.
+legacy=$(git tag --list | grep -v '^release-' \
+         | grep -Ec '^(v[0-9]|[a-z][a-z0-9-]*-v?[0-9])' || true)
+[ "${legacy:-0}" -gt 0 ] && \
+    printf 'note  %s tag(s) in a deprecated format (vM.m.d, <program>-vA.B.C) — kept, but create no more\n' "$legacy"
 
 # --- summary ----------------------------------------------------------
 printf '\n'
