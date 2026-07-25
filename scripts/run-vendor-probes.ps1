@@ -31,7 +31,17 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 # the explicit AutoCAD form and wins where supported.
 if ($Dwg) { $env:AUTOLISP_DWG = $Dwg }
 
-if (-not (Test-Path $alfe)) {
+# The Makefile saves the SBCL image as `alfe-sbcl` with no extension. On
+# Windows it is a native PE, but PowerShell's call operator (&) only runs
+# files whose extension is in $PATHEXT, so it must be a `.exe`. Prefer an
+# existing .exe, else copy the extension-less PE to one. (make-driven targets
+# run the bare name fine because they go through sh/cmd, not PowerShell.)
+if (Test-Path "$alfe.exe") {
+  $alfe = "$alfe.exe"
+} elseif (Test-Path $alfe) {
+  Copy-Item -Force $alfe "$alfe.exe"
+  $alfe = "$alfe.exe"
+} else {
   Write-Host "alfe binary not found at $alfe (build it: make -C autolisp-front-end build-alfe-sbcl)"
   exit 2
 }
