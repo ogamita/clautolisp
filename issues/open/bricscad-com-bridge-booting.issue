@@ -79,9 +79,54 @@ Changes:
   * The VBScript automation path remains, reachable via --mode automation,
     now instrumented (bridge-vbs.log) from the earlier round if ever needed.
 
+Likely root cause: BricsCAD never reaches a command-ready state (licensing)
+--------------------------------------------------------------------------
+
+Batch mode (1.6.7) DID launch the BricsCAD GUI on the Windows runner, but
+it too sat at BOOTING -- run.scr never executed. pjb noted BricsCAD may be
+waiting on the license server with the VPN possibly down (infra he does
+not fully control).
+
+Decisive deduction: BOTH launch paths stall identically at BOOTING --
+  * automation/COM: CreateObject succeeds, SendCommand dispatched with NO
+    error, yet the (load) never runs;
+  * batch: bricscad.exe -B run.scr opens the GUI, yet run.scr never runs.
+The COM path does not use -B at all, so a -B switch problem cannot be the
+common cause. The one thing common to both is that BricsCAD launches but
+never reaches a command-ready prompt, so neither the queued SendCommand
+nor the -B script fires. A license-checkout block during startup (no VPN
+-> license server unreachable) fits exactly, and also retroactively
+explains the original automation BOOTING failures.
+
+=> This is environmental, NOT an alfe defect. The alfe-side work stands
+(batch is the right default; the COM path is instrumented as a fallback).
+Do not chase it further as a code bug until a *licensed* BricsCAD can
+reach its command prompt on the runner.
+
+Update: licensed now, and it's the Windows script switch (-B vs /b)
+------------------------------------------------------------------
+
+The license/VPN did come up: on the batch run BricsCAD opened and showed
+the (empty) drawing -- i.e. it reached a command-ready GUI -- yet run.scr
+STILL never ran and it timed out at BOOTING. Command-ready but script not
+executing rules out licensing as the remaining cause and points at the
+launch switch: build-launch-argv passed `-B run.scr` on every platform,
+but the Windows (AutoCAD-lineage) BricsCAD CLI takes `/b`, not the Unix
+`-B`. With `-B`, Windows BricsCAD opens the GUI and silently ignores the
+script.
+
+Fix (alfe 1.6.8):
+  * build-launch-argv batch: use "/b" on Windows, "-B" elsewhere.
+  * emit-run-scr: first action now drops a run-scr-started.txt marker, so
+    the next kept workdir is self-diagnosing:
+      - marker present + debug.log filled -> script ran, runtime advanced;
+      - marker present + debug.log empty  -> the (load) is the problem;
+      - marker absent                     -> the script switch STILL isn't
+        firing (try another form).
+
 Status
 ------
 
-OPEN pending the next vendor:probes:bricscad CI run, now via batch mode.
-If batch has its own trouble, the automation path (+ bridge-vbs.log) is
-still there as a fallback.
+OPEN pending the next vendor:probes:bricscad run (needs a licensed
+BricsCAD, which the runner now has). Read run-scr-started.txt +
+logs/debug.log in the kept workdir per the table above.

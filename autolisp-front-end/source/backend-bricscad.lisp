@@ -25,8 +25,9 @@
 ;;;;     (Linux automation is deferred per the issue.)
 ;;;;
 ;;;;   Windows, batch mode (default, when bricscad.exe is found):
-;;;;     bricscad.exe <template> -B WORKDIR/run.scr
-;;;;     Same GUI-exe + script mechanism as macOS/Linux — no COM.
+;;;;     bricscad.exe <template> /b WORKDIR/run.scr
+;;;;     Same GUI-exe + script mechanism as macOS/Linux — no COM. NB the
+;;;;     Windows CLI takes /b (AutoCAD-lineage), not the Unix -B.
 ;;;;
 ;;;;   Windows, automation mode (--mode automation, or :auto with no exe):
 ;;;;     cscript //nologo WORKDIR/bridge-bricscad.vbs
@@ -237,7 +238,15 @@ on a save-changes dialog.
 
 Returns the path of the emitted file."
   (let* ((path (merge-pathnames "run.scr" workdir))
+         (marker (namestring (merge-pathnames "run-scr-started.txt" workdir)))
          (text (with-output-to-string (out)
+                 ;; Prove the script actually ran: drop a marker file as the
+                 ;; very first action. If run-scr-started.txt exists in a kept
+                 ;; workdir but debug.log is empty, the (load) is the problem;
+                 ;; if the marker is ALSO absent, the -B/​/b script switch never
+                 ;; fired the script at all.
+                 (format out "(setq alfe-scr-mark (open ~S \"w\"))~%" marker)
+                 (format out "(if alfe-scr-mark (progn (write-line \"run.scr executing\" alfe-scr-mark) (close alfe-scr-mark)))~%")
                  ;; Disable the LISP load-security prompt before the load:
                  ;; the runtime lives in a temp workdir, which SECURELOAD>0
                  ;; would otherwise block with a modal "load unsigned file?"
@@ -492,7 +501,12 @@ typically hands it to UIOP:LAUNCH-PROGRAM."
          (append (list binary)
                  (when template (list (namestring template)))
                  (when (and profile (macos-p)) (list "-P" profile))
-                 (list "-B" (namestring scr)))))
+                 ;; Script switch is platform-specific: Unix builds take
+                 ;; -B, the Windows (AutoCAD-lineage) CLI takes /b. Passing
+                 ;; -B on Windows opens the GUI but silently ignores the
+                 ;; script -- the "drawing shows but run.scr never runs,
+                 ;; stuck at BOOTING" symptom.
+                 (list (if (windows-p) "/b" "-B") (namestring scr)))))
       (:automation
        (cond
          ((windows-p)
