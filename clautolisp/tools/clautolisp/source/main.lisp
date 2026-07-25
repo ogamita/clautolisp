@@ -1015,8 +1015,16 @@ thread), where the interruption runs at the next safe point — returning
 from it resumes the interrupted computation, which is how :IGNORE and the
 debugger's `continue' work. A second SIGINT while one is being handled
 exits immediately (status 130). Returns T when a handler was installed;
-NIL on implementations where the native Control-C behaviour is kept."
-  #+sbcl
+NIL on implementations where the native Control-C behaviour is kept.
+
+On SBCL/Windows the native console keeps its own Control-C behaviour:
+the POSIX-signal API this uses (SB-SYS:ENABLE-INTERRUPT, SB-UNIX:SIGINT)
+does not exist in the win32 build — those symbols are absent from the
+SB-SYS / SB-UNIX packages, so the guarded form must be excluded at
+*read* time (a plain #+sbcl would still fail COMPILE-FILE while reading
+the package-qualified symbols). The (not win32) reader conditional does
+that, degrading to the documented NIL."
+  #+(and sbcl (not win32))
   (let ((thread sb-thread:*current-thread*))
     (sb-sys:enable-interrupt
      sb-unix:sigint
@@ -1030,7 +1038,7 @@ NIL on implementations where the native Control-C behaviour is kept."
              (sb-ext:exit :code 130 :abort t))
            (sb-thread:interrupt-thread thread #'handle-interrupt))))
     t)
-  #-sbcl
+  #-(and sbcl (not win32))
   nil)
 
 (defun run-under-session-debugging (session thunk break-on-error)
