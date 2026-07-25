@@ -288,10 +288,13 @@ End Sub
 attached = False
 created  = False
 
+VBSDebug \"bridge start; commode=\" & commode
+
 If commode = \"attach\" Or commode = \"auto\" Then
   On Error Resume Next
   Set app = GetObject(, \"BricscadApp.AcadApplication\")
   If Err.Number = 0 And Not (app Is Nothing) Then attached = True
+  VBSDebug \"GetObject attach: Err=\" & Err.Number & \" attached=\" & attached
   Err.Clear
   On Error GoTo 0
 End If
@@ -302,36 +305,62 @@ If app Is Nothing Then
     EmitFlags False, False
     WScript.Quit 4
   End If
+  VBSDebug \"CreateObject BricscadApp.AcadApplication ...\"
   On Error Resume Next
   Set app = CreateObject(\"BricscadApp.AcadApplication\")
   If Err.Number <> 0 Then
     AppendLine errFile, \"ERROR COM bridge: could not launch BricsCAD: \" & Err.Description
+    VBSDebug \"CreateObject FAILED: \" & Err.Description & \"; quit 4\"
     EmitFlags False, False
     WScript.Quit 4
   End If
   Err.Clear
   On Error GoTo 0
   created = True
+  VBSDebug \"CreateObject ok\"
 End If
 
 app.Visible = True
 EmitFlags attached, created
 
+On Error Resume Next
+VBSDebug \"app.Name=\" & app.Name & \" ver=\" & app.Version & \" docs=\" & app.Documents.Count
+Err.Clear
+On Error GoTo 0
+
 If app.Documents.Count = 0 Then
+  VBSDebug \"no document; Documents.Add\"
   Call app.Documents.Add(\"\")
 End If
 Set doc = app.ActiveDocument
 
-VBSDebug \"SendCommand (load ...)\"
+' Give a freshly-created BricsCAD a moment to finish initialising its
+' document/command context before pushing a command at it; a SendCommand
+' issued too early can be silently dropped.
+If created Then WScript.Sleep 3000
+
+' Disable the LISP load-security prompt for this session: the runtime
+' lives in a temp workdir, which SECURELOAD>0 would block with a modal
+' \"load unsigned file?\" dialog -- and a modal dialog leaves the (load)
+' never running, exactly the observed \"stuck at BOOTING\" symptom.
+On Error Resume Next
+Call doc.SendCommand(\"(setvar \"\"SECURELOAD\"\" 0) \")
+VBSDebug \"SECURELOAD 0 dispatched: Err=\" & Err.Number
+Err.Clear
+On Error GoTo 0
+
 Dim cmd
 cmd = \"(load \"\"\" & Replace(runFile, \"\\\", \"/\") & \"\"\") \"
+VBSDebug \"SendCommand load: \" & cmd
 On Error Resume Next
 Call doc.SendCommand(cmd)
 If Err.Number <> 0 Then
   AppendLine errFile, \"ERROR COM bridge: SendCommand failed: \" & Err.Description
+  VBSDebug \"SendCommand load FAILED: \" & Err.Description & \"; quit 4\"
   WScript.Quit 4
 End If
 On Error GoTo 0
+VBSDebug \"load dispatched; handing off to alfe poller; quit 0\"
 
 ' The runtime publishes its own status; the VBS exits as soon as it
 ' has dispatched the load. The alfe-side poller takes over.
@@ -513,6 +542,12 @@ future ticket."
   (declare (ignore host mock-input dialect dwg load-encoding io-encoding))
   (log-verbose "backend BRICSCAD: starting engine (mode ~A)" mode)
   (log-debug "backend BRICSCAD: workdir = ~A" workdir)
+  ;; Let --timeout / $AUTOLISP_WAIT_SECS raise the READY timeout: a cold
+  ;; BricsCAD launch (COM start + license + first document) can take well
+  ;; over the 30 s default, which otherwise reports a spurious
+  ;; READY-TIMEOUT while the engine is still booting.
+  (when (and cli-options (alfe.cli:cli-options-timeout cli-options))
+    (setf ready-timeout (alfe.cli:cli-options-timeout cli-options)))
   (log-debug "backend BRICSCAD: ready-timeout = ~A s; wait-for-ready = ~A"
              ready-timeout wait-for-ready)
   (handler-case
@@ -577,6 +612,13 @@ future ticket."
                    :runtime-load-path run-common
                    :status-path (alfe.protocol.file:protocol-session-status-path protocol)
                    :error-path  (alfe.protocol.file:protocol-session-stderr-path protocol)
+                   ;; Always trace the COM bridge into the workdir. Under
+                   ;; --keep-workdir this file survives and shows exactly
+                   ;; how far the bridge got (attach vs create, doc count,
+                   ;; whether SendCommand was dispatched) -- the missing
+                   ;; piece when BricsCAD sits at BOOTING and never runs
+                   ;; run-common.lsp.
+                   :debug-path  (merge-pathnames "bridge-vbs.log" workdir)
                    :com-mode    (or (uiop:getenv "BRICSCAD_COM_MODE") "auto"))
                   (log-debug "backend BRICSCAD: wrote bridge-bricscad.vbs -> ~A" vbs)))
                ((macos-p)

@@ -1,0 +1,65 @@
+-*- coding:utf-8 -*-
+
+bricscad-com-bridge-booting — BricsCAD vendor probes never leave BOOTING
+========================================================================
+
+Reported from: the Windows vendor-probe CI job
+(gitlab job 15534582488, vendor:probes:bricscad) against BricsCAD on the
+Windows runner. All three probes: "no verdict (backend unreachable or
+crashed)".
+
+Diagnosis (from --keep-workdir artifacts)
+-----------------------------------------
+
+alfe's own log (per probe):
+    backend BRICSCAD: spawned, process-info-pid = 37028
+    protocol: status now "BOOTING" (elapsed 0.00 s)
+    protocol: timeout after 30.30 s (last status "BOOTING")
+    BricsCAD did not reach READY within 30 s (last status: "BOOTING"). [READY-TIMEOUT]
+
+protocol/status.txt = BOOTING ; logs/debug.log EMPTY ; stderr.txt EMPTY.
+
+So the alfe-side is healthy: it staged the runtime, emitted
+bridge-bricscad.vbs, spawned `cscript bridge.vbs`, and polled
+status.txt. But run-common.lsp NEVER executed on the BricsCAD side
+(debug.log is empty, not merely late), and the VBS wrote no COM error.
+i.e. BricsCAD launched (or attached) but the `(load run-common.lsp)`
+dispatched by doc.SendCommand never ran. Two plausible causes, not
+distinguishable from the artifacts as they were:
+
+  a. Cold-start slower than the 30 s READY timeout (COM server + license
+     + first document), so the queued load hadn't run when alfe gave up.
+  b. A modal dialog blocking SendCommand -- most likely BricsCAD's LISP
+     load-security prompt (SECURELOAD > 0) on a .lsp under C:/msys64/tmp,
+     or a startup/license dialog.
+
+The bridge VBS had a debugFile hook (VBSDebug) but the caller never
+passed :debug-path, so every kept workdir was blind on the VBS side --
+the missing evidence to tell (a) from (b).
+
+Fix (alfe 1.6.5) — observability + both mitigations
+---------------------------------------------------
+
+autolisp-front-end/source/backend-bricscad.lisp
+  * emit-bridge-vbs call now passes :debug-path <workdir>/bridge-vbs.log,
+    so --keep-workdir captures how far the bridge got (attach vs create,
+    app name/version, doc count, whether SendCommand was dispatched, any
+    COM error). Added VBSDebug traces throughout the template.
+  * bridge: after a *created* (cold) BricsCAD, WScript.Sleep 3000 to let
+    the document/command context settle before SendCommand (an early
+    SendCommand can be silently dropped).
+  * bridge: SendCommand "(setvar \"SECURELOAD\" 0)" before the load, so
+    the temp-dir runtime loads without a modal security prompt (cause b).
+  * start-engine now lets --timeout / $AUTOLISP_WAIT_SECS raise the READY
+    timeout (was a hard-coded 30 s, unreachable from the CLI) -- covers
+    cause a.
+
+scripts/run-vendor-probes.ps1
+  * passes --timeout 180 for the bricscad backend (cold-start budget).
+
+Status
+------
+
+OPEN pending the next vendor:probes:bricscad CI run. If it still stalls,
+dist/vendor-probes/bricscad/<probe>-workdir/bridge-vbs.log will now say
+exactly where (attach/create/doc/SendCommand) -- read it first.
