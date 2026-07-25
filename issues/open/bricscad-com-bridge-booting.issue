@@ -203,11 +203,32 @@ Fix (pure-CAD half, alfe 1.6.11):
 Deferred: the application-context category (--load-app / wire the stub
 --epure to inject the app-load into run.scr) -- after pure-CAD is green.
 
+GREEN on macOS BricsCAD (job 15535421596)
+-----------------------------------------
+
+The macOS twin (vendor:probes:bricscad:macos, bash run-vendor-probes.sh on
+thalassa) PASSES all three probes against real BricsCAD:
+
+    entity-lifecycle  97 passed, 0 failed   ALL ENTITY PROBES PASSED
+    drawing-data      27 passed, 0 failed   ALL DRAWING-DATA PROBES PASSED
+    selection         21 passed, 0 failed   ALL SELECTION PROBES PASSED
+    -> all vendor probes passed on bricscad ; Job succeeded
+
+Those counts match --clautolisp EXACTLY (97/27/21) -> clautolisp's entity /
+drawing-data / selection behaviour conforms to real BricsCAD for the whole
+probe set. First real-CAD vendor verification in the green.
+
+The watcher earned its keep: workdir at +2s (status BOOTING), READY 0 at
+~13-19 s (cold GUI start, well inside the 180 s budget), run-scr-started.txt
++ RUNNING 1 at +21s, then the [CAD] bootstrap timeline. macOS BricsCAD
+reports "host supports &rest" (variadic shadows), vs AutoCAD which lacks it.
+No profile was needed on macOS (clean install, as expected).
+
 Status
 ------
 
-OPEN pending the next vendor:probes:bricscad run, now launched with the clean
-profile. Expect run.scr to finally execute (run-scr-started.txt appears,
-debug.log fills) and reach READY -> real verdicts, or a named FAILED <msg>.
-(If the Drawing Recovery Manager -- a byproduct of earlier forced kills --
-still blocks, clean the recovery files / disable it next.)
+macOS BricsCAD: GREEN -- close-worthy for that platform.
+Windows BricsCAD: still OPEN -- the clean-profile /p fix (1.6.11) + watcher
+land tomorrow when the Windows box is back; expect the same green now that
+the EPURE auto-load is bypassed. AutoCAD: separate (the runtime portability
+fixes are in; needs a re-run). Keep this ticket open until Windows confirms.
