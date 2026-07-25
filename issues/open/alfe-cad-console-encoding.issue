@@ -62,6 +62,20 @@ above). Decisions:
   probe (pjb request), so back-to-back / concurrent probes never share
   or lock the same .dwg (or its .dwl/.bak siblings).
 
+* Runtime discovery in a built-not-installed alfe (job 15534461469)
+
+Real AutoCAD 2022 now launches (discovery fix), but accoreconsole ran
+run-common.lsp, got nil, and quit (exit 0) BEFORE signalling READY: the
+CAD-side remote-I/O runtime was not loaded. discover-runtime-lsp order
+is $ALFE_RUNTIME_LSP -> vendored asset (asdf:system-relative-pathname)
+-> installed paths. On the runner alfe is built-not-installed and the
+vendored-asset lookup is unreliable from a frozen .exe, so nothing was
+found. Fixed in the CI script by setting $ALFE_RUNTIME_LSP /
+$ALFE_BOOTSTRAP_LSP to autolisp-front-end/source/runtime/*.lsp.
+POSSIBLE ALFE BUG to consider: make the vendored-asset discovery robust
+from a frozen executable (bundle the runtime .lsp, or resolve relative
+to the binary), so a built alfe works without env vars or install.
+
 * Verify (blocked on the Windows/AutoCAD runner)
 
 Re-run vendor:probes:autocad on master: bootstrap should pass the
