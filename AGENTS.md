@@ -290,48 +290,59 @@ Resolved tail.
 
 ## Release tags and branches
 
-The **release** is versioned on its own axis, independent of any single
-program's version. A release is marked by an annotated (or lightweight)
-tag `vM.m.d` on the release commit.
+The normative rules live in [`version-rules.md`](version-rules.md) —
+read it before cutting a release. What follows is the summary and the
+parts specific to this repository.
 
-- The release version `vM.m.d` is NOT the version of any one program.
-  Each shipped program keeps its own version (`clautolisp`'s
-  `version.lisp`, `alfe`, `read-autolisp`, `autolisp-spec`, …), tagged
-  under its own prefix (`clautolisp-vA.B.C`, `alfe-vA.B.C`,
-  `alref-vA.B.C`).
-- A program version `foo-A.B.C` shipped in a release must have its
-  **major.minor match the release's**: any `foo-A.B.C` living in the
-  commits between `vM.m.0` and the tip of `release-M.m` must have
-  `A.B = M.m`. The development counter `C` is a per-program monotonic
-  counter and need NOT match across programs or the release.
-  - Exception: a program that has not changed may stay at an older
-    `A.B.C` with `A.B < M.m` and still ship inside `release-M.m.d`.
+**The three kinds of ref, never mixed:**
 
-**Only clean `vM.m.d` tags are release boundaries.** Ignore, for this
-purpose: pre-release tags (`vM.m.d-rcN`), program-prefixed tags
-(`clautolisp-v*`, `alfe-*`, `alref-v*`), and CI/misc tags (`ci-win`).
+- `release-M.m.d` — an **annotated tag**. A frozen feature set; never
+  moves, never deleted. This is the ref a GitLab/GitHub Release is made
+  from. `release-*` is a tag-only namespace: no branch may be named
+  that way.
+- `version-M.m` and `version-M` — **pointer branches**. Nothing is ever
+  committed on them; they are only fast-forwarded onto a commit that
+  carries a `release-*` tag, so checking one out always yields a
+  released state. `version-1.6` is what a user tracking "1.6" follows.
+- `master`, `maint-M.m` — **development lines**, the only branches
+  commits land on. `maint-M.m` is created on demand at the newest
+  `release-M.m.d` when a fix must ship for a frozen series without
+  dragging in trunk work.
 
-For every release tag `vM.m.d` there must be two branches:
+**Version numbers:** `M` = incompatible change, `m` = user-visible
+feature change, `d` = bug fixes and changes with no user-visible
+effect. `d` is monotonic within a series but need not be contiguous —
+this repository couples it to clautolisp's DEVELOP counter, which is
+why `release-1.6.0` is followed by `release-1.6.11`.
 
-- **`release-M.m.d`** — created on the same commit as `vM.m.d`. As a
-  branch it advances onto the following commits until the next release
-  tag `vM'.m'.d'` appears, at which point it is frozen (its tip is the
-  commit just before that next tag). The patch branches thus tile the
-  linear history: one contiguous segment each, no gap, no overlap.
-- **`release-M.m`** — the branch that contains *every* `M.m.d` release,
-  whatever the value of `d`. It advances and keeps advancing until a tag
-  `vM'.m'.d'` with `M'.m' ≠ M.m` appears (the first release of a new
-  minor), then it is frozen just before that tag. The current minor's
-  `release-M.m` never freezes — it tracks the development line (master).
+**Programs versus the release.** The release version is its own axis.
+Each shipped program keeps its own version (clautolisp's
+`version.lisp`, alfe, read-autolisp, autolisp-spec, …); a program
+changed within a series must have `A.B = M.m`, and a program that has
+not changed may stay at an older `A.B` and still ship. Programs are
+**not** tagged separately: the `clautolisp-v*`, `alfe-*` and `alref-v*`
+tags are retired, kept only as historical markers, and no new ones are
+created.
 
-Concretely, when a new release tag `vM.m.d` is placed on commit `C`:
+**Cutting a release** (full procedure in version-rules.md § 5):
 
-1. freeze the currently-live `release-*.*.* ` patch branch at `C^` and
-   create `release-M.m.d` at `C`;
-2. if `M.m` is unchanged, `release-M.m` keeps advancing; if `M.m` is new,
-   freeze the previous `release-*.*` at `C^` and create `release-M.m`
-   at `C`.
+1. bump the shipped programs' stamps, update `RELEASE_NOTES.org`, commit;
+2. `git tag -a release-M.m.d`;
+3. fast-forward `version-M.m` and `version-M` onto that commit
+   (creating `version-M.m` when `d = 0`);
+4. push the tag and both pointers to `origin`;
+5. post-release bump on master, so no untagged commit claims a released
+   version;
+6. `glab release create release-M.m.d`.
 
-Between releases, fast-forward the two live branches (`release-M.m` and
-the current `release-M.m.d`) as the development line advances. Push the
-release branches to the canonical remote (`origin`).
+**Verification.** `make check-versions` audits the repository against
+the invariants; run `git fetch --prune --tags` first. It is expected to
+pass on master at all times.
+
+**Legacy refs.** Releases up to 1.6.11 were originally marked `vM.m.d`
+with `release-M.m.d` / `release-M.m` *branches*; the branches are gone,
+replaced by the tags and pointers above. The old `vM.m.d` tags are kept
+as immutable aliases of the corresponding `release-M.m.d` tags — do not
+create new ones. `release-1.3.1` not being an ancestor of
+`release-1.4.0` is correct, not damage: it is a maintenance release cut
+in parallel with trunk development (version-rules.md I4).

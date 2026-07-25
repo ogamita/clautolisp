@@ -198,6 +198,9 @@ build-libraries:  ## Build the releasable libraries (the drawing/drawing-dwg nat
 # + archive it; the multi-target (6 platforms) combination is assembled
 # by CI from per-target artefacts (see the issue).
 
+check-versions:  ## Audit the release tags / version-* pointers against version-rules.md (run `git fetch --prune --tags` first).
+	sh scripts/check-versions.sh
+
 release: release-sources release-documentation release-programs release-libraries  ## Produce every release artefact for this host.
 
 release-sources:  ## Produce the source tarball + zip (tracked files incl. submodules).
