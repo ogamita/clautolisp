@@ -335,7 +335,9 @@ separate binary for tool integrators.
   interactive REPL, =quit= in batch), =--on-interrupt debug|ignore|quit=
   (default =debug=: Control-C breaks into aldo at the interrupt point;
   =ignore= resumes; =quit= exits 130; a second C-c while one is handled
-  exits immediately), and =--on-quit debug|quit= (default =quit=; =debug=
+  exits immediately — on the Windows SBCL build, which lacks the
+  POSIX-signal API, this policy has no effect and the native console
+  Control-C behaviour is kept), and =--on-quit debug|quit= (default =quit=; =debug=
   enters aldo from ~(quit)~ / ~(exit)~ *before* the stack unwinds —
   continue quits, abort cancels). Each is mirrored by an AutoLISP
   variable — =*clal-on-error*=, =*clal-on-interrupt*=, =*clal-on-quit*= —

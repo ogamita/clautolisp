@@ -534,7 +534,11 @@ See § /Debugger/ for the semantics; the options in brief:
                             ~quit~ (exit 130). Sets
                             ~*CLAL-ON-INTERRUPT*~, re-read *live* at
                             each interrupt. A second =C-c= while one is
-                            being handled exits immediately.
+                            being handled exits immediately. On the
+                            Windows SBCL build the option has no effect:
+                            that build lacks the POSIX-signal API, so
+                            the native console Control-C behaviour is
+                            kept.
 - ~--on-quit POLICY~     :: What ~(quit)~ / ~(exit)~ does: ~quit~ (the
                             default) or ~debug~ (break into aldo before
                             the stack unwinds; continue quits, abort
