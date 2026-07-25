@@ -71,6 +71,17 @@ the CAD ones self-skip when the product is absent):
 make -C autolisp-front-end test
 ```
 
+### On CI (the Windows runner with BricsCAD + AutoCAD)
+
+The `vendor:probes:bricscad` / `vendor:probes:autocad` GitLab CI jobs
+(tag `windows`, stage `test`, **manual** + `allow_failure`) build alfe
+and run all three probes against each real product via
+`scripts/run-vendor-probes.ps1`. Each probe's full output is uploaded
+under `dist/vendor-probes/<backend>/` (with a `SUMMARY.txt`), and the
+job fails on any probe FAIL or an unreachable backend. Trigger them from
+a pipeline, download the artifacts, and feed any FAIL back — it names a
+real clautolisp-vs-vendor divergence to reconcile.
+
 ## Regenerating the embedded copies
 
 After editing `entity-lifecycle-probe.lsp`, refresh the `:setup-files`
