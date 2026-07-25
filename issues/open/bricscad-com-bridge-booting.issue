@@ -124,9 +124,33 @@ Fix (alfe 1.6.8):
       - marker absent                     -> the script switch STILL isn't
         firing (try another form).
 
+Update: /b worked -> reached READY 0; two robustness fixes (alfe 1.6.9)
+----------------------------------------------------------------------
+
+With /b, BricsCAD ran run.scr, bootstrapped, and the server loop published
+READY 0 -- the launch chain is fully working now. Two issues surfaced at
+that point, both fixed:
+
+1. LOGFILENAME read-only. autolisp-log-setup did a bare (setvar
+   "LOGFILENAME" ...); LOGFILENAME is read-only on BOTH AutoCAD and
+   BricsCAD (only LOGFILEPATH is writable), so it SIGNALLED and aborted the
+   whole log-setup. autolisp-safe-setvar/-getvar are now genuinely safe
+   (vl-catch-all-apply, return success bool) and log-setup no longer tries
+   LOGFILENAME at all -- only LOGFILEPATH (+ LOGFILEMODE), each guarded, so
+   a host that locks any of them degrades quietly.
+
+2. Errors escaping the server loop were logged to debug.log ONLY -- alfe
+   saw a silent dead engine and hung to READY-timeout. run-common's loop
+   wrapper now, on a caught error, ALSO writes a stderr line and sets a
+   terminal "FAILED <msg>" status (both guarded), so alfe reports the error
+   and aborts cleanly. This is pjb's ask: catch more, always report-and-
+   abort rather than die silently. It also makes the NEXT run self-
+   explaining -- whatever killed the loop after READY 0 will now appear as
+   FAILED <msg> in status.txt and protocol/stderr.txt.
+
 Status
 ------
 
-OPEN pending the next vendor:probes:bricscad run (needs a licensed
-BricsCAD, which the runner now has). Read run-scr-started.txt +
-logs/debug.log in the kept workdir per the table above.
+OPEN pending the next vendor:probes:bricscad run. The launch works; expect
+either real probe verdicts or a FAILED <msg> status naming whatever the
+loop hit after READY 0.

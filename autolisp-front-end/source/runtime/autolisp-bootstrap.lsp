@@ -837,30 +837,38 @@
 (autolisp-reset-file *AUTOLISP_ERRFILE*)
 (autolisp-set-status 99)
 (setq *AUTOLISP_LOG_STATE* nil)
-(defun autolisp-safe-getvar (name)
-  (getvar name))
+(defun autolisp-safe-getvar (name / r)
+  (setq r (vl-catch-all-apply 'getvar (list name)))
+  (if (vl-catch-all-error-p r) nil r))
 
-(defun autolisp-safe-setvar (name value)
-  (setvar name value))
+;; Actually safe: some sysvars are read-only on some hosts (LOGFILENAME is
+;; read-only on both AutoCAD and BricsCAD -- only LOGFILEPATH is settable),
+;; and a bare (setvar) on such a var SIGNALS, which previously aborted the
+;; whole log-setup mid-way and surfaced as an error. Swallow the rejection
+;; and return T only when the set took.
+(defun autolisp-safe-setvar (name value / r)
+  (setq r (vl-catch-all-apply 'setvar (list name value)))
+  (not (vl-catch-all-error-p r)))
 
-(defun autolisp-log-setup (/ old-mode old-path old-name)
+(defun autolisp-log-setup (/ old-mode old-path)
+  ;; Direct the session log into our workdir via LOGFILEPATH -- the one
+  ;; log sysvar that is writable on the real CAD hosts. LOGFILENAME is
+  ;; read-only there, so we do NOT try to set it (the host keeps its
+  ;; default log name in our directory, which is all we need). Every set
+  ;; goes through autolisp-safe-setvar, so a host that also locks
+  ;; LOGFILEPATH/LOGFILEMODE degrades quietly instead of erroring.
   (setq old-mode (autolisp-safe-getvar "LOGFILEMODE"))
   (setq old-path (autolisp-safe-getvar "LOGFILEPATH"))
-  (setq old-name (autolisp-safe-getvar "LOGFILENAME"))
   (autolisp-safe-setvar "LOGFILEPATH" *AUTOLISP_LOGDIR*)
-  (if *AUTOLISP_LOGNAME*
-    (autolisp-safe-setvar "LOGFILENAME" *AUTOLISP_LOGNAME*))
   (autolisp-safe-setvar "LOGFILEMODE" 1)
-  (list old-mode old-path old-name))
+  (list old-mode old-path))
 
-(defun autolisp-log-restore (state / old-mode old-path old-name)
+(defun autolisp-log-restore (state / old-mode old-path)
   (if state
     (progn
       (setq old-mode (nth 0 state))
       (setq old-path (nth 1 state))
-      (setq old-name (nth 2 state))
       (if old-path (autolisp-safe-setvar "LOGFILEPATH" old-path))
-      (if old-name (autolisp-safe-setvar "LOGFILENAME" old-name))
       (if old-mode (autolisp-safe-setvar "LOGFILEMODE" old-mode)))))
 
 (setq _autolisp_log_setup_result (vl-catch-all-apply 'autolisp-log-setup nil))

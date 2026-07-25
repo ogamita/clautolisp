@@ -1332,13 +1332,26 @@ Returns the path of the emitted file."
                ;; surface the caught error to *AUTOLISP_DEBUGFILE* —
                ;; that's the single most-useful diagnostic when the
                ;; runtime references undefined helpers.
+               ;; An error that escapes the server loop must not leave a
+               ;; silent dead engine: report it on BOTH channels alfe polls
+               ;; -- a FAILED status (terminal, recognised by the alfe-side
+               ;; poller) and a stderr line -- so alfe reports the error and
+               ;; aborts cleanly instead of hanging until READY-timeout. Both
+               ;; writes are themselves guarded so a broken runtime can't
+               ;; re-throw here.
                (format out
                        "~%(alfe-debug-log \"entering autolisp-protocol-server-loop\")~%~
 (setq *AUTOLISP-PROTOCOL-LOOP-RESULT*~%  ~
   (vl-catch-all-apply 'autolisp-protocol-server-loop nil))~%~
 (if (vl-catch-all-error-p *AUTOLISP-PROTOCOL-LOOP-RESULT*)~%  ~
-  (alfe-debug-log (strcat \"server-loop CAUGHT error: \"~%    ~
-    (vl-catch-all-error-message *AUTOLISP-PROTOCOL-LOOP-RESULT*)))~%  ~
+  (progn~%    ~
+    (setq *ALFE-LOOP-ERRMSG*~%      ~
+      (vl-catch-all-error-message *AUTOLISP-PROTOCOL-LOOP-RESULT*))~%    ~
+    (alfe-debug-log (strcat \"server-loop CAUGHT error: \" *ALFE-LOOP-ERRMSG*))~%    ~
+    (vl-catch-all-apply 'autolisp-protocol-write-stderr~%      ~
+      (list (strcat \"ERROR server-loop aborted: \" *ALFE-LOOP-ERRMSG*)))~%    ~
+    (vl-catch-all-apply 'autolisp-protocol-set-status~%      ~
+      (list (strcat \"FAILED \" *ALFE-LOOP-ERRMSG*))))~%  ~
   (alfe-debug-log \"server-loop returned normally\"))~%"))
               (t
                (format out
