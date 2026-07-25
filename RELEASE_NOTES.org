@@ -581,14 +581,15 @@ Every staged tree carries a provenance manifest, installed as
 : $PREFIX/share/doc/clautolisp/manifest-<phase>.txt
 
 one per phase (=programs=, =libraries=, =documentation=), because the
-phases can be built and installed separately. Each names the release
-tag the build came from — or, when the build is not exactly on a
+phases can be built and installed separately. Each names the repository
+the code came from and the release tag it was built from — or, when the build is not exactly on a
 release, how far past the last one it is — plus the commit, the branch,
 whether the build tree was clean, the version of every shipped program,
 and the host it was built on:
 
 #+BEGIN_EXAMPLE
 phase:        programs
+origin:       git@gitlab.com:ogamita/clautolisp.git
 release:      release-1.6.11
 describe:     release-1.6.11
 commit:       623356e109605579f3578cb3d92f0475595a8917

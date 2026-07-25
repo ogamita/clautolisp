@@ -345,6 +345,16 @@ version is read from its source.
    version;
 6. `glab release create release-M.m.d`.
 
+**Build, install and release structure.** The Makefile phases
+(`programs` / `libraries` / `documentation`), the four verbs over them,
+why `install` never compiles, and the provenance manifest every staged
+tree carries are the shared
+[`build-rules.md`](https://gitlab.com/informatimago/rules/-/blob/master/build-rules.md).
+`scripts/make-manifest.sh` and `scripts/check-versions.sh` are vendored
+copies from that repository — fix them there, then re-vendor;
+`scripts/manifest-versions.sh` is the project-specific hook naming the
+programs this repo ships.
+
 **Verification.** `make check-versions` audits the repository against
 the invariants; run `git fetch --prune --tags` first. It is expected to
 pass on master at all times.
