@@ -48,6 +48,20 @@ above). Decisions:
   IO-ENCODING param (currently declared ignore in the autocad backend)
   to both the launch-program call and drain-channel.
 
+* Also done (fix-vendor-autocad-runner, alfe 1.6.2)
+
+- accoreconsole DISCOVERY now prefers real AutoCAD over the read-only
+  DWG TrueView viewer: both ship accoreconsole.exe and DWG TrueView
+  won the descending name sort ("DWG..." > "AutoCAD..."), so on the CI
+  runner it launched the viewer — whose config in Program Files is
+  read-only/locked, aborting with a MessageBox. %ACCORECONSOLE-PREFERENCE
+  ranks AutoCAD before generic before TrueView (unit-tested). If only
+  DWG TrueView is installed, install AutoCAD or set
+  $AUTOCAD_ACCORECONSOLE to the real binary.
+- run-vendor-probes.ps1 copies the drawing to a unique temp name per
+  probe (pjb request), so back-to-back / concurrent probes never share
+  or lock the same .dwg (or its .dwl/.bak siblings).
+
 * Verify (blocked on the Windows/AutoCAD runner)
 
 Re-run vendor:probes:autocad on master: bootstrap should pass the

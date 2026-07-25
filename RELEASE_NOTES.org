@@ -452,6 +452,9 @@ file or COM), and forwards the workload.
   the accoreconsole pipe reads with a total decoder, overridable via
   ~ALFE_AUTOCAD_CONSOLE_ENCODING~ (a per-backend ~-E~ CLI option is
   planned — ~issues/open/alfe-cad-console-encoding.issue~).
+- ~--autocad~ discovery now prefers real AutoCAD over the read-only
+  DWG TrueView viewer (both ship ~accoreconsole.exe~; only AutoCAD can
+  mutate entities), so a host with both no longer picks the viewer.
 - ~--mode~ and ~--dwg~ are now forwarded correctly into CAD backend
   startup, so ~alfe --autocad --mode batch --dwg file.dwg ...~ no
   longer falls back silently to ~:auto~ / automation mode.

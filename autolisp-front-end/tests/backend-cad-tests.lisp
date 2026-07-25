@@ -925,3 +925,17 @@ READY timeout."
                                  :exit-code)))))))
         (uiop:delete-directory-tree workdir :validate t
                                             :if-does-not-exist :ignore)))))
+
+(test autocad-accoreconsole-prefers-real-autocad-over-dwg-trueview
+  ;; Only full AutoCAD can mutate entities; the read-only DWG TrueView
+  ;; viewer also ships accoreconsole.exe and must rank AFTER real AutoCAD
+  ;; so discovery never picks it (alfe-cad-console-encoding.issue).
+  (let ((acad "C:/Program Files/Autodesk/AutoCAD 2026/accoreconsole.exe")
+        (view "C:/Program Files/Autodesk/DWG TrueView 2024 - French/accoreconsole.exe"))
+    (is (= 0 (alfe.backend.autocad::%accoreconsole-preference acad)))
+    (is (= 2 (alfe.backend.autocad::%accoreconsole-preference view)))
+    (is (< (alfe.backend.autocad::%accoreconsole-preference acad)
+           (alfe.backend.autocad::%accoreconsole-preference view)))
+    (let ((sorted (stable-sort (sort (list view acad) #'string>)
+                               #'< :key #'alfe.backend.autocad::%accoreconsole-preference)))
+      (is (search "AutoCAD" (first sorted))))))
