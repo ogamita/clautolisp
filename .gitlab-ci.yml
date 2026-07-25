@@ -589,6 +589,18 @@ vendor:probes:autocad:
   script:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
 
+# macOS twin of the BricsCAD vendor probe, driven by the bash script
+# (run-vendor-probes.sh) rather than PowerShell. BricsCAD batch (bricscad -B
+# run.scr) is the same mechanism as Windows; macOS BricsCAD is typically a
+# clean install (no vertical-app auto-load), so no profile is forced -- set
+# $BRICSCAD_PROFILE_CLEAN if one is needed. Lets us exercise the CAD path while
+# the Windows box is offline.
+vendor:probes:bricscad:macos:
+  extends: .vendor-probe-common
+  tags: [macos, arm64, shell]          # thalassa (intermittent)
+  script:
+    - bash scripts/run-vendor-probes.sh --backend bricscad --keep-workdir "$PROBE_KEEP_WORKDIR"
+
 # --- collect: union the per-target artefacts into the combined set -----
 #
 # Gathers the per-target release jobs' dist/ (binaries-<os>-<arch>,

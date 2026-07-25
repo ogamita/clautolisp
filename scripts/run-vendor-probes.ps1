@@ -115,6 +115,46 @@ foreach ($p in $probes) {
   # timeout, so give it a generous budget (--timeout also feeds READY now).
   $tmo = @()
   if ($Backend -eq "bricscad") { $tmo = @("--mode", "batch", "--timeout", "180") }
+  # Background watcher: while alfe blocks in the protocol (up to --timeout), tail
+  # the engine workdir so a stuck launch is diagnosable. Start-Job output is
+  # collected after alfe returns (Receive-Job); the embedded +Ns timestamps keep
+  # the timeline (e.g. "run-scr-started.txt never appeared, status stuck BOOTING").
+  $stopFlag = Join-Path $tmpBase ("vp-stop-{0}-{1}-{2}" -f $Backend, $p.Name, [guid]::NewGuid().ToString("N"))
+  Remove-Item -Force $stopFlag -ErrorAction SilentlyContinue
+  $startTs = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+  $watcher = $null
+  if ($KeepWorkdir -eq "1" -and $wdPathFile) {
+    $watcher = Start-Job -ScriptBlock {
+      param($wdfile, $stopflag, $start)
+      $wd = ""; $started = $false; $nlines = 0; $laststatus = ""
+      while (-not (Test-Path $stopflag)) {
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $start
+        if (-not $wd -and (Test-Path $wdfile)) {
+          $wd = ([string](Get-Content -Raw $wdfile -ErrorAction SilentlyContinue)).Trim()
+          if ($wd) { "[watch +${now}s] workdir = $wd" }
+        }
+        if ($wd) {
+          if (-not $started -and (Test-Path (Join-Path $wd "run-scr-started.txt"))) {
+            $started = $true; "[watch +${now}s] run-scr-started.txt APPEARED -- the CAD script is running"
+          }
+          $stf = Join-Path $wd "protocol/status.txt"
+          if (Test-Path $stf) {
+            $st = ([string](Get-Content -Raw $stf -ErrorAction SilentlyContinue)).Trim()
+            if ($st -and $st -ne $laststatus) { $laststatus = $st; "[watch +${now}s] status -> $st" }
+          }
+          $dbg2 = Join-Path $wd "logs/debug.log"
+          if (Test-Path $dbg2) {
+            $lines = @(Get-Content $dbg2 -ErrorAction SilentlyContinue)
+            if ($lines.Count -gt $nlines) {
+              $lines[$nlines..($lines.Count-1)] | ForEach-Object { "[watch +${now}s] debug: $_" }
+              $nlines = $lines.Count
+            }
+          }
+        }
+        Start-Sleep -Seconds 2
+      }
+    } -ArgumentList $wdPathFile, $stopFlag, $startTs
+  }
   # alfe writes its --debug/--verbose diagnostics to stderr. With `2>&1`
   # PowerShell wraps each native-stderr line as an ErrorRecord and renders
   # it with the alarming NativeCommandError/RemoteException formatting --
@@ -131,6 +171,14 @@ foreach ($p in $probes) {
     if ($probeDwg -and (Test-Path $probeDwg)) {
       Remove-Item -Force $probeDwg -ErrorAction SilentlyContinue
     }
+  }
+  # Stop the watcher and print its collected timeline.
+  if ($watcher) {
+    New-Item -ItemType File -Force -Path $stopFlag | Out-Null
+    Start-Sleep -Milliseconds 400
+    Receive-Job $watcher -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+    Remove-Job $watcher -Force -ErrorAction SilentlyContinue
+    Remove-Item -Force $stopFlag -ErrorAction SilentlyContinue
   }
   # Safety net: alfe now terminates the engine it launched on abnormal exit,
   # but if alfe itself was killed before cleanup a GUI BricsCAD can be left
