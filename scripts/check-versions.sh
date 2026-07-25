@@ -8,13 +8,19 @@
 # (maint-* carries its series), I7 (no orphaned release). I2, I4 and
 # I8 are policy rather than topology — see version-rules.md § 6.
 #
-# Invoked as `make check-versions`. Exits non-zero if any invariant is
-# violated; prints one line per check. Read-only: never creates, moves
-# or deletes a ref.
+# Project-independent: it reads nothing but git refs. Drop it into any
+# project that follows the rules (usually as scripts/check-versions.sh,
+# wired to a `make check-versions' target) and run it from the top of a
+# work tree. The canonical copy lives in the rules repository above;
+# fix it there, then re-vendor.
+#
+# Exits non-zero if any invariant is violated; prints one line per
+# check. Read-only: never creates, moves or deletes a ref.
 #
 # Scope: the local repository. Remote-tracking refs (origin/*) are used
 # for the branch checks when they exist, so a stale local checkout does
 # not produce false failures; run `git fetch --prune --tags` first.
+# The trunk may be called `master' or `main'.
 
 set -u
 
@@ -127,6 +133,7 @@ done
 # --- I7: no orphaned release -----------------------------------------
 lines=$(git for-each-ref --format='%(refname)' \
             'refs/heads/master' 'refs/remotes/origin/master' \
+            'refs/heads/main' 'refs/remotes/origin/main' \
             'refs/heads/maint-*' 'refs/remotes/origin/maint-*' \
             'refs/heads/dev-*' 'refs/remotes/origin/dev-*')
 for t in $releases; do
@@ -135,7 +142,7 @@ for t in $releases; do
     for l in $lines; do
         if git merge-base --is-ancestor "$c" "$l" 2>/dev/null; then found=yes; break; fi
     done
-    [ "$found" = yes ] || bad "I7: $t is not reachable from master or any maint-* branch"
+    [ "$found" = yes ] || bad "I7: $t is not reachable from the trunk or any maint-*/dev-* line"
 done
 ok "I7: every release is reachable from a development line"
 
