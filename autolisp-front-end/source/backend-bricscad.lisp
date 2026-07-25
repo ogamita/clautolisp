@@ -24,10 +24,15 @@
 ;;;;     bricscad <template> -B WORKDIR/run.scr
 ;;;;     (Linux automation is deferred per the issue.)
 ;;;;
-;;;;   Windows, automation mode (default):
+;;;;   Windows, batch mode (default, when bricscad.exe is found):
+;;;;     bricscad.exe <template> -B WORKDIR/run.scr
+;;;;     Same GUI-exe + script mechanism as macOS/Linux — no COM.
+;;;;
+;;;;   Windows, automation mode (--mode automation, or :auto with no exe):
 ;;;;     cscript //nologo WORKDIR/bridge-bricscad.vbs
 ;;;;     The VBScript instantiates BricsCAD via COM, calls SendCommand
-;;;;     with the run-common.lsp load.
+;;;;     with the run-common.lsp load. Kept as a fallback; the batch path
+;;;;     avoids its SendCommand-timing and modal-dialog fragility.
 
 (defpackage #:alfe.backend.bricscad
   (:use #:cl)
@@ -233,6 +238,13 @@ on a save-changes dialog.
 Returns the path of the emitted file."
   (let* ((path (merge-pathnames "run.scr" workdir))
          (text (with-output-to-string (out)
+                 ;; Disable the LISP load-security prompt before the load:
+                 ;; the runtime lives in a temp workdir, which SECURELOAD>0
+                 ;; would otherwise block with a modal "load unsigned file?"
+                 ;; dialog. SECURELOAD is a system variable (not a LISP atom),
+                 ;; so probe it via getvar; vl-catch-all-apply keeps a host
+                 ;; that rejects the sysvar from aborting the script.
+                 (format out "(if (getvar \"SECURELOAD\") (vl-catch-all-apply 'setvar '(\"SECURELOAD\" 0)))~%")
                  (format out "(load ~S)~%"
                          (namestring (truename runtime-load-path)))
                  (when quit-on-finish-p
@@ -451,14 +463,17 @@ shell process.")
 
 (defun choose-effective-mode (backend cli-mode)
   "Translate the CLI's :auto / :batch / :automation into the
-backend's variant slot. :auto picks :batch on macOS/Linux when the
-CLI binary is found, :automation on Windows."
+backend's variant slot. :auto picks :batch on every platform when the
+CLI binary is found, else :automation.
+
+Windows batch is `bricscad.exe -B run.scr` — the same GUI-exe + script
+mechanism macOS/Linux use, which is simpler and far more robust than the
+COM/VBScript bridge (no SendCommand timing, no modal security/startup
+dialogs silently swallowing the (load)). The VBScript automation path
+remains available via an explicit --mode automation."
   (case cli-mode
     (:auto
-     (cond ((windows-p) :automation)
-           ((or (macos-p) (linux-p))
-            (if (bricscad-backend-executable-path backend) :batch :automation))
-           (t :batch)))
+     (if (bricscad-backend-executable-path backend) :batch :automation))
     ((:batch :automation) cli-mode)))
 
 (defun build-launch-argv (backend protocol-session

@@ -57,9 +57,31 @@ autolisp-front-end/source/backend-bricscad.lisp
 scripts/run-vendor-probes.ps1
   * passes --timeout 180 for the bricscad backend (cold-start budget).
 
+Follow-up (alfe 1.6.7) — drop the VBS: Windows uses batch mode too
+------------------------------------------------------------------
+
+pjb's observation: `alfe --bricscad --mode batch` works well on macOS, so
+why go through VBScript/COM on Windows at all? It needn't. BricsCAD batch
+is `bricscad.exe -B run.scr` -- the SAME GUI-exe + script mechanism
+macOS/Linux already use -- and it sidesteps the whole COM surface
+(SendCommand timing, the modal SECURELOAD/startup dialog that swallowed
+the load). Windows only used automation because choose-effective-mode
+hardcoded :auto -> :automation there.
+
+Changes:
+  * choose-effective-mode: :auto now picks :batch on EVERY platform when
+    bricscad.exe is found (else :automation). detect already resolves the
+    Windows exe (glob or $BRICSCAD_EXE), so the batch path has its binary.
+  * emit-run-scr: prepend a guarded (setvar "SECURELOAD" 0) so batch mode
+    is not blocked by the load-security prompt either.
+  * scripts/run-vendor-probes.ps1: bricscad probes pass --mode batch
+    (+ --timeout 180 for cold GUI start).
+  * The VBScript automation path remains, reachable via --mode automation,
+    now instrumented (bridge-vbs.log) from the earlier round if ever needed.
+
 Status
 ------
 
-OPEN pending the next vendor:probes:bricscad CI run. If it still stalls,
-dist/vendor-probes/bricscad/<probe>-workdir/bridge-vbs.log will now say
-exactly where (attach/create/doc/SendCommand) -- read it first.
+OPEN pending the next vendor:probes:bricscad CI run, now via batch mode.
+If batch has its own trouble, the automation path (+ bridge-vbs.log) is
+still there as a fallback.

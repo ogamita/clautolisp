@@ -97,11 +97,12 @@ foreach ($p in $probes) {
     $wdPathFile = Join-Path $tmpBase ("vp-wd-{0}-{1}-{2}.txt" -f $Backend, $p.Name, [guid]::NewGuid().ToString("N"))
     $dbg = @("--debug", "--verbose", "--keep-workdir", "--write-workdir-path", $wdPathFile)
   }
-  # BricsCAD is launched via COM (cold start = COM server + license + first
-  # document), which can exceed alfe's 30 s default READY timeout; give it a
-  # generous budget. --timeout also feeds the READY wait now.
+  # BricsCAD: use batch mode (bricscad.exe -B run.scr), the same GUI-exe +
+  # script path macOS uses -- no COM/VBScript bridge. A cold GUI start
+  # (launch + license + first document) can exceed alfe's 30 s default READY
+  # timeout, so give it a generous budget (--timeout also feeds READY now).
   $tmo = @()
-  if ($Backend -eq "bricscad") { $tmo = @("--timeout", "180") }
+  if ($Backend -eq "bricscad") { $tmo = @("--mode", "batch", "--timeout", "180") }
   try {
     if ($Backend -eq "autocad" -and $probeDwg) {
       # explicit batch + drawing selection for accoreconsole
