@@ -208,6 +208,7 @@ release-sources:  ## Produce the source tarball + zip (tracked files incl. submo
 	@prefix=clautolisp-$(VERSION); \
 	stage=$$(mktemp -d); dest="$$stage/$$prefix"; mkdir -p "$$dest"; \
 	git ls-files --recurse-submodules -z | tar -cf - --null -T - | tar -C "$$dest" -xf -; \
+	sh scripts/make-manifest.sh sources > "$$dest/manifest-sources.txt"; \
 	tar -C "$$stage" -cjf "$(DIST)/$$prefix-sources.tar.bz2" "$$prefix"; \
 	( cd "$$stage" && zip -qr "$(DIST)/$$prefix-sources.zip" "$$prefix" ); \
 	rm -rf "$$stage"; \
@@ -259,6 +260,8 @@ release-programs: build-programs  ## Build programs and package this host's per-
 	         autolisp-front-end/build/documentation/alfe-user-manual.pdf; do \
 	  if [ -f "$$d" ]; then cp "$$d" "$$docdir"/; fi; \
 	done; \
+	mkdir -p "$$stage/$(MANIFEST_DIR)"; \
+	sh scripts/make-manifest.sh programs > "$$stage/$(MANIFEST_DIR)/manifest-programs.txt"; \
 	tar -C "$$stage" -cjf "$(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2" .; \
 	rm -rf "$$stage"; \
 	echo "wrote $(DIST)/clautolisp-$$ver-binaries-$$os-$$arch.tar.bz2"
@@ -403,6 +406,20 @@ tar -C "$(1)" -cf - $(2) . | tar -C "$$dest" --no-same-owner -xf - ; \
 echo "installed: $(1)/ -> $$dest/"
 endef
 
+# Every staged tree carries a manifest naming the commit it was built
+# from — nothing else installed does. RELEASE_NOTES.org says what the
+# release contains; this says which build you have. One per phase,
+# because the phases can be staged and installed separately.
+# share/doc/clautolisp is the project's doc directory (the repo is named
+# for its flagship program); SUBPROJECT_NAME exists only in the
+# subproject Makefiles, not here.
+MANIFEST_DIR = share/doc/clautolisp
+define stage-manifest
+install -d "$(1)/$(MANIFEST_DIR)" ; \
+sh scripts/make-manifest.sh $(2) > "$(1)/$(MANIFEST_DIR)/manifest-$(2).txt" ; \
+echo "staged: $(1)/$(MANIFEST_DIR)/manifest-$(2).txt"
+endef
+
 stage: stage-programs stage-libraries stage-documentation  ## Build + stage everything under $(STAGE)/ (unprivileged; this is the half that compiles).
 
 stage-programs: build-programs  ## Build the programs and stage them (bin/, libexec/, the harnesses and the alref libs) under $(STAGE)/programs.
@@ -413,12 +430,14 @@ stage-programs: build-programs  ## Build the programs and stage them (bin/, libe
 	$(MAKE) -C autolisp-test      install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
 	$(MAKE) -C autolisp-front-end install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
 	$(MAKE) -C autolisp-benchmark install-programs PREFIX= DESTDIR=$(STAGE_PROGRAMS) $(LISP_VARS)
+	@$(call stage-manifest,$(STAGE_PROGRAMS),programs)
 	@echo "staged: $(STAGE_PROGRAMS)"
 
 stage-libraries: build-libraries  ## Build the native libraries and stage them with the ASDF systems + header under $(STAGE)/libraries.
 	rm -rf "$(STAGE_LIBRARIES)"
 	install -d "$(STAGE_LIBRARIES)"
 	$(MAKE) -C clautolisp         install-libraries PREFIX= DESTDIR=$(STAGE_LIBRARIES) $(LISP_VARS)
+	@$(call stage-manifest,$(STAGE_LIBRARIES),libraries)
 	@echo "staged: $(STAGE_LIBRARIES)"
 
 stage-documentation: build-documentation  ## Render the documentation and stage it (share/doc, share/info, share/man, the spec's HTML/pages) under $(STAGE)/documentation.
@@ -429,6 +448,7 @@ stage-documentation: build-documentation  ## Render the documentation and stage 
 	$(MAKE) -C autolisp-test      install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
 	$(MAKE) -C autolisp-front-end install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
 	$(MAKE) -C autolisp-benchmark install-documentation PREFIX= DESTDIR=$(STAGE_DOCUMENTATION) $(LISP_VARS)
+	@$(call stage-manifest,$(STAGE_DOCUMENTATION),documentation)
 	@echo "staged: $(STAGE_DOCUMENTATION)"
 
 install: install-programs install-libraries install-documentation  ## Install everything into $$PREFIX (default /opt/local) by copying the staged trees — stages first (as $$SUDO_USER when run under sudo), never builds as root.
