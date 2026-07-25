@@ -135,14 +135,30 @@ by --mode batch."))
                   (directory "/c/Program Files/Autodesk/AutoCAD LT */acadlt.exe"))))
         #'string>))
 
+(defun %accoreconsole-preference (path)
+  "Ranking key (lower = preferred) for accoreconsole candidates. Several
+Autodesk products ship accoreconsole.exe; only full AutoCAD can create
+and modify entities. The free DWG TrueView VIEWER also ships one but is
+read-only (and, seen on a CI runner, its config in Program Files is
+read-only/locked and aborts on launch), so it must never win over real
+AutoCAD (alfe-cad-console-encoding.issue / DWG-TrueView discovery)."
+  (let ((p (string-downcase (namestring path))))
+    (cond ((search "trueview" p) 2)         ; read-only viewer — last resort
+          ((search "autocad" p) 0)          ; real AutoCAD — preferred
+          (t 1))))
+
 (defun windows-accoreconsole-candidates ()
-  (sort (append
-         (windows-glob-existing-files '("Autodesk/*/accoreconsole.exe"))
-         ;; Keep the MSYS/MinGW-style /c fallback for compatibility
-         ;; with Unix-like Windows runtimes that do expose that view.
-         (mapcar #'namestring
-                 (directory "/c/Program Files/Autodesk/*/accoreconsole.exe")))
-        #'string>))
+  ;; Version-descending within a preference tier, then AutoCAD before
+  ;; generic before DWG TrueView (STABLE-SORT keeps the version order).
+  (stable-sort
+   (sort (append
+          (windows-glob-existing-files '("Autodesk/*/accoreconsole.exe"))
+          ;; Keep the MSYS/MinGW-style /c fallback for compatibility
+          ;; with Unix-like Windows runtimes that do expose that view.
+          (mapcar #'namestring
+                  (directory "/c/Program Files/Autodesk/*/accoreconsole.exe")))
+         #'string>)
+   #'< :key #'%accoreconsole-preference))
 
 (defun discover-autocad-binary (&key
                                   (os (host-os)))

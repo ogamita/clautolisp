@@ -54,15 +54,30 @@ $probes = @(
 
 $failed = 0
 $summary = @("vendor probes: $Backend", "alfe: $alfe", "dwg: $Dwg", "")
+$tmpBase = if ($env:TEMP) { $env:TEMP } else { $outDir }
 foreach ($p in $probes) {
   $probePath = Join-Path $probeDir $p.File
   $log = Join-Path $outDir ("{0}.log" -f $p.Name)
   Write-Host "=== $Backend : $($p.Name) ==="
-  if ($Backend -eq "autocad" -and $Dwg) {
-    # explicit batch + drawing selection for accoreconsole
-    & $alfe "--autocad" "--mode" "batch" "--dwg" $Dwg -l $probePath 2>&1 | Tee-Object -FilePath $log
-  } else {
-    & $alfe "--$Backend" -l $probePath 2>&1 | Tee-Object -FilePath $log
+  # Copy the drawing to a unique temp name per probe so concurrent /
+  # back-to-back runs never share and lock the same file (or its
+  # .dwl/.bak siblings). Removed after the probe.
+  $probeDwg = $null
+  if ($Dwg -and (Test-Path $Dwg)) {
+    $probeDwg = Join-Path $tmpBase ("vp-{0}-{1}-{2}.dwg" -f $Backend, $p.Name, [guid]::NewGuid().ToString("N"))
+    Copy-Item -Force $Dwg $probeDwg
+  }
+  try {
+    if ($Backend -eq "autocad" -and $probeDwg) {
+      # explicit batch + drawing selection for accoreconsole
+      & $alfe "--autocad" "--mode" "batch" "--dwg" $probeDwg -l $probePath 2>&1 | Tee-Object -FilePath $log
+    } else {
+      & $alfe "--$Backend" -l $probePath 2>&1 | Tee-Object -FilePath $log
+    }
+  } finally {
+    if ($probeDwg -and (Test-Path $probeDwg)) {
+      Remove-Item -Force $probeDwg -ErrorAction SilentlyContinue
+    }
   }
   $content = ""
   if (Test-Path $log) { $content = Get-Content -Raw $log }
