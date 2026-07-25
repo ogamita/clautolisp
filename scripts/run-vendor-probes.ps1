@@ -103,12 +103,17 @@ foreach ($p in $probes) {
   # timeout, so give it a generous budget (--timeout also feeds READY now).
   $tmo = @()
   if ($Backend -eq "bricscad") { $tmo = @("--mode", "batch", "--timeout", "180") }
+  # alfe writes its --debug/--verbose diagnostics to stderr. With `2>&1`
+  # PowerShell wraps each native-stderr line as an ErrorRecord and renders
+  # it with the alarming NativeCommandError/RemoteException formatting --
+  # noise about normal output, not a failure. Coerce every pipeline item to
+  # a plain string (`"$_"`) before Tee so stderr lands in the log as text.
   try {
     if ($Backend -eq "autocad" -and $probeDwg) {
       # explicit batch + drawing selection for accoreconsole
-      & $alfe "--autocad" @dbg "--mode" "batch" "--dwg" $probeDwg -l $probePath 2>&1 | Tee-Object -FilePath $log
+      & $alfe "--autocad" @dbg "--mode" "batch" "--dwg" $probeDwg -l $probePath 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log
     } else {
-      & $alfe "--$Backend" @dbg @tmo -l $probePath 2>&1 | Tee-Object -FilePath $log
+      & $alfe "--$Backend" @dbg @tmo -l $probePath 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log
     }
   } finally {
     if ($probeDwg -and (Test-Path $probeDwg)) {
