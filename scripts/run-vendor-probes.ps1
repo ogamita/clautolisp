@@ -115,6 +115,21 @@ foreach ($p in $probes) {
       Remove-Item -Force $probeDwg -ErrorAction SilentlyContinue
     }
   }
+  # Safety net: alfe now terminates the engine it launched on abnormal exit,
+  # but if alfe itself was killed before cleanup a GUI BricsCAD can be left
+  # spinning. Kill ONLY the exact PID alfe reported ("process-info-pid = N")
+  # and only if it is still a bricscad process -- never a blanket by-name
+  # kill, since the runner may have an interactive BricsCAD open.
+  if ($Backend -eq "bricscad" -and (Test-Path $log)) {
+    foreach ($m in [regex]::Matches((Get-Content -Raw $log), "process-info-pid = (\d+)")) {
+      $enginePid = [int]$m.Groups[1].Value
+      $proc = Get-Process -Id $enginePid -ErrorAction SilentlyContinue
+      if ($proc -and $proc.ProcessName -match "bricscad") {
+        Write-Host "cleanup: terminating leftover bricscad pid $enginePid"
+        Stop-Process -Id $enginePid -Force -ErrorAction SilentlyContinue
+      }
+    }
+  }
   # With --keep-workdir the protocol files (run.scr, run-common.lsp, the
   # staged runtime/bootstrap, the status/stdout/stderr channel files)
   # survive; copy that workdir into the artifacts. The path comes from the

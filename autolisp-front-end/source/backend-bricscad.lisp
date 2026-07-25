@@ -671,30 +671,51 @@ future ticket."
                 (log-debug "backend BRICSCAD: spawned, process-info-pid = ~A"
                            (ignore-errors (uiop:process-info-pid process-info))))
               (setf (bricscad-session-process-info session) process-info))
-            (when wait-for-ready
-              (log-verbose "backend BRICSCAD: waiting for READY (timeout ~A s)"
-                           ready-timeout)
-              (multiple-value-bind (ok elapsed last)
-                  (alfe.protocol.file:wait-for-status-prefix
-                   protocol "READY" :timeout ready-timeout)
-                (cond
-                  (ok
-                   (log-verbose "backend BRICSCAD: READY after ~,2F s (status ~S)"
-                                elapsed last))
-                  (t
-                   (log-warn "backend BRICSCAD: READY timeout after ~,2F s; last status = ~S"
-                             elapsed last)
-                   (error 'backend-bootstrap-error
-                          :backend :bricscad
-                          :code :ready-timeout
-                          :message
-                          (format nil
-                                  "BricsCAD did not reach READY within ~A s (last status: ~S)."
-                                  ready-timeout last)
-                          :details (list :workdir workdir
-                                         :last-status last))))))
-            (session-state-set session :ready)
-            session)))
+            ;; From here on the engine is spawned. If we exit abnormally
+            ;; (e.g. READY-timeout signals below), the error unwinds past the
+            ;; caller's SESSION binding, so its SHUTDOWN never runs and the
+            ;; launched engine is orphaned -- the "BricsCAD left spinning
+            ;; after the job" symptom. In batch mode process-info IS the
+            ;; bricscad.exe, so terminate it ourselves on any abnormal exit;
+            ;; on success it is left running and handed to the session for
+            ;; the normal QUIT/shutdown path.
+            (let ((started-ok nil))
+              (unwind-protect
+                  (progn
+                    (when wait-for-ready
+                      (log-verbose "backend BRICSCAD: waiting for READY (timeout ~A s)"
+                                   ready-timeout)
+                      (multiple-value-bind (ok elapsed last)
+                          (alfe.protocol.file:wait-for-status-prefix
+                           protocol "READY" :timeout ready-timeout)
+                        (cond
+                          (ok
+                           (log-verbose "backend BRICSCAD: READY after ~,2F s (status ~S)"
+                                        elapsed last))
+                          (t
+                           (log-warn "backend BRICSCAD: READY timeout after ~,2F s; last status = ~S"
+                                     elapsed last)
+                           (error 'backend-bootstrap-error
+                                  :backend :bricscad
+                                  :code :ready-timeout
+                                  :message
+                                  (format nil
+                                          "BricsCAD did not reach READY within ~A s (last status: ~S)."
+                                          ready-timeout last)
+                                  :details (list :workdir workdir
+                                                 :last-status last))))))
+                    (session-state-set session :ready)
+                    (setq started-ok t)
+                    session)
+                (unless started-ok
+                  (let ((info (bricscad-session-process-info session)))
+                    (when info
+                      (ignore-errors
+                        (when (uiop:process-alive-p info)
+                          (log-warn "backend BRICSCAD: start aborted; terminating spawned engine (pid ~A)"
+                                    (ignore-errors (uiop:process-info-pid info)))
+                          (uiop:terminate-process info)
+                          (uiop:wait-process info)))))))))))
     (alfe.error:backend-error (probe)
       (error probe))
     (error (probe)

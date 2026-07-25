@@ -148,9 +148,31 @@ that point, both fixed:
    explaining -- whatever killed the loop after READY 0 will now appear as
    FAILED <msg> in status.txt and protocol/stderr.txt.
 
+Orphaned engine on abnormal start (alfe 1.6.10)
+-----------------------------------------------
+
+pjb: a launched BricsCAD was left spinning after the job -- alfe should
+kill the process it launched before exiting. Root cause: start-engine
+stores process-info on the SESSION, but on a READY-timeout it SIGNALS,
+and the error unwinds past the caller's `session' binding, so run-plan's
+SHUTDOWN (which does terminate process-info) never runs -> in batch mode
+the bricscad.exe alfe owns is orphaned.
+
+Fix: start-engine wraps the post-spawn section in unwind-protect; on any
+abnormal exit (started-ok still nil) it terminates the spawned process
+itself. On success the engine is left running and handed to the session
+for the normal QUIT/shutdown path. Plus a targeted safety net in
+run-vendor-probes.ps1: kill ONLY the exact "process-info-pid = N" alfe
+reported, and only if it is still a bricscad process (never a blanket
+by-name kill -- the runner has an interactive BricsCAD).
+
+(Note: the automation/COM path can still orphan BricsCAD -- there
+process-info is the cscript, not the COM-server BricsCAD -- but batch is
+the default now and owns its process directly.)
+
 Status
 ------
 
 OPEN pending the next vendor:probes:bricscad run. The launch works; expect
 either real probe verdicts or a FAILED <msg> status naming whatever the
-loop hit after READY 0.
+loop hit after READY 0 -- and no leftover BricsCAD either way.
