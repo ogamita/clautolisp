@@ -80,7 +80,11 @@ and run all three probes against each real product via
 under `dist/vendor-probes/<backend>/` (with a `SUMMARY.txt`), and the
 job fails on any probe FAIL or an unreachable backend. Trigger them from
 a pipeline, download the artifacts, and feed any FAIL back — it names a
-real clautolisp-vs-vendor divergence to reconcile.
+real clautolisp-vs-vendor divergence to reconcile. The drawing the
+probes open is the `PROBE_DWG` CI variable (default
+`c:/gitlab-runner/dwg/empty.dwg`, the clean canvas AutoCAD batch
+requires); a content drawing (`2018.dwg`) is available for future
+read-oriented probes.
 
 ## Regenerating the embedded copies
 

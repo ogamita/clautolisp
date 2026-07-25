@@ -548,6 +548,10 @@ verify:vl-registry:windows:
   tags: [windows, amd64, shell]
   variables:
     GIT_SUBMODULE_STRATEGY: none
+    # Drawing the probes open on the runner (AutoCAD batch needs one).
+    # empty.dwg is the clean canvas; c:/gitlab-runner/dwg/2018.dwg is a
+    # content drawing available for read-oriented probes later.
+    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
   rules:
     - when: manual
       allow_failure: true
@@ -562,12 +566,12 @@ verify:vl-registry:windows:
 vendor:probes:bricscad:
   extends: .vendor-probe-common
   script:
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad -Dwg $env:PROBE_DWG
 
 vendor:probes:autocad:
   extends: .vendor-probe-common
   script:
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -Dwg $env:PROBE_DWG
 
 # --- collect: union the per-target artefacts into the combined set -----
 #
