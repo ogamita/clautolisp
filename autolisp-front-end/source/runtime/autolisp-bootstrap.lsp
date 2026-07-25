@@ -969,12 +969,25 @@
   (setq hit (atoms-family 1 (list (strcase name))))
   (if (and hit (car hit)) T nil))
 
-;; Real-time yield primitive that does NOT depend on vlax-sleep (absent on
-;; AutoCAD -- it is a BricsCAD extension, and vl-load-com does not add it).
-;; Prefer the DELAY command; if that too is rejected, return immediately and
-;; let the caller's poll loop spin (correct, if more CPU-hungry).
+;; Real-time yield of about MS milliseconds using ONLY (getvar "DATE") -- a
+;; monotonic-enough wall clock every AutoCAD/BricsCAD provides, read without
+;; any command context, that never signals. DATE is the Julian day number
+;; plus fraction-of-day, so one day = 86400000 ms.
+;;
+;; We deliberately do NOT use (command "_DELAY" ms) here: on AutoCAD's
+;; accoreconsole that raises "fonction d'ordre incorrecte: COMMAND", and --
+;; like an undefined vlax-sleep -- that error is signalled while resolving
+;; `command' for the call, BEFORE any vl-catch-all-apply guard is
+;; established, so it escapes the guard and aborts the protocol read loop.
+;; A clock spin costs CPU but is correct and portable; hosts with a real
+;; sleep (vlax-sleep on BricsCAD) never reach this helper.
+(defun autolisp-busy-wait-ms (ms / target)
+  (setq target (+ (getvar "DATE") (/ (float ms) 86400000.0)))
+  (while (< (getvar "DATE") target)
+    (setq target target)))
+
 (defun autolisp-delay-ms (ms)
-  (vl-catch-all-apply 'command (list "_DELAY" ms))
+  (autolisp-busy-wait-ms ms)
   nil)
 
 (defun autolisp-sleep-ms (ms / r)

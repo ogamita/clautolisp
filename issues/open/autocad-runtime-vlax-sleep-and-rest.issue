@@ -70,10 +70,38 @@ host by capability, so BricsCAD/clautolisp behaviour is unchanged. The
 SBCL suite (303 checks) is unaffected — these .lsp files execute only
 inside the CAD host.
 
+Round 2 (alfe 1.6.6) — the DELAY fallback had the SAME escape bug
+----------------------------------------------------------------
+
+The 1.6.4 fix cleared both original crashes (job 15534641534:
+"server-loop returned normally", no more arity error), but the probes
+still got no verdict. New stderr:
+
+    ERROR protocol read: fonction d'ordre incorrecte: COMMAND
+
+The vlax-sleep fallback was `(vl-catch-all-apply 'command (list "_DELAY" ms))`.
+On AutoCAD accoreconsole *applying* the `command` subr raises "fonction
+d'ordre incorrecte: COMMAND" — and, exactly like an undefined vlax-sleep,
+that error fires while resolving `command` for the apply, BEFORE the
+vl-catch-all-apply guard is established, so it escapes and aborts the read
+loop on the first yield.
+
+Fix: yield with neither vlax-sleep nor (command). New
+`autolisp-busy-wait-ms` spins on (getvar "DATE") (Julian day + fraction;
+1 day = 86400000 ms) — a wall clock every host provides, read with no
+command context, that never signals. `autolisp-delay-ms` now calls it;
+`autolisp-sleep-ms` / `autolisp-protocol-sleep-ms` still prefer vlax-sleep
+(BricsCAD) and fall back to it. Costs CPU (a spin), acceptable for the
+probe runs; hosts with a real sleep never reach it.
+
+(The opt-in "DELAY"/"SLEEP" yield modes in autolisp-protocol-yield still
+carry the same latent apply-escape pattern, but they are not the default
+and not exercised here — left for a later cleanup.)
+
 Status
 ------
 
-OPEN pending confirmation on the next vendor:probes:autocad CI run
-(needs the Windows + AutoCAD 2022 runner). Once the AutoCAD probes reach
-READY and produce verdicts, close this and reconcile any genuine
-clautolisp-vs-AutoCAD divergences the probes then surface.
+OPEN pending the next vendor:probes:autocad CI run. With the yield now
+non-signalling, the loop should hold at READY, accept the probe forms,
+and emit real verdicts. Any FAIL from there is a genuine
+clautolisp-vs-AutoCAD divergence to reconcile.
