@@ -17,7 +17,10 @@ param(
   # or it stops with NO-DWG; empty.dwg is the clean canvas the create/delete
   # probes want. Overridden by the PROBE_DWG CI variable. A content drawing
   # (e.g. 2018.dwg) can be passed for read-oriented probes later.
-  [string]$Dwg = "c:/gitlab-runner/dwg/empty.dwg"
+  [string]$Dwg = "c:/gitlab-runner/dwg/empty.dwg",
+  # When 1 (default), pass --debug --verbose --keep-workdir to alfe and
+  # copy each kept protocol workdir into the artifacts for inspection.
+  [string]$Debug = "1"
 )
 
 $ErrorActionPreference = "Continue"
@@ -30,6 +33,20 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 # AUTOLISP_DWG is consulted by both backends' batch paths; --dwg (below) is
 # the explicit AutoCAD form and wins where supported.
 if ($Dwg) { $env:AUTOLISP_DWG = $Dwg }
+
+# Point alfe at the CAD-side runtime/bootstrap LSP shipped in the repo.
+# alfe is built-not-installed on the runner, and the vendored-asset
+# lookup (asdf:system-relative-pathname) is unreliable from a frozen
+# .exe, so run-common.lsp loaded with no remote-I/O runtime and quit
+# before signalling READY (job 15534461469). $ALFE_RUNTIME_LSP /
+# $ALFE_BOOTSTRAP_LSP take precedence over discovery. Forward slashes so
+# SBCL's probe-file parses them on Windows.
+$rtLsp = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-remote-io.lsp") -replace '\\','/'
+$bsLsp = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-bootstrap.lsp") -replace '\\','/'
+if (Test-Path $rtLsp) { $env:ALFE_RUNTIME_LSP = $rtLsp } else { Write-Host "WARN: runtime lsp not found at $rtLsp" }
+if (Test-Path $bsLsp) { $env:ALFE_BOOTSTRAP_LSP = $bsLsp } else { Write-Host "WARN: bootstrap lsp not found at $bsLsp" }
+Write-Host "ALFE_RUNTIME_LSP   = $env:ALFE_RUNTIME_LSP"
+Write-Host "ALFE_BOOTSTRAP_LSP = $env:ALFE_BOOTSTRAP_LSP"
 
 # The Makefile saves the SBCL image as `alfe-sbcl` with no extension. On
 # Windows it is a native PE, but PowerShell's call operator (&) only runs
@@ -67,16 +84,36 @@ foreach ($p in $probes) {
     $probeDwg = Join-Path $tmpBase ("vp-{0}-{1}-{2}.dwg" -f $Backend, $p.Name, [guid]::NewGuid().ToString("N"))
     Copy-Item -Force $Dwg $probeDwg
   }
+  $dbg = @()
+  if ($Debug -eq "1") { $dbg = @("--debug", "--verbose", "--keep-workdir") }
   try {
     if ($Backend -eq "autocad" -and $probeDwg) {
       # explicit batch + drawing selection for accoreconsole
-      & $alfe "--autocad" "--mode" "batch" "--dwg" $probeDwg -l $probePath 2>&1 | Tee-Object -FilePath $log
+      & $alfe "--autocad" @dbg "--mode" "batch" "--dwg" $probeDwg -l $probePath 2>&1 | Tee-Object -FilePath $log
     } else {
-      & $alfe "--$Backend" -l $probePath 2>&1 | Tee-Object -FilePath $log
+      & $alfe "--$Backend" @dbg -l $probePath 2>&1 | Tee-Object -FilePath $log
     }
   } finally {
     if ($probeDwg -and (Test-Path $probeDwg)) {
       Remove-Item -Force $probeDwg -ErrorAction SilentlyContinue
+    }
+  }
+  # With --keep-workdir the protocol files (run.scr, run-common.lsp, the
+  # staged runtime/bootstrap, the status/stdout/stderr channel files)
+  # survive; find that workdir in the log and copy it into the artifacts.
+  if ($Debug -eq "1" -and (Test-Path $log)) {
+    $logText = Get-Content -Raw $log
+    $rx = "[A-Za-z]:[\/][^\s`"']*alfe-$Backend-[0-9]+-[A-Za-z0-9]+"
+    $seen = @{}
+    foreach ($mm in [regex]::Matches($logText, $rx)) {
+      $wd = $mm.Value
+      if ($seen.ContainsKey($wd)) { continue }
+      $seen[$wd] = $true
+      if (Test-Path $wd) {
+        $dest = Join-Path $outDir ("{0}-workdir" -f $p.Name)
+        Copy-Item -Recurse -Force $wd $dest -ErrorAction SilentlyContinue
+        Write-Host "kept workdir copied -> $dest"
+      }
     }
   }
   $content = ""

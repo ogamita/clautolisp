@@ -552,6 +552,9 @@ verify:vl-registry:windows:
     # empty.dwg is the clean canvas; c:/gitlab-runner/dwg/2018.dwg is a
     # content drawing available for read-oriented probes later.
     PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+    # 1 -> pass --debug --verbose --keep-workdir and archive each kept
+    # protocol workdir under dist/vendor-probes/<backend>/<probe>-workdir/.
+    PROBE_DEBUG: '1'
   rules:
     - when: manual
       allow_failure: true
@@ -566,12 +569,12 @@ verify:vl-registry:windows:
 vendor:probes:bricscad:
   extends: .vendor-probe-common
   script:
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad -Dwg $env:PROBE_DWG
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad -Dwg $env:PROBE_DWG -Debug $env:PROBE_DEBUG
 
 vendor:probes:autocad:
   extends: .vendor-probe-common
   script:
-    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -Dwg $env:PROBE_DWG
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -Dwg $env:PROBE_DWG -Debug $env:PROBE_DEBUG
 
 # --- collect: union the per-target artefacts into the combined set -----
 #
