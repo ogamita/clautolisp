@@ -423,6 +423,19 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
        (>= (length string) (length prefix))
        (string= prefix string :end2 (length prefix))))
 
+(defun autocad-console-external-format ()
+  "The external-format for reading accoreconsole's own stdout/stderr pipe.
+Default :ISO-8859-1 — a total decoder that never signals, so a non-UTF-8
+Windows console (accoreconsole emits UTF-16LE on e.g. French Windows)
+cannot crash bootstrap; SLURP-PROCESS-STREAM strips the interleaved NULs.
+Override per backend with $ALFE_AUTOCAD_CONSOLE_ENCODING (a keyword name,
+e.g. UTF-16LE or UTF-8) when the console encoding is known
+(alfe-accoreconsole-encoding.issue)."
+  (let ((env (uiop:getenv "ALFE_AUTOCAD_CONSOLE_ENCODING")))
+    (if (and env (plusp (length env)))
+        (intern (string-upcase env) :keyword)
+        :iso-8859-1)))
+
 (defun slurp-process-stream (stream)
   (if (null stream)
       ""
@@ -595,7 +608,12 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
                    (funcall launcher argv
                             :input :stream
                             :output :stream
-                            :error-output :stream))))
+                            :error-output :stream
+                            ;; accoreconsole's console is not UTF-8 on a
+                            ;; non-UTF-8 Windows; a robust external-format
+                            ;; keeps reading its pipe from crashing bootstrap
+                            ;; (alfe-accoreconsole-encoding.issue).
+                            :external-format (autocad-console-external-format)))))
           (declare (ignore _))
           (when process-info
             (log-debug "backend AUTOCAD: spawned, process-info-pid = ~A"

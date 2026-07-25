@@ -362,6 +362,61 @@ safe; we still test the path explicitly)."
             (is (search (string (code-char 233)) batch))))
       (delete-workdir workdir))))
 
+;;; --- robust console decoding (alfe-accoreconsole-encoding.issue) ---------
+
+(defun %ascii-as-utf16le (string &key bom)
+  "STRING as a UTF-16LE octet vector (each ASCII char -> lo byte, 0)."
+  (let ((bytes (if bom (list #xFF #xFE) '())))
+    (loop for ch across string
+          do (setf bytes (append bytes (list (char-code ch) 0))))
+    (make-array (length bytes) :element-type '(unsigned-byte 8)
+                               :initial-contents bytes)))
+
+(test decode-console-octets-utf16le
+  "accoreconsole on a non-UTF-8 Windows writes UTF-16LE; the decoder must
+recover the ASCII (with or without a BOM), not signal."
+  (is (string= "ALL ENTITY PROBES PASSED"
+               (alfe.protocol.file::decode-console-octets
+                (%ascii-as-utf16le "ALL ENTITY PROBES PASSED"))))
+  (is (string= "ok"
+               (alfe.protocol.file::decode-console-octets
+                (%ascii-as-utf16le "ok" :bom t)))))
+
+(test decode-console-octets-utf8-and-latin1
+  "UTF-8 (incl. a BOM) decodes correctly; an invalid byte degrades to its
+Latin-1 character instead of signalling."
+  ;; UTF-8 "café"
+  (is (string= (format nil "caf~A" (code-char 233))
+               (alfe.protocol.file::decode-console-octets
+                (make-array 5 :element-type '(unsigned-byte 8)
+                              :initial-contents '(#x63 #x61 #x66 #xC3 #xA9)))))
+  ;; UTF-8 BOM + "hi"
+  (is (string= "hi"
+               (alfe.protocol.file::decode-console-octets
+                (make-array 5 :element-type '(unsigned-byte 8)
+                              :initial-contents '(#xEF #xBB #xBF #x68 #x69)))))
+  ;; a lone 0xEA (invalid UTF-8 lead) -> Latin-1 ê, no error
+  (is (string= (format nil "~A" (code-char #xEA))
+               (alfe.protocol.file::decode-console-octets
+                (make-array 1 :element-type '(unsigned-byte 8)
+                              :initial-contents '(#xEA))))))
+
+(test drain-channel-reads-utf16le-verdict
+  "The CI regression: a channel file written as UTF-16LE (accoreconsole)
+drains to readable text, so the probe verdict line survives."
+  (let ((workdir (make-test-workdir "drain-utf16")))
+    (unwind-protect
+        (let* ((session (alfe.protocol.file:init-session workdir))
+               (path (alfe.protocol.file:protocol-session-stdout-path session)))
+          (with-open-file (out path :direction :output :if-exists :append
+                                    :element-type '(unsigned-byte 8))
+            (loop for b across (%ascii-as-utf16le
+                                (format nil "ALL SELECTION PROBES PASSED~%"))
+                  do (write-byte b out)))
+          (let ((batch (alfe.protocol.file:drain-stdout session)))
+            (is (search "ALL SELECTION PROBES PASSED" batch))))
+      (delete-workdir workdir))))
+
 ;;; --- line-to-form reader -------------------------------------------
 
 (test protocol-read-balanced-form-single-atom

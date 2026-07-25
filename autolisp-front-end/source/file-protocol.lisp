@@ -479,38 +479,118 @@ before the helper hands control back."
 
 ;;; --- output draining -----------------------------------------------
 
+;;; --- robust console decoding (alfe-accoreconsole-encoding.issue) ----------
+;;;
+;;; The channel files carry whatever the CAD-resident runtime and the CAD
+;;; console emit. That is UTF-8 for clautolisp and BricsCAD, but AutoCAD's
+;;; accoreconsole on a non-UTF-8 Windows (e.g. French) writes UTF-16LE — a
+;;; hard :UTF-8 external-format then dies with a decoding error mid-bootstrap.
+;;; We instead read the raw octets and decode DEFENSIVELY: detect UTF-16LE
+;;; (BOM or the NUL-at-odd-index pattern of ASCII-in-UTF-16), honour a UTF-8
+;;; BOM, else decode UTF-8 with a per-byte Latin-1 fallback so no octet
+;;; sequence can ever crash the reader. ASCII (the probe verdict lines) comes
+;;; through intact in every case.
+
+(defun %utf8-continuation-p (b) (= (logand b #xC0) #x80))
+
+(defun %looks-utf-16le-p (bytes)
+  "Heuristic UTF-16LE detection: a leading FF FE BOM, or — for pure ASCII
+text encoded as UTF-16LE — a NUL byte at most odd indices."
+  (let ((n (length bytes)))
+    (cond
+      ((and (>= n 2) (= (aref bytes 0) #xFF) (= (aref bytes 1) #xFE)) t)
+      ((< n 4) nil)
+      (t (let ((odd 0) (pairs 0))
+           (loop for i from 1 below n by 2
+                 do (incf pairs)
+                    (when (zerop (aref bytes i)) (incf odd)))
+           (and (plusp pairs) (>= odd (floor pairs 2))))))))
+
+(defun %decode-utf-16le (bytes)
+  "Decode BYTES as UTF-16LE (BMP; a leading BOM and lone surrogate halves
+are skipped)."
+  (with-output-to-string (out)
+    (let ((start (if (and (>= (length bytes) 2)
+                          (= (aref bytes 0) #xFF) (= (aref bytes 1) #xFE))
+                     2 0)))
+      (loop for i from start below (1- (length bytes)) by 2
+            for code = (logior (aref bytes i) (ash (aref bytes (1+ i)) 8))
+            unless (<= #xD800 code #xDFFF)
+              do (write-char (code-char code) out)))))
+
+(defun %decode-utf-8-lenient (bytes &optional (start 0))
+  "Decode BYTES from START as UTF-8; any malformed byte is taken as its
+Latin-1 character, so the decode never fails."
+  (with-output-to-string (out)
+    (let ((i start) (n (length bytes)))
+      (flet ((c (k) (aref bytes k)))
+        (loop while (< i n) do
+          (let ((b (c i)))
+            (cond
+              ((< b #x80) (write-char (code-char b) out) (incf i))
+              ((and (<= #xC2 b #xDF) (< (1+ i) n) (%utf8-continuation-p (c (1+ i))))
+               (write-char (code-char (logior (ash (logand b #x1F) 6)
+                                              (logand (c (1+ i)) #x3F)))
+                           out)
+               (incf i 2))
+              ((and (<= #xE0 b #xEF) (< (+ i 2) n)
+                    (%utf8-continuation-p (c (1+ i))) (%utf8-continuation-p (c (+ i 2))))
+               (write-char (code-char (logior (ash (logand b #x0F) 12)
+                                              (ash (logand (c (1+ i)) #x3F) 6)
+                                              (logand (c (+ i 2)) #x3F)))
+                           out)
+               (incf i 3))
+              ((and (<= #xF0 b #xF4) (< (+ i 3) n)
+                    (%utf8-continuation-p (c (1+ i))) (%utf8-continuation-p (c (+ i 2)))
+                    (%utf8-continuation-p (c (+ i 3))))
+               (write-char (code-char (logior (ash (logand b #x07) 18)
+                                              (ash (logand (c (1+ i)) #x3F) 12)
+                                              (ash (logand (c (+ i 2)) #x3F) 6)
+                                              (logand (c (+ i 3)) #x3F)))
+                           out)
+               (incf i 4))
+              (t (write-char (code-char b) out) (incf i)))))))))
+
+(defun decode-console-octets (bytes)
+  "Decode a channel octet vector to a string, robustly: UTF-16LE (BOM or
+heuristic), a UTF-8 BOM, else lenient UTF-8. Never signals."
+  (cond
+    ((zerop (length bytes)) "")
+    ((%looks-utf-16le-p bytes) (%decode-utf-16le bytes))
+    ((and (>= (length bytes) 3)
+          (= (aref bytes 0) #xEF) (= (aref bytes 1) #xBB) (= (aref bytes 2) #xBF))
+     (%decode-utf-8-lenient bytes 3))
+    (t (%decode-utf-8-lenient bytes))))
+
 (defun drain-channel (path offset-place)
-  "Generic incremental reader. Opens PATH for input, skips to the
-saved OFFSET-PLACE byte position, reads the rest as UTF-8, and
-advances OFFSET-PLACE to the new file length. Returns the new text.
+  "Generic incremental reader. Opens PATH, skips to the saved OFFSET-PLACE
+*byte* position, reads the rest as raw octets, decodes them robustly
+(DECODE-CONSOLE-OCTETS — UTF-16LE / UTF-8 / Latin-1 fallback, never
+signals), and advances OFFSET-PLACE to the new file length. Returns the
+new text; the empty string when PATH does not exist yet.
 
-When PATH does not exist (the runtime hasn't published anything
-yet), returns the empty string and leaves OFFSET-PLACE unchanged.
-
-Note we read by *character*, not by raw byte: the spec says the
-runtime never tears a multi-byte UTF-8 sequence (appends are
-line-buffered), so a character-mode reader is safe."
+The offset is a BYTE offset (was characters+UTF-8): the channel encoding
+is not knowable ahead of time — accoreconsole on a non-UTF-8 Windows
+writes UTF-16LE — so a hard character reader crashed bootstrap
+(alfe-accoreconsole-encoding.issue). Only DRAIN-CHANNEL reads the offset,
+so switching its basis to bytes is self-consistent."
   (cond
     ((not (probe-file path)) "")
     (t
      (with-open-file (in path :direction :input
-                              :element-type 'character
-                              :external-format :utf-8)
-       (let ((current-offset (funcall offset-place)))
-         ;; FILE-POSITION on a character stream is in characters
-         ;; under SBCL/CCL for UTF-8 inputs — we therefore track our
-         ;; offset in characters too, consistent with what the spec
-         ;; calls "the offset". The runtime appends a fixed number of
-         ;; characters per write, never partial code points, so this
-         ;; lines up.
-         (file-position in current-offset)
-         (let ((collected (with-output-to-string (out)
-                            (loop for ch = (read-char in nil :eof)
-                                  until (eq ch :eof)
-                                  do (write-char ch out)
-                                     (incf current-offset)))))
-           (funcall offset-place current-offset)
-           collected))))))
+                              :element-type '(unsigned-byte 8))
+       (let ((start (funcall offset-place))
+             (end (file-length in)))
+         (cond
+           ((>= start end) "")
+           (t
+            (file-position in start)
+            (let* ((buf (make-array (- end start) :element-type '(unsigned-byte 8)))
+                   (got (read-sequence buf in)))
+              (funcall offset-place (+ start got))
+              (decode-console-octets (if (= got (length buf))
+                                         buf
+                                         (subseq buf 0 got)))))))))))
 
 (defun drain-stdout (session)
   "Return the bytes published to stdout.txt since the previous
