@@ -1,0 +1,55 @@
+# -*- mode:org;coding:utf-8 -*-
+#+TITLE: alfe: configurable per-backend encoding for the CAD subprocess console I/O
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-07-25
+
+Found when the Windows CI vendor:probes:autocad job hit a bootstrap
+crash (job 15534319257): the AutoCAD backend read accoreconsole's
+stdout/stderr pipe with the default :UTF-8 external-format, but
+accoreconsole on a non-UTF-8 (French) Windows writes UTF-16LE, so
+`read-char` died with "the octet sequence #(234 0 116) cannot be
+decoded" [BOOTSTRAP-FAILED].
+
+* Root cause
+
+alfe has -E (source-file encoding) and -Eterminal (alfe's own terminal
+I/O), but NOTHING specifies the encoding of the CAD SUBPROCESS console
+I/O. The `uiop:launch-program` call in start-engine (backend-autocad.lisp)
+passed no :external-format, and drain-channel (file-protocol.lisp) read
+the channel files as hard :utf-8. Neither is knowable ahead of time:
+clautolisp/BricsCAD write UTF-8, AutoCAD/accoreconsole writes UTF-16LE
+(codepage-dependent).
+
+* Done (fix-alfe-accoreconsole-encoding, alfe 1.6.1)
+
+Defensive, no-config fixes so bootstrap cannot crash:
+- drain-channel now reads raw octets and decodes robustly
+  (DECODE-CONSOLE-OCTETS: UTF-16LE by BOM/heuristic, UTF-8 BOM, else
+  lenient UTF-8 with a per-byte Latin-1 fallback — never signals; ASCII
+  verdict lines always survive). Offset is now byte-based. Unit-tested.
+- the accoreconsole pipe read uses AUTOCAD-CONSOLE-EXTERNAL-FORMAT
+  (default :iso-8859-1, a total decoder; the existing NUL-strip in
+  slurp-process-stream cleans UTF-16LE), overridable now via
+  $ALFE_AUTOCAD_CONSOLE_ENCODING.
+
+* To design (pjb): per-backend -E CLI options for the subprocess console
+
+pjb wants proper, possibly *different* -E options per backend for the
+CAD subprocess console I/O (not just the env-var override shipped
+above). Decisions:
+- CLI shape: a subprocess-console variant of -E, e.g.
+  =--console-encoding ENC= (backend-default), or per backend
+  =--autocad-console-encoding= / =--bricscad-console-encoding=?
+- default per backend: autocad -> ? (utf-16le vs the robust
+  iso-8859-1+auto-detect shipped), bricscad -> utf-8.
+- OR pass a codepage option TO accoreconsole so it emits UTF-8
+  (investigate accoreconsole flags / a `(setvar)` on the CAD side).
+- thread the chosen encoding through start-engine's already-present
+  IO-ENCODING param (currently declared ignore in the autocad backend)
+  to both the launch-program call and drain-channel.
+
+* Verify (blocked on the Windows/AutoCAD runner)
+
+Re-run vendor:probes:autocad on master: bootstrap should pass the
+decode and reach the probe verdicts. The BricsCAD path likely never hit
+this (UTF-8), but apply the same robustness there if a probe surfaces it.

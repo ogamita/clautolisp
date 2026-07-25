@@ -443,6 +443,13 @@ file or COM), and forwards the workload.
   BricsCAD / AutoCAD binaries from the standard ~Program Files~ roots
   by default; ~BRICSCAD_EXE~, ~AUTOCAD_EXE~ and
   ~AUTOCAD_ACCORECONSOLE~ still override discovery explicitly.
+- The CAD subprocess console I/O is decoded robustly: accoreconsole on
+  a non-UTF-8 Windows writes UTF-16LE, which used to crash AutoCAD
+  bootstrap with a UTF-8 decoding error. The channel drain now
+  auto-detects UTF-16LE / UTF-8 (Latin-1 fallback, never signals), and
+  the accoreconsole pipe reads with a total decoder, overridable via
+  ~ALFE_AUTOCAD_CONSOLE_ENCODING~ (a per-backend ~-E~ CLI option is
+  planned — ~issues/open/alfe-cad-console-encoding.issue~).
 - ~--mode~ and ~--dwg~ are now forwarded correctly into CAD backend
   startup, so ~alfe --autocad --mode batch --dwg file.dwg ...~ no
   longer falls back silently to ~:auto~ / automation mode.
