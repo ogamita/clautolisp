@@ -26,6 +26,19 @@ default:
   # (shared) runners are disabled for this project.
   tags: [linux, amd64, docker]
 
+# Only run pipelines on the default branch (master), merge requests, and
+# release tags. Transient fix-*/feat-* work branches are validated locally
+# and merged to master (where the real pipeline runs), so a pipeline on the
+# branch push is pure waste — and, since the branch is deleted right after
+# the merge, its jobs fail at `get_sources` with "couldn't find remote ref"
+# (an orphan-pipeline red X). This rule prevents that.
+workflow:
+  rules:
+    - if: '$CI_COMMIT_TAG'                              # release tags
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'  # MRs
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'     # master
+    - when: never                                       # no work-branch pipelines
+
 stages:
   - build
   - test
