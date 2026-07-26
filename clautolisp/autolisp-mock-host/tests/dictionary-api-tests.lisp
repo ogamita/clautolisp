@@ -47,17 +47,29 @@
       (is (null (host-dictobjname mock nod (mk-str "ABSENT")))))))
 
 (test dictsearch-object-feeds-entmod-and-entget
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-mock-host))
+        (session (clautolisp.autolisp-runtime:evaluation-context-session
+                  (clautolisp.autolisp-runtime:current-evaluation-context))))
     (let ((nod (host-namedobjdict mock))
           (x   (make-xrecord-ename mock "v1")))
       (host-dictadd mock nod (mk-str "K") x)
       ;; entget on the xrecord ename works
       (is (consp (host-entget mock x)))
-      ;; entmod the xrecord's group 1 value
-      (host-entmod mock (list (cons -1 x) (cons 0 "XRECORD")
-                              (cons 100 "AcDbXrecord") (cons 1 "v2")))
-      (is (string= "v2" (autolisp-string-value
-                         (cdr (assoc 1 (host-entget mock x)))))))))
+      ;; entmod that UPDATES an xrecord is the deviant (BricsCAD) behaviour;
+      ;; the autolisp-spec (per AutoCAD) makes it a no-op, so the normative
+      ;; dialects (autocad/clautolisp/strict) would keep the old value
+      ;; (divergence D3). Exercise the update under --lax (deviant, silent),
+      ;; then restore.
+      (unwind-protect
+           (progn
+             (clautolisp.autolisp-runtime:set-runtime-session-dialect
+              session (clautolisp.autolisp-reader:find-autolisp-dialect :lax))
+             (host-entmod mock (list (cons -1 x) (cons 0 "XRECORD")
+                                     (cons 100 "AcDbXrecord") (cons 1 "v2")))
+             (is (string= "v2" (autolisp-string-value
+                                (cdr (assoc 1 (host-entget mock x)))))))
+        (clautolisp.autolisp-runtime:set-runtime-session-dialect
+         session (clautolisp.autolisp-reader:autolisp-dialect-strict))))))
 
 ;;; --- dictnext enumeration ---------------------------------------
 

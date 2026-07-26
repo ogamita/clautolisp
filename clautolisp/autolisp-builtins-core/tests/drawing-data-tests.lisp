@@ -64,26 +64,31 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
                                 (cons 11 (list 1.0 1.0 0.0)))))
          'ENAME) 1 0)")
 
-(test dd-d1-marker-strict-dialects-reject-markerless-r13-entity
-  ;; autocad-2026 and strict REQUIRE the R13+ subclass markers -> nil (0).
-  (is (eql 0 (%d1-run *d1-markerless-ellipse* :autocad-2026)))
-  (is (eql 0 (%d1-run *d1-markerless-ellipse* :strict))))
+;; The autolisp-spec resolves D1 in AutoCAD's favour (markers required),
+;; so the NORMATIVE dialects (autocad, clautolisp, strict) reject
+;; marker-less input; the DEVIANT dialects (bricscad, lax) accept it.
+;; strict (any divergence) and bricscad (the non-condoned deviant) warn.
 
-(test dd-d1-lenient-dialects-accept-markerless-r13-entity
-  ;; bricscad-v26 and lax accept it and synthesise the markers -> ename (1).
-  (multiple-value-bind (r w) (%d1-run *d1-markerless-ellipse* :bricscad-v26)
-    (is (eql 1 r))
-    (is (string= "" w)))                      ; accepted silently
-  (multiple-value-bind (r w) (%d1-run *d1-markerless-ellipse* :lax)
-    (is (eql 1 r))
-    (is (string= "" w))))
+(test dd-d1-normative-dialects-reject-markerless-r13-entity
+  (dolist (d '(:autocad-2026 :clautolisp :strict))
+    (is (eql 0 (nth-value 0 (%d1-run *d1-markerless-ellipse* d)))
+        "marker-less ELLIPSE should be rejected under ~S" d)))
 
-(test dd-d1-clautolisp-dialect-accepts-with-warning
-  ;; clautolisp accepts (like BricsCAD) but warns about the AutoCAD failure.
-  (multiple-value-bind (r w) (%d1-run *d1-markerless-ellipse* :clautolisp)
-    (is (eql 1 r))
-    (is (search "entmake-subclass-marker" w)
-        "expected the [entmake-subclass-marker] warning; got: ~S" w)))
+(test dd-d1-deviant-dialects-accept-markerless-r13-entity
+  (dolist (d '(:bricscad-v26 :lax))
+    (is (eql 1 (nth-value 0 (%d1-run *d1-markerless-ellipse* d)))
+        "marker-less ELLIPSE should be accepted under ~S" d)))
+
+(test dd-d1-warns-under-bricscad-and-strict-only
+  (dolist (d '(:bricscad-v26 :strict))
+    (multiple-value-bind (r w) (%d1-run *d1-markerless-ellipse* d)
+      (declare (ignore r))
+      (is (search "entmake-subclass-marker" w)
+          "expected the [entmake-subclass-marker] warning under ~S; got: ~S" d w)))
+  (dolist (d '(:autocad-2026 :clautolisp :lax))
+    (multiple-value-bind (r w) (%d1-run *d1-markerless-ellipse* d)
+      (declare (ignore r))
+      (is (string= "" w) "no warning expected under ~S; got: ~S" d w))))
 
 (test dd-d1-explicit-markers-portable-across-all-dialects
   ;; With the markers supplied, the create succeeds everywhere — including
@@ -99,6 +104,62 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
     (multiple-value-bind (r w) (%d1-run *d1-markerless-line* d)
       (is (eql 1 r) "markerless LINE should create under ~S" d)
       (is (string= "" w) "no warning expected for LINE under ~S; got: ~S" d w))))
+
+;;; --- Divergence D3: entmod on a non-graphical XRECORD (dialect) --
+
+;; Create an XRECORD under a dict key, entmod its group-1 value, read it
+;; back; return the readback string. On AutoCAD entmod no-ops (old value),
+;; on BricsCAD it updates.
+(defparameter *d3-xrecord-entmod*
+  "(setq nod (namedobjdict))
+   (setq xr (entmakex (list (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\") (cons 1 \"v1\"))))
+   (dictadd nod \"K\" xr)
+   (entmod (list (cons -1 xr) (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\") (cons 1 \"v2\")))
+   (cdr (assoc 1 (dictsearch nod \"K\")))")
+
+(defun %d3-readback (dialect-keyword)
+  "Run the xrecord-entmod probe under DIALECT-KEYWORD; return
+(values READBACK-STRING WARNING)."
+  (multiple-value-bind (r w) (%d1-run *d3-xrecord-entmod* dialect-keyword)
+    (values (and (typep r 'autolisp-string) (autolisp-string-value r)) w)))
+
+;; The autolisp-spec resolves D3 in AutoCAD's favour (entmod does not
+;; modify a non-graphical object -> no-op), so the NORMATIVE dialects
+;; (autocad, clautolisp, strict) keep the old value; the DEVIANT dialects
+;; (bricscad, lax) apply. strict and bricscad warn.
+
+(test dd-d3-normative-dialects-noop-entmod-on-xrecord
+  (dolist (d '(:autocad-2026 :clautolisp :strict))
+    (is (string= "v1" (%d3-readback d))
+        "entmod on xrecord should be a no-op under ~S" d)))
+
+(test dd-d3-deviant-dialects-apply-entmod-on-xrecord
+  (dolist (d '(:bricscad-v26 :lax))
+    (is (string= "v2" (%d3-readback d))
+        "entmod on xrecord should apply under ~S" d)))
+
+(test dd-d3-warns-under-bricscad-and-strict-only
+  (dolist (d '(:bricscad-v26 :strict))
+    (multiple-value-bind (r w) (%d3-readback d)
+      (declare (ignore r))
+      (is (search "entmod-nongraphical" w)
+          "expected the [entmod-nongraphical] warning under ~S; got: ~S" d w)))
+  (dolist (d '(:autocad-2026 :clautolisp :lax))
+    (multiple-value-bind (r w) (%d3-readback d)
+      (declare (ignore r))
+      (is (string= "" w) "no warning expected under ~S; got: ~S" d w))))
+
+(test dd-d3-graphical-entmod-unaffected-by-object-gate
+  ;; entmod on a graphical entity (CIRCLE) always applies, every dialect,
+  ;; no warning -- the D3 gate is non-graphical-objects only.
+  (dolist (d '(:autocad-2026 :strict :bricscad-v26 :clautolisp :lax))
+    (multiple-value-bind (r w)
+        (%d1-run "
+  (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0))))
+  (entmod (list (cons -1 e) (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 2.0)))
+  (cdr (assoc 40 (entget e)))" d)
+      (is (and (numberp r) (= r 2.0)) "CIRCLE entmod should apply under ~S (got ~S)" d r)
+      (is (string= "" w) "no warning expected for a graphical entmod under ~S; got: ~S" d w))))
 
 ;;; --- XData round-trip with the full group-code set ---------------
 
@@ -192,13 +253,18 @@ dots go to *standard-output*, so rebinding *error-output* is clean."
       1 0)"))))
 
 (test dd-xrecord-mutate-via-entmod-through-dict
+  ;; entmod that UPDATES an xrecord is the lenient (BricsCAD) behaviour;
+  ;; under the strict default it is a no-op (AutoCAD parity, divergence
+  ;; D3), so exercise it under --dialect bricscad-v26. The D3-specific
+  ;; per-dialect behaviour is asserted in dd-d3-* below.
   (is (eql 1
-           (%dd-run "
+           (nth-value 0 (%d1-run "
   (setq nod (namedobjdict))
   (setq xr (entmakex (list (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\") (cons 1 \"v1\"))))
   (dictadd nod \"K\" xr)
   (entmod (list (cons -1 xr) (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\") (cons 1 \"v2\")))
-  (if (= (cdr (assoc 1 (dictsearch nod \"K\"))) \"v2\") 1 0)"))))
+  (if (= (cdr (assoc 1 (dictsearch nod \"K\"))) \"v2\") 1 0)"
+                                  :bricscad-v26)))))
 
 (test dd-dictremove-detaches-entry
   (is (eql 1

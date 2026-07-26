@@ -191,40 +191,47 @@ such entity exists or it has been deleted."
     (when (and (consp pair) (group-code-equal-p (car pair) 0) (stringp (cdr pair)))
       (return (cdr pair)))))
 
-;;; --- Divergence D1: R13+ subclass-marker enforcement -----------
+;;; --- Vendor-divergence policy (autolisp-spec ch.25) -------------
 ;;;
-;;; Real AutoCAD rejects an ENTMAKE / ENTMAKEX of an R13+ entity
-;;; (ELLIPSE, LWPOLYLINE, RAY, XLINE, MTEXT, SPLINE, ...) whose data
-;;; omits the (100 . "AcDbEntity") + (100 . "AcDb<Type>") subclass
-;;; markers; BricsCAD accepts it and synthesises them. clautolisp makes
-;;; this a DIALECT choice: --dialect autocad-2026 / strict reject
-;;; (portable-safe), --dialect bricscad-v26 / lax accept silently
-;;; (the historical behaviour), --dialect clautolisp accepts but warns
-;;; that the create would fail on AutoCAD. See the *** clautolisp note
-;;; on ENTMAKE in the spec and issues/open/vendor-probe-*-divergences.
+;;; D1 (R13+ ENTMAKE subclass markers) and D3 (ENTMOD on a non-graphical
+;;; object) are both divergences the autolisp-spec RESOLVES in AutoCAD's
+;;; favour: AutoCAD's documented behaviour is normative, BricsCAD's is a
+;;; recognised-but-NOT-condoned divergence (see the ENTMAKE / ENTMAKEX /
+;;; ENTMOD *** clautolisp notes in the spec, and ch.25 "Behavior versus
+;;; warning, and the divergence taxonomy"). The per-dialect resolution:
+;;;   normative behaviour (AutoCAD's: reject / no-op) -- autocad,
+;;;                                                      clautolisp, strict
+;;;   deviant   behaviour (BricsCAD's: accept / apply) -- bricscad, lax
+;;;   warns -- bricscad (the deviant dialect, "not condoned") AND strict
+;;;            (any divergence is unsafe to rely on); autocad, clautolisp
+;;;            and lax are silent.
 
-(defun %marker-enforcement (dialect-name)
-  "How DIALECT-NAME treats a missing R13+ subclass marker: :reject
-(autocad / strict — AutoCAD requires it, so returning nil here matches
-the vendor and keeps `strict' portable), :warn (clautolisp — accept
-but flag the AutoCAD incompatibility), or :accept (bricscad / lax /
-unknown — synthesise the markers silently, the historical behaviour)."
+(defun %resolved-divergence-policy (dialect-name)
+  "For a vendor divergence the autolisp-spec resolves in AutoCAD's favour
+(BricsCAD the non-condoned deviant), classify the active DIALECT-NAME and
+return two values:
+  ACTION -- :normative (perform AutoCAD's documented behaviour: reject /
+            no-op) or :deviant (perform BricsCAD's: accept / apply);
+  WARN-P -- T iff a portability warning is due.
+lax -> deviant, silent; bricscad -> deviant + warn; strict -> normative +
+warn (any divergence is unsafe); autocad / clautolisp / unknown ->
+normative, silent."
   (case dialect-name
-    ((:autocad-2026 :autocad-2022 :autocad :strict) :reject)
-    ((:clautolisp) :warn)
-    (t :accept)))
+    ((:lax)                    (values :deviant   nil))
+    ((:bricscad-v26 :bricscad) (values :deviant   t))
+    ((:strict)                 (values :normative t))
+    (t                         (values :normative nil))))
 
-(defun emit-entity-marker-divergence-warning (type missing)
-  "Advisory to *ERROR-OUTPUT* that TYPE's ENTMAKE data omits the R13+
-subclass markers MISSING, which AutoCAD requires. clautolisp (like
-BricsCAD) synthesises them, so the create succeeds here but returns nil
-on AutoCAD."
+(defun emit-entmake-marker-divergence-warning (type missing)
+  "Advisory to *ERROR-OUTPUT*: TYPE's ENTMAKE data omits the R13+ subclass
+markers MISSING. The autolisp-spec (per AutoCAD) requires them; BricsCAD's
+acceptance of marker-less input is a recognised, non-condoned divergence."
   (format *error-output*
-          "~&[entmake-subclass-marker] ~A is an R13+ entity; AutoCAD ~
-requires the ~{(100 . ~S)~^, ~} subclass marker~P in the ENTMAKE / ~
-ENTMAKEX data and returns nil without them. clautolisp (like BricsCAD) ~
-synthesises them, so this runs here but fails on AutoCAD. Add the ~
-markers, or use --dialect autocad-2026 to catch it as a rejection.~%"
+          "~&[entmake-subclass-marker] ~A is an R13+ entity; the ~
+autolisp-spec (per AutoCAD) requires the ~{(100 . ~S)~^, ~} subclass ~
+marker~P in the ENTMAKE / ENTMAKEX data. BricsCAD accepts them omitted, ~
+but that divergence is not portable and not condoned: the create returns ~
+nil under autocad, clautolisp and strict.~%"
           type missing (length missing)))
 
 (defun %host-add-entity (host data operator-name)
@@ -237,21 +244,23 @@ contract is to return nil (and set ERRNO), NOT to raise, on a bad
 group-code list. Only a genuinely non-list argument raises, and that is
 caught upstream in the builtin (REQUIRE-PROPER-LIST).
 
-Divergence D1: under a marker-strict dialect (autocad / strict) an R13+
-entity whose data omits its (100 . \"AcDb...\") subclass markers is
-rejected the same way (nil), matching AutoCAD; under --dialect
-clautolisp it is accepted with a portability warning; otherwise (
-bricscad / lax) it is accepted silently."
+Divergence D1: an R13+ entity whose data omits its (100 . \"AcDb...\")
+subclass markers is REJECTED (nil) under the normative dialects (autocad,
+clautolisp, strict) per the autolisp-spec, and ACCEPTED (markers
+synthesised) under the deviant/lenient dialects (bricscad, lax). strict
+and bricscad additionally warn."
   (let* ((pure (al-data->pure data operator-name))
          (drawing (mock-host-active-drawing host))
          (missing-markers (clautolisp.drawing:entity-dxf-missing-markers pure)))
     (when missing-markers
-      (case (%marker-enforcement
-             (clautolisp.autolisp-runtime:current-evaluation-dialect-name))
-        (:reject (return-from %host-add-entity (values nil nil)))
-        (:warn   (emit-entity-marker-divergence-warning
-                  (%data-type-string pure) missing-markers))
-        (:accept nil)))
+      (multiple-value-bind (action warn-p)
+          (%resolved-divergence-policy
+           (clautolisp.autolisp-runtime:current-evaluation-dialect-name))
+        (when warn-p
+          (emit-entmake-marker-divergence-warning (%data-type-string pure)
+                                                  missing-markers))
+        (when (eq action :normative)
+          (return-from %host-add-entity (values nil nil)))))
     (multiple-value-bind (normalised reason)
         (clautolisp.drawing:validate-entity-dxf pure)
       (declare (ignore reason))
@@ -330,20 +339,66 @@ a SEQEND closes it."
     (declare (ignore entity))
     ename))
 
+;;; --- Divergence D3: ENTMOD on a non-graphical object -----------
+;;;
+;;; ENTMOD on a non-graphical object (XRECORD, DICTIONARY — an AcDbObject,
+;;; not an AcDbEntity) is a NO-OP on real AutoCAD, which DOCUMENTS the
+;;; restriction ("Dictionary entry contents cannot be modified through
+;;; entmod"); BricsCAD documents and applies the opposite. The
+;;; autolisp-spec resolves this divergence in AutoCAD's favour (no-op is
+;;; normative; BricsCAD's application is not condoned), so it is gated
+;;; exactly like D1 via %RESOLVED-DIVERGENCE-POLICY: normative dialects
+;;; (autocad, clautolisp, strict) no-op; deviant/lenient (bricscad, lax)
+;;; apply; strict and bricscad warn.
+
+(defun %entmod-target-nongraphical-p (host handle)
+  "True iff HANDLE names a live NON-GRAPHICAL object (XRECORD /
+DICTIONARY — graphical-p nil in the entity-family registry). The D3
+gate predicate: entmod on these is the divergent case."
+  (let* ((entity (safe-find-entity (mock-host-active-drawing host) handle))
+         (type   (and entity (%data-type-string (entity-handle-data entity))))
+         (family (and type (clautolisp.drawing:find-entity-family type))))
+    (and family (not (clautolisp.drawing:entity-family-graphical-p family)))))
+
+(defun emit-entmod-object-divergence-warning (type)
+  "Advisory to *ERROR-OUTPUT*: ENTMOD on TYPE (a non-graphical object).
+The autolisp-spec (per AutoCAD) specifies entmod does not modify
+dictionary/xrecord entry contents — it is a no-op. BricsCAD applies it,
+a recognised, non-condoned divergence."
+  (format *error-output*
+          "~&[entmod-nongraphical] entmod on ~A: the autolisp-spec (per ~
+AutoCAD) specifies entmod does not modify a non-graphical object's ~
+contents (XRECORD, DICTIONARY) — it is a no-op; such objects are edited ~
+via the object protocol (vlax-put) or the dict* functions. BricsCAD ~
+applies the change, but that divergence is not portable and not ~
+condoned: it is a no-op under autocad, clautolisp and strict.~%"
+          type))
+
 (defmethod host-entmod ((host mock-host) data)
   (let* ((handle (extract-modified-handle data 'entmod))
          (pure (al-data->pure data 'entmod))
-         (drawing (mock-host-active-drawing host))
-         (entity (handler-case (clautolisp.drawing:modify-entity drawing handle pure)
-                   (clautolisp.drawing:drawing-error () nil))))
-    (when entity
-      (let ((document (current-document))
-            (ename (handle->ename handle)))
-        (clautolisp.autolisp-runtime:signal-document-event
-         document :acdb :vlr-objectmodified (list ename))
-        (clautolisp.autolisp-runtime:signal-document-event
-         document :object :vlr-modified (list ename)))
-      (entity->al-view entity))))
+         (drawing (mock-host-active-drawing host)))
+    ;; D3: entmod on a non-graphical object diverges — AutoCAD (normative)
+    ;; no-ops, BricsCAD (deviant) applies. Apply the resolved policy first.
+    (when (%entmod-target-nongraphical-p host handle)
+      (multiple-value-bind (action warn-p)
+          (%resolved-divergence-policy
+           (clautolisp.autolisp-runtime:current-evaluation-dialect-name))
+        (when warn-p
+          (emit-entmod-object-divergence-warning
+           (or (%data-type-string pure) "the object")))
+        (when (eq action :normative)
+          (return-from host-entmod nil))))         ; no-op
+    (let ((entity (handler-case (clautolisp.drawing:modify-entity drawing handle pure)
+                    (clautolisp.drawing:drawing-error () nil))))
+      (when entity
+        (let ((document (current-document))
+              (ename (handle->ename handle)))
+          (clautolisp.autolisp-runtime:signal-document-event
+           document :acdb :vlr-objectmodified (list ename))
+          (clautolisp.autolisp-runtime:signal-document-event
+           document :object :vlr-modified (list ename)))
+        (entity->al-view entity)))))
 
 (defmethod host-entdel ((host mock-host) ename)
   (let* ((handle (ename->handle ename 'entdel))

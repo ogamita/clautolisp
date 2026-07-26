@@ -64513,6 +64513,41 @@ whose list carries no ~(-3 …)~ group leaves existing xdata untouched. A
 list naming no live entity returns ~nil~ and sets ~ERRNO~ 2; no
 Common-Lisp condition is raised.
 
+**** Non-graphical objects (resolved divergence — chapter 25 case 2)
+
+~entmod~ on a *non-graphical object* — an XRECORD or DICTIONARY entry
+(AcDbObject, not AcDbEntity) — does **not** modify the object's contents.
+This is the *normative* behaviour of this specification, adopted from
+AutoCAD, whose reference states it explicitly: "Dictionary objects can be
+examined with entget and their xdata modified with entmod. *Their entries
+cannot be altered with entmod.*" (and lists ~AcDbXrecord~ among the
+objects ~entmod~ does not support). Such objects are edited through the
+object protocol (~vlax-put~) or the dictionary functions (~dictadd~,
+~dictremove~), not ~entmod~. Only the object's *xdata* (~-3~) is editable
+by ~entmod~.
+
+BricsCAD's reference and product take the opposite position — it
+documents ~entmod~ on "an object or entity" with no carve-out and
+*applies* the change to an XRECORD. This specification recognises that
+divergence but does **not condone** it: the lack of an AutoCAD-style
+restriction in the BricsCAD documentation, and the resulting silent
+mutation of dictionary-entry contents, is treated as a non-portable
+vendor deviation, not as normative AutoLISP.
+
+Per dialect (chapter 25, resolved divergence):
+
+- ~--dialect autocad-2026~, ~--dialect clautolisp~, and
+  ~--dialect strict~ — the normative behaviour: ~entmod~ on a
+  non-graphical object is a *no-op* (returns ~nil~, contents unchanged).
+  ~strict~ additionally emits the ~[entmod-nongraphical]~ warning; the
+  others are silent.
+- ~--dialect bricscad-v26~ — reproduces BricsCAD's application of the
+  change and emits the ~[entmod-nongraphical]~ warning (the non-condoned
+  deviant dialect).
+- ~--lax~ — applies the change, silently.
+
+~entmod~ on a graphical entity is unaffected under every dialect.
+
 #+LATEX: \newpage
 
 ** Function Entry: ENTMAKE
@@ -64566,30 +64601,38 @@ permissively (pass-through). A POLYLINE/INSERT opens a subentity run
 whose VERTEX/ATTRIB/SEQEND pieces receive their ~(330 . <owner>)~ from
 the header unless one is supplied; the SEQEND closes the run.
 
-**** R13+ subclass markers (vendor divergence, dialect-gated)
+**** R13+ subclass markers (resolved divergence — chapter 25 case 2)
 
 For the entities AutoCAD introduced at R13 or later — ELLIPSE,
-LWPOLYLINE, RAY, XLINE, MTEXT, SPLINE (and their kin) — *real AutoCAD
-requires* the DXF subclass markers ~(100 . "AcDbEntity")~ and
-~(100 . "AcDb<Type>")~ (e.g. ~(100 . "AcDbEllipse")~) to be present in
-the ~entmake~ data, and returns ~nil~ (sets ~ERRNO~) when they are
-absent. BricsCAD is lenient — it accepts marker-less data and
-synthesises the markers. Pre-R13 entities (LINE, POINT, CIRCLE, ARC,
-TEXT, SOLID, 3DFACE, ...) accept data without the markers on both
-vendors. clautolisp exposes this as a ~--dialect~ choice:
+LWPOLYLINE, RAY, XLINE, MTEXT, SPLINE (and their kin) — the AutoCAD
+AutoLISP reference *explicitly requires* the DXF subclass markers
+~(100 . "AcDbEntity")~ and ~(100 . "AcDb<Type>")~ (e.g.
+~(100 . "AcDbEllipse")~) in the ~entmake~ data ("For entity types
+introduced in AutoCAD Release 13 and later releases, you must also
+specify subclass markers"), and AutoCAD returns ~nil~ (sets ~ERRNO~)
+when they are absent. BricsCAD's reference is *silent* on the
+requirement and its product *accepts* marker-less data (synthesising the
+markers) — an undocumented leniency. **The autolisp-spec adopts
+AutoCAD's documented requirement as normative** (chapter 25, resolved
+divergence); BricsCAD's marker-less acceptance is a recognised but *not
+condoned* divergence. Pre-R13 entities (LINE, POINT, CIRCLE, ARC, TEXT,
+SOLID, 3DFACE, ...) accept data without the markers on both vendors and
+are unaffected.
 
-- ~--dialect autocad-2026~ and ~--dialect strict~ — *require* the
-  markers for R13+ entities: marker-less data returns ~nil~ (~ERRNO~
-  36), matching AutoCAD. (Choosing ~strict~ therefore guarantees the
-  code runs on both vendors.)
-- ~--dialect bricscad-v26~ and ~--lax~ — accept marker-less data and
-  synthesise the markers (the historical clautolisp behaviour).
-- ~--dialect clautolisp~ — accept as ~bricscad-v26~ does, but emit a
-  ~[entmake-subclass-marker]~ portability warning to ~*error-output*~
-  noting the create would fail on AutoCAD.
+Per dialect (chapter 25):
+
+- ~--dialect autocad-2026~, ~--dialect clautolisp~, and
+  ~--dialect strict~ — the normative behaviour: marker-less R13+ data
+  returns ~nil~ (~ERRNO~ 36). ~strict~ additionally emits the
+  ~[entmake-subclass-marker]~ warning (any divergence is unsafe to rely
+  on); ~autocad~ and ~clautolisp~ are silent.
+- ~--dialect bricscad-v26~ — reproduces BricsCAD's leniency (accept +
+  synthesise) and emits the ~[entmake-subclass-marker]~ warning (the
+  non-condoned deviant dialect).
+- ~--lax~ — accept + synthesise, silently.
 
 Supplying the markers explicitly is portable across all dialects and
-both vendors.
+both vendors, and never warns.
 
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
@@ -66515,12 +66558,13 @@ creatable entity. (Historically clautolisp collapsed ~entmakex~ into
 ~entmake~ and wrongly returned the list; fixed in clautolisp 1.6.5.)
 
 It also shares ~entmake~'s R13+ subclass-marker contract (see the
-ENTMAKE ~*** clautolisp~ note): under ~--dialect autocad-2026~ /
-~strict~, ~entmakex~ of an R13+ entity (ELLIPSE, LWPOLYLINE, RAY, XLINE,
-MTEXT, SPLINE) whose data omits the ~(100 . "AcDb...")~ subclass markers
-returns ~nil~ (matching AutoCAD); ~--dialect bricscad-v26~ / ~--lax~
-accept it silently; ~--dialect clautolisp~ accepts it with a
-~[entmake-subclass-marker]~ portability warning.
+ENTMAKE ~*** clautolisp~ note), which the autolisp-spec resolves in
+AutoCAD's favour: ~entmakex~ of an R13+ entity (ELLIPSE, LWPOLYLINE, RAY,
+XLINE, MTEXT, SPLINE) whose data omits the ~(100 . "AcDb...")~ subclass
+markers returns ~nil~ under ~--dialect autocad-2026~, ~clautolisp~ and
+~strict~ (the normative dialects); ~--dialect bricscad-v26~ and ~--lax~
+reproduce BricsCAD's leniency and accept it. ~strict~ and
+~--dialect bricscad-v26~ emit the ~[entmake-subclass-marker]~ warning.
 
 *** Availability
 - AutoCAD 2026: documented.
