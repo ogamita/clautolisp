@@ -70,10 +70,17 @@ Fix (autolisp-bootstrap.lsp): extend the rewriter to pad ALL under-arity calls:
     `(princ)` keeps its newline alias; 2-arg calls pass through. Value contract
     preserved (princ returns its first arg). QUOTE/FUNCTION still stop the walk.
 
+Also (1.6.14): `load` is shadowed with a fixed (file onfailure) arity on the
+no-&rest host too (a vertical app's own load wrapper), so nested 1-arg
+`(load "mod")` calls in app code hit the same trap. The rewriter now pads
+`(load X)` -> `(load X nil)` as well (2-arg passes through). Matters for the
+future app-context (EPURE) tests; the current probes don't call load internally.
+
 Validated: both functions run in clautolisp (an AutoLISP interp) over sample
-forms -- (princ "t")->(princ "t" nil), defun bodies padded, quoted (princ a)
-untouched, 2-arg unchanged; alfe rebuilt, clautolisp probes still 97/27/21,
-suite 306/306. BricsCAD unaffected (normalize = identity there).
+forms -- (princ "t")->(princ "t" nil), (load "m")->(load "m" nil), defun bodies
+padded (both princ AND load), quoted forms untouched, 2-arg unchanged; alfe
+rebuilt, clautolisp probes still 97/27/21, suite 306/306. BricsCAD unaffected
+(normalize = identity there).
 
 Status
 ------

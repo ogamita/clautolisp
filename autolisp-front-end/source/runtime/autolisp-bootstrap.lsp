@@ -602,6 +602,10 @@
               (or (= s "PRINC") (= s "PRINT") (= s "PRIN1"))
               (< (length form) 3))          ; 0 or 1 args on a 2-arg shadow
           T)
+        ((and (= (type head) 'SYM)
+              (= s "LOAD")
+              (= (length form) 2))          ; 1-arg (load X) on a 2-arg shadow
+          T)
         (T
           (cond
             ((autolisp-form-contains-empty-princ-p (car form)) T)
@@ -642,6 +646,16 @@
                  nil))
           (T
            (cons head (mapcar 'autolisp-normalize-princ-call-impl (cdr form))))))
+       ;; `load' is likewise shadowed with a fixed (file onfailure) arity on the
+       ;; no-&rest host (e.g. a vertical app's own load wrapper), so a 1-arg
+       ;; (load X) trips the same too-few-args trap. Pad the missing ONFAILURE
+       ;; with nil; 2-arg (load X F) passes through.
+       ((and (= (type head) 'SYM)
+             (= s "LOAD")
+             (= (length form) 2))
+        (list head
+              (autolisp-normalize-princ-call-impl (cadr form))
+              nil))
        (T
         (cons head (mapcar 'autolisp-normalize-princ-call-impl (cdr form))))))
     (T
