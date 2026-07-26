@@ -556,14 +556,41 @@ verify:vl-registry:windows:
 # entity-mutation / drawing-data-structures / selection vendor-verification
 # tail. Manual + allow_failure: launching GUI CAD is heavy and the runner is
 # intermittent; trigger on demand, download the artifacts, feed FAILs back.
+# --- shared alfe build (artifacts + needs) --------------------------
+#
+# Build alfe ONCE per pipeline on each intermittent runner and share the binary
+# with the (manual) vendor-probe jobs via `needs:`, instead of rebuilding it in
+# every probe job's before_script. clautolisp/alfe change often, so we still
+# build from source (rather than the runner's installed copy) -- bringing our
+# own is more reproducible. Manual because the windows/macos runners are
+# intermittent: trigger the build, then the probes that need it.
+.alfe-build:
+  stage: build
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+  artifacts:
+    name: "alfe-$CI_COMMIT_SHORT_SHA"
+    paths: [autolisp-front-end/tools/alfe/bin/]
+    expire_in: 1 day
+  rules:
+    - when: manual
+      allow_failure: true
+
+build:alfe:windows:
+  extends: .alfe-build
+  tags: [windows, amd64, shell]
+
+build:alfe:macos:
+  extends: .alfe-build
+  tags: [macos, arm64, shell]        # thalassa (intermittent)
+
 .vendor-probe-common:
   stage: test
   tags: [windows, amd64, shell]
   variables:
     GIT_SUBMODULE_STRATEGY: none
-    # Drawing the probes open on the runner (AutoCAD batch needs one).
-    # empty.dwg is the clean canvas; c:/gitlab-runner/dwg/2018.dwg is a
-    # content drawing available for read-oriented probes later.
     # Self-sufficient: the probes open the repo's own committed empty drawing
     # (canonical, 0 entities) rather than a file on the runner. The probes also
     # self-clean at seed time (clean-slate), so stray content can't poison them.
@@ -574,8 +601,8 @@ verify:vl-registry:windows:
   rules:
     - when: manual
       allow_failure: true
-  before_script:
-    - make -C autolisp-front-end build-alfe-sbcl
+  # alfe comes from the build:alfe:* artifact via `needs:` on each job below --
+  # no per-probe rebuild.
   artifacts:
     name: "vendor-probes-$CI_COMMIT_SHORT_SHA"
     when: always
@@ -584,11 +611,13 @@ verify:vl-registry:windows:
 
 vendor:probes:bricscad:
   extends: .vendor-probe-common
+  needs: [{ job: "build:alfe:windows", artifacts: true }]
   script:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend bricscad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
 
 vendor:probes:autocad:
   extends: .vendor-probe-common
+  needs: [{ job: "build:alfe:windows", artifacts: true }]
   script:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-vendor-probes.ps1 -Backend autocad -Dwg $env:PROBE_DWG -KeepWorkdir $env:PROBE_KEEP_WORKDIR
 
@@ -601,6 +630,7 @@ vendor:probes:autocad:
 vendor:probes:bricscad:macos:
   extends: .vendor-probe-common
   tags: [macos, arm64, shell]          # thalassa (intermittent)
+  needs: [{ job: "build:alfe:macos", artifacts: true }]
   script:
     - bash scripts/run-vendor-probes.sh --backend bricscad --keep-workdir "$PROBE_KEEP_WORKDIR"
 
