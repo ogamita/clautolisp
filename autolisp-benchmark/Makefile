@@ -34,6 +34,14 @@ esac
 endef
 
 ROOT_DIR := $(shell pwd)
+# The suite root is handed to clautolisp/alfe as a STRING for (load ...). On
+# Windows the msys `/c/...` form isn't resolvable by the (native) engine
+# (clautolisp: LOAD-FILE-NOT-FOUND) -- convert to `C:/...` via cygpath for that
+# string only. Binary invocation paths keep the msys form (make runs them fine).
+ROOT_DIR_NATIVE := $(ROOT_DIR)
+ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)))
+ROOT_DIR_NATIVE := $(shell cygpath -m "$(ROOT_DIR)" 2>/dev/null || echo "$(ROOT_DIR)")
+endif
 
 ALFE_ROOT := $(ROOT_DIR)/../autolisp-front-end
 ALFE_SBCL := $(ALFE_ROOT)/tools/alfe/bin/alfe-sbcl
@@ -69,7 +77,7 @@ BENCH_SMOKE_SECONDS ?= 0.2
 # and invokes (autolisp-benchmark-run-all). Detection of the
 # implementation is automatic via (ver), so nothing else is needed.
 define BENCH_SNIPPET_template
-  (setq *autolisp-benchmark-root* "$(ROOT_DIR)/") \
+  (setq *autolisp-benchmark-root* "$(ROOT_DIR_NATIVE)/") \
   (setq *bench-seconds* $(1)) \
   (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-benchmark-root* "..."))) \
   (load (strcat *autolisp-benchmark-root* "harness/run.lsp")) \
@@ -172,7 +180,7 @@ run-clautolisp-ccl-autocad: $(CLAUTOLISP_CCL)
 # the clautolisp numbers. Gated on host OS (see autolisp-test). The
 # per-class budget and suite root are set with -x actions before the
 # load, so the CAD-side engine finds the sources and honours BENCH_SECONDS.
-ALFE_SET_ROOT    := -x "(setq *autolisp-benchmark-root* \"$(ROOT_DIR)/\")"
+ALFE_SET_ROOT    := -x "(setq *autolisp-benchmark-root* \"$(ROOT_DIR_NATIVE)/\")"
 ALFE_SET_SECONDS := -x "(setq *bench-seconds* $(BENCH_SECONDS))"
 ALFE_LOAD        := -l "$(ROOT_DIR)/harness/run.lsp"
 ALFE_RUN         := -x "(autolisp-benchmark-run-all)"
@@ -191,9 +199,13 @@ run-bricscad-windows:
 	@$(call require-os-windows,$@); \
 	 "$(ALFE_SBCL)" --no-init --bricscad $(ALFE_ACTIONS)
 
+# accoreconsole needs an explicit batch mode + a drawing (the default :auto
+# picks the broken automation/VBScript path). BENCH_DWG defaults to the runner's
+# CAD-made drawing; override as needed.
+BENCH_DWG ?= c:/gitlab-runner/dwg/empty.dwg
 run-autocad-windows:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --no-init --autocad $(ALFE_ACTIONS)
+	 "$(ALFE_SBCL)" --no-init --autocad --mode batch --dwg "$(BENCH_DWG)" $(ALFE_ACTIONS)
 
 # Very large org docs can exceed TeX's default main_memory and abort with "TeX
 # capacity exceeded". A repo-local web2c/texmf.cnf raises the memory parameters;
