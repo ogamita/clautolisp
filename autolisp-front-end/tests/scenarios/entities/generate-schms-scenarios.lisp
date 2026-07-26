@@ -1,12 +1,16 @@
 ;;;; generate-schms-scenarios.lisp
 ;;;;
 ;;;; Regenerate the .sexp conformance scenarios for the SCHMS
-;;;; drawing-data + selection probes from the canonical .lsp sources, so
-;;;; the embedded copies stay byte-identical. Run from this directory:
+;;;; entity-lifecycle, drawing-data and selection PROBES from the canonical
+;;;; .lsp sources, so the embedded copies stay byte-identical. The probes
+;;;; emit OBSERVE lines (autolisp-spec ch.25 probe model); each scenario
+;;;; carries the per-target :expected-observations derived from the spec.
+;;;; Run from this directory:
 ;;;;
 ;;;;   sbcl --script generate-schms-scenarios.lisp
 ;;;;
-;;;; It (re)writes: drawing-data{,-bricscad,-autocad}.sexp and
+;;;; It (re)writes entity-lifecycle{,-bricscad,-autocad}.sexp,
+;;;; drawing-data{,-bricscad,-autocad}.sexp and
 ;;;; selection{,-bricscad,-autocad}.sexp.
 
 (defun slurp (path)
@@ -58,7 +62,6 @@
        (sel-text (slurp sel-lsp))
        (el-text (slurp el-lsp))
        (dd-pass "ALL DRAWING-DATA PROBES PASSED")
-       (sel-pass "ALL SELECTION PROBES PASSED")
        ;; --- drawing-data expected observations (autolisp-spec ch.25) ---
        ;; The portable observations every target must exhibit identically.
        (dd-obs-portable
@@ -124,14 +127,14 @@
     :covers '("--clautolisp" "--host" "-l"))
   (write-scenario "drawing-data-bricscad.sexp"
     :name "drawing-data-bricscad"
-    :description "The SAME portable drawing-data-structures probe (drawing-data-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — the vendor-verification tail for the drawing-data-structures-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must print the same ALL DRAWING-DATA PROBES PASSED line."
+    :description "The SAME portable drawing-data-structures probe (drawing-data-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — the vendor-verification tail for the drawing-data-structures-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must exhibit the same observations (any per-vendor divergence is recorded in the scenario's expected-observations)."
     :classification :bricscad-only
     :argv '("--bricscad" "-l" "drawing-data-probe.lsp")
     :lsp-file dd-lsp :lsp-text dd-text :observations dd-obs-bricscad
     :covers '("--bricscad" "-l"))
   (write-scenario "drawing-data-autocad.sexp"
     :name "drawing-data-autocad"
-    :description "The SAME portable drawing-data-structures probe (drawing-data-probe.lsp), run UNCHANGED on AutoCAD via alfe. Classified autocad-only: the conformance runner SKIPS it unless AutoCAD is detected on the host — the vendor-verification tail for the drawing-data-structures-parity work (BLOCKED on real CAD access). When an AutoCAD install is present it must print the same ALL DRAWING-DATA PROBES PASSED line."
+    :description "The SAME portable drawing-data-structures probe (drawing-data-probe.lsp), run UNCHANGED on AutoCAD via alfe. Classified autocad-only: the conformance runner SKIPS it unless AutoCAD is detected on the host — the vendor-verification tail for the drawing-data-structures-parity work (BLOCKED on real CAD access). When an AutoCAD install is present it must exhibit the same observations (any per-vendor divergence is recorded in the scenario's expected-observations)."
     :classification :autocad-only
     :argv '("--autocad" "-l" "drawing-data-probe.lsp")
     :lsp-file dd-lsp :lsp-text dd-text :observations dd-obs-normative
@@ -142,21 +145,21 @@
     :description "Portable selection + snapshot probe (selection-probe.lsp) run under the clautolisp backend with the mock host: the non-interactive whole-database scan (ssget \"X\") with the full filter grammar — entity type (0), comma-alternation, the -4 logical operators (<OR/<AND/<NOT) and relational comparison, and the -3 XData application filter — plus sslength/ssname/ssadd/ssdel/ssmemb membership semantics and entnext/entlast traversal. Every scan is fenced to the probe's own entities by an XData application filter, so the assertions hold on a non-empty drawing too. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
     :classification :clautolisp-only
     :argv '("--clautolisp" "--host" "mock" "-l" "selection-probe.lsp")
-    :lsp-file sel-lsp :lsp-text sel-text :pass-line sel-pass
+    :lsp-file sel-lsp :lsp-text sel-text :observations-default "yes"
     :covers '("--clautolisp" "--host" "-l"))
   (write-scenario "selection-bricscad.sexp"
     :name "selection-bricscad"
-    :description "The SAME portable selection + snapshot probe (selection-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — the vendor-verification tail for the selection-and-snapshot-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must print the same ALL SELECTION PROBES PASSED line."
+    :description "The SAME portable selection + snapshot probe (selection-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — the vendor-verification tail for the selection-and-snapshot-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must exhibit the same observations (any per-vendor divergence is recorded in the scenario's expected-observations)."
     :classification :bricscad-only
     :argv '("--bricscad" "-l" "selection-probe.lsp")
-    :lsp-file sel-lsp :lsp-text sel-text :pass-line sel-pass
+    :lsp-file sel-lsp :lsp-text sel-text :observations-default "yes"
     :covers '("--bricscad" "-l"))
   (write-scenario "selection-autocad.sexp"
     :name "selection-autocad"
-    :description "The SAME portable selection + snapshot probe (selection-probe.lsp), run UNCHANGED on AutoCAD via alfe. Classified autocad-only: the conformance runner SKIPS it unless AutoCAD is detected on the host — the vendor-verification tail for the selection-and-snapshot-parity work (BLOCKED on real CAD access). When an AutoCAD install is present it must print the same ALL SELECTION PROBES PASSED line."
+    :description "The SAME portable selection + snapshot probe (selection-probe.lsp), run UNCHANGED on AutoCAD via alfe. Classified autocad-only: the conformance runner SKIPS it unless AutoCAD is detected on the host — the vendor-verification tail for the selection-and-snapshot-parity work (BLOCKED on real CAD access). When an AutoCAD install is present it must exhibit the same observations (any per-vendor divergence is recorded in the scenario's expected-observations)."
     :classification :autocad-only
     :argv '("--autocad" "-l" "selection-probe.lsp")
-    :lsp-file sel-lsp :lsp-text sel-text :pass-line sel-pass
+    :lsp-file sel-lsp :lsp-text sel-text :observations-default "yes"
     :covers '("--autocad" "-l"))
   ;; --- entity-lifecycle ---
   (write-scenario "entity-lifecycle.sexp"
@@ -169,7 +172,7 @@
     :covers '("--clautolisp" "--host" "-l"))
   (write-scenario "entity-lifecycle-bricscad.sexp"
     :name "entities-lifecycle-bricscad"
-    :description "The SAME portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — it is the vendor-verification tail for the entity-mutation-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must print the same ALL ENTITY PROBES PASSED line."
+    :description "The SAME portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — it is the vendor-verification tail for the entity-mutation-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must exhibit the same observations (any per-vendor divergence is recorded in the scenario's expected-observations)."
     :classification :bricscad-only
     :argv '("--bricscad" "-l" "entity-lifecycle-probe.lsp")
     :lsp-file el-lsp :lsp-text el-text
@@ -177,7 +180,7 @@
     :covers '("--bricscad" "-l"))
   (write-scenario "entity-lifecycle-autocad.sexp"
     :name "entities-lifecycle-autocad"
-    :description "The SAME portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp), run UNCHANGED on AutoCAD via alfe. Classified autocad-only: the conformance runner SKIPS it unless AutoCAD is detected on the host — it is the vendor-verification tail for the entity-mutation-parity work (BLOCKED on real CAD access). When an AutoCAD install is present it must print the same ALL ENTITY PROBES PASSED line."
+    :description "The SAME portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp), run UNCHANGED on AutoCAD via alfe. Classified autocad-only: the conformance runner SKIPS it unless AutoCAD is detected on the host — it is the vendor-verification tail for the entity-mutation-parity work (BLOCKED on real CAD access). When an AutoCAD install is present it must exhibit the same observations (any per-vendor divergence is recorded in the scenario's expected-observations)."
     :classification :autocad-only
     :argv '("--autocad" "-l" "entity-lifecycle-probe.lsp")
     :lsp-file el-lsp :lsp-text el-text

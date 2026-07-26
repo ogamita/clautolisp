@@ -1,5 +1,5 @@
 (:name "entities-lifecycle-bricscad"
- :description "The SAME portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — it is the vendor-verification tail for the entity-mutation-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must print the same ALL ENTITY PROBES PASSED line."
+ :description "The SAME portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — it is the vendor-verification tail for the entity-mutation-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must exhibit the same observations (any per-vendor divergence is recorded in the scenario's expected-observations)."
  :classification :bricscad-only
  :argv ("--bricscad" "-l" "entity-lifecycle-probe.lsp")
  :setup-files (("entity-lifecycle-probe.lsp" ";;;; entity-lifecycle-probe.lsp — entity CRUD lifecycle PROBE

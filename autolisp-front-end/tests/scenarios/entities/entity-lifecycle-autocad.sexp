@@ -1,5 +1,5 @@
 (:name "entities-lifecycle-autocad"
- :description "The SAME portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp), run UNCHANGED on AutoCAD via alfe. Classified autocad-only: the conformance runner SKIPS it unless AutoCAD is detected on the host — it is the vendor-verification tail for the entity-mutation-parity work (BLOCKED on real CAD access). When an AutoCAD install is present it must print the same ALL ENTITY PROBES PASSED line."
+ :description "The SAME portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp), run UNCHANGED on AutoCAD via alfe. Classified autocad-only: the conformance runner SKIPS it unless AutoCAD is detected on the host — it is the vendor-verification tail for the entity-mutation-parity work (BLOCKED on real CAD access). When an AutoCAD install is present it must exhibit the same observations (any per-vendor divergence is recorded in the scenario's expected-observations)."
  :classification :autocad-only
  :argv ("--autocad" "-l" "entity-lifecycle-probe.lsp")
  :setup-files (("entity-lifecycle-probe.lsp" ";;;; entity-lifecycle-probe.lsp — entity CRUD lifecycle PROBE

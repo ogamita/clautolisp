@@ -2,58 +2,67 @@
  :description "Portable selection + snapshot probe (selection-probe.lsp) run under the clautolisp backend with the mock host: the non-interactive whole-database scan (ssget \"X\") with the full filter grammar — entity type (0), comma-alternation, the -4 logical operators (<OR/<AND/<NOT) and relational comparison, and the -3 XData application filter — plus sslength/ssname/ssadd/ssdel/ssmemb membership semantics and entnext/entlast traversal. Every scan is fenced to the probe's own entities by an XData application filter, so the assertions hold on a non-empty drawing too. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
  :classification :clautolisp-only
  :argv ("--clautolisp" "--host" "mock" "-l" "selection-probe.lsp")
- :setup-files (("selection-probe.lsp" ";;;; selection-probe.lsp — portable selection-set + snapshot probe
+ :setup-files (("selection-probe.lsp" ";;;; selection-probe.lsp — selection-set + snapshot PROBE
 ;;;;
-;;;; A single, self-contained AutoLISP program that exercises the
-;;;; non-interactive whole-database selection scan (ssget \"X\") and the
-;;;; selection-set functions (sslength / ssname / ssadd / ssdel /
-;;;; ssmemb), plus ENTNEXT / ENTLAST traversal, through functions that
-;;;; AutoCAD, BricsCAD and clautolisp all provide, so it runs UNCHANGED
-;;;; on every target.
+;;;; A probe EXERCISES a feature and reports the EXHIBITED behaviour to be
+;;;; compared against the specification (autolisp-spec ch.25 probe model) —
+;;;; it does not itself judge pass/fail. This one drives the non-interactive
+;;;; whole-database selection scan (ssget \"X\") and the selection-set
+;;;; functions (sslength / ssname / ssadd / ssdel / ssmemb), plus ENTNEXT /
+;;;; ENTLAST traversal, through functions AutoCAD, BricsCAD and clautolisp
+;;;; all provide, so it runs UNCHANGED on every target. These are portable
+;;;; behaviours (no vendor divergence), so every observation is a yes/no
+;;;; property expected to be \"yes\" on all targets.
 ;;;;
 ;;;; The probe isolates its own entities from anything already in the
 ;;;; drawing by tagging every seeded entity with XData under a private
-;;;; application name and AND-ing that (-3 ...) filter into every scan.
-;;;; The assertions therefore hold whether or not the CAD drawing was
-;;;; empty at start — they test semantic set MEMBERSHIP, never raw
-;;;; enumeration order or a global entity count.
+;;;; application name and AND-ing that (-3 ...) filter into every scan, so
+;;;; the observations hold whether or not the CAD drawing started empty —
+;;;; they test semantic set MEMBERSHIP, never raw enumeration order.
 ;;;;
 ;;;; Run it:
 ;;;;   clautolisp:            clautolisp --clautolisp --host mock -l selection-probe.lsp
 ;;;;   via alfe on BricsCAD:  alfe --bricscad -l selection-probe.lsp
 ;;;;   via alfe on AutoCAD:   alfe --autocad  -l selection-probe.lsp
-;;;;   inside a CAD:          (load \"selection-probe.lsp\")
 ;;;;
-;;;; Output: last line is exactly \"ALL SELECTION PROBES PASSED\" on
-;;;; success, or \"SELECTION PROBES FAILED: <n>\" otherwise.
+;;;; Output: \"OBSERVE <name> <token>\" per observation, then
+;;;; \"OBSERVATIONS <n>\".
 
-(setq *probe-pass* 0)
-(setq *probe-fail* 0)
+(setq *obs-count* 0)
 
-(defun chk (label ok)
-  (if ok
-      (progn (setq *probe-pass* (1+ *probe-pass*))
-             (princ (strcat \"  ok   \" label \"\\n\")))
-      (progn (setq *probe-fail* (1+ *probe-fail*))
-             (princ (strcat \"  FAIL \" label \"\\n\"))))
-  ok)
+(defun obs (name token / )
+  (setq *obs-count* (1+ *obs-count*))
+  (princ (strcat \"OBSERVE \" name \" \" token \"\\n\"))
+  token)
 
-;; Portable value->string for diagnostics; only emitted on a mismatch.
+(defun obf (name flag / ) (obs name (if flag \"yes\" \"no\")))
+
 (defun p2s (x)
   (cond ((null x) \"nil\")
         ((= (type x) 'STR) x)
         ((= (type x) 'INT) (itoa x))
-        ((= (type x) 'REAL) (rtos x 2 6))
-        ((= (type x) 'SYM) (vl-symbol-name x))
         ((= (type x) 'ENAME) \"<ename>\")
         ((listp x) \"<list>\")
         (T \"<other>\")))
 
-;; When the (mine) XData filter can't see the seeded entities (the AutoCAD
-;; cascade), dump the values that pin the root cause: what regapp returned,
-;; whether the -3 XData actually attached to a seeded entity, and the mine vs
-;; all counts. Silent (no output) when the seed is visible, so BricsCAD /
-;; clautolisp output is unchanged.
+(setq *app* \"CLAUTOLISP_SEL\")
+
+;; Count the members of a pickset (0 when nil).
+(defun sscount (ss) (if ss (sslength ss) 0))
+
+;; entmakex an entity, then tag it with our private XData so ssget -3 can
+;; isolate exactly the probe's entities.
+(defun mk (data / e)
+  (setq e (entmakex data))
+  (entmod (append (entget e) (list (list -3 (list *app* (cons 1000 \"sel\"))))))
+  e)
+
+;; The (-3 (*app*)) sublist used to fence the probe's own entities.
+(defun mine () (list -3 (list *app*)))
+
+;; Diagnostic dump (human context only, never an OBSERVE line): when the
+;; (mine) filter can't see the seeded entities, print the values that pin
+;; the root cause. Silent when the seed is visible.
 (defun diag-seed (/ e d cnt)
   (setq cnt (sscount (ssget \"X\" (list (mine)))))
   (if (/= cnt 4)
@@ -63,32 +72,12 @@
         (princ (strcat \"  DIAG regapp(app) -> \" (p2s (regapp *app*)) \"\\n\"))
         (princ (strcat \"  DIAG last-seed -3 xdata attached? \"
                        (if (assoc -3 d) \"YES\" \"NO\") \"\\n\"))
-        (princ (strcat \"  DIAG mine-filter count -> \" (p2s cnt) \" (want 4)\\n\"))
-        (princ (strcat \"  DIAG ssget X all count  -> \" (p2s (sscount (ssget \"X\"))) \"\\n\")))))
+        (princ (strcat \"  DIAG mine-filter count -> \" (p2s cnt) \" (want 4)\\n\")))))
 
-(setq *app* \"CLAUTOLISP_SEL\")
+;;; --- Seed (from a clean slate) ----------------------------------
 
-;; Count the members of a pickset (0 when nil).
-(defun sscount (ss) (if ss (sslength ss) 0))
-
-;; entmakex an entity, then tag it with our private XData so ssget -3
-;; can isolate exactly the probe's entities.
-(defun mk (data / e)
-  (setq e (entmakex data))
-  (entmod (append (entget e) (list (list -3 (list *app* (cons 1000 \"sel\"))))))
-  e)
-
-;; The (-3 (*app*)) sublist used to fence the probe's own entities.
-(defun mine () (list -3 (list *app*)))
-
-;;; --- Seed -------------------------------------------------------
-
-;; Start from a clean slate. The absolute counts below assume the drawing holds
-;; ONLY what we seed; a drawing that isn't actually empty (stray entities left
-;; by a prior save into the shared empty.dwg -- seen on the AutoCAD runner:
-;; ssget \"X\" all = 36, 4 of them already carrying our app's XData) poisons every
-;; count. Delete every existing entity first. Silent no-op on a genuinely empty
-;; drawing, so BricsCAD / clautolisp are unaffected.
+;; Delete every existing entity first so the absolute counts hold even on a
+;; drawing left non-empty by a prior run; silent no-op on an empty drawing.
 (defun clean-slate (/ ss i)
   (setq ss (ssget \"X\"))
   (if ss
@@ -100,45 +89,34 @@
 (defun seed (/ )
   (clean-slate)
   (regapp *app*)
-  ;; Three LINEs, colours 1 / 2 / 3.
   (mk (list (cons 0 \"LINE\") (cons 62 1) (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 0.0 0.0))))
   (mk (list (cons 0 \"LINE\") (cons 62 2) (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 2.0 0.0 0.0))))
   (mk (list (cons 0 \"LINE\") (cons 62 3) (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 3.0 0.0 0.0))))
-  ;; One CIRCLE.
   (mk (list (cons 0 \"CIRCLE\") (cons 62 1) (cons 10 (list 5.0 5.0 0.0)) (cons 40 1.0))))
 
 ;;; --- ssget filter grammar ---------------------------------------
 
 (defun run-filter-probes (/ )
   (princ \"ssget filters:\\n\")
-  ;; All four probe entities.
-  (chk \"ssget X (-3 app) selects the four seeded entities\"
-       (= (sscount (ssget \"X\" (list (mine)))) 4))
-  ;; Entity-type filter (group 0).
-  (chk \"ssget X type=LINE selects the three lines\"
+  (obf \"filter.mine-selects-4\" (= (sscount (ssget \"X\" (list (mine)))) 4))
+  (obf \"filter.type-line-3\"
        (= (sscount (ssget \"X\" (list (cons 0 \"LINE\") (mine)))) 3))
-  ;; Comma-joined alternation on the type code.
-  (chk \"ssget X type=LINE,CIRCLE selects all four\"
+  (obf \"filter.type-line-circle-4\"
        (= (sscount (ssget \"X\" (list (cons 0 \"LINE,CIRCLE\") (mine)))) 4))
-  ;; -4 <OR: colour 1 OR colour 3.
-  (chk \"ssget X OR(colour 1, colour 3) selects two\"
+  (obf \"filter.or-colour-2\"
        (= (sscount (ssget \"X\" (list (cons 0 \"LINE\")
                                     (cons -4 \"<OR\") (cons 62 1) (cons 62 3) (cons -4 \"OR>\")
                                     (mine)))) 2))
-  ;; -4 <AND: explicit conjunction.
-  (chk \"ssget X AND(LINE, colour 2) selects one\"
+  (obf \"filter.and-line-colour2-1\"
        (= (sscount (ssget \"X\" (list (cons -4 \"<AND\") (cons 0 \"LINE\") (cons 62 2) (cons -4 \"AND>\")
                                     (mine)))) 1))
-  ;; -4 <NOT: lines whose colour is NOT 1.
-  (chk \"ssget X NOT(colour 1) over lines selects two\"
+  (obf \"filter.not-colour1-2\"
        (= (sscount (ssget \"X\" (list (cons 0 \"LINE\")
                                     (cons -4 \"<NOT\") (cons 62 1) (cons -4 \"NOT>\")
                                     (mine)))) 2))
-  ;; -4 relational comparison.
-  (chk \"ssget X colour > 1 over lines selects two\"
+  (obf \"filter.colour-gt1-2\"
        (= (sscount (ssget \"X\" (list (cons 0 \"LINE\") (cons -4 \">\") (cons 62 1) (mine)))) 2))
-  ;; -3 for an application nobody used -> empty.
-  (chk \"ssget X (-3 OTHERAPP) selects none\"
+  (obf \"filter.otherapp-0\"
        (= (sscount (ssget \"X\" (list (list -3 (list \"CLAUTOLISP_NOBODY\"))))) 0)))
 
 ;;; --- selection-set membership functions -------------------------
@@ -146,42 +124,36 @@
 (defun run-set-op-probes (/ ss e0 e1 empty one)
   (princ \"selection-set ops:\\n\")
   (setq ss (ssget \"X\" (list (cons 0 \"LINE\") (mine))))
-  (chk \"sslength of the LINE set is 3\" (= (sslength ss) 3))
+  (obf \"setop.line-length-3\" (= (sslength ss) 3))
   (setq e0 (ssname ss 0))
   (setq e1 (ssname ss 1))
-  (chk \"ssname 0 is an ENAME\" (= (type e0) 'ENAME))
-  (chk \"ssname past the end is nil\" (null (ssname ss 99)))
-  ;; ssadd: empty, then one.
+  (obf \"setop.ssname0-ename\" (= (type e0) 'ENAME))
+  (obf \"setop.ssname-past-end-nil\" (null (ssname ss 99)))
   (setq empty (ssadd))
-  (chk \"(ssadd) makes an empty set\" (= (sslength empty) 0))
+  (obf \"setop.ssadd-empty-0\" (= (sslength empty) 0))
   (setq one (ssadd e0))
-  (chk \"(ssadd ename) makes a singleton\" (= (sslength one) 1))
-  ;; ssadd into an existing set; duplicates do not grow it.
+  (obf \"setop.ssadd-singleton-1\" (= (sslength one) 1))
   (ssadd e1 one)
-  (chk \"(ssadd ename set) extends the set\" (= (sslength one) 2))
+  (obf \"setop.ssadd-extends-2\" (= (sslength one) 2))
   (ssadd e0 one)
-  (chk \"re-adding a member does not grow the set\" (= (sslength one) 2))
-  ;; ssmemb.
-  (chk \"ssmemb finds a member\" (not (null (ssmemb e0 one))))
-  ;; ssdel.
+  (obf \"setop.readd-no-grow-2\" (= (sslength one) 2))
+  (obf \"setop.ssmemb-finds\" (not (null (ssmemb e0 one))))
   (ssdel e0 one)
-  (chk \"ssdel removes a member\" (= (sslength one) 1))
-  (chk \"ssmemb after ssdel is nil\" (null (ssmemb e0 one))))
+  (obf \"setop.ssdel-removes-1\" (= (sslength one) 1))
+  (obf \"setop.ssmemb-after-ssdel-nil\" (null (ssmemb e0 one))))
 
 ;;; --- ENTNEXT / ENTLAST traversal --------------------------------
 
 (defun run-traversal-probe (/ last first nxt)
   (princ \"entnext / entlast:\\n\")
   (setq last (entlast))
-  (chk \"entlast returns an ENAME after seeding\" (= (type last) 'ENAME))
+  (obf \"traversal.entlast-ename\" (= (type last) 'ENAME))
   (setq first (entnext))
-  (chk \"entnext with no arg returns the first ENAME\"
+  (obf \"traversal.entnext-first-ename-or-nil\"
        (or (null first) (= (type first) 'ENAME)))
-  (if first
-      (progn
-        (setq nxt (entnext first))
-        (chk \"entnext ename returns an ENAME or nil at the tail\"
-             (or (null nxt) (= (type nxt) 'ENAME))))))
+  (setq nxt (if first (entnext first) nil))
+  (obf \"traversal.entnext-next-ename-or-nil\"
+       (or (null nxt) (= (type nxt) 'ENAME))))
 
 ;;; --- Driver -----------------------------------------------------
 
@@ -192,15 +164,11 @@
   (run-filter-probes)
   (run-set-op-probes)
   (run-traversal-probe)
-  (princ (strcat \"\\nsummary: \" (itoa *probe-pass*) \" passed, \"
-                 (itoa *probe-fail*) \" failed\\n\"))
-  (if (= *probe-fail* 0)
-      (princ \"ALL SELECTION PROBES PASSED\\n\")
-      (princ (strcat \"SELECTION PROBES FAILED: \" (itoa *probe-fail*) \"\\n\")))
+  (princ (strcat \"OBSERVATIONS \" (itoa *obs-count*) \"\\n\"))
   (princ))
 
 (run-selection-probes)
 "))
  :expected-exit 0
- :expected-stdout-includes ("ALL SELECTION PROBES PASSED")
+ :expected-observations-default "yes"
  :covers-options ("--clautolisp" "--host" "-l"))

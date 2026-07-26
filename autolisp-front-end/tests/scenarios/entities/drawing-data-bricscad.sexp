@@ -1,5 +1,5 @@
 (:name "drawing-data-bricscad"
- :description "The SAME portable drawing-data-structures probe (drawing-data-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — the vendor-verification tail for the drawing-data-structures-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must print the same ALL DRAWING-DATA PROBES PASSED line."
+ :description "The SAME portable drawing-data-structures probe (drawing-data-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — the vendor-verification tail for the drawing-data-structures-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must exhibit the same observations (any per-vendor divergence is recorded in the scenario's expected-observations)."
  :classification :bricscad-only
  :argv ("--bricscad" "-l" "drawing-data-probe.lsp")
  :setup-files (("drawing-data-probe.lsp" ";;;; drawing-data-probe.lsp — drawing-data-structures PROBE
