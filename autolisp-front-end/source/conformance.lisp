@@ -95,6 +95,14 @@ present and different, is the autolisp-spec normative behaviour — so a
 matching exhibition is a recognised KNOWN-DIVERGENCE rather than a plain
 CONFORMS. NIL when the scenario still uses the older pass-line model."
   (getf scenario :expected-observations))
+(defun scenario-expected-observations-default (scenario)
+  "Optional token every EMITTED observation not named in
+:expected-observations must equal (typically \"yes\" for a probe whose
+checks are mostly portable boolean properties). Lets a probe add portable
+observations without re-listing them; a NEW non-default value it emits
+surfaces as :unexpected until the scenario declares it. NIL disables the
+default (every observation must then be listed explicitly)."
+  (getf scenario :expected-observations-default))
 (defun scenario-version-arg (scenario)
   "Version string the CLI's RUN sees as :VERSION. Defaults so scenarios
 that don't care can omit it."
@@ -354,11 +362,13 @@ model); everything else on stdout is human context and ignored."
                                                     :key #'car :test #'string=))))))))))
     (nreverse table)))
 
-(defun classify-observations (stdout expected-observations)
+(defun classify-observations (stdout expected-observations &optional default)
   "Compare the exhibited OBSERVE tokens in STDOUT against
-EXPECTED-OBSERVATIONS (each (NAME EXPECTED &optional NORMATIVE)). Return
-two values: the verdict list ((NAME VERDICT EXHIBITED EXPECTED NORMATIVE)
-…) and the failure diagnostics. Verdicts:
+EXPECTED-OBSERVATIONS (each (NAME EXPECTED &optional NORMATIVE)). DEFAULT,
+when non-nil, is the token every EMITTED observation NOT named in
+EXPECTED-OBSERVATIONS must equal. Return two values: the verdict list
+((NAME VERDICT EXHIBITED EXPECTED NORMATIVE) …) and the failure
+diagnostics. Verdicts:
   :conforms          exhibited = expected, and expected = normative;
   :known-divergence  exhibited = expected, but expected differs from the
                      autolisp-spec NORMATIVE token (a documented,
@@ -395,6 +405,20 @@ two values: the verdict list ((NAME VERDICT EXHIBITED EXPECTED NORMATIVE)
                            (and normative (not (string= normative expected))
                                 normative))
                    failures))))))
+    ;; Default: every EMITTED observation not explicitly listed must equal
+    ;; DEFAULT (e.g. "yes" for the portable checks of a large probe).
+    (when default
+      (let ((named (mapcar #'first expected-observations)))
+        (dolist (cell exhibited-table)
+          (let ((name (car cell)) (exhibited (cdr cell)))
+            (unless (member name named :test #'string=)
+              (if (string= exhibited default)
+                  (push (list name :conforms exhibited default nil) verdicts)
+                  (progn
+                    (push (list name :unexpected exhibited default nil) verdicts)
+                    (push (format nil "observation ~S = ~S, expected default ~S"
+                                  name exhibited default)
+                          failures))))))))
     (values (nreverse verdicts) (nreverse failures))))
 
 (defun compare-against-expectations (result scenario)
@@ -426,10 +450,11 @@ diagnostic to RESULT's FAILURES for each mismatch. STATUS is set to
     ;; Probe-model observations (autolisp-spec ch.25): compare exhibited
     ;; behaviour against the per-target expectation. :unexpected / :missing
     ;; gate; :known-divergence is informational.
-    (let ((expected-obs (scenario-expected-observations scenario)))
-      (when expected-obs
+    (let ((expected-obs (scenario-expected-observations scenario))
+          (obs-default (scenario-expected-observations-default scenario)))
+      (when (or expected-obs obs-default)
         (multiple-value-bind (verdicts obs-failures)
-            (classify-observations stdout expected-obs)
+            (classify-observations stdout expected-obs obs-default)
           (setf (scenario-result-observations result) verdicts)
           (dolist (msg obs-failures) (push msg failures)))))
     (setf (scenario-result-failures result) (nreverse failures)

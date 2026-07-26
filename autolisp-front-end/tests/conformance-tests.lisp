@@ -102,6 +102,27 @@ OBSERVE entmod.xrecord payload2"))
       (is (= 1 (count :missing v :key #'second)))
       (is (= 1 (length f))))))
 
+(test conformance-classify-observations-default
+  "A DEFAULT token covers every EMITTED observation not explicitly named:
+matching ones conform silently; a NEW non-default value surfaces as
+:unexpected so undeclared divergences cannot slip through."
+  (let ((out "OBSERVE a.b yes
+OBSERVE c.d yes
+OBSERVE e.f rejected"))
+    ;; e.f is declared divergent; a.b/c.d ride the default -> all green
+    (multiple-value-bind (v f)
+        (alfe.conformance:classify-observations
+         out '(("e.f" "rejected")) "yes")
+      (is (= 3 (count :conforms v :key #'second)))   ; e.f explicit + a.b + c.d via default
+      (is (null f)))
+    ;; an undeclared observation that is NOT the default -> unexpected, gates
+    (multiple-value-bind (v f)
+        (alfe.conformance:classify-observations
+         "OBSERVE a.b yes
+OBSERVE surprise.x created" nil "yes")
+      (is (= 1 (count :unexpected v :key #'second)))
+      (is (= 1 (length f))))))
+
 (test conformance-summarise-results-exit-code
   "SUMMARISE-RESULTS returns 0 when every result is :pass / :skipped
 and 1 when any is :fail. Drives the CLI runner's exit-code logic."

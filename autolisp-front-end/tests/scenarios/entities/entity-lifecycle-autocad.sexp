@@ -2,89 +2,68 @@
  :description "The SAME portable entity CRUD lifecycle probe (entity-lifecycle-probe.lsp), run UNCHANGED on AutoCAD via alfe. Classified autocad-only: the conformance runner SKIPS it unless AutoCAD is detected on the host — it is the vendor-verification tail for the entity-mutation-parity work (BLOCKED on real CAD access). When an AutoCAD install is present it must print the same ALL ENTITY PROBES PASSED line."
  :classification :autocad-only
  :argv ("--autocad" "-l" "entity-lifecycle-probe.lsp")
- :setup-files (("entity-lifecycle-probe.lsp" ";;;; entity-lifecycle-probe.lsp — portable entity CRUD conformance probe
+ :setup-files (("entity-lifecycle-probe.lsp" ";;;; entity-lifecycle-probe.lsp — entity CRUD lifecycle PROBE
 ;;;;
-;;;; A single, self-contained AutoLISP program that exercises the
-;;;; create -> read -> modify -> read -> delete -> restore lifecycle of
-;;;; the core drawing-entity families through the low-level entity
-;;;; functions (entmakex / entget / entmod / entdel / entlast / entnext
-;;;; / handent). It uses ONLY functions that AutoCAD, BricsCAD and
-;;;; clautolisp all provide, so it runs UNCHANGED on every target.
+;;;; A probe EXERCISES a feature and reports the EXHIBITED behaviour to be
+;;;; compared against the specification (autolisp-spec ch.25 probe model) —
+;;;; it does not itself judge pass/fail. This one drives the create -> read
+;;;; -> modify -> read -> delete -> restore lifecycle of the core drawing-
+;;;; entity families through the low-level entity functions (entmakex /
+;;;; entget / entmod / entdel / entlast / entnext / handent), plus the
+;;;; ENTMAKE R13+ subclass-marker policy (divergence D1). It uses ONLY
+;;;; functions AutoCAD, BricsCAD and clautolisp all provide, so it runs
+;;;; UNCHANGED on every target.
 ;;;;
 ;;;; Run it:
 ;;;;   clautolisp:            clautolisp --host mock -l entity-lifecycle-probe.lsp
 ;;;;   via alfe on BricsCAD:  alfe --bricscad -l entity-lifecycle-probe.lsp
 ;;;;   via alfe on AutoCAD:   alfe --autocad  -l entity-lifecycle-probe.lsp
-;;;;   inside a CAD:          (load \"entity-lifecycle-probe.lsp\")
 ;;;;
-;;;; Output: one line per assertion (ok / FAIL) plus a final summary.
-;;;; The last line is exactly \"ALL ENTITY PROBES PASSED\" when every
-;;;; assertion held, or \"ENTITY PROBES FAILED: <n>\" otherwise — the
-;;;; alfe conformance scenarios key on those strings.
+;;;; Output: one \"OBSERVE <name> <token>\" line per observation recording
+;;;; the exhibited behaviour, then \"OBSERVATIONS <n>\". The conformance
+;;;; runner compares each token against the per-target expectation from the
+;;;; spec (CONFORMS / KNOWN-DIVERGENCE / UNEXPECTED). Most checks are
+;;;; portable boolean properties (token yes/no); the D1 marker policy is
+;;;; divergent (token created/rejected) and is EXERCISED, not hidden.
 
-(setq *probe-pass* 0)
-(setq *probe-fail* 0)
+(setq *obs-count* 0)
 
-(defun chk (label ok)
-  (if ok
-      (progn (setq *probe-pass* (1+ *probe-pass*))
-             (princ (strcat \"  ok   \" label \"\\n\")))
-      (progn (setq *probe-fail* (1+ *probe-fail*))
-             (princ (strcat \"  FAIL \" label \"\\n\"))))
-  ok)
+(defun obs (name token / )
+  (setq *obs-count* (1+ *obs-count*))
+  (princ (strcat \"OBSERVE \" name \" \" token \"\\n\"))
+  token)
 
-;; Portable value->string for diagnostics (no vl-princ-to-string, which may
-;; need vl-load-com on accoreconsole). Only ever emitted on a mismatch, so the
-;; passing backends' output stays byte-identical.
-(defun p2s (x)
-  (cond ((null x) \"nil\")
-        ((= (type x) 'STR) x)
-        ((= (type x) 'INT) (itoa x))
-        ((= (type x) 'REAL) (rtos x 2 6))
-        ((= (type x) 'SYM) (vl-symbol-name x))
-        ((= (type x) 'ENAME) \"<ename>\")
-        ((listp x) \"<list>\")
-        (T \"<other>\")))
+(defun obf (name flag / ) (obs name (if flag \"yes\" \"no\")))
 
-;; Colour (group 62) is an optional ACI integer valid on every
-;; graphical entity, so it is the portable modify target: fresh
-;; entities default to BYLAYER (no 62 pair), we set it to 3 and read
-;; it back.
+;;; --- Core graphical family lifecycle ----------------------------
+;;
+;; Colour (group 62) is an optional ACI integer valid on every graphical
+;; entity, so it is the portable modify target: fresh entities default to
+;; BYLAYER (no 62 pair); we set it to 3 and read it back.
 (defun probe-graphical (fam data / e d)
   (princ (strcat \"family \" fam \":\\n\"))
-  ;; CREATE
   (setq e (entmakex data))
-  (chk (strcat fam \" entmakex returns an ENAME\") (= (type e) 'ENAME))
   (if (/= (type e) 'ENAME)
-      (progn (princ (strcat \"  DIAG \" fam \" entmakex returned type=\" (p2s (type e))
-                            \" val=\" (p2s e) \"\\n\"))
-             (princ (strcat \"  (skipping rest of \" fam \")\\n\")) nil)
+      (obf (strcat fam \".entmakex-ename\") nil)   ; created? no -> the rest can't run
       (progn
-        ;; READ
+        (obf (strcat fam \".entmakex-ename\") t)
         (setq d (entget e))
-        (chk (strcat fam \" entget returns a list\") (= (type d) 'LIST))
-        (chk (strcat fam \" group 0 is the entity type\")
+        (obf (strcat fam \".entget-list\") (= (type d) 'LIST))
+        (obf (strcat fam \".group0-type\")
              (= (strcase (cdr (assoc 0 d))) (strcase fam)))
-        (chk (strcat fam \" carries a handle (group 5)\")
-             (= (type (cdr (assoc 5 d))) 'STR))
-        (chk (strcat fam \" handent round-trips the handle\")
+        (obf (strcat fam \".handle\") (= (type (cdr (assoc 5 d))) 'STR))
+        (obf (strcat fam \".handent-roundtrip\")
              (= (type (handent (cdr (assoc 5 d)))) 'ENAME))
-        ;; MODIFY: set colour to 3 and read it back.
         (entmod (append (entget e) (list (cons 62 3))))
-        (chk (strcat fam \" entmod set colour 62 = 3\")
-             (= (cdr (assoc 62 (entget e))) 3))
-        ;; DELETE
+        (obf (strcat fam \".entmod-colour\") (= (cdr (assoc 62 (entget e))) 3))
         (entdel e)
-        (chk (strcat fam \" entget is nil after entdel\") (null (entget e)))
-        ;; RESTORE (entdel is a within-session toggle)
-        (entdel e)
-        (chk (strcat fam \" entget is live again after re-entdel\")
-             (not (null (entget e))))
+        (obf (strcat fam \".entget-nil-after-entdel\") (null (entget e)))
+        (entdel e)                                ; entdel is a within-session toggle
+        (obf (strcat fam \".live-after-re-entdel\") (not (null (entget e))))
         e)))
 
-;;; --- Core graphical families ------------------------------------
-
 (defun run-graphical-probes ()
+  ;; Pre-R13 families accept data without subclass markers on every vendor.
   (probe-graphical \"LINE\"
     (list (cons 0 \"LINE\") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 1.0 0.0))))
   (probe-graphical \"POINT\"
@@ -94,27 +73,24 @@
   (probe-graphical \"ARC\"
     (list (cons 0 \"ARC\") (cons 10 (list 4.0 3.0 0.0)) (cons 40 2.0)
           (cons 50 0.0) (cons 51 1.5708)))
-  ;; R13+ entities: the (100 . \"AcDb...\") subclass markers are REQUIRED
-  ;; per the autolisp-spec (adopted from AutoCAD; see the ENTMAKE
-  ;; *** clautolisp note). Supplying them keeps the probe portable across
-  ;; every dialect and both vendors; omitting them is a non-condoned
-  ;; BricsCAD-only leniency that the normative dialects reject.
-  (probe-graphical \"ELLIPSE\"
-    (list (cons 0 \"ELLIPSE\") (cons 100 \"AcDbEntity\") (cons 100 \"AcDbEllipse\")
-          (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 2.0 0.0 0.0))
-          (cons 40 0.5) (cons 41 0.0) (cons 42 6.283185)))
   (probe-graphical \"TEXT\"
     (list (cons 0 \"TEXT\") (cons 10 (list 1.0 1.0 0.0)) (cons 40 0.2) (cons 1 \"hi\")))
-  (probe-graphical \"LWPOLYLINE\"
-    (list (cons 0 \"LWPOLYLINE\") (cons 100 \"AcDbEntity\") (cons 100 \"AcDbPolyline\")
-          (cons 90 2) (cons 70 0)
-          (cons 10 (list 0.0 0.0)) (cons 10 (list 1.0 0.0))))
   (probe-graphical \"SOLID\"
     (list (cons 0 \"SOLID\") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 0.0 0.0))
           (cons 12 (list 0.0 1.0 0.0)) (cons 13 (list 1.0 1.0 0.0))))
   (probe-graphical \"3DFACE\"
     (list (cons 0 \"3DFACE\") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 0.0 0.0))
           (cons 12 (list 1.0 1.0 0.0)) (cons 13 (list 0.0 1.0 0.0))))
+  ;; R13+ families WITH their subclass markers create on every target
+  ;; (portable) — the marker-less policy is probed separately below.
+  (probe-graphical \"ELLIPSE\"
+    (list (cons 0 \"ELLIPSE\") (cons 100 \"AcDbEntity\") (cons 100 \"AcDbEllipse\")
+          (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 2.0 0.0 0.0))
+          (cons 40 0.5) (cons 41 0.0) (cons 42 6.283185)))
+  (probe-graphical \"LWPOLYLINE\"
+    (list (cons 0 \"LWPOLYLINE\") (cons 100 \"AcDbEntity\") (cons 100 \"AcDbPolyline\")
+          (cons 90 2) (cons 70 0)
+          (cons 10 (list 0.0 0.0)) (cons 10 (list 1.0 0.0))))
   (probe-graphical \"RAY\"
     (list (cons 0 \"RAY\") (cons 100 \"AcDbEntity\") (cons 100 \"AcDbRay\")
           (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 0.0 0.0))))
@@ -122,22 +98,42 @@
     (list (cons 0 \"XLINE\") (cons 100 \"AcDbEntity\") (cons 100 \"AcDbXline\")
           (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 0.0 1.0 0.0)))))
 
+;;; --- Divergence D1: R13+ subclass-marker policy -----------------
+;;
+;; entmakex of an R13+ entity WITHOUT the (100 . \"AcDb...\") markers.
+;; AutoCAD documents them as required and REJECTS marker-less data (the
+;; autolisp-spec's normative behaviour); BricsCAD synthesises them and
+;; CREATES. Token: \"created\" (bricscad/lax) or \"rejected\"
+;; (autocad/clautolisp/strict).
+(defun probe-marker-policy (name data / e)
+  (setq e (entmakex data))
+  (obs name (if (= (type e) 'ENAME) \"created\" \"rejected\")))
+
+(defun run-marker-policy-probes ()
+  (princ \"marker policy (D1):\\n\")
+  (probe-marker-policy \"d1.markerless-ellipse\"
+    (list (cons 0 \"ELLIPSE\") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 2.0 0.0 0.0))
+          (cons 40 0.5) (cons 41 0.0) (cons 42 6.283185)))
+  (probe-marker-policy \"d1.markerless-lwpolyline\"
+    (list (cons 0 \"LWPOLYLINE\") (cons 90 2) (cons 70 0)
+          (cons 10 (list 0.0 0.0)) (cons 10 (list 1.0 0.0))))
+  (probe-marker-policy \"d1.markerless-ray\"
+    (list (cons 0 \"RAY\") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 0.0 0.0))))
+  (probe-marker-policy \"d1.markerless-xline\"
+    (list (cons 0 \"XLINE\") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 0.0 1.0 0.0)))))
+
 ;;; --- entmakex vs entmake return contract ------------------------
 
 (defun run-return-contract-probe (/ e d)
   (princ \"return contract:\\n\")
-  ;; entmakex hands back the ENAME (feedable straight into entget).
   (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 9.0 9.0 0.0)) (cons 40 1.0))))
-  (chk \"entmakex returns ENAME (not a list)\" (= (type e) 'ENAME))
-  (chk \"entmakex ename feeds straight into entget\" (= (type (entget e)) 'LIST))
-  ;; entmake returns a non-nil result on success (the vendors echo the
-  ;; supplied list; we only assert truthiness so the probe is portable).
+  (obf \"return.entmakex-ename\" (= (type e) 'ENAME))
+  (obf \"return.entmakex-feeds-entget\" (= (type (entget e)) 'LIST))
   (setq d (entmake (list (cons 0 \"CIRCLE\") (cons 10 (list 8.0 8.0 0.0)) (cons 40 1.0))))
-  (chk \"entmake returns non-nil on success\" (not (null d)))
-  (chk \"entlast after entmake is an ENAME\" (= (type (entlast)) 'ENAME))
-  ;; A missing required code fails softly (nil), never an error.
-  (chk \"entmake of a code-short LINE returns nil\"
-       (null (entmake (list (cons 0 \"LINE\"))))))
+  (obf \"return.entmake-non-nil\" (not (null d)))
+  (obf \"return.entlast-ename\" (= (type (entlast)) 'ENAME))
+  ;; A missing required code fails softly (nil), never an error — portable.
+  (obf \"return.code-short-line-nil\" (null (entmake (list (cons 0 \"LINE\"))))))
 
 ;;; --- XData (extended data) lifecycle ----------------------------
 
@@ -146,30 +142,25 @@
   (setq app \"CLAUTOLISP_PROBE\")
   (regapp app)
   (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 5.0 5.0 0.0)) (cons 40 1.0))))
-  ;; Attach xdata for our application.
   (entmod (append (entget e)
                   (list (list -3 (list app (cons 1000 \"probe-tag\") (cons 1070 42))))))
-  ;; entget WITHOUT an application list suppresses xdata.
   (setq d (entget e))
-  (chk \"entget without applist hides xdata\" (null (assoc -3 d)))
-  ;; entget WITH the application list surfaces it.
+  (obf \"xdata.hidden-without-applist\" (null (assoc -3 d)))
   (setq dx (entget e (list app)))
-  (chk \"entget with applist surfaces the (-3 ...) group\" (not (null (assoc -3 dx))))
+  (obf \"xdata.surfaced-with-applist\" (not (null (assoc -3 dx))))
   (entdel e))
 
-;;; --- Subentity traversal (entnext walks past main entities) -----
+;;; --- Traversal (entnext) ----------------------------------------
 
 (defun run-traversal-probe (/ first-e next-e)
   (princ \"traversal:\\n\")
   (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 0.0 0.0 0.0)) (cons 40 1.0)))
   (setq first-e (entnext))
-  (chk \"entnext with no arg returns the first ENAME (or nil in empty dwg)\"
+  (obf \"traversal.entnext-first-ename-or-nil\"
        (or (null first-e) (= (type first-e) 'ENAME)))
-  (if first-e
-      (progn
-        (setq next-e (entnext first-e))
-        (chk \"entnext ename returns an ENAME or nil at the tail\"
-             (or (null next-e) (= (type next-e) 'ENAME))))))
+  (setq next-e (if first-e (entnext first-e) nil))
+  (obf \"traversal.entnext-next-ename-or-nil\"
+       (or (null next-e) (= (type next-e) 'ENAME))))
 
 ;;; --- Driver -----------------------------------------------------
 
@@ -177,17 +168,20 @@
   (princ \"=== entity lifecycle probes ===\\n\")
   (run-return-contract-probe)
   (run-graphical-probes)
+  (run-marker-policy-probes)
   (run-xdata-probe)
   (run-traversal-probe)
-  (princ (strcat \"\\nsummary: \" (itoa *probe-pass*) \" passed, \"
-                 (itoa *probe-fail*) \" failed\\n\"))
-  (if (= *probe-fail* 0)
-      (princ \"ALL ENTITY PROBES PASSED\\n\")
-      (princ (strcat \"ENTITY PROBES FAILED: \" (itoa *probe-fail*) \"\\n\")))
+  (princ (strcat \"OBSERVATIONS \" (itoa *obs-count*) \"\\n\"))
   (princ))
 
 (run-entity-probes)
 "))
  :expected-exit 0
- :expected-stdout-includes ("ALL ENTITY PROBES PASSED")
+ :expected-observations (
+   ("d1.markerless-ellipse" "rejected")
+   ("d1.markerless-lwpolyline" "rejected")
+   ("d1.markerless-ray" "rejected")
+   ("d1.markerless-xline" "rejected")
+  )
+ :expected-observations-default "yes"
  :covers-options ("--autocad" "-l"))
