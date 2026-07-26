@@ -72,6 +72,49 @@
     (is (null reason))
     (is (equal "WIPEOUT" (cdr (assoc 0 data))))))
 
+;;; --- Divergence D1: R13+ subclass-marker inspection -------------
+
+(test entity-family-since-r13-p-classifies-r13-and-pre-r13
+  ;; R13+ entities require their AcDb subclass markers on AutoCAD.
+  (dolist (name '("ELLIPSE" "LWPOLYLINE" "RAY" "XLINE" "MTEXT" "SPLINE"))
+    (is (entity-family-since-r13-p (find-entity-family name))
+        "~A should be flagged R13+" name))
+  ;; Pre-R13 entities are exempt.
+  (dolist (name '("LINE" "POINT" "CIRCLE" "ARC" "TEXT" "SOLID" "3DFACE"
+                  "POLYLINE" "INSERT"))
+    (is (not (entity-family-since-r13-p (find-entity-family name)))
+        "~A should NOT be flagged R13+" name)))
+
+(test entity-family-expected-markers-lists-base-plus-subclasses
+  (is (equal '("AcDbEntity" "AcDbEllipse")
+             (entity-family-expected-markers (find-entity-family "ELLIPSE"))))
+  ;; A non-graphical object gets the AcDbObject base marker.
+  (is (equal '("AcDbObject" "AcDbXrecord")
+             (entity-family-expected-markers (find-entity-family "XRECORD")))))
+
+(test entity-dxf-missing-markers-reports-absent-r13-markers
+  ;; A marker-less ELLIPSE is missing both the base and per-class marker.
+  (is (equal '("AcDbEntity" "AcDbEllipse")
+             (entity-dxf-missing-markers
+              '((0 . "ELLIPSE") (10 0.0d0 0.0d0 0.0d0) (11 1.0d0 0.0d0 0.0d0)
+                (40 . 0.5d0) (41 . 0.0d0) (42 . 6.28d0)))))
+  ;; With both markers present nothing is missing.
+  (is (null (entity-dxf-missing-markers
+             '((0 . "ELLIPSE") (100 . "AcDbEntity") (100 . "AcDbEllipse")
+               (10 0.0d0 0.0d0 0.0d0) (11 1.0d0 0.0d0 0.0d0)
+               (40 . 0.5d0) (41 . 0.0d0) (42 . 6.28d0)))))
+  ;; Only the per-class marker supplied -> the base marker is still missing.
+  (is (equal '("AcDbEntity")
+             (entity-dxf-missing-markers
+              '((0 . "ELLIPSE") (100 . "AcDbEllipse")
+                (10 0.0d0 0.0d0 0.0d0) (11 1.0d0 0.0d0 0.0d0)
+                (40 . 0.5d0) (41 . 0.0d0) (42 . 6.28d0)))))
+  ;; A pre-R13 entity is never flagged, markers or not.
+  (is (null (entity-dxf-missing-markers
+             '((0 . "LINE") (10 0.0d0 0.0d0 0.0d0) (11 1.0d0 1.0d0 0.0d0)))))
+  ;; An unknown type is not flagged.
+  (is (null (entity-dxf-missing-markers '((0 . "WIPEOUT") (90 . 5))))))
+
 ;;; --- XData-aware MODIFY-ENTITY -----------------------------------
 
 (defun %make-circle (drawing)

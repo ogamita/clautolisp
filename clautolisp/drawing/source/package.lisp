@@ -181,7 +181,11 @@ from the mock-host package before the Phase-17a extraction.")
    #:entity-family-graphical-p
    #:entity-family-complex-p
    #:entity-family-subentity-p
+   #:entity-family-since-r13-p
    #:register-entity-family
    #:find-entity-family
    #:entity-family-names
-   #:validate-entity-dxf))
+   #:validate-entity-dxf
+   ;; Divergence D1: R13+ subclass-marker contract (pure inspection).
+   #:entity-family-expected-markers
+   #:entity-dxf-missing-markers))

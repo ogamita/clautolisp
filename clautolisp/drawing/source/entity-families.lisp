@@ -38,7 +38,10 @@ after the implicit \"AcDbEntity\". DEFAULTS is an alist of
 supplied data. GRAPHICAL-P is nil for the non-graphical objects that
 carry no AcDbEntity subclass / layer. COMPLEX-P flags the entities
 that head a subentity sequence (POLYLINE, INSERT); SUBENTITY-P flags
-the pieces owned by such a head (VERTEX, ATTRIB, SEQEND)."
+the pieces owned by such a head (VERTEX, ATTRIB, SEQEND). SINCE-R13-P
+flags the entities AutoCAD introduced at R13, which REQUIRE their
+(100 . \"AcDb...\") subclass markers to be supplied in the ENTMAKE data
+— see the divergence-D1 handling in the host adapter."
   (name        ""  :type string)
   (kind        nil :type symbol)
   (required    '() :type list)
@@ -46,14 +49,16 @@ the pieces owned by such a head (VERTEX, ATTRIB, SEQEND)."
   (defaults    '() :type list)
   (graphical-p t   :type boolean)
   (complex-p   nil :type boolean)
-  (subentity-p nil :type boolean))
+  (subentity-p nil :type boolean)
+  (since-r13-p nil :type boolean))
 
 (defvar *entity-families* (make-hash-table :test #'equal)
   "Registry mapping an uppercase group-0 type string to its
 ENTITY-FAMILY descriptor.")
 
 (defun register-entity-family (name &key required subclasses defaults
-                                         (graphical-p t) complex-p subentity-p)
+                                         (graphical-p t) complex-p subentity-p
+                                         since-r13-p)
   "Register (or replace) the ENTITY-FAMILY for the group-0 type NAME."
   (let ((up (string-upcase name)))
     (setf (gethash up *entity-families*)
@@ -65,7 +70,8 @@ ENTITY-FAMILY descriptor.")
            :defaults defaults
            :graphical-p graphical-p
            :complex-p complex-p
-           :subentity-p subentity-p))))
+           :subentity-p subentity-p
+           :since-r13-p since-r13-p))))
 
 (defun find-entity-family (name)
   "The ENTITY-FAMILY for the group-0 type string NAME (case-insensitive),
@@ -104,18 +110,22 @@ or NIL when the type is not in the registry."
     ;; 10 centre, 11 major-axis endpoint (relative to centre),
     ;; 40 minor/major ratio, 41 start param, 42 end param.
     :required '(10 11 40 41 42)
-    :subclasses '("AcDbEllipse"))
+    :subclasses '("AcDbEllipse")
+    :since-r13-p t)                    ; R13 — AutoCAD demands the AcDb markers
   (register-entity-family "RAY"
     :required '(10 11)                 ; 10 base point, 11 unit direction
-    :subclasses '("AcDbRay"))
+    :subclasses '("AcDbRay")
+    :since-r13-p t)                    ; R13
   (register-entity-family "XLINE"
     :required '(10 11)                 ; 10 base point, 11 unit direction
-    :subclasses '("AcDbXline"))
+    :subclasses '("AcDbXline")
+    :since-r13-p t)                    ; R13
   ;; --- Polylines ---
   (register-entity-family "LWPOLYLINE"
     ;; 90 vertex count, 70 polyline flags; 10 repeated per vertex.
     :required '(90 70)
-    :subclasses '("AcDbPolyline"))
+    :subclasses '("AcDbPolyline")
+    :since-r13-p t)                    ; R14 — post-R12, same marker contract
   (register-entity-family "POLYLINE"
     ;; The heavyweight polyline: a header entity owning VERTEX
     ;; subentities terminated by a SEQEND. 70 polyline flags;
@@ -136,14 +146,16 @@ or NIL when the type is not in the registry."
     ;; 70 flags, 71 degree, 72 #knots, 73 #control pts, 74 #fit pts;
     ;; 40 repeated per knot, 10 repeated per control point.
     :required '(70 71 72 73)
-    :subclasses '("AcDbSpline"))
+    :subclasses '("AcDbSpline")
+    :since-r13-p t)                    ; R13
   ;; --- Text family ---
   (register-entity-family "TEXT"
     :required '(10 40 1)               ; 10 insertion, 40 height, 1 text
     :subclasses '("AcDbText" "AcDbText"))  ; AutoCAD stamps AcDbText twice (mid + tail)
   (register-entity-family "MTEXT"
     :required '(10 40 1)               ; 10 insertion, 40 nominal height, 1 text
-    :subclasses '("AcDbMText"))
+    :subclasses '("AcDbMText")
+    :since-r13-p t)                    ; R13
   (register-entity-family "ATTDEF"
     ;; 10 insertion, 40 height, 1 default value, 2 tag, 3 prompt,
     ;; 70 attribute flags.
@@ -263,3 +275,47 @@ note on ENTMAKE in the spec."
                                  (cons base-marker
                                        (entity-family-subclasses family))))))
           (values with-subclasses nil))))))
+
+;;; --- Divergence D1: R13+ subclass-marker contract ---------------
+;;;
+;;; Real AutoCAD REQUIRES the (100 . "AcDbEntity") + per-class
+;;; (100 . "AcDb<Type>") subclass markers to be present in the ENTMAKE /
+;;; ENTMAKEX data for the entities it introduced at R13+ (ELLIPSE,
+;;; LWPOLYLINE, RAY, XLINE, MTEXT, SPLINE, ...); marker-less data is
+;;; rejected (entmakex -> nil). BricsCAD is lenient — it synthesises the
+;;; markers — and clautolisp historically followed BricsCAD (see
+;;; VALIDATE-ENTITY-DXF, which appends the markers as defaults). These
+;;; helpers speak PURE CL only and make no dialect decision: they report
+;;; which required markers are ABSENT from the SUPPLIED data, and the
+;;; host adapter applies the active dialect's policy (reject / warn /
+;;; accept). Pre-R12 entities (LINE, CIRCLE, TEXT, ...) are unaffected.
+
+(defun entity-family-expected-markers (family)
+  "The ordered subclass-marker strings a marker-strict host (AutoCAD)
+requires in the ENTMAKE data for a FAMILY create: the base AcDbEntity
+(AcDbObject for a non-graphical object) marker followed by the
+per-class SUBCLASSES."
+  (cons (if (entity-family-graphical-p family) "AcDbEntity" "AcDbObject")
+        (entity-family-subclasses family)))
+
+(defun %marker-present-p (data marker)
+  "True iff DATA carries a (100 . MARKER) subclass-marker pair
+(case-insensitive on the marker string)."
+  (dolist (pair data nil)
+    (when (and (consp pair) (%group-code= (car pair) 100)
+               (stringp (cdr pair)) (string-equal (cdr pair) marker))
+      (return t))))
+
+(defun entity-dxf-missing-markers (data)
+  "For AutoCAD's R13+ subclass-marker contract: the list of expected
+(100 . \"AcDb...\") subclass-marker strings ABSENT from the supplied
+pure-CL DXF list DATA. NIL when the (0 . TYPE) type is unknown,
+pre-R13, or the data already carries every marker — i.e. NIL means
+\"AutoCAD would accept this create; no divergence.\" Pure: the
+reject / warn / accept decision is the caller's (the host adapter,
+per the active dialect)."
+  (let* ((type (%group-0-type data))
+         (family (and type (find-entity-family type))))
+    (when (and family (entity-family-since-r13-p family))
+      (remove-if (lambda (m) (%marker-present-p data m))
+                 (entity-family-expected-markers family)))))

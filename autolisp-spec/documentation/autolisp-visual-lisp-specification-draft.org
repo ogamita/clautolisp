@@ -64566,6 +64566,31 @@ permissively (pass-through). A POLYLINE/INSERT opens a subentity run
 whose VERTEX/ATTRIB/SEQEND pieces receive their ~(330 . <owner>)~ from
 the header unless one is supplied; the SEQEND closes the run.
 
+**** R13+ subclass markers (vendor divergence, dialect-gated)
+
+For the entities AutoCAD introduced at R13 or later — ELLIPSE,
+LWPOLYLINE, RAY, XLINE, MTEXT, SPLINE (and their kin) — *real AutoCAD
+requires* the DXF subclass markers ~(100 . "AcDbEntity")~ and
+~(100 . "AcDb<Type>")~ (e.g. ~(100 . "AcDbEllipse")~) to be present in
+the ~entmake~ data, and returns ~nil~ (sets ~ERRNO~) when they are
+absent. BricsCAD is lenient — it accepts marker-less data and
+synthesises the markers. Pre-R13 entities (LINE, POINT, CIRCLE, ARC,
+TEXT, SOLID, 3DFACE, ...) accept data without the markers on both
+vendors. clautolisp exposes this as a ~--dialect~ choice:
+
+- ~--dialect autocad-2026~ and ~--dialect strict~ — *require* the
+  markers for R13+ entities: marker-less data returns ~nil~ (~ERRNO~
+  36), matching AutoCAD. (Choosing ~strict~ therefore guarantees the
+  code runs on both vendors.)
+- ~--dialect bricscad-v26~ and ~--lax~ — accept marker-less data and
+  synthesise the markers (the historical clautolisp behaviour).
+- ~--dialect clautolisp~ — accept as ~bricscad-v26~ does, but emit a
+  ~[entmake-subclass-marker]~ portability warning to ~*error-output*~
+  noting the create would fail on AutoCAD.
+
+Supplying the markers explicitly is portable across all dialects and
+both vendors.
+
 *** Availability
 - AutoCAD 2026: documented (per Autodesk reference page).
 - BricsCAD V26: presumed compatible (no contradicting page found).
@@ -66488,6 +66513,14 @@ defaulting and subentity-ownership behaviour, and likewise returns ~nil~
 + ~ERRNO~ 36 (no raised condition) when the data does not describe a
 creatable entity. (Historically clautolisp collapsed ~entmakex~ into
 ~entmake~ and wrongly returned the list; fixed in clautolisp 1.6.5.)
+
+It also shares ~entmake~'s R13+ subclass-marker contract (see the
+ENTMAKE ~*** clautolisp~ note): under ~--dialect autocad-2026~ /
+~strict~, ~entmakex~ of an R13+ entity (ELLIPSE, LWPOLYLINE, RAY, XLINE,
+MTEXT, SPLINE) whose data omits the ~(100 . "AcDb...")~ subclass markers
+returns ~nil~ (matching AutoCAD); ~--dialect bricscad-v26~ / ~--lax~
+accept it silently; ~--dialect clautolisp~ accepts it with a
+~[entmake-subclass-marker]~ portability warning.
 
 *** Availability
 - AutoCAD 2026: documented.

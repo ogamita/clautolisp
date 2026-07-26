@@ -24,6 +24,82 @@ the raw result value."
   ;; an invalid name (reserved char) fails via SNVALID -> nil
   (is (eql 1 (%dd-run "(if (regapp \"BAD/NAME\") 0 1)"))))
 
+;;; --- Divergence D1: R13+ subclass-marker enforcement (dialect) ---
+
+(defun %d1-run (source dialect-keyword)
+  "Evaluate SOURCE under DIALECT-KEYWORD on a fresh mock host, capturing
+*error-output*; return (values RESULT WARNING-STRING). FiveAM's progress
+dots go to *standard-output*, so rebinding *error-output* is clean."
+  (reset-autolisp-symbol-table)
+  (let ((warn (make-string-output-stream))
+        (dialect (or (clautolisp.autolisp-reader:find-autolisp-dialect dialect-keyword)
+                     (error "unknown dialect ~S" dialect-keyword))))
+    (let ((result (let ((*error-output* warn))
+                    (run-autolisp-string source
+                                         :dialect dialect
+                                         :setup-fn #'%install-mock-host-and-core))))
+      (values result (get-output-stream-string warn)))))
+
+;; A marker-less ELLIPSE (R13+): AutoCAD rejects it, BricsCAD accepts it.
+(defparameter *d1-markerless-ellipse*
+  "(if (= (type (entmakex (list (cons 0 \"ELLIPSE\")
+                                (cons 10 (list 0.0 0.0 0.0))
+                                (cons 11 (list 1.0 0.0 0.0))
+                                (cons 40 0.5) (cons 41 0.0) (cons 42 6.28))))
+         'ENAME) 1 0)")
+
+;; The same ELLIPSE WITH the AutoCAD subclass markers supplied.
+(defparameter *d1-marked-ellipse*
+  "(if (= (type (entmakex (list (cons 0 \"ELLIPSE\")
+                                (cons 100 \"AcDbEntity\") (cons 100 \"AcDbEllipse\")
+                                (cons 10 (list 0.0 0.0 0.0))
+                                (cons 11 (list 1.0 0.0 0.0))
+                                (cons 40 0.5) (cons 41 0.0) (cons 42 6.28))))
+         'ENAME) 1 0)")
+
+;; A marker-less LINE (pre-R13): accepted by every vendor, marker or not.
+(defparameter *d1-markerless-line*
+  "(if (= (type (entmakex (list (cons 0 \"LINE\")
+                                (cons 10 (list 0.0 0.0 0.0))
+                                (cons 11 (list 1.0 1.0 0.0)))))
+         'ENAME) 1 0)")
+
+(test dd-d1-marker-strict-dialects-reject-markerless-r13-entity
+  ;; autocad-2026 and strict REQUIRE the R13+ subclass markers -> nil (0).
+  (is (eql 0 (%d1-run *d1-markerless-ellipse* :autocad-2026)))
+  (is (eql 0 (%d1-run *d1-markerless-ellipse* :strict))))
+
+(test dd-d1-lenient-dialects-accept-markerless-r13-entity
+  ;; bricscad-v26 and lax accept it and synthesise the markers -> ename (1).
+  (multiple-value-bind (r w) (%d1-run *d1-markerless-ellipse* :bricscad-v26)
+    (is (eql 1 r))
+    (is (string= "" w)))                      ; accepted silently
+  (multiple-value-bind (r w) (%d1-run *d1-markerless-ellipse* :lax)
+    (is (eql 1 r))
+    (is (string= "" w))))
+
+(test dd-d1-clautolisp-dialect-accepts-with-warning
+  ;; clautolisp accepts (like BricsCAD) but warns about the AutoCAD failure.
+  (multiple-value-bind (r w) (%d1-run *d1-markerless-ellipse* :clautolisp)
+    (is (eql 1 r))
+    (is (search "entmake-subclass-marker" w)
+        "expected the [entmake-subclass-marker] warning; got: ~S" w)))
+
+(test dd-d1-explicit-markers-portable-across-all-dialects
+  ;; With the markers supplied, the create succeeds everywhere — including
+  ;; the strict dialects — with no warning.
+  (dolist (d '(:autocad-2026 :strict :bricscad-v26 :clautolisp :lax))
+    (multiple-value-bind (r w) (%d1-run *d1-marked-ellipse* d)
+      (is (eql 1 r) "marked ELLIPSE should create under ~S" d)
+      (is (string= "" w) "no warning expected under ~S; got: ~S" d w))))
+
+(test dd-d1-pre-r13-entity-unaffected-by-marker-contract
+  ;; A LINE is pre-R13: no marker requirement under any dialect.
+  (dolist (d '(:autocad-2026 :strict :bricscad-v26 :clautolisp :lax))
+    (multiple-value-bind (r w) (%d1-run *d1-markerless-line* d)
+      (is (eql 1 r) "markerless LINE should create under ~S" d)
+      (is (string= "" w) "no warning expected for LINE under ~S; got: ~S" d w))))
+
 ;;; --- XData round-trip with the full group-code set ---------------
 
 (test dd-xdata-full-codeset-round-trips-through-entmod

@@ -185,6 +185,48 @@ such entity exists or it has been deleted."
          (entity (safe-find-entity (mock-host-active-drawing host) handle)))
     (and entity (entity->al-view entity applist))))
 
+(defun %data-type-string (data)
+  "The (0 . TYPE) string of the pure group-code list DATA, or NIL."
+  (dolist (pair data nil)
+    (when (and (consp pair) (group-code-equal-p (car pair) 0) (stringp (cdr pair)))
+      (return (cdr pair)))))
+
+;;; --- Divergence D1: R13+ subclass-marker enforcement -----------
+;;;
+;;; Real AutoCAD rejects an ENTMAKE / ENTMAKEX of an R13+ entity
+;;; (ELLIPSE, LWPOLYLINE, RAY, XLINE, MTEXT, SPLINE, ...) whose data
+;;; omits the (100 . "AcDbEntity") + (100 . "AcDb<Type>") subclass
+;;; markers; BricsCAD accepts it and synthesises them. clautolisp makes
+;;; this a DIALECT choice: --dialect autocad-2026 / strict reject
+;;; (portable-safe), --dialect bricscad-v26 / lax accept silently
+;;; (the historical behaviour), --dialect clautolisp accepts but warns
+;;; that the create would fail on AutoCAD. See the *** clautolisp note
+;;; on ENTMAKE in the spec and issues/open/vendor-probe-*-divergences.
+
+(defun %marker-enforcement (dialect-name)
+  "How DIALECT-NAME treats a missing R13+ subclass marker: :reject
+(autocad / strict — AutoCAD requires it, so returning nil here matches
+the vendor and keeps `strict' portable), :warn (clautolisp — accept
+but flag the AutoCAD incompatibility), or :accept (bricscad / lax /
+unknown — synthesise the markers silently, the historical behaviour)."
+  (case dialect-name
+    ((:autocad-2026 :autocad-2022 :autocad :strict) :reject)
+    ((:clautolisp) :warn)
+    (t :accept)))
+
+(defun emit-entity-marker-divergence-warning (type missing)
+  "Advisory to *ERROR-OUTPUT* that TYPE's ENTMAKE data omits the R13+
+subclass markers MISSING, which AutoCAD requires. clautolisp (like
+BricsCAD) synthesises them, so the create succeeds here but returns nil
+on AutoCAD."
+  (format *error-output*
+          "~&[entmake-subclass-marker] ~A is an R13+ entity; AutoCAD ~
+requires the ~{(100 . ~S)~^, ~} subclass marker~P in the ENTMAKE / ~
+ENTMAKEX data and returns nil without them. clautolisp (like BricsCAD) ~
+synthesises them, so this runs here but fails on AutoCAD. Add the ~
+markers, or use --dialect autocad-2026 to catch it as a rejection.~%"
+          type missing (length missing)))
+
 (defun %host-add-entity (host data operator-name)
   "Shared worker for HOST-ENTMAKE / HOST-ENTMAKEX. Validate + normalise
 DATA against the entity-family registry (clautolisp.drawing), add the
@@ -193,9 +235,23 @@ and return (values ENTITY ENAME). Returns (values NIL NIL) when the
 data does not describe a creatable entity — the vendor ENTMAKE/ENTMAKEX
 contract is to return nil (and set ERRNO), NOT to raise, on a bad
 group-code list. Only a genuinely non-list argument raises, and that is
-caught upstream in the builtin (REQUIRE-PROPER-LIST)."
+caught upstream in the builtin (REQUIRE-PROPER-LIST).
+
+Divergence D1: under a marker-strict dialect (autocad / strict) an R13+
+entity whose data omits its (100 . \"AcDb...\") subclass markers is
+rejected the same way (nil), matching AutoCAD; under --dialect
+clautolisp it is accepted with a portability warning; otherwise (
+bricscad / lax) it is accepted silently."
   (let* ((pure (al-data->pure data operator-name))
-         (drawing (mock-host-active-drawing host)))
+         (drawing (mock-host-active-drawing host))
+         (missing-markers (clautolisp.drawing:entity-dxf-missing-markers pure)))
+    (when missing-markers
+      (case (%marker-enforcement
+             (clautolisp.autolisp-runtime:current-evaluation-dialect-name))
+        (:reject (return-from %host-add-entity (values nil nil)))
+        (:warn   (emit-entity-marker-divergence-warning
+                  (%data-type-string pure) missing-markers))
+        (:accept nil)))
     (multiple-value-bind (normalised reason)
         (clautolisp.drawing:validate-entity-dxf pure)
       (declare (ignore reason))
@@ -224,12 +280,6 @@ caught upstream in the builtin (REQUIRE-PROPER-LIST)."
 ;;; one, matching the AutoCAD/BricsCAD create-sequence contract; the
 ;;; SEQEND closes the run. ENTNEXT then walks header -> subentities ->
 ;;; seqend naturally, since they are in creation order.
-
-(defun %data-type-string (data)
-  "The (0 . TYPE) string of the pure group-code list DATA, or NIL."
-  (dolist (pair data nil)
-    (when (and (consp pair) (group-code-equal-p (car pair) 0) (stringp (cdr pair)))
-      (return (cdr pair)))))
 
 (defun %data-has-code-p (data code)
   (dolist (pair data nil)

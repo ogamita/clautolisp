@@ -252,6 +252,7 @@
    #:command-token-from-value
    #:dispatch-autolisp-command
    #:current-evaluation-dialect
+   #:current-evaluation-dialect-name
    #:derive-reader-options-for-dialect
    #:read-current-source
    #:make-default-runtime-context

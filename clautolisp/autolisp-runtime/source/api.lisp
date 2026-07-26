@@ -464,6 +464,16 @@ subsequent dialect-sensitive operation."
             (clautolisp.autolisp-runtime.internal::evaluation-context-session context)))
       (clautolisp.autolisp-reader:autolisp-dialect-strict)))
 
+(defun current-evaluation-dialect-name (&optional (context (current-evaluation-context)))
+  "The keyword name of the active dialect (:strict, :autocad-2026,
+:bricscad-v26, :clautolisp, :lax, ...), or NIL when it cannot be
+resolved. A thin convenience over CURRENT-EVALUATION-DIALECT +
+CLAUTOLISP.AUTOLISP-READER:AUTOLISP-DIALECT-NAME, so callers that only
+depend on the runtime (e.g. the mock host's ENTMAKE adapter, for the
+divergence-D1 R13+ marker policy) need not reach into the reader."
+  (let ((dialect (ignore-errors (current-evaluation-dialect context))))
+    (and dialect (clautolisp.autolisp-reader:autolisp-dialect-name dialect))))
+
 (defun runtime-session-current-document (session)
   (clautolisp.autolisp-runtime.internal::runtime-session-current-document session))
 
