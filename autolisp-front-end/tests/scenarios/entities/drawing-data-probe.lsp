@@ -29,16 +29,30 @@
              (princ (strcat "  FAIL " label "\n"))))
   ok)
 
+;; Portable value->string for diagnostics; only emitted on a mismatch, so
+;; passing backends' output stays byte-identical.
+(defun p2s (x)
+  (cond ((null x) "nil")
+        ((= (type x) 'STR) x)
+        ((= (type x) 'INT) (itoa x))
+        ((= (type x) 'REAL) (rtos x 2 6))
+        ((= (type x) 'SYM) (vl-symbol-name x))
+        ((= (type x) 'ENAME) "<ename>")
+        ((listp x) "<list>")
+        (T "<other>")))
+
 (defun a2 (code lst) (cdr (assoc code lst)))
 
 ;;; --- REGAPP -----------------------------------------------------
 
-(defun run-regapp-probe (/ app)
+(defun run-regapp-probe (/ app r)
   (princ "regapp:\n")
   (setq app "CLAUTOLISP_DDP")
   ;; A fresh application registers and returns its name.
-  (chk "regapp of a fresh app returns the name"
-       (= (regapp app) app)))
+  (setq r (regapp app))
+  (chk "regapp of a fresh app returns the name" (= r app))
+  (if (not (= r app))
+      (princ (strcat "  DIAG regapp returned " (p2s r) " (want " (p2s app) ")\n"))))
 
 ;;; --- XData: the full SCHMS group-code set -----------------------
 
@@ -111,8 +125,12 @@
   ;; Mutate it through entmod.
   (entmod (list (cons -1 xr) (cons 0 "XRECORD") (cons 100 "AcDbXrecord")
                 (cons 1 "payload2") (cons 70 5)))
+  (setq found (dictsearch nod "CLAUTOLISP_REC"))
   (chk "entmod on the xrecord reads back the new value"
-       (= (a2 1 (dictsearch nod "CLAUTOLISP_REC")) "payload2"))
+       (= (a2 1 found) "payload2"))
+  (if (not (= (a2 1 found) "payload2"))
+      (princ (strcat "  DIAG xrecord readback group1 = " (p2s (a2 1 found))
+                     " (want payload2); full = " (p2s found) "\n")))
   ;; A duplicate key fails soft (nil).
   (chk "duplicate dictadd key returns nil"
        (null (dictadd nod "CLAUTOLISP_REC" xr)))

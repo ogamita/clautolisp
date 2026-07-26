@@ -34,6 +34,34 @@
              (princ (strcat "  FAIL " label "\n"))))
   ok)
 
+;; Portable value->string for diagnostics; only emitted on a mismatch.
+(defun p2s (x)
+  (cond ((null x) "nil")
+        ((= (type x) 'STR) x)
+        ((= (type x) 'INT) (itoa x))
+        ((= (type x) 'REAL) (rtos x 2 6))
+        ((= (type x) 'SYM) (vl-symbol-name x))
+        ((= (type x) 'ENAME) "<ename>")
+        ((listp x) "<list>")
+        (T "<other>")))
+
+;; When the (mine) XData filter can't see the seeded entities (the AutoCAD
+;; cascade), dump the values that pin the root cause: what regapp returned,
+;; whether the -3 XData actually attached to a seeded entity, and the mine vs
+;; all counts. Silent (no output) when the seed is visible, so BricsCAD /
+;; clautolisp output is unchanged.
+(defun diag-seed (/ e d cnt)
+  (setq cnt (sscount (ssget "X" (list (mine)))))
+  (if (/= cnt 4)
+      (progn
+        (setq e (entlast))
+        (setq d (entget e (list *app*)))
+        (princ (strcat "  DIAG regapp(app) -> " (p2s (regapp *app*)) "\n"))
+        (princ (strcat "  DIAG last-seed -3 xdata attached? "
+                       (if (assoc -3 d) "YES" "NO") "\n"))
+        (princ (strcat "  DIAG mine-filter count -> " (p2s cnt) " (want 4)\n"))
+        (princ (strcat "  DIAG ssget X all count  -> " (p2s (sscount (ssget "X"))) "\n")))))
+
 (setq *app* "CLAUTOLISP_SEL")
 
 ;; Count the members of a pickset (0 when nil).
@@ -141,6 +169,7 @@
 (defun run-selection-probes (/ )
   (princ "=== selection + snapshot probes ===\n")
   (seed)
+  (diag-seed)
   (run-filter-probes)
   (run-set-op-probes)
   (run-traversal-probe)

@@ -29,6 +29,19 @@
              (princ (strcat "  FAIL " label "\n"))))
   ok)
 
+;; Portable value->string for diagnostics (no vl-princ-to-string, which may
+;; need vl-load-com on accoreconsole). Only ever emitted on a mismatch, so the
+;; passing backends' output stays byte-identical.
+(defun p2s (x)
+  (cond ((null x) "nil")
+        ((= (type x) 'STR) x)
+        ((= (type x) 'INT) (itoa x))
+        ((= (type x) 'REAL) (rtos x 2 6))
+        ((= (type x) 'SYM) (vl-symbol-name x))
+        ((= (type x) 'ENAME) "<ename>")
+        ((listp x) "<list>")
+        (T "<other>")))
+
 ;; Colour (group 62) is an optional ACI integer valid on every
 ;; graphical entity, so it is the portable modify target: fresh
 ;; entities default to BYLAYER (no 62 pair), we set it to 3 and read
@@ -39,7 +52,9 @@
   (setq e (entmakex data))
   (chk (strcat fam " entmakex returns an ENAME") (= (type e) 'ENAME))
   (if (/= (type e) 'ENAME)
-      (progn (princ (strcat "  (skipping rest of " fam ")\n")) nil)
+      (progn (princ (strcat "  DIAG " fam " entmakex returned type=" (p2s (type e))
+                            " val=" (p2s e) "\n"))
+             (princ (strcat "  (skipping rest of " fam ")\n")) nil)
       (progn
         ;; READ
         (setq d (entget e))
