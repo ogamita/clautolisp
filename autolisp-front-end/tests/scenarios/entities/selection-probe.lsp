@@ -79,7 +79,22 @@
 
 ;;; --- Seed -------------------------------------------------------
 
+;; Start from a clean slate. The absolute counts below assume the drawing holds
+;; ONLY what we seed; a drawing that isn't actually empty (stray entities left
+;; by a prior save into the shared empty.dwg -- seen on the AutoCAD runner:
+;; ssget "X" all = 36, 4 of them already carrying our app's XData) poisons every
+;; count. Delete every existing entity first. Silent no-op on a genuinely empty
+;; drawing, so BricsCAD / clautolisp are unaffected.
+(defun clean-slate (/ ss i)
+  (setq ss (ssget "X"))
+  (if ss
+      (progn (setq i 0)
+             (while (< i (sslength ss))
+               (entdel (ssname ss i))
+               (setq i (1+ i))))))
+
 (defun seed (/ )
+  (clean-slate)
   (regapp *app*)
   ;; Three LINEs, colours 1 / 2 / 3.
   (mk (list (cons 0 "LINE") (cons 62 1) (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 0.0 0.0))))
