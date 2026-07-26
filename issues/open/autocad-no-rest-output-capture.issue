@@ -49,9 +49,37 @@ pjb: "We may have to use automation when UI elements are tested, but we'll see
 later" -- batch is fine for these probes; this is an output-capture bug, not a
 UI-mode issue.
 
+Root cause (confirmed) + fix (alfe 1.6.13)
+------------------------------------------
+
+On the no-&rest path the in-effect princ/print/prin1 shadows are the bootstrap's
+FIXED 2-arg `(defun princ (obj file) ...)` (file REQUIRED; no &optional/&rest on
+the fallback host). The walk-rewriter (autolisp-normalize-princ-call) is meant
+to make user calls arity-safe, but it only rewrote the EMPTY `(princ)` case. So
+a 1-arg `(princ "text")` raised "nombre d'arguments insuffisants" -- the SAME
+trap that ate the runtime's own `(princ "")` earlier -- swallowed by the
+enclosing vl-catch-all-apply, so the request still reported DONE 1 OK with nil
+and zero bytes emitted. (On &rest hosts autolisp-normalize-princ-call is the
+identity, so BricsCAD never used this and is unaffected.)
+
+Fix (autolisp-bootstrap.lsp): extend the rewriter to pad ALL under-arity calls:
+  * pre-check autolisp-form-contains-empty-princ-p now triggers on princ/print/
+    prin1 with (length form) < 3 (0 or 1 args), not just empty princ.
+  * autolisp-normalize-princ-call-impl: 1-arg `(princ X)`/`(print X)`/`(prin1 X)`
+    -> pad the missing FILE with nil (`(princ X nil)`), arg walked too; empty
+    `(princ)` keeps its newline alias; 2-arg calls pass through. Value contract
+    preserved (princ returns its first arg). QUOTE/FUNCTION still stop the walk.
+
+Validated: both functions run in clautolisp (an AutoLISP interp) over sample
+forms -- (princ "t")->(princ "t" nil), defun bodies padded, quoted (princ a)
+untouched, 2-arg unchanged; alfe rebuilt, clautolisp probes still 97/27/21,
+suite 306/306. BricsCAD unaffected (normalize = identity there).
+
 Status
 ------
 
-OPEN. Fix the no-&rest output routing so AutoCAD captures princ output to
-protocol/stdout.txt like the &rest path; then re-run vendor:probes:autocad and
-expect 97/27/21 to finally be readable/green.
+FIX IN (1.6.13), OPEN pending the vendor:probes:autocad re-run -- expect the
+probe output to now reach protocol/stdout.txt and the 97/27/21 verdicts to be
+readable/green. The rewriter's cons-rebuild of princ-containing forms was a
+known BricsCAD-V26 mapcar-lambda hazard, but it runs ONLY on the no-&rest
+(AutoCAD) path; watch for any mapcar-lambda breakage there on the re-run.

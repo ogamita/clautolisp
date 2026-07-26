@@ -576,11 +576,17 @@
        (= (type (car form)) 'SYM)
        (= (strcase (vl-symbol-name (car form))) "LOAD")))
 
-;; Cheap-walk pre-check: T iff FORM contains an empty `(princ)' that
-;; needs the legacy rewrite to `(autolisp-princ-newline)'. Walks the
-;; tree without consing.  Stops at QUOTE / FUNCTION exactly like the
-;; rewriter does, so quoted data doesn't trigger a false positive.
-(defun autolisp-form-contains-empty-princ-p (form / head)
+;; Cheap-walk pre-check: T iff FORM contains a princ/print/prin1 call that the
+;; fixed-arity no-&rest shadows can't take as written -- i.e. UNDER-arity: an
+;; empty `(princ)' OR a 1-arg `(princ X)' / `(print X)' / `(prin1 X)'. On the
+;; no-&rest host the shadows require (obj file); an under-arity call raises
+;; "nombre d'arguments insuffisants" (the same trap that silently ate all probe
+;; output on AutoCAD -- see autocad-no-rest-output-capture.issue), so the
+;; rewriter below pads them. Walks the tree without consing. Stops at QUOTE /
+;; FUNCTION exactly like the rewriter, so quoted data doesn't false-positive.
+;; (On &rest hosts autolisp-normalize-princ-call is the identity, so none of
+;; this runs -- BricsCAD is unaffected.)
+(defun autolisp-form-contains-empty-princ-p (form / head s)
   (cond
     ((atom form) nil)
     ((not (listp form)) nil)
@@ -589,13 +595,13 @@
       (setq head (car form))
       (cond
         ((and (= (type head) 'SYM)
-              (= (strcase (vl-symbol-name head)) "PRINC")
-              (= (length form) 1))
-          T)
-        ((and (= (type head) 'SYM)
-              (or (= (strcase (vl-symbol-name head)) "QUOTE")
-                  (= (strcase (vl-symbol-name head)) "FUNCTION")))
+              (progn (setq s (strcase (vl-symbol-name head)))
+                     (or (= s "QUOTE") (= s "FUNCTION"))))
           nil)
+        ((and (= (type head) 'SYM)
+              (or (= s "PRINC") (= s "PRINT") (= s "PRIN1"))
+              (< (length form) 3))          ; 0 or 1 args on a 2-arg shadow
+          T)
         (T
           (cond
             ((autolisp-form-contains-empty-princ-p (car form)) T)
@@ -607,7 +613,7 @@
 ;; replace. Rebuilds cons cells (necessary to inject the rewrite); see
 ;; the comment on autolisp-normalize-princ-call about why we don't want
 ;; this to run otherwise.
-(defun autolisp-normalize-princ-call-impl (form / head)
+(defun autolisp-normalize-princ-call-impl (form / head s)
   (cond
     ((atom form)
      form)
@@ -615,15 +621,27 @@
      (setq head (car form))
      (cond
        ((and (= (type head) 'SYM)
-             (= (strcase (vl-symbol-name head)) "QUOTE"))
+             (progn (setq s (strcase (vl-symbol-name head)))
+                    (or (= s "QUOTE") (= s "FUNCTION"))))
         form)
+       ;; princ/print/prin1: the no-&rest shadows require (obj file), so pad
+       ;; under-arity calls. Empty (princ) keeps its newline alias; a 1-arg
+       ;; call gets the missing FILE = nil (the arg itself is walked too);
+       ;; 2-arg (and odd larger) calls just recurse into their args. This
+       ;; preserves the value contract -- princ returns its first arg.
        ((and (= (type head) 'SYM)
-             (= (strcase (vl-symbol-name head)) "FUNCTION"))
-        form)
-       ((and (= (type head) 'SYM)
-             (= (strcase (vl-symbol-name head)) "PRINC")
-             (= (length form) 1))
-        (list 'autolisp-princ-newline))
+             (or (= s "PRINC") (= s "PRINT") (= s "PRIN1")))
+        (cond
+          ((= (length form) 1)
+           (if (= s "PRINC")
+             (list 'autolisp-princ-newline)
+             (list head "" nil)))
+          ((= (length form) 2)
+           (list head
+                 (autolisp-normalize-princ-call-impl (cadr form))
+                 nil))
+          (T
+           (cons head (mapcar 'autolisp-normalize-princ-call-impl (cdr form))))))
        (T
         (cons head (mapcar 'autolisp-normalize-princ-call-impl (cdr form))))))
     (T
