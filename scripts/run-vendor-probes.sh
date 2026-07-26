@@ -101,7 +101,6 @@ watch_workdir() {
 
 declare -a probe_names=("entity-lifecycle" "drawing-data" "selection")
 declare -a probe_files=("entity-lifecycle-probe.lsp" "drawing-data-probe.lsp" "selection-probe.lsp")
-declare -a probe_pass=("ALL ENTITY PROBES PASSED" "ALL DRAWING-DATA PROBES PASSED" "ALL SELECTION PROBES PASSED")
 
 failed=0
 summary="vendor probes: $backend"$'\n'"alfe: $alfe"$'\n'"dwg: ${dwg:-<none>}"$'\n'
@@ -110,7 +109,6 @@ tmp_base="${TMPDIR:-/tmp}"
 for i in "${!probe_names[@]}"; do
   name="${probe_names[$i]}"
   file="${probe_files[$i]}"
-  pass="${probe_pass[$i]}"
   probe_path="$probe_dir/$file"
   log="$out_dir/$name.log"
   echo "=== $backend : $name ==="
@@ -165,15 +163,24 @@ for i in "${!probe_names[@]}"; do
     rm -f "$wd_path_file"
   fi
 
-  if grep -qF "$pass" "$log" 2>/dev/null; then
-    summary+="PASS  $name"$'\n'; echo "PASS  $name"
+  # Compare the probe's exhibited OBSERVE output against this target's
+  # per-vendor :expected-observations (autolisp-spec ch.25 probe model);
+  # UNEXPECTED / MISSING gate, KNOWN-DIVERGENCE is reported but green.
+  # The clautolisp reference scenario has no suffix; the vendor ones do.
+  if [ "$backend" = "clautolisp" ]; then
+    sexp="$probe_dir/$name.sexp"
+  else
+    sexp="$probe_dir/$name-$backend.sexp"
+  fi
+  cmp_out="$(python3 "$root/scripts/compare-observations.py" "$sexp" "$log" 2>&1)"; cmp_rc=$?
+  echo "$cmp_out"
+  obs_line="$(printf '%s\n' "$cmp_out" | grep -m1 '^observations:')"
+  if [ "$cmp_rc" -eq 0 ]; then
+    summary+="PASS  $name -- ${obs_line:-conforms}"$'\n'; echo "PASS  $name"
   else
     failed=$((failed+1))
-    verdict="no verdict (backend unreachable or crashed)"
-    if grep -qE "PROBES FAILED: [0-9]+" "$log" 2>/dev/null; then
-      verdict="$(grep -oE "PROBES FAILED: [0-9]+" "$log" | head -1) assertion(s) failed"
-    fi
-    summary+="FAIL  $name -- $verdict"$'\n'; echo "FAIL  $name -- $verdict"
+    summary+="FAIL  $name -- ${obs_line:-no observations (backend unreachable or crashed)}"$'\n'
+    echo "FAIL  $name"
   fi
   unset args
 done

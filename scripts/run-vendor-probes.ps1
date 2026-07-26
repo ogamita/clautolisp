@@ -79,9 +79,9 @@ if (Test-Path "$alfe.exe") {
 }
 
 $probes = @(
-  @{ Name = "entity-lifecycle"; File = "entity-lifecycle-probe.lsp"; Pass = "ALL ENTITY PROBES PASSED" },
-  @{ Name = "drawing-data";     File = "drawing-data-probe.lsp";     Pass = "ALL DRAWING-DATA PROBES PASSED" },
-  @{ Name = "selection";        File = "selection-probe.lsp";        Pass = "ALL SELECTION PROBES PASSED" }
+  @{ Name = "entity-lifecycle"; File = "entity-lifecycle-probe.lsp" },
+  @{ Name = "drawing-data";     File = "drawing-data-probe.lsp" },
+  @{ Name = "selection";        File = "selection-probe.lsp" }
 )
 
 $failed = 0
@@ -230,17 +230,23 @@ foreach ($p in $probes) {
       }
     }
   }
-  $content = ""
-  if (Test-Path $log) { $content = Get-Content -Raw $log }
-  if ($content -match [regex]::Escape($p.Pass)) {
-    $summary += "PASS  $($p.Name)"
+  # Compare the probe's exhibited OBSERVE output against this target's
+  # per-vendor :expected-observations (autolisp-spec ch.25 probe model);
+  # UNEXPECTED / MISSING gate, KNOWN-DIVERGENCE is reported but green.
+  $sexp = if ($Backend -eq "clautolisp") { Join-Path $probeDir "$($p.Name).sexp" }
+          else { Join-Path $probeDir "$($p.Name)-$Backend.sexp" }
+  $cmp = & python3 (Join-Path $root "scripts/compare-observations.py") $sexp $log 2>&1
+  $cmpRc = $LASTEXITCODE
+  $cmp | ForEach-Object { Write-Host "$_" }
+  $obsLine = ($cmp | Select-String -Pattern '^observations:' | Select-Object -First 1).ToString()
+  if ($cmpRc -eq 0) {
+    $summary += "PASS  $($p.Name) -- $obsLine"
     Write-Host "PASS  $($p.Name)"
   } else {
     $failed++
-    $verdict = "no verdict (backend unreachable or crashed)"
-    if ($content -match "PROBES FAILED: (\d+)") { $verdict = "$($matches[1]) assertion(s) failed" }
-    $summary += "FAIL  $($p.Name) -- $verdict"
-    Write-Host "FAIL  $($p.Name) -- $verdict"
+    if (-not $obsLine) { $obsLine = "no observations (backend unreachable or crashed)" }
+    $summary += "FAIL  $($p.Name) -- $obsLine"
+    Write-Host "FAIL  $($p.Name)"
   }
 }
 $summary | Set-Content -Encoding utf8 (Join-Path $outDir "SUMMARY.txt")
