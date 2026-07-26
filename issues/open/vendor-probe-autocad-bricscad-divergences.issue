@@ -135,10 +135,26 @@ Diagnostics landed; the re-run gives the exact AutoCAD returns:
 
 Confirmed divergences to process (spec + dialect + cadaptor each):
   D1 entmake subclass markers for R13+ entities   (autocad reject / bricscad
-     synthesise / clautolisp lenient+WARN / strict require).
-  D2 regapp return value: autocad nil, bricscad the name  (registration
-     identical; only the return differs).
-  D3 entmod on non-graphical XRECORD: autocad no-op, bricscad updates.
+     synthesise / clautolisp lenient+WARN / strict require).   *** DONE ***
+  D2 regapp  -- NOT a divergence: CONTAMINATION. See below.
+  D3 entmod on non-graphical XRECORD: autocad no-op, bricscad updates.  OPEN.
+
+D1 IMPLEMENTED (clautolisp 1.6.16). entity-family gains a since-r13-p flag;
+clautolisp.drawing:entity-dxf-missing-markers (pure) reports the absent
+(100 . "AcDb...") markers; the mock host applies a per-dialect policy in
+%host-add-entity (autocad-2026/strict reject -> nil+ERRNO 36; clautolisp warn
+[entmake-subclass-marker]; bricscad-v26/lax accept+synthesise). Spec: R13+
+marker note in the ENTMAKE + ENTMAKEX *** clautolisp sections. Tests: drawing
+unit + builtins-core per-dialect e2e (all green). STILL TODO for D1: fork the
+cadaptor issue.
+
+D2 RESOLVED as contamination, NOT a divergence. regapp of an ALREADY-registered
+app returns nil on BOTH AutoCAD and BricsCAD (that is the spec) -- the probe's
+fixed app name "CLAUTOLISP_DDP" was already in the drawing's APPID table from a
+prior run (there is no unregapp; clean-slate only deletes entities), so the
+"fresh" assumption was false. Proven when BricsCAD Windows ALSO failed the same
+regapp assertion (job 15539173366). Fixed by a per-run-unique app name in the
+probe (commit "probes: unique regapp app name"). No spec/dialect change.
 
 Actions before Divergence 2/3 spec text is final: none -- the values are now
 measured. Selection: regenerate a truly-empty c:/gitlab-runner/dwg/empty.dwg on
@@ -150,6 +166,7 @@ real ssget "X" divergence underneath.
 Status
 ------
 
-OPEN. D1/D2/D3 measured and ready to fork into per-divergence
-spec+dialect+cadaptor issues. Selection blocked on a clean empty.dwg (runner).
-Start implementation with D1 (entmake markers).
+OPEN. D1 IMPLEMENTED (clautolisp 1.6.16; cadaptor fork still TODO). D2 closed
+as contamination (not a divergence). D3 (entmod on XRECORD) remains: spec +
+dialect + cadaptor. Selection blocked on a clean empty.dwg (runner).
+Next: D3, then the D1/D3 cadaptor forks.
