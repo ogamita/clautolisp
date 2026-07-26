@@ -254,7 +254,19 @@ Fixes (alfe 1.6.12):
 Status
 ------
 
-macOS BricsCAD: GREEN. Windows BricsCAD: launch + profile + probe all proven;
-the CRLF/hang fix (1.6.12) should now give a clean :SUCCESS x3 -- pending the
-re-run when the Windows box is back. AutoCAD: separate re-run (its status files
-are also CRLF on Windows -> the same fix helps it). Close when Windows is green.
+CLOSED (2026-07-26). BricsCAD vendor verification is GREEN on BOTH platforms:
+  * macOS  (job 15535421596): 97/27/21 :SUCCESS x3.
+  * Windows (job 15537669248, alfe 1.6.12): 97/27/21, each
+    `plan finished status=:SUCCESS exit=0`, READY in 10-13 s, no :ABORTED, no
+    hang -- the CRLF fix resolved it. "all vendor probes passed on bricscad;
+    Job succeeded".
+Both match --clautolisp exactly, so clautolisp conforms to real BricsCAD across
+the entity / drawing-data / selection probe set.
+
+The COM/VBScript automation path is retained behind --mode automation (with its
+bridge-vbs.log instrumentation) but is no longer needed; batch /b + clean /p
+profile is the default and works.
+
+Remaining, tracked elsewhere: AutoCAD Windows re-run (the CRLF + runtime fixes
+should carry it; see autocad-runtime-vlax-sleep-and-rest.issue), and the opt-in
+application-context test category (--load-app / wire the stub --epure).
