@@ -29,6 +29,13 @@ clautolisp is a Common-Lisp-hosted AutoLISP interpreter shipped as a
 standalone CLI. read-autolisp is its tokenizer/reader available as a
 separate binary for tool integrators.
 
+- Native Windows LibreDWG builds select the MSYS2 MINGW64 compiler,
+  expose its runtime directory to compiler subprocesses, reject private
+  UCRT dependencies, and install the exact DLL imported by the CFFI shim.
+- Documentation builds now locate MSYS2 UCRT64 TeX/Graphviz tools and use
+  Windows-compatible Kpathsea paths, allowing ~make documentation~ to run
+  from plain MSYS and Emacs shells.
+
 ** Standalone CLI (clautolisp-sbcl / clautolisp-ccl)
 
 - Three modes: file (~clautolisp file.lsp~), expression (~-x EXPR~),

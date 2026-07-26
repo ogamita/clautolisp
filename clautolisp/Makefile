@@ -13,6 +13,10 @@ MAKEINFO       ?= makeinfo
 INSTALL_INFO   ?= install-info
 LATEX_COMPILER ?= xelatex
 ROOT_DIR := $(shell pwd)
+DOCUMENTATION_BIN ?= $(shell sh ../scripts/resolve-documentation-bin.sh)
+ifneq ($(DOCUMENTATION_BIN),)
+export PATH := $(DOCUMENTATION_BIN):$(PATH)
+endif
 # NOTE: never interpolate $(ROOT_DIR)-derived absolute paths into Lisp
 # forms — under the Windows runner's MSYS shell `pwd` yields /c/… which
 # SBCL cannot parse; the test targets merge the bare file name against
@@ -124,7 +128,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
 .PHONY: all test test-sbcl test-ccl build build-sbcl build-ccl probe-check \
-        build-libredwg \
+        build-libredwg test-libredwg-compiler-path \
         build-read-autolisp-sbcl build-read-autolisp-ccl \
         build-clautolisp-sbcl build-clautolisp-ccl \
         run-file-compat run-file-compat-sbcl run-file-compat-ccl \
@@ -193,6 +197,9 @@ build-ccl:  ## Strictly build the CCL clautolisp + read-autolisp images (errors 
 
 build-libredwg:  ## Build the vendored libredwg submodule + the CFFI shim for the optional DWG codec (Phase 17e). Requires cmake + a C compiler.
 	drawing-dwg/build-libredwg.sh
+
+test-libredwg-compiler-path:
+	drawing-dwg/tests/compiler-runtime-path-test.sh
 
 test: test-sbcl
 
@@ -331,7 +338,16 @@ documentation/RELEASE_NOTES.org: ../RELEASE_NOTES.org
 # (and base files) still come from the system installation.
 TEX_WEB2C    := $(ROOT_DIR)/documentation/web2c
 TEXFMT_CACHE := $(XDG_CACHE_HOME)/texmf-var
-export TEXMFCNF := $(TEX_WEB2C):
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(shell uname -s)),)
+TEX_PATH_SEPARATOR := ;
+TEX_WEB2C_SEARCH := $(shell cygpath -m "$(TEX_WEB2C)")
+TEX_DOCUMENTATION_SEARCH := $(shell cygpath -m "$(ROOT_DIR)/documentation")
+else
+TEX_PATH_SEPARATOR := :
+TEX_WEB2C_SEARCH := $(TEX_WEB2C)
+TEX_DOCUMENTATION_SEARCH := $(ROOT_DIR)/documentation
+endif
+export TEXMFCNF := $(TEX_WEB2C_SEARCH)$(TEX_PATH_SEPARATOR)
 export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
@@ -354,7 +370,7 @@ endif
 # in-place output org-export produced from the source.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@mkdir -p $(@D)
-	TEXINPUTS="$(ROOT_DIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf
@@ -568,10 +584,13 @@ install-documentation:  ## Install just the clautolisp documentation (org/pdf/in
 
 install-libraries: install-lisp-systems  ## Install everything the release-libraries artefact ships: the ASDF systems (share/common-lisp), the native DWG codec libraries (lib/), the libredwg header (include/), and the drawing spec + libredwg licence (share/doc).
 	install -d $(LIB_INSTALL_DIR)
-	@for f in third-party/libredwg/build/libredwg.so \
-	          third-party/libredwg/build/libredwg.dylib \
-	          third-party/libredwg/build/libredwg.dll \
-	          drawing-dwg/source/clal_dwg.so \
+	@runtime_manifest=third-party/libredwg/build/clautolisp-runtime-library; \
+	[ -s "$$runtime_manifest" ] || { echo "error: missing LibreDWG runtime manifest; run make build-libredwg" >&2; exit 1; }; \
+	runtime=$$(cat "$$runtime_manifest"); \
+	[ -f "$$runtime" ] || { echo "error: recorded LibreDWG runtime does not exist: $$runtime" >&2; exit 1; }; \
+	install -m 0755 "$$runtime" $(LIB_INSTALL_DIR)/; \
+	echo "installed: $$runtime -> $(LIB_INSTALL_DIR)/"; \
+	for f in drawing-dwg/source/clal_dwg.so \
 	          drawing-dwg/source/clal_dwg.dylib \
 	          drawing-dwg/source/clal_dwg.dll; do \
 	  if [ -f "$$f" ]; then \
@@ -657,4 +676,3 @@ uninstall:  ## Remove the clautolisp install from $$PREFIX.
 	@# documents it installs go with $(DOC_INSTALL_DIR) below.)
 	rm -rf $(LIB_INSTALL_DIR) $(INCLUDE_INSTALL_DIR)
 	rm -rf $(LIBEXEC_INSTALL_DIR) $(DOC_INSTALL_DIR)
-

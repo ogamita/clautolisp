@@ -11,6 +11,10 @@ MAKEINFO       ?= makeinfo
 INSTALL_INFO   ?= install-info
 AUTOCAD_RUNNER ?=
 BRICSCAD_RUNNER ?=
+DOCUMENTATION_BIN ?= $(shell sh ../scripts/resolve-documentation-bin.sh)
+ifneq ($(DOCUMENTATION_BIN),)
+export PATH := $(DOCUMENTATION_BIN):$(PATH)
+endif
 
 DOCUMENTATION_ORG := $(wildcard documentation/*.org)
 SPECIFICATIONS_ORG := $(wildcard specifications/*.org)
@@ -208,7 +212,16 @@ uninstall:  ## Remove the spec install from $$PREFIX.
 # trailing empty component on TEXMFCNF appends the system search path.
 TEX_WEB2C    := $(CURDIR)/documentation/web2c
 TEXFMT_CACHE := $(CURDIR)/.cache/texmf-var
-export TEXMFCNF := $(TEX_WEB2C):
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(shell uname -s)),)
+TEX_PATH_SEPARATOR := ;
+TEX_WEB2C_SEARCH := $(shell cygpath -m "$(TEX_WEB2C)")
+TEX_DOCUMENTATION_SEARCH := $(shell cygpath -m "$(CURDIR)/documentation")
+else
+TEX_PATH_SEPARATOR := :
+TEX_WEB2C_SEARCH := $(TEX_WEB2C)
+TEX_DOCUMENTATION_SEARCH := $(CURDIR)/documentation
+endif
+export TEXMFCNF := $(TEX_WEB2C_SEARCH)$(TEX_PATH_SEPARATOR)
 export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
@@ -227,7 +240,7 @@ endif
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@mkdir -p $(@D)
-	TEXINPUTS="$(CURDIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf

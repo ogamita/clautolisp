@@ -2,6 +2,10 @@ SUBPROJECTS := autolisp-spec clautolisp autolisp-test autolisp-front-end autolis
 CLAUTOLISP_CI_IMAGE ?= registry.gitlab.com/ogamita/clautolisp/clautolisp-ci:latest
 CLAUTOLISP_CI_DOCKERFILE ?= clautolisp/docker/Dockerfile
 CLAUTOLISP_CI_PLATFORM ?= linux/amd64
+DOCUMENTATION_BIN ?= $(shell sh scripts/resolve-documentation-bin.sh)
+ifneq ($(DOCUMENTATION_BIN),)
+export PATH := $(DOCUMENTATION_BIN):$(PATH)
+endif
 
 # Install destination. Override on the command line:
 #   make install PREFIX=/usr/local

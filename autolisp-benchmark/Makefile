@@ -9,6 +9,10 @@
 # (xelatex) — same toolchain as the sibling subprojects.
 EMACS          ?= $(shell sh ../scripts/resolve-emacs.sh)
 LATEX_COMPILER ?= xelatex
+DOCUMENTATION_BIN ?= $(shell sh ../scripts/resolve-documentation-bin.sh)
+ifneq ($(DOCUMENTATION_BIN),)
+export PATH := $(DOCUMENTATION_BIN):$(PATH)
+endif
 SBCL   ?= sbcl
 CCL    ?= ccl
 
@@ -198,7 +202,16 @@ run-autocad-windows:
 # component on TEXMFCNF appends the system search path.
 TEX_WEB2C    := $(ROOT_DIR)/documentation/web2c
 TEXFMT_CACHE := $(XDG_CACHE_HOME)/texmf-var
-export TEXMFCNF := $(TEX_WEB2C):
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(shell uname -s)),)
+TEX_PATH_SEPARATOR := ;
+TEX_WEB2C_SEARCH := $(shell cygpath -m "$(TEX_WEB2C)")
+TEX_DOCUMENTATION_SEARCH := $(shell cygpath -m "$(ROOT_DIR)/documentation")
+else
+TEX_PATH_SEPARATOR := :
+TEX_WEB2C_SEARCH := $(TEX_WEB2C)
+TEX_DOCUMENTATION_SEARCH := $(ROOT_DIR)/documentation
+endif
+export TEXMFCNF := $(TEX_WEB2C_SEARCH)$(TEX_PATH_SEPARATOR)
 export TEXMFVAR := $(TEXFMT_CACHE)
 ifeq ($(LATEX_COMPILER),xelatex)
 TEX_FMT_DEP := $(TEXFMT_CACHE)/web2c/xetex/xelatex.fmt
@@ -216,7 +229,7 @@ endif
 # the source path) and delete the intermediate .tex so the source tree stays clean.
 $(BUILD_DIR)/%.pdf: %.org | $(TEX_FMT_DEP)
 	@mkdir -p $(@D)
-	TEXINPUTS="$(ROOT_DIR)/documentation:$$TEXINPUTS" $(EMACS) --batch \
+	TEXINPUTS="$(TEX_DOCUMENTATION_SEARCH)$(TEX_PATH_SEPARATOR)$$TEXINPUTS" $(EMACS) --batch \
 		--eval '(progn (require (quote ox-latex)) (setq org-latex-compiler "$(LATEX_COMPILER)") (setq org-export-with-broken-links t) (add-to-list (quote org-latex-packages-alist) (quote ("" "clautolisp-doc-preamble" t ("xelatex" "lualatex"))) t) (setq org-latex-pdf-process (list (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f") (concat "$(LATEX_COMPILER)" " -interaction nonstopmode -output-directory %o %f"))))' \
 		--visit "$<" \
 		--funcall org-latex-export-to-pdf

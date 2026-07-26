@@ -156,6 +156,31 @@ The implementation subproject is intended to work with:
 
 The long-term build target is a standalone executable.
 
+On MSYS2, building the optional LibreDWG codec requires the native
+MINGW64 GCC package:
+
+```sh
+pacman -S --needed mingw-w64-x86_64-gcc
+```
+
+Building all PDF, Info, and diagram documentation on MSYS2 requires Emacs,
+Texinfo, XeLaTeX, the LaTeX packages used by the repository preamble, and
+Graphviz:
+
+```sh
+pacman -S --needed \
+  mingw-w64-x86_64-emacs \
+  mingw-w64-ucrt-x86_64-texinfo \
+  mingw-w64-ucrt-x86_64-texlive-bin \
+  mingw-w64-ucrt-x86_64-texlive-core \
+  mingw-w64-ucrt-x86_64-texlive-latex-recommended \
+  mingw-w64-ucrt-x86_64-texlive-latex-extra \
+  mingw-w64-ucrt-x86_64-graphviz
+```
+
+The documentation Makefiles locate the UCRT64 tools automatically from plain
+MSYS and Emacs shells.
+
 The global `Makefile` and subproject `Makefile`s provide targets for:
 
 - running tests,
