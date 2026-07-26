@@ -52,14 +52,12 @@
     :name "drawing-data-clautolisp"
     :description "Portable drawing-data-structures probe (drawing-data-probe.lsp) run under the clautolisp backend with the mock host: REGAPP; the full XData group-code set (1000/1002/1003/1005/1040/1070/1071) round-tripped through entget/entmod preserving order and multiplicity; multi-application xdata filtering; the named-object-dictionary tree with an XRECORD create/read/mutate/remove lifecycle; and tblsearch/tblnext over LAYER/LTYPE/STYLE/APPID. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
     :classification :clautolisp-only
-    ;; --lax: the probe's XRECORD entmod-mutate assertion exercises the
-    ;; DEVIANT (BricsCAD) side of divergence D3; the autolisp-spec adopts
-    ;; AutoCAD's no-op as normative, so the normative dialects would leave
-    ;; the value unchanged. --lax reproduces the mutation silently (see
-    ;; the ENTMOD *** clautolisp note, ch.25).
-    :argv '("--clautolisp" "--lax" "--host" "mock" "-l" "drawing-data-probe.lsp")
+    ;; Runs under the normal (normative) dialect: the probe no longer
+    ;; asserts the non-portable XRECORD entmod-mutate (divergence D3), so
+    ;; it passes under every dialect and on both real vendors.
+    :argv '("--clautolisp" "--host" "mock" "-l" "drawing-data-probe.lsp")
     :lsp-file dd-lsp :lsp-text dd-text :pass-line dd-pass
-    :covers '("--clautolisp" "--lax" "--host" "-l"))
+    :covers '("--clautolisp" "--host" "-l"))
   (write-scenario "drawing-data-bricscad.sexp"
     :name "drawing-data-bricscad"
     :description "The SAME portable drawing-data-structures probe (drawing-data-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — the vendor-verification tail for the drawing-data-structures-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must print the same ALL DRAWING-DATA PROBES PASSED line."

@@ -1,7 +1,7 @@
 (:name "drawing-data-clautolisp"
  :description "Portable drawing-data-structures probe (drawing-data-probe.lsp) run under the clautolisp backend with the mock host: REGAPP; the full XData group-code set (1000/1002/1003/1005/1040/1070/1071) round-tripped through entget/entmod preserving order and multiplicity; multi-application xdata filtering; the named-object-dictionary tree with an XRECORD create/read/mutate/remove lifecycle; and tblsearch/tblnext over LAYER/LTYPE/STYLE/APPID. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
  :classification :clautolisp-only
- :argv ("--clautolisp" "--lax" "--host" "mock" "-l" "drawing-data-probe.lsp")
+ :argv ("--clautolisp" "--host" "mock" "-l" "drawing-data-probe.lsp")
  :setup-files (("drawing-data-probe.lsp" ";;;; drawing-data-probe.lsp — portable drawing-data-structures probe
 ;;;;
 ;;;; A single, self-contained AutoLISP program that exercises the
@@ -137,15 +137,15 @@
   (chk \"dictsearch returns the xrecord data\" (not (null found)))
   (chk \"dictsearch data has (0 . XRECORD)\" (= (strcase (a2 0 found)) \"XRECORD\"))
   (chk \"dictsearch data carries the payload (group 1)\" (= (a2 1 found) \"payload\"))
-  ;; Mutate it through entmod.
-  (entmod (list (cons -1 xr) (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\")
-                (cons 1 \"payload2\") (cons 70 5)))
-  (setq found (dictsearch nod \"CLAUTOLISP_REC\"))
-  (chk \"entmod on the xrecord reads back the new value\"
-       (= (a2 1 found) \"payload2\"))
-  (if (not (= (a2 1 found) \"payload2\"))
-      (princ (strcat \"  DIAG xrecord readback group1 = \" (p2s (a2 1 found))
-                     \" (want payload2); full = \" (p2s found) \"\\n\")))
+  ;; NOTE: modifying an XRECORD's ENTRY CONTENTS through entmod is a
+  ;; VENDOR DIVERGENCE (autolisp-spec ch.25, divergence D3), so it is NOT
+  ;; asserted here — a portable probe must not test non-portable
+  ;; behaviour. AutoCAD documents entmod as a NO-OP on dictionary/xrecord
+  ;; entries (\"their entries cannot be altered with entmod\"); BricsCAD
+  ;; applies the change. The autolisp-spec adopts AutoCAD's no-op as
+  ;; normative (see the ENTMOD *** clautolisp note); the per-dialect
+  ;; behaviour is covered by the dd-d3-* unit tests. entmod on such
+  ;; objects is only guaranteed for their XDATA, not their entry contents.
   ;; A duplicate key fails soft (nil).
   (chk \"duplicate dictadd key returns nil\"
        (null (dictadd nod \"CLAUTOLISP_REC\" xr)))
@@ -189,4 +189,4 @@
 "))
  :expected-exit 0
  :expected-stdout-includes ("ALL DRAWING-DATA PROBES PASSED")
- :covers-options ("--clautolisp" "--lax" "--host" "-l"))
+ :covers-options ("--clautolisp" "--host" "-l"))

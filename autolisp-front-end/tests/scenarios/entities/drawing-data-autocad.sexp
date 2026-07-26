@@ -137,15 +137,15 @@
   (chk \"dictsearch returns the xrecord data\" (not (null found)))
   (chk \"dictsearch data has (0 . XRECORD)\" (= (strcase (a2 0 found)) \"XRECORD\"))
   (chk \"dictsearch data carries the payload (group 1)\" (= (a2 1 found) \"payload\"))
-  ;; Mutate it through entmod.
-  (entmod (list (cons -1 xr) (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\")
-                (cons 1 \"payload2\") (cons 70 5)))
-  (setq found (dictsearch nod \"CLAUTOLISP_REC\"))
-  (chk \"entmod on the xrecord reads back the new value\"
-       (= (a2 1 found) \"payload2\"))
-  (if (not (= (a2 1 found) \"payload2\"))
-      (princ (strcat \"  DIAG xrecord readback group1 = \" (p2s (a2 1 found))
-                     \" (want payload2); full = \" (p2s found) \"\\n\")))
+  ;; NOTE: modifying an XRECORD's ENTRY CONTENTS through entmod is a
+  ;; VENDOR DIVERGENCE (autolisp-spec ch.25, divergence D3), so it is NOT
+  ;; asserted here — a portable probe must not test non-portable
+  ;; behaviour. AutoCAD documents entmod as a NO-OP on dictionary/xrecord
+  ;; entries (\"their entries cannot be altered with entmod\"); BricsCAD
+  ;; applies the change. The autolisp-spec adopts AutoCAD's no-op as
+  ;; normative (see the ENTMOD *** clautolisp note); the per-dialect
+  ;; behaviour is covered by the dd-d3-* unit tests. entmod on such
+  ;; objects is only guaranteed for their XDATA, not their entry contents.
   ;; A duplicate key fails soft (nil).
   (chk \"duplicate dictadd key returns nil\"
        (null (dictadd nod \"CLAUTOLISP_REC\" xr)))
