@@ -90,13 +90,20 @@
   (probe-graphical "ARC"
     (list (cons 0 "ARC") (cons 10 (list 4.0 3.0 0.0)) (cons 40 2.0)
           (cons 50 0.0) (cons 51 1.5708)))
+  ;; R13+ entities: the (100 . "AcDb...") subclass markers are REQUIRED
+  ;; per the autolisp-spec (adopted from AutoCAD; see the ENTMAKE
+  ;; *** clautolisp note). Supplying them keeps the probe portable across
+  ;; every dialect and both vendors; omitting them is a non-condoned
+  ;; BricsCAD-only leniency that the normative dialects reject.
   (probe-graphical "ELLIPSE"
-    (list (cons 0 "ELLIPSE") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 2.0 0.0 0.0))
+    (list (cons 0 "ELLIPSE") (cons 100 "AcDbEntity") (cons 100 "AcDbEllipse")
+          (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 2.0 0.0 0.0))
           (cons 40 0.5) (cons 41 0.0) (cons 42 6.283185)))
   (probe-graphical "TEXT"
     (list (cons 0 "TEXT") (cons 10 (list 1.0 1.0 0.0)) (cons 40 0.2) (cons 1 "hi")))
   (probe-graphical "LWPOLYLINE"
-    (list (cons 0 "LWPOLYLINE") (cons 90 2) (cons 70 0)
+    (list (cons 0 "LWPOLYLINE") (cons 100 "AcDbEntity") (cons 100 "AcDbPolyline")
+          (cons 90 2) (cons 70 0)
           (cons 10 (list 0.0 0.0)) (cons 10 (list 1.0 0.0))))
   (probe-graphical "SOLID"
     (list (cons 0 "SOLID") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 0.0 0.0))
@@ -105,9 +112,11 @@
     (list (cons 0 "3DFACE") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 0.0 0.0))
           (cons 12 (list 1.0 1.0 0.0)) (cons 13 (list 0.0 1.0 0.0))))
   (probe-graphical "RAY"
-    (list (cons 0 "RAY") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 0.0 0.0))))
+    (list (cons 0 "RAY") (cons 100 "AcDbEntity") (cons 100 "AcDbRay")
+          (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 1.0 0.0 0.0))))
   (probe-graphical "XLINE"
-    (list (cons 0 "XLINE") (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 0.0 1.0 0.0)))))
+    (list (cons 0 "XLINE") (cons 100 "AcDbEntity") (cons 100 "AcDbXline")
+          (cons 10 (list 0.0 0.0 0.0)) (cons 11 (list 0.0 1.0 0.0)))))
 
 ;;; --- entmakex vs entmake return contract ------------------------
 
