@@ -29,6 +29,15 @@
              (princ (strcat "  FAIL " label "\n"))))
   ok)
 
+;; A per-run-unique suffix. regapp of an ALREADY-registered app returns nil on
+;; BOTH AutoCAD and BricsCAD (that's the spec -- it is not a divergence), and a
+;; drawing that carries a prior run's APPID makes the "fresh app" assumption
+;; false (there is no unregapp, and clean-slate only deletes entities). Append
+;; this so the app is genuinely fresh every run.
+(defun uniq ( / d)
+  (setq d (getvar "DATE"))
+  (if d (itoa (fix (* 864000000.0 (- d (fix d))))) "X"))
+
 ;; Portable value->string for diagnostics; only emitted on a mismatch, so
 ;; passing backends' output stays byte-identical.
 (defun p2s (x)
@@ -47,7 +56,9 @@
 
 (defun run-regapp-probe (/ app r)
   (princ "regapp:\n")
-  (setq app "CLAUTOLISP_DDP")
+  ;; Unique per run so it is genuinely fresh even on a drawing that already
+  ;; carries a prior run's APPID (see uniq).
+  (setq app (strcat "CLAUTOLISP_DDP" (uniq)))
   ;; A fresh application registers and returns its name.
   (setq r (regapp app))
   (chk "regapp of a fresh app returns the name" (= r app))
