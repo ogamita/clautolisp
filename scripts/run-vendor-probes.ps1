@@ -103,11 +103,15 @@ foreach ($p in $probes) {
   # sidecar file (--write-workdir-path). That is authoritative: the script
   # reads the path from the file instead of scraping stdout, which is
   # brittle across encodings and log truncation.
-  $dbg = @()
+  # --no-init: a probe/test run must not auto-load the runner's user init
+  # file (~/.autolisp etc.) -- it varies per machine and pollutes the plan
+  # (we saw `load "C:/.../.autolisp"` sneak in as plan[1]).
+  $dbg = @("--no-init")
   $wdPathFile = $null
   if ($KeepWorkdir -eq "1") {
     $wdPathFile = Join-Path $tmpBase ("vp-wd-{0}-{1}-{2}.txt" -f $Backend, $p.Name, [guid]::NewGuid().ToString("N"))
-    $dbg = @("--debug", "--verbose", "--keep-workdir", "--write-workdir-path", $wdPathFile)
+    # APPEND (not reassign) so --no-init is never dropped.
+    $dbg += @("--debug", "--verbose", "--keep-workdir", "--write-workdir-path", $wdPathFile)
   }
   # BricsCAD: use batch mode (bricscad.exe -B run.scr), the same GUI-exe +
   # script path macOS uses -- no COM/VBScript bridge. A cold GUI start

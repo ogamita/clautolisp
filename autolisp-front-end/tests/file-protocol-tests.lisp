@@ -248,6 +248,30 @@ without throwing a Lisp condition."
             (is (string= "BOOTING" last))))
       (delete-workdir workdir))))
 
+(test protocol-status-tolerates-crlf
+  "BricsCAD/AutoCAD on Windows write status.txt CRLF-terminated
+(`STOPPED\\r\\n`). READ-CURRENT-STATUS must return the bare value and the
+EXACT wait-for-status must still match -- otherwise the terminal STOPPED
+transition never matches on Windows, the quit action times out, and the
+whole run is misreported :ABORTED (then shutdown blocks). Regression for
+job 15535444210."
+  (let ((workdir (make-test-workdir "status-crlf")))
+    (unwind-protect
+        (let ((session (alfe.protocol.file:init-session workdir)))
+          (with-open-file (out (alfe.protocol.file:protocol-session-status-path session)
+                               :direction :output :if-exists :supersede
+                               :if-does-not-exist :create
+                               :external-format :latin-1)
+            (write-string (format nil "STOPPED~C~C" #\Return #\Linefeed) out))
+          (is (string= "STOPPED"
+                       (alfe.protocol.file:read-current-status session)))
+          (multiple-value-bind (ok elapsed last)
+              (alfe.protocol.file:wait-for-status session "STOPPED" :timeout 1)
+            (declare (ignore elapsed))
+            (is (not (null ok)))
+            (is (string= "STOPPED" last))))
+      (delete-workdir workdir))))
+
 (test protocol-wait-for-status-prefix-matches-parameterised
   "WAIT-FOR-STATUS-PREFIX matches `READY 0` / `RUNNING 7` / `DONE 7
 OK` etc. by leading prefix, since the counter suffix is set by the

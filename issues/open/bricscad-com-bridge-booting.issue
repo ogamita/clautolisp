@@ -224,11 +224,37 @@ The watcher earned its keep: workdir at +2s (status BOOTING), READY 0 at
 reports "host supports &rest" (variadic shadows), vs AutoCAD which lacks it.
 No profile was needed on macOS (clean install, as expected).
 
+Windows: clean profile works; then a CRLF bug misreported ABORTED + hung (1.6.12)
+--------------------------------------------------------------------------------
+
+Job 15535444210 (Windows, clean /p profile): READY in 14 s, entity-lifecycle
+probe 97/0 PASS -- the launch + profile fixes work on Windows too. BUT alfe then
+reported `plan finished status=:ABORTED exit=1` and the PS script HUNG (BricsCAD
+had run and exited). The kept workdir (pjb tar'd it) showed the CAD side perfect:
+status.txt = STOPPED, control = SHUTDOWN, debug.log "server-loop returned
+normally". Root cause, from `od -c status.txt`: **`STOPPED\r\n` -- CRLF**.
+BricsCAD/AutoCAD write status.txt CRLF-terminated on Windows.
+last-non-empty-line split on #\Newline only, so read-current-status returned
+`STOPPED\r`. The prefix waits (READY/RUNNING/DONE) tolerated the stray CR; the
+EXACT wait-for-status (terminal STOPPED) did not -> the quit action waited the
+full shutdown-timeout -> :ABORTED, then run-plan's cleanup shutdown blocked in
+uiop:wait-process on the (GUI) engine -> whole job hung.
+
+Fixes (alfe 1.6.12):
+  * file-protocol last-non-empty-line splits on BOTH #\Return and #\Newline ->
+    read-current-status returns the bare value; exact + prefix waits both match
+    on CRLF. Regression test protocol-status-tolerates-crlf.
+  * %kill-engine-process: terminate + POLL process-alive-p up to a bound (never
+    an unbounded uiop:wait-process, which can hang on Windows); used by shutdown
+    and the start-engine abnormal-exit cleanup.
+  * run-vendor-probes.{ps1,sh}: pass --no-init ALWAYS -- the runner's ~/.autolisp
+    was auto-loaded as plan[1] (pollutes tests). (PS bug: the keep-workdir branch
+    had reassigned $dbg and dropped --no-init; now appends.)
+
 Status
 ------
 
-macOS BricsCAD: GREEN -- close-worthy for that platform.
-Windows BricsCAD: still OPEN -- the clean-profile /p fix (1.6.11) + watcher
-land tomorrow when the Windows box is back; expect the same green now that
-the EPURE auto-load is bypassed. AutoCAD: separate (the runtime portability
-fixes are in; needs a re-run). Keep this ticket open until Windows confirms.
+macOS BricsCAD: GREEN. Windows BricsCAD: launch + profile + probe all proven;
+the CRLF/hang fix (1.6.12) should now give a clean :SUCCESS x3 -- pending the
+re-run when the Windows box is back. AutoCAD: separate re-run (its status files
+are also CRLF on Windows -> the same fix helps it). Close when Windows is green.

@@ -373,8 +373,18 @@ expects when the runtime hasn't published anything yet."
 (defun last-non-empty-line (text)
   "Return the last non-blank line of TEXT, or NIL if TEXT has none.
 The status channel records the entire transition history (the
-runtime appends to it); the *current* state is the last line."
-  (let ((lines (remove "" (uiop:split-string text :separator '(#\Newline))
+runtime appends to it); the *current* state is the last line.
+
+Splits on BOTH #\\Return and #\\Newline so a CRLF-terminated file --
+which BricsCAD/AutoCAD on Windows produce (`STOPPED\\r\\n`) -- yields
+the bare value `STOPPED`, not `STOPPED\\r`. Without this the exact
+WAIT-FOR-STATUS (used for the terminal STOPPED transition) never
+matches on Windows -> the quit action times out -> the whole run is
+misreported :ABORTED and shutdown then blocks. Prefix waits
+(READY/RUNNING/DONE) tolerated the stray CR by luck; the exact one
+did not."
+  (let ((lines (remove "" (uiop:split-string
+                           text :separator '(#\Return #\Newline))
                        :test #'string=)))
     (and lines (car (last lines)))))
 

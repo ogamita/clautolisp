@@ -739,11 +739,9 @@ future ticket."
                   (let ((info (bricscad-session-process-info session)))
                     (when info
                       (ignore-errors
-                        (when (uiop:process-alive-p info)
-                          (log-warn "backend BRICSCAD: start aborted; terminating spawned engine (pid ~A)"
-                                    (ignore-errors (uiop:process-info-pid info)))
-                          (uiop:terminate-process info)
-                          (uiop:wait-process info)))))))))))
+                        (log-warn "backend BRICSCAD: start aborted; terminating spawned engine (pid ~A)"
+                                  (ignore-errors (uiop:process-info-pid info))))
+                      (%kill-engine-process info)))))))))
     (alfe.error:backend-error (probe)
       (error probe))
     (error (probe)
@@ -787,6 +785,27 @@ future ticket."
     (:shutdown   :stopped)
     (:interrupt  :interrupted)))
 
+(defun %kill-engine-process (info &key (timeout 6))
+  "Best-effort terminate the launched engine within TIMEOUT seconds, NEVER
+blocking indefinitely. uiop:wait-process can hang on Windows when the engine
+(a GUI BricsCAD) is slow to die or a child shares its handles -- that would
+freeze alfe in shutdown and hang the whole job. So we terminate, then POLL
+process-alive-p up to TIMEOUT, force-killing (:urgent) if it outlives that,
+and never issue an unbounded wait. On exit the OS reaps it."
+  (when info
+    (ignore-errors
+     (when (uiop:process-alive-p info) (uiop:terminate-process info)))
+    (let ((start (get-internal-real-time)))
+      (loop while (and (ignore-errors (uiop:process-alive-p info))
+                       (< (/ (float (- (get-internal-real-time) start))
+                             internal-time-units-per-second)
+                          timeout))
+            do (sleep 0.2)))
+    (ignore-errors
+     (when (uiop:process-alive-p info)
+       (uiop:terminate-process info :urgent t))))
+  nil)
+
 (defmethod shutdown ((session bricscad-session) &key reason)
   (declare (ignore reason))
   (unless (eq (session-state session) :stopped)
@@ -796,12 +815,7 @@ future ticket."
       (ignore-errors
        (alfe.protocol.file:wait-for-status
         protocol alfe.protocol.file:+status-stopped+ :timeout 5))
-      (when info
-        (handler-case
-            (when (uiop:process-alive-p info)
-              (uiop:terminate-process info)
-              (uiop:wait-process info))
-          (error () nil))))
+      (%kill-engine-process info))
     (session-state-set session :stopped))
   session)
 

@@ -119,8 +119,10 @@ for i in "${!probe_names[@]}"; do
     cp -f "$dwg" "$probe_dwg"
   fi
 
-  # Assemble alfe args per backend.
-  declare -a args=()
+  # Assemble alfe args per backend. --no-init: a test run must not auto-load
+  # the runner's user init file (~/.autolisp etc.) -- it varies per machine
+  # and pollutes the plan.
+  declare -a args=("--no-init")
   wd_path_file=""
   if [ "$keep_workdir" = "1" ]; then
     wd_path_file="$tmp_base/vp-wd-$backend-$name-$$-$i.txt"
