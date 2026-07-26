@@ -1,0 +1,57 @@
+-*- coding:utf-8 -*-
+
+autocad-no-rest-output-capture — probe princ output lost on AutoCAD (no-&rest path)
+===================================================================================
+
+Reported from: Windows vendor-probe job 15537669249
+(vendor:probes:autocad, alfe 1.6.12), against AutoCAD 2022 accoreconsole.
+
+The AutoCAD backend now works end to end EXCEPT output capture:
+
+  * accoreconsole launches, `run.scr` runs, runtime bootstraps, READY 0 in
+    ~0.8 s, the probe evaluates, status walks RUNNING 1 -> DONE 1 OK -> STOPPED,
+    and alfe reports `plan finished status=:SUCCESS exit=0`. No error anywhere.
+  * BUT the probe's printed output is GONE, so run-vendor-probes greps the log,
+    finds no "ALL ENTITY PROBES PASSED", and reports FAIL -- "no verdict". This
+    is a FALSE fail: the probe almost certainly passed, we just can't see it.
+
+Kept-workdir evidence (alfe-autocad-11664-3q9m89):
+    protocol/stdout.txt        0 bytes
+    output.txt                 0 bytes
+    errors.txt / stderr.txt    0 bytes
+    accoreconsole .log         only `nil` (the eval result), then _QSAVE/_QUIT
+    protocol/alfe-eval.lsp     (setq *AUTOLISP-EVAL-RESULT* (RUN-ENTITY-PROBES))
+    debug.log                  "host lacks &rest; keeping bootstrap 1-arg shadows
+                                + walk-rewriting normalize" ... server-loop
+                                returned normally
+
+Contrast: on BricsCAD (macOS + Windows) the SAME probe prints all 97 "ok" lines
++ "ALL ENTITY PROBES PASSED" and PASSES. BricsCAD logs "host supports &rest;
+installing variadic shadows + no-op normalize". So the break is specific to the
+**no-&rest** shadow/output path (AutoCAD lacks &rest; macOS BricsCAD has it).
+
+The probe prints ONLY via 1-arg `(princ (strcat ...))` -- no &rest/&optional.
+The loader (autolisp-source-load-run-body-impl) sets *AUTOLISP_CAPTURE_STDOUT* T
+around each form's eval, so by inspection the top-level `(run-entity-probes)`
+runs with capture on; emit-user-line/-out write to *AUTOLISP_OUTFILE* when
+capture is T. Yet all sinks are empty -- the divergence is in the run-common
+template's "host lacks &rest" branch (file-protocol.lisp, ~1240-1330: the princ
+shadow install / OUTFILE binding), not in the probe.
+
+Suspected root cause (under investigation): on the no-&rest path the in-effect
+`princ` shadow either writes to a sink alfe never drains, or emit is bypassed,
+or OUTFILE is not bound to protocol/stdout.txt. A subagent trace is pinpointing
+the exact line.
+
+Impact: AutoCAD conformance can't be *read* yet, though the engine runs the
+probe cleanly. Lower priority than BricsCAD (which is GREEN both platforms).
+pjb: "We may have to use automation when UI elements are tested, but we'll see
+later" -- batch is fine for these probes; this is an output-capture bug, not a
+UI-mode issue.
+
+Status
+------
+
+OPEN. Fix the no-&rest output routing so AutoCAD captures princ output to
+protocol/stdout.txt like the &rest path; then re-run vendor:probes:autocad and
+expect 97/27/21 to finally be readable/green.
