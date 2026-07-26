@@ -42,6 +42,7 @@ workflow:
 stages:
   - build
   - test
+  - benchmark
   - release
   - collect
   - deploy
@@ -635,6 +636,114 @@ vendor:probes:bricscad:macos:
   needs: [{ job: "build:alfe:macos", artifacts: true }]
   script:
     - bash scripts/run-vendor-probes.sh --backend bricscad --keep-workdir "$PROBE_KEEP_WORKDIR"
+
+# ============================================================================
+# Benchmarks: run the AutoLISP suite on each target and publish a comparison
+# table (GitLab Pages). Manual per target (the macOS/Windows runners are
+# intermittent) -- run the ones whose runner is up, then `pages` aggregates
+# whatever produced a dist/bench/<label>.txt. BENCH_SECONDS flows to the
+# benchmark Makefile via the environment (its `?=` picks it up).
+# ============================================================================
+.benchmark:
+  stage: benchmark
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    BENCH_SECONDS: '3.0'
+  rules:
+    - when: manual
+      allow_failure: true
+  artifacts:
+    name: "bench-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/bench/]
+    expire_in: 30 days
+
+# --- clautolisp: the standalone executable runs the pure-AutoLISP suite ---
+benchmark:clautolisp:linux:
+  extends: .benchmark
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
+  script:
+    - make build-programs
+    - mkdir -p dist/bench
+    - make -C autolisp-benchmark run-clautolisp-sbcl 2>&1 | tee dist/bench/clautolisp-linux.txt
+
+benchmark:clautolisp:macos:
+  extends: .benchmark
+  tags: [macos, arm64, shell]
+  script:
+    - make build-programs
+    - mkdir -p dist/bench
+    - make -C autolisp-benchmark run-clautolisp-sbcl 2>&1 | tee dist/bench/clautolisp-macos.txt
+
+benchmark:clautolisp:windows:
+  extends: .benchmark
+  tags: [windows, amd64, shell]
+  script:
+    - make build-programs
+    - New-Item -ItemType Directory -Force dist/bench | Out-Null
+    - make -C autolisp-benchmark run-clautolisp-sbcl *> dist/bench/clautolisp-windows.txt
+    - Get-Content dist/bench/clautolisp-windows.txt
+
+# --- CAD: alfe drives the real CAD to run the same suite ---
+# SHAKEDOWN PENDING: like the vendor probes, the CAD path needs a first run on
+# the runner to settle (runtime-LSP env is set below; BricsCAD Windows gets the
+# clean profile). Expect iteration, exactly as the probes did.
+.benchmark-cad:
+  extends: .benchmark
+  variables:
+    ALFE_RUNTIME_LSP: "$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-remote-io.lsp"
+    ALFE_BOOTSTRAP_LSP: "$CI_PROJECT_DIR/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp"
+
+benchmark:bricscad:macos:
+  extends: .benchmark-cad
+  tags: [macos, arm64, shell]
+  needs: [{ job: "build:alfe:macos", artifacts: true }]
+  script:
+    - mkdir -p dist/bench
+    - make -C autolisp-benchmark run-bricscad-macos 2>&1 | tee dist/bench/bricscad-macos.txt
+
+benchmark:bricscad:windows:
+  extends: .benchmark-cad
+  tags: [windows, amd64, shell]
+  needs: [{ job: "build:alfe:windows", artifacts: true }]
+  variables:
+    AUTOLISP_BRICSCAD_PROFILE: '<<Profil sans nom>>'
+  script:
+    - New-Item -ItemType Directory -Force dist/bench | Out-Null
+    - make -C autolisp-benchmark run-bricscad-windows *> dist/bench/bricscad-windows.txt
+    - Get-Content dist/bench/bricscad-windows.txt
+
+benchmark:autocad:windows:
+  extends: .benchmark-cad
+  tags: [windows, amd64, shell]
+  needs: [{ job: "build:alfe:windows", artifacts: true }]
+  script:
+    - New-Item -ItemType Directory -Force dist/bench | Out-Null
+    - make -C autolisp-benchmark run-autocad-windows *> dist/bench/autocad-windows.txt
+    - Get-Content dist/bench/autocad-windows.txt
+
+# --- publish: aggregate whatever ran into one table on GitLab Pages ---
+pages:
+  stage: deploy
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  needs:
+    - { job: "benchmark:clautolisp:linux",   artifacts: true, optional: true }
+    - { job: "benchmark:clautolisp:macos",   artifacts: true, optional: true }
+    - { job: "benchmark:clautolisp:windows", artifacts: true, optional: true }
+    - { job: "benchmark:bricscad:macos",     artifacts: true, optional: true }
+    - { job: "benchmark:bricscad:windows",   artifacts: true, optional: true }
+    - { job: "benchmark:autocad:windows",    artifacts: true, optional: true }
+  rules:
+    - when: manual
+      allow_failure: true
+  script:
+    - python3 scripts/benchmark-report.py dist/bench public
+  artifacts:
+    paths: [public]
 
 # --- collect: union the per-target artefacts into the combined set -----
 #

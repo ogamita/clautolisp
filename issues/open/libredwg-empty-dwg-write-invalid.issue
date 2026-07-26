@@ -1,0 +1,28 @@
+-*- coding:utf-8 -*-
+
+libredwg-empty-dwg-write-invalid — libredwg writes a DWG real CADs reject (report upstream)
+===========================================================================================
+
+scripts/make-empty-dwg.sh uses clautolisp's drawing-dwg (libredwg) codec to
+read a base DWG, drop all graphical entities, and write it back as an empty
+R2000 DWG. libredwg reads it back fine (0 entities), and `file` reports a valid
+"DWG AutoDesk AutoCAD 2000". BUT real CADs reject the output:
+
+  * BricsCAD (macOS): "An error occurred while loading the drawing ... Object of
+    class AcDbDictionary can't be cast to AcDbLayerTable. Make sure the file is
+    a valid dwg drawing."
+  * AutoCAD 2022 (accoreconsole): process exits before READY with
+    ErrorStatus=53 (invalid drawing) -- job 15539071800.
+
+So libredwg's WRITER emits a structurally-invalid file (a dictionary where the
+layer table is expected), at least when entities have been removed from a
+read-in drawing. Reproduce with make-empty-dwg.sh against a libredwg sample:
+  scripts/make-empty-dwg.sh clautolisp/third-party/libredwg/test/test-data/sample_2000.dwg /tmp/empty.dwg
+then try to open /tmp/empty.dwg in BricsCAD/AutoCAD.
+
+Action: gather a minimal repro (which handle/table gets mis-typed) and report to
+the LibreDWG project (github.com/LibreDWG/libredwg). It may be a known
+dwg_write limitation. Meanwhile the vendor probes use the runner's CAD-made
+empty.dwg + clean-slate (no generated DWG shipped).
+
+Status: OPEN (upstream report + minimal repro).
