@@ -34,6 +34,9 @@ case "$backend" in
 esac
 
 root="${CI_PROJECT_DIR:-$(pwd)}"
+# Default to the repo's committed empty drawing (self-sufficient; the probe also
+# self-cleans at seed time). Override with --dwg.
+[ -z "$dwg" ] && dwg="$root/autolisp-front-end/tests/scenarios/entities/empty.dwg"
 alfe="$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl"
 probe_dir="$root/autolisp-front-end/tests/scenarios/entities"
 out_dir="$root/dist/vendor-probes/$backend"

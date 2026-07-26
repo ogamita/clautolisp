@@ -17,7 +17,7 @@ param(
   # or it stops with NO-DWG; empty.dwg is the clean canvas the create/delete
   # probes want. Overridden by the PROBE_DWG CI variable. A content drawing
   # (e.g. 2018.dwg) can be passed for read-oriented probes later.
-  [string]$Dwg = "c:/gitlab-runner/dwg/empty.dwg",
+  [string]$Dwg = (Join-Path $PSScriptRoot "..\autolisp-front-end\tests\scenarios\entities\empty.dwg"),
   # When 1 (default), pass --debug --verbose --keep-workdir to alfe and
   # copy each kept protocol workdir into the artifacts for inspection.
   # NB: must NOT be named -Debug -- that collides with PowerShell's reserved

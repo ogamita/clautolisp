@@ -1,0 +1,5 @@
+# Binary assets must never be line-ending-converted (a CRLF pass would corrupt
+# the DWG on a Windows checkout -- the vendor probes open this file).
+*.dwg binary
+*.dwt binary
+*.dws binary

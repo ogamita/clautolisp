@@ -564,7 +564,10 @@ verify:vl-registry:windows:
     # Drawing the probes open on the runner (AutoCAD batch needs one).
     # empty.dwg is the clean canvas; c:/gitlab-runner/dwg/2018.dwg is a
     # content drawing available for read-oriented probes later.
-    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+    # Self-sufficient: the probes open the repo's own committed empty drawing
+    # (canonical, 0 entities) rather than a file on the runner. The probes also
+    # self-clean at seed time (clean-slate), so stray content can't poison them.
+    PROBE_DWG: '$CI_PROJECT_DIR/autolisp-front-end/tests/scenarios/entities/empty.dwg'
     # 1 -> pass --debug --verbose --keep-workdir and archive each kept
     # protocol workdir under dist/vendor-probes/<backend>/<probe>-workdir/.
     PROBE_KEEP_WORKDIR: '1'
