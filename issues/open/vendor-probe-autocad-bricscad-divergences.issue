@@ -1,0 +1,118 @@
+-*- coding:utf-8 -*-
+
+vendor-probe-autocad-bricscad-divergences — real AutoCAD-vs-BricsCAD differences surfaced by the vendor probes
+=============================================================================================================
+
+Source: vendor:probes:autocad job 15538718100 (AutoCAD 2022, alfe 1.6.13,
+Windows runner). With the no-&rest princ-capture fix (1.6.13) the AutoCAD probe
+output is finally readable, and it now produces real verdicts. BricsCAD (macOS
++ Windows) is 100% green on the same probes; AutoCAD fails 14 assertions. These
+are GENUINE BricsCAD-vs-AutoCAD divergences -- the whole point of the vendor
+tail. clautolisp currently tracks BricsCAD's (more lenient) behaviour.
+
+PROCESS (pjb) for EACH divergence below:
+  1. Document it in autolisp-spec (per-vendor, in the *** vendor/clautolisp
+     section of the affected function page + the user manual).
+  2. Implement it per --dialect in clautolisp:
+       --dialect autocad    -> AutoCAD's behaviour
+       --dialect bricscad    -> BricsCAD's behaviour
+       --dialect clautolisp -> a deliberate choice/extension (often the lenient
+                               superset, possibly WARN)
+       --dialect strict      -> the conservative/portable option (usually the
+                               STRICTER of the two, so code that passes strict
+                               runs on both vendors)
+  3. Fork an issue to update cadaptor, which also tracks bricscad/autocad
+     differences.
+Each numbered divergence can be forked into its own spec+dialect+cadaptor issue.
+
+DIAGNOSTIC GAP: the probes only print ok/FAIL, not the divergent VALUE. To spec
+these accurately we need to SEE what AutoCAD actually returns (regapp -> nil or
+T? entmakex on a marker-less ELLIPSE -> nil?). Add a diagnostic probe variant
+(or a --verbose mode) that prints the actual return on a mismatch, and re-run on
+AutoCAD, before finalising the spec wording.
+
+--------------------------------------------------------------------------------
+Divergence 1 — entmake/entmakex requires subclass markers for R13+ entities
+--------------------------------------------------------------------------------
+Evidence (entity-lifecycle, 4 fails): entmakex returns nil (no ENAME) on AutoCAD
+for ELLIPSE, LWPOLYLINE, RAY, XLINE; passes for LINE, POINT, CIRCLE, ARC, TEXT,
+SOLID, 3DFACE. The probe's entmakex data for the failing four omits the
+subclass-marker records, e.g.:
+    (list (cons 0 "ELLIPSE") (cons 10 ...) (cons 11 ...) (cons 40 ..) ...)
+i.e. no (100 . "AcDbEntity") / (100 . "AcDbEllipse").
+
+Analysis: real AutoCAD's entmake/entmakex requires the group-100 subclass
+markers for post-R12 entities (ELLIPSE, LWPOLYLINE, RAY, XLINE, MTEXT, LEADER,
+SPLINE, HATCH, …); the R12-era entities (LINE/POINT/CIRCLE/ARC/TEXT/SOLID/
+3DFACE/…) accept data without them. BricsCAD is lenient -- it synthesises the
+markers -- and clautolisp follows BricsCAD.
+
+Actions:
+  * spec: document entmake's subclass-marker requirement; table of which entity
+    types need (100 . "AcDbEntity")+(100 . "AcDb<Type>"). Note AutoCAD=required,
+    BricsCAD=optional.
+  * dialect: autocad -> reject (return nil) marker-less R13+ data; bricscad ->
+    accept, synthesise markers; clautolisp -> accept (lenient), consider WARN;
+    strict -> require markers (the portable choice, matches AutoCAD).
+  * cadaptor fork.
+Confidence: HIGH (well-documented AutoLISP behaviour).
+
+--------------------------------------------------------------------------------
+Divergence 2 — regapp / XData round-trip (cascades to ssget "X" selection)
+--------------------------------------------------------------------------------
+Evidence:
+  * drawing-data: "regapp of a fresh app returns the name" FAILS
+    -- the probe checks (= (regapp app) app).
+  * selection: ALL EIGHT (mine)-XData-filtered ssget "X" tests fail
+    (-3 app, type=LINE, type=LINE,CIRCLE, OR/AND/NOT colour, colour>1, and
+    sslength=3). BUT "ssget X (-3 OTHERAPP) selects none" PASSES.
+    (mine) = (-3 (app...)) XData filter over the seeded entities.
+
+Analysis: ssget "X" itself works on AutoCAD (the OTHERAPP=0 case passed). The
+seeded entities carry private XData under *app*, and the (mine) filter finds
+NONE of them -> the regapp+XData-attach path diverges: either regapp returns a
+different value (name vs nil vs T) and/or the XData set via entmod doesn't stick
+/ isn't visible to the ssget -3 filter on AutoCAD as it is on BricsCAD.
+
+Needs vendor confirmation of the exact difference (see DIAGNOSTIC GAP): print
+(regapp app), and after seeding print (entget e '("*")) to see whether the -3
+XData is actually attached on AutoCAD.
+
+Actions: spec + dialect + cadaptor (same structure) once the exact behaviour is
+captured. Likely two sub-divergences: (2a) regapp return value; (2b) XData
+attach/visibility under ssget -3.
+Confidence: MEDIUM (cascade root identified; exact vendor behaviour to confirm).
+
+--------------------------------------------------------------------------------
+Divergence 3 — entmod on an XRECORD readback
+--------------------------------------------------------------------------------
+Evidence (drawing-data, 1 fail): "entmod on the xrecord reads back the new
+value" fails. The probe entmakex's an XRECORD (with the (100 . "AcDbXrecord")
+marker, so creation succeeds), then entmod-mutates it and reads it back; the
+readback diverges on AutoCAD.
+
+Analysis: entmod on a non-graphical dictionary object (XRECORD) may be
+restricted or behave differently on AutoCAD vs BricsCAD (AutoCAD may require
+the change via the dictionary / a different code path, or reject entmod on
+xrecords). Confirm the actual readback.
+
+Actions: spec + dialect + cadaptor. Confidence: MEDIUM.
+
+--------------------------------------------------------------------------------
+Related
+--------------------------------------------------------------------------------
+The scenario dir already carries per-vendor expected captures
+(entity-lifecycle-{autocad,bricscad}.sexp, etc.). Once each divergence's true
+AutoCAD behaviour is confirmed, update the AutoCAD .sexp expectations to match,
+so the conformance harness encodes the vendor difference rather than reporting
+a raw FAIL. The vendor probes' single "ALL … PASSED" gate is fine for BricsCAD
+(green) but for AutoCAD should become per-vendor-aware (expect the documented
+divergences) OR the divergences get fixed in clautolisp's autocad dialect and
+the probe data made portable (add the markers).
+
+Status
+------
+
+OPEN. Next: (a) add the diagnostic value-printing to the probes and re-run on
+AutoCAD to capture exact returns; (b) fork per-divergence spec+dialect+cadaptor
+issues; (c) start with Divergence 1 (entmake markers) -- highest confidence.
