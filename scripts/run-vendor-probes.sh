@@ -34,9 +34,10 @@ case "$backend" in
 esac
 
 root="${CI_PROJECT_DIR:-$(pwd)}"
-# Default to the repo's committed empty drawing (self-sufficient; the probe also
-# self-cleans at seed time). Override with --dwg.
-[ -z "$dwg" ] && dwg="$root/autolisp-front-end/tests/scenarios/entities/empty.dwg"
+# No default drawing: BricsCAD batch opens a fresh default drawing when none is
+# given (that's what the macOS probe relies on). A libredwg-written empty.dwg is
+# NOT CAD-valid, so we don't ship one; pass --dwg a real CAD-made file if a
+# specific drawing is needed. The probe self-cleans at seed time regardless.
 alfe="$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl"
 probe_dir="$root/autolisp-front-end/tests/scenarios/entities"
 out_dir="$root/dist/vendor-probes/$backend"

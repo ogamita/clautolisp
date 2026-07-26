@@ -591,10 +591,12 @@ build:alfe:macos:
   tags: [windows, amd64, shell]
   variables:
     GIT_SUBMODULE_STRATEGY: none
-    # Self-sufficient: the probes open the repo's own committed empty drawing
-    # (canonical, 0 entities) rather than a file on the runner. The probes also
-    # self-clean at seed time (clean-slate), so stray content can't poison them.
-    PROBE_DWG: '$CI_PROJECT_DIR/autolisp-front-end/tests/scenarios/entities/empty.dwg'
+    # The runner's own drawing -- a real CAD-made file the CADs actually open.
+    # (A libredwg-WRITTEN empty.dwg is NOT CAD-valid: BricsCAD rejects it with
+    # "AcDbDictionary can't be cast to AcDbLayerTable", so we can't ship a
+    # generated one.) The probes self-clean at seed time (clean-slate), so this
+    # drawing's stray content can't poison the counts.
+    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
     # 1 -> pass --debug --verbose --keep-workdir and archive each kept
     # protocol workdir under dist/vendor-probes/<backend>/<probe>-workdir/.
     PROBE_KEEP_WORKDIR: '1'

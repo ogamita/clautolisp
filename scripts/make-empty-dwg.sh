@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# Produce a truly-empty DWG (0 graphical entities) that AutoCAD / BricsCAD open,
-# using clautolisp's OWN drawing-dwg codec (libredwg) -- no CAD needed, portable.
+# Produce a truly-empty DWG (0 graphical entities) using clautolisp's OWN
+# drawing-dwg codec (libredwg) -- no CAD needed, portable.
+#
+# CAVEAT: libredwg's WRITER does not produce a strictly CAD-valid file -- real
+# BricsCAD/AutoCAD reject the output ("AcDbDictionary can't be cast to
+# AcDbLayerTable"). So this is fine for clautolisp's own (libredwg) round-trip
+# use, but NOT for handing an empty.dwg to a real CAD. For a CAD-openable empty
+# drawing, generate it WITH the CAD (e.g. accoreconsole SAVEAS from a template)
+# or reuse a CAD-made file.
 #
 #   scripts/make-empty-dwg.sh <base.dwg> <out.dwg>
 #
