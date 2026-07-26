@@ -233,16 +233,26 @@ Read that section and apply it. In brief:
   0. **Common** — both reference docs agree, both products match → no warning.
   1. **Extension** — present in some implementations only → clautolisp
      runs it; warn under any dialect that isn't the owner (`lax` silent).
-  2. **Spec divergence (symmetric)** — the AutoCAD and BricsCAD reference
-     *documents* genuinely specify different behaviour → **every dialect
-     except `lax` warns** (a majority does not make it "right").
-  3. **Implementation ≠ spec (asymmetric)** — the documents agree but one
-     *product* violates its own spec → only the non-conforming vendor's
-     dialect warns; `clautolisp`/`strict` follow the *specified* behaviour.
-- Distinguishing case 2 from case 3 needs probe results matched against
-  **both** vendor reference documents; until that evidence exists, treat
-  the difference as case 2 (symmetric) so no product is wrongly blamed,
-  and record the open question per *Unverified Spec Behaviour* below.
+  2. **Divergence (resolved)** — vendors behave differently (the docs
+     differ, *or* a product contradicts an agreed doc). The autolisp-spec
+     **adopts one vendor as normative** (usually the better-specified —
+     historically AutoCAD) and records which/why in the `*** clautolisp`
+     note. The adopted-vendor dialect and `clautolisp` perform the
+     normative behaviour silently; the **deviant** vendor's dialect
+     reproduces the other behaviour and warns (*not condoned*); `strict`
+     performs the normative behaviour but **also warns**; `lax` does the
+     most useful thing, silently.
+  3. **Divergence (unresolved, symmetric)** — the autolisp-spec adopts
+     *neither* (genuinely irreconcilable) → **every dialect except `lax`
+     warns** (a majority does not make it "right").
+- **`strict` warns on *any* divergence** (case 2 or 3) — a divergence of
+  any kind means the feature is unsafe to rely on. Code that runs clean
+  under `strict` is portable.
+- Distinguishing case 2 (resolved) from case 3 (unresolved) needs probe
+  results matched against **both** vendor reference documents; until that
+  evidence exists, treat the difference as case 3 (symmetric) so no vendor
+  is wrongly blamed, and record the open question per *Unverified Spec
+  Behaviour* below.
 - Every function entry that has a per-vendor difference MUST state, in its
   `*** clautolisp` deviation note, which case it is and what each dialect
   does.

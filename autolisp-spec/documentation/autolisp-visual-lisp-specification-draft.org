@@ -94420,43 +94420,60 @@ For each (function, argument-shape) clautolisp classifies the behavior:
 |   | same and both products match.            |                                                                                                          |                                                   |
 | 1 | *Extension.* Specified/present for some  | clautolisp (a superset) performs the owning vendor's behavior in every dialect                           | every dialect except the owner and ~lax~          |
 |   | implementations only.                    |                                                                                                          |                                                   |
-| 2 | *Spec divergence (symmetric).* The two   | each vendor dialect its own document's behavior; ~clautolisp~ picks one vendor, or a third behavior;      | *every dialect except ~lax~* (symmetric)          |
-|   | reference DOCUMENTS specify DIFFERENT     | ~strict~ the safe / most-restrictive behavior                                                             |                                                   |
-|   | behavior — non-portable by design.       |                                                                                                          |                                                   |
-| 3 | *Implementation ≠ spec (asymmetric).*    | the *conforming* vendor dialect performs the spec; the *non-conforming* vendor dialect reproduces the    | only the *non-conforming* vendor's dialect        |
-|   | The documents AGREE, but one PRODUCT      | real (defective) behavior; ~clautolisp~ and ~strict~ favor the *specified* behavior                      | (~lax~ silent)                                    |
-|   | contradicts its own spec.                |                                                                                                          |                                                   |
+| 2 | *Divergence (resolved).* Vendors behave  | the autolisp-spec ADOPTS one vendor as normative (the ~*** clautolisp~ note records which and why — the  | the *deviant* (non-adopted) vendor's              |
+|   | differently — the DOCUMENTS differ, or a  | better-specified vendor, historically AutoCAD). The adopted-vendor dialect and ~clautolisp~ perform the   | dialect, and ~strict~ (~lax~ silent)              |
+|   | product contradicts an agreed document;   | normative behavior silently; ~strict~ performs it but WARNS (any divergence is unsafe to rely on); the    |                                                   |
+|   | the autolisp-spec resolves it.            | DEVIANT vendor's dialect reproduces the other behavior and warns (recognised, *not condoned*); ~lax~      |                                                   |
+|   |                                           | does the most useful thing, silent.                                                                       |                                                   |
+| 3 | *Divergence (unresolved, symmetric).* The | each vendor dialect its own document's behavior; ~clautolisp~ picks one; ~strict~ the safe /              | *every dialect except ~lax~* (symmetric)          |
+|   | autolisp-spec adopts NEITHER — genuinely  | most-restrictive one                                                                                      |                                                   |
+|   | irreconcilable, no portable-safe choice.  |                                                                                                          |                                                   |
 
 **** Dialect roles
 - ~lax~ — do whatever is most useful to the program; *never* warn.
 - ~--autocad~ / ~--bricscad~ — reproduce that product's real behavior.
-  Silent for that product's own extensions and for spec-conformant
-  behavior; but under case 2 (a genuine spec divergence) they warn too —
-  the diagnostic is on ~*error-output*~ and does not disturb the
-  value-faithful reproduction.
+  Silent for that product's own extensions and for behavior the
+  autolisp-spec adopts as normative. A vendor dialect warns only when it
+  reproduces a divergence the autolisp-spec did *not* adopt from it — the
+  deviant side of a resolved divergence (case 2), or either side of an
+  unresolved one (case 3). The diagnostic is on ~*error-output*~ and does
+  not disturb the value-faithful reproduction.
 - ~clautolisp~ — the superset. For an extension it runs it; for a
-  divergence it MAY adopt one vendor's behavior, or the specified
-  behavior, or define its own — the choice is recorded in the function's
-  ~*** clautolisp~ note. It is silent whenever its chosen behavior is
-  spec-conformant, and warns under case 2.
-- ~strict~ — the portable/conservative choice: the safe or
-  most-restrictive behavior, and the *specified* behavior in case 3.
-  Warns on every non-portable construct (extension) and every genuine
-  divergence (case 2). Code that runs clean under ~strict~ is portable.
+  divergence it performs the autolisp-spec's adopted normative behavior
+  (case 2) or its own recorded pick (case 3); the choice is stated in the
+  function's ~*** clautolisp~ note. It is silent whenever its behavior is
+  the adopted/normative one, and warns only in case 3.
+- ~strict~ — the portable/conservative choice: it performs the adopted
+  normative behavior (case 2) or the safe / most-restrictive one (case
+  3), and it *warns whenever any other dialect would* — on every
+  extension used outside its owning dialect, and on *every* divergence,
+  resolved or not, because a divergence of any kind makes the feature
+  unsafe to rely on. Code that runs clean (no warning) under ~strict~ is
+  portable.
 
-**** Symmetry and conformance principles
-1. *Symmetry.* When the divergence is genuine (case 2), the warning is
-   symmetric — issued in every dialect except ~lax~, whichever behavior
-   was chosen, because the *other* vendor differs no matter what.
-2. *Conformance.* When the documents agree and only a product diverges
-   (case 3), the situation is asymmetric: the implementations matching
-   the document are correct and are silent; only the dialect emulating
-   the non-conforming product warns, and clautolisp/strict prefer the
-   documented behavior. Classifying a specific difference as case 2 vs
-   case 3 requires matching probe results against *both* reference
-   documents; until that evidence exists a difference is provisionally
-   treated as case 2 (symmetric) so no product is wrongly blamed.
-3. *Error is a behavior.* A dialect's chosen behavior may be to signal an
+**** Resolution, symmetry, and error
+1. *Resolution.* The autolisp-spec is clautolisp's normative reference;
+   when vendors diverge it normally ADOPTS one vendor's behavior as
+   normative — typically the one with the explicit, coherent
+   specification (historically AutoCAD, the reference AutoLISP). The
+   other vendor's behavior is then recognised but *not condoned*: only
+   its dialect (and ~strict~) warn, while ~clautolisp~ and the adopted
+   vendor's dialect perform the normative behavior silently. Record the
+   adoption, with its documentary evidence, in the function's
+   ~*** clautolisp~ note.
+2. *Symmetry (residual).* Only when the autolisp-spec adopts NEITHER
+   vendor (case 3) is the warning fully symmetric — every dialect except
+   ~lax~ — because no behavior is privileged. A *majority* behavior does
+   not make it "right". Classifying a difference as case 2 (resolved) vs
+   case 3 (unresolved) needs probe results matched against *both*
+   reference documents; until that evidence exists, treat it as case 3
+   (symmetric) so no vendor is wrongly blamed.
+3. *Strict warns on any divergence.* Independently of the case, ~strict~
+   emits a warning whenever the active feature diverges across vendors —
+   the purpose of ~strict~ is to surface every portability hazard, not to
+   pick winners. It still *performs* the adopted or safe behavior; only
+   the warning is unconditional.
+4. *Error is a behavior.* A dialect's chosen behavior may be to signal an
    error (AutoLISP-level: ~nil~ + ~ERRNO~, or an ~*error*~ exit). The
    warning, when due, is issued *before* the error. A hard abort of an
    otherwise-running program happens only under the opt-in
