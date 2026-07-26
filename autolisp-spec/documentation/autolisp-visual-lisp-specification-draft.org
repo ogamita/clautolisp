@@ -94381,6 +94381,94 @@ escalates such a warning to an error (compare the ~:strict-error~
 diagnostic mode of ~:unbound-variable-mode~, chapter 3); escalation is
 optional and non-conforming when it changes whether a program runs.
 
+*** Behavior versus warning, and the divergence taxonomy
+The ~&rest~ example above is one of several *kinds* of portability
+warning. This subsection is the normative framework that classifies them
+and fixes, for each dialect, *what the operation does* and *whether a
+warning accompanies it*. Every function entry that documents a
+per-vendor difference (its ~*** clautolisp~ deviation note) MUST state
+which case below it falls into.
+
+**** Behavior and warning are orthogonal
+In a controlled implementation every argument value is *accepted*: the
+function does *something* — it returns a value, or it performs a
+non-local exit (an error, or a normal early exit). The exit may itself
+be the caller's expected, meaningful result. "Rejects the value" is
+therefore not a category; there is no "out-of-range" input a function
+declines to act on. A *warning* is a separate, advisory portability
+diagnostic written to the diagnostic channel (~*error-output*~); it is
+independent of whether the call returns or exits, and it never changes
+the value channel (stdout / the return value), so a dialect that
+reproduces a vendor stays byte-faithful on the value channel while
+clautolisp adds the warning on the side channel.
+
+**** Two sources of divergence
+A behavior is either *specified* — written in the AutoCAD reference
+document and/or the BricsCAD reference document — or merely *exhibited* —
+what the real product does, known only from probes. Warnings are driven
+by divergence between these, judged *symmetrically*: divergence is a
+relation between implementations, so if one implementation diverges on a
+value, they all diverge on it. A *majority* behavior does not thereby
+become "right".
+
+**** The four cases
+For each (function, argument-shape) clautolisp classifies the behavior:
+
+| # | Situation                                | Behavior clautolisp performs, by dialect                                                                 | Warns                                             |
+|---+------------------------------------------+----------------------------------------------------------------------------------------------------------+---------------------------------------------------|
+| 0 | *Common.* Both documents specify the     | the common behavior                                                                                       | nobody                                            |
+|   | same and both products match.            |                                                                                                          |                                                   |
+| 1 | *Extension.* Specified/present for some  | clautolisp (a superset) performs the owning vendor's behavior in every dialect                           | every dialect except the owner and ~lax~          |
+|   | implementations only.                    |                                                                                                          |                                                   |
+| 2 | *Spec divergence (symmetric).* The two   | each vendor dialect its own document's behavior; ~clautolisp~ picks one vendor, or a third behavior;      | *every dialect except ~lax~* (symmetric)          |
+|   | reference DOCUMENTS specify DIFFERENT     | ~strict~ the safe / most-restrictive behavior                                                             |                                                   |
+|   | behavior — non-portable by design.       |                                                                                                          |                                                   |
+| 3 | *Implementation ≠ spec (asymmetric).*    | the *conforming* vendor dialect performs the spec; the *non-conforming* vendor dialect reproduces the    | only the *non-conforming* vendor's dialect        |
+|   | The documents AGREE, but one PRODUCT      | real (defective) behavior; ~clautolisp~ and ~strict~ favor the *specified* behavior                      | (~lax~ silent)                                    |
+|   | contradicts its own spec.                |                                                                                                          |                                                   |
+
+**** Dialect roles
+- ~lax~ — do whatever is most useful to the program; *never* warn.
+- ~--autocad~ / ~--bricscad~ — reproduce that product's real behavior.
+  Silent for that product's own extensions and for spec-conformant
+  behavior; but under case 2 (a genuine spec divergence) they warn too —
+  the diagnostic is on ~*error-output*~ and does not disturb the
+  value-faithful reproduction.
+- ~clautolisp~ — the superset. For an extension it runs it; for a
+  divergence it MAY adopt one vendor's behavior, or the specified
+  behavior, or define its own — the choice is recorded in the function's
+  ~*** clautolisp~ note. It is silent whenever its chosen behavior is
+  spec-conformant, and warns under case 2.
+- ~strict~ — the portable/conservative choice: the safe or
+  most-restrictive behavior, and the *specified* behavior in case 3.
+  Warns on every non-portable construct (extension) and every genuine
+  divergence (case 2). Code that runs clean under ~strict~ is portable.
+
+**** Symmetry and conformance principles
+1. *Symmetry.* When the divergence is genuine (case 2), the warning is
+   symmetric — issued in every dialect except ~lax~, whichever behavior
+   was chosen, because the *other* vendor differs no matter what.
+2. *Conformance.* When the documents agree and only a product diverges
+   (case 3), the situation is asymmetric: the implementations matching
+   the document are correct and are silent; only the dialect emulating
+   the non-conforming product warns, and clautolisp/strict prefer the
+   documented behavior. Classifying a specific difference as case 2 vs
+   case 3 requires matching probe results against *both* reference
+   documents; until that evidence exists a difference is provisionally
+   treated as case 2 (symmetric) so no product is wrongly blamed.
+3. *Error is a behavior.* A dialect's chosen behavior may be to signal an
+   error (AutoLISP-level: ~nil~ + ~ERRNO~, or an ~*error*~ exit). The
+   warning, when due, is issued *before* the error. A hard abort of an
+   otherwise-running program happens only under the opt-in
+   ~--portability-warning-mode error~ escalation (see the ~*** Statement~
+   above), never as a dialect default.
+
+**** Message form
+Each warning carries a distinct bracketed tag naming the construct
+(e.g. ~[lambda-list-extension]~, ~[terpri-file-extension]~), the active
+dialect, and, where useful, the fix. Tests key on the tag substring.
+The once-per-occurrence rule below applies to every case.
+
 *** Runtime semantics (executing implementation)
 In an executing implementation such as ~clautolisp~ the warning is a
 *run-time* event, tied to *evaluation*, not to mere textual presence:

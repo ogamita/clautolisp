@@ -210,6 +210,43 @@ manual in the real dir node instead.
 - Record significant architectural decisions in documentation when they affect future work.
 - Do not silently broaden scope; note new standing directives here when they become project policy.
 
+## Dialect Divergence and Warnings
+
+When implementing **any** `autolisp-spec` operator, system variable, or
+behaviour, you MUST classify it against the dialects before writing the
+code. The governing rules are normative in the specification:
+
+> `autolisp-spec` Chapter 25, *Environment Profiles and Dialects* →
+> *Normative Rules: Dialect Portability Warnings* →
+> *Behavior versus warning, and the divergence taxonomy*.
+
+Read that section and apply it. In brief:
+
+- **Behaviour and warning are orthogonal.** Every value is accepted; the
+  function does *something* (returns, or a non-local exit — an error can
+  be the expected result). There is no "out-of-range / rejected" input.
+  A warning is a separate advisory portability diagnostic on
+  `*error-output*` that never changes the value channel.
+- Classify each `(function, argument-shape)` into one of four cases and
+  set behaviour + warning per dialect (`lax`, `--autocad`, `--bricscad`,
+  `clautolisp`, `strict`) accordingly:
+  0. **Common** — both reference docs agree, both products match → no warning.
+  1. **Extension** — present in some implementations only → clautolisp
+     runs it; warn under any dialect that isn't the owner (`lax` silent).
+  2. **Spec divergence (symmetric)** — the AutoCAD and BricsCAD reference
+     *documents* genuinely specify different behaviour → **every dialect
+     except `lax` warns** (a majority does not make it "right").
+  3. **Implementation ≠ spec (asymmetric)** — the documents agree but one
+     *product* violates its own spec → only the non-conforming vendor's
+     dialect warns; `clautolisp`/`strict` follow the *specified* behaviour.
+- Distinguishing case 2 from case 3 needs probe results matched against
+  **both** vendor reference documents; until that evidence exists, treat
+  the difference as case 2 (symmetric) so no product is wrongly blamed,
+  and record the open question per *Unverified Spec Behaviour* below.
+- Every function entry that has a per-vendor difference MUST state, in its
+  `*** clautolisp` deviation note, which case it is and what each dialect
+  does.
+
 ## Unverified Spec Behaviour
 
 When an implementation chooses behaviour that the spec doesn't
