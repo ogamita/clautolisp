@@ -257,6 +257,46 @@ Read that section and apply it. In brief:
   `*** clautolisp` deviation note, which case it is and what each dialect
   does.
 
+## Probes, Tests, and Benchmarks
+
+Three distinct instruments — do not conflate them. Each one's result is a
+function of the **dialect × version** combination it runs under:
+
+- **Probe** — *exercise* a feature to compare its behaviour against the
+  specification. A probe is an INSTRUMENT, not a judge: it runs the
+  operation (including the divergent and edge cases) and REPORTS the
+  *exhibited* behaviour; it does not itself decide pass/fail. The
+  comparison against the spec's per-target expectation (and the
+  CONFORMS / KNOWN-DIVERGENCE / UNEXPECTED verdict) is done by the
+  runner, not baked into the probe. A probe that has been tuned to
+  "always pass" has stopped probing.
+- **Test** — *validate* that a feature works as specified/expected. Here a
+  fixed expected result is correct, and the outcome is pass/fail (the
+  FiveAM suites).
+- **Benchmark** — *measure how fast* a feature works (the
+  autolisp-benchmark harness).
+
+### Probe observation model (autolisp-spec ch.25)
+
+Conformance probes under `autolisp-front-end/tests/scenarios/` emit one
+machine-readable line per observation:
+
+    OBSERVE <name> <token>
+
+where `<name>` is a stable dotted key and `<token>` is a single
+whitespace-free word recording the *exhibited* behaviour (a `yes`/`no`
+property for portable behaviour, or the distinguishing raw value for a
+divergent one — e.g. `payload` vs `payload2`). The probe ends with
+`OBSERVATIONS <n>`. Each scenario `.sexp` carries `:expected-observations`
+— `(NAME EXPECTED-TOKEN &optional NORMATIVE-TOKEN)` per target, derived
+from the spec (see `generate-schms-scenarios.lisp`). The runner
+(`alfe.conformance`) compares exhibited vs expected and gates on
+`UNEXPECTED` / missing observations; a `KNOWN-DIVERGENCE` (expected
+differs from the normative token) is reported but green. Divergences are
+EXERCISED and REPORTED, never hidden. When adding or changing a probe,
+supply the per-target expectations from the § Dialect Divergence
+resolution, not a single "correct" answer.
+
 ## Unverified Spec Behaviour
 
 When an implementation chooses behaviour that the spec doesn't

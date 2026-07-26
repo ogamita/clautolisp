@@ -2,57 +2,60 @@
  :description "Portable drawing-data-structures probe (drawing-data-probe.lsp) run under the clautolisp backend with the mock host: REGAPP; the full XData group-code set (1000/1002/1003/1005/1040/1070/1071) round-tripped through entget/entmod preserving order and multiplicity; multi-application xdata filtering; the named-object-dictionary tree with an XRECORD create/read/mutate/remove lifecycle; and tblsearch/tblnext over LAYER/LTYPE/STYLE/APPID. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
  :classification :clautolisp-only
  :argv ("--clautolisp" "--host" "mock" "-l" "drawing-data-probe.lsp")
- :setup-files (("drawing-data-probe.lsp" ";;;; drawing-data-probe.lsp — portable drawing-data-structures probe
+ :setup-files (("drawing-data-probe.lsp" ";;;; drawing-data-probe.lsp — drawing-data-structures PROBE
 ;;;;
-;;;; A single, self-contained AutoLISP program that exercises the
-;;;; drawing-resident data structures — registered applications and
-;;;; XData, the named-object dictionary tree, XRECORD objects, and the
-;;;; symbol tables — through the low-level functions that AutoCAD,
-;;;; BricsCAD and clautolisp all provide, so it runs UNCHANGED on every
-;;;; target.
+;;;; A probe EXERCISES a feature and reports the EXHIBITED behaviour to be
+;;;; compared against the specification (autolisp-spec ch.25 probe model) —
+;;;; it does not itself judge pass/fail. This one drives the drawing-
+;;;; resident data structures — registered applications and XData, the
+;;;; named-object dictionary tree, XRECORD objects, and the symbol tables —
+;;;; through the low-level functions AutoCAD, BricsCAD and clautolisp all
+;;;; provide, so it runs UNCHANGED on every target.
 ;;;;
 ;;;; Run it:
 ;;;;   clautolisp:            clautolisp --clautolisp --host mock -l drawing-data-probe.lsp
 ;;;;   via alfe on BricsCAD:  alfe --bricscad -l drawing-data-probe.lsp
 ;;;;   via alfe on AutoCAD:   alfe --autocad  -l drawing-data-probe.lsp
-;;;;   inside a CAD:          (load \"drawing-data-probe.lsp\")
 ;;;;
-;;;; Output: one line per assertion (ok / FAIL) plus a final summary.
-;;;; The last line is exactly \"ALL DRAWING-DATA PROBES PASSED\" when every
-;;;; assertion held, or \"DRAWING-DATA PROBES FAILED: <n>\" otherwise — the
-;;;; alfe conformance scenarios key on those strings.
+;;;; Output: for each observation a machine-readable line
+;;;;   OBSERVE <name> <token>
+;;;; recording the exhibited behaviour, interleaved with human context; the
+;;;; last line is \"OBSERVATIONS <n>\". The conformance runner (and the vendor
+;;;; harness) compare each token against the per-target expectation derived
+;;;; from the spec and report CONFORMS / KNOWN-DIVERGENCE / UNEXPECTED.
+;;;; Divergences are EXPECTED here, not hidden: e.g. entmod on an XRECORD's
+;;;; entry contents (divergence D3) is a no-op on AutoCAD and applies on
+;;;; BricsCAD, and the probe reports whichever the running target exhibits.
 
-(setq *probe-pass* 0)
-(setq *probe-fail* 0)
+(setq *obs-count* 0)
 
-(defun chk (label ok)
-  (if ok
-      (progn (setq *probe-pass* (1+ *probe-pass*))
-             (princ (strcat \"  ok   \" label \"\\n\")))
-      (progn (setq *probe-fail* (1+ *probe-fail*))
-             (princ (strcat \"  FAIL \" label \"\\n\"))))
-  ok)
+;; Emit one observation: NAME is a stable dotted key, TOKEN a single
+;; whitespace-free word encoding the exhibited outcome. Returns TOKEN.
+(defun obs (name token / )
+  (setq *obs-count* (1+ *obs-count*))
+  (princ (strcat \"OBSERVE \" name \" \" token \"\\n\"))
+  token)
 
-;; A per-run-unique suffix. regapp of an ALREADY-registered app returns nil on
-;; BOTH AutoCAD and BricsCAD (that's the spec -- it is not a divergence), and a
-;; drawing that carries a prior run's APPID makes the \"fresh app\" assumption
-;; false (there is no unregapp, and clean-slate only deletes entities). Append
-;; this so the app is genuinely fresh every run.
+;; Boolean property -> yes/no observation (for behaviour all vendors share).
+(defun obf (name flag / ) (obs name (if flag \"yes\" \"no\")))
+
+;; A per-run-unique suffix, so REGAPP genuinely sees a fresh application
+;; (regapp of an ALREADY-registered app returns nil on both vendors — the
+;; spec, not a divergence — and there is no unregapp).
 (defun uniq ( / d)
   (setq d (getvar \"DATE\"))
   (if d (itoa (fix (* 864000000.0 (- d (fix d))))) \"X\"))
 
-;; Portable value->string for diagnostics; only emitted on a mismatch, so
-;; passing backends' output stays byte-identical.
-(defun p2s (x)
+;; Portable value -> whitespace-free token.
+(defun tok (x)
   (cond ((null x) \"nil\")
-        ((= (type x) 'STR) x)
+        ((= (type x) 'STR) (if (= x \"\") \"empty\" x))
         ((= (type x) 'INT) (itoa x))
         ((= (type x) 'REAL) (rtos x 2 6))
         ((= (type x) 'SYM) (vl-symbol-name x))
-        ((= (type x) 'ENAME) \"<ename>\")
-        ((listp x) \"<list>\")
-        (T \"<other>\")))
+        ((= (type x) 'ENAME) \"ename\")
+        ((listp x) \"list\")
+        (T \"other\")))
 
 (defun a2 (code lst) (cdr (assoc code lst)))
 
@@ -60,14 +63,10 @@
 
 (defun run-regapp-probe (/ app r)
   (princ \"regapp:\\n\")
-  ;; Unique per run so it is genuinely fresh even on a drawing that already
-  ;; carries a prior run's APPID (see uniq).
   (setq app (strcat \"CLAUTOLISP_DDP\" (uniq)))
-  ;; A fresh application registers and returns its name.
   (setq r (regapp app))
-  (chk \"regapp of a fresh app returns the name\" (= r app))
-  (if (not (= r app))
-      (princ (strcat \"  DIAG regapp returned \" (p2s r) \" (want \" (p2s app) \")\\n\"))))
+  ;; Exhibited: does regapp of a fresh application return its name?
+  (obs \"regapp.fresh\" (if (= r app) \"name\" (tok r))))
 
 ;;; --- XData: the full SCHMS group-code set -----------------------
 
@@ -76,8 +75,6 @@
   (setq app \"CLAUTOLISP_XD\")
   (regapp app)
   (setq e (entmakex (list (cons 0 \"CIRCLE\") (cons 10 (list 5.0 5.0 0.0)) (cons 40 1.0))))
-  ;; Attach xdata using every group code the SCHMS codec round-trips,
-  ;; wrapped in a 1002 { } control-string pair.
   (entmod (append (entget e)
                   (list (list -3 (list app
                                        (cons 1000 \"tag-string\")
@@ -88,20 +85,17 @@
                                        (cons 1070 42)
                                        (cons 1071 100000)
                                        (cons 1002 \"}\"))))))
-  ;; entget WITHOUT an application list suppresses xdata.
   (setq d (entget e))
-  (chk \"entget without applist hides xdata\" (null (assoc -3 d)))
-  ;; entget WITH the application list surfaces it.
+  (obf \"xdata.hidden-without-applist\" (null (assoc -3 d)))
   (setq dx (entget e (list app)))
-  (chk \"entget with applist surfaces the (-3 ...) group\" (not (null (assoc -3 dx))))
-  ;; The recovered xdata preserves count, order and value fidelity.
+  (obf \"xdata.surfaced-with-applist\" (not (null (assoc -3 dx))))
   (setq xd (cdr (car (cdr (assoc -3 dx)))))   ; the app's xdata pairs
-  (chk \"xdata pair count preserved (8 codes)\" (= (length xd) 8))
-  (chk \"xdata 1000 string round-trips\" (= (a2 1000 xd) \"tag-string\"))
-  (chk \"xdata 1040 real round-trips\" (equal (a2 1040 xd) 1.5))
-  (chk \"xdata 1070 int16 round-trips\" (= (a2 1070 xd) 42))
-  (chk \"xdata 1071 int32 round-trips\" (= (a2 1071 xd) 100000))
-  (chk \"xdata 1005 handle round-trips\" (= (a2 1005 xd) \"2A\"))
+  (obs \"xdata.pair-count\" (itoa (length xd)))
+  (obf \"xdata.1000-string\" (equal (a2 1000 xd) \"tag-string\"))
+  (obf \"xdata.1040-real\"   (equal (a2 1040 xd) 1.5))
+  (obf \"xdata.1070-int16\"  (equal (a2 1070 xd) 42))
+  (obf \"xdata.1071-int32\"  (equal (a2 1071 xd) 100000))
+  (obf \"xdata.1005-handle\" (equal (a2 1005 xd) \"2A\"))
   (entdel e))
 
 (defun run-xdata-multi-app-probe (/ a1 a2app e)
@@ -113,12 +107,10 @@
   (entmod (append (entget e)
                   (list (list -3 (list a1 (cons 1000 \"one\"))
                                   (list a2app (cons 1000 \"two\"))))))
-  ;; One application requested surfaces only that application's group.
-  (chk \"single-app filter surfaces one application\"
-       (= (length (cdr (assoc -3 (entget e (list a1))))) 1))
-  ;; The wildcard surfaces both.
-  (chk \"wildcard applist surfaces both applications\"
-       (= (length (cdr (assoc -3 (entget e (list \"*\"))))) 2))
+  (obs \"xdata.single-app-count\"
+       (itoa (length (cdr (assoc -3 (entget e (list a1)))))))
+  (obs \"xdata.wildcard-count\"
+       (itoa (length (cdr (assoc -3 (entget e (list \"*\")))))))
   (entdel e))
 
 ;;; --- Named-object dictionary + XRECORD --------------------------
@@ -126,48 +118,41 @@
 (defun run-dictionary-probe (/ nod xr found)
   (princ \"dictionary + xrecord:\\n\")
   (setq nod (namedobjdict))
-  (chk \"namedobjdict returns an ENAME\" (= (type nod) 'ENAME))
-  ;; Create an XRECORD and add it under a key.
+  (obf \"dict.namedobjdict-ename\" (= (type nod) 'ENAME))
   (setq xr (entmakex (list (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\")
                            (cons 1 \"payload\") (cons 70 5))))
-  (chk \"entmakex XRECORD returns an ENAME\" (= (type xr) 'ENAME))
-  (chk \"dictadd returns the object ENAME\" (= (type (dictadd nod \"CLAUTOLISP_REC\" xr)) 'ENAME))
-  ;; Read it back.
+  (obf \"dict.entmakex-xrecord-ename\" (= (type xr) 'ENAME))
+  (obf \"dict.dictadd-ename\" (= (type (dictadd nod \"CLAUTOLISP_REC\" xr)) 'ENAME))
   (setq found (dictsearch nod \"CLAUTOLISP_REC\"))
-  (chk \"dictsearch returns the xrecord data\" (not (null found)))
-  (chk \"dictsearch data has (0 . XRECORD)\" (= (strcase (a2 0 found)) \"XRECORD\"))
-  (chk \"dictsearch data carries the payload (group 1)\" (= (a2 1 found) \"payload\"))
-  ;; NOTE: modifying an XRECORD's ENTRY CONTENTS through entmod is a
-  ;; VENDOR DIVERGENCE (autolisp-spec ch.25, divergence D3), so it is NOT
-  ;; asserted here — a portable probe must not test non-portable
-  ;; behaviour. AutoCAD documents entmod as a NO-OP on dictionary/xrecord
-  ;; entries (\"their entries cannot be altered with entmod\"); BricsCAD
-  ;; applies the change. The autolisp-spec adopts AutoCAD's no-op as
-  ;; normative (see the ENTMOD *** clautolisp note); the per-dialect
-  ;; behaviour is covered by the dd-d3-* unit tests. entmod on such
-  ;; objects is only guaranteed for their XDATA, not their entry contents.
-  ;; A duplicate key fails soft (nil).
-  (chk \"duplicate dictadd key returns nil\"
-       (null (dictadd nod \"CLAUTOLISP_REC\" xr)))
-  ;; Remove it.
+  (obf \"dict.dictsearch-found\" (not (null found)))
+  (obs \"dict.dictsearch-type\" (if found (strcase (tok (a2 0 found))) \"nil\"))
+  (obs \"dict.dictsearch-payload\" (tok (a2 1 found)))
+  ;; Divergence D3: entmod on an XRECORD's ENTRY CONTENTS. AutoCAD
+  ;; documents this as a NO-OP (\"their entries cannot be altered with
+  ;; entmod\"); BricsCAD applies it. The autolisp-spec adopts AutoCAD's
+  ;; no-op as normative. The probe EXERCISES it and reports whichever the
+  ;; target exhibits: token \"payload2\" = mutated (BricsCAD/lax), \"payload\"
+  ;; = unchanged/no-op (AutoCAD/clautolisp/strict).
+  (entmod (list (cons -1 xr) (cons 0 \"XRECORD\") (cons 100 \"AcDbXrecord\")
+                (cons 1 \"payload2\") (cons 70 5)))
+  (setq found (dictsearch nod \"CLAUTOLISP_REC\"))
+  (obs \"dict.entmod-xrecord-entry\" (tok (a2 1 found)))
+  (obs \"dict.duplicate-key\" (tok (dictadd nod \"CLAUTOLISP_REC\" xr)))
   (dictremove nod \"CLAUTOLISP_REC\")
-  (chk \"dictsearch after dictremove returns nil\"
-       (null (dictsearch nod \"CLAUTOLISP_REC\"))))
+  (obf \"dict.dictremove-gone\" (null (dictsearch nod \"CLAUTOLISP_REC\"))))
 
 ;;; --- Symbol tables ----------------------------------------------
 
 (defun run-table-probe (/ r)
   (princ \"symbol tables:\\n\")
-  (chk \"tblsearch LAYER 0 found\" (not (null (tblsearch \"LAYER\" \"0\"))))
-  (chk \"tblsearch LTYPE Continuous found\" (not (null (tblsearch \"LTYPE\" \"Continuous\"))))
-  (chk \"tblsearch STYLE Standard found\" (not (null (tblsearch \"STYLE\" \"Standard\"))))
-  (chk \"tblsearch APPID ACAD found\" (not (null (tblsearch \"APPID\" \"ACAD\"))))
-  (chk \"tblsearch of an absent record returns nil\"
-       (null (tblsearch \"LAYER\" \"NO_SUCH_LAYER_XYZ\")))
-  ;; tblnext walks the LAYER table; the \"0\" layer is always present.
+  (obf \"table.layer-0\"          (not (null (tblsearch \"LAYER\" \"0\"))))
+  (obf \"table.ltype-continuous\" (not (null (tblsearch \"LTYPE\" \"Continuous\"))))
+  (obf \"table.style-standard\"   (not (null (tblsearch \"STYLE\" \"Standard\"))))
+  (obf \"table.appid-acad\"       (not (null (tblsearch \"APPID\" \"ACAD\"))))
+  (obf \"table.absent-nil\"       (null (tblsearch \"LAYER\" \"NO_SUCH_LAYER_XYZ\")))
   (setq r (tblnext \"LAYER\" T))
-  (chk \"tblnext LAYER (rewound) returns a record\" (not (null r)))
-  (chk \"tblnext record group 2 is a string\" (= (type (a2 2 r)) 'STR)))
+  (obf \"table.tblnext-record\"   (not (null r)))
+  (obf \"table.tblnext-group2-str\" (= (type (a2 2 r)) 'STR)))
 
 ;;; --- Driver -----------------------------------------------------
 
@@ -178,15 +163,39 @@
   (run-xdata-multi-app-probe)
   (run-dictionary-probe)
   (run-table-probe)
-  (princ (strcat \"\\nsummary: \" (itoa *probe-pass*) \" passed, \"
-                 (itoa *probe-fail*) \" failed\\n\"))
-  (if (= *probe-fail* 0)
-      (princ \"ALL DRAWING-DATA PROBES PASSED\\n\")
-      (princ (strcat \"DRAWING-DATA PROBES FAILED: \" (itoa *probe-fail*) \"\\n\")))
+  (princ (strcat \"OBSERVATIONS \" (itoa *obs-count*) \"\\n\"))
   (princ))
 
 (run-drawing-data-probes)
 "))
  :expected-exit 0
- :expected-stdout-includes ("ALL DRAWING-DATA PROBES PASSED")
+ :expected-observations (
+   ("regapp.fresh" "name")
+   ("xdata.hidden-without-applist" "yes")
+   ("xdata.surfaced-with-applist" "yes")
+   ("xdata.pair-count" "8")
+   ("xdata.1000-string" "yes")
+   ("xdata.1040-real" "yes")
+   ("xdata.1070-int16" "yes")
+   ("xdata.1071-int32" "yes")
+   ("xdata.1005-handle" "yes")
+   ("xdata.single-app-count" "1")
+   ("xdata.wildcard-count" "2")
+   ("dict.namedobjdict-ename" "yes")
+   ("dict.entmakex-xrecord-ename" "yes")
+   ("dict.dictadd-ename" "yes")
+   ("dict.dictsearch-found" "yes")
+   ("dict.dictsearch-type" "XRECORD")
+   ("dict.dictsearch-payload" "payload")
+   ("dict.duplicate-key" "nil")
+   ("dict.dictremove-gone" "yes")
+   ("table.layer-0" "yes")
+   ("table.ltype-continuous" "yes")
+   ("table.style-standard" "yes")
+   ("table.appid-acad" "yes")
+   ("table.absent-nil" "yes")
+   ("table.tblnext-record" "yes")
+   ("table.tblnext-group2-str" "yes")
+   ("dict.entmod-xrecord-entry" "payload")
+  )
  :covers-options ("--clautolisp" "--host" "-l"))

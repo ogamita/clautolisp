@@ -58,6 +58,50 @@ one of each major action class (-x, -l, --main)."
     (is (some (lambda (a) (find "--dry-run" a :test #'string=)) argvs)
         "No scenario exercises --dry-run")))
 
+;;; --- probe observation model (autolisp-spec ch.25) ----------------
+
+(test conformance-parse-observations
+  "PARSE-OBSERVATIONS extracts (NAME . TOKEN) from OBSERVE lines, last
+write winning, ignoring human context."
+  (let ((table (alfe.conformance:parse-observations
+                (format nil "=== probe ===~%OBSERVE a.b yes~%noise~%  OBSERVE c.d payload~%OBSERVE a.b no~%OBSERVATIONS 3~%"))))
+    (is (string= "no" (cdr (assoc "a.b" table :test #'string=))))   ; last write wins
+    (is (string= "payload" (cdr (assoc "c.d" table :test #'string=))))
+    (is (= 2 (length table)))))
+
+(test conformance-classify-observations-verdicts
+  "CLASSIFY-OBSERVATIONS yields :conforms / :known-divergence /
+:unexpected / :missing and gates only on the last two."
+  (let ((normative "OBSERVE keep.same payload
+OBSERVE entmod.xrecord payload")
+        (deviant "OBSERVE keep.same payload
+OBSERVE entmod.xrecord payload2"))
+    ;; normative target: exhibited = expected = normative -> conforms, no failures
+    (multiple-value-bind (v f)
+        (alfe.conformance:classify-observations
+         normative '(("keep.same" "payload") ("entmod.xrecord" "payload")))
+      (is (= 2 (count :conforms v :key #'second)))
+      (is (null f)))
+    ;; bricscad target: exhibited = expected (payload2) but normative differs
+    ;; -> known-divergence, still green
+    (multiple-value-bind (v f)
+        (alfe.conformance:classify-observations
+         deviant '(("keep.same" "payload") ("entmod.xrecord" "payload2" "payload")))
+      (is (= 1 (count :known-divergence v :key #'second)))
+      (is (null f)))
+    ;; a target that should no-op but mutated -> unexpected (a real bug), gates
+    (multiple-value-bind (v f)
+        (alfe.conformance:classify-observations
+         deviant '(("keep.same" "payload") ("entmod.xrecord" "payload")))
+      (is (= 1 (count :unexpected v :key #'second)))
+      (is (= 1 (length f))))
+    ;; probe never emitted an expected observation -> missing, gates
+    (multiple-value-bind (v f)
+        (alfe.conformance:classify-observations
+         normative '(("keep.same" "payload") ("never.emitted" "x")))
+      (is (= 1 (count :missing v :key #'second)))
+      (is (= 1 (length f))))))
+
 (test conformance-summarise-results-exit-code
   "SUMMARISE-RESULTS returns 0 when every result is :pass / :skipped
 and 1 when any is :fail. Drives the CLI runner's exit-code logic."

@@ -57,6 +57,11 @@
            #:scenario-result-exit-code
            #:scenario-result-stdout
            #:scenario-result-stderr
+           #:scenario-result-observations
+           ;; probe-model observations (autolisp-spec ch.25)
+           #:scenario-expected-observations
+           #:parse-observations
+           #:classify-observations
            ;; helpers
            #:summarise-results
            #:any-failed-p
@@ -82,6 +87,14 @@
 (defun scenario-stdin (scenario)          (getf scenario :stdin))
 (defun scenario-setup-files (scenario)    (getf scenario :setup-files))
 (defun scenario-covers-options (scenario) (getf scenario :covers-options))
+(defun scenario-expected-observations (scenario)
+  "The per-target observation expectations (autolisp-spec ch.25 probe
+model). Each entry is (NAME EXPECTED-TOKEN &optional NORMATIVE-TOKEN):
+EXPECTED-TOKEN is what THIS target should exhibit; NORMATIVE-TOKEN, when
+present and different, is the autolisp-spec normative behaviour — so a
+matching exhibition is a recognised KNOWN-DIVERGENCE rather than a plain
+CONFORMS. NIL when the scenario still uses the older pass-line model."
+  (getf scenario :expected-observations))
 (defun scenario-version-arg (scenario)
   "Version string the CLI's RUN sees as :VERSION. Defaults so scenarios
 that don't care can omit it."
@@ -98,6 +111,7 @@ output."
   (scenario      nil)
   (status        :pending :type (member :pending :pass :fail :skipped))
   (failures      nil :type list)
+  (observations  nil :type list)   ; (NAME VERDICT EXHIBITED EXPECTED NORMATIVE) per obs
   (exit-code     nil)
   (stdout        "" :type string)
   (stderr        "" :type string))
@@ -316,6 +330,73 @@ path traversal sanity-check beyond what the OS enforces."
                            :external-format :utf-8)
         (write-string content out)))))
 
+(defun parse-observations (stdout)
+  "Parse the probe's `OBSERVE <name> <token>' lines from STDOUT into an
+alist (NAME . TOKEN), last write winning. A probe is an INSTRUMENT that
+emits one such line per exhibited behaviour (autolisp-spec ch.25 probe
+model); everything else on stdout is human context and ignored."
+  (let ((table nil))
+    (with-input-from-string (in stdout)
+      (loop for line = (read-line in nil :eof)
+            until (eq line :eof)
+            do (let* ((trimmed (string-left-trim '(#\Space #\Tab #\Return) line)))
+                 (when (and (>= (length trimmed) 8)
+                            (string= "OBSERVE " (subseq trimmed 0 8)))
+                   (let* ((body (string-trim '(#\Space #\Tab #\Return)
+                                             (subseq trimmed 8)))
+                          (sp (position #\Space body)))
+                     (when sp
+                       (let ((name (subseq body 0 sp))
+                             (token (string-trim '(#\Space #\Tab #\Return)
+                                                 (subseq body sp))))
+                         (setf table (acons name token
+                                            (remove name table
+                                                    :key #'car :test #'string=))))))))))
+    (nreverse table)))
+
+(defun classify-observations (stdout expected-observations)
+  "Compare the exhibited OBSERVE tokens in STDOUT against
+EXPECTED-OBSERVATIONS (each (NAME EXPECTED &optional NORMATIVE)). Return
+two values: the verdict list ((NAME VERDICT EXHIBITED EXPECTED NORMATIVE)
+…) and the failure diagnostics. Verdicts:
+  :conforms          exhibited = expected, and expected = normative;
+  :known-divergence  exhibited = expected, but expected differs from the
+                     autolisp-spec NORMATIVE token (a documented,
+                     recognised divergence for this target) — NOT a
+                     failure;
+  :unexpected        exhibited ≠ expected (the target deviates from what
+                     it should do) — a failure;
+  :missing           the probe emitted no observation of that NAME — a
+                     failure."
+  (let ((exhibited-table (parse-observations stdout))
+        (verdicts nil)
+        (failures nil))
+    (dolist (entry expected-observations)
+      (destructuring-bind (name expected &optional normative) entry
+        (let* ((cell (assoc name exhibited-table :test #'string=))
+               (exhibited (and cell (cdr cell)))
+               (verdict
+                 (cond
+                   ((null cell) :missing)
+                   ((string= exhibited expected)
+                    (if (and normative (not (string= normative expected)))
+                        :known-divergence
+                        :conforms))
+                   (t :unexpected))))
+          (push (list name verdict exhibited expected normative) verdicts)
+          (case verdict
+            (:missing
+             (push (format nil "observation ~S missing (expected ~S)"
+                           name expected)
+                   failures))
+            (:unexpected
+             (push (format nil "observation ~S = ~S, expected ~S~@[ (normative ~S)~]"
+                           name exhibited expected
+                           (and normative (not (string= normative expected))
+                                normative))
+                   failures))))))
+    (values (nreverse verdicts) (nreverse failures))))
+
 (defun compare-against-expectations (result scenario)
   "Walk every :expected-* declaration in SCENARIO and append a
 diagnostic to RESULT's FAILURES for each mismatch. STATUS is set to
@@ -342,6 +423,15 @@ diagnostic to RESULT's FAILURES for each mismatch. STATUS is set to
       (when (search needle stderr)
         (push (format nil "stderr contains forbidden substring ~S" needle)
               failures)))
+    ;; Probe-model observations (autolisp-spec ch.25): compare exhibited
+    ;; behaviour against the per-target expectation. :unexpected / :missing
+    ;; gate; :known-divergence is informational.
+    (let ((expected-obs (scenario-expected-observations scenario)))
+      (when expected-obs
+        (multiple-value-bind (verdicts obs-failures)
+            (classify-observations stdout expected-obs)
+          (setf (scenario-result-observations result) verdicts)
+          (dolist (msg obs-failures) (push msg failures)))))
     (setf (scenario-result-failures result) (nreverse failures)
           (scenario-result-status result)
           (if failures :fail :pass))
@@ -377,9 +467,29 @@ otherwise — the runner's exit code maps from this."
   (let* ((counts (count-by-status results))
          (pass (getf counts :pass))
          (fail (getf counts :fail))
-         (skip (getf counts :skipped)))
+         (skip (getf counts :skipped))
+         (all-obs (loop for r in results append (scenario-result-observations r)))
+         (n-conforms (count :conforms all-obs :key #'second))
+         (n-known    (count :known-divergence all-obs :key #'second)))
     (format stream "~&alfe conformance: ~D pass, ~D fail, ~D skipped~%"
             pass fail skip)
+    (when (plusp (length all-obs))
+      (format stream "observations: ~D conforms, ~D known-divergence, ~D unexpected~%"
+              n-conforms n-known
+              (count :unexpected all-obs :key #'second)))
+    ;; Known divergences are diagnostic, not failures: surface them so the
+    ;; probe run documents where each target departs from the normative
+    ;; spec (autolisp-spec ch.25).
+    (when (plusp n-known)
+      (format stream "~%Known divergences (target departs from the normative spec):~%")
+      (dolist (r results)
+        (dolist (obs (scenario-result-observations r))
+          (destructuring-bind (name verdict exhibited expected normative) obs
+            (declare (ignore expected))
+            (when (eq verdict :known-divergence)
+              (format stream "  ~A / ~A: exhibited ~S; normative ~S~%"
+                      (scenario-name (scenario-result-scenario r))
+                      name exhibited normative))))))
     (when (plusp fail)
       (format stream "~%Failures:~%")
       (dolist (r results)

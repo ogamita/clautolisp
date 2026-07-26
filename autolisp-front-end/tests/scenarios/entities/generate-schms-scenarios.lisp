@@ -21,7 +21,7 @@
             while ch do (write-char ch out)))))
 
 (defun emit-scenario (out &key name description classification argv
-                              lsp-file lsp-text pass-line covers)
+                              lsp-file lsp-text pass-line observations covers)
   (format out "(:name ~S~%" name)
   (format out " :description ~S~%" description)
   (format out " :classification :~(~A~)~%" (symbol-name classification))
@@ -30,7 +30,16 @@
   (prin1 lsp-text out)
   (format out "))~%")
   (format out " :expected-exit 0~%")
-  (format out " :expected-stdout-includes (~S)~%" pass-line)
+  ;; Probe-model scenarios (autolisp-spec ch.25) carry per-target
+  ;; :expected-observations; the pre-observation probes still key on a
+  ;; stdout pass-line.
+  (if observations
+      (progn
+        (format out " :expected-observations (~%")
+        (dolist (o observations)
+          (format out "   ~S~%" o))
+        (format out "  )~%"))
+      (format out " :expected-stdout-includes (~S)~%" pass-line))
   (format out " :covers-options ~S)~%" covers))
 
 (defun write-scenario (sexp-name &rest args)
@@ -46,31 +55,69 @@
        (el-text (slurp el-lsp))
        (dd-pass "ALL DRAWING-DATA PROBES PASSED")
        (sel-pass "ALL SELECTION PROBES PASSED")
-       (el-pass "ALL ENTITY PROBES PASSED"))
+       (el-pass "ALL ENTITY PROBES PASSED")
+       ;; --- drawing-data expected observations (autolisp-spec ch.25) ---
+       ;; The portable observations every target must exhibit identically.
+       (dd-obs-portable
+        '(("regapp.fresh" "name")
+          ("xdata.hidden-without-applist" "yes")
+          ("xdata.surfaced-with-applist" "yes")
+          ("xdata.pair-count" "8")
+          ("xdata.1000-string" "yes")
+          ("xdata.1040-real" "yes")
+          ("xdata.1070-int16" "yes")
+          ("xdata.1071-int32" "yes")
+          ("xdata.1005-handle" "yes")
+          ("xdata.single-app-count" "1")
+          ("xdata.wildcard-count" "2")
+          ("dict.namedobjdict-ename" "yes")
+          ("dict.entmakex-xrecord-ename" "yes")
+          ("dict.dictadd-ename" "yes")
+          ("dict.dictsearch-found" "yes")
+          ("dict.dictsearch-type" "XRECORD")
+          ("dict.dictsearch-payload" "payload")
+          ("dict.duplicate-key" "nil")
+          ("dict.dictremove-gone" "yes")
+          ("table.layer-0" "yes")
+          ("table.ltype-continuous" "yes")
+          ("table.style-standard" "yes")
+          ("table.appid-acad" "yes")
+          ("table.absent-nil" "yes")
+          ("table.tblnext-record" "yes")
+          ("table.tblnext-group2-str" "yes")))
+       ;; Divergence D3 (entmod on an XRECORD entry): the autolisp-spec
+       ;; adopts AutoCAD's NO-OP (readback "payload") as normative. The
+       ;; normative targets (clautolisp under the strict default, AutoCAD)
+       ;; exhibit "payload" -> CONFORMS; BricsCAD mutates ("payload2") ->
+       ;; KNOWN-DIVERGENCE (3rd token = the normative value).
+       (dd-obs-normative
+        (append dd-obs-portable '(("dict.entmod-xrecord-entry" "payload"))))
+       (dd-obs-bricscad
+        (append dd-obs-portable
+                '(("dict.entmod-xrecord-entry" "payload2" "payload")))))
   ;; --- drawing-data ---
   (write-scenario "drawing-data.sexp"
     :name "drawing-data-clautolisp"
     :description "Portable drawing-data-structures probe (drawing-data-probe.lsp) run under the clautolisp backend with the mock host: REGAPP; the full XData group-code set (1000/1002/1003/1005/1040/1070/1071) round-tripped through entget/entmod preserving order and multiplicity; multi-application xdata filtering; the named-object-dictionary tree with an XRECORD create/read/mutate/remove lifecycle; and tblsearch/tblnext over LAYER/LTYPE/STYLE/APPID. The identical .lsp runs unchanged on BricsCAD/AutoCAD via alfe."
     :classification :clautolisp-only
-    ;; Runs under the normal (normative) dialect: the probe no longer
-    ;; asserts the non-portable XRECORD entmod-mutate (divergence D3), so
-    ;; it passes under every dialect and on both real vendors.
+    ;; Runs under the normative dialect (strict, the --clautolisp default),
+    ;; so entmod on an XRECORD entry is a no-op -> "payload" -> CONFORMS.
     :argv '("--clautolisp" "--host" "mock" "-l" "drawing-data-probe.lsp")
-    :lsp-file dd-lsp :lsp-text dd-text :pass-line dd-pass
+    :lsp-file dd-lsp :lsp-text dd-text :observations dd-obs-normative
     :covers '("--clautolisp" "--host" "-l"))
   (write-scenario "drawing-data-bricscad.sexp"
     :name "drawing-data-bricscad"
     :description "The SAME portable drawing-data-structures probe (drawing-data-probe.lsp), run UNCHANGED on BricsCAD via alfe. Classified bricscad-only: the conformance runner SKIPS it unless BricsCAD is detected on the host — the vendor-verification tail for the drawing-data-structures-parity work (BLOCKED on real CAD access). When a BricsCAD install is present it must print the same ALL DRAWING-DATA PROBES PASSED line."
     :classification :bricscad-only
     :argv '("--bricscad" "-l" "drawing-data-probe.lsp")
-    :lsp-file dd-lsp :lsp-text dd-text :pass-line dd-pass
+    :lsp-file dd-lsp :lsp-text dd-text :observations dd-obs-bricscad
     :covers '("--bricscad" "-l"))
   (write-scenario "drawing-data-autocad.sexp"
     :name "drawing-data-autocad"
     :description "The SAME portable drawing-data-structures probe (drawing-data-probe.lsp), run UNCHANGED on AutoCAD via alfe. Classified autocad-only: the conformance runner SKIPS it unless AutoCAD is detected on the host — the vendor-verification tail for the drawing-data-structures-parity work (BLOCKED on real CAD access). When an AutoCAD install is present it must print the same ALL DRAWING-DATA PROBES PASSED line."
     :classification :autocad-only
     :argv '("--autocad" "-l" "drawing-data-probe.lsp")
-    :lsp-file dd-lsp :lsp-text dd-text :pass-line dd-pass
+    :lsp-file dd-lsp :lsp-text dd-text :observations dd-obs-normative
     :covers '("--autocad" "-l"))
   ;; --- selection ---
   (write-scenario "selection.sexp"
