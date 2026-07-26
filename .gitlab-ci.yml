@@ -682,7 +682,11 @@ benchmark:clautolisp:windows:
   script:
     - make build-programs
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
-    - make -C autolisp-benchmark run-clautolisp-sbcl *> dist/bench/clautolisp-windows.txt
+    # Merge all streams (*>&1) then write UTF-8. PowerShell's bare `*>`
+    # redirection defaults to UTF-16LE, which the Pages report parser used
+    # to read as UTF-8 garbage (empty column); the parser now sniffs the
+    # BOM, but UTF-8 keeps the raw artifact human-readable too.
+    - make -C autolisp-benchmark run-clautolisp-sbcl *>&1 | Out-File -Encoding utf8 dist/bench/clautolisp-windows.txt
     - Get-Content dist/bench/clautolisp-windows.txt
 
 # --- CAD: alfe drives the real CAD to run the same suite ---
@@ -711,7 +715,7 @@ benchmark:bricscad:windows:
     AUTOLISP_BRICSCAD_PROFILE: '<<Profil sans nom>>'
   script:
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
-    - make -C autolisp-benchmark run-bricscad-windows *> dist/bench/bricscad-windows.txt
+    - make -C autolisp-benchmark run-bricscad-windows *>&1 | Out-File -Encoding utf8 dist/bench/bricscad-windows.txt
     - Get-Content dist/bench/bricscad-windows.txt
 
 benchmark:autocad:windows:
@@ -720,7 +724,7 @@ benchmark:autocad:windows:
   needs: [{ job: "build:alfe:windows", artifacts: true }]
   script:
     - New-Item -ItemType Directory -Force dist/bench | Out-Null
-    - make -C autolisp-benchmark run-autocad-windows *> dist/bench/autocad-windows.txt
+    - make -C autolisp-benchmark run-autocad-windows *>&1 | Out-File -Encoding utf8 dist/bench/autocad-windows.txt
     - Get-Content dist/bench/autocad-windows.txt
 
 # --- publish: aggregate whatever ran into one table on GitLab Pages ---

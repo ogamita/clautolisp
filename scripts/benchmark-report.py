@@ -13,32 +13,47 @@ higher = faster) for GitLab Pages, and <out-dir>/benchmarks.csv.
 """
 import sys, os, glob, html, csv
 
+def read_text(path):
+    """Read PATH as text, honouring a UTF-8/UTF-16 byte-order mark. The
+    Windows CI jobs redirect with PowerShell (`*>` / Out-File), which
+    defaults to UTF-16LE; decoding those as UTF-8 turns the whole table
+    into `c\\x00l\\x00a\\x00s\\x00s` garbage and every row is lost. Sniff
+    the BOM so linux/macos (UTF-8) and windows (UTF-16) all parse."""
+    with open(path, "rb") as f:
+        raw = f.read()
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        enc = "utf-16"            # the BOM carries the endianness
+    elif raw[:3] == b"\xef\xbb\xbf":
+        enc = "utf-8-sig"
+    else:
+        enc = "utf-8"
+    return raw.decode(enc, errors="replace")
+
 def parse(path):
     impl = platform = overall = None
     rows = {}
     in_table = False
-    with open(path, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            s = line.strip()
-            low = s.lower()
-            if low.startswith("implementation") and ":" in s:
-                impl = s.split(":", 1)[1].strip()
-            elif low.startswith("platform") and ":" in s:
-                platform = s.split(":", 1)[1].strip()
-            elif low.startswith("overall iters/s") and ":" in s:
-                overall = s.split(":", 1)[1].strip()
-            elif low.startswith("class") and "iters/sec" in low:
-                in_table = True
-            elif s.startswith("---") or s.startswith("==="):
-                in_table = False
-            elif in_table and s:
-                p = s.split()
-                # class benchmark iters iters/sec us/iter
-                if len(p) >= 5:
-                    try:
-                        rows[p[1]] = float(p[3])
-                    except ValueError:
-                        pass
+    for line in read_text(path).splitlines():
+        s = line.strip()
+        low = s.lower()
+        if low.startswith("implementation") and ":" in s:
+            impl = s.split(":", 1)[1].strip()
+        elif low.startswith("platform") and ":" in s:
+            platform = s.split(":", 1)[1].strip()
+        elif low.startswith("overall iters/s") and ":" in s:
+            overall = s.split(":", 1)[1].strip()
+        elif low.startswith("class") and "iters/sec" in low:
+            in_table = True
+        elif s.startswith("---") or s.startswith("==="):
+            in_table = False
+        elif in_table and s:
+            p = s.split()
+            # class benchmark iters iters/sec us/iter
+            if len(p) >= 5:
+                try:
+                    rows[p[1]] = float(p[3])
+                except ValueError:
+                    pass
     return {"impl": impl, "platform": platform, "overall": overall, "rows": rows}
 
 def main():

@@ -163,23 +163,32 @@ result alist: NAME CATEGORY REPS MS."
 (setq *bench-col-name* 16)
 (setq *bench-col-num* 16)
 
+;; IMPORTANT: emit each table line with a SINGLE princ (assemble the whole
+;; row first, newline included). Under a line-buffered host adapter — alfe's
+;; remote-io, which drives the CAD backends — every princ write becomes its
+;; own protocol line, so a per-field princ splits one logical row across five
+;; physical lines and the parser (scripts/benchmark-report.py) can no longer
+;; find the "class ... iters/sec" header or the data rows. The banner /
+;; summary lines already work because each is one strcat'd princ; the table
+;; is the only place that fanned out per column. See the empty CAD columns
+;; on GitLab Pages before this fix.
 (defun bench--print-table-header ( / )
-  (bench--out (bench--pad-right "class" *bench-col-cat*))
-  (bench--out (bench--pad-right "benchmark" *bench-col-name*))
-  (bench--out (bench--pad-left "iters" *bench-col-num*))
-  (bench--out (bench--pad-left "iters/sec" *bench-col-num*))
-  (bench--out (bench--pad-left "us/iter" *bench-col-num*))
-  (bench--nl))
+  (bench--out
+    (strcat (bench--pad-right "class" *bench-col-cat*)
+            (bench--pad-right "benchmark" *bench-col-name*)
+            (bench--pad-left "iters" *bench-col-num*)
+            (bench--pad-left "iters/sec" *bench-col-num*)
+            (bench--pad-left "us/iter" *bench-col-num*)
+            "\n")))
 
 (defun bench--print-row (r / )
-  (bench--out (bench--pad-right (cdr (assoc 'category r)) *bench-col-cat*))
-  (bench--out (bench--pad-right (cdr (assoc 'name r)) *bench-col-name*))
-  (bench--out (bench--pad-left (itoa (bench--reps r)) *bench-col-num*))
-  (bench--out (bench--pad-left (bench--fmt-real (bench--per-sec r) 1)
-                               *bench-col-num*))
-  (bench--out (bench--pad-left (bench--fmt-real (bench--us-per-rep r) 4)
-                               *bench-col-num*))
-  (bench--nl))
+  (bench--out
+    (strcat (bench--pad-right (cdr (assoc 'category r)) *bench-col-cat*)
+            (bench--pad-right (cdr (assoc 'name r)) *bench-col-name*)
+            (bench--pad-left (itoa (bench--reps r)) *bench-col-num*)
+            (bench--pad-left (bench--fmt-real (bench--per-sec r) 1) *bench-col-num*)
+            (bench--pad-left (bench--fmt-real (bench--us-per-rep r) 4) *bench-col-num*)
+            "\n")))
 
 ;;; --- top-level entry -----------------------------------------------
 
