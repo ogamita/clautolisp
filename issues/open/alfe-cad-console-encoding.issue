@@ -81,3 +81,47 @@ to the binary), so a built alfe works without env vars or install.
 Re-run vendor:probes:autocad on master: bootstrap should pass the
 decode and reach the probe verdicts. The BricsCAD path likely never hit
 this (UTF-8), but apply the same robustness there if a probe surfaces it.
+
+* BricsCAD/macOS data point (alfe 1.6.14 / clautolisp 1.6.17, BricsCAD V26)
+
+Reported from the SCHMS+ CAD test harness (sncf-reseau/src/schms,
+tests/test-cad.lsp), which drives BricsCAD through
+`alfe --bricscad --mode batch` and whose application sources are cp1252.
+
+The defensive part shipped in 1.6.1 works: the drain no longer signals.
+On 1.6.0 an accented byte from the application killed the run outright —
+
+    alfe: :UTF-8 stream decoding error on
+      .../protocol/stdout.txt: the octet sequence #(233 32 97)
+      cannot be decoded.
+
+— and on 1.6.14 the same output is drained without incident. Good.
+
+But the "to design" part above is still open, and it is not merely
+cosmetic on this platform: the character is *lost*. BricsCAD on macOS
+writes its console in **Mac Roman**, and the drain's lenient fallback
+decodes it as Latin-1, so accented characters silently become control
+characters:
+
+    ;; CAD side, one character, code 233 = 'é'
+    alfe -norc --bricscad --mode batch -e WINDOWS-1252 -E <ENC> \
+         -x '(princ (strcat "\nACCENT<" (chr 233) ">FIN"))'
+
+    drained bytes:  41 43 43 45 4e 54 3c  c2 8e  3e 46 49 4e
+                    A  C  C  E  N  T  <   U+008E >  F  I  N
+
+`é` was emitted by BricsCAD as Mac Roman 0x8E and decoded as U+008E
+(SS2) instead of U+00E9. Identical output for `-E MAC-ROMAN`,
+`-E WINDOWS-1252` and `-E UTF-8` — i.e. **-E has no effect whatsoever on
+the CAD subprocess console**, on this backend, at 1.6.14.
+
+So the per-backend console-encoding option sketched above would want a
+third default alongside the two listed: bricscad -> utf-8 on Windows,
+but **mac-roman on macOS**. And whatever the default, `-E` (or its
+per-backend successor) should actually reach drain-channel for the
+BricsCAD backend, which it currently does not.
+
+Impact for a caller: any diagnostic the application prints with an
+accent is unreadable in the alfe transcript. It does not corrupt test
+verdicts (those are ASCII), but it makes a failing CAD run harder to
+read than it should be.

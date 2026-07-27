@@ -7,8 +7,18 @@ Reported from: SCHMS+ test harness (sncf-reseau/src/schms, Makefile
 targets test-cad-* / test-unitaire-clautolisp) driving
 `alfe --bricscad --mode batch` on macOS, BricsCAD V26.
 
-Observed with the installed alfe 1.6.0. The code path is unchanged at
-repository HEAD (alfe 1.6.14).
+First observed on alfe 1.6.0; **re-confirmed reproducing on alfe 1.6.14
+/ clautolisp 1.6.17**:
+
+    $ mkdir -p /tmp/wdtest && echo precious > /tmp/wdtest/my-result.txt
+    $ AUTOLISP_WORKDIR=/tmp/wdtest \
+        alfe -norc --clautolisp --host mock -x '(princ "hi")' --quit -q
+    $ ls /tmp/wdtest
+    ls: /tmp/wdtest: No such file or directory
+
+The directory and everything in it are gone. Note this needs no CAD:
+it is core alfe behaviour, reproducible on the clautolisp backend in a
+couple of seconds.
 
 Summary
 -------

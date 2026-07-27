@@ -7,9 +7,21 @@ Reported from: SCHMS+ CAD test harness (sncf-reseau/src/schms,
 tests/test-cad.lsp) run via `alfe --bricscad --mode batch` on macOS,
 BricsCAD V26.
 
-Observed with the installed alfe 1.6.0. The faulty code path is
-UNCHANGED at repository HEAD (alfe 1.6.14) — see "Root cause" below for
-exact locations — so this is expected to still reproduce.
+First observed on alfe 1.6.0; **re-confirmed reproducing on alfe 1.6.14
+/ clautolisp 1.6.17** (BricsCAD V26, macOS), which is what the "Root
+cause" section below describes.
+
+The literal-argument case was re-checked at the same time and WORKS:
+
+    (load "/abs/path/outils-test-cad.lsp")   => LITERAL-OK
+    (vl-catch-all-apply 'load (list p))      => APPLY=OK
+    (load p)                                 => bad argument type <P>
+
+That matters for the triage note at the end of this issue: the failure
+described by cad-vl-filename-directory-and-load — an in-file `(load
+<literal absolute path>)` — does NOT reproduce here, so if it was real
+it is a separate problem, and if it was a misdiagnosis of this bug then
+that issue can simply be closed.
 
 Summary
 -------
