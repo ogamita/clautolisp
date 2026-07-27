@@ -1,0 +1,506 @@
+#+TITLE: Multi-Document Semantics of AutoCAD and BricsCAD — Analysis for clautolisp
+#+SUBTITLE: State partitioning, namespace communication, and the concurrency model
+#+AUTHOR: Pascal Bourguignon
+#+DATE: 2026-07-26
+#+OPTIONS: toc:3 num:t ^:nil
+#+STARTUP: overview
+
+* Purpose and status
+
+This document is *analysis input*, not a specification.  It records what the
+vendor documentation actually says about how AutoCAD and BricsCAD partition
+state and execution across multiple open documents, and derives the
+constraints this places on ~clautolisp~ (the hosted AutoLISP interpreter),
+~alfe~ (the front-end and wire protocol), and ~aldo~ (the debugger
+orchestrator).
+
+Every factual claim carries a provenance grade:
+
+| Grade | Meaning                                                                 |
+|-------+-------------------------------------------------------------------------|
+| A     | Primary vendor documentation (Autodesk help, ObjectARX guide, Bricsys)  |
+| B     | Vendor employee blog or vendor staff forum answer                       |
+| C     | Third-party summary; treat as a hypothesis to verify                    |
+| V     | Not established by any source; must be settled by experiment (see §9)   |
+
+Nothing below has been verified against a running AutoCAD or BricsCAD in the
+course of this analysis.  Section 9 lists the discriminating experiments.
+
+* Terminology (adopted from the ObjectARX Developer's Guide)
+
+Using the vendor's vocabulary avoids the ambiguity of "image", "namespace"
+and "context" being used interchangeably.
+
+- *document* :: an MDI document window, an execution context, an associated
+  editor state, and a single current database, plus any number of side
+  databases opened in association with it.  A document is *not* synonymous
+  with its ~AcDbDatabase~. [A]
+- *active document* :: the one holding window focus, which receives the next
+  user input event. [A]
+- *current document* :: the one whose execution context is current.  It is
+  normally the active document during user-input processing, but programs can
+  temporarily make another document current, and the two differ during
+  transitional states such as document activation notification. [A]
+- *execution context* :: either a *document context* (one per open document)
+  or the *application context*, also called the session context. [A]
+- *namespace* :: the AutoLISP environment holding a set of symbols, both
+  variables and functions.  One per document, plus the blackboard, plus one
+  per separate-namespace VLX. [A]
+- *per-application data* :: needs to exist once per application. [A]
+- *per-context data* :: instantiated once per execution context, the
+  application context included.  The command processor is the canonical
+  example. [A]
+- *per-document data* :: instantiated once per document. [A]
+
+Note the three-level distinction: per-application, per-context, per-document.
+Per-context is not per-document, because the application context also owns
+one instance.  ~clautolisp~ needs all three levels.
+
+* State partitioning
+
+** Per-document state
+
+| State                                 | Notes                                                       | Grade |
+|---------------------------------------+-------------------------------------------------------------+-------|
+| AutoLISP namespace: variables         | Isolated between documents                                  | A     |
+| AutoLISP namespace: function symbols  | ~(defun c:foo …)~ loaded in doc A is undefined in doc B     | A     |
+| Current database ~AcDbDatabase~       | Plus side databases opened in association with the document | A     |
+| Editor state, command processor       | Per execution context                                       | A     |
+| Entity names (~ename~)                | Handles into one database; meaningless elsewhere            | A     |
+| Selection sets                        | Limited in number, per document                             | A     |
+| Undo/redo stack                       | Per document                                                | A     |
+| ~vlax-ldata~ payloads                 | Stored in the drawing's dictionaries; persistent in the DWG | A     |
+| Reactors created in the namespace     | Live in the creating namespace                              | A     |
+| System variables with scope *Drawing* | May differ from drawing to drawing                          | A     |
+| ~USERI1..5~, ~USERR1..5~, ~USERS1..5~ | Free user sysvars, saved in the drawing                     | A     |
+| ~acaddoc.lsp~ / ~on_doc_load*.lsp~    | Loaded once per document                                    | A/B   |
+
+The load-time behaviour matters for the propagation primitives:
+
+- AutoCAD: ~acad.lsp~ is loaded once per session unless ~ACADLSPASDOC~ = 1, in
+  which case it is loaded for each document; ~acaddoc.lsp~ is loaded per
+  document; ~<menu>.mnl~ is loaded per attached menu, per document. [A/B]
+- BricsCAD: ~on_start.lsp~ / ~on_start_default.lsp~ per session,
+  ~on_doc_load.lsp~ / ~on_doc_load_default.lsp~ per document, independently of
+  ~ACADLSPASDOC~; ~ACADLSPASDOC~ is nevertheless honoured for ~on_start~.  Since
+  V17 the registry DemandLoad mechanism and Appload AutoLoad were extended to
+  Lisp and VBA modules, both at startup and per opened/created drawing;
+  ~autoload.rx~ lists modules line by line; ~(vl-list-loaded-lisp)~ reports what
+  is loaded. [A for DevRef statements, B for forum details]
+
+** Session-wide (shared) state
+
+| State                                          | Scope                | Lisp access                            | Grade |
+|------------------------------------------------+----------------------+----------------------------------------+-------|
+| Blackboard namespace                           | Session              | ~vl-bb-set~ / ~vl-bb-ref~                | A     |
+| System variables with scope *Registry*         | Session + machine    | ~getvar~ / ~setvar~                      | A     |
+| System variables with scope *Not saved*        | Session (volatile)   | ~getvar~ / ~setvar~                      | A     |
+| AutoCAD/BricsCAD environment variables         | Profile / registry   | ~getenv~ / ~setenv~, ~vl-registry-*~      | A     |
+| Loaded ARX/BRX/.NET modules and their subrs    | Session              | callable from every document namespace | A     |
+| C++/.NET globals and statics inside those      | Session              | —                                      | A/B   |
+| Application object and Documents collection    | Session              | ~vlax-get-acad-object~ (COM, Windows)    | A     |
+| Separate-namespace VLX (AutoCAD only)          | Session              | ~vl-doc-export~ / ~vl-doc-import~         | A     |
+| Menus, CUI, profiles, support paths            | Session              | ~getvar~, ~vl-registry-*~                | A     |
+| Filesystem, OS environment                     | Machine              | ~open~, ~getenv~                         | A     |
+
+Two consequences deserve emphasis.
+
+1. AutoLISP is the *only* API in AutoCAD that is inherently document-centric.
+   VBA, ObjectARX and the managed API live in the session context by default,
+   which means a global variable in an ARX module is shared by all documents,
+   and a subr an ARX module registers is visible from every document
+   namespace.  The decision to give each document its own Lisp environment
+   was made during AutoCAD 2000 development, primarily for backward
+   compatibility with the pre-MDI, document-centric Lisp corpus. [B, Autodesk
+   employee blog]
+
+2. Everything a ~clautolisp~ program can reach that is *not* the Lisp
+   namespace itself is potentially shared.  A "hermetic per-document image"
+   is therefore a fiction at the boundary: ~setvar~ on a Registry-scoped
+   variable, ~setenv~, ~vl-registry-write~ and ~open~ all escape the document.
+
+** The blackboard
+
+- It is a namespace attached to neither a document nor a VLX; it can be read
+  and written from any document or VLX. [A]
+- Setting a blackboard variable has no effect on a same-named variable in any
+  other namespace, and vice versa.  The two are entirely distinct bindings.
+  [A]
+- ~vl-bb-set~ accepts integers, reals, strings, lists, enames, ~T~ and ~nil~ —
+  explicitly *any value except a function*. [A]
+- Bricsys documents the blackboard identically, as global to all open drawings
+  and to all loaded Lisp code. [A]
+
+The exclusion of functions is the single most consequential detail for
+~aldo~: instrumented function bodies cannot be shipped through the
+blackboard.  Only data can.
+
+** Namespace communication primitives
+
+| Function                     | Semantics                                                                       | AutoCAD | BricsCAD |
+|------------------------------+---------------------------------------------------------------------------------+---------+----------|
+| ~vl-bb-set~ / ~vl-bb-ref~      | Set/get a blackboard variable; no functions                                     | yes     | yes      |
+| ~vl-doc-set~ / ~vl-doc-ref~    | Set/get a variable in the document namespace from a separate-namespace VLX      | yes     | yes      |
+| ~vl-propagate~                 | Copy a value into all open document namespaces and into any opened later         | yes     | yes      |
+| ~vl-load-all~                  | Load a file into all open documents and into any opened later in the session    | yes     | yes      |
+| ~vl-doc-export~ / ~-import~    | Publish a VLX function to the document namespace / import it into the VLX       | yes     | n/a      |
+| ~vl-arx-import~                | Import ARX/ADS subrs into a separate-namespace VLX                              | yes     | n/a      |
+| ~vl-list-loaded-vlx~           | Enumerate loaded VLX                                                            | yes     | listed   |
+| ~vl-list-loaded-lisp~          | Enumerate loaded Lisp files (BricsCAD-specific)                                 | no      | yes      |
+
+The "and into any document opened later in the session" clause of
+~vl-propagate~ and ~vl-load-all~ implies a *session-level pending list* that
+the document-creation path consults.  ~clautolisp~ must model this
+explicitly; it is not derivable from a snapshot of the open documents.
+
+BricsCAD has no separate-namespace compilation mode: projects compile to
+~.des~ rather than ~.vlx~, and globals remain exposed as if uncompiled. [C,
+well-informed third party; verify]  This is a real dialect divergence for
+~--autocad~ versus ~--bricscad~.
+
+** System variable scopes
+
+Three scopes, visible in the System Variable Editor and in the help page of
+each variable:
+
+| Scope     | Behaviour                                                        |
+|-----------+------------------------------------------------------------------|
+| Drawing   | Stored in the DWG; may differ per drawing; per-document          |
+| Registry  | Same for all drawings, and persists across sessions; per-machine |
+| Not saved | Session-lifetime only; reset on restart                          |
+
+[A] for the taxonomy.  Bricsys uses the same three-way classification, with
+"Windows registry (or config file on macOS and Linux)" as the persistent
+tier.
+
+This taxonomy is *not* optional metadata for ~clautolisp~: it is the only way
+to answer "does this ~setvar~ affect other documents?", which the debugger's
+workspace snapshot/restore must answer correctly.
+
+* Concurrency model
+
+** Historical arc
+
+1. AutoCAD started single-threaded.  Around R13/R14 it was built against
+   multithreaded C runtime and MFC libraries but remained single-threaded in
+   behaviour. [B]
+2. MDI (AutoCAD 2000, "Tahoe") was implemented with Win32 *fibers*: each
+   document has its own fiber, switched programmatically when the user
+   changes drawing, plus a session fiber owning global constructs such as the
+   Windows message loop. [B]
+3. From AutoCAD 2015 the fibers are inactive; the code paths remain, largely
+   for testing.  Execution contexts, session versus document, remain
+   meaningful and supported in the post-fiber world. [B, including the
+   author's own follow-up correction]
+4. Consequently command invocation was split into a subroutine form and a
+   coroutine form: ~acedCommandS~/~acedCmdS~ versus ~acedCommandC~/~acedCmdC~ with
+   a continuation-passing callback; .NET grew ~Editor.Command~ versus
+   ~Editor.CommandAsync~.  AutoLISP was shielded from the change because the
+   vendor controls the Lisp evaluator and selects the underlying form itself,
+   though ~(command-s …)~ was exposed for the cases where the subroutine form
+   must be forced. [B]
+
+Fibers are cooperatively scheduled units *within* a thread.  Their use never
+implied parallelism, and their removal did not introduce any.
+
+** The governing invariant
+
+*One runner, N parked contexts.*  There is no thread per document.  At any
+instant at most one document's Lisp evaluation is running in the whole
+session, but arbitrarily many document contexts may hold a *suspended*
+evaluation.
+
+The primary documentation states the suspension rule directly: whenever a
+prompt for user input is made, the user may switch documents, at which point
+the current command is suspended and its stack state is saved until the
+document is reactivated. [A]
+
+This is precisely a park/resume discipline, and it is the CAD-side analogue
+of the signal/park mechanism already designed for ~aldo~.
+
+** Application context and locking
+
+- Code running in the application context must lock and unlock the current
+  document before modifying anything associated with it, via
+  ~AcApDocManager::lockDocument~ / ~unlockDocument~. [A]
+- Modifying any document other than the current one requires an explicit
+  lock. [A]
+- ~acedCommand~ / ~acedCmd~ / ~acedInvoke~ cannot be used from the application
+  context. [B]
+- While user input is being obtained from the application context, document
+  switching is disabled; the code may itself switch the current and/or active
+  document. [A]
+- Commands registered with the session flag run in the application context and
+  therefore need explicit locking; commands registered modal run in the
+  document context and do not. [A/B]
+
+** Where genuine multithreading exists
+
+Never in the Lisp evaluator or the command engine.  Only in ancillary
+subsystems:
+
+| Product  | Control                    | Covers                                                                 | Grade |
+|----------+----------------------------+------------------------------------------------------------------------+-------|
+| AutoCAD  | ~WHIPTHREAD~ (Registry, 1)  | Redraw and regeneration only; DRAWORDER not guaranteed for display at 2/3 | A     |
+| BricsCAD | ~WHIPTHREAD~                | Present but not supported; use ~MTFLAGS~                                 | A     |
+| BricsCAD | ~MTFLAGS~ (Short, Registry, 0..4095, default 3015) | Bit flags for parallel display and loading            | A     |
+| BricsCAD | ~MAXTHREADS~                | Cap on threads used for display and drawing load                        | A     |
+
+BricsCAD parallelises a broader set of operations than AutoCAD — rendering,
+file load and save, REGEN, point clouds, BIM classification, plotting and
+publishing — but these are all below the API level. [C]
+
+** Foreign OS threads
+
+Accessing the CAD API from an OS thread that is not one of the application's
+own execution contexts is unsafe; the canonical example is the .NET
+finalizer thread, from which even a print call fails. [B, expert commenter on
+an Autodesk employee blog; treat as authoritative in practice, since it
+matches the single-runner model]
+
+Corollary: no part of ~aldo~ may run as a worker thread inside the CAD
+process.  On the wire-backed path the debugger thread lives in ~alfe~; the CAD
+side contributes only poll points and blocking round trips.
+
+* Requirements derived for clautolisp (the interpreter)
+
+- *R1 — Three-level state model.* Model per-application, per-context and
+  per-document state distinctly.  A ~session~ object owns: N document images,
+  one blackboard environment, one application-context image, and the
+  session-level subr table contributed by ARX/BRX-equivalent modules.
+
+- *R2 — Symbol identity.* AutoLISP isolates variables *and* functions per
+  document.  Recommended implementation: one global symbol table (interning
+  is session-wide) with per-document value and function cells, rather than a
+  per-document obarray.  Rationale: enames, quoted symbols and lists cross
+  namespaces through the blackboard, and a per-document obarray would make
+  ~(eq (vl-bb-ref 'x) 'foo)~ fail in a way real AutoCAD may not.  This is
+  unverified — see E1.  The assignment-conversion boxing strategy (gensym'd
+  value cells) must therefore be *per-document*, and the symbol pool for
+  non-escaping frames must be per-document too, or symbols leak across
+  documents.
+
+- *R3 — Blackboard as a distinct environment.* Value-only: signal an error on
+  attempts to store a function, matching the documented restriction.
+  Copy-versus-share semantics are unverified — see E2.  Since AutoLISP has no
+  mutable conses, sharing is largely unobservable, but ~eq~ makes it
+  observable, so pick a rule and document it.
+
+- *R4 — System variable scope table.* Carry the three-way scope
+  (Drawing / Registry / Not-saved) as data in the sysvar table, per dialect,
+  since the classification differs between AutoCAD and BricsCAD for some
+  variables.  Required by R17 below.  This also gives the ~--strict~ /
+  ~--autocad~ / ~--bricscad~ flags something concrete to switch on.
+
+- *R5 — Document-tagged handles.* Entity names, selection sets and ldata
+  handles must carry their owning document.  Dereferencing one from another
+  document is an error, not undefined behaviour.  This is what makes an
+  inspector safe across a multi-document session.
+
+- *R6 — Stream ownership.* File handles opened by ~open~ belong to the
+  document namespace that created them.  Define and document the
+  close-on-document-close behaviour; the encoding dispatch work
+  (~issue-encoding-dispatch.md~) interacts here, since ~SYSCODEPAGE~ is
+  session-scoped while ~DWGCODEPAGE~ is document-scoped.
+
+- *R7 — Per-document evaluator state.* ~*error*~, command echo state,
+  ~vl-enable-user-cancel~ state and any redefinition of built-ins are
+  per-document.
+
+- *R8 — Dialect gating of separate namespaces.* Separate-namespace VLX,
+  ~vl-doc-export~, ~vl-doc-import~ and ~vl-arx-import~ exist under ~--autocad~
+  only.  Under ~--bricscad~ they should signal an unsupported-feature
+  condition rather than silently degrade.
+
+- *R9 — Session-level pending-load list.* Implement ~vl-propagate~ and
+  ~vl-load-all~ against an explicit list consulted by the document-creation
+  path, so that documents opened later in the session receive the value or
+  the file, per the documented semantics.  Model the startup hook chain
+  (~acad.lsp~ + ~ACADLSPASDOC~ + ~acaddoc.lsp~ + MNL, versus ~on_start*.lsp~ +
+  ~on_doc_load*.lsp~) as data, one chain per dialect.
+
+* Requirements derived for alfe (front-end and protocol)
+
+- *R10 — Document identity in the envelope.* The current unified envelope
+  ~(KIND SEQ RE . ARGS)~ has no document discriminator.  Instrumentation
+  state, breakpoint tables and parked evaluations are all per-document, so
+  either add a context field or make ~SEQ~ document-qualified.  Adding a field
+  is preferable: it keeps ~SEQ~ a scalar and makes the routing explicit.
+
+- *R11 — Correlation is a forest, not a stack.* Nested request/reply already
+  works, but nesting can now *interleave across documents*: while document A
+  is parked awaiting a reply, the user may switch to document B and start a
+  fresh top-level evaluation that itself nests.  Maintain one stack per
+  document context, keyed by document, not a single global stack.
+
+- *R12 — Per-document instrumentation installation.* The two bodies
+  (~~ord~ / ~~dbg~) emitted by the transform are installed in one document
+  namespace only.  Use the propagation primitives, or a per-document load
+  hook, and never assume a definition installed in A exists in B.  The
+  instrumentation cache in ~alfe~ must be keyed by (document, function).
+
+- *R13 — No backend-side locking needed, but no idleness assumption either.*
+  Because the CAD side never runs two evaluations concurrently, backend data
+  structures need no mutual exclusion.  But ~alfe~ must not infer that the
+  backend is idle merely because document A is parked: document B may be
+  running.
+
+- *R14 — Interrupts are cooperative, necessarily.* The open question of
+  whether the transport supports a non-blocking peek to interrupt tight loops
+  is bounded by the platform: since the CAD side is single-threaded and
+  cooperatively scheduled, an interrupt can only ever be observed at a poll
+  point.  There is no async-interrupt hazard on the CAD side, which is
+  strictly simpler than the SBCL/CCL deferred-flag situation.  The design
+  should exploit this asymmetry rather than paper over it.
+
+- *R15 — Blocking-read UI freeze.* This is the most serious open risk.  When
+  the CAD side blocks in a synchronous socket read (waiting for a debugger
+  command), it is inside a subr call, not at a user-input prompt.  The
+  documented right to switch documents applies to *input prompts*.  If the
+  application does not pump messages during a blocking subr, the entire
+  session freezes: no other document is usable while one is parked in the
+  debugger.  See E4; if confirmed, mitigations are (a) implement the wait as
+  a bounded poll loop that yields, (b) route debugger waits through an actual
+  interactive primitive so the platform treats it as an input prompt, or
+  (c) accept the freeze and document it.
+
+* Requirements derived for aldo (debugger)
+
+- *R16 — Debugger state keyed by document.* The signal/park mechanism, the
+  pending-break flag, the volatile breakpoint set and the current frame
+  pointer are per-document-context, not global.
+
+- *R17 — Workspace snapshot must be scope-aware.* When snapshotting and
+  restoring condition workspaces, record each system variable's scope.
+  Restoring a Registry-scoped variable is visible in every other document and
+  survives the session; restoring a Drawing-scoped one is not.  Silently
+  restoring the former is a correctness bug, not a nuisance.
+
+- *R18 — Breakpoint table placement.* Poll-point Bloom filters are naturally
+  per-document, since a function may be defined in one document only.  But
+  breakpoint *intent* is a session-level, user-level notion.  Suggested split:
+  authoritative intent table session-level (blackboard is available and
+  value-only, which suffices for a table), materialised filters per document,
+  rebuilt when a document opens and inherits the intent.
+
+- *R19 — Concurrent debugger contexts.* Two documents can be parked in the
+  debugger simultaneously.  The ~salve~ protocol and the ~aldb~ Emacs UI must
+  therefore support N concurrent debugger sessions, not merely nested levels
+  within one.  This is a superset of SLDB's model: SLDB nests levels within a
+  single connection; here the contexts are siblings, each with its own level
+  stack.  Buffer naming, keybindings and the ~*aldb*~ buffer list must reflect
+  the document.
+
+- *R20 — Cross-document evaluation goes through locking.* Re-evaluatable
+  accessor S-expressions produced by the inspector must default to the owning
+  document.  Evaluating one against another document requires the document
+  lock discipline (or the COM Documents collection, which is Windows-only and
+  should be avoided for portability).
+
+- *R21 — No CAD-side worker thread.* The two-thread, exclusive-handoff design
+  applies to the same-image hosted case only.  On the wire-backed path the
+  handoff is between ~alfe~ threads; the CAD side offers no thread to hand off
+  to.
+
+* Open questions and discriminating experiments
+
+Each experiment should be run on both platforms, on the targeted versions,
+and the result recorded as a lesson.
+
+- *E1 — Symbol identity across namespaces.*  In document A:
+  ~(vl-bb-set 'probe 'my-symbol)~.  In document B: ~(eq (vl-bb-ref 'probe)
+  'my-symbol)~.  Also compare ~(type (vl-bb-ref 'probe))~.  Settles R2.
+
+- *E2 — Blackboard copy versus share.*  In A: ~(setq l (list 1 2 3))~ then
+  ~(vl-bb-set 'probe l)~.  In B: ~(setq m (vl-bb-ref 'probe))~, then back in A:
+  ~(eq l (vl-bb-ref 'probe))~.  Settles R3.
+
+- *E3 — Namespace isolation on BricsCAD.*  Bricsys documents the blackboard
+  as global to all drawings, which presupposes per-drawing namespaces, but no
+  equally explicit statement of variable *and function* isolation was found.
+  Define ~(defun probe () 42)~ in one drawing and call it in another; also
+  test a plain ~setq~.  Settles whether ~--bricscad~ can share the
+  ~--autocad~ state model.
+
+- *E4 — UI liveness during a blocking subr.*  From document A, call a subr
+  that blocks for 30 s without prompting for input.  Attempt to switch to
+  document B and type a command.  Settles R15, and is the single highest-value
+  experiment in this list.
+
+- *E5 — Document switching at a break that is an input prompt.*  Break inside
+  an instrumented function at a point wrapped by ~aldbg:io-call~, switch to
+  document B, run an instrumented function there that also breaks, then
+  return to A.  Confirms R19 empirically and exercises R11.
+
+- *E6 — Propagation to future documents.*  ~(vl-propagate 'x)~, then open a new
+  drawing and read ~x~.  Same for ~(vl-load-all "f.lsp")~.  Confirms R9 and
+  reveals whether the pending list survives a ~CLOSEALL~.
+
+- *E7 — Sysvar scope inventory.*  Extract the scope of every system variable
+  from each product's help, per targeted version, into a machine-readable
+  table.  Feeds R4.  Note that AutoCAD and BricsCAD disagree for some
+  variables, and BricsCAD's persistent tier is a config file on macOS and
+  Linux rather than a registry.
+
+- *E8 — SDI mode.*  ~SDI~ is documented by Autodesk as available but no longer
+  supported, with some commands and features unavailable in single-document
+  mode.  Verify ~clautolisp~ behaves correctly in a one-document session and
+  decide whether ~SDI~ is worth emulating at all.
+
+- *E9 — Separate-namespace VLX on BricsCAD.*  Confirm the absence of a
+  separate-namespace compilation mode and the ~.des~ output format on the
+  targeted version.  Feeds R8.
+
+- *E10 — MTFLAGS interaction.*  Confirm that no ~MTFLAGS~ setting introduces
+  parallel Lisp evaluation, i.e. that the invariant of §4.2 holds with
+  ~MTFLAGS~ at its default 3015 and at 4095.
+
+* Summary of the invariant to design against
+
+#+begin_quote
+Each document owns an isolated AutoLISP namespace holding both variables and
+functions.  Communication between documents happens only through the
+blackboard (values, never functions), through the propagation primitives,
+through session-scoped system variables and environment, through
+session-context ARX/BRX modules, and through the filesystem.  Execution is
+single-runner and cooperative: at most one document's evaluation runs at any
+instant, while any number of document contexts may hold a suspended
+evaluation whose stack has been saved.  Real threads exist only below the API
+level, for display, regeneration and file loading.
+#+end_quote
+
+Every design decision in ~clautolisp~, ~alfe~ and ~aldo~ that assumes either
+(a) a single global Lisp environment, or (b) concurrent per-document
+execution, is wrong.  The correct model is N isolated environments with one
+cooperative scheduler and an explicit shared-value channel.
+
+* References
+
+|  # | Source                                                                 | URL                                                                                                                             | Grade |
+|----+------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------+-------|
+|  1 | About Namespaces (AutoLISP), AutoCAD help                              | [[https://help.autodesk.com/cloudhelp/2022/ENU/AutoCAD-AutoLISP/files/GUID-4E949651-A881-4E0F-9DBA-A4645FE473B3.htm]]               | A     |
+|  2 | Sharing Data Between Namespaces (AutoLISP Developer's Guide)           | [[https://documentation.help/AutoCAD-ALISP-VLISP/WS73099cc142f4875516d84be10ebc87a53f-783e.htm]]                                    | A     |
+|  3 | vl-bb-set (AutoLISP reference)                                         | [[https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-2B1484FC-BBD1-408B-A8A0-DB931363630F.htm]]               | A     |
+|  4 | vl-propagate (AutoLISP reference)                                      | [[https://help.autodesk.com/cloudhelp/2016/ENU/AutoCAD-AutoLISP/files/GUID-9B30560A-5037-4C2D-8175-429E110277F5.htm]]               | A     |
+|  5 | Accessing the Current Document and Its Related Objects (ObjectARX)     | [[https://help.autodesk.com/cloudhelp/2022/ENU/OARX-DevGuide/files/GUID-2395776D-0B07-45BF-92A6-A3B4A78653F7.htm]]                  | A     |
+|  6 | MDI Terminology (ObjectARX Developer's Guide)                          | [[http://docs.autodesk.com/ACDMAC/2013/ENU/ObjectARX%20Developer%20Guide/files/GUID-C5C0EA33-73E7-4E4C-BE63-805A06423DEB.htm]]      | A     |
+|  7 | Other Application Execution Context Considerations (ObjectARX)         | [[http://docs.autodesk.com/ACDMAC/2011/ENU/ObjectARX%20Developer's%20Guide/filesXDG/WS1a9193826455f5ff128052610e798412bc-4b18.htm]] | A     |
+|  8 | Lock and Unlock a Document (.NET Developer's Guide)                    | [[https://help.autodesk.com/cloudhelp/2026/CSY/OARX-DevGuide-Managed/files/GUID-A2CD7540-69C5-4085-BCE8-2A8ACE16BFDD.htm]]          | A     |
+|  9 | WHIPTHREAD (System Variable)                                           | [[https://help.autodesk.com/cloudhelp/2019/ENU/AutoCAD-Core/files/GUID-DF14446D-1EB4-44DF-859C-01977F6C4CD0.htm]]                   | A     |
+| 10 | Bricsys DevRef: vl-bb-set                                              | [[https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/vl-bb-set.htm]]                                               | A     |
+| 11 | Bricsys DevRef: vl-propagate                                           | [[https://developer.bricsys.com/bricscad/help/en_US/V22/DevRef/source/vl-propagate.htm]]                                            | A     |
+| 12 | Bricsys DevRef: Automatic LISP + VBA Loading                           | [[https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/source/AutomaticLISPVBALoading.htm]]                                 | A     |
+| 13 | Bricsys: MTFLAGS system variable                                       | [[https://help.bricsys.com/en-us/document/system-variable-reference/m/mtflags-system-variable]]                                     | A     |
+| 14 | Bricsys: MAXTHREADS system variable                                    | [[https://help.bricsys.com/document/_systemvariablereference--SV_maxthreads/V23/IT_IT]]                                             | A     |
+| 15 | Bricsys: WHIPTHREAD system variable (not supported)                    | [[https://help.bricsys.com/document/_systemvariablereference--SV_whipthread/V23/EN_US]]                                             | A     |
+| 16 | Bricsys: System variable reference (scopes)                            | [[https://help.bricsys.com/en-us/document/system-variable-reference]]                                                               | A     |
+| 17 | Walmsley, MDI implementation and per-document data (fibers, Lisp)      | [[https://keanw.com/2006/10/some_background.html]]                                                                                  | B     |
+| 18 | Walmsley, AutoCAD 2015: calling commands (fibers inactive)             | [[https://keanw.com/2014/03/autocad-2015-calling-commands.html]]                                                                    | B     |
+| 19 | Walmsley, Per-document data in ObjectARX (MDI-aware, SDI)              | [[https://keanw.com/2006/10/perdocument_dat.html]]                                                                                  | B     |
+| 20 | Walmsley, Cleaning up after yourself (foreign-thread hazard, comments) | [[https://keanw.com/2008/06/cleaning-up-aft.html]]                                                                                  | B     |
+| 21 | ADN DevBlog, creating and activating a document from a command         | [[https://adndevblog.typepad.com/autocad/2013/03/creating-a-new-document-and-activating-it-from-a-custom-command.html]]             | B     |
+| 22 | Bricsys forum, on_start.lsp / on_doc_load.lsp and ACADLSPASDOC         | [[https://forum.bricsys.com/discussion/22783/loading-lisp-applications-on-all-drawing-files]]                                       | B     |
+| 23 | Bricsys forum, WHIPTHREAD not supported, use MTFLAGS                   | [[https://forum.bricsys.com/discussion/38570/whipthread-system-variable]]                                                           | B     |
+| 24 | cadnauseam, BricsCAD Lisp: no separate-namespace compile, .des         | [[https://www.cadnauseam.com/2017/01/21/bricscads-lisp-kicks-sand-in-the-face-of-autocads/]]                                        | C     |
+| 25 | Microvellum KB, multithreading in BricsCAD and AutoCAD                 | [[https://intercom.help/microvellum-knowledge-base/en/articles/13852805-multithreading-in-bricscad-and-autocad]]                    | C     |
+| 26 | Ascented, System Variables in AutoCAD (three scopes)                   | [[https://resources.ascented.com/autocad/system-variables-in-autocad]]                                                              | C     |

@@ -1,0 +1,340 @@
+-*- mode:markdown -*-
+
+# Issue: specify and design `cador`, the headless multidocument CAD host
+
+- **Status:** open — specification and design work, no production code beyond the mechanical migration in §7
+- **Depends on:** `clautolisp-multidocument-analysis.org` (requirements R1–R21, experiments E1–E10)
+- **Related:** `clautolisp-debugger-remote-cad-spec.org` (Revision 2), `issue-encoding-dispatch.md`
+- **Blocks:** any further entity-level work, currently mislocated in the null host
+
+## 1. Decision record
+
+The following is settled. Do not relitigate it in the deliverables; record it as
+given and move on.
+
+**The host interface is clautolisp's single way out to CAD and GUI features.**
+Everything that is not pure AutoLISP evaluation — documents, databases,
+entities, system variables, user interaction, drawing output — crosses this
+interface. Nothing else in the interpreter may reach a CAD backend directly.
+
+Three hosts are planned:
+
+| Host | Nature | Purpose |
+|---|---|---|
+| `nihil` | No-op stubs | Keeps the interpreter running with no CAD backend at all. Explicitly implements nothing CAD-like. |
+| `cador` | Headless, in-process CAD core | Real documents, databases and entities, no GUI. Semantically comparable to AutoCAD and BricsCAD. The analogue of AutoCAD Core Console (`accoreconsole`). |
+| *(name TBD)* | Wire protocol to a remote display/editor server | Forwards host operations to a separate CAD/GUI application process that owns the real editor and display. Closer in spirit to Display PostScript or X11 than to a Lisp REPL: clautolisp evaluates, the remote process displays and gathers input. **Not** the `alfe` protocol — see §1.1. |
+
+Consequences:
+
+1. `cador` is a **peer** of the wire host, not a family name covering both. My
+   earlier suggestion to make `cador` the umbrella for a host family is
+   superseded and should not appear in the deliverables.
+2. Entity handling was begun in the null host. It **belongs in `cador`** and
+   must be moved there (§7).
+3. The null host is renamed `nihil` and reduced to no-op stubs whose only
+   purpose is to prevent crashes. Its contract is *negative*: it must never
+   grow a CAD-like implementation. Any pressure to do so is a signal that the
+   feature belongs in `cador`.
+4. Naming the wire host is a separate decision. Use the placeholder
+   `<wire-host>` in the deliverables; do not block on it.
+
+### 1.1 The two wire protocols are distinct
+
+The system contains two unrelated wires. Conflating them, as an earlier draft of
+this issue did, corrupts both designs.
+
+**W1 — the `alfe` protocol.** `alfe` exists because AutoLISP inside AutoCAD and
+BricsCAD has no terminal. `princ`, `prin1`, `print` and a bare `read-line`
+address the CAD's own console — the F2 text window — or files; they never touch
+the process's stdin and stdout. `read` is not a stream reader at all: it takes a
+string, and is therefore `cl:read-from-string` under another name. There is
+consequently no way, from AutoLISP running inside a real product, to obtain a
+terminal CLI or REPL. `alfe` supplies one: a terminal front-end that ships
+AutoLISP forms to a real AutoCAD or BricsCAD for evaluation by the CAD's own
+engine, mediating I/O bidirectionally in mid-evaluation. It may later also carry
+a debugger session over the terminal, and forward a channel to Emacs. On W1,
+**the CAD evaluates**.
+
+**W2 — the host wire protocol.** The wire host is the mirror image.
+**clautolisp evaluates**, and the remote process is a display and editor server
+executing host operations on request: make this entity, prompt for that point,
+show this. The references are Display PostScript and X11, not SLIME.
+
+`alfe` may also use clautolisp as its backend, which gives a terminal user
+access to `nihil`, `cador` and any future host. Those host operations reach the
+host **through clautolisp's host interface**, not over W1. The alfe protocol is
+not involved, and must not be assumed available, when a clautolisp host is in
+play.
+
+### 1.2 Three debugging configurations
+
+The deliverables must keep these apart:
+
+- **(a) Hosted.** Debuggee: clautolisp, in-image. Host: `nihil` or `cador`.
+  This is the same-image two-thread design with signal/park handoff.
+- **(b) Wire-hosted.** Debuggee: still clautolisp, in-image; the host is a
+  peripheral that may block on W2. Poll points remain in clautolisp. New
+  hazard to specify: a host call may be outstanding when a break is requested.
+- **(c) Remote CAD.** Debuggee: the CAD's *own* AutoLISP engine, reached over
+  W1. The instrumentation transform runs in `alfe` using clautolisp's reader,
+  and two bodies per function are emitted and shipped. No clautolisp host is
+  involved anywhere in this configuration.
+
+E1–E10 establish reference behaviour in the environment of configuration (c) —
+a real product — and conformance in configuration (a).
+
+## 2. Required reading before writing anything
+
+- `clautolisp-multidocument-analysis.org` in full. The R-numbers and E-numbers
+  below refer to it and must be cited by number in the deliverables.
+- The `§4.2` invariant of that document — *one runner, N parked contexts* — is
+  the load-bearing constraint of this whole issue.
+- The parent debugger spec and its remote-CAD addendum, read with §1.2 in hand.
+  The addendum's Part III replacement targets configuration (c) — a real CAD
+  over W1 — and is *not* a specification of any clautolisp host. Do not import
+  its wire assumptions into D1.
+
+## 3. Deliverables
+
+Write these as separate documents. Do not merge D1 into D2: the interface must
+be specifiable without reference to any particular host, or it is not an
+interface.
+
+- **D1 — `clautolisp-host-interface-spec.org`**
+  The generic host interface every host implements. Backend-agnostic.
+- **D2 — `clautolisp-cador-spec.org`**
+  Part I: the semantics `cador` presents to AutoLISP code.
+  Part II: the internal design realising those semantics.
+- **D3 — Migration commits** per §7. Mechanical, reviewable, no behaviour
+  change smuggled in.
+- **D4 — Conformance test suite skeleton** per §8, with E1–E10 as its first
+  cases.
+- **D5 — A short naming and architecture note** (may be a section of D1)
+  recording §1 of this issue, so the decision survives without this issue.
+
+Conventions: org-mode, `~verbatim~` for Lisp symbols containing asterisks, org
+tables, `[[link]]` for URLs. Carry the analysis document's provenance grades
+(A/B/C/V) on every factual claim about AutoCAD or BricsCAD behaviour. Flag every
+assumption explicitly as an assumption, in a dedicated subsection, until it is
+resolved — do not let assumed behaviour read as established behaviour.
+
+## 4. Required structure for D1, the host interface
+
+Specify operations by group. For each operation give: name, arguments, return
+value, error conditions, and the expected behaviour of *each* host.
+
+1. **Session and document management** — enumerate documents, create, open,
+   close, activate; current versus active document; document identity as a
+   first-class value.
+2. **Database and entity access** — entity creation, retrieval, modification,
+   deletion; entity data lists; symbol tables; dictionaries; extended data.
+3. **System variables** — get, set, and the scope tier of each (R4).
+4. **Interaction and the console device** — string, integer, real, point, angle
+   and keyword input; entity selection; message and prompt output. Specify the
+   *console* as an explicit host-provided device, distinct from file streams,
+   because AutoLISP's I/O model requires it: `princ`, `prin1`, `print` and a
+   bare `read-line` address the console rather than process stdin and stdout,
+   and `read` parses a string rather than reading a stream. Do not model the
+   console as a `cl:stream` handed to the interpreter. Each host may map the device
+   differently: `nihil` and `cador` bind it to its own standard streams
+   (~*standard-output*~); a GUI host would display the output in a GUI windows, 
+   a wire host would forwards it to the remote editor. This is the
+   group that distinguishes the hosts most sharply.
+5. **Command layer** — invoking native CAD commands, if at all (§9.4).
+6. **Filesystem and encoding** — file streams, code page resolution; must
+   interoperate with `issue-encoding-dispatch.md` rather than duplicate it.
+7. **Notification** — reactors and events.
+8. **Concurrency and locking** — document locking, park/resume, and the
+   capability of a host to suspend an evaluation.
+
+Then specify two cross-cutting mechanisms:
+
+- **Capability query.** A host must declare which operations it supports, so
+  that library code, `aldo` and the test suite can adapt rather than crash.
+  Define the query, its granularity, and whether it is consulted at load time
+  or at call time.
+- **Condition taxonomy.** Distinguish, as distinct condition classes:
+  *operation not supported by this host* (`nihil` asked for an entity),
+  *operation unavailable in a headless context* (`cador` asked for a rubber-band
+  drag), *operation not yet implemented* (a real gap), and *backend error*
+  (the remote CAD refused). Conflating these makes the test suite unable to tell
+  a gap from a design boundary.
+
+Close D1 with a **fidelity matrix**: rows are operations, columns are `nihil`,
+`cador`, `<wire-host>`, AutoCAD, BricsCAD. This table is the contract, and it is
+also the checklist the conformance suite walks.
+
+## 5. Required structure for D2, `cador`
+
+Part I, semantics. Each of these must reach a stated decision, not a survey:
+
+1. **Session model.** N document images, one blackboard environment, one
+   application-context image, one session-level subr table (R1).
+2. **Scheduler.** The single-runner cooperative model. Specify what parking is,
+   where the park points are, what resuming restores, and what happens when a
+   host operation is invoked from a parked context (R11, R13).
+3. **Current versus active document.** In a headless core "active" has no window
+   focus to derive from. Define what it means, or state that the two collapse
+   into one notion and why that is safe.
+4. **Namespace and symbol model.** Global interning with per-document value and
+   function cells, versus per-document obarray (R2). Depends on E1; state the
+   choice, state the fallback if E1 contradicts it.
+5. **Blackboard.** Value-only, function-rejecting; copy versus share semantics
+   (R3, E2).
+6. **System variable scope tiers.** Drawing / Registry-equivalent / Not-saved.
+   In a headless core the persistent tier needs a concrete home — a config file,
+   an environment variable, or explicit non-persistence. Decide (R4, E7).
+7. **Handles.** Entity names, selection sets, ldata; document tagging;
+   cross-document dereference is an error (R5).
+8. **Streams and encoding.** Ownership by document namespace, close-on-close
+   behaviour, `DWGCODEPAGE` versus `SYSCODEPAGE` (R6).
+9. **Startup hook chain.** The pending-load list that makes `vl-propagate` and
+   `vl-load-all` apply to documents opened later (R9), and which of the
+   `acad.lsp` / `acaddoc.lsp` / `on_start` / `on_doc_load` chains `cador`
+   emulates under each dialect flag.
+10. **The console device in a headless core.** Where `cador`'s console reads
+    from and writes to; how a script drives it; what happens on a non-tty
+    source; whether the device is per-session or per-document. The behaviour of
+    `accoreconsole` is the reference point to establish here (§9.1). Specify a
+    scripted, non-interactive source as a first-class mode, not a degraded one:
+    this is the mode CI depends on.
+11. **Deliberate omissions.** An explicit list of what `cador` does not do:
+    display, dialogs, real-time cursor tracking, plotting to a device.
+    Each omission names the condition class it signals.
+
+Part II, design:
+
+12. **Database backend.** The largest open decision. Present the alternatives —
+    a native Common Lisp in-memory database with DXF read/write; a native
+    database with no persistence at first; binding an external library for DWG —
+    with their consequences for portability, licensing and the fidelity matrix.
+    Recommend one, and specify the entity model concretely enough to implement.
+13. **Command layer scope.** See §9.4.
+14. **Debugger integration.** The concrete surfaces `aldo` attaches to: poll
+    points, per-document debugger state, park/signal per context, workspace
+    snapshot with scope awareness, breakpoint intent versus materialised filters
+    (R16–R21).
+15. **Module and package layout.** ASDF systems, package names, the boundary
+    that a linter or review can check to prove nothing bypasses the host
+    interface.
+
+## 6. Non-negotiable constraints
+
+Any design violating one of these is wrong, not merely different.
+
+- **C1.** No global Lisp environment. N isolated document environments plus the
+  blackboard plus the application context (R1, R2).
+- **C2.** No concurrent per-document execution. At most one evaluation runs at
+  any instant; any number may be parked (§4.2, R13).
+- **C3.** The blackboard carries values, never functions (R3).
+- **C4.** Every system variable carries its scope tier as data (R4).
+- **C5.** Handles are document-tagged; cross-document dereference signals (R5).
+- **C6.** No CAD access outside the host interface, from anywhere in the
+  interpreter.
+- **C7.** `nihil` implements nothing CAD-like. If a test passes against `nihil`
+  in a way that implies entity semantics, either the test or `nihil` is wrong.
+- **C8.** `cador` needs no worker thread, and must not require one. The
+  single-runner model is a simplification to exploit, not an obstacle (R14,
+  R21).
+
+## 7. Migration instructions
+
+Ordered. One commit per step, each independently reviewable.
+
+1. **Inventory.** List every entity-related and document-related function
+   currently in the null host, with its call sites. Publish the list in the
+   issue thread before moving anything.
+2. **Create the `cador` system and package**, empty, with its ASDF definition
+   and a placeholder host registration.
+3. **Move the entity code verbatim.** A pure move: no renaming, no
+   reorganisation, no fixes. The diff must be readable as a relocation.
+4. **Adapt the moved code** to the D1 interface, in a separate commit, so that
+   review can see exactly what changed semantically.
+5. **Rename the null host to `nihil`** — package, system, file names, host
+   registration, documentation.
+6. **Reduce `nihil` to stubs.** Every operation either no-ops or signals the
+   *not supported by this host* condition, per the D1 taxonomy. Delete, do not
+   comment out, whatever CAD-like remnants survive.
+7. **Update the test suite** so that tests requiring entity semantics select
+   `cador`, and tests exercising the interpreter core alone select `nihil`. This
+   split is itself a useful assertion about the codebase.
+8. **Update CI** per §8.
+
+## 8. Conformance tests and CI
+
+- **E1–E10 become conformance probes.** Each experiment in the analysis
+  document is a test case runnable against any host. Against AutoCAD and
+  BricsCAD they establish reference behaviour; against `cador` they assert
+  conformance. Structure the harness so a probe is written once and run
+  three ways, with results tabulated per host and version.
+- **`cador` is the natural CI host.** Tests needing a CAD backend can select
+  clautolisp-with-`cador` instead of a real product, which makes them hermetic.
+  The console device (§5.10) is what makes that work: a scripted, non-tty source
+  that never touches a terminal. Note the division of responsibility — the
+  `isatty` guards, bounded reads, non-interactive `*debugger-hook*` and explicit
+  `GITLAB_CI` detection belong to `alfe`'s terminal layer, not to `cador`;
+  `cador` contributes a path with no terminal to query in the first place.
+  Record in D2 that making the test suite hermetic is part of why the headless
+  host exists.
+- **The fidelity matrix from D1 is the coverage target.** A cell with no test
+  is an untested contract.
+
+## 9. Open questions the specification must resolve explicitly
+
+Do not silently assume any of these. Each gets a subsection, a stated
+resolution or a stated assumption, and a provenance grade.
+
+1. **`accoreconsole` fidelity envelope.** What the AutoCAD Core Console
+   actually supports — which input primitives function, what happens to
+   dialogs, whether plotting works, how it is driven — must be established from
+   vendor documentation with citations, not from recollection. `cador` is
+   described as its analogue, so the analogy needs a defined boundary.
+2. **BricsCAD headless equivalent.** Determine whether Bricsys ships a
+   comparable console or headless mode, and under what name. If it does, its
+   behaviour is a second reference point; if it does not, say so, because that
+   asymmetry affects what "portable" means for `cador`.
+3. **Database backend.** §5.12. Decide, with reasons.
+4. **Command layer scope.** Does `cador` implement native commands such that
+   `(command "LINE" …)` works, or is entity access purely programmatic
+   (`entmake`, `entget`, `entmod`)? A minimal command set, none at all, and
+   full emulation are three very different projects. State which, and specify
+   what `(command …)` and `(command-s …)` do for unimplemented commands. Note
+   that a great deal of real AutoLISP code in the wild drives commands rather
+   than the entity API, so this decision determines how much existing code
+   `cador` can run at all.
+5. **Locking semantics in a headless core.** Document locking exists in the
+   real products to protect against cross-context modification. With a single
+   runner and no user, decide whether `cador` implements locking faithfully,
+   implements it as a checked no-op that still detects protocol violations, or
+   omits it. The middle option is worth serious consideration: it catches bugs
+   that would only otherwise appear against a real CAD backend.
+6. **E1 and E2 outcomes** — symbol identity and blackboard sharing. Until
+   settled, D2 must state the assumed answer and the cost of being wrong.
+7. **Wire host name.** Note the placeholder; decide separately. The Display
+   PostScript analogy suggests a name evoking a display or a mirror rather than
+   a wire, and it should not suggest kinship with `alfe`.
+
+## 10. Acceptance criteria
+
+- [ ] D1 exists, is backend-agnostic, and contains the fidelity matrix.
+- [ ] D2 exists, with Part I semantics and Part II design, and reaches a stated
+      decision on every item in §5 and §9.
+- [ ] Every claim about AutoCAD or BricsCAD behaviour carries a provenance
+      grade; every assumption is in the assumptions subsection.
+- [ ] Every constraint C1–C8 is traceable to a section of D2 that satisfies it.
+- [ ] The entity code lives in `cador`; the null host is `nihil` and contains
+      only stubs.
+- [ ] E1–E10 exist as runnable probes; those not yet run against a real product
+      are marked pending, not passing.
+- [ ] `alfe-test` runs green in GitLab CI against `cador` with no interactive
+      input.
+
+## 11. Out of scope
+
+- Implementing the wire host, or naming it.
+- Implementing the database backend chosen in §5.12 — this issue selects and
+  specifies it.
+- The lexical binding work, and the alpha-renaming and boxing strategies, except
+  where R2 forces the symbol model to be per-document.
+- GUI work of any kind.
