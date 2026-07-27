@@ -97,6 +97,12 @@ SMALL — process next, in this order:
   6b alfe-workdir-env-deletes-caller-directory.issue  $AUTOLISP_WORKDIR is taken as alfe's own protocol workdir and
                                                    delete-directory-tree'd at exit -- silent DATA LOSS for a caller
                                                    that exports it to point at its own artefacts directory.
+  6c encoding-situations-cli-options.issue        BLOCKED on pjb validating the situation list (§3) -- everything
+                                                   else derives from it. Names the distinct encoding situations
+                                                   (source/file/console/log/terminal), gives -E{situation} /
+                                                   --{situation}-encoding, generalises the {enc}-{lineterm} suffix,
+                                                   and carries the vendor evidence + measurements. Supersedes the
+                                                   "To design" section of alfe-cad-console-encoding.
   7  clautolisp-host-product-still-bricscad.issue  stamp PRODUCT in host identity (one-liner + test)
   8  deferred-command-special-form.issue           COMMAND special form (mock token queue)
   9  dribble.issue                                 dribble builtin + CLI option
