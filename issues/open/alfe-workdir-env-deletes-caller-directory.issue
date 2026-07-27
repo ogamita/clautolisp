@@ -1,0 +1,88 @@
+-*- coding:utf-8 -*-
+
+alfe-workdir-env-deletes-caller-directory — $AUTOLISP_WORKDIR is taken as alfe's own workdir and removed at exit
+================================================================================================================
+
+Reported from: SCHMS+ test harness (sncf-reseau/src/schms, Makefile
+targets test-cad-* / test-unitaire-clautolisp) driving
+`alfe --bricscad --mode batch` on macOS, BricsCAD V26.
+
+Observed with the installed alfe 1.6.0. The code path is unchanged at
+repository HEAD (alfe 1.6.14).
+
+Summary
+-------
+
+`$AUTOLISP_WORKDIR` is read as an override for **alfe's own protocol
+workdir** (`autolisp-front-end/source/cli.lisp:181`, mapping
+`:workdir` -> `"AUTOLISP_WORKDIR"`; documented at cli.lisp:249 as
+"--workdir DIR  Override $AUTOLISP_WORKDIR"). At the end of the run,
+`alfe.workdir:remove-workdir`
+(`autolisp-front-end/source/workdir.lisp:84`) does
+`uiop:delete-directory-tree` on it unless `--keep-workdir` /
+`$AUTOLISP_KEEP_WORKDIR` is set.
+
+So a caller that exports `AUTOLISP_WORKDIR` pointing at one of its own
+directories has that directory **recursively deleted**, silently, when
+alfe exits.
+
+How it bit us
+-------------
+
+`AUTOLISP_WORKDIR` is also the name the AutoLISP-side test harnesses use
+for "where to write my artefacts" — it is the variable the SCHMS+ harness
+reads (`tu:workdir`) to place `errors.log`, and the same name appears in
+the CAD probe conventions. Exporting it before invoking alfe is the
+obvious thing to do:
+
+    AUTOLISP_WORKDIR="$build/cad" \
+    alfe -norc --bricscad --mode batch -l tests/test-cad.lsp -x '(C:MAIN)'
+
+Result: the suite runs and passes, then alfe deletes `$build/cad`
+including the `.out`, `.err` and `.status` files the harness had just
+written. The calling Makefile then reports
+
+    Tests cad failed under BricsCAD: status=missing
+
+for a run that was in fact fully green — an outcome that looks like a
+harness bug and costs real time to trace back to alfe.
+
+Expected
+--------
+
+At least one of, in decreasing order of preference:
+
+1. Never delete a workdir that alfe did not create. `remove-workdir`
+   should only remove auto-generated workdirs (the
+   `alfe-<backend>-<pid>-<hash>` ones); a directory supplied by the user
+   via `--workdir` or `$AUTOLISP_WORKDIR` should be cleaned of alfe's own
+   protocol files at most, never `delete-directory-tree`'d.
+
+2. Failing that, refuse to use a non-empty caller-supplied directory, or
+   create a private subdirectory inside it and delete only that.
+
+3. At minimum: document the destructive behaviour loudly in `--help` and
+   in the workdir documentation ("alfe DELETES this directory on exit"),
+   since the current wording "Override $AUTOLISP_WORKDIR" gives no hint.
+
+A separate name for the two concepts would also help: alfe's protocol
+scratch directory and the AutoLISP program's output directory are not the
+same thing, yet they currently share one environment variable.
+
+Workaround in use
+-----------------
+
+Do not export `AUTOLISP_WORKDIR`; pass the harness directory in-band
+instead, which alfe does not interpret:
+
+    alfe … -x '(setq *AUTOLISP_WORKDIR* "<dir>")' -l … -x '(C:MAIN)'
+
+(see the RUN_TESTS_WITH_ALFE macro in sncf-reseau/src/schms/Makefile,
+which carries a comment to that effect so nobody re-adds the export).
+
+Severity
+--------
+
+Data loss. It is recursive deletion of a user-designated directory,
+triggered by setting a documented environment variable to a plausible
+value.

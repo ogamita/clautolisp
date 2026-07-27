@@ -89,6 +89,14 @@ SMALL — process next, in this order:
   6  debugger-public-interface-and-on-error.issue  Parts B-D: --on-interrupt/--debugger-ui/--aldb-* CLI options
 
   -- C: engine smalls
+  6a alfe-load-form-argument-not-evaluated.issue   (load X) at top level of a -l file / -x form passes X UNEVALUATED;
+                                                   only a string literal works. Root cause pinned in
+                                                   runtime/autolisp-bootstrap.lsp (autolisp-eval-load-form passes
+                                                   (cadr form) straight through). Headless-fixable + unit-testable;
+                                                   supersedes cad-vl-filename-directory-and-load.
+  6b alfe-workdir-env-deletes-caller-directory.issue  $AUTOLISP_WORKDIR is taken as alfe's own protocol workdir and
+                                                   delete-directory-tree'd at exit -- silent DATA LOSS for a caller
+                                                   that exports it to point at its own artefacts directory.
   7  clautolisp-host-product-still-bricscad.issue  stamp PRODUCT in host identity (one-liner + test)
   8  deferred-command-special-form.issue           COMMAND special form (mock token queue)
   9  dribble.issue                                 dribble builtin + CLI option
@@ -132,7 +140,10 @@ BLOCKED / EXTERNAL (hardware, CAD product, or pjb decision):
       EVAL mid-suite; --timeout parsed but unplumbed — plumbing is
       headless-testable, final verification needs BricsCAD),
     cad-load-encoding-macos, cad-path-dotdot-resolution,
-    cad-vl-filename-directory-and-load, deferred-bricscad-setq-nil-returns-2,
+    cad-vl-filename-directory-and-load (mechanism now pinned by
+      alfe-load-form-argument-not-evaluated -- close in its favour unless the
+      string-literal case it describes genuinely fails too),
+    deferred-bricscad-setq-nil-returns-2,
     bricscad-undocumented-clisms, bricscad-dialect-sysvar-parity (phase 2 harvest),
     autolisp-spec-questions (COND edges), deferred-spec-research
   Windows needed: clautolisp-windows-pathname-mapping

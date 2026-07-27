@@ -1,0 +1,140 @@
+-*- coding:utf-8 -*-
+
+alfe-load-form-argument-not-evaluated — the bootstrap's (load …) interception passes the argument unevaluated
+=============================================================================================================
+
+Reported from: SCHMS+ CAD test harness (sncf-reseau/src/schms,
+tests/test-cad.lsp) run via `alfe --bricscad --mode batch` on macOS,
+BricsCAD V26.
+
+Observed with the installed alfe 1.6.0. The faulty code path is
+UNCHANGED at repository HEAD (alfe 1.6.14) — see "Root cause" below for
+exact locations — so this is expected to still reproduce.
+
+Summary
+-------
+
+Inside a file loaded by `-l`, and in any `-x` request form, a top-level
+`(load X)` where X is anything other than a STRING LITERAL fails: the
+bootstrap hands `X` to its own loader **unevaluated**.
+
+    (load "/abs/path/file.lsp")                        => works
+    (setq p "/abs/path/file.lsp") (load p)             => FAILS
+    (load (strcat repo "/tests/runner.lsp"))           => FAILS
+    (vl-catch-all-apply 'load (list p))                => works
+
+The error names the source expression, not its value, which makes it
+read like a type error in the caller:
+
+    bad argument type <P> ; expected <STRING> at [findfile]
+    bad argument type <(STRCAT ZZ:REPO \"/tests/test-runner-commun.lsp\")>
+      ; expected <STRING> at [findfile]
+
+Minimal reproduction
+--------------------
+
+    $ cat > /tmp/mini.lsp <<'EOF'
+    (setq zz:dir  (vl-filename-directory "/tmp/a/b/file.lsp"))
+    (setq zz:repo (vl-filename-directory zz:dir))
+    (princ (strcat "\nDIR=[" zz:dir "] REPO=[" zz:repo "]"))
+    (load (strcat zz:repo "/some-existing-file.lsp"))
+    (princ "\nLOADED-OK")
+    EOF
+    $ alfe -norc --bricscad --mode batch -l /tmp/mini.lsp
+
+DIR/REPO print correctly (so the path computation is fine) and the
+`(load …)` on the next line fails. Replacing it with a string literal,
+or with `(vl-catch-all-apply 'load (list <same expression>))`, works.
+
+Root cause
+----------
+
+`autolisp-front-end/source/runtime/autolisp-bootstrap.lsp`:
+
+  - `autolisp-source-load-run-body-impl` (line ~461) evaluates every
+    top-level form of a `-l` file through `autolisp-eval-request-form`,
+    not through plain `eval`.
+
+  - `autolisp-eval-request-form` (line ~703) dispatches on
+    `autolisp-load-form-p`, which is a purely syntactic test — "car of
+    the form is the symbol LOAD":
+
+        (defun autolisp-load-form-p (form)
+          (and (listp form) form
+               (= (type (car form)) 'SYM)
+               (= (strcase (vl-symbol-name (car form))) "LOAD")))
+
+  - `autolisp-eval-load-form` (line ~688) then passes `(cadr form)`
+    straight to `autolisp-source-load` / `autolisp-internal-protocol-load-p`:
+
+        ((= (length form) 2)
+         (autolisp-source-load (cadr form)))
+
+    `(cadr form)` is the *unevaluated* argument. For `(load p)` that is
+    the symbol `P`; for `(load (strcat a b))` it is the list
+    `(STRCAT A B)`. Both then fail inside `findfile`, which is where the
+    reported error comes from.
+
+The same dispatch is duplicated in the emitted bootstrap text in
+`autolisp-front-end/source/file-protocol.lisp` (~line 1187).
+
+Expected
+--------
+
+`load` is an ordinary AutoLISP function; its argument is evaluated on
+every engine (clautolisp, BricsCAD, AutoCAD). The interception exists to
+route source loads through alfe's own loader, which is fine — but it
+must evaluate the argument first:
+
+    ((= (length form) 2)
+     (autolisp-source-load (eval (cadr form))))
+
+and likewise for the 3-argument (onfailure) branch and for the
+`autolisp-internal-protocol-load-p` guards, which currently test the
+unevaluated argument against a `*protocol-request-*.lsp` wildcard and so
+never match a computed path.
+
+Care is needed for the onfailure argument: `(load path onfailure)` must
+evaluate `path` but the failure value is a datum, matching the AutoLISP
+contract.
+
+Why it matters
+--------------
+
+Computing a path and loading it is the normal way an AutoLISP harness or
+application bootstraps itself — there is no `*load-truename*`, so a file
+derives its siblings from a variable. SCHMS+ does it in production too
+(`schms_active_objet` does `(load (com_way (schms_nomfichier_script …)))`,
+src-vlx/objet_workflow.lsp:16); that one happens to survive because it
+sits inside a `defun` body rather than at top level, so it is not routed
+through the request path. The divergence is therefore silent and
+position-dependent: the same expression works or fails depending on
+whether it is nested in a function.
+
+Workaround in use on the SCHMS+ side (tests/test-cad.lsp,
+tests/test-unitaire.lsp):
+
+    (vl-catch-all-apply (function load) (list (strcat *tu:repo-dir* "/…")))
+
+Related
+-------
+
+`cad-vl-filename-directory-and-load.issue` reached the same symptom from
+the other end ("in-file native (load <abs-path>) fails under BricsCAD's
+load shadow in some contexts") and asked to be retitled/triaged; its
+`vl-filename-directory` angle can be dropped and it can be closed in
+favour of this issue, which pins the mechanism. Note that the case it
+describes — an in-file `(load <literal absolute path>)` — should NOT be
+affected by the bug described here; if it genuinely failed, there is a
+second, distinct problem still to explain.
+
+Suggested test
+--------------
+
+A conformance case asserting that, for each backend, a `-l` file
+containing
+
+    (setq p "<abs path>")
+    (load p)
+
+loads the target, and that `(load (strcat …))` does too.
