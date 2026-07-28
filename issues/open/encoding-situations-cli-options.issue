@@ -120,6 +120,18 @@ optional; without BOM the file is treated as ANSI.
   `ccs=UTF-16LE` is *accepted without error* and silently produces UTF-8
   on macOS. Worth a separate vendor-divergence probe.
 
+[obs 2026-07-28, the encoding experiment — see §7] The picture is richer
+than the single Mac-Roman row above: BricsCAD/macOS's `(open … "w")`
+default follows the **process locale**, not SYSCODEPAGE. Under the CI
+runner's `LANG=en_US.UTF-8` it wrote **UTF-8** (é = `c3 a9`), and
+`LC_ALL=C` switched it to Latin-1 (é = `e9`); the earlier `41 8e 42`
+(Mac Roman) was a non-UTF-8-desktop-locale reading. So `file` IS
+settable on macOS via `LC_ALL`. BricsCAD/**Windows** by contrast pins the
+default to ANSI_1252 (SYSCODEPAGE) regardless of `chcp`/`LC_*`, but
+HONOURS `,ccs=UTF-8` AND `,ccs=UTF-16LE` — so the §7 E4 divergence is
+confirmed (UTF-16LE works on Windows, degrades to UTF-8 on macOS).
+accoreconsole ignores `,ccs=` altogether (product-fixed ANSI/MBCS).
+
 ** 2.3 Console (program's `princ` / `read-line` on stdin-stdout)
 
 | CAD / setting                 | Encoding                      | Configurable?                  |
@@ -337,15 +349,56 @@ cp1252 or UTF-8 on Windows. The existing sketch in
 `alfe-cad-console-encoding.issue` ("autocad -> ?, bricscad -> utf-8")
 is therefore under-specified.
 
-Seed values, to complete as experiments land:
+MEASURED 2026-07-28 by the encoding experiment (encoding-probe.lsp driven
+by scripts/run-encoding-experiment.{sh,ps1}; CI encoding:experiment:*
+jobs; reports in the job artifacts dist/encoding/<backend>-<os>.txt). The
+program writes A·é(U+00E9)·€(chr 8364)·B with (open … "w")+princ under
+default / `,ccs=UTF-8` / `,ccs=UTF-16LE` modes and dumps the raw bytes,
+then re-runs under a matrix of LANG/LC_* (Unix) and chcp code-page
+(Windows) knobs to see which, if any, MOVES the exhibited encoding.
 
-| Situation | clautolisp | BricsCAD/macOS | BricsCAD/Windows | accoreconsole      |
-|-----------+------------+----------------+------------------+--------------------|
-| source    | `-e`, dflt UTF-8 | Mac Roman unless BOM | cp1252 unless BOM [?] | per LISPSYS [?] |
-| file      | UTF-8      | Mac Roman-lf   | [?]              | MBCS               |
-| console   | UTF-8      | Mac Roman      | [?]              | **UTF-16LE, fixed, no BOM in** |
-| log       | n/a        | [?]            | [?]              | [?]                |
-| terminal  | platform default | —        | —                | —                  |
+Target identity as actually run (the (os × tool × version × codepage) key):
+  clautolisp 1.6.15,       Linux,   SYSCODEPAGE UTF-8,     LANG=C.UTF-8
+  BricsCAD   V26.0 LispEx,  macOS,   SYSCODEPAGE MAC_ROMAN, LANG=en_US.UTF-8
+  BricsCAD   V25.0 LispEx,  Windows, SYSCODEPAGE ANSI_1252, LANG=C
+  AutoCAD    2022 (24.1) / accoreconsole, Windows FR, LISPSYS 0, SYSCODEPAGE ANSI_1252
+
+Measured `file` bytes for é (U+00E9), and the provenance CLASS (§6 p.5:
+settable-by-us / fixed-known / unknown):
+
+| Target                | default write        | `,ccs=UTF-8`        | `,ccs=UTF-16LE`     | moved by knob?              | class            |
+|-----------------------+----------------------+---------------------+---------------------+-----------------------------+------------------|
+| clautolisp/Linux      | `c3 a9` UTF-8        | `c3 a9` UTF-8 ✓     | `e9 00` UTF-16LE ✓  | LANG/LC_ALL/LC_CTYPE → yes  | **settable**     |
+| BricsCAD/macOS V26     | `c3 a9` **UTF-8**    | UTF-8 (= default)   | UTF-8 (ccs ignored) | LC_ALL=C → Latin-1 `e9`     | **settable** (LC_ALL) |
+| BricsCAD/Windows V25   | `e9` ANSI_1252       | `c3 a9` UTF-8 ✓     | UTF-16LE ✓          | chcp/LANG/LC_ → no          | default fixed-known; per-call ccs settable |
+| AutoCAD/accoreconsole  | `e9` ANSI/MBCS       | `e9` (ccs ignored)  | `e9` (ccs ignored)  | chcp/LANG/LC_ → no          | **fixed-known**  |
+
+Resolved defaults table (was all [?]; now [obs] except where noted):
+
+| Situation | clautolisp/Linux | BricsCAD/macOS V26 | BricsCAD/Windows V25 | AutoCAD/accoreconsole 2022 |
+|-----------+------------------+--------------------+----------------------+----------------------------|
+| source    | `-Esource`, dflt UTF-8; settable via LC_* | follows locale (UTF-8 here) unless BOM [obs]; not unconditionally Mac Roman | ANSI_1252 unless BOM [?] E1 | per LISPSYS (0 here) [?] E1 |
+| file      | **UTF-8**, settable (LC_*, `-Esource`, `*AUTOLISP-FILE-ENCODING*`, ccs=) [obs] | **UTF-8** default under UTF-8 locale, settable via LC_ALL (C→Latin-1); ccs= IGNORED [obs] | **ANSI_1252** default (fixed by SYSCODEPAGE; chcp/LC_ don't move it); per-call ccs=UTF-8/UTF-16LE HONOURED [obs] | **ANSI_1252 / MBCS, fixed**; ccs= IGNORED; no knob moves it [obs] |
+| console   | UTF-8            | Mac Roman [obs prior] | [?] E3 (BricsCAD Qt on stdout) | **UTF-16LE, fixed, no BOM in** [doc] |
+| log       | n/a             | [?] E2             | [?]                  | [?]                        |
+| terminal  | platform default | —                 | —                    | —                          |
+
+Corrections vs the earlier sketch:
+- BricsCAD/macOS `file` default is **UTF-8**, not Mac Roman, when the
+  process locale is UTF-8 (`LANG=en_US.UTF-8`, as on the CI runner). The
+  old "Mac Roman 0x8E" obs (§2.2) was taken under a non-UTF-8 desktop
+  locale — so the axis is the POSIX locale, not the product. This makes
+  BricsCAD/macOS `file` **settable via LC_ALL**, not "no setting".
+- E4 CONFIRMED as a genuine platform divergence: `,ccs=UTF-16LE` writes
+  proper UTF-16LE on BricsCAD/**Windows** but silently writes UTF-8 on
+  BricsCAD/**macOS**. Worth its own conformance/vendor-divergence probe.
+- accoreconsole `file` ignores `,ccs=` entirely (all three modes = ANSI),
+  and no chcp/LANG/LC_ knob moves it: the AutoCAD `file` encoding is
+  product-fixed, matching the [doc] MBCS claim.
+- Non-Latin-1 chars diverge in the char model, not just the codec: the €
+  (chr 8364) landed as U+00AC on BricsCAD, low-byte 0xAC on accoreconsole,
+  and was dropped in BricsCAD/Windows ANSI — a separate `chr`/DXF-codepage
+  question, tracked apart from these encoding rows.
 
 * 8. Experiments
 
@@ -356,10 +409,13 @@ Seed values, to complete as experiments land:
   in batch mode; the BricsCAD/macOS attempt here produced none despite
   `LOGFILEMODE 1` + `LOGFILEPATH`.
 - E3 — BricsCAD/Windows console encoding in `-B` batch, to fill the
-  column above.
-- E4 — BricsCAD `ccs=UTF-16LE` writes UTF-8 on macOS (measured). Confirm
-  on Windows; if it differs, it is a platform divergence worth its own
-  probe in the conformance suite.
+  column above. PARTIAL (2026-07-28): the `file` situation is measured
+  (ANSI_1252 default, ccs= honoured); the console/cadstdio bytes still
+  need the raw drain capture (the probe's console line comes back already
+  transcoded), so the console cell stays [?].
+- E4 — DONE (2026-07-28): BricsCAD `,ccs=UTF-16LE` writes UTF-8 on macOS
+  but proper UTF-16LE on Windows — a confirmed platform divergence.
+  Promote to a conformance/vendor-divergence probe in the suite.
 - E5 — confirm the current real meaning of `-e`, `-E` and whether
   `-Eterminal` exists, before assigning aliases (§3.d).
 
