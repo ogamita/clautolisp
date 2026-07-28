@@ -62,6 +62,50 @@
              (setq ok T)))
   ok)
 
+;; the DECODED code points of S, space-separated ints — reveals how many
+;; chars the engine sees and their codes (65 233 90 = it decoded "AéZ";
+;; 65 195 169 90 = it decoded UTF-8 é-bytes as two Latin-1 chars).
+(defun codepoints (s / i n out)
+  (if (= (type s) 'STR)
+      (progn (setq out "" i 1 n (strlen s))
+             (while (<= i n)
+               (setq out (strcat out (itoa (ascii (substr s i 1))) " "))
+               (setq i (1+ i)))
+             out)
+    "not-a-string"))
+
+;; open PATH under MODE and report the DECODED code points (read-char
+;; returns the engine's decoded char code). Distinct from dumpbytes, which
+;; reads under ISO-8859-1 to recover the RAW bytes. Wrapped so a decode
+;; error yields "READ-ERR" rather than halting the probe.
+(defun readcp-impl (path mode / f c out)
+  (setq out "" f (open path mode))
+  (if f (progn (while (setq c (read-char f)) (setq out (strcat out (itoa c) " ")))
+               (close f))
+    (setq out "OPEN-FAIL"))
+  out)
+(defun readcp (path mode / r)
+  (setq r (vl-catch-all-apply 'readcp-impl (list path mode)))
+  (if (vl-catch-all-error-p r) "READ-ERR" r))
+
+;; source situation: write a file whose SOURCE contains a literal non-ASCII
+;; char (A é Z) under a chosen write MODE, record the on-disk BYTES (known),
+;; then NATIVE (load) it and report the code points the engine's own loader
+;; decoded. Comparing bytes↔codepoints characterises the native-load decode
+;; (the axis behind cad-load-encoding-macos) without needing external
+;; byte-exact fixtures we cannot transfer into the CAD's cwd.
+(defun srcprobe (tag mode / path expr r)
+  (setq path (strcat "encp-src-" tag ".lsp"))
+  (setq expr (strcat "(setq ENCSRC \"A" (chr 233) "Z\")"))
+  (if (trywrite path mode expr)
+      (progn
+        (m (strcat "source." tag ".bytes") (dumpbytes path))
+        (setq ENCSRC "unset")
+        (setq r (vl-catch-all-apply 'load (list path)))
+        (if (vl-catch-all-error-p r)
+            (m (strcat "source." tag ".load") "LOAD-ERR")
+            (m (strcat "source." tag ".cp") (codepoints ENCSRC))))))
+
 (defun run-encoding-probe ( / S)
   (princ "=== encoding probe ===\n")
 
@@ -114,6 +158,33 @@
   (m "syscodepage.after-set" (getvar "SYSCODEPAGE"))
   (if (trywrite "encp-after-scp.txt" "w" S)
       (m "file.after-syscodepage.hex" (dumpbytes "encp-after-scp.txt")))
+
+  ;; --- 6. file READ decode: how the engine DECODES bytes it wrote back.
+  ;; read.*.cp are the decoded code points (65 233 8364 66 = clean A é € B);
+  ;; compares default vs explicit ccs= read modes, and cross-reads a
+  ;; UTF-8-written and a UTF-16LE-written file to probe read-side codec
+  ;; selection (incl. BricsCAD's ccs=UNICODE auto-adapt-on-read claim). ---
+  (m "read.default.cp"            (readcp "encp-default.txt"     "r"))
+  (m "read.default-as-utf8.cp"    (readcp "encp-default.txt"     "r,ccs=UTF-8"))
+  (m "read.utf8file-as-utf8.cp"   (readcp "encp-ccs-utf8.txt"    "r,ccs=UTF-8"))
+  (m "read.utf8file-default.cp"   (readcp "encp-ccs-utf8.txt"    "r"))
+  (m "read.utf16file-unicode.cp"  (readcp "encp-ccs-utf16le.txt" "r,ccs=UNICODE"))
+  (m "read.utf16file-utf16le.cp"  (readcp "encp-ccs-utf16le.txt" "r,ccs=UTF-16LE"))
+
+  ;; --- 7. source situation: native (load) decode vs known on-disk bytes,
+  ;; across the write encodings (default / UTF-8 / UTF-16LE). Each line pair
+  ;; source.<tag>.bytes + source.<tag>.cp says "these bytes decoded to these
+  ;; code points" — the direct measurement of the CAD's own loader. ---
+  (srcprobe "default" "w")
+  (srcprobe "utf8"    "w,ccs=UTF-8")
+  (srcprobe "utf16le" "w,ccs=UTF-16LE")
+
+  ;; --- 8. log situation (identity only; producing/reading a batch log is
+  ;; E2 and has so far failed to yield a file). Report the log sysvars so we
+  ;; at least capture the path/mode the target exposes. ---
+  (m "log.mode"     (getvar "LOGFILEMODE"))
+  (m "log.path"     (getvar "LOGFILEPATH"))
+  (m "log.name"     (getvar "LOGFILENAME"))
 
   (princ "ENC-PROBE DONE\n")
   (princ))
