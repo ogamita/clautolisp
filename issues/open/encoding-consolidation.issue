@@ -77,7 +77,7 @@ pjb's; B4/B6 are the two he scoped out of the CLI but that are still work.
 |----------+--------------------+----------------------+---------------------------|
 | B1 read/write =.lsp/.txt= in-process | =source= + =file= | settable | read+write honour =*AUTOLISP-FILE-ENCODING*=/=-e=, per-open ✓ |
 | B2 alfe ↔ user terminal | =terminal= | settable | *BUG: -E published but NOT applied to alfe's own streams* |
-| B3 alfe ↔ CAD console pipe | =console= | fixed-known (accoreconsole UTF-16LE) / variable (bricscad) | lenient default; not threaded; no CLI |
+| B3 alfe ↔ CAD subprocess pipe | =cadstdio= (+ =console= = the CAD GUI console device, separate) | fixed-known (accoreconsole UTF-16LE) / variable (bricscad Qt; Unix LC_) | lenient default; not threaded; no CLI |
 | B4 protocol channel files | (internal) | fixed (we own both ends = UTF-8) | works; alfe writes UTF-8, reads octets+heuristic |
 | B5 CAD's own =(load)= | =source= inside the CAD | variable (SYSCODEPAGE/locale) | *BUG: ignores =-e=; macOS Mac Roman* |
 | B6 return values CAD→alfe | (derived from =terminal= + CAD codepage) | variable | *BUG: no transcode; wrong for 0x80–0x9F* |

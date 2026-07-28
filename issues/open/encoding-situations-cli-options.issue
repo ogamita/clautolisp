@@ -4,10 +4,21 @@
 
 * Status
 
-*Proposal — the situation list in §3 needs pjb's validation or amendment
-before any implementation.* Everything downstream (option names, defaults
-table, plumbing) is derived from that list, so it is the one thing to
-settle first.
+*VALIDATED 2026-07-28 (pjb).* The situation list is settled at SIX:
+=source=, =file=, =console= (CAD GUI console device), =cadstdio= (CAD
+process OS pipes), =log=, =terminal= (alfe/clautolisp's own). Arbitration
+points a–d resolved (see §3): one =file=; two encodings (in/out) on
+=console=/=cadstdio=/=terminal= (+ read/write on =file=); =-e= and =-E=
+DROPPED; the console-area three-way split (=console= ≠ =cadstdio= ≠
+=terminal=). The option set is §4. Downstream still to complete: the §7
+defaults table (needs experiments E1–E5, several CAD-blocked) and the §6
+plumbing — but implementation of the settled situations + CLI can start.
+Key implementation constraint (§2.1): all =load= implementations
+(=builtin-load=/=autolisp-load-file-in-context= engine, =autolisp-source-load=
+CAD-side shadow — CONFIRMED still present, currently NOT encoding-aware =
+the macOS bug, =direct-load= alfe bridge, and the external =tu:load=) MUST
+share one algorithm, signature, and encoding-parameter processing for the
+=source= situation.
 
 Supersedes the "To design (pjb)" section of
 =alfe-cad-console-encoding.issue=, which sketched a per-backend console
@@ -63,6 +74,24 @@ used when *compiling* LSP files. It does **not** state how a `.lsp` is
 [obs] BricsCAD in-engine `(load …)` ignores alfe's `-e`; that is
 `cad-load-encoding-macos.issue`, and it is the same axis as this issue:
 the source situation has no per-engine setting to forward `-e` into.
+
+Our load implementations (verified 2026-07-28) — the `source` situation
+spans ALL of them, and they MUST share one algorithm, signature, and
+encoding-parameter processing (a fourth, macro-load, may join):
+- `builtin-load` → `autolisp-load-file-in-context`
+  (=CL/autolisp-builtins-core/source/api.lisp:546=, runtime :2829) —
+  in-process engine; HONOURS the encoding. **The reference algorithm.**
+- `autolisp-source-load` (=AFE/source/runtime/autolisp-bootstrap.lsp:563=,
+  family 432/461/566, dispatch `autolisp-eval-load-form` :688, registered
+  `*CLLOAD_DEFAULT_LOADER*` :833) — the CAD-side shadow that deports the
+  program's I/O over the protocol. **CONFIRMED still present; native
+  `(open … "r")` with NO encoding ⇒ host codepage (macOS Mac Roman). This
+  is the bug.** Must be brought to the reference algorithm; watch the
+  pure-ASCII constraint on the vendored runtime (bootstrap :541-547).
+- `direct-load` (=AFE/source/backend-clautolisp.lisp:505=) — the
+  alfe→clautolisp bridge; delegates to the engine, OK.
+- `tu:load` — the SCHMS+ unit-test loader (external, sncf-reseau/src/schms);
+  out of this tree but must follow the same contract.
 
 ** 2.2 Files opened by the program (`open`, `read-line`, `write-line`, `princ` to a file)
 
@@ -154,13 +183,23 @@ control files are alfe's own and their payload is ASCII.
 The name is what the CLI option is built from, so it should read well in
 both forms. Proposal:
 
-| # | Situation  | Covers                                                              | Who fixes it                |
-|---+------------+---------------------------------------------------------------------+-----------------------------|
-| 1 | `source`   | `.lsp`/`.dcl` read by `load` and by alfe `-l`                       | engine (LISPSYS / BOM rule) |
-| 2 | `file`     | files the AutoLISP program opens with `open`                        | per-call arg; default = ours |
-| 3 | `console`  | the engine's own stdin/stdout as the program sees it                | product (accoreconsole: fixed) |
-| 4 | `log`      | the CAD log file (LOGFILEMODE)                                      | [?]                         |
-| 5 | `terminal` | alfe's / clautolisp's own terminal I/O to the user                  | us                          |
+| # | Situation   | Covers                                                              | Who fixes it                     |
+|---+-------------+---------------------------------------------------------------------+----------------------------------|
+| 1 | `source`    | `.lsp`/`.dcl` read by `load` and by alfe `-l` (ALL load impls, §2.1) | engine (LISPSYS / BOM rule)      |
+| 2 | `file`      | files the AutoLISP program opens with `open`                        | per-call arg; default = ours     |
+| 3 | `console`   | the CAD's OWN console DEVICE (the GUI text console) — the *true* console; may differ from its stdio | product; [?] likely unsettable   |
+| 4 | `cadstdio`  | the CAD subprocess's stdin/stdout/stderr OS pipes (accoreconsole UTF-16LE; BricsCAD Qt on stdout) | fixed-known / Unix `LC_*` default |
+| 5 | `log`       | the CAD log file (LOGFILEMODE)                                      | [?]                              |
+| 6 | `terminal`  | alfe's / clautolisp's own REPL I/O to the user                     | us (settable)                    |
+
+Console-area distinction (pjb 2026-07-28): three different streams share
+the word "console" — the CAD GUI console DEVICE (`console`, product-fixed,
+maybe unsettable), the CAD process OS pipes (`cadstdio`, accoreconsole
+UTF-16LE / Unix LC_), and alfe's own terminal (`terminal`, ours). What a
+probe's `princ` writes lands on `cadstdio` for accoreconsole but on the
+file-IPC `protocol` channel for BricsCAD batch; the GUI `console` is only
+in the loop with a visible GUI. Situations 3/4/6 each carry TWO encodings
+(input + output — §arbitrated-b).
 
 Deliberately *not* proposed as user-facing situations, but say if you
 want them:
@@ -171,22 +210,33 @@ want them:
   DWGCODEPAGE, and libredwg's codepage handling). A real situation, but a
   different subsystem; probably its own issue.
 
-Points to arbitrate:
+Points ARBITRATED (pjb 2026-07-28):
 
-a. Is `file` one situation or two (`file-read` / `file-write`)? BricsCAD's
-   `ccs=UNICODE` auto-adapts on read but not on write, so the natural
-   defaults differ per direction.
-b. Should `console` split into `console-in` / `console-out`? For
-   accoreconsole both are UTF-16LE, but the *line-termination* rules
-   differ (input CRLF is destructive, output is not).
-c. `source` currently has `-e`. Keeping `-e` as an alias of `-Esource` is
-   the obvious compatibility move — confirm.
-d. `-E` today is documented as "I/O encoding for the engine's
-   stdin/stdout", i.e. `console`. Making `-E` an alias of `-Econsole`
-   preserves existing scripts. But `alfe-cad-console-encoding.issue`
-   describes `-E` as the *source-file* encoding and mentions an
-   `-Eterminal` that `--help` does not list — the current state of those
-   two options should be checked before deciding.
+a. RESOLVED — `file` stays ONE situation (a user wants a consistent
+   load/file rule). The read/write divergence (BricsCAD `ccs=UNICODE`
+   auto-adapts on read only) is captured in the §7 defaults table, not a
+   second option. NB: the cross-CAD `source` discrepancy traces to our
+   having THREE+ `load` implementations (see §2.1) — they MUST share one
+   algorithm, signature, and encoding-parameter processing.
+b. RESOLVED — a console needs TWO encodings, INPUT and OUTPUT. Usually the
+   same, but a configuration may differ (e.g. an ISO-8859-1 keyboard with
+   a UTF-8 screen), and the line-termination treatment differs by
+   direction regardless. So the console/terminal options take an optional
+   direction: `-E<situation>[-in|-out]` (bare form sets both).
+c. RESOLVED — DROP both `-e` AND `-E` (no legacy aliases,
+   per pjb-cli-option-convention).
+d. RESOLVED — THREE distinct streams share the word "console" (see the §3
+   table + note), so three distinct situations:
+   - `console`  = the CAD's OWN console DEVICE (GUI text console). The
+                  *true* console; product-fixed, [?] whether settable.
+                  Option `-Econsole`.
+   - `cadstdio` = the CAD subprocess's OS stdin/stdout/stderr pipes
+                  (accoreconsole UTF-16LE; BricsCAD Qt on stdout; Unix may
+                  default from `LC_*`). Option `-Ecadstdio`.
+   - `terminal` = alfe's / clautolisp's OWN REPL device to the user; ours.
+                  Option `-Eterminal`.
+   (Current `-E` = terminal I/O per the code-map E5, NOT the CAD console;
+   the `-E`=source-file text in alfe-cad-console-encoding is stale.)
 
 * 4. Proposed CLI shape
 
@@ -200,6 +250,24 @@ single dash used above — say if the double dash is intended.)
 
 A bare `-E {encoding}` / `--encoding {encoding}` setting *every*
 situation at once would be a convenient shorthand; propose adding it.
+
+** Resolved option set (pjb 2026-07-28) — `-e` and `-E` DROPPED
+
+| situation  | short         | long                       | directions   |
+|------------+---------------+----------------------------+--------------|
+| `source`   | `-Esource`    | `--source-encoding`        | (read)       |
+| `file`     | `-Efile`      | `--file-encoding`          | read / write |
+| `console`  | `-Econsole`   | `--console-encoding`       | in / out     |
+| `cadstdio` | `-Ecadstdio`  | `--cadstdio-encoding`      | in / out     |
+| `log`      | `-Elog`       | `--log-encoding`           | (read)       |
+| `terminal` | `-Eterminal`  | `--terminal-encoding`      | in / out     |
+
+Direction (arbitrated-b — two encodings, input and output, may differ):
+the bare option sets BOTH directions; a suffix picks one:
+`-E<situation>-in` / `-E<situation>-out` (and `--<situation>-input-encoding`
+/ `--<situation>-output-encoding`). For `file` the two directions are
+`-read` / `-write`. The `{encoding}-{line-termination}` suffix (§5) is
+valid on all of them.
 
 Rules:
 
