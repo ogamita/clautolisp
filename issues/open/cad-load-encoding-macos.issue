@@ -1,5 +1,8 @@
 -*- coding:utf-8 -*-
 
+# CONSOLIDATED 2026-07-28 into issues/open/encoding-consolidation.issue
+# (boundaries B5 + B6 / gaps G3 + G4). Track the work there; kept for history.
+
 cad-load-encoding-macos — BricsCAD native (load) ignores the -e/load encoding on macOS
 ======================================================================================
 

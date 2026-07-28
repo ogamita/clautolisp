@@ -1,0 +1,179 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: Character-encoding consolidation (alfe + clautolisp): the umbrella — program of work, code map, and the no-regression invariant
+#+AUTHOR: Pascal J. Bourguignon
+#+DATE: 2026-07-28
+
+* What this is (and what it defers)
+
+The UMBRELLA that ties all character-encoding work into one program with a
+plan and a regression guardrail. It does NOT re-design the CLI or the
+per-situation defaults — that is pjb's =encoding-situations-cli-options.issue=,
+which is the AUTHORITY for:
+- the named *situation* list (source / file / console / log / terminal) — §3,
+- the =-E{situation}= / =--{situation}-encoding= CLI shape — §4,
+- line-termination per situation — §5,
+- the plumbing steps — §6,
+- the (situation × backend × version × platform) defaults table — §7,
+- the experiments E1–E5 — §8.
+
+This umbrella adds ONLY what that issue does not carry: the whole-tree code
+map (file:line for every boundary, incl. the ones it scopes out), the
+"hardwired / must-not-change" tripwire, the phased PLAN, and the two
+boundaries it deliberately excludes (protocol transport, return-value
+transcode) as tracked work.
+
+Issue landscape after consolidation:
+- =encoding-situations-cli-options.issue= — the CLI/situations DESIGN
+  (blocked on pjb validating the situation list; everything derives from it).
+- =encoding-consolidation.issue= (this) — the PROGRAM + plan + code map +
+  invariant; SUPERSEDES =cad-load-encoding-macos= (B5/B6) and
+  =test-file-encodings= (B1 tests+spec); COORDINATES with (does not
+  supersede) the two above. =alfe-cad-console-encoding= is already
+  part-superseded by the situations issue.
+- CLOSED, do NOT reopen: =encoding-dispatch=, =encodings=,
+  =open-write-ignores-file-encoding=.
+
+* The hard invariant (governs every step)
+
+The working CAD path must NOT regress: alfe drives BricsCAD (UTF-8) and
+accoreconsole (UTF-16LE) headless on macOS + Windows and reads their
+verdicts. Every change ships behind a default that reproduces today's
+behaviour; a CAD-behaviour change is verified on a real runner BEFORE it
+becomes the default. Appendix F is the tripwire.
+
+* Provenance — four states (aligns the situations issue §6 with the dialect taxonomy)
+
+Each (situation/boundary, os×tool×version) cell is ONE of:
+- *settable*     — user picks it, we honour it (clautolisp source/file/terminal).
+- *fixed-known*  — the product pins it and we know the value (accoreconsole
+                   console = UTF-16LE) → the CLI option is accepted but WARNS
+                   and is not applied (never silently ignored).
+- *variable*     — resolved at runtime from sources in precedence: CAD sysvars
+                   (SYSCODEPAGE/DWGCODEPAGE) → the DWG codepage → BOM →
+                   $LC_ALL/$LANG/$LC_CTYPE → probe (e.g. BricsCAD source =
+                   "UTF-8 if BOM else codepage").
+- *unknown*      — not yet measured; needs an experiment (log-file encoding).
+This is the encoding analogue of the dialect-divergence provenance, and the
+same "accept-but-warn where we cannot honour" rule (fixed-known) applies.
+Design principle (pjb): every encoding is a NAMED parameter, one greppable
+source of truth — no =:external-format= literal buried at a call site.
+
+* Model — six boundaries on the data path (the code topology)
+
+Maps the situations onto where they live in the code. Situations 1-5 are
+pjb's; B4/B6 are the two he scoped out of the CLI but that are still work.
+
+#+begin_example
+ [user terminal] ──B2 terminal── [alfe] ──B1 source/file── [.lsp/.txt alfe loads/opens]
+                          │
+                          ├──B3 console══ CAD process stdout/stderr pipe
+                          └──B4 protocol══ protocol/*.txt ══ [CAD-side runtime]
+                                                                 │
+                                                                 B5 source-in-CAD── [.lsp the CAD loads natively]
+                          ◄──────── B6 return-transcode ─────────┘
+#+end_example
+
+| boundary | situation (pjb §3) | provenance (default) | state (from the code map) |
+|----------+--------------------+----------------------+---------------------------|
+| B1 read/write =.lsp/.txt= in-process | =source= + =file= | settable | read+write honour =*AUTOLISP-FILE-ENCODING*=/=-e=, per-open ✓ |
+| B2 alfe ↔ user terminal | =terminal= | settable | *BUG: -E published but NOT applied to alfe's own streams* |
+| B3 alfe ↔ CAD console pipe | =console= | fixed-known (accoreconsole UTF-16LE) / variable (bricscad) | lenient default; not threaded; no CLI |
+| B4 protocol channel files | (internal) | fixed (we own both ends = UTF-8) | works; alfe writes UTF-8, reads octets+heuristic |
+| B5 CAD's own =(load)= | =source= inside the CAD | variable (SYSCODEPAGE/locale) | *BUG: ignores =-e=; macOS Mac Roman* |
+| B6 return values CAD→alfe | (derived from =terminal= + CAD codepage) | variable | *BUG: no transcode; wrong for 0x80–0x9F* |
+| — CAD =log= file | =log= | unknown | needs experiment E2 |
+
+* Open gaps (the work) — each names its home issue
+
+- *G1 (B2)* — apply the resolved =terminal= encoding to alfe's own
+  =*standard-output*/-input= (today =-E= is dropped). Engine-side, unit-
+  testable, no CAD. [this issue / situations §6.2]
+- *G2 (B3, situations issue)* — thread the =console= encoding through
+  =start-engine= to BOTH =launch-program :external-format= AND
+  =drain-channel=/=decode-console-octets= (the auto-detect cascade becomes
+  the =AUTO= value, not the only behaviour); make accoreconsole's default
+  the TRUE UTF-16LE, robust decoder demoted to safety net; the CLI option
+  is fixed-known→warn there. Plus robust vendored-runtime discovery from a
+  FROZEN exe. [encoding-situations-cli-options + alfe-cad-console-encoding]
+- *G3 (B5, cad-load-encoding-macos)* — CAD native =(load)= must honour the
+  active =source= encoding (macOS Mac Roman today): consult it in the
+  CAD-side load shim and/or drive SYSCODEPAGE from the launch encoding
+  (verify it takes on macOS). Keep the vendored runtime pure-ASCII (F.5).
+- *G4 (B6, cad-load-encoding-macos)* — transcode remote-eval return values
+  from the CAD codepage to the =terminal= encoding (windows-1252/Mac Roman
+  → UTF-8). None today.
+- *G5 (B1 tests+spec, test-file-encodings)* — the part-1 (LOAD a
+  =(setq text (strcat …))= fixture per encoding) and part-3 (loop over
+  =*AUTOLISP-FILE-ENCODING*=) AutoLISP programs incl. wrong-encoding /
+  wrong-line-termination error cases; verify per-*open* (not per-read)
+  selection on real CADs; autolisp-spec update (per-open selection, the
+  =*AUTOLISP-FILE-ENCODING*= extension, the hardwired-console facts, the
+  provenance table).
+- *G6 (experiments)* — E1 AutoCAD LISPSYS×BOM load decode; E2 log-file
+  encoding; E3 BricsCAD/Windows console; E4 =ccs=UTF-16LE= writes UTF-8;
+  E5 confirm current =-e=/=-E=/=-Eterminal= meaning. [situations §8]
+
+* Plan (phased; each phase ships behind a behaviour-preserving default)
+
+- *Phase 0* — situation list validated (pjb, situations §3) + the named-
+  parameter scaffold and the =(situation, os, tool, version) → (value,
+  provenance)= lookup on the dialect-platform-version axis, defaults =
+  today. Pure refactor of literals into named parameters; unit-test the
+  lookup + provenance. BLOCKS on §3.
+- *Phase 1* — B1/B2 engine-side + the CLI family (situations §4) + G1 + G5
+  tests + G6/E5. No CAD; fully unit-testable. Introduce
+  =-E{situation}=/=--{situation}-encoding=, apply =terminal= to alfe's own
+  streams, land the test-file-encodings matrix, spec the per-open rule.
+- *Phase 2* — B3/B4: =console= threaded end to end (situations §6.3-6.4);
+  accoreconsole default → true UTF-16LE (verified on the runner), robust
+  decoder as =AUTO= safety net; frozen-exe runtime discovery. Behaviour-
+  preserving default; verified on a real runner before flipping.
+- *Phase 3* — B5/B6 CAD-side (G3/G4) + the CAD experiments (E1-E4):
+  =source=-in-CAD native load honouring the encoding, return-value
+  transcode. Needs real macOS BricsCAD + Windows accoreconsole. Highest
+  care; the invariant governs.
+- *Phase 4* — spec + docs: the situations, the (os×tool×version) defaults
+  with provenance, the hardwired facts → autolisp-spec + the
+  =running-with-clautolisp-and-alfe= runbook.
+
+* Appendix — code map (verified, file:line)  [AFE=autolisp-front-end CL=clautolisp]
+
+** B1 source/file (in-process engine)
+- =CL/autolisp-runtime/source/api.lisp:2829= =autolisp-load-file-in-context= — precedence 2844-2863: (1) =*AUTOLISP-FILE-ENCODING*= (=lookup-autolisp-file-encoding= :2807), (2) session =runtime-session-default-source-encoding= (=CL/…/model.lisp:142=, set by =-e=), (3) dialect default.
+- reader open: =CL/autolisp-reader/source/input.lisp:25= =decode-and-normalize-file=; entry points =CL/autolisp-reader/source/api.lisp:332,377,421=.
+- LOAD 3rd-arg ENCODING: =CL/autolisp-builtins-core/source/api.lisp:548-568=.
+- WRITE: =CL/…/api.lisp:1967= =open-default-external-format= (=builtin-open= :2200), fallback =:iso-8859-1= (:1989); BricsCAD =,ccs=ENC= =%split-bricscad-mode-suffix= (:1991), precedence 2191-2200.
+- alfe in-process load honours =:encoding=: =AFE/source/backend-clautolisp.lisp:505= =direct-load= (:527); workdir files hardwired =:utf-8= (:357).
+
+** B2 terminal
+- =-E ENC= → =cli-options-io-encoding= (=CL/autolisp-cli/source/spec.lisp:216-220=; help =AFE/source/cli.lisp:241=); published as =*AUTOLISP-TERMINAL-ENCODING*= (=CL/autolisp-cli/source/transmit.lisp:133-135=). Every backend =(declare (ignore … io-encoding))= (=backend-clautolisp.lisp:389=, =backend-bricscad.lisp:599=, =backend-autocad.lisp:552=). NO reconfig of alfe's own =*standard-output*= external-format ⇒ SBCL locale default.
+
+** B3 console pipe
+- =AFE/source/backend-autocad.lisp:442= =autocad-console-external-format= (default =:iso-8859-1=, env =$ALFE_AUTOCAD_CONSOLE_ENCODING=); applied at =launch-program= :632; NUL-strip =slurp-process-stream= :455-461. BricsCAD launcher :692-697 passes NO =:external-format= (real output via B4).
+
+** B4 protocol channel files
+- READ (octet, robust): =AFE/source/file-protocol.lisp:575= =drain-channel= (byte offset) → =decode-console-octets= :564 (UTF-16LE BOM/=%looks-utf-16le-p= :506 → UTF-8 BOM → =%decode-utf-8-lenient= :531 Latin-1 fallback).
+- WRITE (alfe): =write-atomic-file= :320 (=:utf-8=); status UTF-8; CRLF-tolerant =last-non-empty-line= :373-384.
+- CAD-side native (no encoding arg): =AFE/source/runtime/autolisp-remote-io.lsp= =autolisp-protocol-write-line= :7, =…-set-status= :39, =…-slurp-lines= :19.
+
+** B5 in-engine native load
+- =AFE/source/runtime/autolisp-bootstrap.lsp:703= → =autolisp-eval-load-form= :688 → =autolisp-source-load= (default loader :833); body :461 native =(open resolved "r")= :463 + =read-line= :470, NO encoding ⇒ host native; =*AUTOLISP-FILE-ENCODING*= NOT read here. pure-ASCII constraint :541-547; =autolisp-write-string-to-file= :924 ASCII byte-at-a-time.
+
+** B6 return transcode
+- NONE. Return values ride the B4 stdout drain; Latin-1 fallback in =%decode-utf-8-lenient= (wrong for 0x80–0x9F). In-process codepage machinery (=%canonical-codepage-string=, =builtin-clal-system-codepage= =CL/…/api.lisp:4429-4494=) only canonicalises SYSCODEPAGE strings for user code.
+
+** references
+- CLI options CURRENT: =-e ENC= (=spec.lisp:211-215=), =-E ENC= (:216-220), =--list-encodings= (:99-103); alias/resolver =CL/autolisp-cli/source/encoding.lisp= (line-term suffixes :81-104). The =-E{situation}= redesign is in the situations issue §4.
+- diagnostics: =CL/autolisp-runtime/source/api.lisp= =*enc-diagnostic-codes*= closed set :2983; =signal-encoding-diagnostic= :3006 (=[enc-<code>]=, silent under =:lax=).
+- dialect default encodings (=CL/autolisp-reader/source/dialect.lisp=): strict & autocad-2022 → =:iso-8859-1=; autocad-2026/bricscad/clautolisp/lax → =:utf-8= (:112,128-129,147-148,160-161,177-178,200-201,223-224); locale fallback =locale-default-source-encoding= (=CL/…/api.lisp:402=).
+- tests: =AFE/tests/file-protocol-tests.lisp= (:399,:428,:251); =AFE/tests/cli-tests.lisp= (:139,:151,:165); =CL/autolisp-builtins-core/tests/builtin-tests.lisp= (=%capture-enc-diagnostics= :3934).
+
+** Appendix F — HARDWIRED / must-not-change (the regression tripwire)
+1. accoreconsole UTF-16LE read path — =AFE/source/file-protocol.lisp:492-603= (byte-offset drain + never-signal decode). Hard =:utf-8= reader crashes bootstrap on French Windows.
+2. NUL-strip — =backend-autocad.lisp:461=.
+3. Console default must stay a TOTAL never-signaling decoder — =backend-autocad.lisp:453= (default may become =:utf-16le= only if it too never crashes bootstrap; else keep the lenient =AUTO=).
+4. status.txt CRLF-tolerant parse — =file-protocol.lisp:373-384= (clean shutdown depends on it on Windows).
+5. CAD-side vendored runtime/bootstrap + generated run-common.lsp must stay pure ASCII — =autolisp-bootstrap.lsp:541-547=, =file-protocol.lisp:980-983=, =autolisp-write-string-to-file:924=.
+6. =open-default-external-format= fallback =:iso-8859-1= + read/write precedence symmetry — =CL/…/api.lisp:1989= (re-breaks =open-write-ignores-file-encoding= if changed).
+7. =*enc-diagnostic-codes*= closed set — adding a code requires updating :2983.
+8. reverse direction (=-x '(… é …)'= → BricsCAD as code 233) is CORRECT and must not regress (situations §1).

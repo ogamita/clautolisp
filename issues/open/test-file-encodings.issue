@@ -1,3 +1,6 @@
+# CONSOLIDATED 2026-07-28 into issues/open/encoding-consolidation.issue
+# (boundary B1 tests + spec / gap G5). Track the work there; kept for history.
+
 Write test fixtures and tests for the file encoding and line termination.
 
 Prepare 6 files containing this lisp expression:

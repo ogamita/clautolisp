@@ -3,6 +3,9 @@
 #+AUTHOR: Pascal J. Bourguignon
 #+DATE: 2026-07-25
 
+# CONSOLIDATED 2026-07-28 into issues/open/encoding-consolidation.issue
+# (boundary B3 / gap G2). Track the work there; kept for history.
+
 Found when the Windows CI vendor:probes:autocad job hit a bootstrap
 crash (job 15534319257): the AutoCAD backend read accoreconsole's
 stdout/stderr pipe with the default :UTF-8 external-format, but

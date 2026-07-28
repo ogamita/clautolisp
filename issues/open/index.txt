@@ -76,6 +76,22 @@ portable .lsp scenarios are doable now.
   S3b xdroom-xdsize-not-implemented.issue      XDROOM/XDSIZE builtins
   S4a entnext-nongraphical-enumeration.issue   ENTNEXT/ENTLAST reach dict/xrecord objects (vendor confines to OBJECTS)
 
+ENCODING — CURRENT (pjb-driven, 2026-07-28): character-encoding consolidation.
+  encoding-situations-cli-options.issue  DESIGN AUTHORITY (pjb; = index 6c below).
+     The named situations (source/file/console/log/terminal), the
+     -E{situation}/--{situation}-encoding CLI, line-termination, defaults table,
+     plumbing, experiments E1-E5. BLOCKED on pjb validating the situation list (§3)
+     -- settle first; everything derives from it.
+  encoding-consolidation.issue   UMBRELLA: the program of work + phased PLAN +
+     whole-tree code map (file:line per boundary) + the "hardwired / must-not-
+     change" regression tripwire + the no-regression invariant. Defers the CLI/
+     situations design to the issue above; adds the two boundaries it scopes out
+     (protocol transport, return-value transcode). SUPERSEDES cad-load-encoding-
+     macos + test-file-encodings; coordinates with (not supersedes) the two above.
+     Phased, each behind a behaviour-preserving default: P0 situation list + named-
+     parameter scaffold; P1 B1/B2 engine + CLI + tests (no CAD); P2 B3/B4 console;
+     P3 B5/B6 CAD-side (needs real CAD); P4 spec+docs.
+
 SMALL — process next, in this order:
 
   -- A: sedit/nav/interactor follow-ups (same code area, freshest)
