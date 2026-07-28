@@ -228,18 +228,29 @@ same shared evaluation context.
 
 * Encoding
 
-| Option   | Effect                                                              |
-|----------+---------------------------------------------------------------------|
-| =-e ENC= | Override the source-file encoding for the whole session.            |
-| =-E ENC= | Declared terminal-IO encoding; surfaced to AutoLISP code.           |
+Encoding is set per /situation/ — one option per boundary where
+bytes cross. Each situation =S= has a long form =--S-encoding ENC=
+and a short form =-ES ENC=; bidirectional situations also accept a
+=-in= / =-out= suffix (=--S-in-encoding=, =-ES-in=). A bare
+=--encoding ENC= / =-E ENC= sets every situation at once.
+
+| Situation  | Option                | Effect                                              |
+|------------+-----------------------+-----------------------------------------------------|
+| source     | =-Esource ENC=        | Source-file encoding for the whole session.         |
+| terminal   | =-Eterminal ENC=      | alfe's own REPL I/O encoding; surfaced to AutoLISP. |
+| file       | =-Efile ENC=          | =(open …)= file I/O default.                         |
+| console    | =-Econsole ENC=       | CAD GUI console device I/O.                          |
+| cadstdio   | =-Ecadstdio ENC=      | CAD subprocess stdin/stdout pipes.                  |
+| log        | =-Elog ENC=           | alfe's log/diagnostic stream.                        |
+| (all)      | =-E ENC=              | Every situation at once.                            |
 
 Accepted ENC values: =utf-8=, =iso-8859-1= (= =latin-1=),
 =windows-1252= (= =cp1252=), =us-ascii=. Suffixes select a
 line-ending variant: =-mac= / =-cr= for CR, =-dos= / =-crlf= for
-CRLF, =-unix= / =-lf= for LF. So =-e utf-8-crlf= reads a UTF-8 file
-with CRLF terminators.
+CRLF, =-unix= / =-lf= for LF. So =-Esource utf-8-crlf= reads a UTF-8
+file with CRLF terminators.
 
-Without =-e=, the dialect's default applies (=iso-8859-1= for
+Without =-Esource=, the dialect's default applies (=iso-8859-1= for
 =strict=, =utf-8= for =autocad-2026= / =bricscad-v26= /
 =clautolisp=). When neither dialect nor option specifies one, the
 process locale (=$LC_ALL=, then =$LANG=, then =$LC_CTYPE=)
@@ -273,7 +284,7 @@ state:
 | =*AUTOLISP-HELP*=              | The --help banner of the front-end as a string.        |
 | =*AUTOLISP-DIALECT*=           | =:strict= / =:autocad-2026= / =:bricscad-v26= / =:clautolisp=. |
 | =*AUTOLISP-HOST*=              | =:mock= / =:null= / a CAD-specific keyword.            |
-| =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (always a string). Empty string =""= means "no preference; fall through to the dialect default" — the documented degenerate case when neither =-e= nor any =LC_*= env var resolves an encoding. |
+| =*AUTOLISP-FILE-ENCODING*=     | Active source-file encoding (always a string). Empty string =""= means "no preference; fall through to the dialect default" — the documented degenerate case when neither =-Esource= nor any =LC_*= env var resolves an encoding. |
 | =*AUTOLISP-TERMINAL-ENCODING*= | Active terminal encoding (always a string, never empty — falls back to =US-ASCII= in the degenerate case). |
 | =*AUTOLISP-VERSION*=           | Version string of the running engine.                  |
 | =*AUTOLISP-LOAD-PATHNAME*=     | Set by =LOAD= during evaluation of the loaded file.    |

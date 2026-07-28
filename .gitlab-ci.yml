@@ -641,15 +641,25 @@ vendor:probes:bricscad:macos:
 # Encoding experiment: run encoding-probe.lsp under a MATRIX of encoding
 # knobs (Unix LANG/LC_*; Windows chcp code page) on each CAD backend, to
 # DISCOVER which knob changes the exhibited encoding. Fills the
-# encoding-situations §7 defaults table. Manual (intermittent runners); the
-# result is the dist/encoding/<backend>-<os>.txt report artifact.
+# encoding-situations §7 defaults table; the result is the
+# dist/encoding/<backend>-<os>.txt report artifact.
+#
+# Runs SYSTEMATICALLY (for now, per pbourguignon): rules `on_success` rather
+# than `manual`, so no one has to trigger them by hand while we gather the
+# data. Each job is SELF-CONTAINED -- it builds alfe in-script rather than
+# depending on the manual build:alfe:* jobs (those stay manual, so a `needs:`
+# on them would make the encoding job "skipped"). `allow_failure` so an
+# offline/misbehaving CAD runner never reddens the pipeline, and
+# `interruptible` so a newer pipeline cancels older still-pending runs on the
+# intermittent macOS/Windows boxes instead of letting them pile up.
 # ============================================================================
 .encoding-experiment:
   stage: test
   variables:
     GIT_SUBMODULE_STRATEGY: none
+  interruptible: true
   rules:
-    - when: manual
+    - when: on_success
       allow_failure: true
   artifacts:
     name: "encoding-$CI_COMMIT_SHORT_SHA"
@@ -668,24 +678,24 @@ encoding:experiment:clautolisp:linux:
 encoding:experiment:bricscad:macos:
   extends: .encoding-experiment
   tags: [macos, arm64, shell]
-  needs: [{ job: "build:alfe:macos", artifacts: true }]
   script:
+    - make -C autolisp-front-end build-alfe-sbcl
     - bash scripts/run-encoding-experiment.sh --backend bricscad
 
 encoding:experiment:bricscad:windows:
   extends: .encoding-experiment
   tags: [windows, amd64, shell]
-  needs: [{ job: "build:alfe:windows", artifacts: true }]
   script:
+    - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend bricscad
 
 encoding:experiment:autocad:windows:
   extends: .encoding-experiment
   tags: [windows, amd64, shell]
-  needs: [{ job: "build:alfe:windows", artifacts: true }]
   variables:
     PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
   script:
+    - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
 
 # ============================================================================

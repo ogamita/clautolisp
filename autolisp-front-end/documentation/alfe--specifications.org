@@ -1427,14 +1427,23 @@ The =alfe= binary can:
 
 ** Encodings
 
-Full support via =babel=: every coding and every line ending. =-e=
-sets the session-wide source-file encoding (applied to every load
-in the session, including nested =(load …)= calls a user init file
-makes); =-E= sets the I/O encoding.
+Full support via =babel=: every coding and every line ending. The
+encoding CLI is a *family* keyed by /situation/, spelled -E<situation>
+(or --<situation>-encoding), one option per boundary where bytes
+cross. Two are exercised by the conformance scenarios: =-Esource= sets
+the session-wide source-file encoding (applied to every load in the
+session, including nested =(load …)= calls a user init file makes),
+and =-Eterminal= sets the encoding of alfe's own REPL I/O. The
+remaining situations — file, console, cadstdio and log — take the
+same shape (for a bidirectional situation a direction may be pinned,
+e.g. -Eterminal-in / -Eterminal-out), and a bare -E ENC /
+--encoding ENC sets them all at once. The full situation list,
+directions, and resolution order live in the =clautolisp= CLI spec
+(=*encoding-situations*=).
 
 *** Default source-file encoding — precedence
 
-When the caller does not pass =-e ENC=, =alfe= (and the
+When the caller does not pass =-Esource ENC=, =alfe= (and the
 =clautolisp= backend it drives) resolves the default encoding from
 the POSIX locale environment in the standard order:
 
@@ -1461,7 +1470,7 @@ The resulting full precedence is, strongest first:
 
 | Step | Source                                  | Notes                                     |
 |------+-----------------------------------------+-------------------------------------------|
-|    1 | =-e ENC= on the alfe command line       | Explicit user intent.                     |
+|    1 | =-Esource ENC= on the alfe command line | Explicit user intent.                     |
 |    2 | =LC_ALL= / =LC_CTYPE= / =LANG=          | POSIX host hint.                          |
 |    3 | Dialect default                         | =strict=→latin-1, autocad/bricscad→utf-8. |
 
