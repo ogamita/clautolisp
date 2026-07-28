@@ -75,6 +75,80 @@ suppress output a user explicitly asked for."
           (%verbosity-rank current))
        (setf (cli-options-verbosity opts) requested)))))
 
+;;; --- encoding SITUATIONS + the -E<situation> option family -----------
+;;;
+;;; See issues/open/encoding-situations-cli-options.issue. The old generic
+;;; -e (load) / -E (io) are DROPPED in favour of one option per situation,
+;;; generated from this registry. `source' and `terminal' mirror the two
+;;; legacy slots (load-encoding / io-encoding) so downstream consumers are
+;;; unchanged; the other situations land in the situation-encodings alist
+;;; for the plumbing phases to consume.
+
+(defparameter *encoding-situations*
+  '(("source"   . ())               ; .lsp/.dcl loaded (all load impls)
+    ("file"     . ("read" "write")) ; files the AutoLISP program opens
+    ("console"  . ("in" "out"))     ; the CAD's own GUI console device
+    ("cadstdio" . ("in" "out"))     ; the CAD subprocess OS stdin/stdout/stderr
+    ("log"      . ())               ; the CAD log file
+    ("terminal" . ("in" "out")))    ; alfe/clautolisp's own REPL device
+  "The character-encoding SITUATIONS. Each is (NAME . DIRECTIONS); empty
+DIRECTIONS = single-directional. The CLI has one -E<name>[-<dir>] /
+--<name>[-<longdir>]-encoding option per (situation, direction), plus a
+bare -E/--encoding that sets them all.")
+
+(defun %encoding-dir-long (dir)
+  (cond ((string= dir "in") "input") ((string= dir "out") "output") (t dir)))
+
+(defun %encoding-store (opts key canon)
+  "Record encoding CANON under KEY (\"all\" | \"<name>\" | \"<name>/<dir>\")
+in OPTS's situation table, and mirror the two legacy slots so existing
+downstream keeps working: source -> load-encoding, terminal -> io-encoding."
+  (push (cons key canon) (cli-options-situation-encodings opts))
+  (cond ((string= key "source")   (setf (cli-options-load-encoding opts) canon))
+        ((string= key "terminal") (setf (cli-options-io-encoding opts) canon))))
+
+(defun cli-situation-encoding (opts situation &optional direction)
+  "The user-requested encoding for SITUATION (and optional DIRECTION), by
+precedence: the specific <name>/<dir> override, then <name> (both
+directions), then the bare \"all\"; NIL when nothing was set (the caller
+then falls through to the variable/fixed default for that boundary)."
+  (let ((tbl (cli-options-situation-encodings opts)))
+    (or (and direction
+             (cdr (assoc (format nil "~A/~A" situation direction) tbl :test #'string=)))
+        (cdr (assoc situation tbl :test #'string=))
+        (cdr (assoc "all" tbl :test #'string=)))))
+
+(defun %encoding-option-specs ()
+  "Generate the -E<situation>[-<dir>] / --<situation>[-<longdir>]-encoding
+family + the bare -E/--encoding (sets every situation)."
+  (let ((specs (list
+                (make-option-spec
+                 :longs '("--encoding") :shorts '("-E") :takes-arg-p t
+                 :handler (lambda (opts value name)
+                            (%encoding-store
+                             opts "all"
+                             (canonical-encoding-name value (or name "-E"))))))))
+    (dolist (sit *encoding-situations* (nreverse specs))
+      (destructuring-bind (name . dirs) sit
+        (push (make-option-spec
+               :longs (list (format nil "--~A-encoding" name))
+               :shorts (list (format nil "-E~A" name)) :takes-arg-p t
+               :handler (let ((k name))
+                          (lambda (opts value nm)
+                            (%encoding-store
+                             opts k (canonical-encoding-name
+                                     value (or nm (format nil "-E~A" k)))))))
+              specs)
+        (dolist (dir dirs)
+          (push (make-option-spec
+                 :longs (list (format nil "--~A-~A-encoding" name (%encoding-dir-long dir)))
+                 :shorts (list (format nil "-E~A-~A" name dir)) :takes-arg-p t
+                 :handler (let ((k (format nil "~A/~A" name dir)))
+                            (lambda (opts value nm)
+                              (%encoding-store
+                               opts k (canonical-encoding-name value (or nm k))))))
+                specs))))))
+
 (defun %make-common-option-specs ()
   "Build the common-option-specs list once at load time. Returned as
 a fresh list so callers can DESTRUCTIVELY extend it with tool-specific
@@ -201,23 +275,11 @@ specs without mutating the shared template."
                              (list (cons :interactive t))))))
 
    ;; --- encoding --------------------------------------------------
-   ;; -e ENC and -E ENC validate the value at parse time via the
-   ;; shared encoding alias registry (encoding.issue). A typo
-   ;; (e.g. `-e uft-8') surfaces here as a cli-usage-error rather
-   ;; than later as a cryptic "Undefined external-format" from
-   ;; CL OPEN. The canonical spelling is stored on the slot so
-   ;; *AUTOLISP-FILE-ENCODING* / *AUTOLISP-TERMINAL-ENCODING* show
-   ;; the registered name regardless of which alias the user typed.
-   (make-option-spec
-    :longs nil :shorts '("-e") :takes-arg-p t
-    :handler (lambda (opts value name)
-               (setf (cli-options-load-encoding opts)
-                     (canonical-encoding-name value (or name "-e")))))
-   (make-option-spec
-    :longs nil :shorts '("-E") :takes-arg-p t
-    :handler (lambda (opts value name)
-               (setf (cli-options-io-encoding opts)
-                     (canonical-encoding-name value (or name "-E")))))
+   ;; The encoding options are the generated -E<situation>[-<dir>] /
+   ;; --<situation>-encoding family (%ENCODING-OPTION-SPECS, appended to
+   ;; *COMMON-OPTION-SPECS* below). The old generic -e/-E were dropped
+   ;; (encoding-situations-cli-options.issue). A typo (e.g. `uft-8')
+   ;; still surfaces via CANONICAL-ENCODING-NAME as a cli-usage-error.
 
    ;; --- init files / colour --------------------------------------
    (make-option-spec
@@ -231,7 +293,8 @@ specs without mutating the shared template."
                (declare (ignore value name))
                (setf (cli-options-no-color-p opts) t)))))
 
-(defparameter *common-option-specs* (%make-common-option-specs)
+(defparameter *common-option-specs*
+  (append (%make-common-option-specs) (%encoding-option-specs))
   "The intersection of CLI options accepted by both clautolisp and
 alfe. Each tool builds its full spec list by appending its
 tool-specific specs (alfe's --mode/--backend/--dwg/--epure/etc.;

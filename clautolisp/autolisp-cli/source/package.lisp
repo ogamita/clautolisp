@@ -22,8 +22,11 @@
    #:cli-options-quit-p          ; A
    #:cli-options-host            ; AC — :mock / :null
    #:cli-options-dialect         ; AC — :strict / :autocad-2026 / :bricscad-v26 / :clautolisp
-   #:cli-options-load-encoding   ; AC — -e ENC
-   #:cli-options-io-encoding     ; AC — -E ENC
+   #:cli-options-load-encoding   ; AC — the `source' situation (-Esource)
+   #:cli-options-io-encoding     ; AC — the `terminal' situation (-Eterminal)
+   #:cli-options-situation-encodings ; AC — the -E<situation>[-<dir>] alist
+   #:cli-situation-encoding      ; AC — resolver: (opts situation &optional direction)
+   #:*encoding-situations*       ; AC — the situation registry
    #:cli-options-dwg             ; A
    #:cli-options-epure-p         ; A
    #:cli-options-bootstrap-phase ; A

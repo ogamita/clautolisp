@@ -137,51 +137,55 @@ the sidecar file so a caller can locate a kept workdir without scraping stdout."
   (is (null (cli-options-write-workdir-path (parse-arguments '())))))
 
 (test cli-encoding-flags-stick
-  "-e and -E set their respective encoding slots; -l after -e inherits
-the load encoding. Per encoding.issue the parser canonicalises the
-user's spelling against the shared alias registry, so `-e cp1252'
-lands as \"WINDOWS-1252\" (and `-E utf-8' as \"UTF-8\")."
-  (let ((opts (parse-arguments '("-e" "cp1252" "-l" "/tmp/x.lsp" "-E" "utf-8"))))
-    (is (string= "WINDOWS-1252" (cli-options-load-encoding opts)))
-    (is (string= "UTF-8"        (cli-options-io-encoding opts)))
+  "The -E<situation> family (encoding-situations-cli-options.issue) sets
+the per-situation encodings; -Esource / -Eterminal mirror the legacy
+load-encoding / io-encoding slots so downstream is unchanged, and -l
+after -Esource inherits the source encoding. The parser canonicalises the
+spelling, so `-Esource cp1252' lands as \"WINDOWS-1252\"."
+  (let ((opts (parse-arguments
+               '("-Esource" "cp1252" "-l" "/tmp/x.lsp" "-Eterminal" "utf-8"))))
+    (is (string= "WINDOWS-1252" (cli-options-load-encoding opts)))   ; source
+    (is (string= "UTF-8"        (cli-options-io-encoding opts)))     ; terminal
     (let ((action (first (cli-options-actions opts))))
       (is (eq :load (action-kind action)))
       (is (string= "WINDOWS-1252" (getf (action-payload action) :encoding))))))
 
+(test cli-encoding-per-situation-and-resolver
+  "The other situations land in the situation-encodings table; directions
+and the bare -E/--encoding resolve by precedence <name>/<dir> > <name> >
+all. Long forms --<situation>-encoding / --<situation>-input-encoding
+work too."
+  (let ((opts (parse-arguments
+               '("-Efile-read" "cp1252" "-Econsole" "UTF-16LE"
+                 "--cadstdio-output-encoding" "utf-8" "-E" "US-ASCII"))))
+    (is (string= "WINDOWS-1252" (cli-situation-encoding opts "file" "read")))
+    (is (string= "UTF-16LE"     (cli-situation-encoding opts "console" "in")))  ; -Econsole = both
+    (is (string= "UTF-8"        (cli-situation-encoding opts "cadstdio" "out")))
+    (is (string= "US-ASCII"     (cli-situation-encoding opts "log")))           ; from bare -E (all)
+    (is (string= "UTF-16LE"     (cli-situation-encoding opts "console")))))
+
 (test cli-encoding-typo-rejected
-  "A typo'd -e value (e.g. `-e uft-8') signals cli-usage-error at
-parse time, not later as a cryptic external-format error from
-OPEN. Encoding.issue's headline rule. The validator probes the
-running CL implementation's external-format registry, so a value
-that looks alphanumerically plausible but isn't actually a
-recognised encoding still gets caught here."
-  (signals cli-usage-error
-    (parse-arguments '("-e" "uft-8")))      ; user's exact typo
-  (signals cli-usage-error
-    (parse-arguments '("-e" "1234not-an-encoding")))
-  (signals cli-usage-error
-    (parse-arguments '("-E" "/etc/passwd"))))
+  "A typo'd value signals cli-usage-error at parse time (encoding.issue's
+headline rule), and the dropped generic -e/-E are now unknown options."
+  (signals cli-usage-error (parse-arguments '("-Esource" "uft-8")))
+  (signals cli-usage-error (parse-arguments '("-Esource" "1234not-an-encoding")))
+  (signals cli-usage-error (parse-arguments '("-Eterminal" "/etc/passwd")))
+  (signals cli-usage-error (parse-arguments '("-e" "UTF-8")))       ; -e dropped
+  (signals cli-usage-error (parse-arguments '("-Ebogus" "UTF-8"))))  ; unknown situation
 
 (test cli-encoding-line-terminator-suffix
-  "Line-termination.issue: `-e UTF-8-mac' / `-dos' / `-unix' / -lf /
--cr / -crlf are accepted on top of any base encoding. The slot
-keeps the suffix (so *AUTOLISP-FILE-ENCODING* surfaces it
-unchanged); the canonical spelling preserves it as documented."
+  "Line-termination.issue: the -mac / -dos / -unix / -lf / -cr / -crlf
+suffix is accepted on any situation option, preserved on the slot."
   (dolist (suffix '("-mac" "-dos" "-unix" "-lf" "-cr" "-crlf" "-MAC" "-Dos"))
-    (let ((opts (parse-arguments (list "-e" (format nil "UTF-8~A" suffix)))))
-      (is (search (string-downcase suffix)
-                  (cli-options-load-encoding opts))
-          "Suffix ~A preserved in load-encoding slot" suffix)
+    (let ((opts (parse-arguments (list "-Esource" (format nil "UTF-8~A" suffix)))))
+      (is (search (string-downcase suffix) (cli-options-load-encoding opts))
+          "Suffix ~A preserved" suffix)
       (is (search "UTF-8" (cli-options-load-encoding opts))
           "Base UTF-8 preserved alongside ~A" suffix)))
-  ;; Same on -E.
-  (let ((opts (parse-arguments '("-E" "ISO-8859-1-crlf"))))
+  (let ((opts (parse-arguments '("-Eterminal" "ISO-8859-1-crlf"))))
     (is (string= "ISO-8859-1-crlf" (cli-options-io-encoding opts))))
-  ;; A suffix on a typo still fails — the base is validated.
-  (signals cli-usage-error
-    (parse-arguments '("-e" "UTF-8-banana")))
-  (signals cli-usage-error
-    (parse-arguments '("-e" "ftu-8-mac"))))
+  (signals cli-usage-error (parse-arguments '("-Esource" "UTF-8-banana")))
+  (signals cli-usage-error (parse-arguments '("-Esource" "ftu-8-mac"))))
 
 (test cli-bootstrap-and-host-and-dialect
   "Phase truncation, host, and dialect are routed onto the right slots."

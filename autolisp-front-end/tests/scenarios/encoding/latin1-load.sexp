@@ -4,10 +4,10 @@
 sequence is identical across encodings; the scenario verifies the
 encoding option is plumbed without breaking the load path."
  :classification :clautolisp-only
- :argv ("--clautolisp" "-e" "iso-8859-1" "-l" "fixture.lsp")
+ :argv ("--clautolisp" "-Esource" "iso-8859-1" "-l" "fixture.lsp")
  :setup-files
    (("fixture.lsp"
      "(setq m 1)
 "))
  :expected-exit 0
- :covers-options ("--clautolisp" "-e" "-l"))
+ :covers-options ("--clautolisp" "-Esource" "-l"))

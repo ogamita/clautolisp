@@ -61,6 +61,7 @@
                 #:cli-options-mode
                 #:cli-options-load-encoding
                 #:cli-options-io-encoding
+                #:cli-situation-encoding
                 #:cli-options-dwg
                 #:cli-options-epure-p
                 #:cli-options-bootstrap-phase

@@ -866,7 +866,7 @@ Delegates to the shared CLI alias registry
 wrapper to preserve the (potentially nil-accepting) call shape used
 by BUILD-CONTEXT below."
   (and encoding-string
-       (clautolisp.autolisp-cli:encoding-keyword encoding-string "-e")))
+       (clautolisp.autolisp-cli:encoding-keyword encoding-string "-Esource")))
 
 (defun build-context (dialect host mock-input &optional load-encoding)
   "Make a fresh runtime context, install builtins, attach the host

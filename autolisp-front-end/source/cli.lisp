@@ -89,6 +89,8 @@
                 #:cli-options-dialect
                 #:cli-options-load-encoding
                 #:cli-options-io-encoding
+                #:cli-options-situation-encodings
+                #:cli-situation-encoding
                 #:cli-options-dwg
                 #:cli-options-epure-p
                 #:cli-options-bootstrap-phase
@@ -132,6 +134,8 @@
            #:cli-options-dialect
            #:cli-options-load-encoding
            #:cli-options-io-encoding
+           #:cli-options-situation-encodings
+           #:cli-situation-encoding
            #:cli-options-dwg
            #:cli-options-epure-p
            #:cli-options-bootstrap-phase
@@ -237,8 +241,16 @@ Dialect, host, encoding:
                          Honoured under --clautolisp; ignored under --autocad/--bricscad.
   --list-dialects        Print every --dialect name (strict first, lax last) and exit.
   --host {mock,null}     HAL backend (clautolisp only).
-  -e ENC                 Load encoding for -l files.
-  -E ENC                 I/O encoding for the engine's stdin/stdout.
+  -E ENC                 Encoding for every situation (shorthand).
+  -Esource ENC           Encoding of .lsp files loaded (-l and (load ...)).
+  -Efile[-read|-write] ENC   Encoding of files the program opens.
+  -Econsole[-in|-out] ENC    Encoding of the CAD's GUI console device.
+  -Ecadstdio[-in|-out] ENC   Encoding of the CAD subprocess stdio pipes.
+  -Elog ENC              Encoding of the CAD log file.
+  -Eterminal[-in|-out] ENC   Encoding of this tool's own terminal I/O.
+                         (long forms: --SITUATION-encoding /
+                          --SITUATION-{input,output,read,write}-encoding;
+                          ENC accepts a -mac/-dos/-unix/-lf/-cr/-crlf suffix.)
 
 CAD-specific options:
   --dwg FILE             Drawing to open before running the script.

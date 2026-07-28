@@ -22,8 +22,10 @@
   (dialect          :strict)          ; AC  :strict / :autocad-2026 / :bricscad-v26 / :clautolisp
   (host             :mock)            ; AC  :mock / :null (default :mock)
   ;; Encoding
-  (load-encoding    nil)              ; AC  -e ENC (string)
-  (io-encoding      nil)              ; AC  -E ENC (string)
+  (load-encoding    nil)              ; AC  = the `source' situation (-Esource); mirrored for downstream
+  (io-encoding      nil)              ; AC  = the `terminal' situation (-Eterminal); mirrored for downstream
+  (situation-encodings nil)           ; AC  alist (KEY . canonical-enc): KEY = "all" | "<situation>" | "<situation>/<dir>"
+                                      ;     built by the -E<situation>[-<dir>] / --<situation>-encoding family
   ;; Drawing + plugin
   (dwg              nil)              ; A
   (epure-p          nil)              ; A

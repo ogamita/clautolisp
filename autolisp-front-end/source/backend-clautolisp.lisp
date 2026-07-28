@@ -543,7 +543,7 @@ Delegates to the shared CLI alias registry
 signals a cli-usage-error on a typo at CLI parse time, so by the
 time the backend reaches this helper the value is either a
 canonical alias or already-validated alphanumeric."
-  (clautolisp.autolisp-cli:encoding-keyword encoding-string "-e"))
+  (clautolisp.autolisp-cli:encoding-keyword encoding-string "-Esource"))
 
 (defun direct-eval (session action)
   (let* ((text    (action-payload action))
@@ -761,13 +761,12 @@ subprocess variant."
                   "--quiet"
                   "--dialect" (dialect-cli-name dialect)
                   "--host"    host-name)
-            ;; Forward the user's `-e ENC' so the spawned
-            ;; clautolisp-sbcl reads source files in the same
-            ;; encoding the user asked alfe for. Placed BEFORE the
-            ;; action flags so it's in effect from the very first
-            ;; -l/-x in the queue.
+            ;; Forward the user's `source' encoding so the spawned
+            ;; clautolisp-sbcl reads source files in the same encoding
+            ;; the user asked alfe for. Placed BEFORE the action flags so
+            ;; it's in effect from the very first -l/-x in the queue.
             (let ((enc (clautolisp-subprocess-session-load-encoding session)))
-              (when enc (list "-e" enc)))
+              (when enc (list "-Esource" enc)))
             (loop for action in plan
                   for flags = (action-to-cli-flags action)
                   when flags append flags))))
