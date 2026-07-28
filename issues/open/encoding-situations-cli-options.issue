@@ -371,14 +371,14 @@ settable-by-us / fixed-known / unknown):
 | clautolisp/Linux      | `c3 a9` UTF-8        | `c3 a9` UTF-8 ✓     | `e9 00` UTF-16LE ✓  | LANG/LC_ALL/LC_CTYPE → yes  | **settable**     |
 | BricsCAD/macOS V26     | `c3 a9` **UTF-8**    | UTF-8 (= default)   | UTF-8 (ccs ignored) | LC_ALL=C → Latin-1 `e9`     | **settable** (LC_ALL) |
 | BricsCAD/Windows V25   | `e9` ANSI_1252       | `c3 a9` UTF-8 ✓     | UTF-16LE ✓          | chcp/LANG/LC_ → no          | default fixed-known; per-call ccs settable |
-| AutoCAD/accoreconsole  | `e9` ANSI/MBCS       | `e9` (ccs ignored)  | `e9` (ccs ignored)  | chcp/LANG/LC_ → no          | **fixed-known**  |
+| AutoCAD/accoreconsole  | `e9` ANSI/MBCS (LISPSYS 0) | `e9` (ccs ignored)  | `e9` (ccs ignored)  | chcp/LANG/LC_ → no; **LISPSYS → yes** (cp1252↔UTF-8) | fixed per session, selectable via LISPSYS (restart) |
 
 Resolved defaults table (was all [?]; now [obs] except where noted):
 
 | Situation | clautolisp/Linux | BricsCAD/macOS V26 | BricsCAD/Windows V25 | AutoCAD/accoreconsole 2022 |
 |-----------+------------------+--------------------+----------------------+----------------------------|
-| source    | `-Esource`, dflt UTF-8; settable via LC_* | follows locale (UTF-8 here) unless BOM [obs]; not unconditionally Mac Roman | ANSI_1252 unless BOM [?] E1 | per LISPSYS (0 here) [?] E1 |
-| file      | **UTF-8**, settable (LC_*, `-Esource`, `*AUTOLISP-FILE-ENCODING*`, ccs=) [obs] | **UTF-8** default under UTF-8 locale, settable via LC_ALL (C→Latin-1); ccs= IGNORED [obs] | **ANSI_1252** default (fixed by SYSCODEPAGE; chcp/LC_ don't move it); per-call ccs=UTF-8/UTF-16LE HONOURED [obs] | **ANSI_1252 / MBCS, fixed**; ccs= IGNORED; no knob moves it [obs] |
+| source    | `-Esource`, dflt UTF-8; settable via LC_* | follows locale (UTF-8 here) unless BOM [obs]; not unconditionally Mac Roman | ANSI_1252 unless BOM [?] E1 | **LISPSYS picks cp1252 (0) vs UTF-8 (1/2)** [pjb]; measured LISPSYS 0 → ANSI_1252; restart-level |
+| file      | **UTF-8**, settable (LC_*, `-Esource`, `*AUTOLISP-FILE-ENCODING*`, ccs=) [obs] | **UTF-8** default under UTF-8 locale, settable via LC_ALL (C→Latin-1); ccs= IGNORED [obs] | **ANSI_1252** default (fixed by SYSCODEPAGE; chcp/LC_ don't move it); per-call ccs=UTF-8/UTF-16LE HONOURED [obs] | **LISPSYS picks cp1252 (0) vs UTF-8 (1/2)** [pjb]; measured LISPSYS 0 → ANSI_1252; ccs= IGNORED; no runtime knob moves it [obs] |
 | console   | UTF-8            | Mac Roman [obs prior] | [?] E3 (BricsCAD Qt on stdout) | **UTF-16LE, fixed, no BOM in** [doc] |
 | log       | n/a             | [?] E2             | [?]                  | [?]                        |
 | terminal  | platform default | —                 | —                    | —                          |
@@ -393,8 +393,14 @@ Corrections vs the earlier sketch:
   proper UTF-16LE on BricsCAD/**Windows** but silently writes UTF-8 on
   BricsCAD/**macOS**. Worth its own conformance/vendor-divergence probe.
 - accoreconsole `file` ignores `,ccs=` entirely (all three modes = ANSI),
-  and no chcp/LANG/LC_ knob moves it: the AutoCAD `file` encoding is
-  product-fixed, matching the [doc] MBCS claim.
+  and no *runtime* knob (chcp/LANG/LC_) moves it. But it is NOT purely
+  product-fixed: **LISPSYS** selects between windows-1252 (LISPSYS 0, what
+  we measured) and UTF-8 (LISPSYS 1/2) [pjb]. LISPSYS is a restart-level
+  sysvar, so for AutoCAD `source`/`file` alfe cannot *set* the encoding
+  mid-session — it must READ LISPSYS and adapt (a precondition to check
+  and report, per §6 p.5), like the load-path decision. Our matrix should
+  gain a LISPSYS axis (0/1/2) on the AutoCAD runner to nail the exact
+  cp1252-vs-UTF-8 byte outcomes — that is experiment E1.
 - Non-Latin-1 chars diverge in the char model, not just the codec: the €
   (chr 8364) landed as U+00AC on BricsCAD, low-byte 0xAC on accoreconsole,
   and was dropped in BricsCAD/Windows ANSI — a separate `chr`/DXF-codepage
@@ -404,7 +410,16 @@ Corrections vs the earlier sketch:
 
 - E1 — AutoCAD: does `(load "x.lsp")` decode by BOM, by LISPSYS, or by
   codepage? Vary LISPSYS 0/1/2 × file with/without UTF-8 BOM × cp1252
-  bytes. Needs the Windows/AutoCAD runner.
+  bytes. Needs the Windows/AutoCAD runner. KNOWN (pjb): LISPSYS IS the
+  selector — cp1252 at 0, UTF-8 at 1/2. Remaining: the exact byte outcomes
+  per level and the BOM interaction. CRITICAL for the experiment design:
+  LISPSYS is **restart-level** — `(setvar "LISPSYS" n)` in the running
+  accoreconsole/AutoCAD session does NOT change how that session decodes;
+  the new value only takes effect after the CAD is **relaunched**. So the
+  LISPSYS axis must be a SEPARATE probe invocation per level (set LISPSYS,
+  quit, relaunch accoreconsole, then measure), not an in-session sweep like
+  the LANG/LC_/chcp matrix. Same restart constraint already noted for
+  `source` in §2.1.
 - E2 — log file encoding, both CADs. First make a log file appear at all
   in batch mode; the BricsCAD/macOS attempt here produced none despite
   `LOGFILEMODE 1` + `LOGFILEPATH`.
