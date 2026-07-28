@@ -1,0 +1,62 @@
+accoreconsole: alfe's deported (load) errors on a source file with a high byte
+
+== Symptom ==
+
+Running the encoding probe under `alfe --autocad --mode batch` (accoreconsole
+2022, LISPSYS 0, SYSCODEPAGE ANSI_1252, Windows), an in-engine
+`(load "file.lsp")` where file.lsp contains a non-ASCII byte fails:
+
+    source.default.load  = LOAD-ERR   ; file bytes: (setq ENCSRC "A<e9>Z")
+    source.utf8.load     = LOAD-ERR   ; ccs= ignored -> same ANSI bytes
+    source.utf16le.load  = LOAD-ERR   ; ccs= ignored -> same ANSI bytes
+
+The file is `(setq ENCSRC "AéZ")` with é = 0xE9 (ANSI). The SAME bytes read
+back with `(open "r")`+read-char decode fine (read.default.cp = 65 233 172 66),
+so accoreconsole itself can decode the byte on READ — it is the (load) path
+that errors.
+
+Contrast: on BricsCAD (macOS V26 and Windows V25) the identical probe's
+`(load)` decodes UTF-8 (no BOM), UTF-16LE and ANSI source correctly
+(source.*.cp = 65 233 90). So the failure is specific to the accoreconsole
+backend, not to `(load)` in general.
+
+== Context / likely cause ==
+
+Inside a CAD, `(load …)` does not use the engine's own native loader; it
+goes through alfe's DEPORTED `autolisp-source-load` shadow
+(autolisp-front-end/source/runtime/autolisp-bootstrap.lsp ~:563; dispatch
+autolisp-eval-load-form; registered *CLLOAD_DEFAULT_LOADER*), which reads
+the file and ships it over the protocol. accoreconsole's stdin/stdout pipe
+is UTF-16LE (fixed by the product), so the deported load's transport /
+file-read of a raw high byte is the suspect. This is exactly the
+`source`-situation load path that
+issues/open/encoding-situations-cli-options.issue §2.1 says must be brought
+to the reference algorithm (autolisp-load-file-in-context, which HONOURS
+the encoding).
+
+== Repro ==
+
+    make -C autolisp-front-end build-alfe-sbcl
+    alfe --autocad --mode batch -l \
+      autolisp-front-end/tests/scenarios/entities/encoding-probe.lsp
+    # grep the output for source.*.load ; observe LOAD-ERR
+    # (needs the Windows/AutoCAD runner: encoding:experiment:autocad:windows)
+
+Measured on CI pipeline 2713419298, job 15586058491 (probe commit 1380ca2).
+
+== To investigate ==
+
+1. Is it the file READ inside autolisp-source-load (wrong/again single-byte
+   assumption), or the protocol transport to accoreconsole's UTF-16LE pipe?
+2. Does it reproduce under LISPSYS 1/2? (restart-level — separate probe
+   invocations; see the issue §8 E1.) If LISPSYS 1/2 loads cleanly, the bug
+   is an LISPSYS-0/MBCS interaction.
+3. Fix by bringing autolisp-source-load to the reference load algorithm
+   (honour the resolved `source` encoding), per the encoding-situations plan.
+
+== Related ==
+
+- issues/open/encoding-situations-cli-options.issue (§2.1 load impls, §7.1
+  measured source native-load)
+- issues/open/cad-load-encoding-macos.issue (the same source-load axis on
+  BricsCAD/macOS)

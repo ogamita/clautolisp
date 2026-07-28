@@ -406,6 +406,56 @@ Corrections vs the earlier sketch:
   and was dropped in BricsCAD/Windows ANSI — a separate `chr`/DXF-codepage
   question, tracked apart from these encoding rows.
 
+** 7.1 Measured — source native-load and file-read decode (2026-07-28)
+
+Second experiment pass (probe §6/§7/§8, commit 1380ca2; CI pipeline
+2713419298). The probe writes a file with known bytes, records them, then
+NATIVE `(load)`s it (or reads it back) and reports the DECODED code points.
+Test literal `A é Z`; 233 = é decoded to one char, `195 169` = its UTF-8
+bytes seen as two Latin-1 chars.
+
+CAVEAT: inside a CAD, `(load …)` goes through alfe's DEPORTED
+`autolisp-source-load` shadow (§2.1), so these `source` rows measure THAT
+path, not necessarily the CAD's own native loader.
+
+source native-load — decoded code points (✓ = A é Z = `65 233 90`):
+
+| file bytes written        | clautolisp | BricsCAD/macOS | BricsCAD/Win | AutoCAD/accore |
+|---------------------------+------------+----------------+--------------+----------------|
+| default (ANSI or UTF-8)   | UTF-8 → ✓  | UTF-8 → ✓       | ANSI e9 → ✓   | ANSI e9 → **LOAD-ERR** |
+| `,ccs=UTF-8` (no BOM)     | UTF-8 → ✓  | UTF-8 → ✓       | UTF-8 → ✓     | (ccs ign) → **LOAD-ERR** |
+| `,ccs=UTF-16LE`           | **LOAD-ERR** | UTF-8 (ccs ign) → ✓ | UTF-16LE → ✓ | (ccs ign) → **LOAD-ERR** |
+
+Findings:
+- BricsCAD `(load)` (BOTH platforms) auto-decodes UTF-8 **without a BOM**
+  AND UTF-16LE — the deported load is robust for BricsCAD.
+- **AutoCAD/accoreconsole `(load)` ERRORS on any source file with a high
+  byte (0xE9) at LISPSYS 0** — the deported `autolisp-source-load` path is
+  broken over accoreconsole. Filed: `accoreconsole-deported-load-highbyte.issue`.
+  (Also re-run under LISPSYS 1/2 — restart-level, §8 E1 — to see whether it
+  is a LISPSYS-0/MBCS artefact.)
+- clautolisp `(load)` decodes UTF-8; UTF-16LE source → LOAD-ERR (matches
+  its file-read: no UTF-16 source support).
+
+file READ decode — how `(open "r")`+read-char decodes bytes:
+
+- BricsCAD decodes UTF-8 **only with a BOM**: a BOM-less UTF-8 file reads
+  back as raw bytes (`65 195 169 …`), and `,ccs=UTF-8` on read does NOT
+  override the no-BOM→ANSI rule (matches vendor [doc]). So on BricsCAD
+  `read` ≠ `load`: `(load)` is BOM-less-UTF-8-aware, `(open "r")` is not.
+- BricsCAD/macOS **writes UTF-8 but reads it back single-byte** (`c3 a9` →
+  `195 169`) — a read/write asymmetry; the default file it authors does not
+  round-trip through its own reader without a BOM.
+- accoreconsole read = ANSI single-byte (`e9` → 233); `,ccs=` ignored;
+  no chcp/LANG/LC_ knob moves it.
+- clautolisp read decodes every case correctly (UTF-8 and UTF-16LE).
+
+log — E2 UNBLOCKED: all three CADs report `LOGFILEMODE 1` and a real
+`LOGFILENAME` (AutoCAD `…\logs\empty_*.log`, BricsCAD/Win
+`…\logs\Dessin1_*.log`, BricsCAD/mac `…/logs/bricscad.log`). A log file
+DOES exist during a run, so a follow-up probe can write a known accented
+line and `dumpbytes` the `LOGFILENAME` to read its encoding.
+
 * 8. Experiments
 
 - E1 — AutoCAD: does `(load "x.lsp")` decode by BOM, by LISPSYS, or by
@@ -420,7 +470,11 @@ Corrections vs the earlier sketch:
   quit, relaunch accoreconsole, then measure), not an in-session sweep like
   the LANG/LC_/chcp matrix. Same restart constraint already noted for
   `source` in §2.1.
-- E2 — log file encoding, both CADs. First make a log file appear at all
+- E2 — log file encoding, both CADs. UNBLOCKED (2026-07-28, §7.1): a log
+  DOES exist during a run (LOGFILEMODE 1 + a real LOGFILENAME on all three
+  CADs). Next: a probe that writes a known accented line then dumpbytes the
+  LOGFILENAME. Original note kept below.
+  First make a log file appear at all
   in batch mode; the BricsCAD/macOS attempt here produced none despite
   `LOGFILEMODE 1` + `LOGFILEPATH`.
 - E3 — BricsCAD/Windows console encoding in `-B` batch, to fill the
