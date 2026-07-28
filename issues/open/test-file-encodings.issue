@@ -102,6 +102,18 @@ ignored the requested encoding:
   a non-ASCII char under a chosen code page?) — exactly the kind of thing
   this issue says must be verified against the *cads and then specified.
 
+DONE 2026-07-28 (part 3 + part 1, engine level) — clautolisp 1.6.19:
+  clautolisp/autolisp-file-compat/scenarios/encodings/encoding-roundtrip.lsp
+  is the pure-AutoLISP program: for each *AUTOLISP-FILE-ENCODING* it writes
+  a (setq rt "A<é><à>B") fixture (open "w" + princ) and loads it back under
+  the same encoding, asserting the accents round-trip AND that the
+  wrong-encoding loads FAIL to decode (UTF-8-as-US-ASCII, ISO-8859-1-as-
+  UTF-8). Pure-ASCII source (accents via (chr N)). Wired as the FiveAM test
+  ENCODING-FILE-ROUNDTRIP (autolisp-builtins-core/tests/encoding-roundtrip-
+  tests.lisp), run in a temp dir. This covers the engine's read+write
+  encoding symmetry (part 1's LOAD and part 3's *AUTOLISP-FILE-ENCODING*
+  loop). The .lsp is CAD-portable for the parity check below.
+
 REMAINING (needs CAD access / spec authority):
   - decide + fix the open-for-write encoding behaviour (above), then add
     the part-1 (LOAD a `(setq text (strcat …))` fixture per encoding) and

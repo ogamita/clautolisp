@@ -465,6 +465,7 @@
    (:file "autolisp-builtins-core/tests/exit-status-tests")
    (:file "autolisp-builtins-core/tests/clal-extensions-tests")
    (:file "autolisp-builtins-core/tests/secureload-dialect-tests")
+   (:file "autolisp-builtins-core/tests/encoding-roundtrip-tests")
    (:file "autolisp-builtins-core/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
