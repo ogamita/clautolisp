@@ -20,6 +20,24 @@ $ErrorActionPreference = "Continue"
 
 $root = if ($env:CI_PROJECT_DIR) { $env:CI_PROJECT_DIR } else { (Get-Location).Path }
 $alfe = if ($env:ALFE_BIN) { $env:ALFE_BIN } else { Join-Path $root "autolisp-front-end/tools/alfe/bin/alfe-sbcl" }
+
+# The Makefile saves the SBCL image as `alfe-sbcl` with no extension. On
+# Windows it is a native PE, but PowerShell's call operator (&) only runs
+# files whose extension is in $PATHEXT, so it must be a `.exe` -- otherwise
+# Windows pops the "select an application to open alfe-sbcl" dialog. Prefer
+# an existing .exe, else copy the extension-less PE to one. (Mirrors
+# run-vendor-probes.ps1; make-driven targets run the bare name fine because
+# they go through sh/cmd, not PowerShell.)
+if (Test-Path "$alfe.exe") {
+  $alfe = "$alfe.exe"
+} elseif (Test-Path $alfe) {
+  Copy-Item -Force $alfe "$alfe.exe"
+  $alfe = "$alfe.exe"
+} else {
+  Write-Host "alfe binary not found at $alfe (build it: make -C autolisp-front-end build-alfe-sbcl)"
+  exit 2
+}
+
 $probe = Join-Path $root "autolisp-front-end/tests/scenarios/entities/encoding-probe.lsp"
 if (-not $env:ALFE_RUNTIME_LSP)   { $env:ALFE_RUNTIME_LSP   = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-remote-io.lsp") -replace '\\','/' }
 if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-bootstrap.lsp") -replace '\\','/' }
