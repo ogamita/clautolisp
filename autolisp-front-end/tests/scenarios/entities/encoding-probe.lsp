@@ -31,16 +31,26 @@
 (defun hx (n / h) (setq h "0123456789abcdef" n (rem n 256))
   (strcat (substr h (1+ (/ n 16)) 1) (substr h (1+ (rem n 16)) 1)))
 
-;; read PATH back byte-by-byte and return "aa bb cc" hex. Reliable on a
-;; single-byte-codepage engine (BricsCAD ANSI / Mac Roman); best-effort on a
-;; Unicode-default engine where read-char may decode multibyte (noted).
-(defun dumpbytes (path / f c out)
+;; read PATH back byte-by-byte and return "aa bb cc" hex. Reads under
+;; ISO-8859-1 (a TOTAL single-byte decoder: every byte -> one char 0-255,
+;; never a decode error) so the raw bytes survive on an engine that honours
+;; *AUTOLISP-FILE-ENCODING* for the read (clautolisp; BricsCAD's ANSI/Mac
+;; Roman default is already single-byte). Wrapped so a stray decode error
+;; on a Unicode-default engine yields "DECODE-ERR" instead of halting.
+(defun dumpbytes-impl (path / f c out)
   (setq out "" f (open path "r"))
   (if f (progn
           (while (setq c (read-char f)) (setq out (strcat out (hx c) " ")))
           (close f))
     (setq out "OPEN-FAILED"))
   out)
+
+(defun dumpbytes (path / old r)
+  (setq old *AUTOLISP-FILE-ENCODING*)
+  (setq *AUTOLISP-FILE-ENCODING* "ISO-8859-1")
+  (setq r (vl-catch-all-apply 'dumpbytes-impl (list path)))
+  (setq *AUTOLISP-FILE-ENCODING* old)
+  (if (vl-catch-all-error-p r) "DECODE-ERR" r))
 
 ;; write S to PATH under MODE; T if it worked (mode may be unsupported).
 (defun trywrite (path mode s / f ok)
@@ -66,6 +76,12 @@
   (m "dwgcodepage" (getvar "DWGCODEPAGE"))
   (m "lispsys"     (getvar "LISPSYS"))        ; AutoCAD only; nil elsewhere
 
+  ;; --- 1b. the env the CAD's AutoLISP sees (the driver varies these) ---
+  (m "env.LANG"     (getenv "LANG"))
+  (m "env.LC_ALL"   (getenv "LC_ALL"))
+  (m "env.LC_CTYPE" (getenv "LC_CTYPE"))
+  (m "env.LANGUAGE" (getenv "LANGUAGE"))
+
   ;; --- 2. the test string: A <e-acute 233> [euro 8364] B ---
   ;; 233 is in the Latin-1/ANSI range; the euro (8364) probes the cp1252
   ;; 0x80-0x9F band the drain's Latin-1 fallback gets wrong — but (chr 8364)
@@ -88,6 +104,16 @@
   ;; --- 4. cadstdio OUT: print the accents to the console; the alfe drain
   ;; captures the raw bytes on the way back (compare to file.default.hex). ---
   (m "console.test" S)
+
+  ;; --- 5. does (setvar "SYSCODEPAGE" ...) take, and change the write? ---
+  ;; (accoreconsole documents SYSCODEPAGE as read-only; BricsCAD may honour
+  ;; it — the point is to MEASURE, per target.)
+  (setq r (vl-catch-all-apply 'setvar (list "SYSCODEPAGE" "ansi_1252")))
+  (m "setvar.syscodepage-ansi_1252"
+     (if (vl-catch-all-error-p r) "rejected" "accepted"))
+  (m "syscodepage.after-set" (getvar "SYSCODEPAGE"))
+  (if (trywrite "encp-after-scp.txt" "w" S)
+      (m "file.after-syscodepage.hex" (dumpbytes "encp-after-scp.txt")))
 
   (princ "ENC-PROBE DONE\n")
   (princ))

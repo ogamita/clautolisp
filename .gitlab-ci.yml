@@ -638,6 +638,57 @@ vendor:probes:bricscad:macos:
     - bash scripts/run-vendor-probes.sh --backend bricscad --keep-workdir "$PROBE_KEEP_WORKDIR"
 
 # ============================================================================
+# Encoding experiment: run encoding-probe.lsp under a MATRIX of encoding
+# knobs (Unix LANG/LC_*; Windows chcp code page) on each CAD backend, to
+# DISCOVER which knob changes the exhibited encoding. Fills the
+# encoding-situations §7 defaults table. Manual (intermittent runners); the
+# result is the dist/encoding/<backend>-<os>.txt report artifact.
+# ============================================================================
+.encoding-experiment:
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  rules:
+    - when: manual
+      allow_failure: true
+  artifacts:
+    name: "encoding-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/encoding/]
+    expire_in: 30 days
+
+encoding:experiment:clautolisp:linux:
+  extends: .encoding-experiment
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-encoding-experiment.sh --backend clautolisp
+
+encoding:experiment:bricscad:macos:
+  extends: .encoding-experiment
+  tags: [macos, arm64, shell]
+  needs: [{ job: "build:alfe:macos", artifacts: true }]
+  script:
+    - bash scripts/run-encoding-experiment.sh --backend bricscad
+
+encoding:experiment:bricscad:windows:
+  extends: .encoding-experiment
+  tags: [windows, amd64, shell]
+  needs: [{ job: "build:alfe:windows", artifacts: true }]
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend bricscad
+
+encoding:experiment:autocad:windows:
+  extends: .encoding-experiment
+  tags: [windows, amd64, shell]
+  needs: [{ job: "build:alfe:windows", artifacts: true }]
+  variables:
+    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+  script:
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
+
+# ============================================================================
 # Benchmarks: run the AutoLISP suite on each target and publish a comparison
 # table (GitLab Pages). Manual per target (the macOS/Windows runners are
 # intermittent) -- run the ones whose runner is up, then `pages` aggregates
