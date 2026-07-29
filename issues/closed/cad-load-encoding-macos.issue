@@ -200,3 +200,11 @@ alfe[debug]: [CAD] server-loop returned normally
 nil
 
 alfe[verbose]: cli: plan finished status=:SUCCESS exit=0 elapsed=8.74s
+
+== CLOSED 2026-07-29 — superseded by encoding-consolidation.issue ==
+G3 (alfe 1.6.19) makes the CAD-side native (load) honour an explicit -Esource
+(published as *AUTOLISP-CAD-LOAD-ENCODING*, consumed by autolisp-source-open-
+encoded per backend), and G4's return transcode is covered by G1+G2. Real-
+runner confirmation and the accoreconsole high-byte case are tracked by
+encoding-consolidation (which supersedes this) + accoreconsole-deported-load-
+highbyte.issue.

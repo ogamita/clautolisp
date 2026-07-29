@@ -128,3 +128,10 @@ Impact for a caller: any diagnostic the application prints with an
 accent is unreadable in the alfe transcript. It does not corrupt test
 verdicts (those are ASCII), but it makes a failing CAD run harder to
 read than it should be.
+
+== CLOSED 2026-07-29 — superseded by encoding-situations-cli-options + encoding-consolidation ==
+The planned per-backend console -E option is implemented: G2 (alfe 1.6.17/
+1.6.18) threads the resolved console/cadstdio encoding through the drain
+(-Econsole/-Ecadstdio; accoreconsole default → the named UTF-16LE, robust
+cascade as the :AUTO safety net, fixed-known→warn), and autocad-console-
+external-format folds the CLI encoding over the env var. Superseded.

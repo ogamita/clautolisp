@@ -121,3 +121,10 @@ REMAINING (needs CAD access / spec authority):
     including the wrong-encoding / wrong-line-termination error cases;
   - verify the per-open (not per-read) encoding-selection against AutoCAD
     and BricsCAD and update the autolisp-spec accordingly.
+
+== CLOSED 2026-07-29 — superseded by encoding-consolidation.issue ==
+The B1 fixture matrix + the part-1/part-3 AutoLISP round-trip programs (G5)
+are DONE (clautolisp 1.6.19, test ENCODING-FILE-ROUNDTRIP), and the per-open
+(not per-read) rule + the *AUTOLISP-FILE-ENCODING* extension are now in the
+autolisp-spec (Phase 4). Any remaining CAD-parity confirmation is tracked by
+the encoding-consolidation umbrella, which explicitly supersedes this issue.

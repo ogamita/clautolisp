@@ -251,3 +251,11 @@ The backend-selection feature is COMPLETE.
 - [x] update alfe specifications (alfe--specifications.org + autolisp-cli-specifications.org)
 - [x] update alfe user manual (Selecting a specific CAD install; --list-situations)
 - [x] update alfe tests (denotation-parsing, denotation-resolution, locale-preference)
+
+== CLOSED 2026-07-29 ==
+Feature complete (increments 1–3 + optional polish, clautolisp 1.6.22→1.6.25 /
+alfe 1.6.20→1.6.23): cad-program model + discovery + --list-cad-programs;
+--cad DENOTATION selection (exact/partial/latest, autocad→acad/accoreconsole
+per --mode, $*_EXE override); BricsCAD locale tie-break; per-backend
+--list-situations; docs in the alfe user manual + alfe--specifications.org +
+autolisp-cli-specifications.org. Full suite green.
