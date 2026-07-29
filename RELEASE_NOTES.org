@@ -11,7 +11,7 @@ reference. Each entry is intentionally short — one to three lines —
 and points at the relevant ~user-manual.org~ for normative details.
 
 This is not a changelog. Each section reflects the *current* state of
-master at the top of the file (clautolisp 1.5.1 / alfe 1.5.1). For the
+master at the top of the file (clautolisp 1.7.0 / alfe 1.7.0). For the
 chronology and the issue-by-issue history, see ~git log~ on master and
 the issues under ~issues/closed/~.
 
@@ -150,12 +150,16 @@ separate binary for tool integrators.
 
 ** Encoding handling (issues/closed/encoding-dispatch.issue)
 
-- Launch chain: =LC_ALL → LANG → LC_CTYPE → -e= resolves the active
-  encoding at startup and populates ~SYSCODEPAGE~, ~DWGCODEPAGE~, and
-  ~*AUTOLISP-FILE-ENCODING*~ (no more empty placeholders). Empty-
+- Launch chain: =LC_ALL → LANG → LC_CTYPE → -Esource= resolves the
+  active encoding at startup and populates ~SYSCODEPAGE~, ~DWGCODEPAGE~,
+  and ~*AUTOLISP-FILE-ENCODING*~ (no more empty placeholders). Empty-
   string sentinel for ~*AUTOLISP-FILE-ENCODING*~ in the degenerate
-  case (no locale env, no -e) falls through to the dialect default.
-  See § /Source-file and terminal encoding/.
+  case (no locale env, no ~-Esource~) falls through to the dialect
+  default. See § /Source-file and terminal encoding/.
+- Encoding is set per *situation*: ~-E<situation>[-<dir>] ENC~ /
+  ~--<situation>-encoding ENC~ (~source~ / ~file~ / ~console~ /
+  ~cadstdio~ / ~log~ / ~terminal~; bare ~-E~ sets all), replacing the
+  old ~-e~ / ~-E~. ~--list-situations~ prints them.
 - ~LOAD~ and ~OPEN~ accept a positional ~[encoding]~ argument under
   ~--clautolisp~ / ~--lax~. Foreign-dialect spellings (AutoCAD's
   ~"utf8"~ / ~"utf8-bom"~ third arg, BricsCAD's ~,ccs=…~ mode suffix,
@@ -457,8 +461,8 @@ file or COM), and forwards the workload.
   bootstrap with a UTF-8 decoding error. The channel drain now
   auto-detects UTF-16LE / UTF-8 (Latin-1 fallback, never signals), and
   the accoreconsole pipe reads with a total decoder, overridable via
-  ~ALFE_AUTOCAD_CONSOLE_ENCODING~ (a per-backend ~-E~ CLI option is
-  planned — ~issues/open/alfe-cad-console-encoding.issue~).
+  ~ALFE_AUTOCAD_CONSOLE_ENCODING~ or the per-situation ~-Econsole~ /
+  ~-Ecadstdio~ options (see § /Encoding/ below).
 - ~--autocad~ discovery now prefers real AutoCAD over the read-only
   DWG TrueView viewer (both ship ~accoreconsole.exe~; only AutoCAD can
   mutate entities), so a host with both no longer picks the viewer.
@@ -473,6 +477,32 @@ file or COM), and forwards the workload.
   process exit code and console diagnostics immediately when the CAD
   process dies before publishing ~READY~, instead of timing out with a
   generic ~READY-TIMEOUT~.
+
+** CAD selection (alfe-user-manual § /Selecting a specific CAD install/)
+
+- ~--list-cad-programs~ scans the host and prints every installed CAD
+  with its canonical denotation (~acad-2026~, ~accoreconsole-2022~,
+  ~bricscad-v25-fr_FR~, ~clautolisp~, …).
+- ~--cad DENOTATION~ selects a specific install: exact, or bare/partial
+  → the latest version; the virtual ~autocad~ resolves to ~acad~ or
+  ~accoreconsole~ per ~--mode~. Among same-version BricsCAD locales the
+  host language preference (macOS ~AppleLanguages~; ~LANG~ / ~LC_*~)
+  breaks the tie.
+
+** Encoding (alfe-user-manual § /Encoding/)
+
+- Per-*situation* encoding CLI: ~-E<situation>[-<dir>] ENC~ /
+  ~--<situation>-encoding ENC~ for ~source~ / ~file~ / ~console~ /
+  ~cadstdio~ / ~log~ / ~terminal~, plus a bare ~-E ENC~ that sets them
+  all. This replaces the previous ~-e~ / ~-E~ flags. ~-Eterminal~ now
+  reconfigures alfe's own stdout/stderr/stdin; ~-Esource~ is forwarded
+  into the CAD's native ~(load)~; ~-Econsole~ / ~-Ecadstdio~ drive the
+  console/pipe decode (a product-fixed situation such as accoreconsole's
+  UTF-16LE console warns that the option is ignored and keeps the
+  product value).
+- ~--list-situations~ prints the encoding situations and their
+  directions; under a backend flag it prints that backend's per-situation
+  default provenance (settable / product-fixed / LISPSYS / …).
 
 ** Modes
 
