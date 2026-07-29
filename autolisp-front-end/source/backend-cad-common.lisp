@@ -43,7 +43,8 @@
            #:cad-program-path
            #:cad-program-denotation
            #:discover-cad-programs
-           #:print-cad-programs))
+           #:print-cad-programs
+           #:resolve-cad-denotation))
 
 (in-package #:alfe.backend.cad-common)
 
@@ -714,3 +715,45 @@ canonical denotation. clautolisp is always present (embedded)."
           (format stream "~24A ~A~%" (cad-program-denotation p) (cad-program-path p)))
         (format stream "no CAD programs found (clautolisp is always available)~%"))
     (values)))
+
+;;; --- denotation resolution (backend selection, increment 2) --------
+
+(defun %prefix-p (prefix string)
+  (and (<= (length prefix) (length string))
+       (string= prefix string :end2 (length prefix))))
+
+(defun %denotation-matches-p (query pd)
+  "QUERY matches program-denotation PD when it is PD exactly, or a
+segment-boundary prefix of it (so \"bricscad\" matches \"bricscad-v26\" and
+\"bricscad-v25\" matches \"bricscad-v25-fr_FR\")."
+  (or (string= query pd)
+      (%prefix-p (concatenate 'string query "-") pd)))
+
+(defun %cad-version-key (program)
+  "A sortable integer for 'latest' selection: the AutoCAD year, or the
+BricsCAD V-number; 0 when there is no version."
+  (let ((v (cad-program-version program)))
+    (cond
+      ((null v) 0)
+      ((and (plusp (length v)) (char-equal (char v 0) #\V))
+       (or (parse-integer v :start 1 :junk-allowed t) 0))
+      (t (or (parse-integer v :junk-allowed t) 0)))))
+
+(defun resolve-cad-denotation (denotation programs &key (mode :auto))
+  "Resolve DENOTATION (a string) against PROGRAMS to a single CAD-PROGRAM, or
+NIL when nothing matches. Exact and segment-prefix matches are accepted, and
+the bare/partial forms pick the LATEST version. The virtual =autocad[-VER]=
+maps to =acad= or =accoreconsole= per MODE (=:batch= → accoreconsole, else
+acad), so =--cad autocad-2022 --mode batch= selects accoreconsole-2022."
+  (let* ((q0 (string-downcase (string-trim '(#\Space #\Tab) denotation)))
+         (q (if (or (string= q0 "autocad") (%prefix-p "autocad-" q0))
+                (concatenate 'string
+                             (if (eq mode :batch) "accoreconsole" "acad")
+                             (subseq q0 (length "autocad")))
+                q0))
+         (matches (remove-if-not
+                   (lambda (p)
+                     (%denotation-matches-p q (string-downcase (cad-program-denotation p))))
+                   programs)))
+    (when matches
+      (first (stable-sort (copy-list matches) #'> :key #'%cad-version-key)))))

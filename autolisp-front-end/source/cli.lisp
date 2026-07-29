@@ -82,6 +82,7 @@
                 #:cli-options-backend
                 #:cli-options-mode
                 #:cli-options-backend-variant
+                #:cli-options-cad
                 #:cli-options-actions
                 #:cli-options-interactive-p
                 #:cli-options-quit-p
@@ -129,6 +130,7 @@
            #:cli-options-backend
            #:cli-options-mode
            #:cli-options-backend-variant
+           #:cli-options-cad
            #:cli-options-actions
            #:cli-options-interactive-p
            #:cli-options-quit-p
@@ -248,6 +250,10 @@ Dialect, host, encoding:
   --list-dialects        Print every --dialect name (strict first, lax last) and exit.
   --list-cad-programs    Scan the host and print each installed CAD with its
                          canonical denotation (acad-2026, bricscad-v26, …), then exit.
+  --cad DENOTATION       Select a specific installed CAD by denotation
+                         (acad-2026, accoreconsole-2022, bricscad-v25-fr_FR,
+                         or a bare/partial acad / bricscad / autocad → latest;
+                         autocad honours --mode: batch→accoreconsole, else acad).
   --host {mock,null}     HAL backend (clautolisp only).
   -E ENC                 Encoding for every situation (shorthand).
   -Esource ENC           Encoding of .lsp files loaded (-l and (load ...)).
@@ -429,6 +435,15 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-list-cad-programs-p opts) t)))
+   ;; --cad DENOTATION picks a specific installed CAD by its canonical name
+   ;; (acad-2026, bricscad-v25-fr_FR, autocad-2022, …; --list-cad-programs
+   ;; enumerates them). The denotation is stored raw and resolved in RUN,
+   ;; once --mode is known (autocad → acad/accoreconsole depends on it).
+   (make-option-spec
+    :longs '("--cad") :takes-arg-p t
+    :handler (lambda (opts value name)
+               (declare (ignore name))
+               (setf (cli-options-cad opts) value)))
    (make-option-spec
     :longs '("--main") :takes-arg-p t
     :handler (lambda (opts value name)
@@ -843,6 +858,55 @@ when none was requested."
                (cli-situation-encoding options "cadstdio")))
       :auto))
 
+;;; --- backend selection: resolve --cad DENOTATION ---
+;;;
+;;; --cad names a specific installed CAD by its canonical denotation. It is
+;;; resolved here (not at parse time) because the autocad→acad/accoreconsole
+;;; choice depends on the fully-parsed --mode. Resolution sets the backend and
+;;; overrides that backend's discovery by exporting its $*_EXE env var to the
+;;; chosen path (the DETECT methods already prefer $*_EXE), so no backend code
+;;; needs to change. alfe.backend.cad-common loads after this file, so its
+;;; functions are reached via UIOP:SYMBOL-CALL.
+
+(defun %default-mode (options mode)
+  "Set --mode to MODE unless the user already chose one explicitly."
+  (when (eq (cli-options-mode options) :auto)
+    (setf (cli-options-mode options) mode)))
+
+(defun apply-cad-selection (options)
+  "Resolve --cad DENOTATION (if given) to an installed CAD program, set the
+backend, and point the backend's discovery at the chosen executable. A
+denotation that matches nothing is a usage error listing the way to see them."
+  (let ((den (cli-options-cad options)))
+    (when den
+      (let* ((programs (uiop:symbol-call :alfe.backend.cad-common
+                                         :discover-cad-programs))
+             (program (uiop:symbol-call :alfe.backend.cad-common
+                                        :resolve-cad-denotation den programs
+                                        :mode (cli-options-mode options))))
+        (unless program
+          (error 'cli-usage-error
+                 :option "--cad"
+                 :message (format nil "unknown CAD program ~S (see --list-cad-programs)"
+                                  den)))
+        (let ((kind (uiop:symbol-call :alfe.backend.cad-common :cad-program-kind program))
+              (path (uiop:symbol-call :alfe.backend.cad-common :cad-program-path program)))
+          (log-verbose "cli: --cad ~S -> ~A ~A"
+                       den
+                       (uiop:symbol-call :alfe.backend.cad-common
+                                         :cad-program-denotation program)
+                       path)
+          (ecase kind
+            (:acad          (%set-backend-checked options :autocad "--cad")
+                            (setf (uiop:getenv "AUTOCAD_EXE") path)
+                            (%default-mode options :automation))
+            (:accoreconsole (%set-backend-checked options :autocad "--cad")
+                            (setf (uiop:getenv "AUTOCAD_ACCORECONSOLE") path)
+                            (%default-mode options :batch))
+            (:bricscad      (%set-backend-checked options :bricscad "--cad")
+                            (setf (uiop:getenv "BRICSCAD_EXE") path))
+            (:clautolisp    (%set-backend-checked options :clautolisp "--cad"))))))))
+
 (defun run (argv &key version)
   "alfe entry point. ARGV is the argument list *without* the program
 name; VERSION is the version string printed by --version. Returns an
@@ -883,6 +947,9 @@ The handler chain matches alfe-cli.issue's exit-code table:
            ;; the colour probe, the plan) so the whole run honours it. A
            ;; no-op unless -Eterminal[-in|-out] was given.
            (apply-terminal-encoding options)
+           ;; Resolve --cad DENOTATION -> backend + $*_EXE override (needs
+           ;; --mode, which is now parsed). No-op unless --cad was given.
+           (apply-cad-selection options)
            ;; Once the log level is set, dump the resolved option
            ;; surface at :debug so a `--debug` run shows what the
            ;; parser decided. Mirrors the bash autolisp script's

@@ -1007,3 +1007,35 @@ the canonical denotation each yields (OS-independent — we feed paths in)."
       (is (eq :bricscad (alfe.backend.cad-common:cad-program-kind p)))
       (is (string= "V25" (alfe.backend.cad-common:cad-program-version p)))
       (is (string= "fr_FR" (alfe.backend.cad-common:cad-program-locale p))))))
+
+(test cad-denotation-resolution
+  "backend-selection: resolve-cad-denotation picks the right install — exact,
+bare/partial (latest wins), and the virtual autocad -> acad/accoreconsole per
+--mode."
+  (labels ((mk (kind path) (alfe.backend.cad-common::%cad-program-from-path kind path))
+           (den (p) (and p (alfe.backend.cad-common:cad-program-denotation p)))
+           (res (q progs &optional (mode :auto))
+             (alfe.backend.cad-common:resolve-cad-denotation q progs :mode mode)))
+    (let ((progs (list
+                  (mk :acad "C:/Program Files/Autodesk/AutoCAD 2022/acad.exe")
+                  (mk :acad "C:/Program Files/Autodesk/AutoCAD 2026/acad.exe")
+                  (mk :accoreconsole "C:/Program Files/Autodesk/AutoCAD 2022/accoreconsole.exe")
+                  (mk :bricscad "C:/Program Files/Bricsys/BricsCAD V25 fr_FR/bricscad.exe")
+                  (mk :bricscad "C:/Program Files/Bricsys/BricsCAD V26 en_US/bricscad.exe"))))
+      ;; exact
+      (is (string= "acad-2022" (den (res "acad-2022" progs))))
+      ;; bare kind -> latest version
+      (is (string= "acad-2026" (den (res "acad" progs))))
+      (is (string= "bricscad-v26-en_US" (den (res "bricscad" progs))))
+      ;; partial version -> the matching locale variant
+      (is (string= "bricscad-v25-fr_FR" (den (res "bricscad-v25" progs))))
+      ;; virtual autocad -> acad (auto) / accoreconsole (batch), latest
+      (is (string= "acad-2026"          (den (res "autocad" progs :auto))))
+      (is (string= "accoreconsole-2022" (den (res "autocad" progs :batch))))
+      (is (string= "acad-2022"          (den (res "autocad-2022" progs :auto))))
+      (is (string= "accoreconsole-2022" (den (res "autocad-2022" progs :batch))))
+      ;; case-insensitive
+      (is (string= "acad-2026" (den (res "ACAD" progs))))
+      ;; unknown -> nil
+      (is (null (res "nope" progs)))
+      (is (null (res "acad-2019" progs))))))

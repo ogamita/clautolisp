@@ -201,18 +201,29 @@ clautolisp         clautolisp-1.6.17
   Linux (prints =clautolisp (embedded in alfe)=). Unit test
   =cad-program-denotation-parsing= (12 checks; suite 364/364).
 
+** DONE 2026-07-29 (clautolisp 1.6.23 / alfe 1.6.21) — increment 2: selection
+- =--cad DENOTATION= (option + =cli-options-cad= slot). Resolved in RUN (not
+  at parse time) so =--mode= is known. =resolve-cad-denotation= (cad-common)
+  handles exact, segment-prefix bare/partial (latest version wins), and the
+  virtual =autocad[-VER]= → =acad=/=accoreconsole= per =--mode= (batch →
+  accoreconsole, else acad). Case-insensitive.
+- =apply-cad-selection= (cli): sets the backend (via =%set-backend-checked=,
+  so =--cad= + a conflicting =--autocad/--bricscad= is a usage error) and
+  points the backend's discovery at the chosen exe by exporting its
+  =$*_EXE= — =AUTOCAD_EXE= / =AUTOCAD_ACCORECONSOLE= / =BRICSCAD_EXE= — which
+  every =DETECT= already prefers; no backend code changed. accoreconsole/acad
+  also default =--mode= (batch/automation) when the user left it =:auto=.
+- Unknown denotation → =cli-usage-error= pointing at =--list-cad-programs=.
+  Help text added. Verified: =--cad clautolisp= → CLAUTOLISP; =--cad acad-2022=
+  on Linux → clean "unknown CAD program" error; =--bricscad --cad clautolisp=
+  → conflict error. Unit test =cad-denotation-resolution= (11 checks; suite
+  375/375).
+
 ** REMAINING (next increments)
-- SELECTION: accept a denotation to pick a specific install — e.g.
-  =--cad autocad-2022= / =--autocad-2022=, and the bare aliases (=autocad= →
-  latest acad-or-accoreconsole per =--mode=; =bricscad= → latest). Resolve to
-  a =cad-program= and feed its =path= into the backend =DETECT= (an explicit
-  path override beats the env-var/glob discovery the backends do now).
-- =--mode= batch→accoreconsole / automation→acad wiring against the
-  denotation (=autocad-2022= → =accoreconsole-2022= or =acad-2022=).
-- Locale selection when several BricsCAD locales are installed (macOS/Linux
-  =LANG=/=LC_*=; macOS =AppleLanguages= ∩ available; Windows).
-- Threading the chosen path into =discover-*-binary= (an explicit
-  =$*_EXE=-equivalent from the CLI).
+- Locale PREFERENCE when several BricsCAD locales of the same version are
+  installed (macOS =AppleLanguages= ∩ available; Unix =LANG=/=LC_*=; Windows).
+  Today bare =bricscad= picks the latest version, locale by discovery order.
+- Optional =--list-situations= (encoding-situations §4) — separate.
 
 * TODO (per increment above)
 - [~] update alfe implementation (increment 1 landed; selection next)

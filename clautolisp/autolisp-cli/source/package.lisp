@@ -17,6 +17,7 @@
    #:cli-options-backend         ; A — alfe backend selector (:clautolisp/:bricscad/:autocad)
    #:cli-options-mode            ; A — :auto / :automation / :batch
    #:cli-options-backend-variant ; A — :attach / :launch / …
+   #:cli-options-cad             ; A — --cad DENOTATION (alfe backend selection)
    #:cli-options-actions         ; AC — ordered action list ((:file . PATH)/(:expression . TEXT))
    #:cli-options-interactive-p   ; AC
    #:cli-options-quit-p          ; A

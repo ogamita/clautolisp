@@ -18,6 +18,7 @@
   (backend          nil)              ; A   :clautolisp / :bricscad / :autocad
   (mode             :auto)            ; A   :auto / :automation / :batch
   (backend-variant  nil)              ; A   :attach / :launch / :direct / :subprocess
+  (cad              nil)              ; A   --cad DENOTATION (alfe backend selection)
   ;; Dialect + host
   (dialect          :strict)          ; AC  :strict / :autocad-2026 / :bricscad-v26 / :clautolisp
   (host             :mock)            ; AC  :mock / :null (default :mock)
