@@ -439,18 +439,49 @@ doesn't need a _QUIT — accoreconsole exits when the script finishes."
        (>= (length string) (length prefix))
        (string= prefix string :end2 (length prefix))))
 
-(defun autocad-console-external-format ()
-  "The external-format for reading accoreconsole's own stdout/stderr pipe.
-Default :ISO-8859-1 — a total decoder that never signals, so a non-UTF-8
-Windows console (accoreconsole emits UTF-16LE on e.g. French Windows)
-cannot crash bootstrap; SLURP-PROCESS-STREAM strips the interleaved NULs.
-Override per backend with $ALFE_AUTOCAD_CONSOLE_ENCODING (a keyword name,
-e.g. UTF-16LE or UTF-8) when the console encoding is known
-(alfe-accoreconsole-encoding.issue)."
-  (let ((env (uiop:getenv "ALFE_AUTOCAD_CONSOLE_ENCODING")))
-    (if (and env (plusp (length env)))
-        (intern (string-upcase env) :keyword)
-        :iso-8859-1)))
+(defparameter *accoreconsole-console-encoding* :utf-16le
+  "accoreconsole's console / stdout is UTF-16LE, FIXED by the product
+(verified 2026-07-29 on French Windows; no /l language flag or chcp code
+page changes it). Named so the value lives in ONE place. The drain decodes
+the channel with it; the robust auto-detect cascade (:AUTO) stays as the
+safety net for any target that turns out NOT to be UTF-16LE.")
+
+(defun %autocad-console-decode-encoding (cli-options variant)
+  "How the drain decodes AutoCAD's console output AS. accoreconsole (the
+:BATCH variant) is *ACCORECONSOLE-CONSOLE-ENCODING* (UTF-16LE), FIXED by the
+product: a conflicting -Econsole / -Ecadstdio is accepted, WARNED as ignored
+(situations §4 fixed-known rule), and the product value kept. The GUI
+:AUTOMATION path has no fixed console, so the user's request (or :AUTO) rides
+through unchanged."
+  (let ((requested (alfe.cli:resolved-console-encoding cli-options)))
+    (cond
+      ((eq variant :batch)
+       (when (and (not (eq requested :auto))
+                  (not (eql (clautolisp.autolisp-cli:encoding-keyword requested)
+                            *accoreconsole-console-encoding*)))
+         (log-warn "backend AUTOCAD: accoreconsole console I/O is fixed at ~
+UTF-16LE by the product; ignoring the requested console encoding ~S."
+                   requested))
+       *accoreconsole-console-encoding*)
+      (t requested))))
+
+(defun autocad-console-external-format (&optional cli-options)
+  "The external-format for reading accoreconsole's own stdout/stderr PIPE
+(diagnostics). Precedence: an explicit -Econsole / -Ecadstdio in CLI-OPTIONS,
+then $ALFE_AUTOCAD_CONSOLE_ENCODING, then the robust default :ISO-8859-1 — a
+total decoder that never signals, so a non-UTF-8 Windows console cannot crash
+bootstrap; SLURP-PROCESS-STREAM strips UTF-16LE's interleaved NULs. The
+protocol PAYLOAD is decoded separately by the drain (DECODE-CONSOLE-OCTETS,
+never signals) with %AUTOCAD-CONSOLE-DECODE-ENCODING — this is only the raw
+pipe read, so the default stays the robust total decoder (G2)."
+  (let ((requested (and cli-options
+                        (let ((e (alfe.cli:resolved-console-encoding cli-options)))
+                          (unless (eq e :auto) e))))
+        (env (uiop:getenv "ALFE_AUTOCAD_CONSOLE_ENCODING")))
+    (cond
+      (requested (clautolisp.autolisp-cli:encoding-keyword requested))
+      ((and env (plusp (length env))) (intern (string-upcase env) :keyword))
+      (t :iso-8859-1))))
 
 (defun slurp-process-stream (stream)
   (if (null stream)
@@ -580,10 +611,11 @@ e.g. UTF-16LE or UTF-8) when the console encoding is known
                 :version-text version-text
                 :backend-name "AUTOCAD"))
              (variant (choose-effective-mode backend mode)))
-        ;; G2: how the drain decodes AutoCAD's console output. :AUTO (default)
-        ;; keeps the robust cascade — behaviour-preserving.
+        ;; G2: how the drain decodes AutoCAD's console output. accoreconsole
+        ;; (batch) is UTF-16LE, product-fixed (conflicting -Econsole warned +
+        ;; ignored); the GUI path honours the user's request, else :AUTO.
         (setf (alfe.protocol.file:protocol-session-console-encoding protocol)
-              (alfe.cli:resolved-console-encoding cli-options))
+              (%autocad-console-decode-encoding cli-options variant))
         (cond
           (staged-bootstrap
            (log-debug "backend AUTOCAD: staged bootstrap -> ~A" staged-bootstrap))
@@ -632,8 +664,11 @@ e.g. UTF-16LE or UTF-8) when the console encoding is known
                             ;; accoreconsole's console is not UTF-8 on a
                             ;; non-UTF-8 Windows; a robust external-format
                             ;; keeps reading its pipe from crashing bootstrap
-                            ;; (alfe-accoreconsole-encoding.issue).
-                            :external-format (autocad-console-external-format)))))
+                            ;; (alfe-accoreconsole-encoding.issue). -Econsole /
+                            ;; -Ecadstdio (or $ALFE_AUTOCAD_CONSOLE_ENCODING)
+                            ;; override it (G2 send half).
+                            :external-format (autocad-console-external-format
+                                              cli-options)))))
           (declare (ignore _))
           (when process-info
             (log-debug "backend AUTOCAD: spawned, process-info-pid = ~A"

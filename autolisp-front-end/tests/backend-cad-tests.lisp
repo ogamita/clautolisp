@@ -939,3 +939,36 @@ READY timeout."
     (let ((sorted (stable-sort (sort (list view acad) #'string>)
                                #'< :key #'alfe.backend.autocad::%accoreconsole-preference)))
       (is (search "AutoCAD" (first sorted))))))
+
+;;; --- G2: console-encoding resolution (decode + pipe) ----------------
+
+(test autocad-console-decode-accoreconsole-fixed-utf16le
+  "G2: accoreconsole (batch) console decode is UTF-16LE, product-FIXED — a
+conflicting -Econsole is ignored (fixed-known warn); the GUI automation path
+honours the user's request, else :AUTO."
+  (is (eq :utf-16le (alfe.backend.autocad::%autocad-console-decode-encoding
+                     (parse-arguments '("--autocad")) :batch)))
+  ;; conflicting -Econsole on accoreconsole -> still UTF-16LE (fixed)
+  (is (eq :utf-16le (alfe.backend.autocad::%autocad-console-decode-encoding
+                     (parse-arguments '("--autocad" "-Econsole" "cp1252")) :batch)))
+  ;; matching -Econsole utf-16le -> UTF-16LE, no conflict
+  (is (eq :utf-16le (alfe.backend.autocad::%autocad-console-decode-encoding
+                     (parse-arguments '("--autocad" "-Econsole" "utf-16le")) :batch)))
+  ;; GUI automation: honour the user's console request
+  (is (string= "WINDOWS-1252"
+               (alfe.backend.autocad::%autocad-console-decode-encoding
+                (parse-arguments '("--autocad" "-Econsole" "cp1252")) :automation)))
+  ;; GUI automation, unset: :AUTO
+  (is (eq :auto (alfe.backend.autocad::%autocad-console-decode-encoding
+                 (parse-arguments '("--autocad")) :automation))))
+
+(test autocad-console-external-format-folds-cli-over-default
+  "G2 send half: an explicit -Econsole/-Ecadstdio drives the pipe external-
+format; with nothing requested (and no env) it stays the robust :ISO-8859-1."
+  (is (eq :utf-16le (alfe.backend.autocad::autocad-console-external-format
+                     (parse-arguments '("--autocad" "-Econsole" "utf-16le")))))
+  (is (eq :windows-1252 (alfe.backend.autocad::autocad-console-external-format
+                         (parse-arguments '("--autocad" "-Ecadstdio" "cp1252")))))
+  (unless (uiop:getenv "ALFE_AUTOCAD_CONSOLE_ENCODING")
+    (is (eq :iso-8859-1 (alfe.backend.autocad::autocad-console-external-format
+                         (parse-arguments '("--autocad")))))))

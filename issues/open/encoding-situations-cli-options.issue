@@ -329,9 +329,12 @@ enough. Concretely, today:
    `alfe.cli:resolved-console-encoding` in the AUTOCAD/BRICSCAD
    `start-engine`. Codecs: utf-16le / utf-8 / iso-8859-1 / cp1252 (0x80–0x9F
    C1 band) / us-ascii; unknown → :AUTO.
-4. `autocad-console-external-format` (backend-autocad.lisp:442, env
-   `$ALFE_AUTOCAD_CONSOLE_ENCODING`) folds into the `console` situation;
-   keep the env var as a lower-priority fallback.
+4. DONE (alfe 1.6.18) — `autocad-console-external-format` now takes
+   CLI-OPTIONS and folds the resolved `console`/`cadstdio` encoding OVER
+   `$ALFE_AUTOCAD_CONSOLE_ENCODING` OVER the robust :ISO-8859-1 pipe default.
+   The accoreconsole channel-decode default is the named
+   `*accoreconsole-console-encoding*` (:utf-16le); a conflicting -Econsole on
+   accoreconsole is warned + ignored (fixed-known rule).
 5. For the engine-side situations (`source`, `file`, `console` inside the
    CAD), forwarding means emitting the right thing into the CAD:
    `(setvar "LISPSYS" …)` is a restart-level decision, so `source` for

@@ -97,7 +97,8 @@ pjb's; B4/B6 are the two he scoped out of the CLI but that are still work.
   =-Eterminal ISO-8859-1= makes é emit the single byte =e9=, =-Eterminal-out
   cp1252= makes € emit =80=, default stays locale UTF-8 (=c3 a9=). Unit test
   =cli-terminal-encoding-plan= (pure plan) + full suite 334/334.
-- *G2 (B3, situations issue)* — IN PROGRESS.
+- *G2 (B3, situations issue)* — DONE 2026-07-29 (alfe 1.6.17 decode half,
+  1.6.18 send half + flip).
   DONE 2026-07-29 (alfe 1.6.17) — the DECODE (read) half: =decode-console-
   octets= / =drain-channel= now take an ENCODING; =:AUTO= (the default)
   runs the robust auto-detect cascade unchanged, an explicit keyword/string
@@ -110,14 +111,22 @@ pjb's; B4/B6 are the two he scoped out of the CLI but that are still work.
   BRICSCAD =start-engine= set it on the session right after =init-session=.
   Behaviour-preserving: unset ⇒ :AUTO ⇒ identical to pre-G2. Unit test
   =decode-console-octets-honours-explicit-encoding= (+ suite 344/344).
-  REMAINING — the SEND half + the flip: thread the encoding to
-  =launch-program :external-format= (fold =autocad-console-external-format=
-  in, keep =$ALFE_AUTOCAD_CONSOLE_ENCODING= as a lower-priority fallback);
-  make accoreconsole's DEFAULT the true UTF-16LE (currently still :AUTO —
-  the flip waits on real-runner verification per the phase plan); the CLI
-  option fixed-known→warn on accoreconsole; robust vendored-runtime
-  discovery from a FROZEN exe. [encoding-situations-cli-options +
-  alfe-cad-console-encoding]
+  DONE 2026-07-29 (alfe 1.6.18) — the SEND half + the flip (pjb confirmed
+  UTF-16LE): =autocad-console-external-format= now folds the resolved
+  console/cadstdio encoding (explicit -Econsole/-Ecadstdio) over
+  =$ALFE_AUTOCAD_CONSOLE_ENCODING= over the robust :ISO-8859-1 pipe default,
+  and is passed CLI-OPTIONS at =launch-program=. accoreconsole's channel
+  decode DEFAULT is now the named =*accoreconsole-console-encoding*=
+  (=:utf-16le=) via =%autocad-console-decode-encoding= — the flip; :AUTO
+  stays the safety net for non-accoreconsole targets. FIXED-KNOWN→WARN: a
+  conflicting -Econsole on accoreconsole (batch) is accepted, warned as
+  ignored, and UTF-16LE kept. Tests =autocad-console-decode-accoreconsole-
+  fixed-utf16le= + =autocad-console-external-format-folds-cli-over-default=;
+  suite 352/352. NOTE: the pipe-read default stays :ISO-8859-1 (a total
+  decoder + NUL-strip) — only the never-signal channel decoder is flipped to
+  UTF-16LE, so read-char strictness can't crash bootstrap.
+  STILL OPEN (separate from encoding): robust vendored-runtime discovery
+  from a FROZEN exe. [encoding-situations-cli-options + alfe-cad-console-encoding]
 - *G3 (B5, cad-load-encoding-macos)* — CAD native =(load)= must honour the
   active =source= encoding (macOS Mac Roman today): consult it in the
   CAD-side load shim and/or drive SYSCODEPAGE from the launch encoding
