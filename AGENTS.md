@@ -7,6 +7,7 @@ General directives for this repository.
 - This file records project-wide directives and standing instructions.
 - Add new persistent project directives here when they are decided.
 - More detailed design and planning material belongs in the relevant subproject `documentation/` directory.
+- Some normative rules are shared across projects and live in the [`informatimago/rules`](https://gitlab.com/informatimago/rules) repository — read the relevant one before the work it governs. In particular [`version-rules.md`](https://gitlab.com/informatimago/rules/-/blob/master/version-rules.md) governs version numbers, release tags, and branches (summarised under [Release tags and branches](#release-tags-and-branches)), and [`build-rules.md`](https://gitlab.com/informatimago/rules/-/blob/master/build-rules.md) governs the Makefile phases and install/release structure.
 
 ## Project Nature
 
