@@ -81,3 +81,40 @@ and structured logging."
     (is (string= "boom" (alfe.error:backend-error-message condition)))
     (is (equal '(:span "<expr>:1:1-1:5")
                (alfe.error:backend-error-details condition)))))
+
+;;; --- workdir cleanup safety (alfe-workdir-env-deletes-caller-directory) ---
+
+(test workdir-cleanup-spares-caller-supplied-directory
+  "remove-workdir deletes a workdir ALFE generated (make-fresh-workdir name)
+entirely, but NEVER a caller-supplied one (--workdir / $AUTOLISP_WORKDIR): it
+removes only alfe's own protocol/ scratch and leaves the caller's files."
+  ;; the name predicate — only the exact alfe-<backend>-<pid>-<6alnum> shape
+  (is (alfe.workdir:alfe-generated-workdir-name-p "/tmp/alfe-bricscad-1234-ab12cd/"))
+  (is (alfe.workdir:alfe-generated-workdir-name-p "/x/alfe-clautolisp-9-z9y8x7/"))
+  (is (not (alfe.workdir:alfe-generated-workdir-name-p "/tmp/wdtest/")))
+  (is (not (alfe.workdir:alfe-generated-workdir-name-p "/tmp/alfe-foo/")))         ; wrong arity
+  (is (not (alfe.workdir:alfe-generated-workdir-name-p "/tmp/alfe-b-x-ab12cd/")))  ; pid not digits
+  ;; a CALLER-supplied dir survives; only protocol/ is removed
+  (let* ((base (uiop:ensure-directory-pathname
+                (merge-pathnames (format nil "wdtest-caller-~D/" (random 999999))
+                                 (uiop:temporary-directory))))
+         (precious (merge-pathnames "my-result.txt" base))
+         (protocol (uiop:ensure-directory-pathname (merge-pathnames "protocol/" base))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist protocol)
+           (with-open-file (s precious :direction :output :if-exists :supersede) (write-line "keep" s))
+           (with-open-file (s (merge-pathnames "status.txt" protocol)
+                              :direction :output :if-exists :supersede) (write-line "x" s))
+           (alfe.workdir:remove-workdir base)
+           (is (probe-file precious))                        ; caller's file survives
+           (is (not (uiop:directory-exists-p protocol)))     ; alfe's protocol/ gone
+           (is (uiop:directory-exists-p base)))              ; caller's dir survives
+      (ignore-errors (uiop:delete-directory-tree base :validate t :if-does-not-exist :ignore))))
+  ;; an ALFE-generated dir is removed entirely
+  (let ((base (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "alfe-clautolisp-~D-abc123/" (random 999999))
+                                (uiop:temporary-directory)))))
+    (ensure-directories-exist base)
+    (alfe.workdir:remove-workdir base)
+    (is (not (uiop:directory-exists-p base)))))
