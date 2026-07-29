@@ -1201,7 +1201,15 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
            (autolisp-symbol-function (find-autolisp-symbol "VL-FILENAME-DIRECTORY")))
          (filename-extension-fn
            (autolisp-symbol-function (find-autolisp-symbol "VL-FILENAME-EXTENSION")))
-         (directory (format nil "/tmp/clautolisp-builtins-core-dir-~D/" (random 1000000000)))
+         ;; Use uiop:temporary-directory, NOT a hardcoded /tmp: on macOS /tmp
+         ;; is a symlink into /private, and listing files through it broke
+         ;; vl-directory-files on the macOS lane while the real temp dir (as
+         ;; the encoding-roundtrip test already uses) is fine.
+         (directory (namestring
+                     (uiop:ensure-directory-pathname
+                      (merge-pathnames
+                       (format nil "clautolisp-builtins-core-dir-~D/" (random 1000000000))
+                       (uiop:temporary-directory)))))
          (subdirectory (concatenate 'string directory "subdir/"))
          (file-path (concatenate 'string directory "alpha.lsp"))
          (other-file-path (concatenate 'string directory "README"))
@@ -1219,15 +1227,21 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
                             :if-does-not-exist :create)
       (write-line "readme" stream))
     (set-autolisp-current-directory directory)
-    (let ((all-results (call-autolisp-function directory-files-fn))
-          (file-results (call-autolisp-function directory-files-fn nil pattern-string 1))
-          (directory-results (call-autolisp-function directory-files-fn nil nil -1)))
-      (is (equal '("README" "alpha.lsp")
-                 (sort (mapcar #'autolisp-string-value all-results) #'string<)))
-      (is (equal '("alpha.lsp")
-                 (mapcar #'autolisp-string-value file-results)))
-      (is (equal '("subdir")
-                 (mapcar #'autolisp-string-value directory-results))))
+    (let* ((all-results (call-autolisp-function directory-files-fn))
+           (file-results (call-autolisp-function directory-files-fn nil pattern-string 1))
+           (directory-results (call-autolisp-function directory-files-fn nil nil -1))
+           (all-names (sort (mapcar #'autolisp-string-value all-results) #'string<))
+           (file-names (mapcar #'autolisp-string-value file-results))
+           (dir-names (mapcar #'autolisp-string-value directory-results)))
+      ;; Descriptions carry the actual values + the cwd so a macОС-only
+      ;; regression is self-explanatory in the CI trace.
+      (is (equal '("README" "alpha.lsp") all-names)
+          "vl-directory-files files = ~S (dir ~S, cwd ~S)"
+          all-names directory (clautolisp.autolisp-runtime:autolisp-current-directory))
+      (is (equal '("alpha.lsp") file-names)
+          "vl-directory-files *.lsp = ~S" file-names)
+      (is (equal '("subdir") dir-names)
+          "vl-directory-files dirs = ~S" dir-names))
     (is (string= "T"
                  (autolisp-symbol-name
                   (call-autolisp-function file-directory-p-fn
