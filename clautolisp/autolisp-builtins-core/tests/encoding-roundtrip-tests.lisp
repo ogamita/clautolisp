@@ -32,16 +32,24 @@ real files) and require ALL ENCODING ROUNDTRIP PASSED."
                                 (uiop:temporary-directory))))
          (out (make-string-output-stream)))
     (ensure-directories-exist dir)
+    ;; Pass the fixture directory as an ABSOLUTE path (forward slashes, with
+    ;; trailing separator) so the program's (open)/(load) never depend on the
+    ;; AutoLISP CWD / support-search-path resolution, which differs on Windows
+    ;; and made the bare-relative "enc-rt.lsp" load throw there.
+    (let* ((dir-ns (substitute #\/ #\\ (namestring dir)))
+           (prefixed (concatenate 'string
+                                  (format nil "(setq *rt-dir* ~S)~%" dir-ns)
+                                  src)))
     (unwind-protect
          (uiop:with-current-directory (dir)
            (reset-autolisp-symbol-table)
            (let ((*standard-output* out)
                  (*error-output* (make-string-output-stream)))
              (run-autolisp-string
-              src
+              prefixed
               :dialect (clautolisp.autolisp-reader:find-autolisp-dialect :clautolisp)
               :setup-fn #'%install-mock-host-and-core)))
       (ignore-errors (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))
     (let ((s (get-output-stream-string out)))
       (is (search "ALL ENCODING ROUNDTRIP PASSED" s)
-          "encoding-roundtrip.lsp did not pass. Output:~%~A" s))))
+          "encoding-roundtrip.lsp did not pass. Output:~%~A" s)))))
