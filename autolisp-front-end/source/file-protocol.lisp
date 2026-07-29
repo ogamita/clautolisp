@@ -66,6 +66,8 @@
            #:protocol-session-stdout-offset
            #:protocol-session-stderr-offset
            #:protocol-session-debug-log-offset
+           #:protocol-session-console-encoding
+           #:decode-console-octets
            ;; lifecycle
            #:init-session
            #:reset-session
@@ -188,7 +190,12 @@ and DRAIN-STDERR so successive reads see only the new bytes."
   (debug-log-path         nil :type (or null pathname))
   (stdout-offset            0 :type unsigned-byte)
   (stderr-offset            0 :type unsigned-byte)
-  (debug-log-offset         0 :type unsigned-byte))
+  (debug-log-offset         0 :type unsigned-byte)
+  ;; G2: how DRAIN-STDOUT/-STDERR decode the CAD's console output. :AUTO (the
+  ;; default) keeps the robust auto-detect cascade — behaviour-preserving; a
+  ;; keyword (e.g. :utf-16le for accoreconsole, :cp1252) forces that codec.
+  ;; Set from the resolved `console` situation encoding at session start.
+  (console-encoding      :auto))
 
 ;;; --- INIT-SESSION --------------------------------------------------
 
@@ -561,23 +568,94 @@ Latin-1 character, so the decode never fails."
                (incf i 4))
               (t (write-char (code-char b) out) (incf i)))))))))
 
-(defun decode-console-octets (bytes)
-  "Decode a channel octet vector to a string, robustly: UTF-16LE (BOM or
-heuristic), a UTF-8 BOM, else lenient UTF-8. Never signals."
+;;; The Windows-1252 (cp1252) 0x80–0x9F band maps to characters OTHER than the
+;;; matching Latin-1 C1 controls — the euro at 0x80 being the one that bites.
+;;; NIL slots (0x81/8D/8F/90/9D are undefined in cp1252) fall back to the raw
+;;; byte so the decode still never fails.
+(defparameter *cp1252-c1-table*
+  #(#x20AC nil    #x201A #x0192 #x201E #x2026 #x2020 #x2021
+    #x02C6 #x2030 #x0160 #x2039 #x0152 nil    #x017D nil
+    nil    #x2018 #x2019 #x201C #x201D #x2022 #x2013 #x2014
+    #x02DC #x2122 #x0161 #x203A #x0153 nil    #x017E #x0178)
+  "cp1252 code points for bytes #x80–#x9F; NIL = undefined (use the byte).")
+
+(defun %decode-latin1 (bytes &optional (start 0))
+  "Every byte → its code-char (ISO-8859-1 is a total single-byte codec)."
+  (let ((out (make-string (- (length bytes) start))))
+    (loop for i from start below (length bytes)
+          do (setf (char out (- i start)) (code-char (aref bytes i))))
+    out))
+
+(defun %decode-cp1252 (bytes &optional (start 0))
+  "Decode BYTES as Windows-1252: 0x80–0x9F via *CP1252-C1-TABLE*, all other
+bytes as ISO-8859-1. Never signals."
+  (with-output-to-string (out)
+    (loop for i from start below (length bytes)
+          for b = (aref bytes i)
+          do (write-char
+              (code-char (if (<= #x80 b #x9F)
+                             (or (aref *cp1252-c1-table* (- b #x80)) b)
+                             b))
+              out))))
+
+(defun %decode-console-octets-auto (bytes)
+  "The robust auto-detect cascade: UTF-16LE (BOM or heuristic), a UTF-8 BOM,
+else lenient UTF-8. Never signals. This is the behaviour of the distinguished
+:AUTO encoding — and the default, so an un-configured console is decoded
+exactly as before G2."
   (cond
-    ((zerop (length bytes)) "")
     ((%looks-utf-16le-p bytes) (%decode-utf-16le bytes))
     ((and (>= (length bytes) 3)
           (= (aref bytes 0) #xEF) (= (aref bytes 1) #xBB) (= (aref bytes 2) #xBF))
      (%decode-utf-8-lenient bytes 3))
     (t (%decode-utf-8-lenient bytes))))
 
-(defun drain-channel (path offset-place)
+(defun %canonical-console-encoding (encoding)
+  "Fold an encoding designator (keyword or string, any case/aliases) to one of
+the console decoder's canonical keywords, or :AUTO for nil / unknown."
+  (cond
+    ((null encoding) :auto)
+    ((stringp encoding)
+     (%canonical-console-encoding
+      (intern (string-upcase (substitute #\- #\_ encoding)) :keyword)))
+    (t (case encoding
+         ((:auto) :auto)
+         ((:utf-16le :utf16le :utf-16 :utf16 :ucs-2le) :utf-16le)
+         ((:utf-8 :utf8) :utf-8)
+         ((:iso-8859-1 :iso8859-1 :latin-1 :latin1 :ansi) :iso-8859-1)
+         ((:cp1252 :windows-1252 :cp-1252) :cp1252)
+         ((:us-ascii :ascii) :us-ascii)
+         (t :auto)))))
+
+(defun decode-console-octets (bytes &optional (encoding :auto))
+  "Decode a channel octet vector to a string, never signalling. ENCODING
+selects the codec; the default :AUTO runs the robust auto-detect cascade
+(UTF-16LE / UTF-8 BOM / lenient UTF-8) — i.e. exactly the pre-G2 behaviour.
+An explicit keyword/string (utf-16le, utf-8, iso-8859-1, cp1252, us-ascii)
+decodes as that; anything unrecognised falls back to :AUTO."
+  (if (zerop (length bytes))
+      ""
+      (ecase (%canonical-console-encoding encoding)
+        (:auto      (%decode-console-octets-auto bytes))
+        (:utf-16le  (%decode-utf-16le bytes))
+        (:utf-8     (%decode-utf-8-lenient
+                     bytes
+                     (if (and (>= (length bytes) 3)
+                              (= (aref bytes 0) #xEF) (= (aref bytes 1) #xBB)
+                              (= (aref bytes 2) #xBF))
+                         3 0)))
+        (:iso-8859-1 (%decode-latin1 bytes))
+        (:cp1252     (%decode-cp1252 bytes))
+        ;; US-ASCII bytes are Latin-1-identical for ≤0x7F; keep >0x7F as the
+        ;; raw byte rather than signalling (robustness over strictness here).
+        (:us-ascii   (%decode-latin1 bytes)))))
+
+(defun drain-channel (path offset-place &optional (encoding :auto))
   "Generic incremental reader. Opens PATH, skips to the saved OFFSET-PLACE
-*byte* position, reads the rest as raw octets, decodes them robustly
-(DECODE-CONSOLE-OCTETS — UTF-16LE / UTF-8 / Latin-1 fallback, never
-signals), and advances OFFSET-PLACE to the new file length. Returns the
-new text; the empty string when PATH does not exist yet.
+*byte* position, reads the rest as raw octets, decodes them
+(DECODE-CONSOLE-OCTETS with ENCODING — :AUTO = the robust UTF-16LE / UTF-8 /
+Latin-1 cascade, never signals), and advances OFFSET-PLACE to the new file
+length. Returns the new text; the empty string when PATH does not exist yet.
 
 The offset is a BYTE offset (was characters+UTF-8): the channel encoding
 is not knowable ahead of time — accoreconsole on a non-UTF-8 Windows
@@ -600,7 +678,8 @@ so switching its basis to bytes is self-consistent."
               (funcall offset-place (+ start got))
               (decode-console-octets (if (= got (length buf))
                                          buf
-                                         (subseq buf 0 got)))))))))))
+                                         (subseq buf 0 got))
+                                     encoding)))))))))
 
 (defun drain-stdout (session)
   "Return the bytes published to stdout.txt since the previous
@@ -610,7 +689,8 @@ DRAIN-STDOUT call. Advances SESSION's offset."
    (lambda (&optional new-value)
      (if new-value
          (setf (protocol-session-stdout-offset session) new-value)
-         (protocol-session-stdout-offset session)))))
+         (protocol-session-stdout-offset session)))
+   (protocol-session-console-encoding session)))
 
 (defun drain-stderr (session)
   "Mirror of DRAIN-STDOUT for the stderr channel."
@@ -619,7 +699,8 @@ DRAIN-STDOUT call. Advances SESSION's offset."
    (lambda (&optional new-value)
      (if new-value
          (setf (protocol-session-stderr-offset session) new-value)
-         (protocol-session-stderr-offset session)))))
+         (protocol-session-stderr-offset session)))
+   (protocol-session-console-encoding session)))
 
 (defun drain-debug-log (session)
   "Read any new bytes from the CAD-side debug log (workdir/logs/debug.log)

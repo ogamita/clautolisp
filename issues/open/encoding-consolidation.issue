@@ -97,13 +97,27 @@ pjb's; B4/B6 are the two he scoped out of the CLI but that are still work.
   =-Eterminal ISO-8859-1= makes é emit the single byte =e9=, =-Eterminal-out
   cp1252= makes € emit =80=, default stays locale UTF-8 (=c3 a9=). Unit test
   =cli-terminal-encoding-plan= (pure plan) + full suite 334/334.
-- *G2 (B3, situations issue)* — thread the =console= encoding through
-  =start-engine= to BOTH =launch-program :external-format= AND
-  =drain-channel=/=decode-console-octets= (the auto-detect cascade becomes
-  the =AUTO= value, not the only behaviour); make accoreconsole's default
-  the TRUE UTF-16LE, robust decoder demoted to safety net; the CLI option
-  is fixed-known→warn there. Plus robust vendored-runtime discovery from a
-  FROZEN exe. [encoding-situations-cli-options + alfe-cad-console-encoding]
+- *G2 (B3, situations issue)* — IN PROGRESS.
+  DONE 2026-07-29 (alfe 1.6.17) — the DECODE (read) half: =decode-console-
+  octets= / =drain-channel= now take an ENCODING; =:AUTO= (the default)
+  runs the robust auto-detect cascade unchanged, an explicit keyword/string
+  forces a codec (=utf-16le=, =utf-8=, =iso-8859-1=, =cp1252= incl. the
+  0x80–0x9F C1 band, =us-ascii=; unknown → :AUTO, never signals). The
+  =console-encoding= rides on the =protocol-session=; =drain-stdout/-stderr=
+  pass it (the debug log stays :AUTO). Threaded CLI→session:
+  =alfe.cli:resolved-console-encoding= folds the resolved =console=-out /
+  =console= / =cadstdio=-out / =cadstdio= situation and the AUTOCAD /
+  BRICSCAD =start-engine= set it on the session right after =init-session=.
+  Behaviour-preserving: unset ⇒ :AUTO ⇒ identical to pre-G2. Unit test
+  =decode-console-octets-honours-explicit-encoding= (+ suite 344/344).
+  REMAINING — the SEND half + the flip: thread the encoding to
+  =launch-program :external-format= (fold =autocad-console-external-format=
+  in, keep =$ALFE_AUTOCAD_CONSOLE_ENCODING= as a lower-priority fallback);
+  make accoreconsole's DEFAULT the true UTF-16LE (currently still :AUTO —
+  the flip waits on real-runner verification per the phase plan); the CLI
+  option fixed-known→warn on accoreconsole; robust vendored-runtime
+  discovery from a FROZEN exe. [encoding-situations-cli-options +
+  alfe-cad-console-encoding]
 - *G3 (B5, cad-load-encoding-macos)* — CAD native =(load)= must honour the
   active =source= encoding (macOS Mac Roman today): consult it in the
   CAD-side load shim and/or drive SYSCODEPAGE from the launch encoding

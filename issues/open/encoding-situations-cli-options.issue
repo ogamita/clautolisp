@@ -322,10 +322,13 @@ enough. Concretely, today:
    to one keyword per situation.
 2. Every backend must stop discarding it: remove `io-encoding` from the
    three `(declare (ignore …))` forms listed in §1 and use it.
-3. `decode-console-octets` and `drain-channel` must take the resolved
-   `console` encoding as an argument. Today neither has a parameter; the
-   auto-detect cascade becomes the behaviour of a distinguished
-   `AUTO` value rather than the only behaviour.
+3. DONE (alfe 1.6.17, G2 decode half) — `decode-console-octets` and
+   `drain-channel` now take an `encoding` argument; the auto-detect cascade
+   is the distinguished `:AUTO` value (and the default, so unset ⇒
+   unchanged). It rides on `protocol-session-console-encoding`, set from
+   `alfe.cli:resolved-console-encoding` in the AUTOCAD/BRICSCAD
+   `start-engine`. Codecs: utf-16le / utf-8 / iso-8859-1 / cp1252 (0x80–0x9F
+   C1 band) / us-ascii; unknown → :AUTO.
 4. `autocad-console-external-format` (backend-autocad.lisp:442, env
    `$ALFE_AUTOCAD_CONSOLE_ENCODING`) folds into the `console` situation;
    keep the env var as a lower-priority fallback.

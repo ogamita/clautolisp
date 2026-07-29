@@ -580,6 +580,10 @@ e.g. UTF-16LE or UTF-8) when the console encoding is known
                 :version-text version-text
                 :backend-name "AUTOCAD"))
              (variant (choose-effective-mode backend mode)))
+        ;; G2: how the drain decodes AutoCAD's console output. :AUTO (default)
+        ;; keeps the robust cascade — behaviour-preserving.
+        (setf (alfe.protocol.file:protocol-session-console-encoding protocol)
+              (alfe.cli:resolved-console-encoding cli-options))
         (cond
           (staged-bootstrap
            (log-debug "backend AUTOCAD: staged bootstrap -> ~A" staged-bootstrap))

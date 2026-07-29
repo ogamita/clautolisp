@@ -139,6 +139,7 @@
            #:cli-situation-encoding
            #:terminal-encoding-plan
            #:apply-terminal-encoding
+           #:resolved-console-encoding
            #:cli-options-dwg
            #:cli-options-epure-p
            #:cli-options-bootstrap-phase
@@ -809,6 +810,26 @@ leaving ~(~A~) at the host default." key)))
         (error (e)
           (warn "alfe: could not apply -Eterminal (~A) to ~(~A~): ~A"
                 ext key e))))))
+
+;;; --- G2: the `console` encoding alfe DECODES the CAD's output AS ---
+;;;
+;;; The file-IPC drain (drain-stdout/-stderr → decode-console-octets) reads
+;;; the CAD's console/stdout bytes back through the protocol channel files.
+;;; RESOLVED-CONSOLE-ENCODING picks the codec from the resolved `console`
+;;; (then `cadstdio`) situation; NIL from the CLI → :AUTO, i.e. the robust
+;;; auto-detect cascade — the behaviour-preserving default. A per-backend
+;;; default (accoreconsole → true UTF-16LE) is deliberately NOT forced here
+;;; yet: that flip waits on real-runner verification (Phase 2 plan).
+(defun resolved-console-encoding (options)
+  "The encoding alfe should decode the CAD console output AS — the resolved
+`console`-out / `console` / `cadstdio`-out / `cadstdio` situation, or :AUTO
+when none was requested."
+  (or (and options
+           (or (cli-situation-encoding options "console" "out")
+               (cli-situation-encoding options "console")
+               (cli-situation-encoding options "cadstdio" "out")
+               (cli-situation-encoding options "cadstdio")))
+      :auto))
 
 (defun run (argv &key version)
   "alfe entry point. ARGV is the argument list *without* the program

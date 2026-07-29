@@ -632,6 +632,10 @@ future ticket."
                 :cli-options cli-options
                 :version-text version-text
                 :backend-name "BRICSCAD")))
+        ;; G2: how the drain decodes BricsCAD's console output. :AUTO
+        ;; (default) keeps the robust cascade — behaviour-preserving.
+        (setf (alfe.protocol.file:protocol-session-console-encoding protocol)
+              (alfe.cli:resolved-console-encoding cli-options))
         (cond
           (staged-bootstrap
            (log-debug "backend BRICSCAD: staged bootstrap -> ~A" staged-bootstrap))

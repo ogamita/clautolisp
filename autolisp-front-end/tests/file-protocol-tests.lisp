@@ -868,3 +868,37 @@ transition must be observed within the timeout."
                session "STOPPED" :timeout 2))
           (bordeaux-threads:join-thread cad-thread))
       (delete-workdir workdir))))
+
+;;; --- G2: console-encoding decode ------------------------------------
+
+(defun %octets (&rest bs)
+  (make-array (length bs) :element-type '(unsigned-byte 8) :initial-contents bs))
+
+(test decode-console-octets-honours-explicit-encoding
+  "G2: DECODE-CONSOLE-OCTETS honours an explicit ENCODING; the default
+:AUTO keeps the robust auto-detect cascade (behaviour-preserving), while an
+explicit codec forces that interpretation of the SAME octets. Aliases and
+string designators resolve alike; unknown codecs fall back to :AUTO and it
+never signals."
+  (flet ((dec (bs enc) (alfe.protocol.file:decode-console-octets bs enc)))
+    ;; byte 0x80: cp1252 -> euro U+20AC; iso-8859-1 -> the C1 control U+0080
+    (let ((b (%octets #x41 #x80 #x42)))                       ; "A" <0x80> "B"
+      (is (string= (format nil "A~cB" (code-char #x20AC)) (dec b :cp1252)))
+      (is (string= (format nil "A~cB" (code-char #x80))   (dec b :iso-8859-1)))
+      (is (string= (dec b :cp1252)     (dec b "windows-1252")))  ; alias + string
+      (is (string= (dec b :iso-8859-1) (dec b "latin1"))))
+    ;; UTF-8 bytes of é: :utf-8 -> one char U+00E9; :iso-8859-1 -> two bytes
+    (let ((b (%octets #x41 #xC3 #xA9 #x42)))
+      (is (string= (format nil "A~cB" (code-char #xE9)) (dec b :utf-8)))
+      (is (= 4 (length (dec b :iso-8859-1)))))
+    ;; UTF-16LE "Aé"
+    (is (string= (format nil "A~c" (code-char #xE9))
+                 (dec (%octets #x41 #x00 #xE9 #x00) :utf-16le)))
+    ;; :AUTO (the default arg) reproduces the cascade: a UTF-8 BOM decodes UTF-8
+    (is (string= (format nil "A~c" (code-char #xE9))
+                 (alfe.protocol.file:decode-console-octets
+                  (%octets #xEF #xBB #xBF #x41 #xC3 #xA9))))
+    ;; unrecognised codec -> :AUTO fallback, never signals
+    (is (string= "AB" (dec (%octets #x41 #x42) :ebcdic-us)))
+    ;; empty stays empty
+    (is (string= "" (dec (%octets) :cp1252)))))
