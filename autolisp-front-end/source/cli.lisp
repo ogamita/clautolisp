@@ -91,6 +91,7 @@
                 #:cli-options-io-encoding
                 #:cli-options-situation-encodings
                 #:cli-situation-encoding
+                #:encoding-keyword
                 #:cli-options-dwg
                 #:cli-options-epure-p
                 #:cli-options-bootstrap-phase
@@ -136,6 +137,8 @@
            #:cli-options-io-encoding
            #:cli-options-situation-encodings
            #:cli-situation-encoding
+           #:terminal-encoding-plan
+           #:apply-terminal-encoding
            #:cli-options-dwg
            #:cli-options-epure-p
            #:cli-options-bootstrap-phase
@@ -739,6 +742,74 @@ the dry-run renderer."
 
 ;;; --- top-level RUN --------------------------------------------------
 
+;;; --- G1: apply the `terminal` situation encoding to alfe's OWN streams ---
+;;;
+;;; -Eterminal[-in|-out] declares the encoding of alfe's own REPL / batch I/O
+;;; with the user. Until now the value was published to AutoLISP code as
+;;; *AUTOLISP-TERMINAL-ENCODING* but never applied to this process's
+;;; *standard-output* / *standard-input*, so the flag was inert (the streams
+;;; kept SBCL's locale default). G1 makes it real: when — and ONLY when — a
+;;; terminal encoding is explicitly requested, rebind alfe's standard streams
+;;; to fresh fd-streams in that encoding. Unset ⇒ nothing changes (the
+;;; behaviour-preserving default the phased plan requires).
+
+(defun terminal-encoding-plan (options)
+  "The stream reconfiguration the resolved `terminal` encoding implies for
+alfe's OWN standard streams, as a list of (KEY FD DIRECTION EXTERNAL-FORMAT)
+entries — KEY one of :OUTPUT / :ERROR / :INPUT, FD the OS descriptor,
+EXTERNAL-FORMAT a CL keyword. NIL when -Eterminal was not given. The bare
+-Eterminal sets both directions; -Eterminal-out drives stdout+stderr,
+-Eterminal-in drives stdin. Pure — so tests assert what a CLI would
+reconfigure without touching real process streams. The line-ending suffix is
+accepted-and-ignored here (terminal I/O is line-buffered), matching the
+--list-encodings note."
+  (let ((out (cli-situation-encoding options "terminal" "out"))
+        (in  (cli-situation-encoding options "terminal" "in")))
+    (nconc
+     (when out
+       (let ((ext (encoding-keyword out)))
+         (list (list :output 1 :output ext)
+               (list :error  2 :output ext))))
+     (when in
+       (list (list :input 0 :input (encoding-keyword in)))))))
+
+(defun %make-terminal-fd-stream (fd direction external-format)
+  "A fresh stream over OS descriptor FD with EXTERNAL-FORMAT (DIRECTION is
+:INPUT or :OUTPUT), or NIL when the host CL cannot build one. Only SBCL is
+wired today; other implementations return NIL and the caller warns rather
+than failing."
+  (declare (ignorable fd direction external-format))
+  #+sbcl
+  (sb-sys:make-fd-stream fd
+                         :input  (eq direction :input)
+                         :output (eq direction :output)
+                         :external-format external-format
+                         :buffering (if (eq direction :output) :line :full)
+                         :name "alfe terminal")
+  #-sbcl
+  nil)
+
+(defun apply-terminal-encoding (options)
+  "G1 side effect: reconfigure alfe's own *standard-output* / *error-output*
+/ *standard-input* per TERMINAL-ENCODING-PLAN. A no-op when -Eterminal was
+not given. Any failure (unsupported host CL, un-reopenable fd) degrades to a
+warning — it must never abort the run, and the un-reconfigured stream simply
+keeps the locale default."
+  (dolist (entry (terminal-encoding-plan options))
+    (destructuring-bind (key fd direction ext) entry
+      (handler-case
+          (let ((stream (%make-terminal-fd-stream fd direction ext)))
+            (if stream
+                (ecase key
+                  (:output (setf *standard-output* stream))
+                  (:error  (setf *error-output* stream))
+                  (:input  (setf *standard-input* stream)))
+                (warn "alfe: -Eterminal is only implemented on SBCL; ~
+leaving ~(~A~) at the host default." key)))
+        (error (e)
+          (warn "alfe: could not apply -Eterminal (~A) to ~(~A~): ~A"
+                ext key e))))))
+
 (defun run (argv &key version)
   "alfe entry point. ARGV is the argument list *without* the program
 name; VERSION is the version string printed by --version. Returns an
@@ -768,6 +839,11 @@ The handler chain matches alfe-cli.issue's exit-code table:
            0)
           (t
            (set-level (cli-options-verbosity options))
+           ;; G1: apply the resolved `terminal` encoding to alfe's OWN
+           ;; standard streams FIRST — before any output (the debug dump,
+           ;; the colour probe, the plan) so the whole run honours it. A
+           ;; no-op unless -Eterminal[-in|-out] was given.
+           (apply-terminal-encoding options)
            ;; Once the log level is set, dump the resolved option
            ;; surface at :debug so a `--debug` run shows what the
            ;; parser decided. Mirrors the bash autolisp script's

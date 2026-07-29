@@ -76,7 +76,7 @@ pjb's; B4/B6 are the two he scoped out of the CLI but that are still work.
 | boundary | situation (pjb §3) | provenance (default) | state (from the code map) |
 |----------+--------------------+----------------------+---------------------------|
 | B1 read/write =.lsp/.txt= in-process | =source= + =file= | settable | read+write honour =*AUTOLISP-FILE-ENCODING*=/=-e=, per-open ✓ |
-| B2 alfe ↔ user terminal | =terminal= | settable | *BUG: -E published but NOT applied to alfe's own streams* |
+| B2 alfe ↔ user terminal | =terminal= | settable | FIXED (G1, alfe 1.6.16): =-Eterminal= reconfigures alfe's own stdout/stderr/stdin |
 | B3 alfe ↔ CAD subprocess pipe | =cadstdio= (+ =console= = the CAD GUI console device, separate) | fixed-known (accoreconsole UTF-16LE) / variable (bricscad Qt; Unix LC_) | lenient default; not threaded; no CLI |
 | B4 protocol channel files | (internal) | fixed (we own both ends = UTF-8) | works; alfe writes UTF-8, reads octets+heuristic |
 | B5 CAD's own =(load)= | =source= inside the CAD | variable (SYSCODEPAGE/locale) | *BUG: ignores =-e=; macOS Mac Roman* |
@@ -85,9 +85,18 @@ pjb's; B4/B6 are the two he scoped out of the CLI but that are still work.
 
 * Open gaps (the work) — each names its home issue
 
-- *G1 (B2)* — apply the resolved =terminal= encoding to alfe's own
-  =*standard-output*/-input= (today =-E= is dropped). Engine-side, unit-
-  testable, no CAD. [this issue / situations §6.2]
+- *G1 (B2)* — DONE 2026-07-29 (alfe 1.6.16). =-Eterminal[-in|-out]= (and
+  the bare =-E=) now reconfigures alfe's OWN =*standard-output*=,
+  =*error-output*= and =*standard-input*= to the requested encoding, via
+  =apply-terminal-encoding= / =terminal-encoding-plan= (=AFE/source/cli.lisp=,
+  called first thing in =run='s real-run branch, before any output). Bare
+  =-Eterminal= sets both directions (out = stdout+stderr, in = stdin);
+  =-out= / =-in= pick one. Behaviour-preserving default: a no-op unless
+  explicitly requested; any reconfig failure degrades to a warning, never a
+  crash; SBCL-only for now (other CLs warn + keep the host default). Verified:
+  =-Eterminal ISO-8859-1= makes é emit the single byte =e9=, =-Eterminal-out
+  cp1252= makes € emit =80=, default stays locale UTF-8 (=c3 a9=). Unit test
+  =cli-terminal-encoding-plan= (pure plan) + full suite 334/334.
 - *G2 (B3, situations issue)* — thread the =console= encoding through
   =start-engine= to BOTH =launch-program :external-format= AND
   =drain-channel=/=decode-console-octets= (the auto-detect cascade becomes
@@ -146,7 +155,7 @@ pjb's; B4/B6 are the two he scoped out of the CLI but that are still work.
 - alfe in-process load honours =:encoding=: =AFE/source/backend-clautolisp.lisp:505= =direct-load= (:527); workdir files hardwired =:utf-8= (:357).
 
 ** B2 terminal
-- =-E ENC= → =cli-options-io-encoding= (=CL/autolisp-cli/source/spec.lisp:216-220=; help =AFE/source/cli.lisp:241=); published as =*AUTOLISP-TERMINAL-ENCODING*= (=CL/autolisp-cli/source/transmit.lisp:133-135=). Every backend =(declare (ignore … io-encoding))= (=backend-clautolisp.lisp:389=, =backend-bricscad.lisp:599=, =backend-autocad.lisp:552=). NO reconfig of alfe's own =*standard-output*= external-format ⇒ SBCL locale default.
+- =-E ENC= → =cli-options-io-encoding= (=CL/autolisp-cli/source/spec.lisp:216-220=; help =AFE/source/cli.lisp:241=); published as =*AUTOLISP-TERMINAL-ENCODING*= (=CL/autolisp-cli/source/transmit.lisp:133-135=). Every backend =(declare (ignore … io-encoding))= (=backend-clautolisp.lisp:389=, =backend-bricscad.lisp:599=, =backend-autocad.lisp:552=) — still true for the CAD backends' remote streams. FIXED for alfe's OWN process streams (G1, alfe 1.6.16): =apply-terminal-encoding= / =terminal-encoding-plan= (=AFE/source/cli.lisp=) rebind =*standard-output*/-error/-input= to fresh SBCL fd-streams in the =-Eterminal= encoding when explicitly requested; unset ⇒ SBCL locale default as before.
 
 ** B3 console pipe
 - =AFE/source/backend-autocad.lisp:442= =autocad-console-external-format= (default =:iso-8859-1=, env =$ALFE_AUTOCAD_CONSOLE_ENCODING=); applied at =launch-program= :632; NUL-strip =slurp-process-stream= :455-461. BricsCAD launcher :692-697 passes NO =:external-format= (real output via B4).

@@ -62,6 +62,7 @@
                 #:cli-options-load-encoding
                 #:cli-options-io-encoding
                 #:cli-situation-encoding
+                #:terminal-encoding-plan
                 #:cli-options-dwg
                 #:cli-options-epure-p
                 #:cli-options-bootstrap-phase

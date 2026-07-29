@@ -164,6 +164,34 @@ work too."
     (is (string= "US-ASCII"     (cli-situation-encoding opts "log")))           ; from bare -E (all)
     (is (string= "UTF-16LE"     (cli-situation-encoding opts "console")))))
 
+(test cli-terminal-encoding-plan
+  "G1: -Eterminal[-in|-out] yields the reconfiguration plan for alfe's OWN
+standard streams; unset ⇒ NIL (behaviour-preserving). Bare -Eterminal (and
+bare -E) set BOTH directions — stdout+stderr for out, stdin for in;
+-Eterminal-out drives only stdout+stderr; -Eterminal-in only stdin."
+  (flet ((kw (name) (clautolisp.autolisp-cli:encoding-keyword name)))
+    ;; sanity: the name→CL-external-format mapping the plan relies on
+    (is (eq :utf-8 (kw "UTF-8")))
+    ;; unset: no plan, nothing reconfigured
+    (is (null (terminal-encoding-plan (parse-arguments '("-x" "(+ 1 2)")))))
+    ;; bare -Eterminal: both directions (out = stdout+stderr, in = stdin)
+    (is (equal (list (list :output 1 :output (kw "UTF-8"))
+                     (list :error  2 :output (kw "UTF-8"))
+                     (list :input  0 :input  (kw "UTF-8")))
+               (terminal-encoding-plan (parse-arguments '("-Eterminal" "UTF-8")))))
+    ;; -Eterminal-out: only the output streams
+    (is (equal (list (list :output 1 :output (kw "cp1252"))
+                     (list :error  2 :output (kw "cp1252")))
+               (terminal-encoding-plan (parse-arguments '("-Eterminal-out" "cp1252")))))
+    ;; -Eterminal-in: only stdin
+    (is (equal (list (list :input 0 :input (kw "ISO-8859-1")))
+               (terminal-encoding-plan (parse-arguments '("-Eterminal-in" "ISO-8859-1")))))
+    ;; the bare -E (all situations) also reaches terminal, both directions
+    (is (equal (list (list :output 1 :output (kw "UTF-8"))
+                     (list :error  2 :output (kw "UTF-8"))
+                     (list :input  0 :input  (kw "UTF-8")))
+               (terminal-encoding-plan (parse-arguments '("-E" "UTF-8")))))))
+
 (test cli-encoding-typo-rejected
   "A typo'd value signals cli-usage-error at parse time (encoding.issue's
 headline rule), and the dropped generic -e/-E are now unknown options."
