@@ -130,6 +130,16 @@ derived value."
                    (canonical-encoding-name (cli-options-load-encoding options)))
               (resolve-locale-encoding-name)
               "")))
+   ;; The EXPLICITLY-requested source encoding (-Esource / -e) only — empty
+   ;; when the user did not ask. Distinct from *AUTOLISP-FILE-ENCODING* above,
+   ;; which also folds in the host locale. The CAD-side native (load) shim
+   ;; (G3) consults THIS, so an un-configured load keeps the CAD's own default
+   ;; decode; only an explicit -Esource makes the CAD `open' honour it.
+   (list "*AUTOLISP-CAD-LOAD-ENCODING*"
+         (make-autolisp-string
+          (if (cli-options-load-encoding options)
+              (canonical-encoding-name (cli-options-load-encoding options))
+              "")))
    (list "*AUTOLISP-TERMINAL-ENCODING*"
          (make-autolisp-string
           (resolve-effective-encoding (cli-options-io-encoding options))))

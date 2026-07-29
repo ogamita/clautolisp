@@ -458,9 +458,59 @@
         (error (vl-catch-all-error-message catch-result))
         catch-result))))
 
+;; --- G3: native (load) honours the resolved `source' encoding -------------
+;;
+;; The front-end publishes the EXPLICITLY-requested source encoding as
+;; *AUTOLISP-CAD-LOAD-ENCODING* (empty when the user did not pass -Esource).
+;; When set, open the source file the way THIS backend understands
+;; (*AUTOLISP-BACKEND*): BricsCAD "r,ccs=ENC", AutoCAD the 3rd-arg literal,
+;; clautolisp reads *AUTOLISP-FILE-ENCODING* itself so a bare open suffices.
+;; ANY failure -- an unsupported 3rd arg at AutoCAD LISPSYS 0, an unknown ccs
+;; -- falls back to the bare "r" open, so a load can NEVER break because of
+;; this. Empty encoding => bare open => the pre-G3 behaviour, unchanged.
+;;
+;; NB: THIS file (and the rest of the vendored runtime) still must stay pure
+;; ASCII -- it is sourced by the CAD to BOOTSTRAP the encoding machinery,
+;; before *AUTOLISP-CAD-LOAD-ENCODING* exists. G3 governs the USER files the
+;; shim loads, not the runtime itself, so the ASCII-only rule below stands.
+
+(defun autolisp-source-enc-canon (s / out i c)
+  ;; upcase and drop "-"/"_" so "utf-8" "UTF8" "utf_8" all fold to "UTF8".
+  (setq out "" i 1)
+  (while (<= i (strlen s))
+    (setq c (substr s i 1))
+    (if (and (/= c "-") (/= c "_"))
+      (setq out (strcat out (strcase c))))
+    (setq i (1+ i)))
+  out)
+
+(defun autolisp-source-open-encoded-try (path enc backend / u)
+  (setq u (autolisp-source-enc-canon enc))
+  (cond
+    ((= backend "BRICSCAD")
+     (cond ((= u "UTF8")    (open path "r,ccs=UTF-8"))
+           ((= u "UTF16LE") (open path "r,ccs=UTF-16LE"))
+           (T               (open path "r"))))    ; ANSI default handles latin-1
+    ((= backend "AUTOCAD")
+     (cond ((= u "UTF8")    (open path "r" "utf8"))
+           (T               (open path "r"))))    ; MBCS default
+    (T                      (open path "r"))))     ; clautolisp reads the var itself
+
+(defun autolisp-source-open-encoded (path / enc backend f)
+  (setq enc (if (boundp '*AUTOLISP-CAD-LOAD-ENCODING*) *AUTOLISP-CAD-LOAD-ENCODING* nil))
+  (setq backend (if (boundp '*AUTOLISP-BACKEND*) *AUTOLISP-BACKEND* nil))
+  (if (or (null enc) (= enc "") (null backend))
+    (open path "r")                                ; behaviour-preserving default
+    (progn
+      (setq f (vl-catch-all-apply 'autolisp-source-open-encoded-try
+                                  (list path enc backend)))
+      (if (or (vl-catch-all-error-p f) (null f))
+        (open path "r")                            ; robust fallback on any failure
+        f))))
+
 (defun autolisp-source-load-run-body-impl (resolved / f line line-no form-text form-start-line result form-read defun-name eval-result capture-old)
   (progn
-      (setq f (open resolved "r"))
+      (setq f (autolisp-source-open-encoded resolved))
       (if (not f)
         (autolisp-source-raise resolved "unable to open source file" nil nil nil nil))
       (setq line-no 0)
@@ -541,10 +591,12 @@
           ;; Keep this file ASCII-only: every byte > 127 has caused a
           ;; BricsCAD / clautolisp LOAD failure ("ASCII stream decoding
           ;; error on octet sequence #(226)") -- the em-dash that used
-          ;; to live in this comment was exactly such a byte. Until
-          ;; the LOAD path reliably picks UTF-8 from
-          ;; *AUTOLISP-FILE-ENCODING*, the vendored runtime+bootstrap
-          ;; stay pure ASCII.
+          ;; to live in this comment was exactly such a byte. G3 makes the
+          ;; shim honour the encoding for USER files (autolisp-source-open-
+          ;; encoded above), but the vendored runtime+bootstrap themselves
+          ;; still stay pure ASCII: they are sourced by the CAD to BOOTSTRAP
+          ;; the encoding machinery, before *AUTOLISP-CAD-LOAD-ENCODING* even
+          ;; exists, so they cannot rely on it for their own decode.
           (if (/= *AUTOLISP_SOURCE_SCAN_STATE* 'empty)
             (autolisp-source-raise resolved
                                    (if (= *AUTOLISP_SOURCE_SCAN_STATE* 'incomplete-string)

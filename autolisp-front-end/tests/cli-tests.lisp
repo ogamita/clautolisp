@@ -192,6 +192,7 @@ bare -E) set BOTH directions — stdout+stderr for out, stdin for in;
                      (list :input  0 :input  (kw "UTF-8")))
                (terminal-encoding-plan (parse-arguments '("-E" "UTF-8")))))))
 
+
 (test cli-encoding-typo-rejected
   "A typo'd value signals cli-usage-error at parse time (encoding.issue's
 headline rule), and the dropped generic -e/-E are now unknown options."

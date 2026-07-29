@@ -127,13 +127,32 @@ pjb's; B4/B6 are the two he scoped out of the CLI but that are still work.
   UTF-16LE, so read-char strictness can't crash bootstrap.
   STILL OPEN (separate from encoding): robust vendored-runtime discovery
   from a FROZEN exe. [encoding-situations-cli-options + alfe-cad-console-encoding]
-- *G3 (B5, cad-load-encoding-macos)* — CAD native =(load)= must honour the
-  active =source= encoding (macOS Mac Roman today): consult it in the
-  CAD-side load shim and/or drive SYSCODEPAGE from the launch encoding
-  (verify it takes on macOS). Keep the vendored runtime pure-ASCII (F.5).
-- *G4 (B6, cad-load-encoding-macos)* — transcode remote-eval return values
-  from the CAD codepage to the =terminal= encoding (windows-1252/Mac Roman
-  → UTF-8). None today.
+- *G3 (B5, cad-load-encoding-macos)* — DONE 2026-07-29 (alfe 1.6.19),
+  pending real-runner confirmation. The CAD-side native =(load)= shim now
+  honours the EXPLICIT source encoding. Publish half: transmit.lisp emits
+  =*AUTOLISP-CAD-LOAD-ENCODING*= = the explicit =-Esource= value ("" when
+  unset), distinct from =*AUTOLISP-FILE-ENCODING*= (which also folds the
+  locale) so the default stays behaviour-preserving. Consume half:
+  =autolisp-source-open-encoded= (bootstrap.lsp) reads it + =*AUTOLISP-
+  BACKEND*= and opens the source file the way THAT backend understands —
+  BricsCAD =r,ccs=ENC=, AutoCAD 3rd-arg literal, clautolisp bare (its engine
+  reads =*AUTOLISP-FILE-ENCODING*= itself). Empty/unbound ⇒ bare =open=
+  (pre-G3 behaviour); ANY encoded-open failure (e.g. the 3rd arg at AutoCAD
+  LISPSYS 0) falls back to the bare open via vl-catch-all, so a load can
+  NEVER break. Vendored runtime stays pure-ASCII (it bootstraps the
+  encoding, before the var exists). Verified on Linux: the var publishes
+  ("UTF-8" under =-Esource utf-8=, empty otherwise) and the enc-canon fold
+  is correct; the per-CAD open needs a macOS-BricsCAD / accoreconsole run to
+  confirm (and to check whether it fixes accoreconsole-deported-load-highbyte
+  at LISPSYS 1/2). Flip-to-apply-the-locale-default too can follow that run.
+- *G4 (B6, cad-load-encoding-macos)* — DONE (covered by G1+G2). There is NO
+  separate return-value channel: CAD backends surface =:value nil=; every
+  user-visible byte rides =stdout.txt= → =drain-stdout= → =decode-console-
+  octets=, which G2 made console-encoding-aware (cp1252 fixes the 0x80–0x9F
+  band, UTF-16LE for accoreconsole) and G1 re-encodes to the =terminal=. So
+  the CAD-codepage→terminal transcode is the G1+G2 path; no separate work.
+  The only residual lenient-Latin-1 site is the =:AUTO= fallback, bypassed
+  the moment the user names a console encoding.
 - *G5 (B1 tests+spec, test-file-encodings)* — the part-1 (LOAD a
   =(setq text (strcat …))= fixture per encoding) and part-3 (loop over
   =*AUTOLISP-FILE-ENCODING*=) AutoLISP programs incl. wrong-encoding /

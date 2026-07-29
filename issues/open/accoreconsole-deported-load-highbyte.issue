@@ -59,6 +59,17 @@ Measured on CI pipeline 2713419298, job 15586058491 (probe commit 1380ca2).
 3. Fix by bringing autolisp-source-load to the reference load algorithm
    (honour the resolved `source` encoding), per the encoding-situations plan.
 
+== Update 2026-07-29 (G3, alfe 1.6.19) ==
+
+The G3 shim (autolisp-source-open-encoded, bootstrap.lsp) now opens the
+source file honouring an EXPLICIT -Esource encoding, per backend — for
+AutoCAD via the 3rd-arg literal `(open path "r" "utf8")`. This MAY fix this
+bug when the user passes `-Esource utf-8` AND LISPSYS is 1/2 (the 3rd arg is
+documented only for Unicode LISPSYS; at LISPSYS 0 it falls back to the bare
+open via vl-catch-all, so the bug persists there but is no worse). Needs a
+Windows/accoreconsole run to confirm: repro with `-Esource utf-8` at LISPSYS
+0 vs 1/2 (remember /isolate pins LISPSYS — drop it or pre-set the profile).
+
 == Related ==
 
 - issues/open/encoding-situations-cli-options.issue (§2.1 load impls, §7.1

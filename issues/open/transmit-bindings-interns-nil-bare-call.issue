@@ -1,0 +1,51 @@
+cli-options->transmit-bindings signals (make-autolisp-symbol :NAME NIL) on a bare call
+
+== Symptom ==
+
+Calling the transmit-binding builder OUTSIDE the full `run' path signals a
+TYPE-ERROR from interning a NIL symbol name:
+
+    (alfe.cli:cli-options-transmit-bindings-for-alfe
+      (alfe.cli:parse-arguments '("--bricscad" "-Esource" "utf-8"))
+      :version-text "0" :usage-text "")
+    ;; => Unhandled TYPE-ERROR
+    ;;    0: (CLAUTOLISP.AUTOLISP-RUNTIME.INTERNAL:MAKE-AUTOLISP-SYMBOL :NAME NIL …)
+    ;;    1: (CLAUTOLISP.AUTOLISP-RUNTIME:INTERN-AUTOLISP-SYMBOL NIL …)
+    ;;    2: (CLAUTOLISP.AUTOLISP-CLI:CLI-OPTIONS->TRANSMIT-BINDINGS #S(CLI-OPTIONS …))
+
+One of the emitted bindings interns a VALUE (not a name — the names are
+string literals) that is NIL for this options shape, and INTERN-AUTOLISP-
+SYMBOL rejects a NIL name.
+
+== Why it isn't seen in normal use ==
+
+The real `run' path (and the CI suite) never calls the builder in this bare
+form; it goes through emit-run-common-lsp with a fully-populated context, so
+whatever special/global makes the interned value non-NIL is in place. Hence
+the alfe suite is green and `alfe … -Esource utf-8 -x (princ *AUTOLISP-CAD-
+LOAD-ENCODING*)` prints "UTF-8" correctly. The bug only surfaces when unit
+tests try to call the builder directly (it blocked a G3 regression test,
+which was dropped in favour of the end-to-end manual verification).
+
+== Repro ==
+
+    sbcl … (load clautolisp.asd + autolisp-front-end.asd; load-system
+            "autolisp-front-end")
+    (alfe.cli:cli-options-transmit-bindings-for-alfe
+      (alfe.cli:parse-arguments '("--bricscad")) :version-text "0" :usage-text "")
+
+== To investigate ==
+
+1. Which binding's VALUE is NIL and reaches INTERN-AUTOLISP-SYMBOL? (Likely a
+   keyword/identity binding — *AUTOLISP-HOST* / *AUTOLISP-DWG* / an action
+   slot — rendered via intern rather than a plain string.)
+2. Either guard INTERN-AUTOLISP-SYMBOL callers against NIL (emit "" / skip
+   the binding) so the builder is safely callable in isolation, or document
+   that it requires the full run context. Making it pure would let G3 (and
+   future) get a direct unit test.
+
+== Related ==
+
+- issues/open/encoding-situations-cli-options.issue (G3 — the dropped test
+  wanted to assert *AUTOLISP-CAD-LOAD-ENCODING* is published)
+- clautolisp/autolisp-cli/source/transmit.lisp (cli-options->transmit-bindings)
