@@ -8,6 +8,7 @@ this scenario doesn't have to *test* the semantics, it just has to
 mention each one."
  :classification :clautolisp-only
  :argv ("--clautolisp"
+        "--cad" "clautolisp"
         "--dry-run"
         "--mode" "auto"
         "--backend" "direct"
@@ -18,7 +19,7 @@ mention each one."
         "--timeout" "30"
         "-x" "(+ 1 2)")
  :expected-exit 0
- :covers-options ("--clautolisp" "--dry-run"
+ :covers-options ("--clautolisp" "--cad" "--dry-run"
                   "--mode" "--backend"
                   "--bootstrap-phase" "--no-init"
                   "--no-color"
