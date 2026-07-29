@@ -972,3 +972,38 @@ format; with nothing requested (and no env) it stays the robust :ISO-8859-1."
   (unless (uiop:getenv "ALFE_AUTOCAD_CONSOLE_ENCODING")
     (is (eq :iso-8859-1 (alfe.backend.autocad::autocad-console-external-format
                          (parse-arguments '("--autocad")))))))
+
+;;; --- backend selection: CAD-program denotation parsing --------------
+
+(test cad-program-denotation-parsing
+  "alfe-backend-selection: version/locale extraction from install paths and
+the canonical denotation each yields (OS-independent — we feed paths in)."
+  (labels ((den (kind path)
+             (alfe.backend.cad-common:cad-program-denotation
+              (alfe.backend.cad-common::%cad-program-from-path kind path))))
+    ;; AutoCAD (Windows + macOS) — the bare 20NN year
+    (is (string= "acad-2022"
+                 (den :acad "C:/Program Files/Autodesk/AutoCAD 2022/acad.exe")))
+    (is (string= "acad-2026"
+                 (den :acad "/Applications/Autodesk/AutoCAD 2026/AutoCAD 2026.app/Contents/MacOS/AutoCAD")))
+    (is (string= "accoreconsole-2022"
+                 (den :accoreconsole "C:/Program Files/Autodesk/AutoCAD 2022/accoreconsole.exe")))
+    ;; BricsCAD — the V-token (lower-cased in the denotation); + locale on Win
+    (is (string= "bricscad-v26"
+                 (den :bricscad "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad")))
+    (is (string= "bricscad-v25-fr_FR"
+                 (den :bricscad "C:/Program Files/Bricsys/BricsCAD V25 fr_FR/bricscad.exe")))
+    (is (string= "bricscad-v25"
+                 (den :bricscad "/opt/bricsys/bricscad/V25/bricscad")))
+    ;; V26x64 keeps only V26
+    (is (string= "bricscad-v26"
+                 (den :bricscad "C:/Program Files/Bricsys/BricsCAD V26x64/bricscad.exe")))
+    ;; no version in the path -> bare denotation
+    (is (string= "acad" (den :acad "/somewhere/acad.exe")))
+    (is (string= "clautolisp" (den :clautolisp "(embedded in alfe)")))
+    ;; the parsed struct fields
+    (let ((p (alfe.backend.cad-common::%cad-program-from-path
+              :bricscad "C:/Program Files/Bricsys/BricsCAD V25 fr_FR/bricscad.exe")))
+      (is (eq :bricscad (alfe.backend.cad-common:cad-program-kind p)))
+      (is (string= "V25" (alfe.backend.cad-common:cad-program-version p)))
+      (is (string= "fr_FR" (alfe.backend.cad-common:cad-program-locale p))))))

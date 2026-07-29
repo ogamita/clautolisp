@@ -34,7 +34,16 @@
            #:discover-runtime-lsp
            #:discover-bootstrap-lsp
            ;; protocol-driven eval-plan
-           #:drive-protocol-actions))
+           #:drive-protocol-actions
+           ;; CAD program discovery + denotation (backend selection)
+           #:cad-program
+           #:cad-program-kind
+           #:cad-program-version
+           #:cad-program-locale
+           #:cad-program-path
+           #:cad-program-denotation
+           #:discover-cad-programs
+           #:print-cad-programs))
 
 (in-package #:alfe.backend.cad-common)
 
@@ -570,3 +579,138 @@ already published when we begin driving."
     (let* ((parts (uiop:split-string string :separator '(#\Space #\Tab))))
       (when (>= (length parts) 2)
         (ignore-errors (parse-integer (second parts)))))))
+
+;;; --- CAD program discovery + denotation (alfe-backend-selection) ---
+;;;
+;;; A user may have several CAD versions/locales installed and want to pick
+;;; one explicitly. DISCOVER-CAD-PROGRAMS enumerates them ALL (unlike the
+;;; per-backend DISCOVER-*-BINARY which return only the best one), each with a
+;;; canonical DENOTATION (acad-2026, bricscad-v26, bricscad-v25-fr_FR,
+;;; accoreconsole-2022, clautolisp) the CLI can select by. This is the model
+;;; behind --list-cad-programs; the selection wiring builds on it.
+
+(defstruct (cad-program (:constructor %make-cad-program) (:copier nil))
+  (kind       nil)   ; :acad :accoreconsole :bricscad :clautolisp
+  (version    nil)   ; "2026" / "V26" / an alfe version / NIL
+  (locale     nil)   ; "fr_FR" (BricsCAD/Windows) or NIL
+  (path       nil)   ; executable namestring, or "(embedded)" for clautolisp
+  (denotation nil))  ; canonical selector, e.g. "acad-2026"
+
+;; -- version / locale extraction from an install path -----------------
+
+(defun %find-autocad-year (path)
+  "The first bare 20NN run in PATH (a namestring), or NIL. Bare = not a
+digit on either side, so \"AutoCAD 2026\" yields \"2026\"."
+  (loop for i from 0 to (max -1 (- (length path) 4))
+        when (and (char= (char path i) #\2) (char= (char path (1+ i)) #\0)
+                  (digit-char-p (char path (+ i 2))) (digit-char-p (char path (+ i 3)))
+                  (or (zerop i) (not (digit-char-p (char path (1- i)))))
+                  (or (>= (+ i 4) (length path)) (not (digit-char-p (char path (+ i 4))))))
+          return (subseq path i (+ i 4))))
+
+(defun %find-bricscad-version (path)
+  "The BricsCAD version token in PATH — \"V\" then digits (e.g. \"V26\"),
+upper-cased; \"V26x64\" keeps only \"V26\". NIL when absent."
+  (let ((u (string-upcase path)))
+    (loop for i from 0 below (length u)
+          when (and (char= (char u i) #\V)
+                    (< (1+ i) (length u))
+                    (digit-char-p (char u (1+ i)))
+                    (or (zerop i) (not (alpha-char-p (char u (1- i))))))
+            return (let ((j (1+ i)))
+                     (loop while (and (< j (length u)) (digit-char-p (char u j))) do (incf j))
+                     (concatenate 'string "V" (subseq u (1+ i) j))))))
+
+(defun %find-locale (path)
+  "A POSIX-ish locale token in PATH — ll_CC (two lower, '_', two upper, e.g.
+\"fr_FR\") — or NIL."
+  (loop for i from 0 to (max -1 (- (length path) 5))
+        when (and (lower-case-p (char path i)) (lower-case-p (char path (1+ i)))
+                  (char= (char path (+ i 2)) #\_)
+                  (upper-case-p (char path (+ i 3))) (upper-case-p (char path (+ i 4)))
+                  (or (zerop i) (not (alphanumericp (char path (1- i)))))
+                  (or (>= (+ i 5) (length path)) (not (alphanumericp (char path (+ i 5))))))
+          return (subseq path i (+ i 5))))
+
+(defun %cad-denotation (kind version locale)
+  "Build the canonical denotation string from KIND + VERSION + LOCALE."
+  (let ((base (ecase kind
+                (:acad          (format nil "acad~@[-~A~]" version))
+                (:accoreconsole (format nil "accoreconsole~@[-~A~]" version))
+                (:bricscad      (format nil "bricscad~@[-~(~A~)~]" version))
+                (:clautolisp    "clautolisp"))))
+    (if (and (eq kind :bricscad) locale)
+        (format nil "~A-~A" base locale)
+        base)))
+
+(defun %cad-program-from-path (kind path)
+  "Parse a discovered executable PATH into a CAD-PROGRAM of KIND."
+  (let* ((ns (namestring path))
+         (version (case kind
+                    ((:acad :accoreconsole) (%find-autocad-year ns))
+                    (:bricscad              (%find-bricscad-version ns))))
+         (locale (when (eq kind :bricscad) (%find-locale ns))))
+    (%make-cad-program :kind kind :version version :locale locale :path ns
+                       :denotation (%cad-denotation kind version locale))))
+
+;; -- per-kind, per-OS enumeration -------------------------------------
+
+(defun %glob (pattern) (mapcar #'namestring (directory pattern)))
+
+(defun discover-acad-programs ()
+  (cond
+    ((windows-p)
+     (append (windows-glob-existing-files '("Autodesk/AutoCAD */acad.exe"))
+             (%glob "/c/Program Files/Autodesk/AutoCAD */acad.exe")))
+    ((macos-p)
+     (%glob "/Applications/Autodesk/AutoCAD */AutoCAD *.app/Contents/MacOS/AutoCAD"))))
+
+(defun discover-accoreconsole-programs ()
+  (cond
+    ((windows-p)
+     (append (windows-glob-existing-files '("Autodesk/*/accoreconsole.exe"))
+             (%glob "/c/Program Files/Autodesk/*/accoreconsole.exe")))
+    ((macos-p)
+     (%glob "/Applications/Autodesk/AutoCAD */AutoCAD *.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole"))))
+
+(defun discover-bricscad-paths ()
+  (cond
+    ((windows-p)
+     (append (windows-glob-existing-files '("Bricsys/*/bricscad.exe"))
+             (%glob "/c/Program Files*/Bricsys/*/bricscad.exe")))
+    ((macos-p) (%glob "/Applications/BricsCAD*.app/Contents/MacOS/bricscad"))
+    ((linux-p) (%glob "/opt/bricsys/bricscad/V*/bricscad"))))
+
+(defun %dedup-programs (programs)
+  "Drop programs whose PATH we have already seen (the Windows globs overlap)."
+  (let ((seen (make-hash-table :test #'equal)) (out '()))
+    (dolist (p programs (nreverse out))
+      (unless (gethash (cad-program-path p) seen)
+        (setf (gethash (cad-program-path p) seen) t)
+        (push p out)))))
+
+(defun clautolisp-program ()
+  "clautolisp is embedded in alfe (not forked), so it is always available."
+  (%make-cad-program :kind :clautolisp :path "(embedded in alfe)"
+                     :denotation "clautolisp"))
+
+(defun discover-cad-programs ()
+  "All CAD programs installed on this host, each as a CAD-PROGRAM with a
+canonical denotation. clautolisp is always present (embedded)."
+  (%dedup-programs
+   (append (mapcar (lambda (p) (%cad-program-from-path :acad p))
+                   (discover-acad-programs))
+           (mapcar (lambda (p) (%cad-program-from-path :accoreconsole p))
+                   (discover-accoreconsole-programs))
+           (mapcar (lambda (p) (%cad-program-from-path :bricscad p))
+                   (discover-bricscad-paths))
+           (list (clautolisp-program)))))
+
+(defun print-cad-programs (&optional (stream *standard-output*))
+  "The --list-cad-programs output: DENOTATION then PATH, one per line."
+  (let ((programs (discover-cad-programs)))
+    (if programs
+        (dolist (p programs)
+          (format stream "~24A ~A~%" (cad-program-denotation p) (cad-program-path p)))
+        (format stream "no CAD programs found (clautolisp is always available)~%"))
+    (values)))

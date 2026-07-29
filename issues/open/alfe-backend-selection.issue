@@ -182,8 +182,40 @@ clautolisp-1.6.17  /opt/local/bin/clautolisp or alfe since it's embedded?
 clautolisp         clautolisp-1.6.17
 #+end_example
 
-* TODO
-- update alfe specifications
-- update alfe user manual
-- update alfe tests  
-- update alfe implementation
+* Status
+
+** DONE 2026-07-29 (clautolisp 1.6.22 / alfe 1.6.20) — increment 1: model + scan + list
+- =cad-program= struct (kind / version / locale / path / denotation) +
+  path parsers in =AFE/source/backend-cad-common.lisp=:
+  =%find-autocad-year= (bare 20NN), =%find-bricscad-version= (V-token,
+  "V26x64"→"V26"), =%find-locale= (ll_CC), =%cad-denotation=,
+  =%cad-program-from-path=. Denotations: =acad-2026=, =accoreconsole-2022=,
+  =bricscad-v26=, =bricscad-v25-fr_FR=, =clautolisp=.
+- =discover-cad-programs= enumerates ALL installed CADs per OS (macOS
+  /Applications globs incl. AutoCAD Helpers/AcCoreConsole; Windows Program
+  Files globs; Linux /opt/bricsys), dedups by path, always includes the
+  embedded clautolisp. (Unlike the per-backend =discover-*-binary= which
+  return only the best one.)
+- =alfe --list-cad-programs= prints =denotation  path=, one per line, then
+  exits (short-circuit like =--list-encodings=; help text added). Verified on
+  Linux (prints =clautolisp (embedded in alfe)=). Unit test
+  =cad-program-denotation-parsing= (12 checks; suite 364/364).
+
+** REMAINING (next increments)
+- SELECTION: accept a denotation to pick a specific install — e.g.
+  =--cad autocad-2022= / =--autocad-2022=, and the bare aliases (=autocad= →
+  latest acad-or-accoreconsole per =--mode=; =bricscad= → latest). Resolve to
+  a =cad-program= and feed its =path= into the backend =DETECT= (an explicit
+  path override beats the env-var/glob discovery the backends do now).
+- =--mode= batch→accoreconsole / automation→acad wiring against the
+  denotation (=autocad-2022= → =accoreconsole-2022= or =acad-2022=).
+- Locale selection when several BricsCAD locales are installed (macOS/Linux
+  =LANG=/=LC_*=; macOS =AppleLanguages= ∩ available; Windows).
+- Threading the chosen path into =discover-*-binary= (an explicit
+  =$*_EXE=-equivalent from the CLI).
+
+* TODO (per increment above)
+- [~] update alfe implementation (increment 1 landed; selection next)
+- [ ] update alfe specifications
+- [ ] update alfe user manual
+- [x] update alfe tests (cad-program-denotation-parsing; more with selection)

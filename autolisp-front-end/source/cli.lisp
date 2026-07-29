@@ -102,6 +102,7 @@
                 #:cli-options-version-p
                 #:cli-options-list-encodings-p
                 #:cli-options-list-dialects-p
+                #:cli-options-list-cad-programs-p
                 #:cli-options-dry-run-p
                 #:cli-options-no-init-p
                 #:cli-options-no-color-p
@@ -150,6 +151,7 @@
            #:cli-options-version-p
            #:cli-options-list-encodings-p
            #:cli-options-list-dialects-p
+           #:cli-options-list-cad-programs-p
            #:cli-options-dry-run-p
            #:cli-options-no-init-p
            #:cli-options-no-color-p
@@ -244,6 +246,8 @@ Dialect, host, encoding:
                          bricscad-v25, bricscad-v26, bricscad, clautolisp, lax.
                          Honoured under --clautolisp; ignored under --autocad/--bricscad.
   --list-dialects        Print every --dialect name (strict first, lax last) and exit.
+  --list-cad-programs    Scan the host and print each installed CAD with its
+                         canonical denotation (acad-2026, bricscad-v26, …), then exit.
   --host {mock,null}     HAL backend (clautolisp only).
   -E ENC                 Encoding for every situation (shorthand).
   -Esource ENC           Encoding of .lsp files loaded (-l and (load ...)).
@@ -417,6 +421,14 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (setf (cli-options-backend-variant opts)
                      (parse-backend-variant value name))))
+   ;; --list-cad-programs scans the host for installed CADs and prints each
+   ;; with its canonical denotation, then exits — same short-circuit shape as
+   ;; --list-encodings / --list-dialects (alfe-backend-selection).
+   (make-option-spec
+    :longs '("--list-cad-programs") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-list-cad-programs-p opts) t)))
    (make-option-spec
     :longs '("--main") :takes-arg-p t
     :handler (lambda (opts value name)
@@ -857,6 +869,12 @@ The handler chain matches alfe-cli.issue's exit-code table:
            0)
           ((cli-options-list-dialects-p options)
            (clautolisp.autolisp-cli:print-dialects)
+           0)
+          ((cli-options-list-cad-programs-p options)
+           ;; alfe.backend.cad-common loads AFTER this file (concrete backends
+           ;; self-register at runtime; cli never names their packages), so
+           ;; resolve PRINT-CAD-PROGRAMS at call time.
+           (uiop:symbol-call :alfe.backend.cad-common :print-cad-programs)
            0)
           (t
            (set-level (cli-options-verbosity options))

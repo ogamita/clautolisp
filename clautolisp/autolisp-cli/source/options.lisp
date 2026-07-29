@@ -43,6 +43,7 @@
   (version-p        nil)              ; AC
   (list-encodings-p nil)              ; AC  --list-encodings
   (list-dialects-p  nil)              ; AC  --list-dialects
+  (list-cad-programs-p nil)           ; AC  --list-cad-programs (alfe)
   (dry-run-p        nil)              ; A
   (no-init-p        nil)              ; AC
   (no-color-p       nil)              ; AC
