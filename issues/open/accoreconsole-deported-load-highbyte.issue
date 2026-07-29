@@ -50,7 +50,12 @@ Measured on CI pipeline 2713419298, job 15586058491 (probe commit 1380ca2).
    assumption), or the protocol transport to accoreconsole's UTF-16LE pipe?
 2. Does it reproduce under LISPSYS 1/2? (restart-level — separate probe
    invocations; see the issue §8 E1.) If LISPSYS 1/2 loads cleanly, the bug
-   is an LISPSYS-0/MBCS interaction.
+   is an LISPSYS-0/MBCS interaction. NB (pjb): accoreconsole's `/isolate`
+   option prevents sysvar changes from persisting, and alfe passes it — so
+   LISPSYS is stuck at 0 under alfe. To even test 1/2, launch accoreconsole
+   WITHOUT `/isolate` (or pre-set LISPSYS in the profile/registry). That
+   also means the eventual fix cannot rely on `(setvar "LISPSYS" …)` from
+   inside an /isolate'd session — it must be a launch/profile precondition.
 3. Fix by bringing autolisp-source-load to the reference load algorithm
    (honour the resolved `source` encoding), per the encoding-situations plan.
 

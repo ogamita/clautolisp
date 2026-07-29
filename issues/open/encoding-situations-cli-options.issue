@@ -137,10 +137,10 @@ accoreconsole ignores `,ccs=` altogether (product-fixed ANSI/MBCS).
 | CAD / setting                 | Encoding                      | Configurable?                  |
 |-------------------------------+-------------------------------+--------------------------------|
 | AutoCAD GUI                   | no accessible console         | n/a                            |
-| accoreconsole 2022 FR         | **UTF-16LE both ways**, no BOM on input | **no known setting** |
-| BricsCAD GUI                  | no accessible console         | n/a                            |
-| BricsCAD V26 macOS, batch     | **Mac Roman** out             | [?] no known setting           |
-| BricsCAD Windows, batch       | [?] presumably cp1252 or UTF-8 | [?]                           |
+| accoreconsole 2022 FR         | UTF-16, **BE per pjb §7.2** (was "LE"); LF-in/CRLF-out; unflushed prompt | **no known setting** (fixed) |
+| BricsCAD GUI (macOS V26)      | **full Unicode** both ways (é 233, € 8364) [§7.2] | product-fixed          |
+| BricsCAD GUI (Windows V25)    | **cp1252** (é 233, € 128) [§7.2] | product-fixed                  |
+| AutoCAD GUI (Windows 2022)    | **cp1252** in (é 233, € 128); € → 172 out [§7.2] | product-fixed        |
 | clautolisp                    | alfe `-E` — currently ignored | yes, once plumbed              |
 
 [obs, pjb] `accoreconsole/accoreconsole.org`: input must carry no BOM (a
@@ -379,7 +379,7 @@ Resolved defaults table (was all [?]; now [obs] except where noted):
 |-----------+------------------+--------------------+----------------------+----------------------------|
 | source    | `-Esource`, dflt UTF-8; settable via LC_* | follows locale (UTF-8 here) unless BOM [obs]; not unconditionally Mac Roman | ANSI_1252 unless BOM [?] E1 | **LISPSYS picks cp1252 (0) vs UTF-8 (1/2)** [pjb]; measured LISPSYS 0 → ANSI_1252; restart-level |
 | file      | **UTF-8**, settable (LC_*, `-Esource`, `*AUTOLISP-FILE-ENCODING*`, ccs=) [obs] | **UTF-8** default under UTF-8 locale, settable via LC_ALL (C→Latin-1); ccs= IGNORED [obs] | **ANSI_1252** default (fixed by SYSCODEPAGE; chcp/LC_ don't move it); per-call ccs=UTF-8/UTF-16LE HONOURED [obs] | **LISPSYS picks cp1252 (0) vs UTF-8 (1/2)** [pjb]; measured LISPSYS 0 → ANSI_1252; ccs= IGNORED; no runtime knob moves it [obs] |
-| console   | UTF-8            | Mac Roman [obs prior] | [?] E3 (BricsCAD Qt on stdout) | **UTF-16LE, fixed, no BOM in** [doc] |
+| console   | UTF-8            | **full Unicode both ways** (é 233, € 8364) [obs §7.2] | GUI **cp1252** (é 233, € 128 in; € 128 out) [obs §7.2] | accoreconsole **UTF-16 BE** (LF-in/CRLF-out, € 172 out); GUI acad cp1252 [obs §7.2] |
 | log       | n/a             | [?] E2             | [?]                  | [?]                        |
 | terminal  | platform default | —                 | —                    | —                          |
 
@@ -456,6 +456,54 @@ log — E2 UNBLOCKED: all three CADs report `LOGFILEMODE 1` and a real
 DOES exist during a run, so a follow-up probe can write a known accented
 line and `dumpbytes` the `LOGFILENAME` to read its encoding.
 
+** 7.2 Measured — GUI console I/O (2026-07-29, hand-run gui-console-probe.lsp)
+
+pjb ran the GUI console probe inside each product's real console (results
+appended to ~/enc-gui-console-report--*.txt). This is the `console`
+situation — the one batch cannot reach — measured BOTH directions.
+
+console INPUT (you type the char; the engine reports its decoded code points):
+
+| target (GUI console)        | é typed | € typed          | console-in codec        |
+|-----------------------------+---------+------------------+-------------------------|
+| BricsCAD/macOS V26          | 233     | 8364             | **full Unicode**        |
+| BricsCAD/Windows V25        | 233     | 128              | cp1252 (€ = 0x80)       |
+| AutoCAD/Windows (acad GUI)  | 233     | 128              | cp1252 (€ = 0x80)       |
+| accoreconsole 2022          | 233     | U+20AC code unit | **UTF-16 (BE per pjb)** |
+
+console OUTPUT (what renders on screen; output.string.cp):
+- BricsCAD/macOS: `Aé€B` renders correctly, cp 65 233 8364 66 — full Unicode
+  both ways (the ONLY target that round-trips the euro).
+- BricsCAD/Windows: cp 65 233 128 66 — cp1252 (€ = 128).
+- AutoCAD GUI + accoreconsole: cp 65 233 172 66, € renders as `¬` — output
+  low-byte-truncates 8364 → 172 (0xAC).
+
+Findings:
+- BricsCAD/macOS GUI console is FULLY Unicode in and out (é 233, € 8364) —
+  in stark contrast to its own file/DXF path, which degrades € to U+00AC.
+  So `console` and `file` on the SAME target have DIFFERENT provenance.
+- The Windows GUI CADs (BricsCAD V25, AutoCAD) are cp1252 on the console:
+  é = 233, € = 128 in; AutoCAD truncates € → 172 on output.
+- accoreconsole console is UTF-16, **big-endian per pjb's direct-drive
+  experiment** (euro read back as the U+20AC code unit), with ASYMMETRIC
+  line terminators — **LF on input, CRLF on output** — and it does NOT
+  flush the LISP prompt (the prompt appears AFTER the typed input in the
+  transcript). Under a UTF-8 terminal the euro mis-decodes to `172 32`;
+  under a UTF-16BE terminal it reads as U+20AC. This REVISES the earlier
+  "UTF-16LE both ways" note in §2.3 — reconcile with alfe's
+  `decode-console-octets` cascade, which currently assumes UTF-16**LE**.
+
+/isolate ⟺ LISPSYS (pjb, KEY): accoreconsole's `/isolate <userid>
+<folder>` option is designed to PREVENT sysvar changes from propagating.
+So LISPSYS cannot be persisted while `/isolate` is passed. alfe's autocad
+backend launches accoreconsole with `/isolate`, which is why:
+  (a) the batch probe is pinned at LISPSYS 0 and cannot sweep 0/1/2, and
+  (b) the deported-load bug (§7.1, accoreconsole-deported-load-highbyte)
+      reproduces — it is stuck at LISPSYS 0 / MBCS.
+To test LISPSYS 1/2 or change the source-load decode, run accoreconsole
+WITHOUT `/isolate` (or pre-set LISPSYS in the user profile/registry). This
+is the concrete unblock for E1 on accoreconsole.
+
 * 8. Experiments
 
 - E1 — AutoCAD: does `(load "x.lsp")` decode by BOM, by LISPSYS, or by
@@ -469,7 +517,10 @@ line and `dumpbytes` the `LOGFILENAME` to read its encoding.
   LISPSYS axis must be a SEPARATE probe invocation per level (set LISPSYS,
   quit, relaunch accoreconsole, then measure), not an in-session sweep like
   the LANG/LC_/chcp matrix. Same restart constraint already noted for
-  `source` in §2.1.
+  `source` in §2.1. ALSO CRITICAL (pjb, §7.2): accoreconsole's `/isolate`
+  option prevents sysvar changes from persisting, and alfe passes it — so
+  LISPSYS is pinned at 0 under alfe. The E1 run must drop `/isolate` (or
+  pre-set LISPSYS in the profile) or the level never changes.
 - E2 — log file encoding, both CADs. UNBLOCKED (2026-07-28, §7.1): a log
   DOES exist during a run (LOGFILEMODE 1 + a real LOGFILENAME on all three
   CADs). Next: a probe that writes a known accented line then dumpbytes the
@@ -481,7 +532,10 @@ line and `dumpbytes` the `LOGFILENAME` to read its encoding.
   column above. PARTIAL (2026-07-28): the `file` situation is measured
   (ANSI_1252 default, ccs= honoured); the console/cadstdio bytes still
   need the raw drain capture (the probe's console line comes back already
-  transcoded), so the console cell stays [?].
+  transcoded). UPDATE (2026-07-29, §7.2): the BricsCAD/Windows **GUI**
+  console is measured — cp1252 (é 233, € 128) both ways. The `-B` batch
+  console (via the file-IPC drain) may still differ from the GUI device;
+  that raw-drain capture remains the open part.
 - E4 — DONE (2026-07-28): BricsCAD `,ccs=UTF-16LE` writes UTF-8 on macOS
   but proper UTF-16LE on Windows — a confirmed platform divergence.
   Promote to a conformance/vendor-divergence probe in the suite.
