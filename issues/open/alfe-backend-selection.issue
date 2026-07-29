@@ -1,0 +1,189 @@
+Currently alfe has options:
+
+--clautolisp
+--briscad
+--autocad
+
+and it will run an executable it finds with some heuristic or hardwired path.
+
+This is insuficient.
+
+Users may have several versions of their CAD application installed and
+may want to use/test one or the other explicitely.
+
+In the case of autocad, we're using accoreconsole (notably in --mode
+batch), but we might want to use also acad (the GUI autocad), notably
+when we will be testing GUI aspects.
+
+
+Therefore, we need:
+
+- a way to scan and list all the CAD available.
+- a way to denote them to select them easily.
+- and of course, to use default to make naming easy.
+
+* Scanning for CADs
+
+Scanning should depend on the OS.
+
+** MacOS
+
+On macOS, search in /Applications
+Perhaps something like: 
+
+To find the .app bundle:
+
+#+begin_src bash
+find /Applications/ -maxdepth 3 \( -iname AutoCAD\ 20\*.app -o -iname BricsCAD\*.app \)
+#+end_src
+
+To find the application executable
+
+#+begin_src bash
+{
+  find /Applications/ -maxdepth 3 -iname AutoCAD\ 20\*.app \
+  | while read apppath ; do echo "${apppath}/Contents/MacOS/AutoCAD" ; done
+  find /Applications/ -maxdepth 3 -iname BricsCAD\ \*.app \
+  | while read apppath ; do echo "${apppath}/Contents/MacOS/bricscad" ; done
+}
+#+end_src
+
+/Applications/Autodesk/AutoCAD 2026/AutoCAD 2026.app/Contents/MacOS/AutoCAD
+/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/MacOS/AutoCAD
+/Applications/BricsCAD V26.app/Contents/MacOS/bricscad
+
+
+To find other tools, such as AcCoreConsole:
+
+#+begin_src bash
+{
+  find /Applications/ -maxdepth 3 -iname AutoCAD\ 20\*.app \
+  | while read apppath ; do echo "${apppath}/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole" ; done
+}
+#+end_src
+
+/Applications/Autodesk/AutoCAD 2026/AutoCAD 2026.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole
+/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole
+
+
+
+To find other executables in BricsCAD:
+
+#+begin_src bash
+find '/Applications/BricsCAD V26.app/Contents/MacOS/' -depth 1 \( -name \*.\* -o -print \)|sort 
+#+end_src
+
+** MS-Windows
+
+Similarly, on MS-Windows. I'll let you find the native commands (with
+powershell) to find CAD .exe in "C:\Program Files".
+
+#+begin_src pwsh
+"C:/Program Files/Bricsys/BricsCAD*/bricscad.exe"
+#+end_src
+
+"C:/Program Files/Bricsys/BricsCAD V25 fr_FR/bricscad.exe"
+
+#+begin_src pwsh
+"C:/Program Files/Autodesk/AutoCAD*/acad.exe"
+"C:/Program Files/Autodesk/AutoCAD*/accoreconsole.exe"
+#+end_src
+
+"C:/Program Files/Autodesk/AutoCAD 2022/acad.exe"
+"C:/Program Files/Autodesk/AutoCAD 2022/accoreconsole.exe"
+
+** Linux
+
+On Linux, AutoCAD is not availble, BricsCAD is available, but I don't know how it's installed.
+
+clautolisp is usually installed in =/opt/local/bin/clautolisp= but anything goes, it's unix.
+Let's expect it on the PATH or in the same directory as the alfe executable itself
+(and IIRC, alfe doesn't fork clautolisp, it just includes it as a library, so the question is moot).
+
+* Denotation
+
+- =autocad= denotes the latest version of AutoCAD
+- =bricscad= denotes the latest version of BricsCAD
+
+- =autocad-2022= denotes "AutoCAD 2022/acad.exe"
+- =bricscad-v25= denotes "BricsCAD V25 fr_FR/briscad.exe"
+- =bricscad-v25-fr_FR= denotes "BricsCAD V25 fr_FR/briscad.exe"
+
+I think we need to be able to select acad or accoreconsole explicitely:
+
+- =acad= denotes the latest version of "acad.exe"
+- =acad-2022= denotes "AutoCAD 2022/acad.exe"
+- =accoreconsole= denotes the latest version of "acoreconsole.exe"
+- =accoreconsole-2022= denotes "AutoCAD 2022/acoreconsole.exe"
+
+Then =autocad= and =autocad-2022=, etc, will denote acad or
+accoreconsole depending on the other options, in particular the
+=--mode=:
+- =--mode= =batch= -> =accoreconsole=
+- =--mode= =automation= -> =acad=
+
+Note: the mode selects a protocol between alfe and the cad, so any
+combination is possible theorically.  If accoreconsole responds to
+=COM= messages, or AppleScript messages, it can also be used with
+=--mode= =automation=.
+
+
+How do we select the language_contry if there are several bricscad
+installed of different localisations?
+
+On macOS or Linux, we can use LANG/LC_* to select one
+
+On macOS, we have languages preferences. Find which domain is the most indicated,
+I guess ".GlobalPreferences_m" or "Apple Global Domain".
+
+We can make an intersection of the prefered languages with the
+available languages and choose the most prefered one. Or else the first found.
+
+#+begin_src bash :results raw
+  echo all prefered languages:
+  defaults read ".GlobalPreferences_m" "AppleLanguages"
+  echo most prefered language:
+  defaults read ".GlobalPreferences_m" "AppleLanguages"|sed -n -e '/"/{p;q;}'
+#+end_src
+
+#+RESULTS:
+all prefered languages:
+(
+    "en-FR",
+    "en-GB",
+    "fr-FR"
+)
+most prefered language:
+    "en-FR",
+
+Perhaps something similar can be done on MS-Windows.
+
+* New alfe option: =--list-cad-programs=
+
+=alfe= will need an option to list the available cad and their denotation:
+
+#+begin_src bash
+alfe --list-cad-programs
+#+end_src
+
+#+begin_example
+acad-2026          /Applications/Autodesk/AutoCAD 2026/AutoCAD 2026.app/Contents/MacOS/AutoCAD
+acad-2027          /Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/MacOS/AutoCAD
+acad               acad-2027
+accoreconsole-2026 /Applications/Autodesk/AutoCAD 2026/AutoCAD 2026.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole
+accoreconsole-2027 /Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole
+acoreconsole       acoreconsole-2027
+autocad-2026       acad-2026 or acoreconsole-2026
+autocad-2027       acad-2027 or acoreconsole-2027
+autocad            acad or acoreconsole
+briscad-v26        /Applications/BricsCAD V26.app/Contents/MacOS/bricscad
+bricscad           bricscad-v26
+clautolisp-1.6.17  /opt/local/bin/clautolisp or alfe since it's embedded?
+clautolisp         clautolisp-1.6.17
+#+end_example
+
+* TODO
+- update alfe specifications
+- update alfe user manual
+- update alfe tests  
+- update alfe implementation
