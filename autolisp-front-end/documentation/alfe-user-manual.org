@@ -258,6 +258,42 @@ supplies the fallback.
 
 =--list-encodings= prints every accepted ENC name and exits.
 
+** What each situation actually does
+
+Not every situation is settable on every target — some are fixed by the
+CAD product. alfe *accepts* the option in all cases, but when the value is
+fixed it warns that it is ignored and keeps the product value (so a typo is
+still an error, but a fixed boundary is never silently wrong).
+
+- =terminal= — applied to alfe's OWN =*standard-output*= / =*standard-input*=
+  / =*error-output*=. =-Eterminal-in= drives stdin, =-Eterminal-out= drives
+  stdout+stderr; the bare form both. Settable everywhere (it is alfe's own
+  stream).
+- =source= — an explicit =-Esource= is forwarded into the CAD's native
+  =(load)= so a =.lsp= with non-ASCII literals decodes correctly (BricsCAD
+  =,ccs=…=, AutoCAD the =open= 3rd-arg at =LISPSYS= 1/2). Without it the CAD
+  keeps its own default decode.
+- =file= — the default encoding of files the AutoLISP program itself opens.
+  On clautolisp it also drives =*AUTOLISP-FILE-ENCODING*=.
+- =console= / =cadstdio= — how alfe DECODES the CAD's console/pipe output.
+  accoreconsole is UTF-16LE, *fixed by the product* — a conflicting
+  =-Econsole= is warned and ignored. For other targets the default is an
+  auto-detect cascade (UTF-16LE / UTF-8 / lenient) unless you name a codec.
+- =log= — alfe's own diagnostic stream.
+
+** Per-target defaults (measured 2026-07)
+
+These are the encodings each target exhibits with NO override — the reason
+some situations warn-and-ignore. Full provenance (settable / product-fixed /
+LISPSYS-selected) is tracked in the project's encoding issues.
+
+| Target                    | source / file           | console                       |
+|---------------------------+-------------------------+-------------------------------|
+| clautolisp (Linux)        | UTF-8 (settable, LC_*)  | UTF-8                         |
+| BricsCAD V26 / macOS      | UTF-8 under a UTF-8 locale (settable via =LC_ALL=); read needs a BOM | full Unicode (GUI) |
+| BricsCAD V25 / Windows    | ANSI_1252; per-open =,ccs=UTF-8/UTF-16LE= honoured | cp1252 (GUI) |
+| AutoCAD 2022 / accoreconsole | ANSI_1252 / MBCS; =LISPSYS= 1/2 → UTF-8 (restart); =ccs=~ ignored | UTF-16LE, fixed |
+
 * Init files
 
 On startup (unless =--no-init= / =-norc= is given), alfe loads

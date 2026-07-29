@@ -7042,9 +7042,65 @@ The strict choice is *deliberately permissive at the byte level*: a 1-1 byte cod
 - AutoCAD 2025 release-note quote: "In the previous versions of AutoCAD, the encoding of the file was 'ANSI', now it is 'UTF-8'." This applies to source files emitted by the Visual LISP IDE.
 - BricsCAD V26 honours the C-runtime ~ccs=NAME~ embedded mode-string as documented in earlier Phase-6 probe evidence (~open-ccs-mode-p~).
 
+*** Per-open, not per-read
+The encoding is fixed when the stream is *opened*, not chosen per ~read-char~
+/ ~read-line~ / ~read~ (or per ~princ~ / ~write-line~). AutoCAD and BricsCAD
+both bind the decoder at ~open~ time — through the third argument or the
+~ccs=~ mode suffix — and subsequent reads on the same handle cannot change
+it. clautolisp matches this: ~open~ resolves the external-format once (from
+its explicit argument, then ~*AUTOLISP-FILE-ENCODING*~, then the dialect
+default) and holds it for the life of the stream. A program that must read
+parts of a file under different encodings must ~close~ and re-~open~ it.
+
+*** Extension (clautolisp): =*AUTOLISP-FILE-ENCODING*=
+clautolisp adds a settable global, ~*AUTOLISP-FILE-ENCODING*~ — a string,
+where the empty string ~""~ means "no preference; fall through to the
+dialect default". It is consulted when neither an explicit ~open~ third
+argument nor a ~load~ ~:external-format~ is supplied, and applies to BOTH
+directions: the read side of ~load~ / ~open~ "r" / ~read-line~, and the
+write side of ~open~ "w"/"a" + ~princ~ / ~write-line~. A pure-AutoLISP
+program can therefore author a file and read it back in a chosen encoding
+with no CLI flag. The front-end sets it from ~-Esource ENC~ (alfe) / ~-e
+ENC~; it may be reassigned at runtime *between* ~open~ calls (not
+mid-stream — see the per-open rule above). This variable does not exist on
+AutoCAD or BricsCAD; portable code selects the encoding through the ~open~
+third argument / ~ccs=~ instead. Status: clautolisp-only extension.
+
+*** Measured vendor divergences (2026-07, clautolisp probe evidence)
+Observed behaviours on specific (product × version × platform) targets,
+recorded so the divergence taxonomy (chapter 25) can classify the feature.
+They are *not* normative for the language; portable code must not rely on
+them. The front-end's full (situation × os × tool × version) defaults table
+with provenance lives in the alfe integration notes.
+
+- *AutoCAD / accoreconsole 2022 (Windows), LISPSYS 0* — ~open~ *ignores* the
+  ~ccs=~ suffix; the file-write default is ANSI_1252 / MBCS, and a
+  non-Latin-1 char is written as its low byte (U+20AC → 0xAC). ~LISPSYS~
+  1/2 switch the reader/writer to UTF-8 (restart-level; ~LISPSYS~ selects
+  cp1252 vs UTF-8). The accoreconsole console pipe is UTF-16LE, fixed by the
+  product — no ~/l~ language flag or code page changes it.
+- *BricsCAD V26 (macOS)* — the ~open "w"~ default follows the POSIX locale,
+  not ~SYSCODEPAGE~ (which reads ~MAC_ROMAN~): a UTF-8 locale writes UTF-8,
+  ~LC_ALL=C~ writes Latin-1. On READ, a UTF-8 file is decoded only *with* a
+  BOM — a BOM-less UTF-8 file reads back as raw bytes even under
+  ~,ccs=UTF-8~. ~,ccs=UTF-16LE~ is accepted but silently writes UTF-8 — a
+  platform divergence: on BricsCAD/Windows it writes real UTF-16LE.
+- *BricsCAD V25 (Windows)* — ~open "w"~ default is ANSI_1252; both
+  ~,ccs=UTF-8~ and ~,ccs=UTF-16LE~ are honoured on write.
+- *GUI console encodings* — BricsCAD/macOS GUI console is full Unicode both
+  ways (é = 233, € = 8364); the Windows GUI CADs (BricsCAD, AutoCAD) are
+  cp1252 (é = 233, € = 128), AutoCAD truncating € to 0xAC on output.
+- *Native =(load)= decode* — the encoding a CAD's own ~(load path)~ uses to
+  decode a source file follows the same (product × version × platform ×
+  LISPSYS) axis; the clautolisp front-end forwards an explicit ~-Esource~
+  into the CAD's per-open spelling where the engine supports it.
+
 *** Cross-references
 - Special Form Entry: LOAD (chapter 11) — uses the dialect's source-encoding default.
 - Function Entry: OPEN (chapter 11) — uses the dialect's file-encoding default when its third argument is omitted.
+- alfe integration: the ~-E{situation}~ encoding CLI family and the
+  (situation × os × tool × version) defaults table with provenance
+  (source / file / console / cadstdio / log / terminal).
 
 *** Source Notes
 - [open (AutoLISP, AutoCAD 2024)](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-AutoLISP-Reference/files/GUID-089A323F-21FF-4337-99A9-375758E23BA4.htm)

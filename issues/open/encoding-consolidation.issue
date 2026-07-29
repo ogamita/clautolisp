@@ -183,9 +183,22 @@ pjb's; B4/B6 are the two he scoped out of the CLI but that are still work.
   =source=-in-CAD native load honouring the encoding, return-value
   transcode. Needs real macOS BricsCAD + Windows accoreconsole. Highest
   care; the invariant governs.
-- *Phase 4* — spec + docs: the situations, the (os×tool×version) defaults
-  with provenance, the hardwired facts → autolisp-spec + the
-  =running-with-clautolisp-and-alfe= runbook.
+- *Phase 4* — DONE 2026-07-29 (docs only, no version bump). autolisp-spec
+  "Source-File and File-Stream Encoding" gained: the per-open (not per-read)
+  rule, the =*AUTOLISP-FILE-ENCODING*= clautolisp extension, and a "Measured
+  vendor divergences (2026-07)" subsection (accoreconsole ccs-ignored +
+  UTF-16LE console + LISPSYS cp1252/UTF-8; BricsCAD/macOS locale-driven +
+  BOM-on-read + ccs=UTF-16LE→UTF-8; GUI console encodings; native-load
+  axis). alfe user-manual "Encoding" gained "What each situation actually
+  does" (settable vs product-fixed→warn) + a measured per-target defaults
+  table. The =running-with-clautolisp-and-alfe= runbook (informatimago/rules)
+  gained an "Encoding" section (situations, defaults, CI locale guidance).
+
+All of enc-consolidation's gaps (G1–G6) and phases (0–4) are now landed;
+what remains is real-runner CONFIRMATION of the CAD-side pieces (G3 native
+load; the G2 accoreconsole-UTF-16LE flip) and the still-open experiments
+(E1 LISPSYS sweep w/o /isolate, E2 log bytes) — tracked in
+encoding-situations-cli-options + accoreconsole-deported-load-highbyte.
 
 * Appendix — code map (verified, file:line)  [AFE=autolisp-front-end CL=clautolisp]
 
