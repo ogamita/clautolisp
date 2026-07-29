@@ -1,0 +1,22 @@
+When we make a new release (create a release-* tag or and a version-* branch),
+
+The build stage should be built automatically, and mandatory.
+(build:alfe:windows build:alfe:macos)
+
+The test stage should be built automatically:
+- all the build: jobs (shouldn't it be moved to the build stage?)
+- all the test: jobs,
+- all the verify: jobs,
+are mandatory.
+
+The benchmark stage should be built automatically:
+- all the benchmark job are pass if fail.
+
+The release stage should be built automatically:
+- all the release jobs are mandatory.
+
+The collect stage should be built automatically:
+- all the collect jobs are mandatory.
+
+The deploy stage should be built automatically:
+- all the deploy jobs are mandatory.
