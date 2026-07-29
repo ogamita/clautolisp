@@ -137,7 +137,7 @@ accoreconsole ignores `,ccs=` altogether (product-fixed ANSI/MBCS).
 | CAD / setting                 | Encoding                      | Configurable?                  |
 |-------------------------------+-------------------------------+--------------------------------|
 | AutoCAD GUI                   | no accessible console         | n/a                            |
-| accoreconsole 2022 FR         | UTF-16, **endianness OPEN** (§7.2; euro is a degenerate test); LF-in/CRLF-out; unflushed prompt | **no known setting** (fixed) |
+| accoreconsole 2022 FR         | **UTF-16LE** (pjb confirmed §7.2; matches alfe drain); LF-in/CRLF-out; unflushed prompt | **no known setting** (fixed) |
 | BricsCAD GUI (macOS V26)      | **full Unicode** both ways (é 233, € 8364) [§7.2] | product-fixed          |
 | BricsCAD GUI (Windows V25)    | **cp1252** (é 233, € 128) [§7.2] | product-fixed                  |
 | AutoCAD GUI (Windows 2022)    | **cp1252** in (é 233, € 128); € → 172 out [§7.2] | product-fixed        |
@@ -379,7 +379,7 @@ Resolved defaults table (was all [?]; now [obs] except where noted):
 |-----------+------------------+--------------------+----------------------+----------------------------|
 | source    | `-Esource`, dflt UTF-8; settable via LC_* | follows locale (UTF-8 here) unless BOM [obs]; not unconditionally Mac Roman | ANSI_1252 unless BOM [?] E1 | **LISPSYS picks cp1252 (0) vs UTF-8 (1/2)** [pjb]; measured LISPSYS 0 → ANSI_1252; restart-level |
 | file      | **UTF-8**, settable (LC_*, `-Esource`, `*AUTOLISP-FILE-ENCODING*`, ccs=) [obs] | **UTF-8** default under UTF-8 locale, settable via LC_ALL (C→Latin-1); ccs= IGNORED [obs] | **ANSI_1252** default (fixed by SYSCODEPAGE; chcp/LC_ don't move it); per-call ccs=UTF-8/UTF-16LE HONOURED [obs] | **LISPSYS picks cp1252 (0) vs UTF-8 (1/2)** [pjb]; measured LISPSYS 0 → ANSI_1252; ccs= IGNORED; no runtime knob moves it [obs] |
-| console   | UTF-8            | **full Unicode both ways** (é 233, € 8364) [obs §7.2] | GUI **cp1252** (é 233, € 128 in; € 128 out) [obs §7.2] | accoreconsole **UTF-16** (endianness OPEN, §7.2), LF-in/CRLF-out, € 172 out; GUI acad cp1252 [obs §7.2] |
+| console   | UTF-8            | **full Unicode both ways** (é 233, € 8364) [obs §7.2] | GUI **cp1252** (é 233, € 128 in; € 128 out) [obs §7.2] | accoreconsole **UTF-16LE** (pjb, §7.2), LF-in/CRLF-out, € 172 out; GUI acad cp1252 [obs §7.2] |
 | log       | n/a             | [?] E2             | [?]                  | [?]                        |
 | terminal  | platform default | —                 | —                    | —                          |
 
@@ -486,22 +486,22 @@ Findings:
   é = 233, € = 128 in; AutoCAD truncates € → 172 on output.
 - accoreconsole console is UTF-16, with ASYMMETRIC line terminators — **LF
   on input, CRLF on output** — and it does NOT flush the LISP prompt (it
-  appears AFTER the typed input in the transcript). ENDIANNESS UNCONFIRMED:
-  pjb saw mojibake under emacs `utf-16le` and clean output under `utf-16be`,
-  but the euro is a DEGENERATE discriminator — U+20AC's two bytes are 0x20
-  (= ASCII space) and 0xAC (= 172 = `(mod 8364 256)`), so a split UTF-16
-  unit reads as `[172][32]` or `[32][172]` and the ORDER is imposed by the
-  emacs coding layer in the middle, not proven to be accoreconsole's native
-  order. Confounds (pjb): a dropped 0x00 (ASCII is `XX 00`/`00 XX`) desyncs
-  the stream and flips apparent endianness; emacs plain `utf-16` is
-  BOM-adaptive (only explicit `utf-16le/be` are fixed). CLEAN CONFIRMATION,
-  emacs-free: accoreconsole already redirects its stdout to a temp file
-  (`Redirect stdout (file: …\accc…)`); hexdump THAT (or the LOGFILE) after a
-  `(princ "\U+20AC")` — `20 ac` = BE, `ac 20` = LE, unmediated. Better
-  discriminator: a char whose UTF-16 bytes avoid 0x00 and 0x20, e.g.
-  Œ = U+0152 → `01 52` (cp1252 0x8C, survives LISPSYS 0): byte `52` first
-  ⇒ LE, `01` first ⇒ BE. Until then, treat LE vs BE as OPEN and reconcile
-  with `decode-console-octets` (assumes LE) only after the hexdump.
+  appears AFTER the typed input in the transcript). ENDIANNESS: **UTF-16LE**
+  (pjb 2026-07-29 — "j'utilise utf-16le en fait, j'ai dû me tromper ce
+  matin"; the morning `utf-16be` reading was an emacs-side misconfiguration,
+  not accoreconsole's order). This MATCHES alfe's `decode-console-octets`
+  (assumes LE), so no reconciliation is needed. Why the euro was a bad test:
+  U+20AC's two bytes are 0x20 (= ASCII space) and 0xAC (= 172 =
+  `(mod 8364 256)`), so a split UTF-16 unit reads as `[172][32]`/`[32][172]`
+  and the ORDER was imposed by the emacs coding layer, not accoreconsole —
+  plus a dropped 0x00 (ASCII is `XX 00`/`00 XX`) can desync the stream and
+  flip apparent endianness. A definitive emacs-free check remains available
+  if ever needed: hexdump accoreconsole's own redirected-stdout temp file
+  (`Redirect stdout (file: …\accc…)`) after a `(princ)` — but use a VISIBLE
+  discriminator whose UTF-16 bytes avoid 0x00 AND 0x20 AND control codes
+  (Œ = U+0152 → `01 52` is NOT ideal: 0x01 is invisible, per pjb; pick a
+  char whose both bytes are printable, e.g. one mapping to two distinct
+  ASCII letters). LE is treated as CONFIRMED for now.
 
 /isolate ⟺ LISPSYS (pjb, KEY): accoreconsole's `/isolate <userid>
 <folder>` option is designed to PREVENT sysvar changes from propagating.
