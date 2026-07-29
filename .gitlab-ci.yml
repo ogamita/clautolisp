@@ -35,6 +35,7 @@ default:
 workflow:
   rules:
     - if: '$CI_COMMIT_TAG'                              # release tags
+    - if: '$CI_COMMIT_BRANCH =~ /^version-/'            # version-* pointer branches (release)
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'  # MRs
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'     # master
     - when: never                                       # no work-branch pipelines
@@ -46,6 +47,23 @@ stages:
   - release
   - collect
   - deploy
+
+# --- Release-ref rule fragments (issues/open/release-ci.issue) ---------------
+# A "release ref" is a release-* tag OR a version-* pointer branch (version-
+# rules.md). On such a ref the whole pipeline runs AUTOMATICALLY: build / test
+# / verify / release / collect / deploy jobs are MANDATORY (a failure reddens
+# the pipeline and blocks the release), while benchmarks stay allow_failure.
+# Off a release ref, jobs keep their normal rules (manual for the intermittent
+# CAD lanes, automatic for the poseidon test lanes). These anchors are spliced
+# as the FIRST rule of a job so the release ref wins over the manual fallback.
+.on-release-mandatory: &on-release-mandatory
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ || $CI_COMMIT_BRANCH =~ /^version-/'
+  when: on_success
+  allow_failure: false
+.on-release-benchmark: &on-release-benchmark
+  if: '$CI_COMMIT_TAG =~ /^release-[0-9]/ || $CI_COMMIT_BRANCH =~ /^version-/'
+  when: on_success
+  allow_failure: true
 
 # Build the CI image with kaniko — NO Docker daemon, NO privileged, NO
 # socket exposure. The poseidon group runner is rootless docker
@@ -186,7 +204,9 @@ test:alfe:spec-coverage:
 # user / system init-file output so the captured stdout is just
 # the (princ) value.
 build:alfe:sbcl:
-  stage: test
+  # A build: job belongs in the build stage (issues/open/release-ci.issue) so
+  # it runs before the test lanes that `needs:` its artifact.
+  stage: build
   script:
     - make -C autolisp-front-end build-alfe-sbcl
     - |
@@ -281,8 +301,7 @@ documentation:
   variables:
     GIT_SUBMODULE_STRATEGY: recursive   # libredwg (+ jsmn) needed by build-libraries
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
-      when: on_success
+    - *on-release-mandatory
     - when: manual
       allow_failure: true
   # Cache the slow autolisp-spec paged split (3026 sections -> html/info/
@@ -501,6 +520,7 @@ release:windows:x86-64:
 .platform-test-common:
   stage: test
   rules:
+    - *on-release-mandatory
     # automatic on master pushes (allow_failure: the runners are
     # intermittent laptops and must never block); manual elsewhere
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
@@ -528,6 +548,7 @@ test:clautolisp:windows:
 .verify-registry-common:
   stage: test
   rules:
+    - *on-release-mandatory
     - when: manual
       allow_failure: true
   variables:
@@ -576,6 +597,7 @@ verify:vl-registry:windows:
     paths: [autolisp-front-end/tools/alfe/bin/]
     expire_in: 1 day
   rules:
+    - *on-release-mandatory
     - when: manual
       allow_failure: true
 
@@ -602,6 +624,7 @@ build:alfe:macos:
     # protocol workdir under dist/vendor-probes/<backend>/<probe>-workdir/.
     PROBE_KEEP_WORKDIR: '1'
   rules:
+    - *on-release-mandatory
     - when: manual
       allow_failure: true
   # alfe comes from the build:alfe:* artifact via `needs:` on each job below --
@@ -711,6 +734,7 @@ encoding:experiment:autocad:windows:
     GIT_SUBMODULE_STRATEGY: none
     BENCH_SECONDS: '3.0'
   rules:
+    - *on-release-benchmark
     - when: manual
       allow_failure: true
   artifacts:
@@ -803,6 +827,7 @@ pages:
     - { job: "benchmark:bricscad:windows",   artifacts: true, optional: true }
     - { job: "benchmark:autocad:windows",    artifacts: true, optional: true }
   rules:
+    - *on-release-mandatory
     - when: manual
       allow_failure: true
   script:
@@ -834,8 +859,7 @@ collect:release:
     - { job: "release:windows:x86-64", artifacts: true }
     - { job: "release:documentation", artifacts: true }
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
-      when: on_success
+    - *on-release-mandatory
     - when: manual
       allow_failure: true
   before_script:
@@ -897,8 +921,7 @@ deploy:documentation:
   needs:
     - { job: "release:documentation", artifacts: true }
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^release-[0-9]/'
-      when: on_success
+    - *on-release-mandatory
     - when: manual
       allow_failure: true
   before_script:

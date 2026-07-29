@@ -20,3 +20,48 @@ The collect stage should be built automatically:
 
 The deploy stage should be built automatically:
 - all the deploy jobs are mandatory.
+
+== Resolution (2026-07-29) ==
+
+Implemented in .gitlab-ci.yml.
+
+- workflow now also triggers on =version-*= pointer branches (release-*
+  tags already triggered).
+- Two rule anchors define the "release ref" condition
+  (=$CI_COMMIT_TAG =~ /^release-[0-9]/ || $CI_COMMIT_BRANCH =~ /^version-/=):
+  =*on-release-mandatory= (when: on_success, allow_failure: false) and
+  =*on-release-benchmark= (allow_failure: true). Each is spliced as the FIRST
+  rule of the relevant template/job so a release ref wins over the manual
+  fallback; off a release ref the existing rules (manual CAD lanes, automatic
+  poseidon lanes) are unchanged.
+- build stage: =.alfe-build= (build:alfe:windows/macos) mandatory on release;
+  =build:alfe:sbcl= MOVED from the test stage to the build stage (answering
+  the "shouldn't it be in build?" question — every =build:*= job is now in
+  the build stage; build:clautolisp-ci-image stays build, and deliberately
+  does NOT rebuild on a release tag, using the published :latest).
+- test stage mandatory on release: =.platform-test-common=
+  (test:clautolisp:macos/windows), =.verify-registry-common= (verify:*),
+  =.vendor-probe-common= (vendor:probes:*). The plain =test:*= poseidon lanes
+  had no rules and were already automatic + mandatory. =.encoding-experiment=
+  is measurement, left auto + allow_failure (not a gate).
+- benchmark stage: =.benchmark= / =.benchmark-cad= auto + allow_failure on
+  release (pass-if-fail), per the issue.
+- release / collect / deploy stages mandatory on release: =.release-common=,
+  =collect:release=, =pages=, =deploy:documentation= (their old
+  release-[0-9]-tag-only clause is replaced by the anchor, which also covers
+  version-* branches and pins allow_failure: false).
+
+Validated with =glab ci lint= (valid).
+
+NOTES / follow-ups:
+- Because BOTH the release-* tag and the version-* branches are release
+  triggers, a release that pushes =release-1.7.0 + version-1.7 + version-1=
+  in one go creates THREE pipelines, each running the full mandatory
+  pipeline (incl. the CAD build/test lanes). If that is too heavy on the
+  intermittent runners, restrict release/collect/deploy (or all of it) to the
+  tag only. Left as specified for now.
+- test:clautolisp:macos is now MANDATORY on a release, and it currently
+  fails on a pre-existing macOS-only bug
+  (vl-directory-filename-helpers-fail-macos.issue) — so a release pipeline
+  will be red until that is fixed. That is the intended effect of mandatory
+  release verification (it surfaces the real bug).
