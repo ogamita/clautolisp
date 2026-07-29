@@ -219,14 +219,29 @@ clautolisp         clautolisp-1.6.17
   → conflict error. Unit test =cad-denotation-resolution= (11 checks; suite
   375/375).
 
-** REMAINING (next increments)
-- Locale PREFERENCE when several BricsCAD locales of the same version are
-  installed (macOS =AppleLanguages= ∩ available; Unix =LANG=/=LC_*=; Windows).
-  Today bare =bricscad= picks the latest version, locale by discovery order.
-- Optional =--list-situations= (encoding-situations §4) — separate.
+** DONE 2026-07-29 (clautolisp 1.6.24 / alfe 1.6.22) — increment 3: locale + list-situations + docs
+- Locale PREFERENCE: =resolve-cad-denotation= now breaks same-version ties by
+  the host's locale preference (=%host-preferred-locales= — macOS
+  =AppleLanguages= via =defaults=, then =LC_ALL=/=LC_CTYPE=/=LANG=), with
+  =:preferred-locales= injectable for tests. Version still beats locale; no
+  preference keeps discovery order. Test =cad-denotation-locale-preference=.
+- =--list-situations= prints the six situations + directions + one-line notes
+  (=print-situations= on the shared =*encoding-situations*= registry); wired
+  in BOTH alfe and the clautolisp binary. Help text added.
+- DOCS: alfe user-manual "Selecting a specific CAD install" (=--cad=
+  denotation grammar + =--list-cad-programs= + locale tie-break) and the
+  =--list-situations= mention in Encoding.
+- Full suite 382/382; both binaries build and run =--list-situations= /
+  =--list-cad-programs= / =--cad=.
+
+The backend-selection feature is functionally COMPLETE. Optional later: a
+per-backend =--list-situations= that resolves each situation's default +
+settability against the SELECTED backend (needs the §7 provenance table in
+code), and adding the new options to the formal autolisp-cli-specifications.org.
 
 * TODO (per increment above)
-- [~] update alfe implementation (increment 1 landed; selection next)
-- [ ] update alfe specifications
-- [ ] update alfe user manual
-- [x] update alfe tests (cad-program-denotation-parsing; more with selection)
+- [x] update alfe implementation (discovery + --cad + locale + --list-*)
+- [~] update alfe specifications (user manual done; formal
+      autolisp-cli-specifications.org still to add the three options)
+- [x] update alfe user manual (Selecting a specific CAD install; --list-situations)
+- [x] update alfe tests (denotation-parsing, denotation-resolution, locale-preference)

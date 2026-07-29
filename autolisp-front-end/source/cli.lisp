@@ -103,6 +103,7 @@
                 #:cli-options-version-p
                 #:cli-options-list-encodings-p
                 #:cli-options-list-dialects-p
+                #:cli-options-list-situations-p
                 #:cli-options-list-cad-programs-p
                 #:cli-options-dry-run-p
                 #:cli-options-no-init-p
@@ -153,6 +154,7 @@
            #:cli-options-version-p
            #:cli-options-list-encodings-p
            #:cli-options-list-dialects-p
+           #:cli-options-list-situations-p
            #:cli-options-list-cad-programs-p
            #:cli-options-dry-run-p
            #:cli-options-no-init-p
@@ -248,6 +250,7 @@ Dialect, host, encoding:
                          bricscad-v25, bricscad-v26, bricscad, clautolisp, lax.
                          Honoured under --clautolisp; ignored under --autocad/--bricscad.
   --list-dialects        Print every --dialect name (strict first, lax last) and exit.
+  --list-situations      Print the encoding situations (source/file/console/…) and exit.
   --list-cad-programs    Scan the host and print each installed CAD with its
                          canonical denotation (acad-2026, bricscad-v26, …), then exit.
   --cad DENOTATION       Select a specific installed CAD by denotation
@@ -933,6 +936,9 @@ The handler chain matches alfe-cli.issue's exit-code table:
            0)
           ((cli-options-list-dialects-p options)
            (clautolisp.autolisp-cli:print-dialects)
+           0)
+          ((cli-options-list-situations-p options)
+           (clautolisp.autolisp-cli:print-situations)
            0)
           ((cli-options-list-cad-programs-p options)
            ;; alfe.backend.cad-common loads AFTER this file (concrete backends

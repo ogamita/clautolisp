@@ -99,6 +99,43 @@ export ALFE_BACKEND_OVERRIDE=bricscad
 Explicit flags still win — =alfe --clautolisp -x "(+ 1 2)"= runs
 under clautolisp even with the override set.
 
+** Selecting a specific CAD install
+
+=--clautolisp= / =--bricscad= / =--autocad= pick the *latest* install
+of a backend. When several versions or localisations are present and
+you need a particular one, use =--cad DENOTATION=.
+
+=alfe --list-cad-programs= scans the host and prints every installed
+CAD with its canonical denotation:
+
+#+begin_example
+acad-2026                /Applications/Autodesk/AutoCAD 2026/…/MacOS/AutoCAD
+accoreconsole-2026       /Applications/Autodesk/AutoCAD 2026/…/AcCoreConsole
+bricscad-v26             /Applications/BricsCAD V26.app/Contents/MacOS/bricscad
+clautolisp               (embedded in alfe)
+#+end_example
+
+Denotation grammar:
+
+| Denotation                | Selects                                             |
+|---------------------------+-----------------------------------------------------|
+| =acad-2026=               | that exact AutoCAD (GUI =acad=)                     |
+| =accoreconsole-2022=      | that exact =accoreconsole=                          |
+| =bricscad-v25-fr_FR=      | that exact BricsCAD version + locale                |
+| =bricscad-v25=            | V25 of any locale (host locale preference breaks ties) |
+| =acad= / =bricscad=       | the latest of that kind                             |
+| =autocad= / =autocad-2022= | =acad= or =accoreconsole= per =--mode= (batch → accoreconsole, else acad) |
+| =clautolisp=              | the embedded engine                                 |
+
+So =alfe --cad bricscad-v25-fr_FR -l script.lsp= runs a specific
+BricsCAD, and =alfe --cad autocad-2022 --mode batch= selects
+accoreconsole 2022. =--cad= sets the backend (a conflicting
+=--autocad= / =--bricscad= on the same line is an error) and, for a
+CAD, points that backend's discovery at the chosen executable. When
+several BricsCAD locales of the same version are installed, the host
+language preference (macOS =AppleLanguages=; Unix =LANG= / =LC_*=)
+picks one.
+
 * Dialect selection
 
 The =--dialect NAME= option (and its =--strict= / =--autocad= /
@@ -256,7 +293,8 @@ Without =-Esource=, the dialect's default applies (=iso-8859-1= for
 process locale (=$LC_ALL=, then =$LANG=, then =$LC_CTYPE=)
 supplies the fallback.
 
-=--list-encodings= prints every accepted ENC name and exits.
+=--list-encodings= prints every accepted ENC name and exits;
+=--list-situations= prints the situations and their directions.
 
 ** What each situation actually does
 

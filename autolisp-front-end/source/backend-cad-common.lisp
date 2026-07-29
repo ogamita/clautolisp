@@ -739,12 +739,65 @@ BricsCAD V-number; 0 when there is no version."
        (or (parse-integer v :start 1 :junk-allowed t) 0))
       (t (or (parse-integer v :junk-allowed t) 0)))))
 
-(defun resolve-cad-denotation (denotation programs &key (mode :auto))
+;; -- host locale preference (disambiguates same-version installs) -----
+
+(defun %locale-from-lc-value (value)
+  "The ll_CC core of a POSIX locale string, or NIL. \"fr_FR.UTF-8\" → \"fr_FR\";
+\"C\" / \"POSIX\" / \"en\" → NIL."
+  (when (and value (plusp (length value)))
+    (let* ((end (or (position #\. value) (position #\@ value) (length value)))
+           (base (subseq value 0 end)))
+      (when (and (= (length base) 5) (char= (char base 2) #\_)) base))))
+
+(defun %macos-apple-languages ()
+  "The macOS AppleLanguages preference as ll_CC codes (\"en-FR\" → \"en_FR\"),
+most-preferred first; NIL off macOS or on any failure (best-effort)."
+  (when (macos-p)
+    (let ((out (ignore-errors
+                 (uiop:run-program '("defaults" "read" "-g" "AppleLanguages")
+                                   :output :string :ignore-error-status t))))
+      (when out
+        (let ((result '()) (start 0))
+          (loop
+            (let ((open (position #\" out :start start)))
+              (unless open (return))
+              (let ((close (position #\" out :start (1+ open))))
+                (unless close (return))
+                (let ((tok (substitute #\_ #\- (subseq out (1+ open) close))))
+                  (when (and (= (length tok) 5) (char= (char tok 2) #\_))
+                    (push tok result)))
+                (setf start (1+ close)))))
+          (nreverse result))))))
+
+(defun %host-preferred-locales ()
+  "Ordered, de-duplicated ll_CC locales the host prefers — macOS
+AppleLanguages first, then LC_ALL / LC_CTYPE / LANG — used to pick among
+same-version BricsCAD installs of different localisations."
+  (let ((acc '()))
+    (dolist (loc (append (%macos-apple-languages)
+                         (remove nil (mapcar (lambda (v) (%locale-from-lc-value (uiop:getenv v)))
+                                             '("LC_ALL" "LC_CTYPE" "LANG")))))
+      (pushnew loc acc :test #'string-equal))
+    (nreverse acc)))
+
+(defun %locale-rank (program preferred-locales)
+  "PROGRAM's position in PREFERRED-LOCALES (earlier = better), or a large
+number when it has no locale or none is preferred — so locale-less programs
+keep their discovery order."
+  (let ((loc (cad-program-locale program)))
+    (or (and loc (position loc preferred-locales :test #'string-equal))
+        most-positive-fixnum)))
+
+(defun resolve-cad-denotation (denotation programs &key (mode :auto)
+                                                        (preferred-locales
+                                                         (%host-preferred-locales)))
   "Resolve DENOTATION (a string) against PROGRAMS to a single CAD-PROGRAM, or
-NIL when nothing matches. Exact and segment-prefix matches are accepted, and
-the bare/partial forms pick the LATEST version. The virtual =autocad[-VER]=
-maps to =acad= or =accoreconsole= per MODE (=:batch= → accoreconsole, else
-acad), so =--cad autocad-2022 --mode batch= selects accoreconsole-2022."
+NIL when nothing matches. Exact and segment-prefix matches are accepted; among
+matches the LATEST version wins, and ties are broken by PREFERRED-LOCALES (the
+host's locale preference) so several localised BricsCAD installs of the same
+version pick the right one. The virtual =autocad[-VER]= maps to =acad= or
+=accoreconsole= per MODE (=:batch= → accoreconsole, else acad), so
+=--cad autocad-2022 --mode batch= selects accoreconsole-2022."
   (let* ((q0 (string-downcase (string-trim '(#\Space #\Tab) denotation)))
          (q (if (or (string= q0 "autocad") (%prefix-p "autocad-" q0))
                 (concatenate 'string
@@ -756,4 +809,7 @@ acad), so =--cad autocad-2022 --mode batch= selects accoreconsole-2022."
                      (%denotation-matches-p q (string-downcase (cad-program-denotation p))))
                    programs)))
     (when matches
-      (first (stable-sort (copy-list matches) #'> :key #'%cad-version-key)))))
+      (let* ((top-version (reduce #'max matches :key #'%cad-version-key :initial-value -1))
+             (top (remove-if-not (lambda (p) (= (%cad-version-key p) top-version)) matches)))
+        (first (stable-sort (copy-list top) #'<
+                            :key (lambda (p) (%locale-rank p preferred-locales))))))))

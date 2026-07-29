@@ -1039,3 +1039,27 @@ bare/partial (latest wins), and the virtual autocad -> acad/accoreconsole per
       ;; unknown -> nil
       (is (null (res "nope" progs)))
       (is (null (res "acad-2019" progs))))))
+
+(test cad-denotation-locale-preference
+  "backend-selection: among same-version BricsCAD installs of different
+locales, the host's preferred locale (injected) wins; version still beats
+locale; no preference keeps discovery order."
+  (labels ((mk (kind path) (alfe.backend.cad-common::%cad-program-from-path kind path))
+           (den (p) (and p (alfe.backend.cad-common:cad-program-denotation p)))
+           (res (q progs prefs)
+             (alfe.backend.cad-common:resolve-cad-denotation q progs :preferred-locales prefs)))
+    ;; the POSIX ll_CC extractor
+    (is (string= "fr_FR" (alfe.backend.cad-common::%locale-from-lc-value "fr_FR.UTF-8")))
+    (is (string= "en_US" (alfe.backend.cad-common::%locale-from-lc-value "en_US")))
+    (is (null (alfe.backend.cad-common::%locale-from-lc-value "C")))
+    (let ((progs (list
+                  (mk :bricscad "C:/Program Files/Bricsys/BricsCAD V26 en_US/bricscad.exe")
+                  (mk :bricscad "C:/Program Files/Bricsys/BricsCAD V26 fr_FR/bricscad.exe"))))
+      (is (string= "bricscad-v26-fr_FR" (den (res "bricscad" progs '("fr_FR" "en_US")))))
+      (is (string= "bricscad-v26-en_US" (den (res "bricscad" progs '("en_US" "fr_FR")))))
+      ;; no preference -> discovery order (first = en_US)
+      (is (string= "bricscad-v26-en_US" (den (res "bricscad" progs nil)))))
+    ;; version beats a locale preference for an older version
+    (let ((mixed (list (mk :bricscad "C:/x/Bricsys/BricsCAD V25 fr_FR/bricscad.exe")
+                       (mk :bricscad "C:/x/Bricsys/BricsCAD V26 en_US/bricscad.exe"))))
+      (is (string= "bricscad-v26-en_US" (den (res "bricscad" mixed '("fr_FR"))))))))

@@ -96,6 +96,31 @@ DIRECTIONS = single-directional. The CLI has one -E<name>[-<dir>] /
 --<name>[-<longdir>]-encoding option per (situation, direction), plus a
 bare -E/--encoding that sets them all.")
 
+(defparameter *encoding-situation-notes*
+  '(("source"   . "how a .lsp is decoded on load (incl. the CAD's native load)")
+    ("file"     . "default encoding of files the program opens")
+    ("console"  . "the CAD's own GUI console device (may be product-fixed)")
+    ("cadstdio" . "the CAD subprocess stdin/stdout/stderr pipes")
+    ("log"      . "the CAD log file")
+    ("terminal" . "alfe / clautolisp's own REPL I/O (always settable)"))
+  "One-line description per encoding situation, for --list-situations.")
+
+(defun print-situations (&optional (stream *standard-output*))
+  "Print the encoding situations, their directions, and what each covers —
+the companion to --list-encodings. Per-target defaults (settable vs
+product-fixed) are in the alfe user-manual Encoding section."
+  (format stream "Encoding situations — set with -E<situation>[-<dir>] ENC ~
+or --<situation>[-<dir>]-encoding ENC~%(a bare -E / --encoding sets them ~
+all):~%~%")
+  (dolist (row *encoding-situations*)
+    (let ((name (car row))
+          (dirs (cdr row)))
+      (format stream "  -E~11A~13A ~A~%"
+              name
+              (if dirs (format nil "[~{~A~^|~}]" dirs) "")
+              (or (cdr (assoc name *encoding-situation-notes* :test #'string=)) ""))))
+  (values))
+
 (defun %encoding-dir-long (dir)
   (cond ((string= dir "in") "input") ((string= dir "out") "output") (t dir)))
 
@@ -183,6 +208,13 @@ specs without mutating the shared template."
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-list-dialects-p opts) t)))
+   ;; --list-situations prints the encoding situations (and directions),
+   ;; then exits — companion to --list-encodings.
+   (make-option-spec
+    :longs '("--list-situations") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-list-situations-p opts) t)))
 
    ;; --- verbosity -------------------------------------------------
    ;; The three verbosity flags compose ADDITIVELY: each handler raises

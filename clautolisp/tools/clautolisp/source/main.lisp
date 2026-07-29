@@ -1224,6 +1224,8 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
           (clautolisp.autolisp-cli:print-encodings) (quit 0))
         (when (clautolisp.autolisp-cli:cli-options-list-dialects-p options)
           (clautolisp.autolisp-cli:print-dialects) (quit 0))
+        (when (clautolisp.autolisp-cli:cli-options-list-situations-p options)
+          (clautolisp.autolisp-cli:print-situations) (quit 0))
         (let* ((verbosity (clautolisp.autolisp-cli:cli-options-verbosity options))
                (verbose-p (member verbosity '(:verbose :debug)))
                (debug-p   (eq verbosity :debug))

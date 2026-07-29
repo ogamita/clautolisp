@@ -38,6 +38,7 @@
    #:cli-options-version-p       ; AC
    #:cli-options-list-encodings-p ; AC
    #:cli-options-list-dialects-p ; AC
+   #:cli-options-list-situations-p ; AC
    #:cli-options-list-cad-programs-p ; AC
    #:cli-options-dry-run-p       ; A
    #:cli-options-no-init-p       ; AC
@@ -104,4 +105,5 @@
    #:resolve-effective-encoding
    #:enumerate-implementation-encodings
    #:print-encodings
-   #:print-dialects))
+   #:print-dialects
+   #:print-situations))
