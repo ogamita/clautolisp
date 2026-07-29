@@ -90,6 +90,7 @@
            #:+status-failed-prefix+
            #:wait-for-status
            #:wait-for-status-prefix
+           #:starts-with-p
            ;; output draining
            #:drain-stdout
            #:drain-stderr
@@ -453,7 +454,8 @@ suffix carries a request-counter we don't pin a priori."
   (and (>= (length string) (length prefix))
        (string= prefix string :end2 (length prefix))))
 
-(defun wait-for-status-prefix (session prefix &key (timeout 10))
+(defun wait-for-status-prefix (session prefix
+                               &key (timeout 10) running-prefix alive-p)
   "Like WAIT-FOR-STATUS but matches by prefix — the spec's status
 table has parameterised states (`READY N`, `RUNNING N`, `DONE N OK`)
 whose counter is set by the runtime.
@@ -463,13 +465,28 @@ the alfe logger (see STREAM-DEBUG-LOG-TO-LOGGER) so under --debug the
 user sees the remote bootstrap progress as it happens. We also drain
 once more before each return so the *final* state of the log (a crash
 message, the last `runtime LOAD succeeded` line, etc.) is surfaced
-before the helper hands control back."
-  (log-debug "protocol: wait-for-status-prefix ~S (timeout ~A s)"
-             prefix timeout)
+before the helper hands control back.
+
+RUNNING-aware liveness (alfe-request-timeout-aborts-long-eval): a
+request-timeout should measure *unresponsiveness*, not the duration of
+a legitimately long computation. When RUNNING-PREFIX and ALIVE-P are
+supplied, TIMEOUT bounds only the handshake window — the time until the
+engine acknowledges the request by publishing a status that starts with
+RUNNING-PREFIX (e.g. \"RUNNING 7\"). Once that acknowledgement is seen
+and (FUNCALL ALIVE-P) is true, the wall-clock deadline is extended so a
+long (eval ...) is not aborted while its CAD process is alive. ALIVE-P
+(a thunk over UIOP:PROCESS-ALIVE-P) is also polled every tick: a dead
+engine aborts promptly, whatever the elapsed time. With neither key —
+the default, and every pre-existing caller — the behaviour is an
+unchanged plain wall-clock timeout."
+  (log-debug "protocol: wait-for-status-prefix ~S (timeout ~A s~:[~;, running-aware~])"
+             prefix timeout (and running-prefix alive-p))
   (let ((start (universal-time-now))
+        (deadline timeout)                ; extended while RUNNING and alive
         (interval-ms *poll-initial-ms*)
         (last-seen nil)
-        (prev-status nil))
+        (prev-status nil)
+        (running-seen nil))
     (loop
       (stream-debug-log-to-logger session)
       (setf last-seen (read-current-status session))
@@ -481,16 +498,37 @@ before the helper hands control back."
         (log-debug "protocol: status now ~S (elapsed ~,2F s)"
                    last-seen (seconds-elapsed-since start))
         (setf prev-status last-seen))
+      ;; A dead engine aborts immediately — never wait out the remaining
+      ;; deadline for a process that can no longer publish anything.
+      (when (and alive-p (not (funcall alive-p)))
+        (log-debug "protocol: engine process is no longer alive after ~,2F s (last status ~S)"
+                   (seconds-elapsed-since start) last-seen)
+        (stream-debug-log-to-logger session) ; final tail
+        (return (values nil (seconds-elapsed-since start) last-seen)))
       (when (and last-seen (starts-with-p last-seen prefix))
         (log-debug "protocol: matched ~S after ~,2F s"
                    prefix (seconds-elapsed-since start))
         (stream-debug-log-to-logger session) ; final tail
         (return (values t (seconds-elapsed-since start) last-seen)))
-      (when (>= (seconds-elapsed-since start) timeout)
-        (log-debug "protocol: timeout after ~,2F s (last status ~S)"
-                   (seconds-elapsed-since start) last-seen)
-        (stream-debug-log-to-logger session) ; final tail
-        (return (values nil (seconds-elapsed-since start) last-seen)))
+      ;; Note the RUNNING N acknowledgement: proof the engine accepted the
+      ;; request and is computing, so wall-clock alone must not kill it.
+      (when (and running-prefix last-seen
+                 (starts-with-p last-seen running-prefix))
+        (setf running-seen t))
+      (when (>= (seconds-elapsed-since start) deadline)
+        (cond
+          ;; Handshake done + engine alive: the deadline only guarded the
+          ;; READY->RUNNING window. Push it forward and keep waiting on the
+          ;; DONE prefix / liveness rather than aborting a live computation.
+          ((and running-seen alive-p (funcall alive-p))
+           (log-debug "protocol: ~,2F s elapsed but engine is RUNNING and alive; extending deadline"
+                      (seconds-elapsed-since start))
+           (setf deadline (+ (seconds-elapsed-since start) timeout)))
+          (t
+           (log-debug "protocol: timeout after ~,2F s (last status ~S)"
+                      (seconds-elapsed-since start) last-seen)
+           (stream-debug-log-to-logger session) ; final tail
+           (return (values nil (seconds-elapsed-since start) last-seen)))))
       (sleep-ms interval-ms)
       (setf interval-ms (min *poll-max-ms* (* 2 interval-ms))))))
 

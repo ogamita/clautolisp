@@ -57,6 +57,7 @@
                 #:session-workdir
                 #:session-dialect
                 #:session-state
+                #:session-request-timeout
                 #:session-state-set
                 #:register-backend)
   (:import-from #:alfe.error
@@ -690,6 +691,9 @@ future ticket."
                 (session (%make-bricscad-session
                           :backend backend
                           :workdir workdir
+                          :request-timeout (and cli-options
+                                                (alfe.cli:cli-options-timeout
+                                                 cli-options))
                           :protocol-session protocol
                           :variant variant)))
             (log-verbose "backend BRICSCAD: launching: ~{~A~^ ~}" argv)
@@ -759,9 +763,17 @@ future ticket."
 
 (defmethod eval-plan ((session bricscad-session) plan)
   (session-state-set session :running)
-  (let ((result (drive-protocol-actions
-                 (bricscad-session-protocol-session session)
-                 plan)))
+  (let* ((explicit-timeout (session-request-timeout session))
+         (result (drive-protocol-actions
+                  (bricscad-session-protocol-session session)
+                  plan
+                  ;; --timeout / $AUTOLISP_WAIT_SECS reaches the DONE wait.
+                  ;; An explicit value is a hard cap (keep-alive off); the
+                  ;; default keeps a RUNNING eval alive while BricsCAD lives
+                  ;; (alfe-request-timeout-aborts-long-eval).
+                  :request-timeout (or explicit-timeout 30)
+                  :keep-alive-while-running (null explicit-timeout)
+                  :process-info (bricscad-session-process-info session))))
     (session-state-set session
                        (ecase (alfe.backend:eval-result-status result)
                          (:success :done)

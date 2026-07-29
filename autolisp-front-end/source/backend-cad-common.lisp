@@ -276,6 +276,8 @@ round-trip.")
 (defun drive-protocol-actions (protocol-session plan
                                &key
                                  (request-timeout 30)
+                                 (keep-alive-while-running t)
+                                 (process-info nil)
                                  (shutdown-timeout 10)
                                  (input-stream  *standard-input*)
                                  (output-stream *standard-output*)
@@ -303,10 +305,24 @@ became ready) and incremented locally on each send.
 
 INPUT-STREAM/OUTPUT-STREAM/ERROR-STREAM are wired through to the
 :interactive REPL loop; the CLI passes the live terminal streams,
-tests can pass string streams to drive the REPL in-process."
+tests can pass string streams to drive the REPL in-process.
+
+REQUEST-TIMEOUT bounds how long each round-trip waits for its `DONE N'.
+When KEEP-ALIVE-WHILE-RUNNING (the default) and PROCESS-INFO are given,
+that budget only guards the READY->RUNNING handshake: once the runtime
+publishes `RUNNING N' and the spawned process is alive, the wait is
+extended so a legitimately long (eval ...) is not aborted on wall-clock
+(alfe-request-timeout-aborts-long-eval). An explicit user `--timeout'
+passes KEEP-ALIVE-WHILE-RUNNING NIL to restore a hard cap. PROCESS-INFO
+(a UIOP process object) also lets a dead engine abort promptly."
   (let* ((status :success)
          (captured-stdout (make-string-output-stream))
          (captured-stderr (make-string-output-stream))
+         ;; Liveness probe over the spawned CAD process, or NIL in tests /
+         ;; when the caller has no handle. Consulted by wait-for-status-prefix
+         ;; to distinguish "engine still computing" from "engine died".
+         (alive-p (when process-info
+                    (lambda () (uiop:process-alive-p process-info))))
          ;; The runtime publishes "READY N" at startup and then walks
          ;; N+1 on each request. We initialise from the currently-
          ;; observed status (typically "READY 0") so the first
@@ -449,11 +465,21 @@ trace line."
            (incf request-counter)
            (let ((target (format nil "~A ~D"
                                  alfe.protocol.file:+status-done-prefix+
-                                 request-counter)))
+                                 request-counter))
+                 ;; RUNNING acknowledgement for this request. Supplied only
+                 ;; when the caller opted into keep-alive; an explicit
+                 ;; --timeout keeps this NIL so the wait is a hard cap.
+                 (running-target
+                   (when keep-alive-while-running
+                     (format nil "~A ~D"
+                             alfe.protocol.file:+status-running-prefix+
+                             request-counter))))
              (multiple-value-bind (matched elapsed last)
                  (alfe.protocol.file:wait-for-status-prefix
                   protocol-session target
-                  :timeout request-timeout)
+                  :timeout request-timeout
+                  :running-prefix running-target
+                  :alive-p alive-p)
                (declare (ignore elapsed))
                (drain-live)
                (sync-verbosity-from-runtime)

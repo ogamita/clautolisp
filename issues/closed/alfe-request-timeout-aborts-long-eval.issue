@@ -111,3 +111,46 @@ Definition of done
   benchmark Makefile uses it.
 - benchmark run-bricscad-macos completes all 7 classes.
 - alfe version bumped per project convention.
+
+
+Resolution (alfe 1.7.3, branch fix-alfe-request-timeout-aborts-long-eval)
+-------------------------------------------------------------------------
+
+All three cooperating defects fixed:
+
+1. Plumbed the option. A REQUEST-TIMEOUT slot was added to the base
+   SESSION struct (backend.lisp); both CAD start-engine methods fill it
+   from (cli-options-timeout cli-options), and both eval-plan methods
+   hand it to drive-protocol-actions as :request-timeout. The AutoCAD
+   backend now also raises its READY timeout from --timeout, matching
+   the pre-existing BricsCAD behaviour.
+
+2. Killed the dead-end. drive-protocol-actions gained :request-timeout
+   (already existed), :keep-alive-while-running and :process-info keys;
+   wait-done threads the RUNNING-N acknowledgement prefix and a liveness
+   thunk into wait-for-status-prefix.
+
+3. RUNNING-aware semantics. wait-for-status-prefix (file-protocol.lisp)
+   gained optional :running-prefix and :alive-p. Once RUNNING N is seen
+   and (funcall alive-p) is true, the wall-clock deadline is extended, so
+   a legitimately long (eval …) is not aborted while the CAD process
+   lives; a dead process aborts promptly. With neither key (every
+   pre-existing caller) the behaviour is the unchanged plain timeout.
+
+Default (no --timeout) → RUNNING-aware keep-alive. Explicit --timeout N
+→ keep-alive OFF, i.e. a hard cap that restricts as well as extends
+(--timeout 1 aborts; --timeout 600 grants ten minutes).
+
+Tests: four new file-protocol-tests (outlasts-deadline, aborts-on-dead-
+process, still-bounds-handshake, without-keys-is-a-hard-cap) plus a
+plumbing pin in bricscad-start-engine-with-mock-launcher. SBCL suite
+396/396. The RUNNING-aware end-to-end run against a live BricsCAD /
+AutoCAD remains to be confirmed on the CAD runners (unit-verified here).
+
+autolisp-benchmark/Makefile: added an optional ALFE_TIMEOUT knob
+(empty default; the RUNNING-aware wait carries the long run without a
+cap; set ALFE_TIMEOUT=300 to bound a hung engine).
+
+Docs: alfe--specifications.org (env table + request-timeout semantics
+note), alfe-user-manual.org (Troubleshooting entry), RELEASE_NOTES.org
+(alfe § Request timeout).

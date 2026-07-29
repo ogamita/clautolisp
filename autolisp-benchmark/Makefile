@@ -189,15 +189,23 @@ ALFE_RUN         := -x "(autolisp-benchmark-run-all)"
 #   make run-bricscad-macos ALFE_DEBUG=1
 ALFE_DEBUG       ?=
 ALFE_DEBUG_FLAGS := $(if $(filter-out 0,$(ALFE_DEBUG)),--verbose --keep-workdir --debug)
+# Optional hard cap on the per-request wait (seconds). Empty by default: the
+# alfe request-timeout is RUNNING-aware (alfe-request-timeout-aborts-long-eval),
+# so a legitimately long (autolisp-benchmark-run-all) — ~7 classes x
+# BENCH_SECONDS + calibration — is kept alive while the CAD process lives and
+# needs no cap. Set e.g. ALFE_TIMEOUT=300 to bound a possibly-hung engine; that
+# switches the wait to a hard wall-clock cap.
+ALFE_TIMEOUT      ?=
+ALFE_TIMEOUT_FLAG := $(if $(ALFE_TIMEOUT),--timeout $(ALFE_TIMEOUT))
 ALFE_ACTIONS      = $(ALFE_DEBUG_FLAGS) $(ALFE_SET_ROOT) $(ALFE_SET_SECONDS) $(ALFE_LOAD) $(ALFE_RUN)
 
 run-bricscad-macos:
 	@$(call require-os-darwin,$@); \
-	 "$(ALFE_SBCL)" --no-init --bricscad $(ALFE_ACTIONS)
+	 "$(ALFE_SBCL)" --no-init $(ALFE_TIMEOUT_FLAG) --bricscad $(ALFE_ACTIONS)
 
 run-bricscad-windows:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --no-init --bricscad $(ALFE_ACTIONS)
+	 "$(ALFE_SBCL)" --no-init $(ALFE_TIMEOUT_FLAG) --bricscad $(ALFE_ACTIONS)
 
 # accoreconsole needs an explicit batch mode + a drawing (the default :auto
 # picks the broken automation/VBScript path). BENCH_DWG defaults to the runner's
@@ -205,7 +213,7 @@ run-bricscad-windows:
 BENCH_DWG ?= c:/gitlab-runner/dwg/empty.dwg
 run-autocad-windows:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --no-init --autocad --mode batch --dwg "$(BENCH_DWG)" $(ALFE_ACTIONS)
+	 "$(ALFE_SBCL)" --no-init $(ALFE_TIMEOUT_FLAG) --autocad --mode batch --dwg "$(BENCH_DWG)" $(ALFE_ACTIONS)
 
 # Very large org docs can exceed TeX's default main_memory and abort with "TeX
 # capacity exceeded". A repo-local web2c/texmf.cnf raises the memory parameters;

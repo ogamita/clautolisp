@@ -1831,11 +1831,22 @@ when one exists.
 | Variable                                   | Values     | CLI         | Effect                                                            |
 |--------------------------------------------+------------+-------------+-------------------------------------------------------------------|
 | =AUTOLISP_WORKDIR=                         | path       |             | Workdir root.                                                     |
-| =AUTOLISP_WAIT_SECS=                       | seconds    | =--timeout= | Global engine-wait timeout (default =180=).                       |
+| =AUTOLISP_WAIT_SECS=                       | seconds    | =--timeout= | Per-request engine-wait timeout; raises the READY handshake bound. |
 | =AUTOLISP_TIMEOUT=                         | seconds    |             | Old name, still accepted as a fallback.                           |
 | =AUTOLISP_BRICSCAD_BATCH_STARTUP_TIMEOUT=  | seconds    |             | macOS BricsCAD batch startup timeout (default =15=).              |
 | =AUTOLISP_BRICSCAD_BATCH_EXIT_TIMEOUT=     | seconds    |             | Exit timeout after the final status (default =10=).               |
 | =TMPDIR=                                   | path       |             | Alternative workdir root for macOS BricsCAD batch and REPL.       |
+
+*Request-timeout semantics.* On the CAD backends the per-request wait
+distinguishes an unresponsive engine from a legitimately long computation. By
+default (no =--timeout=) the timeout bounds only the =READY N= -> =RUNNING N=
+handshake: once the runtime acknowledges the request with =RUNNING N= and its
+process is still alive, alfe keeps waiting for =DONE N= — a multi-second
+=(eval ...)= is *not* aborted on wall-clock. A dead engine still aborts
+promptly. Passing an explicit =--timeout N= (or =AUTOLISP_WAIT_SECS=) turns the
+wait into a hard cap of =N= seconds that restricts as well as extends, so
+=alfe --timeout 1= aborts a long eval and =alfe --timeout 600= grants it ten
+minutes.
 
 ** Backend and engine selection
 
