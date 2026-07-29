@@ -523,6 +523,40 @@ without an AppleScript bridge.
 or Linux. The =--autocad= combination on those systems fails cleanly
 with code =3=.
 
+** Selecting a specific install — denotation, =--cad=, =--list-cad-programs=
+
+=--clautolisp= / =--bricscad= / =--autocad= select the *latest* install of
+a backend family. A host may have several versions and/or localisations;
+=--cad DENOTATION= selects a specific one.
+
+=--list-cad-programs= scans the host (macOS =/Applications=, Windows Program
+Files, Linux =/opt/bricsys=; the AutoCAD =.app= also contributes its bundled
+=AcCoreConsole=) and prints each installed CAD as =DENOTATION  PATH=, then
+exits. The embedded =clautolisp= is always listed.
+
+A *denotation* is the canonical selector:
+
+| Form                    | Meaning                                                         |
+|-------------------------+-----------------------------------------------------------------|
+| =acad-YYYY=             | AutoCAD YYYY, GUI engine (=acad=)                               |
+| =accoreconsole-YYYY=    | =accoreconsole= of AutoCAD YYYY                                 |
+| =bricscad-vNN[-ll_CC]=  | BricsCAD VNN, optionally a specific locale                      |
+| =acad= / =bricscad= / =accoreconsole= | latest of that kind                              |
+| =autocad[-YYYY]=        | =acad= or =accoreconsole= per =--mode= (=batch= → accoreconsole, else =acad=) |
+| =clautolisp=            | the embedded engine                                             |
+
+=--cad= is resolved after the whole command line is parsed (so the
+=autocad= → =acad=/=accoreconsole= choice sees the final =--mode=). It sets
+the backend — a conflicting =--autocad= / =--bricscad= on the same line is a
+usage error (=cli-usage-error=, exit 2), and an unknown denotation likewise
+(pointing at =--list-cad-programs=). For a CAD it then points that backend's
+=DETECT= at the chosen executable by exporting the backend's discovery env
+var (=AUTOCAD_EXE= / =AUTOCAD_ACCORECONSOLE= / =BRICSCAD_EXE=), and, when
+=--mode= was left =auto=, defaults it (=acad= → =automation=, =accoreconsole=
+→ =batch=). When several BricsCAD locales of the same version are installed,
+the host language preference (macOS =AppleLanguages=, then =LC_ALL= /
+=LC_CTYPE= / =LANG=) breaks the tie; version always beats locale.
+
 * Backend bricscad
 :PROPERTIES:
 :CUSTOM_ID: backend-bricscad

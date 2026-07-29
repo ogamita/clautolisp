@@ -938,7 +938,8 @@ The handler chain matches alfe-cli.issue's exit-code table:
            (clautolisp.autolisp-cli:print-dialects)
            0)
           ((cli-options-list-situations-p options)
-           (clautolisp.autolisp-cli:print-situations)
+           (clautolisp.autolisp-cli:print-situations
+            :backend (cli-options-backend options))
            0)
           ((cli-options-list-cad-programs-p options)
            ;; alfe.backend.cad-common loads AFTER this file (concrete backends

@@ -105,21 +105,62 @@ bare -E/--encoding that sets them all.")
     ("terminal" . "alfe / clautolisp's own REPL I/O (always settable)"))
   "One-line description per encoding situation, for --list-situations.")
 
-(defun print-situations (&optional (stream *standard-output*))
-  "Print the encoding situations, their directions, and what each covers —
-the companion to --list-encodings. Per-target defaults (settable vs
-product-fixed) are in the alfe user-manual Encoding section."
-  (format stream "Encoding situations — set with -E<situation>[-<dir>] ENC ~
+(defparameter *situation-backend-table*
+  '((:clautolisp
+     ("source"   "settable"        "-Esource / *AUTOLISP-FILE-ENCODING* / LC_*; default UTF-8")
+     ("file"     "settable"        "-Efile / *AUTOLISP-FILE-ENCODING*; default UTF-8")
+     ("console"  "n/a"             "in-process — same stream as terminal")
+     ("cadstdio" "n/a"             "no CAD subprocess")
+     ("log"      "n/a"             "—")
+     ("terminal" "settable"        "-Eterminal — applied to alfe's own streams"))
+    (:bricscad
+     ("source"   "locale/BOM"      "UTF-8 with a BOM / locale; -Esource forwarded to the native load")
+     ("file"     "default+ccs"     "default from locale / SYSCODEPAGE; per-open ,ccs=UTF-8/UTF-16LE")
+     ("console"  "product-fixed"   "GUI device: macOS full-Unicode, Windows cp1252")
+     ("cadstdio" "auto / -Ecadstdio" "drain auto-detects; -Ecadstdio overrides")
+     ("log"      "unmeasured"      "LOGFILEMODE; encoding not yet measured")
+     ("terminal" "settable"        "-Eterminal — alfe's own stream"))
+    (:autocad
+     ("source"   "LISPSYS"         "LISPSYS 0=cp1252, 1/2=UTF-8 (restart); -Esource forwarded at 1/2")
+     ("file"     "LISPSYS / MBCS"  "MBCS at LISPSYS 0; ccs= ignored by accoreconsole")
+     ("console"  "product-fixed"   "accoreconsole UTF-16LE (fixed); GUI acad cp1252")
+     ("cadstdio" "product-fixed"   "accoreconsole UTF-16LE")
+     ("log"      "unmeasured"      "—")
+     ("terminal" "settable"        "-Eterminal — alfe's own stream")))
+  "Per-backend encoding-situation provenance for --list-situations, distilled
+from the measured (os × tool × version) findings. Approximate at the CLI
+backend level (accoreconsole vs GUI acad, macOS vs Windows differ within a
+backend); the full table with byte evidence is the alfe user manual + the
+encoding issues.")
+
+(defun print-situations (&key backend (stream *standard-output*))
+  "Print the encoding situations — the companion to --list-encodings. With a
+BACKEND (:clautolisp / :bricscad / :autocad) print that backend's resolved
+default provenance per situation; otherwise print the generic situation list
+with directions."
+  (let ((rows (cdr (assoc backend *situation-backend-table*))))
+    (cond
+      (rows
+       (format stream "Encoding situations for the ~(~A~) backend ~
+(set with -E<situation>[-<dir>] ENC):~%~%" backend)
+       (dolist (row rows)
+         (destructuring-bind (name provenance note) row
+           (format stream "  -E~11A~18A ~A~%" name provenance note)))
+       (format stream "~%A product-fixed situation still accepts -E<situation> ~
+but WARNS that it is ignored and keeps the product value. Full (os × version) ~
+defaults with byte evidence: the alfe user-manual Encoding section.~%"))
+      (t
+       (format stream "Encoding situations — set with -E<situation>[-<dir>] ENC ~
 or --<situation>[-<dir>]-encoding ENC~%(a bare -E / --encoding sets them ~
-all):~%~%")
-  (dolist (row *encoding-situations*)
-    (let ((name (car row))
-          (dirs (cdr row)))
-      (format stream "  -E~11A~13A ~A~%"
-              name
-              (if dirs (format nil "[~{~A~^|~}]" dirs) "")
-              (or (cdr (assoc name *encoding-situation-notes* :test #'string=)) ""))))
-  (values))
+all; --list-situations under a backend flag shows that backend's defaults):~%~%")
+       (dolist (row *encoding-situations*)
+         (let ((name (car row))
+               (dirs (cdr row)))
+           (format stream "  -E~11A~13A ~A~%"
+                   name
+                   (if dirs (format nil "[~{~A~^|~}]" dirs) "")
+                   (or (cdr (assoc name *encoding-situation-notes* :test #'string=)) ""))))))
+    (values)))
 
 (defun %encoding-dir-long (dir)
   (cond ((string= dir "in") "input") ((string= dir "out") "output") (t dir)))

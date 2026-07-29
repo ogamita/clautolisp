@@ -143,6 +143,23 @@ ISO-8859-* / KOI8-* / CP* family.
 The catalogue header announces the line-terminator suffix
 convention so a user discovers it without reading the spec.
 
+* The --list-situations printer
+
+=--list-situations= prints the encoding *situations* — the
+boundaries each =-E<situation>= option governs — and exits, the
+companion to =--list-encodings=. =print-situations= takes an
+optional =:backend= keyword: with none it prints the generic
+situation list (=source= / =file= / =console= / =cadstdio= / =log=
+/ =terminal=) and their input/output directions from
+=*encoding-situations*=; with a backend (=:clautolisp= /
+=:bricscad= / =:autocad=, i.e. when a backend flag was given) it
+prints that backend's per-situation default *provenance*
+(=settable= / =product-fixed= / =LISPSYS= / …) from
+=*situation-backend-table*=, distilled from the measured
+(os × tool × version) encoding findings. A product-fixed situation
+still accepts its =-E<situation>= option but warns that the value
+is ignored and keeps the product value.
+
 * Test coverage
 
 Tests live in alfe's =tests/cli-tests.lisp= and

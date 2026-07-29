@@ -234,14 +234,20 @@ clautolisp         clautolisp-1.6.17
 - Full suite 382/382; both binaries build and run =--list-situations= /
   =--list-cad-programs= / =--cad=.
 
-The backend-selection feature is functionally COMPLETE. Optional later: a
-per-backend =--list-situations= that resolves each situation's default +
-settability against the SELECTED backend (needs the §7 provenance table in
-code), and adding the new options to the formal autolisp-cli-specifications.org.
+** DONE 2026-07-29 (clautolisp 1.6.25 / alfe 1.6.23) — optional polish
+- Per-backend =--list-situations=: with a backend flag it prints that
+  backend's per-situation default provenance (settable / product-fixed /
+  LISPSYS / …) from =*situation-backend-table*= (the §7 findings encoded in
+  code); no flag → the generic list. Wired in both binaries.
+- Formal docs: alfe--specifications.org gained a 'Selecting a specific
+  install' section (=--cad= denotation grammar, =--list-cad-programs=, the
+  env-override + locale tie-break); autolisp-cli-specifications.org gained a
+  '--list-situations printer' section.
+
+The backend-selection feature is COMPLETE.
 
 * TODO (per increment above)
 - [x] update alfe implementation (discovery + --cad + locale + --list-*)
-- [~] update alfe specifications (user manual done; formal
-      autolisp-cli-specifications.org still to add the three options)
+- [x] update alfe specifications (alfe--specifications.org + autolisp-cli-specifications.org)
 - [x] update alfe user manual (Selecting a specific CAD install; --list-situations)
 - [x] update alfe tests (denotation-parsing, denotation-resolution, locale-preference)
