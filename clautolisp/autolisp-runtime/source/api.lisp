@@ -1825,6 +1825,85 @@ non-portable. Use --dialect clautolisp to silence, or rewrite ~
 without a rest parameter.~%"
                 who token (or name "default"))))))
 
+(defun autolisp-path-has-dotdot-component-p (path)
+  "T iff the string PATH contains a `..' PATH COMPONENT — a `..' segment
+delimited by `/' or `\\' or a string end. So `../x', `a/../b', `x/..'
+and `..' all count, but `a..b', `..foo' and `foo..' (no separator) do
+NOT. Both separators are checked so a Windows-style path is caught too."
+  (and (stringp path)
+       (loop with len = (length path)
+             for start = 0 then (1+ pos)
+             for pos = (position-if (lambda (c) (or (char= c #\/) (char= c #\\)))
+                                    path :start start)
+             for seg = (subseq path start (or pos len))
+             when (string= seg "..") return t
+             while pos
+             finally (return nil))))
+
+(defun %dotdot-path-warning-seen-p (path)
+  "T iff a `..'-path portability warning has already fired for the string
+PATH in this run; records it as seen otherwise. Keyed by the path string
+ (EQUAL) in the session's DOTDOT-PATH-WARNINGS-SEEN table, so dedup is
+once-per-distinct-path and resets with a fresh session. When no session
+is reachable, dedup is skipped (always emit)."
+  (let* ((context (ignore-errors (current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (table   (and session
+                       (clautolisp.autolisp-runtime.internal::runtime-session-dotdot-path-warnings-seen
+                        session))))
+    (cond
+      ((null table) nil)
+      ((gethash path table) t)
+      (t (setf (gethash path table) t) nil))))
+
+(defun emit-dotdot-path-portability-warning (path who)
+  "When PATH contains a `..' component, emit a `[path-dotdot]' dialect
+portability warning — because `..' resolution is NOT portable: POSIX
+hosts (clautolisp everywhere, BricsCAD on macOS) walk the tree
+physically (UP: a `..' through a missing directory FAILS, and a `..'
+after a symbolic link lands wherever the link's target's parent is),
+while Windows CADs (BricsCAD, AutoCAD) collapse `..' textually (BACK: it
+succeeds through a missing directory and ignores symlinks). Even when
+both resolve, they disagree the moment a symlink precedes the `..'. See
+cad-path-dotdot-resolution.issue for the probed matrix.
+
+Silent ONLY in the --lax dialect (the catch-all `accept anything without
+complaining' mode). Every other dialect — --strict, the vendor dialects
+ (--autocad / --bricscad) and --clautolisp — warns, because the construct
+is non-portable regardless of which engine's semantics you prefer. WHO
+is the builtin name for the diagnostic prefix (e.g. \"OPEN\").
+
+Deduped once per distinct PATH per run (%dotdot-path-warning-seen-p).
+Honours the active dialect's PORTABILITY-WARNING-MODE: when it is
+`:error', a non-silent hit signals a runtime error instead of printing
+ (the same warning->error escalation as the lambda-list extension
+warning). Advisory otherwise — the operation proceeds normally. Warnings
+go to *ERROR-OUTPUT*."
+  (when (autolisp-path-has-dotdot-component-p path)
+    (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+           (name (and dialect
+                      (clautolisp.autolisp-reader:autolisp-dialect-name dialect)))
+           (mode (or (and dialect
+                          (ignore-errors
+                           (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                            dialect)))
+                     :warn)))
+      (unless (eq name :lax)
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error
+           :non-portable-construct
+           "~A: path ~S contains a `..' component, whose resolution is not portable across engines/platforms (POSIX-UP vs Windows-BACK, and they differ on symbolic links); --portability-warning-mode error escalates it to an error. Use --dialect lax to silence."
+           who path))
+        (unless (%dotdot-path-warning-seen-p path)
+          (format *error-output*
+                  "~&[path-dotdot] ~A: path ~S contains a `..' component; ~
+its resolution is not portable — POSIX hosts walk physically (UP), ~
+Windows CADs rewrite textually (BACK), and the two differ on symbolic ~
+links. --dialect lax silences this; prefer a path without `..'.~%"
+                  who path))))))
+
 (defun split-usubr-lambda-list (lambda-list)
   "Walk LAMBDA-LIST and split it into the three positional groups
 clautolisp's `defun' / `lambda' recognises:

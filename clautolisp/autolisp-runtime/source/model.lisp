@@ -149,7 +149,13 @@ clautolisp-secureload-trust-model spec.")
   ;; consed per session, so a new run (fresh process / fresh
   ;; make-runtime-session) starts with a clean slate. See
   ;; emit-lambda-list-extension-warning.
-  (portability-warnings-seen (make-hash-table :test #'eq)))
+  (portability-warnings-seen (make-hash-table :test #'eq))
+  ;; Dedup for the `..'-path portability warning (open / findfile / load
+  ;; on a path with a `..' component). Keyed by the path STRING (EQUAL),
+  ;; so a loop that opens the same `..' path warns once per run. Consed
+  ;; per session like PORTABILITY-WARNINGS-SEEN. See
+  ;; emit-dotdot-path-portability-warning / cad-path-dotdot-resolution.
+  (dotdot-path-warnings-seen (make-hash-table :test #'equal)))
 
 (defstruct evaluation-context
   session

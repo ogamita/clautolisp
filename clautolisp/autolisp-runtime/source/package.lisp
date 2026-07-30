@@ -253,6 +253,10 @@
    #:dispatch-autolisp-command
    #:current-evaluation-dialect
    #:current-evaluation-dialect-name
+   ;; `..'-path portability warning (cad-path-dotdot-resolution): the
+   ;; path builtins call the emitter, which is silent only in --lax.
+   #:emit-dotdot-path-portability-warning
+   #:autolisp-path-has-dotdot-component-p
    #:derive-reader-options-for-dialect
    #:read-current-source
    #:make-default-runtime-context
