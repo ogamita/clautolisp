@@ -605,19 +605,37 @@ glob both levels."
                                               (uiop:ensure-directory-pathname root)))))))
 
 (defun cui-file-corrupt-p (path)
-  "True iff PATH exists but is empty or does not begin (after leading
-whitespace) with `<'. The CUI is XML; \"invalid document structure at line 1,
-char 1\" is exactly a file that does not open with a tag. An ABSENT file is not
-corrupt (BricsCAD creates it); an unreadable file is left alone (NIL)."
+  "True iff PATH exists but is empty or does not begin — after an optional
+Unicode BOM and leading whitespace — with a `<' (0x3C) tag. The CUI is XML;
+\"invalid document structure at line 1, char 1\" is exactly a file that does not
+open with a tag. Read as OCTETS so a valid BOM-prefixed CUI (BricsCAD writes a
+UTF-8 BOM `EF BB BF' before `<?xml' — the fr_FR default.cui does) is NOT
+mistaken for garbage. An ABSENT file is not corrupt (BricsCAD creates it); an
+unreadable file is left alone (NIL). Conservative on purpose — a false positive
+renames the user's real customization aside."
   (ignore-errors
-   (with-open-file (in path :direction :input :element-type 'character
-                            :external-format :latin-1 :if-does-not-exist nil)
-     (and in
-          (loop for ch = (read-char in nil :eof)
-                do (cond ((eq ch :eof) (return t))            ; empty / whitespace-only
-                         ((member ch '(#\Space #\Tab #\Newline #\Return #\Page)) nil)
-                         ((char= ch #\<) (return nil))        ; opens with a tag -> OK
-                         (t (return t))))))))                 ; some other byte -> corrupt
+   (with-open-file (in path :direction :input
+                            :element-type '(unsigned-byte 8)
+                            :if-does-not-exist nil)
+     (when in
+       (let* ((buf (make-array 64 :element-type '(unsigned-byte 8)))
+              (n (read-sequence buf in)))
+         (if (zerop n)
+             t                                     ; empty -> corrupt
+             (let ((i 0))
+               ;; Skip a leading BOM: UTF-8 (EF BB BF) or UTF-16 (FF FE / FE FF).
+               (cond
+                 ((and (>= n 3) (= (aref buf 0) #xEF) (= (aref buf 1) #xBB) (= (aref buf 2) #xBF))
+                  (setf i 3))
+                 ((and (>= n 2) (member (aref buf 0) '(#xFF #xFE)) (member (aref buf 1) '(#xFF #xFE)))
+                  (setf i 2)))
+               ;; Skip whitespace, incl. the UTF-16 zero bytes between chars.
+               (loop while (and (< i n) (member (aref buf i) '(32 9 10 13 12 0)))
+                     do (incf i))
+               (cond
+                 ((>= i n) t)                      ; BOM/whitespace only -> corrupt
+                 ((= (aref buf i) #x3C) nil)       ; opens with `<' -> OK
+                 (t t)))))))))                     ; some other byte -> corrupt
 
 (defun quarantine-corrupt-bricscad-cui ()
   "Rename any corrupt per-user default.cui aside so BricsCAD regenerates a fresh
