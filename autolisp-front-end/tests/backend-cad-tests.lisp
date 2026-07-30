@@ -990,23 +990,27 @@ READY timeout."
 
 ;;; --- G2: console-encoding resolution (decode + pipe) ----------------
 
-(test autocad-console-decode-accoreconsole-fixed-utf16le
-  "G2: accoreconsole (batch) console decode is UTF-16LE, product-FIXED — a
-conflicting -Econsole is ignored (fixed-known warn); the GUI automation path
-honours the user's request, else :AUTO."
-  (is (eq :utf-16le (alfe.backend.autocad::%autocad-console-decode-encoding
-                     (parse-arguments '("--autocad")) :batch)))
-  ;; conflicting -Econsole on accoreconsole -> still UTF-16LE (fixed)
-  (is (eq :utf-16le (alfe.backend.autocad::%autocad-console-decode-encoding
-                     (parse-arguments '("--autocad" "-Econsole" "cp1252")) :batch)))
-  ;; matching -Econsole utf-16le -> UTF-16LE, no conflict
+(test autocad-console-decode-protocol-files-auto-by-default
+  "The DRAIN decodes the runtime-written protocol stdout/stderr FILES with the
+robust :AUTO cascade by default — they are UTF-8/ASCII in practice (verified on
+real AutoCAD 2022) and self-describing, DISTINCT from accoreconsole's own console
+PIPE (UTF-16LE, handled by AUTOCAD-CONSOLE-EXTERNAL-FORMAT). Forcing :utf-16le
+here mangled UTF-8 payload into CJK mojibake (autocad-no-rest-output-capture). An
+explicit -Econsole / -Ecadstdio still forces a codec; the variant no longer
+matters for the file drain."
+  ;; accoreconsole batch, unset -> :AUTO (was wrongly forced to UTF-16LE)
+  (is (eq :auto (alfe.backend.autocad::%autocad-console-decode-encoding
+                 (parse-arguments '("--autocad")) :batch)))
+  ;; explicit -Econsole is now HONOURED on the file drain (no product-fixed override)
+  (is (string= "WINDOWS-1252"
+               (alfe.backend.autocad::%autocad-console-decode-encoding
+                (parse-arguments '("--autocad" "-Econsole" "cp1252")) :batch)))
   (is (eq :utf-16le (alfe.backend.autocad::%autocad-console-decode-encoding
                      (parse-arguments '("--autocad" "-Econsole" "utf-16le")) :batch)))
-  ;; GUI automation: honour the user's console request
+  ;; automation path: identical contract
   (is (string= "WINDOWS-1252"
                (alfe.backend.autocad::%autocad-console-decode-encoding
                 (parse-arguments '("--autocad" "-Econsole" "cp1252")) :automation)))
-  ;; GUI automation, unset: :AUTO
   (is (eq :auto (alfe.backend.autocad::%autocad-console-decode-encoding
                  (parse-arguments '("--autocad")) :automation))))
 
