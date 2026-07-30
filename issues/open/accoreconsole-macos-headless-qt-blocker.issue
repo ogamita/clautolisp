@@ -1,0 +1,93 @@
+-*- mode:org -*-
+
+accoreconsole-macos-headless-qt-blocker — --cad accoreconsole on macOS: alfe now attempts it, but AcCoreConsole aborts bootstrap before READY (Qt init)
+=====================================================================================================================================================
+
+Status: alfe side DONE (discovery + DETECT); BLOCKED on an Autodesk-internal
+AcCoreConsole limitation on macOS. Found while exercising --cad accoreconsole
+on the macOS runner (thalassa, real AutoCAD 2026 + 2027 installed, UNLICENSED).
+
+Context
+-------
+
+The macOS AutoCAD bundle ships AcCoreConsole (the batch engine) even though the
+AutoCAD GUI is Windows-only:
+
+  /Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole
+
+pjb confirmed AcCoreConsole launches on macOS without an immediate license
+rejection, so `alfe --cad accoreconsole --mode batch' on macOS is worth
+supporting. `--list-cad-programs' already discovers accoreconsole-2026 /
+accoreconsole-2027 there.
+
+What was fixed on the alfe side (this issue's branch, feat-accoreconsole-macos)
+-------------------------------------------------------------------------------
+
+Before: `--cad accoreconsole' on macOS died IMMEDIATELY with
+`alfe AUTOCAD backend error (phase DETECT): AutoCAD is not distributed for
+macOS' — the autocad backend DETECT hard-refused any non-Windows host.
+
+1. discover-accoreconsole-binary grows macOS candidates
+   (macos-accoreconsole-candidates: the AcCoreConsole path inside the AutoCAD
+   .app bundle, version-descending).
+2. DETECT no longer refuses non-Windows outright: the GUI / COM-automation path
+   stays Windows-only, but a non-Windows host is allowed when an accoreconsole
+   BATCH engine is available. (Test updated to the new contract.)
+   apply-cad-selection already exports the resolved path as
+   $AUTOCAD_ACCORECONSOLE, which DETECT honours OS-independently, so `--cad
+   accoreconsole' now reaches the engine.
+
+The remaining blocker (Autodesk-internal, not alfe)
+---------------------------------------------------
+
+With those changes, on the macOS runner accoreconsole is launched:
+
+  AcCoreConsole /i <writable seed.dwg> /s <workdir>/run.scr
+
+and gets FURTHER than DETECT, but exits (exit 0) before publishing READY:
+
+  alfe[warn]: backend AUTOCAD: process exited after 3.79 s; last status = "BOOTING"
+  alfe: ... AutoCAD process exited before READY (exit 0):
+        Attribute Qt::AA_PluginApplication must be set before QCoreApplication is created.
+  AcCoreConsole: StdOutConsoleMode: processed-output: enabled,auto
+  AutoCAD Core Engine Console - Copyright 2026 Autodesk, Inc.  ... (X.60.M.171)
+  Version Number: X.60.M.171 (UNICODE)
+  LogFilePath has been set to the working folder.
+  .
+  ; error: File load canceled: .../run-common.lsp
+
+Observations:
+  - AcCoreConsole STARTS and prints its banner — NO license rejection in the
+    first ~4 s (matches pjb's manual observation).
+  - It emits `Qt::AA_PluginApplication must be set before QCoreApplication is
+    created' and then cancels the run.scr's (load run-common.lsp), quitting
+    before READY. AA_PluginApplication is set via QCoreApplication::setAttribute
+    inside AcCoreConsole's OWN startup — not settable from the environment, so
+    QT_QPA_PLATFORM etc. do not address it.
+  - Two intermediate blockers already handled while probing: (a) the bundle
+    .dwt templates are READ-ONLY ("currently in use or is read-only") — feed a
+    WRITABLE copy; (b) the backend's template discovery
+    (candidate-autocad-template-paths) looks NEXT TO the binary, wrong for the
+    deeply-nested macOS AcCoreConsole — macOS templates live under
+    .../Contents/Resources/UserDataCache/<locale>/Template/*.dwt.
+
+Next steps / open questions
+---------------------------
+
+- Is the Qt::AA_PluginApplication abort inherent to running AcCoreConsole
+  outside the AutoCAD app on macOS, or does a specific launch context /
+  entitlement / working directory avoid it? (Needs Autodesk-side knowledge or
+  experimentation on the macOS box.)
+- If AcCoreConsole can be made to reach READY, add macOS template discovery to
+  candidate-autocad-template-paths (Resources/UserDataCache/<locale>/Template)
+  and copy the chosen template to a writable per-run drawing, so batch mode
+  works without an explicit --dwg.
+- Decide whether to SHIP the DETECT relaxation before the engine works: it
+  turns a clean "unsupported on macOS" into an attempt that fails at bootstrap.
+  Kept on feat-accoreconsole-macos (draft) pending this decision.
+
+Repro (macOS with AutoCAD installed)
+------------------------------------
+
+  alfe --cad accoreconsole --mode batch --dwg <writable.dwg> -x '(princ "HI")'
+  # -> AcCoreConsole starts, Qt::AA_PluginApplication, exits before READY.
