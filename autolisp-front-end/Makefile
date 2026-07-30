@@ -229,6 +229,7 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
 		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
@@ -241,6 +242,7 @@ test-ccl:  ## Run the alfe FiveAM suite under CCL.
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
 		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
@@ -284,6 +286,7 @@ conformance:  ## Run the alfe scenario corpus and exit non-zero on any failure.
 		--eval '(when (find-package :ql) (ql:quickload "fiveam" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "bordeaux-threads" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
+		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
 		--eval '(require :asdf)' \
 		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
 		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
