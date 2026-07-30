@@ -12,12 +12,12 @@
 
 ;;; --- Helpers ----------------------------------------------------
 
-(defun %dict-member-view (drawing member-handle)
+(defun %dict-member-view (host member-handle)
   "The entget-style AutoLISP view of the dictionary member stored under
 MEMBER-HANDLE, or NIL if it no longer exists. XData is suppressed, like
-plain ENTGET / DICTSEARCH."
-  (let ((entity (safe-find-entity drawing member-handle)))
-    (and entity (entity->al-view entity))))
+plain ENTGET / DICTSEARCH. HOST supplies the ename intern cache."
+  (let ((entity (safe-find-entity (mock-host-active-drawing host) member-handle)))
+    (and entity (entity->al-view host entity))))
 
 (defun %require-dict-handle (host dict-ename operator-name)
   "Resolve DICT-ENAME to a live dictionary hex handle, or NIL when it
@@ -32,7 +32,7 @@ an ename at all."
 (defmethod host-namedobjdict ((host mock-host))
   (let* ((drawing (mock-host-active-drawing host))
          (root (clautolisp.drawing:ensure-root-dictionary drawing)))
-    (handle->ename (clautolisp.drawing:entity-handle-id root))))
+    (handle->ename host (clautolisp.drawing:entity-handle-id root))))
 
 (defmethod host-dictsearch ((host mock-host) dict-ename name &key next-after)
   (let* ((drawing (mock-host-active-drawing host))
@@ -49,7 +49,7 @@ an ename at all."
                    (tail (member key entries :test #'string-equal :key #'car)))
               (setf (gethash dict-handle (mock-host-dictnext-iterators host))
                     (rest tail))))
-          (%dict-member-view drawing member))))))
+          (%dict-member-view host member))))))
 
 (defmethod host-dictnext ((host mock-host) dict-ename &key rewind)
   (let* ((drawing (mock-host-active-drawing host))
@@ -66,7 +66,7 @@ an ename at all."
             (when (null remaining) (return nil))
             (let ((entry (first remaining)))
               (setf (gethash dict-handle iterators) (rest remaining))
-              (let ((view (%dict-member-view drawing (cdr entry))))
+              (let ((view (%dict-member-view host (cdr entry))))
                 (when view (return view))))))))))
 
 (defmethod host-dictadd ((host mock-host) dict-ename name object-ename)
@@ -87,7 +87,7 @@ an ename at all."
       (let* ((key (mock-string-value name))
              (removed (and key (clautolisp.drawing:dictionary-remove-entry
                                 drawing dict-handle key))))
-        (and removed (handle->ename removed))))))
+        (and removed (handle->ename host removed))))))
 
 (defmethod host-dictrename ((host mock-host) dict-ename old new)
   (let* ((drawing (mock-host-active-drawing host))
@@ -107,7 +107,7 @@ an ename at all."
       (let* ((key (mock-string-value name))
              (member (and key (clautolisp.drawing:dictionary-member-handle
                                drawing dict-handle key))))
-        (and member (safe-find-entity drawing member) (handle->ename member))))))
+        (and member (safe-find-entity drawing member) (handle->ename host member))))))
 
 (defmethod host-regapp ((host mock-host) name)
   (let ((app (mock-string-value name)))
