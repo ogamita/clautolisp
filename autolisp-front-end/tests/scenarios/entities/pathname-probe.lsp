@@ -24,7 +24,7 @@
         ((null h) "NIL")
         (t (vl-catch-all-apply 'close (list h)) "HANDLE")))
 
-(defun probe-pathnames ( / base sub target ddpath dotpath sep tmp)
+(defun probe-pathnames ( / base sub target ddpath dotpath nxpath sep tmp)
   ;; --- pick a writable base directory --------------------------------
   (setq tmp (getvar "TEMPPREFIX"))
   (if (or (null tmp) (= tmp "")) (setq tmp (getenv "TMPDIR")))
@@ -54,13 +54,20 @@
   (pp "TARGET-EXISTS" (if (findfile target) "Y" "N"))
 
   ;; --- the actual probes ---------------------------------------------
-  (setq ddpath  (strcat base "/sub/../target.txt"))  ; ".." through sub/
-  (setq dotpath (strcat base "/./target.txt"))       ; "." no-op segment
+  (setq ddpath  (strcat base "/sub/../target.txt"))     ; ".." through sub/ (exists)
+  (setq dotpath (strcat base "/./target.txt"))          ; "." no-op segment
+  (setq nxpath  (strcat base "/noexist/../target.txt")) ; ".." through a MISSING dir
   (pp "DIRECT-OPEN"     (open-result target "r"))
   (pp "DOT-OPEN"        (open-result dotpath "r"))
   (pp "DOTDOT-OPEN"     (open-result ddpath "r"))
   (pp "DOTDOT-FINDFILE" (vl-princ-to-string (findfile ddpath)))
   (pp "DOT-FINDFILE"    (vl-princ-to-string (findfile dotpath)))
+  ;; ".." through a directory that does NOT exist distinguishes POSIX-UP
+  ;; (physical walk -> must fail: the missing dir can't be traversed) from
+  ;; syntactic BACK (textual rewrite to BASE/target.txt -> would succeed).
+  ;; clautolisp is UP; this line says what each CAD does.
+  (pp "NOEXIST-DOTDOT-OPEN"     (open-result nxpath "r"))
+  (pp "NOEXIST-DOTDOT-FINDFILE" (vl-princ-to-string (findfile nxpath)))
 
   ;; --- clean up ------------------------------------------------------
   (vl-catch-all-apply 'vl-file-delete (list target))
