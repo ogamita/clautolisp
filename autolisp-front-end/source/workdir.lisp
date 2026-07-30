@@ -20,6 +20,7 @@
            #:make-fresh-workdir
            #:ensure-subdir
            #:remove-workdir
+           #:alfe-generated-workdir-name-p
            #:keep-workdir-env-set-p))
 
 (in-package #:alfe.workdir)
@@ -81,12 +82,46 @@ opted to inspect a run's artefacts after the fact."
   (let ((value (uiop:getenv "AUTOLISP_KEEP_WORKDIR")))
     (and value (plusp (length value)))))
 
+(defun alfe-generated-workdir-name-p (workdir)
+  "True iff WORKDIR's basename is one MAKE-FRESH-WORKDIR produced —
+`alfe-<backend>-<pid>-<6 lowercase-alnum>' — i.e. ALFE created it and may
+therefore remove it entirely. Any other name is treated as caller-supplied
+and is NEVER tree-deleted (alfe-workdir-env-deletes-caller-directory). Keep
+this in sync with MAKE-FRESH-WORKDIR's naming above."
+  (let* ((name (car (last (pathname-directory
+                           (uiop:ensure-directory-pathname workdir)))))
+         (parts (and (stringp name) (uiop:split-string name :separator "-"))))
+    (and parts
+         (= 4 (length parts))
+         (string= "alfe" (first parts))
+         (plusp (length (second parts)))
+         (plusp (length (third parts)))
+         (every #'digit-char-p (third parts))               ; pid
+         (= 6 (length (fourth parts)))                       ; random tag
+         (every (lambda (c) (or (digit-char-p c) (char<= #\a c #\z)))
+                (fourth parts)))))
+
 (defun remove-workdir (workdir &key keep-p)
-  "Recursively remove WORKDIR unless KEEP-P or
-$AUTOLISP_KEEP_WORKDIR forbids it. No-op if WORKDIR does not exist."
+  "Remove WORKDIR's scratch unless KEEP-P or $AUTOLISP_KEEP_WORKDIR forbids
+it. A workdir ALFE created (MAKE-FRESH-WORKDIR, see
+ALFE-GENERATED-WORKDIR-NAME-P) is removed entirely. A CALLER-supplied workdir
+(--workdir / $AUTOLISP_WORKDIR) is NEVER deleted — the caller may keep its own
+artefacts there — so only alfe's own `protocol/' subdir is cleaned. No-op if
+nothing exists."
   (when (or keep-p (keep-workdir-env-set-p))
     (return-from remove-workdir workdir))
-  (when (uiop:directory-exists-p workdir)
-    (uiop:delete-directory-tree
-     workdir :validate t :if-does-not-exist :ignore))
+  (cond
+    ((alfe-generated-workdir-name-p workdir)
+     (when (uiop:directory-exists-p workdir)
+       (uiop:delete-directory-tree
+        workdir :validate t :if-does-not-exist :ignore)))
+    (t
+     ;; Caller-supplied directory: leave it and its contents alone; remove
+     ;; only alfe's own protocol scratch inside it.
+     (let ((protocol (uiop:ensure-directory-pathname
+                      (merge-pathnames "protocol/"
+                                       (uiop:ensure-directory-pathname workdir)))))
+       (when (uiop:directory-exists-p protocol)
+         (uiop:delete-directory-tree
+          protocol :validate t :if-does-not-exist :ignore)))))
   workdir)

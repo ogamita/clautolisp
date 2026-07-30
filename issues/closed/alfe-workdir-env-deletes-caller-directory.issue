@@ -96,3 +96,18 @@ Severity
 Data loss. It is recursive deletion of a user-designated directory,
 triggered by setting a documented environment variable to a plausible
 value.
+
+== FIXED 2026-07-29 (alfe 1.7.2, fix-alfe-workdir-env-deletes-caller-directory) ==
+
+Implemented Expected option 1 (never delete a workdir alfe did not create).
+alfe.workdir:remove-workdir now tree-deletes ONLY a workdir whose basename
+matches make-fresh-workdir's exact shape — alfe-<backend>-<pid>-<6 alnum>
+(alfe-generated-workdir-name-p) — i.e. one alfe itself created. A
+caller-supplied workdir (--workdir / $AUTOLISP_WORKDIR) is never deleted; only
+alfe's own protocol/ scratch subdir inside it is removed, so the caller's
+artefacts (errors.log / .out / .err / .status, etc.) survive.
+
+Verified with the exact repro: `AUTOLISP_WORKDIR=/tmp/wdtest alfe … --quit`
+leaves /tmp/wdtest and its precious file intact; an auto workdir is still
+removed entirely. Unit test workdir-cleanup-spares-caller-supplied-directory;
+full alfe suite 391/391.
