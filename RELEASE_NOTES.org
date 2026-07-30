@@ -509,6 +509,15 @@ file or COM), and forwards the workload.
 - ~--mode auto~ (default), ~--mode batch~, ~--mode automation~.
   See § /Backend invocation/ for the file-protocol handshake.
 
+** Output line discipline (CAD backends)
+
+- On the CAD backends, ~princ~ and ~prin1~ no longer terminate a line:
+  consecutive output primitives in one form concatenate, and only
+  ~terpri~, ~print~'s framing, or an explicit ~\n~ break the line — matching
+  the clautolisp REPL and real AutoLISP. ~(terpri)~ now routes its break
+  through the captured output too. (Before, each ~princ~/~prin1~ emitted a
+  spurious trailing newline; confirmed fixed on real BricsCAD V26.)
+
 ** Request timeout (alfe-user-manual § /Troubleshooting/)
 
 - ~--timeout~ / ~$AUTOLISP_WAIT_SECS~ now reaches the CAD backends'
