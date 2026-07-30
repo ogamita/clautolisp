@@ -518,6 +518,11 @@ file or COM), and forwards the workload.
   through the captured output too. (Before, each ~princ~/~prin1~ emitted a
   spurious trailing newline; confirmed fixed on real BricsCAD V26.)
 
+- On the CAD backends, a top-level ~(load X)~ now evaluates its argument:
+  ~(load p)~ and ~(load (strcat dir "f.lsp"))~ work, not only string
+  literals. (Before, a non-literal argument reached ~findfile~ unevaluated
+  and failed with ~bad argument type~; confirmed fixed on real BricsCAD V26.)
+
 ** Request timeout (alfe-user-manual § /Troubleshooting/)
 
 - ~--timeout~ / ~$AUTOLISP_WAIT_SECS~ now reaches the CAD backends'

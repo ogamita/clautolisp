@@ -738,17 +738,23 @@
     form))
 
 (defun autolisp-eval-load-form (form)
+  ;; The LOAD argument must be EVALUATED before it reaches the source loader:
+  ;; (load p) / (load (strcat dir "f.lsp")) are as valid as (load "f.lsp").
+  ;; Passing (cadr form) raw made findfile see the unevaluated expression and
+  ;; fail with "bad argument type <P>; expected <STRING>" for anything but a
+  ;; string literal (alfe-load-form-argument-not-evaluated). (eval x) on a
+  ;; string literal is the string itself, so literals keep working.
   (cond
     ((and (= (length form) 2)
           (autolisp-internal-protocol-load-p (cadr form)))
      (eval form))
     ((= (length form) 2)
-     (autolisp-source-load (cadr form)))
+     (autolisp-source-load (eval (cadr form))))
     ((and (= (length form) 3)
           (autolisp-internal-protocol-load-p (cadr form)))
      (eval form))
     ((= (length form) 3)
-     (autolisp-source-load-with-onfailure (cadr form) (caddr form)))
+     (autolisp-source-load-with-onfailure (eval (cadr form)) (eval (caddr form))))
     (T
      (eval form))))
 

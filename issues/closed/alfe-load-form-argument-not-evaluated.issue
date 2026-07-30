@@ -150,3 +150,36 @@ containing
     (load p)
 
 loads the target, and that `(load (strcat …))` does too.
+
+
+Resolution (alfe 1.7.5, branch fix-alfe-load-form-argument-not-evaluated)
+-------------------------------------------------------------------------
+
+Root cause confirmed in autolisp-eval-load-form (autolisp-front-end/source/
+runtime/autolisp-bootstrap.lsp): the two source-load branches passed
+(cadr form) — the LOAD argument EXPRESSION — straight to autolisp-source-load /
+autolisp-source-load-with-onfailure, unevaluated. For a string literal
+(load "f.lsp") cadr is already the string, so it worked; for (load p) or
+(load (strcat ...)) findfile received the raw symbol/list and failed with
+`bad argument type <P>; expected <STRING>'.
+
+Fix: evaluate the argument — (autolisp-source-load (eval (cadr form))) and
+(autolisp-source-load-with-onfailure (eval (cadr form)) (eval (caddr form))).
+(eval "f.lsp") is the string itself, so literals keep working.
+
+Why it looked path-dependent: the interception only fires when (load X) is a
+TOP-LEVEL form — a bare `-x (load p)', or an individual form of a `-l' file.
+Wrapping it as `-x (progn (setq p ...) (load p) ...)' makes the whole progn
+the request form (car = PROGN, not LOAD), so it is eval'd normally and the
+argument IS evaluated — which is why an early -x probe wrongly looked fine.
+
+Verified on REAL BricsCAD V26 / macOS via the cad-triage job:
+  outer.lsp: (setq p "inner.lsp") (load p) (princ (strcat "OUTER-SEES=" ...))
+  before: ERROR ... bad argument type <P>; expected <STRING> at [findfile]
+  after:  INNER-LOADED / OUTER-SEES=777
+
+Related triage (same run, both already fixed at HEAD, closed separately):
+  - alfe-large-form-load-limit  (:load sends native (load path); 228 KB single
+    form loaded, BIGLEN=40000)
+  - alfe-bricscad-open          ((prin1/princ x fileDesc) writes to the file:
+    OPENFILE=["NAME" 42] OPEN-OK)
