@@ -23,38 +23,41 @@ $probe = Join-Path $out "diag.lsp"
 @"
 (setq __d (open "$diagLisp" "w"))
 (defun dl (s) (princ s __d) (princ "\n" __d))
-(dl (strcat "RUNTIME-EMIT-DEF=" (if (member (quote autolisp-emit-user-line) (atoms-family 1)) "yes" "no")))
-(dl (strcat "NORMALIZE-DEF=" (if (member (quote autolisp-normalize-princ-call) (atoms-family 1)) "yes" "no")))
-(dl (strcat "PRINC-IS-SUBR=" (if (= (type princ) (quote SUBR)) "native-subr" "shadowed-usubr")))
-(dl (strcat "CAPTURE=" (cond ((not (boundp (quote *AUTOLISP_CAPTURE_STDOUT*))) "UNBOUND") (*AUTOLISP_CAPTURE_STDOUT* "T") (T "NIL"))))
-(dl (strcat "STDOUTFILE=" (if (boundp (quote *AUTOLISP_PROTOCOL_STDOUTFILE*)) *AUTOLISP_PROTOCOL_STDOUTFILE* "UNBOUND")))
-(setq __r (vl-catch-all-apply (quote autolisp-emit-user-line) (list "DIAG-EMIT-MARKER")))
-(dl (strcat "EMIT-CALL=" (if (vl-catch-all-error-p __r) (strcat "ERR:" (vl-catch-all-error-message __r)) "OK")))
-(setq __p2 (vl-catch-all-apply (quote princ) (list "DIAG-P2-MARKER" nil)))
-(dl (strcat "PRINC-2ARG-NILFD=" (if (vl-catch-all-error-p __p2) (strcat "ERR:" (vl-catch-all-error-message __p2)) "OK")))
-(dl (strcat "SOURCE-LOAD-TYPE=" (vl-princ-to-string (type autolisp-source-load))))
-(dl (strcat "PROTOCOL-WRITE-TYPE=" (vl-princ-to-string (type autolisp-protocol-write-line))))
-(dl (strcat "DEBUG-LOG-TYPE=" (vl-princ-to-string (type alfe-debug-log))))
-(dl (strcat "EMIT-LINE-TYPE=" (vl-princ-to-string (type autolisp-emit-user-line))))
+(defun fsize (p / f n) (setq n -1) (setq f (open p "r")) (if f (progn (setq n 0) (while (read-line f) (setq n (1+ n))) (close f))) n)
+;; On AutoCAD 2022 a defun'd function reports (type)=SUBR (not USUBR) -- calibrate:
+(defun __tf (a) a)
+(dl (strcat "USER-DEFUN-TYPE=" (vl-princ-to-string (type __tf))))
+(dl (strcat "PRINC-TYPE=" (vl-princ-to-string (type princ))))
 (dl (strcat "NORMALIZE-TYPE=" (vl-princ-to-string (type autolisp-normalize-princ-call))))
-(dl (strcat "BOOTSTRAP-LSP-VAR=" (if (boundp (quote *AUTOLISP_BOOTSTRAP_LSP*)) *AUTOLISP_BOOTSTRAP_LSP* "UNBOUND")))
-;; Dump the CAD-side debug.log — it records the startup load sequence + errors.
-(setq __ld (cond ((boundp (quote *AUTOLISP-LOGDIR*)) *AUTOLISP-LOGDIR*)
-                 ((boundp (quote *AUTOLISP_LOGDIR*)) *AUTOLISP_LOGDIR*) (T nil)))
-(dl (strcat "LOGDIR=" (if __ld __ld "UNBOUND")))
-(if __ld
-  (progn
-    (setq __lp (strcat __ld "/debug.log"))
-    (if (findfile __lp)
-      (progn (setq __lf (open __lp "r"))
-             (while (setq __l (read-line __lf)) (dl (strcat "  DBG| " __l))) (close __lf))
-      (dl "  DEBUGLOG-ABSENT"))))
+(dl (strcat "CAPTURE=" (cond ((not (boundp (quote *AUTOLISP_CAPTURE_STDOUT*))) "UNBOUND") (*AUTOLISP_CAPTURE_STDOUT* "T") (T "NIL"))))
+(setq sf (if (boundp (quote *AUTOLISP_PROTOCOL_STDOUTFILE*)) *AUTOLISP_PROTOCOL_STDOUTFILE* "?"))
+(dl (strcat "STDOUTFILE=" sf))
+(dl (strcat "STDOUT-LINES-BEFORE=" (itoa (fsize sf))))
+;; Does an explicit 2-arg (princ x nil) write to the protocol stdout?
+(setq r1 (vl-catch-all-apply (quote princ) (list "MARK-2ARG-NILFD" nil)))
+(dl (strcat "PRINC-2ARG=" (if (vl-catch-all-error-p r1) (strcat "ERR:" (vl-catch-all-error-message r1)) "OK")))
+;; Does emit-user-line write to the protocol stdout?
+(setq r2 (vl-catch-all-apply (quote autolisp-emit-user-line) (list "MARK-EMIT")))
+(dl (strcat "EMIT-CALL=" (if (vl-catch-all-error-p r2) (strcat "ERR:" (vl-catch-all-error-message r2)) "OK")))
+(dl (strcat "STDOUT-LINES-AFTER=" (itoa (fsize sf))))
+;; Does the walk-rewriter pad a 1-arg (princ x) when a form is normalized+eval'd?
+(setq r3 (vl-catch-all-apply (quote eval) (list (list (quote autolisp-normalize-princ-call) (list (quote quote) (list (quote princ) "MARK-NORMALIZED"))))))
+(dl (strcat "NORMALIZE-1ARG=" (if (vl-catch-all-error-p r3) (strcat "ERR:" (vl-catch-all-error-message r3)) (vl-princ-to-string r3))))
+;; Dump stdout content so we SEE what landed:
+(if (and (/= sf "?") (findfile sf))
+  (progn (setq f (open sf "r")) (setq c "") (while (setq l (read-line f)) (setq c (strcat c l "|"))) (close f)
+         (dl (strcat "STDOUT-CONTENT=[" c "]")))
+  (dl "STDOUT-ABSENT"))
+;; debug.log (need --debug for it to be written):
+(setq __ld (cond ((boundp (quote *AUTOLISP-LOGDIR*)) *AUTOLISP-LOGDIR*) ((boundp (quote *AUTOLISP_LOGDIR*)) *AUTOLISP_LOGDIR*) (T nil)))
+(if __ld (progn (setq __lp (strcat __ld "/debug.log"))
+  (if (findfile __lp) (progn (setq __lf (open __lp "r")) (while (setq __l (read-line __lf)) (dl (strcat "  DBG| " __l))) (close __lf)) (dl "  DEBUGLOG-ABSENT"))))
 (close __d)
-(princ "DIAG-DONE-VIA-1ARG")
+(princ "DIAG3-DONE")
 "@ | Set-Content -Path $probe -Encoding ascii
 
 Write-Host "==== run diagnostic probe on AutoCAD ===="
-& $alfe -norc --autocad --mode batch --dwg $Dwg --verbose --timeout 120 -l $probe 2>&1 | ForEach-Object { "$_" }
+& $alfe -norc --autocad --mode batch --dwg $Dwg --debug --verbose --timeout 120 -l $probe 2>&1 | ForEach-Object { "$_" }
 Write-Host "---- exit $LASTEXITCODE ----"
 Write-Host "==== DIAG FILE CONTENT ===="
 if (Test-Path $diag) { Get-Content $diag } else { Write-Host "(diag file not written: $diag)" }
