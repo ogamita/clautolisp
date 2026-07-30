@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# TEMPORARY diagnostic (remove with the debug job): cad-chr-vs-loaded-encoding.
+# On BricsCAD, (chr 233) is not = to the SAME char decoded from a cp1252 file,
+# though both strlen 1. Dump the BYTE representation of each (write them to a
+# file via 2-arg princ, hex-dump it) so we see exactly how they differ.
+set -u
+root="${CI_PROJECT_DIR:-$(pwd)}"
+alfe="$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl"
+out="$root/dist/cad-diag-chr"
+mkdir -p "$out"
+export ALFE_RUNTIME_LSP="$root/autolisp-front-end/source/runtime/autolisp-remote-io.lsp"
+export ALFE_BOOTSTRAP_LSP="$root/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp"
+[ -x "$alfe" ] || { echo "alfe not built" >&2; exit 2; }
+
+# se.lsp holds a cp1252 e-acute (single byte 0xE9), loaded via -Esource cp1252.
+printf '(setq src-e "\xe9")\n' > "$out/se.lsp"
+echo "=== se.lsp bytes ==="; xxd "$out/se.lsp"
+
+diagfile="$out/chr-diag.txt"
+rm -f "$diagfile"
+cat > "$out/diag.lsp" <<LSP
+(setq df (open "$diagfile" "w"))
+(defun dl (k s) (princ k df) (princ "=[" df) (princ s df) (princ "]\n" df))
+(dl "SRC" src-e)
+(dl "CHR" (chr 233))
+(princ (strcat "STRLEN-SRC=" (itoa (strlen src-e)) " STRLEN-CHR=" (itoa (strlen (chr 233))) "\n") df)
+(princ (strcat "ASCII-SRC=" (itoa (ascii src-e)) " ASCII-CHR=" (itoa (ascii (chr 233))) "\n") df)
+(princ (strcat "EQ=" (if (= src-e (chr 233)) "T" "nil") "\n") df)
+(close df)
+(princ "CHR-DIAG-DONE")
+LSP
+
+echo "=== run: alfe --bricscad -Esource/-Efile Windows-1252 -l se.lsp -l diag.lsp ==="
+"$alfe" -norc --bricscad --mode batch --timeout 120 \
+  -Esource Windows-1252 -Efile Windows-1252 \
+  -l "$out/se.lsp" -l "$out/diag.lsp" 2>&1
+echo "---- exit $? ----"
+echo "=== chr-diag.txt (text) ==="; cat "$diagfile" 2>/dev/null || echo "(absent)"
+echo "=== chr-diag.txt (hex — the byte reps of SRC vs CHR) ==="; xxd "$diagfile" 2>/dev/null || echo "(absent)"
+exit 0
