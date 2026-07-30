@@ -189,3 +189,32 @@ STATUS: investigation complete; engine behaviour characterised on all
 three targets. Left OPEN pending the (a)/(b) documentation + policy
 decision. Probe tooling kept (manual CI jobs) so any target can be
 re-checked on demand.
+
+===========================================================================
+DECISION (pjb, 2026-07-30) — warn on every `..' path; keep UP everywhere.
+===========================================================================
+
+Even when both UP and BACK resolve to a file, they differ FUNDAMENTALLY
+once a SYMBOLIC LINK precedes the `..': UP walks the physical tree (the
+`..' after a symlink lands in the link target's parent), while BACK
+rewrites textually (the symlink is ignored). So a `..' path is
+non-portable in general, not only in the missing-directory case.
+
+Ruling, implemented in clautolisp 1.7.5:
+  - open / findfile / load emit a `[path-dotdot]' portability warning for
+    ANY path containing a `..' component, in every dialect EXCEPT --lax
+    (--strict, --autocad, --bricscad and --clautolisp all warn; --lax is
+    the silent catch-all). See emit-dotdot-path-portability-warning and
+    tests/... path-dotdot-tests.lisp.
+  - clautolisp keeps POSIX-UP semantics on every platform.
+
+Deferred alternative (noted, not done): clautolisp could instead follow
+the platform — BACK on Windows, UP on Unix — as BricsCAD does, so it
+would match whichever native CAD the user runs beside. Kept UP everywhere
+for now for cross-OS clautolisp consistency; revisit if the divergence
+with the Windows CADs proves a problem in practice.
+
+This closes the ticket's two open directives (document the behaviour;
+warn on `..' outside --lax). STATUS: the warning has shipped; this issue
+stays OPEN only as the record of the platform-dependent alternative
+above, to be closed or actioned at pjb's discretion.
