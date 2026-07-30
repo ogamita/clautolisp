@@ -81,3 +81,26 @@ under the BricsCAD load shadow in some contexts" — retitle/triage
 accordingly. The vl-filename-directory angle can be dropped. (The
 remaining BricsCAD/macOS failures are encoding only — see
 cad-load-encoding-macos.issue.)
+
+
+Resolution (fixed by alfe 1.7.5 — verified on real BricsCAD, cad-triage-vl)
+---------------------------------------------------------------------------
+
+Same root cause as alfe-load-form-argument-not-evaluated, NOT a path-derivation
+divergence. The error "bad argument type <*TU:TEST-FRAMEWORK*>" is the SYMBOL
+reaching findfile: the harness does (load *tu:test-framework*) as a top-level
+form, and autolisp-eval-load-form passed the argument UNEVALUATED. It was
+misread here as "*tu:test-framework* ends up NIL" (a nil value would error as
+<nil>, not <*TU:TEST-FRAMEWORK*>).
+
+alfe 1.7.5 evaluates the (load X) argument, so a variable / (strcat ...) load
+works. Verified by replicating the exact harness shape on real BricsCAD V26 /
+macOS (a *tu:self-override* var -> vl-filename-directory -> composed sibling
+path -> (load VAR)):
+
+  VL-DIR=[.../dist/cad-triage-vl]                 <- vl-filename-directory OK
+  VL-FW=[.../vl-framework.lsp]                    <- composed path OK
+  VL-FRAMEWORK-LOADED / VL-FRAMEWORK-SEES=999     <- (load VAR) now works
+
+vl-filename-directory itself did NOT diverge; the whole failure was the
+unevaluated load argument. Closed by verification.
