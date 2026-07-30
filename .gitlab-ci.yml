@@ -723,6 +723,63 @@ encoding:experiment:autocad:windows:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
 
 # ============================================================================
+# Pathname probe: run pathname-probe.lsp on each backend to confirm how
+# "." / ".." path segments resolve (cad-path-dotdot-resolution.issue).
+# Self-contained (builds alfe in-script), on_success + allow_failure +
+# interruptible, exactly like the encoding experiment, so it runs on the
+# intermittent macOS/Windows CAD runners without reddening the pipeline.
+# TEMPORARY: retire (or drop to `when: manual`) once the divergence is
+# recorded in the issue.
+# ============================================================================
+.pathname-probe:
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  interruptible: true
+  # MANUAL: the "." / ".." resolution was captured (see
+  # cad-path-dotdot-resolution.issue); keep the jobs available to re-run
+  # on demand (a runner is up) without firing on every pipeline.
+  rules:
+    - when: manual
+      allow_failure: true
+  artifacts:
+    name: "pathname-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/pathname/]
+    expire_in: 30 days
+
+pathname:probe:clautolisp:linux:
+  extends: .pathname-probe
+  tags: [linux, amd64, docker]
+  image: $CLAUTOLISP_CI_LATEST
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-pathname-probe.sh --backend clautolisp
+
+pathname:probe:bricscad:macos:
+  extends: .pathname-probe
+  tags: [macos, arm64, shell]
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-pathname-probe.sh --backend bricscad
+
+pathname:probe:bricscad:windows:
+  extends: .pathname-probe
+  tags: [windows, amd64, shell]
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend bricscad
+
+pathname:probe:autocad:windows:
+  extends: .pathname-probe
+  tags: [windows, amd64, shell]
+  variables:
+    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-pathname-probe.ps1 -Backend autocad -Dwg $env:PROBE_DWG
+
+# ============================================================================
 # Benchmarks: run the AutoLISP suite on each target and publish a comparison
 # table (GitLab Pages). Manual per target (the macOS/Windows runners are
 # intermittent) -- run the ones whose runner is up, then `pages` aggregates
