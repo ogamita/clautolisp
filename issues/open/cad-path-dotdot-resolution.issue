@@ -82,3 +82,110 @@ parity rule.
 
    When paths containing /../ are encountered in non --clautolisp or
    --lax dialects, must be flagged (a warning issued).
+
+===========================================================================
+PROBE RESULTS (2026-07-30) — the divergence is OS-level, and the
+original hypothesis is refuted. clautolisp is UP on every platform.
+===========================================================================
+
+Confirmed with a self-contained probe on the real runners (pjb granted
+the macOS + Windows CAD runners for this): pathname-probe.lsp
+(autolisp-front-end/tests/scenarios/entities/) builds BASE/ and BASE/sub/,
+writes BASE/target.txt, then opens it three ways. The CI jobs are
+pathname:probe:* (now `when: manual`); drivers run-pathname-probe.{sh,ps1}.
+
+Two cases matter:
+  - EXISTING intermediate:  open "BASE/sub/../target.txt"     (sub/ exists)
+  - MISSING  intermediate:  open "BASE/noexist/../target.txt" (noexist does not)
+The missing case is the UP-vs-BACK discriminator: POSIX-UP physically
+walks the directories, so the missing segment can't be traversed and the
+open FAILS; a syntactic BACK rewrite just deletes "noexist/../" textually,
+so the open SUCCEEDS.
+
+  engine / OS        | ".." via existing dir | ".." via MISSING dir | semantics
+  -------------------+-----------------------+----------------------+-----------
+  clautolisp (all)   | HANDLE  (resolves)    | NIL    (fails)       | POSIX-UP
+  BricsCAD  macOS    | HANDLE  (resolves)    | NIL    (fails)       | POSIX-UP
+  BricsCAD  Windows  | HANDLE  (resolves)    | HANDLE (succeeds)    | syntactic-BACK
+  AutoCAD   Windows  | HANDLE  (resolves)    | HANDLE (succeeds)    | syntactic-BACK
+
+findfile mirrors open in every cell (collapses ".." when open succeeds,
+nil when it fails).
+
+Findings
+--------
+
+1. EXISTING-intermediate ".." (and ".") resolve everywhere — clautolisp,
+   BricsCAD (both OSes), AutoCAD. There is NO divergence for the common
+   case. The issue's original premise ("BricsCAD does NOT resolve '..'")
+   is REFUTED: BricsCAD resolves it exactly like clautolisp.
+
+2. The real, narrow divergence is MISSING-intermediate "..", and it is
+   OS-level, not engine-level:
+     - POSIX (clautolisp everywhere, BricsCAD macOS): UP — the missing
+       directory can't be walked, so it FAILS.
+     - Windows (BricsCAD Windows, AutoCAD Windows): BACK — the CAD uses
+       the Windows path canonicaliser (GetFullPathName-style), which
+       collapses ".." TEXTUALLY, so it SUCCEEDS even through a missing
+       directory.
+
+3. clautolisp does UP on ALL platforms (it goes through the CL
+   truename/open path). So on WINDOWS clautolisp is STRICTER than the
+   native Windows CADs: a "BASE/missing/../target.txt" that AutoCAD /
+   BricsCAD-Windows open, clautolisp-on-Windows rejects. That is the
+   opposite direction from what this ticket assumed.
+
+Reconciling the SCHMS report
+----------------------------
+
+The SCHMS failure was on BricsCAD V26 / macOS — i.e. UP semantics. A
+"repo-dir/../outils-autolisp/..." path fails under UP whenever the ".."
+step lands on a directory the process can't physically walk (a component
+that doesn't exist from the CAD's cwd, or a symlink resolving elsewhere),
+while a clean absolute path with no ".." always works — exactly what was
+observed. clautolisp happened to resolve the same string because its cwd
+/ physical layout let the UP walk succeed. So this was never "BricsCAD
+can't do ..": it was UP-semantics sensitivity to the physical tree, which
+clean paths sidestep.
+
+Bonus: TEMPPREFIX on the real CADs
+----------------------------------
+
+The probe also captured real TEMPPREFIX values, which validated the
+clautolisp-tempprefix-empty fix (clautolisp 1.7.4):
+  BricsCAD macOS   : /var/folders/.../T/BricsCAD/
+  BricsCAD Windows : C:\Users\<user>\AppData\Local\Temp\BricsCAD\
+  AutoCAD  Windows : C:\Users\PPBN02~1\AppData\Local\Temp\   (8.3 short name)
+All non-empty, trailing separator; AutoCAD returns a backslash 8.3 path.
+
+Recommendation (needs a pjb decision)
+-------------------------------------
+
+The ticket's two original directives were premised on BricsCAD being the
+STRICTER one; the data shows the reverse on Windows and parity on macOS,
+so they need revisiting:
+
+  a) "Document that BricsCAD produces different results." -> Amend: on
+     macOS BricsCAD == clautolisp (UP); on Windows both CADs are BACK and
+     clautolisp is the strict one. Document the OS-level UP/BACK split in
+     the source-encoding / pathname section, with this matrix.
+
+  b) "Warn on any /../ in non-clautolisp/lax dialects." -> A BLANKET
+     warning is unjustified: existing-intermediate ".." is portable
+     everywhere. The only non-portable construct is ".." THROUGH A
+     MISSING directory (Windows CADs accept it, clautolisp + macOS
+     BricsCAD reject it). Options for pjb:
+       (i)  warn only when a ".." segment's preceding directory does not
+            exist (requires a probe-file at flag time), or
+       (ii) leave clautolisp UP everywhere and just DOCUMENT the gap
+            (portable code must not build ".." through possibly-missing
+            dirs), or
+       (iii) make clautolisp-on-Windows follow the platform (BACK) so it
+            matches the native Windows CADs — at the cost of cross-OS
+            clautolisp consistency.
+     Deferring the choice to pjb; no warning implemented yet.
+
+STATUS: investigation complete; engine behaviour characterised on all
+three targets. Left OPEN pending the (a)/(b) documentation + policy
+decision. Probe tooling kept (manual CI jobs) so any target can be
+re-checked on demand.

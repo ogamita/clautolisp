@@ -736,8 +736,11 @@ encoding:experiment:autocad:windows:
   variables:
     GIT_SUBMODULE_STRATEGY: none
   interruptible: true
+  # MANUAL: the "." / ".." resolution was captured (see
+  # cad-path-dotdot-resolution.issue); keep the jobs available to re-run
+  # on demand (a runner is up) without firing on every pipeline.
   rules:
-    - when: on_success
+    - when: manual
       allow_failure: true
   artifacts:
     name: "pathname-$CI_COMMIT_SHORT_SHA"
