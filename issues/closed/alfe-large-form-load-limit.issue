@@ -55,3 +55,15 @@ outils-autolisp : le job CI macos:bricscad / windows:bricscad de autolisp-doc
 découper autolisp-ref.lsp en formes plus petites (+ le générateur
 build_autolisp_ref.py). Le job est `allow_failure: true` et la logique doc est
 validée en headless (clautolisp), donc non bloquant en attendant.
+
+
+Resolution (verified already fixed at HEAD — alfe 1.7.4, cad-triage)
+-------------------------------------------------------------------
+
+Not reproducing. The :load action now sends a NATIVE (load "path") to the CAD
+(backend-cad-common.lisp drive-protocol-actions), so `-l' no longer inlines the
+file's forms as one giant eval — any file size loads via the host's own reader.
+
+Verified on real BricsCAD V26 / macOS: a 228 KB file containing a single
+(setq *big* '(1 2 ... 40000)) form loaded via `-l' and (length *big*) = 40000
+(triage line BIGLEN=40000). Closed by verification, no code change needed.
