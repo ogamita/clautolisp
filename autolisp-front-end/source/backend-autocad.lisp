@@ -448,23 +448,22 @@ the channel with it; the robust auto-detect cascade (:AUTO) stays as the
 safety net for any target that turns out NOT to be UTF-16LE.")
 
 (defun %autocad-console-decode-encoding (cli-options variant)
-  "How the drain decodes AutoCAD's console output AS. accoreconsole (the
-:BATCH variant) is *ACCORECONSOLE-CONSOLE-ENCODING* (UTF-16LE), FIXED by the
-product: a conflicting -Econsole / -Ecadstdio is accepted, WARNED as ignored
-(situations §4 fixed-known rule), and the product value kept. The GUI
-:AUTOMATION path has no fixed console, so the user's request (or :AUTO) rides
-through unchanged."
+  "How the DRAIN decodes the protocol stdout/stderr FILES. These are written by
+the AutoLISP runtime (open + write-line), NOT by accoreconsole itself, so they
+carry the CAD's FILE encoding -- UTF-8/ASCII in practice (verified on real
+AutoCAD 2022), possibly UTF-16LE on some locales -- which is DISTINCT from
+accoreconsole's own console PIPE (that is UTF-16LE and is handled by
+AUTOCAD-CONSOLE-EXTERNAL-FORMAT). The files are self-describing, so decode with
+the robust :AUTO cascade (it detects UTF-16LE via the interleaved NULs, else
+UTF-8/Latin-1, and never signals). Forcing :UTF-16LE here decoded the UTF-8
+payload as UTF-16 and turned every line into CJK mojibake -- the real cause of
+autocad-no-rest-output-capture. An explicit -Econsole / -Ecadstdio still forces
+a codec for a target that genuinely needs one."
+  (declare (ignore variant))
   (let ((requested (alfe.cli:resolved-console-encoding cli-options)))
-    (cond
-      ((eq variant :batch)
-       (when (and (not (eq requested :auto))
-                  (not (eql (clautolisp.autolisp-cli:encoding-keyword requested)
-                            *accoreconsole-console-encoding*)))
-         (log-warn "backend AUTOCAD: accoreconsole console I/O is fixed at ~
-UTF-16LE by the product; ignoring the requested console encoding ~S."
-                   requested))
-       *accoreconsole-console-encoding*)
-      (t requested))))
+    (if (eq requested :auto)
+        :auto
+        (clautolisp.autolisp-cli:encoding-keyword requested))))
 
 (defun autocad-console-external-format (&optional cli-options)
   "The external-format for reading accoreconsole's own stdout/stderr PIPE
