@@ -85,7 +85,8 @@
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
   :depends-on ("autolisp-front-end/core"
-               "autolisp-front-end/file-protocol")
+               "autolisp-front-end/file-protocol"
+               "babel")                 ; codepage->UTF-8 transcode of -Esource -l sources
   :serial t
   :components
   ((:file "source/backend-cad-common")

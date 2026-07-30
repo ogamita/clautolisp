@@ -118,3 +118,32 @@ the file-decode path.
 
 Related: cad-load-encoding-macos.issue (the encoding-flag part, now
 resolved by -Esource/-Efile).
+
+
+Resolution (alfe 1.7.8, branch fix-cad-chr-source-encoding — VERIFIED on real BricsCAD V26/macOS)
+------------------------------------------------------------------------------------------------
+
+Confirmed NOT a chr bug: byte-dumped on real BricsCAD, (chr 233)=é (C3 A9,
+correct); the "loaded é" was actually È (C3 88) because the cp1252 source byte
+0xE9 was decoded with the host SYSCODEPAGE (macOS = MAC_ROMAN), not cp1252.
+-Esource was ignored for the CAD bridge: (load) has NO encoding argument (BOM or
+read-only SYSCODEPAGE), and ccs= is open-only. So a raw cp1252 file cannot be
+native-loaded on macOS without converting it first.
+
+Fix: alfe now TRANSCODES a -Esource codepage source to UTF-8-with-BOM before the
+CAD loads it. When the -l action carries a -Esource encoding that is a codepage
+(not nil/:auto/utf-8/utf-16), stage-source-as-utf8-bom (backend-cad-common.lisp)
+decodes the file with BABEL (uniform codec set on SBCL and CCL) and writes a
+UTF-8+BOM copy into the workdir; (load) is issued on that copy. BricsCAD/AutoCAD
+(load) detects the BOM and decodes UTF-8 on every platform, so chr/read/strcat
+and the file path finally agree.
+
+Verified on real BricsCAD V26 / macOS:
+  se.lsp = one raw cp1252 byte 0xE9 ; alfe --bricscad -Esource Windows-1252 -l se.lsp
+  before: SRC=[È] C3 88, ASCII 200, EQ=nil
+  after:  SRC=[é] C3 A9, ASCII 233, EQ=T   <-- (= src-e (chr 233)) now holds
+
+babel added as an alfe dependency (backend-cad-common). SBCL 412/412. See
+autolisp-spec-load-open-encoding-docs.issue for the documented vendor rules.
+Refinement not needed for correctness: skip the copy when -Esource already
+equals the host SYSCODEPAGE (the raw file would load right too).
