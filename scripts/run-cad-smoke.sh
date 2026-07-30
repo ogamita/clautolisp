@@ -48,6 +48,25 @@ bs_lsp="$root/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp"
 # macOS ships bash 3.2, where "${arr[@]}" on an EMPTY array under `set -u`
 # aborts ("unbound variable"). Build the optional --dwg args so the expansion
 # is safe whether or not a drawing was given (the ${a[@]+"${a[@]}"} idiom).
+# Diagnostic: on macOS, accoreconsole batch needs a drawing/template but the
+# backend's template discovery only looks next to the (deeply-nested) binary.
+# List any .dwt the AutoCAD install ships so we learn the real macOS path, and
+# auto-supply the first as --dwg when the caller gave none, so the accoreconsole
+# smoke can get past [NO-DWG] and actually evaluate (does the unlicensed engine
+# run?). Bake the discovered path into the backend afterwards.
+if [ -z "$dwg" ] && { [ "$cad" = "accoreconsole" ] || [ "$cad" = "autocad" ] || [ "$cad" = "acad" ]; }; then
+  echo "==== SMOKE template-scan (.dwt under /Applications/Autodesk) ===="
+  found_dwt="$(find /Applications/Autodesk -iname '*.dwt' 2>/dev/null | sort | tee "$out_dir/dwt-candidates.txt" | head -1)"
+  find /Applications/Autodesk -iname '*.dwt' 2>/dev/null | sort | head -8
+  if [ -n "$found_dwt" ]; then
+    dwg="$found_dwt"
+    echo "auto-selected template: $dwg"
+  else
+    echo "no .dwt template found under /Applications/Autodesk"
+  fi
+  echo
+fi
+
 dwg_args=()
 [ -n "$dwg" ] && dwg_args=(--dwg "$dwg")
 
