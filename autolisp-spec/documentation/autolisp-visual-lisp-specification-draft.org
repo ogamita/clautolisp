@@ -7095,6 +7095,45 @@ with provenance lives in the alfe integration notes.
   LISPSYS) axis; the clautolisp front-end forwards an explicit ~-Esource~
   into the CAD's per-open spelling where the engine supports it.
 
+*** Vendor-documented ~load~ / ~open~ encoding rules (normative reference)
+
+These are the concrete, version-qualified rules the vendors publish; the
+whole macOS cp1252 problem (a source file's ~(chr N)~ diverging from the same
+character read from disk) follows from them.
+
+- ~load~ — *no encoding argument*. Signature ~(load lspfile [failure-expr])~;
+  extension search ~name.des~ then ~name.lsp~ when none is given. Since
+  BricsCAD V20 (and AutoCAD 2021 under ~LISPSYS~ 1/2) ~load~ also reads
+  *Unicode* Lisp files stored as **UTF-8 (Little-Endian)** or **UTF-16
+  (Little-Endian)** — but the **Byte-Order-Mark (BOM) is mandatory**: a UTF-8
+  file *without* a BOM may fail. With no BOM the file is decoded with the host
+  ~SYSCODEPAGE~, which is *read-only* (e.g. ~MAC_ROMAN~ on macOS,
+  ~ansi_1252~ on French Windows). Consequence: a raw single-byte-codepage
+  (e.g. cp1252) source *cannot be portably native-loaded* — on macOS
+  ~SYSCODEPAGE = MAC_ROMAN~ mis-reads byte ~0xE9~ as ~È~ (U+00C8) instead of
+  ~é~ (U+00E9).
+- ~open~ — *optional encoding argument* (AutoCAD 2021, BricsCAD V21 and
+  higher; pre-2021 ~open~ has none). Signature
+  ~(open fileName openMode [encoding])~; modes ~"r"~ ~"w"~ ~"a"~ plus binary
+  ~"rb"~ ~"wb"~ ~"ab"~. The documented ~encoding~ values are **~"utf8"~**,
+  **~"utf8-bom"~**, **~"utf16-bom"~** — "UTF-8 without BOM can not be
+  distinguished from normal ANSI". (BricsCAD additionally accepts a
+  ~"MODE,ccs=ENC"~ mode spelling for ~open~; ~ccs=~ is an ~open~-only knob and
+  has *no* ~load~ equivalent.)
+- *Canonical-representation contract (normative)* — whatever the file
+  encoding, a decoded non-ASCII character MUST satisfy
+  ~(= (chr N) <same char decoded from a file>)~: one canonical internal
+  representation per character. clautolisp already guarantees this; BricsCAD's
+  native ~chr~ is correct (~(chr 233)~ = é) but a *file* char decoded with the
+  wrong codec is not, so the two diverge — a front-end/host contract, not a
+  ~chr~ bug. See ~issues/open/cad-chr-vs-loaded-encoding.issue~.
+- *alfe consequence* — because ~load~ takes no encoding and ~SYSCODEPAGE~ is
+  not settable, a ~-Esource ENC~ whose ~ENC~ is neither the host
+  ~SYSCODEPAGE~ nor a BOM'd UTF-8/UTF-16 must be **converted before the CAD
+  loads it**: alfe decodes the source with ~ENC~ and stages a
+  **UTF-8-with-BOM** copy, which every platform's ~load~ detects and decodes
+  correctly.
+
 *** Cross-references
 - Special Form Entry: LOAD (chapter 11) — uses the dialect's source-encoding default.
 - Function Entry: OPEN (chapter 11) — uses the dialect's file-encoding default when its third argument is omitted.
