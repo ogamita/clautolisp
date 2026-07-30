@@ -45,6 +45,7 @@
         "tests/special-forms/function.lsp"
         "tests/special-forms/defun.lsp"
         "tests/special-forms/defun-q.lsp"
+        "tests/special-forms/dynamic-scope.lsp"
         ;; equality and predicate
         "tests/equality/eq.lsp"
         "tests/equality/equal.lsp"

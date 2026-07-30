@@ -71,3 +71,73 @@ To do:
   - Either way: the expectations path prints "unknown.lsp" because
     the descriptor's version field is unknown under --no-init; check
     whether that fallback is intended.
+
+===========================================================================
+RESOLUTION (2026-07-30) — misdiagnosis confirmed; engine exonerated.
+===========================================================================
+
+Root cause PINNED by reproduction on the pre-workaround harness
+(parent of a2a0c21) with clautolisp 1.7.x SBCL. It is NOT a
+dynamic-binding bug and NOT an engine bug. It is the harness's
+Step-2 `or`-pattern relying on Common-Lisp `or`-value semantics that
+AutoLISP does not have.
+
+The old Step-2 was:
+
+  (setq results
+        (or (autolisp-test--guarded "apply-expectations"
+              (list 'lambda nil
+                    (list 'autolisp-test-apply-expectations 'results 'overlay)))
+            results))
+
+Instrumented reproduction (faithful stand-ins, overlay = nil from the
+missing-expectations path):
+
+  [apply] results type=LIST overlay type=nil
+  [apply] returning type=LIST
+  [guard apply-expectations] catcher type=LIST val=(((NAME . t1)))
+  results-after type = SYM            ; <- T
+
+apply-expectations returned a proper LIST; --guarded returned that
+LIST; yet `(or LIST results)` evaluated to T. Because in AutoLISP
+`or` and `and` return T / nil ONLY — never the first/last truthy
+value the way Common Lisp does:
+
+  (or (list 1 2) 'fb)  =>  T          ; clautolisp, AutoCAD, BricsCAD
+  (or nil (list 3 4))  =>  T
+  (and 1 2)            =>  T
+
+So every non-empty `results` made the `or` yield T, which then flowed
+into matrix / write-sexp-report / print-recap:
+  "FOREACH ... got T", "LENGTH ... got T".
+
+clautolisp implements the AutoLISP boolean-or/and convention
+correctly; the fault was CL-habituated harness code. The probes 1-2
+in this ticket were right that dynamic scoping is intact — the
+"dynamic-binding bug" label was simply wrong. The "no expectations
+file ... unknown.lsp" line printed just before the crash was
+coincident (a benign missing-overlay diagnostic), not causal.
+
+Fixes / hardening (all landed):
+  - Step 2 now `(if (listp guard-tmp) (setq results guard-tmp))`
+    (a2a0c21) — a non-list return can no longer overwrite `results`.
+  - --guarded-apply passes VALUES, not the 'results/'overlay symbols.
+  - autolisp-test-apply-expectations already returns `(reverse acc)`
+    (a list) on every path; no remaining value-reliant (setq X (or/and))
+    exists anywhere in autolisp-test/harness/*.lsp (swept).
+  - AutoLISP boolean or/and is already pinned by
+    tests/special-forms/{or,and}.lsp and
+    tests/divergent/and-or-return-value.lsp.
+  - Added tests/special-forms/dynamic-scope.lsp (3 strict tests, all
+    PASS) pinning the wrongly-blamed semantic: a callee sees a
+    caller's `/`-local, the binding unwinds when the caller returns,
+    and the innermost dynamic binding wins. Registered in the loader
+    manifest. Corpus 3924 -> 3927, Pass +3, Fail unchanged (218).
+  - The `unknown` version fallback (detect-version: *clautolisp-version*
+    -> ACADVER -> "unknown") is intended and benign; it only picks
+    "unknown" when neither source is bound, and a missing overlay file
+    adds no expectations. Left as-is.
+
+Verdict: engine correct, label was a misdiagnosis, workaround is
+simply better harness code, and the semantics are now regression-pinned.
+CLOSED.
