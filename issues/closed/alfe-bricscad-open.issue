@@ -9307,3 +9307,16 @@ tes/"
 alfe[verbose]: cli: plan finished status=:SUCCESS exit=0 elapsed=17.91s
 
 
+
+
+Resolution (verified already fixed at HEAD — alfe 1.7.4, cad-triage)
+-------------------------------------------------------------------
+
+Not reproducing. The variadic and 1-arg princ/prin1/print shadows honour the
+optional file-descriptor argument: (princ obj f) / (prin1 obj f) route through
+autolisp-write-string-to-file to the open file F, NOT protocol stdout.
+
+Verified on real BricsCAD V26 / macOS: (open path "w") then (prin1 "NAME" f)
+(princ " " f) (prin1 42 f), reopened and read back "NAME" 42 from the FILE
+(triage line OPENFILE=["NAME" 42] OPEN-OK) — nothing leaked to stdout. Closed
+by verification, no code change needed.
