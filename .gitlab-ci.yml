@@ -722,6 +722,22 @@ encoding:experiment:autocad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
 
+# TEMPORARY — diagnose autocad-no-rest-output-capture on real AutoCAD.
+# REMOVE with scripts/run-cad-diag-autocad.ps1.
+debug:cad:diag-autocad:windows:
+  stage: test
+  tags: [windows, amd64, shell]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+  interruptible: true
+  rules:
+    - when: on_success
+      allow_failure: true
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-cad-diag-autocad.ps1 -Dwg $env:PROBE_DWG
+
 # ============================================================================
 # Benchmarks: run the AutoLISP suite on each target and publish a comparison
 # table (GitLab Pages). Manual per target (the macOS/Windows runners are
