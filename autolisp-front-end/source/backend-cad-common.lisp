@@ -273,6 +273,62 @@ list is just a UX convenience so users can type the familiar tokens
 and have the loop terminate cleanly without waiting for the runtime
 round-trip.")
 
+;;; --- G3b: transcode a codepage -l source to UTF-8+BOM for the CAD --------
+;;;
+;;; A CAD host cannot load a raw single-byte-codepage source portably: (load)
+;;; has NO encoding argument -- it detects a UTF-8/UTF-16 BOM, else decodes with
+;;; the READ-ONLY SYSCODEPAGE (macOS = MAC_ROMAN, Windows = its ANSI cp). So a
+;;; cp1252 é (0xE9) native-loaded on macOS BricsCAD becomes È, and (chr 233) is
+;;; no longer = the file char (cad-chr-vs-loaded-encoding). When -Esource names
+;;; a codepage, alfe decodes the file with it and stages a UTF-8-WITH-BOM copy,
+;;; which every platform's (load) detects (via the BOM) and decodes correctly.
+;;; Unicode / unset encodings pass through unchanged. (A refinement, not needed
+;;; for correctness: skip the copy when -Esource already equals the host
+;;; SYSCODEPAGE -- the raw file would then load right too.)
+
+(defun %source-encoding->babel (encoding)
+  "Map a -Esource ENCODING designator to a BABEL encoding keyword, or NIL when it
+is nil / :auto / a Unicode codec the CAD reads via its own BOM (no transcode
+needed). babel gives the SAME codec set on SBCL and CCL, so every named codepage
+is handled, not just the built-in cp1252 cascade."
+  (let ((kw (ignore-errors (clautolisp.autolisp-cli:encoding-keyword encoding))))
+    (case kw
+      ((nil :auto :utf-8 :utf8 :utf-16 :utf-16le :utf-16be :utf16le :utf16be) nil)
+      ;; babel spells the Windows codepages :cp125X, not :windows-125X.
+      (:windows-1250 :cp1250) (:windows-1251 :cp1251) (:windows-1252 :cp1252)
+      (:windows-1253 :cp1253) (:windows-1254 :cp1254) (:windows-1255 :cp1255)
+      (:windows-1256 :cp1256) (:windows-1257 :cp1257) (:windows-1258 :cp1258)
+      (t kw))))                          ; :iso-8859-*, :koi8-*, :cp125X, … pass through
+
+(defun %read-file-octets (path)
+  (with-open-file (in path :direction :input :element-type '(unsigned-byte 8))
+    (let ((v (make-array (file-length in) :element-type '(unsigned-byte 8))))
+      (read-sequence v in)
+      v)))
+
+(defun stage-source-as-utf8-bom (protocol-session path encoding)
+  "If ENCODING is a non-Unicode codepage, decode PATH with babel and write a
+UTF-8-with-BOM copy into the workdir, returning that copy's path for the CAD to
+(load); otherwise return PATH unchanged."
+  (let ((babel-enc (%source-encoding->babel encoding)))
+    (if (null babel-enc)
+      path
+      (let* ((text (babel:octets-to-string (%read-file-octets path)
+                                           :encoding babel-enc :errorp nil))
+             (staged (merge-pathnames
+                      (format nil "esrc-~A" (file-namestring (pathname path)))
+                      (uiop:ensure-directory-pathname
+                       (alfe.protocol.file:protocol-session-workdir
+                        protocol-session)))))
+        (with-open-file (out staged :direction :output :external-format :utf-8
+                                    :if-exists :supersede :if-does-not-exist :create)
+          (write-char (code-char #xFEFF) out)   ; UTF-8 BOM -> EF BB BF
+          (write-string text out))
+        (log-debug "cad-common: staged UTF-8+BOM ~A -> ~A (from ~A source)"
+                   (file-namestring (pathname path))
+                   (file-namestring staged) encoding)
+        (namestring (truename staged))))))
+
 (defun drive-protocol-actions (protocol-session plan
                                &key
                                  (request-timeout 30)
@@ -549,8 +605,11 @@ shows the error on stderr and the prompt comes back."
                    (alfe.backend:action-payload action))
         (case (alfe.backend:action-kind action)
           (:load
-           (let ((path (getf (alfe.backend:action-payload action) :path)))
-             (send-action (format nil "(load ~S)" path))))
+           (let* ((payload (alfe.backend:action-payload action))
+                  (path (getf payload :path))
+                  (load-path (stage-source-as-utf8-bom
+                              protocol-session path (getf payload :encoding))))
+             (send-action (format nil "(load ~S)" load-path))))
           (:eval
            (send-action (alfe.backend:action-payload action)))
           (:main

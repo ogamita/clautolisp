@@ -461,6 +461,14 @@ file or COM), and forwards the workload.
   the runtime writes those files in UTF-8/ASCII, so forcing UTF-16LE had
   turned captured output into mojibake (an explicit ~-Econsole~ /
   ~-Ecadstdio~ still forces a codec; the console *pipe* stays UTF-16LE).
+- ~-Esource ENC~ on a CAD backend now decodes a codepage source and
+  hands the CAD a UTF-8-with-BOM copy to ~(load)~. A CAD ~(load)~ has no
+  encoding argument — it reads a BOM'd Unicode file, else the read-only
+  host ~SYSCODEPAGE~ (macOS = Mac Roman) — so a raw cp1252 ~.lsp~ used to
+  load with the wrong characters (a loaded ~é~ came back as ~È~, and
+  ~(= (chr 233) loaded-é)~ was ~nil~). alfe now transcodes (via babel)
+  and stages UTF-8+BOM, so the loaded character equals ~(chr N)~ on every
+  platform. Confirmed on real BricsCAD V26.
 - ~--echo~ — a test backend that logs without executing.
 - On MS-Windows, ~--bricscad~ and ~--autocad~ now discover installed
   BricsCAD / AutoCAD binaries from the standard ~Program Files~ roots
