@@ -16,16 +16,22 @@ param(
 $ErrorActionPreference = "Continue"
 
 $root = if ($env:CI_PROJECT_DIR) { $env:CI_PROJECT_DIR } else { (Get-Location).Path }
-$alfe = Join-Path $root "autolisp-front-end/tools/alfe/bin/alfe-sbcl.exe"
-if (-not (Test-Path $alfe)) {
-  # Some runners build without the .exe suffix on the wrapper; fall back.
-  $alt = Join-Path $root "autolisp-front-end/tools/alfe/bin/alfe-sbcl"
-  if (Test-Path $alt) { $alfe = $alt }
-}
 $outDir = Join-Path $root ("dist/cad-debug/{0}-Windows" -f $Cad)
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-if (-not (Test-Path $alfe)) {
+# The Makefile saves the SBCL image as `alfe-sbcl` with NO extension. PowerShell
+# only runs external programs whose extension is in $PATHEXT, so calling the
+# extension-less file with `&` in a pipeline fails (CantActivateDocumentInPipeline
+# — Windows tries to "open the document" instead). Prefer an existing .exe, else
+# copy the extension-less PE to one. Mirrors run-encoding-experiment.ps1 /
+# run-vendor-probes.ps1.
+$alfe = Join-Path $root "autolisp-front-end/tools/alfe/bin/alfe-sbcl"
+if (Test-Path "$alfe.exe") {
+  $alfe = "$alfe.exe"
+} elseif (Test-Path $alfe) {
+  Copy-Item -Force $alfe "$alfe.exe"
+  $alfe = "$alfe.exe"
+} else {
   Write-Error "alfe binary not found at $alfe (build: make -C autolisp-front-end build-alfe-sbcl)"
   exit 2
 }

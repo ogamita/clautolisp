@@ -1269,6 +1269,14 @@ Returns the path of the emitted file."
   (autolisp-write-line *AUTOLISP_PROTOCOL_STDOUTFILE*~%~
                        (autolisp-stdout-text obj))~%~
   obj)~%~
+;; alfe-princ-prin1-spurious-newlines: princ/prin1 must NOT terminate a~%~
+;; line -- only terpri / print's framing / an explicit \\n breaks it. This~%~
+;; RAW emitter appends TEXT to the byte-drained protocol stdout with no~%~
+;; trailing newline (autolisp-write-string-to-file is char-wise, no \\n).~%~
+(defun autolisp-emit-user-str (text / f)~%~
+  (setq f (open *AUTOLISP_PROTOCOL_STDOUTFILE* \"a\"))~%~
+  (if f (progn (autolisp-write-string-to-file text f) (close f)))~%~
+  text)~%~
 (defun autolisp-log-err (text)~%~
   (autolisp-write-line *AUTOLISP_PROTOCOL_STDERRFILE* text))~%~
 (setq *AUTOLISP_CAPTURE_STDOUT* T)~%~
@@ -1403,7 +1411,7 @@ Returns the path of the emitted file."
           (autolisp-write-string-to-file (autolisp-str (car args)) (cadr args))~%~
           (car args))~%~
         (T~%~
-          (autolisp-emit-user-line (autolisp-str (car args)))~%~
+          (autolisp-emit-user-str (autolisp-str (car args)))~%~
           (car args))))~%~
     ;; (print obj) writes a leading newline before obj; (print obj~%~
     ;; filedes) writes the documented leading-newline + trailing-space~%~
@@ -1418,17 +1426,19 @@ Returns the path of the emitted file."
             (strcat \"\\n\" (autolisp-stdout-text (car args)) \" \") (cadr args))~%~
           (car args))~%~
         (T~%~
-          (autolisp-princ-newline)~%~
-          (autolisp-emit-user-out (car args)))))~%~
+          (autolisp-emit-user-str~%~
+            (strcat \"\\n\" (autolisp-stdout-text (car args)) \" \"))~%~
+          (car args))))~%~
     (defun prin1 (&rest args)~%~
       (cond~%~
         ((null args)~%~
-          (autolisp-emit-user-out nil))~%~
+          (autolisp-emit-user-str (autolisp-stdout-text nil)))~%~
         ((cadr args)~%~
           (autolisp-write-string-to-file (autolisp-stdout-text (car args)) (cadr args))~%~
           (car args))~%~
         (T~%~
-          (autolisp-emit-user-out (car args)))))~%~
+          (autolisp-emit-user-str (autolisp-stdout-text (car args)))~%~
+          (car args))))~%~
     (defun prompt (&rest args)~%~
       (cond~%~
         ((null args) nil)~%~
