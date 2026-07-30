@@ -45,6 +45,9 @@ bs_lsp="$root/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp"
 [ -f "$rt_lsp" ] && export ALFE_RUNTIME_LSP="$rt_lsp"   || echo "WARN: runtime lsp not found at $rt_lsp" >&2
 [ -f "$bs_lsp" ] && export ALFE_BOOTSTRAP_LSP="$bs_lsp" || echo "WARN: bootstrap lsp not found at $bs_lsp" >&2
 
+# macOS ships bash 3.2, where "${arr[@]}" on an EMPTY array under `set -u`
+# aborts ("unbound variable"). Build the optional --dwg args so the expansion
+# is safe whether or not a drawing was given (the ${a[@]+"${a[@]}"} idiom).
 dwg_args=()
 [ -n "$dwg" ] && dwg_args=(--dwg "$dwg")
 
@@ -60,14 +63,13 @@ echo "==== SMOKE discover (--list-cad-programs) ===="
 echo
 
 # Helper: run one eval smoke, capture log + exit code, never abort the script.
+# The script uses `set -u` (not `-e`), so a non-zero alfe just continues.
 smoke() {
   local label="$1"; shift
   echo "==== SMOKE $label  (--cad $cad --mode $mode) ===="
-  set +e
-  "$alfe" -norc --cad "$cad" --mode "$mode" "${dwg_args[@]}" \
+  "$alfe" -norc --cad "$cad" --mode "$mode" ${dwg_args[@]+"${dwg_args[@]}"} \
           --verbose --timeout 120 "$@" 2>&1 | tee "$out_dir/$label.log"
   local rc=${PIPESTATUS[0]}
-  set -e 2>/dev/null || true
   echo "---- $label exit: $rc ----"
   echo
 }
