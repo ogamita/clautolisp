@@ -765,10 +765,18 @@ the :launcher keyword. The session ends up in :ready state."
                          :bootstrap-phase :full
                          :interactive-p nil
                          :mode :batch
+                         ;; --timeout 7 must reach the session so eval-plan can
+                         ;; hand it to drive-protocol-actions
+                         ;; (alfe-request-timeout-aborts-long-eval): before the
+                         ;; fix cli-options-timeout dead-ended in the CLI.
+                         :cli-options (alfe.cli:make-cli-options :timeout 7)
                          :launcher launcher
                          :wait-for-ready t
                          :ready-timeout 2)))
           (is (eq :ready (alfe.backend:session-state session)))
+          ;; The parsed --timeout is stored on the session (the plumb the bug
+          ;; was missing); eval-plan reads it back out below.
+          (is (eql 7 (alfe.backend:session-request-timeout session)))
           ;; Now run a tiny plan.
           (let ((*standard-output* (make-string-output-stream))
                 (*error-output*    (make-string-output-stream)))

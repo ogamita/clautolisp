@@ -290,6 +290,102 @@ runtime and not known a priori."
             (is (string= "READY 42" last))))
       (delete-workdir workdir))))
 
+;;; --- RUNNING-aware request timeout (alfe-request-timeout-aborts-long-eval) ---
+;;;
+;;; A request-timeout should measure UNRESPONSIVENESS, not the duration of
+;;; a legitimately long (eval ...). These pin the four corners of the
+;;; RUNNING-PREFIX / ALIVE-P contract on WAIT-FOR-STATUS-PREFIX without
+;;; needing a live CAD: the status file is driven by hand and ALIVE-P is a
+;;; plain thunk standing in for UIOP:PROCESS-ALIVE-P.
+
+(defun %publish-status (session text)
+  (alfe.protocol.file:write-atomic-file
+   (alfe.protocol.file:protocol-session-status-path session)
+   text))
+
+(test protocol-wait-prefix-running-aware-outlasts-deadline
+  "Once RUNNING N is observed and the process is alive, the wall-clock
+deadline is extended: a long eval that publishes DONE well after TIMEOUT
+still matches. Proves the deadline no longer kills a live computation."
+  (let ((workdir (make-test-workdir "wait-running-extend")))
+    (unwind-protect
+        (let* ((session (alfe.protocol.file:init-session workdir))
+               (ticks 0)
+               ;; Always "alive"; publishes DONE 1 only after several polls,
+               ;; i.e. long after the 0.2 s deadline would otherwise fire.
+               (alive-p (lambda ()
+                          (incf ticks)
+                          (when (= ticks 5)
+                            (%publish-status session "DONE 1 OK"))
+                          t)))
+          (%publish-status session "RUNNING 1")
+          (multiple-value-bind (ok elapsed last)
+              (alfe.protocol.file:wait-for-status-prefix
+               session "DONE 1"
+               :timeout 0.2 :running-prefix "RUNNING 1" :alive-p alive-p)
+            (is (not (null ok)))
+            (is (alfe.protocol.file:starts-with-p last "DONE 1"))
+            ;; The match landed AFTER the nominal deadline — it was extended.
+            (is (> elapsed 0.2))))
+      (delete-workdir workdir))))
+
+(test protocol-wait-prefix-running-aware-aborts-on-dead-process
+  "While waiting on a RUNNING eval, a dead process aborts promptly — the
+helper returns NIL well before the (long) nominal timeout, rather than
+hanging until it elapses."
+  (let ((workdir (make-test-workdir "wait-running-dead")))
+    (unwind-protect
+        (let* ((session (alfe.protocol.file:init-session workdir))
+               (polls 0)
+               ;; Alive for the first few polls, then the engine dies.
+               (alive-p (lambda () (incf polls) (<= polls 3))))
+          (%publish-status session "RUNNING 1")     ; never advances to DONE
+          (multiple-value-bind (ok elapsed last)
+              (alfe.protocol.file:wait-for-status-prefix
+               session "DONE 1"
+               :timeout 30 :running-prefix "RUNNING 1" :alive-p alive-p)
+            (is (null ok))
+            (is (string= "RUNNING 1" last))
+            ;; Aborted on death, not on the 30 s wall-clock.
+            (is (< elapsed 5))))
+      (delete-workdir workdir))))
+
+(test protocol-wait-prefix-running-aware-still-bounds-handshake
+  "The extension only applies AFTER RUNNING N is seen. If the engine
+never acknowledges (stuck at READY), the deadline still fires even with a
+live process — the handshake window stays bounded."
+  (let ((workdir (make-test-workdir "wait-running-handshake")))
+    (unwind-protect
+        (let* ((session (alfe.protocol.file:init-session workdir))
+               (alive-p (lambda () t)))          ; alive, but never RUNNING
+          (%publish-status session "READY 0")
+          (multiple-value-bind (ok elapsed last)
+              (alfe.protocol.file:wait-for-status-prefix
+               session "DONE 1"
+               :timeout 0.3 :running-prefix "RUNNING 1" :alive-p alive-p)
+            (is (null ok))
+            (is (string= "READY 0" last))
+            (is (>= elapsed 0.3))
+            (is (< elapsed 3))))              ; timed out, did NOT extend
+      (delete-workdir workdir))))
+
+(test protocol-wait-prefix-without-keys-is-a-hard-cap
+  "With neither RUNNING-PREFIX nor ALIVE-P (the pre-existing signature, and
+the path an explicit --timeout takes), a RUNNING status does NOT extend
+anything — the wall-clock cap fires as before."
+  (let ((workdir (make-test-workdir "wait-hard-cap")))
+    (unwind-protect
+        (let ((session (alfe.protocol.file:init-session workdir)))
+          (%publish-status session "RUNNING 1")   ; running, but no keep-alive
+          (multiple-value-bind (ok elapsed last)
+              (alfe.protocol.file:wait-for-status-prefix
+               session "DONE 1" :timeout 0.3)
+            (is (null ok))
+            (is (string= "RUNNING 1" last))
+            (is (>= elapsed 0.3))
+            (is (< elapsed 3))))
+      (delete-workdir workdir))))
+
 ;;; --- output draining -----------------------------------------------
 
 (test protocol-drain-stdout-incremental

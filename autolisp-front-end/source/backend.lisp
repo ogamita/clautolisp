@@ -49,6 +49,7 @@
            #:session-dialect
            #:session-state
            #:session-handle
+           #:session-request-timeout
            #:session-state-set
            ;; canonical session states
            #:+session-states+
@@ -233,6 +234,13 @@ The state slot follows the +SESSION-STATES+ vocabulary."
   (backend  nil)
   (workdir  nil)
   (dialect  nil)
+  ;; REQUEST-TIMEOUT: the per-request wait budget the user asked for via
+  ;; --timeout / $AUTOLISP_WAIT_SECS, or NIL when unspecified (backends then
+  ;; fall back to their built-in default). CAD backends thread this into
+  ;; DRIVE-PROTOCOL-ACTIONS so `alfe --timeout N' actually bounds (or, at the
+  ;; default, keeps alive) a long eval — see
+  ;; alfe-request-timeout-aborts-long-eval.
+  (request-timeout nil)
   (state    :booting :type (member :booting :ready :running :done
                                    :stopping :stopped :failed))
   ;; HANDLE is opaque; backends store their engine handle here when

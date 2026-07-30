@@ -40,6 +40,7 @@
                 #:session-workdir
                 #:session-dialect
                 #:session-state
+                #:session-request-timeout
                 #:session-state-set
                 #:register-backend)
   (:import-from #:alfe.error
@@ -583,6 +584,11 @@ pipe read, so the default stays the robust total decoder (G2)."
   (declare (ignore dialect host mock-input load-encoding io-encoding))
   (log-verbose "backend AUTOCAD: starting engine (mode ~A)" mode)
   (log-debug "backend AUTOCAD: workdir = ~A" workdir)
+  ;; Parity with the BricsCAD backend: let --timeout / $AUTOLISP_WAIT_SECS
+  ;; raise the READY timeout too, so a cold accoreconsole launch is not
+  ;; reported as a spurious READY-TIMEOUT while it is still booting.
+  (when (and cli-options (alfe.cli:cli-options-timeout cli-options))
+    (setf ready-timeout (alfe.cli:cli-options-timeout cli-options)))
   (log-debug "backend AUTOCAD: dwg = ~A; ready-timeout = ~A s; wait-for-ready = ~A"
              dwg ready-timeout wait-for-ready)
   (handler-case
@@ -652,6 +658,9 @@ pipe read, so the default stays the robust total decoder (G2)."
                (session (%make-autocad-session
                          :backend backend
                          :workdir workdir
+                         :request-timeout (and cli-options
+                                               (alfe.cli:cli-options-timeout
+                                                cli-options))
                          :protocol-session protocol
                          :variant variant))
                (_ (log-verbose "backend AUTOCAD: launching: ~{~A~^ ~}" argv))
@@ -720,8 +729,16 @@ pipe read, so the default stays the robust total decoder (G2)."
 
 (defmethod eval-plan ((session autocad-session) plan)
   (session-state-set session :running)
-  (let ((result (drive-protocol-actions
-                 (autocad-session-protocol-session session) plan)))
+  (let* ((explicit-timeout (session-request-timeout session))
+         (result (drive-protocol-actions
+                  (autocad-session-protocol-session session) plan
+                  ;; See the BricsCAD eval-plan: --timeout bounds the DONE
+                  ;; wait (hard cap when explicit), else a RUNNING eval is
+                  ;; kept alive while accoreconsole lives
+                  ;; (alfe-request-timeout-aborts-long-eval).
+                  :request-timeout (or explicit-timeout 30)
+                  :keep-alive-while-running (null explicit-timeout)
+                  :process-info (autocad-session-process-info session))))
     (session-state-set session
                        (ecase (alfe.backend:eval-result-status result)
                          (:success :done)

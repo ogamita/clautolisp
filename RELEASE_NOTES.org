@@ -509,6 +509,18 @@ file or COM), and forwards the workload.
 - ~--mode auto~ (default), ~--mode batch~, ~--mode automation~.
   See § /Backend invocation/ for the file-protocol handshake.
 
+** Request timeout (alfe-user-manual § /Troubleshooting/)
+
+- ~--timeout~ / ~$AUTOLISP_WAIT_SECS~ now reaches the CAD backends'
+  per-request wait (previously parsed but ignored there). It is
+  *RUNNING-aware*: by default the timeout bounds only the
+  ~READY N~ → ~RUNNING N~ handshake, and once the engine acknowledges a
+  request and its process is alive a long ~(eval …)~ is kept running
+  rather than aborted on wall-clock; a dead engine still aborts
+  promptly. An explicit ~--timeout N~ is a hard cap that restricts as
+  well as extends (~--timeout 1~ aborts, ~--timeout 600~ grants ten
+  minutes).
+
 ** Diagnostics under ~--verbose~ / ~--debug~
 
 - Both flags now emit progressive diagnostics through every

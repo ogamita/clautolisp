@@ -394,6 +394,19 @@ Auto-detection of installed CADs has been removed. Set
 =$ALFE_BACKEND_OVERRIDE= in your shell init if you want a CAD
 backend by default.
 
+** A long =(eval …)= on a CAD backend is aborted after ~30 s
+
+By default the per-request timeout is *RUNNING-aware*: it bounds only
+the time until the engine acknowledges the request (=RUNNING N=). Once
+that acknowledgement is seen and the CAD process is alive, alfe keeps
+waiting — a legitimately long computation is not killed on wall-clock,
+and a dead engine still aborts promptly. If you still want a firm upper
+bound (or need to raise a slow-launch handshake window), pass
+=--timeout N= or set =$AUTOLISP_WAIT_SECS=N=; an explicit value is a
+*hard cap* — =--timeout 1= aborts a long eval, =--timeout 600= grants it
+ten minutes. (Before alfe 1.7.3 =--timeout= was parsed but ignored on
+the CAD backends, so a long eval was aborted at the fixed 30 s default.)
+
 * See also
 
 - =alfe(1)= — short man page summarising the same options.
