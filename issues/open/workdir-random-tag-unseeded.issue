@@ -1,0 +1,40 @@
+-*- mode:org -*-
+
+workdir-random-tag-unseeded — per-run workdir random tag is constant (RNG not seeded)
+=====================================================================================
+
+Found while triaging autocad-no-rest-output-capture (2026-07-30): every alfe run
+produces the SAME 6-char workdir tag. The AutoCAD workdirs across unrelated runs
+(and across months) were all alfe-autocad-<pid>-3q9m89:
+
+  this session:  C:/msys64/tmp/alfe-autocad-23784-3q9m89
+                 C:/msys64/tmp/alfe-autocad-10828-3q9m89
+  original tkt:  .../alfe-autocad-11664-3q9m89
+
+Only the PID varies; the "random" tag is constant "3q9m89".
+
+Cause
+-----
+
+autolisp-front-end/source/workdir.lisp random-tag uses (random (length alphabet))
+without seeding *random-state*. SBCL/CCL start from the same default random state
+each process, so the sequence -- and thus the tag -- is identical every run.
+
+Impact
+------
+
+Low but real: the tag adds NO uniqueness; make-fresh-workdir relies entirely on
+the PID for a distinct path. Two alfe processes that happen to share a PID (PID
+reuse across time, or different machines/containers) collide on the same workdir
+-> protocol files clobbered. Also makes workdir names non-diagnostic (can't tell
+runs apart by tag).
+
+Fix
+---
+
+Seed the random state once at startup, e.g.
+  (setf *random-state* (make-random-state t))
+in the workdir package load / make-fresh-workdir, or derive the tag from a
+higher-entropy source (get-internal-real-time XOR pid, a UUID, etc.). Add a test
+that two make-fresh-workdir calls in one image differ (they already do via a
+counter? -- verify) AND that the tag is not a fixed constant.
