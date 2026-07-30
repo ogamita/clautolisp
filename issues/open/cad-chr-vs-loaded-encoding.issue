@@ -57,3 +57,43 @@ canonical internal representation per character — as clautolisp does.
 
 Related: cad-load-encoding-macos.issue (the encoding-flag part, now
 resolved by -Esource/-Efile).
+
+
+Diagnosis (alfe 1.7.7, byte-level, on real BricsCAD V26 / macOS — cad-diag-chr)
+------------------------------------------------------------------------------
+
+NOT a (chr) bug and NOT a chr-vs-file representation mismatch. Byte dump of both
+strings (written to a file via (princ x fd), hex-dumped):
+
+  se.lsp bytes:  (setq src-e "<E9>")            <- one cp1252 byte 0xE9 = é
+  (chr 233)  ->  bytes C3 A9  = U+00E9 é  (ascii 233)   CORRECT
+  src-e      ->  bytes C3 88  = U+00C8 È  (ascii 200)   WRONG
+
+So (chr 233) is RIGHT (é, UTF-8 internally). The "loaded é" is actually È: the
+source byte 0xE9 was decoded as **Mac Roman** (0xE9 -> È in Mac Roman, the macOS
+BricsCAD OS default), NOT as cp1252 (which -Esource Windows-1252 requested). The
+two strings differ because src-e is the WRONG character, not because chr and the
+file disagree on é's representation.
+
+Root cause: -Esource is IGNORED for CAD `-l` loads. backend-bricscad.lisp's
+start-engine `(declare (ignore ... load-encoding ...))`, and the CAD-common
+:load action just sends `(load "<original-path>")` — so the CAD reads the raw
+file with its OWN default decode (macOS BricsCAD = Mac Roman), never the
+-Esource codec. (The earlier "-Esource -l now decodes cp1252 correctly" applied
+to the in-process clautolisp backend, not the CAD bridge.) BricsCAD's internal
+string model IS UTF-8 (chr 233 = C3 A9), so once the source is read with the
+right codec, chr/read/strcat and the file path agree — as clautolisp does.
+
+Fix direction (needs the BricsCAD load-decode model confirmed):
+alfe must make the CAD read the -l source with the -Esource codec. Options:
+  1. TRANSCODE + stage: decode the file with -Esource, write a copy the CAD
+     decodes correctly, and (load) THAT. Target encoding depends on how
+     BricsCAD's (load) chooses its codec:
+       - if it honours a UTF-8 BOM -> stage UTF-8-with-BOM (portable);
+       - if it uses SYSCODEPAGE/DWGCODEPAGE -> setvar the codepage + stage to
+         match, or stage to the CAD's OS-default codec (Mac Roman here) — but
+         that is OS/locale-dependent and brittle.
+  2. Pass an encoding to the CAD's own load (BricsCAD's `,ccs=` suffix / a
+     codepage) if one exists for LOAD (it exists for OPEN).
+Question for pjb: does BricsCAD's `(load "file")` on macOS honour a UTF-8 BOM,
+or a SYSCODEPAGE/DWGCODEPAGE setvar, so we can pick a reliable staged encoding?
