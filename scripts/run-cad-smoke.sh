@@ -59,8 +59,20 @@ if [ -z "$dwg" ] && { [ "$cad" = "accoreconsole" ] || [ "$cad" = "autocad" ] || 
   found_dwt="$(find /Applications/Autodesk -iname '*.dwt' 2>/dev/null | sort | tee "$out_dir/dwt-candidates.txt" | head -1)"
   find /Applications/Autodesk -iname '*.dwt' 2>/dev/null | sort | head -8
   if [ -n "$found_dwt" ]; then
-    dwg="$found_dwt"
-    echo "auto-selected template: $dwg"
+    # The bundle templates are READ-ONLY ("currently in use or is read-only"),
+    # which makes accoreconsole exit before READY. Copy to a writable temp and
+    # feed THAT, so we get past the read-only blocker and see whether the engine
+    # actually runs headless on macOS (or hits the Qt::AA_PluginApplication wall).
+    writable_dwg="$out_dir/seed.dwg"
+    if cp "$found_dwt" "$writable_dwg" 2>/dev/null; then
+      chmod u+w "$writable_dwg" 2>/dev/null || true
+      dwg="$writable_dwg"
+      echo "auto-selected template: $found_dwt"
+      echo "writable copy:          $dwg"
+    else
+      dwg="$found_dwt"
+      echo "auto-selected template (could not copy; using read-only): $dwg"
+    fi
   else
     echo "no .dwt template found under /Applications/Autodesk"
   fi
