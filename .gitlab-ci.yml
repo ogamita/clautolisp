@@ -723,6 +723,62 @@ encoding:experiment:autocad:windows:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
 
 # ============================================================================
+# TEMPORARY — CAD-runtime bug-cluster debugging (REMOVE when the cluster lands).
+#
+# Auto-running (on_success) smoke/diagnostic jobs that drive the REAL CAD
+# engines on the intermittent macOS/Windows workstation runners, so the
+# cluster fixes (princ/prin1 newlines, (load VAR) evaluation, large-form load)
+# can be developed and confirmed against live CAD without a manual trigger.
+# Also exercises two never-before-tried paths: --cad acad --mode batch on
+# Windows (real AutoCAD GUI batch, not just accoreconsole) and --cad
+# accoreconsole on macOS. allow_failure + interruptible: an offline or
+# unlicensed CAD never reddens the pipeline and a re-push cancels stale runs.
+# Delete this block and scripts/run-cad-smoke.{sh,ps1} when done.
+# ============================================================================
+.cad-debug:
+  stage: test
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  interruptible: true
+  rules:
+    - when: on_success
+      allow_failure: true
+  artifacts:
+    name: "cad-debug-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/cad-debug/]
+    expire_in: 7 days
+
+# Control: BricsCAD on macOS is the known-good CAD path — proves the smoke
+# harness itself works before we read anything into the new paths below.
+debug:cad:bricscad:macos:
+  extends: .cad-debug
+  tags: [macos, arm64, shell]
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-cad-smoke.sh --cad bricscad --mode batch
+
+# NEW: AutoCAD accoreconsole on macOS. Two AutoCADs are installed but
+# unlicensed; accoreconsole did not reject on launch, so we try a few evals.
+debug:cad:accoreconsole:macos:
+  extends: .cad-debug
+  tags: [macos, arm64, shell]
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-cad-smoke.sh --cad accoreconsole --mode batch
+
+# NEW: real AutoCAD GUI (acad) in --mode batch on Windows, vs the usual
+# accoreconsole batch path.
+debug:cad:acad:windows:
+  extends: .cad-debug
+  tags: [windows, amd64, shell]
+  variables:
+    PROBE_DWG: 'c:/gitlab-runner/dwg/empty.dwg'
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-cad-smoke.ps1 -Cad acad -Mode batch -Dwg $env:PROBE_DWG
+
+# ============================================================================
 # Benchmarks: run the AutoLISP suite on each target and publish a comparison
 # table (GitLab Pages). Manual per target (the macOS/Windows runners are
 # intermittent) -- run the ones whose runner is up, then `pages` aggregates
