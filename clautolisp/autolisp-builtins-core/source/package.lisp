@@ -65,6 +65,7 @@
                 #:set-autolisp-function-list-definition
                 #:set-autolisp-symbol-function
                 #:current-evaluation-dialect
+                #:emit-dotdot-path-portability-warning
                 #:current-evaluation-host
                 #:dispatch-autolisp-command
                 #:autolisp-ename

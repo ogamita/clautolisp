@@ -566,6 +566,7 @@ TRUSTEDPATHS to trust it."
                                (%coerce-encoding-designator encoding "LOAD")))
          (encoding-kw (and encoding-supplied-p
                            (%resolve-load-external-format encoding-string "LOAD"))))
+    (emit-dotdot-path-portability-warning value "LOAD")
     (when encoding-supplied-p
       (%dispatch-load-encoding-diagnostic encoding-string))
     (cond
@@ -2172,6 +2173,7 @@ Per-dialect dispatch matrix (encoding-dispatch.issue, section
                             (autolisp-string-value
                              (require-string encoding "OPEN"))))
          (external-format nil))
+    (emit-dotdot-path-portability-warning path-string "OPEN")
     (multiple-value-bind (mode-string ccs-encoding-string)
         (%split-bricscad-mode-suffix raw-mode-string)
       (when ccs-encoding-string
@@ -2262,6 +2264,7 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
          (search-dirs (append (%effective-support-dirs)
                               (%secureload-trusted-dirs)))
          (located (resolve-existing-file value search-dirs)))
+    (emit-dotdot-path-portability-warning value "FINDFILE")
     (if located
         (errno-and-return 0 (make-autolisp-string located))
         (errno-and-return 22 nil))))
