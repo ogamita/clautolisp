@@ -90,3 +90,31 @@ probe output to now reach protocol/stdout.txt and the 97/27/21 verdicts to be
 readable/green. The rewriter's cons-rebuild of princ-containing forms was a
 known BricsCAD-V26 mapcar-lambda hazard, but it runs ONLY on the no-&rest
 (AutoCAD) path; watch for any mapcar-lambda breakage there on the re-run.
+
+
+Re-confirmed STILL REPRODUCING at HEAD (alfe 1.7.6, 2026-07-30, cad-triage-autocad)
+-----------------------------------------------------------------------------------
+
+Verified on the Windows runner against real AutoCAD 2022 accoreconsole:
+  launching: .../AutoCAD 2022/accoreconsole.exe /i empty.dwg /s run.scr
+  READY 0, plan finished status=:SUCCESS exit=0 -- and NO output.
+A probe printing ONLY through 1-arg (princ (strcat ...)) (both -l and -x)
+produced none of its markers (TRIAGE-OUT-A / TRIAGE-X-A / TRIAGE-DONE). So this
+is NOT fixed by the 1.7.4 princ/prin1 newline work: that fix routes the &rest
+VARIADIC shadows (BricsCAD has &rest); AutoCAD keeps the no-&rest 1-arg
+bootstrap shadows + the walk-rewriter, and the output path there still drops
+1-arg princ output.
+
+Likely gap: the walk-rewriter (autolisp-normalize-princ-call) only pads the
+TOP-LEVEL request form; 1-arg (princ X) calls INSIDE a loaded defun (the probe's
+run-entity-probes, or any user function) are NOT rewritten, so on a host that
+errors on under-arity they raise "too few arguments" and get swallowed. Fix
+direction to try: make the bootstrap princ/print/prin1 shadows accept the file
+arg via &optional (if accoreconsole's defun supports &optional) instead of
+relying on the source-form rewriter — then any arity works without a walk. Needs
+an AutoCAD triage of &optional support.
+
+Side finding (separate ticket-worthy): the per-run workdir RANDOM tag is
+CONSTANT -- alfe-autocad-<pid>-3q9m89 here AND in the original report -- so
+workdir.lisp's random-tag is unseeded (only the PID varies). See
+workdir-random-tag-unseeded (to file).
