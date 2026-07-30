@@ -1,0 +1,59 @@
+cad-chr-vs-loaded-encoding — (chr N) not = to the same char loaded from a file (BricsCAD)
+=========================================================================================
+
+Reported from: SCHMS+ test harness via `alfe --bricscad --mode batch`
+on macOS. alfe 1.7.3 / clautolisp 1.7.2.
+
+Context / progress
+------------------
+
+alfe 1.7.x's new per-situation encodings fixed the earlier problems:
+- `-Esource Windows-1252` : `(load …)` / `-l` now decode cp1252 correctly.
+- `-Efile Windows-1252`   : `read-char` on an opened file returns the right
+  code (probe: byte 0xE9 -> 233). Good.
+
+Remaining bug
+-------------
+
+On BricsCAD, a character produced by `(chr N)` for N >= 128 is NOT
+`=` (nor `equal`) to the *same* character obtained by decoding a
+cp1252 file, even though both have `strlen` 1. So the two internal
+representations differ.
+
+Minimal repro
+-------------
+
+    printf '(setq src-e "\xe9")\n' > /tmp/se.lsp     # a .lsp holding cp1252 é
+
+    alfe --no-init --bricscad --mode batch \
+         -Esource Windows-1252 -Efile Windows-1252 \
+         -l /tmp/se.lsp \
+         -x '(princ (list (= src-e (chr 233)) (strlen src-e) (strlen (chr 233))))'
+
+    BricsCAD:   (nil 1 1)     ; loaded-é  /=  (chr 233)
+    clautolisp: (T   1 1)     ; identical
+
+(Also: `(chr 233)` prints as empty on a UTF-8 terminal but its strlen is
+1 — so it's an internal-representation mismatch, not a dropped char.)
+
+Impact
+------
+
+Any code that rebuilds strings from char codes and compares them to
+strings read from source is broken for accented chars on BricsCAD.
+The SCHMS+ test harness reads test files char-by-char
+(`tu:read-form`: `read-char` -> `(chr code)` -> `(read text)`) to
+transform assertion forms, then compares the resulting literals to
+strings from modules loaded via `-Esource`. Result: the 13
+`description_validateur/*` accent tests fail on BricsCAD (all logic
+passes); clautolisp is 177/177 OK.
+
+Expected
+--------
+
+`(= (chr N) <same-char-decoded-from-a-file>)` should hold for all N,
+i.e. `chr`/`read`/`strcat` and the file-decode path must yield one
+canonical internal representation per character — as clautolisp does.
+
+Related: cad-load-encoding-macos.issue (the encoding-flag part, now
+resolved by -Esource/-Efile).
