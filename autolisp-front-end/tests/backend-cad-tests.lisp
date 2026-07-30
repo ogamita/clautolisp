@@ -246,21 +246,27 @@ Program Files scan."
                                        :if-does-not-exist :ignore))))
 
 (test autocad-detect-on-non-windows-signals-unsupported-os
-  "AutoCAD is Windows-only; on macOS/Linux DETECT signals
-BACKEND-NOT-AVAILABLE with :unsupported-os and a structured message
-the CLI translates to exit code 3."
+  "AutoCAD's GUI / COM-automation path is Windows-only; on macOS/Linux
+DETECT signals BACKEND-NOT-AVAILABLE with :unsupported-os (exit code 3) —
+UNLESS an AcCoreConsole batch engine is present (it ships with the macOS
+AutoCAD bundle and runs there), in which case batch DETECT succeeds."
   (when (or (alfe.backend.cad-common:macos-p)
             (alfe.backend.cad-common:linux-p))
     (let ((backend (alfe.backend.autocad:make-autocad-backend)))
-      (handler-case
-          (progn
-            (alfe.backend:detect backend)
-            (is nil "Expected BACKEND-NOT-AVAILABLE on non-Windows host."))
-        (alfe.error:backend-not-available (condition)
-          (is (eq :autocad (alfe.error:backend-error-backend condition)))
-          (is (eq :unsupported-os (alfe.error:backend-error-code condition)))
-          (is (search "not distributed"
-                      (alfe.error:backend-error-message condition))))))))
+      (if (alfe.backend.autocad:discover-accoreconsole-binary)
+          ;; accoreconsole available off Windows (macOS with AutoCAD) — the
+          ;; batch engine is supported, so DETECT resolves rather than errors.
+          (is (eq backend (alfe.backend:detect backend)))
+          ;; No batch engine — GUI-only, genuinely unsupported off Windows.
+          (handler-case
+              (progn
+                (alfe.backend:detect backend)
+                (is nil "Expected BACKEND-NOT-AVAILABLE on non-Windows host."))
+            (alfe.error:backend-not-available (condition)
+              (is (eq :autocad (alfe.error:backend-error-backend condition)))
+              (is (eq :unsupported-os (alfe.error:backend-error-code condition)))
+              (is (search "not distributed"
+                          (alfe.error:backend-error-message condition)))))))))
 
 (test autocad-unsupported-os-message-mentions-current-os
   "The friendly message names the current OS — so the user sees a

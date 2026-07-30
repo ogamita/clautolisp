@@ -1277,6 +1277,11 @@ Returns the path of the emitted file."
   (setq f (open *AUTOLISP_PROTOCOL_STDOUTFILE* \"a\"))~%~
   (if f (progn (autolisp-write-string-to-file text f) (close f)))~%~
   text)~%~
+;; With princ/prin1 no longer forcing a newline, a direct (terpri) must route~%~
+;; the line break to the protocol stdout (native terpri writes to the CAD~%~
+;; console, which alfe never drains) -- otherwise consecutive output runs~%~
+;; together. autolisp-princ-newline emits an empty line via emit-user-line.~%~
+(defun terpri () (autolisp-princ-newline))~%~
 (defun autolisp-log-err (text)~%~
   (autolisp-write-line *AUTOLISP_PROTOCOL_STDERRFILE* text))~%~
 (setq *AUTOLISP_CAPTURE_STDOUT* T)~%~
