@@ -723,6 +723,30 @@ encoding:experiment:autocad:windows:
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
 
 # ============================================================================
+# TEMPORARY — CAD cluster TRIAGE (REMOVE when triage done). Auto-runs the
+# stale-bug repros on real BricsCAD to find which 1.1-1.6-era cluster issues
+# are already fixed at HEAD (large-form load, open-to-file, load-form via -l).
+# allow_failure + interruptible. Delete with scripts/run-cad-triage.sh.
+# ============================================================================
+debug:cad:triage:bricscad:macos:
+  stage: test
+  tags: [macos, arm64, shell]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  interruptible: true
+  rules:
+    - when: on_success
+      allow_failure: true
+  artifacts:
+    name: "cad-triage-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/cad-triage/]
+    expire_in: 7 days
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-cad-triage.sh --backend bricscad
+
+# ============================================================================
 # Benchmarks: run the AutoLISP suite on each target and publish a comparison
 # table (GitLab Pages). Manual per target (the macOS/Windows runners are
 # intermittent) -- run the ones whose runner is up, then `pages` aggregates
