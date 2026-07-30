@@ -7,10 +7,20 @@ on macOS. alfe 1.7.3 / clautolisp 1.7.2.
 Context / progress
 ------------------
 
-alfe 1.7.x's new per-situation encodings fixed the earlier problems:
-- `-Esource Windows-1252` : `(load …)` / `-l` now decode cp1252 correctly.
-- `-Efile Windows-1252`   : `read-char` on an opened file returns the right
-  code (probe: byte 0xE9 -> 233). Good.
+alfe 1.7.x's per-situation encodings help alfe's OWN file I/O:
+- `-Efile Windows-1252` : `read-char` on a file alfe opens returns the
+  right code (probe: byte 0xE9 -> 233). Good.
+
+BUT `-Esource` does NOT reach BricsCAD's native `load`. Isolated probe
+on a raw cp1252 `.lsp` (byte 0xE9 = "é", no BOM), Mac BricsCAD V26:
+
+    -Esource Windows-1252 -l cp1252.lsp -> (= src-e (chr 233))=nil, ascii=200
+    (no -Esource)         -l cp1252.lsp -> (= src-e (chr 233))=nil, ascii=200
+
+Identical: for the `-l`/`load` path, BricsCAD decodes the file itself
+via SYSCODEPAGE (=MAC_ROMAN on macOS), so 0xE9 is mis-read as the
+Mac-Roman char (ascii 200), and `-Esource` is a no-op. On Mac you
+CANNOT native-load a Windows-1252 source as-is.
 
 Remaining bug
 -------------
@@ -54,6 +64,57 @@ Expected
 `(= (chr N) <same-char-decoded-from-a-file>)` should hold for all N,
 i.e. `chr`/`read`/`strcat` and the file-decode path must yield one
 canonical internal representation per character — as clautolisp does.
+
+Why it can't be fixed from AutoLISP on BricsCAD
+-----------------------------------------------
+
+Probed on BricsCAD V26 / macOS:
+- `(getvar "SYSCODEPAGE")` => "MAC_ROMAN"  and it is READ-ONLY
+  (`(setvar "SYSCODEPAGE" "ansi_1252")` errors, value stays MAC_ROMAN).
+- `(getvar "DWGCODEPAGE")` => "ANSI_1252"  (per-drawing, not the source
+  codepage; also not settable via setvar here).
+- `(load file [onfailure])` has no encoding parameter; no AutoLISP
+  global controls it.
+
+So BricsCAD's native `chr` uses the fixed system codepage (Mac Roman on
+macOS) and there is NO *sysvar* knob to change it.
+
+Concrete fix path — feed BricsCAD a Unicode (UTF-8+BOM) source
+--------------------------------------------------------------
+
+Since BricsCAD V20, `load` also accepts a Unicode `.lsp` when it carries
+a Byte-Order-Mark: UTF-8+BOM or UTF-16LE+BOM (BOM mandatory; UTF-8
+without BOM may fail). Loading such a file bypasses SYSCODEPAGE and makes
+`chr` consistent. Verified on BricsCAD V26 / macOS:
+
+Measured on Mac BricsCAD V26, same "é" via native `-l`:
+
+    encoding of file        (= src-e (chr 233))   ascii src-e
+    ---------------------   -------------------   -----------
+    cp1252 (no BOM)                nil                200
+    cp1252 + -Esource              nil                200   (flag ignored)
+    UTF-8 + BOM                     T                 233   <-- correct
+    MacRoman (é=0x8E)               T                 233   <-- correct
+
+    printf '\xef\xbb\xbf(setq src-e "\xc3\xa9")\n' > /tmp/utf8bom.lsp   # UTF-8+BOM
+    printf '(setq src-e "\x8e")\n'                 > /tmp/macroman.lsp  # MacRoman
+
+Both correct encodings give ascii 233 and `(chr 233)` consistency.
+(UTF-16LE+BOM via `-l` produced no output — alfe seems to pre-read the
+file and not handle UTF-16 input; UTF-8+BOM is the reliable Unicode one.)
+
+MacRoman is a poor target: Mac-only (wrong on Windows where
+SYSCODEPAGE=cp1252) and lossy (no €, œ/Œ, Ÿ, ‰). **UTF-8+BOM is
+lossless and cross-platform (V20+).**
+
+Suggested alfe behaviour: when handing a file to a CAD host's native
+`load`, transcode the `-Esource`-decoded text to a temporary
+**UTF-8-with-BOM** copy and load that, on every platform. This fixes the
+13 SCHMS+ accent tests with the on-disk sources left untouched (still
+cp1252/CRLF for AutoCAD & the rest of the toolchain), and makes
+`-Esource` actually effective for `load` (today it is a no-op there).
+Alternatively, make `(chr N)` yield the same canonical representation as
+the file-decode path.
 
 Related: cad-load-encoding-macos.issue (the encoding-flag part, now
 resolved by -Esource/-Efile).

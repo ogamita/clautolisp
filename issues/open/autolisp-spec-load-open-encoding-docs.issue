@@ -1,0 +1,100 @@
+autolisp-spec-load-open-encoding-docs — document load/open file-encoding behavior (BOM, UTF-8/16, encoding arg)
+==============================================================================================================
+
+Type: documentation
+Reported from: SCHMS+ integration (alfe --bricscad on macOS), 2026-07-30
+
+Summary
+-------
+
+The autolisp-spec entries for `load` and `open`, and the other
+clautolisp encoding documentation, do not yet record the concrete
+file-encoding rules the vendors document. These rules explain the
+whole macOS cp1252 problem (see cad-chr-vs-loaded-encoding.issue and
+cad-load-encoding-macos.issue) and must be specified so clautolisp/alfe
+behavior can be defined against them.
+
+Primary source to cite
+-----------------------
+
+BricsCAD Developer Reference (V25), `open`:
+  https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/index.html?page=source%2Fopen.htm
+  (content page: .../V25/DevRef/source/open.htm)
+BricsCAD Developer Reference (V25), `load`:
+  https://developer.bricsys.com/bricscad/help/en_US/V25/DevRef/index.html?page=source%2Fload.htm
+  (content page: .../V25/DevRef/source/load.htm)
+
+Facts to document
+-----------------
+
+1. `load` — Unicode source files (BricsCAD V20+)
+
+   Signature: (load lspfile [failure-expression])
+   Extension search when none given: name.des then name.lsp.
+   Verbatim (BricsCAD DevRef):
+     "Since BricsCAD V20, the (load) function also supports Lisp files
+      which are stored as 'Unicode':
+        - using UTF-8  format in 'Little-Endian' byte order
+        - using UTF-16 format in 'Little-Endian' byte order
+      For both UTF-8/16 format, the Byte-Order-Mark (BOM) is absolutely
+      required; UTF-8 without BOM might fail."
+   Note: `load` itself has NO encoding parameter; the encoding is
+   detected from the BOM, otherwise the file is decoded with the host
+   system codepage (SYSCODEPAGE). => A non-BOM cp1252 source cannot be
+   portably native-loaded (on macOS SYSCODEPAGE=MAC_ROMAN, so it is
+   mis-decoded).
+
+2. `open` — explicit encoding argument (AutoCAD 2021+ / BricsCAD V21+)
+
+   Signature: (open fileName openMode [encoding])
+   Modes: "r" "w" "a" and binary "rb" "wb" "ab".
+   Optional encoding argument, verbatim (BricsCAD DevRef):
+     allowed values "utf8", "utf8-bom", "utf16-bom".
+     "UTF-8 without BOM can not be distinguished from normal ANSII."
+   Version: "introduced by AutoCAD 2021", "supported in BricsCAD V21
+   and higher." Pre-2021 `open` had no encoding argument.
+
+3. AutoCAD parity note
+
+   AutoCAD 2021 introduced the same Unicode changes under `LISPSYS`;
+   the encoding argument to `open` is the AutoCAD 2021 feature BricsCAD
+   mirrors from V21. The pre-Unicode vs post-Unicode distinction is
+   already sketched in the spec draft (see cross-references).
+
+What to update
+--------------
+
+- autolisp-spec/documentation/autolisp-visual-lisp-specification-draft.org
+  * Add proper function entries for `load` and `open` capturing the
+    signatures above and the encoding/BOM rules, version-qualified.
+  * The existing "Pre-Unicode and Post-Unicode Semantics" section
+    (~line 4929) already notes "explicit file-opening encoding support"
+    and "extended `open` modes" — expand it with the concrete argument
+    values ("utf8"/"utf8-bom"/"utf16-bom") and the load BOM requirement,
+    with the version qualifiers and the source URLs.
+
+- Other clautolisp encoding docs to align with the same facts:
+  * clautolisp/autolisp-file-compat/documentation/usage.org
+    (open modes + encoding arg; how clautolisp maps them)
+  * clautolisp/autolisp-runtime/documentation/autolisp-runtime-specifications.org
+    (ascii/chr/read-char pre/post-Unicode behavior; codepage vs Unicode)
+  * clautolisp/documentation/clautolisp-user-manual.org
+    (any user-facing note on source encoding / SYSCODEPAGE)
+
+Consistency to assert in the spec
+---------------------------------
+
+Whatever the file encoding, a decoded non-ASCII character must satisfy
+`(= (chr N) <same char decoded from a file>)` — i.e. one canonical
+internal representation per character (this is where BricsCAD's native
+`chr` currently diverges from a file-decoded char; clautolisp already
+does this right). Documenting the rule fixes the contract alfe must
+honor when it hands sources to a CAD host (transcode to UTF-8+BOM).
+
+Cross-references
+----------------
+
+- cad-chr-vs-loaded-encoding.issue  (the concrete BricsCAD/macOS bug +
+  UTF-8+BOM measurements)
+- cad-load-encoding-macos.issue     (encoding-flag handling)
+- autolisp-spec-questions.issue     (open general spec questions)
