@@ -96,7 +96,9 @@
            #:emit-launcher-applescript
            #:build-launch-argv
            #:discover-bricscad-binary
-           #:discover-bricscad-template))
+           #:discover-bricscad-template
+           #:cui-file-corrupt-p
+           #:quarantine-corrupt-bricscad-cui))
 
 (in-package #:alfe.backend.bricscad)
 
@@ -570,6 +572,92 @@ SHUTDOWN can terminate it."
     (ensure-directories-exist workdir)
     workdir))
 
+;;; --- corrupt-CUI guard --------------------------------------------
+;;;
+;;; A corrupt per-user default.cui pops a modal at STARTUP -- "CUI File Error:
+;;; ... invalid document structure" with a No/Yes "restore from a backup?"
+;;; prompt -- BEFORE any command runs, so the `-'/`_'/`.' command prefixes
+;;; can't help. On a headless/batch run that modal stalls the launch until it
+;;; times out. The file is the WRITABLE user copy (a pristine template lives
+;;; read-only in the app bundle), so if it is unreadable we quarantine it and
+;;; BricsCAD regenerates a fresh one on the next launch.
+
+(defun bricscad-user-cui-candidates ()
+  "The writable per-user default.cui files BricsCAD loads at startup. Version-
+and locale-specific (e.g. .../BricsCAD/V26x64/en_US/Support/default.cui), so
+glob both levels."
+  (let ((roots
+          (cond
+            ((macos-p)
+             (let ((home (uiop:getenv "HOME")))
+               (when home
+                 (list (format nil "~A/Library/Application Support/Bricsys/BricsCAD/" home)))))
+            ((windows-p)
+             (let ((appdata (uiop:getenv "APPDATA")))
+               (when appdata (list (format nil "~A/Bricsys/BricsCAD/" appdata)))))
+            (t
+             (let ((home (uiop:getenv "HOME")))
+               (when home
+                 (list (format nil "~A/.local/share/Bricsys/BricsCAD/" home))))))))
+    (loop for root in (remove nil roots)
+          append (ignore-errors
+                  (directory (merge-pathnames "*/*/Support/default.cui"
+                                              (uiop:ensure-directory-pathname root)))))))
+
+(defun cui-file-corrupt-p (path)
+  "True iff PATH exists but is empty or does not begin — after an optional
+Unicode BOM and leading whitespace — with a `<' (0x3C) tag. The CUI is XML;
+\"invalid document structure at line 1, char 1\" is exactly a file that does not
+open with a tag. Read as OCTETS so a valid BOM-prefixed CUI (BricsCAD writes a
+UTF-8 BOM `EF BB BF' before `<?xml' — the fr_FR default.cui does) is NOT
+mistaken for garbage. An ABSENT file is not corrupt (BricsCAD creates it); an
+unreadable file is left alone (NIL). Conservative on purpose — a false positive
+renames the user's real customization aside."
+  (ignore-errors
+   (with-open-file (in path :direction :input
+                            :element-type '(unsigned-byte 8)
+                            :if-does-not-exist nil)
+     (when in
+       (let* ((buf (make-array 64 :element-type '(unsigned-byte 8)))
+              (n (read-sequence buf in)))
+         (if (zerop n)
+             t                                     ; empty -> corrupt
+             (let ((i 0))
+               ;; Skip a leading BOM: UTF-8 (EF BB BF) or UTF-16 (FF FE / FE FF).
+               (cond
+                 ((and (>= n 3) (= (aref buf 0) #xEF) (= (aref buf 1) #xBB) (= (aref buf 2) #xBF))
+                  (setf i 3))
+                 ((and (>= n 2) (member (aref buf 0) '(#xFF #xFE)) (member (aref buf 1) '(#xFF #xFE)))
+                  (setf i 2)))
+               ;; Skip whitespace, incl. the UTF-16 zero bytes between chars.
+               (loop while (and (< i n) (member (aref buf i) '(32 9 10 13 12 0)))
+                     do (incf i))
+               (cond
+                 ((>= i n) t)                      ; BOM/whitespace only -> corrupt
+                 ((= (aref buf i) #x3C) nil)       ; opens with `<' -> OK
+                 (t t)))))))))                     ; some other byte -> corrupt
+
+(defun quarantine-corrupt-bricscad-cui ()
+  "Rename any corrupt per-user default.cui aside so BricsCAD regenerates a fresh
+one from its bundled template instead of popping a startup modal that stalls a
+batch launch. Renames (never deletes) and logs. Opt out with
+$ALFE_NO_CUI_REPAIR. Returns the list of quarantined paths."
+  (unless (let ((v (uiop:getenv "ALFE_NO_CUI_REPAIR"))) (and v (plusp (length v))))
+    (loop for cui in (bricscad-user-cui-candidates)
+          when (cui-file-corrupt-p cui)
+            append (let ((aside (format nil "~A.corrupt-~D"
+                                        (namestring cui) (get-universal-time))))
+                     (handler-case
+                         (progn
+                           (rename-file cui (pathname aside))
+                           (log-warn "backend BRICSCAD: quarantined corrupt CUI ~A -> ~A; BricsCAD will regenerate it"
+                                     (namestring cui) (file-namestring aside))
+                           (list cui))
+                       (error (e)
+                         (log-warn "backend BRICSCAD: corrupt CUI ~A could not be quarantined (~A); a startup modal may stall this run"
+                                   (namestring cui) e)
+                         nil))))))
+
 (defmethod start-engine ((backend bricscad-backend) workdir
                          &key dialect host mock-input bootstrap-phase
                               interactive-p
@@ -608,6 +696,9 @@ future ticket."
     (setf ready-timeout (alfe.cli:cli-options-timeout cli-options)))
   (log-debug "backend BRICSCAD: ready-timeout = ~A s; wait-for-ready = ~A"
              ready-timeout wait-for-ready)
+  ;; A corrupt per-user default.cui pops a startup modal that stalls a batch
+  ;; launch; quarantine it first so BricsCAD regenerates a clean one.
+  (quarantine-corrupt-bricscad-cui)
   (handler-case
       (let* ((runtime-source (discover-runtime-lsp))
              (bootstrap-source (discover-bootstrap-lsp))

@@ -90,6 +90,46 @@ to live on the test host."
               (signals alfe.error:backend-not-available
                 (alfe.backend:detect backend))))))))
 
+(test bricscad-cui-file-corrupt-p-classifies-cui-files
+  "cui-file-corrupt-p: a CUI that opens (after leading whitespace) with a `<'
+tag is fine; empty / whitespace-only / non-tag content is corrupt (the startup
+'invalid document structure' modal); an ABSENT file is not corrupt — BricsCAD
+creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
+  (let ((dir (uiop:ensure-directory-pathname
+              (merge-pathnames (format nil "alfe-cui-test-~D/" (random 999999))
+                               (uiop:temporary-directory)))))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist dir)
+          (flet ((mk (name content)
+                   (let ((p (merge-pathnames name dir)))
+                     (with-open-file (o p :direction :output :if-exists :supersede
+                                          :if-does-not-exist :create
+                                          :external-format :latin-1)
+                       (write-string content o))
+                     p)))
+            ;; valid: opens with a tag (optionally after whitespace)
+            (is (null (alfe.backend.bricscad:cui-file-corrupt-p
+                       (mk "ok.cui" (format nil "<?xml version=\"1.0\"?>~%<CUIx/>~%")))))
+            (is (null (alfe.backend.bricscad:cui-file-corrupt-p
+                       (mk "ok-ws.cui" (format nil "  ~%<CUIx/>")))))
+            ;; valid WITH a leading UTF-8 BOM (EF BB BF) — BricsCAD writes one
+            ;; before <?xml (the fr_FR default.cui). Must NOT be flagged corrupt.
+            (is (null (alfe.backend.bricscad:cui-file-corrupt-p
+                       (mk "ok-bom.cui"
+                           (format nil "~C~C~C<?xml version=\"1.0\"?>~%<CUIx/>"
+                                   (code-char #xEF) (code-char #xBB) (code-char #xBF))))))
+            ;; corrupt: empty / whitespace-only / non-tag first char
+            (is (alfe.backend.bricscad:cui-file-corrupt-p (mk "empty.cui" "")))
+            (is (alfe.backend.bricscad:cui-file-corrupt-p
+                 (mk "ws.cui" (format nil "   ~%  ~%"))))
+            (is (alfe.backend.bricscad:cui-file-corrupt-p
+                 (mk "garbage.cui" "not xml at all")))
+            ;; absent: not corrupt (BricsCAD regenerates it)
+            (is (null (alfe.backend.bricscad:cui-file-corrupt-p
+                       (merge-pathnames "does-not-exist.cui" dir))))))
+      (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore))))
+
 ;;; --- BricsCAD emitters ---------------------------------------------
 
 (defun read-back (path)
