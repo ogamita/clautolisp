@@ -488,9 +488,16 @@
   (setq u (autolisp-source-enc-canon enc))
   (cond
     ((= backend "BRICSCAD")
+     ;; BricsCAD's (open ... "r,ccs=ENC") decodes with a named character code
+     ;; set. UTF-8 / UTF-16LE spell out; a CODEPAGE (e.g. Windows-1252) must be
+     ;; passed as its ccs too -- a BARE (open "r") uses the OS default, which on
+     ;; macOS is Mac Roman, NOT cp1252, so a cp1252 é (0xE9) loaded as È
+     ;; (cad-chr-vs-loaded-encoding). Pass ENC as the ccs; an unknown name just
+     ;; errors and the caller falls back to a bare open (no worse than before).
      (cond ((= u "UTF8")    (open path "r,ccs=UTF-8"))
            ((= u "UTF16LE") (open path "r,ccs=UTF-16LE"))
-           (T               (open path "r"))))    ; ANSI default handles latin-1
+           ((= u "UTF16BE") (open path "r,ccs=UTF-16BE"))
+           (T               (open path (strcat "r,ccs=" enc)))))
     ((= backend "AUTOCAD")
      (cond ((= u "UTF8")    (open path "r" "utf8"))
            (T               (open path "r"))))    ; MBCS default

@@ -722,6 +722,21 @@ encoding:experiment:autocad:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-encoding-experiment.ps1 -Backend autocad -Dwg $env:PROBE_DWG
 
+# TEMPORARY — verify cad-chr-vs-loaded-encoding ccs fix on real BricsCAD (macOS).
+# REMOVE with scripts/run-cad-diag-chr.sh.
+debug:cad:verify-chr:bricscad:macos:
+  stage: test
+  tags: [macos, arm64, shell]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  interruptible: true
+  rules:
+    - when: on_success
+      allow_failure: true
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/run-cad-diag-chr.sh
+
 # ============================================================================
 # Benchmarks: run the AutoLISP suite on each target and publish a comparison
 # table (GitLab Pages). Manual per target (the macOS/Windows runners are
