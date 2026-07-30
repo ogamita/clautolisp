@@ -177,3 +177,37 @@ alfe-request-timeout-aborts-long-eval fixed or --timeout raised)
 renders the banner and the result table with the same layout as the
 clautolisp run — one row per line, columns aligned, no blank-line
 padding.
+
+
+Resolution (alfe 1.7.4, branch fix-alfe-princ-prin1-spurious-newlines)
+----------------------------------------------------------------------
+
+Fixed in the file-IPC run-common shadows (autolisp-front-end/source/
+file-protocol.lisp). The princ/prin1/print shadows routed through
+autolisp-emit-user-line / autolisp-emit-user-out, which append a newline via
+autolisp-write-line — so every consecutive princ/prin1 in one form landed on
+its own line.
+
+Added autolisp-emit-user-str, a RAW no-newline emitter over the byte-drained
+protocol stdout (autolisp-write-string-to-file is char-wise, no \n), and routed
+the &rest variadic shadows through it:
+  - princ / prin1 emit their text with NO trailing newline;
+  - print keeps its leading-newline + trailing-space framing.
+
+Fixing that exposed a latent gap: a direct (terpri) called NATIVE terpri, which
+writes to the CAD console (never drained), so its line break vanished — with
+the spurious newlines gone, "1 ABC" and "END" ran together. Added a terpri
+shadow -> autolisp-princ-newline so the break routes through the protocol
+stdout. Now ONLY terpri / print's framing / an explicit \n break a line.
+
+Confirmed on REAL BricsCAD V26 / macOS via the temporary debug:cad smoke jobs:
+  (prin1 1)(princ " ")(prin1 'abc)(terpri)(princ "END")
+  before: 1 / <sp> / ABC / END   (four lines)
+  after:  1 ABC / END            (one line + terpri break)
+  (princ "A")(load p)(princ " B") before: A \n B  after: A ... B  (one line)
+
+SBCL suite 405/405 (run-common emit test pins the generated shadows).
+
+Note: only the &rest variadic path (BricsCAD V26; AutoCAD when it supports
+&rest) is routed. If a future non-&rest host reproduces, route the base
+autolisp-bootstrap.lsp princ/prin1 shadows through emit-user-str too.
