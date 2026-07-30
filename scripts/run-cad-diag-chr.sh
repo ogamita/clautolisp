@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# TEMPORARY ccs-discovery (remove with the debug job): find the exact ,ccs= NAME
-# BricsCAD accepts for cp1252 on macOS. Open a single-byte-0xE9 file with several
-# ccs candidates and read-char it; the codec that yields code 233 (é) is the one
-# to map WINDOWS-1252 to. (cad-chr-vs-loaded-encoding: ,ccs=WINDOWS-1252 was
-# rejected -> bare open -> Mac Roman -> È.)
+# TEMPORARY verification (remove with the debug job): cad-chr-vs-loaded-encoding.
+# With alfe transcoding a -Esource codepage file to UTF-8+BOM before the CAD
+# (load)s it, a cp1252 é (byte 0xE9) must now load as é (C3 A9) = (chr 233),
+# not È (C3 88). Both strlen 1; EQ must be T.
 set -u
 root="${CI_PROJECT_DIR:-$(pwd)}"
 alfe="$root/autolisp-front-end/tools/alfe/bin/alfe-sbcl"
@@ -12,38 +11,27 @@ export ALFE_RUNTIME_LSP="$root/autolisp-front-end/source/runtime/autolisp-remote
 export ALFE_BOOTSTRAP_LSP="$root/autolisp-front-end/source/runtime/autolisp-bootstrap.lsp"
 [ -x "$alfe" ] || { echo "alfe not built" >&2; exit 2; }
 
-# A file holding exactly one byte 0xE9.
-tf="$out/byte-e9.bin"; printf '\xe9' > "$tf"
-echo "=== byte-e9.bin ==="; xxd "$tf"
+printf '(setq src-e "\xe9")\n' > "$out/se.lsp"       # one cp1252 byte 0xE9 = é
+echo "=== se.lsp bytes (raw cp1252) ==="; xxd "$out/se.lsp"
 
-diagfile="$out/ccs-diag.txt"; rm -f "$diagfile"
+diagfile="$out/chr-diag.txt"; rm -f "$diagfile"
 cat > "$out/diag.lsp" <<LSP
 (setq df (open "$diagfile" "w"))
-(defun tryccs (ccs / f code)
-  (setq f (vl-catch-all-apply (quote open) (list "$tf" (strcat "r,ccs=" ccs))))
-  (princ (strcat "ccs=" ccs " -> ") df)
-  (if (vl-catch-all-error-p f)
-    (princ (strcat "OPEN-ERR: " (vl-catch-all-error-message f)) df)
-    (if (null f) (princ "nil" df)
-      (progn (setq code (read-char f)) (close f)
-             (princ (if code (itoa code) "eof") df))))
-  (princ "\n" df))
-(tryccs "Windows-1252")
-(tryccs "windows-1252")
-(tryccs "WINDOWS-1252")
-(tryccs "1252")
-(tryccs "ANSI")
-(tryccs "CP1252")
-(tryccs "ISO-8859-1")
-(tryccs "Latin1")
-(tryccs "UTF-8")
-(princ "want: the ccs whose value is 233 (byte 0xE9 = cp1252 e-acute)\n" df)
+(defun dl (k s) (princ k df) (princ "=[" df) (princ s df) (princ "]\n" df))
+(dl "SRC" src-e)
+(dl "CHR" (chr 233))
+(princ (strcat "ASCII-SRC=" (itoa (ascii src-e)) " ASCII-CHR=" (itoa (ascii (chr 233))) "\n") df)
+(princ (strcat "STRLEN-SRC=" (itoa (strlen src-e)) " STRLEN-CHR=" (itoa (strlen (chr 233))) "\n") df)
+(princ (strcat "EQ=" (if (= src-e (chr 233)) "T" "nil") "\n") df)
 (close df)
-(princ "CCS-DIAG-DONE")
+(princ "CHR-DIAG-DONE")
 LSP
 
-echo "=== run: alfe --bricscad -l diag.lsp (ccs discovery) ==="
-"$alfe" -norc --bricscad --mode batch --timeout 120 -l "$out/diag.lsp" 2>&1
-echo "---- exit $? ----"
-echo "=== ccs-diag.txt ==="; cat "$diagfile" 2>/dev/null || echo "(absent)"
+echo "=== run: alfe --bricscad -Esource/-Efile Windows-1252 -l se.lsp -l diag.lsp ==="
+"$alfe" -norc --bricscad --mode batch --verbose --timeout 120 \
+  -Esource Windows-1252 -Efile Windows-1252 \
+  -l "$out/se.lsp" -l "$out/diag.lsp" 2>&1 | grep -aiE "staged UTF-8|BOM|CHR-DIAG|READY after|plan finished" | head
+echo "---- exit ----"
+echo "=== chr-diag.txt (text — SRC should be é, EQ=T) ==="; cat "$diagfile" 2>/dev/null || echo "(absent)"
+echo "=== chr-diag.txt (hex — SRC should be c3 a9) ==="; xxd "$diagfile" 2>/dev/null | head -6 || echo "(absent)"
 exit 0
