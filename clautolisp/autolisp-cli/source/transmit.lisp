@@ -220,6 +220,78 @@ DWGCODEPAGE via HOST-SET-DERIVED-SYSVAR again."
         (clautolisp.autolisp-host:host-set-derived-sysvar
          host "DWGCODEPAGE" effective)))))
 
+;;; --- TEMPPREFIX: the folder for temporary files -------------------
+;;;
+;;; On a real CAD, TEMPPREFIX is a registry-backed preference (the
+;;; "Temporary Drawing File Location"). clautolisp's mock host inherits
+;;; the AutoCAD-generated sysvar catalogue, where TEMPPREFIX is a
+;;; host-derived stand-in ("") — so `(getvar "TEMPPREFIX")` came back
+;;; EMPTY, which breaks portable code that builds temp paths from it.
+;;;
+;;; Resolution order at launch (mirrors a real host's preference load):
+;;;   1. the value already stored in the vl-registry, else
+;;;   2. the TMPDIR environment variable (TEMP / TMP on Windows), else
+;;;   3. the platform default ("/tmp/" on Unix, "C:/Temp/" on Windows).
+;;; A value resolved from the environment or the default is written back
+;;; to the registry, so it persists like a real preference. Only the
+;;; clautolisp engine reaches this path (real CAD backends never call
+;;; INSTALL-TRANSMIT-VARIABLES), so a genuine CAD's TEMPPREFIX is untouched.
+
+(defparameter +tempprefix-registry-key+
+  "HKEY_CURRENT_USER\\Software\\clautolisp\\Preferences"
+  "vl-registry key under which the resolved TEMPPREFIX preference is
+stored / retrieved by the clautolisp engine at launch.")
+
+(defparameter +tempprefix-registry-value+ "TempPrefix"
+  "The value-name of the TEMPPREFIX preference within
++TEMPPREFIX-REGISTRY-KEY+.")
+
+(defun %platform-temp-default ()
+  "The factory TEMPPREFIX when neither the registry nor the environment
+supplies one."
+  #+(or win32 windows mswindows os-windows) "C:/Temp/"
+  #-(or win32 windows mswindows os-windows) "/tmp/")
+
+(defun %environment-temp-dir ()
+  "The temp directory named by the environment, or NIL: TMPDIR on Unix,
+TEMP then TMP on Windows (all three are checked so a mixed shell still
+resolves)."
+  (loop for var in '("TMPDIR" "TEMP" "TMP")
+        for val = (ignore-errors (uiop:getenv var))
+        when (and val (plusp (length val))) return val))
+
+(defun %normalize-temp-prefix (path)
+  "Canonicalise PATH to a forward-slash directory ending in a slash, so
+concatenating a bare file name yields a valid path on every platform."
+  (let ((p (substitute #\/ #\\ path)))
+    (if (and (plusp (length p)) (char= #\/ (char p (1- (length p)))))
+        p
+        (concatenate 'string p "/"))))
+
+(defun apply-tempprefix-default (context)
+  "Populate the host's TEMPPREFIX sysvar at launch from the registry, the
+environment, or the platform default (in that order), persisting a
+freshly-resolved value to the registry. See the commentary above."
+  (when context
+    (let ((host (clautolisp.autolisp-runtime:current-evaluation-host context)))
+      (when host
+        (let* ((stored (ignore-errors
+                        (clautolisp.autolisp-host:host-registry-read
+                         host +tempprefix-registry-key+
+                         +tempprefix-registry-value+)))
+               (have-stored (and stored (plusp (length stored))))
+               (value (%normalize-temp-prefix
+                       (cond (have-stored stored)
+                             ((%environment-temp-dir))
+                             (t (%platform-temp-default))))))
+          (unless have-stored
+            (ignore-errors
+             (clautolisp.autolisp-host:host-registry-write
+              host +tempprefix-registry-key+
+              +tempprefix-registry-value+ value)))
+          (clautolisp.autolisp-host:host-set-derived-sysvar
+           host "TEMPPREFIX" value))))))
+
 (defun launch-program-name (frontend-name)
   "Return the value to publish as the PROGRAM sysvar (the AutoLISP/
 AutoCAD `(getvar \"PROGRAM\")` slot = the running application).
@@ -281,6 +353,9 @@ Side effects:
 - the clautolisp engine identity (PROGRAM / VENDORNAME / PLATFORM /
   ACADVER) is stamped onto the host via APPLY-CLAUTOLISP-HOST-IDENTITY
   so a clautolisp host stops reporting itself as BricsCAD;
+- the TEMPPREFIX sysvar is resolved (registry -> TMPDIR/TEMP -> platform
+  default) and stamped via APPLY-TEMPPREFIX-DEFAULT, replacing the
+  generated catalogue's empty host-derived stand-in;
 - the dialect-dependent SECURELOAD / TRUSTEDPATHS defaults (and the
   clautolisp-only trust sysvars) are stamped via
   APPLY-DIALECT-TRUST-DEFAULTS so each dialect launches with its own
@@ -301,6 +376,7 @@ Side effects:
                       (clautolisp.autolisp-runtime:autolisp-symbol-name
                        (second entry))))))
     (apply-clautolisp-host-identity context version frontend)
+    (apply-tempprefix-default context)
     (apply-dialect-trust-defaults context (transmit-dialect-keyword bindings))
     (apply-dialect-sysvar-defaults context (transmit-dialect-keyword bindings))))
 

@@ -1,0 +1,63 @@
+clautolisp-tempprefix-empty — (getvar "TEMPPREFIX") returned "" on the mock host
+================================================================================
+
+Reported: pjb, 2026-07-30, while reviewing the pathname probe (the
+probe's TEMPPREFIX fallback exposed it).
+
+Symptom
+-------
+
+    $ clautolisp --host mock -x '(princ (getvar "TEMPPREFIX"))'
+    (empty)
+
+TEMPPREFIX ("Temporary prefix: the folder name for temporary files")
+should never be empty. On a real CAD it is a registry-backed preference
+(the Temporary Drawing File Location). clautolisp's mock host inherits
+the AutoCAD-generated sysvar catalogue (sysvar-catalogue.lisp), where
+TEMPPREFIX is a host-derived stand-in with default "", so GETVAR came
+back empty and portable code that builds temp paths from it broke.
+
+Expected (pjb)
+--------------
+
+- Default "/tmp/" on Unix, "C:/Temp/" on Windows.
+- Stored / retrieved from the registry (vl-registry).
+- Initialized from the TMPDIR environment variable (TEMP / TMP on
+  Windows) when not already in the registry.
+
+Resolution (clautolisp 1.7.4)
+-----------------------------
+
+New APPLY-TEMPPREFIX-DEFAULT in autolisp-cli/source/transmit.lisp,
+called from INSTALL-TRANSMIT-VARIABLES at launch (the clautolisp-engine
+path only — real CAD backends never call it, so a genuine CAD's
+TEMPPREFIX is untouched). Resolution order:
+
+    1. the value stored in the vl-registry
+       (HKEY_CURRENT_USER\Software\clautolisp\Preferences / TempPrefix),
+    2. else the environment (TMPDIR, then TEMP, then TMP),
+    3. else the platform default ("/tmp/" | "C:/Temp/").
+
+The value is normalized to a forward-slash directory ending in a slash;
+a value resolved from the environment or the default is written back to
+the registry so it persists like a real preference. Uses the HAL
+generics host-registry-read / host-registry-write / host-set-derived-
+sysvar (no mock-host coupling in the CLI layer).
+
+Verified (clautolisp --host mock, SBCL)
+---------------------------------------
+
+    ;; fresh registry, no TMPDIR      -> platform default, persisted
+    TEMPPREFIX=[/tmp/]                 ; registry now holds ("TempPrefix" . "/tmp/")
+    ;; fresh registry, TMPDIR=/x/y     -> from the environment
+    TEMPPREFIX=[/x/y/]
+    ;; value already in the registry   -> registry wins, env ignored
+    env TMPDIR=/ignored ... TEMPPREFIX=[/tmp/]
+
+Note: a focused unit test was not added because autolisp-cli has no test
+suite yet — clautolisp.asd's test-op for "clautolisp/autolisp-cli/tests"
+references a system that has no defsystem and no tests/ directory (a
+pre-existing gap; filed separately as a reminder). The behaviour is
+covered end-to-end by the four CLI runs above.
+
+CLOSED (clautolisp 1.7.4).
