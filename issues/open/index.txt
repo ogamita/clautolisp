@@ -70,7 +70,6 @@ portable .lsp scenarios are doable now.
   S2c entity-family-3d-solids.issue            3DSOLID/REGION/BODY/SURFACE/MESH/POLYLINE-mesh/HELIX
   S2d entity-family-tables-viewport-misc.issue ACAD_TABLE/VIEWPORT/SHAPE/LIGHT/SUN
   S2e entity-family-nongraphical-objects.issue DICTIONARY/GROUP/LAYOUT/PLOTSETTINGS/MATERIAL/*STYLE objects
-  S2f ename-eq-identity.issue                  defect: same-entity ENAMEs not EQ (cross-cutting)
   Found during S3/S4 (headless, no CAD needed):
   S3a entmake-symbol-table-records.issue       (entmake) creation of table records
   S3b xdroom-xdsize-not-implemented.issue      XDROOM/XDSIZE builtins

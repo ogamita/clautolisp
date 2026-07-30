@@ -20,9 +20,23 @@
 
 ;;; --- ENAME <-> handle helpers ------------------------------------
 
-(defun handle->ename (handle)
-  "Wrap a hex handle string in an AutoLISP ENAME."
-  (clautolisp.autolisp-runtime:make-autolisp-ename :value handle))
+(defun handle->ename (host handle)
+  "Return the AutoLISP ENAME that denotes HANDLE on HOST, interning it so
+the same handle always yields the same (EQ) ename object within a
+drawing. Vendor AutoLISP has this identity — two enames for the same
+entity are EQ / EQUAL — so the portable idioms (eq (entlast) (entlast)),
+ (eq ename (car sel)) and (member ename enames) work. The cache is
+drained whenever the host's active drawing is replaced, so a handle from
+a closed drawing can never alias a fresh drawing's entities.
+ (ename-eq-identity.issue)"
+  (let ((cache   (mock-host-ename-cache host))
+        (drawing (mock-host-active-drawing host)))
+    (unless (eq drawing (mock-host-ename-cache-drawing host))
+      (clrhash cache)
+      (setf (mock-host-ename-cache-drawing host) drawing))
+    (or (gethash handle cache)
+        (setf (gethash handle cache)
+              (clautolisp.autolisp-runtime:make-autolisp-ename :value handle)))))
 
 (defun ename->handle (ename operator-name)
   "Extract the hex handle string from an AutoLISP ENAME, signalling
@@ -114,12 +128,13 @@ only those whose APPNAME is requested by NAMES (a list of CL strings);
                             (member (car grp) names :test #'string-equal)))
                      groups)))
 
-(defun entity->al-view (entity &optional applist)
+(defun entity->al-view (host entity &optional applist)
   "The AutoLISP entget / entmake view of a stored ENTITY-HANDLE: the
 (-1 . ename) head, the wrapped ordinary group codes, and — only when
 APPLIST (a list of registered application names) is supplied — the
 matching xdata appended as a trailing (-3 ...) cell. Without APPLIST
-the xdata is suppressed, matching the vendor ENTGET contract."
+the xdata is suppressed, matching the vendor ENTGET contract. HOST
+supplies the ename intern cache for the (-1 . ename) head."
   (let* ((data (entity-handle-data entity))
          (ordinary (remove-if #'xdata-cell-p data))
          (xdata-cell (find-if #'xdata-cell-p data))
@@ -127,7 +142,7 @@ the xdata is suppressed, matching the vendor ENTGET contract."
          (kept (and xdata-cell names
                     (%filter-xdata-groups (cdr xdata-cell) names))))
     (append
-     (list (cons -1 (handle->ename (entity-handle-id entity))))
+     (list (cons -1 (handle->ename host (entity-handle-id entity))))
      (mapcar (lambda (pair)
                (if (consp pair)
                    (cons (car pair) (pure->al-value (cdr pair)))
@@ -183,7 +198,7 @@ such entity exists or it has been deleted."
 (defmethod host-entget ((host mock-host) ename &optional applist)
   (let* ((handle (ename->handle ename 'entget))
          (entity (safe-find-entity (mock-host-active-drawing host) handle)))
-    (and entity (entity->al-view entity applist))))
+    (and entity (entity->al-view host entity applist))))
 
 (defun %data-type-string (data)
   "The (0 . TYPE) string of the pure group-code list DATA, or NIL."
@@ -272,7 +287,7 @@ and bricscad additionally warn."
                            (clautolisp.drawing:drawing-error () nil))))
             (if (null entity)
                 (values nil nil)
-                (let ((ename (handle->ename (entity-handle-id entity)))
+                (let ((ename (handle->ename host (entity-handle-id entity)))
                       (document (current-document)))
                   (%update-open-complex host entity normalised)
                   (clautolisp.autolisp-runtime:signal-document-event
@@ -329,7 +344,7 @@ a SEQEND closes it."
   ;; layer decides what the user ultimately sees (see BUILTIN-ENTMAKE).
   (multiple-value-bind (entity ename) (%host-add-entity host data 'entmake)
     (declare (ignore ename))
-    (and entity (entity->al-view entity))))
+    (and entity (entity->al-view host entity))))
 
 (defmethod host-entmakex ((host mock-host) data)
   ;; ENTMAKEX's distinguishing contract: return the new entity's ENAME
@@ -393,12 +408,12 @@ condoned: it is a no-op under autocad, clautolisp and strict.~%"
                     (clautolisp.drawing:drawing-error () nil))))
       (when entity
         (let ((document (current-document))
-              (ename (handle->ename handle)))
+              (ename (handle->ename host handle)))
           (clautolisp.autolisp-runtime:signal-document-event
            document :acdb :vlr-objectmodified (list ename))
           (clautolisp.autolisp-runtime:signal-document-event
            document :object :vlr-modified (list ename)))
-        (entity->al-view entity)))))
+        (entity->al-view host entity)))))
 
 (defmethod host-entdel ((host mock-host) ename)
   (let* ((handle (ename->handle ename 'entdel))
@@ -428,7 +443,7 @@ condoned: it is a no-op under autocad, clautolisp and strict.~%"
   (let ((drawing (mock-host-active-drawing host)))
     (loop for handle in (clautolisp.drawing:drawing-creation-order drawing)
           when (clautolisp.drawing:find-entity drawing handle)
-            return (handle->ename handle)
+            return (handle->ename host handle)
           finally (return nil))))
 
 (defmethod host-entnext ((host mock-host) ename)
@@ -439,7 +454,7 @@ condoned: it is a no-op under autocad, clautolisp and strict.~%"
     (flet ((first-live (handles)
              (loop for handle in handles
                    when (clautolisp.drawing:find-entity drawing handle)
-                     return (handle->ename handle)
+                     return (handle->ename host handle)
                    finally (return nil))))
       (if (null ename)
           (first-live order)
@@ -454,4 +469,4 @@ condoned: it is a no-op under autocad, clautolisp and strict.~%"
            (clautolisp.autolisp-runtime:autolisp-string
             (clautolisp.autolisp-runtime:autolisp-string-value handle-string)))))
     (and (safe-find-entity (mock-host-active-drawing host) value)
-         (handle->ename value))))
+         (handle->ename host value))))

@@ -117,7 +117,23 @@ or an INSERT, its handle is recorded here; each following VERTEX /
 ATTRIB subentity gets its owner (group 330) set to this handle
 unless the caller supplied one, matching the AutoCAD/BricsCAD
 create-sequence contract. A SEQEND closes the run (clears the
-slot). This is session state, not drawing state."))
+slot). This is session state, not drawing state.")
+   (ename-cache              :initform (make-hash-table :test #'equal)
+                             :accessor mock-host-ename-cache
+                             :documentation "Interns AutoLISP ENAMEs by
+hex-handle string so that every producer (entget, entlast, entnext,
+handent, ssname, entmakex ...) yields the SAME (EQ) ename object for a
+given handle within a drawing. Vendor AutoLISP has this identity —
+ (eq (entlast) (entlast)) is T and the EQ-based idioms (member ename
+list), (eq ename (car sel)) work. Keyed and drained per drawing via
+ENAME-CACHE-DRAWING. See HANDLE->ENAME. (ename-eq-identity.issue)")
+   (ename-cache-drawing      :initform nil
+                             :accessor mock-host-ename-cache-drawing
+                             :documentation "The DRAWING object the
+ENAME-CACHE is currently valid for. When the active drawing is replaced
+ (a future multi-drawing session), HANDLE->ENAME notices the identity
+change and clears the cache so handles from a closed drawing can never
+alias a fresh drawing's entities."))
   (:default-initargs :name "mock-host")
   (:documentation "In-memory deterministic CAD-database substitute
 backend for clautolisp. Holds an active CLAUTOLISP.DRAWING:DRAWING

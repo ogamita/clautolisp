@@ -49,11 +49,11 @@ the MockHost's per-kind keyword."
       "~A expects a record name string, got ~S."
       operator-name name))))
 
-(defun table-record->ename (record)
-  "Wrap a table-record's id in an ENAME so AutoLISP code can
-round-trip table identity through tblobjname."
-  (clautolisp.autolisp-runtime:make-autolisp-ename
-   :value (symbol-table-record-id record)))
+(defun table-record->ename (host record)
+  "Intern a table-record's id as an ENAME (via the host cache) so
+AutoLISP code can round-trip table identity through tblobjname and the
+result is EQ to any other ename for the same record. (ename-eq-identity)"
+  (handle->ename host (symbol-table-record-id record)))
 
 ;;; --- Method definitions ------------------------------------------
 
@@ -105,4 +105,4 @@ group-code list with every string value wrapped as an autolisp-string."
   (let ((record (mock-host-find-table-record host
                                               (resolve-table-kind kind 'tblobjname)
                                               (resolve-record-name name 'tblobjname))))
-    (and record (table-record->ename record))))
+    (and record (table-record->ename host record))))

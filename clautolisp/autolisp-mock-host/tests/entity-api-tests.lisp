@@ -255,3 +255,50 @@
     (declare (ignore poly))
     (is (string= "FADE"
                  (autolisp-string-value (cdr (assoc 330 (host-entget mock v))))))))
+
+;;; --- ename EQ / EQUAL identity (ename-eq-identity.issue) ----------
+;;;
+;;; In AutoCAD / BricsCAD two enames that denote the SAME entity are EQ
+;;; (and EQUAL): (eq (entlast) (entlast)) is T, and the portable idioms
+;;; (eq ename (car sel)), (member ename enames) work. clautolisp interns
+;;; enames per handle on the host so every producer yields the same EQ
+;;; object; these tests pin that across all the producers.
+
+(test ename-entlast-is-eq-across-calls
+  (let ((mock (make-mock-host)))
+    (host-entmakex mock (make-line-data))
+    (is (eq (host-entlast mock) (host-entlast mock)))
+    (is (equal (host-entlast mock) (host-entlast mock)))))
+
+(test ename-entmakex-eq-to-entlast-and-entnext
+  (let* ((mock (make-mock-host))
+         (e (host-entmakex mock (make-line-data))))
+    (is (eq e (host-entlast mock)))
+    (is (eq e (host-entnext mock nil)))))
+
+(test ename-entget-head-eq-to-producer
+  (let* ((mock (make-mock-host))
+         (e (host-entmakex mock (make-line-data)))
+         (head (cdr (assoc -1 (host-entget mock e)))))
+    (is (eq e head))))
+
+(test ename-handent-eq-to-producer
+  (let* ((mock (make-mock-host))
+         (e (host-entmakex mock (make-line-data)))
+         (handle (cdr (assoc 5 (host-entget mock e)))))
+    (is (eq e (host-handent mock handle)))))
+
+(test ename-ssname-eq-to-producer
+  (let* ((mock (make-mock-host))
+         (e (host-entmakex mock (make-line-data)))
+         (set (host-ssget mock nil :mode (make-autolisp-string "X"))))
+    (is (eq e (host-ssname mock set 0)))
+    (is (member e (list (host-ssname mock set 0))))))
+
+(test ename-distinct-entities-are-not-eq
+  ;; Interning must not conflate different handles.
+  (let* ((mock (make-mock-host))
+         (a (host-entmakex mock (make-line-data)))
+         (b (host-entmakex mock (make-line-data))))
+    (is (not (eq a b)))
+    (is (not (equal a b)))))

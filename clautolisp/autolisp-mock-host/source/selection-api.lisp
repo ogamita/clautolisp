@@ -383,8 +383,7 @@ than signalling (the builtin layer validates gross filter shape)."
       ((or (minusp i) (>= i (length members))) nil)
       (t
        (let ((entity (nth i members)))
-         (clautolisp.autolisp-runtime:make-autolisp-ename
-          :value (entity-handle-id entity)))))))
+         (handle->ename host (entity-handle-id entity)))))))
 
 (defmethod host-sslength ((host mock-host) ap)
   (length (pickset-members (ap->pickset host ap 'sslength))))

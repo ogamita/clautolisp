@@ -48,3 +48,43 @@ entity-CRUD pass (which is about entity data, not ename identity), so
 deferred and filed here. Add a portable probe assertion
 (eq (entlast) (entlast)) once fixed. Listed in the Deferred section of
 entity-mutation-parity.issue.
+
+===========================================================================
+RESOLUTION (2026-07-30) — clautolisp 1.7.3, interning approach.
+===========================================================================
+
+Fixed by interning enames per handle on the MockHost, so every producer
+yields the same (EQ / EQUAL) ename object for a given handle within a
+drawing — matching vendor AutoLISP, where EQ is true for two enames of
+the same entity.
+
+  - mock-host gained an ENAME-CACHE (handle-string -> autolisp-ename)
+    plus ENAME-CACHE-DRAWING (the drawing the cache is valid for).
+  - handle->ename now takes HOST, drains the cache when the active
+    drawing identity changes (future multi-drawing sessions), and
+    interns: same handle -> same object.
+  - Every producer routes through it: the entget (-1 . ename) head
+    (entity->al-view), entlast, entnext, entmakex/%host-add-entity,
+    entmod, handent, ssname (selection-api), tblobjname
+    (table-record->ename), namedobjdict / dictsearch / dictnext /
+    dictremove / dictobjname (dictionary-api). The two remaining direct
+    make-autolisp-ename call sites (ssname, table-record->ename) were
+    rerouted through handle->ename.
+
+Verified (clautolisp --host mock):
+  (eq (entlast) (entlast))          => T
+  (eq e (entlast))                  => T   ; e from entmakex
+  (eq e (entnext))                  => T
+  (eq e (handent (cdr (assoc 5 (entget e))))) => T
+  (eq e (ssname (ssget "X") 0))     => T
+  (member e (list (entlast)))       => non-nil
+  (equal e (entlast))               => T
+  distinct entities: (eq a b)       => nil   ; interning does not conflate
+
+Regression pins added to autolisp-mock-host/tests/entity-api-tests.lisp
+(6 tests: entlast-eq-across-calls, entmakex-eq-to-entlast/entnext,
+entget-head-eq, handent-eq, ssname-eq+member, distinct-not-eq). Mock-host
+FiveAM suite 727 -> 737 checks, 100% pass; conformance corpus unchanged
+(3666 pass / 218 fail); EQ stays struct identity (only interning changed).
+
+CLOSED.

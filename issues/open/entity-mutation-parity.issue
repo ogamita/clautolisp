@@ -145,7 +145,8 @@ for full modelling by:
 Related defect found during this pass:
 
   - ename-eq-identity.issue — two ENAMEs for the same entity are not EQ
-    (vendor: they are). Cross-cutting; deferred.
+    (vendor: they are). Cross-cutting. RESOLVED (clautolisp 1.7.3): enames
+    are now interned per handle on the host; see issues/closed/.
 
 Vendor-probe verification (BLOCKED)
 -----------------------------------
