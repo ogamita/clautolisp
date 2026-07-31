@@ -1,0 +1,61 @@
+backend-cad-tests-dead-suite-zone — a middle band of backend-cad-tests.lisp never runs
+======================================================================================
+
+Found: 2026-07-31, while adding build-launch-argv tests for
+alfe-bricscad-batch-hidden-ui.
+
+Symptom
+-------
+
+A large contiguous band of the FiveAM tests in
+autolisp-front-end/tests/backend-cad-tests.lisp is registered but is
+NEVER executed by `make -C autolisp-front-end test-sbcl`
+(fiveam:run 'autolisp-front-end-suite). Sabotaging an assertion in one
+of these tests does NOT redden the suite (make exits 0).
+
+Confirmed on a pristine build (all fasl caches purged) on master:
+
+  - bricscad-emit-run-scr-...            RUNS   (early)
+  - bricscad-emit-bridge-vbs-...         does NOT run
+  - autocad-backend-is-registered        does NOT run
+  - bricscad-build-launch-argv-batch-shape  does NOT run
+  - the cad-drive-protocol-actions-* end-to-end regression tests
+    (mock CAD lifecycle) — appear to be in the dead band too
+  - cad-program-denotation-parsing / cad-denotation-* (end of file)  RUN
+
+So the file's tests split into a live head + live tail with a dead
+middle. The check count is identical (412) with or without the middle
+tests' assertions, proving they never run.
+
+Impact
+------
+
+These are real regression tests (VBS/argv emitters, the file-IPC
+mock-CAD lifecycle, start-engine early-exit handling). They have been
+silently green — a genuine coverage hole. No product bug is implied, but
+the safety net for the CAD backends is smaller than it looks.
+
+The single file has exactly one `(in-suite autolisp-front-end-suite)` at
+the top and no mid-file suite/def-suite/*suite* form, so membership
+should be uniform. The dead zone is likely a RUN-ORDER effect (FiveAM
+orders by its own hash, not file order) — e.g. one test ERRORS mid-run
+and aborts the remainder of the suite, or a cross-file duplicate test
+name orphans a subset. Not yet root-caused.
+
+To do
+-----
+
+  - Root-cause: instrument fiveam:run to log the actual executed order
+    and the total member count of autolisp-front-end-suite; find the
+    first non-executed member and whether an error/abort precedes it.
+  - Check for duplicate `(test NAME ...)` names across the alfe test
+    files (get-test is global by name; a later file would win).
+  - Once fixed, re-enable + green the whole file; the argv tests added
+    at the END for alfe-bricscad-batch-hidden-ui can then move back into
+    the BUILD-LAUNCH-ARGV section next to the existing one.
+
+Workaround in place
+-------------------
+
+The alfe-bricscad-batch-hidden-ui argv tests were appended at the END of
+the file (the live tail), verified to run via a sabotage probe.

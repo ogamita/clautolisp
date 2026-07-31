@@ -16,7 +16,10 @@ drives three backends behind a single command-line shape:
 - =clautolisp= — an in-process AutoLISP evaluator that ships with
   alfe. No CAD required. The default backend.
 - =bricscad= — BricsCAD V26+, via batch (=-b run.scr=) or COM
-  /AppleScript automation.
+  /AppleScript automation. On MS-Windows, =--mode batch= launches
+  BricsCAD with its main frame window hidden (the =/Automation=
+  startup switch); this is just a hidden-UI batch run and does *not*
+  select the COM =--mode automation= backend.
 - =autocad= — AutoCAD 2026+, via =accoreconsole= batch or COM
   automation (MS-Windows only).
 

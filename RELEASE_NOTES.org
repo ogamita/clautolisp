@@ -455,6 +455,13 @@ file or COM), and forwards the workload.
   aside so BricsCAD regenerates a fresh one) instead of letting the
   "CUI File Error / invalid document structure" modal stall a headless
   run. Opt out with ~$ALFE_NO_CUI_REPAIR~.
+- ~--bricscad --mode batch~ on MS-Windows now launches BricsCAD with its
+  main frame window *hidden*: alfe passes the BricsCAD ~/Automation~
+  startup switch alongside the direct ~/b run.scr~ command. ~/Automation~
+  is a BricsCAD executable switch (not COM) and does *not* select alfe's
+  COM ~--mode automation~ backend — the file-protocol still drives the
+  run, just without a visible window. Windows only; the macOS/Linux batch
+  command is unchanged. See ~alfe-bricscad-batch-hidden-ui~.
 - ~--autocad~ — drive an AutoCAD process (Windows + macOS lanes). The
   protocol stdout/stderr the CAD-side runtime writes is now decoded with
   the robust ~:auto~ cascade, not accoreconsole's console ~:utf-16le~ —

@@ -1115,3 +1115,64 @@ locale; no preference keeps discovery order."
     (let ((mixed (list (mk :bricscad "C:/x/Bricsys/BricsCAD V25 fr_FR/bricscad.exe")
                        (mk :bricscad "C:/x/Bricsys/BricsCAD V26 en_US/bricscad.exe"))))
       (is (string= "bricscad-v26-en_US" (den (res "bricscad" mixed '("fr_FR"))))))))
+
+;;; --- build-launch-argv: the Windows /Automation hidden-UI switch ----
+;;; alfe-bricscad-batch-hidden-ui. Simulate the host OS via
+;;; *host-os-override* so the Windows-only argv is exercised from any host.
+;;; (Placed in this section deliberately: the mid-file BUILD-LAUNCH-ARGV
+;;; area is in the dead suite-registration zone tracked by
+;;; backend-cad-tests-dead-suite-zone.issue.)
+
+(defun %bricscad-batch-argv (os &key profile (template "C:/t.dwt"))
+  "The :batch launch argv BUILD-LAUNCH-ARGV produces on a simulated OS."
+  (let ((alfe.backend.cad-common:*host-os-override* os)
+        (backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path "/fake/bricscad.exe"
+                  :variant :batch
+                  :template-path template
+                  :profile profile))
+        (session (alfe.protocol.file::%make-protocol-session
+                  :workdir (uiop:ensure-directory-pathname "/tmp/argv-probe/"))))
+    (alfe.backend.bricscad:build-launch-argv backend session :mode :batch)))
+
+(test bricscad-windows-batch-argv-has-single-automation-before-b
+  "On Windows the direct batch argv carries exactly one /Automation, and it
+precedes the /b script pair (alfe-bricscad-batch-hidden-ui)."
+  (let* ((argv (%bricscad-batch-argv :windows :profile "clean"))
+         (autopos (position "/Automation" argv :test #'string=))
+         (bpos (position "/b" argv :test #'string=)))
+    (is (eql 1 (count "/Automation" argv :test #'string=)))
+    (is (integerp autopos))
+    (is (integerp bpos))
+    (is (< autopos bpos))
+    (is (member "C:/t.dwt" argv :test #'string=))
+    (is (member "/p" argv :test #'string=))
+    (is (member "clean" argv :test #'string=))
+    (is (search "run.scr" (car (last argv))))
+    (is (not (member "-B" argv :test #'string=)))
+    (is (not (member "-P" argv :test #'string=)))))
+
+(test bricscad-nonwindows-batch-argv-has-no-automation
+  "macOS/Linux batch argv never contains /Automation and uses -B, not /b."
+  (dolist (os '(:macos :linux))
+    (let ((argv (%bricscad-batch-argv os :profile "clean")))
+      (is (not (member "/Automation" argv :test #'string=)) "no /Automation on ~A" os)
+      (is (not (member "/b" argv :test #'string=))          "no /b on ~A" os)
+      (is (member "-B" argv :test #'string=)                "-B present on ~A" os)
+      (is (member "-P" argv :test #'string=)                "-P present on ~A" os))))
+
+(test bricscad-windows-automation-mode-still-launches-cscript
+  "Explicit ALFE :automation mode (the COM/VBScript backend) is unchanged by
+the hidden-UI switch: on Windows it still runs cscript on the VBS bridge,
+NOT bricscad.exe /Automation."
+  (let ((alfe.backend.cad-common:*host-os-override* :windows)
+        (backend (alfe.backend.bricscad:make-bricscad-backend
+                  :executable-path "/fake/bricscad.exe" :variant :automation))
+        (session (alfe.protocol.file::%make-protocol-session
+                  :workdir (uiop:ensure-directory-pathname "/tmp/argv-probe/"))))
+    (let ((argv (alfe.backend.bricscad:build-launch-argv
+                 backend session :mode :automation)))
+      (is (string= "cscript" (first argv)))
+      (is (member "//nologo" argv :test #'string=))
+      (is (some (lambda (a) (search "bridge-bricscad.vbs" a)) argv))
+      (is (not (member "/Automation" argv :test #'string=))))))

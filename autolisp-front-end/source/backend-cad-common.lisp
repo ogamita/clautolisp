@@ -20,6 +20,7 @@
                 #:log-verbose)
   (:export ;; OS detection
            #:host-os
+           #:*host-os-override*
            #:macos-p
            #:linux-p
            #:windows-p
@@ -50,17 +51,25 @@
 
 ;;; --- OS detection -------------------------------------------------
 
+(defvar *host-os-override* nil
+  "When non-NIL, forces HOST-OS to return this keyword (:macos / :linux /
+:windows) instead of the compile-time detection. Its only purpose is to
+let tests exercise a platform-specific launch path — e.g. the Windows
+`/Automation' batch argv (alfe-bricscad-batch-hidden-ui) — from a host of
+a different OS. NIL in production; never bound outside the test suite.")
+
 (defun host-os ()
   "Return one of :macos :linux :windows :unknown. The detection only
 looks at compile-time *features*; UIOP exposes a similar helper but
 its name differs across versions, and we don't need uiop's full
-matrix here."
-  (cond
-    #+darwin                   ((or :macos))
-    #+(and unix (not darwin))  ((or :linux))
-    #+(or win32 windows mswindows)
-                               ((or :windows))
-    (t                          :unknown)))
+matrix here. *HOST-OS-OVERRIDE*, when set, wins (tests only)."
+  (or *host-os-override*
+      (cond
+        #+darwin                   ((or :macos))
+        #+(and unix (not darwin))  ((or :linux))
+        #+(or win32 windows mswindows)
+                                   ((or :windows))
+        (t                          :unknown))))
 
 (defun macos-p ()   (eq (host-os) :macos))
 (defun linux-p ()   (eq (host-os) :linux))
