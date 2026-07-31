@@ -73,6 +73,13 @@
                 #:cli-options-positional
                 #:cli-options-no-init-p
                 #:plan-from-options
-                #:env-default)
+                #:env-default
+                ;; --print-command
+                #:make-cli-options
+                #:cli-options-print-command-p
+                #:print-command-plan
+                #:format-launch-command
+                #:shell-quote-argument
+                #:windows-quote-argument)
   (:export #:autolisp-front-end-suite
            #:run-all-tests))

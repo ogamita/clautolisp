@@ -41,6 +41,7 @@
    #:cli-options-list-situations-p ; AC
    #:cli-options-list-cad-programs-p ; AC
    #:cli-options-dry-run-p       ; A
+   #:cli-options-print-command-p ; A
    #:cli-options-no-init-p       ; AC
    #:cli-options-no-color-p      ; AC
    #:cli-options-keep-workdir-p  ; A

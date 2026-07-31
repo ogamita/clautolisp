@@ -194,6 +194,7 @@ REPL with =-i=).
 | =-i= / =--interactive=   | Enter REPL after the queue (same context). Auto-printing is enabled in the REPL only.      |
 | =--quit=               | Force engine shutdown after the queue.          |
 | =--dry-run=            | Print the resolved plan; don't run anything.    |
+| =--print-command=      | Stage the workdir for real, print the CAD command line that would be launched, launch nothing. CAD backends only. |
 
 Examples:
 
@@ -369,6 +370,57 @@ state:
 | =*AUTOLISP-INTERACTIVE*=       | =T= when the REPL is active, =NIL= otherwise.          |
 
 The specifications document the full set and their lifetimes.
+
+* Seeing the CAD command line: =--print-command=
+
+=--print-command= answers "what exactly does alfe launch?". It runs
+the whole preparation phase for real — creates the workdir, stages the
+runtime and bootstrap LSP, writes =run-common.lsp= and the launcher
+(=run.scr=, or the VBScript/AppleScript bridge under
+=--mode automation=) — and then, instead of spawning the CAD, prints
+the command line it would have spawned:
+
+#+begin_src sh
+$ alfe --bricscad --print-command -x "(princ)"
+/opt/bricsys/bricscad/bricscad -B /tmp/alfe-bricscad-31337-a1b2c3/run.scr
+
+$ alfe --autocad --mode batch --print-command -l draw.lsp
+'C:/Program Files/Autodesk/AutoCAD 2026/accoreconsole.exe' /i C:/T/tpl.dwt /s C:/T/alfe-autocad-2244-f0e9d1/run.scr
+#+end_src
+
+Exactly one line goes to stdout — the command, with every argument
+quoted for the host shell — so it can be captured directly:
+
+#+begin_src sh
+cmd=$(alfe --bricscad --print-command --keep-workdir -x "(princ)")
+#+end_src
+
+Everything else (backend, workdir, the raw argv list) is logged at
+=--verbose= / =--debug=.
+
+Two things to know:
+
+- *The workdir is deleted on the way out* unless you pass
+  =--keep-workdir=. Without it the printed command names a directory
+  that no longer exists — fine for reading the argv, useless for
+  running it. Combine with =--keep-workdir= (and optionally
+  =--write-workdir-path FILE=) when you intend to run the command by
+  hand.
+- *Running that command yourself is not a full alfe run.* It starts
+  the CAD against the staged workdir, and the engine will boot, load
+  =run-common.lsp= and reach =READY= — then wait, because nothing is
+  driving alfe's side of the file-IPC protocol (no request is ever
+  written to =protocol/=, no output is drained). It is a debugging
+  aid: it shows the exact switches, binary and script path, and lets
+  you reproduce a launch-time failure (licensing, profile, a modal
+  dialog) without alfe in the loop.
+
+=--print-command= requires a CAD backend. Under =--clautolisp= there
+is no external command line — the engine runs in-process — so alfe
+exits 2 with a usage error rather than printing nothing.
+
+It is distinct from =--dry-run=, which resolves nothing, touches no
+disk and just prints the action plan.
 
 * Troubleshooting
 

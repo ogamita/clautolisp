@@ -47,6 +47,14 @@
   (list-situations-p nil)             ; AC  --list-situations
   (list-cad-programs-p nil)           ; AC  --list-cad-programs (alfe)
   (dry-run-p        nil)              ; A
+  (print-command-p  nil)              ; A   --print-command: stage the workdir as
+                                      ;     usual, print the CAD command line that
+                                      ;     WOULD be launched, then exit without
+                                      ;     launching. Unlike --dry-run (which
+                                      ;     resolves nothing and touches no disk),
+                                      ;     this needs a real backend and a real
+                                      ;     workdir, so the printed argv is the
+                                      ;     exact one alfe would spawn.
   (no-init-p        nil)              ; AC
   (no-color-p       nil)              ; AC
   (keep-workdir-p   nil)              ; A

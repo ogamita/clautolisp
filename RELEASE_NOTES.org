@@ -566,6 +566,21 @@ file or COM), and forwards the workload.
   backend's lifecycle (workdir, argv, BOOTSTRAP timing, status-file
   polling). The old "single error line" failure mode is gone.
 
+- ~--print-command~ prints the CAD command line alfe *would* launch,
+  and launches nothing. It stages the workdir for real (runtime and
+  bootstrap LSP, ~run-common.lsp~, ~run.scr~ or the VBScript /
+  AppleScript bridge), then writes exactly one shell-ready line to
+  stdout — every argument quoted for the host shell — so
+  ~cmd=$(alfe --bricscad --print-command …)~ works. The workdir is
+  erased on the way out unless ~--keep-workdir~ is given. CAD backends
+  only: under ~--clautolisp~ there is no external command line, and
+  alfe exits 2 with a usage error. Running the printed command by hand
+  boots the CAD against the staged workdir but stops at ~READY~, since
+  nothing drives alfe's side of the file-IPC protocol — it is a
+  launch-time debugging aid (switches, licensing, profile, startup
+  modals), not a substitute for a run. Distinct from ~--dry-run~,
+  which resolves nothing, touches no disk, and prints only the plan.
+
 ** Image-introspection variables
 
 - alfe publishes the same ~*AUTOLISP-…*~ globals as clautolisp, plus

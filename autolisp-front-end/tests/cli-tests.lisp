@@ -458,3 +458,62 @@ from alfe-backend-interface.issue."
              (run '("-x" "(+ 1 2)") :version "0.0.1"))))
     (is (= 0 exit-code))
     (is (search (format nil "3~%") (get-output-stream-string stdout)))))
+
+;;; --- --print-command ------------------------------------------------
+;;;
+;;; The option stages a run for real and prints the CAD command line
+;;; instead of spawning it. Parsing + argument quoting live here; the
+;;; end-to-end staging path is exercised in backend-cad-tests.lisp,
+;;; where the BricsCAD backend symbols are in scope.
+
+(test cli-parse-print-command-flag
+  "--print-command sets its own flag and is independent of --dry-run
+and --keep-workdir."
+  (let ((plain (parse-arguments '("-x" "(princ)")))
+        (printed (parse-arguments '("--bricscad" "--print-command" "-x" "(princ)")))
+        (kept (parse-arguments '("--bricscad" "--print-command" "--keep-workdir"))))
+    (is (null (cli-options-print-command-p plain)))
+    (is (cli-options-print-command-p printed))
+    ;; --print-command is NOT --dry-run: it must not set the other flag.
+    (is (null (cli-options-dry-run-p printed)))
+    (is (cli-options-print-command-p kept))
+    (is (cli-options-keep-workdir-p kept))))
+
+(test cli-print-command-quotes-posix-arguments
+  "The printed line is shell-ready: safe words stay bare, anything with
+whitespace or metacharacters is single-quoted, and an embedded single
+quote uses the '\\'' escape."
+  (is (string= "/opt/bricscad" (shell-quote-argument "/opt/bricscad")))
+  (is (string= "-B" (shell-quote-argument "-B")))
+  (is (string= "'/tmp/a b/run.scr'" (shell-quote-argument "/tmp/a b/run.scr")))
+  (is (string= "'it'\\''s'" (shell-quote-argument "it's")))
+  (is (string= "'a;rm -rf /'" (shell-quote-argument "a;rm -rf /")))
+  (is (string= "/opt/bricscad -B '/tmp/a b/run.scr'"
+               (format-launch-command
+                '("/opt/bricscad" "-B" "/tmp/a b/run.scr") :linux))))
+
+(test cli-print-command-quotes-windows-arguments
+  "On Windows the same argv is rendered with cmd.exe quoting: double
+quotes around anything with a space, switches left bare."
+  (is (string= "/Automation" (windows-quote-argument "/Automation")))
+  (is (string= "\"C:/Program Files/Bricsys/bricscad.exe\""
+               (windows-quote-argument "C:/Program Files/Bricsys/bricscad.exe")))
+  (is (string= "\"C:/Program Files/Bricsys/bricscad.exe\" /Automation /b C:/T/run.scr"
+               (format-launch-command
+                '("C:/Program Files/Bricsys/bricscad.exe" "/Automation"
+                  "/b" "C:/T/run.scr")
+                :windows))))
+
+(test cli-run-print-command-rejects-non-cad-backend
+  "--print-command against a non-CAD backend is a usage error (exit 2),
+not a silent empty answer — `cmd=$(alfe --print-command …)` must fail
+loudly rather than yield an empty string."
+  (let* ((stderr (make-string-output-stream))
+         (exit-code
+           (let ((*error-output* stderr)
+                 (alfe.backend:*backends* (make-hash-table :test #'eql)))
+             (alfe.backend:register-backend
+              :echo (alfe.backend.echo:make-echo-backend))
+             (run '("--print-command" "-x" "(princ)") :version "0.0.1"))))
+    (is (= 2 exit-code))
+    (is (search "--print-command" (get-output-stream-string stderr)))))
