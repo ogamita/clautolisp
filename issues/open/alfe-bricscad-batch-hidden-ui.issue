@@ -1,0 +1,151 @@
+alfe-bricscad-batch-hidden-ui — pass /Automation with /b on Windows to run BricsCAD batch with its main frame hidden
+===================================================================================================================
+
+Affected:
+  autolisp-front-end/source/backend-bricscad.lisp
+  autolisp-front-end/tests/backend-cad-tests.lisp
+
+Context
+-------
+
+The Windows BricsCAD batch backend currently launches:
+
+  bricscad.exe <template> [/p <profile>] /b <workdir>/run.scr
+
+`build-launch-argv` deliberately uses the direct executable + `/b`
+path because it is simpler and more reliable than the legacy
+COM/VBScript bridge. The direct path currently opens BricsCAD's main
+window, even though ALFE only needs the script-driven protocol.
+
+Bricsys documents that the Windows-only `/Automation` startup switch:
+
+  - starts BricsCAD without displaying the main frame window;
+  - was intended for COM automation;
+  - is also useful for batch processing that does not use COM;
+  - can be combined directly with `/B`;
+  - requires the loaded script to close BricsCAD when processing ends.
+
+The documented example is:
+
+  <BricsCAD.exe> /automation /B <scriptFileName.scr>
+
+Source, checked 2026-07-31:
+  https://help.bricsys.com/en-us/document/bricscad/customization/startup-options
+
+The switch therefore does not require ALFE to use COM. It is an
+independent startup option that can hide the UI while the existing
+`run.scr` file protocol drives BricsCAD.
+
+Terminology warning
+-------------------
+
+ALFE already calls the legacy COM/VBScript backend `:automation` and
+exposes it as `--mode automation`. BricsCAD also names its executable
+switch `/Automation`. These are not the same mechanism:
+
+  - ALFE `:batch` on Windows: direct `bricscad.exe ... /b run.scr`;
+  - proposed change: direct `bricscad.exe /Automation ... /b run.scr`;
+  - ALFE `:automation`: `cscript bridge-bricscad.vbs`, using COM and
+    `SendCommand`.
+
+This issue changes only the direct Windows batch argv. It does not
+replace, rename, or otherwise modify the legacy COM backend.
+
+Required change
+---------------
+
+In `build-launch-argv`, add `/Automation` to the direct batch command
+when `windows-p` is true. Do not pass it on macOS or Linux, where the
+switch is not supported.
+
+The effective Windows command should be equivalent to:
+
+  bricscad.exe /Automation <template> [/p <profile>] /b <workdir>/run.scr
+
+The exact argument position may follow the existing argv construction,
+provided `/Automation` precedes the `/b` script pair and BricsCAD V25
+accepts the resulting command.
+
+`run.scr` already issues `_FILEDIA 0`, loads `run-common.lsp`, and
+closes BricsCAD on normal completion. Preserve those semantics.
+
+Why this matters for CI
+-----------------------
+
+SCHMS+ is preparing a Windows GitLab Runner host. BricsCAD is normally
+invoked once per ALFE invocation and exits after that invocation. A
+single CI job may perform several successive ALFE/BricsCAD cycles.
+
+Hiding the main frame is valuable in both contemplated deployments:
+
+  1. an interactive runner or `alfe-back` in a persistent RDP session;
+  2. a GitLab Runner Windows service with no interactive session, if
+     BricsCAD can initialize successfully in session 0.
+
+`/Automation` removes the visible main frame but does not by itself
+prove that BricsCAD can run on a noninteractive Windows window station.
+Session-0 support remains an empirical integration test, not an
+assumption of this change.
+
+Tests
+-----
+
+Unit tests, runnable without BricsCAD:
+
+  - add or extend a `build-launch-argv` test for a simulated Windows
+    host;
+  - assert that the direct Windows batch argv contains exactly one
+    `/Automation` argument;
+  - assert that `/Automation` appears before `/b` and its script path;
+  - assert that the Windows command still contains the configured
+    template and `/p` profile when present;
+  - assert that the macOS/Linux batch argv does not contain
+    `/Automation` and still uses `-B`;
+  - assert that explicit ALFE `:automation` mode still launches
+    `cscript`/VBScript on Windows.
+
+Windows integration tests, requiring BricsCAD V25:
+
+  1. Run a minimal `alfe --bricscad --mode batch -x ...` invocation in
+     an ordinary interactive session. It reaches READY, executes the
+     request, writes DONE, and exits without displaying the main frame.
+  2. Run the same command in a disconnected RDP session.
+  3. Run it from GitLab Runner installed as a service after reboot,
+     with no user session open. Record whether BricsCAD reaches READY;
+     failure here does not invalidate the argv change, but determines
+     whether CI needs the RDP/interactive-agent architecture.
+  4. Verify that abnormal ALFE termination still kills BricsCAD and
+     releases the network licence.
+
+Documentation synchronisation
+-----------------------------
+
+Update all documentation tracks affected by the launch command:
+
+  - source comments at the top of `backend-bricscad.lisp`;
+  - function docstrings/comments describing Windows batch mode;
+  - ALFE user manual and specifications where the BricsCAD launch
+    command or batch/automation distinction is documented;
+  - `alfe --help` and its man page only if their user-visible mode
+    description needs clarification.
+
+Make it explicit that `/Automation` is a BricsCAD executable switch in
+the direct batch backend and does not mean that ALFE selected its COM
+`--mode automation` backend.
+
+Acceptance criteria
+-------------------
+
+  - On Windows, direct BricsCAD batch argv is
+    `bricscad.exe ... /Automation ... /b run.scr`.
+  - On non-Windows platforms, direct batch argv is unchanged.
+  - The COM/VBScript backend remains available and unchanged through
+    explicit ALFE `--mode automation`.
+  - Unit tests pin the platform-specific argv and the distinction
+    between direct hidden-UI batch and COM automation.
+  - A BricsCAD V25 Windows integration run reaches READY, executes an
+    ALFE request, reports DONE, and exits cleanly.
+  - The result of the no-session/service experiment is recorded.
+  - Synchronized documentation accurately describes the new command.
+  - The ALFE version is bumped according to project convention.
+

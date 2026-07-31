@@ -63,6 +63,24 @@ Possible approaches
 - At minimum, document that native `(load)` on macOS BricsCAD uses
   the OS default codepage, not `-e`.
 
+UPDATE (alfe 1.6.14)
+--------------------
+
+The encoding fix works for native `(load …)`: the src-vlx modules now
+decode cp1252 correctly (`actual="entière"`, `"«salut»"`, `"égale à 42"`).
+BUT the mismatch merely FLIPPED — now the *test files*, which the harness
+reads with its own char reader (`tu:read-form` = `open` + `read-char`,
+used by `tu:load-test`), come out mangled:
+
+    expected="entire"       actual="entière"      (é/à dropped)
+    expected="gale  42"     actual="égale à 42"
+    expected="ÇsalutÈ"      actual="«salut»"      (« » -> Ç È)
+
+So on BricsCAD, native `load` and `open`/`read-char` no longer agree on
+cp1252 decoding (clautolisp keeps them consistent -> 177 OK). The `-e` /
+SYSCODEPAGE encoding needs to apply uniformly to `read-char`/`read-line`
+on file streams too, not only to `load`. Still 13/177, all accents.
+
 Tested so far (inconclusive)
 ----------------------------
 

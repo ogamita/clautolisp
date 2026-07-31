@@ -135,6 +135,7 @@ SMALL — process next, in this order:
 
   -- E: build/CI polish
   E0 cloud-platform-runners.issue             pjb: survey on-demand macos/windows cloud runners
+  E0a alfe-bricscad-batch-hidden-ui.issue     Windows: add BricsCAD /Automation to direct /b batch launch
   19 autolisp-spec-pdf-versioned-filename.issue
   20 tex-pdf-characters.issue
   21 nice-make-output.issue
@@ -414,7 +415,6 @@ release-artefacts.issue  -- CI + Makefile workflow to produce release
   6 SBCL targets; bin/ dispatch + libexec layout; bundled libdwg.
 
 ---
-
 
 
 
