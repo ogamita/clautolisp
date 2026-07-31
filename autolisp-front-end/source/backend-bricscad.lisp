@@ -25,9 +25,13 @@
 ;;;;     (Linux automation is deferred per the issue.)
 ;;;;
 ;;;;   Windows, batch mode (default, when bricscad.exe is found):
-;;;;     bricscad.exe <template> [/p <profile>] /b WORKDIR/run.scr
+;;;;     bricscad.exe /Automation <template> [/p <profile>] /b WORKDIR/run.scr
 ;;;;     Same GUI-exe + script mechanism as macOS/Linux — no COM. NB the
 ;;;;     Windows CLI takes /p and /b (AutoCAD-lineage), not the Unix -P/-B.
+;;;;     /Automation is a BricsCAD executable switch that starts it with the
+;;;;     main frame window HIDDEN (Bricsys Startup options doc); it combines
+;;;;     with /B and does NOT mean ALFE's COM `--mode automation' backend —
+;;;;     the direct /b file-protocol still drives the run. Windows only.
 ;;;;     $AUTOLISP_BRICSCAD_PROFILE names the profile; a CLEAN profile is
 ;;;;     required for pure-CAD runs, else the runner's default profile
 ;;;;     auto-loads a vertical app whose startup blocks the /b script.
@@ -523,6 +527,18 @@ typically hands it to UIOP:LAUNCH-PROGRAM."
              (template (bricscad-backend-template-path backend))
              (profile (bricscad-backend-profile backend)))
          (append (list binary)
+                 ;; Windows-only: /Automation starts BricsCAD WITHOUT its main
+                 ;; frame window. It is a BricsCAD executable startup switch
+                 ;; (Bricsys "Startup options" doc), NOT ALFE's COM `--mode
+                 ;; automation' backend — the direct /b file-protocol still
+                 ;; drives the run. Bricsys documents it as combinable with /B
+                 ;; and useful for non-COM batch; the loaded script must close
+                 ;; BricsCAD on completion (run.scr already does). Not passed on
+                 ;; macOS/Linux, where the switch does not exist. It precedes
+                 ;; the template + /b pair, matching the documented example
+                 ;; `bricscad.exe /automation /B <script.scr>'.
+                 ;; See alfe-bricscad-batch-hidden-ui.issue.
+                 (when (windows-p) (list "/Automation"))
                  (when template (list (namestring template)))
                  ;; User profile: the /p (Windows) or -P (Unix) switch. This
                  ;; is how a pure-CAD run avoids the runner's default profile

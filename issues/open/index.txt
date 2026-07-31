@@ -400,6 +400,11 @@ tex-pdf-characters.issue
 alfe-plugin-model.issue
 nice-make-output.issue
 ci-github-ccl-lane.issue
+backend-cad-tests-dead-suite-zone.issue  -- found 2026-07-31 while doing
+  alfe-bricscad-batch-hidden-ui: a middle band of backend-cad-tests.lisp
+  FiveAM tests registers but never runs (silent coverage hole; not root-
+  caused). Non-blocking: the hidden-ui argv tests were appended to the
+  live tail.
 
 
 drawing-database-api.issue  -- parent tracking issue; see the plan in

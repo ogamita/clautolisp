@@ -567,6 +567,26 @@ verify:vl-registry:windows:
   script:
     - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
+# --- alfe-bricscad-batch-hidden-ui: prove BricsCAD accepts /Automation ------
+# Drives a minimal `alfe --bricscad --mode batch` invocation through the real
+# BricsCAD (Windows) and asserts the whole protocol cycle completes with the
+# /Automation (hidden main frame) switch in the direct /b command. Self-
+# contained (builds alfe in-script); manual (intermittent Windows CAD runner).
+# The RDP / session-0 / abnormal-termination experiments (issue tests 2-4)
+# stay manual, out of CI. See scripts/verify-bricscad-hidden-ui.ps1.
+verify:bricscad-hidden-ui:windows:
+  stage: test
+  tags: [windows, amd64, shell]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  rules:
+    - *on-release-mandatory
+    - when: manual
+      allow_failure: true
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-bricscad-hidden-ui.ps1
+
 # --- vendor verification: alfe probes on real BricsCAD / AutoCAD ------------
 #
 # The Windows runner has BricsCAD and AutoCAD installed and runs in an open

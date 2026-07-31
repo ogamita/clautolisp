@@ -510,7 +510,7 @@ backend by default can set =$ALFE_BACKEND_OVERRIDE=bricscad= (or
 
 | Backend      | macOS                                  | Linux            | MS-Windows                                                      |
 |--------------+----------------------------------------+------------------+-----------------------------------------------------------------|
-| =bricscad=   | =batch= ; =automation= via AppleScript | Not supported¹   | =automation= via COM (default); =batch= via =-B run.scr=        |
+| =bricscad=   | =batch= ; =automation= via AppleScript | Not supported¹   | =automation= via COM (default); =batch= via =/Automation … /b run.scr=³ |
 | =autocad=    | Not supported²                         | Not supported²   | =automation= via COM (default); =batch= via =accoreconsole.exe= |
 | =clautolisp= | (default) Always supported             | Always supported | Always supported                                                |
 
@@ -522,6 +522,16 @@ without an AppleScript bridge.
 ² Autodesk distributes neither AutoCAD nor =accoreconsole= for macOS
 or Linux. The =--autocad= combination on those systems fails cleanly
 with code =3=.
+
+³ On MS-Windows the direct batch command takes the AutoCAD-lineage
+=/b= (not the Unix =-B=), and alfe prefixes it with =/Automation= —
+a *BricsCAD executable* startup switch that launches BricsCAD with its
+main frame window HIDDEN (Bricsys "Startup options"). =/Automation=
+combines with =/b= and does NOT require or select COM: it is unrelated
+to alfe's =--mode automation= (the COM/VBScript backend). The loaded
+=run.scr= closes BricsCAD on completion, as required. Windows-only; the
+macOS/Linux batch argv is unchanged (=-P= / =-B=).
+See =alfe-bricscad-batch-hidden-ui=.
 
 ** Selecting a specific install — denotation, =--cad=, =--list-cad-programs=
 
