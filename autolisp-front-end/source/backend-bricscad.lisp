@@ -486,6 +486,7 @@ substituted from the provided session paths."
 
 set runLspFile to \"${RUNLSPFILE}\"
 set appPath to \"${APPPATH}\"
+set docPath to \"${DOCPATH}\"
 
 -- Launch-or-activate in one step. `open -a' is idempotent: it activates an
 -- already-running copy rather than starting a second one, so no process-name
@@ -575,17 +576,30 @@ bundle name, not by the unix binary's name."
                           :name nil :type nil :version nil
                           :defaults path)))))))
 
-(defun %applescript-launch-command (executable-path)
+(defun %applescript-launch-command (executable-path &optional template-path)
   "The `do shell script' line the launcher uses to bring BricsCAD up.
 Prefers the enclosing .app bundle with `open -a' (the supported way to
 launch a macOS GUI app); falls back to running the binary directly in
 the background when the executable is not inside a bundle. AppleScript's
 `quoted form of' does the shell quoting, so a path with spaces — the
-normal case, \"BricsCAD V26.app\" — is safe."
+normal case, \"BricsCAD V26.app\" — is safe.
+
+When TEMPLATE-PATH is given it is opened WITH the app. That is not a
+nicety: `keystroke' types into the frontmost window, and a BricsCAD with
+no drawing open shows its Start page, which has no command line to
+receive the text. The 2026-08-01 macOS probe proved the keystrokes were
+reaching a focused BricsCAD (launcher-focus.txt said
+`frontmost=bricscad focused=true', osascript exit 0) and still executing
+nothing. The batch path never had this problem because it always passes
+a template on the command line."
   (let ((bundle (macos-app-bundle-for executable-path)))
-    (if bundle
-        "do shell script \"open -a \" & quoted form of appPath"
-        "do shell script quoted form of appPath & \" > /dev/null 2>&1 &\"")))
+    (cond
+      ((and bundle template-path)
+       "do shell script \"open -a \" & quoted form of appPath & \" \" & quoted form of docPath")
+      (bundle
+       "do shell script \"open -a \" & quoted form of appPath")
+      (t
+       "do shell script quoted form of appPath & \" > /dev/null 2>&1 &\""))))
 
 (defparameter +bricscad-applescript-startup-wait+ "60"
   "How many seconds the launcher waits for BricsCAD to become the
@@ -596,10 +610,13 @@ delay is unusable here — too short and the keystrokes go to the
 terminal, too long and every run pays for it. Override with
 $ALFE_BRICSCAD_STARTUP_DELAY.")
 
-(defun emit-launcher-applescript (path &key runtime-load-path executable-path)
+(defun emit-launcher-applescript (path &key runtime-load-path executable-path
+                                            template-path)
   "Write the macOS AppleScript launcher to PATH. EXECUTABLE-PATH is the
 discovered bricscad binary; the launcher addresses its enclosing .app
-bundle (see MACOS-APP-BUNDLE-FOR) rather than guessing an app name."
+bundle (see MACOS-APP-BUNDLE-FOR) rather than guessing an app name.
+TEMPLATE-PATH, when given, is opened with it so the CAD has a drawing —
+and therefore a command line — to type into."
   (let* ((bundle (or (macos-app-bundle-for executable-path) executable-path ""))
          ;; :escape #'identity — this template is AppleScript, not VBScript.
          ;; The two path values are escaped here (they land inside AppleScript
@@ -609,7 +626,10 @@ bundle (see MACOS-APP-BUNDLE-FOR) rather than guessing an app name."
                 *bricscad-applescript-template*
                 `(("RUNLSPFILE"    . ,(applescript-escape (namestring runtime-load-path)))
                   ("APPPATH"       . ,(applescript-escape (namestring bundle)))
-                  ("LAUNCHCOMMAND" . ,(%applescript-launch-command executable-path))
+                  ("DOCPATH"       . ,(applescript-escape
+                                       (if template-path (namestring template-path) "")))
+                  ("LAUNCHCOMMAND" . ,(%applescript-launch-command
+                                       executable-path template-path))
                   ("STARTUPWAIT"   . ,(or (uiop:getenv "ALFE_BRICSCAD_STARTUP_DELAY")
                                           +bricscad-applescript-startup-wait+))
                   ("FOCUSLOG"      . ,(applescript-escape
@@ -926,7 +946,11 @@ future ticket."
                 (let ((apl (merge-pathnames "launcher.applescript" workdir)))
                   (emit-launcher-applescript
                    apl :runtime-load-path run-common
-                       :executable-path (bricscad-backend-executable-path backend))
+                       :executable-path (bricscad-backend-executable-path backend)
+                       ;; Open a drawing with the app: no document, no command
+                       ;; line, nowhere for the keystrokes to land.
+                       :template-path (or (bricscad-backend-template-path backend)
+                                          (discover-bricscad-template)))
                   (log-debug "backend BRICSCAD: wrote launcher.applescript -> ~A" apl))))))
           (let ((argv (build-launch-argv backend protocol :mode mode))
                 (session (%make-bricscad-session

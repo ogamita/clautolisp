@@ -1268,7 +1268,8 @@ returns NIL for a plain unix binary."
   (is (null (alfe.backend.bricscad:macos-app-bundle-for "/opt/bricsys/bricscad")))
   (is (null (alfe.backend.bricscad:macos-app-bundle-for nil))))
 
-(defun %emitted-applescript (executable-path &key (code-only t))
+(defun %emitted-applescript (executable-path &key (code-only t)
+                                                  (template-path "/tmp/tpl/Default-mm.dwt"))
   "The AppleScript EMIT-LAUNCHER-APPLESCRIPT writes for EXECUTABLE-PATH.
 With CODE-ONLY (the default) the `--' comment lines are dropped, so the
 assertions below test what osascript will RUN. The template's comments
@@ -1281,7 +1282,8 @@ comments), and matching against them would make every check vacuous."
          (progn
            (alfe.backend.bricscad:emit-launcher-applescript
             path :runtime-load-path "/tmp/wd/run-common.lsp"
-                 :executable-path executable-path)
+                 :executable-path executable-path
+                 :template-path template-path)
            (let ((text (uiop:read-file-string path)))
              (if code-only
                  (format nil "~{~A~^~%~}"
@@ -1384,3 +1386,25 @@ osascript exit 0, status stuck at BOOTING)."
     (is (search "launcher-focus.txt" script))
     ;; And there is no bare fixed-delay-then-type any more.
     (is (not (search "delay 8.0" script)))))
+
+(test macos-launcher-applescript-opens-a-drawing-with-the-app
+  "The launcher must open a DOCUMENT, not just the application. BricsCAD
+with no drawing shows its Start page, which has no command line, so the
+keystrokes land in a focused BricsCAD and execute nothing — the exact
+2026-08-01 probe result (frontmost=bricscad focused=true, osascript exit
+0, status stuck at BOOTING). The batch path never hit this because it
+always passes a template."
+  (let ((with-doc (%emitted-applescript
+                   "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad"
+                   :template-path "/tmp/tpl/Default-mm.dwt"))
+        (no-doc (%emitted-applescript
+                 "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad"
+                 :template-path nil)))
+    (is (search "quoted form of docPath" with-doc))
+    (is (search "/tmp/tpl/Default-mm.dwt" with-doc))
+    ;; Still shell-quoted (a template path has spaces on a real install).
+    (is (search "open -a " with-doc))
+    ;; With no template discovered we still launch the app rather than
+    ;; emitting a broken `open -a APP ""'.
+    (is (not (search "quoted form of docPath" no-doc)))
+    (is (search "open -a " no-doc))))
