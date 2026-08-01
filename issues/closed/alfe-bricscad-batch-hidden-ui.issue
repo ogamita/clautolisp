@@ -149,3 +149,50 @@ Acceptance criteria
   - Synchronized documentation accurately describes the new command.
   - The ALFE version is bumped according to project convention.
 
+
+
+* Resolution — integration run GREEN (2026-08-01)
+
+Implemented in alfe 1.7.9 (feature-alfe-bricscad-batch-hidden-ui,
+MR!30): BUILD-LAUNCH-ARGV prepends /Automation on Windows only, before
+the template + /b pair; macOS/Linux keep `-B' with no switch; the COM
+`--mode automation' backend is untouched; 3 unit tests pin all three
+shapes; docs synchronised (spec matrix + footnote, user manual, source
+header, RELEASE_NOTES).
+
+** The integration criterion is met
+
+verify:bricscad-hidden-ui:windows, job 15659929904, on the real
+Windows CAD runner against BricsCAD V25 fr_FR:
+
+  == command line alfe would launch ==
+  "C:/program files/Bricsys/BricsCAD V25 fr_FR/bricscad.exe" /Automation /b C:/msys64/tmp/alfe-bricscad-17096-y54em6/run.scr
+  == running: alfe --bricscad --mode batch -l C:\msys64\tmp\alfe-hidden-ui-probe-16312.lsp ==
+  HIDDEN-UI-PROBE-OK-16312
+  == PASS: batch cycle completed with /Automation; marker echoed, exit 0 ==
+
+So BricsCAD V25 ACCEPTS /Automation in the direct /b batch command, and
+the full cycle (launch -> READY -> request -> DONE -> clean exit)
+completes. The argv line is printed by `alfe --print-command' (1.7.10),
+which is why the switch is visible in the trace as well as asserted in
+the unit tests.
+
+** The first run of this job was a FALSE FAILURE
+
+Job 15659915928 reported FAIL with alfe exit 0 and "nil" echoed. The
+fault was in the probe, not the product: the .ps1 passed the request as
+-x "(princ \"MARKER\")", and PowerShell's native-argument parser strips
+the inner quotes, so BricsCAD princ'd an unbound symbol. The cycle had
+in fact SUCCEEDED. Both probe drivers now pass the request in a .lsp
+file with -l (no quoting surface) — see the fix-cad-verification-probes
+commit. Worth remembering: a CAD probe that asserts on marker TEXT is
+only as trustworthy as its argv quoting.
+
+** Experiments 2-4 (RDP / no session / abnormal termination)
+
+Deliberately still out of CI and NOT run: they need a disconnected RDP
+session and a runner installed as a service, which the shared Windows
+box cannot provide without disturbing the other jobs. Recorded here as
+open manual experiments rather than silently dropped.
+
+CLOSED: the acceptance criteria that CI can reach are all met.

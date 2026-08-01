@@ -62,3 +62,91 @@ job artifacts (dist/bricscad-automation/).
 A Windows counterpart job (verify:bricscad-automation:windows, driving
 the COM/VBScript bridge) is worth adding for symmetry once the macOS
 side has a verdict.
+
+
+* First run: FAIL, and now we know why (2026-08-01)
+
+verify:bricscad-automation:macos, job 15659895556, thalassa, real
+BricsCAD V26:
+
+  ### phase 1: --mode automation (the path under test)
+  == [automation] command line alfe would launch ==
+  osascript /var/folders/.../alfe-bricscad-81366-y58ksi/launcher.applescript
+  alfe[warn]: backend BRICSCAD: READY timeout after 240.01 s; last status = "BOOTING"
+  == [automation] FAIL: exit=4 marker-present=0 ==
+
+  ### phase 2: --mode batch (control)
+  '/Applications/BricsCAD V26.app/Contents/MacOS/bricscad' '/Users/pjb/.../Default-mm.dwt' -B /var/folders/.../run.scr
+  AUTOMATION-PROBE-OK-81364
+  == [batch] PASS (exit 0, marker echoed) ==
+
+  ### RESULT: automation FAIL / batch PASS
+
+The control did its job: BricsCAD and the runner are healthy, and the
+fault is in the macOS automation path alone. status.txt never left
+BOOTING and protocol/stdout.txt and stderr.txt were EMPTY — the CAD
+never received the (load ...) at all.
+
+** Cause: the emitted AppleScript could not run
+
+Two independent faults in *BRICSCAD-APPLESCRIPT-TEMPLATE*, either of
+which aborts the script before a single keystroke is sent:
+
+  1. `set running to exists (processes whose name is "bricscad")'
+     — `running' is a RESERVED AppleScript property term, so this is a
+     compile error, not an assignment.
+
+  2. `tell application "BricsCAD" to activate' — the installed bundle
+     is "BricsCAD V26.app"; there is no application named "BricsCAD".
+
+That is consistent with every observable: empty channels, status stuck
+at BOOTING, and the CAD never started.
+
+** Why it cost 240 s instead of failing at once
+
+alfe waited out the whole READY timeout because the READY wait ignored
+the launcher process. osascript had already exited non-zero, and its
+exit code and stderr — the actual diagnosis — were discarded.
+WAIT-FOR-STATUS-PREFIX has always accepted :ALIVE-P; BricsCAD's
+START-ENGINE simply never passed it.
+
+** Fixed (alfe 1.7.11)
+
+  - Template: launch-or-activate in one step with
+    `do shell script "open -a " & quoted form of appPath', addressing
+    the REAL bundle (MACOS-APP-BUNDLE-FOR derives it from the
+    discovered binary). No reserved word, no guessed app name, no
+    process-name probing. Startup delay 2.0 -> 8.0 s (a cold start on
+    the runner takes ~9 s), overridable with
+    $ALFE_BRICSCAD_STARTUP_DELAY.
+  - SUBSTITUTE-PLACEHOLDERS took an :ESCAPE function. It had always
+    applied VBS-ESCAPE — right for the VBScript bridge, wrong here: it
+    doubled the quotes of the injected AppleScript fragment. Caught by
+    the new unit tests, not by CI.
+  - START-ENGINE now passes :ALIVE-P. A launcher that exits NON-ZERO
+    aborts the wait immediately with a :LAUNCHER-FAILED error carrying
+    its exit code and stderr; a launcher that exits 0 is a driver that
+    finished its job (osascript after typing, cscript after
+    SendCommand) and the wait continues, so the batch path is
+    unchanged.
+
+** Still open: does the keystroke approach work in CI at all?
+
+Even with a correct script, `keystroke' needs an interactive GUI
+session AND Accessibility (TCC) permission for the process running
+osascript. A GitLab shell runner typically has neither, in which case
+System Events raises -25211 and osascript exits non-zero — which alfe
+will now report immediately and precisely instead of hanging.
+
+Re-run the job. Three outcomes, three different next steps:
+
+  - PASS                      -> macOS automation works; close.
+  - :LAUNCHER-FAILED -25211   -> permission/session limit, not a code
+                                 bug. Decide: grant Accessibility to
+                                 the runner, or declare --mode
+                                 automation unsupported on macOS and
+                                 make it fail fast with that message
+                                 instead of pretending.
+  - :LAUNCHER-FAILED other    -> read the reported stderr; script bug.
+
+Either way the 240 s silent hang is gone.

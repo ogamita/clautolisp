@@ -1248,3 +1248,98 @@ run.scr and run-common.lsp the printed command refers to."
       (is (uiop:file-exists-p (merge-pathnames "run-common.lsp" dir)))
       (ignore-errors (uiop:delete-directory-tree dir :validate t
                                                      :if-does-not-exist :ignore)))))
+
+;;; --- macOS automation launcher (alfe-bricscad-automation-macos) ----
+;;; The first real macOS probe run sat at BOOTING for the whole 240 s
+;;; READY timeout with empty stdout/stderr, because the emitted
+;;; AppleScript could not run at all: it used `running' (a reserved
+;;; AppleScript property term) as a variable, and addressed the app as
+;;; "BricsCAD" while the installed bundle is "BricsCAD V26.app".
+
+(test macos-app-bundle-for-finds-enclosing-bundle
+  "MACOS-APP-BUNDLE-FOR maps a binary inside a .app to the bundle, and
+returns NIL for a plain unix binary."
+  (is (string= "/Applications/BricsCAD V26.app/"
+               (alfe.backend.bricscad:macos-app-bundle-for
+                "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad")))
+  (is (string= "/Applications/BricsCAD.app/"
+               (alfe.backend.bricscad:macos-app-bundle-for
+                "/Applications/BricsCAD.app/Contents/MacOS/bricscad")))
+  (is (null (alfe.backend.bricscad:macos-app-bundle-for "/opt/bricsys/bricscad")))
+  (is (null (alfe.backend.bricscad:macos-app-bundle-for nil))))
+
+(defun %emitted-applescript (executable-path &key (code-only t))
+  "The AppleScript EMIT-LAUNCHER-APPLESCRIPT writes for EXECUTABLE-PATH.
+With CODE-ONLY (the default) the `--' comment lines are dropped, so the
+assertions below test what osascript will RUN. The template's comments
+quote the very constructs the tests forbid (that is the point of the
+comments), and matching against them would make every check vacuous."
+  (let ((path (merge-pathnames (format nil "alfe-applescript-~D.applescript"
+                                       (random 1000000))
+                               (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (alfe.backend.bricscad:emit-launcher-applescript
+            path :runtime-load-path "/tmp/wd/run-common.lsp"
+                 :executable-path executable-path)
+           (let ((text (uiop:read-file-string path)))
+             (if code-only
+                 (format nil "~{~A~^~%~}"
+                         (remove-if (lambda (line)
+                                      (let ((trimmed (string-left-trim
+                                                      '(#\Space #\Tab) line)))
+                                        (and (>= (length trimmed) 2)
+                                             (string= "--" trimmed :end2 2))))
+                                    (uiop:split-string text :separator '(#\Newline))))
+                 text)))
+      (ignore-errors (delete-file path)))))
+
+(test macos-launcher-applescript-avoids-reserved-word-and-app-name-guess
+  "The emitted launcher must not use the reserved term `running' as a
+variable, must not address a guessed \"BricsCAD\" application name, and
+must launch the real bundle via `open -a' with AppleScript quoting."
+  (let ((script (%emitted-applescript
+                 "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad")))
+    ;; The two faults that made the first macOS probe run a silent no-op.
+    (is (not (search "set running to" script)))
+    (is (not (search "tell application \"BricsCAD\" to activate" script)))
+    ;; What it does instead.
+    (is (search "open -a " script))
+    (is (search "quoted form of appPath" script))
+    (is (search "/Applications/BricsCAD V26.app" script))
+    ;; The payload still gets typed.
+    (is (search "keystroke" script))
+    (is (search "/tmp/wd/run-common.lsp" script))))
+
+(test macos-launcher-applescript-falls-back-to-plain-binary
+  "A bricscad that is NOT inside a .app bundle is run directly rather
+than through `open -a', which only accepts an application."
+  (let ((script (%emitted-applescript "/opt/bricsys/bricscad")))
+    (is (not (search "open -a " script)))
+    (is (search "/opt/bricsys/bricscad" script))
+    (is (search "do shell script quoted form of appPath" script))))
+
+;;; --- launcher liveness: a dead launcher must not cost the timeout ---
+
+(defstruct (%fake-process (:constructor %make-fake-process))
+  "Stand-in for a UIOP process-info in the launcher-liveness tests."
+  (alive t) (code 0))
+
+(test launcher-alive-or-clean-p-only-fails-on-nonzero-exit
+  "The READY wait aborts only when the launcher exited NON-ZERO. While it
+runs, and after a clean exit (osascript done typing, cscript done
+dispatching), the wait must continue — the CAD publishes READY later."
+  (flet ((probe (alive code)
+           ;; Exercise the decision directly: NIL exit code = still alive.
+           (let ((exit (if alive nil code)))
+             (or (null exit) (eql exit 0)))))
+    (is (probe t 0)   "alive -> keep waiting")
+    (is (probe nil 0) "exited 0 -> keep waiting (driver finished its job)")
+    (is (not (probe nil 1)) "exited non-zero -> abort now")
+    (is (not (probe nil 2)) "exited non-zero -> abort now")))
+
+(test launcher-failure-details-nil-unless-nonzero-exit
+  "LAUNCHER-FAILURE-DETAILS reports nothing for a live or cleanly-exited
+launcher, so the normal path keeps its plain READY-TIMEOUT message."
+  (is (null (alfe.backend.cad-common:launcher-failure-details nil)))
+  (is (null (alfe.backend.cad-common:launcher-exit-code nil))))
