@@ -100,6 +100,57 @@ run_phase () {
     return 1
 }
 
+# --- preflight: can this runner send keystrokes at all? --------------------
+#
+# `--mode automation' on macOS drives BricsCAD with synthetic keystrokes, which
+# needs Accessibility (TCC) permission for the process running osascript. That
+# is a property of the RUNNER, not of alfe, and it is the difference between "we
+# have a bug to fix" and "this mechanism cannot work here".
+#
+# `UI elements enabled' is System Events' own report of whether assistive access
+# is granted to the caller. It has no side effects (unlike actually sending a
+# keystroke, which would type into whatever is frontmost). An unanswered
+# permission prompt blocks, so the call is bounded and its result recorded
+# either way — the preflight never fails the job by itself.
+preflight_accessibility () {
+    local file="$outdir/accessibility.txt"
+    local pid waited rc
+    : > "$file"
+
+    osascript -e 'tell application "System Events" to return UI elements enabled' \
+        > "$file" 2>&1 &
+    pid=$!
+
+    waited=0
+    while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 20 ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null
+        echo "### preflight: osascript BLOCKED for ${waited}s and was killed."
+        echo "### That is the signature of an UNANSWERED Accessibility prompt:"
+        echo "### the first keystroke from an un-permitted process raises a modal"
+        echo "### that nobody is there to click, and osascript waits forever."
+        return
+    fi
+
+    wait "$pid"; rc=$?
+    echo "### preflight: System Events 'UI elements enabled' -> $(cat "$file") (osascript exit $rc)"
+    if grep -qi "false" "$file" 2>/dev/null || [ "$rc" -ne 0 ]; then
+        echo "### preflight: Accessibility is NOT granted to this runner, so"
+        echo "### synthetic keystrokes cannot reach BricsCAD: --mode automation"
+        echo "### CANNOT work here whatever alfe does. Either grant it (System"
+        echo "### Settings > Privacy & Security > Accessibility, for the runner's"
+        echo "### shell) or decide macOS automation is unsupported and make alfe"
+        echo "### say so instead of trying."
+    fi
+}
+preflight_accessibility
+
+echo
 echo "### phase 1: --mode automation (the path under test)"
 if run_phase automation; then
     echo "### RESULT: automation PASS — the macOS AppleScript launcher drives"

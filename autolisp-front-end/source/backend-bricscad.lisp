@@ -92,6 +92,7 @@
                 ;; a mere style warning).
                 #:launcher-alive-or-clean-p
                 #:launcher-failure-details
+                #:launcher-state-description
                 #:launcher-exit-code)
   (:import-from #:alfe.logging
                 #:log-debug
@@ -946,8 +947,10 @@ future ticket."
                                                 "BricsCAD launch failed before READY: ~A (last status: ~S)."
                                                 failure last)
                                         (format nil
-                                                "BricsCAD did not reach READY within ~A s (last status: ~S)."
-                                                ready-timeout last))
+                                                "BricsCAD did not reach READY within ~A s (last status: ~S~@[; ~A~])."
+                                                ready-timeout last
+                                                (launcher-state-description
+                                                 (bricscad-session-process-info session))))
                                     :details (list :workdir workdir
                                                    :last-status last
                                                    :launcher-failure failure)))))))

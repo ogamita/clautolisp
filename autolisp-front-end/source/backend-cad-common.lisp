@@ -39,6 +39,7 @@
            ;; launcher liveness during the READY wait
            #:launcher-exit-code
            #:launcher-alive-or-clean-p
+           #:launcher-state-description
            #:launcher-failure-details
            ;; CAD program discovery + denotation (backend selection)
            #:cad-program
@@ -374,6 +375,21 @@ its job); false only once it has exited NON-ZERO, which aborts the wait
 immediately instead of burning the rest of the timeout."
   (let ((code (launcher-exit-code process-info)))
     (or (null code) (eql code 0))))
+
+(defun launcher-state-description (process-info)
+  "A short phrase describing the launcher's state, for the READY-timeout
+message. A launcher that finished cleanly and a launcher that is STUCK
+produce identical protocol symptoms — status.txt frozen at BOOTING,
+empty channels — and the one thing that tells them apart is whether the
+process is still there. On macOS the stuck case is real and common: the
+first `keystroke' from an un-permitted process raises a system
+Accessibility prompt, and osascript blocks on that modal until someone
+answers it."
+  (when process-info
+    (let ((code (launcher-exit-code process-info)))
+      (if code
+          (format nil "launcher exited with code ~A" code)
+          "launcher still running"))))
 
 (defun launcher-failure-details (process-info &key (limit 4000))
   "When PROCESS-INFO exited non-zero, return a string with its exit code
