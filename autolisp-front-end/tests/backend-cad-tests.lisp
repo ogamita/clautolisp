@@ -1343,3 +1343,23 @@ dispatching), the wait must continue — the CAD publishes READY later."
 launcher, so the normal path keeps its plain READY-TIMEOUT message."
   (is (null (alfe.backend.cad-common:launcher-failure-details nil)))
   (is (null (alfe.backend.cad-common:launcher-exit-code nil))))
+
+(test bricscad-package-imports-the-launcher-liveness-helpers
+  "Regression (alfe 1.7.11). START-ENGINE's READY wait calls
+LAUNCHER-ALIVE-OR-CLEAN-P and LAUNCHER-FAILURE-DETAILS, which live in
+ALFE.BACKEND.CAD-COMMON. ALFE.BACKEND.BRICSCAD :USEs only CL, so
+EXPORTING them was not enough: the calls read as fresh internal
+ALFE.BACKEND.BRICSCAD:: symbols and every launch — batch as well as
+automation — died with an undefined-function error at RUNTIME. At
+compile time it is only a style warning, and nothing in this suite
+drives the READY wait (backend-cad-tests-dead-suite-zone), so the first
+thing to notice was a real CAD run in CI."
+  (let ((home (find-package :alfe.backend.cad-common))
+        (bricscad (find-package :alfe.backend.bricscad)))
+    (dolist (name '("LAUNCHER-ALIVE-OR-CLEAN-P"
+                    "LAUNCHER-FAILURE-DETAILS"
+                    "LAUNCHER-EXIT-CODE"))
+      (let ((sym (find-symbol name bricscad)))
+        (is (and sym (eq (symbol-package sym) home) (fboundp sym))
+            "~A must resolve, inside ALFE.BACKEND.BRICSCAD, to the bound ~
+CAD-COMMON function (got ~S)" name sym)))))

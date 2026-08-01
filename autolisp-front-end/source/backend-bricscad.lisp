@@ -83,7 +83,16 @@
                 #:applescript-escape
                 #:discover-runtime-lsp
                 #:discover-bootstrap-lsp
-                #:drive-protocol-actions)
+                #:drive-protocol-actions
+                ;; READY-wait launcher liveness. This package :USEs only CL,
+                ;; so exporting these from cad-common is not enough — an
+                ;; un-imported name reads as an internal
+                ;; ALFE.BACKEND.BRICSCAD:: symbol and every launch dies with
+                ;; an undefined-function error at RUNTIME (compile-time it is
+                ;; a mere style warning).
+                #:launcher-alive-or-clean-p
+                #:launcher-failure-details
+                #:launcher-exit-code)
   (:import-from #:alfe.logging
                 #:log-debug
                 #:log-verbose
