@@ -400,6 +400,14 @@ tex-pdf-characters.issue
 alfe-plugin-model.issue
 nice-make-output.issue
 ci-github-ccl-lane.issue
+reactor-builtins-undefined-functions.issue  -- found 2026-08-01: the
+  vlr-*-reactor constructors and vlr-pers-list call REACTOR-TYPE-NAME /
+  DOCUMENT-REACTOR-REGISTRY, which are exported by autolisp-runtime but
+  NOT imported into autolisp-builtins-core -> unbound internal symbols,
+  fatal undefined-function at runtime (compile-time it is only a style
+  warning). Proven, not speculative. No test constructs a reactor, which
+  is why the corpus is green.
+
 alfe-bricscad-automation-macos.issue  -- pjb 2026-08-01: test `--mode
   automation' on macOS like on Windows. FIRST RUN DONE: automation FAIL
   / batch PASS -- the emitted AppleScript could not run (reserved word
