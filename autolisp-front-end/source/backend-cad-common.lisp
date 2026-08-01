@@ -36,6 +36,11 @@
            #:discover-bootstrap-lsp
            ;; protocol-driven eval-plan
            #:drive-protocol-actions
+           ;; launcher liveness during the READY wait
+           #:launcher-exit-code
+           #:launcher-alive-or-clean-p
+           #:launcher-state-description
+           #:launcher-failure-details
            ;; CAD program discovery + denotation (backend selection)
            #:cad-program
            #:cad-program-kind
@@ -337,6 +342,79 @@ UTF-8-with-BOM copy into the workdir, returning that copy's path for the CAD to
                    (file-namestring (pathname path))
                    (file-namestring staged) encoding)
         (namestring (truename staged))))))
+
+;;; --- launcher liveness during the READY wait -------------------------
+;;;
+;;; alfe-bricscad-automation-macos: a launcher that dies before the engine
+;;; publishes READY used to be invisible — the READY wait simply ran out its
+;;; whole timeout (240 s on the macOS probe) and reported a bare READY-TIMEOUT
+;;; with an empty status.txt, which says nothing about WHY. The launcher's own
+;;; exit code and stderr held the answer and were discarded.
+;;;
+;;; The subtlety is that a launcher exiting is NOT itself a failure. In
+;;; automation mode the launcher is a driver, not the engine: osascript
+;;; returns as soon as it has typed its keystrokes, and cscript returns once it
+;;; has dispatched the COM SendCommand — both long before the CAD has loaded
+;;; run-common.lsp and published READY. Only a NON-ZERO exit proves the launch
+;;; failed. So we abort early on a non-zero exit and keep waiting on a clean
+;;; one, which leaves the batch path (where the process IS the CAD) unchanged
+;;; in every case that used to work.
+
+(defun launcher-exit-code (process-info)
+  "The exit code of PROCESS-INFO if it has terminated, else NIL. Never
+blocks: UIOP:WAIT-PROCESS returns immediately (and caches) once the
+process is gone."
+  (when (and process-info
+             (not (ignore-errors (uiop:process-alive-p process-info))))
+    (ignore-errors (uiop:wait-process process-info))))
+
+(defun launcher-alive-or-clean-p (process-info)
+  "Predicate for WAIT-FOR-STATUS-PREFIX's :ALIVE-P. True while the
+launcher is running, and true after it exits 0 (a driver that has done
+its job); false only once it has exited NON-ZERO, which aborts the wait
+immediately instead of burning the rest of the timeout."
+  (let ((code (launcher-exit-code process-info)))
+    (or (null code) (eql code 0))))
+
+(defun launcher-state-description (process-info)
+  "A short phrase describing the launcher's state, for the READY-timeout
+message. A launcher that finished cleanly and a launcher that is STUCK
+produce identical protocol symptoms — status.txt frozen at BOOTING,
+empty channels — and the one thing that tells them apart is whether the
+process is still there. On macOS the stuck case is real and common: the
+first `keystroke' from an un-permitted process raises a system
+Accessibility prompt, and osascript blocks on that modal until someone
+answers it."
+  (when process-info
+    (let ((code (launcher-exit-code process-info)))
+      (if code
+          (format nil "launcher exited with code ~A" code)
+          "launcher still running"))))
+
+(defun launcher-failure-details (process-info &key (limit 4000))
+  "When PROCESS-INFO exited non-zero, return a string with its exit code
+and whatever it wrote to stderr/stdout (truncated to LIMIT characters);
+NIL while it is alive or when it exited 0. Only ever reads the streams of
+a process already known to be dead, so it cannot block on a live pipe."
+  (let ((code (launcher-exit-code process-info)))
+    (when (and code (not (eql code 0)))
+      (flet ((tail (stream)
+               (or (ignore-errors
+                    (when (and stream (open-stream-p stream))
+                      (let ((text (with-output-to-string (out)
+                                    (loop for line = (read-line stream nil nil)
+                                          while line do (write-line line out)))))
+                        (when (plusp (length text))
+                          (if (> (length text) limit)
+                              (subseq text (- (length text) limit))
+                              text)))))
+                   "")))
+        (let ((err (tail (ignore-errors (uiop:process-info-error-output process-info))))
+              (out (tail (ignore-errors (uiop:process-info-output process-info)))))
+          (format nil "launcher exited with code ~A~@[; stderr: ~A~]~@[; stdout: ~A~]"
+                  code
+                  (when (plusp (length err)) (string-trim '(#\Newline #\Space) err))
+                  (when (plusp (length out)) (string-trim '(#\Newline #\Space) out))))))))
 
 (defun drive-protocol-actions (protocol-session plan
                                &key

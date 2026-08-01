@@ -400,11 +400,21 @@ tex-pdf-characters.issue
 alfe-plugin-model.issue
 nice-make-output.issue
 ci-github-ccl-lane.issue
+reactor-builtins-undefined-functions.issue  -- found 2026-08-01: the
+  vlr-*-reactor constructors and vlr-pers-list call REACTOR-TYPE-NAME /
+  DOCUMENT-REACTOR-REGISTRY, which are exported by autolisp-runtime but
+  NOT imported into autolisp-builtins-core -> unbound internal symbols,
+  fatal undefined-function at runtime (compile-time it is only a style
+  warning). Proven, not speculative. No test constructs a reactor, which
+  is why the corpus is green.
+
 alfe-bricscad-automation-macos.issue  -- pjb 2026-08-01: test `--mode
-  automation' on macOS like on Windows. The osascript/AppleScript
-  launcher has never been exercised end to end. Job prepared
-  (verify:bricscad-automation:macos, manual); needs the macOS CAD
-  runner to give a verdict.
+  automation' on macOS like on Windows. FIRST RUN DONE: automation FAIL
+  / batch PASS -- the emitted AppleScript could not run (reserved word
+  `running', wrong app name), and a dead launcher cost the full 240 s
+  READY timeout. Both fixed in alfe 1.7.11; re-run the job. Open
+  question: does `keystroke' work at all on a CI runner (Accessibility
+  /TCC + interactive session)?
 
 backend-cad-tests-dead-suite-zone.issue  -- found 2026-07-31 while doing
   alfe-bricscad-batch-hidden-ui: a middle band of backend-cad-tests.lisp

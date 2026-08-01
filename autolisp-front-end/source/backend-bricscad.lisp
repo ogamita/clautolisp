@@ -83,7 +83,17 @@
                 #:applescript-escape
                 #:discover-runtime-lsp
                 #:discover-bootstrap-lsp
-                #:drive-protocol-actions)
+                #:drive-protocol-actions
+                ;; READY-wait launcher liveness. This package :USEs only CL,
+                ;; so exporting these from cad-common is not enough — an
+                ;; un-imported name reads as an internal
+                ;; ALFE.BACKEND.BRICSCAD:: symbol and every launch dies with
+                ;; an undefined-function error at RUNTIME (compile-time it is
+                ;; a mere style warning).
+                #:launcher-alive-or-clean-p
+                #:launcher-failure-details
+                #:launcher-state-description
+                #:launcher-exit-code)
   (:import-from #:alfe.logging
                 #:log-debug
                 #:log-verbose
@@ -98,6 +108,7 @@
            #:emit-run-scr
            #:emit-bridge-vbs
            #:emit-launcher-applescript
+           #:macos-app-bundle-for
            #:build-launch-argv
            #:discover-bricscad-binary
            #:discover-bricscad-template
@@ -418,16 +429,25 @@ WScript.Quit 0
   "VBScript template for the Windows COM bridge. Placeholders are
 substituted by EMIT-BRIDGE-VBS at emit time.")
 
-(defun substitute-placeholders (template alist)
+(defun substitute-placeholders (template alist &key (escape #'vbs-escape))
   "Substitute every ${KEY} occurrence in TEMPLATE with the matching
 value from ALIST. Cheap one-pass replacement; placeholders that
 don't appear in ALIST are left as-is so the caller can spot
-unfilled slots in tests."
+unfilled slots in tests.
+
+ESCAPE is applied to each value on the way in. It defaults to
+VBS-ESCAPE because the first template here was the VBScript bridge,
+where a literal quote must be doubled. Callers whose template is NOT
+VBScript must pass their own (or #'IDENTITY and escape at the call
+site): the AppleScript launcher injects a code fragment as well as
+string literals, and doubling the quotes in
+`do shell script \"open -a \" & quoted form of appPath'
+turned it into the un-runnable `do shell script \"\"open -a \"\" & ...'."
   (let ((out template))
     (loop for (key . value) in alist
           do (setf out (uiop:frob-substrings
                         out (list (format nil "${~A}" key))
-                        (vbs-escape value))))
+                        (funcall escape value))))
     out))
 
 (defun emit-bridge-vbs (path
@@ -456,23 +476,69 @@ substituted from the provided session paths."
 
 (defparameter *bricscad-applescript-template*
   "-- BricsCAD macOS automation launcher — emitted by alfe.backend.bricscad
+--
+-- Types `(load \"<run-common.lsp>\")' into BricsCAD's command line with
+-- synthetic keystrokes. That needs BOTH an interactive GUI session AND
+-- Accessibility (TCC) permission for whatever process runs osascript; without
+-- either, System Events raises an error and osascript exits non-zero. alfe
+-- surfaces that exit code and stderr now instead of waiting out the READY
+-- timeout (alfe-bricscad-automation-macos).
 
 set runLspFile to \"${RUNLSPFILE}\"
+set appPath to \"${APPPATH}\"
+set docPath to \"${DOCPATH}\"
 
-tell application \"System Events\"
-  set running to exists (processes whose name is \"bricscad\")
-end tell
+-- Launch-or-activate in one step. `open -a' is idempotent: it activates an
+-- already-running copy rather than starting a second one, so no process-name
+-- probing is needed.
+--
+-- The previous template did probe, and was wrong twice over: it wrote
+-- `set running to exists (processes whose name is \"bricscad\")', but
+-- `running' is a RESERVED AppleScript property term, and it then addressed
+-- the app as `application \"BricsCAD\"' while the installed bundle is named
+-- e.g. \"BricsCAD V26.app\". Either fault aborts the script before a single
+-- keystroke is sent — which is exactly what the first macOS probe run saw:
+-- status.txt stuck at BOOTING with empty stdout/stderr.
+${LAUNCHCOMMAND}
 
-if not running then
-  tell application \"BricsCAD\" to activate
-  delay 2.0
+-- Wait for BricsCAD to actually OWN THE KEYBOARD before typing, instead of
+-- guessing with a fixed delay. `keystroke' has no target: it goes to whatever
+-- is frontmost at that instant. If BricsCAD is still starting, the text lands
+-- in the terminal that ran osascript and is silently lost — the script still
+-- exits 0, so from alfe's side it looks exactly like success while status.txt
+-- stays at BOOTING forever. That is what the 2026-08-01 macOS probe hit: a
+-- clean run (Accessibility granted, `UI elements enabled' -> true, exit 0)
+-- whose keystrokes never reached the CAD.
+--
+-- AppleScript's `contains' is case-insensitive, so this matches the process
+-- whatever the bundle calls itself (\"BricsCAD\", \"bricscad\", \"BricsCAD V26\").
+set frontApp to \"\"
+set focused to false
+repeat ${STARTUPWAIT} times
+  try
+    tell application \"System Events\"
+      set frontApp to name of first application process whose frontmost is true
+    end tell
+    if frontApp contains \"bricscad\" then
+      set focused to true
+      exit repeat
+    end if
+  end try
+  delay 1
+end repeat
+
+-- Record what actually had focus, so a failure says where the keystrokes went
+-- rather than leaving us to guess.
+try
+  do shell script \"printf '%s\\\\n' \" & quoted form of (\"frontmost=\" & frontApp & \" focused=\" & (focused as text)) & \" > \" & quoted form of \"${FOCUSLOG}\"
+end try
+
+if not focused then
+  -- Do NOT type into someone else's window. Exiting non-zero makes alfe abort
+  -- the READY wait at once (LAUNCHER-FAILED) and report this message, instead
+  -- of spending the whole timeout on a run that cannot succeed.
+  error \"BricsCAD never became frontmost within ${STARTUPWAIT}s (frontmost was \\\"\" & frontApp & \"\\\"); refusing to send keystrokes to another application.\" number 1
 end if
-
-tell application \"System Events\"
-  tell process \"bricscad\"
-    set frontmost to true
-  end tell
-end tell
 
 tell application \"System Events\"
   keystroke \"(load \\\"\" & runLspFile & \"\\\")\"
@@ -480,15 +546,101 @@ tell application \"System Events\"
 end tell
 "
   "AppleScript template for macOS automation. Injects (load
-runLspFile) into BricsCAD's command-line via System Events
-keystrokes — requires Accessibility permission for the running
-shell process.")
+runLspFile) into BricsCAD's command line via System Events keystrokes —
+requires an interactive session and Accessibility permission for the
+process running osascript.")
 
-(defun emit-launcher-applescript (path &key runtime-load-path)
-  "Write the macOS AppleScript launcher to PATH."
-  (let ((text (substitute-placeholders
-               *bricscad-applescript-template*
-               `(("RUNLSPFILE" . ,(namestring runtime-load-path))))))
+(defun macos-app-bundle-for (executable-path)
+  "The .app bundle enclosing EXECUTABLE-PATH — e.g.
+/Applications/BricsCAD V26.app/Contents/MacOS/bricscad
+-> /Applications/BricsCAD V26.app — or NIL when the path is not inside
+a bundle. Needed because AppleScript must address the app by its real
+bundle name, not by the unix binary's name."
+  (when executable-path
+    (let* ((path (uiop:ensure-directory-pathname
+                  (make-pathname :name nil :type nil :version nil
+                                 :defaults (pathname executable-path))))
+           (components (pathname-directory path)))
+      (let ((tail (member-if (lambda (component)
+                               (and (stringp component)
+                                    (let ((n (length component)))
+                                      (and (> n 4)
+                                           (string-equal ".app" component
+                                                         :start2 (- n 4))))))
+                             (reverse components))))
+        (when tail
+          ;; TAIL is the reversed list from the .app component down to :absolute;
+          ;; re-reverse to rebuild the bundle's own directory pathname.
+          (namestring
+           (make-pathname :directory (reverse tail)
+                          :name nil :type nil :version nil
+                          :defaults path)))))))
+
+(defun %applescript-launch-command (executable-path &optional template-path)
+  "The `do shell script' line the launcher uses to bring BricsCAD up.
+Prefers the enclosing .app bundle with `open -a' (the supported way to
+launch a macOS GUI app); falls back to running the binary directly in
+the background when the executable is not inside a bundle. AppleScript's
+`quoted form of' does the shell quoting, so a path with spaces — the
+normal case, \"BricsCAD V26.app\" — is safe.
+
+When TEMPLATE-PATH is given it is opened WITH the app. That is not a
+nicety: `keystroke' types into the frontmost window, and a BricsCAD with
+no drawing open shows its Start page, which has no command line to
+receive the text. The 2026-08-01 macOS probe proved the keystrokes were
+reaching a focused BricsCAD (launcher-focus.txt said
+`frontmost=bricscad focused=true', osascript exit 0) and still executing
+nothing. The batch path never had this problem because it always passes
+a template on the command line."
+  (let ((bundle (macos-app-bundle-for executable-path)))
+    (cond
+      ((and bundle template-path)
+       "do shell script \"open -a \" & quoted form of appPath & \" \" & quoted form of docPath")
+      (bundle
+       "do shell script \"open -a \" & quoted form of appPath")
+      (t
+       "do shell script quoted form of appPath & \" > /dev/null 2>&1 &\""))))
+
+(defparameter +bricscad-applescript-startup-wait+ "60"
+  "How many seconds the launcher waits for BricsCAD to become the
+frontmost application before typing into it. This is a BOUND on a poll,
+not a fixed sleep: the script types as soon as the CAD has focus, and
+gives up (non-zero, so alfe aborts at once) if it never does. A fixed
+delay is unusable here — too short and the keystrokes go to the
+terminal, too long and every run pays for it. Override with
+$ALFE_BRICSCAD_STARTUP_DELAY.")
+
+(defun emit-launcher-applescript (path &key runtime-load-path executable-path
+                                            template-path)
+  "Write the macOS AppleScript launcher to PATH. EXECUTABLE-PATH is the
+discovered bricscad binary; the launcher addresses its enclosing .app
+bundle (see MACOS-APP-BUNDLE-FOR) rather than guessing an app name.
+TEMPLATE-PATH, when given, is opened with it so the CAD has a drawing —
+and therefore a command line — to type into."
+  (let* ((bundle (or (macos-app-bundle-for executable-path) executable-path ""))
+         ;; :escape #'identity — this template is AppleScript, not VBScript.
+         ;; The two path values are escaped here (they land inside AppleScript
+         ;; string literals); LAUNCHCOMMAND is a code fragment and must go in
+         ;; verbatim.
+         (text (substitute-placeholders
+                *bricscad-applescript-template*
+                `(("RUNLSPFILE"    . ,(applescript-escape (namestring runtime-load-path)))
+                  ("APPPATH"       . ,(applescript-escape (namestring bundle)))
+                  ("DOCPATH"       . ,(applescript-escape
+                                       (if template-path (namestring template-path) "")))
+                  ("LAUNCHCOMMAND" . ,(%applescript-launch-command
+                                       executable-path template-path))
+                  ("STARTUPWAIT"   . ,(or (uiop:getenv "ALFE_BRICSCAD_STARTUP_DELAY")
+                                          +bricscad-applescript-startup-wait+))
+                  ("FOCUSLOG"      . ,(applescript-escape
+                                       (namestring
+                                        (merge-pathnames
+                                         "launcher-focus.txt"
+                                         (uiop:ensure-directory-pathname
+                                          (make-pathname
+                                           :name nil :type nil :version nil
+                                           :defaults (pathname runtime-load-path))))))))
+                :escape #'identity)))
     (with-open-file (out path :direction :output
                               :if-exists :supersede
                               :if-does-not-exist :create
@@ -792,7 +944,13 @@ future ticket."
                   (log-debug "backend BRICSCAD: wrote bridge-bricscad.vbs -> ~A" vbs)))
                ((macos-p)
                 (let ((apl (merge-pathnames "launcher.applescript" workdir)))
-                  (emit-launcher-applescript apl :runtime-load-path run-common)
+                  (emit-launcher-applescript
+                   apl :runtime-load-path run-common
+                       :executable-path (bricscad-backend-executable-path backend)
+                       ;; Open a drawing with the app: no document, no command
+                       ;; line, nowhere for the keystrokes to land.
+                       :template-path (or (bricscad-backend-template-path backend)
+                                          (discover-bricscad-template)))
                   (log-debug "backend BRICSCAD: wrote launcher.applescript -> ~A" apl))))))
           (let ((argv (build-launch-argv backend protocol :mode mode))
                 (session (%make-bricscad-session
@@ -830,23 +988,44 @@ future ticket."
                                    ready-timeout)
                       (multiple-value-bind (ok elapsed last)
                           (alfe.protocol.file:wait-for-status-prefix
-                           protocol "READY" :timeout ready-timeout)
+                           protocol "READY" :timeout ready-timeout
+                           ;; A launcher that exits NON-ZERO before READY
+                           ;; aborts the wait at once; one that exits 0 is a
+                           ;; driver that finished its job (osascript after
+                           ;; typing, cscript after SendCommand) and the wait
+                           ;; continues. Without this the failure was silent:
+                           ;; the whole timeout elapsed and the launcher's exit
+                           ;; code and stderr — the actual diagnosis — were
+                           ;; thrown away. See alfe-bricscad-automation-macos.
+                           :alive-p
+                           (let ((info (bricscad-session-process-info session)))
+                             (when info
+                               (lambda () (launcher-alive-or-clean-p info)))))
                         (cond
                           (ok
                            (log-verbose "backend BRICSCAD: READY after ~,2F s (status ~S)"
                                         elapsed last))
                           (t
-                           (log-warn "backend BRICSCAD: READY timeout after ~,2F s; last status = ~S"
-                                     elapsed last)
-                           (error 'backend-bootstrap-error
-                                  :backend :bricscad
-                                  :code :ready-timeout
-                                  :message
-                                  (format nil
-                                          "BricsCAD did not reach READY within ~A s (last status: ~S)."
-                                          ready-timeout last)
-                                  :details (list :workdir workdir
-                                                 :last-status last))))))
+                           (let ((failure (launcher-failure-details
+                                           (bricscad-session-process-info session))))
+                             (log-warn "backend BRICSCAD: READY ~:[timeout~;abort~] after ~,2F s; last status = ~S~@[ (~A)~]"
+                                       failure elapsed last failure)
+                             (error 'backend-bootstrap-error
+                                    :backend :bricscad
+                                    :code (if failure :launcher-failed :ready-timeout)
+                                    :message
+                                    (if failure
+                                        (format nil
+                                                "BricsCAD launch failed before READY: ~A (last status: ~S)."
+                                                failure last)
+                                        (format nil
+                                                "BricsCAD did not reach READY within ~A s (last status: ~S~@[; ~A~])."
+                                                ready-timeout last
+                                                (launcher-state-description
+                                                 (bricscad-session-process-info session))))
+                                    :details (list :workdir workdir
+                                                   :last-status last
+                                                   :launcher-failure failure)))))))
                     (session-state-set session :ready)
                     (setq started-ok t)
                     session)

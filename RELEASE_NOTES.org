@@ -566,6 +566,30 @@ file or COM), and forwards the workload.
   backend's lifecycle (workdir, argv, BOOTSTRAP timing, status-file
   polling). The old "single error line" failure mode is gone.
 
+- A CAD launcher that dies before the engine is ready now fails *fast
+  and specifically*. Previously alfe waited out the whole READY timeout
+  and reported a bare ~READY-TIMEOUT~ with an empty status file, while
+  the launcher's exit code and stderr — the actual diagnosis — were
+  discarded. A launcher exiting NON-ZERO now aborts the wait at once
+  with ~LAUNCHER-FAILED~ and reports its exit code and stderr. A
+  launcher exiting 0 is *not* an error: in ~--mode automation~ it is a
+  driver that has done its job (~osascript~ once it has typed,
+  ~cscript~ once it has dispatched the COM command) and the CAD
+  publishes READY afterwards, so the wait continues as before.
+
+- macOS ~--mode automation~: the emitted AppleScript launcher could
+  never run. It used ~running~ — a reserved AppleScript property term —
+  as a variable, and addressed the app as ~"BricsCAD"~ while the
+  installed bundle is e.g. ~BricsCAD V26.app~. It now launches and
+  activates the real bundle in one step (~open -a~ with the bundle
+  derived from the discovered binary), waits longer for a cold start
+  (8 s, override with ~$ALFE_BRICSCAD_STARTUP_DELAY~), and the
+  placeholder substitution no longer applies VBScript quote-doubling to
+  an AppleScript template. Whether the keystroke mechanism can work on
+  a headless CI runner at all (it needs an interactive session and
+  Accessibility permission) is still open — but it now says so instead
+  of hanging.
+
 - ~--print-command~ prints the CAD command line alfe *would* launch,
   and launches nothing. It stages the workdir for real (runtime and
   bootstrap LSP, ~run-common.lsp~, ~run.scr~ or the VBScript /

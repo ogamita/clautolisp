@@ -38,12 +38,31 @@ if (-not $env:ALFE_RUNTIME_LSP)   { $env:ALFE_RUNTIME_LSP   = (Join-Path $root "
 if (-not $env:ALFE_BOOTSTRAP_LSP) { $env:ALFE_BOOTSTRAP_LSP = (Join-Path $root "autolisp-front-end/source/runtime/autolisp-bootstrap.lsp") -replace '\\','/' }
 
 $marker = "HIDDEN-UI-PROBE-OK-$PID"
-$expr = "(princ `"$marker`")"
 
-Write-Host "== running: alfe --bricscad --mode batch -x $expr =="
-$out = & $alfe "--no-init" "--bricscad" "--mode" "batch" "--timeout" "180" "-x" $expr 2>&1
+# Pass the expression in a FILE (-l), never as -x "(princ \"...\")".
+# PowerShell's native-argument parser strips the inner double quotes when
+# calling a native executable, so `-x (princ "M")' reaches alfe as
+# `(princ M)' -- BricsCAD then princ's an unbound symbol and echoes "nil".
+# That is exactly how the first run of this script reported FAIL while the
+# whole /Automation cycle had in fact succeeded (exit 0, "nil" echoed).
+# The other .ps1 probe drivers in scripts/ all use -l for this reason.
+$probe = Join-Path ([System.IO.Path]::GetTempPath()) "alfe-hidden-ui-probe-$PID.lsp"
+Set-Content -Encoding ascii -Path $probe -Value "(princ `"$marker`")"
+Write-Host "== probe file $probe =="
+Get-Content $probe | ForEach-Object { Write-Host "   $_" }
+
+# Record the exact command line alfe will launch (alfe 1.7.10+). Purely
+# informational: it shows the /Automation switch really is in the argv.
+Write-Host "== command line alfe would launch =="
+& $alfe "--no-init" "--bricscad" "--mode" "batch" "--print-command" "-l" $probe 2>&1 |
+  ForEach-Object { Write-Host $_ }
+
+Write-Host "== running: alfe --bricscad --mode batch -l $probe =="
+$out = & $alfe "--no-init" "--bricscad" "--mode" "batch" "--timeout" "180" "-l" $probe 2>&1
 $code = $LASTEXITCODE
 $out | ForEach-Object { Write-Host $_ }
+
+Remove-Item -Force $probe -ErrorAction SilentlyContinue
 
 $joined = ($out | Out-String)
 if ($code -eq 0 -and $joined.Contains($marker)) {
