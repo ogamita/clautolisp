@@ -1363,3 +1363,24 @@ thing to notice was a real CAD run in CI."
         (is (and sym (eq (symbol-package sym) home) (fboundp sym))
             "~A must resolve, inside ALFE.BACKEND.BRICSCAD, to the bound ~
 CAD-COMMON function (got ~S)" name sym)))))
+
+(test macos-launcher-applescript-waits-for-focus-before-typing
+  "`keystroke' has no target: it goes to whatever is frontmost. The
+launcher must therefore WAIT for BricsCAD to own the keyboard and
+refuse to type otherwise — a fixed delay silently loses the payload to
+the terminal while still exiting 0, which is indistinguishable from
+success on alfe's side (2026-08-01 macOS probe: Accessibility granted,
+osascript exit 0, status stuck at BOOTING)."
+  (let ((script (%emitted-applescript
+                 "/Applications/BricsCAD V26.app/Contents/MacOS/bricscad")))
+    ;; Polls for the frontmost process instead of sleeping a fixed time.
+    (is (search "frontmost is true" script))
+    (is (search "exit repeat" script))
+    ;; Refuses to type into another application, and says so non-zero so
+    ;; alfe's READY wait aborts at once instead of burning the timeout.
+    (is (search "error " script))
+    (is (search "refusing to send keystrokes" script))
+    ;; Records where the focus actually was, for the failing case.
+    (is (search "launcher-focus.txt" script))
+    ;; And there is no bare fixed-delay-then-type any more.
+    (is (not (search "delay 8.0" script)))))

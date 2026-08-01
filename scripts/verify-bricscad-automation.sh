@@ -87,7 +87,8 @@ run_phase () {
         echo "== [$mode] staged workdir kept: $workdir =="
         local keep="$outdir/$mode-workdir"
         mkdir -p "$keep"
-        for artefact in launcher.applescript bridge-bricscad.vbs bridge-vbs.log \
+        for artefact in launcher.applescript launcher-focus.txt \
+                        bridge-bricscad.vbs bridge-vbs.log \
                         run-common.lsp run.scr protocol/status.txt \
                         protocol/stdout.txt protocol/stderr.txt; do
             if [ -f "$workdir/$artefact" ]; then

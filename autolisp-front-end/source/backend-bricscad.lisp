@@ -499,7 +499,45 @@ set appPath to \"${APPPATH}\"
 -- keystroke is sent — which is exactly what the first macOS probe run saw:
 -- status.txt stuck at BOOTING with empty stdout/stderr.
 ${LAUNCHCOMMAND}
-delay ${STARTUPDELAY}
+
+-- Wait for BricsCAD to actually OWN THE KEYBOARD before typing, instead of
+-- guessing with a fixed delay. `keystroke' has no target: it goes to whatever
+-- is frontmost at that instant. If BricsCAD is still starting, the text lands
+-- in the terminal that ran osascript and is silently lost — the script still
+-- exits 0, so from alfe's side it looks exactly like success while status.txt
+-- stays at BOOTING forever. That is what the 2026-08-01 macOS probe hit: a
+-- clean run (Accessibility granted, `UI elements enabled' -> true, exit 0)
+-- whose keystrokes never reached the CAD.
+--
+-- AppleScript's `contains' is case-insensitive, so this matches the process
+-- whatever the bundle calls itself (\"BricsCAD\", \"bricscad\", \"BricsCAD V26\").
+set frontApp to \"\"
+set focused to false
+repeat ${STARTUPWAIT} times
+  try
+    tell application \"System Events\"
+      set frontApp to name of first application process whose frontmost is true
+    end tell
+    if frontApp contains \"bricscad\" then
+      set focused to true
+      exit repeat
+    end if
+  end try
+  delay 1
+end repeat
+
+-- Record what actually had focus, so a failure says where the keystrokes went
+-- rather than leaving us to guess.
+try
+  do shell script \"printf '%s\\\\n' \" & quoted form of (\"frontmost=\" & frontApp & \" focused=\" & (focused as text)) & \" > \" & quoted form of \"${FOCUSLOG}\"
+end try
+
+if not focused then
+  -- Do NOT type into someone else's window. Exiting non-zero makes alfe abort
+  -- the READY wait at once (LAUNCHER-FAILED) and report this message, instead
+  -- of spending the whole timeout on a run that cannot succeed.
+  error \"BricsCAD never became frontmost within ${STARTUPWAIT}s (frontmost was \\\"\" & frontApp & \"\\\"); refusing to send keystrokes to another application.\" number 1
+end if
 
 tell application \"System Events\"
   keystroke \"(load \\\"\" & runLspFile & \"\\\")\"
@@ -549,11 +587,13 @@ normal case, \"BricsCAD V26.app\" — is safe."
         "do shell script \"open -a \" & quoted form of appPath"
         "do shell script quoted form of appPath & \" > /dev/null 2>&1 &\"")))
 
-(defparameter +bricscad-applescript-startup-delay+ "8.0"
-  "Seconds the launcher waits after `open -a' before typing. A cold
-BricsCAD start on the macOS CI runner takes several seconds (the batch
-control run needed ~9 s end to end), and the old 2.0 s delay could send
-keystrokes into a window that did not exist yet. Override with
+(defparameter +bricscad-applescript-startup-wait+ "60"
+  "How many seconds the launcher waits for BricsCAD to become the
+frontmost application before typing into it. This is a BOUND on a poll,
+not a fixed sleep: the script types as soon as the CAD has focus, and
+gives up (non-zero, so alfe aborts at once) if it never does. A fixed
+delay is unusable here — too short and the keystrokes go to the
+terminal, too long and every run pays for it. Override with
 $ALFE_BRICSCAD_STARTUP_DELAY.")
 
 (defun emit-launcher-applescript (path &key runtime-load-path executable-path)
@@ -570,8 +610,16 @@ bundle (see MACOS-APP-BUNDLE-FOR) rather than guessing an app name."
                 `(("RUNLSPFILE"    . ,(applescript-escape (namestring runtime-load-path)))
                   ("APPPATH"       . ,(applescript-escape (namestring bundle)))
                   ("LAUNCHCOMMAND" . ,(%applescript-launch-command executable-path))
-                  ("STARTUPDELAY"  . ,(or (uiop:getenv "ALFE_BRICSCAD_STARTUP_DELAY")
-                                          +bricscad-applescript-startup-delay+)))
+                  ("STARTUPWAIT"   . ,(or (uiop:getenv "ALFE_BRICSCAD_STARTUP_DELAY")
+                                          +bricscad-applescript-startup-wait+))
+                  ("FOCUSLOG"      . ,(applescript-escape
+                                       (namestring
+                                        (merge-pathnames
+                                         "launcher-focus.txt"
+                                         (uiop:ensure-directory-pathname
+                                          (make-pathname
+                                           :name nil :type nil :version nil
+                                           :defaults (pathname runtime-load-path))))))))
                 :escape #'identity)))
     (with-open-file (out path :direction :output
                               :if-exists :supersede
