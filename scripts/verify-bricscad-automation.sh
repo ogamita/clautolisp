@@ -45,8 +45,15 @@ export ALFE_BOOTSTRAP_LSP="${ALFE_BOOTSTRAP_LSP:-$root/autolisp-front-end/source
 mkdir -p "$outdir"
 
 marker="AUTOMATION-PROBE-OK-$$"
-expr="(princ \"$marker\")"
 timeout_secs="${ALFE_PROBE_TIMEOUT:-240}"
+
+# The request goes in a FILE (-l), not in -x "(princ \"...\")". Quoting an
+# expression through a shell into a native argv is exactly what broke the
+# Windows sibling of this probe (PowerShell dropped the inner quotes, the CAD
+# princ'd an unbound symbol, and a PASSING run was reported as FAIL). A file
+# has no quoting surface at all.
+probe="$outdir/probe.lsp"
+printf '(princ "%s")\n' "$marker" > "$probe"
 
 # run_phase MODE -> 0 on success. Echoes everything it does.
 run_phase () {
@@ -55,14 +62,14 @@ run_phase () {
     local log="$outdir/$mode.log"
 
     echo "== [$mode] command line alfe would launch =="
-    "$alfe" --no-init --bricscad --mode "$mode" --print-command -x "$expr" \
+    "$alfe" --no-init --bricscad --mode "$mode" --print-command -l "$probe" \
         2>&1 | tee "$outdir/$mode-command.txt"
 
-    echo "== [$mode] running: alfe --bricscad --mode $mode -x $expr =="
+    echo "== [$mode] running: alfe --bricscad --mode $mode -l $probe =="
     "$alfe" --no-init --bricscad --mode "$mode" \
             --timeout "$timeout_secs" \
             --keep-workdir --write-workdir-path "$wdfile" \
-            -x "$expr" 2>&1 | tee "$log"
+            -l "$probe" 2>&1 | tee "$log"
     local code="${PIPESTATUS[0]}"
 
     local workdir=""
