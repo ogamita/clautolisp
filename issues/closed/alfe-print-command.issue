@@ -1,0 +1,84 @@
+alfe needs an option — like --dry-run, but concrete — that prints the
+AutoCAD / BricsCAD command line it WOULD use.
+
+It should prepare the workdir as usual, and erase it unless
+--keep-workdir is given.
+
+(It is understood that running that command in bash, even with the
+workdir kept, would just launch bricscad or autocad or accoreconsole,
+and could not go very far without alfe processing its side of the
+protocol. For now that is OK — the value is seeing the exact binary,
+switches and script path.)
+
+pjb: --dry-run is already taken; use --print-command.
+
+
+* Resolution (feature-alfe-print-command, alfe 1.7.10 / clautolisp 1.7.6)
+
+New alfe option --print-command. It is NOT a variant of --dry-run:
+
+  --dry-run        resolves the backend by NAME only, touches no disk,
+                   prints the action plan.
+  --print-command  resolves the backend WITH detection, stages the
+                   workdir for real, prints the argv, launches nothing.
+
+Contract:
+
+- Real staging. prepare-workdir + start-engine run exactly as in
+  run-plan: runtime and bootstrap LSP staged, run-common.lsp emitted,
+  run.scr (or bridge-bricscad.vbs / launcher.applescript under
+  --mode automation) written. So the printed line is the real one,
+  binary path included.
+
+- No spawn. The argv is captured by handing START-ENGINE a :launcher
+  closure that records its argument and returns NIL — the same seam
+  the test suite uses for the mock CAD — with :wait-for-ready NIL. No
+  SHUTDOWN is attempted either: nothing was launched, and BricsCAD's
+  SHUTDOWN would spend its 5 s waiting for a STOPPED status that
+  cannot arrive.
+
+- One line on stdout: the command alone, each argument quoted for the
+  host shell (POSIX single-quote rules; cmd.exe double quotes when the
+  host OS is Windows), so `cmd=$(alfe --print-command ...)' works.
+  Backend / workdir / raw argv go to the log at :verbose / :debug.
+
+- Cleanup: the workdir is removed on the way out unless
+  --keep-workdir. --write-workdir-path FILE still records its path.
+
+- CAD backends only. Under --clautolisp the engine runs in-process and
+  there is no external command line, so it is a CLI-USAGE-ERROR
+  (exit 2) rather than a silent empty answer — a caller capturing the
+  output fails loudly.
+
+Examples:
+
+  $ alfe --bricscad --print-command -x "(princ)"
+  /opt/bricsys/bricscad/bricscad -B /tmp/alfe-bricscad-31337-a1b2c3/run.scr
+
+  $ alfe --bricscad --print-command --keep-workdir -x "(princ)"
+  '/opt/fake cad/bricscad v26' -B /tmp/alfe-bricscad-1617099-25f79e/run.scr
+
+Implementation:
+
+- clautolisp/autolisp-cli/source/options.lisp — new print-command-p
+  slot on the shared cli-options struct (alfe-only), exported from
+  clautolisp.autolisp-cli.
+- autolisp-front-end/source/cli.lisp — option spec, help text,
+  shell-quote-argument / windows-quote-argument /
+  quote-command-argument / format-launch-command, and
+  print-command-plan (the staged-no-spawn driver).
+
+Tests: 27 new FiveAM checks (alfe suite 434 -> 461, 100% pass):
+parsing + POSIX/Windows quoting + the non-CAD usage error in
+cli-tests.lisp; end-to-end staging in backend-cad-tests.lisp
+(bricscad-print-command-plan-prints-argv-and-erases-workdir asserts a
+single line naming the binary and run.scr and that the workdir is
+gone; ...-keep-workdir-leaves-staged-artefacts asserts run.scr and
+run-common.lsp survive). Conformance scenario
+cli/print-command.sexp (37 pass, 0 fail); spec-coverage 33/33 —
+--write-workdir-path was pulled into the coverage set by the new spec
+prose and is now covered by cli/option-coverage.sexp.
+
+Documented in alfe-user-manual.org (§ "Seeing the CAD command line"),
+alfe--specifications.org (§ "--print-command (staged launch, no
+spawn)") and RELEASE_NOTES.org.

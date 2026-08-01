@@ -587,6 +587,34 @@ verify:bricscad-hidden-ui:windows:
     - make -C autolisp-front-end build-alfe-sbcl
     - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-bricscad-hidden-ui.ps1
 
+# --- alfe --mode automation on macOS ---------------------------------------
+# The Windows automation path (COM via cscript + bridge-bricscad.vbs) has been
+# driven against the real product repeatedly; its macOS counterpart (osascript
+# + the generated launcher.applescript) never has. This job runs the full
+# READY -> request -> DONE cycle in `--mode automation' on real BricsCAD, and
+# on failure re-runs the same request in `--mode batch' as a control, so the
+# log attributes the failure to the automation path rather than to the runner.
+# Both phases log the argv via `--print-command'; a failing phase keeps the
+# staged launcher.applescript / run-common.lsp / protocol files as artifacts.
+# Manual + allow_failure: the macOS CAD runner is intermittent.
+verify:bricscad-automation:macos:
+  stage: test
+  tags: [macos, arm64, shell]
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  rules:
+    - *on-release-mandatory
+    - when: manual
+      allow_failure: true
+  artifacts:
+    name: "bricscad-automation-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths: [dist/bricscad-automation/]
+    expire_in: 30 days
+  script:
+    - make -C autolisp-front-end build-alfe-sbcl
+    - bash scripts/verify-bricscad-automation.sh
+
 # --- vendor verification: alfe probes on real BricsCAD / AutoCAD ------------
 #
 # The Windows runner has BricsCAD and AutoCAD installed and runs in an open

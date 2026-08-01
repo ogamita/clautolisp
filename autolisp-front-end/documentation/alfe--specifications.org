@@ -2003,6 +2003,42 @@ workdir cleanup. The =--no-init= flag is /not/ overloaded for
 this purpose (the V0 implementation accidentally tied the two
 slots together; the fix landed alongside the init-file work).
 
+** =--print-command= (staged launch, no spawn)
+
+=--print-command= runs the full preparation phase of a CAD run and
+then prints the argv alfe would have launched, instead of launching
+it. Contract:
+
+  - *Real staging.* The workdir is created and populated exactly as a
+    normal run populates it (runtime + bootstrap LSP, =run-common.lsp=,
+    =run.scr= or the VBScript / AppleScript bridge). The backend is
+    resolved with detection ON, so the printed binary path is the one
+    that would actually be executed; a missing engine still exits 3.
+  - *No spawn.* The argv is captured by passing =START-ENGINE= a
+    =:launcher= closure that records it and returns =NIL=, with
+    =:wait-for-ready NIL=. Nothing is executed, and no =SHUTDOWN= is
+    attempted (there is no engine, and BricsCAD's =SHUTDOWN= would
+    burn its 5 s waiting for a =STOPPED= that cannot arrive).
+  - *One line on stdout.* The command line alone, each argument quoted
+    for the host shell (POSIX single-quote rules, or =cmd.exe= double
+    quotes when the host OS is Windows), so =$(…)= capture works.
+    Backend, workdir and the raw argv list are logged at =:verbose= /
+    =:debug=.
+  - *Cleanup.* The workdir is removed on exit unless =--keep-workdir=
+    was given; =--write-workdir-path FILE= still records its path.
+  - *CAD backends only.* Under =--clautolisp= (in-process, no external
+    command) it is a =CLI-USAGE-ERROR= → exit 2, so a caller capturing
+    the output fails loudly instead of receiving an empty string.
+
+Running the printed command by hand starts the CAD against the staged
+workdir and gets as far as =READY=, but no further: nothing drives
+alfe's half of the file-IPC protocol. The option is a launch-time
+debugging aid (switches, licensing, profile, startup modals), not a
+substitute for a run.
+
+Distinct from =--dry-run=, which resolves no backend, touches no disk
+and prints only the action plan.
+
 
 * Versioning
 

@@ -1,0 +1,64 @@
+Test alfe's `--mode automation' on macOS, like we do on Windows.
+
+pjb, 2026-08-01: "Next I think we should test --automation on macos
+like on windows."
+
+
+* Why
+
+alfe has two ways to drive BricsCAD:
+
+  --mode batch       the GUI executable + a script:
+                     bricscad.exe [/Automation] /b run.scr   (Windows)
+                     bricscad -B run.scr                     (macOS/Linux)
+
+  --mode automation  an out-of-process launcher script:
+                     cscript //nologo bridge-bricscad.vbs    (Windows, COM)
+                     osascript launcher.applescript          (macOS)
+
+The Windows automation path has been driven against the real product
+many times (it is where BRICSCAD_COM_MODE, bridge-vbs.log and the
+SendCommand timing work came from). The macOS counterpart —
+EMIT-LAUNCHER-APPLESCRIPT + osascript — has NEVER been exercised end
+to end: no CI job runs it, and no manual run is recorded. We do not
+know whether it reaches READY at all.
+
+Note this is alfe's own mode flag, distinct from BricsCAD's
+`/Automation' executable switch (the hidden-main-frame startup switch
+added for alfe-bricscad-batch-hidden-ui, Windows-only, used inside
+--mode batch).
+
+
+* Test job (prepared, awaiting a runner)
+
+  scripts/verify-bricscad-automation.sh
+  .gitlab-ci.yml : verify:bricscad-automation:macos   (manual, allow_failure)
+
+Phase 1 runs the minimal request in --mode automation on the real
+BricsCAD and requires the whole cycle: READY -> request -> DONE ->
+clean exit, with the marker echoed back.
+
+Phase 2 runs ONLY if phase 1 fails: the same request in --mode batch,
+as a control. That splits the two failure stories:
+
+  automation FAIL + batch PASS  -> the macOS automation path is at fault
+  automation FAIL + batch FAIL  -> the engine or the runner is at fault
+
+Both phases log the argv via alfe --print-command, so the osascript /
+bricscad command line appears in the trace even when the launch never
+gets off the ground. A failing phase keeps its workdir and publishes
+launcher.applescript, run-common.lsp, run.scr and protocol/*.txt as
+job artifacts (dist/bricscad-automation/).
+
+
+* Acceptance
+
+- verify:bricscad-automation:macos runs GREEN on the macOS CAD runner
+  (thalassa), i.e. --mode automation completes the protocol cycle; or
+- it fails and we have the artefacts to say precisely why, at which
+  point this issue becomes the fix ticket for the AppleScript
+  launcher.
+
+A Windows counterpart job (verify:bricscad-automation:windows, driving
+the COM/VBScript bridge) is worth adding for symmetry once the macOS
+side has a verdict.

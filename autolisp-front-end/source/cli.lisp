@@ -106,6 +106,7 @@
                 #:cli-options-list-situations-p
                 #:cli-options-list-cad-programs-p
                 #:cli-options-dry-run-p
+                #:cli-options-print-command-p
                 #:cli-options-no-init-p
                 #:cli-options-no-color-p
                 #:cli-options-keep-workdir-p
@@ -157,6 +158,7 @@
            #:cli-options-list-situations-p
            #:cli-options-list-cad-programs-p
            #:cli-options-dry-run-p
+           #:cli-options-print-command-p
            #:cli-options-no-init-p
            #:cli-options-no-color-p
            #:cli-options-keep-workdir-p
@@ -169,6 +171,12 @@
            #:print-version
            ;; env-var resolution helpers, exported for tests
            #:env-default
+           ;; --print-command: staged-argv rendering (exported for tests)
+           #:print-command-plan
+           #:format-launch-command
+           #:quote-command-argument
+           #:shell-quote-argument
+           #:windows-quote-argument
            ;; resolution
            #:resolve-backend
            #:plan-from-options
@@ -293,6 +301,16 @@ Bootstrap and runtime:
                          locate a --keep-workdir workdir without scraping stdout.
                          Mirrors $AUTOLISP_WRITE_WORKDIR_PATH.
   --dry-run              Print the resolved action plan and exit 0.
+  --print-command        Stage the workdir exactly as a real run would, print
+                         the CAD command line alfe would launch (one shell-ready
+                         line on stdout), then exit 0 WITHOUT launching it.
+                         Requires --autocad or --bricscad (the clautolisp
+                         backend runs in-process and has no command line).
+                         The workdir is deleted on the way out unless
+                         --keep-workdir is given; running the printed command
+                         by hand starts the CAD against the staged workdir, but
+                         nothing drives alfe's side of the file-IPC protocol, so
+                         the engine will boot and then wait.
 
 Diagnostics:
   -v, --verbose          Verbose progress.
@@ -493,6 +511,11 @@ error rather than silently last-winning."
     :handler (lambda (opts value name)
                (declare (ignore value name))
                (setf (cli-options-dry-run-p opts) t)))
+   (make-option-spec
+    :longs '("--print-command") :takes-arg-p nil
+    :handler (lambda (opts value name)
+               (declare (ignore value name))
+               (setf (cli-options-print-command-p opts) t)))
    (make-option-spec
     :longs '("--keep-workdir") :takes-arg-p nil
     :handler (lambda (opts value name)
@@ -771,6 +794,75 @@ the dry-run renderer."
     (format stream "    - ~A~%" (render-action action)))
   (finish-output stream))
 
+;;; --- --print-command ------------------------------------------------
+;;;
+;;; --print-command stages a run for real (workdir, run-common.lsp,
+;;; run.scr / bridge script, …) and prints the CAD command line alfe
+;;; WOULD spawn, instead of spawning it. It is the debugging companion
+;;; to --dry-run: --dry-run resolves nothing and touches no disk;
+;;; --print-command resolves the engine, writes the launch artefacts,
+;;; and therefore prints the exact argv, binary path included.
+;;;
+;;; The printed line goes to *STANDARD-OUTPUT* ALONE (no banner), so
+;;; `cmd=$(alfe --print-command --bricscad …)` is usable directly;
+;;; everything else is logged at :verbose.
+
+(defparameter +shell-safe-characters+
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_@%+=:,./-"
+  "Characters that need no quoting in a POSIX shell word. Deliberately
+conservative: anything outside this set sends the argument through
+single-quote escaping.")
+
+(defun shell-quote-argument (string)
+  "Quote STRING for a POSIX shell (sh/bash). Uses single quotes, with
+the standard `'\\''` trick for an embedded single quote, so the result
+is safe for any byte sequence."
+  (if (and (plusp (length string))
+           (every (lambda (char) (find char +shell-safe-characters+)) string))
+      string
+      (with-output-to-string (out)
+        (write-char #\' out)
+        (loop for char across string
+              do (if (char= char #\')
+                     (write-string "'\\''" out)
+                     (write-char char out)))
+        (write-char #\' out))))
+
+(defun windows-quote-argument (string)
+  "Quote STRING for a Windows command line (cmd.exe / PowerShell's
+argument mode). Double quotes are the only portable grouping there;
+we quote whenever the argument holds whitespace or a shell
+metacharacter, and escape an embedded double quote as \\\"."
+  (if (and (plusp (length string))
+           (notany (lambda (char)
+                     (or (member char '(#\Space #\Tab #\Newline))
+                         (find char "&|<>^\"'`,;=()%!")))
+                   string))
+      string
+      (with-output-to-string (out)
+        (write-char #\" out)
+        (loop for char across string
+              do (when (char= char #\") (write-char #\\ out))
+                 (write-char char out))
+        (write-char #\" out))))
+
+(defun quote-command-argument (string &optional os)
+  "Quote STRING for OS's shell (:WINDOWS → cmd rules, anything else →
+POSIX rules). OS defaults to the host OS as ALFE.BACKEND.CAD-COMMON
+sees it — resolved at call time because that package loads after this
+file, and because the test suite overrides it."
+  (let ((os (or os (uiop:symbol-call :alfe.backend.cad-common :host-os))))
+    (if (eq os :windows)
+        (windows-quote-argument string)
+        (shell-quote-argument string))))
+
+(defun format-launch-command (argv &optional os)
+  "Render ARGV (binary in CAR) as one shell-ready command line, each
+element quoted for OS. This is what --print-command writes to stdout."
+  (format nil "~{~A~^ ~}"
+          (mapcar (lambda (argument) (quote-command-argument argument os))
+                  argv)))
+
 ;;; --- top-level RUN --------------------------------------------------
 
 ;;; --- G1: apply the `terminal` situation encoding to alfe's OWN streams ---
@@ -1006,6 +1098,8 @@ The handler chain matches alfe-cli.issue's exit-code table:
                    ((cli-options-dry-run-p options)
                     (emit-dry-run options backend)
                     0)
+                   ((cli-options-print-command-p options)
+                    (print-command-plan options backend :version-text version))
                    (t
                     (run-plan options backend :version-text version)))))))))
     (cli-usage-error (condition)
@@ -1138,3 +1232,79 @@ engine."
       (ignore-errors (shutdown session :reason :cli-exit))
       (ignore-errors (cleanup-workdir backend workdir
                                       :keep-p (cli-options-keep-workdir-p options))))))
+
+(defun print-command-plan (options backend &key version-text
+                                                (stream *standard-output*))
+  "Implement --print-command. Returns the exit code (0 on success).
+
+Prepares the workdir and stages every launch artefact exactly as
+RUN-PLAN would — same runtime/bootstrap staging, same run-common.lsp,
+same run.scr or bridge script — then prints the CAD command line alfe
+WOULD spawn and returns, without spawning anything. The argv is
+captured by handing START-ENGINE a :LAUNCHER closure that records its
+argument and returns NIL (the same seam the test suite uses for the
+mock CAD), with :WAIT-FOR-READY NIL since no engine will ever publish
+READY.
+
+Only the CAD backends have a command line; asking for one under
+--clautolisp is a usage error rather than a silent empty answer, so a
+caller doing `cmd=$(alfe --print-command …)` fails loudly.
+
+No SHUTDOWN is performed: nothing was launched, and BricsCAD's
+SHUTDOWN would spend its 5 s waiting for a STOPPED status that cannot
+arrive. The workdir is removed on the way out unless --keep-workdir
+was given — so the printed command references a directory that no
+longer exists unless the user asked to keep it. That is deliberate:
+--print-command must not litter the temp tree by default."
+  (let ((backend-name (alfe.backend:backend-name backend)))
+    (unless (member backend-name '(:autocad :bricscad))
+      (error 'cli-usage-error
+             :option "--print-command"
+             :message
+             (format nil
+                     "applies to the CAD backends (--autocad / --bricscad); ~
+backend ~(~A~) runs in-process and has no external command line."
+                     backend-name)))
+    (let ((captured nil)
+          (keep-p (cli-options-keep-workdir-p options))
+          (workdir (let ((wd (prepare-workdir backend
+                                              (cli-options-workdir options))))
+                     (%write-workdir-path-file options wd)
+                     wd)))
+      (unwind-protect
+           (progn
+             (start-engine backend workdir
+                           :dialect (effective-dialect options)
+                           :host (cli-options-host options)
+                           :mock-input nil
+                           :bootstrap-phase (cli-options-bootstrap-phase options)
+                           :interactive-p (cli-options-interactive-p options)
+                           :mode (cli-options-mode options)
+                           :dwg (cli-options-dwg options)
+                           :load-encoding (cli-options-load-encoding options)
+                           :io-encoding (cli-options-io-encoding options)
+                           :cli-options options
+                           :version-text version-text
+                           :wait-for-ready nil
+                           :launcher (lambda (argv &rest ignored)
+                                       (declare (ignore ignored))
+                                       (setf captured argv)
+                                       nil))
+             (unless captured
+               (error 'alfe.error:backend-bootstrap-error
+                      :backend backend-name
+                      :code :no-launch-command
+                      :message
+                      (format nil "Backend ~(~A~) staged the workdir but produced ~
+no launch command line." backend-name)))
+             (log-verbose "cli: --print-command backend ~A, workdir ~A"
+                          backend-name workdir)
+             (log-debug "cli: --print-command argv = ~S" captured)
+             ;; The command line, alone, on stdout: this is the deliverable.
+             (format stream "~&~A~%" (format-launch-command captured))
+             (finish-output stream)
+             (unless keep-p
+               (log-verbose "cli: --print-command removing workdir ~A ~
+(pass --keep-workdir to keep the staged artefacts)" workdir))
+             0)
+        (ignore-errors (cleanup-workdir backend workdir :keep-p keep-p))))))

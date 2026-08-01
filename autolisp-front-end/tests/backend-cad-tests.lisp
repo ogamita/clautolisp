@@ -1176,3 +1176,75 @@ NOT bricscad.exe /Automation."
       (is (member "//nologo" argv :test #'string=))
       (is (some (lambda (a) (search "bridge-bricscad.vbs" a)) argv))
       (is (not (member "/Automation" argv :test #'string=))))))
+
+;;; --- --print-command: real staging, no launch ----------------------
+;;; PRINT-COMMAND-PLAN must do everything a real run does short of
+;;; spawning the CAD: prepare the workdir, stage run-common.lsp and
+;;; run.scr, then print the argv it WOULD have launched. It must launch
+;;; nothing, and it must not leave the workdir behind unless asked.
+
+(defun %fake-bricscad-binary ()
+  "A file on disk standing in for bricscad(.exe). Only its existence
+matters — PRINT-COMMAND-PLAN never executes it."
+  (let ((path (merge-pathnames (format nil "alfe-fake-bricscad-~D" (random 1000000))
+                               (uiop:temporary-directory))))
+    (with-open-file (out path :direction :output :if-exists :supersede
+                              :if-does-not-exist :create)
+      (write-line "#!/bin/sh" out))
+    (namestring path)))
+
+(defun %run-print-command-plan (&key keep-p)
+  "Drive ALFE.CLI:PRINT-COMMAND-PLAN against a fake BricsCAD in :batch
+mode. Returns (values exit-code printed-output workdir-path)."
+  (let* ((binary (%fake-bricscad-binary))
+         (wd-file (merge-pathnames (format nil "alfe-print-command-wd-~D.txt"
+                                           (random 1000000))
+                                   (uiop:temporary-directory)))
+         (backend (alfe.backend.bricscad:make-bricscad-backend
+                   :executable-path binary :variant :batch))
+         (options (make-cli-options :backend :bricscad
+                                    :mode :batch
+                                    :keep-workdir-p keep-p
+                                    :write-workdir-path (namestring wd-file)
+                                    :actions (list (action-eval "(princ)"))))
+         (stdout (make-string-output-stream))
+         (code (print-command-plan options backend
+                                   :version-text "0.0.1"
+                                   :stream stdout))
+         (workdir (with-open-file (in wd-file) (read-line in nil ""))))
+    (ignore-errors (delete-file wd-file))
+    (ignore-errors (delete-file binary))
+    (values code (get-output-stream-string stdout) workdir)))
+
+(test bricscad-print-command-plan-prints-argv-and-erases-workdir
+  "--print-command stages the workdir for real, prints exactly one
+shell-ready command line naming the binary and the staged run.scr, and
+removes the workdir afterwards (no --keep-workdir)."
+  (multiple-value-bind (code output workdir) (%run-print-command-plan)
+    (is (= 0 code))
+    (let ((lines (remove "" (uiop:split-string (string-trim '(#\Newline) output)
+                                               :separator '(#\Newline))
+                         :test #'string=)))
+      ;; One line, and one line only: the command.
+      (is (= 1 (length lines)))
+      (let ((command (first lines)))
+        (is (search "bricscad" command))
+        (is (search "run.scr" command))
+        ;; The Unix batch switch (tests run on POSIX CI hosts).
+        (is (search "-B" command))))
+    ;; Default: the staged workdir is gone.
+    (is (plusp (length workdir)))
+    (is (not (uiop:directory-exists-p (uiop:ensure-directory-pathname workdir))))))
+
+(test bricscad-print-command-plan-keep-workdir-leaves-staged-artefacts
+  "With --keep-workdir the staged workdir survives, holding the exact
+run.scr and run-common.lsp the printed command refers to."
+  (multiple-value-bind (code output workdir) (%run-print-command-plan :keep-p t)
+    (declare (ignore output))
+    (is (= 0 code))
+    (let ((dir (uiop:ensure-directory-pathname workdir)))
+      (is (uiop:directory-exists-p dir))
+      (is (uiop:file-exists-p (merge-pathnames "run.scr" dir)))
+      (is (uiop:file-exists-p (merge-pathnames "run-common.lsp" dir)))
+      (ignore-errors (uiop:delete-directory-tree dir :validate t
+                                                     :if-does-not-exist :ignore)))))
