@@ -155,3 +155,42 @@ PROBES))") loses its output, while a form/defun loaded+run via -l (source-load)
 is now correct. Next: make the eval-request native-load path capture the CAD
 output (or route -x through source-load like -l), then re-verify the full
 vendor probe on real AutoCAD.
+
+
+== Capture design — pjb ruling (2026-08-02) ==
+
+The variadic-shadow direction is DEAD: pjb confirms AutoCAD accepts NO variadic
+mechanism at all — no &rest, no &optional, no other way to define a
+variable-arity user function. So the fixed-arity shadow + source-form
+walk-rewriter can never cover 1-arg princ calls made INSIDE a natively-loaded
+defun (the probe's run-entity-probes). The earlier "&optional shadow" fix note
+above is void.
+
+Why we shadow princ/prin1/print at all: to capture their command-line output and
+route it to alfe's REPL output. The clean analogue of CL's "bind *standard-
+output* to another stream" is to REDIRECT the command-line stream itself, not
+shadow the functions — via AutoCAD's command-history log:
+
+  - Enable logging so 1-arg (princ x)/(prin1 x)/(print x) output is teed to a
+    file, no file handle needed; let the NATIVE functions run (their real
+    AutoCAD semantics preserved: bare (princ) -> newline; bare (print) -> does
+    nothing, returns nil like (values)).
+  - Sysvars (autolisp-spec + pjb): LOGFILEMODE is READ-ONLY (toggled by the
+    LOGFILEON/LOGFILEOFF commands — but `command` is unusable under accoreconsole,
+    so whether (setvar "LOGFILEMODE" 1) is even accepted MUST be tested);
+    LOGFILEPATH = the DIRECTORY where per-drawing log files are stored (settable);
+    LOGFILENAME = READ-ONLY path+name of the current drawing's log file.
+
+Complication (pjb): user programs may ALSO use file logging for their own
+purposes. So alfe must record whether logging is already active, TEE output to
+both the user's log and alfe's capture, and if LOGFILEMODE/LOGFILEPATH are
+changed mid-run, start / stop / retarget its tee accordingly. That requires
+SHADOWING setvar to intercept those sysvar writes.
+
+Open validation (pjb to run on a Windows or macOS accoreconsole): does
+accoreconsole honour LOGFILEMODE / LOGFILEON and actually log a 1-arg
+(princ "MARKER") to the LOGFILENAME file? If yes, implement the log-redirect +
+setvar-shadow tee; if not, fall back to capturing accoreconsole's process stdout.
+
+Related: [[accoreconsole-macos-headless-qt-blocker]] (a fresh macOS accoreconsole
+run first has to get past its Qt::AA_PluginApplication bootstrap abort).
