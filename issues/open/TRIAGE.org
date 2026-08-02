@@ -63,7 +63,6 @@ retrofitted as they are touched.
 | autocad-no-rest-output-capture                | cad-runtime     | TODO     | no-&rest path loses probe output on AutoCAD |
 | autocad-runtime-vlax-sleep-and-rest           | cad-runtime     | TODO     | vlax-sleep / &rest portability on AutoCAD |
 | accoreconsole-deported-load-highbyte          | cad-runtime/enc | TODO     | accoreconsole (load) errors on a high-byte source file |
-| alfe-bricscad-batch-hidden-ui                 | alfe-backend    | NEXT     | Windows: /Automation + /b for hidden-UI batch (Windows push) |
 | alfe-bricscad-automation-macos                | alfe-backend    | TODO     | exercise --mode automation on macOS (no true headless on mac — see rules repo) |
 | dialect-platform-version-axis                 | dialect-design  | TODO     | autocad vs autocad-mac + version suffixes; drives "/…"-warns-on-windows |
 | clautolisp-dialect-portability-warnings       | dialect         | TODO     | verify the portability-warning mechanism; ch.25 DoD |
@@ -82,7 +81,6 @@ retrofitted as they are touched.
 | Issue                                    | Type          | Status   | Note |
 |------------------------------------------+---------------+----------+------|
 | vl-directory-filename-helpers-fail-macos | builtin-bug   | NEXT     | 🔴 BUILTIN-VL-DIRECTORY-AND-FILENAME-HELPERS fails 2 checks on macOS |
-| transmit-bindings-interns-nil-bare-call  | bug           | NEXT     | cli-options->transmit-bindings signals on a bare call |
 | complete-unit-tests                      | coverage-epic | TODO     | backfill builtin coverage to ≥95% |
 | banner                                   | cli-feature   | TODO     | print a startup banner unless -q/--quiet |
 | deferred-stubbed-functions               | builtins-epic | DEFERRED | promote stubbed-as-no-op builtins (registry section done 1.5.1) |
