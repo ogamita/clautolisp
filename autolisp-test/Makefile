@@ -41,6 +41,17 @@ endef
 
 ROOT_DIR := $(shell pwd)
 
+# Paths PASSED TO the clautolisp / alfe engine (as *autolisp-test-root*, the
+# harness `-l' path, TRUSTEDPATHS) must be NATIVE: on Windows those engines run
+# native and cannot resolve the msys `/c/...' form `pwd' yields there — only
+# `C:/...'. cygpath -m converts on Windows; identity elsewhere. (make/bash keep
+# ROOT_DIR itself, in msys form, for filesystem operations.)
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(HOST_OS)),)
+ROOT_DIR_NATIVE := $(shell cygpath -m "$(ROOT_DIR)")
+else
+ROOT_DIR_NATIVE := $(ROOT_DIR)
+endif
+
 # Path to alfe-sbcl / alfe-ccl. Used by the CAD-driven targets that
 # load the harness through a real BricsCAD/AutoCAD engine via the
 # file-IPC protocol Phase 3 wired up. Defined AFTER ROOT_DIR so the
@@ -79,7 +90,7 @@ PDF_FILES := $(patsubst %.org,$(BUILD_DIR)/%.pdf,$(DOCUMENTATION_ORG))
 HARNESS_SNIPPET := \
   (setq *clautolisp-version* "0.x") \
   (setq *autolisp-test-debug-p* nil) \
-  (setq *autolisp-test-root* "$(ROOT_DIR)/") \
+  (setq *autolisp-test-root* "$(ROOT_DIR_NATIVE)/") \
   (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-test-root* "..."))) \
   (load (strcat *autolisp-test-root* "harness/run.lsp")) \
   (autolisp-test-run-all)
@@ -90,7 +101,7 @@ HARNESS_SNIPPET := \
 HARNESS_DEBUG_SNIPPET := \
   (setq *clautolisp-version* "0.x") \
   (setq *autolisp-test-debug-p* T) \
-  (setq *autolisp-test-root* "$(ROOT_DIR)/") \
+  (setq *autolisp-test-root* "$(ROOT_DIR_NATIVE)/") \
   (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-test-root* "..."))) \
   (load (strcat *autolisp-test-root* "harness/run.lsp")) \
   (autolisp-test-run-all)
@@ -144,7 +155,7 @@ test: harness-self-test test-clautolisp-sbcl
 # repro). Loads run.lsp then the self-test, which exits non-zero on
 # any failed check.
 HARNESS_SELFTEST_SNIPPET := \
-  (setq *autolisp-test-root* "$(ROOT_DIR)/") \
+  (setq *autolisp-test-root* "$(ROOT_DIR_NATIVE)/") \
   (vl-catch-all-apply (quote setvar) (list "TRUSTEDPATHS" (strcat *autolisp-test-root* "..."))) \
   (load (strcat *autolisp-test-root* "harness/run.lsp")) \
   (load (strcat *autolisp-test-root* "harness/self-test.lsp"))
@@ -353,7 +364,7 @@ test-clautolisp-all: test-clautolisp-sbcl-all test-clautolisp-ccl-all
 # autolisp-test-run-all entry) and asks alfe to evaluate the entry
 # point. The CAD-side runtime publishes status transitions; alfe's
 # eval-plan waits for DONE between each action.
-ALFE_HARNESS_LOAD := -l "$(ROOT_DIR)/harness/run.lsp"
+ALFE_HARNESS_LOAD := -l "$(ROOT_DIR_NATIVE)/harness/run.lsp"
 ALFE_HARNESS_RUN  := -x "(autolisp-test-run-all)"
 
 test-bricscad-macos-strict:
