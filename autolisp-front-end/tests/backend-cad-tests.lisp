@@ -408,19 +408,25 @@ discovered AutoCAD install."
                           (touch-file (merge-pathnames
                                        "Autodesk/AutoCAD 2026/accoreconsole.exe"
                                        root))))))
-          (with-env ("AUTOLISP_DWG" "")
-            (is (string=
-                 (namestring requested)
-                 (alfe.backend.autocad:discover-autocad-template
-                  backend :requested (namestring requested)))))
-          (with-env ("AUTOLISP_DWG" (namestring env-template))
-            (is (string=
-                 (namestring env-template)
-                 (alfe.backend.autocad:discover-autocad-template backend))))
-          (with-env ("AUTOLISP_DWG" "")
-            (is (string=
-                 (namestring install-template)
-                 (alfe.backend.autocad:discover-autocad-template backend)))))
+          (flet ((same-file (a b)
+                   ;; Compare existing paths by TRUENAME: macOS resolves the
+                   ;; /var -> /private/var symlink, and DISCOVER-AUTOCAD-TEMPLATE
+                   ;; TRUENAMEs the requested path, so a raw STRING= spuriously
+                   ;; fails on macOS while passing on Linux (where /var is real).
+                   (equal (truename a) (truename b))))
+            (with-env ("AUTOLISP_DWG" "")
+              (is (same-file
+                   requested
+                   (alfe.backend.autocad:discover-autocad-template
+                    backend :requested (namestring requested)))))
+            (with-env ("AUTOLISP_DWG" (namestring env-template))
+              (is (same-file
+                   env-template
+                   (alfe.backend.autocad:discover-autocad-template backend))))
+            (with-env ("AUTOLISP_DWG" "")
+              (is (same-file
+                   install-template
+                   (alfe.backend.autocad:discover-autocad-template backend))))))
       (uiop:delete-directory-tree root :validate t
                                        :if-does-not-exist :ignore))))
 
