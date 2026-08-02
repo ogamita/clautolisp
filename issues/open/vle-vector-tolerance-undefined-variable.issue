@@ -1,0 +1,50 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vle-vector-tolerance-undefined-variable — forward-reference compile warning in builtin-vle-g-vectol
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-vle-vector-tolerance-undefined-variable
+
+* Context
+
+A from-scratch SBCL compile of =clautolisp/autolisp-builtins-core= prints:
+
+: caught WARNING:
+:   undefined variable: CLAUTOLISP.AUTOLISP-BUILTINS-CORE::*VLE-VECTOR-TOLERANCE*
+:   (BLOCK ...BUILTIN-VLE-G-VECTOL ...*VLE-VECTOR-TOLERANCE*)
+
+Found 2026-08-02 while fixing [[reactor-builtins-undefined-functions]]
+(same "scrolls past in a green run" class, milder variant).
+
+* Problem
+
+Unlike the reactor case, this is NOT a runtime bug: the special variable
+is defined in the same file/package, only *after* its first use —
+
+- used at =autolisp-builtins-core/source/api.lisp:6843= (inside
+  =builtin-vle-g-vectol=),
+- defined at =api.lisp:6845= =(defparameter *vle-vector-tolerance* 1.0d-10 …)=.
+
+So the compiler warns about a forward reference; at run time the
+=defparameter= has already executed at load, so the variable is bound
+and the builtin works. Purely a compile-time warning / ordering nit.
+
+* Proposal
+
+Move the =(defparameter *vle-vector-tolerance* …)= (and its companion
+doc, api.lisp:6845/7283) *above* its first use (=builtin-vle-g-vectol=,
+~6840), so a from-scratch compile is clean. No behaviour change.
+
+This supports the broader goal noted in
+[[reactor-builtins-undefined-functions]]: a CI guard that fails the
+build on any "undefined function/variable" in a from-scratch compile —
+which requires the tree to be warning-clean first.
+
+* Acceptance criteria
+
+- From-scratch =make -C clautolisp test-sbcl
+  TEST_SYSTEM=clautolisp/autolisp-builtins-core/tests= compiles with no
+  =undefined variable *VLE-VECTOR-TOLERANCE*= warning.
+- builtins-core suite stays green; VLE_G_VECTOL / vector builtins
+  unchanged.

@@ -99,7 +99,9 @@
                 #:all-document-reactors
                 #:all-application-reactors
                 #:all-session-reactors
-                #:document-namespace-persistent-reactor-index)
+                #:document-namespace-persistent-reactor-index
+                #:reactor-type-name
+                #:document-reactor-registry)
   (:import-from #:clautolisp.autolisp-runtime
                 #:autolisp-safearray
                 #:autolisp-safearray-value

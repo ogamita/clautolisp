@@ -3560,6 +3560,25 @@ reactors."
     (is (true-p "(vl-load-reactors)"))
     (is (true-p "(vl-load-all)"))))
 
+(test reactor-builtins-import-runtime-helpers
+  "Regression for reactor-builtins-undefined-functions: the reactor
+builtins call REACTOR-TYPE-NAME (install-new-reactor, hit by every
+vlr-*-reactor constructor) and DOCUMENT-REACTOR-REGISTRY (vlr-pers-list),
+both defined and exported by clautolisp.autolisp-runtime. They must be
+imported into clautolisp.autolisp-builtins-core — otherwise the compiler
+only whispers a style warning while each name reads as a fresh, unbound
+internal symbol that signals undefined-function at runtime. Assert each
+resolves to a bound function in the builtins-core package."
+  (let ((pkg (find-package '#:clautolisp.autolisp-builtins-core)))
+    (is (not (null pkg)))
+    (dolist (name '("REACTOR-TYPE-NAME" "DOCUMENT-REACTOR-REGISTRY"))
+      (let ((sym (find-symbol name pkg)))
+        (is (not (null sym))
+            "~A absent from clautolisp.autolisp-builtins-core" name)
+        (is (and sym (fboundp sym))
+            "~A unbound in clautolisp.autolisp-builtins-core (missing :import-from)"
+            name)))))
+
 (test m5-layoutlist-returns-model-only
   "(layoutlist) returns a single-element list with the autolisp-string \"Model\"."
   (reset-autolisp-symbol-table)

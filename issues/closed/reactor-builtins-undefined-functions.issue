@@ -80,3 +80,23 @@ whispers a style warning. The build prints it, but it scrolls past in a
 green run. Worth a CI check that fails the build on any
 "undefined function" in a from-scratch compile — the same slip shipped
 in alfe on 2026-08-01 and was caught only by a real CAD run.
+
+
+* Resolution (1.7.7, 2026-08-02) — branch fix-reactor-builtins-undefined-functions
+
+Added =#:reactor-type-name= and =#:document-reactor-registry= to the
+reactor :IMPORT-FROM block in
+=clautolisp/autolisp-builtins-core/source/package.lisp=, so both now
+resolve to the bound clautolisp.autolisp-runtime functions instead of
+fresh unbound internal symbols. Regression test
+=reactor-builtins-import-runtime-helpers= (builtin-tests.lisp) asserts
+both names are present and fboundp in the builtins-core package —
+failing before the import, passing after. builtins-core suite green
+(1577/1577, incl. the new checks); no more "undefined function"
+warnings for the two names in a from-scratch compile. Version 1.7.6 ->
+1.7.7.
+
+Follow-up filed (same bug class, out of scope here): the from-scratch
+compile still warns =undefined variable *VLE-VECTOR-TOLERANCE*= in
+=builtin-vle-g-vectol= — see
+issues/open/vle-vector-tolerance-undefined-variable.issue.
