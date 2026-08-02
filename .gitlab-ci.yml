@@ -546,6 +546,36 @@ test:clautolisp:windows:
     - make -C clautolisp test-sbcl
     - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-vl-registry.lisp"
 
+# The autolisp-test harness and the autolisp-front-end (alfe) FiveAM suite on
+# the native runners too. Platform-specific pathname / temp-file / thread
+# behaviour only shows on the real OS, not the linux docker lane — e.g. the
+# msys `/c/...' load-asd path (needs cygpath + #P), the macOS /var->/private
+# truename, and mock-CAD-thread teardown races. allow_failure via
+# .platform-test-common (intermittent laptops must never block a pipeline).
+test:autolisp-test:macos:
+  extends: .platform-test-common
+  tags: [macos, arm64, shell]
+  script:
+    - make -C autolisp-test test
+
+test:autolisp-test:windows:
+  extends: .platform-test-common
+  tags: [windows, amd64, shell]
+  script:
+    - make -C autolisp-test test
+
+test:alfe:macos:
+  extends: .platform-test-common
+  tags: [macos, arm64, shell]
+  script:
+    - make -C autolisp-front-end test-sbcl
+
+test:alfe:windows:
+  extends: .platform-test-common
+  tags: [windows, amd64, shell]
+  script:
+    - make -C autolisp-front-end test-sbcl
+
 .verify-registry-common:
   stage: test
   rules:
