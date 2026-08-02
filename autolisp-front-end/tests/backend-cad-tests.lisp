@@ -173,7 +173,7 @@ creates it. Backs the pre-launch quarantine of a corrupt per-user default.cui."
             (is (search "_FILEDIA 0" content))
             (is (search "_QUIT _N" content))))
       (uiop:delete-directory-tree workdir :validate t
-                                          :if-does-not-exist :ignore)))
+                                          :if-does-not-exist :ignore))))
 
 (test bricscad-emit-bridge-vbs-substitutes-placeholders
   "EMIT-BRIDGE-VBS substitutes every documented placeholder. The
@@ -927,7 +927,7 @@ $AUTOLISP_DWG, nor an install template exists."
                                                             workdir))))))
               (is (string= "/usr/bin/true" (first argv)))
               (is (member "/i" argv :test #'string=))
-              (is (member "/s" argv :test #'string=))))))
+              (is (member "/s" argv :test #'string=)))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 

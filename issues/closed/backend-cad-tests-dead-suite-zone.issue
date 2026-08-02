@@ -59,3 +59,28 @@ Workaround in place
 
 The alfe-bricscad-batch-hidden-ui argv tests were appended at the END of
 the file (the live tail), verified to run via a sabotage probe.
+
+
+Resolution (alfe 1.7.15, 2026-08-02) — branch fix-backend-cad-tests-dead-suite-zone
+-----------------------------------------------------------------------------------
+
+Root cause: a SINGLE missing closing paren. BRICSCAD-EMIT-RUN-SCR-LOADS-RUNTIME-
+AND-QUITS (the last live test before the band) was short one ) at its end, so its
+(test …) form did not close — it swallowed every following (test …) as nested
+body forms until a compensating extra ) at the end of
+AUTOCAD-BUILD-LAUNCH-ARGV-… . A paren-depth scan showed ONE top-level form
+spanning lines 150–932 (782 lines) instead of ~20 separate tests; the swallowed
+(test …) macro calls were never evaluated at load time, so they never registered
+with FiveAM — compiling fine, silently not running.
+
+Fix: add the missing ) to emit-run-scr, remove the compensating extra ) at the
+end of build-launch-argv (which also had the separate let*-scope paren slip fixed
+in 1.7.14). Verified: the alfe suite went 136 -> 157 tests / 497 -> 567 checks,
+all pass, no PROTOCOL/WITH-ACC warnings. The ~21 un-hidden tests (autocad-detect,
+autocad-discover-*, autocad-emit-*, cad-drive-protocol-*, bricscad-emit-*/
+start-engine, build-launch-argv, …) all pass. NB this means the
+feat-accoreconsole-macos autocad-detect test update now actually executes.
+
+Lesson: a swallowed test band produces NO failure — it's invisible in a green
+run. A cheap CI guard would assert the registered test count against an expected
+floor, or run a paren-balance/top-level-form scan on the test files.
