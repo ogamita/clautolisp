@@ -18,6 +18,19 @@ ROOT_DIR := $(shell pwd)
 CLAUTOLISP_ROOT := $(ROOT_DIR)/../clautolisp
 CLAUTOLISP_ASD := $(CLAUTOLISP_ROOT)/clautolisp.asd
 ALFE_ASD := $(ROOT_DIR)/autolisp-front-end.asd
+
+# Native (C:/...) forms of the .asd paths handed to the SBCL/CCL engine below:
+# on Windows msys `pwd' yields `/c/...', which native-Windows Lisp
+# asdf:load-asd cannot resolve, so the system never registers and test-system
+# reports "Component not found". cygpath -m on Windows, identity elsewhere
+# (same idiom as the TEX_*_SEARCH paths further down).
+ifneq ($(filter MINGW% MSYS% CYGWIN%,$(shell uname -s)),)
+CLAUTOLISP_ASD_NATIVE := $(shell cygpath -m "$(CLAUTOLISP_ASD)")
+ALFE_ASD_NATIVE       := $(shell cygpath -m "$(ALFE_ASD)")
+else
+CLAUTOLISP_ASD_NATIVE := $(CLAUTOLISP_ASD)
+ALFE_ASD_NATIVE       := $(ALFE_ASD)
+endif
 ALFE_TOOL_DIR := tools/alfe
 ALFE_BIN_DIR := $(ALFE_TOOL_DIR)/bin
 ALFE_SBCL := $(ALFE_BIN_DIR)/alfe-sbcl
@@ -231,8 +244,8 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
-		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
+		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd "$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
 
 test-ccl:  ## Run the alfe FiveAM suite under CCL.
@@ -244,8 +257,8 @@ test-ccl:  ## Run the alfe FiveAM suite under CCL.
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
-		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
+		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd "$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)' \
 		--eval '(ccl:quit)'
 
@@ -288,8 +301,8 @@ conformance:  ## Run the alfe scenario corpus and exit non-zero on any failure.
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD)")' \
-		--eval '(asdf:load-asd "$(ALFE_ASD)")' \
+		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd "$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-front-end/tool-run-alfe-conformance")' \
 		--eval '(alfe.tools.run-alfe-conformance:main nil)'
 
