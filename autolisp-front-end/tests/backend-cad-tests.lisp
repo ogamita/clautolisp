@@ -508,6 +508,13 @@ ECHO-STDIN-P, when true, echoes each consumed stdin.txt payload to
 stdout.txt so the test driver can verify the round-trip."
   (bordeaux-threads:make-thread
    (lambda ()
+     ;; Guard the whole mock body: if the workdir is torn down while this
+     ;; thread is still alive (a teardown race, or a test whose JOIN got
+     ;; skipped because the driver threw), an unguarded WRITE-ATOMIC-FILE
+     ;; here signals a file error that, being UNHANDLED in a thread under
+     ;; --disable-debugger, aborts the ENTIRE test process. Swallow it so
+     ;; at most the owning test fails; the suite keeps running.
+     (ignore-errors
      (alfe.protocol.file:write-atomic-file
       (alfe.protocol.file:protocol-session-status-path protocol-session)
       "READY 0")
@@ -556,7 +563,7 @@ stdout.txt so the test driver can verify the round-trip."
      (sleep 0.2)
      (alfe.protocol.file:write-atomic-file
       (alfe.protocol.file:protocol-session-status-path protocol-session)
-      "STOPPED"))
+      "STOPPED")))
    :name "mock-cad-runtime"))
 
 (test cad-drive-protocol-actions-end-to-end
