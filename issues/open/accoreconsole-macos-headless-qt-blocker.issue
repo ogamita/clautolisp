@@ -91,3 +91,37 @@ Repro (macOS with AutoCAD installed)
 
   alfe --cad accoreconsole --mode batch --dwg <writable.dwg> -x '(princ "HI")'
   # -> AcCoreConsole starts, Qt::AA_PluginApplication, exits before READY.
+
+
+PARKED — confirmed an Autodesk macOS AcCoreConsole bug (2026-08-02, pjb, thalassa)
+---------------------------------------------------------------------------------
+
+With the --cad DETECT fix (1.7.12) alfe now reaches AcCoreConsole on macOS.
+Empirically the engine is NOT usable there yet, on BOTH installed versions:
+
+  - AutoCAD 2027 AcCoreConsole  X.60.M.171
+  - AutoCAD 2026 AcCoreConsole  W.119.M.325
+
+Both, with AND without QT_QPA_PLATFORM=offscreen, print
+"Attribute Qt::AA_PluginApplication must be set before QCoreApplication is
+created." and then CANCEL every LISP load — decisively including AUTODESK's OWN
+startup lisp (acad2027.LSP / acad2026.LSP), not just our run-common.lsp. So this
+is Autodesk's binary, not our code or a trust issue we introduced; exit code is
+0 (no license wall). QT_QPA_PLATFORM=offscreen has no effect (the fault is the
+AA_PluginApplication *attribute*, set in C++ before QCoreApplication, not the
+platform plugin).
+
+Contributing but secondary: "File load canceled" is also the classic headless
+SECURELOAD / Trusted-Locations symptom (a temp-dir .lsp triggers a trust prompt
+a headless engine can't answer). Even fixing that would not help while Autodesk's
+own startup lisp dies on the Qt error.
+
+Decision: PARK macOS AcCoreConsole. Real AutoCAD conformance runs on Windows
+(green). Keep the --cad access (opt-in via $AUTOCAD_ACCORECONSOLE, which --cad
+sets) to re-test on a fixed Autodesk build. Worth an Autodesk report.
+
+Useful nuggets for the capture work IF the Qt bug ever clears: AcCoreConsole
+prints "Redirect stdout (file: /var/tmp/accc……)" — it already tees its stdout to
+a temp file — and "LogFilePath has been set to the working folder" (LOGFILEPATH
+works). Both are alternative capture paths worth revisiting then. See
+[[autocad-no-rest-output-capture]].

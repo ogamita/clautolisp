@@ -63,7 +63,7 @@ retrofitted as they are touched.
 | autocad-no-rest-output-capture                | cad-runtime     | TODO     | no-&rest path loses probe output on AutoCAD |
 | autocad-runtime-vlax-sleep-and-rest           | cad-runtime     | TODO     | vlax-sleep / &rest portability on AutoCAD |
 | accoreconsole-deported-load-highbyte          | cad-runtime/enc | TODO     | accoreconsole (load) errors on a high-byte source file |
-| accoreconsole-macos-headless-qt-blocker       | cad-runtime     | BLOCKED  | AcCoreConsole aborts on Qt::AA_PluginApplication before READY on macOS; --cad now reaches it (1.7.12) |
+| accoreconsole-macos-headless-qt-blocker       | cad-runtime     | BLOCKED  | PARKED — Autodesk macOS bug (V26 W.119.M.325 + V27 X.60.M.171, even their own acad20XX.LSP fails); real AutoCAD conformance runs on Windows |
 | alfe-bricscad-automation-macos                | alfe-backend    | TODO     | exercise --mode automation on macOS (no true headless on mac — see rules repo) |
 | dialect-platform-version-axis                 | dialect-design  | TODO     | autocad vs autocad-mac + version suffixes; drives "/…"-warns-on-windows |
 | clautolisp-dialect-portability-warnings       | dialect         | TODO     | verify the portability-warning mechanism; ch.25 DoD |
