@@ -244,8 +244,8 @@ test-sbcl:  ## Run the alfe FiveAM suite under SBCL.
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD_NATIVE)")' \
-		--eval '(asdf:load-asd "$(ALFE_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)'
 
 test-ccl:  ## Run the alfe FiveAM suite under CCL.
@@ -257,8 +257,8 @@ test-ccl:  ## Run the alfe FiveAM suite under CCL.
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD_NATIVE)")' \
-		--eval '(asdf:load-asd "$(ALFE_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:test-system "$(TEST_SYSTEM)" :verbose t)' \
 		--eval '(ccl:quit)'
 
@@ -301,8 +301,8 @@ conformance:  ## Run the alfe scenario corpus and exit non-zero on any failure.
 		--eval '(when (find-package :ql) (ql:quickload "trivial-gray-streams" :silent t))' \
 		--eval '(when (find-package :ql) (ql:quickload "babel" :silent t))' \
 		--eval '(require :asdf)' \
-		--eval '(asdf:load-asd "$(CLAUTOLISP_ASD_NATIVE)")' \
-		--eval '(asdf:load-asd "$(ALFE_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(CLAUTOLISP_ASD_NATIVE)")' \
+		--eval '(asdf:load-asd #P"$(ALFE_ASD_NATIVE)")' \
 		--eval '(asdf:load-system "autolisp-front-end/tool-run-alfe-conformance")' \
 		--eval '(alfe.tools.run-alfe-conformance:main nil)'
 
