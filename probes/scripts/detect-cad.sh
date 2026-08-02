@@ -53,7 +53,7 @@ case "$product" in
         || true)"
     fi
     [[ -n "$bin" && -x "$bin" ]] || { echo "detect-cad: no clautolisp binary (build it, or set CLAUTOLISP_BIN)" >&2; exit 3; }
-    emit "\"$bin\" --clautolisp -q -l __PROBE_FILE__"
+    emit "\"$bin\" --no-init --clautolisp -q -l __PROBE_FILE__"
     ;;
 
   autocad)

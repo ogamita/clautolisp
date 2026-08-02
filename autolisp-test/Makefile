@@ -150,7 +150,7 @@ HARNESS_SELFTEST_SNIPPET := \
   (load (strcat *autolisp-test-root* "harness/self-test.lsp"))
 
 harness-self-test: $(CLAUTOLISP_SBCL)  ## Harness regression tests (detection + matrix; guards the recap-crash bug).
-	"$(CLAUTOLISP_SBCL)" -x '$(HARNESS_SELFTEST_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc -x '$(HARNESS_SELFTEST_SNIPPET)'
 
 # --- Path 1: the standalone clautolisp executable ------------------
 # The executables under clautolisp/tools/clautolisp/bin/ are built
@@ -168,16 +168,16 @@ build-clautolisp-sbcl: $(CLAUTOLISP_SBCL)
 build-clautolisp-ccl:  $(CLAUTOLISP_CCL)
 
 test-clautolisp-sbcl: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-sbcl-debug: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" -x '$(HARNESS_DEBUG_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc -x '$(HARNESS_DEBUG_SNIPPET)'
 
 test-clautolisp-ccl: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-ccl-debug: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" -x '$(HARNESS_DEBUG_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc -x '$(HARNESS_DEBUG_SNIPPET)'
 
 # --- Path 2: SBCL/CCL + ASDF driver --------------------------------
 # Loads the autolisp-test/clautolisp-driver system, which installs
@@ -294,28 +294,28 @@ clean-pdf:
 # the harness entry point only needs editing one place.
 
 test-clautolisp-sbcl-strict: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc --dialect strict -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-sbcl-clautolisp: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc --dialect strict -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-sbcl-bricscad: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect bricscad-v26 -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc --dialect bricscad-v26 -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-sbcl-autocad: $(CLAUTOLISP_SBCL)
-	"$(CLAUTOLISP_SBCL)" --dialect autocad-2026 -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_SBCL)" -norc --dialect autocad-2026 -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-ccl-strict: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc --dialect strict -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-ccl-clautolisp: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect strict -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc --dialect strict -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-ccl-bricscad: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect bricscad-v26 -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc --dialect bricscad-v26 -x '$(HARNESS_SNIPPET)'
 
 test-clautolisp-ccl-autocad: $(CLAUTOLISP_CCL)
-	"$(CLAUTOLISP_CCL)" --dialect autocad-2026 -x '$(HARNESS_SNIPPET)'
+	"$(CLAUTOLISP_CCL)" -norc --dialect autocad-2026 -x '$(HARNESS_SNIPPET)'
 
 # Aggregate: every dialect against one implementation.
 test-clautolisp-sbcl-all: \
@@ -358,31 +358,31 @@ ALFE_HARNESS_RUN  := -x "(autolisp-test-run-all)"
 
 test-bricscad-macos-strict:
 	@$(call require-os-darwin,$@); \
-	 "$(ALFE_SBCL)" --bricscad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --bricscad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-bricscad-macos-bricscad:
 	@$(call require-os-darwin,$@); \
-	 "$(ALFE_SBCL)" --bricscad --dialect bricscad-v26 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --bricscad --dialect bricscad-v26 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-bricscad-macos: test-bricscad-macos-strict test-bricscad-macos-bricscad
 
 test-bricscad-windows-strict:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --bricscad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --bricscad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-bricscad-windows-bricscad:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --bricscad --dialect bricscad-v26 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --bricscad --dialect bricscad-v26 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-bricscad-windows: test-bricscad-windows-strict test-bricscad-windows-bricscad
 
 test-autocad-windows-strict:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --autocad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --autocad --dialect strict $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-autocad-windows-autocad:
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --autocad --dialect autocad-2026 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
+	 "$(ALFE_SBCL)" --no-init --autocad --dialect autocad-2026 $(ALFE_HARNESS_LOAD) $(ALFE_HARNESS_RUN)
 
 test-autocad-windows: test-autocad-windows-strict test-autocad-windows-autocad
 

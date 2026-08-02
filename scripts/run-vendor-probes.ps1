@@ -167,9 +167,9 @@ foreach ($p in $probes) {
   try {
     if ($Backend -eq "autocad" -and $probeDwg) {
       # explicit batch + drawing selection for accoreconsole
-      & $alfe "--autocad" @dbg "--mode" "batch" "--dwg" $probeDwg -l $probePath 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log
+      & $alfe "--no-init" "--autocad" @dbg "--mode" "batch" "--dwg" $probeDwg -l $probePath 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log
     } else {
-      & $alfe "--$Backend" @dbg @tmo -l $probePath 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log
+      & $alfe "--no-init" "--$Backend" @dbg @tmo -l $probePath 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log
     }
   } finally {
     if ($probeDwg -and (Test-Path $probeDwg)) {

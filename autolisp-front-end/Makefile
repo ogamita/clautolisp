@@ -323,34 +323,34 @@ clean: clean-pdf  ## Remove built executables and generated PDFs.
 # the OS guard only handles the "obviously wrong platform" case.
 
 test-alfe-sbcl-clautolisp: $(ALFE_SBCL)  ## alfe-sbcl --clautolisp smoke test (any OS).
-	"$(ALFE_SBCL)" --clautolisp -x '(+ 1 2)'
+	"$(ALFE_SBCL)" --no-init --clautolisp -x '(+ 1 2)'
 
 test-alfe-ccl-clautolisp: $(ALFE_CCL)  ## alfe-ccl --clautolisp smoke test (any OS).
-	"$(ALFE_CCL)" --clautolisp -x '(+ 1 2)'
+	"$(ALFE_CCL)" --no-init --clautolisp -x '(+ 1 2)'
 
 test-alfe-sbcl-bricscad-macos: $(ALFE_SBCL)  ## alfe-sbcl --bricscad smoke test (macOS).
 	@$(call require-os-darwin,$@); \
-	 "$(ALFE_SBCL)" --bricscad -x '(princ (+ 1 2))'
+	 "$(ALFE_SBCL)" --no-init --bricscad -x '(princ (+ 1 2))'
 
 test-alfe-ccl-bricscad-macos: $(ALFE_CCL)  ## alfe-ccl --bricscad smoke test (macOS).
 	@$(call require-os-darwin,$@); \
-	 "$(ALFE_CCL)" --bricscad -x '(princ (+ 1 2))'
+	 "$(ALFE_CCL)" --no-init --bricscad -x '(princ (+ 1 2))'
 
 test-alfe-sbcl-bricscad-windows: $(ALFE_SBCL)  ## alfe-sbcl --bricscad smoke test (Windows).
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --bricscad -x '(princ (+ 1 2))'
+	 "$(ALFE_SBCL)" --no-init --bricscad -x '(princ (+ 1 2))'
 
 test-alfe-ccl-bricscad-windows: $(ALFE_CCL)  ## alfe-ccl --bricscad smoke test (Windows).
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_CCL)" --bricscad -x '(princ (+ 1 2))'
+	 "$(ALFE_CCL)" --no-init --bricscad -x '(princ (+ 1 2))'
 
 test-alfe-sbcl-autocad-windows: $(ALFE_SBCL)  ## alfe-sbcl --autocad smoke test (Windows).
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_SBCL)" --autocad -x '(princ (+ 1 2))'
+	 "$(ALFE_SBCL)" --no-init --autocad -x '(princ (+ 1 2))'
 
 test-alfe-ccl-autocad-windows: $(ALFE_CCL)  ## alfe-ccl --autocad smoke test (Windows).
 	@$(call require-os-windows,$@); \
-	 "$(ALFE_CCL)" --autocad -x '(princ (+ 1 2))'
+	 "$(ALFE_CCL)" --no-init --autocad -x '(princ (+ 1 2))'
 
 # Dependencies — if the alfe binary doesn't exist, build it first.
 # Use the existing build-alfe-* targets so the recipe stays in one
