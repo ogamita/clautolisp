@@ -919,7 +919,7 @@ $AUTOLISP_DWG, nor an install template exists."
               (is (string= "/usr/bin/true" (first argv)))
               (is (member "/i" argv :test #'string=))
               (is (find "acadiso.dwt" argv :test (lambda (needle s)
-                                                   (search needle s))))))
+                                                   (search needle s)))))
             (let ((argv (alfe.backend.autocad:build-launch-argv
                          with-acc protocol :mode :batch
                          :dwg (namestring
@@ -927,7 +927,7 @@ $AUTOLISP_DWG, nor an install template exists."
                                                             workdir))))))
               (is (string= "/usr/bin/true" (first argv)))
               (is (member "/i" argv :test #'string=))
-              (is (member "/s" argv :test #'string=)))))
+              (is (member "/s" argv :test #'string=))))))
       (uiop:delete-directory-tree workdir :validate t
                                           :if-does-not-exist :ignore))))
 
