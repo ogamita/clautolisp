@@ -167,11 +167,24 @@ AutoCAD (alfe-cad-console-encoding.issue / DWG-TrueView discovery)."
       (when (eq os :windows)
         (first-existing (windows-acad-candidates)))))
 
+(defun macos-accoreconsole-candidates ()
+  "AcCoreConsole ships INSIDE the macOS AutoCAD app bundle, e.g.
+/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole
+(confirmed by --list-cad-programs on a macOS runner). AutoCAD proper (the GUI)
+is Windows-only, but this batch engine runs on macOS. Version-descending so the
+newest AutoCAD wins."
+  (sort (mapcar #'namestring
+                (directory
+                 "/Applications/Autodesk/AutoCAD */*.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole"))
+        #'string>))
+
 (defun discover-accoreconsole-binary (&key
                                         (os (host-os)))
   (or (env-binary "AUTOCAD_ACCORECONSOLE")
-      (when (eq os :windows)
-        (first-existing (windows-accoreconsole-candidates)))))
+      (case os
+        (:windows (first-existing (windows-accoreconsole-candidates)))
+        ;; accoreconsole batch runs on macOS too (alfe cad-runtime debugging).
+        (:macos   (first-existing (macos-accoreconsole-candidates))))))
 
 (defun candidate-autocad-template-paths (backend)
   "Return likely DWG/DWT templates that ship alongside the discovered
@@ -210,14 +223,18 @@ Order of precedence:
 ;;; --- DETECT --------------------------------------------------------
 
 (defmethod detect ((backend autocad-backend) &key)
-  (unless (windows-p)
-    (error 'backend-not-available
-           :backend :autocad
-           :code :unsupported-os
-           :message (unsupported-os-message)
-           :details (list :os (host-os))))
   (let ((acad (discover-autocad-binary))
         (acc  (discover-accoreconsole-binary)))
+    ;; The AutoCAD GUI / COM-automation path is Windows-only, but the
+    ;; AcCoreConsole BATCH engine ships with the macOS AutoCAD bundle and runs
+    ;; there. Allow a non-Windows host only when an accoreconsole binary is
+    ;; available (batch mode); GUI acad / --mode automation still needs Windows.
+    (when (and (not (windows-p)) (not acc))
+      (error 'backend-not-available
+             :backend :autocad
+             :code :unsupported-os
+             :message (unsupported-os-message)
+             :details (list :os (host-os))))
     (unless (or acad acc)
       (error 'backend-not-available
              :backend :autocad
