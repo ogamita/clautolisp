@@ -167,24 +167,23 @@ AutoCAD (alfe-cad-console-encoding.issue / DWG-TrueView discovery)."
       (when (eq os :windows)
         (first-existing (windows-acad-candidates)))))
 
-(defun macos-accoreconsole-candidates ()
-  "AcCoreConsole ships INSIDE the macOS AutoCAD app bundle, e.g.
-/Applications/Autodesk/AutoCAD 2027/AutoCAD 2027.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole
-(confirmed by --list-cad-programs on a macOS runner). AutoCAD proper (the GUI)
-is Windows-only, but this batch engine runs on macOS. Version-descending so the
-newest AutoCAD wins."
-  (sort (mapcar #'namestring
-                (directory
-                 "/Applications/Autodesk/AutoCAD */*.app/Contents/Helpers/AcCoreConsole.app/Contents/MacOS/AcCoreConsole"))
-        #'string>))
-
 (defun discover-accoreconsole-binary (&key
                                         (os (host-os)))
+  "Locate the AcCoreConsole batch engine.
+
+On Windows it is auto-discovered from the install. AcCoreConsole ALSO ships
+inside the macOS AutoCAD bundle and can be driven by alfe — but it is NOT
+auto-discovered here: on macOS it is opt-in via $AUTOCAD_ACCORECONSOLE, which
+`--cad accoreconsole' sets to the bundle path (cli.lisp). Auto-globbing the
+bundle would make plain `--autocad' — and thus the conformance corpus, through
+BACKEND-AVAILABLE-P -> DETECT — treat macOS as a working AutoCAD host and RUN the
+AutoCAD scenarios, but the macOS batch engine still aborts at bootstrap
+(accoreconsole-macos-headless-qt-blocker), so they fail with exit 4 instead of
+skipping. Env-gating keeps the corpus deterministic (Windows-only for real
+AutoCAD) while letting `--cad accoreconsole' drive it on macOS for debugging."
   (or (env-binary "AUTOCAD_ACCORECONSOLE")
-      (case os
-        (:windows (first-existing (windows-accoreconsole-candidates)))
-        ;; accoreconsole batch runs on macOS too (alfe cad-runtime debugging).
-        (:macos   (first-existing (macos-accoreconsole-candidates))))))
+      (when (eq os :windows)
+        (first-existing (windows-accoreconsole-candidates)))))
 
 (defun candidate-autocad-template-paths (backend)
   "Return likely DWG/DWT templates that ship alongside the discovered

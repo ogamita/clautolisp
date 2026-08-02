@@ -135,3 +135,32 @@ and 1 when any is :fail. Drives the CLI runner's exit-code logic."
       (is (= 0 (alfe.conformance:summarise-results passing))))
     (let ((*standard-output* (make-string-output-stream)))
       (is (= 1 (alfe.conformance:summarise-results mixed))))))
+
+(test accoreconsole-macos-is-opt-in-not-auto-discovered
+  "Regression guard for the corpus break caused by the macOS --cad fix:
+macOS AcCoreConsole must NOT be auto-discovered from the AutoCAD bundle.
+Auto-discovery made plain --autocad — and thus this file's
+CONFORMANCE-CORPUS-PASSES via BACKEND-AVAILABLE-P -> DETECT — treat
+macOS-with-AutoCAD as a working AutoCAD host and RUN the AutoCAD scenarios,
+which then fail with exit 4 (accoreconsole-macos-headless-qt-blocker)
+instead of skipping. It is opt-in via $AUTOCAD_ACCORECONSOLE, which
+--cad accoreconsole sets (cli.lisp). Host-independent: passes :os :macos
+explicitly. (Placed here, not in backend-cad-tests.lisp, whose autocad-detect
+band is in the dead-suite zone — see backend-cad-tests-dead-suite-zone.)"
+  (let ((saved (uiop:getenv "AUTOCAD_ACCORECONSOLE"))
+        (fake (namestring (merge-pathnames
+                           (format nil "alfe-fake-acc-~D.txt" (random 999999))
+                           (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (setf (uiop:getenv "AUTOCAD_ACCORECONSOLE") "")
+           (is (null (alfe.backend.autocad:discover-accoreconsole-binary
+                      :os :macos)))
+           (with-open-file (s fake :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (write-line "stub" s))
+           (setf (uiop:getenv "AUTOCAD_ACCORECONSOLE") fake)
+           (is (equal fake (alfe.backend.autocad:discover-accoreconsole-binary
+                            :os :macos))))
+      (setf (uiop:getenv "AUTOCAD_ACCORECONSOLE") (or saved ""))
+      (ignore-errors (delete-file fake)))))
