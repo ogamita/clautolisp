@@ -1,0 +1,176 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: clautolisp — issue triage & processing index
+#+TODO: TODO(t) NEXT(n) BLOCKED(b) DEFERRED(d) | DONE(D) WONTFIX(w)
+#+STARTUP: overview
+
+Authoritative triage of =issues/open/=. Replaces the old =index.txt=
+(its content is preserved in git history; historical processed batches
+live there and under =issues/closed/=). Rebuilt 2026-08-02 against the
+real open set (65 issues at =fe30b9e=). Priority order set by pjb:
+*P1 CAD backend / dialect divergences → P2 language / builtins
+completeness → P3 everything else.*
+
+* Processing rules
+
+- If an issue is completely done, close it and move it to =issues/closed/=.
+- Process issues in the priority order below (P1 → P2 → P3); within a
+  tier, =NEXT= first, then =TODO=; skip =BLOCKED= / =DEFERRED=.
+- Strive to implement an issue completely. Only inconsistency or a
+  dependency (missing spec, or another issue's implementation) justifies
+  putting it on hold and moving on.
+- Before starting, check the tree: progress may have made parts (or all)
+  of an issue irrelevant — then close it with an explanation.
+- Non-blocking bugs found mid-issue: enqueue as a new issue (standard
+  format below) and add it here. Blocking bugs: fix within the current
+  issue (may be a separate commit).
+- Branch naming: bug → =fix-<slug>=, feature → =feature-<slug>=; an epic
+  runs in one long-lived branch for its sub-issues. Fetch + rebase before
+  merging back to =master=.
+
+* Standard issue format
+
+Every issue file is =<slug>.issue=, org-mode, UTF-8, beginning with the
+keyword header below; new issues MUST use it, existing ones are
+retrofitted as they are touched.
+
+#+begin_src org
+  # -*- mode:org; coding:utf-8 -*-
+  #+TITLE: <slug> — <one-line summary>
+  #+STATUS: NEXT|TODO|BLOCKED|DEFERRED|DONE|WONTFIX
+  #+PRIORITY: P1|P2|P3
+  #+TYPE: bug|divergence|cad-runtime|feature|epic|spec|infra|doc
+  #+DEPENDS: <issue slug(s) or external gate, or ->
+  #+BRANCH: fix-<slug> | feature-<slug> | <epic-branch>
+  * Context
+  * Problem
+  * Proposal
+  * Acceptance criteria
+#+end_src
+
+=BLOCKED= records *why* in =#+DEPENDS:= (e.g. =bricscad-access=,
+=windows-access=, =pjb-decision=, =libredwg-upstream=, or an issue slug).
+
+* P1 — CAD backend / dialect divergences
+  :PROPERTIES:
+  :Priority: P1
+  :END:
+
+| Issue                                         | Type            | Status   | Note |
+|-----------------------------------------------+-----------------+----------+------|
+| vendor-probe-autocad-bricscad-divergences     | divergence-cat  | TODO     | canonical AutoCAD⇄BricsCAD divergence register; anchor for the rest |
+| bricscad-dialect-sysvar-parity                | dialect-bug     | TODO     | bricscad dialect reports AutoCAD's sysvars, not BricsCAD factory defaults (phase-2 harvest) |
+| system-variables                              | dialect-epic    | TODO     | AutoCAD/BricsCAD sysvars: collect/specify/implement; coupling backlog, partly gated on drawing-database-api (17f) |
+| autocad-no-rest-output-capture                | cad-runtime     | TODO     | no-&rest path loses probe output on AutoCAD |
+| autocad-runtime-vlax-sleep-and-rest           | cad-runtime     | TODO     | vlax-sleep / &rest portability on AutoCAD |
+| accoreconsole-deported-load-highbyte          | cad-runtime/enc | TODO     | accoreconsole (load) errors on a high-byte source file |
+| alfe-bricscad-batch-hidden-ui                 | alfe-backend    | NEXT     | Windows: /Automation + /b for hidden-UI batch (Windows push) |
+| alfe-bricscad-automation-macos                | alfe-backend    | TODO     | exercise --mode automation on macOS (no true headless on mac — see rules repo) |
+| dialect-platform-version-axis                 | dialect-design  | TODO     | autocad vs autocad-mac + version suffixes; drives "/…"-warns-on-windows |
+| clautolisp-dialect-portability-warnings       | dialect         | TODO     | verify the portability-warning mechanism; ch.25 DoD |
+| cad-path-dotdot-resolution                    | divergence      | BLOCKED  | investigation complete; final verify needs bricscad-access |
+| bricscad-undocumented-clisms                  | dialect-invent  | BLOCKED  | inventory; needs bricscad-access (phase-2 harvest) |
+| clautolisp-windows-pathname-mapping           | portability     | BLOCKED  | needs windows-access; design spec written |
+| deferred-clautolisp-out-of-dialect-warnings   | dialect         | DEFERRED | availability bitmap |
+| deferred-document-lifecycle-command-semantics | cad-semantics   | DEFERRED | pjb-decision (NEW/OPEN/SAVE/CLOSE vs running routine) |
+| deferred-bricscad-setq-nil-returns-2          | dialect         | DEFERRED | cosmetic, no functional impact; needs bricscad-access |
+
+* P2 — language / builtins completeness
+  :PROPERTIES:
+  :Priority: P2
+  :END:
+
+| Issue                                    | Type          | Status   | Note |
+|------------------------------------------+---------------+----------+------|
+| vl-directory-filename-helpers-fail-macos | builtin-bug   | NEXT     | 🔴 BUILTIN-VL-DIRECTORY-AND-FILENAME-HELPERS fails 2 checks on macOS |
+| transmit-bindings-interns-nil-bare-call  | bug           | NEXT     | cli-options->transmit-bindings signals on a bare call |
+| reactor-builtins-undefined-functions     | builtin-bug   | NEXT     | 🔴 vlr-* reactor builtins call two undefined functions in their package → signal at runtime (found 2026-08-01) |
+| complete-unit-tests                      | coverage-epic | TODO     | backfill builtin coverage to ≥95% |
+| banner                                   | cli-feature   | TODO     | print a startup banner unless -q/--quiet |
+| deferred-stubbed-functions               | builtins-epic | DEFERRED | promote stubbed-as-no-op builtins (registry section done 1.5.1) |
+| deferred-spec-research                   | builtins      | DEFERRED | vendor-validate uncertain builtins; needs cad-access |
+| xdroom-xdsize-not-implemented            | builtin/draw  | DEFERRED | XDROOM/XDSIZE still nil stubs (schms-data-selection) |
+
+* P3 — everything else (by workstream)
+  :PROPERTIES:
+  :Priority: P3
+  :END:
+
+** Drawing / entity parity (SCHMS corpus)
+Headless cores largely DONE; most families parked; CAD verification is
+the shared blocker.
+
+| Issue                              | Status   | Note |
+|------------------------------------+----------+------|
+| entity-mutation-parity             | TODO     | headless foundation done (1.6.5/6); umbrella for deferred families + CAD verify |
+| drawing-database-api               | TODO     | parent epic — Phase 17f multi-document / 17g ObjectDBX / 17h |
+| drawing-data-structures-parity     | BLOCKED  | headless done (1.6.8–10); needs cad-access to verify |
+| selection-and-snapshot-parity      | BLOCKED  | headless done (1.6.8–10); needs cad-access to verify |
+| entnext-nongraphical-enumeration   | BLOCKED  | verification blocked on libredwg-upstream |
+| libredwg-empty-dwg-write-invalid   | BLOCKED  | libredwg-upstream bug (minimal repro filed) |
+| entmake-symbol-table-records       | DEFERRED | table-record creation from AutoLISP |
+| entity-family-annotation           | DEFERRED | schms-parity 1.6.6 |
+| entity-family-hatch-image-boundary | DEFERRED | schms-parity 1.6.6 |
+| entity-family-3d-solids            | DEFERRED | schms-parity 1.6.6 |
+| entity-family-tables-viewport-misc | DEFERRED | schms-parity 1.6.6 |
+| entity-family-nongraphical-objects | DEFERRED | schms-parity 1.6.6 |
+
+** Encoding (pjb-driven)
+| Issue                            | Status  | Note |
+|----------------------------------+---------+------|
+| encoding-situations-cli-options  | BLOCKED | DESIGN AUTHORITY; blocked on pjb validating the situation list (§3) — settle first |
+| encoding-consolidation           | BLOCKED | umbrella program/PLAN; gated behind the situation list above |
+
+** CI / build / test infra
+| Issue                         | Status | Note |
+|-------------------------------+--------+------|
+| ccl-suite-failures            | NEXT   | 🔴 CCL suite failing |
+| autolisp-cli-tests-missing    | TODO   | test-op references a non-existent test system |
+| backend-cad-tests-dead-suite-zone | TODO | a middle band of backend-cad-tests.lisp never runs |
+| ci-github-ccl-lane            | TODO   | add a CCL job to the GitHub Actions workflow |
+| cloud-platform-runners        | TODO   | pjb: survey on-demand macOS/Windows cloud runners |
+| nice-make-output              | TODO   | concise per-target make output |
+| workdir-random-tag-unseeded   | TODO   | unseeded random workdir tag |
+| lisp-configuration            | TODO   | lisp.conf + stacked settings + REPL ,set |
+
+** Debugger
+| Issue                                | Status   | Note |
+|--------------------------------------+----------+------|
+| debugger-public-interface-and-on-error | TODO   | clal-* API + --on-error/--debugger-ui/--aldb-* CLI |
+| deferred-debugger-compiler-two-bodies | DEFERRED | gated on compiler (Phase 8) |
+| deferred-debugger-remote-cad          | DEFERRED | gated on transport + CAD (Phase 9) |
+
+** OpenDCL (feature build; no code yet — one epic per opendcl.plan)
+opendcl-runtime-core, opendcl-controls, opendcl-host-pickers,
+opendcl-project-file, opendcl-renderer-scaffold, opendcl-wire-protocol,
+opendcl-conformance. All =TODO=.
+
+** Compiler
+| Issue    | Status | Note |
+|----------+--------+------|
+| compiler | TODO   | flagship epic (DRAFT): interpreter companion + AutoLISP→CL compiler |
+
+** Spec / docs
+| Issue                              | Status  | Note |
+|------------------------------------+---------+------|
+| autolisp-spec-load-open-encoding-docs | TODO | document load/open file-encoding behaviour (BOM, UTF-8/16) |
+| autolisp-spec-questions            | BLOCKED | COND edges etc.; needs cad-access |
+| tex-pdf-characters                 | TODO    | extra characters needed for the PDF build |
+
+** Interactor / UX
+| Issue                               | Status   | Note |
+|-------------------------------------+----------+------|
+| dribble                             | TODO     | dribble builtin + CLI option |
+| dribble-stop-announcement-interactor | TODO    | stop-announcement in the interactor |
+| interactor-state-diagram-revision   | DEFERRED | pjb-decision |
+
+** Big features / environment
+| Issue                    | Status   | Note |
+|--------------------------+----------+------|
+| cador-multidocument-host | TODO     | multi-document host (cador) |
+| salve-environment        | DEFERRED | SPEC draft; pjb-decision (SLIME-like Emacs env; aldb ⊂ salve) |
+| alfe-plugin-model        | DEFERRED | V2 plugin contract + EPURE (3 open design decisions) |
+
+* Companion non-issue files (keep, do not process as issues)
+=alfe.plan=, =opendcl.plan=, =missing-functions-plan.md=,
+=note-secureload.txt=, =schms-call-inventory.md=,
+=test-1252.lsp=, =compiler-transpile-probe.lisp=.
