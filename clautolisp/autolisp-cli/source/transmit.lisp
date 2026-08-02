@@ -94,8 +94,13 @@ derived value."
    ;; remote-forwarding table.
    (list "*AUTOLISP-VERSION*"
          (make-autolisp-string (or version-text "0.0.0")))
-   (list "*AUTOLISP-FRONTEND*"           (intern-autolisp-symbol frontend))
-   (list "*AUTOLISP-BACKEND*"            (intern-autolisp-symbol backend))
+   ;; A caller may pass an explicit NIL (e.g. alfe's wrapper leaves
+   ;; :backend unset when the builder is exercised in isolation), which
+   ;; would make INTERN-AUTOLISP-SYMBOL choke on a NIL name. Fall back to
+   ;; the documented "CLAUTOLISP" default so the builder is safely
+   ;; callable outside the full run path.
+   (list "*AUTOLISP-FRONTEND*"           (intern-autolisp-symbol (or frontend "CLAUTOLISP")))
+   (list "*AUTOLISP-BACKEND*"            (intern-autolisp-symbol (or backend "CLAUTOLISP")))
    (list "*AUTOLISP-DIALECT*"
          (dialect-name-symbol-keyword (cli-options-dialect options)))
    (list "*AUTOLISP-HOST*"

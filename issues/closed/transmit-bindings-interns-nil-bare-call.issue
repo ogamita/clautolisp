@@ -49,3 +49,24 @@ which was dropped in favour of the end-to-end manual verification).
 - issues/open/encoding-situations-cli-options.issue (G3 — the dropped test
   wanted to assert *AUTOLISP-CAD-LOAD-ENCODING* is published)
 - clautolisp/autolisp-cli/source/transmit.lisp (cli-options->transmit-bindings)
+
+
+== Resolution (1.7.8, 2026-08-02) — branch fix-transmit-bindings-interns-nil-bare-call ==
+
+Root cause: alfe's wrapper CLI-OPTIONS-TRANSMIT-BINDINGS-FOR-ALFE
+(autolisp-front-end/source/cli.lisp:582) declares `&key backend` with NO
+default (frontend defaults to "ALFE"), and forwards that NIL to
+CLI-OPTIONS->TRANSMIT-BINDINGS, whose lines 97/98 did
+(intern-autolisp-symbol backend/frontend) with no NIL guard — so a bare
+call (no :backend) interned a NIL name -> TYPE-ERROR. The real run path
+always passes an explicit backend, hence the suite stayed green.
+
+Fix (transmit.lisp): fall back to the documented "CLAUTOLISP" default via
+(or backend "CLAUTOLISP") / (or frontend "CLAUTOLISP"), so the builder is
+safely callable in isolation. Regression tests added in
+clautolisp/tools/clautolisp/tests/transmit-tests.lisp (interim home — the
+dedicated autolisp-cli suite is still missing, see
+issues/open/autolisp-cli-tests-missing.issue): one asserts an explicit
+NIL backend/frontend yields present, non-NIL *AUTOLISP-BACKEND*/-FRONTEND
+bindings; one asserts an explicit backend/frontend is still published
+verbatim. Version 1.7.7 -> 1.7.8.
