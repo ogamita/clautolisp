@@ -28,6 +28,9 @@
   =%install-reactor-test-env= setup-fn (mock host + a current document, which
   run-autolisp-string's session lacks) + three =coverage-vlr-reactor-*= tests.
   Coverage now **83.4% (522/626, 104 untested)**.
+- 2026-08-03 (clautolisp 1.7.16): backfilled the VL-ANNOTATIVE-* (8) and
+  VL-SUBENT-* (4) documented-nil stub families (call-path coverage). Coverage
+  now **85.3% (534/626, 92 untested)**.
 - Note: the tool is deliberately conservative — it counts only literal
   =(name= form heads, so DATA-DRIVEN / macro-generated tests are invisible
   to it; write explicit literal snippets when backfilling so the tool

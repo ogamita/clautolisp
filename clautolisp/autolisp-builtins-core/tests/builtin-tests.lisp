@@ -3758,6 +3758,34 @@ clears it, vlr-pers-dictname names the NOD entry."
       (is (string= "ACAD_REACTORS" (autolisp-string-value dictname))
           "vlr-pers-dictname names the persistent-reactor dictionary"))))
 
+(test coverage-vl-annotative-stubs-return-nil
+  "The VL-ANNOTATIVE-* annotation-scale surface ships as documented nil
+stubs headless (no annotation-scale database). Exercises the call path per
+complete-unit-tests.issue (registration-only family)."
+  (reset-autolisp-symbol-table)
+  (flet ((stub-nil (form) (null (run-autolisp-string form
+                                                     :setup-fn #'install-core-into))))
+    (is (stub-nil "(vl-annotative-addscale nil 1.0)"))
+    (is (stub-nil "(vl-annotative-getscales nil)"))
+    (is (stub-nil "(vl-annotative-remove nil)"))
+    (is (stub-nil "(vl-annotative-removescale nil 1.0)"))
+    (is (stub-nil "(vl-annotative-reset nil)"))
+    (is (stub-nil "(vl-annotative-scalelist)"))
+    (is (stub-nil "(vl-annotative-set nil nil)"))
+    (is (stub-nil "(vl-annotative-setscales nil nil)"))))
+
+(test coverage-vl-subent-stubs-return-nil
+  "The VL-SUBENT-* subentity-selection surface ships as documented nil stubs
+headless (no interactive subentity picking). Call-path coverage per
+complete-unit-tests.issue."
+  (reset-autolisp-symbol-table)
+  (flet ((stub-nil (form) (null (run-autolisp-string form
+                                                     :setup-fn #'install-core-into))))
+    (is (stub-nil "(vl-subent-select nil nil)"))
+    (is (stub-nil "(vl-subent-ssadd nil nil nil)"))
+    (is (stub-nil "(vl-subent-ssdel nil nil)"))
+    (is (stub-nil "(vl-subent-ssmemb nil nil nil)"))))
+
 (test dcl-terminal-renderer-drives-dialog-headless
   "End-to-end DCL over the terminal (TUI) renderer, headless. Feeding
 `x=hi' then `accept' on stdin: the edit-box action binds $value into `got',
