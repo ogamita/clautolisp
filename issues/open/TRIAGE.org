@@ -119,7 +119,6 @@ the shared blocker.
 ** CI / build / test infra
 | Issue                         | Status | Note |
 |-------------------------------+--------+------|
-| autolisp-cli-tests-missing    | TODO   | test-op references a non-existent test system |
 | ci-github-ccl-lane            | TODO   | add a CCL job to the GitHub Actions workflow |
 | cloud-platform-runners        | TODO   | pjb: survey on-demand macOS/Windows cloud runners |
 | nice-make-output              | TODO   | concise per-target make output |

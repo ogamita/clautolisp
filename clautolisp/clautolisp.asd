@@ -276,6 +276,25 @@
                          (declare (ignore op system))
                          :success))
 
+(asdf:defsystem "clautolisp/autolisp-cli/tests"
+  :description "FiveAM tests for the shared CLI layer (launch-time host
+identity / TEMPPREFIX stamping, option value parsers)."
+  :author "Pascal J. Bourguignon"
+  :license "AGPL-3.0"
+  :depends-on ("clautolisp/autolisp-cli"
+               "clautolisp/autolisp-mock-host"
+               "fiveam")
+  :serial t
+  :components
+  ((:file "autolisp-cli/tests/package")
+   (:file "autolisp-cli/tests/test-harness")
+   (:file "autolisp-cli/tests/cli-launch-tests")
+   (:file "autolisp-cli/tests/run"))
+  :perform (asdf:test-op (op system)
+                         (declare (ignore op system))
+                         (uiop:symbol-call :clautolisp.autolisp-cli.tests
+                                           :run-all-tests)))
+
 (asdf:defsystem "clautolisp/clautolisp-tool"
   :description "Standalone AutoLISP evaluator built on top of the clautolisp runtime."
   :author "Codex"
@@ -850,6 +869,7 @@
                "clautolisp/autolisp-mock-host/tests"
                "clautolisp/autolisp-dcl/tests"
                "clautolisp/autolisp-builtins-core/tests"
+               "clautolisp/autolisp-cli/tests"
                "clautolisp/autolisp-file-compat/tests"
                "clautolisp/autolisp-init-files/tests"
                "clautolisp/autolisp-debug/tests"
@@ -875,6 +895,8 @@
                            (uiop:symbol-call :clautolisp.autolisp-dcl.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-builtins-core.tests
+                                             :run-all-tests)
+                           (uiop:symbol-call :clautolisp.autolisp-cli.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-file-compat.tests
                                              :run-all-tests)
