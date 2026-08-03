@@ -31,8 +31,13 @@
   (format t "  --host NAME            HAL backend: mock (default), null.~%")
   (format t "  --mock-input PATH      Attach the file at PATH as the MockHost prompt-stream.~%")
   (format t "                         Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
-  (format t "  --gui CMD              DCL renderer: subprocess CMD speaking the sexp wire protocol.~%")
-  (format t "                         Defaults to the built-in terminal renderer (or $CLAUTOLISP_GUI).~%")
+  (format t "  --gui CMD              DCL GUI driver: subprocess CMD speaking the sexp wire protocol.~%")
+  (format t "                         Also read from $CLAUTOLISP_GUI when --gui is omitted.~%")
+  (format t "  --dcl MODE             DCL renderer selection: tui (force the terminal / command-line~%")
+  (format t "                         form — clautolisp's spelling of AutoCAD's `-command' convention),~%")
+  (format t "                         gui (the --gui subprocess driver), or auto (default: GUI when a~%")
+  (format t "                         driver is configured and stdout is a TTY, else the TUI, so every~%")
+  (format t "                         headless / piped run gets the command-line form).~%")
   (format t "  --trace                Print every AutoLISP function call (entry args + exit value),~%")
   (format t "                         indented by call depth. Output goes to *trace-output* (stderr).~%")
   (format t "Debugger (aldo):~%")
@@ -1173,27 +1178,61 @@ machinery, not user intent)."
       (report-error condition)
       2)))
 
-(defun install-gui-renderer (gui-command)
-  "Switch the active DCL renderer to a subprocess driver if
-GUI-COMMAND is non-nil, or if CLAUTOLISP_GUI is set in the
-environment. Otherwise the terminal renderer (installed at
-autolisp-dcl load time) stays in effect."
-  (let ((effective
-          (or gui-command
-              (let ((env (uiop:getenv "CLAUTOLISP_GUI")))
-                (and env (plusp (length env)) env))))
-        (debug-p (let ((env (uiop:getenv "CLAUTOLISP_DCL_DEBUG")))
-                   (and env (plusp (length env))))))
+(defun %effective-gui-command (gui-command)
+  "The configured GUI driver command: the explicit --gui value, else
+$CLAUTOLISP_GUI, else NIL (no driver — GUI unavailable)."
+  (or gui-command
+      (let ((env (uiop:getenv "CLAUTOLISP_GUI")))
+        (and env (plusp (length env)) env))))
+
+(defun %stdout-is-tty-p ()
+  "True when this process's stdout is an interactive terminal. Used by the
+--dcl auto policy: a non-TTY stdout (piped / redirected / CI — i.e. a
+headless or `-command'-style invocation) selects the TUI renderer."
+  (or (ignore-errors
+        (clautolisp.autolisp-runtime:output-stream-is-tty-p *standard-output*))
+      nil))
+
+(defun select-and-install-dcl-renderer (dcl-mode gui-command)
+  "Install the DCL renderer chosen by --dcl DCL-MODE (:tui / :gui / :auto):
+
+  :tui   the built-in terminal (command-line) renderer — the clautolisp
+         spelling of AutoCAD's `-command' convention (force the non-dialog
+         form even when a GUI driver is configured).
+  :gui   the subprocess GUI renderer; when no driver is configured
+         (--gui CMD / $CLAUTOLISP_GUI), warn and fall back to the TUI.
+  :auto  the GUI when a driver is configured AND stdout is a TTY; otherwise
+         the TUI — so every headless / piped run (the `-command' scenario)
+         gets the command-line form automatically.
+
+The terminal renderer is already installed at autolisp-dcl load time; this
+overrides it only when the GUI is selected (and re-affirms the TUI otherwise
+so a re-entrant run resets a previously-installed subprocess renderer)."
+  (let* ((gui (%effective-gui-command gui-command))
+         (tty (%stdout-is-tty-p))
+         (debug-p (let ((env (uiop:getenv "CLAUTOLISP_DCL_DEBUG")))
+                    (and env (plusp (length env)))))
+         (use-gui
+           (ecase dcl-mode
+             (:tui  nil)
+             (:gui  (cond (gui t)
+                          (t (format *error-output*
+                                     "~&clautolisp: --dcl gui: no GUI driver ~
+configured (--gui CMD or $CLAUTOLISP_GUI); using the terminal (TUI) ~
+renderer.~%")
+                             nil)))
+             (:auto (and gui tty)))))
     (when debug-p
       (format *error-output*
-              "~&[dcl-debug] install-gui-renderer effective=~S~%" effective))
-    (when effective
-      (clautolisp.autolisp-dcl:install-default-renderer
-       (clautolisp.autolisp-dcl:make-subprocess-renderer
-        :command effective))
-      (when debug-p
-        (format *error-output*
-                "~&[dcl-debug] subprocess renderer installed.~%")))))
+              "~&[dcl-debug] select-renderer mode=~S gui=~S tty=~S -> ~A~%"
+              dcl-mode gui tty (if use-gui "GUI" "TUI")))
+    (cond
+      (use-gui
+       (clautolisp.autolisp-dcl:install-default-renderer
+        (clautolisp.autolisp-dcl:make-subprocess-renderer :command gui)))
+      (t
+       (clautolisp.autolisp-dcl:install-default-renderer
+        (clautolisp.autolisp-dcl:make-terminal-renderer))))))
 
 (defun synchronize-process-cwd ()
   "Align the engine's notion of the current directory with the LIVE
@@ -1247,6 +1286,7 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                (actions   (clautolisp.autolisp-cli:cli-options-actions options))
                (mock-input (clautolisp.autolisp-cli:cli-options-mock-input options))
                (gui       (clautolisp.autolisp-cli:cli-options-gui options))
+               (dcl-mode  (clautolisp.autolisp-cli:cli-options-dcl options))
                (trace-p   (clautolisp.autolisp-cli:cli-options-trace-p options))
                (load-encoding (clautolisp.autolisp-cli:cli-options-load-encoding options))
                (io-encoding   (clautolisp.autolisp-cli:cli-options-io-encoding options))
@@ -1346,7 +1386,7 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
                    :no-color-flag no-color-p))
                 (effective-actions
                   (prepend-init-file-actions actions no-init-p)))
-            (install-gui-renderer gui)
+            (select-and-install-dcl-renderer dcl-mode gui)
             (when trace-p
               (setf clautolisp.autolisp-runtime:*autolisp-trace-p* t))
             (let ((status
