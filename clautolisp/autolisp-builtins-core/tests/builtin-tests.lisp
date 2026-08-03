@@ -3798,6 +3798,97 @@ new_dialog, action_tile, start_dialog, done_dialog, unload_dialog."
       (ignore-errors
         (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))))
 
+;;;; ---------------------------------------------------------------------
+;;;; DCL widgets — end-to-end over the terminal (TUI) renderer, headless.
+;;;;
+;;;; These drive the full load_dialog / new_dialog / action_tile / get_tile
+;;;; / start_dialog / done_dialog stack with stdin-fed TUI input, the model
+;;;; being dcl-terminal-renderer-drives-dialog-headless above. Kept together
+;;;; in this block to minimise merge conflicts with concurrent NON-DCL
+;;;; coverage work on master (dcl-tui-completion coordination note).
+
+(defun %write-dcl-file (dir name text)
+  "Write TEXT to DIR/NAME and return its namestring."
+  (let ((path (merge-pathnames name dir)))
+    (ensure-directories-exist dir)
+    (with-open-file (out path :direction :output :if-exists :supersede
+                              :if-does-not-exist :create)
+      (write-string text out))
+    (namestring path)))
+
+(defmacro %with-tui-input ((input) &body body)
+  "Run BODY with *standard-input* fed from the string INPUT and
+*standard-output* discarded (the TUI renderer's echo)."
+  `(let ((*standard-input* (make-string-input-stream ,input))
+         (*standard-output* (make-string-output-stream)))
+     ,@body))
+
+(test dcl-terminal-list-box-headless
+  "A list_box picker (the listpick example shape) headless over the TUI:
+feeding `colour=Green' selects index 1, and `accept' reads it back via
+get_tile — dcl-tui-completion item 5 acceptance fixture."
+  (reset-autolisp-symbol-table)
+  (let* ((dir (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "clautolisp-dcl-list-~D/" (random 1000000))
+                                (uiop:temporary-directory))))
+         (dcl (%write-dcl-file dir "p.dcl"
+                               "p : dialog { : list_box { key = \"colour\"; } : ok_cancel; }")))
+    (unwind-protect
+        (%with-tui-input ((format nil "colour=Green~%accept~%"))
+          (let ((result
+                  (run-autolisp-string
+                   (format nil
+                           "(progn (setq id (load_dialog ~S)) (new_dialog \"p\" id) ~
+                            (start_list \"colour\") (add_list \"Red\") (add_list \"Green\") ~
+                            (add_list \"Blue\") (end_list) ~
+                            (action_tile \"colour\" \"(setq pick $value)\") ~
+                            (action_tile \"accept\" \"(setq pick (get_tile \\\"colour\\\")) (done_dialog 1)\") ~
+                            (setq st (start_dialog)) (unload_dialog id) (list st pick))"
+                           dcl)
+                   :setup-fn #'install-core-into)))
+            (is (eql 1 (first result)))
+            (is (and (second result)
+                     (string= "1" (autolisp-string-value (second result))))
+                "get_tile returned the selected index; got ~S" (second result))))
+      (ignore-errors
+        (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))))
+
+(test dcl-terminal-widgets-roundtrip-headless
+  "toggle, radio_column and slider all round-trip through get_tile over the
+TUI, headless: `shout=1', selecting the `medium' radio_button, and clamping
+`vol=99' to max_value 10 — dcl-tui-completion item 2 over the full stack."
+  (reset-autolisp-symbol-table)
+  (let* ((dir (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "clautolisp-dcl-w-~D/" (random 1000000))
+                                (uiop:temporary-directory))))
+         (dcl (%write-dcl-file
+               dir "w.dcl"
+               "w : dialog {
+                  : toggle { key = \"shout\"; }
+                  : radio_column { key = \"size\";
+                      : radio_button { key = \"small\"; }
+                      : radio_button { key = \"medium\"; }
+                      : radio_button { key = \"large\"; } }
+                  : slider { key = \"vol\"; min_value = 0; max_value = 10; }
+                  : ok_cancel; }")))
+    (unwind-protect
+        (%with-tui-input ((format nil "shout=1~%medium~%vol=99~%accept~%"))
+          (let ((result
+                  (run-autolisp-string
+                   (format nil
+                           "(progn (setq id (load_dialog ~S)) (new_dialog \"w\" id) ~
+                            (action_tile \"accept\" ~
+                              \"(setq res (list (get_tile \\\"shout\\\") (get_tile \\\"size\\\") (get_tile \\\"vol\\\"))) (done_dialog 1)\") ~
+                            (setq st (start_dialog)) (unload_dialog id) res)"
+                           dcl)
+                   :setup-fn #'install-core-into)))
+            (is (equal '("1" "medium" "10")
+                       (mapcar #'autolisp-string-value result))
+                "toggle/radio/slider round-tripped; got ~S"
+                (and result (mapcar #'autolisp-string-value result)))))
+      (ignore-errors
+        (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))))
+
 (test m5-layoutlist-returns-model-only
   "(layoutlist) returns a single-element list with the autolisp-string \"Model\"."
   (reset-autolisp-symbol-table)
