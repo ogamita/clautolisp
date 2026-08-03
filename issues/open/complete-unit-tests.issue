@@ -1,10 +1,35 @@
-# Complete unit-test coverage for all clautolisp builtins
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: complete-unit-tests — behavioural unit-test coverage for every builtin
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: coverage-epic
+#+DEPENDS: -
+#+BRANCH: feature-complete-unit-tests
 
-Status: open
-Baseline: master @ 0a45e4b (clautolisp 1.0.70 + missing-functions
-landed + the M2-M5 coverage backfill)
+* Progress log
 
-## Goal
+- 2026-08-03 (clautolisp 1.7.10): landed the coverage-measurement tool
+  =autolisp-builtins-core/tests/scripts/coverage-report.sh= (acceptance
+  criterion 3). IMPLEMENTED = make-core-builtin-subr names + special-op
+  dispatch (626); TESTED = form heads =(name= appearing in a quoted snippet
+  or =(find-autolisp-symbol "NAME")= across the FiveAM + scenario corpora.
+  Run =bash …/coverage-report.sh= for the current gap; =--strict= exits 1
+  when anything is untested. Re-measured baseline: 74.4% behavioural.
+  Backfilled the two trivial high-symmetry families — Cxxr depth-4
+  (CAAADR..CDDDDR, new =builtin-caxr-family-depth-4-complete= oracle-tests
+  vs the CL accessor) and the VLE-NTH shortcuts (nth1/2/4..8, extended
+  =m3a-vle-nth-shortcuts=). Coverage now **77.8% (487/626, 139 untested)**.
+- Note: the tool is deliberately conservative — it counts only literal
+  =(name= form heads, so DATA-DRIVEN / macro-generated tests are invisible
+  to it; write explicit literal snippets when backfilling so the tool
+  credits them.
+
+Remaining families to backfill (see the per-family map below): DCL
+dialog/tile/image/list, GET*/INITGET + selection-set (delegation-shape
+tests vs mock-host), VLAX-* safearray/variant, VLR-* reactors (~40),
+VL-ANNOTATIVE-* (8), VL-SUBENT-* (4), and assorted VLE-* CAD/COM stubs.
+
+* Goal
 
 Bring every implemented AutoLISP operator under a focused FiveAM
 unit test. Today's coverage is 65% behavioural / 80% any-mention.

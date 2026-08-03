@@ -1706,6 +1706,43 @@ loaded file errors out. See issues/closed/autolisp-load-pathname.issue."
     (is (equal '(3 4 5) (call-autolisp-function cddr-fn lst)))
     (is (eql 1 (call-autolisp-function caar-fn '((1 2) 3))))))
 
+(test builtin-caxr-family-depth-4-complete
+  ;; Every depth-4 C[AD]{4}R walker must agree with the CL accessor of the
+  ;; same name on a complete depth-4 cons tree (leaves 0..15). This closes
+  ;; the Cxxr gap in complete-unit-tests.issue: CAAADR..CDDDDR (the 14
+  ;; depth-4 accessors the caxr-family spot-check skipped) had no direct
+  ;; behavioural test. The CL accessor is the oracle — CL standardises the
+  ;; full c[ad]{1,4}r set, so `(caaadr tree)' is an exact reference.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (labels ((build (depth n)
+             ;; Complete binary cons tree; every depth-4 leaf is a distinct
+             ;; integer, so a wrong car/cdr chain yields a different value.
+             (if (zerop depth)
+                 n
+                 (cons (build (1- depth) (* 2 n))
+                       (build (1- depth) (1+ (* 2 n))))))
+           (al (name tree)
+             (call-autolisp-function
+              (autolisp-symbol-function (find-autolisp-symbol name)) tree)))
+    (let ((tree (build 4 0)))
+      (is (eql (caaaar tree) (al "CAAAAR" tree)) "CAAAAR")
+      (is (eql (caaadr tree) (al "CAAADR" tree)) "CAAADR")
+      (is (eql (caadar tree) (al "CAADAR" tree)) "CAADAR")
+      (is (eql (caaddr tree) (al "CAADDR" tree)) "CAADDR")
+      (is (eql (cadaar tree) (al "CADAAR" tree)) "CADAAR")
+      (is (eql (cadadr tree) (al "CADADR" tree)) "CADADR")
+      (is (eql (caddar tree) (al "CADDAR" tree)) "CADDAR")
+      (is (eql (cadddr tree) (al "CADDDR" tree)) "CADDDR")
+      (is (eql (cdaaar tree) (al "CDAAAR" tree)) "CDAAAR")
+      (is (eql (cdaadr tree) (al "CDAADR" tree)) "CDAADR")
+      (is (eql (cdadar tree) (al "CDADAR" tree)) "CDADAR")
+      (is (eql (cdaddr tree) (al "CDADDR" tree)) "CDADDR")
+      (is (eql (cddaar tree) (al "CDDAAR" tree)) "CDDAAR")
+      (is (eql (cddadr tree) (al "CDDADR" tree)) "CDDADR")
+      (is (eql (cdddar tree) (al "CDDDAR" tree)) "CDDDAR")
+      (is (eql (cddddr tree) (al "CDDDDR" tree)) "CDDDDR"))))
+
 (test builtin-string-trim-search-translate
   ;; vl-string-* family used by real-world AutoLISP (e.g. project-file
   ;; loaders and path normalisers).
@@ -2698,13 +2735,37 @@ form a LIFO stack returning the keyword names of pushed modes."
 
 (test m3a-vle-nth-shortcuts
   "VLE-NTH0..VLE-NTH9 return the element at their fixed index, or
-NIL past the end."
+NIL past the end. Covers the whole shortcut family (nth0..nth8 all hit a
+distinct element of a 9-element list; nth9 falls off the end) — closing
+the VLE-NTH gap in complete-unit-tests.issue, where only nth0/nth3/nth9
+were spot-checked."
   (reset-autolisp-symbol-table)
   (is (eq (intern-autolisp-symbol "A")
-          (run-autolisp-string "(vle-nth0 '(a b c d))"
+          (run-autolisp-string "(vle-nth0 '(a b c d e f g h i))"
+                               :setup-fn #'install-core-into)))
+  (is (eq (intern-autolisp-symbol "B")
+          (run-autolisp-string "(vle-nth1 '(a b c d e f g h i))"
+                               :setup-fn #'install-core-into)))
+  (is (eq (intern-autolisp-symbol "C")
+          (run-autolisp-string "(vle-nth2 '(a b c d e f g h i))"
                                :setup-fn #'install-core-into)))
   (is (eq (intern-autolisp-symbol "D")
-          (run-autolisp-string "(vle-nth3 '(a b c d))"
+          (run-autolisp-string "(vle-nth3 '(a b c d e f g h i))"
+                               :setup-fn #'install-core-into)))
+  (is (eq (intern-autolisp-symbol "E")
+          (run-autolisp-string "(vle-nth4 '(a b c d e f g h i))"
+                               :setup-fn #'install-core-into)))
+  (is (eq (intern-autolisp-symbol "F")
+          (run-autolisp-string "(vle-nth5 '(a b c d e f g h i))"
+                               :setup-fn #'install-core-into)))
+  (is (eq (intern-autolisp-symbol "G")
+          (run-autolisp-string "(vle-nth6 '(a b c d e f g h i))"
+                               :setup-fn #'install-core-into)))
+  (is (eq (intern-autolisp-symbol "H")
+          (run-autolisp-string "(vle-nth7 '(a b c d e f g h i))"
+                               :setup-fn #'install-core-into)))
+  (is (eq (intern-autolisp-symbol "I")
+          (run-autolisp-string "(vle-nth8 '(a b c d e f g h i))"
                                :setup-fn #'install-core-into)))
   (is (null
        (run-autolisp-string "(vle-nth9 '(a b c d))"
