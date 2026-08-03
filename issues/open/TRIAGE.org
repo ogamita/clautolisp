@@ -82,7 +82,6 @@ retrofitted as they are touched.
 | Issue                                    | Type          | Status   | Note |
 |------------------------------------------+---------------+----------+------|
 | vl-directory-filename-helpers-fail-macos | builtin-bug   | NEXT     | 🔴 BUILTIN-VL-DIRECTORY-AND-FILENAME-HELPERS fails 2 checks on macOS |
-| write-atomic-file-concurrent-rename-macos-windows | bug | TODO | 🔴 CI-caught: protocol-write-atomic-file-contention fails natively on macOS+Windows (concurrent rename/open); real single-writer usage safe — harden-vs-relax is pjb's call |
 | complete-unit-tests                      | coverage-epic | TODO     | backfill builtin coverage to ≥95% |
 | banner                                   | cli-feature   | TODO     | print a startup banner unless -q/--quiet |
 | deferred-stubbed-functions               | builtins-epic | DEFERRED | promote stubbed-as-no-op builtins (registry section done 1.5.1) |

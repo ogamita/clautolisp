@@ -1,0 +1,64 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: write-atomic-file-concurrent-rename-windows — protocol-write-atomic-file-contention fails natively on Windows (non-atomic rename)
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: -
+
+* Context
+
+Found 2026-08-03 by the NEW native CI lanes =test:alfe:{macos,windows}=
+(pipeline #701) — the alfe FiveAM suite's first run on the real runners.
+
+CORRECTED attribution (an earlier note conflated two failures):
+  - Windows =test:alfe:windows= 556/561: the failing test IS
+    =PROTOCOL-WRITE-ATOMIC-FILE-CONTENTION=.
+  - macOS =test:alfe:macos= 566/567: the contention test PASSES; the single
+    macOS failure is =CONFORMANCE-CORPUS-PASSES= driving REAL BricsCAD and
+    hitting exit 4 (the default.cui / BricsCAD-boot issue) — unrelated, tracked
+    separately (see the bricscad-in-CI note below / accoreconsole-macos parked).
+  - Linux: green.
+
+* Problem (Windows only)
+
+=protocol-write-atomic-file-contention= (file-protocol-tests.lisp) stresses
+=write-atomic-file= with 16 writer threads racing onto ONE target + a reader.
+=write-atomic-file= writes a temp sibling then =uiop:rename-file-overwriting-
+target=. That helper (uiop/filesystem.lisp) is:
+
+  #+(and sbcl os-windows) (delete-file-if-exists target) ;; not atomic
+  #-clisp (rename-file source target ...)
+
+so on SBCL+Windows it does delete-then-rename (TWO syscalls, UIOP itself says
+"not atomic"); on Linux AND macOS it is a bare =rename(2)= = atomic. Hence the
+race only loses on Windows: writers hit transient "couldn't rename", the reader
+=read-file-as-string='s =probe-file=->=open= TOCTOU hits a momentarily-absent
+target. Nothing to "harden" — the primitive is correct on the atomic-rename
+OSes; Windows non-atomicity is an OS/UIOP limitation.
+
+* Not a real-usage bug
+
+The live file-IPC protocol is SINGLE-writer-per-file across SEPARATE processes
+(the CAD process writes status/stdout/stderr; alfe writes stdin/control), so
+nothing writes the same file concurrently — real CAD runs are unaffected
+(BricsCAD Windows is green). The test is an artificial concurrent-multi-writer
+stress that a non-atomic Windows rename cannot satisfy.
+
+* Resolution (alfe 1.7.18, 2026-08-03)
+
+Per pjb ("on windows, relax"): gate =protocol-write-atomic-file-contention= to a
+skip-note on Windows (=(uiop:os-windows-p)= -> (is t "skipped …"); FiveAM has no
+first-class skip in this suite), keeping it live and passing on Linux/macOS
+where the rename is atomic. Verified Linux 567/567 (the test still RUNS there —
+=os-windows-p= is false); the Windows skip will be confirmed green by the next
+=test:alfe:windows= native CI run on this commit.
+
+* Follow-up (separate)
+
+The macOS =test:alfe:macos= CONFORMANCE-CORPUS-PASSES failure is the BricsCAD
+default.cui / batch-profile boot issue on the macOS runner — the conformance
+corpus drives real BricsCAD when detected and it exits 4. Needs the clean-
+profile / seeded-default.cui treatment for the CI BricsCAD (cf.
+alfe-cad-probe-rules "clean profile" + the session-start default.cui seeding).
+Not this issue.
