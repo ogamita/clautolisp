@@ -3758,6 +3758,46 @@ clears it, vlr-pers-dictname names the NOD entry."
       (is (string= "ACAD_REACTORS" (autolisp-string-value dictname))
           "vlr-pers-dictname names the persistent-reactor dictionary"))))
 
+(test dcl-terminal-renderer-drives-dialog-headless
+  "End-to-end DCL over the terminal (TUI) renderer, headless. Feeding
+`x=hi' then `accept' on stdin: the edit-box action binds $value into `got',
+and `accept' — reachable even though ok_cancel is not expanded into an
+explicit accept tile — fires and calls done_dialog. Regression for the
+terminal-renderer action-firing fixes + the $value binding
+(cad-open... / dcl terminal renderer work). Also exercises load_dialog,
+new_dialog, action_tile, start_dialog, done_dialog, unload_dialog."
+  (reset-autolisp-symbol-table)
+  (let* ((dir (uiop:ensure-directory-pathname
+               (merge-pathnames (format nil "clautolisp-dcl-~D/" (random 1000000))
+                                (uiop:temporary-directory))))
+         (dcl (merge-pathnames "t.dcl" dir)))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist dir)
+          (with-open-file (out dcl :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create)
+            (write-string "t : dialog { : edit_box { key = \"x\"; } : ok_cancel; }"
+                          out))
+          (let ((*standard-input* (make-string-input-stream (format nil "x=hi~%accept~%")))
+                (*standard-output* (make-string-output-stream)))
+            (let ((result
+                    (run-autolisp-string
+                     (format nil
+                             "(progn (setq id (load_dialog ~S)) (new_dialog \"t\" id) ~
+                              (action_tile \"x\" \"(setq got $value)\") ~
+                              (action_tile \"accept\" \"(done_dialog 1)\") ~
+                              (setq st (start_dialog)) (unload_dialog id) (list st got))"
+                             (namestring dcl))
+                     :setup-fn #'install-core-into)))
+              (is (eql 1 (first result))
+                  "start_dialog returns the done_dialog status")
+              (is (and (second result)
+                       (string= "hi" (autolisp-string-value (second result))))
+                  "the edit-box action bound $value=hi into `got'; got ~S"
+                  (second result)))))
+      (ignore-errors
+        (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore)))))
+
 (test m5-layoutlist-returns-model-only
   "(layoutlist) returns a single-element list with the autolisp-string \"Model\"."
   (reset-autolisp-symbol-table)

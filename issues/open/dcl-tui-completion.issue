@@ -1,0 +1,81 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: dcl-tui-completion — complete the integrated DCL text-UI renderer for headless / "-" commands
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: feature
+#+DEPENDS: -
+#+BRANCH: feature-dcl-tui
+
+* Context
+
+clautolisp has a *pluggable* DCL renderer (=autolisp-dcl/source/runtime.lisp=,
+=dcl-renderer= struct: open/run/close/set-tile/mode/image-paint/populate-list
+fns). Two renderers ship: a Qt GUI via a sexp subprocess protocol
+(=subprocess-renderer.lisp=, partial — tracked separately in the opendcl
+epic) and a pure-CL **terminal (TUI) renderer** (=terminal.lisp=), installed
+as the default at load (=eval-when= at end of terminal.lisp). So headless
+runs already drive dialogs through the TUI.
+
+Reference (AutoCAD/BricsCAD): prefixing a command with =-= runs its
+*command-line* form instead of the dialog. For custom DCL there is no
+vendor-provided =-= fallback — the developer writes one. clautolisp's TUI
+renderer is effectively that command-line form for ANY dialog, applied
+automatically when no GUI is present. This issue completes it so =-=-style /
+headless invocations that call up DCL work end-to-end.
+
+* Progress (clautolisp 1.7.15) — greet works headless
+
+Three real bugs fixed; the =greet= example now runs fully over the TUI
+(=name=Claude= + =accept= → "Hello, Claude!"; =cancel= → "Cancelled."):
+
+- =terminal-handle-line= short-circuited =accept=/=ok=/=cancel=/=quit= to a
+  status BEFORE looking up the tile, so an accept button's registered action
+  (which reads tiles via get_tile and calls done_dialog) never fired. Now a
+  named tile is handled by firing its action first.
+- The DCL reserved variables were interned as =$KEY$= / =$VALUE$= / =$REASON$=
+  (trailing =$=); AutoLISP DCL — and pjb's own greet.lsp — use =$key= / =$value=
+  / =$reason= / =$data= (no trailing =$=; the reader upcases =$value= → =$VALUE=).
+  Mismatch → =$value= read nil. Fixed the names; =$reason= is now the integer
+  reason code (1 select / 2 changed / 3 focus-lost / 4 double-click) via
+  =dcl-reason-code=. Corrected the =runtime-action-callback-binding-symbols=
+  test (it had codified the buggy spelling) and added the integration test
+  =dcl-terminal-renderer-drives-dialog-headless= (builtins-core, stdin-driven).
+- =ok_cancel= is NOT expanded into accept/cancel button tiles (it renders as a
+  =<ok-cancel>= placeholder), so its accept/cancel were unreachable from the
+  tile walk. =terminal-fire-registered= fires the action registered under
+  =accept=/=cancel= even without an explicit tile.
+
+* Remaining work
+
+1. **Expand predefined clusters at load** (ok_cancel, ok_only, ok_cancel_help,
+   ok_cancel_help_errtile, ...) into their constituent =:button= tiles, so
+   accept/cancel/help are real tiles both renderers see. This is the proper
+   fix (the =terminal-fire-registered= stopgap only covers accept/cancel by
+   name); it also benefits the Qt renderer. Currently they are single
+   unexpanded tile types rendered as =<ok-cancel>= placeholders.
+2. **Unhandled / incomplete tile types in the terminal renderer**: =:toggle=
+   and cluster tiles render as =<toggle>= / =<ok-cancel>= placeholders rather
+   than proper widgets, and the toggle value does not round-trip (=shout=1= in
+   greet did not reach =(= $shout "1")=). Cover toggle, radio_button /
+   radio_column, popup_list, slider, image / image_button interaction + value
+   storage, matching what get_tile expects.
+3. **Renderer selection / the "-" semantics**: define how TUI vs GUI is
+   chosen — auto (non-TTY or no GUI backend → TUI), an explicit CLI flag, and
+   the =-=-command convention (force the command-line/TUI form even when a GUI
+   is available). Today the terminal renderer is the hardcoded default and the
+   Qt renderer installs itself when the GUI runs.
+4. **$reason breadth**: only =:reason-selected= is emitted by the renderers;
+   wire :reason-changed (edit-in-progress), :reason-lost-focus, and
+   :reason-double-click where the interaction model supports them.
+5. **Second example**: make =examples/listpick= (a list_box picker) work
+   headless too, as a second acceptance fixture.
+6. Complete the Qt GUI DCL renderer (partial) — its own opendcl-epic issues.
+
+* Acceptance criteria
+
+- =greet= and =listpick= examples run fully over the TUI headless (all their
+  tiles interactive, values round-trip through get_tile).
+- Predefined clusters are expanded into real tiles; =<...>= placeholders gone.
+- Renderer selection (auto headless + explicit force) is documented in the
+  clautolisp user manual, incl. how a =-= invocation gets the TUI.
+- FiveAM tests cover each interactive tile type over the terminal renderer.

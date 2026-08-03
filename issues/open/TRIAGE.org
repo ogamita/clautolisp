@@ -133,7 +133,12 @@ the shared blocker.
 | deferred-debugger-compiler-two-bodies | DEFERRED | gated on compiler (Phase 8) |
 | deferred-debugger-remote-cad          | DEFERRED | gated on transport + CAD (Phase 9) |
 
-** OpenDCL (feature build; no code yet — one epic per opendcl.plan)
+** DCL (dialog control language)
+| Issue               | Status | Note |
+|---------------------+--------+------|
+| dcl-tui-completion  | TODO   | complete the terminal (TUI) DCL renderer for headless/"-" commands; greet works (1.7.15), remaining: expand ok_cancel clusters, toggle/radio/list interaction, TUI-vs-GUI selection |
+
+*** OpenDCL (feature build; no code yet — one epic per opendcl.plan)
 opendcl-runtime-core, opendcl-controls, opendcl-host-pickers,
 opendcl-project-file, opendcl-renderer-scaffold, opendcl-wire-protocol,
 opendcl-conformance. All =TODO=.

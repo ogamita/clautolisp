@@ -130,27 +130,49 @@ one."
       (dcl-runtime-fire-action dialog key new-value :reason-selected))))
 
 (defun terminal-handle-line (dialog interactive line)
-  "Interpret one input line. Returns :continue, :cancel, or :ok
-to drive the run loop, or an integer status when the action
-caused done_dialog to fire (or pressed default/cancel button)."
+  "Interpret one input line. Returns :continue to keep prompting, or an
+integer status when the line caused done_dialog to fire (a button's action,
+or the accept/cancel convention).
+
+A named tile is handled by FIRING its registered action — including the
+`accept' / `cancel' predefined buttons, whose action typically reads the
+tiles (get_tile) and calls done_dialog. Only when the word names no tile do
+we fall back to the bare accept->1 / cancel->0 convention (for dialogs that
+ship no explicit accept/cancel tile). Previously accept/ok/cancel/quit
+short-circuited to a status BEFORE the tile lookup, so an accept button's
+action never fired and any value it copied into a variable via get_tile was
+lost (the greet example returned nil and crashed)."
   (multiple-value-bind (key value) (terminal-parse-command line)
-    (cond
-      ((or (string= key "quit") (string= key "cancel")) 0)
-      ((or (string= key "accept") (string= key "ok")) 1)
-      (t
-       (let ((entry (assoc key interactive :test #'string=)))
-         (cond
-           ((null entry)
-            (format *standard-output* "~&Unknown key ~A.~%" key)
-            :continue)
-           (t
-            (let ((tile (cdr entry)))
-              (case (dcl-tile-type tile)
-                (:button
-                 (or (terminal-handle-button dialog tile key) :continue))
-                (otherwise
-                 (terminal-handle-value-tile dialog tile key value)
-                 :continue))))))))))
+    (let ((entry (assoc key interactive :test #'string=)))
+      (cond
+        (entry
+         (let ((tile (cdr entry)))
+           (case (dcl-tile-type tile)
+             (:button
+              (or (terminal-handle-button dialog tile key) :continue))
+             (otherwise
+              (terminal-handle-value-tile dialog tile key value)
+              :continue))))
+        ((or (string= key "accept") (string= key "ok"))
+         (terminal-fire-registered dialog "accept")
+         (if (dcl-dialog-finished-p dialog) (dcl-dialog-status dialog) 1))
+        ((or (string= key "quit") (string= key "cancel"))
+         (terminal-fire-registered dialog "cancel")
+         (if (dcl-dialog-finished-p dialog) (dcl-dialog-status dialog) 0))
+        (t
+         (format *standard-output* "~&Unknown key ~A.~%" key)
+         :continue)))))
+
+(defun terminal-fire-registered (dialog key)
+  "Fire the action registered under KEY, if any. Used when a conventional
+word (`accept' / `cancel') names an action whose button is not an explicit
+tile in the tree — notably the `ok_cancel' predefined cluster, which is not
+expanded into separate accept/cancel button tiles, so action_tile \"accept\"
+would otherwise be unreachable from the TUI."
+  (when (gethash key (dcl-dialog-actions dialog))
+    (dcl-runtime-fire-action dialog key
+                             (gethash key (dcl-dialog-state dialog) "")
+                             :reason-selected)))
 
 (defun terminal-run-dialog (dialog)
   "Drive DIALOG until done_dialog or EOF. Returns the dialog's

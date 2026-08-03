@@ -49,8 +49,10 @@ mirrors the loaded source."
       (ignore-errors (delete-file path)))))
 
 (test runtime-action-callback-binding-symbols
-  "Firing an action sets *$KEY$* / *$VALUE$* / *$REASON$* in the
-default evaluation context."
+  "Firing an action binds the AutoLISP DCL reserved variables $key /
+$value / $reason (NO trailing $ — the reader upcases the source $value to
+the symbol $VALUE) in the default evaluation context. $reason is the integer
+reason code (1 = selected)."
   (reset-default-evaluation-context)
   (let ((path (write-temp-dcl "g" "x : edit_box { key = \"x\"; }")))
     (unwind-protect
@@ -70,11 +72,14 @@ default evaluation context."
                                             (make-autolisp-string ""))
                   (dcl-runtime-fire-action dialog "x" "hello" :reason-selected)
                   (let ((kv (autolisp-symbol-value
-                             (intern-autolisp-symbol "$KEY$")))
+                             (intern-autolisp-symbol "$KEY")))
                         (vv (autolisp-symbol-value
-                             (intern-autolisp-symbol "$VALUE$"))))
+                             (intern-autolisp-symbol "$VALUE")))
+                        (rv (autolisp-symbol-value
+                             (intern-autolisp-symbol "$REASON"))))
                     (is (string= "x" (autolisp-string-value kv)))
-                    (is (string= "hello" (autolisp-string-value vv))))
+                    (is (string= "hello" (autolisp-string-value vv)))
+                    (is (eql 1 rv)))
                   (dcl-runtime-done-dialog dialog-id 1))
              (install-default-renderer saved-renderer))
            (dcl-runtime-unload-dialog source-id))

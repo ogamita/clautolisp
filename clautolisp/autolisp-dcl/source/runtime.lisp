@@ -356,30 +356,46 @@ clear the batch state. Returns nil."
       (setf *current-list-operation* nil)))
   nil)
 
+(defun dcl-reason-code (reason)
+  "Map a renderer REASON keyword to the AutoLISP $reason integer code:
+1 = tile selected, 2 = value changed (edit in progress), 3 = focus lost,
+4 = double-click. An integer passes through; anything else defaults to 1."
+  (case reason
+    (:reason-selected     1)
+    (:reason-changed      2)
+    (:reason-lost-focus   3)
+    (:reason-double-click 4)
+    (t (if (integerp reason) reason 1))))
+
 (defun dcl-runtime-fire-action (dialog key value reason)
   "Invoked by the renderer when a tile fires its action. Looks up
 the registered AutoLISP callback (a list of forms or a callable)
-and invokes it. Sets *$key$*, *$value$*, *$reason$* per the
-AutoLISP DCL contract. Records VALUE in the dialog's state map
-so that subsequent (get_tile KEY) returns what the user just
-entered. The callback may call done_dialog; afterwards
-`dcl-dialog-finished-p` is t."
+and invokes it. Binds the DCL reserved variables $key / $value /
+$reason / $data per the AutoLISP DCL contract. Records VALUE in the
+dialog's state map so that subsequent (get_tile KEY) returns what the
+user just entered. The callback may call done_dialog; afterwards
+`dcl-dialog-finished-p` is t.
+
+NB the reserved names have NO trailing `$' — the reader upcases the
+source `$value' to the symbol $VALUE. They were interned as \"$VALUE$\"
+etc., which no user source ever reads, so `$value' came back nil and
+every action that consulted it (the greet example) lost the tile value."
   ;; Update the value state before firing the callback so that
   ;; (get_tile key) inside the callback observes the new value.
   (when (stringp value)
     (setf (gethash key (dcl-dialog-state dialog)) value))
   (let* ((callback (gethash key (dcl-dialog-actions dialog)))
-         (key-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$KEY$"))
-         (value-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$VALUE$"))
-         (reason-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$REASON$"))
-         (data-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$DATA$")))
+         (key-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$KEY"))
+         (value-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$VALUE"))
+         (reason-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$REASON"))
+         (data-symbol (clautolisp.autolisp-runtime:intern-autolisp-symbol "$DATA")))
     (when callback
       (clautolisp.autolisp-runtime:set-variable
        key-symbol (clautolisp.autolisp-runtime:make-autolisp-string key))
       (clautolisp.autolisp-runtime:set-variable
        value-symbol (clautolisp.autolisp-runtime:make-autolisp-string (or value "")))
       (clautolisp.autolisp-runtime:set-variable
-       reason-symbol reason)
+       reason-symbol (dcl-reason-code reason))
       (clautolisp.autolisp-runtime:set-variable
        data-symbol (or (gethash key (dcl-dialog-client dialog)) nil))
       (cond
