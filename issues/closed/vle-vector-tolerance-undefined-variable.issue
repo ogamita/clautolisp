@@ -1,10 +1,24 @@
 # -*- mode:org; coding:utf-8 -*-
 #+TITLE: vle-vector-tolerance-undefined-variable — forward-reference compile warning in builtin-vle-g-vectol
-#+STATUS: TODO
+#+STATUS: DONE
 #+PRIORITY: P3
 #+TYPE: bug
 #+DEPENDS: -
 #+BRANCH: fix-vle-vector-tolerance-undefined-variable
+
+* Resolution (2026-08-03, clautolisp 1.7.13)
+
+Moved the =(defparameter *vle-vector-tolerance* 1.0d-10 …)= form so it
+now sits *above* =builtin-vle-g-vectol= (its first reader) in
+=clautolisp/autolisp-builtins-core/source/api.lisp=, instead of two
+lines below it. Pure reordering — no behaviour change; the special is
+still defined once, in the same file and package.
+
+Verification: a from-scratch =make -C clautolisp test-sbcl
+TEST_SYSTEM=clautolisp/autolisp-builtins-core/tests= no longer prints
+the =undefined variable … *VLE-VECTOR-TOLERANCE*= WARNING, and the
+builtins-core suite stays green (1615/1615 checks, M3B-VLE-VECTOR-
+TOLERANCE-GET-SET included).
 
 * Context
 

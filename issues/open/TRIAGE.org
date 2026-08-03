@@ -125,7 +125,6 @@ the shared blocker.
 | nice-make-output              | TODO   | concise per-target make output |
 | workdir-random-tag-unseeded   | TODO   | unseeded random workdir tag |
 | lisp-configuration            | TODO   | lisp.conf + stacked settings + REPL ,set |
-| vle-vector-tolerance-undefined-variable | TODO | forward-ref compile warning in builtin-vle-g-vectol; move defparameter above first use |
 | windows-terminal-encoding-fd-stream | TODO | -Eterminal must use Console API (SetConsoleOutputCP) on Windows, not fd reopening; stopgap warns-and-keeps-default (1.7.21) |
 | cp1252-codec-host-independent | TODO | provide CP-1252/Windows-1252 codec (CCL lacks it); roundtrip test skips it on such hosts (1.7.11) |
 
