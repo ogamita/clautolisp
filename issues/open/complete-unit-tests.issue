@@ -18,7 +18,16 @@
   Backfilled the two trivial high-symmetry families — Cxxr depth-4
   (CAAADR..CDDDDR, new =builtin-caxr-family-depth-4-complete= oracle-tests
   vs the CL accessor) and the VLE-NTH shortcuts (nth1/2/4..8, extended
-  =m3a-vle-nth-shortcuts=). Coverage now **77.8% (487/626, 139 untested)**.
+  =m3a-vle-nth-shortcuts=). Coverage now 77.8% (487/626, 139 untested).
+- 2026-08-03 (clautolisp 1.7.12): backfilled the whole VLR reactor family
+  (35 functions — the biggest remaining cluster): constructors (all 17
+  vlr-*-reactor kinds → vlr-type), the accessor/predicate/mutator surface
+  (vlr-data/owners/owner-add/remove/added-p/reactions/reaction-set/reactors/
+  set-notification/notification/trace-reaction/current-reaction-name/types),
+  and persistence (vlr-pers/pers-p/pers-release/pers-dictname). New
+  =%install-reactor-test-env= setup-fn (mock host + a current document, which
+  run-autolisp-string's session lacks) + three =coverage-vlr-reactor-*= tests.
+  Coverage now **83.4% (522/626, 104 untested)**.
 - Note: the tool is deliberately conservative — it counts only literal
   =(name= form heads, so DATA-DRIVEN / macro-generated tests are invisible
   to it; write explicit literal snippets when backfilling so the tool

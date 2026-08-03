@@ -3640,6 +3640,124 @@ resolves to a bound function in the builtins-core package."
             "~A unbound in clautolisp.autolisp-builtins-core (missing :import-from)"
             name)))))
 
+;;;; ----- VLR reactor surface (complete-unit-tests.issue, VLR family) -----
+;;;;
+;;;; The reactor-fires-on-mock-host-mutation test in the mock-host suite
+;;;; covers dispatch; these backfill behavioural coverage of the 35
+;;;; previously-untested VLR-* constructors, accessors, predicates,
+;;;; mutators, and the persistence surface, all headless.
+
+(defun %install-reactor-test-env (context)
+  "Core builtins + mock host + a current document, so BOTH document- and
+application-scoped VLR reactor constructors work. run-autolisp-string's
+session has no current-document (the CLI boot installs one); document-scoped
+constructors (vlr-dwg-reactor, ...) call current-document-or-error, so
+install one here."
+  (%install-mock-host-and-core context)
+  (let ((session (clautolisp.autolisp-runtime:evaluation-context-session context)))
+    (unless (clautolisp.autolisp-runtime:runtime-session-current-document session)
+      (clautolisp.autolisp-runtime:set-runtime-session-current-document
+       session
+       (clautolisp.autolisp-runtime:make-document-namespace
+        :name "REACTOR-TEST-DOC")))))
+
+(test coverage-vlr-reactor-constructors-report-their-type
+  "Every VLR-*-REACTOR constructor builds a reactor of the matching kind
+(vlr-type), and vlr-types lists the whole registry. Covers the 17
+previously-untested constructors + vlr-type / vlr-types."
+  (reset-autolisp-symbol-table)
+  (let ((types (run-autolisp-string
+                "(progn
+                   (defun cb (a b) nil)
+                   (mapcar (quote vlr-type)
+                     (list (vlr-acdb-reactor nil nil nil)
+                           (vlr-deepclone-reactor nil nil)
+                           (vlr-document-reactor nil nil)
+                           (vlr-dwg-reactor nil nil)
+                           (vlr-dxf-reactor nil nil)
+                           (vlr-insert-reactor nil nil)
+                           (vlr-mouse-reactor nil nil)
+                           (vlr-sysvar-reactor nil nil)
+                           (vlr-toolbar-reactor nil nil)
+                           (vlr-undo-reactor nil nil)
+                           (vlr-wblock-reactor nil nil)
+                           (vlr-window-reactor nil nil)
+                           (vlr-xref-reactor nil nil)
+                           (vlr-docmanager-reactor nil nil)
+                           (vlr-linker-reactor nil nil)
+                           (vlr-lisp-reactor nil nil)
+                           (vlr-miscellaneous-reactor nil nil))))"
+                :setup-fn #'%install-reactor-test-env)))
+    (is (equal '("ACDB" "DEEPCLONE" "DOCUMENT" "DWG" "DXF" "INSERT" "MOUSE"
+                 "SYSVAR" "TOOLBAR" "UNDO" "WBLOCK" "WINDOW" "XREF"
+                 "DOCMANAGER" "LINKER" "LISP" "MISCELLANEOUS")
+               (mapcar #'autolisp-symbol-name types))))
+  (let ((all (run-autolisp-string "(vlr-types)"
+                                  :setup-fn #'%install-reactor-test-env)))
+    (is (= 20 (length all))
+        "vlr-types should list all 20 registered reactor kinds; got ~S"
+        (length all))))
+
+(test coverage-vlr-reactor-accessor-and-mutation-surface
+  "The accessor / predicate / mutator surface on a live reactor:
+vlr-added-p, vlr-data, vlr-owners + vlr-owner-add/remove, vlr-notification +
+vlr-set-notification, vlr-reactions + vlr-reaction-set, vlr-reactors,
+vlr-trace-reaction, vlr-current-reaction-name."
+  (reset-autolisp-symbol-table)
+  (let ((res (run-autolisp-string
+              "(progn
+                 (defun cb (a b) nil)
+                 (setq r (vlr-lisp-reactor (list \"d1\" \"d2\")
+                                           (list (cons \"vlr-lispWillStart\" (quote cb)))))
+                 (setq own \"owner-x\")
+                 (vlr-owner-add r own)    (setq nadd (length (vlr-owners r)))
+                 (vlr-owner-remove r own) (setq nrem (length (vlr-owners r)))
+                 (vlr-set-notification r (quote :all-documents))
+                 (vlr-reaction-set r \"vlr-lispWillQuit\" (quote cb))
+                 (list (vlr-added-p r)
+                       (length (vlr-data r))
+                       nadd nrem
+                       (vlr-notification r)
+                       (length (vlr-reactions r))
+                       (if (vlr-reactors) 1 0)
+                       (if (vlr-trace-reaction r \"vlr-lispWillStart\") 1 0)
+                       (if (vlr-current-reaction-name) 1 0)))"
+              :setup-fn #'%install-reactor-test-env)))
+    (destructuring-bind (added ndata nadd nrem notif nreac hasreactors hastrace curname)
+        res
+      (is (string= "T" (autolisp-symbol-name added)) "vlr-added-p on an active reactor")
+      (is (eql 2 ndata) "vlr-data returns the two data items")
+      (is (eql 1 nadd)  "vlr-owner-add added one owner")
+      (is (eql 0 nrem)  "vlr-owner-remove removed it")
+      (is (string= "ALL-DOCUMENTS" (autolisp-symbol-name notif))
+          "vlr-set-notification / vlr-notification round-trip")
+      (is (eql 2 nreac) "vlr-reaction-set added a second reaction")
+      (is (eql 1 hasreactors) "vlr-reactors lists the session's reactors")
+      (is (eql 1 hastrace) "vlr-trace-reaction acknowledges the reaction")
+      (is (eql 0 curname) "vlr-current-reaction-name is nil outside a dispatch"))))
+
+(test coverage-vlr-reactor-persistence-surface
+  "vlr-pers makes a reactor persistent, vlr-pers-p tracks it, vlr-pers-release
+clears it, vlr-pers-dictname names the NOD entry."
+  (reset-autolisp-symbol-table)
+  (let ((res (run-autolisp-string
+              "(progn
+                 (defun cb (a b) nil)
+                 (setq r (vlr-lisp-reactor nil
+                            (list (cons \"vlr-lispWillStart\" (quote cb)))))
+                 (setq before (vlr-pers-p r))
+                 (vlr-pers r)         (setq after (vlr-pers-p r))
+                 (vlr-pers-release r) (setq afterrel (vlr-pers-p r))
+                 (list (if before 1 0) (if after 1 0) (if afterrel 1 0)
+                       (vlr-pers-dictname)))"
+              :setup-fn #'%install-reactor-test-env)))
+    (destructuring-bind (before after afterrel dictname) res
+      (is (eql 0 before)   "not persistent before vlr-pers")
+      (is (eql 1 after)    "persistent after vlr-pers")
+      (is (eql 0 afterrel) "cleared after vlr-pers-release")
+      (is (string= "ACAD_REACTORS" (autolisp-string-value dictname))
+          "vlr-pers-dictname names the persistent-reactor dictionary"))))
+
 (test m5-layoutlist-returns-model-only
   "(layoutlist) returns a single-element list with the autolisp-string \"Model\"."
   (reset-autolisp-symbol-table)
