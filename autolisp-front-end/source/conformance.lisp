@@ -169,25 +169,40 @@ which gives a stable runner sequence."
 
 ;;; --- backend availability gating ----------------------------------
 
+(defun vendor-conformance-enabled-p ()
+  "The :bricscad-only / :autocad-only scenarios drive a REAL CAD engine.
+That belongs in the dedicated vendor-probe jobs, NOT the unit-test lane: a
+unit suite must not depend on a CAD engine booting (default.cui/profile) or
+on the host's terminal/CAD environment. Gate them behind an explicit opt-in
+env var so `make test' SKIPS them on any runner — CAD present or not — and
+they stay green everywhere. Set ALFE_VENDOR_CONFORMANCE=1 in a dedicated job
+to actually drive the vendor CAD through the corpus."
+  (let ((v (uiop:getenv "ALFE_VENDOR_CONFORMANCE")))
+    (and v (plusp (length v)))))
+
 (defun backend-available-p (classification)
   "True iff the scenario's classification can run on the current host.
-:portable always runs; backend-bound ones check if the matching
-backend is registered AND (for CAD backends) detects successfully."
+:portable always runs; :clautolisp-only needs the in-process engine; the
+CAD backends (:bricscad-only / :autocad-only) additionally require the
+ALFE_VENDOR_CONFORMANCE opt-in (see VENDOR-CONFORMANCE-ENABLED-P) before they
+detect + run, so the unit lane never drives a real CAD."
   (case classification
     (:portable         t)
     (:clautolisp-only  (not (null (alfe.backend:find-backend :clautolisp))))
     (:bricscad-only
-     (let ((backend (alfe.backend:find-backend :bricscad)))
-       (and backend
-            (handler-case
-                (progn (alfe.backend:detect backend) t)
-              (alfe.error:backend-not-available () nil)))))
+     (and (vendor-conformance-enabled-p)
+          (let ((backend (alfe.backend:find-backend :bricscad)))
+            (and backend
+                 (handler-case
+                     (progn (alfe.backend:detect backend) t)
+                   (alfe.error:backend-not-available () nil))))))
     (:autocad-only
-     (let ((backend (alfe.backend:find-backend :autocad)))
-       (and backend
-            (handler-case
-                (progn (alfe.backend:detect backend) t)
-              (alfe.error:backend-not-available () nil)))))
+     (and (vendor-conformance-enabled-p)
+          (let ((backend (alfe.backend:find-backend :autocad)))
+            (and backend
+                 (handler-case
+                     (progn (alfe.backend:detect backend) t)
+                   (alfe.error:backend-not-available () nil))))))
     (:parity
      ;; Parity scenarios run only when AUTOLISP_LEGACY is set to a
      ;; path the runner can spawn.
