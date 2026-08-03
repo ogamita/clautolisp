@@ -1,7 +1,32 @@
--*- mode:org -*-
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: workdir-random-tag-unseeded — per-run workdir random tag is constant (RNG not seeded)
+#+STATUS: DONE
+#+PRIORITY: P3
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-workdir-random-tag-unseeded
 
-workdir-random-tag-unseeded — per-run workdir random tag is constant (RNG not seeded)
-=====================================================================================
+* Resolution (2026-08-03, alfe 1.7.24)
+
+=alfe.workdir:random-tag= now draws from a dedicated per-process random
+state (=*tag-random-state*=) that is seeded once, lazily, from a
+high-entropy source via =(make-random-state t)= (ENSURE-TAG-RANDOM-STATE
+in =autolisp-front-end/source/workdir.lisp=). Keeping a separate state
+means seeding the tag generator never perturbs any other consumer of
+=CL:RANDOM=, while giving each process a distinct tag sequence — so the
+workdir name is no longer the fixed "3q9m89" every run.
+
+Added a regression test WORKDIR-RANDOM-TAG-IS-SEEDED-AND-VARIES
+(=autolisp-front-end/tests/backend-tests.lisp=): it checks the tag shape
+(6 lowercase alnum) and, by clearing =*tag-random-state*= between calls
+to simulate fresh-process starts, asserts the first tag varies across
+re-seeds — which fails for an unseeded / fixed-seed generator and passes
+for the =(make-random-state t)= one.
+
+Verification: =make -C autolisp-front-end test-sbcl= → 573/573 checks
+pass.
+
+* Context
 
 Found while triaging autocad-no-rest-output-capture (2026-07-30): every alfe run
 produces the SAME 6-char workdir tag. The AutoCAD workdirs across unrelated runs
@@ -13,15 +38,13 @@ produces the SAME 6-char workdir tag. The AutoCAD workdirs across unrelated runs
 
 Only the PID varies; the "random" tag is constant "3q9m89".
 
-Cause
------
+* Problem
 
 autolisp-front-end/source/workdir.lisp random-tag uses (random (length alphabet))
 without seeding *random-state*. SBCL/CCL start from the same default random state
 each process, so the sequence -- and thus the tag -- is identical every run.
 
-Impact
-------
+* Impact
 
 Low but real: the tag adds NO uniqueness; make-fresh-workdir relies entirely on
 the PID for a distinct path. Two alfe processes that happen to share a PID (PID
@@ -29,8 +52,7 @@ reuse across time, or different machines/containers) collide on the same workdir
 -> protocol files clobbered. Also makes workdir names non-diagnostic (can't tell
 runs apart by tag).
 
-Fix
----
+* Proposal
 
 Seed the random state once at startup, e.g.
   (setf *random-state* (make-random-state t))
