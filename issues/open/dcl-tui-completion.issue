@@ -45,6 +45,57 @@ Three real bugs fixed; the =greet= example now runs fully over the TUI
   tile walk. =terminal-fire-registered= fires the action registered under
   =accept=/=cancel= even without an explicit tile.
 
+* Progress (clautolisp 1.7.18) — TUI complete; only the Qt GUI app remains
+
+Items 1-5 DONE on branch =feature-dcl-tui=; the TUI renderer is complete and
+every acceptance criterion except the Qt C++ app (item 6) is met.
+
+- **Item 1 — clusters expand at load.** =expand-predefined-tile= matched the
+  parser's =:OK-CANCEL= keyword against the underscore registry keys
+  (=ok_cancel=) and silently never fired. Fixed the normalisation
+  (downcase + dashes→underscores) and made it recurse; added =errtile=,
+  =ok_cancel_err=, =ok_cancel_help_errtile=. ok_only / ok_cancel /
+  ok_cancel_help now become real =accept= / =cancel= / =help= =:button= and
+  =errtile= =:text= tiles that both renderers walk. The =<ok-cancel>=
+  placeholder is gone; =terminal-fire-registered= kept as a harmless fallback.
+- **Item 2 — interactive tile types.** toggle (key=1 sets / bare key flips —
+  the greet =shout= toggle round-trips), radio_button / radio_column (mutually
+  exclusive; the cluster key returns the selected button key), popup_list /
+  list_box (select by index or name; stores the index), slider (clamped to
+  min/max), image / image_button. Each renders legibly and round-trips through
+  get_tile.
+- **Item 3 — renderer selection.** =--dcl tui|gui|auto= (shared CLI spec +
+  =parse-dcl-mode= + a =cli-options= slot). auto = GUI only when a driver is
+  configured AND stdout is a TTY, else TUI (so headless/piped = TUI); tui =
+  force the command-line form (clautolisp's spelling of AutoCAD's =-command=);
+  gui = subprocess driver, warn+fallback to TUI when none configured. Wired in
+  main.lisp (=select-and-install-dcl-renderer=, using =output-stream-is-tty-p=)
+  and documented in the user manual ("DCL dialogs — renderer selection").
+- **Item 4 — $reason breadth.** The TUI input grammar carries a modifier:
+  =KEY= (selected, 1), =KEY=VALUE= (changed, 2, for edit_box/slider; a select
+  for list/popup/toggle/radio), =KEY==VALUE= (double-click, 4), =KEY!= (lost
+  focus, 3). All four codes reachable and tested.
+- **Item 5 — listpick headless.** =examples/listpick/listpick.lsp= now loads
+  its .dcl by a relative name (was a hard-coded /Users/pjb path) and runs
+  headless; a list_box picker integration test added.
+
+Validation deliverable: =examples/all-widgets/= (all-widgets.dcl +
+all-widgets.lsp + README.org) — one of every standard DCL tile, a labelled
+value report for cross-CAD diffing, runs fully in TUI mode headless.
+
+Tests: pure-renderer FiveAM tests per tile type + cluster expansion + the four
+reason codes (autolisp-dcl/tests); two stdin-driven integration tests over the
+full get_tile/action stack in a =;;;; DCL widgets= block (builtins-core). Whole
+suite green (Fail: 0).
+
+Remaining: **item 6** — the Qt C++ GUI app (=tools/clautolisp-gui-qt=). The
+Lisp-side subprocess renderer is complete (announces the tile tree via
+=tile->sexp=, forwards set_tile/mode/focus/populate_list/image_paint, consumes
+=:action= / =:done=); what is unbuilt/unexercised here is the C++ side —
+rendering each widget and emitting =:action= / =:done= events back. Tracked by
+the opendcl epic (=opendcl-renderer-scaffold=, =opendcl-controls=,
+=opendcl-wire-protocol=). Kept OPEN until that lands.
+
 * Remaining work
 
 1. **Expand predefined clusters at load** (ok_cancel, ok_only, ok_cancel_help,
