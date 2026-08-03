@@ -888,7 +888,9 @@ CAR, and the SCR points into the workdir."
                  (argv (alfe.backend.bricscad:build-launch-argv
                         backend protocol :mode :batch)))
             (is (string= "/usr/bin/true" (first argv)))
-            (is (member "-B" argv :test #'string=))
+            ;; Batch switch is platform-shaped: /b on Windows, -B on POSIX
+            ;; (backend-bricscad build-launch-argv, `(if (windows-p) ...)').
+            (is (member (if (uiop:os-windows-p) "/b" "-B") argv :test #'string=))
             (is (find "run.scr" argv :test (lambda (needle s)
                                               (search needle s))))))
       (uiop:delete-directory-tree workdir :validate t
@@ -1249,8 +1251,8 @@ removes the workdir afterwards (no --keep-workdir)."
       (let ((command (first lines)))
         (is (search "bricscad" command))
         (is (search "run.scr" command))
-        ;; The Unix batch switch (tests run on POSIX CI hosts).
-        (is (search "-B" command))))
+        ;; The batch switch: /b on Windows, -B on POSIX.
+        (is (search (if (uiop:os-windows-p) "/b" "-B") command))))
     ;; Default: the staged workdir is gone.
     (is (plusp (length workdir)))
     (is (not (uiop:directory-exists-p (uiop:ensure-directory-pathname workdir))))))

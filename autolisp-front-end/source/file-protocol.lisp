@@ -367,16 +367,26 @@ inputs. Pass :newline-p nil for binary-ish writes (rare)."
 (defun read-file-as-string (path &key (external-format :utf-8))
   "Slurp the entire contents of PATH as a UTF-8 string. Returns the
 empty string when PATH does not exist; this is what the protocol
-expects when the runtime hasn't published anything yet."
-  (cond
-    ((not (probe-file path)) "")
-    (t
-     (with-open-file (in path :direction :input
-                              :external-format external-format)
-       (with-output-to-string (out)
-         (loop for ch = (read-char in nil :eof)
-               until (eq ch :eof)
-               do (write-char ch out)))))))
+expects when the runtime hasn't published anything yet.
+
+Opens with :IF-DOES-NOT-EXIST NIL rather than probe-then-open. On
+Windows WRITE-ATOMIC-FILE is non-atomic (delete-target + rename — see
+that function's Windows note), so a hot channel like status.txt vanishes
+for an instant on every rewrite. A probe-then-open would race into that
+delete-gap and signal FILE-DOES-NOT-EXIST (the reader-side twin of the
+write contention we relaxed); collapsing the check into the open makes a
+transient absence read as empty — identical to a never-written file — so
+the pollers simply try again on the next tick. On POSIX rename(2) is
+atomic and this path never triggers."
+  (with-open-file (in path :direction :input
+                           :external-format external-format
+                           :if-does-not-exist nil)
+    (if (null in)
+        ""
+        (with-output-to-string (out)
+          (loop for ch = (read-char in nil :eof)
+                until (eq ch :eof)
+                do (write-char ch out))))))
 
 (defun last-non-empty-line (text)
   "Return the last non-blank line of TEXT, or NIL if TEXT has none.
