@@ -1,0 +1,57 @@
+cad-open-relative-path-not-resolved-vs-cwd — (open "rel/path" ...) fails under clautolisp
+==========================================================================================
+
+Reported from: SCHMS+ loader generation (dev/lisp/make-loader.lsp) run
+headless via `alfe --clautolisp --host mock`. clautolisp 1.7.x / alfe 1.7.x.
+
+Symptom
+-------
+
+`(open "src-vlx/schmsplus.prj" "r")` — a path RELATIVE to the process
+current working directory — returns NIL under clautolisp, even though
+the file exists and the process cwd is the repo root. BricsCAD and
+AutoCAD both resolve such a relative path against the current directory
+and open it successfully (that is how SCHMS+ generates its loader today,
+via `AUTOLISP_BIN --bricscad --mode batch`).
+
+Repro
+-----
+
+    cd <repo>            # contains src-vlx/schmsplus.prj
+    alfe --no-init --clautolisp --host mock \
+         -x '(princ (list (open "src-vlx/schmsplus.prj" "r")))'
+    => (nil)             ; clautolisp: relative path not found
+
+    # absolute path works:
+    alfe --no-init --clautolisp --host mock \
+         -x '(princ (list (open "<repo>/src-vlx/schmsplus.prj" "r")))'
+    => (#<file ...>)
+
+Setting TRUSTEDPATHS to the repo subtree does NOT change the relative
+case (so it is not a SECURELOAD gate — it is path resolution: the
+relative name is never resolved against the process cwd).
+
+Expected
+--------
+
+`open` (and by extension `findfile`, `load` given a bare relative name,
+etc.) should resolve a relative path against the AutoLISP current
+directory the same way BricsCAD/AutoCAD do — i.e. against the process
+cwd in the headless `--clautolisp` host (or against a documented,
+settable base). Today callers must pass absolute paths, which is awkward
+for build tooling and forces absolute paths into generated artifacts
+(a portability problem — such paths must not be committed).
+
+Impact
+------
+
+SCHMS+ wants `schmsplus-loader.lsp` generated headless via clautolisp
+(the clautolisp equivalent of the `.vlx`/`.des` CAD artifacts). The
+generator opens the `.prj` and writes the loader; with only absolute
+paths accepted, the generated loader would embed an absolute default
+directory unless the generator is reworked to keep that default
+relative. Native cwd-relative `open` would remove that friction.
+
+Related: cad-path-dotdot-resolution.issue,
+cad-vl-filename-directory-and-load.issue (other path-resolution
+differences already filed).
