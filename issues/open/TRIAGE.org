@@ -129,6 +129,7 @@ the shared blocker.
 | workdir-random-tag-unseeded   | TODO   | unseeded random workdir tag |
 | lisp-configuration            | TODO   | lisp.conf + stacked settings + REPL ,set |
 | vle-vector-tolerance-undefined-variable | TODO | forward-ref compile warning in builtin-vle-g-vectol; move defparameter above first use |
+| windows-terminal-encoding-fd-stream | TODO | -Eterminal must use Console API (SetConsoleOutputCP) on Windows, not fd reopening; stopgap warns-and-keeps-default (1.7.21) |
 
 ** Debugger
 | Issue                                | Status   | Note |

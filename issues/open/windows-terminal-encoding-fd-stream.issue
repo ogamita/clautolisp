@@ -1,0 +1,52 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: windows-terminal-encoding-fd-stream — -Eterminal must use the console API on Windows, not fd reopening
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: portability
+#+DEPENDS: windows-access
+#+BRANCH: feature-windows-terminal-encoding
+
+* Context
+
+=-Eterminal <enc>= reconfigures alfe's own =*standard-output*= /
+=*error-output*= / =*standard-input*= to a chosen external-format. It is
+implemented in =source/cli.lisp= (=%make-terminal-fd-stream= +
+=apply-terminal-encoding=) by reopening OS descriptors 0/1/2 with
+=sb-sys:make-fd-stream= and =setf='ing the stream globals.
+
+* Problem
+
+On Windows the reopen-by-fd approach is unreliable. =make-fd-stream= over
+the inherited console descriptor *succeeds*, but the first *write* can fail
+with =EBADF= (=Descripteur non valide=) under a non-console CI/msys shell.
+That write happens later, in user code, past =apply-terminal-encoding='s
+=handler-case=, so instead of the documented "degrade to a warning, never
+abort" it aborted the whole run.
+
+Surfaced on the native Windows runner as =CONFORMANCE-CORPUS-PASSES= failing
+on the =cli-io-encoding= scenario (=--clautolisp -Eterminal utf-8 --dry-run
+-x "(+ 1 2)"=), which runs in-process: the reopened FD-1 stream replaced the
+harness's captured string stream and then EBADF'd.
+
+* Stopgap (alfe 1.7.21)
+
+=%make-terminal-fd-stream= now returns NIL on Windows (=#+(and sbcl (not
+win32))=), so =-Eterminal= warns-and-keeps-default there rather than
+crashing. POSIX SBCL is unchanged. The unit lane is green on all runners.
+
+* Proposal
+
+Implement terminal-encoding on Windows via the Console API rather than fd
+reopening: set the active code page with =SetConsoleOutputCP= /
+=SetConsoleCP= (CP_UTF8 = 65001) for the real console case, and for a
+redirected/piped stdout wrap the stream with the requested external-format
+without reopening the descriptor by number. Keep the "never abort, degrade
+to a warning" contract: probe writability before installing any stream.
+
+* Acceptance criteria
+
+- =-Eterminal utf-8= on Windows makes alfe emit UTF-8 to a real console and
+  to a redirected file, with no EBADF and no run abort.
+- =cli-io-encoding= scenario passes on Windows while actually exercising the
+  reconfiguration (not just the warn path).
+- POSIX behaviour unchanged.

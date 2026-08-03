@@ -138,10 +138,11 @@ formed value, never a partial one."
       ;; can see it missing. Real usage is single-writer-per-file across
       ;; separate processes, so this never happens live (BricsCAD Windows is
       ;; green). Skip the artificial stress on Windows; keep it on Linux/macOS
-      ;; where UIOP uses a bare atomic rename(2). FiveAM has no first-class
-      ;; skip here, so record a passing note. See
+      ;; where UIOP uses a bare atomic rename(2). Record a passing note with
+      ;; PASS -- FiveAM's IS needs a list predicate form, so `(is t ...)' is a
+      ;; compile-time error ("Argument to IS must be a list, not T"). See
       ;; write-atomic-file-concurrent-rename-macos-windows.issue.
-      (is t "skipped on Windows: write-atomic-file rename is non-atomic (UIOP delete+rename); single-writer usage unaffected")
+      (pass "skipped on Windows: write-atomic-file rename is non-atomic (UIOP delete+rename); single-writer usage unaffected")
   (let* ((workdir (make-test-workdir "contention"))
          (target (merge-pathnames "value.txt" workdir))
          (n-writers 16)

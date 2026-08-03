@@ -12,6 +12,7 @@
                 #:def-suite
                 #:in-suite
                 #:is
+                #:pass
                 #:signals
                 ;; #:run intentionally NOT imported here — alfe.cli also
                 ;; exports a RUN symbol (the CLI entry point) and the

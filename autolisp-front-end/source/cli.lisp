@@ -898,18 +898,27 @@ accepted-and-ignored here (terminal I/O is line-buffered), matching the
 
 (defun %make-terminal-fd-stream (fd direction external-format)
   "A fresh stream over OS descriptor FD with EXTERNAL-FORMAT (DIRECTION is
-:INPUT or :OUTPUT), or NIL when the host CL cannot build one. Only SBCL is
-wired today; other implementations return NIL and the caller warns rather
-than failing."
+:INPUT or :OUTPUT), or NIL when the host CL cannot reliably build one; the
+caller then warns and keeps the host default rather than failing.
+
+Wired on POSIX SBCL only. On Windows we deliberately return NIL: reopening
+an inherited console descriptor *by number* with SB-SYS:MAKE-FD-STREAM
+succeeds, but the first write can fail with EBADF (`Descripteur non valide')
+under a non-console CI/msys shell — and that write happens later, in user
+code, past the caller's HANDLER-CASE, so it would abort the whole run
+instead of degrading. Proper Windows terminal-encoding needs the console
+API (SetConsoleOutputCP/CP_UTF8), not fd reopening; until then -Eterminal
+warns-and-keeps-default on Windows. See windows-terminal-encoding-fd-stream
+.issue."
   (declare (ignorable fd direction external-format))
-  #+sbcl
+  #+(and sbcl (not win32))
   (sb-sys:make-fd-stream fd
                          :input  (eq direction :input)
                          :output (eq direction :output)
                          :external-format external-format
                          :buffering (if (eq direction :output) :line :full)
                          :name "alfe terminal")
-  #-sbcl
+  #-(and sbcl (not win32))
   nil)
 
 (defun apply-terminal-encoding (options)
@@ -927,8 +936,9 @@ keeps the locale default."
                   (:output (setf *standard-output* stream))
                   (:error  (setf *error-output* stream))
                   (:input  (setf *standard-input* stream)))
-                (warn "alfe: -Eterminal is only implemented on SBCL; ~
-leaving ~(~A~) at the host default." key)))
+                (warn "alfe: -Eterminal terminal-encoding reconfiguration ~
+is unavailable on this host (non-SBCL, or Windows where console-fd ~
+reopening is unreliable); leaving ~(~A~) at the host default." key)))
         (error (e)
           (warn "alfe: could not apply -Eterminal (~A) to ~(~A~): ~A"
                 ext key e))))))
