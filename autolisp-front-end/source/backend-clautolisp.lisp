@@ -397,6 +397,23 @@ SHUTDOWN."
                 (session-handle (evaluation-context-session context)))
            (set-runtime-session-host session-handle host-instance)
            (install-core-builtins)
+           ;; Re-anchor path resolution to the LIVE process cwd. The runtime's
+           ;; *autolisp-current-directory* / support paths are DEFPARAMETER'd
+           ;; from (truename ".") at BUILD time — baked to the image's build
+           ;; directory. The standalone clautolisp tool re-reads getcwd at
+           ;; startup (clautolisp-boot-cwd-pwd-pathname-defaults.issue); the
+           ;; in-process alfe backend must do the same, or a relative
+           ;; (open "rel/path" ...) resolves against the build dir and returns
+           ;; nil instead of opening the file under the user's cwd — where
+           ;; BricsCAD/AutoCAD resolve it (cad-open-relative-path-not-resolved
+           ;; -vs-cwd.issue). Also keep CL's *default-pathname-defaults* in
+           ;; agreement so bare CL merges match.
+           (let ((cwd (ignore-errors (uiop:getcwd))))
+             (when cwd
+               (setf *default-pathname-defaults* cwd)
+               (clautolisp.autolisp-runtime:set-autolisp-current-directory cwd)
+               (clautolisp.autolisp-runtime:set-autolisp-support-paths
+                (list cwd))))
            ;; Install the *AUTOLISP-…* globals derived from alfe's
            ;; CLI options. The in-process engine IS the clautolisp
            ;; runtime, so *AUTOLISP-BACKEND* = CLAUTOLISP. alfe is

@@ -104,6 +104,52 @@ side effects (here, setq) survive into a subsequent :eval action."
             (alfe.backend:shutdown session)))
       (when (probe-file path) (delete-file path)))))
 
+(test clautolisp-direct-open-resolves-relative-path-against-cwd
+  "Regression (cad-open-relative-path-not-resolved-vs-cwd.issue): a relative
+path handed to OPEN resolves against the LIVE process cwd, not the image
+build directory. The runtime's *autolisp-current-directory* is
+DEFPARAMETER'd at build time; START-ENGINE re-reads getcwd so (open \"rel\"
+...) opens a file under the caller's cwd, matching BricsCAD/AutoCAD. A
+relative name with no matching file still returns nil."
+  (let* ((dir (uiop:ensure-directory-pathname
+               (merge-pathnames
+                (format nil "alfe-test-relopen-~D-~D/"
+                        (alfe.workdir::current-pid) (random 1000000))
+                (uiop:temporary-directory))))
+         (rel "fixture-rel.prj")
+         (file (merge-pathnames rel dir)))
+    (unwind-protect
+        (progn
+          (ensure-directories-exist dir)
+          (with-open-file (out file :direction :output
+                                    :if-exists :supersede
+                                    :if-does-not-exist :create
+                                    :external-format :utf-8)
+            (write-line "(project fixture)" out))
+          (uiop:with-current-directory (dir)
+            ;; Relative name that exists -> opens (1).
+            (let* ((session (start-clautolisp-direct-session))
+                   (plan (list (alfe.backend:action-eval
+                                (format nil "(if (open ~S \"r\") 1 0)" rel))
+                               (alfe.backend:action-quit)))
+                   (result (alfe.backend:eval-plan session plan)))
+              (is (eq :success (alfe.backend:eval-result-status result)))
+              (is (string= "1" (alfe.backend:eval-result-value result))
+                  "relative OPEN should resolve against cwd; got ~S"
+                  (alfe.backend:eval-result-value result))
+              (alfe.backend:shutdown session))
+            ;; Relative name that does not exist -> still nil (0).
+            (let* ((session (start-clautolisp-direct-session))
+                   (plan (list (alfe.backend:action-eval
+                                "(if (open \"nope-missing.prj\" \"r\") 1 0)")
+                               (alfe.backend:action-quit)))
+                   (result (alfe.backend:eval-plan session plan)))
+              (is (string= "0" (alfe.backend:eval-result-value result)))
+              (alfe.backend:shutdown session))))
+      (ignore-errors
+        (uiop:delete-directory-tree dir :validate t
+                                        :if-does-not-exist :ignore)))))
+
 (test clautolisp-direct-main-calls-named-entry-point
   "(action-main \"FN\") looks up FN in the runtime and calls it as
 the entry point. Result is the function's return value."

@@ -1,3 +1,36 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cad-open-relative-path-not-resolved-vs-cwd — (open "rel/path" ...) fails under clautolisp
+#+STATUS: DONE
+#+PRIORITY: P1
+#+TYPE: divergence
+#+DEPENDS: -
+#+BRANCH: fix-cad-open-relative-path-not-resolved-vs-cwd
+
+* Resolution (2026-08-03, alfe 1.7.23)
+
+Root cause: the runtime's =*autolisp-current-directory*= (and the support
+paths derived from it) are DEFPARAMETER'd from =(truename ".")= at BUILD
+time — baked to the image's build directory. The standalone =clautolisp=
+tool re-reads =getcwd= at startup and calls =set-autolisp-current-directory=
+(clautolisp-boot-cwd-pwd-pathname-defaults.issue), but the in-process alfe
+=--clautolisp= backend (backend-clautolisp.lisp, the =:direct= start-engine)
+did NOT — so via alfe a relative =(open "rel" ...)= resolved against the
+build dir and returned nil, while an absolute path worked.
+
+Fix: the =:direct= boot now re-anchors to the live process cwd right after
+=install-core-builtins= — sets =*default-pathname-defaults*=,
+=set-autolisp-current-directory=, and =set-autolisp-support-paths= to
+=getcwd=, mirroring the standalone tool. So relative OPEN / FINDFILE / LOAD
+resolve against the caller's cwd, matching BricsCAD/AutoCAD. Regression test
+=clautolisp-direct-open-resolves-relative-path-against-cwd= (alfe suite
+570/570). Verified with the reported repro (=alfe --clautolisp --host mock -x
+'(open "src-vlx/schmsplus.prj" "r")'= now opens the file).
+
+Docs: OPEN's clautolisp behaviour note (relative paths resolve against the
+process cwd, settable via vl-setcurrentdir) reviewed — see the commit.
+
+* Original report
+
 cad-open-relative-path-not-resolved-vs-cwd — (open "rel/path" ...) fails under clautolisp
 ==========================================================================================
 

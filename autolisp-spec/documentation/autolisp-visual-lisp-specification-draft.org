@@ -7297,8 +7297,16 @@ Errors are reported for invalid paths, modes, or inaccessible files.
 
 In clautolisp, ~open~ resolves a relative name through the support search
 path (an existing file is found on the path; a new name falls back to the
-current directory, so write semantics are unchanged), and it is *gated by
-the trust model* for files whose extension is in the gated set: at
+current directory, so write semantics are unchanged). That *current
+directory* is the process working directory at launch — matching
+BricsCAD/AutoCAD, which resolve a relative name against the current directory
+— and user code may query or change it with ~vl-getcurrentdir~ /
+~vl-setcurrentdir~. This holds identically whether clautolisp runs standalone
+or in-process behind ~alfe --clautolisp~ (the in-process backend re-anchors
+to the live cwd at start-up; see
+issues/closed/cad-open-relative-path-not-resolved-vs-cwd.issue). ~open~ is
+also *gated by the trust model* for files whose extension is in the gated
+set: at
 ~SECURELOAD~ 2 an untrusted gated file is blocked (ERRNO + a
 =:open-untrusted-file= error), at 1 it warns and proceeds; ordinary data
 files are never gated. Autodesk does not gate ~open~ — this is a
