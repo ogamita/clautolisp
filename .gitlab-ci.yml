@@ -1,3 +1,24 @@
+# ======================================================================
+# GitHub Actions parity (see .github/workflows/README.md)
+# ----------------------------------------------------------------------
+# This file is the SOURCE OF TRUTH for CI. The COMMON (Linux, host-portable)
+# lanes below are ALSO mirrored, by hand, into .github/workflows/ci.yml,
+# because GitLab->GitHub is a plain git mirror that does NOT translate CI.
+#
+# COMMON — keep .github/workflows/ci.yml in sync with these before a merge
+# to master or a release tag/branch:
+#   test:clautolisp:sbcl        test:clautolisp:ccl
+#   test:clautolisp:file-compat:sbcl   test:clautolisp:file-compat:ccl
+#   test:autolisp-test:sbcl
+#   test:alfe:sbcl   test:alfe:ccl   test:alfe:conformance
+#   test:alfe:spec-coverage      build:alfe:sbcl
+#
+# GITLAB-ONLY (NOT mirrored — need self-hosted / CAD-equipped runners):
+#   the CI-image build; every *:macos / *:windows job; verify:*; vendor:*;
+#   *:probe:*; encoding:experiment:*; benchmark:*; the release:* matrix;
+#   pages / collect / deploy.
+# ======================================================================
+
 variables:
   CLAUTOLISP_CI_IMAGE: $CI_REGISTRY_IMAGE/clautolisp-ci
   CLAUTOLISP_CI_LATEST: $CI_REGISTRY_IMAGE/clautolisp-ci:latest

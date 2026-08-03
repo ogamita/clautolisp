@@ -1,0 +1,96 @@
+name: Setup Lisp
+description: >
+  Install SBCL (always) and Clozure CL (optional), bootstrap Quicklisp into
+  ~/quicklisp with a cache, and pre-warm the quicklisp-distributed libraries
+  the suites touch. Mirrors clautolisp/docker/Dockerfile (the GitLab CI image)
+  so the common Linux lanes behave the same on both CIs. See
+  .github/workflows/README.md for the GitLab<->GitHub parity rule.
+
+inputs:
+  ccl:
+    description: Also install Clozure CL (for the CCL lanes).
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Install SBCL
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        # apt's sbcl is fine — we don't rely on any feature newer than 2.2.
+        sudo apt-get install -y --no-install-recommends sbcl
+        sbcl --version
+
+    - name: Install Clozure CL
+      if: inputs.ccl == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Same recipe as clautolisp/docker/Dockerfile: clone the source tree,
+        # overlay the release kernel+heap tarball, wrap lx86cl64 as `ccl'.
+        CCL_VERSION=1.13
+        sudo git clone --depth 1 --branch "v${CCL_VERSION}" \
+          https://github.com/Clozure/ccl.git /opt/ccl
+        curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+          --connect-timeout 30 -4 -o /tmp/linuxx86.tar.gz \
+          "https://github.com/Clozure/ccl/releases/download/v${CCL_VERSION}/linuxx86.tar.gz"
+        sudo tar -xzf /tmp/linuxx86.tar.gz -C /opt/ccl
+        printf '%s\n' '#!/bin/sh' 'exec /opt/ccl/lx86cl64 "$@"' \
+          | sudo tee /usr/local/bin/ccl >/dev/null
+        sudo chmod +x /usr/local/bin/ccl
+        rm -f /tmp/linuxx86.tar.gz
+        ccl --no-init --quiet \
+          --eval '(progn (format t "CCL ~A~%" (lisp-implementation-version)) (ccl:quit))'
+
+    - name: Cache Quicklisp
+      id: quicklisp-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/quicklisp
+          ~/.cache/common-lisp
+        # ~/quicklisp is implementation-independent; per-impl fasls live under
+        # ~/.cache/common-lisp/<impl>-… so SBCL and CCL coexist in one cache.
+        # Bump the cache-vN suffix to force a fresh install after a stale-fasl
+        # or dist-snapshot incident.
+        key: quicklisp-dist2024.10-cache-v1-${{ hashFiles('**/*.asd') }}
+        restore-keys: |
+          quicklisp-dist2024.10-cache-v1-
+
+    - name: Install Quicklisp (cache miss)
+      if: steps.quicklisp-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        # A restore-keys partial hit repopulates ~/quicklisp without setting
+        # cache-hit=='true' (only an exact key match does), so skip the install
+        # when setup.lisp is already on disk — quicklisp-quickstart:install
+        # errors on an existing install. We do NOT call (ql:add-to-init-file):
+        # every Makefile target passes --no-userinit and loads setup.lisp
+        # explicitly, and that helper churned across the 2026-01-01 dist.
+        if [ -f "$HOME/quicklisp/setup.lisp" ]; then
+          echo "Quicklisp already present (restored from cache); skipping install."
+          exit 0
+        fi
+        curl -sSO https://beta.quicklisp.org/quicklisp.lisp
+        sbcl --non-interactive --no-userinit \
+             --load quicklisp.lisp \
+             --eval '(quicklisp-quickstart:install)'
+        rm -f quicklisp.lisp
+
+    - name: Pre-warm Quicklisp dependencies (SBCL)
+      shell: bash
+      run: |
+        sbcl --non-interactive \
+             --load ~/quicklisp/setup.lisp \
+             --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)'
+
+    - name: Pre-warm Quicklisp dependencies (CCL)
+      if: inputs.ccl == 'true'
+      shell: bash
+      run: |
+        ccl --no-init --quiet \
+            --eval '(load #P"~/quicklisp/setup.lisp")' \
+            --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)' \
+            --eval '(ccl:quit)'

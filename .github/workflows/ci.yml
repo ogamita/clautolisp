@@ -1,12 +1,17 @@
 name: CI
 
-# Mirror — but not duplicate — what .gitlab-ci.yml covers. GitLab
-# CI runs against a custom Docker image with both SBCL and CCL
-# preinstalled (clautolisp/docker/Dockerfile); GitHub Actions
-# bootstraps SBCL on the standard ubuntu-latest runner. CCL coverage
-# stays GitLab-only for now — the GitHub side is here mostly for
-# the alfe (autolisp-front-end) lanes the GitLab pipeline does not
-# yet cover.
+# GitHub mirror of the COMMON (Linux, host-portable) lanes of
+# .gitlab-ci.yml. GitLab is the source of truth; this file reproduces only
+# the jobs that run on an ordinary ubuntu-latest runner — the SBCL + CCL
+# FiveAM suites, the alfe conformance/spec-coverage gates, file-compat, and
+# the alfe binary smoke build. The GitLab-only lanes (native macOS/Windows
+# on self-hosted runners, vendor BricsCAD/AutoCAD probes, benchmarks,
+# encoding/pathname experiments, the release matrix) are NOT mirrored here —
+# they need self-hosted or CAD-equipped runners GitHub does not provide.
+#
+# PARITY RULE: before merging to master or cutting a release tag/branch,
+# re-sync this file with the common lanes of .gitlab-ci.yml. See
+# .github/workflows/README.md for the job-by-job mapping and the rule.
 
 on:
   push:
@@ -16,99 +21,35 @@ on:
     branches: [master]
   workflow_dispatch:
 
-# Cancel in-progress runs on the same ref when a new push lands.
-# Releases on tags get their own concurrency group so a master
-# push doesn't pull the rug out from under a tag build.
+# Cancel in-progress runs on the same ref when a new push lands. Tag builds
+# get their own group so a master push doesn't cancel a tag build.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
-  # ---------------------------------------------------------------------
-  # The bulk of CI: every FiveAM suite under SBCL, plus the alfe
-  # conformance corpus and spec-coverage gate. Combined into one job
-  # so we pay SBCL+Quicklisp install costs once.
-
+  # --------------------------------------------------------------------- #
+  # SBCL — every FiveAM suite, the alfe conformance corpus + spec-coverage
+  # gate, and the file-compat report. One job so the SBCL+Quicklisp install
+  # is paid once. Mirrors GitLab test:clautolisp:sbcl,
+  # test:clautolisp:file-compat:sbcl, test:autolisp-test:sbcl,
+  # test:alfe:sbcl, test:alfe:conformance, test:alfe:spec-coverage.
   sbcl-test:
     name: SBCL — full test matrix
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install SBCL
-        run: |
-          sudo apt-get update -qq
-          # apt's sbcl is fine for our purposes (we don't rely on
-          # any feature newer than 2.2). Pinning a specific version
-          # is not worth the extra friction — if a regression lands,
-          # we'll pin then.
-          sudo apt-get install -y --no-install-recommends sbcl
-          sbcl --version
-
-      - name: Cache Quicklisp
-        id: quicklisp-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/quicklisp
-            ~/.cache/common-lisp
-          # Cache key buckets per-Lisp + per-quicklisp-dist; bump
-          # the suffix when the dist version changes.
-          # Cache-bust suffix (`cache-v1`, `cache-v2`, …) lets us
-          # force a fresh Quicklisp install when an old cache holds a
-          # stale fasl or an incompatible dist snapshot. Bump on
-          # observed CI failures that look cache-related — the v0
-          # entries land in oblivion and the next run reinstalls from
-          # beta.quicklisp.org.
-          key: quicklisp-sbcl-dist2024.10-cache-v1-${{ hashFiles('**/*.asd') }}
-          restore-keys: |
-            quicklisp-sbcl-dist2024.10-cache-v1-
-
-      - name: Install Quicklisp (cache miss)
-        if: steps.quicklisp-cache.outputs.cache-hit != 'true'
-        run: |
-          # Bootstrap quicklisp into ~/quicklisp. We do NOT call
-          # (ql:add-to-init-file) — that helper modifies ~/.sbclrc
-          # to auto-load quicklisp on every interactive SBCL launch,
-          # which is meaningless in CI (every Makefile target passes
-          # --no-userinit and loads ~/quicklisp/setup.lisp explicitly).
-          # Skipping it also dodges a Quicklisp-API churn: the
-          # 2026-01-01 dist relocated the function and FIND-SYMBOL
-          # of an out-of-date package name returned NIL, which then
-          # got FUNCALLed and crashed with "function NIL undefined".
-          #
-          # Guard against a restore-key partial hit: the cache key
-          # embeds hashFiles('**/*.asd'), so any .asd change misses
-          # the exact key — but `restore-keys` still repopulates
-          # ~/quicklisp from an older cache. cache-hit is only 'true'
-          # on an *exact* match, so this step still runs with a fully
-          # installed quicklisp on disk, and quicklisp-quickstart:install
-          # errors out ("already installed"). When setup.lisp is already
-          # there, don't reinstall — the steps that follow load it
-          # explicitly, which is all we need.
-          if [ -f "$HOME/quicklisp/setup.lisp" ]; then
-            echo "Quicklisp already present (restored from cache); skipping install."
-            exit 0
-          fi
-          curl -sSO https://beta.quicklisp.org/quicklisp.lisp
-          sbcl --non-interactive --no-userinit \
-               --load quicklisp.lisp \
-               --eval '(quicklisp-quickstart:install)'
-          rm -f quicklisp.lisp
-
-      - name: Pre-warm Quicklisp dependencies
-        # Pull every quicklisp-distributed library the test image
-        # touches, in one go. Subsequent ASDF loads re-use these
-        # without reaching out to beta.quicklisp.org.
-        run: |
-          sbcl --non-interactive \
-               --load ~/quicklisp/setup.lisp \
-               --eval '(ql:quickload (list "fiveam" "bordeaux-threads" "trivial-gray-streams" "babel" "alexandria") :silent t)'
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-lisp
 
       - name: clautolisp — FiveAM suite (SBCL)
         run: make -C clautolisp test-sbcl
+
+      - name: clautolisp — file-compat report (SBCL)
+        run: |
+          mkdir -p clautolisp/.artifacts
+          make -C clautolisp run-file-compat-sbcl \
+            FILE_COMPAT_ARGS="--tag builtin --report-format json --output .artifacts/file-compat-sbcl.json"
 
       - name: autolisp-test — conformance harness
         run: make -C autolisp-test test
@@ -122,75 +63,50 @@ jobs:
       - name: autolisp-front-end (alfe) — spec-coverage gate
         run: make -C autolisp-front-end check-spec-coverage
 
-  # ---------------------------------------------------------------------
-  # Smoke build: produce the alfe-sbcl binary and verify --version
-  # reports the right string. Uploads the binary as a workflow
-  # artifact so contributors can grab a pre-built alfe from a PR
-  # without setting up SBCL locally.
+  # --------------------------------------------------------------------- #
+  # CCL — the Clozure CL lanes. CCL is a supported host; this lane went
+  # green with clautolisp 1.7.11 (ccl-suite-failures.issue) and closes
+  # ci-github-ccl-lane.issue. Mirrors GitLab test:clautolisp:ccl,
+  # test:clautolisp:file-compat:ccl, test:alfe:ccl.
+  ccl-test:
+    name: CCL — clautolisp + alfe suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-lisp
+        with:
+          ccl: "true"
 
+      - name: clautolisp — FiveAM suite (CCL)
+        run: make -C clautolisp test-ccl
+
+      - name: clautolisp — file-compat report (CCL)
+        run: |
+          mkdir -p clautolisp/.artifacts
+          make -C clautolisp run-file-compat-ccl \
+            FILE_COMPAT_ARGS="--tag builtin --report-format json --output .artifacts/file-compat-ccl.json"
+
+      - name: autolisp-front-end (alfe) — FiveAM suite (CCL)
+        run: make -C autolisp-front-end test-ccl
+
+  # --------------------------------------------------------------------- #
+  # Smoke build: produce alfe-sbcl, verify --version matches the source, run
+  # the headline acceptance, upload the binary. Mirrors GitLab build:alfe:sbcl.
   alfe-binary:
     name: alfe — SBCL binary build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install SBCL
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends sbcl
-
-      - name: Cache Quicklisp
-        id: quicklisp-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/quicklisp
-            ~/.cache/common-lisp
-          # Cache-bust suffix (`cache-v1`, `cache-v2`, …) lets us
-          # force a fresh Quicklisp install when an old cache holds a
-          # stale fasl or an incompatible dist snapshot. Bump on
-          # observed CI failures that look cache-related — the v0
-          # entries land in oblivion and the next run reinstalls from
-          # beta.quicklisp.org.
-          key: quicklisp-sbcl-dist2024.10-cache-v1-${{ hashFiles('**/*.asd') }}
-          restore-keys: |
-            quicklisp-sbcl-dist2024.10-cache-v1-
-
-      - name: Install Quicklisp (cache miss)
-        if: steps.quicklisp-cache.outputs.cache-hit != 'true'
-        run: |
-          # Mirror of the sbcl-test job's install step. See the
-          # comment block on that step for why (ql:add-to-init-file)
-          # is intentionally omitted: it modifies ~/.sbclrc (useless
-          # in CI, all our Makefile invocations pass --no-userinit)
-          # and the 2026-01-01 dist relocated the function so
-          # FIND-SYMBOL came back NIL, FUNCALL crashed.
-          #
-          # Also mirrors the partial-hit guard: a `restore-keys` match
-          # repopulates ~/quicklisp without setting cache-hit=='true'
-          # (only an exact key match does), so skip the install when
-          # setup.lisp is already on disk — quicklisp-quickstart:install
-          # errors on an existing install, and the build step that
-          # follows loads setup.lisp itself.
-          if [ -f "$HOME/quicklisp/setup.lisp" ]; then
-            echo "Quicklisp already present (restored from cache); skipping install."
-            exit 0
-          fi
-          curl -sSO https://beta.quicklisp.org/quicklisp.lisp
-          sbcl --non-interactive --no-userinit \
-               --load quicklisp.lisp \
-               --eval '(quicklisp-quickstart:install)'
-          rm -f quicklisp.lisp
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-lisp
 
       - name: Build alfe-sbcl
         run: make -C autolisp-front-end build-alfe-sbcl
 
       - name: Verify alfe --version
-        # Cross-check the built binary reports the version the
-        # source declares — catches mismatches between the alfe
-        # bump and a forgotten conformance scenario.
+        # Cross-check the built binary reports the version the source
+        # declares — catches a version bump with a forgotten rebuild.
         run: |
           declared=$(sed -n 's/.*\*version\* "\([^"]*\)".*/\1/p' \
                        autolisp-front-end/tools/alfe/source/version.lisp)
@@ -203,21 +119,15 @@ jobs:
           }
 
       - name: Smoke-test alfe --clautolisp -x '(princ (+ 1 2))'
-        # The headline V1 acceptance criterion. Worth keeping as a
-        # post-build assertion: if this regresses, every other CI
-        # check could pass while real users see breakage.
-        #
-        # NOTE: alfe -x does NOT auto-print its expression value
-        # (see issues/closed/doc-x-output-semantics.issue) — the
-        # smoke test wraps in (princ ...) explicitly. The
-        # --no-init flag suppresses ~/.autolisp / system init-file
-        # output so the captured stdout is just the (princ) value.
+        # The headline V1 acceptance criterion. alfe -x does NOT auto-print
+        # its value (doc-x-output-semantics.issue) — wrap in (princ ...);
+        # --no-init keeps init-file output out of captured stdout.
         run: |
           output=$(./autolisp-front-end/tools/alfe/bin/alfe-sbcl \
                      --no-init --clautolisp -x '(princ (+ 1 2))')
           echo "output: $output"
           [ "$output" = "3" ] || {
-            echo "Headline acceptance failed: alfe --clautolisp -x '(princ (+ 1 2))' produced '$output' (expected '3')." >&2
+            echo "Headline acceptance failed: got '$output' (expected '3')." >&2
             exit 1
           }
 
@@ -227,6 +137,4 @@ jobs:
           name: alfe-sbcl-linux-x64
           path: autolisp-front-end/tools/alfe/bin/alfe-sbcl
           if-no-files-found: error
-          # Keep alfe-sbcl artifacts around for a couple of weeks
-          # so PR reviewers can pull a build without rebuilding.
           retention-days: 14
