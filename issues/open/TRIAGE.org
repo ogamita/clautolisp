@@ -82,7 +82,6 @@ retrofitted as they are touched.
 | Issue                                    | Type          | Status   | Note |
 |------------------------------------------+---------------+----------+------|
 | complete-unit-tests                      | coverage-epic | TODO     | backfill builtin coverage to ≥95% |
-| banner                                   | cli-feature   | TODO     | print a startup banner unless -q/--quiet |
 | deferred-stubbed-functions               | builtins-epic | DEFERRED | promote stubbed-as-no-op builtins (registry section done 1.5.1) |
 | deferred-spec-research                   | builtins      | DEFERRED | vendor-validate uncertain builtins; needs cad-access |
 | xdroom-xdsize-not-implemented            | builtin/draw  | DEFERRED | XDROOM/XDSIZE still nil stubs (schms-data-selection) |

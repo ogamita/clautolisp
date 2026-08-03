@@ -504,14 +504,24 @@ STREAM signalled end-of-file before any input was given."
                (unless (reader-error-incomplete-p condition)
                  (return (values accumulated nil)))))))))))
 
+(defparameter *copyright-start-year* 2026
+  "First year of the clautolisp copyright range shown in the REPL banner;
+the end year is the current year, so a fresh year needs no source edit.")
+
 (defun emit-repl-banner (dialect context &key mock-input gui trace-p)
-  "Print the REPL banner. With *verbose-p* on, append a second line
-listing the active host and any non-default knobs so the user sees
-exactly what they are typing into."
+  "Print the multi-line REPL welcome banner: product + version, copyright,
+license + source URL, then the AUTOLISP REPL line naming the active dialect
+and host. The whole banner is suppressed by -q/--quiet (the caller guards on
+QUIET-P, i.e. verbosity :warn). With *verbose-p* on, append a line listing
+any non-default knobs so the user sees exactly what they are typing into."
   (let* ((session (evaluation-context-session context))
-         (host (clautolisp.autolisp-runtime:runtime-session-host session)))
-    (format t "~&clautolisp ~A — REPL (~A dialect, ~A host) — Ctrl-D to exit.~%"
-            *version*
+         (host (clautolisp.autolisp-runtime:runtime-session-host session))
+         (this-year (nth-value 5 (get-decoded-time))))
+    (format t "~&Welcome to clautolisp Version ~A~%" *version*)
+    (format t "Copyright ~D-~D Ogamita Ltd~%" *copyright-start-year* this-year)
+    (format t "Licensed under AGPL; source codes available at:~%")
+    (format t "http://gitlab.com/ogamita/clautolisp/~%")
+    (format t "AUTOLISP REPL (~A dialect, ~A host) — Ctrl-D to exit.~%"
             (autolisp-dialect-name dialect)
             (host-name host))
     (when *verbose-p*
