@@ -844,7 +844,13 @@ CONTEXT's session. Returns VALUE."
                  (set-function symbol function context)
                  (push symbol imported))
                application-table)
-      (nreverse imported))))
+      ;; Return in a deterministic name-sorted order. The source is a
+      ;; hash-table whose MAPHASH order is implementation-dependent — SBCL
+      ;; and CCL enumerate it differently — and callers/tests compare the
+      ;; returned list, so a stable order makes the contract host-independent
+      ;; (ccl-suite-failures.issue). All functions are imported regardless of
+      ;; order; only the reported list is sorted.
+      (sort imported #'string< :key #'autolisp-symbol-name))))
 
 (defun blackboard-ref (symbol &optional (context (current-evaluation-context)))
   (let* ((namespace (runtime-session-blackboard-namespace
@@ -2378,13 +2384,39 @@ COMMAND token sequence to the HAL backend HOST. The autolisp-host
 module installs #'HOST-COMMAND here when loaded; tests may rebind
 it to capture routed tokens without a host system.")
 
+(defun autolisp-format-real (value)
+  "The host-independent AutoLISP spelling of a real VALUE: the double-float
+PRINC form with the CL float-type marker elided and any exponent normalised
+to a lowercase `e', an unsigned `+', and no leading zeros. This is the single
+source of truth for princ/prin1/rtos-decimal/command-token real formatting.
+
+Without the normalisation the spelling is host-dependent: for 1e20 SBCL
+prints `1.0e20' while CCL prints `1.0E+20', and for 1e-8 SBCL `1.0e-8' vs
+CCL `1.0E-8'. Binding *READ-DEFAULT-FLOAT-FORMAT* only elides the type
+marker; it does not unify the exponent case/sign/padding. We post-process so
+both hosts agree on the SBCL-canonical form (float-printer-omits-double-float
+-marker; ccl-suite-failures.issue)."
+  (let* ((d (coerce value 'double-float))
+         (s (let ((*read-default-float-format* 'double-float))
+              (princ-to-string d)))
+         (pos (position-if (lambda (c)
+                             (member c '(#\e #\E #\d #\D #\s #\S #\f #\F #\l #\L)))
+                           s)))
+    (if (null pos)
+        s
+        (let* ((mantissa (subseq s 0 pos))
+               (exp      (subseq s (1+ pos)))
+               (neg      (and (plusp (length exp)) (char= (char exp 0) #\-)))
+               (digits   (string-left-trim "0" (string-left-trim "+-" exp))))
+          (when (zerop (length digits)) (setf digits "0"))
+          (concatenate 'string mantissa "e" (if neg "-" "") digits)))))
+
 (defun format-command-number (value)
   "Format the number VALUE as a CAD command-line token: integers in
 decimal, reals in their AutoLISP princ spelling (no CL float marker)."
   (if (integerp value)
       (format nil "~D" value)
-      (let ((*read-default-float-format* 'double-float))
-        (princ-to-string (coerce value 'double-float)))))
+      (autolisp-format-real value)))
 
 (defun command-point-p (value)
   "True iff VALUE is an AutoLISP point usable as command input: a

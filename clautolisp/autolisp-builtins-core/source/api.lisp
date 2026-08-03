@@ -2707,12 +2707,10 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
      (format nil "~D" object))
     ((floatp object)
      ;; AutoLISP reals print without the CL double-float marker
-     ;; ("3.14", not "3.14d0"; "1.0e20", not "1.0d20"). Binding
-     ;; *read-default-float-format* to double-float tells SBCL/CCL
-     ;; the marker is redundant and they elide it — same printed
-     ;; form vendor AutoLISP emits.
-     (let ((*read-default-float-format* 'double-float))
-       (princ-to-string object)))
+     ;; ("3.14", not "3.14d0"; "1.0e20", not "1.0d20"). Delegate to the
+     ;; runtime's single host-independent formatter — princ alone diverges
+     ;; between SBCL ("1.0e20") and CCL ("1.0E+20"). See AUTOLISP-FORMAT-REAL.
+     (clautolisp.autolisp-runtime:autolisp-format-real object))
     ((typep object 'autolisp-string)
      (if princp
          (autolisp-string-value object)
@@ -3416,8 +3414,15 @@ E, an always-signed exponent zero-padded to at least two digits, e.g.
 double-float exponent marker (\"1.00d+2\") with an unpadded exponent;
 the ~E exponent-digits (2) and exponent-char ('E) parameters fix both.
 Exponents wider than two digits expand as needed (e.g. \"1.00E+100\").
-system-variables.issue, 'rtos/distance float-format'."
-  (format nil "~,v,2,,,,'EE" (max 0 p) n))
+system-variables.issue, 'rtos/distance float-format'.
+
+Zero is special-cased to \"0.<p zeros>E+00\": CL's ~E prints (rtos 0.0 1 4)
+as \"0.0000E-01\" on CCL (vs \"0.0000E+00\" on SBCL) — a host divergence in
+how the exponent of a zero mantissa is chosen — so we emit the canonical
++00 form directly (ccl-suite-failures.issue)."
+  (if (zerop n)
+      (concatenate 'string "0." (make-string (max 0 p) :initial-element #\0) "E+00")
+      (format nil "~,v,2,,,,'EE" (max 0 p) n)))
 
 (defun %rtos-units-sysvar (name default)
   "Read an integer linear-units sysvar (LUNITS / LUPREC / DIMZIN)
@@ -6480,6 +6485,30 @@ defvar so the value survives multiple test-image reloads.")
     (error () nil))
   nil)
 
+(defun %program-launchable-p (program)
+  "True iff PROGRAM (the executable token of an argv) can plausibly be
+exec'd: an existing regular file when it names a path (has a directory
+separator), or a regular file found on $PATH otherwise. Lets STARTAPP /
+VLE-STARTAPP return NIL for a missing binary on every host — SBCL's
+launch-program signals ENOENT synchronously (so the handler-case yields
+nil), but CCL defers the exec failure to the async child and hands back a
+live process object, which would otherwise leak a non-nil PID
+(ccl-suite-failures.issue)."
+  (labels ((regular-file-p (path)
+             (let ((tp (ignore-errors (probe-file path))))
+               (and tp (not (uiop:directory-pathname-p tp))))))
+    (if (or (find #\/ program) (find #\\ program))
+        (regular-file-p program)
+        (let ((path (uiop:getenv "PATH"))
+              (sep (if (uiop:os-windows-p) #\; #\:)))
+          (and path
+               (some (lambda (dir)
+                       (and (plusp (length dir))
+                            (regular-file-p
+                             (merge-pathnames program
+                                              (uiop:ensure-directory-pathname dir)))))
+                     (uiop:split-string path :separator (string sep))))))))
+
 (defun builtin-startapp (command &optional file)
   ;; (startapp "cmd" ["file"]) -> integer-or-nil. Launches an
   ;; external program asynchronously. Autodesk returns the process
@@ -6489,6 +6518,9 @@ defvar so the value survives multiple test-image reloads.")
          (arg (and file
                    (autolisp-string-value (require-string file "STARTAPP"))))
          (argv (if arg (list cmd arg) cmd)))
+    ;; Missing binary -> nil on every host (see %PROGRAM-LAUNCHABLE-P).
+    (unless (%program-launchable-p cmd)
+      (return-from builtin-startapp nil))
     (handler-case
         (let ((proc (uiop:launch-program argv :output nil :error-output nil)))
           (or (ignore-errors (uiop:process-info-pid proc)) 1))
@@ -7768,6 +7800,9 @@ the un-tabulated 10-249 range."
                   (list* cmd-str (autolisp-string-tokenise args-str)))
                  (t (list cmd-str))))
          (wait-p (autolisp-true-p mode)))
+    ;; Missing binary -> nil on every host (see %PROGRAM-LAUNCHABLE-P).
+    (unless (%program-launchable-p cmd-str)
+      (return-from builtin-vle-startapp nil))
     (handler-case
         (cond
           (wait-p

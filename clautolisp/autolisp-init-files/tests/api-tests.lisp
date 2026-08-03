@@ -67,7 +67,19 @@ unmodified mtime when neither path applies."
          (uiop:run-program
           (list "powershell" "-NoProfile" "-Command"
                 (format nil "(Get-Item '~A').LastWriteTime = (Get-Date).AddSeconds(-~D)"
-                        (namestring p) seconds-older))))))
+                        (namestring p) seconds-older)))))
+      (t
+       ;; Any other POSIX host — notably CCL, which has no SB-POSIX::UTIME.
+       ;; Without this branch the back-date was a silent no-op there, so the
+       ;; "older" fixture kept the same mtime as the "newer" one and the
+       ;; newest-wins init-file tests failed (ccl-suite-failures.issue).
+       ;; Shell out to touch(1): GNU coreutils (the CCL CI lane is Linux)
+       ;; accepts -d @UNIXEPOCH.
+       (let ((target-unix (- (get-universal-time) seconds-older 2208988800)))
+         (ignore-errors
+           (uiop:run-program
+            (list "touch" "-d" (format nil "@~D" target-unix) (namestring p))
+            :ignore-error-status t)))))
     p))
 
 ;;; --- env-true-p ----------------------------------------------------

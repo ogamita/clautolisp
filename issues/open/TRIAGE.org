@@ -119,7 +119,6 @@ the shared blocker.
 ** CI / build / test infra
 | Issue                         | Status | Note |
 |-------------------------------+--------+------|
-| ccl-suite-failures            | NEXT   | 🔴 CCL suite failing |
 | autolisp-cli-tests-missing    | TODO   | test-op references a non-existent test system |
 | ci-github-ccl-lane            | TODO   | add a CCL job to the GitHub Actions workflow |
 | cloud-platform-runners        | TODO   | pjb: survey on-demand macOS/Windows cloud runners |
@@ -128,6 +127,7 @@ the shared blocker.
 | lisp-configuration            | TODO   | lisp.conf + stacked settings + REPL ,set |
 | vle-vector-tolerance-undefined-variable | TODO | forward-ref compile warning in builtin-vle-g-vectol; move defparameter above first use |
 | windows-terminal-encoding-fd-stream | TODO | -Eterminal must use Console API (SetConsoleOutputCP) on Windows, not fd reopening; stopgap warns-and-keeps-default (1.7.21) |
+| cp1252-codec-host-independent | TODO | provide CP-1252/Windows-1252 codec (CCL lacks it); roundtrip test skips it on such hosts (1.7.11) |
 
 ** Debugger
 | Issue                                | Status   | Note |

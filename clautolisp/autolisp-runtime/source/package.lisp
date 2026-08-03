@@ -74,6 +74,7 @@
    #:set-runtime-session-current-document
    #:autolisp-file
    #:make-autolisp-file
+   #:autolisp-format-real
    #:autolisp-file-stream
    #:autolisp-file-path
    #:autolisp-file-mode

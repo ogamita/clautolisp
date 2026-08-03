@@ -1,0 +1,48 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cp1252-codec-host-independent — provide CP-1252/Windows-1252 without relying on the host CL codec
+#+STATUS: TODO
+#+PRIORITY: P3
+#+TYPE: portability
+#+DEPENDS: -
+#+BRANCH: feature-cp1252-codec
+
+* Context
+
+OPEN with encoding =CP-1252= / =WINDOWS-1252= (and the CLI/-E paths that
+resolve to =:windows-1252=) delegates to the host CL's external-format:
+=(open path :external-format :windows-1252)=. SBCL ships that codec; CCL
+does NOT — =ccl= has no windows-1252 / cp1252 character-encoding at all
+(=lookup-character-encoding= returns nil; opening a stream with it signals).
+
+* Problem
+
+On CCL, =(open f "w" "CP-1252")= / =(open f "w,ccs=CP-1252")= errors
+(AUTOLISP-RUNTIME-ERROR) instead of writing CP-1252 bytes. This blocked a
+green CCL lane (ccl-suite-failures.issue). Stopgap (clautolisp 1.7.11): the
+=cross-dialect-encoding-roundtrip-table= test now SKIPS the CP-1252 rows on
+a host whose CL lacks the codec (=%host-supports-open-encoding-p=), so the
+suite is green — but the *builtin itself* still errors for CCL users.
+
+* Proposal
+
+Give clautolisp its OWN CP-1252 codec so behaviour is identical on every
+host. CP-1252 is ISO-8859-1 except the 0x80–0x9F block (27 defined code
+points incl. € = 0x80 ↔ U+20AC, ‚ ƒ „ … † ‡ ˆ ‰ Š ‹ Œ Ž ' ' " " • – — ˜ ™ š
+› œ ž Ÿ; 0x81 0x8D 0x8F 0x90 0x9D undefined). Options, prefer (1):
+
+1. A small Gray-stream codec (character-input/-output) wrapping the octet
+   stream: write = Unicode→CP-1252 byte via a 32-entry override table over
+   Latin-1; read = byte→Unicode via the inverse. Route OPEN through it only
+   when the resolved external-format is =:windows-1252= AND the host lacks
+   the codec (keep the native path where it exists). Validate the whole
+   autolisp-file surface (read-char/read-line/princ/close/file-position).
+2. On CCL only, register the encoding via =ccl:define-character-encoding=
+   with the 1252 decode table (host-specific; less portable than (1)).
+
+* Acceptance criteria
+
+- =(open f "w" "CP-1252")= writes € as byte 0x80 and é as 0xE9 on SBCL AND
+  CCL; the reverse read round-trips both.
+- =cross-dialect-encoding-roundtrip-table= runs (not skips) all CP-1252 /
+  windows-1252 rows on every supported host; remove the skip stopgap.
+- No regression in the file-encoding / open test suites on either host.

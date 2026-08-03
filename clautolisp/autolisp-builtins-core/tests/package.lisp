@@ -4,6 +4,7 @@
                 #:def-suite
                 #:in-suite
                 #:is
+                #:skip
                 #:run
                 #:explain!
                 #:results-status
