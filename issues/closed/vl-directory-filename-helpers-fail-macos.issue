@@ -1,0 +1,50 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: vl-directory-filename-helpers-fail-macos — BUILTIN-VL-DIRECTORY-AND-FILENAME-HELPERS fails 2 checks on macOS
+#+STATUS: DONE
+#+PRIORITY: P2
+#+TYPE: bug
+#+DEPENDS: -
+#+BRANCH: fix-vl-directory-files-macos-tmp
+
+* Resolution (2026-08-03, alfe/clautolisp master @ c0544de)
+
+Already fixed by commit =069e81d= ("fix(test): vl-directory-files test uses
+uiop:temporary-directory (macOS /tmp symlink)"). The test built its scratch
+directory from a hard-coded =/tmp/…=; on macOS =/tmp= is a symlink into
+=/private=, and listing files through the un-canonicalised symlink path
+broke =vl-directory-files='s name comparison, so the first two =is= forms
+(=all-names=, =file-names=) failed. Switching the scratch dir to
+=uiop:temporary-directory= (the real, canonical temp dir — the same one the
+encoding-roundtrip test already used) resolved it; the three list-compare
+forms also gained value-carrying description strings for future triage.
+
+Verified: on pipeline 2726349431 the =test:clautolisp:macos= job is GREEN
+and =BUILTIN-VL-DIRECTORY-AND-FILENAME-HELPERS= runs all-dots (no =ff=), 0
+failures. Windows + Linux were never affected. Closed as done — no further
+work; the "add descriptions / reproduce on macOS" first-step is moot.
+
+* Symptom (original)
+
+On the macOS clautolisp test lane, the FiveAM test
+BUILTIN-VL-DIRECTORY-AND-FILENAME-HELPERS reported two failed checks:
+
+    Running test BUILTIN-VL-DIRECTORY-AND-FILENAME-HELPERS ff...........
+    Did 1549 checks.  Fail: 2
+
+The two failing =is= forms carried no description string (=[]=), so the
+trace showed only the count. The rest of the test passed.
+
+* Scope / not a regression
+
+- macOS ONLY: test:clautolisp:windows and the Linux suite passed the same test.
+- Pre-existing across several pipelines (540f232, 2f151e7, fb38d9a, 0a7aa86 —
+  the G2/G3/Phase-4 encoding commits), none of which touch vl-directory /
+  vl-filename. The macOS runner is intermittent and had not run for a while,
+  so it only surfaced then.
+- Unrelated to the encoding work (ENCODING-FILE-ROUNDTRIP and the
+  CLAL-FILE-ENCODING-* tests all passed on the same macOS run).
+
+* Likely cause (confirmed)
+
+A macOS-specific path assumption: =/tmp= vs =/private= symlink
+canonicalisation in the vl-directory helper test. Fixed as above.
