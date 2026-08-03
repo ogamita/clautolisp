@@ -74,6 +74,7 @@
 (defun scenario-name (scenario)           (getf scenario :name))
 (defun scenario-description (scenario)    (getf scenario :description))
 (defun scenario-classification (scenario) (getf scenario :classification :portable))
+(defun scenario-skip-on-os (scenario)     (getf scenario :skip-on-os))
 (defun scenario-argv (scenario)           (getf scenario :argv))
 (defun scenario-expected-exit (scenario)  (getf scenario :expected-exit 0))
 (defun scenario-stdout-includes (scenario)
@@ -253,6 +254,13 @@ spells the names inline."
     ,workdir (list ,@env-var-names)
     (lambda () ,@body)))
 
+(defun current-os-keyword ()
+  "The running host as a scenario :skip-on-os keyword: :windows, :macos,
+or :linux (the catch-all for every other POSIX)."
+  (cond ((uiop:os-windows-p) :windows)
+        ((uiop:os-macosx-p)  :macos)
+        (t                   :linux)))
+
 (defun run-scenario (scenario)
   "Execute SCENARIO against alfe.cli:run with captured streams. Returns
 a SCENARIO-RESULT; the caller is responsible for surfacing failures.
@@ -268,6 +276,14 @@ re-register the standard four (echo / clautolisp / bricscad /
 autocad) at the start of every scenario."
   (let ((result (make-scenario-result :scenario scenario)))
     (unless (backend-available-p (scenario-classification scenario))
+      (setf (scenario-result-status result) :skipped)
+      (return-from run-scenario result))
+    ;; Per-OS skip: some scenarios assert a diagnostic that only exists on
+    ;; some platforms (e.g. autocad-unsupported-os's exit-3 "not distributed"
+    ;; path can't fire on Windows, where DETECT structurally succeeds). Such
+    ;; a scenario declares :skip-on-os (:windows ...) rather than pretending
+    ;; its expectation is portable.
+    (when (member (current-os-keyword) (scenario-skip-on-os scenario))
       (setf (scenario-result-status result) :skipped)
       (return-from run-scenario result))
     (let* ((workdir (uiop:ensure-directory-pathname
@@ -291,13 +307,17 @@ autocad) at the start of every scenario."
                     ;; declared via :setup-files. Without this, the
                     ;; test host's real ~/.autolisp file (or a
                     ;; contaminated CI env's $AUTOLISP_NO_INIT) would
-                    ;; leak into every run.
+                    ;; leak into every run. AUTOCAD_ACCORECONSOLE is
+                    ;; unset too: a real runner (macOS/Windows) may point
+                    ;; it at an installed accoreconsole, which would flip
+                    ;; --autocad's DETECT and change exit codes the corpus
+                    ;; asserts against an AutoCAD-absent baseline.
                     (exit-code
                       (with-sandboxed-init-env
                           (workdir
                            "HOME" "AUTOLISP_NO_INIT"
                            "ALFE_NO_INIT" "CLAUTOLISP_NO_INIT"
-                           "AUTOLISP_KEEP_WORKDIR")
+                           "AUTOLISP_KEEP_WORKDIR" "AUTOCAD_ACCORECONSOLE")
                         (uiop:with-current-directory (workdir)
                           (let ((*standard-output* stdout-stream)
                                 (*error-output*    stderr-stream)
