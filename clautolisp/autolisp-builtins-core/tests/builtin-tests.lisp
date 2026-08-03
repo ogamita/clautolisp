@@ -3786,6 +3786,41 @@ complete-unit-tests.issue."
     (is (stub-nil "(vl-subent-ssdel nil nil)"))
     (is (stub-nil "(vl-subent-ssmemb nil nil nil)"))))
 
+(defun %get-with-mock-input (form-source input-line)
+  "Evaluate FORM-SOURCE under a MockHost whose prompt-stream yields
+INPUT-LINE; return the raw AutoLISP result. Generalises
+%GETSTRING-WITH-INPUT for the whole GET* family."
+  (let ((mock (clautolisp.autolisp-mock-host:make-mock-host)))
+    (setf (clautolisp.autolisp-mock-host:mock-host-prompt-stream mock)
+          (make-string-input-stream (format nil "~A~%" input-line)))
+    (run-autolisp-string
+     form-source
+     :setup-fn
+     (lambda (context)
+       (install-core-into context)
+       (setf (clautolisp.autolisp-runtime.internal::runtime-session-host
+              (clautolisp.autolisp-runtime:evaluation-context-session context))
+             mock)))))
+
+(test coverage-get-family-reads-parsed-value-from-host
+  "The interactive GET* prompts delegate to the active host's prompt stream
+and return the parsed value of their type. Driven by a MockHost input line:
+getint->integer, getreal->real, getkword->the matched keyword string,
+getangle/getorient->radians real, getcorner->point. (complete-unit-tests.issue
+GET* family; getstring/getdist/getpoint/getvar/initget already covered.)"
+  (reset-autolisp-symbol-table)
+  (is (eql 42 (%get-with-mock-input "(getint \"n? \")" "42")))
+  (is (eql 3.5d0 (%get-with-mock-input "(getreal \"r? \")" "3.5")))
+  (is (string= "Yes"
+               (autolisp-string-value
+                (%get-with-mock-input
+                 "(progn (initget \"Yes No\") (getkword \"yn? \"))" "Yes"))))
+  (is (eql 0.0d0 (%get-with-mock-input "(getangle \"a? \")" "0")))
+  (is (eql 0.0d0 (%get-with-mock-input "(getorient \"o? \")" "0")))
+  (is (equal '(1.0d0 2.0d0 0.0d0)
+             (%get-with-mock-input
+              "(getcorner (list 0.0 0.0 0.0) \"c? \")" "1.0 2.0"))))
+
 (test dcl-terminal-renderer-drives-dialog-headless
   "End-to-end DCL over the terminal (TUI) renderer, headless. Feeding
 `x=hi' then `accept' on stdin: the edit-box action binds $value into `got',

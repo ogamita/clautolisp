@@ -31,6 +31,10 @@
 - 2026-08-03 (clautolisp 1.7.16): backfilled the VL-ANNOTATIVE-* (8) and
   VL-SUBENT-* (4) documented-nil stub families (call-path coverage). Coverage
   now **85.3% (534/626, 92 untested)**.
+- 2026-08-03 (clautolisp 1.7.17): backfilled the GET* interactive-prompt
+  family (getint/getreal/getkword/getangle/getorient/getcorner) via a
+  MockHost input stream (%get-with-mock-input helper). Coverage now **86.3%
+  (540/626, 86 untested)**.
 - Note: the tool is deliberately conservative — it counts only literal
   =(name= form heads, so DATA-DRIVEN / macro-generated tests are invisible
   to it; write explicit literal snippets when backfilling so the tool
