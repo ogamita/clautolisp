@@ -1,0 +1,65 @@
+alfe-open-relative-path-not-resolved-vs-cwd — (open "rel/path" ...) fails via alfe, works in clautolisp
+======================================================================================================
+
+*** RESOLVED in alfe 1.7.23. ***
+`alfe --clautolisp` now resolves cwd-relative paths, matching direct
+clautolisp: from the repo `(open "src-vlx/schmsplus.prj" "r")` => handle;
+a bogus relative name => NIL; the same call from cwd=/tmp => NIL. No
+difference between alfe and direct clautolisp remains.
+
+Reported from: SCHMS+ loader generation (dev/lisp/make-loader.lsp) run
+headless. clautolisp 1.7.x / alfe 1.7.3 (broken) -> 1.7.23 (fixed).
+
+*** Attribution corrected: this is an ALFE bug, not clautolisp. ***
+clautolisp invoked directly resolves cwd-relative paths correctly;
+only the `alfe --clautolisp` front-end fails to.
+
+Symptom
+-------
+
+`(open "src-vlx/schmsplus.prj" "r")` — a path RELATIVE to the process
+current working directory — returns NIL under `alfe --clautolisp`, even
+though the file exists and the process cwd is the repo root. The same
+expression opens the file when clautolisp is invoked DIRECTLY, and
+BricsCAD/AutoCAD also resolve it against the current directory.
+
+Repro (cwd = a dir containing src-vlx/schmsplus.prj)
+---------------------------------------------------
+
+    clautolisp --no-init --dialect clautolisp --host mock \
+      -x '(princ (if (open "src-vlx/schmsplus.prj" "r") "OK" "NIL"))'
+    => OK          # direct clautolisp: relative path resolved
+
+    alfe --no-init --clautolisp --host mock \
+      -x '(princ (if (open "src-vlx/schmsplus.prj" "r") "OK" "NIL"))'
+    => NIL         # via alfe: relative path NOT resolved
+
+    alfe --no-init --clautolisp --host mock \
+      -x '(princ (if (open "<abs>/src-vlx/schmsplus.prj" "r") "OK" "NIL"))'
+    => OK          # via alfe: absolute path works
+
+TRUSTEDPATHS makes no difference (not a SECURELOAD gate).
+
+Diagnosis
+---------
+
+Since direct clautolisp succeeds and only `alfe --clautolisp` fails,
+alfe must run the hosted engine with a different working directory (or
+resolve relative filenames against a different base — e.g. its install
+dir or a temp dir) than the process cwd. alfe should resolve
+cwd-relative filenames against the invoking process's current directory,
+matching direct clautolisp and BricsCAD/AutoCAD.
+
+Impact
+------
+
+SCHMS+ generates `schmsplus-loader.lsp` (the clautolisp equivalent of
+the `.vlx`/`.des` CAD artifacts) with a headless AutoLISP tool. Using
+`clautolisp` DIRECTLY (the intended invocation for such tool use) avoids
+the problem entirely and needs no absolute paths, so the loader's
+embedded default directory stays relative/portable. This bug only bites
+callers who go through `alfe --clautolisp`; fixing it would let either
+entry point be used interchangeably for headless file tooling.
+
+Related: cad-path-dotdot-resolution.issue,
+cad-vl-filename-directory-and-load.issue.
