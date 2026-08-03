@@ -323,6 +323,17 @@ specs without mutating the shared template."
     :handler (lambda (opts value name)
                (setf (cli-options-host opts) (parse-host value name))))
 
+   ;; --- DCL renderer selection (clautolisp; alfe ignores the slot) --
+   ;; --dcl tui|gui|auto picks how a DCL dialog is presented: tui forces
+   ;; the terminal / command-line form (clautolisp's spelling of AutoCAD's
+   ;; `-command' convention), gui uses the subprocess GUI driver, auto
+   ;; (the default) uses the GUI only when a driver is configured AND
+   ;; stdout is a TTY, otherwise the TUI.
+   (make-option-spec
+    :longs '("--dcl") :shorts nil :takes-arg-p t
+    :handler (lambda (opts value name)
+               (setf (cli-options-dcl opts) (parse-dcl-mode value name))))
+
    ;; --- actions ---------------------------------------------------
    (make-option-spec
     :longs '("--load") :shorts '("-l") :takes-arg-p t

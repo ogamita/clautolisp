@@ -22,10 +22,21 @@
     (terminal-render-tile-tree root dialog 0)
     (force-output *standard-output*)))
 
+(defun terminal-tile-key (tile)
+  (or (dcl-tile-key tile) (tile-attribute tile "key")))
+
+(defun terminal-list-items (dialog key)
+  "The items populated into a list_box / popup_list KEY via
+start_list/add_list/end_list, or NIL."
+  (let ((items (and key (gethash (concatenate 'string key ":items")
+                                 (dcl-dialog-state dialog) nil))))
+    (if (listp items) items '())))
+
 (defun terminal-render-tile-tree (tile dialog indent)
   (let ((indentation (make-string (* 2 indent) :initial-element #\Space)))
     (case (dcl-tile-type tile)
-      ((:dialog :row :column :boxed-row :boxed-column)
+      ((:dialog :row :column :boxed-row :boxed-column
+        :radio-column :radio-row :concatenation)
        (let ((label (tile-attribute tile "label")))
          (when label
            (format *standard-output* "~A~A~%" indentation label)))
@@ -33,46 +44,76 @@
          (terminal-render-tile-tree child dialog (1+ indent))))
       (:text
        (format *standard-output* "~A~A~%" indentation
-               (or (tile-attribute tile "label") "")))
+               (or (tile-attribute tile "label")
+                   ;; An errtile (or any keyed text) shows its live value.
+                   (let ((key (terminal-tile-key tile)))
+                     (and key (gethash key (dcl-dialog-state dialog) "")))
+                   "")))
       (:spacer
        (format *standard-output* "~%"))
-      (:button
+      ((:button :image-button)
        (format *standard-output* "~A[ ~A ]"
                indentation
                (or (tile-attribute tile "label")
                    (or (dcl-tile-key tile) (tile-attribute tile "_name_") "button")))
-       (let ((key (or (dcl-tile-key tile) (tile-attribute tile "key"))))
+       (let ((key (terminal-tile-key tile)))
          (when key (format *standard-output* "  (key: ~A)" key)))
        (terpri *standard-output*))
       (:edit-box
-       (let* ((key (or (dcl-tile-key tile) (tile-attribute tile "key")))
+       (let* ((key (terminal-tile-key tile))
               (label (or (tile-attribute tile "label") key "edit"))
               (value (and key (gethash key (dcl-dialog-state dialog) ""))))
-         (format *standard-output* "~A~A: ~A~%" indentation label value)))
+         (format *standard-output* "~A~A: ~A~@[  (key: ~A)~]~%"
+                 indentation label value key)))
+      (:toggle
+       (let* ((key (terminal-tile-key tile))
+              (label (or (tile-attribute tile "label") key "toggle"))
+              (value (and key (gethash key (dcl-dialog-state dialog) "0"))))
+         (format *standard-output* "~A[~A] ~A~@[  (key: ~A)~]~%"
+                 indentation (if (equal value "1") "x" " ") label key)))
       (:list-box
-       (let* ((key (or (dcl-tile-key tile) (tile-attribute tile "key")))
-              (label (or (tile-attribute tile "label") key "list")))
-         (format *standard-output* "~A~A:~%" indentation label)
-         (let ((items (and key
-                           (gethash (concatenate 'string key ":items")
-                                    (dcl-dialog-state dialog) nil))))
-           (dolist (item (if (listp items) items '()))
-             (format *standard-output* "~A  - ~A~%" indentation item)))))
+       (let* ((key (terminal-tile-key tile))
+              (label (or (tile-attribute tile "label") key "list"))
+              (selected (and key (gethash key (dcl-dialog-state dialog) ""))))
+         (format *standard-output* "~A~A:~@[  (key: ~A)~]~%" indentation label key)
+         (loop for item in (terminal-list-items dialog key)
+               for i from 0
+               do (format *standard-output* "~A  ~A ~D: ~A~%"
+                          indentation
+                          (if (equal selected (princ-to-string i)) ">" " ")
+                          i item))))
       (:popup-list
-       (let* ((key (or (dcl-tile-key tile) (tile-attribute tile "key")))
-              (label (or (tile-attribute tile "label") key "popup")))
-         (format *standard-output* "~A~A: ~A~%" indentation label
-                 (and key (gethash key (dcl-dialog-state dialog) "")))))
+       (let* ((key (terminal-tile-key tile))
+              (label (or (tile-attribute tile "label") key "popup"))
+              (selected (and key (gethash key (dcl-dialog-state dialog) "")))
+              (items (terminal-list-items dialog key)))
+         (format *standard-output* "~A~A: [~A]~@[  (key: ~A)~]~%"
+                 indentation label
+                 (let ((idx (ignore-errors (parse-integer selected))))
+                   (if (and idx (< -1 idx (length items)))
+                       (nth idx items) selected))
+                 key)
+         (loop for item in items for i from 0
+               do (format *standard-output* "~A    ~D: ~A~%" indentation i item))))
       (:radio-button
-       (let* ((key (or (dcl-tile-key tile) (tile-attribute tile "key")))
+       (let* ((key (terminal-tile-key tile))
               (label (or (tile-attribute tile "label") key "option"))
               (value (and key (gethash key (dcl-dialog-state dialog) "0"))))
-         (format *standard-output* "~A( ~A ) ~A~%"
+         (format *standard-output* "~A( ~A ) ~A~@[  (key: ~A)~]~%"
                  indentation
                  (if (equal value "1") "*" " ")
-                 label)))
+                 label key)))
+      (:slider
+       (let* ((key (terminal-tile-key tile))
+              (label (or (tile-attribute tile "label") key "slider"))
+              (value (and key (gethash key (dcl-dialog-state dialog) "0")))
+              (mn (or (tile-attribute tile "min_value") 0))
+              (mx (or (tile-attribute tile "max_value") 100)))
+         (format *standard-output* "~A~A: ~A  (~A..~A)~@[  (key: ~A)~]~%"
+                 indentation label value mn mx key)))
       (:image
-       (format *standard-output* "~A[image]~%" indentation))
+       (let ((key (terminal-tile-key tile)))
+         (format *standard-output* "~A[image~@[ ~A~]]~%" indentation key)))
       (otherwise
        (let ((label (tile-attribute tile "label")))
          (format *standard-output* "~A<~A>~A~%"
@@ -118,40 +159,156 @@ no auto-exit is warranted."
     ((tile-attribute tile "is_default") 1)
     (t nil)))
 
-(defun terminal-handle-value-tile (dialog tile key value)
-  "Update the dialog state for a non-button tile from a parsed
-command, prompting for the value when the user did not supply
-one."
-  (declare (ignore tile))
-  (let ((new-value (or value
-                       (terminal-prompt-line (format nil "~A=" key)))))
-    (when new-value
-      (setf (gethash key (dcl-dialog-state dialog)) new-value)
-      (dcl-runtime-fire-action dialog key new-value :reason-selected))))
+(defun terminal-modifier-reason (modifier default)
+  "Map an input-line MODIFIER to the AutoLISP $reason keyword for an
+editable tile (edit_box / slider), where `key=value' is an in-progress
+value change (reason 2). DEFAULT covers a bare activation."
+  (case modifier
+    (:change :reason-changed)         ; key=value  — value changed
+    (:commit :reason-lost-focus)      ; key! / key=value! — tile lost focus
+    (:double :reason-double-click)    ; key==value — double-click / accept
+    (t default)))                     ; :activate
+
+(defun terminal-select-reason (modifier)
+  "Map an input-line MODIFIER to the AutoLISP $reason keyword for a
+selection tile (toggle / radio_button / list_box / popup_list), where
+choosing a value IS the selection (reason 1), a double-click is reason 4,
+and losing focus is reason 3."
+  (case modifier
+    (:double :reason-double-click)    ; key==value — double-click / accept
+    (:commit :reason-lost-focus)      ; key! — lost focus
+    (t :reason-selected)))            ; :activate and :change are selections
+
+(defun terminal-truthy-p (value)
+  "Interpret a toggle input string as on/off."
+  (member value '("1" "t" "on" "yes" "true") :test #'string-equal))
+
+(defun terminal-cluster-radio-keys (cluster)
+  "The keys of every radio_button descendant of CLUSTER, in source order."
+  (let ((acc '()))
+    (labels ((walk (node)
+               (when (eq (dcl-tile-type node) :radio-button)
+                 (let ((k (terminal-tile-key node)))
+                   (when k (push k acc))))
+               (dolist (c (dcl-tile-children node)) (walk c))))
+      (walk cluster))
+    (nreverse acc)))
+
+(defun terminal-find-radio-cluster (root key)
+  "The radio_column / radio_row tile that contains the radio_button KEY,
+or NIL when KEY is a stand-alone radio_button."
+  (labels ((find-cluster (tile)
+             (cond
+               ((and (member (dcl-tile-type tile) '(:radio-column :radio-row))
+                     (member key (terminal-cluster-radio-keys tile)
+                             :test #'string=))
+                tile)
+               (t (some #'find-cluster (dcl-tile-children tile))))))
+    (find-cluster root)))
+
+(defun terminal-select-radio (dialog key)
+  "Set KEY's radio_button to \"1\" and every sibling in its cluster to
+\"0\" (mutual exclusion). Also set the enclosing radio cluster's own key,
+when it has one, to KEY — so (get_tile CLUSTER-KEY) returns the selected
+button's key, matching AutoCAD/BricsCAD radio-group semantics."
+  (let* ((root (dcl-dialog-tile dialog))
+         (cluster (terminal-find-radio-cluster root key))
+         (siblings (and cluster (terminal-cluster-radio-keys cluster))))
+    (dolist (k (or siblings (list key)))
+      (setf (gethash k (dcl-dialog-state dialog))
+            (if (string= k key) "1" "0")))
+    (let ((cluster-key (and cluster (terminal-tile-key cluster))))
+      (when cluster-key
+        (setf (gethash cluster-key (dcl-dialog-state dialog)) key)))))
+
+(defun terminal-set-and-fire (dialog key value reason)
+  "Store VALUE under KEY and fire KEY's action with REASON."
+  (setf (gethash key (dcl-dialog-state dialog)) value)
+  (dcl-runtime-fire-action dialog key value reason))
+
+(defun terminal-handle-value-tile (dialog tile key value modifier)
+  "Update the dialog state for an interactive non-button tile and fire its
+action with the $reason implied by MODIFIER (see terminal-modifier-reason).
+Prompts for a value when the user supplied none on an editable tile."
+  (case (dcl-tile-type tile)
+    (:toggle
+     ;; key=1/0 sets; a bare `key' (or key!) flips the current state.
+     (let* ((current (gethash key (dcl-dialog-state dialog) "0"))
+            (new (cond (value (if (terminal-truthy-p value) "1" "0"))
+                       (t (if (equal current "1") "0" "1")))))
+       (terminal-set-and-fire dialog key new
+                              (terminal-select-reason modifier))))
+    (:radio-button
+     (terminal-select-radio dialog key)
+     (dcl-runtime-fire-action dialog key "1"
+                              (terminal-select-reason modifier)))
+    ((:list-box :popup-list)
+     ;; The stored value is the selected item's INDEX (as a string), which
+     ;; is what get_tile returns for a list in AutoLISP. Accept a numeric
+     ;; index or match an item by name.
+     (let* ((items (terminal-list-items dialog key))
+            (index (cond
+                     ((null value) (gethash key (dcl-dialog-state dialog) ""))
+                     ((every #'digit-char-p value) value)
+                     (t (let ((pos (position value items :test #'string-equal)))
+                          (if pos (princ-to-string pos) value))))))
+       (terminal-set-and-fire dialog key index
+                              (terminal-select-reason modifier))))
+    (:slider
+     (let* ((mn (or (tile-attribute tile "min_value") 0))
+            (mx (or (tile-attribute tile "max_value") 100))
+            ;; A commit (lost focus) with no value keeps the current value;
+            ;; otherwise a bare `key' prompts for one.
+            (raw (cond (value value)
+                       ((eq modifier :commit) nil)
+                       (t (terminal-prompt-line (format nil "~A=" key)))))
+            (n (and raw (ignore-errors (parse-integer raw :junk-allowed t))))
+            (clamped (cond ((null n) (gethash key (dcl-dialog-state dialog) "0"))
+                           ((< n mn) (princ-to-string mn))
+                           ((> n mx) (princ-to-string mx))
+                           (t (princ-to-string n)))))
+       (terminal-set-and-fire dialog key clamped
+                              (terminal-modifier-reason modifier :reason-changed))))
+    (otherwise
+     ;; edit_box and any other value-bearing tile.
+     (let ((new-value
+             (cond (value value)
+                   ;; `key!' (lost focus) fires with the current value —
+                   ;; no re-prompt.
+                   ((eq modifier :commit) (gethash key (dcl-dialog-state dialog) ""))
+                   (t (terminal-prompt-line (format nil "~A=" key))))))
+       (when new-value
+         (terminal-set-and-fire dialog key new-value
+                                (terminal-modifier-reason modifier :reason-changed)))))))
 
 (defun terminal-handle-line (dialog interactive line)
   "Interpret one input line. Returns :continue to keep prompting, or an
 integer status when the line caused done_dialog to fire (a button's action,
 or the accept/cancel convention).
 
-A named tile is handled by FIRING its registered action — including the
-`accept' / `cancel' predefined buttons, whose action typically reads the
-tiles (get_tile) and calls done_dialog. Only when the word names no tile do
-we fall back to the bare accept->1 / cancel->0 convention (for dialogs that
-ship no explicit accept/cancel tile). Previously accept/ok/cancel/quit
-short-circuited to a status BEFORE the tile lookup, so an accept button's
-action never fired and any value it copied into a variable via get_tile was
-lost (the greet example returned nil and crashed)."
-  (multiple-value-bind (key value) (terminal-parse-command line)
+The line grammar is:
+  KEY            activate the tile — press a button, flip a toggle, select a
+                 radio_button / list item ($reason 1 = selected)
+  KEY=VALUE      change the tile's value ($reason 2 = changed for edit_box /
+                 slider; a select for list/popup/toggle)
+  KEY==VALUE     double-click select ($reason 4)
+  KEY! / KEY=V!  the tile loses focus after the edit ($reason 3)
+
+A named tile fires its registered action — including the `accept' / `cancel'
+predefined buttons (now real tiles after cluster expansion). Only when the
+word names no tile do we fall back to the bare accept->1 / cancel->0
+convention (terminal-fire-registered), kept as a harmless stopgap for a
+dialog that ships no explicit accept/cancel tile."
+  (multiple-value-bind (key value modifier) (terminal-parse-command line)
     (let ((entry (assoc key interactive :test #'string=)))
       (cond
         (entry
          (let ((tile (cdr entry)))
            (case (dcl-tile-type tile)
-             (:button
+             ((:button :image-button)
               (or (terminal-handle-button dialog tile key) :continue))
              (otherwise
-              (terminal-handle-value-tile dialog tile key value)
+              (terminal-handle-value-tile dialog tile key value modifier)
               :continue))))
         ((or (string= key "accept") (string= key "ok"))
          (terminal-fire-registered dialog "accept")
@@ -195,13 +352,29 @@ AutoCAD's documented predefined-button behaviour."
                (return result)))))))))
 
 (defun terminal-parse-command (line)
-  "Parse a single TUI command of the form `key` or `key=value`."
+  "Parse one TUI command into (values KEY VALUE MODIFIER). Grammar:
+`key' (:activate), `key=value' (:change), `key==value' (:double, a
+double-click), and a trailing `!' (:commit, focus lost) on either form."
   (let* ((trimmed (string-trim '(#\Space #\Tab #\Return) line))
+         (commit (and (plusp (length trimmed))
+                      (char= (char trimmed (1- (length trimmed))) #\!)))
+         (trimmed (if commit
+                      (string-right-trim '(#\! #\Space) trimmed)
+                      trimmed))
          (eq-pos (position #\= trimmed)))
     (cond
-      ((null eq-pos) (values trimmed nil))
-      (t (values (string-trim '(#\Space) (subseq trimmed 0 eq-pos))
-                 (string-trim '(#\Space) (subseq trimmed (1+ eq-pos))))))))
+      ((null eq-pos)
+       (values trimmed nil (if commit :commit :activate)))
+      (t
+       (let* ((key (string-trim '(#\Space) (subseq trimmed 0 eq-pos)))
+              (rest (subseq trimmed (1+ eq-pos)))
+              (double (and (plusp (length rest)) (char= (char rest 0) #\=)))
+              (value (string-trim '(#\Space)
+                                  (if double (subseq rest 1) rest))))
+         (values key value
+                 (cond (double :double)
+                       (commit :commit)
+                       (t :change))))))))
 
 (defun make-terminal-renderer ()
   (make-dcl-renderer

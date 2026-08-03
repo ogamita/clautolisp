@@ -592,6 +592,60 @@ on a per-session log, echoes a ~Command: ...~ line, and returns
 signals ~:host-not-supported~ (~vl-cmdf~ instead returns ~nil~, per
 its T / nil success contract).
 
+** DCL dialogs — renderer selection and the "-" convention
+An AutoLISP program that puts up a DCL dialog (~load_dialog~ /
+~new_dialog~ / ~action_tile~ / ~start_dialog~) is driven by a
+*renderer*. clautolisp ships two:
+
+- the *terminal (TUI) renderer* — a pure line-oriented rendering of the
+  dialog, so a dialog runs headless (piped stdin, CI, a script); and
+- the *GUI renderer* — a subprocess GUI driver (e.g. the Qt app in
+  ~tools/clautolisp-gui-qt~) selected with ~--gui CMD~ or the
+  ~$CLAUTOLISP_GUI~ environment variable, speaking a sexp wire protocol.
+
+~--dcl MODE~ chooses between them:
+
+- ~--dcl tui~   :: Force the terminal / command-line form, even when a GUI
+                   driver is configured. This is clautolisp's spelling of
+                   AutoCAD's ~-command~ convention: in AutoCAD, prefixing a
+                   command with ~-~ runs its command-line (non-dialog)
+                   form; clautolisp has no per-command dispatcher, so the
+                   whole-session ~--dcl tui~ flag requests that form for
+                   every dialog the run puts up.
+- ~--dcl gui~   :: Use the subprocess GUI driver. If none is configured
+                   (~--gui~ / ~$CLAUTOLISP_GUI~), clautolisp warns and
+                   falls back to the TUI.
+- ~--dcl auto~  :: (default) Use the GUI when a driver is configured *and*
+                   stdout is a terminal; otherwise the TUI. So every
+                   headless / piped / redirected run — exactly the
+                   ~-command~ scenario — automatically gets the
+                   command-line form with no extra flag.
+
+*Driving the TUI.* The terminal renderer paints the tile tree, then reads
+one command per line until a button's action calls ~done_dialog~ (or EOF,
+which cancels). A command is:
+
+| input        | effect                                                     | ~$reason~ |
+|--------------+------------------------------------------------------------+-----------|
+| ~KEY~        | activate KEY: press a button, flip a toggle, select a       |         1 |
+|              | radio_button / list item                                    |           |
+| ~KEY=VALUE~  | set KEY's value — an edit_box / slider change (~$reason~ 2), |     2 / 1 |
+|              | or a list_box / popup_list / toggle selection (~$reason~ 1) |           |
+| ~KEY==VALUE~ | double-click select KEY                                     |         4 |
+| ~KEY!~       | KEY loses focus after the edit                              |         3 |
+
+A ~list_box~ / ~popup_list~ value is the selected item's 0-based *index*
+(a name is resolved to its index); ~get_tile~ returns that index string,
+as in AutoCAD/BricsCAD. A ~radio_column~ / ~radio_row~ with its own key
+returns the selected ~radio_button~'s key from ~get_tile~. The predefined
+clusters (~ok_cancel~, ~ok_only~, ~ok_cancel_help~, …) expand into real
+~accept~ / ~cancel~ / ~help~ button tiles, so ~(action_tile "accept" …)~
+is reachable.
+
+See ~examples/all-widgets/~ (one of every tile type, with a labelled
+value report you can diff against AutoCAD / BricsCAD) and
+~examples/greet~ / ~examples/listpick~.
+
 ** Interactive user input (~get*~ functions)
 AutoCAD and BricsCAD gather the answers to the interactive input
 functions — ~getstring~, ~getint~, ~getreal~, ~getpoint~, ~getcorner~,

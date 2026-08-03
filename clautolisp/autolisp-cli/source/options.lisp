@@ -65,6 +65,7 @@
   ;; Clautolisp-only
   (mock-input       nil)              ; C   --mock-input PATH (string)
   (gui              nil)              ; C   --gui CMD          (string)
+  (dcl              :auto)            ; C   --dcl tui|gui|auto — DCL renderer selection
   (trace-p          nil)              ; C   --trace
   ;; Dribble (dribble.issue; clautolisp today, alfe planned)
   (dribble          nil)              ; C   --dribble / --dribble=FILE → t / FILE (string)
@@ -252,6 +253,22 @@ names/aliases, yielding the list of name strings."
                       :message
                       (format nil "~A got no interactor names in ~S" option value)))
              (nreverse names)))))
+
+(defun parse-dcl-mode (value option)
+  "The --dcl DCL-renderer selection: tui (force the terminal / command-line
+form — the clautolisp spelling of AutoCAD's `-command' convention), gui (the
+subprocess GUI renderer), or auto (GUI when a driver is configured and stdout
+is a TTY, otherwise the TUI — so every headless / piped run gets the TUI).
+`terminal' / `text' are accepted spellings of tui."
+  (cond ((or (string-equal value "tui")
+             (string-equal value "terminal")
+             (string-equal value "text")) :tui)
+        ((string-equal value "gui")  :gui)
+        ((string-equal value "auto") :auto)
+        (t (error 'cli-usage-error
+                  :option option
+                  :message
+                  (format nil "Unknown --dcl mode ~S (expected tui/gui/auto)" value)))))
 
 (defun parse-user-interface (value option)
   "The --debugger-ui selection: tui (the line/terminal UI; `terminal' and

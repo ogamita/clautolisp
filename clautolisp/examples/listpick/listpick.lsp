@@ -1,6 +1,8 @@
 (defun c:listpick (/ id status pick)
-  (setq id (load_dialog
-            "/Users/pjb/src/public/clautolisp/clautolisp/examples/listpick/listpick.dcl"))
+  ;; Relative name: run from this directory (clautolisp resolves a relative
+  ;; load_dialog against the cwd; in AutoCAD/BricsCAD put it on the support
+  ;; path). Keeps an absolute path out of the committed file.
+  (setq id (load_dialog "listpick.dcl"))
   (cond
     ((< id 0) (princ "\nCould not load listpick.dcl"))
     (T

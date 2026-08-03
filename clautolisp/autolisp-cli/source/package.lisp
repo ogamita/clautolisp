@@ -49,6 +49,7 @@
    #:cli-options-main            ; A — symbol name (string)
    #:cli-options-mock-input      ; C — clautolisp mock-host prompt-stream
    #:cli-options-gui             ; C — clautolisp DCL subprocess renderer
+   #:cli-options-dcl             ; C — clautolisp --dcl tui|gui|auto renderer selection
    #:cli-options-trace-p         ; C — clautolisp --trace
    #:cli-options-on-error        ; C — clautolisp --on-error policy
    #:cli-options-on-interrupt    ; C — clautolisp --on-interrupt policy
@@ -73,6 +74,7 @@
    #:parse-on-interrupt
    #:parse-on-quit
    #:parse-user-interface
+   #:parse-dcl-mode
    #:parse-aldb-listen
    #:parse-dribble-interactors
 

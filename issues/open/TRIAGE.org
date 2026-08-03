@@ -136,7 +136,7 @@ the shared blocker.
 ** DCL (dialog control language)
 | Issue               | Status | Note |
 |---------------------+--------+------|
-| dcl-tui-completion  | TODO   | complete the terminal (TUI) DCL renderer for headless/"-" commands; greet works (1.7.15), remaining: expand ok_cancel clusters, toggle/radio/list interaction, TUI-vs-GUI selection |
+| dcl-tui-completion  | IN PROGRESS | TUI complete (1.7.18): clusters expand, all interactive tiles round-trip, --dcl tui\vert{}gui\vert{}auto selection, $reason breadth, all-widgets + listpick examples/tests green; remaining = the Qt C++ GUI app (item 6, opendcl epic) |
 
 *** OpenDCL (feature build; no code yet — one epic per opendcl.plan)
 opendcl-runtime-core, opendcl-controls, opendcl-host-pickers,
