@@ -118,3 +118,25 @@ removes only alfe's own protocol/ scratch and leaves the caller's files."
     (ensure-directories-exist base)
     (alfe.workdir:remove-workdir base)
     (is (not (uiop:directory-exists-p base)))))
+
+;;; --- workdir random tag is seeded (workdir-random-tag-unseeded) ---
+
+(test workdir-random-tag-is-seeded-and-varies
+  "random-tag must draw from a high-entropy per-process state, not the
+implementation's fixed default sequence: before the seed fix every
+process produced the SAME 6-char tag (workdir-random-tag-unseeded.issue)."
+  ;; well-formed: 6 lowercase alphanumerics
+  (let ((tag (alfe.workdir::random-tag)))
+    (is (= 6 (length tag)))
+    (is (every (lambda (c) (or (digit-char-p c) (char<= #\a c #\z))) tag)))
+  ;; Simulate fresh-process starts: clear the memoised state so the next
+  ;; call re-seeds via (make-random-state t), and take the first tag each
+  ;; time. A properly seeded generator yields differing first tags; an
+  ;; unseeded / fixed-seed one repeats the same tag every time.
+  (let ((first-tags
+          (loop repeat 8
+                collect (progn (setf alfe.workdir::*tag-random-state* nil)
+                               (alfe.workdir::random-tag)))))
+    (is (> (length (remove-duplicates first-tags :test #'string=)) 1)))
+  ;; Reset so later callers get a fresh seed rather than our torn-down one.
+  (setf alfe.workdir::*tag-random-state* nil))

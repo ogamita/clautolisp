@@ -6867,17 +6867,17 @@ the caller can fall back to a placeholder triple)."
     (list (list 0.0d0 0.0d0 0.0d0)
           (list width height 0.0d0))))
 
+(defparameter *vle-vector-tolerance* 1.0d-10
+  "Tolerance used by VLE-VECTOR-* equality / parallelism /
+codirectionality predicates. Land alongside VLE_G_VECTOL so
+later M3 (vector math) functions can pick it up from one place.")
+
 (defun builtin-vle-g-vectol ()
   ;; (vle_g_vectol) -> tolerance value used by VLE-VECTOR-* operators.
   ;; Documented as "geometric tolerance, double-float", default 1e-10.
   ;; Configurable via the same Visual LISP path Autodesk exposes — we
   ;; ship a session-scoped binding via a defparameter.
   *vle-vector-tolerance*)
-
-(defparameter *vle-vector-tolerance* 1.0d-10
-  "Tolerance used by VLE-VECTOR-* equality / parallelism /
-codirectionality predicates. Land alongside VLE_G_VECTOL so
-later M3 (vector math) functions can pick it up from one place.")
 
 ;;; ---- CLI no-ops (no graphics surface in a headless engine) ----
 ;;;
