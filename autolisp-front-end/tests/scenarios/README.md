@@ -27,8 +27,8 @@ scenarios/
 |--------------------+---------------------------------------------------------------------------|
 | `:portable`        | Always (no backend required).                                             |
 | `:clautolisp-only` | The clautolisp backend is registered (the default).                       |
-| `:bricscad-only`   | BricsCAD's `detect` succeeds on the host.                                 |
-| `:autocad-only`    | AutoCAD's `detect` succeeds — i.e. running on Windows.                    |
+| `:bricscad-only`   | `$ALFE_VENDOR_CONFORMANCE` is set and BricsCAD detection succeeds.       |
+| `:autocad-only`    | `$ALFE_VENDOR_CONFORMANCE` is set and AutoCAD detection succeeds.        |
 | `:parity`          | `$AUTOLISP_LEGACY` points at a co-located legacy bash wrapper.            |
 
 Scenarios that can't run on the current host return `:skipped`

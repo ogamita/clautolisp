@@ -776,6 +776,10 @@ subprocess variant."
                       (otherwise (string-downcase (symbol-name host))))))
     (append (list binary
                   "--quiet"
+                  ;; The front-end owns bootstrap/init policy.  Loading the
+                  ;; spawned CLI's user rc files here makes subprocess runs
+                  ;; differ from the direct backend and contaminates tests.
+                  "--no-init"
                   "--dialect" (dialect-cli-name dialect)
                   "--host"    host-name)
             ;; Forward the user's `source' encoding so the spawned

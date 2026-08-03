@@ -543,10 +543,10 @@ stdout.txt so the test driver can verify the round-trip."
          (alfe.protocol.file:write-atomic-file
           (alfe.protocol.file:protocol-session-status-path protocol-session)
           (format nil "DONE ~D OK" (1+ i)))
-         (sleep 0.05)
-         (alfe.protocol.file:write-atomic-file
-          (alfe.protocol.file:protocol-session-status-path protocol-session)
-          (format nil "READY ~D" (1+ i)))))
+         ;; Keep DONE published until the next cycle consumes stdin and
+         ;; replaces it with RUNNING. A fixed sleep lets a busy scheduler
+         ;; miss DONE entirely and makes the mock nondeterministic.
+         ))
      ;; Wait for SHUTDOWN.
      (let ((control (alfe.protocol.file:protocol-session-control-path protocol-session))
            (deadline (+ (get-internal-real-time)
