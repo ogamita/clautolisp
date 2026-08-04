@@ -176,3 +176,54 @@ document. Repeated calls return the same application object."
                 (com-object->vla app))
           (setf (mock-host-acad-application-id host) (mock-com-object-id app))
           (com-object->vla app)))))
+
+;;; --- Entity <-> VLA-object bridge + introspection ----------------
+
+(defmethod host-vlax-ename->vla-object ((host mock-host) ename)
+  "Wrap entity ENAME in an identity-stable COM object (progid
+\"AutoCAD.Entity\") carrying its hex handle, so vlax-vla-object->ename
+round-trips and vlax-curve-* can recover the entity."
+  (let* ((handle (ename->handle ename 'vlax-ename->vla-object))
+         (cached-id (gethash handle (mock-host-entity-vla-map host)))
+         (cached (and cached-id (mock-host-find-com-object host cached-id))))
+    (if (and cached (not (mock-com-object-released-p cached)))
+        (com-object->vla cached)
+        (let ((obj (%register-mock-com-object
+                    host (make-mock-com-object :progid "AutoCAD.Entity"
+                                               :backing-ename handle))))
+          (setf (gethash handle (mock-host-entity-vla-map host))
+                (mock-com-object-id obj))
+          (com-object->vla obj)))))
+
+(defmethod host-vlax-vla-object->ename ((host mock-host) vla)
+  (let* ((obj (resolve-vla-object host vla 'vlax-vla-object->ename))
+         (handle (mock-com-object-backing-ename obj)))
+    (if handle
+        (handle->ename host handle)
+        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+         :not-an-entity-vla-object
+         "vlax-vla-object->ename: ~A is not an entity-backed VLA-OBJECT."
+         (mock-com-object-progid obj)))))
+
+(defmethod host-vlax-erased-p ((host mock-host) vla)
+  ;; Do NOT go through resolve-vla-object: a released object must report
+  ;; erased = T, not signal :released-vla-object.
+  (ensure-vla-object vla 'vlax-erased-p)
+  (let* ((id (clautolisp.autolisp-runtime:autolisp-vla-object-value vla))
+         (obj (mock-host-find-com-object host id)))
+    (cond
+      ((null obj) t)                    ; unknown -> gone
+      ((mock-com-object-backing-ename obj)
+       (null (safe-find-entity (mock-host-active-drawing host)
+                               (mock-com-object-backing-ename obj))))
+      (t (mock-com-object-released-p obj)))))
+
+(defmethod host-vlax-describe-object ((host mock-host) vla)
+  (let ((obj (resolve-vla-object host vla 'vlax-describe-object))
+        (props '())
+        (methods '()))
+    (maphash (lambda (k v) (push (cons k v) props))
+             (mock-com-object-properties obj))
+    (maphash (lambda (k v) (declare (ignore v)) (push k methods))
+             (mock-com-object-methods obj))
+    (values (nreverse props) (nreverse methods))))

@@ -412,6 +412,13 @@ separate binary for tool integrators.
   ~vla-*~ methods expect; ~vlax-safearray-get-dim~ and
   ~vlax-safearray-value~ (nested for multi-dim) round out the safearray
   surface.
+- Object-model bridge + introspection: ~vlax-ename->vla-object~ /
+  ~vlax-vla-object->ename~ convert between an entity name and an
+  identity-stable VLA-object (so it round-trips and ~vlax-curve-*~ can
+  recover the entity); ~vlax-erased-p~ tracks entity deletion / object
+  release; ~vlax-read-enabled-p~ / ~vlax-write-enabled-p~,
+  ~vlax-typeinfo-available-p~, ~vlax-dump-object~ and
+  ~vlax-import-type-library~ complete the introspection surface.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

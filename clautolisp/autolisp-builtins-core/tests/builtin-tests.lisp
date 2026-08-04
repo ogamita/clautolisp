@@ -2431,6 +2431,37 @@ NIL when GETSTRING returns nil)."
              (%vla "(setq a (vlax-make-safearray vlax-vbInteger '(0 . 2)))(vlax-safearray-fill a '(10 20 30))(vlax-safearray-value a)")))
   (is (eql 1 (%vla "(vlax-safearray-get-dim (vlax-make-safearray vlax-vbInteger '(0 . 2)))"))))
 
+;;; --- vlax-* group B: entity<->vla bridge + introspection ---------
+
+(defparameter +vla-line+
+  "(vl-load-com)(setq e (entmakex '((0 . \"LINE\")(10 0.0 0.0 0.0)(11 10.0 0.0 0.0))))")
+
+(test vlax-ename->vla-object-round-trips
+  ;; ename -> vla -> ename yields the same (eq) ename object.
+  (is (%vla (concatenate 'string +vla-line+
+                         "(eq e (vlax-vla-object->ename (vlax-ename->vla-object e)))"))))
+
+(test vlax-ename->vla-object-is-identity-stable
+  (is (%vla (concatenate 'string +vla-line+
+                         "(equal (vlax-vla-object->ename (vlax-ename->vla-object e))"
+                         "       (vlax-vla-object->ename (vlax-ename->vla-object e)))"))))
+
+(test vlax-erased-p-tracks-entity-deletion
+  (is (null (%vla (concatenate 'string +vla-line+
+                               "(vlax-erased-p (vlax-ename->vla-object e))"))))
+  ;; A released COM object reports erased without signalling.
+  (is (%vla (concatenate 'string +vla-line+
+                         "(setq v (vlax-ename->vla-object e))(entdel e)(vlax-erased-p v)"))))
+
+(test vlax-read-write-typeinfo-on-document
+  (is (%vla "(vl-load-com)(vlax-read-enabled-p (vla-get-activedocument (vlax-get-acad-object)))"))
+  (is (%vla "(vl-load-com)(vlax-write-enabled-p (vla-get-activedocument (vlax-get-acad-object)))"))
+  (is (%vla "(vl-load-com)(vlax-typeinfo-available-p (vla-get-activedocument (vlax-get-acad-object)))")))
+
+(test vlax-import-type-library-and-dump-object-return-t
+  (is (%vla "(vl-load-com)(vlax-import-type-library :tlb-filename \"x.tlb\")"))
+  (is (%vla "(vl-load-com)(vlax-dump-object (vla-get-activedocument (vlax-get-acad-object)))")))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs

@@ -187,7 +187,11 @@
                 #:host-vlax-invoke-method
                 #:host-vlax-property-available-p
                 #:host-vlax-method-applicable-p
-                #:host-vlax-get-acad-object)
+                #:host-vlax-get-acad-object
+                #:host-vlax-ename->vla-object
+                #:host-vlax-vla-object->ename
+                #:host-vlax-erased-p
+                #:host-vlax-describe-object)
   (:export
    #:*core-builtin-names*
    #:core-builtins

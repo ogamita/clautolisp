@@ -151,6 +151,10 @@ not implement OPERATION."
 (defgeneric host-vlax-property-available-p(host vla-object name)   (:documentation "True if NAME is an available property on the COM object."))
 (defgeneric host-vlax-method-applicable-p (host vla-object name)   (:documentation "True if NAME is an applicable method on the COM object."))
 (defgeneric host-vlax-get-acad-object     (host)                   (:documentation "Return the top-level application COM object (vlax-get-acad-object). One singleton per host."))
+(defgeneric host-vlax-ename->vla-object   (host ename)             (:documentation "Return the VLA-object wrapping entity ENAME (vlax-ename->vla-object)."))
+(defgeneric host-vlax-vla-object->ename   (host vla-object)        (:documentation "Return the entity ENAME an entity-backed VLA-object wraps (vlax-vla-object->ename), or NIL."))
+(defgeneric host-vlax-erased-p            (host vla-object)        (:documentation "True if the object (entity-backed or COM) has been erased/released (vlax-erased-p)."))
+(defgeneric host-vlax-describe-object     (host vla-object)        (:documentation "Return (values PROPERTY-ALIST METHOD-NAME-LIST) for a COM object; backs vlax-dump-object / -typeinfo-available-p."))
 
 ;;; --- Base-class fallback methods --------------------------------
 ;;;
@@ -228,3 +232,7 @@ not implement OPERATION."
 (defmethod host-vlax-property-available-p ((host host) vla-object name)   (declare (ignore vla-object name)) (signal-host-not-supported host 'vlax-property-available-p))
 (defmethod host-vlax-method-applicable-p  ((host host) vla-object name)   (declare (ignore vla-object name)) (signal-host-not-supported host 'vlax-method-applicable-p))
 (defmethod host-vlax-get-acad-object      ((host host))                   (signal-host-not-supported host 'vlax-get-acad-object))
+(defmethod host-vlax-ename->vla-object    ((host host) ename)             (declare (ignore ename)) (signal-host-not-supported host 'vlax-ename->vla-object))
+(defmethod host-vlax-vla-object->ename    ((host host) vla-object)        (declare (ignore vla-object)) (signal-host-not-supported host 'vlax-vla-object->ename))
+(defmethod host-vlax-erased-p             ((host host) vla-object)        (declare (ignore vla-object)) (signal-host-not-supported host 'vlax-erased-p))
+(defmethod host-vlax-describe-object      ((host host) vla-object)        (declare (ignore vla-object)) (signal-host-not-supported host 'vlax-describe-object))

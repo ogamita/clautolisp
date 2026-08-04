@@ -39,7 +39,11 @@ vlax-release-object."
   (progid      "" :type string)
   (properties  (make-hash-table :test #'equalp))
   (methods     (make-hash-table :test #'equalp))
-  (released-p  nil :type boolean))
+  (released-p  nil :type boolean)
+  ;; When this COM object is the ActiveX wrapper of a drawing entity
+  ;; (vlax-ename->vla-object), BACKING-ENAME is that entity's hex-handle
+  ;; string; NIL for ordinary application/document/collection objects.
+  (backing-ename nil))
 
 ;;; --- MockHost ---------------------------------------------------
 
@@ -114,6 +118,25 @@ COM-object ids.")
 singleton AutoCAD.Application returned by (vlax-get-acad-object),
 or NIL before the first call. Lazily created together with its
 ActiveDocument so the vla-get-activedocument chain resolves.")
+   (entity-vla-map           :initform (make-hash-table :test #'equal)
+                             :accessor mock-host-entity-vla-map
+                             :documentation "Entity hex-handle string ->
+COM-object id of its vlax-ename->vla-object wrapper, so repeated
+conversions of the same entity yield the same (identity-stable) VLA
+object and vlax-vla-object->ename round-trips.")
+   (ldata-store              :initform (make-hash-table :test #'equal)
+                             :accessor mock-host-ldata-store
+                             :documentation "Persistent vlax-ldata store:
+maps a (DICT-KEY . PRIVATE-P) namespace string to an alist of
+(entry-key . value). DICT-KEY is the dictionary's identity (COM id or
+global-dictionary name). Survives for the host's lifetime — the headless
+CAD analogue of ldata stored in the drawing.")
+   (registered-commands      :initform '()
+                             :accessor mock-host-registered-commands
+                             :documentation "Reverse-order list of
+(global-name local-name . function) registered by vlax-add-cmd, and the
+queue fed by vlax-queueexpr. Headless has no interactive command line, so
+this records registrations/queued expressions for introspection.")
    (open-complex-handle      :initform nil
                              :accessor mock-host-open-complex-handle
                              :documentation "The hex handle of the

@@ -5619,6 +5619,73 @@ this is a singleton AutoCAD.Application whose ActiveDocument resolves to
 a document object; on a real CAD host it is the live acad app."
   (host-vlax-get-acad-object (current-evaluation-host)))
 
+;;; --- Object-model bridge + introspection (Group B) ---------------
+
+(defun builtin-vlax-ename->vla-object (ename)
+  "Entity name -> VLA-object (spec 69468)."
+  (host-vlax-ename->vla-object (current-evaluation-host) ename))
+
+(defun builtin-vlax-vla-object->ename (vla)
+  "VLA-object -> entity name; inverse of the above (spec 69515)."
+  (host-vlax-vla-object->ename (current-evaluation-host) vla))
+
+(defun builtin-vlax-erased-p (vla)
+  "Non-nil if the object has been erased/released (spec 71674)."
+  (if (host-vlax-erased-p (current-evaluation-host) vla)
+      (autolisp-true)
+      nil))
+
+(defun builtin-vlax-typeinfo-available-p (vla)
+  "T if TypeLib info exists for the object (spec 72201). On the mock,
+objects that expose methods have type info; entity wrappers and bare
+records do not. SPEC-UNCERTAIN: the precise per-object answer (e.g.
+AcadDocument) is a vendor detail we approximate by method presence."
+  (multiple-value-bind (props methods)
+      (host-vlax-describe-object (current-evaluation-host) vla)
+    (declare (ignore props))
+    (if methods (autolisp-true) nil)))
+
+(defun builtin-vlax-read-enabled-p (vla)
+  "T if the object can be read — i.e. it is not erased/released (spec 70303)."
+  (if (host-vlax-erased-p (current-evaluation-host) vla) nil (autolisp-true)))
+
+(defun builtin-vlax-write-enabled-p (object)
+  "T if the drawing object can be modified (spec 70839). Accepts a
+VLA-object or an ename. Writable = live and not flagged ReadOnly."
+  (let* ((host (current-evaluation-host))
+         (vla (if (typep object 'autolisp-ename)
+                  (host-vlax-ename->vla-object host object)
+                  object)))
+    (cond
+      ((host-vlax-erased-p host vla) nil)
+      ((and (host-vlax-property-available-p host vla "ReadOnly")
+            (host-vlax-get-property host vla "ReadOnly"))
+       nil)
+      (t (autolisp-true)))))
+
+(defun builtin-vlax-import-type-library (&rest args)
+  "Import a COM type-library's wrappers (spec 70070). Headless clautolisp
+resolves vla-* dynamically (the accessor façade), so there are no static
+wrappers to generate; the keyword form is accepted and T is returned."
+  (declare (ignore args))
+  (autolisp-true))
+
+(defun builtin-vlax-dump-object (vla &optional detail)
+  "Print an object's properties (and, when DETAIL is non-nil, its
+methods) to standard output; returns T (spec 69945)."
+  (multiple-value-bind (props methods)
+      (host-vlax-describe-object (current-evaluation-host) vla)
+    (let ((out *standard-output*))
+      (format out "; Object properties:~%")
+      (dolist (p props)
+        (format out ";   ~A~%" (car p)))
+      (when detail
+        (format out "; Methods supported:~%")
+        (dolist (m methods)
+          (format out ";   ~A~%" m)))
+      (finish-output out))
+    (autolisp-true)))
+
 ;;; --- Dynamic vla-* accessor façade -------------------------------
 ;;
 ;; Visual LISP does not ship fixed vla-get-Foo functions: after
@@ -8631,14 +8698,11 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "VLAX-CURVE-GETSECONDDERIV" "VLAX-CURVE-GETSTARTPARAM"
     "VLAX-CURVE-GETSTARTPOINT" "VLAX-CURVE-ISCLOSED"
     "VLAX-CURVE-ISPERIODIC" "VLAX-CURVE-ISPLANAR"
-    "VLAX-DUMP-OBJECT" "VLAX-ENAME->VLA-OBJECT" "VLAX-ERASED-P"
-    "VLAX-FOR" "VLAX-IMPORT-TYPE-LIBRARY"
+    "VLAX-FOR"
     "VLAX-LDATA-DELETE" "VLAX-LDATA-GET" "VLAX-LDATA-LIST"
     "VLAX-LDATA-PUT" "VLAX-LDATA-TEST" "VLAX-MACHINE-PRODUCT-KEY"
     "VLAX-MAP-COLLECTION" "VLAX-PRODUCT-KEY" "VLAX-QUEUEEXPR"
-    "VLAX-READ-ENABLED-P" "VLAX-REMOVE-CMD"
-    "VLAX-TYPEINFO-AVAILABLE-P" "VLAX-USER-PRODUCT-KEY"
-    "VLAX-VLA-OBJECT->ENAME" "VLAX-WRITE-ENABLED-P"
+    "VLAX-REMOVE-CMD" "VLAX-USER-PRODUCT-KEY"
     ;; VLA-* (2)
     "VLA-COLLECTION->LIST" "VLA-POSTCOMMAND"
     ;; VLR-* (4)
@@ -8877,6 +8941,14 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "VLAX-TMATRIX"                 #'builtin-vlax-tmatrix)
    (make-core-builtin-subr "VLAX-SAFEARRAY-GET-DIM"       #'builtin-vlax-safearray-get-dim)
    (make-core-builtin-subr "VLAX-SAFEARRAY-VALUE"         #'builtin-vlax-safearray-value)
+   (make-core-builtin-subr "VLAX-ENAME->VLA-OBJECT"       #'builtin-vlax-ename->vla-object)
+   (make-core-builtin-subr "VLAX-VLA-OBJECT->ENAME"       #'builtin-vlax-vla-object->ename)
+   (make-core-builtin-subr "VLAX-ERASED-P"                #'builtin-vlax-erased-p)
+   (make-core-builtin-subr "VLAX-TYPEINFO-AVAILABLE-P"    #'builtin-vlax-typeinfo-available-p)
+   (make-core-builtin-subr "VLAX-READ-ENABLED-P"          #'builtin-vlax-read-enabled-p)
+   (make-core-builtin-subr "VLAX-WRITE-ENABLED-P"         #'builtin-vlax-write-enabled-p)
+   (make-core-builtin-subr "VLAX-IMPORT-TYPE-LIBRARY"     #'builtin-vlax-import-type-library)
+   (make-core-builtin-subr "VLAX-DUMP-OBJECT"             #'builtin-vlax-dump-object)
    (make-core-builtin-subr "VLAX-PROPERTY-AVAILABLE-P"    #'builtin-vlax-property-available-p)
    (make-core-builtin-subr "VLAX-METHOD-APPLICABLE-P"     #'builtin-vlax-method-applicable-p)
    (make-core-builtin-subr "VLAX-MAKE-SAFEARRAY"          #'builtin-vlax-make-safearray)
