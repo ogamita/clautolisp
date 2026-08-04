@@ -5686,6 +5686,93 @@ methods) to standard output; returns T (spec 69945)."
       (finish-output out))
     (autolisp-true)))
 
+;;; --- LDATA + product-key / command registration (Groups C, D) ----
+
+(defun %al->cl-string (x)
+  (cond ((typep x 'autolisp-string) (autolisp-string-value x))
+        ((stringp x) x)
+        (t x)))
+
+(defun %ldata-storable-p (value)
+  "Value categories admissible as ldata (spec 71931): numbers, strings,
+lists, enames, VLA-objects, variants, safearrays, T and nil. Functions
+(subr / usubr) are not storable."
+  (typecase value
+    (null t)
+    (cons t)
+    (number t)
+    (autolisp-string t)
+    (autolisp-ename t)
+    (autolisp-vla-object t)
+    (autolisp-variant t)
+    (autolisp-safearray t)
+    (autolisp-symbol t)
+    (t nil)))
+
+(defun builtin-vlax-ldata-put (dict key value &optional private)
+  (host-vlax-ldata-put (current-evaluation-host) dict key value private))
+
+(defun builtin-vlax-ldata-get (dict key &optional default private)
+  (host-vlax-ldata-get (current-evaluation-host) dict key default private))
+
+(defun builtin-vlax-ldata-delete (dict key &optional private)
+  (if (host-vlax-ldata-delete (current-evaluation-host) dict key private)
+      (autolisp-true)
+      nil))
+
+(defun builtin-vlax-ldata-list (dict &optional private)
+  (mapcar (lambda (pair) (cons (make-autolisp-string (car pair)) (cdr pair)))
+          (host-vlax-ldata-list (current-evaluation-host) dict private)))
+
+(defun builtin-vlax-ldata-test (value)
+  (if (%ldata-storable-p value) (autolisp-true) nil))
+
+(defun builtin-vlax-machine-product-key ()
+  "HKLM registry path for the product (spec 71970). Headless clautolisp
+returns a synthetic path for the emulated CAD product."
+  (make-autolisp-string
+   "HKEY_LOCAL_MACHINE\\SOFTWARE\\clautolisp\\headless-cad\\R1.7"))
+
+(defun builtin-vlax-user-product-key ()
+  (make-autolisp-string
+   "HKEY_CURRENT_USER\\SOFTWARE\\clautolisp\\headless-cad\\R1.7"))
+
+(defun builtin-vlax-product-key ()
+  "Obsolete; prefer vlax-machine-product-key (spec 72007)."
+  (builtin-vlax-machine-product-key))
+
+(defun builtin-vlax-add-cmd (global-name function &optional local-or-flags flags)
+  "Register a command (spec 9703). Accepts (global func [local [flags]])
+and (global func [flags]); returns the global name. Headless records the
+registration for introspection — there is no interactive command line."
+  ;; 3-arg form (global func flags): a bare integer in the third slot is
+  ;; command flags, not a local name.
+  (let ((local (if (and local-or-flags (null flags) (integerp local-or-flags))
+                   nil
+                   local-or-flags)))
+    (make-autolisp-string
+     (host-vlax-add-cmd (current-evaluation-host)
+                        (%al->cl-string global-name)
+                        function
+                        (and local (%al->cl-string local))
+                        flags))))
+
+(defun builtin-vlax-remove-cmd (global-name)
+  "Remove a registered command (spec 72079); T removes the whole group.
+Returns T if something was removed, else nil."
+  (let ((g (if (and (typep global-name 'autolisp-symbol)
+                    (string= (autolisp-symbol-name global-name) "T"))
+               t
+               (%al->cl-string global-name))))
+    (if (host-vlax-remove-cmd (current-evaluation-host) g)
+        (autolisp-true)
+        nil)))
+
+(defun builtin-vlax-queueexpr (string)
+  "Queue a command / Lisp string for async execution (spec 81387,
+BricsCAD); always returns nil."
+  (host-vlax-queueexpr (current-evaluation-host) (%al->cl-string string)))
+
 ;;; --- Dynamic vla-* accessor façade -------------------------------
 ;;
 ;; Visual LISP does not ship fixed vla-get-Foo functions: after
@@ -8686,8 +8773,8 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "ACET-VIEWPORT-FROZEN-LAYER-LIST" "ACET-VIEWPORT-LOCK-SET"
     "ACET-VIEWPORT-NEXT-PICKABLE" "ACET-WMFIN" "ACET-XDATA-GET"
     "ACET-XDATA-SET"
-    ;; VLAX-* (46)
-    "VLAX-ADD-CMD"
+    ;; VLAX-* (still stubbed: curve geometry [group E] + collection
+    ;; iteration; the rest are now real builtins).
     "VLAX-CURVE-GETAREA" "VLAX-CURVE-GETCLOSESTPOINTTO"
     "VLAX-CURVE-GETCLOSESTPOINTTOPROJECTION"
     "VLAX-CURVE-GETDISTATPARAM" "VLAX-CURVE-GETDISTATPOINT"
@@ -8698,11 +8785,7 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "VLAX-CURVE-GETSECONDDERIV" "VLAX-CURVE-GETSTARTPARAM"
     "VLAX-CURVE-GETSTARTPOINT" "VLAX-CURVE-ISCLOSED"
     "VLAX-CURVE-ISPERIODIC" "VLAX-CURVE-ISPLANAR"
-    "VLAX-FOR"
-    "VLAX-LDATA-DELETE" "VLAX-LDATA-GET" "VLAX-LDATA-LIST"
-    "VLAX-LDATA-PUT" "VLAX-LDATA-TEST" "VLAX-MACHINE-PRODUCT-KEY"
-    "VLAX-MAP-COLLECTION" "VLAX-PRODUCT-KEY" "VLAX-QUEUEEXPR"
-    "VLAX-REMOVE-CMD" "VLAX-USER-PRODUCT-KEY"
+    "VLAX-FOR" "VLAX-MAP-COLLECTION"
     ;; VLA-* (2)
     "VLA-COLLECTION->LIST" "VLA-POSTCOMMAND"
     ;; VLR-* (4)
@@ -8949,6 +9032,17 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "VLAX-WRITE-ENABLED-P"         #'builtin-vlax-write-enabled-p)
    (make-core-builtin-subr "VLAX-IMPORT-TYPE-LIBRARY"     #'builtin-vlax-import-type-library)
    (make-core-builtin-subr "VLAX-DUMP-OBJECT"             #'builtin-vlax-dump-object)
+   (make-core-builtin-subr "VLAX-LDATA-PUT"               #'builtin-vlax-ldata-put)
+   (make-core-builtin-subr "VLAX-LDATA-GET"               #'builtin-vlax-ldata-get)
+   (make-core-builtin-subr "VLAX-LDATA-DELETE"            #'builtin-vlax-ldata-delete)
+   (make-core-builtin-subr "VLAX-LDATA-LIST"              #'builtin-vlax-ldata-list)
+   (make-core-builtin-subr "VLAX-LDATA-TEST"              #'builtin-vlax-ldata-test)
+   (make-core-builtin-subr "VLAX-MACHINE-PRODUCT-KEY"     #'builtin-vlax-machine-product-key)
+   (make-core-builtin-subr "VLAX-USER-PRODUCT-KEY"        #'builtin-vlax-user-product-key)
+   (make-core-builtin-subr "VLAX-PRODUCT-KEY"             #'builtin-vlax-product-key)
+   (make-core-builtin-subr "VLAX-ADD-CMD"                 #'builtin-vlax-add-cmd)
+   (make-core-builtin-subr "VLAX-REMOVE-CMD"              #'builtin-vlax-remove-cmd)
+   (make-core-builtin-subr "VLAX-QUEUEEXPR"               #'builtin-vlax-queueexpr)
    (make-core-builtin-subr "VLAX-PROPERTY-AVAILABLE-P"    #'builtin-vlax-property-available-p)
    (make-core-builtin-subr "VLAX-METHOD-APPLICABLE-P"     #'builtin-vlax-method-applicable-p)
    (make-core-builtin-subr "VLAX-MAKE-SAFEARRAY"          #'builtin-vlax-make-safearray)

@@ -87,4 +87,11 @@
    #:host-vlax-ename->vla-object
    #:host-vlax-vla-object->ename
    #:host-vlax-erased-p
-   #:host-vlax-describe-object))
+   #:host-vlax-describe-object
+   #:host-vlax-ldata-put
+   #:host-vlax-ldata-get
+   #:host-vlax-ldata-delete
+   #:host-vlax-ldata-list
+   #:host-vlax-add-cmd
+   #:host-vlax-remove-cmd
+   #:host-vlax-queueexpr))

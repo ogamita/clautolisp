@@ -227,3 +227,86 @@ round-trips and vlax-curve-* can recover the entity."
     (maphash (lambda (k v) (declare (ignore v)) (push k methods))
              (mock-com-object-methods obj))
     (values (nreverse props) (nreverse methods))))
+
+;;; --- LDATA (persistent extension-dictionary LISP data) -----------
+
+(defun %ldata-namespace (host dictionary private operator-name)
+  "Namespace string identifying a (dictionary, public/private) ldata
+keyspace. DICTIONARY is a VLA-object or a global-dictionary name string."
+  (let ((dict-id
+          (cond
+            ((typep dictionary 'clautolisp.autolisp-runtime:autolisp-vla-object)
+             (let ((obj (resolve-vla-object host dictionary operator-name)))
+               (or (mock-com-object-backing-ename obj)
+                   (princ-to-string (mock-com-object-id obj)))))
+            ((typep dictionary 'clautolisp.autolisp-runtime:autolisp-string)
+             (clautolisp.autolisp-runtime:autolisp-string-value dictionary))
+            ((stringp dictionary) dictionary)
+            (t (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+                :invalid-ldata-dictionary
+                "~A: dictionary must be a VLA-object or a string, got ~S."
+                operator-name dictionary)))))
+    (format nil "~A|~:[pub~;prv~]" dict-id private)))
+
+(defun %ldata-key (key operator-name)
+  (cond
+    ((typep key 'clautolisp.autolisp-runtime:autolisp-string)
+     (clautolisp.autolisp-runtime:autolisp-string-value key))
+    ((stringp key) key)
+    (t (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+        :invalid-ldata-key
+        "~A: key must be a string, got ~S." operator-name key))))
+
+(defmethod host-vlax-ldata-put ((host mock-host) dictionary key value private)
+  (let* ((ns (%ldata-namespace host dictionary private 'vlax-ldata-put))
+         (k (%ldata-key key 'vlax-ldata-put))
+         (store (mock-host-ldata-store host))
+         (alist (gethash ns store))
+         (cell (assoc k alist :test #'string=)))
+    (if cell
+        (setf (cdr cell) value)
+        (setf (gethash ns store) (append alist (list (cons k value)))))
+    value))
+
+(defmethod host-vlax-ldata-get ((host mock-host) dictionary key default private)
+  (let* ((ns (%ldata-namespace host dictionary private 'vlax-ldata-get))
+         (k (%ldata-key key 'vlax-ldata-get))
+         (cell (assoc k (gethash ns (mock-host-ldata-store host)) :test #'string=)))
+    (if cell (cdr cell) default)))
+
+(defmethod host-vlax-ldata-delete ((host mock-host) dictionary key private)
+  (let* ((ns (%ldata-namespace host dictionary private 'vlax-ldata-delete))
+         (k (%ldata-key key 'vlax-ldata-delete))
+         (store (mock-host-ldata-store host))
+         (alist (gethash ns store)))
+    (when (assoc k alist :test #'string=)
+      (setf (gethash ns store) (remove k alist :key #'car :test #'string=))
+      t)))
+
+(defmethod host-vlax-ldata-list ((host mock-host) dictionary private)
+  (let ((ns (%ldata-namespace host dictionary private 'vlax-ldata-list)))
+    (mapcar (lambda (pair) (cons (car pair) (cdr pair)))
+            (gethash ns (mock-host-ldata-store host)))))
+
+;;; --- Command registration + async expression queue --------------
+
+(defmethod host-vlax-add-cmd ((host mock-host) global-name function local-name flags)
+  (declare (ignore flags))
+  (push (list :cmd global-name (or local-name global-name) function)
+        (mock-host-registered-commands host))
+  global-name)
+
+(defmethod host-vlax-remove-cmd ((host mock-host) global-name)
+  (let* ((cmds (mock-host-registered-commands host))
+         (kept (if (eq global-name t)
+                   (remove :cmd cmds :key #'car)
+                   (remove-if (lambda (e)
+                                (and (eq (car e) :cmd)
+                                     (string-equal (second e) global-name)))
+                              cmds))))
+    (setf (mock-host-registered-commands host) kept)
+    (and (< (length kept) (length cmds)) t)))
+
+(defmethod host-vlax-queueexpr ((host mock-host) string)
+  (push (list :queue string) (mock-host-registered-commands host))
+  nil)

@@ -2462,6 +2462,48 @@ NIL when GETSTRING returns nil)."
   (is (%vla "(vl-load-com)(vlax-import-type-library :tlb-filename \"x.tlb\")"))
   (is (%vla "(vl-load-com)(vlax-dump-object (vla-get-activedocument (vlax-get-acad-object)))")))
 
+;;; --- vlax-* group C (ldata) + group D (product-key / cmd) --------
+
+(test vlax-ldata-put-get-delete-roundtrip
+  (is (eql 42 (%vla "(vl-load-com)(vlax-ldata-put \"D\" \"k\" 42)(vlax-ldata-get \"D\" \"k\")")))
+  (is (eql 99 (%vla "(vl-load-com)(vlax-ldata-get \"D\" \"absent\" 99)")))
+  ;; delete returns AutoLISP T when the entry existed, and the entry is gone.
+  (is (%vla "(vl-load-com)(vlax-ldata-put \"D\" \"k\" 1)(vlax-ldata-delete \"D\" \"k\")"))
+  (is (null (%vla "(vl-load-com)(vlax-ldata-put \"D\" \"k\" 1)(vlax-ldata-delete \"D\" \"k\")(vlax-ldata-get \"D\" \"k\")")))
+  ;; deleting an absent entry returns nil.
+  (is (null (%vla "(vl-load-com)(vlax-ldata-delete \"D\" \"absent\")"))))
+
+(test vlax-ldata-private-and-public-namespaces-are-separate
+  (is (equal '(10 20)
+             (%vla (concatenate 'string
+                                "(vl-load-com)"
+                                "(vlax-ldata-put \"D\" \"k\" 10)"
+                                "(vlax-ldata-put \"D\" \"k\" 20 T)"
+                                "(list (vlax-ldata-get \"D\" \"k\") (vlax-ldata-get \"D\" \"k\" nil T))")))))
+
+(test vlax-ldata-list-and-test
+  (let ((entries (%vla "(vl-load-com)(vlax-ldata-put \"D\" \"a\" 1)(vlax-ldata-put \"D\" \"b\" 2)(vlax-ldata-list \"D\")")))
+    (is (= 2 (length entries)))
+    (is (eql 1 (cdr (find "a" entries
+                          :key (lambda (p) (let ((k (car p)))
+                                             (if (typep k 'autolisp-string)
+                                                 (autolisp-string-value k) k)))
+                          :test #'string=)))))
+  (is (%vla "(vl-load-com)(vlax-ldata-test '(1 2))"))
+  ;; A function is not storable ldata.
+  (is (null (%vla "(vl-load-com)(vlax-ldata-test car)"))))
+
+(test vlax-product-key-and-command-registration
+  (is (stringp (let ((v (%vla "(vl-load-com)(vlax-machine-product-key)")))
+                 (if (typep v 'autolisp-string) (autolisp-string-value v) v))))
+  ;; add-cmd returns the global name; remove-cmd is T then nil.
+  (is (equal "MYCMD" (let ((v (%vla "(vl-load-com)(vlax-add-cmd \"MYCMD\" 'foo)")))
+                       (if (typep v 'autolisp-string) (autolisp-string-value v) v))))
+  ;; remove-cmd is truthy when it removed something, nil when absent.
+  (is (%vla "(vl-load-com)(vlax-add-cmd \"MYCMD\" 'foo)(vlax-remove-cmd \"MYCMD\")"))
+  (is (null (%vla "(vl-load-com)(vlax-remove-cmd \"NOPE\")")))
+  (is (null (%vla "(vl-load-com)(vlax-queueexpr \"(princ)\")"))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs
