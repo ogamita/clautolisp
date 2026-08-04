@@ -405,6 +405,13 @@ separate binary for tool integrators.
   ~(vla-get-activedocument (vlax-get-acad-object))~ works headless on
   ~--host mock~. See the user manual § /Host backend / The ActiveX / COM
   object model/ and ~issues/open/vla-accessor-family.issue~.
+- ActiveX ~vlax-*~ primitives are being promoted from nil-stubs to real
+  implementations behind the same headless-CAD host. Point / matrix
+  builders ~vlax-2d-point~, ~vlax-3d-point~ (Z defaults 0.0),
+  ~vlax-tmatrix~ return the ActiveX VARIANT-wrapped double SAFEARRAYs the
+  ~vla-*~ methods expect; ~vlax-safearray-get-dim~ and
+  ~vlax-safearray-value~ (nested for multi-dim) round out the safearray
+  surface.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

@@ -2405,6 +2405,32 @@ NIL when GETSTRING returns nil)."
   ;; A user (defun vla-get-foo …) shadows the façade for that name.
   (is (eql 42 (%vla "(vl-load-com)(defun vla-get-foo (x) 42)(vla-get-foo nil)"))))
 
+;;; --- vlax-* group A: points / tmatrix / safearray extras ---------
+
+(test vlax-3d-point-builds-variant-double-triple
+  (is (equal '(1.0d0 2.0d0 3.0d0)
+             (%vla "(vlax-safearray->list (vlax-variant-value (vlax-3d-point 1 2 3)))")))
+  ;; A 2D point handed to the 3D form pads Z with 0.0.
+  (is (equal '(1.0d0 2.0d0 0.0d0)
+             (%vla "(vlax-safearray->list (vlax-variant-value (vlax-3d-point '(1 2))))"))))
+
+(test vlax-2d-point-builds-variant-double-pair
+  (is (equal '(4.0d0 5.0d0)
+             (%vla "(vlax-safearray->list (vlax-variant-value (vlax-2d-point 4 5)))"))))
+
+(test vlax-tmatrix-is-a-4x4-safearray
+  (is (eql 2 (%vla "(vlax-safearray-get-dim (vlax-tmatrix '((1 0 0 0)(0 1 0 0)(0 0 1 0)(0 0 0 1))))")))
+  (is (equal '((1.0d0 2.0d0 3.0d0 4.0d0)
+               (5.0d0 6.0d0 7.0d0 8.0d0)
+               (9.0d0 10.0d0 11.0d0 12.0d0)
+               (13.0d0 14.0d0 15.0d0 16.0d0))
+             (%vla "(vlax-safearray-value (vlax-tmatrix '((1 2 3 4)(5 6 7 8)(9 10 11 12)(13 14 15 16))))"))))
+
+(test vlax-safearray-value-and-get-dim-on-1d
+  (is (equal '(10 20 30)
+             (%vla "(setq a (vlax-make-safearray vlax-vbInteger '(0 . 2)))(vlax-safearray-fill a '(10 20 30))(vlax-safearray-value a)")))
+  (is (eql 1 (%vla "(vlax-safearray-get-dim (vlax-make-safearray vlax-vbInteger '(0 . 2)))"))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs

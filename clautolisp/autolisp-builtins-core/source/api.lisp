@@ -5908,6 +5908,119 @@ host does the case-insensitive match."
                    (t :variant))))
     (make-autolisp-variant :value (cons target (cdr pair)))))
 
+;;; --- Points, transform matrices, safearray extras (Group A) -------
+;;;
+;;; vla-* methods that take points/matrices expect ActiveX VARIANTs
+;;; wrapping SAFEARRAYs of doubles. vlax-2d-point / -3d-point / -tmatrix
+;;; build those; vlax-safearray-get-dim / -value round out the safearray
+;;; introspection surface. (autolisp-spec ch.19; -2d-point / -value are
+;;; BricsCAD-only spellings, -value documented identical to ->list.)
+
+(defun %args->coordinate-doubles (args count operator-name)
+  "ARGS is either a single point list or COUNT separate numbers. Return
+a list of exactly COUNT double-floats; a 2D point handed to the 3D form
+is padded with Z = 0.0 (spec 69891-69941)."
+  (let ((raw (if (and (= (length args) 1) (listp (first args)))
+                 (first args)
+                 args)))
+    (require-proper-list raw operator-name)
+    (let ((nums (mapcar (lambda (n) (coerce (require-number n operator-name) 'double-float))
+                        raw)))
+      (cond
+        ((= (length nums) count) nums)
+        ((and (= count 3) (= (length nums) 2)) (append nums (list 0.0d0)))
+        (t (signal-builtin-argument-error
+            :invalid-point operator-name
+            "~A expects ~D coordinate(s)~:[~; (or a 2D point)~], got ~D."
+            operator-name count (= count 3) (length nums)))))))
+
+(defun %doubles->safearray (doubles)
+  (let ((n (length doubles)))
+    (make-autolisp-safearray
+     :value (make-safearray-data
+             :type-tag :double
+             :bounds (list (list 0 (1- n)))
+             :storage (make-array n :initial-contents doubles)))))
+
+(defun %safearray-variant (safearray)
+  (make-autolisp-variant :value (cons :array safearray)))
+
+(defun %as-safearray (object operator-name)
+  "Accept a SAFEARRAY, or a VARIANT wrapping one, and return the
+autolisp-safearray. vlax-safearray-value / -get-dim take either."
+  (cond
+    ((typep object 'autolisp-safearray) object)
+    ((and (typep object 'autolisp-variant)
+          (consp (autolisp-variant-value object))
+          (typep (cdr (autolisp-variant-value object)) 'autolisp-safearray))
+     (cdr (autolisp-variant-value object)))
+    (t (signal-builtin-argument-error
+        :invalid-safearray operator-name
+        "~A expects a SAFEARRAY (or a VARIANT wrapping one), got ~S."
+        operator-name object))))
+
+(defun builtin-vlax-3d-point (&rest args)
+  (%safearray-variant (%doubles->safearray
+                       (%args->coordinate-doubles args 3 "VLAX-3D-POINT"))))
+
+(defun builtin-vlax-2d-point (&rest args)
+  (%safearray-variant (%doubles->safearray
+                       (%args->coordinate-doubles args 2 "VLAX-2D-POINT"))))
+
+(defun builtin-vlax-tmatrix (rows)
+  "(vlax-tmatrix '((..4..)(..4..)(..4..)(..4..))) -> a VARIANT wrapping a
+4x4 double SAFEARRAY, as consumed by vla-transformby (spec 72156-72197)."
+  (require-proper-list rows "VLAX-TMATRIX")
+  (unless (= (length rows) 4)
+    (signal-builtin-argument-error
+     :invalid-matrix "VLAX-TMATRIX"
+     "VLAX-TMATRIX expects four rows, got ~D." (length rows)))
+  (let ((storage (make-array 16))
+        (i 0))
+    (dolist (row rows)
+      (require-proper-list row "VLAX-TMATRIX")
+      (unless (= (length row) 4)
+        (signal-builtin-argument-error
+         :invalid-matrix "VLAX-TMATRIX"
+         "VLAX-TMATRIX: each row must have 4 numbers, got ~D." (length row)))
+      (dolist (n row)
+        (setf (aref storage i)
+              (coerce (require-number n "VLAX-TMATRIX") 'double-float))
+        (incf i)))
+    (%safearray-variant
+     (make-autolisp-safearray
+      :value (make-safearray-data :type-tag :double
+                                  :bounds (list (list 0 3) (list 0 3))
+                                  :storage storage)))))
+
+(defun builtin-vlax-safearray-get-dim (safe)
+  (length (safearray-data-bounds
+           (safearray-of (%as-safearray safe "VLAX-SAFEARRAY-GET-DIM")
+                         "VLAX-SAFEARRAY-GET-DIM"))))
+
+(defun %safearray-nested-value (bounds storage)
+  "Reconstruct nested (row-major) lists from flat STORAGE per BOUNDS."
+  (labels ((build (dims offset)
+             (if (null dims)
+                 (aref storage offset)
+                 (let* ((n (first dims))
+                        (rest-dims (rest dims))
+                        (rest-size (reduce #'* rest-dims :initial-value 1)))
+                   (loop for k below n
+                         collect (build rest-dims (+ offset (* k rest-size))))))))
+    (build (bounds-shape bounds) 0)))
+
+(defun builtin-vlax-safearray-value (safe)
+  "Safearray contents as a Lisp list; nested lists for multi-dimensional
+arrays. Documented identical to vlax-safearray->list for 1D (spec 81442)."
+  (let* ((data (safearray-of (%as-safearray safe "VLAX-SAFEARRAY-VALUE")
+                             "VLAX-SAFEARRAY-VALUE"))
+         (bounds (safearray-data-bounds data))
+         (storage (safearray-data-storage data)))
+    (if (<= (length bounds) 1)
+        (coerce storage 'list)
+        (%safearray-nested-value bounds storage))))
+
 ;;; --- Phase 14b: reactor (vlr-*) builtin family ---------------------
 ;;;
 ;;; A reactor is a host-side event-callback subscription object.
@@ -8507,7 +8620,7 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "ACET-VIEWPORT-NEXT-PICKABLE" "ACET-WMFIN" "ACET-XDATA-GET"
     "ACET-XDATA-SET"
     ;; VLAX-* (46)
-    "VLAX-2D-POINT" "VLAX-3D-POINT" "VLAX-ADD-CMD"
+    "VLAX-ADD-CMD"
     "VLAX-CURVE-GETAREA" "VLAX-CURVE-GETCLOSESTPOINTTO"
     "VLAX-CURVE-GETCLOSESTPOINTTOPROJECTION"
     "VLAX-CURVE-GETDISTATPARAM" "VLAX-CURVE-GETDISTATPOINT"
@@ -8524,7 +8637,6 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "VLAX-LDATA-PUT" "VLAX-LDATA-TEST" "VLAX-MACHINE-PRODUCT-KEY"
     "VLAX-MAP-COLLECTION" "VLAX-PRODUCT-KEY" "VLAX-QUEUEEXPR"
     "VLAX-READ-ENABLED-P" "VLAX-REMOVE-CMD"
-    "VLAX-SAFEARRAY-GET-DIM" "VLAX-SAFEARRAY-VALUE" "VLAX-TMATRIX"
     "VLAX-TYPEINFO-AVAILABLE-P" "VLAX-USER-PRODUCT-KEY"
     "VLAX-VLA-OBJECT->ENAME" "VLAX-WRITE-ENABLED-P"
     ;; VLA-* (2)
@@ -8760,6 +8872,11 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "VLAX-PUT-PROPERTY"            #'builtin-vlax-put-property)
    (make-core-builtin-subr "VLAX-INVOKE-METHOD"           #'builtin-vlax-invoke-method)
    (make-core-builtin-subr "VLAX-GET-ACAD-OBJECT"         #'builtin-vlax-get-acad-object)
+   (make-core-builtin-subr "VLAX-2D-POINT"                #'builtin-vlax-2d-point)
+   (make-core-builtin-subr "VLAX-3D-POINT"                #'builtin-vlax-3d-point)
+   (make-core-builtin-subr "VLAX-TMATRIX"                 #'builtin-vlax-tmatrix)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-GET-DIM"       #'builtin-vlax-safearray-get-dim)
+   (make-core-builtin-subr "VLAX-SAFEARRAY-VALUE"         #'builtin-vlax-safearray-value)
    (make-core-builtin-subr "VLAX-PROPERTY-AVAILABLE-P"    #'builtin-vlax-property-available-p)
    (make-core-builtin-subr "VLAX-METHOD-APPLICABLE-P"     #'builtin-vlax-method-applicable-p)
    (make-core-builtin-subr "VLAX-MAKE-SAFEARRAY"          #'builtin-vlax-make-safearray)
