@@ -81,6 +81,7 @@ retrofitted as they are touched.
 
 | Issue                                    | Type          | Status   | Note |
 |------------------------------------------+---------------+----------+------|
+| pi-constant-unbound                      | builtin       | TODO     | PI evaluates to NIL in every dialect (vendors: 3.14159…); one-line fix, 97 uses in the SCHMS+ sources; error surfaces at the arithmetic, not at the constant |
 | complete-unit-tests                      | coverage-epic | TODO     | backfill builtin coverage to ≥95% |
 | deferred-stubbed-functions               | builtins-epic | DEFERRED | promote stubbed-as-no-op builtins (registry section done 1.5.1) |
 | deferred-spec-research                   | builtins      | DEFERRED | vendor-validate uncertain builtins; needs cad-access |

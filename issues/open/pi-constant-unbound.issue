@@ -1,0 +1,83 @@
+-*- coding:utf-8 -*-
+
+pi-constant-unbound — the AutoLISP constant PI evaluates to NIL in every dialect
+================================================================================
+
+Reported from: SCHMS+ CAD test harness (sncf-reseau/src/schms,
+tests/test-cad.lsp) while porting it from BricsCAD to the clautolisp
+mock host. clautolisp 1.7.18 / alfe 1.7.24, macOS.
+
+Summary
+-------
+
+`pi` is a predefined constant in AutoLISP — 3.14159265358979 in both
+AutoCAD and BricsCAD, in every context. Under clautolisp it is unbound
+and evaluates to NIL, **in every dialect**, so any angle computation
+silently becomes an error at the first arithmetic use.
+
+    $ for d in strict lax clautolisp bricscad-v26 autocad-2022 ; do
+        clautolisp --no-init --host mock --dialect $d \
+                   -x '(princ (strcat "pi=" (vl-princ-to-string pi)))' -q
+      done
+    pi=nil
+    pi=nil
+    pi=nil
+    pi=nil
+    pi=nil
+
+    $ alfe -norc --bricscad --mode batch \
+           -x '(princ (strcat "\npi=" (vl-princ-to-string pi)))'
+    pi=3.14159265358979
+
+`(type pi)` is likewise NIL under clautolisp.
+
+Symptom at the call site
+------------------------
+
+The failure surfaces far from the cause, because NIL propagates until
+some arithmetic rejects it. In our case a stub file failed to load with
+
+    [tu] WARNING: echec chargement source tests/bouchons-epure.lsp :
+                  / expects a number, got NIL.
+
+for a line that reads `(setq pi/2 (/ pi 2.0))` — nothing in the message
+points at `pi`. Application code that does `(polar pt (+ ag pi) d)` will
+fail the same way, one frame further in.
+
+Expected
+--------
+
+`pi` is bound to the double-float value of π, in every dialect, with no
+host required (it is a language constant, not a drawing property). It
+should be non-writable, or at least behave like the vendors' — AutoCAD
+and BricsCAD both allow `(setq pi 3)` and both restore it per-document,
+so matching "bound by default" is the part that matters here.
+
+Note that a bare `--dialect strict` run does not warn either: the symbol
+is simply unbound, so nothing flags it. A dialect warning for a read of
+an unbound symbol that the vendors define would have caught this at the
+first use.
+
+Why it matters
+--------------
+
+`pi` is used 97 times in the SCHMS+ sources alone, in every geometry
+computation. Any AutoLISP application ported to clautolisp hits this on
+its first angle, and the diagnostic points at the arithmetic rather than
+at the missing constant. It is a one-line fix with a large blast radius.
+
+Suggested test
+--------------
+
+A conformance case asserting `(equal pi 3.14159265358979 1e-14)` and
+`(= (type pi) 'REAL)` on every backend, plus the vendor-parity probe for
+the per-document reset behaviour if that is worth matching.
+
+Related
+-------
+
+Found alongside the absence of `vla-get-activedocument` (already tracked
+as an unchecked entry in issues/open/schms-call-inventory.md), which is
+what currently stops the same SCHMS+ suite from running headless: it
+makes src-vlx/plateforme.lsp fail to load, and with it
+`schms_transaction_undo`, which every entity-mutating test goes through.
