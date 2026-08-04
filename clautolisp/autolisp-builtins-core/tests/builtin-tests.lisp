@@ -2504,6 +2504,69 @@ NIL when GETSTRING returns nil)."
   (is (null (%vla "(vl-load-com)(vlax-remove-cmd \"NOPE\")")))
   (is (null (%vla "(vl-load-com)(vlax-queueexpr \"(princ)\")"))))
 
+;;; --- vlax-* group E: curve geometry ------------------------------
+
+(defun %pt~ (got expected &optional (eps 1d-9))
+  "True if point list GOT matches EXPECTED within EPS per coordinate."
+  (and (listp got) (= (length got) (length expected))
+       (every (lambda (g e) (and (numberp g) (< (abs (- g e)) eps))) got expected)))
+
+(defparameter +curve-line+
+  "(vl-load-com)(setq e (entmakex '((0 . \"LINE\")(10 0.0 0.0 0.0)(11 10.0 0.0 0.0))))")
+(defparameter +curve-circle+
+  "(vl-load-com)(setq e (entmakex '((0 . \"CIRCLE\")(10 0.0 0.0 0.0)(40 . 5.0))))")
+(defparameter +curve-arc+
+  "(vl-load-com)(setq e (entmakex '((0 . \"ARC\")(10 0.0 0.0 0.0)(40 . 2.0)(50 . 0.0)(51 . 90.0))))")
+(defparameter +curve-pline+
+  (concatenate 'string
+   "(vl-load-com)(setq e (entmakex '((0 . \"LWPOLYLINE\")"
+   "(100 . \"AcDbEntity\")(100 . \"AcDbPolyline\")"
+   "(90 . 3)(70 . 0)(10 0.0 0.0)(10 3.0 0.0)(10 3.0 4.0))))"))
+
+(defun %curve (mk expr) (%vla (concatenate 'string mk expr)))
+
+(test vlax-curve-line-geometry
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getstartpoint e)") '(0 0 0)))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getendpoint e)") '(10 0 0)))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getpointatdist e 2.5)") '(2.5 0 0)))
+  (is (< (abs (- 7.0d0 (%curve +curve-line+ "(vlax-curve-getparamatpoint e '(7.0 0.0 0.0))"))) 1d-9))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getclosestpointto e '(5.0 3.0 0.0))") '(5 0 0)))
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getfirstderiv e 3.0)") '(1 0 0)))
+  (is (null (%curve +curve-line+ "(vlax-curve-isclosed e)")))
+  (is (< (abs (- 10.0d0 (%curve +curve-line+ "(vlax-curve-getperimeter e)"))) 1d-9)))
+
+(test vlax-curve-circle-geometry
+  (is (< (abs (- (* pi 25) (%curve +curve-circle+ "(vlax-curve-getarea e)"))) 1d-6))
+  (is (< (abs (- (* 2 pi 5) (%curve +curve-circle+ "(vlax-curve-getperimeter e)"))) 1d-6))
+  (is (%curve +curve-circle+ "(vlax-curve-isclosed e)"))
+  (is (%curve +curve-circle+ "(vlax-curve-isperiodic e)"))
+  ;; arc-length param r*pi/2 -> quarter turn -> (0 5 0)
+  (is (%pt~ (%curve +curve-circle+ "(vlax-curve-getpointatparam e 7.8539816339744831)")
+            '(0 5 0) 1d-6)))
+
+(test vlax-curve-arc-geometry
+  (is (%pt~ (%curve +curve-arc+ "(vlax-curve-getstartpoint e)") '(2 0 0) 1d-9))
+  (is (%pt~ (%curve +curve-arc+ "(vlax-curve-getendpoint e)") '(0 2 0) 1d-9))
+  ;; quarter circle of radius 2 -> arc length = pi
+  (is (< (abs (- pi (%curve +curve-arc+ "(vlax-curve-getperimeter e)"))) 1d-6))
+  (is (null (%curve +curve-arc+ "(vlax-curve-isclosed e)"))))
+
+(test vlax-curve-polyline-geometry
+  (is (< (abs (- 2.0d0 (%curve +curve-pline+ "(vlax-curve-getendparam e)"))) 1d-9))
+  (is (< (abs (- 7.0d0 (%curve +curve-pline+ "(vlax-curve-getperimeter e)"))) 1d-9))
+  (is (%pt~ (%curve +curve-pline+ "(vlax-curve-getpointatdist e 3.0)") '(3 0 0)))
+  (is (%pt~ (%curve +curve-pline+ "(vlax-curve-getpointatdist e 5.0)") '(3 2 0)))
+  (is (< (abs (- 1.5d0 (%curve +curve-pline+ "(vlax-curve-getparamatpoint e '(3.0 2.0 0.0))"))) 1d-9))
+  (is (%pt~ (%curve +curve-pline+ "(vlax-curve-getclosestpointto e '(5.0 2.0 0.0))") '(3 2 0))))
+
+(test vlax-curve-accepts-vla-object-and-nils-unsupported
+  ;; The curve arg may be a vla-object, not just an ename.
+  (is (%pt~ (%curve +curve-line+ "(vlax-curve-getstartpoint (vlax-ename->vla-object e))") '(0 0 0)))
+  ;; A non-curve entity yields nil (documented failure return).
+  (is (null (%vla (concatenate 'string
+                   "(vl-load-com)(setq tp (entmakex '((0 . \"POINT\")(10 1.0 2.0 0.0))))"
+                   "(vlax-curve-getstartpoint tp)")))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs
@@ -5415,7 +5478,7 @@ cp1252-codec-host-independent.issue."
   (reset-autolisp-symbol-table)
   (install-core-builtins)
   (dolist (probe '(("ACET-STR-FORMAT" "%d" 42)
-                   ("VLAX-CURVE-GETAREA" "ent")
+                   ("VLAX-MAP-COLLECTION" "coll" "fn")
                    ("DOS_STRTRIM" "  hi  ")
                    ("OSNAP" "1.0,2.0" "_END")
                    ("GRARC")))

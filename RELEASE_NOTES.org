@@ -427,6 +427,15 @@ separate binary for tool integrators.
   ~-user-product-key~ / ~-product-key~ return the product registry
   paths; ~vlax-add-cmd~ / ~-remove-cmd~ register commands and
   ~vlax-queueexpr~ queues an expression (recorded headlessly).
+- Curve geometry: the whole ~vlax-curve-*~ family (19 functions —
+  start/end point + param, point/param/dist conversions, first/second
+  derivative, closest-point, area, perimeter, is-closed / -periodic /
+  -planar) computes analytically over the entity behind an ename or
+  VLA-object. Supported curve types: LINE, RAY, XLINE, CIRCLE, ARC and
+  straight-segment LWPOLYLINE / POLYLINE. ELLIPSE, SPLINE and the arc
+  segments of a bulged polyline are not yet evaluated (they return nil,
+  the documented failure value) — see the SPEC-UNCERTAIN notes in
+  ~issues/open/vla-accessor-family.issue~.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

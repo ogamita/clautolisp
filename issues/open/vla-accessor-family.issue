@@ -2,8 +2,22 @@
 
 # Issue: implement the `vla-get-*` / `vla-put-*` / `vla-<method>` accessor family
 
-- **Status:** open — **P1 landed** (v1.7.19: generic façade + vlax-get-acad-object
-  + ActiveDocument resolution + tests). P2/P3 remain (see §4).
+- **Status:** open — **P1 + most of P2 landed.** v1.7.19 generic façade +
+  vlax-get-acad-object + ActiveDocument; v1.7.20 group A (points / tmatrix /
+  safearray extras); v1.7.21 group B (ename<->vla bridge + introspection);
+  v1.7.22 groups C+D (ldata, product-key, command registration); v1.7.23
+  group E (the vlax-curve-* geometry family). All vlax-* are now real builtins
+  **except** vlax-for and vlax-map-collection (collection iteration), still
+  stubbed pending collection objects.
+
+  **SPEC-UNCERTAIN / not-yet-evaluated (return the documented nil):**
+  - vlax-curve-* on ELLIPSE and SPLINE (elliptic-integral / NURBS math), and
+    the arc segments of a bulged LWPOLYLINE/POLYLINE (treated as absent).
+  - vlax-curve-getclosestpointtoprojection for an oblique projection plane
+    (only normal ~ +Z, i.e. the identity projection, is computed).
+  - vlax-typeinfo-available-p approximates "has type info" by method presence.
+  Grep the sources with `grep -rn SPEC-UNCERTAIN clautolisp/` and record probe
+  questions in issues/open/deferred-spec-research.issue when validating.
 - **Related:** `cador-multidocument-host.issue` (the real document/entity host that
   `vla-get-activedocument` ultimately reaches once `cador` exists),
   `deferred-document-lifecycle-command-semantics.issue`,
