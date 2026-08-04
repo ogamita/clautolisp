@@ -108,6 +108,12 @@ AutoLISP-visible VLA-object wraps that id.")
                              :accessor mock-host-next-com-counter
                              :documentation "Allocator state for
 COM-object ids.")
+   (acad-application-id      :initform nil
+                             :accessor mock-host-acad-application-id
+                             :documentation "COM-object id of the
+singleton AutoCAD.Application returned by (vlax-get-acad-object),
+or NIL before the first call. Lazily created together with its
+ActiveDocument so the vla-get-activedocument chain resolves.")
    (open-complex-handle      :initform nil
                              :accessor mock-host-open-complex-handle
                              :documentation "The hex handle of the

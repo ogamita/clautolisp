@@ -134,6 +134,7 @@
    #:autolisp-errno
    #:autolisp-runtime-error-errno
    #:signal-autolisp-runtime-error
+   #:*resolve-unbound-function-hook*
    #:set-autolisp-errno
    #:autolisp-exit-status
    #:set-autolisp-exit-status

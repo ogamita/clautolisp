@@ -186,7 +186,8 @@
                 #:host-vlax-put-property
                 #:host-vlax-invoke-method
                 #:host-vlax-property-available-p
-                #:host-vlax-method-applicable-p)
+                #:host-vlax-method-applicable-p
+                #:host-vlax-get-acad-object)
   (:export
    #:*core-builtin-names*
    #:core-builtins

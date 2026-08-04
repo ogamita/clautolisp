@@ -592,6 +592,34 @@ on a per-session log, echoes a ~Command: ...~ line, and returns
 signals ~:host-not-supported~ (~vl-cmdf~ instead returns ~nil~, per
 its T / nil success contract).
 
+*** The ActiveX / COM object model (~vla-*~ / ~vlax-*~)
+
+Visual LISP exposes the CAD object model through ActiveX. clautolisp
+provides that surface through the host backend:
+
+- The ~vlax-*~ primitives — ~vlax-get-property~, ~vlax-put-property~,
+  ~vlax-invoke-method~, ~vlax-get-acad-object~, object lifecycle
+  (~vlax-create-object~, ~vlax-release-object~, ~vlax-object-released-p~),
+  SAFEARRAY and VARIANT helpers — operate on VLA-objects backed by the
+  selected host. On ~--host mock~ they run against an in-memory COM
+  object graph (~AutoCAD.Application~ with a live ~ActiveDocument~,
+  ~AutoCAD.Document~, …); on ~--host null~ they signal
+  ~:host-not-supported~.
+- The ~vla-*~ *accessors* are resolved **dynamically**, exactly as in
+  Visual LISP: after ~(vl-load-com)~, calling ~(vla-get-<Prop> obj)~
+  reads property ~<Prop>~, ~(vla-put-<Prop> obj v)~ writes it, and
+  ~(vla-<Method> obj args…)~ invokes method ~<Method>~ — the name after
+  the prefix is taken verbatim and matched case-insensitively. There is
+  no fixed list of ~vla-get-Foo~ functions; any property/method name
+  works. Before ~(vl-load-com)~ these names are undefined, and a user
+  ~(defun vla-get-foo …)~ shadows the façade for that name.
+
+Example (headless, against the mock host):
+
+: (vl-load-com)
+: (setq doc (vla-get-activedocument (vlax-get-acad-object)))
+: (vla-get-name doc)            ; => "Drawing.dwg"
+
 ** DCL dialogs — renderer selection and the "-" convention
 An AutoLISP program that puts up a DCL dialog (~load_dialog~ /
 ~new_dialog~ / ~action_tile~ / ~start_dialog~) is driven by a

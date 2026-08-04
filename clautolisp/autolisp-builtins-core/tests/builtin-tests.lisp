@@ -2347,6 +2347,64 @@ NIL when GETSTRING returns nil)."
                    (autolisp-symbol-name
                     (call-autolisp-function type-fn v)))))))
 
+;;; --- Dynamic vla-* accessor façade (vla-accessor-family.issue) ---
+;;;
+;;; After (vl-load-com), an unbound VLA-GET-<prop> / VLA-PUT-<prop> /
+;;; VLA-<method> operator is resolved on demand to the vlax-* primitive,
+;;; mirroring Visual LISP's type-library-driven accessors. Exercised
+;;; end-to-end against the mock AutoCAD.Application / .Document.
+
+(defun %vla (source)
+  "Evaluate SOURCE through run-autolisp-string on a fresh mock host."
+  (reset-autolisp-symbol-table)
+  (run-autolisp-string source :setup-fn #'%install-mock-host-and-core))
+
+(defun %vla-code (source)
+  "Evaluate SOURCE, returning the autolisp-runtime-error code it signals
+ (or :no-error)."
+  (handler-case (progn (%vla source) :no-error)
+    (clautolisp.autolisp-runtime:autolisp-runtime-error (e)
+      (clautolisp.autolisp-runtime:autolisp-runtime-error-code e))))
+
+(test vla-accessor-undefined-before-vl-load-com
+  ;; The façade is gated: vla-* names are undefined until (vl-load-com).
+  (is (eq :undefined-function
+          (%vla-code "(vla-get-activedocument (vlax-get-acad-object))"))))
+
+(test vla-get-activedocument-resolves-end-to-end
+  (let ((doc (%vla "(vl-load-com)(vla-get-activedocument (vlax-get-acad-object))")))
+    (is (typep doc 'clautolisp.autolisp-runtime:autolisp-vla-object))))
+
+(test vla-get-accessor-reads-a-property
+  (let ((name (%vla "(vl-load-com)(vla-get-name (vla-get-activedocument (vlax-get-acad-object)))")))
+    (is (string= "Drawing.dwg"
+                 (if (typep name 'autolisp-string) (autolisp-string-value name) name)))))
+
+(test vla-put-accessor-writes-a-property
+  (let ((name (%vla (concatenate 'string
+                                 "(vl-load-com)"
+                                 "(setq d (vla-get-activedocument (vlax-get-acad-object)))"
+                                 "(vla-put-name d \"Renamed.dwg\")"
+                                 "(vla-get-name d)"))))
+    (is (string= "Renamed.dwg"
+                 (if (typep name 'autolisp-string) (autolisp-string-value name) name)))))
+
+(test vla-method-dispatch-routes-to-invoke-method
+  ;; A non-get/put vla-<method> dispatches to vlax-invoke-method; an
+  ;; unknown method surfaces the host :unknown-com-method error (proving
+  ;; the route), rather than :undefined-function.
+  (is (eq :unknown-com-method
+          (%vla-code "(vl-load-com)(vla-bogusmethod (vla-get-activedocument (vlax-get-acad-object)))"))))
+
+(test vla-accessor-empty-suffix-stays-undefined
+  ;; Degenerate "vla-get-" / "vla-put-" (empty property) are not accessors.
+  (is (eq :undefined-function (%vla-code "(vl-load-com)(vla-get- (vlax-get-acad-object))")))
+  (is (eq :undefined-function (%vla-code "(vl-load-com)(vla-put- (vlax-get-acad-object) 1)"))))
+
+(test vla-accessor-user-definition-wins
+  ;; A user (defun vla-get-foo …) shadows the façade for that name.
+  (is (eql 42 (%vla "(vl-load-com)(defun vla-get-foo (x) 42)(vla-get-foo nil)"))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs

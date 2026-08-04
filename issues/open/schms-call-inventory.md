@@ -540,6 +540,13 @@ références de bloc attribuées portant des XData.
 
 ### ActiveX object model `vla-*` (graphical/session — needs COM or emulation)
 
+> **Façade générique livrée** (`vla-accessor-family.issue`, P1) : après
+> `(vl-load-com)`, tout `vla-get-<prop>` / `vla-put-<prop>` / `vla-<method>`
+> est résolu dynamiquement vers `vlax-get-property` / `vlax-put-property` /
+> `vlax-invoke-method` (plus de `:undefined-function`). Ce qui est *coché*
+> ci-dessous est validé de bout en bout sur le mock ; les autres se résolvent
+> mais dépendent encore de la couverture du graphe d'objets mock (P2).
+
 - [ ] `vla-put-textstring` — 188
 - [ ] `vla-get-layer` — 170
 - [ ] `vla-get-insertionpoint` — 169
@@ -575,7 +582,7 @@ références de bloc attribuées portant des XData.
 - [ ] `vla-saveas` — 3
 - [ ] `vla-activate` — 2
 - [ ] `vla-endundomark` — 2
-- [ ] `vla-get-activedocument` — 2
+- [x] `vla-get-activedocument` — 2 (façade + vlax-get-acad-object; end-to-end on mock)
 - [ ] `vla-get-alignment` — 2
 - [ ] `vla-get-elevation` — 2
 - [ ] `vla-get-propertyname` — 2

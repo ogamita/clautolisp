@@ -5613,6 +5613,66 @@ issues/open/clautolisp-module-app-extensions.issue."
                              (t name))
                            args))
 
+(defun builtin-vlax-get-acad-object ()
+  "Return the host's top-level application COM object. On the mock host
+this is a singleton AutoCAD.Application whose ActiveDocument resolves to
+a document object; on a real CAD host it is the live acad app."
+  (host-vlax-get-acad-object (current-evaluation-host)))
+
+;;; --- Dynamic vla-* accessor façade -------------------------------
+;;
+;; Visual LISP does not ship fixed vla-get-Foo functions: after
+;; (vl-load-com), (vla-get-<Prop> obj), (vla-put-<Prop> obj v) and
+;; (vla-<Method> obj args…) are resolved on demand from the ActiveX
+;; type library, the name after the prefix naming the property/method.
+;; We reproduce that dynamically: an unbound VLA-* operator is
+;; synthesized into a subr dispatching to the vlax-* primitives, via the
+;; runtime's *RESOLVE-UNBOUND-FUNCTION-HOOK* (install-core-builtins wires
+;; RESOLVE-VLA-ACCESSOR into it — the runtime cannot name these builtins
+;; directly, being a layer below this one).
+
+(defvar *com-loaded-p* nil
+  "True once (vl-load-com) has run in this interpreter. Gates
+RESOLVE-VLA-ACCESSOR so vla-* names are undefined beforehand, as in VL.
+Reset by INSTALL-CORE-BUILTINS (a fresh builtin world = COM not loaded).")
+
+(defun %string-prefix-p (prefix string)
+  (let ((p (length prefix)))
+    (and (>= (length string) p)
+         (string= prefix string :end2 p))))
+
+(defun resolve-vla-accessor (symbol context)
+  "Runtime hook (*RESOLVE-UNBOUND-FUNCTION-HOOK*): when COM is loaded and
+SYMBOL names an unbound VLA-GET-<prop> / VLA-PUT-<prop> / VLA-<method>,
+return a freshly built subr dispatching to the corresponding vlax-*
+primitive; otherwise NIL (fall through to :undefined-function). The
+property/method name is the symbol-name suffix, passed verbatim — the
+host does the case-insensitive match."
+  (declare (ignore context))
+  (when *com-loaded-p*
+    (let ((name (autolisp-symbol-name symbol)))
+      (cond
+        ((and (%string-prefix-p "VLA-GET-" name) (> (length name) 8))
+         (let ((prop (subseq name 8)))
+           (make-core-builtin-subr
+            name (lambda (obj) (builtin-vlax-get-property obj prop)))))
+        ((and (%string-prefix-p "VLA-PUT-" name) (> (length name) 8))
+         (let ((prop (subseq name 8)))
+           (make-core-builtin-subr
+            name (lambda (obj value) (builtin-vlax-put-property obj prop value)))))
+        ;; Any other VLA-<method> (with a non-empty suffix, and not a
+        ;; degenerate empty-property "VLA-GET-"/"VLA-PUT-") is a method
+        ;; invocation. Names like VLA-GETBOUNDINGBOX (no hyphen after
+        ;; GET) correctly land here, not in the get-property branch.
+        ((and (%string-prefix-p "VLA-" name) (> (length name) 4)
+              (not (%string-prefix-p "VLA-GET-" name))
+              (not (%string-prefix-p "VLA-PUT-" name)))
+         (let ((method (subseq name 4)))
+           (make-core-builtin-subr
+            name (lambda (obj &rest args)
+                   (apply #'builtin-vlax-invoke-method obj method args)))))
+        (t nil)))))
+
 (defun builtin-vlax-property-available-p (vla name)
   (if (host-vlax-property-available-p
        (current-evaluation-host) vla
@@ -8047,7 +8107,12 @@ name strings."
   ;; clautolisp the VLE-* set is always loaded; T (success).
   (autolisp-true))
 
-(defun builtin-vl-load-com () (autolisp-true))      ; no COM bridge; success.
+(defun builtin-vl-load-com ()
+  ;; Flip the COM-loaded flag that gates the dynamic vla-* accessor
+  ;; façade (RESOLVE-VLA-ACCESSOR), matching Visual LISP where vla-*
+  ;; names become resolvable only after (vl-load-com).
+  (setf *com-loaded-p* t)
+  (autolisp-true))
 (defun builtin-vl-load-reactors () (autolisp-true)) ; no reactors yet; success.
 (defun builtin-vl-load-all () (autolisp-true))      ; alias of the above.
 
@@ -8454,7 +8519,7 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "VLAX-CURVE-GETSTARTPOINT" "VLAX-CURVE-ISCLOSED"
     "VLAX-CURVE-ISPERIODIC" "VLAX-CURVE-ISPLANAR"
     "VLAX-DUMP-OBJECT" "VLAX-ENAME->VLA-OBJECT" "VLAX-ERASED-P"
-    "VLAX-FOR" "VLAX-GET-ACAD-OBJECT" "VLAX-IMPORT-TYPE-LIBRARY"
+    "VLAX-FOR" "VLAX-IMPORT-TYPE-LIBRARY"
     "VLAX-LDATA-DELETE" "VLAX-LDATA-GET" "VLAX-LDATA-LIST"
     "VLAX-LDATA-PUT" "VLAX-LDATA-TEST" "VLAX-MACHINE-PRODUCT-KEY"
     "VLAX-MAP-COLLECTION" "VLAX-PRODUCT-KEY" "VLAX-QUEUEEXPR"
@@ -8694,6 +8759,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "VLAX-GET-PROPERTY"            #'builtin-vlax-get-property)
    (make-core-builtin-subr "VLAX-PUT-PROPERTY"            #'builtin-vlax-put-property)
    (make-core-builtin-subr "VLAX-INVOKE-METHOD"           #'builtin-vlax-invoke-method)
+   (make-core-builtin-subr "VLAX-GET-ACAD-OBJECT"         #'builtin-vlax-get-acad-object)
    (make-core-builtin-subr "VLAX-PROPERTY-AVAILABLE-P"    #'builtin-vlax-property-available-p)
    (make-core-builtin-subr "VLAX-METHOD-APPLICABLE-P"     #'builtin-vlax-method-applicable-p)
    (make-core-builtin-subr "VLAX-MAKE-SAFEARRAY"          #'builtin-vlax-make-safearray)
@@ -9256,4 +9322,9 @@ extension-variable convention below."
       (set-autolisp-symbol-function symbol builtin)))
   (install-predefined-variables)
   (install-clal-extension-variables)
+  ;; Fresh builtin world: COM is not loaded yet, and the runtime's
+  ;; unbound-function hook resolves the dynamic vla-* accessor façade.
+  (setf *com-loaded-p* nil)
+  (setf clautolisp.autolisp-runtime:*resolve-unbound-function-hook*
+        #'resolve-vla-accessor)
   t)

@@ -60,7 +60,8 @@
                 #:host-vlax-put-property
                 #:host-vlax-invoke-method
                 #:host-vlax-property-available-p
-                #:host-vlax-method-applicable-p)
+                #:host-vlax-method-applicable-p
+                #:host-vlax-get-acad-object)
   (:import-from #:clautolisp.autolisp-mock-host
                 #:mock-host
                 #:make-mock-host

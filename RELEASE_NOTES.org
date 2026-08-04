@@ -397,6 +397,14 @@ separate binary for tool integrators.
   through ~issues/open/deferred-stubbed-functions.issue~. ~ALERT~
   is now a real builtin (emits ~"WARNING: <message>"~ to stdout in
   the headless engine).
+- ActiveX ~vla-*~ accessor family: after ~(vl-load-com)~, any
+  ~vla-get-<Prop>~ / ~vla-put-<Prop>~ / ~vla-<Method>~ call is resolved
+  dynamically to the matching ~vlax-*~ primitive (no fixed function
+  list, matching Visual LISP), and ~vlax-get-acad-object~ now returns a
+  live application object whose ~ActiveDocument~ resolves — so
+  ~(vla-get-activedocument (vlax-get-acad-object))~ works headless on
+  ~--host mock~. See the user manual § /Host backend / The ActiveX / COM
+  object model/ and ~issues/open/vla-accessor-family.issue~.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

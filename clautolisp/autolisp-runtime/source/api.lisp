@@ -1397,6 +1397,15 @@ caught autolisp-runtime-error BEFORE returning the AutoLISP error object
 (spec §10.2 'break on caught error'). The debugger installs this only when
 break-on-caught is enabled; NIL by default (off).")
 
+(defparameter *resolve-unbound-function-hook* nil
+  "When non-nil, a function (SYMBOL CONTEXT) the evaluator calls just
+before signalling :undefined-function for an unbound operator. It returns
+a callable (autolisp-subr / autolisp-usubr) to use as the function, or NIL
+to let the normal :undefined-function error fire. This is how the builtins
+layer wires the dynamic Visual-LISP `vla-*' accessor façade without the
+runtime having to depend on the builtins system (a layer above it). See
+RESOLVE-VLA-ACCESSOR in autolisp-builtins-core.")
+
 (defparameter *debug-define-command-hook* nil
   "When non-nil, a function (NAMES FUNCTION DOC) the CLAL-DEFINE-DEBUGGER-COMMAND
 builtin calls to register an AutoLISP-defined debugger command (command
@@ -1647,6 +1656,17 @@ disabled / the debugger is absent, so the caller falls back to the plain body."
          (current-evaluation-context)
          arguments))
 
+(defun resolve-unbound-function-or-signal (symbol context)
+  "SYMBOL has no function binding. Give *RESOLVE-UNBOUND-FUNCTION-HOOK* a
+chance to synthesize one (the vla-* accessor façade); otherwise signal
+:undefined-function. Never returns NIL — either a callable or a throw."
+  (or (and *resolve-unbound-function-hook*
+           (funcall *resolve-unbound-function-hook* symbol context))
+      (signal-autolisp-runtime-error
+       :undefined-function
+       "Undefined AutoLISP function ~A."
+       (autolisp-symbol-name symbol))))
+
 (defun resolve-autolisp-function-designator (designator
                                             &optional
                                               (context (current-evaluation-context)))
@@ -1658,12 +1678,9 @@ disabled / the debugger is absent, so the caller falls back to the plain body."
      (multiple-value-bind (binding boundp origin)
          (lookup-function designator context)
        (declare (ignore origin))
-       (unless boundp
-         (signal-autolisp-runtime-error
-          :undefined-function
-          "Undefined AutoLISP function ~A."
-          (autolisp-symbol-name designator)))
-       binding))
+       (if boundp
+           binding
+           (resolve-unbound-function-or-signal designator context))))
     ((and (consp designator)
           (= (length designator) 2)
           (typep (first designator) 'autolisp-symbol)
@@ -2838,12 +2855,9 @@ forms have unevaluated operands it must not instrument (spec §5.3)."
                         (autolisp-eval operator context)
                         (multiple-value-bind (binding boundp origin) (lookup-function operator context)
                           (declare (ignore origin))
-                          (unless boundp
-                            (signal-autolisp-runtime-error
-                             :undefined-function
-                             "Undefined AutoLISP function ~A."
-                             (autolisp-symbol-name operator)))
-                          binding))))
+                          (if boundp
+                              binding
+                              (resolve-unbound-function-or-signal operator context))))))
               (apply #'call-autolisp-function-in-context
                      function
                      context

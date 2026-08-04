@@ -150,6 +150,7 @@ not implement OPERATION."
 (defgeneric host-vlax-invoke-method       (host vla-object name args)  (:documentation "Invoke a method on a COM object."))
 (defgeneric host-vlax-property-available-p(host vla-object name)   (:documentation "True if NAME is an available property on the COM object."))
 (defgeneric host-vlax-method-applicable-p (host vla-object name)   (:documentation "True if NAME is an applicable method on the COM object."))
+(defgeneric host-vlax-get-acad-object     (host)                   (:documentation "Return the top-level application COM object (vlax-get-acad-object). One singleton per host."))
 
 ;;; --- Base-class fallback methods --------------------------------
 ;;;
@@ -226,3 +227,4 @@ not implement OPERATION."
 (defmethod host-vlax-invoke-method        ((host host) vla-object name args) (declare (ignore vla-object name args)) (signal-host-not-supported host 'vlax-invoke-method))
 (defmethod host-vlax-property-available-p ((host host) vla-object name)   (declare (ignore vla-object name)) (signal-host-not-supported host 'vlax-property-available-p))
 (defmethod host-vlax-method-applicable-p  ((host host) vla-object name)   (declare (ignore vla-object name)) (signal-host-not-supported host 'vlax-method-applicable-p))
+(defmethod host-vlax-get-acad-object      ((host host))                   (signal-host-not-supported host 'vlax-get-acad-object))

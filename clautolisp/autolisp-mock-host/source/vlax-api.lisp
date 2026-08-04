@@ -148,3 +148,31 @@ released and :unknown-vla-object if it never existed."
   (let* ((object (resolve-vla-object host vla 'vlax-method-applicable-p))
          (string (ensure-property-name-string name 'vlax-method-applicable-p)))
     (and (gethash string (mock-com-object-methods object)) t)))
+
+(defun %register-mock-com-object (host object)
+  "Store OBJECT in HOST's com-objects table (build-mock-com-object
+allocates but does not register). Returns OBJECT."
+  (setf (gethash (mock-com-object-id object) (mock-host-com-objects host))
+        object))
+
+(defmethod host-vlax-get-acad-object ((host mock-host))
+  "Return the singleton AutoCAD.Application VLA-OBJECT, creating it — and
+its ActiveDocument — on first call. Object-valued properties are stored
+as VLA-OBJECT references so vla-get-activedocument yields a usable
+document. Repeated calls return the same application object."
+  (let* ((cached-id (mock-host-acad-application-id host))
+         (cached (and cached-id (mock-host-find-com-object host cached-id))))
+    (if (and cached (not (mock-com-object-released-p cached)))
+        (com-object->vla cached)
+        (let ((app (%register-mock-com-object
+                    host (build-mock-com-object host "AutoCAD.Application")))
+              (doc (%register-mock-com-object
+                    host (build-mock-com-object host "AutoCAD.Document"))))
+          ;; Wire the object graph: Application.ActiveDocument -> the
+          ;; document, and Document.Application -> back to the app.
+          (setf (gethash "ActiveDocument" (mock-com-object-properties app))
+                (com-object->vla doc))
+          (setf (gethash "Application" (mock-com-object-properties doc))
+                (com-object->vla app))
+          (setf (mock-host-acad-application-id host) (mock-com-object-id app))
+          (com-object->vla app)))))

@@ -1,0 +1,147 @@
+-*- mode:markdown -*-
+
+# Issue: implement the `vla-get-*` / `vla-put-*` / `vla-<method>` accessor family
+
+- **Status:** open — **P1 landed** (v1.7.19: generic façade + vlax-get-acad-object
+  + ActiveDocument resolution + tests). P2/P3 remain (see §4).
+- **Related:** `cador-multidocument-host.issue` (the real document/entity host that
+  `vla-get-activedocument` ultimately reaches once `cador` exists),
+  `deferred-document-lifecycle-command-semantics.issue`,
+  `deferred-stubbed-functions.issue` (VLAX-GET-ACAD-OBJECT is a nil stub today).
+- **Backlog driver:** `schms-call-inventory.md` — SCHMS+ calls a whole family of
+  `vla-*` accessors that clautolisp does not provide.
+
+## 1. Motivation
+
+Real Visual LISP does not ship a fixed set of `vla-get-Foo` functions. After
+`(vl-load-com)`, calling `(vla-get-<Property> obj)`, `(vla-put-<Property> obj v)`
+or `(vla-<Method> obj args…)` is resolved *dynamically* against the ActiveX
+type library: `vla-get-ActiveDocument` reads the `ActiveDocument` property,
+`vla-put-Color` writes `Color`, `vla-AddLine` invokes the `AddLine` method.
+The property/method name is simply the part of the symbol after the prefix.
+
+clautolisp today has the **primitives** (`vlax-get-property`, `vlax-put-property`,
+`vlax-invoke-method`) but **none of the `vla-*` façade**: only two `VLA-*` names
+are registered (`VLA-COLLECTION->LIST`, `VLA-POSTCOMMAND`). Every
+`vla-get-<prop>` / `vla-put-<prop>` / `vla-<method>` call therefore fails as an
+undefined function. This blocks a large slice of the SCHMS+ corpus.
+
+Representative SCHMS+ usages (from `schms-call-inventory.md`), all currently
+unimplemented:
+
+    vla-get-activedocument (2), vla-get-modelspace (4), vla-get-layers (4),
+    vla-get-documents (3), vla-get-fullname (3), vla-get-ownerid (3),
+    vla-get-textstring (2), vla-get-value (2), vla-get-elevation (2),
+    vla-put-layer (6), vla-put-color (5), vla-put-insertionpoint (6),
+    vla-add (4), vla-move (4), vla-saveas (3), vla-activate (2),
+    vla-endundomark (2), vla-regen (2), vla-save (2), … (dozens more)
+
+## 2. Current state (what exists / what is missing)
+
+Exists:
+- `builtin-vlax-get-property` / `-put-property` / `-invoke-method`
+  (`autolisp-builtins-core/source/api.lisp`) — accept a VLA-OBJECT and a
+  property/method name as string **or symbol**, delegating to the host protocol.
+- Host protocol `host-vlax-get-property` / `-put-property` / `-invoke-method`
+  (`autolisp-host/source/protocol.lisp`) with a full MockHost implementation
+  (`autolisp-mock-host/source/vlax-api.lisp`).
+- COM ProgID templates for `AutoCAD.Application` and `AutoCAD.Document`
+  (`autolisp-mock-host/source/com-progids.lisp`).
+
+Missing / stubbed:
+1. **The `vla-*` façade** — no `vla-get-<prop>` / `vla-put-<prop>` / `vla-<method>`
+   dispatch. (This issue's core.)
+2. **`vlax-get-acad-object`** — registered only as a nil-returning M6 stub
+   (`*m6-stub-names*`), so there is no application object to start a chain from.
+   `vlax-import-type-library` is likewise a nil stub.
+3. **Nested COM objects** — object-valued properties in the mock templates
+   (`ActiveDocument`, `Documents`, `ModelSpace`, `Application`, `Layers`, …) are
+   seeded as `nil` or bare strings, not as VLA-OBJECT references. A property
+   read that should hand back another COM object cannot today.
+
+## 3. Design
+
+### 3.1 Generic façade (faithful to Visual LISP)
+
+Add a fallback in the evaluator's undefined-function path: when an AutoLISP
+call names an **unbound** function whose name matches, case-insensitively:
+
+- `VLA-GET-<PROP>`  → `(vlax-get-property   obj "<PROP>")`      (arity: obj)
+- `VLA-PUT-<PROP>`  → `(vlax-put-property   obj "<PROP>" value)` (arity: obj value)
+- `VLA-<METHOD>`    → `(vlax-invoke-method  obj "<METHOD>" args…)` (obj . args)
+
+dispatch to the corresponding primitive with the property/method name taken
+verbatim from the symbol suffix. Because the primitives already accept a
+symbol/string name and route through the host, the façade is a thin,
+data-driven shim — it introduces **no** per-property enumeration and therefore
+covers the entire family (all the SCHMS names above and any future one) at once.
+
+Placement/precedence rules:
+- Only trigger when the name is otherwise unbound, so a user `(defun vla-… )`
+  or a genuinely-registered `VLA-*` (`VLA-COLLECTION->LIST`, `VLA-POSTCOMMAND`)
+  still wins.
+- Gate behind `(vl-load-com)` having run, matching VL (before `vl-load-com`
+  these names are undefined). `vl-load-com` is currently a no-op returning T
+  (`missing-functions-plan.md`); flip an internal "COM loaded" flag there.
+- `vla-get-`/`vla-put-` require the exact 4-char `get-`/`put-` infix; everything
+  else `vla-…` is a method. `vla-get`/`vla-put` with an empty suffix stay
+  undefined.
+
+### 3.2 `vlax-get-acad-object`
+
+Un-stub it: return the singleton mock `AutoCAD.Application` VLA-OBJECT (create
+on first call via the host, cache on the host so repeated calls return the same
+id). Add a host-protocol generic (e.g. `host-vlax-get-acad-object`) so `nihil`
+signals not-supported and MockHost / future `cador` provide it.
+
+### 3.3 Nested COM object resolution
+
+Teach the mock templates to hand back object-valued properties as live
+VLA-OBJECTs: `AutoCAD.Application.ActiveDocument` lazily creates (once) an
+`AutoCAD.Document` mock and stores its id as the property value, so
+`vla-get-activedocument` returns a usable object. Do the same for the other
+object-valued properties as they are needed (`Documents`, `ModelSpace`, …),
+driven by demand rather than seeding everything up front.
+
+### 3.4 End-to-end target
+
+    (vl-load-com)
+    (setq app (vlax-get-acad-object))         ; mock AutoCAD.Application
+    (setq doc (vla-get-activedocument app))   ; -> mock AutoCAD.Document VLA-OBJECT
+    (vla-get-name doc)                          ; -> "Drawing.dwg"
+
+## 4. Scope / phasing
+
+- **P1 (this pass):** generic façade §3.1 + `vl-load-com` COM-loaded flag +
+  `vlax-get-acad-object` §3.2 + `ActiveDocument` nested-object resolution §3.3,
+  enough to make `vla-get-activedocument` work end-to-end headless. Tick off
+  `vla-get-activedocument` (and any accessor now transitively covered) in
+  `schms-call-inventory.md`.
+- **P2:** flesh out the remaining object-valued mock properties + method
+  handlers that SCHMS+ needs (`ModelSpace`, `Documents`, `Layers`, `AddLine`,
+  `Move`, …), each with a regression test.
+- **P3 (deferred to `cador`):** back the same façade with the real headless
+  document/entity host instead of the mock. No AutoLISP-visible change.
+
+## 5. Tests
+
+- MockHost layer (`autolisp-mock-host/tests/vlax-tests.lisp`): acad-object is a
+  singleton; ActiveDocument resolves to an `AutoCAD.Document` VLA-OBJECT.
+- Builtins layer (`autolisp-builtins-core/tests/builtin-tests.lisp`): the façade
+  maps `vla-get-Name`→property read, `vla-put-Name`→write, `vla-<method>`→invoke;
+  unbound-before-`vl-load-com`; user shadow wins; empty-suffix stays undefined;
+  unknown property still raises `:unknown-com-property`.
+
+## 6. Spec / docs sync (AGENTS.md)
+
+- Note the `vla-*` accessor family + the `(vl-load-com)` gate in the clautolisp
+  user manual and the autolisp-spec `*** clautolisp` deviation section (the
+  dynamic-dispatch behaviour is worth pinning as implementation-defined).
+- `RELEASE_NOTES.org` entry under clautolisp when P1 ships.
+
+## 7. Vendor uncertainty (SPEC-UNCERTAIN)
+
+- Exact error text/behaviour when a `vla-get-<prop>` names a property the object
+  lacks (VL raises an ActiveX exception catchable by `vl-catch-all-apply`) —
+  probe against a real AutoCAD/BricsCAD and record in `deferred-spec-research`.
+- Whether `vla-*` names are visible before `(vl-load-com)` in every vendor build.
