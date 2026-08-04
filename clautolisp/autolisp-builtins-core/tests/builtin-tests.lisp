@@ -2567,6 +2567,32 @@ NIL when GETSTRING returns nil)."
                    "(vl-load-com)(setq tp (entmakex '((0 . \"POINT\")(10 1.0 2.0 0.0))))"
                    "(vlax-curve-getstartpoint tp)")))))
 
+;;; --- vlax-for (special form) + vlax-map-collection ---------------
+
+(test vlax-for-iterates-a-collection
+  ;; The mock Documents collection holds the one open document.
+  (is (eql 1 (%vla (concatenate 'string
+                    "(vl-load-com)(setq n 0)"
+                    "(vlax-for d (vlax-get-property (vlax-get-acad-object) \"Documents\")"
+                    "  (setq n (+ n 1)))"
+                    "n"))))
+  ;; VAR is bound to each member (a document VLA-object) in turn.
+  (is (equal "Drawing.dwg"
+             (let ((v (%vla (concatenate 'string
+                             "(vl-load-com)(setq nm nil)"
+                             "(vlax-for d (vlax-get-property (vlax-get-acad-object) \"Documents\")"
+                             "  (setq nm (vlax-get-property d \"Name\")))"
+                             "nm"))))
+               (if (typep v 'autolisp-string) (autolisp-string-value v) v)))))
+
+(test vlax-map-collection-runs-fn-and-returns-nil
+  (is (equal '(1)
+             (%vla (concatenate 'string
+                    "(vl-load-com)(setq c 0)"
+                    "(vlax-map-collection (vlax-get-property (vlax-get-acad-object) \"Documents\")"
+                    "  '(lambda (x) (setq c (+ c 1))))"
+                    "(list c)")))))
+
 (test reader-handles-newline-and-tab-string-escapes
   ;; "\n" / "\t" / "\r" in source code must produce real control
   ;; characters in every dialect, not literal backslash-letter pairs
@@ -5478,7 +5504,6 @@ cp1252-codec-host-independent.issue."
   (reset-autolisp-symbol-table)
   (install-core-builtins)
   (dolist (probe '(("ACET-STR-FORMAT" "%d" 42)
-                   ("VLAX-MAP-COLLECTION" "coll" "fn")
                    ("DOS_STRTRIM" "  hi  ")
                    ("OSNAP" "1.0,2.0" "_END")
                    ("GRARC")))

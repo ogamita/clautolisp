@@ -174,8 +174,28 @@ document. Repeated calls return the same application object."
                 (com-object->vla doc))
           (setf (gethash "Application" (mock-com-object-properties doc))
                 (com-object->vla app))
+          ;; A Documents collection holding the one open document, so
+          ;; vlax-for / vlax-map-collection have something to iterate.
+          (let ((docs (%register-mock-com-object
+                       host (make-mock-com-object
+                             :progid "AutoCAD.Documents"
+                             :collection-p t
+                             :collection-members (list (com-object->vla doc))))))
+            (setf (gethash "Documents" (mock-com-object-properties app))
+                  (com-object->vla docs)))
           (setf (mock-host-acad-application-id host) (mock-com-object-id app))
           (com-object->vla app)))))
+
+(defmethod host-vlax-collection-items ((host mock-host) vla)
+  "Return the collection's member VLA-objects as a CL list; signal
+:not-a-collection if VLA is not a collection object."
+  (let ((obj (resolve-vla-object host vla 'vlax-collection-items)))
+    (if (mock-com-object-collection-p obj)
+        (copy-list (mock-com-object-collection-members obj))
+        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
+         :not-a-collection
+         "vlax-for / vlax-map-collection: ~A is not an ActiveX collection."
+         (mock-com-object-progid obj)))))
 
 ;;; --- Entity <-> VLA-object bridge + introspection ----------------
 

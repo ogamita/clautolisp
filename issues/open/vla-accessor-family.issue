@@ -6,9 +6,11 @@
   vlax-get-acad-object + ActiveDocument; v1.7.20 group A (points / tmatrix /
   safearray extras); v1.7.21 group B (ename<->vla bridge + introspection);
   v1.7.22 groups C+D (ldata, product-key, command registration); v1.7.23
-  group E (the vlax-curve-* geometry family). All vlax-* are now real builtins
-  **except** vlax-for and vlax-map-collection (collection iteration), still
-  stubbed pending collection objects.
+  group E (the vlax-curve-* geometry family); v1.7.24 collection iteration
+  (vlax-for special form + vlax-map-collection). **Every vlax-* operator is
+  now a real implementation over the headless-CAD host — none remain nil
+  stubs.** Remaining work is P3 (back the same surface with the real `cador`
+  host) and resolving the SPEC-UNCERTAIN items below.
 
   **SPEC-UNCERTAIN / not-yet-evaluated (return the documented nil):**
   - vlax-curve-* on ELLIPSE and SPLINE (elliptic-integral / NURBS math), and

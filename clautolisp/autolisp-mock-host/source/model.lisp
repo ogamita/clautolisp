@@ -43,7 +43,12 @@ vlax-release-object."
   ;; When this COM object is the ActiveX wrapper of a drawing entity
   ;; (vlax-ename->vla-object), BACKING-ENAME is that entity's hex-handle
   ;; string; NIL for ordinary application/document/collection objects.
-  (backing-ename nil))
+  (backing-ename nil)
+  ;; When this COM object is an ActiveX collection (Documents, ModelSpace,
+  ;; …), COLLECTION-P is T and COLLECTION-MEMBERS is the ordered list of
+  ;; its member VLA-objects, iterated by vlax-for / vlax-map-collection.
+  (collection-p nil)
+  (collection-members '()))
 
 ;;; --- MockHost ---------------------------------------------------
 

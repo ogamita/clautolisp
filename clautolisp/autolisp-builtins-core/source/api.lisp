@@ -5773,6 +5773,16 @@ Returns T if something was removed, else nil."
 BricsCAD); always returns nil."
   (host-vlax-queueexpr (current-evaluation-host) (%al->cl-string string)))
 
+;;; --- Collection iteration (vlax-for is a runtime special form) ---
+
+(defun builtin-vlax-map-collection (collection function-designator)
+  "Apply FUNCTION-DESIGNATOR to each member of an ActiveX COLLECTION
+(spec 71711); side-effecting traversal, returns nil."
+  (let ((fn (resolve-autolisp-function-designator function-designator)))
+    (dolist (item (host-vlax-collection-items (current-evaluation-host) collection))
+      (call-autolisp-function fn item))
+    nil))
+
 ;;; --- Curve geometry (Group E: vlax-curve-*) ----------------------
 ;;;
 ;;; A vlax-curve-* argument is an entity ENAME or a VLA-object; we
@@ -9095,9 +9105,8 @@ stub. Used by CORE-BUILTINS to bulk-install the M6 inventory."
     "ACET-VIEWPORT-FROZEN-LAYER-LIST" "ACET-VIEWPORT-LOCK-SET"
     "ACET-VIEWPORT-NEXT-PICKABLE" "ACET-WMFIN" "ACET-XDATA-GET"
     "ACET-XDATA-SET"
-    ;; VLAX-* (still stubbed: collection iteration only; the rest —
-    ;; incl. the whole vlax-curve-* family — are now real builtins).
-    "VLAX-FOR" "VLAX-MAP-COLLECTION"
+    ;; VLAX-* — all now real: vlax-for is a runtime special form,
+    ;; vlax-map-collection a builtin; nothing left to stub here.
     ;; VLA-* (2)
     "VLA-COLLECTION->LIST" "VLA-POSTCOMMAND"
     ;; VLR-* (4)
@@ -9374,6 +9383,7 @@ docstring above the def for the upgrade-path reference.")
    (make-core-builtin-subr "VLAX-CURVE-ISCLOSED"          #'builtin-vlax-curve-isclosed)
    (make-core-builtin-subr "VLAX-CURVE-ISPERIODIC"        #'builtin-vlax-curve-isperiodic)
    (make-core-builtin-subr "VLAX-CURVE-ISPLANAR"          #'builtin-vlax-curve-isplanar)
+   (make-core-builtin-subr "VLAX-MAP-COLLECTION"          #'builtin-vlax-map-collection)
    (make-core-builtin-subr "VLAX-PROPERTY-AVAILABLE-P"    #'builtin-vlax-property-available-p)
    (make-core-builtin-subr "VLAX-METHOD-APPLICABLE-P"     #'builtin-vlax-method-applicable-p)
    (make-core-builtin-subr "VLAX-MAKE-SAFEARRAY"          #'builtin-vlax-make-safearray)
@@ -9941,4 +9951,10 @@ extension-variable convention below."
   (setf *com-loaded-p* nil)
   (setf clautolisp.autolisp-runtime:*resolve-unbound-function-hook*
         #'resolve-vla-accessor)
+  ;; The VLAX-FOR special form (in the runtime) gets its collection
+  ;; members through this hook, since the runtime cannot reach the host
+  ;; COM protocol directly.
+  (setf clautolisp.autolisp-runtime:*vlax-collection-items-hook*
+        (lambda (collection)
+          (host-vlax-collection-items (current-evaluation-host) collection)))
   t)

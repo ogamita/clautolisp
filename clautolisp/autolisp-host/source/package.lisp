@@ -94,4 +94,5 @@
    #:host-vlax-ldata-list
    #:host-vlax-add-cmd
    #:host-vlax-remove-cmd
-   #:host-vlax-queueexpr))
+   #:host-vlax-queueexpr
+   #:host-vlax-collection-items))

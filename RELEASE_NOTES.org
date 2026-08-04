@@ -436,6 +436,10 @@ separate binary for tool integrators.
   segments of a bulged polyline are not yet evaluated (they return nil,
   the documented failure value) — see the SPEC-UNCERTAIN notes in
   ~issues/open/vla-accessor-family.issue~.
+- Collection iteration: ~vlax-for~ (a special form) and
+  ~vlax-map-collection~ iterate an ActiveX collection, binding / applying
+  to each member. With this, *every* ~vlax-*~ operator is now a real
+  implementation over the headless-CAD host — none remain nil stubs.
 - ~acad_strlsort~ now really sorts: it returns a *new* list of the
   input strings in ascending, case-sensitive, ordinal order (upper
   before lower; accented / non-ASCII letters after the ASCII range),

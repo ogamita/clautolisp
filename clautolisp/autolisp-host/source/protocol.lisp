@@ -162,6 +162,7 @@ not implement OPERATION."
 (defgeneric host-vlax-add-cmd             (host global-name function local-name flags) (:documentation "Register a command (vlax-add-cmd); returns the global name string."))
 (defgeneric host-vlax-remove-cmd          (host global-name) (:documentation "Remove a registered command (vlax-remove-cmd); T if present."))
 (defgeneric host-vlax-queueexpr           (host string) (:documentation "Queue a command/Lisp string for async execution (vlax-queueexpr); returns nil."))
+(defgeneric host-vlax-collection-items    (host vla-object) (:documentation "Return a CL list of an ActiveX collection's member VLA-objects; backs vlax-for / vlax-map-collection."))
 
 ;;; --- Base-class fallback methods --------------------------------
 ;;;
@@ -250,3 +251,4 @@ not implement OPERATION."
 (defmethod host-vlax-add-cmd              ((host host) global-name function local-name flags) (declare (ignore global-name function local-name flags)) (signal-host-not-supported host 'vlax-add-cmd))
 (defmethod host-vlax-remove-cmd           ((host host) global-name) (declare (ignore global-name)) (signal-host-not-supported host 'vlax-remove-cmd))
 (defmethod host-vlax-queueexpr            ((host host) string) (declare (ignore string)) (signal-host-not-supported host 'vlax-queueexpr))
+(defmethod host-vlax-collection-items     ((host host) vla-object) (declare (ignore vla-object)) (signal-host-not-supported host 'vlax-collection-items))

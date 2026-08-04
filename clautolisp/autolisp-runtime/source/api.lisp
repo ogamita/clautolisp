@@ -1406,6 +1406,12 @@ layer wires the dynamic Visual-LISP `vla-*' accessor façade without the
 runtime having to depend on the builtins system (a layer above it). See
 RESOLVE-VLA-ACCESSOR in autolisp-builtins-core.")
 
+(defparameter *vlax-collection-items-hook* nil
+  "When non-nil, a function (COLLECTION-VLA) returning a CL list of an
+ActiveX collection's member values; used by the VLAX-FOR special form.
+Set by the builtins layer (which owns the host COM protocol), so the
+runtime need not depend on the host/builtins layers above it.")
+
 (defparameter *debug-define-command-hook* nil
   "When non-nil, a function (NAMES FUNCTION DOC) the CLAL-DEFINE-DEBUGGER-COMMAND
 builtin calls to register an AutoLISP-defined debugger command (command
@@ -2605,6 +2611,39 @@ COMMAND-S special forms and the VL-CMDF builtin."
                                 nil))))
         (pop-dynamic-frame context)))))
 
+(defun eval-vlax-for-form (arguments context)
+  "(vlax-for VAR COLLECTION BODY...) — iterate over an ActiveX
+collection, binding VAR to each member (Visual LISP special form, spec
+1568). The member list comes from *vlax-collection-items-hook*, which the
+builtins layer installs (the runtime cannot reach the host COM protocol)."
+  (unless (>= (length arguments) 2)
+    (signal-autolisp-runtime-error
+     :wrong-number-of-arguments
+     "VLAX-FOR expects at least a binding name and a collection, got ~D arguments."
+     (length arguments)))
+  (let ((name (first arguments))
+        (body (cddr arguments))
+        (result nil))
+    (unless (typep name 'autolisp-symbol)
+      (signal-autolisp-runtime-error
+       :invalid-foreach-binding
+       "VLAX-FOR binding name must be an AutoLISP symbol, got ~S." name))
+    (unless *vlax-collection-items-hook*
+      (signal-autolisp-runtime-error
+       :unsupported-special-operator
+       "VLAX-FOR is unavailable: no COM collection support is installed."))
+    (let ((items (funcall *vlax-collection-items-hook*
+                          (autolisp-eval (second arguments) context))))
+      (unwind-protect
+           (progn
+             (push-dynamic-frame context)
+             (dolist (element items result)
+               (if (find-dynamic-binding name (evaluation-context-dynamic-frame context))
+                   (set-variable name element context)
+                   (bind-dynamic-variable name element context))
+               (setf result (if body (autolisp-eval-progn body context) nil))))
+        (pop-dynamic-frame context)))))
+
 (defun maybe-warn-about-rest-separator (lambda-list who)
   "Walk LAMBDA-LIST, find the rest-separator if any, and emit a
 dialect-aware warning via `emit-lambda-list-extension-warning'.
@@ -2738,6 +2777,7 @@ malformed cases surface at call-time via `bind-usubr-frame')."
         (cons "WHILE" #'eval-while-form)
         (cons "REPEAT" #'eval-repeat-form)
         (cons "FOREACH" #'eval-foreach-form)
+        (cons "VLAX-FOR" #'eval-vlax-for-form)
         (cons "LAMBDA" #'eval-lambda-form)
         (cons "FUNCTION" #'eval-function-form)
         (cons "DEFUN-Q" #'eval-defun-q-form)
