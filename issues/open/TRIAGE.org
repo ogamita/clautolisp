@@ -57,7 +57,7 @@ retrofitted as they are touched.
 
 | Issue                                         | Type            | Status   | Note |
 |-----------------------------------------------+-----------------+----------+------|
-| vendor-probe-autocad-bricscad-divergences     | divergence-cat  | TODO     | canonical AutoCAD⇄BricsCAD divergence register; anchor for the rest. NOTE: not access-blocked — D1 DONE (1.6.16), D2 closed; probes already ran on real runners. Remaining D3 (entmod on XRECORD: AutoCAD no-op / BricsCAD updates) = pure code (per-dialect policy+spec) + regen a clean empty.dwg on the Windows runner and re-run vendor:probes:* |
+| vendor-probe-autocad-bricscad-divergences     | divergence-cat  | TODO     | canonical AutoCAD⇄BricsCAD divergence register; anchor for the rest. All three divergences RESOLVED in clautolisp: D1 DONE (1.6.16), D2 closed (contamination), D3 DONE (1.6.17, entmod-on-XRECORD per-dialect, verified green 2026-08-06). Remaining is NOT clautolisp code: the D1/D3 cadaptor forks (external repo) + selection re-verify blocked on regenerating a clean empty.dwg on the Windows runner |
 | bricscad-dialect-sysvar-parity                | dialect-bug     | TODO     | bricscad dialect reports AutoCAD's sysvars, not BricsCAD factory defaults (phase-2 harvest) |
 | system-variables                              | dialect-epic    | TODO     | AutoCAD/BricsCAD sysvars: collect/specify/implement; coupling backlog, partly gated on drawing-database-api (17f) |
 | autocad-no-rest-output-capture                | cad-runtime     | TODO     | no-&rest path loses probe output on AutoCAD |

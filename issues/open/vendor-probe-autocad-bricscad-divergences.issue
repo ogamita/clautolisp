@@ -137,7 +137,7 @@ Confirmed divergences to process (spec + dialect + cadaptor each):
   D1 entmake subclass markers for R13+ entities   (autocad reject / bricscad
      synthesise / clautolisp lenient+WARN / strict require).   *** DONE ***
   D2 regapp  -- NOT a divergence: CONTAMINATION. See below.
-  D3 entmod on non-graphical XRECORD: autocad no-op, bricscad updates.  OPEN.
+  D3 entmod on non-graphical XRECORD: autocad no-op, bricscad updates.  *** DONE ***
 
 D1 IMPLEMENTED (clautolisp 1.6.16). entity-family gains a since-r13-p flag;
 clautolisp.drawing:entity-dxf-missing-markers (pure) reports the absent
@@ -147,6 +147,27 @@ clautolisp.drawing:entity-dxf-missing-markers (pure) reports the absent
 marker note in the ENTMAKE + ENTMAKEX *** clautolisp sections. Tests: drawing
 unit + builtins-core per-dialect e2e (all green). STILL TODO for D1: fork the
 cadaptor issue.
+
+D3 IMPLEMENTED (clautolisp 1.6.17; renamed mock-host -> cador in 1.7.27).
+Mirrors D1 exactly, sharing the same per-dialect resolver. The cador host
+gates host-entmod (clautolisp/cador/source/entity-api.lisp): the pure
+predicate %entmod-target-nongraphical-p flags a non-graphical target (the
+drawing layer's XRECORD/DICTIONARY families carry :graphical-p nil), and
+%resolved-divergence-policy (shared with D1) maps the ambient dialect
+(clautolisp.autolisp-runtime:current-evaluation-dialect-name) to an action:
+autocad-2026 / clautolisp / strict -> :normative NO-OP (entmod returns nil,
+the mutation does not take, matching AutoCAD); bricscad-v26 / lax -> :deviant
+apply (matching BricsCAD). strict + bricscad-v26 additionally emit the
+[entmod-nongraphical] warning; lax is silent. Spec: ENTMOD page ****
+"Non-graphical objects (resolved divergence — chapter 25 case 2)" in the
+autolisp-visual-lisp-specification-draft. Tests (all green, verified
+2026-08-06, builtins-core suite 1712 checks 0 fail): builtins-core e2e
+dd-d3-normative-dialects-noop-entmod-on-xrecord /
+dd-d3-deviant-dialects-apply-entmod-on-xrecord /
+dd-d3-warns-under-bricscad-and-strict-only /
+dd-d3-graphical-entmod-unaffected-by-object-gate, plus the cador host unit
+dictsearch-object-feeds-entmod-and-entget. STILL TODO for D3: fork the
+cadaptor issue (same external follow-on as D1).
 
 D2 RESOLVED as contamination, NOT a divergence. regapp of an ALREADY-registered
 app returns nil on BOTH AutoCAD and BricsCAD (that is the spec) -- the probe's
@@ -166,7 +187,14 @@ real ssget "X" divergence underneath.
 Status
 ------
 
-OPEN. D1 IMPLEMENTED (clautolisp 1.6.16; cadaptor fork still TODO). D2 closed
-as contamination (not a divergence). D3 (entmod on XRECORD) remains: spec +
-dialect + cadaptor. Selection blocked on a clean empty.dwg (runner).
-Next: D3, then the D1/D3 cadaptor forks.
+OPEN. All three divergences are now RESOLVED in clautolisp itself:
+D1 IMPLEMENTED (1.6.16), D2 closed as contamination (not a divergence),
+D3 IMPLEMENTED (1.6.17, verified green 2026-08-06). What remains is NOT
+clautolisp code:
+  - the D1/D3 cadaptor forks (file the two divergences into the cadaptor
+    consumer — external follow-on, another repo); and
+  - the selection re-verify, blocked on regenerating a truly-empty
+    c:/gitlab-runner/dwg/empty.dwg on the Windows runner (drawing hygiene,
+    not a language divergence — see the MEASURED note above).
+This issue stays OPEN as the tracker for those two residual items.
+Next: the cadaptor forks; the empty.dwg regen is a one-shot runner task.
