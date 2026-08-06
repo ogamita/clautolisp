@@ -1,0 +1,78 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-1-split-nihil-cador — name the two headless hosts nihil (stubs) and cador (CAD core)
+#+STATUS: NEXT
+#+PRIORITY: P1
+#+TYPE: infra
+#+DEPENDS: cador-multidocument-host
+#+BRANCH: cador
+
+* Context
+
+Sub-task 1 of the =cador-multidocument-host= epic (§1, §7). The epic
+plans three hosts: =nihil= (no-op stubs), =cador= (headless in-process
+CAD core), and a future wire host.
+
+Code reality (verified 2026-08-06, master), which differs from the
+epic's §7 assumption that entity code lives "in the null host":
+
+- =autolisp-host/source/null-host.lisp= — the =null-host= class is
+  ALREADY pure stubs: 51 methods, each =signal-host-not-supported= (a few
+  sysvar-wiring ones are silent no-ops). This IS the intended =nihil=.
+- =autolisp-mock-host/= — the =mock-host= class is the real headless CAD
+  core (entity DB, ssget, symbol tables, dictionaries, sysvar catalogue,
+  the vlax/vla COM surface, reactors). This IS the intended =cador=. It is
+  the default backend (=--host mock=, and =resolve-host-backend= default).
+- So the "split" the epic describes is, in this codebase, essentially a
+  *rename to the epic's names* — the functional split (stubs vs CAD core)
+  already happened, under the names null-host / mock-host.
+
+(Note: the epic's "null host accumulated cador functions" framing pre-dates
+the mock-host extraction; the accumulated functions are in mock-host.)
+
+* Problem
+
+The two headless hosts do not carry their intended architectural names,
+and =nihil='s stub contract is a hard =:host-not-supported= error rather
+than the softer "not implemented in this host" the owner wants for a
+backend whose job is only to keep the interpreter running.
+
+* Proposal
+
+1. **cador = the real headless CAD host.** Rename =mock-host= →
+   =cador= across package (=clautolisp.autolisp-mock-host= →
+   =clautolisp.cador=), ASDF system, source directory, class,
+   =make-mock-host= → =make-cador=, and the ~134 package refs / 140
+   constructor sites / 45 files. Follow the epic §7 discipline: pure
+   mechanical move/rename in one reviewable commit, no behaviour change.
+2. **nihil = the stub host.** Rename =null-host= → =nihil= (7 files:
+   class, =make-null-host=, =*null-host*=, package/system, docs).
+3. **nihil stub behaviour.** Change the stubs from a bare
+   =signal-host-not-supported= to the D1 taxonomy's *operation not
+   supported by this host* condition, carrying a warning-grade message
+   ("… not implemented in the nihil host") — visible, catchable, and
+   distinct from cador's "unavailable in a headless context". (Exact
+   condition-class vs warning semantics to align with D1 / owner; the
+   pi/T/PAUSE-style predefined bindings and pure language surface must
+   keep working under nihil.)
+4. **CLI.** =--host cador|nihil= become the canonical values; keep
+   =mock=→cador and =null=→nihil as accepted (deprecated) aliases so
+   existing invocations, tests and docs do not break in one step.
+5. **Tests.** Retain the mock-host suites under the cador name; the split
+   the epic §7.7 wants (entity-semantics tests select cador, core-only
+   tests select nihil) falls out naturally.
+
+Open decision for the owner before executing (see the issue thread):
+whether to do the full mock→cador rename now (large, churny, but the
+epic's stated intent) or introduce =cador= as the canonical name with
+=mock= kept as a thin alias to bound the churn.
+
+* Acceptance criteria
+
+- [ ] =cador= is the name of the real headless CAD host (class, package,
+      system, constructor, =--host cador=), behaviour unchanged.
+- [ ] =nihil= is the stub host (=--host nihil=); its operations signal the
+      D1 "not supported by this host" condition with a clear message, and
+      the pure language surface still runs under it.
+- [ ] =mock= / =null= still accepted as deprecated =--host= aliases.
+- [ ] Full =test-system "clautolisp"= green on SBCL and CCL.
+- [ ] AGENTS.md / user-manual updated for the host names.

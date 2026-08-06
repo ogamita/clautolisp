@@ -1,0 +1,53 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-4-epic-remainder — remaining cador epic work (DB backend, command layer, migration adaptation, conformance, wire host)
+#+STATUS: DEFERRED
+#+PRIORITY: P3
+#+TYPE: epic
+#+DEPENDS: cador-1-split-nihil-cador cador-2-multidocument-runtime cador-3-host-interface-protocol-spec
+#+BRANCH: cador
+
+* Context
+
+Sub-task 4 (catch-all tail) of the =cador-multidocument-host= epic: the
+work that follows once the naming split (cador-1), the multidocument
+runtime (cador-2) and the specification (cador-3) are in hand. Kept as one
+tracker so the epic's remaining scope is not lost; split into its own
+issues as each becomes actionable.
+
+* Remaining work (from the epic §5 Part II, §7.4, §8, §9)
+
+- **Database backend decision + build-out (epic §5.12, §9.3).** cador's
+  entity store is today the mock-host in-memory DB with no persistence.
+  Decide and specify the target: native CL in-memory DB with DXF
+  read/write, native with deferred persistence, or an external DWG library
+  (libredwg is already vendored). Recommend + implement.
+- **Command layer scope (epic §9.4).** Decide whether =(command "LINE" …)=
+  drives native commands in cador or entity access is purely programmatic;
+  specify =(command …)= / =(command-s …)= for unimplemented commands. Large
+  real-world impact (much AutoLISP drives commands, not the entity API).
+- **Migration §7.4 adaptation.** After cador-1's mechanical rename, adapt
+  the moved code to the D1 interface in a separate, reviewable commit
+  (semantic changes visible on their own).
+- **Locking semantics (epic §9.5).** Faithful / checked-no-op / omitted —
+  the checked-no-op (detects protocol violations without a real backend)
+  is worth serious consideration.
+- **Conformance suite (epic §8, D4).** E1–E10 as probes runnable three
+  ways (AutoCAD / BricsCAD reference, cador conformance); the D1 fidelity
+  matrix is the coverage target; =alfe-test= green in CI against cador with
+  no interactive input.
+- **accoreconsole / BricsCAD-headless fidelity envelope (epic §9.1, §9.2)**
+  — establish the reference boundary with citations.
+- **Wire host (epic §1 third host, §9.7).** Specify and name the W2
+  display/editor server host. Out of scope for the epic itself; tracked
+  here so it is not forgotten.
+
+* Acceptance criteria
+
+- [ ] Each bullet promoted to its own issue when actionable, and this
+      tracker updated / closed when they are all spun out.
+- [ ] Epic §10 acceptance criteria met once cador-1..4 land.
+
+* Notes
+
+Most of this is gated on cador-1..3 and, for the conformance reference
+rows, on live CAD access (BricsCAD/AutoCAD) — hence DEFERRED for now.

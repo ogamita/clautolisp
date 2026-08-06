@@ -1,0 +1,67 @@
+# -*- mode:org; coding:utf-8 -*-
+#+TITLE: cador-3-host-interface-protocol-spec — D1 host-interface spec + formal autolisp↔host protocol + D2 cador spec
+#+STATUS: TODO
+#+PRIORITY: P2
+#+TYPE: spec
+#+DEPENDS: cador-multidocument-host
+#+BRANCH: cador
+
+* Context
+
+Sub-task 3 of the =cador-multidocument-host= epic — its deliverables
+D1, D2, D5 (§3, §4, §5). Writing the specification and design, including
+the *formal definition of the protocol between AutoLISP and the host*.
+
+* Problem
+
+The host interface is clautolisp's single way out to CAD/GUI (epic §1),
+but it is only implemented (as CLOS generics =host-*=), not specified.
+The cador multidocument runtime (cador-2) and any future wire host need a
+backend-agnostic, formally-defined contract to implement against.
+
+* Proposal / deliverables
+
+- **D1 — =clautolisp-host-interface-spec.org=.** The generic, backend-
+  agnostic host interface. Operations by group (epic §4): session/document
+  management; database/entity access; system variables + scope tiers;
+  interaction + the *console device* (explicitly not a cl:stream); command
+  layer; filesystem/encoding; notification/reactors; concurrency/locking.
+  Plus the two cross-cutting mechanisms — capability query, and the
+  condition taxonomy (not-supported-by-this-host vs unavailable-headless
+  vs not-yet-implemented vs backend-error). Close with the fidelity matrix
+  (rows = operations; columns = nihil, cador, <wire-host>, AutoCAD,
+  BricsCAD).
+- **Formal protocol.** A precise definition of the request/response
+  contract between the AutoLISP engine and a host: message/operation set,
+  argument and result value domains, error signalling, ordering and the
+  park/resume interaction (so it holds for an in-image host, cador's
+  coroutine model, and a future out-of-process wire host alike). This is
+  the artefact cador-2's scheduler and any wire host implement.
+- **D2 — =clautolisp-cador-spec.org=.** Part I semantics (session model,
+  scheduler/parking, current-vs-active document, namespace/symbol model,
+  blackboard, sysvar scope tiers, handles, streams/encoding, startup hook
+  chain, the headless console device, deliberate omissions) — each a
+  stated decision, not a survey. Part II design (DB backend choice,
+  command-layer scope, debugger integration surfaces, module/package
+  layout). Resolve every §5 and §9 open question with a provenance grade;
+  every assumption in a dedicated subsection.
+- **D5 — naming + architecture note** recording epic §1 (may be a D1
+  section) so the decision survives the epic.
+
+Conventions per epic §3 (org-mode, provenance grades A/B/C/V, assumptions
+flagged). Documents live under =clautolisp/documentation/=.
+
+* Acceptance criteria
+
+- [ ] D1 exists, backend-agnostic, with the fidelity matrix and the
+      capability-query + condition-taxonomy mechanisms.
+- [ ] The formal autolisp↔host protocol is defined precisely enough for
+      cador-2 and a future wire host to implement against it.
+- [ ] D2 Part I + Part II reach a stated decision on every §5 / §9 item.
+- [ ] Constraints C1–C8 each trace to a D2 section.
+
+* Notes
+
+D1 must be specifiable without reference to any particular host (epic §3).
+Feeds cador-1 (the condition taxonomy nihil/cador use) and cador-2 (the
+protocol the scheduler realises).
