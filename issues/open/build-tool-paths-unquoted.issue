@@ -1,0 +1,119 @@
+-*- coding:utf-8 -*-
+
+build-tool-paths-unquoted — the build breaks when a tool lives in a path with spaces
+=====================================================================================
+
+Reported from: the SCHMS+ CI on a Windows runner (fabrik, project
+dmoe-pop/epure/es/schms), building clautolisp from source in-job.
+2026-08-06.
+
+Symptom
+-------
+
+    $ make build-programs
+    /usr/bin/sh: line 1: C:/Program: No such file or directory
+    make: *** [Makefile:194: build-programs] Error 127
+
+`sh` split the command on the space in `C:/Program Files/Steel Bank
+Common Lisp/sbcl` and went looking for an executable literally named
+`C:/Program`. Exit 127 is "command not found", not a build error.
+
+The machine is a stock Windows developer workstation. Its tools are
+where Windows installers put them:
+
+    C:\Program Files\Steel Bank Common Lisp
+    C:\Program Files\Git\bin
+    C:\Program Files\dotnet
+    C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin
+    C:\Program Files\make-4.4.1-with-guile-w32\bin
+
+Every one of those contains a space. On Windows this is the normal case,
+not an exotic one.
+
+Cause
+-----
+
+Recipes interpolate the tool variable without quoting it:
+
+    autolisp-front-end/Makefile:240
+        $(SBCL) --noinform --no-userinit --non-interactive \
+
+    autolisp-front-end/Makefile:253
+        $(CCL) --no-init --quiet \
+
+When `SBCL` resolves to a bare `sbcl` found on PATH — the POSIX case —
+this works. When it resolves to an absolute path containing a space, the
+shell word-splits it.
+
+Note that the *diagnostics* around those lines already quote correctly:
+
+    autolisp-front-end/Makefile:157
+        echo "Error: sbcl not found in PATH (looked for '$(SBCL)')"; \
+
+so the fix is to extend to the invocations the care already taken in the
+messages.
+
+Extent
+------
+
+Recipe lines interpolating a tool variable unquoted, per Makefile:
+
+    autolisp-front-end/Makefile   4
+    clautolisp/Makefile           4
+    autolisp-benchmark/Makefile   1
+    autolisp-spec/Makefile        1
+    autolisp-test/Makefile        1
+    documentation/Makefile        1
+
+(counted on `^\t.*[^"]\$\((SBCL|CCL|LISP|CLAUTOLISP|ALFE|PYTHON|EMACS|PANDOC)\)`;
+treat it as a lower bound, and as a starting point rather than a
+specification — the same reasoning applies to any variable that can hold
+a path.)
+
+Three shell scripts interpolate the same variables and want the same
+review:
+
+    scripts/run-pathname-probe.sh
+    scripts/run-encoding-experiment.sh
+    scripts/verify-bricscad-automation.sh
+
+Also worth checking, because the failure mode is identical and silent
+until a Windows machine runs it: `$(MAKE) -C <dir>` where the directory
+could contain a space, `command -v $(SBCL)` in the HAVE_* probes
+(Makefile:58-59 — `command -v` on an unquoted path with spaces answers
+about the wrong thing), and any `PREFIX=` / `DESTDIR=` passed down.
+
+Requested
+---------
+
+Quote tool variables at their point of use in recipes and scripts:
+`"$(SBCL)"`, `"$(CCL)"`, `"$(CLAUTOLISP)"`, `"$(ALFE)"`. Same in the
+`command -v` probes, which currently answer the wrong question when the
+path has a space.
+
+This is worth doing rather than working around. The workaround on the
+caller's side is to set `SBCL=sbcl` and rely on PATH resolution, which
+works — the CI now puts the right directories on PATH — but it hides a
+defect that will hit the next Windows machine, and it constrains how
+callers may configure the build.
+
+Suggested test
+--------------
+
+A build with a tool path containing a space, which needs no Windows:
+
+    mkdir -p "/tmp/faux outils"
+    ln -s "$(command -v sbcl)" "/tmp/faux outils/sbcl"
+    make build-programs SBCL="/tmp/faux outils/sbcl"
+
+That reproduces the failure on Linux and guards the fix afterwards.
+
+Why it matters
+--------------
+
+It is what currently stops `build:clautolisp:windows` from succeeding in
+the SCHMS+ pipeline, and with it the whole Windows test lane — the CAD
+tests included, since they need alfe on the machine that has the CAD.
+
+The Linux lane is unaffected: `sbcl` is found on PATH there, without a
+space, so the defect stays invisible until a build runs on Windows.
