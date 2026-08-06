@@ -1,4 +1,4 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; Default symbol-table records and sysvar cells installed in a
 ;;;; freshly-constructed MockHost.
@@ -25,7 +25,7 @@
 (defun populate-default-tables (mock)
   "Pre-populate MOCK with the standard empty AutoCAD symbol
 tables so tblsearch / tblnext have a sensible baseline."
-  (let ((tables (mock-host-tables mock)))
+  (let ((tables (cador-tables mock)))
     (dolist (entry *default-table-records*)
       (let* ((kind  (car entry))
              (names (cdr entry))
@@ -87,7 +87,7 @@ CATALOGUE selects the table installed:
 In both modes the entries are five-tuples
   (NAME KIND DEFAULT READ-ONLY-P [HOST-DERIVED-P])
 with HOST-DERIVED-P defaulting to NIL for the :SEED list."
-  (let ((table (mock-host-sysvars mock))
+  (let ((table (cador-sysvars mock))
         (entries (ecase catalogue
                    (:full *full-sysvar-catalogue*)
                    (:seed *default-sysvars*))))
@@ -107,36 +107,36 @@ with HOST-DERIVED-P defaulting to NIL for the :SEED list."
 
 ;;; --- Convenience accessors -------------------------------------
 
-(defun mock-host-table (mock kind)
+(defun cador-table (mock kind)
   "Return the per-kind symbol-table hash-table for MOCK, creating
 it on first reference."
-  (let ((tables (mock-host-tables mock)))
+  (let ((tables (cador-tables mock)))
     (or (gethash kind tables)
         (setf (gethash kind tables)
               (make-hash-table :test #'equalp)))))
 
-(defun mock-host-find-table-record (mock kind name)
-  (gethash name (mock-host-table mock kind)))
+(defun cador-find-table-record (mock kind name)
+  (gethash name (cador-table mock kind)))
 
-(defun mock-host-add-table-record (mock record)
-  (let ((per-kind (mock-host-table mock (symbol-table-record-kind record))))
+(defun cador-add-table-record (mock record)
+  (let ((per-kind (cador-table mock (symbol-table-record-kind record))))
     (setf (gethash (symbol-table-record-name record) per-kind) record)
     record))
 
-(defun mock-host-sysvar (mock name)
-  (gethash name (mock-host-sysvars mock)))
+(defun cador-sysvar (mock name)
+  (gethash name (cador-sysvars mock)))
 
-(defun mock-host-set-sysvar (mock name value)
-  (let ((cell (mock-host-sysvar mock name)))
+(defun cador-set-sysvar (mock name value)
+  (let ((cell (cador-sysvar mock name)))
     (when cell
       (when (sysvar-cell-read-only-p cell)
         (signal-host-not-supported mock 'setvar))
       (setf (sysvar-cell-value cell) value)
       value)))
 
-(defun mock-host-remove-sysvar (mock name)
+(defun cador-remove-sysvar (mock name)
   "Drop the sysvar cell NAME from MOCK. After this, getvar returns nil
 \(unknown name) and setvar signals unknown-sysvar — the behaviour of a
 real CAD for a variable it does not define. Returns T when a cell was
 removed, nil when NAME was already absent."
-  (remhash name (mock-host-sysvars mock)))
+  (remhash name (cador-sysvars mock)))

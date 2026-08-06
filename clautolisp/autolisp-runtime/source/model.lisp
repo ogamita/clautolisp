@@ -56,7 +56,7 @@ clautolisp-secureload-trust-model spec.")
   ;; Per-document persistent-reactor symbol-name index. Maps a
   ;; reactor-id to a property list (:type :callbacks :data :owners)
   ;; suitable for serialisation / round-trip via
-  ;; mock-host-snapshot. Maintained by vlr-pers / vlr-pers-release.
+  ;; cador-snapshot. Maintained by vlr-pers / vlr-pers-release.
   (persistent-reactor-index (make-hash-table :test #'eq))
   ;; Phase 14a back-pointer: the runtime-session that owns this
   ;; document. Set by make-runtime-session and preserved across

@@ -1,6 +1,6 @@
-(in-package #:clautolisp.autolisp-mock-host.tests)
+(in-package #:clautolisp.cador.tests)
 
-(in-suite autolisp-mock-host-suite)
+(in-suite cador-suite)
 
 ;;;; MockHost adapter tests for the named-object dictionary tree,
 ;;;; xrecord lifecycle and REGAPP registration.
@@ -15,14 +15,14 @@
 ;;; --- namedobjdict / dictadd / dictsearch ------------------------
 
 (test namedobjdict-returns-a-stable-ename
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (let ((r1 (host-namedobjdict mock))
           (r2 (host-namedobjdict mock)))
       (is (typep r1 'autolisp-ename))
       (is (string= (autolisp-ename-value r1) (autolisp-ename-value r2))))))
 
 (test dictadd-and-dictsearch-round-trip-an-xrecord
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (let ((nod (host-namedobjdict mock))
           (x   (make-xrecord-ename mock "hello")))
       (is (eq x (host-dictadd mock nod (mk-str "MYREC") x)))
@@ -38,7 +38,7 @@
       (is (null (host-dictadd mock nod (mk-str "MYREC") (make-xrecord-ename mock)))))))
 
 (test dictobjname-returns-member-ename
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (let ((nod (host-namedobjdict mock))
           (x   (make-xrecord-ename mock)))
       (host-dictadd mock nod (mk-str "K") x)
@@ -47,7 +47,7 @@
       (is (null (host-dictobjname mock nod (mk-str "ABSENT")))))))
 
 (test dictsearch-object-feeds-entmod-and-entget
-  (let ((mock (make-mock-host))
+  (let ((mock (make-cador))
         (session (clautolisp.autolisp-runtime:evaluation-context-session
                   (clautolisp.autolisp-runtime:current-evaluation-context))))
     (let ((nod (host-namedobjdict mock))
@@ -74,7 +74,7 @@
 ;;; --- dictnext enumeration ---------------------------------------
 
 (test dictnext-enumerates-all-members-then-nil
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (let ((nod (host-namedobjdict mock)))
       (host-dictadd mock nod (mk-str "A") (make-xrecord-ename mock "a"))
       (host-dictadd mock nod (mk-str "B") (make-xrecord-ename mock "b"))
@@ -90,7 +90,7 @@
 ;;; --- dictremove / dictrename ------------------------------------
 
 (test dictremove-detaches-and-returns-ename
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (let ((nod (host-namedobjdict mock))
           (x   (make-xrecord-ename mock)))
       (host-dictadd mock nod (mk-str "K") x)
@@ -100,7 +100,7 @@
       (is (null (host-dictremove mock nod (mk-str "K")))))))
 
 (test dictrename-changes-the-key
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (let ((nod (host-namedobjdict mock))
           (x   (make-xrecord-ename mock)))
       (host-dictadd mock nod (mk-str "OLD") x)
@@ -112,7 +112,7 @@
 ;;; --- ssget must never return dictionaries / xrecords ------------
 
 (test ssget-x-excludes-non-graphical-objects
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (host-entmake mock (list (cons 0 "LINE") (cons 10 '(0.0d0 0.0d0 0.0d0))
                              (cons 11 '(1.0d0 1.0d0 0.0d0))))
     (host-namedobjdict mock)                       ; creates the root DICTIONARY
@@ -124,17 +124,17 @@
 ;;; --- REGAPP ------------------------------------------------------
 
 (test regapp-registers-and-rejects-duplicates
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (is (string= "SCHMS" (autolisp-string-value (host-regapp mock (mk-str "SCHMS")))))
     (is (null (host-regapp mock (mk-str "SCHMS"))))          ; already registered
-    (is (typep (mock-host-find-table-record mock :appid "SCHMS")
+    (is (typep (cador-find-table-record mock :appid "SCHMS")
                'symbol-table-record))))
 
 ;;; --- Session isolation: fresh host = fresh drawing --------------
 
 (test dictionaries-are-isolated-between-fresh-hosts
-  (let ((m1 (make-mock-host))
-        (m2 (make-mock-host)))
+  (let ((m1 (make-cador))
+        (m2 (make-cador)))
     (host-dictadd m1 (host-namedobjdict m1) (mk-str "K") (make-xrecord-ename m1))
     ;; m2's fresh root dictionary has no such entry
     (is (null (host-dictsearch m2 (host-namedobjdict m2) (mk-str "K"))))))

@@ -48,7 +48,7 @@
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-host"
-               "clautolisp/autolisp-mock-host"
+               "clautolisp/cador"
                "clautolisp/autolisp-init-files"
                "uiop")
   :serial t

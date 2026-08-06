@@ -1,4 +1,4 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; COM ProgID registry for MockHost (Phase 13).
 ;;;;
@@ -24,9 +24,9 @@ hash-table from each ALIST.")
         (list :properties properties :methods methods))
   progid)
 
-(defun mock-host-allocate-com-id (host)
-  (let ((n (mock-host-next-com-counter host)))
-    (incf (mock-host-next-com-counter host))
+(defun cador-allocate-com-id (host)
+  (let ((n (cador-next-com-counter host)))
+    (incf (cador-next-com-counter host))
     (format nil "COM-~D" n)))
 
 (defun build-mock-com-object (host progid)
@@ -34,7 +34,7 @@ hash-table from each ALIST.")
 template for PROGID. Returns nil if PROGID is unknown."
   (let ((template (gethash progid *com-progids*)))
     (and template
-         (let* ((id (mock-host-allocate-com-id host))
+         (let* ((id (cador-allocate-com-id host))
                 (object (make-mock-com-object :id id :progid progid))
                 (props (mock-com-object-properties object))
                 (methods (mock-com-object-methods object)))
@@ -44,8 +44,8 @@ template for PROGID. Returns nil if PROGID is unknown."
                  do (setf (gethash name methods) handler))
            object))))
 
-(defun mock-host-find-com-object (host vla-id)
-  (gethash vla-id (mock-host-com-objects host)))
+(defun cador-find-com-object (host vla-id)
+  (gethash vla-id (cador-com-objects host)))
 
 ;;; --- Default templates --------------------------------------------
 

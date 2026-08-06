@@ -1,10 +1,10 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; Symbol-table walker HAL methods on MockHost (Phase 11).
 ;;;;
 ;;;; Implements: host-tblsearch, host-tblnext, host-tblobjname.
 ;;;;
-;;;; Per-kind iteration state is kept on mock-host-tblnext-iterators
+;;;; Per-kind iteration state is kept on cador-tblnext-iterators
 ;;;; (a hash-table from kind keyword to remaining-list). REWIND
 ;;;; restarts the walk; without REWIND, each call advances by one.
 
@@ -70,16 +70,16 @@ result is EQ to any other ename for the same record. (ename-eq-identity)"
 group-code list with every string value wrapped as an autolisp-string."
   (pure->al-value (symbol-table-record-data record)))
 
-(defmethod host-tblsearch ((host mock-host) kind name)
-  (let ((record (mock-host-find-table-record host
+(defmethod host-tblsearch ((host cador) kind name)
+  (let ((record (cador-find-table-record host
                                               (resolve-table-kind kind 'tblsearch)
                                               (resolve-record-name name 'tblsearch))))
     (and record (table-record->al-view record))))
 
-(defmethod host-tblnext ((host mock-host) kind &key rewind)
+(defmethod host-tblnext ((host cador) kind &key rewind)
   (let* ((k (resolve-table-kind kind 'tblnext))
-         (iterators (mock-host-tblnext-iterators host))
-         (table (mock-host-table host k)))
+         (iterators (cador-tblnext-iterators host))
+         (table (cador-table host k)))
     (when (or rewind (not (nth-value 1 (gethash k iterators))))
       ;; (Re)build the iterator only on first reference or on
       ;; explicit rewind; once exhausted (value = nil but key
@@ -101,8 +101,8 @@ group-code list with every string value wrapped as an autolisp-string."
            (setf (gethash k iterators) (rest remaining))
            (table-record->al-view next)))))))
 
-(defmethod host-tblobjname ((host mock-host) kind name)
-  (let ((record (mock-host-find-table-record host
+(defmethod host-tblobjname ((host cador) kind name)
+  (let ((record (cador-find-table-record host
                                               (resolve-table-kind kind 'tblobjname)
                                               (resolve-record-name name 'tblobjname))))
     (and record (table-record->ename host record))))

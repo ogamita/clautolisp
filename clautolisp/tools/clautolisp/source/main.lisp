@@ -28,7 +28,7 @@
   (format t "                         extensions (e.g. variadic functions). Out-of-dialect~%")
   (format t "                         operators stay callable but emit a diagnostic at use.~%")
   (format t "Host:~%")
-  (format t "  --host NAME            HAL backend: mock (default), null.~%")
+  (format t "  --host NAME            HAL backend: cador (default), null. mock=alias of cador.~%")
   (format t "  --mock-input PATH      Attach the file at PATH as the MockHost prompt-stream.~%")
   (format t "                         Lines are consumed by GETSTRING / GETPOINT / etc. in order.~%")
   (format t "  --gui CMD              DCL GUI driver: subprocess CMD speaking the sexp wire protocol.~%")
@@ -113,14 +113,11 @@
          (string-equal name "null")
          (string-equal name "none"))
      *null-host*)
-    ((string-equal name "mock")
-     ;; Phase 9 deliverable: data structures only. Phase 10 fills in
-     ;; the entget / ssget / getvar / command surfaces; until then
-     ;; every host operation falls through to the base-class
-     ;; :host-not-supported diagnostic.
-     (make-mock-host))
+    ((or (string-equal name "cador")
+         (string-equal name "mock"))     ; "mock" is the deprecated alias
+     (make-cador))
     (t
-     (error "Unknown host backend ~S. Expected one of: null, mock." name))))
+     (error "Unknown host backend ~S. Expected one of: cador, null (mock = alias of cador)." name))))
 
 (defun print-version ()
   (format t "~&clautolisp ~A~%" *version*))
@@ -145,12 +142,12 @@ so adding a dialect only touches dialect.lisp."
       (autolisp-dialect-strict)))
 
 (defun keyword->host (host-keyword)
-  "Map :mock / :null to a HAL backend instance. Defaults to the
-MockHost when HOST-KEYWORD is nil (the empty default for clautolisp
-omits --host)."
+  "Map :cador / :mock / :null to a HAL backend instance. Defaults to
+cador (the headless CAD core) when HOST-KEYWORD is nil (the empty
+default for clautolisp omits --host). :mock is the deprecated alias."
   (case host-keyword
-    ((nil :mock) (make-mock-host))
-    ((:null)     *null-host*)))
+    ((nil :cador :mock) (make-cador))
+    ((:null)            *null-host*)))
 
 (defun pop-required-argument (option arguments)
   "Pop the next argument off ARGUMENTS or signal a usage error
@@ -443,11 +440,11 @@ that subsequent get* calls read deterministic answers from it."
   (when host
     (set-runtime-session-host (evaluation-context-session context) host))
   (when (and mock-input
-             (typep host 'clautolisp.autolisp-mock-host:mock-host))
+             (typep host 'clautolisp.cador:cador))
     (let ((stream (open mock-input :direction :input
                                    :external-format :utf-8
                                    :if-does-not-exist :error)))
-      (setf (clautolisp.autolisp-mock-host:mock-host-prompt-stream host) stream)))
+      (setf (clautolisp.cador:cador-prompt-stream host) stream)))
   (install-core-builtins))
 
 (defun setup-builtins (context)
@@ -668,7 +665,7 @@ consume it (bug-aldo-nav-entry-and-breakpoint-flow)."
         (clautolisp.debug.ui:ui-open-navigation-request
          (clautolisp.debug.ui:session-ui session) session request)))))
 
-(defun wire-mock-host-to-terminal (context)
+(defun wire-cador-to-terminal (context)
   "In an interactive REPL the MockHost has no prompt-stream, so every
 get* (GETSTRING, GETINT, …) reads EOF and returns nil. Point the
 host's prompt input at *standard-input* and its prompt output at
@@ -679,11 +676,11 @@ host is a MockHost that has no prompt-stream yet (i.e. --mock-input was
 not supplied)."
   (let ((host (clautolisp.autolisp-runtime:runtime-session-host
                (evaluation-context-session context))))
-    (when (and (typep host 'clautolisp.autolisp-mock-host:mock-host)
-               (null (clautolisp.autolisp-mock-host:mock-host-prompt-stream host)))
-      (setf (clautolisp.autolisp-mock-host:mock-host-prompt-stream host)
+    (when (and (typep host 'clautolisp.cador:cador)
+               (null (clautolisp.cador:cador-prompt-stream host)))
+      (setf (clautolisp.cador:cador-prompt-stream host)
             (make-synonym-stream '*standard-input*)
-            (clautolisp.autolisp-mock-host:mock-host-prompt-output host)
+            (clautolisp.cador:cador-prompt-output host)
             (make-synonym-stream '*standard-output*)))))
 
 ;;; --- the AUTOLISP interactor: REPL comma-commands -----------------------
@@ -752,7 +749,7 @@ the current dialect can come later).")
     (emit-repl-banner dialect context
                       :mock-input mock-input :gui gui :trace-p trace-p))
   (unless mock-input
-    (wire-mock-host-to-terminal context))
+    (wire-cador-to-terminal context))
   (%repl-init-history context)
   ;; The dribble tee/echo streams were installed by RUN-WITH-INPUT
   ;; (before the debug session captured its streams); they are pure

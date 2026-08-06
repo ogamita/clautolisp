@@ -53,10 +53,10 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
                     (format nil "clautolisp-cli-test-registry-~36R.sexp"
                             (random (expt 36 8)))
                     (uiop:temporary-directory)))
-            (clautolisp.autolisp-mock-host::*vl-registry-backend* :unix)
-            (clautolisp.autolisp-mock-host::*mock-registry-path* ,path)
-            (clautolisp.autolisp-mock-host::*mock-registry* nil)
-            (clautolisp.autolisp-mock-host::*mock-registry-loaded-from* nil))
+            (clautolisp.cador::*vl-registry-backend* :unix)
+            (clautolisp.cador::*mock-registry-path* ,path)
+            (clautolisp.cador::*mock-registry* nil)
+            (clautolisp.cador::*mock-registry-loaded-from* nil))
        (unwind-protect (progn ,@body)
          (ignore-errors (delete-file ,path))))))
 
@@ -98,8 +98,10 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
 
 ;;; --- Option value parsers ---------------------------------------
 
-(test parse-host-accepts-mock-null-none
-  (is (eql :mock (parse-host "mock" "--host")))
+(test parse-host-accepts-cador-null-none
+  (is (eql :cador (parse-host "cador" "--host")))
+  ;; "mock" is the deprecated alias of cador
+  (is (eql :cador (parse-host "mock" "--host")))
   (is (eql :null (parse-host "null" "--host")))
   (is (eql :null (parse-host "none" "--host"))))
 

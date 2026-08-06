@@ -1,4 +1,4 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; Named-object-dictionary, xrecord and REGAPP HAL methods on
 ;;;; MockHost — the AutoLISP adapter over the pure-CL dictionary /
@@ -16,7 +16,7 @@
   "The entget-style AutoLISP view of the dictionary member stored under
 MEMBER-HANDLE, or NIL if it no longer exists. XData is suppressed, like
 plain ENTGET / DICTSEARCH. HOST supplies the ename intern cache."
-  (let ((entity (safe-find-entity (mock-host-active-drawing host) member-handle)))
+  (let ((entity (safe-find-entity (cador-active-drawing host) member-handle)))
     (and entity (entity->al-view host entity))))
 
 (defun %require-dict-handle (host dict-ename operator-name)
@@ -24,18 +24,18 @@ plain ENTGET / DICTSEARCH. HOST supplies the ename intern cache."
 is not a dictionary. Signals :invalid-ename only when DICT-ENAME is not
 an ename at all."
   (let* ((handle (ename->handle dict-ename operator-name))
-         (drawing (mock-host-active-drawing host)))
+         (drawing (cador-active-drawing host)))
     (and (clautolisp.drawing:find-dictionary drawing handle) handle)))
 
 ;;; --- Method definitions -----------------------------------------
 
-(defmethod host-namedobjdict ((host mock-host))
-  (let* ((drawing (mock-host-active-drawing host))
+(defmethod host-namedobjdict ((host cador))
+  (let* ((drawing (cador-active-drawing host))
          (root (clautolisp.drawing:ensure-root-dictionary drawing)))
     (handle->ename host (clautolisp.drawing:entity-handle-id root))))
 
-(defmethod host-dictsearch ((host mock-host) dict-ename name &key next-after)
-  (let* ((drawing (mock-host-active-drawing host))
+(defmethod host-dictsearch ((host cador) dict-ename name &key next-after)
+  (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictsearch)))
     (when dict-handle
       (let* ((key (mock-string-value name))
@@ -47,15 +47,15 @@ an ename at all."
           (when next-after
             (let* ((entries (clautolisp.drawing:dictionary-object-entries drawing dict-handle))
                    (tail (member key entries :test #'string-equal :key #'car)))
-              (setf (gethash dict-handle (mock-host-dictnext-iterators host))
+              (setf (gethash dict-handle (cador-dictnext-iterators host))
                     (rest tail))))
           (%dict-member-view host member))))))
 
-(defmethod host-dictnext ((host mock-host) dict-ename &key rewind)
-  (let* ((drawing (mock-host-active-drawing host))
+(defmethod host-dictnext ((host cador) dict-ename &key rewind)
+  (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictnext)))
     (when dict-handle
-      (let ((iterators (mock-host-dictnext-iterators host)))
+      (let ((iterators (cador-dictnext-iterators host)))
         (when (or rewind (not (nth-value 1 (gethash dict-handle iterators))))
           (setf (gethash dict-handle iterators)
                 (clautolisp.drawing:dictionary-object-entries drawing dict-handle)))
@@ -69,8 +69,8 @@ an ename at all."
               (let ((view (%dict-member-view host (cdr entry))))
                 (when view (return view))))))))))
 
-(defmethod host-dictadd ((host mock-host) dict-ename name object-ename)
-  (let* ((drawing (mock-host-active-drawing host))
+(defmethod host-dictadd ((host cador) dict-ename name object-ename)
+  (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictadd)))
     (when dict-handle
       (let ((key (mock-string-value name))
@@ -80,8 +80,8 @@ an ename at all."
                     drawing dict-handle key object-handle))
           object-ename)))))
 
-(defmethod host-dictremove ((host mock-host) dict-ename name)
-  (let* ((drawing (mock-host-active-drawing host))
+(defmethod host-dictremove ((host cador) dict-ename name)
+  (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictremove)))
     (when dict-handle
       (let* ((key (mock-string-value name))
@@ -89,8 +89,8 @@ an ename at all."
                                 drawing dict-handle key))))
         (and removed (handle->ename host removed))))))
 
-(defmethod host-dictrename ((host mock-host) dict-ename old new)
-  (let* ((drawing (mock-host-active-drawing host))
+(defmethod host-dictrename ((host cador) dict-ename old new)
+  (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictrename)))
     (when dict-handle
       (let ((old-key (mock-string-value old))
@@ -100,8 +100,8 @@ an ename at all."
                     drawing dict-handle old-key new-key))
           (clautolisp.autolisp-runtime:make-autolisp-string new-key))))))
 
-(defmethod host-dictobjname ((host mock-host) dict-ename name)
-  (let* ((drawing (mock-host-active-drawing host))
+(defmethod host-dictobjname ((host cador) dict-ename name)
+  (let* ((drawing (cador-active-drawing host))
          (dict-handle (%require-dict-handle host dict-ename 'dictobjname)))
     (when dict-handle
       (let* ((key (mock-string-value name))
@@ -109,8 +109,8 @@ an ename at all."
                                drawing dict-handle key))))
         (and member (safe-find-entity drawing member) (handle->ename host member))))))
 
-(defmethod host-regapp ((host mock-host) name)
+(defmethod host-regapp ((host cador) name)
   (let ((app (mock-string-value name)))
     (and app
-         (clautolisp.drawing:register-appid (mock-host-active-drawing host) app)
+         (clautolisp.drawing:register-appid (cador-active-drawing host) app)
          (clautolisp.autolisp-runtime:make-autolisp-string app))))

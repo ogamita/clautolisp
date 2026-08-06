@@ -1,6 +1,6 @@
-(in-package #:clautolisp.autolisp-mock-host.tests)
+(in-package #:clautolisp.cador.tests)
 
-(in-suite autolisp-mock-host-suite)
+(in-suite cador-suite)
 
 ;;; --- Phase 10: entity API on MockHost -----------------------------
 
@@ -11,7 +11,7 @@
         (cons 11 end)))
 
 (test entmake-allocates-handle-and-injects-bookkeeping
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (data (host-entmake mock (make-line-data))))
     (is (consp data))
     ;; First entry is the (-1 . ENAME) injected by the host.
@@ -31,7 +31,7 @@
       (is (string= "10" (autolisp-ename-value last-ename))))))
 
 (test entget-returns-the-stored-data-list
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (data (host-entmake mock (make-line-data)))
          (ename (cdr (first data)))
          (round-trip (host-entget mock ename)))
@@ -46,7 +46,7 @@
     (is (string= "0" (autolisp-string-value (cdr (assoc 8 round-trip)))))))
 
 (test entget-on-deleted-entity-returns-nil
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (data (host-entmake mock (make-line-data)))
          (ename (cdr (first data))))
     (host-entdel mock ename)
@@ -55,7 +55,7 @@
 (test entdel-toggles-undelete
   ;; Calling entdel a second time un-deletes the entity, mirroring
   ;; AutoLISP's documented within-command toggle behaviour.
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (data (host-entmake mock (make-line-data)))
          (ename (cdr (first data))))
     (host-entdel mock ename)
@@ -64,7 +64,7 @@
     (is (consp (host-entget mock ename)))))
 
 (test entmod-replaces-data-and-keeps-bookkeeping
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (data (host-entmake mock (make-line-data)))
          (ename (cdr (first data))))
     ;; Build a new data list that changes the layer to "Mine".
@@ -81,7 +81,7 @@
         (is (eql 5 (car (second after))))))))
 
 (test entlast-and-entnext-walk-creation-order
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (a (cdr (first (host-entmake mock (make-line-data :layer "L1")))))
          (b (cdr (first (host-entmake mock (make-line-data :layer "L2")))))
          (c (cdr (first (host-entmake mock (make-line-data :layer "L3"))))))
@@ -96,7 +96,7 @@
     (is (null (host-entnext mock c)))))
 
 (test entlast-skips-deleted-entities
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (a (cdr (first (host-entmake mock (make-line-data :layer "L1")))))
          (b (cdr (first (host-entmake mock (make-line-data :layer "L2"))))))
     (host-entdel mock b)
@@ -108,7 +108,7 @@
                    (autolisp-ename-value last))))))
 
 (test handent-resolves-known-handle
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (data (host-entmake mock (make-line-data)))
          (handle (cdr (second data)))            ; an autolisp-string now
          (ename (host-handent mock handle)))
@@ -117,7 +117,7 @@
     (is (null (host-handent mock "DEADBEEF")))))
 
 (test entupd-returns-ename-for-live-entity-and-nil-for-deleted
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (data (host-entmake mock (make-line-data)))
          (ename (cdr (first data))))
     (is (eq ename (host-entupd mock ename)))
@@ -128,12 +128,12 @@
   ;; Vendor parity: ENTMAKE on a group-code list that does not describe
   ;; a creatable entity (here: no (0 . "TYPE") marker) returns nil — it
   ;; does NOT raise. The builtin maps that nil to ERRNO 36.
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (is (null (host-entmake mock '((8 . "0") (10 0 0 0)))))))
 
 (test entmake-rejects-family-missing-required-code
   ;; CIRCLE requires the 40 (radius) group; omitting it fails the create.
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (is (null (host-entmake mock (list (cons 0 "CIRCLE")
                                        (cons 10 '(0.0d0 0.0d0 0.0d0))))))
     ;; With the radius it succeeds.
@@ -145,7 +145,7 @@
   ;; The distinguishing ENTMAKEX contract (issue entmakex-returns-list):
   ;; ENTMAKEX hands back the new entity's ENAME, feedable straight into
   ;; entget / entmod / entdel — NOT the entget-style DXF list.
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (result (host-entmakex mock (make-line-data))))
     (is (typep result 'autolisp-ename))
     ;; The ename resolves: entget on it round-trips a data list.
@@ -157,7 +157,7 @@
 (test entmakex-defaults-layer-and-stamps-subclass
   ;; ENTMAKEX normalises: a LINE with no (8 . layer) gets the "0"
   ;; default, and the AcDbEntity/AcDbLine subclass markers appear.
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (ename (host-entmakex mock (list (cons 0 "LINE")
                                           (cons 10 '(0.0d0 0.0d0 0.0d0))
                                           (cons 11 '(1.0d0 1.0d0 0.0d0)))))
@@ -170,7 +170,7 @@
                 :test #'string=))))
 
 (test entget-rejects-non-ename
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (handler-case
         (host-entget mock "not-an-ename")
       (autolisp-runtime-error (condition)
@@ -186,7 +186,7 @@
   ;; entget without an application list hides xdata; with a matching
   ;; application name it appends the (-3 ...) group; a non-matching name
   ;; yields no xdata.
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (ename (host-entmakex mock (make-line-data))))
     ;; Attach xdata via entmod (the -1 head names the entity).
     (host-entmod mock
@@ -220,7 +220,7 @@
   ;; A POLYLINE opens a run; its VERTEX subentities get their owner
   ;; (330) set to the polyline handle; the SEQEND closes the run.
   ;; ENTNEXT walks header -> vertices -> seqend in creation order.
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (poly (host-entmakex mock (list (cons 0 "POLYLINE") (cons 70 1))))
          (poly-handle (autolisp-ename-value poly))
          (v1 (host-entmakex mock (list (cons 0 "VERTEX")
@@ -247,7 +247,7 @@
 
 (test entmake-explicit-owner-330-is-respected
   ;; A caller-supplied 330 owner is not overwritten by the auto-linker.
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (poly (host-entmakex mock (list (cons 0 "POLYLINE") (cons 70 1))))
          (v (host-entmakex mock (list (cons 0 "VERTEX")
                                       (cons 10 '(0.0d0 0.0d0 0.0d0))
@@ -265,31 +265,31 @@
 ;;; object; these tests pin that across all the producers.
 
 (test ename-entlast-is-eq-across-calls
-  (let ((mock (make-mock-host)))
+  (let ((mock (make-cador)))
     (host-entmakex mock (make-line-data))
     (is (eq (host-entlast mock) (host-entlast mock)))
     (is (equal (host-entlast mock) (host-entlast mock)))))
 
 (test ename-entmakex-eq-to-entlast-and-entnext
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (e (host-entmakex mock (make-line-data))))
     (is (eq e (host-entlast mock)))
     (is (eq e (host-entnext mock nil)))))
 
 (test ename-entget-head-eq-to-producer
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (e (host-entmakex mock (make-line-data)))
          (head (cdr (assoc -1 (host-entget mock e)))))
     (is (eq e head))))
 
 (test ename-handent-eq-to-producer
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (e (host-entmakex mock (make-line-data)))
          (handle (cdr (assoc 5 (host-entget mock e)))))
     (is (eq e (host-handent mock handle)))))
 
 (test ename-ssname-eq-to-producer
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (e (host-entmakex mock (make-line-data)))
          (set (host-ssget mock nil :mode (make-autolisp-string "X"))))
     (is (eq e (host-ssname mock set 0)))
@@ -297,7 +297,7 @@
 
 (test ename-distinct-entities-are-not-eq
   ;; Interning must not conflate different handles.
-  (let* ((mock (make-mock-host))
+  (let* ((mock (make-cador))
          (a (host-entmakex mock (make-line-data)))
          (b (host-entmakex mock (make-line-data))))
     (is (not (eq a b)))

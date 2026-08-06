@@ -20,7 +20,7 @@
 supplied, stubs the environment lookups (a function NAME -> string-or-nil).
 The cwd is stubbed to /work/proj so implicit-trusted defaults are
 deterministic."
-  (let ((mock (clautolisp.autolisp-mock-host:make-mock-host)))
+  (let ((mock (clautolisp.cador:make-cador)))
     (if getenv
         (clautolisp.autolisp-builtins-core:apply-dialect-trust-sysvar-defaults
          mock dialect :getenv getenv :getcwd #'%const-cwd)

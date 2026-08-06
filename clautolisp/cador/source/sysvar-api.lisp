@@ -1,4 +1,4 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; Sysvar HAL methods on MockHost (Phase 11).
 ;;;;
@@ -195,9 +195,9 @@ clock."
 
 ;;; --- Method definitions ------------------------------------------
 
-(defmethod host-getvar ((host mock-host) name)
+(defmethod host-getvar ((host cador) name)
   (let* ((string (ensure-sysvar-name name 'getvar))
-         (cell (mock-host-sysvar host string)))
+         (cell (cador-sysvar host string)))
     (cond
       ;; Unknown name -> nil (§16 normative rule on unknown names).
       ((null cell) nil)
@@ -215,7 +215,7 @@ clock."
        (present-sysvar-value (sysvar-cell-kind cell)
                              (sysvar-cell-value cell))))))
 
-(defmethod host-sysvar-names ((host mock-host))
+(defmethod host-sysvar-names ((host cador))
   "Return the upper-cased names of every sysvar known to HOST,
 sorted lexicographically. Used by the CLAL-SYSVAR-LIST and
 CLAL-SYSVAR-APROPOS clautolisp extensions."
@@ -223,12 +223,12 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
     (maphash (lambda (k v)
                (declare (ignore v))
                (push k names))
-             (mock-host-sysvars host))
+             (cador-sysvars host))
     (sort names #'string<)))
 
-(defmethod host-setvar ((host mock-host) name value)
+(defmethod host-setvar ((host cador) name value)
   (let* ((string (ensure-sysvar-name name 'setvar))
-         (cell (mock-host-sysvar host string)))
+         (cell (cador-sysvar host string)))
     (cond
       ((null cell)
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
@@ -253,14 +253,14 @@ CLAL-SYSVAR-APROPOS clautolisp extensions."
           document :sysvar :vlr-sysvarchanged (list rendered-name))
          (present-sysvar-value (sysvar-cell-kind cell) coerced))))))
 
-(defmethod host-undefine-sysvar ((host mock-host) name)
+(defmethod host-undefine-sysvar ((host cador) name)
   "Drop NAME from HOST's sysvar table (bricscad dialect overlay). NAME may
 be an autolisp-string or a CL string. Silently no-ops on unknown names so
 the launch-time overlay does not need to know which catalogue is installed."
   (let ((string (ensure-sysvar-name name 'undefine-sysvar)))
-    (mock-host-remove-sysvar host string)))
+    (cador-remove-sysvar host string)))
 
-(defmethod host-set-derived-sysvar ((host mock-host) name value)
+(defmethod host-set-derived-sysvar ((host cador) name value)
   "Launch-time bypass of the cell's read-only flag for host-derived
 sysvars (SYSCODEPAGE, DWGCODEPAGE, …). The catalogue marks these as
 read-only because user code must not setvar them at runtime, but the
@@ -268,14 +268,14 @@ HAL itself populates them once at session start. NAME must already
 exist; the function silently no-ops on unknown sysvars so transmit-
 side callers don't need to know which catalogue is installed."
   (let* ((string (ensure-sysvar-name name 'set-derived-sysvar))
-         (cell (mock-host-sysvar host string)))
+         (cell (cador-sysvar host string)))
     (when cell
       (let ((coerced (coerce-sysvar-value
                       (sysvar-cell-kind cell) value string)))
         (setf (sysvar-cell-value cell) coerced)
         coerced))))
 
-(defmethod host-define-sysvar ((host mock-host) name kind value read-only-p)
+(defmethod host-define-sysvar ((host cador) name kind value read-only-p)
   "Upsert a sysvar cell. When NAME exists, set its value (coerced to
 the cell's kind, or to KIND when supplied) and its read-only flag;
 otherwise create the cell with KIND (defaulting to :string), VALUE and
@@ -283,7 +283,7 @@ READ-ONLY-P. Used at launch to apply dialect-dependent trust defaults
 and to register the clautolisp-only trust sysvars. Returns the stored
 value."
   (let* ((string (ensure-sysvar-name name 'define-sysvar))
-         (cell (mock-host-sysvar host string)))
+         (cell (cador-sysvar host string)))
     (if cell
         (let* ((effective-kind (or kind (sysvar-cell-kind cell)))
                (coerced (coerce-sysvar-value effective-kind value string)))
@@ -298,5 +298,5 @@ value."
                                       :value coerced
                                       :read-only-p (and read-only-p t)
                                       :host-derived-p nil)))
-          (setf (gethash string (mock-host-sysvars host)) new)
+          (setf (gethash string (cador-sysvars host)) new)
           coerced))))

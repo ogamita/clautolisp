@@ -1,4 +1,4 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; Entity-level HAL methods for MockHost.
 ;;;;
@@ -29,11 +29,11 @@ entity are EQ / EQUAL — so the portable idioms (eq (entlast) (entlast)),
 drained whenever the host's active drawing is replaced, so a handle from
 a closed drawing can never alias a fresh drawing's entities.
  (ename-eq-identity.issue)"
-  (let ((cache   (mock-host-ename-cache host))
-        (drawing (mock-host-active-drawing host)))
-    (unless (eq drawing (mock-host-ename-cache-drawing host))
+  (let ((cache   (cador-ename-cache host))
+        (drawing (cador-active-drawing host)))
+    (unless (eq drawing (cador-ename-cache-drawing host))
       (clrhash cache)
-      (setf (mock-host-ename-cache-drawing host) drawing))
+      (setf (cador-ename-cache-drawing host) drawing))
     (or (gethash handle cache)
         (setf (gethash handle cache)
               (clautolisp.autolisp-runtime:make-autolisp-ename :value handle)))))
@@ -166,12 +166,12 @@ supplies the ename intern cache for the (-1 . ename) head."
 
 ;;; --- Compatibility helpers (kept; used by selection-api etc.) ----
 
-(defun mock-host-allocate-handle (mock)
+(defun cador-allocate-handle (mock)
   "Allocate the next hex handle string for MOCK's active drawing and
 bump its seed. Retained for API compatibility; the entity methods now
 let clautolisp.drawing:ADD-ENTITY allocate internally."
   (format nil "~X" (clautolisp.drawing:allocate-handle
-                    (mock-host-active-drawing mock))))
+                    (cador-active-drawing mock))))
 
 (defun safe-find-entity (drawing handle &key include-deleted)
   "Like clautolisp.drawing:find-entity, but a malformed handle (one
@@ -184,10 +184,10 @@ and set ERRNO, they do not raise."
                                       :include-deleted include-deleted)
     (clautolisp.drawing:drawing-error () nil)))
 
-(defun mock-host-find-entity-by-handle (mock handle)
+(defun cador-find-entity-by-handle (mock handle)
   "Return the live ENTITY-HANDLE stored under HANDLE, or nil if no
 such entity exists or it has been deleted."
-  (safe-find-entity (mock-host-active-drawing mock) handle))
+  (safe-find-entity (cador-active-drawing mock) handle))
 
 (defun current-document ()
   (clautolisp.autolisp-runtime:evaluation-context-current-document
@@ -195,9 +195,9 @@ such entity exists or it has been deleted."
 
 ;;; --- Host method implementations ---------------------------------
 
-(defmethod host-entget ((host mock-host) ename &optional applist)
+(defmethod host-entget ((host cador) ename &optional applist)
   (let* ((handle (ename->handle ename 'entget))
-         (entity (safe-find-entity (mock-host-active-drawing host) handle)))
+         (entity (safe-find-entity (cador-active-drawing host) handle)))
     (and entity (entity->al-view host entity applist))))
 
 (defun %data-type-string (data)
@@ -265,7 +265,7 @@ clautolisp, strict) per the autolisp-spec, and ACCEPTED (markers
 synthesised) under the deviant/lenient dialects (bricscad, lax). strict
 and bricscad additionally warn."
   (let* ((pure (al-data->pure data operator-name))
-         (drawing (mock-host-active-drawing host))
+         (drawing (cador-active-drawing host))
          (missing-markers (clautolisp.drawing:entity-dxf-missing-markers pure)))
     (when missing-markers
       (multiple-value-bind (action warn-p)
@@ -317,7 +317,7 @@ group, append the header's handle as its owner. Returns the possibly
 augmented data."
   (let* ((type (%data-type-string normalised))
          (family (clautolisp.drawing:find-entity-family type))
-         (open (mock-host-open-complex-handle host)))
+         (open (cador-open-complex-handle host)))
     (if (and family
              (clautolisp.drawing:entity-family-subentity-p family)
              open
@@ -333,12 +333,12 @@ a SEQEND closes it."
          (family (clautolisp.drawing:find-entity-family type)))
     (cond
       ((and family (clautolisp.drawing:entity-family-complex-p family))
-       (setf (mock-host-open-complex-handle host)
+       (setf (cador-open-complex-handle host)
              (clautolisp.drawing:entity-handle-id entity)))
       ((and type (string-equal type "SEQEND"))
-       (setf (mock-host-open-complex-handle host) nil)))))
+       (setf (cador-open-complex-handle host) nil)))))
 
-(defmethod host-entmake ((host mock-host) data)
+(defmethod host-entmake ((host cador) data)
   ;; ENTMAKE returns the entget-style view (the (-1 . ename) head +
   ;; wrapped data) on success, nil on failure. The AutoLISP builtin
   ;; layer decides what the user ultimately sees (see BUILTIN-ENTMAKE).
@@ -346,7 +346,7 @@ a SEQEND closes it."
     (declare (ignore ename))
     (and entity (entity->al-view host entity))))
 
-(defmethod host-entmakex ((host mock-host) data)
+(defmethod host-entmakex ((host cador) data)
   ;; ENTMAKEX's distinguishing contract: return the new entity's ENAME
   ;; (feedable straight into entget/entmod/entdel), not the DXF list.
   ;; See issues/closed/entmakex-returns-list.issue.
@@ -370,7 +370,7 @@ a SEQEND closes it."
   "True iff HANDLE names a live NON-GRAPHICAL object (XRECORD /
 DICTIONARY — graphical-p nil in the entity-family registry). The D3
 gate predicate: entmod on these is the divergent case."
-  (let* ((entity (safe-find-entity (mock-host-active-drawing host) handle))
+  (let* ((entity (safe-find-entity (cador-active-drawing host) handle))
          (type   (and entity (%data-type-string (entity-handle-data entity))))
          (family (and type (clautolisp.drawing:find-entity-family type))))
     (and family (not (clautolisp.drawing:entity-family-graphical-p family)))))
@@ -389,10 +389,10 @@ applies the change, but that divergence is not portable and not ~
 condoned: it is a no-op under autocad, clautolisp and strict.~%"
           type))
 
-(defmethod host-entmod ((host mock-host) data)
+(defmethod host-entmod ((host cador) data)
   (let* ((handle (extract-modified-handle data 'entmod))
          (pure (al-data->pure data 'entmod))
-         (drawing (mock-host-active-drawing host)))
+         (drawing (cador-active-drawing host)))
     ;; D3: entmod on a non-graphical object diverges — AutoCAD (normative)
     ;; no-ops, BricsCAD (deviant) applies. Apply the resolved policy first.
     (when (%entmod-target-nongraphical-p host handle)
@@ -415,9 +415,9 @@ condoned: it is a no-op under autocad, clautolisp and strict.~%"
            document :object :vlr-modified (list ename)))
         (entity->al-view host entity)))))
 
-(defmethod host-entdel ((host mock-host) ename)
+(defmethod host-entdel ((host cador) ename)
   (let* ((handle (ename->handle ename 'entdel))
-         (drawing (mock-host-active-drawing host))
+         (drawing (cador-active-drawing host))
          (entity (safe-find-entity drawing handle :include-deleted t)))
     (when entity
       ;; AutoLISP's entdel is a toggle: a second call undeletes.
@@ -432,24 +432,24 @@ condoned: it is a no-op under autocad, clautolisp and strict.~%"
            document :object event (list ename))))
       ename)))
 
-(defmethod host-entupd ((host mock-host) ename)
+(defmethod host-entupd ((host cador) ename)
   (let* ((handle (ename->handle ename 'entupd)))
-    (and (safe-find-entity (mock-host-active-drawing host) handle)
+    (and (safe-find-entity (cador-active-drawing host) handle)
          ename)))
 
-(defmethod host-entlast ((host mock-host))
+(defmethod host-entlast ((host cador))
   ;; Most recently created entity that is not deleted. creation-order
   ;; is newest-first.
-  (let ((drawing (mock-host-active-drawing host)))
+  (let ((drawing (cador-active-drawing host)))
     (loop for handle in (clautolisp.drawing:drawing-creation-order drawing)
           when (clautolisp.drawing:find-entity drawing handle)
             return (handle->ename host handle)
           finally (return nil))))
 
-(defmethod host-entnext ((host mock-host) ename)
+(defmethod host-entnext ((host cador) ename)
   ;; (entnext)       -> first non-deleted entity, or nil.
   ;; (entnext ENAME) -> next non-deleted entity after ENAME, or nil.
-  (let* ((drawing (mock-host-active-drawing host))
+  (let* ((drawing (cador-active-drawing host))
          (order (reverse (clautolisp.drawing:drawing-creation-order drawing))))
     (flet ((first-live (handles)
              (loop for handle in handles
@@ -462,11 +462,11 @@ condoned: it is a no-op under autocad, clautolisp and strict.~%"
                  (tail (member needle order :test #'string=)))
             (first-live (rest tail)))))))
 
-(defmethod host-handent ((host mock-host) handle-string)
+(defmethod host-handent ((host cador) handle-string)
   (let ((value
          (etypecase handle-string
            (string handle-string)
            (clautolisp.autolisp-runtime:autolisp-string
             (clautolisp.autolisp-runtime:autolisp-string-value handle-string)))))
-    (and (safe-find-entity (mock-host-active-drawing host) value)
+    (and (safe-find-entity (cador-active-drawing host) value)
          (handle->ename host value))))

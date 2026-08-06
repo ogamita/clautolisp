@@ -1,4 +1,4 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; Visual LISP COM-bridge HAL methods on MockHost (Phase 13).
 ;;;;
@@ -9,7 +9,7 @@
 ;;;;
 ;;;; The AutoLISP-visible VLA-OBJECT (autolisp-runtime:autolisp-vla-object)
 ;;;; wraps the host-allocated COM-object id; the host stores the
-;;;; mock-com-object struct in mock-host-com-objects keyed on that
+;;;; mock-com-object struct in cador-com-objects keyed on that
 ;;;; same id.
 
 (defun ensure-progid-string (progid operator-name)
@@ -54,7 +54,7 @@
 released and :unknown-vla-object if it never existed."
   (ensure-vla-object vla operator-name)
   (let* ((id (clautolisp.autolisp-runtime:autolisp-vla-object-value vla))
-         (object (mock-host-find-com-object host id)))
+         (object (cador-find-com-object host id)))
     (cond
       ((null object)
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
@@ -70,7 +70,7 @@ released and :unknown-vla-object if it never existed."
 
 ;;; --- Method definitions ------------------------------------------
 
-(defmethod host-vlax-create-object ((host mock-host) progid)
+(defmethod host-vlax-create-object ((host cador) progid)
   (let ((id-string (ensure-progid-string progid 'vlax-create-object)))
     (let ((object (build-mock-com-object host id-string)))
       (cond
@@ -81,11 +81,11 @@ released and :unknown-vla-object if it never existed."
           id-string))
         (t
          (setf (gethash (mock-com-object-id object)
-                        (mock-host-com-objects host))
+                        (cador-com-objects host))
                object)
          (com-object->vla object))))))
 
-(defmethod host-vlax-get-object ((host mock-host) progid)
+(defmethod host-vlax-get-object ((host cador) progid)
   ;; "Get" rather than "create": find the most recently-created
   ;; non-released instance of this ProgID, or nil.
   (let ((id-string (ensure-progid-string progid 'vlax-get-object))
@@ -95,15 +95,15 @@ released and :unknown-vla-object if it never existed."
                (when (and (not (mock-com-object-released-p object))
                           (string-equal (mock-com-object-progid object) id-string))
                  (setf best object)))
-             (mock-host-com-objects host))
+             (cador-com-objects host))
     (and best (com-object->vla best))))
 
-(defmethod host-vlax-release-object ((host mock-host) vla)
+(defmethod host-vlax-release-object ((host cador) vla)
   (let ((object (resolve-vla-object host vla 'vlax-release-object)))
     (setf (mock-com-object-released-p object) t)
     nil))
 
-(defmethod host-vlax-get-property ((host mock-host) vla name)
+(defmethod host-vlax-get-property ((host cador) vla name)
   (let* ((object (resolve-vla-object host vla 'vlax-get-property))
          (string (ensure-property-name-string name 'vlax-get-property)))
     (multiple-value-bind (value present-p)
@@ -116,7 +116,7 @@ released and :unknown-vla-object if it never existed."
           (mock-com-object-progid object) string))
         (t value)))))
 
-(defmethod host-vlax-put-property ((host mock-host) vla name value)
+(defmethod host-vlax-put-property ((host cador) vla name value)
   (let* ((object (resolve-vla-object host vla 'vlax-put-property))
          (string (ensure-property-name-string name 'vlax-put-property)))
     (unless (nth-value 1 (gethash string (mock-com-object-properties object)))
@@ -127,7 +127,7 @@ released and :unknown-vla-object if it never existed."
     (setf (gethash string (mock-com-object-properties object)) value)
     value))
 
-(defmethod host-vlax-invoke-method ((host mock-host) vla name args)
+(defmethod host-vlax-invoke-method ((host cador) vla name args)
   (let* ((object (resolve-vla-object host vla 'vlax-invoke-method))
          (string (ensure-property-name-string name 'vlax-invoke-method))
          (handler (gethash string (mock-com-object-methods object))))
@@ -139,12 +139,12 @@ released and :unknown-vla-object if it never existed."
         (mock-com-object-progid object) string))
       (t (funcall handler host object args)))))
 
-(defmethod host-vlax-property-available-p ((host mock-host) vla name)
+(defmethod host-vlax-property-available-p ((host cador) vla name)
   (let* ((object (resolve-vla-object host vla 'vlax-property-available-p))
          (string (ensure-property-name-string name 'vlax-property-available-p)))
     (and (nth-value 1 (gethash string (mock-com-object-properties object))) t)))
 
-(defmethod host-vlax-method-applicable-p ((host mock-host) vla name)
+(defmethod host-vlax-method-applicable-p ((host cador) vla name)
   (let* ((object (resolve-vla-object host vla 'vlax-method-applicable-p))
          (string (ensure-property-name-string name 'vlax-method-applicable-p)))
     (and (gethash string (mock-com-object-methods object)) t)))
@@ -152,16 +152,16 @@ released and :unknown-vla-object if it never existed."
 (defun %register-mock-com-object (host object)
   "Store OBJECT in HOST's com-objects table (build-mock-com-object
 allocates but does not register). Returns OBJECT."
-  (setf (gethash (mock-com-object-id object) (mock-host-com-objects host))
+  (setf (gethash (mock-com-object-id object) (cador-com-objects host))
         object))
 
-(defmethod host-vlax-get-acad-object ((host mock-host))
+(defmethod host-vlax-get-acad-object ((host cador))
   "Return the singleton AutoCAD.Application VLA-OBJECT, creating it — and
 its ActiveDocument — on first call. Object-valued properties are stored
 as VLA-OBJECT references so vla-get-activedocument yields a usable
 document. Repeated calls return the same application object."
-  (let* ((cached-id (mock-host-acad-application-id host))
-         (cached (and cached-id (mock-host-find-com-object host cached-id))))
+  (let* ((cached-id (cador-acad-application-id host))
+         (cached (and cached-id (cador-find-com-object host cached-id))))
     (if (and cached (not (mock-com-object-released-p cached)))
         (com-object->vla cached)
         (let ((app (%register-mock-com-object
@@ -183,10 +183,10 @@ document. Repeated calls return the same application object."
                              :collection-members (list (com-object->vla doc))))))
             (setf (gethash "Documents" (mock-com-object-properties app))
                   (com-object->vla docs)))
-          (setf (mock-host-acad-application-id host) (mock-com-object-id app))
+          (setf (cador-acad-application-id host) (mock-com-object-id app))
           (com-object->vla app)))))
 
-(defmethod host-vlax-collection-items ((host mock-host) vla)
+(defmethod host-vlax-collection-items ((host cador) vla)
   "Return the collection's member VLA-objects as a CL list; signal
 :not-a-collection if VLA is not a collection object."
   (let ((obj (resolve-vla-object host vla 'vlax-collection-items)))
@@ -199,23 +199,23 @@ document. Repeated calls return the same application object."
 
 ;;; --- Entity <-> VLA-object bridge + introspection ----------------
 
-(defmethod host-vlax-ename->vla-object ((host mock-host) ename)
+(defmethod host-vlax-ename->vla-object ((host cador) ename)
   "Wrap entity ENAME in an identity-stable COM object (progid
 \"AutoCAD.Entity\") carrying its hex handle, so vlax-vla-object->ename
 round-trips and vlax-curve-* can recover the entity."
   (let* ((handle (ename->handle ename 'vlax-ename->vla-object))
-         (cached-id (gethash handle (mock-host-entity-vla-map host)))
-         (cached (and cached-id (mock-host-find-com-object host cached-id))))
+         (cached-id (gethash handle (cador-entity-vla-map host)))
+         (cached (and cached-id (cador-find-com-object host cached-id))))
     (if (and cached (not (mock-com-object-released-p cached)))
         (com-object->vla cached)
         (let ((obj (%register-mock-com-object
                     host (make-mock-com-object :progid "AutoCAD.Entity"
                                                :backing-ename handle))))
-          (setf (gethash handle (mock-host-entity-vla-map host))
+          (setf (gethash handle (cador-entity-vla-map host))
                 (mock-com-object-id obj))
           (com-object->vla obj)))))
 
-(defmethod host-vlax-vla-object->ename ((host mock-host) vla)
+(defmethod host-vlax-vla-object->ename ((host cador) vla)
   (let* ((obj (resolve-vla-object host vla 'vlax-vla-object->ename))
          (handle (mock-com-object-backing-ename obj)))
     (if handle
@@ -225,20 +225,20 @@ round-trips and vlax-curve-* can recover the entity."
          "vlax-vla-object->ename: ~A is not an entity-backed VLA-OBJECT."
          (mock-com-object-progid obj)))))
 
-(defmethod host-vlax-erased-p ((host mock-host) vla)
+(defmethod host-vlax-erased-p ((host cador) vla)
   ;; Do NOT go through resolve-vla-object: a released object must report
   ;; erased = T, not signal :released-vla-object.
   (ensure-vla-object vla 'vlax-erased-p)
   (let* ((id (clautolisp.autolisp-runtime:autolisp-vla-object-value vla))
-         (obj (mock-host-find-com-object host id)))
+         (obj (cador-find-com-object host id)))
     (cond
       ((null obj) t)                    ; unknown -> gone
       ((mock-com-object-backing-ename obj)
-       (null (safe-find-entity (mock-host-active-drawing host)
+       (null (safe-find-entity (cador-active-drawing host)
                                (mock-com-object-backing-ename obj))))
       (t (mock-com-object-released-p obj)))))
 
-(defmethod host-vlax-describe-object ((host mock-host) vla)
+(defmethod host-vlax-describe-object ((host cador) vla)
   (let ((obj (resolve-vla-object host vla 'vlax-describe-object))
         (props '())
         (methods '()))
@@ -277,10 +277,10 @@ keyspace. DICTIONARY is a VLA-object or a global-dictionary name string."
         :invalid-ldata-key
         "~A: key must be a string, got ~S." operator-name key))))
 
-(defmethod host-vlax-ldata-put ((host mock-host) dictionary key value private)
+(defmethod host-vlax-ldata-put ((host cador) dictionary key value private)
   (let* ((ns (%ldata-namespace host dictionary private 'vlax-ldata-put))
          (k (%ldata-key key 'vlax-ldata-put))
-         (store (mock-host-ldata-store host))
+         (store (cador-ldata-store host))
          (alist (gethash ns store))
          (cell (assoc k alist :test #'string=)))
     (if cell
@@ -288,45 +288,45 @@ keyspace. DICTIONARY is a VLA-object or a global-dictionary name string."
         (setf (gethash ns store) (append alist (list (cons k value)))))
     value))
 
-(defmethod host-vlax-ldata-get ((host mock-host) dictionary key default private)
+(defmethod host-vlax-ldata-get ((host cador) dictionary key default private)
   (let* ((ns (%ldata-namespace host dictionary private 'vlax-ldata-get))
          (k (%ldata-key key 'vlax-ldata-get))
-         (cell (assoc k (gethash ns (mock-host-ldata-store host)) :test #'string=)))
+         (cell (assoc k (gethash ns (cador-ldata-store host)) :test #'string=)))
     (if cell (cdr cell) default)))
 
-(defmethod host-vlax-ldata-delete ((host mock-host) dictionary key private)
+(defmethod host-vlax-ldata-delete ((host cador) dictionary key private)
   (let* ((ns (%ldata-namespace host dictionary private 'vlax-ldata-delete))
          (k (%ldata-key key 'vlax-ldata-delete))
-         (store (mock-host-ldata-store host))
+         (store (cador-ldata-store host))
          (alist (gethash ns store)))
     (when (assoc k alist :test #'string=)
       (setf (gethash ns store) (remove k alist :key #'car :test #'string=))
       t)))
 
-(defmethod host-vlax-ldata-list ((host mock-host) dictionary private)
+(defmethod host-vlax-ldata-list ((host cador) dictionary private)
   (let ((ns (%ldata-namespace host dictionary private 'vlax-ldata-list)))
     (mapcar (lambda (pair) (cons (car pair) (cdr pair)))
-            (gethash ns (mock-host-ldata-store host)))))
+            (gethash ns (cador-ldata-store host)))))
 
 ;;; --- Command registration + async expression queue --------------
 
-(defmethod host-vlax-add-cmd ((host mock-host) global-name function local-name flags)
+(defmethod host-vlax-add-cmd ((host cador) global-name function local-name flags)
   (declare (ignore flags))
   (push (list :cmd global-name (or local-name global-name) function)
-        (mock-host-registered-commands host))
+        (cador-registered-commands host))
   global-name)
 
-(defmethod host-vlax-remove-cmd ((host mock-host) global-name)
-  (let* ((cmds (mock-host-registered-commands host))
+(defmethod host-vlax-remove-cmd ((host cador) global-name)
+  (let* ((cmds (cador-registered-commands host))
          (kept (if (eq global-name t)
                    (remove :cmd cmds :key #'car)
                    (remove-if (lambda (e)
                                 (and (eq (car e) :cmd)
                                      (string-equal (second e) global-name)))
                               cmds))))
-    (setf (mock-host-registered-commands host) kept)
+    (setf (cador-registered-commands host) kept)
     (and (< (length kept) (length cmds)) t)))
 
-(defmethod host-vlax-queueexpr ((host mock-host) string)
-  (push (list :queue string) (mock-host-registered-commands host))
+(defmethod host-vlax-queueexpr ((host cador) string)
+  (push (list :queue string) (cador-registered-commands host))
   nil)

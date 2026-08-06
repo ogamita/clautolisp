@@ -3839,7 +3839,7 @@ most recent first."
 ;;; (autolisp-spec ch.16). The current-evaluation-host helper
 ;;; resolves the backend through the active context; under NullHost
 ;;; every call signals :host-not-supported, under MockHost it
-;;; reaches the methods in autolisp-mock-host/source/entity-api.lisp.
+;;; reaches the methods in cador/source/entity-api.lisp.
 
 (defun require-ename (object operator-name)
   (unless (typep object 'autolisp-ename)
@@ -6816,7 +6816,7 @@ the data list."
 
 (defun reactor-as-persistent-record (reactor)
   "Encode a reactor as a property list suitable for serialisation
-through mock-host-snapshot. Callbacks must be autolisp-symbols
+through cador-snapshot. Callbacks must be autolisp-symbols
 (closures cannot survive)."
   (let ((callbacks '()))
     (maphash (lambda (name fn)
@@ -7899,7 +7899,7 @@ deciding membership."
 (defun builtin-vle-variantp    (x) (declare (ignore x)) nil)
 ;;; STUB: SAFEARRAYP — no SAFEARRAY type. See deferred-stubbed-functions.issue § VLE COM predicates.
 (defun builtin-vle-safearrayp  (x) (declare (ignore x)) nil)
-;;; STUB: VLAOBJECTP — VLA objects exist only under the mock-host ActiveX bridge; not visible from the bare runtime. See deferred-stubbed-functions.issue § VLE COM predicates.
+;;; STUB: VLAOBJECTP — VLA objects exist only under the cador ActiveX bridge; not visible from the bare runtime. See deferred-stubbed-functions.issue § VLE COM predicates.
 (defun builtin-vle-vlaobjectp  (x) (declare (ignore x)) nil)
 
 (defun builtin-vle-picksetp (x)

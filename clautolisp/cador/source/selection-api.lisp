@@ -1,4 +1,4 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; Selection-set HAL methods on MockHost (Phase 11).
 ;;;;
@@ -6,7 +6,7 @@
 ;;;; host-sslength, host-ssmemb, host-ssgetfirst, host-sssetfirst.
 ;;;;
 ;;;; AutoLISP-visible PICKSET wraps the host-internal pickset's id;
-;;;; the host stores the pickset itself in mock-host-picksets keyed
+;;;; the host stores the pickset itself in cador-picksets keyed
 ;;;; on that same id.
 
 ;;; --- Pickset wrapping helpers ------------------------------------
@@ -27,15 +27,15 @@ identity mismatch."
      "~A expects a PICKSET, got ~S."
      operator-name ap))
   (let* ((id (clautolisp.autolisp-runtime:autolisp-pickset-value ap))
-         (set (gethash id (mock-host-picksets host))))
+         (set (gethash id (cador-picksets host))))
     (or set
         (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
          :invalid-pickset
          "~A: pickset has been released or never existed: ~S."
          operator-name ap))))
 
-(defun mock-host-register-pickset (host pickset)
-  (setf (gethash (pickset-id pickset) (mock-host-picksets host)) pickset)
+(defun cador-register-pickset (host pickset)
+  (setf (gethash (pickset-id pickset) (cador-picksets host)) pickset)
   pickset)
 
 ;;; --- Filter-list matching ----------------------------------------
@@ -295,7 +295,7 @@ than signalling (the builtin layer validates gross filter shape)."
 
 ;;; --- Method definitions ------------------------------------------
 
-(defmethod host-ssget ((host mock-host) filter &key mode)
+(defmethod host-ssget ((host cador) filter &key mode)
   ;; Phase-11 supported modes:
   ;;   "X" / "_X"     all entities, optionally filtered.
   ;;   nil            (interactive) — not supported headlessly,
@@ -308,10 +308,10 @@ than signalling (the builtin layer validates gross filter shape)."
        (signal-host-not-supported host 'ssget))
       ((or (string-equal mode-string "X")
            (string-equal mode-string "_X"))
-       (let* ((order (reverse (mock-host-creation-order host)))
+       (let* ((order (reverse (cador-creation-order host)))
               (matches '()))
          (dolist (handle order)
-           (let ((entity (gethash handle (mock-host-entities host))))
+           (let ((entity (gethash handle (cador-entities host))))
              ;; The whole-database scan returns only graphical entities,
              ;; exactly like the vendor: dictionaries, xrecords and other
              ;; non-graphical objects are never selected by ssget.
@@ -322,7 +322,7 @@ than signalling (the builtin layer validates gross filter shape)."
                (push entity matches))))
          (let ((set (make-pickset :members (nreverse matches))))
            (and (pickset-members set)
-                (progn (mock-host-register-pickset host set)
+                (progn (cador-register-pickset host set)
                        (pickset->ap set))))))
       (t
        (clautolisp.autolisp-runtime:signal-autolisp-runtime-error
@@ -330,7 +330,7 @@ than signalling (the builtin layer validates gross filter shape)."
         "MockHost does not yet support ssget mode ~S; accepted modes are ~S and ~S."
         mode-string "X" "_X")))))
 
-(defmethod host-ssadd ((host mock-host) ap ename)
+(defmethod host-ssadd ((host cador) ap ename)
   ;; (ssadd)        — create a new empty pickset (handled via the
   ;;                  builtin's optional args).
   ;; (ssadd ENAME)  — create a new pickset containing one entity.
@@ -341,27 +341,27 @@ than signalling (the builtin layer validates gross filter shape)."
     ((and (null ap) (null ename))
      ;; (ssadd) -> empty pickset.
      (let ((set (make-pickset)))
-       (mock-host-register-pickset host set)
+       (cador-register-pickset host set)
        (pickset->ap set)))
     ((null ap)
      (let* ((handle (clautolisp.autolisp-runtime:autolisp-ename-value ename))
-            (entity (mock-host-find-entity-by-handle host handle))
+            (entity (cador-find-entity-by-handle host handle))
             (set (make-pickset :members (and entity (list entity)))))
-       (mock-host-register-pickset host set)
+       (cador-register-pickset host set)
        (pickset->ap set)))
     (t
      (let* ((set (ap->pickset host ap 'ssadd))
             (handle (clautolisp.autolisp-runtime:autolisp-ename-value ename))
-            (entity (mock-host-find-entity-by-handle host handle)))
+            (entity (cador-find-entity-by-handle host handle)))
        (when (and entity (not (member entity (pickset-members set))))
          (setf (pickset-members set)
                (append (pickset-members set) (list entity))))
        ap))))
 
-(defmethod host-ssdel ((host mock-host) ap ename)
+(defmethod host-ssdel ((host cador) ap ename)
   (let* ((set (ap->pickset host ap 'ssdel))
          (handle (clautolisp.autolisp-runtime:autolisp-ename-value ename))
-         (entity (mock-host-find-entity-by-handle host handle)))
+         (entity (cador-find-entity-by-handle host handle)))
     (cond
       ((and entity (member entity (pickset-members set)))
        (setf (pickset-members set)
@@ -369,7 +369,7 @@ than signalling (the builtin layer validates gross filter shape)."
        ap)
       (t nil))))
 
-(defmethod host-ssname ((host mock-host) ap index)
+(defmethod host-ssname ((host cador) ap index)
   (let* ((set (ap->pickset host ap 'ssname))
          (i (cond
               ((integerp index) index)
@@ -385,28 +385,28 @@ than signalling (the builtin layer validates gross filter shape)."
        (let ((entity (nth i members)))
          (handle->ename host (entity-handle-id entity)))))))
 
-(defmethod host-sslength ((host mock-host) ap)
+(defmethod host-sslength ((host cador) ap)
   (length (pickset-members (ap->pickset host ap 'sslength))))
 
-(defmethod host-ssmemb ((host mock-host) ap ename)
+(defmethod host-ssmemb ((host cador) ap ename)
   (let* ((set (ap->pickset host ap 'ssmemb))
          (handle (clautolisp.autolisp-runtime:autolisp-ename-value ename))
-         (entity (mock-host-find-entity-by-handle host handle)))
+         (entity (cador-find-entity-by-handle host handle)))
     (and entity (member entity (pickset-members set)) ename)))
 
-(defmethod host-ssgetfirst ((host mock-host))
+(defmethod host-ssgetfirst ((host cador))
   ;; AutoLISP returns a list of (grip-set . pickset). MockHost has
   ;; no grip semantics; we model it as (nil . PICKSET).
-  (let ((current (mock-host-pickfirst host)))
+  (let ((current (cador-pickfirst host)))
     (and current
          (list nil (pickset->ap current)))))
 
-(defmethod host-sssetfirst ((host mock-host) ap)
+(defmethod host-sssetfirst ((host cador) ap)
   (cond
     ((null ap)
-     (setf (mock-host-pickfirst host) nil)
+     (setf (cador-pickfirst host) nil)
      nil)
     (t
      (let ((set (ap->pickset host ap 'sssetfirst)))
-       (setf (mock-host-pickfirst host) set)
+       (setf (cador-pickfirst host) set)
        ap))))

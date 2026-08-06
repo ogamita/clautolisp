@@ -18,7 +18,7 @@
 ;;;; (0.0 0.0)) chosen so that GETVAR returns a value of the right
 ;;;; AutoLISP type.
 
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 (defparameter *full-sysvar-catalogue*
   ;; (NAME KIND DEFAULT READ-ONLY-P HOST-DERIVED-P)

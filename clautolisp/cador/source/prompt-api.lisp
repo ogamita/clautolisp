@@ -1,4 +1,4 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; Headless interaction-channel HAL methods on MockHost (Phase 12).
 ;;;;
@@ -30,17 +30,17 @@
   (:documentation "Captured INITGET arguments awaiting consumption
 by the next get* call."))
 
-(defun mock-host-take-initget (host)
+(defun cador-take-initget (host)
   "Pop the pending initget state off HOST, returning its bits and
 keyword list. Subsequent calls return defaults until another
 initget is issued."
-  (let ((state (mock-host-pending-initget host)))
-    (setf (mock-host-pending-initget host) nil)
+  (let ((state (cador-pending-initget host)))
+    (setf (cador-pending-initget host) nil)
     (values (if state (initget-bits state) 0)
             (if state (initget-keywords state) '()))))
 
-(defun mock-host-write-prompt (host string)
-  (let ((sink (mock-host-prompt-output host)))
+(defun cador-write-prompt (host string)
+  (let ((sink (cador-prompt-output host)))
     (when (and string sink)
       (write-string string sink)
       ;; When the sink is a live terminal (interactive REPL) the prompt
@@ -52,7 +52,7 @@ initget is issued."
 (defun read-prompt-line (host)
   "Read one line from HOST's prompt-stream, returning the line as a
 CL string or :eof on end of stream / when no input was configured."
-  (let ((stream (mock-host-prompt-stream host)))
+  (let ((stream (cador-prompt-stream host)))
     (cond
       ((null stream) :eof)
       (t (let ((line (read-line stream nil :eof)))
@@ -183,24 +183,24 @@ non-numeric."
 
 ;;; --- Method definitions -----------------------------------------
 
-(defmethod host-prompt ((host mock-host) string)
+(defmethod host-prompt ((host cador) string)
   (let ((text (etypecase string
                 (clautolisp.autolisp-runtime:autolisp-string
                  (clautolisp.autolisp-runtime:autolisp-string-value string))
                 (string string))))
-    (mock-host-write-prompt host text)
+    (cador-write-prompt host text)
     nil))
 
-(defmethod host-initget ((host mock-host) bits keywords)
-  (setf (mock-host-pending-initget host)
+(defmethod host-initget ((host cador) bits keywords)
+  (setf (cador-pending-initget host)
         (make-instance 'initget-state
                        :bits (or bits 0)
                        :keywords (or keywords '())))
   nil)
 
-(defmethod host-getstring ((host mock-host) prompt &key controls)
+(defmethod host-getstring ((host cador) prompt &key controls)
   (declare (ignore controls))
-  (multiple-value-bind (bits kwords) (mock-host-take-initget host)
+  (multiple-value-bind (bits kwords) (cador-take-initget host)
     (declare (ignore bits kwords))
     (when prompt (host-prompt host prompt))
     (let ((line (read-prompt-line host)))
@@ -208,9 +208,9 @@ non-numeric."
         ((eq line :eof) nil)
         (t (clautolisp.autolisp-runtime:make-autolisp-string line))))))
 
-(defmethod host-getint ((host mock-host) prompt &key controls)
+(defmethod host-getint ((host cador) prompt &key controls)
   (declare (ignore controls))
-  (multiple-value-bind (bits kwords) (mock-host-take-initget host)
+  (multiple-value-bind (bits kwords) (cador-take-initget host)
     (declare (ignore bits kwords))
     (when prompt (host-prompt host prompt))
     (let ((line (read-prompt-line host)))
@@ -218,9 +218,9 @@ non-numeric."
         ((eq line :eof) nil)
         (t (parse-integer-token line))))))
 
-(defmethod host-getreal ((host mock-host) prompt &key controls)
+(defmethod host-getreal ((host cador) prompt &key controls)
   (declare (ignore controls))
-  (multiple-value-bind (bits kwords) (mock-host-take-initget host)
+  (multiple-value-bind (bits kwords) (cador-take-initget host)
     (declare (ignore bits kwords))
     (when prompt (host-prompt host prompt))
     (let ((line (read-prompt-line host)))
@@ -228,9 +228,9 @@ non-numeric."
         ((eq line :eof) nil)
         (t (parse-real line))))))
 
-(defmethod host-getpoint ((host mock-host) prompt &key base controls)
+(defmethod host-getpoint ((host cador) prompt &key base controls)
   (declare (ignore base controls))
-  (multiple-value-bind (bits kwords) (mock-host-take-initget host)
+  (multiple-value-bind (bits kwords) (cador-take-initget host)
     (declare (ignore bits kwords))
     (when prompt (host-prompt host prompt))
     (let ((line (read-prompt-line host)))
@@ -238,13 +238,13 @@ non-numeric."
         ((eq line :eof) nil)
         (t (parse-coordinate-list line))))))
 
-(defmethod host-getcorner ((host mock-host) prompt &key base controls)
+(defmethod host-getcorner ((host cador) prompt &key base controls)
   (declare (ignore base))
   (host-getpoint host prompt :controls controls))
 
-(defmethod host-getdist ((host mock-host) prompt &key base controls)
+(defmethod host-getdist ((host cador) prompt &key base controls)
   (declare (ignore base controls))
-  (multiple-value-bind (bits kwords) (mock-host-take-initget host)
+  (multiple-value-bind (bits kwords) (cador-take-initget host)
     (declare (ignore bits kwords))
     (when prompt (host-prompt host prompt))
     (let ((line (read-prompt-line host)))
@@ -252,12 +252,12 @@ non-numeric."
         ((eq line :eof) nil)
         (t (parse-real line))))))
 
-(defmethod host-getangle ((host mock-host) prompt &key base controls)
+(defmethod host-getangle ((host cador) prompt &key base controls)
   ;; Parse the entered angle and return it in RADIANS. A bare number is
   ;; radians (MockHost's dialect-neutral default); an explicit unit
   ;; (deg / rd) or a D-M-S expression is honored -- see PARSE-ANGLE.
   (declare (ignore base controls))
-  (multiple-value-bind (bits kwords) (mock-host-take-initget host)
+  (multiple-value-bind (bits kwords) (cador-take-initget host)
     (declare (ignore bits kwords))
     (when prompt (host-prompt host prompt))
     (let ((line (read-prompt-line host)))
@@ -265,12 +265,12 @@ non-numeric."
         ((eq line :eof) nil)
         (t (parse-angle line))))))
 
-(defmethod host-getorient ((host mock-host) prompt &key base controls)
+(defmethod host-getorient ((host cador) prompt &key base controls)
   (host-getangle host prompt :base base :controls controls))
 
-(defmethod host-getkword ((host mock-host) prompt &key controls)
+(defmethod host-getkword ((host cador) prompt &key controls)
   (declare (ignore controls))
-  (multiple-value-bind (bits kwords) (mock-host-take-initget host)
+  (multiple-value-bind (bits kwords) (cador-take-initget host)
     (declare (ignore bits))
     (when prompt (host-prompt host prompt))
     (let ((line (read-prompt-line host)))

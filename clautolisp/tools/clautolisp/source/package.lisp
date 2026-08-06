@@ -70,10 +70,10 @@
                 #:null-host
                 #:make-null-host
                 #:*null-host*)
-  (:import-from #:clautolisp.autolisp-mock-host
-                #:make-mock-host
-                #:mock-host
-                #:mock-host-prompt-stream)
+  (:import-from #:clautolisp.cador
+                #:make-cador
+                #:cador
+                #:cador-prompt-stream)
   (:import-from #:clautolisp.autolisp-builtins-core
                 #:autolisp-value->string
                 #:install-core-builtins)

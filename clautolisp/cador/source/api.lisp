@@ -1,13 +1,13 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; Constructor + snapshot helpers for MockHost.
 ;;;;
-;;;; Phase 9 deliverable. The `mock-host` class itself is defined in
+;;;; Phase 9 deliverable. The `cador` class itself is defined in
 ;;;; model.lisp; this file ties together the populate-* helpers and
 ;;;; provides the test-friendly constructor and snapshot/restore
 ;;;; primitives the implementation roadmap calls for.
 
-(defun make-mock-host (&key (name "mock-host")
+(defun make-cador (&key (name "cador")
                               (populate-tables-p t)
                               (populate-sysvars-p t)
                               prompt-stream)
@@ -17,11 +17,11 @@ tables and the conservative sysvar subset are populated; pass
 host (e.g. for empty-fixture tests). PROMPT-STREAM, if supplied,
 is the input source the headless interactive prompts will read
 from."
-  (let ((mock (make-instance 'mock-host :name name)))
+  (let ((mock (make-instance 'cador :name name)))
     (when populate-tables-p (populate-default-tables mock))
     (when populate-sysvars-p (populate-default-sysvars mock))
     (when prompt-stream
-      (setf (mock-host-prompt-stream mock) prompt-stream))
+      (setf (cador-prompt-stream mock) prompt-stream))
     mock))
 
 ;;; --- Snapshot / restore ----------------------------------------
@@ -68,14 +68,14 @@ from."
         :read-only-p (sysvar-cell-read-only-p cell)
         :host-derived-p (sysvar-cell-host-derived-p cell)))
 
-(defun mock-host-snapshot (mock)
+(defun cador-snapshot (mock)
   "Return a serialisable snapshot of MOCK's host-visible state. The
 value is a property list suitable for round-trip through ~prin1~ /
 ~read~ (with ~with-standard-io-syntax~)."
   (let* ((entity-snapshot
-          (snapshot-table (mock-host-entities mock) #'snapshot-entity))
+          (snapshot-table (cador-entities mock) #'snapshot-entity))
          (pickset-snapshot
-          (snapshot-table (mock-host-picksets mock) #'snapshot-pickset))
+          (snapshot-table (cador-picksets mock) #'snapshot-pickset))
          (tables-snapshot
           (let ((acc '()))
             (maphash
@@ -83,36 +83,36 @@ value is a property list suitable for round-trip through ~prin1~ /
                (push (cons kind
                            (snapshot-table per-kind #'snapshot-table-record))
                      acc))
-             (mock-host-tables mock))
+             (cador-tables mock))
             (sort acc (lambda (a b) (string< (symbol-name (car a))
                                               (symbol-name (car b)))))))
          (sysvars-snapshot
-          (snapshot-table (mock-host-sysvars mock) #'snapshot-sysvar)))
+          (snapshot-table (cador-sysvars mock) #'snapshot-sysvar)))
     (list :name (host-name mock)
           :entities entity-snapshot
           :picksets pickset-snapshot
           :tables tables-snapshot
           :sysvars sysvars-snapshot
-          :pickfirst (and (mock-host-pickfirst mock)
+          :pickfirst (and (cador-pickfirst mock)
                           (princ-to-string
-                           (pickset-id (mock-host-pickfirst mock)))))))
+                           (pickset-id (cador-pickfirst mock)))))))
 
-(defun mock-host-restore (mock snapshot)
-  "Restore MOCK from a snapshot produced by mock-host-snapshot.
+(defun cador-restore (mock snapshot)
+  "Restore MOCK from a snapshot produced by cador-snapshot.
 Mutates MOCK in place; returns MOCK. Existing state is *replaced*,
 not merged: the entities / picksets / tables / sysvars hash-tables
 are cleared first."
   ;; Clear.
-  (clrhash (mock-host-entities mock))
-  (clrhash (mock-host-picksets mock))
-  (let ((tables (mock-host-tables mock)))
+  (clrhash (cador-entities mock))
+  (clrhash (cador-picksets mock))
+  (let ((tables (cador-tables mock)))
     (maphash (lambda (k per-kind)
                (declare (ignore k))
                (clrhash per-kind))
              tables)
     (clrhash tables))
-  (clrhash (mock-host-sysvars mock))
-  (setf (mock-host-pickfirst mock) nil)
+  (clrhash (cador-sysvars mock))
+  (setf (cador-pickfirst mock) nil)
   ;; Restore.
   (let ((entity-by-id (make-hash-table :test #'equal)))
     (dolist (pair (getf snapshot :entities))
@@ -126,7 +126,7 @@ are cleared first."
                       :deleted-p (getf plist :deleted-p))))
         (setf (gethash id-string entity-by-id) handle
               (gethash (entity-handle-id handle)
-                       (mock-host-entities mock))
+                       (cador-entities mock))
               handle)))
     (dolist (pair (getf snapshot :picksets))
       (let* ((plist   (cdr pair))
@@ -134,7 +134,7 @@ are cleared first."
                                 (gethash id entity-by-id))
                               (getf plist :members)))
              (set     (make-pickset :members members)))
-        (setf (gethash (pickset-id set) (mock-host-picksets mock)) set))))
+        (setf (gethash (pickset-id set) (cador-picksets mock)) set))))
   (dolist (pair (getf snapshot :tables))
     (let ((kind (car pair)))
       (dolist (record-pair (cdr pair))
@@ -143,7 +143,7 @@ are cleared first."
                         :kind (or (getf plist :kind) kind)
                         :name (getf plist :name)
                         :data (getf plist :data))))
-          (mock-host-add-table-record mock record)))))
+          (cador-add-table-record mock record)))))
   (dolist (pair (getf snapshot :sysvars))
     (let* ((plist (cdr pair))
            (cell  (make-sysvar-cell
@@ -152,5 +152,5 @@ are cleared first."
                    :value          (getf plist :value)
                    :read-only-p    (getf plist :read-only-p)
                    :host-derived-p (getf plist :host-derived-p))))
-      (setf (gethash (sysvar-cell-name cell) (mock-host-sysvars mock)) cell)))
+      (setf (gethash (sysvar-cell-name cell) (cador-sysvars mock)) cell)))
   mock)

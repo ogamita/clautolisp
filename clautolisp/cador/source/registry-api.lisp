@@ -1,4 +1,4 @@
-;;;; clautolisp/autolisp-mock-host/source/registry-api.lisp
+;;;; clautolisp/cador/source/registry-api.lisp
 ;;;;
 ;;;; VL-REGISTRY-* backing for the mock host (vl-registry.issue). On real
 ;;;; hosts these functions reach the Windows registry, or the macOS defaults
@@ -9,7 +9,7 @@
 ;;;; case-insensitive like the Windows registry; each key holds named
 ;;;; values (the default value is the name "").
 
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 (defvar *mock-registry-path* nil
   "Override for the registry store file (tests point it at a temp file);
@@ -219,7 +219,7 @@ persistent sexp file). Defaults to the platform; RUNTIME-dispatched so
 the unit tests can bind :UNIX and exercise the sexp store on any
 platform (the platform verify jobs cover the other two).")
 
-(defmethod host-registry-read ((host mock-host) key value-name)
+(defmethod host-registry-read ((host cador) key value-name)
   (ecase *vl-registry-backend*
     (:windows (%reg-read key value-name))
     (:darwin (%dflt-read key value-name))
@@ -227,7 +227,7 @@ platform (the platform verify jobs cover the other two).")
      (let ((values (gethash key (%registry))))
        (and values (gethash (%registry-value-name value-name) values))))))
 
-(defmethod host-registry-write ((host mock-host) key value-name value)
+(defmethod host-registry-write ((host cador) key value-name value)
   (ecase *vl-registry-backend*
     (:windows (%reg-write key value-name value))
     (:darwin (%dflt-write key value-name value))
@@ -240,7 +240,7 @@ platform (the platform verify jobs cover the other two).")
        (%registry-save)
        value))))
 
-(defmethod host-registry-delete ((host mock-host) key value-name)
+(defmethod host-registry-delete ((host cador) key value-name)
   (ecase *vl-registry-backend*
     (:windows (%reg-delete key value-name))
     (:darwin (%dflt-delete key value-name))
@@ -255,7 +255,7 @@ platform (the platform verify jobs cover the other two).")
        (when deleted (%registry-save))
        deleted))))
 
-(defmethod host-registry-descendents ((host mock-host) key value-names-p)
+(defmethod host-registry-descendents ((host cador) key value-names-p)
   (ecase *vl-registry-backend*
     (:windows (%reg-descendents key value-names-p))
     (:darwin (%dflt-descendents key value-names-p))

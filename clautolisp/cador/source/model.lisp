@@ -1,4 +1,4 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; MockHost data carriers and the MockHost class.
 ;;;;
@@ -12,9 +12,9 @@
 ;;;; are not part of a drawing — PICKSET and MOCK-COM-OBJECT — and the
 ;;;; MOCK-HOST class. MockHost now holds an ACTIVE-DRAWING and delegates
 ;;;; its entity / table / sysvar surface to it; the historical
-;;;; accessors (mock-host-entities, mock-host-tables, mock-host-sysvars,
-;;;; mock-host-creation-order, mock-host-next-handle-counter,
-;;;; mock-host-named-object-dictionary) are preserved below as thin
+;;;; accessors (cador-entities, cador-tables, cador-sysvars,
+;;;; cador-creation-order, cador-next-handle-counter,
+;;;; cador-named-object-dictionary) are preserved below as thin
 ;;;; functions that forward to the active drawing.
 
 ;;; --- Selection set (session state) ------------------------------
@@ -52,28 +52,28 @@ vlax-release-object."
 
 ;;; --- MockHost ---------------------------------------------------
 
-(defclass mock-host (host)
+(defclass cador (host)
   ((active-drawing           :initform (make-drawing :name "Drawing.dwg")
-                             :accessor mock-host-active-drawing
+                             :accessor cador-active-drawing
                              :documentation "The drawing the host's
 AutoLISP entity / table / sysvar surface currently operates on. A
 CLAUTOLISP.DRAWING:DRAWING. Phase 17a holds exactly one; Phase 17f
 will grow a set of open drawings with this as the active pointer.")
    (picksets                 :initform (make-hash-table :test #'eq)
-                             :reader   mock-host-picksets)
+                             :reader   cador-picksets)
    (vla-objects              :initform (make-hash-table :test #'eq)
-                             :reader   mock-host-vla-objects)
+                             :reader   cador-vla-objects)
    (prompt-stream            :initform nil
-                             :accessor mock-host-prompt-stream
+                             :accessor cador-prompt-stream
                              :documentation "Optional input stream
 that getstring / getreal / getpoint / etc. consume in headless
 mode. Set by tests and the CLI's --mock-input flag.")
    (prompt-output            :initform (make-string-output-stream)
-                             :accessor mock-host-prompt-output
+                             :accessor cador-prompt-output
                              :documentation "Sink that the prompt
 builtin and the get* prompts write to. Tests inspect it.")
    (command-log              :initform '()
-                             :accessor mock-host-command-log
+                             :accessor cador-command-log
                              :documentation "Reverse-order list of
 recorded (command ...) token sequences — each element is the
 normalized token-string list one HOST-COMMAND call received.
@@ -81,69 +81,69 @@ MockHost has no command engine; recording the tokens (and echoing
 them to PROMPT-OUTPUT) is the whole mock semantics. Read oldest-
 first through HOST-COMMAND-LOG / the CLAL-COMMAND-LOG extension.")
    (display-log              :initform '()
-                             :accessor mock-host-display-log
+                             :accessor cador-display-log
                              :documentation "Reverse-order list of
 recorded transient-graphics calls (grdraw / grtext / grvecs /
 grclear / redraw). Tests inspect this; production code does not.")
    (pickfirst                :initform nil
-                             :accessor mock-host-pickfirst
+                             :accessor cador-pickfirst
                              :documentation "The session's
 pickfirst selection set, as set by ssgetfirst / sssetfirst.")
    (tblnext-iterators        :initform (make-hash-table :test #'eq)
-                             :accessor mock-host-tblnext-iterators
+                             :accessor cador-tblnext-iterators
                              :documentation "Per-kind iterator
 state for tblnext. Maps a table-kind keyword to the remaining
 list of records that subsequent (tblnext KIND) calls will
 return. Cleared / reset when (tblnext KIND :rewind t).")
    (dictnext-iterators       :initform (make-hash-table :test #'equal)
-                             :accessor mock-host-dictnext-iterators
+                             :accessor cador-dictnext-iterators
                              :documentation "Per-dictionary iterator
 state for dictnext. Maps a dictionary hex-handle string to the
 remaining list of (KEY . MEMBER-HANDLE) entries that subsequent
  (dictnext DICT) calls will return. Rebuilt on first reference or on
  (dictnext DICT :rewind t), matching the tblnext contract.")
    (pending-initget          :initform nil
-                             :accessor mock-host-pending-initget
+                             :accessor cador-pending-initget
                              :documentation "Per-host scratch slot
 for the most recent INITGET call. Bound to an `initget-state`
 object; consumed and cleared by the next get* invocation, matching
 AutoLISP's documented one-shot semantics.")
    (com-objects              :initform (make-hash-table :test #'equal)
-                             :reader   mock-host-com-objects
+                             :reader   cador-com-objects
                              :documentation "Hash-table mapping a
 unique COM-object id (string) to a MOCK-COM-OBJECT struct. The
 AutoLISP-visible VLA-object wraps that id.")
    (next-com-counter         :initform 0
-                             :accessor mock-host-next-com-counter
+                             :accessor cador-next-com-counter
                              :documentation "Allocator state for
 COM-object ids.")
    (acad-application-id      :initform nil
-                             :accessor mock-host-acad-application-id
+                             :accessor cador-acad-application-id
                              :documentation "COM-object id of the
 singleton AutoCAD.Application returned by (vlax-get-acad-object),
 or NIL before the first call. Lazily created together with its
 ActiveDocument so the vla-get-activedocument chain resolves.")
    (entity-vla-map           :initform (make-hash-table :test #'equal)
-                             :accessor mock-host-entity-vla-map
+                             :accessor cador-entity-vla-map
                              :documentation "Entity hex-handle string ->
 COM-object id of its vlax-ename->vla-object wrapper, so repeated
 conversions of the same entity yield the same (identity-stable) VLA
 object and vlax-vla-object->ename round-trips.")
    (ldata-store              :initform (make-hash-table :test #'equal)
-                             :accessor mock-host-ldata-store
+                             :accessor cador-ldata-store
                              :documentation "Persistent vlax-ldata store:
 maps a (DICT-KEY . PRIVATE-P) namespace string to an alist of
 (entry-key . value). DICT-KEY is the dictionary's identity (COM id or
 global-dictionary name). Survives for the host's lifetime — the headless
 CAD analogue of ldata stored in the drawing.")
    (registered-commands      :initform '()
-                             :accessor mock-host-registered-commands
+                             :accessor cador-registered-commands
                              :documentation "Reverse-order list of
 (global-name local-name . function) registered by vlax-add-cmd, and the
 queue fed by vlax-queueexpr. Headless has no interactive command line, so
 this records registrations/queued expressions for introspection.")
    (open-complex-handle      :initform nil
-                             :accessor mock-host-open-complex-handle
+                             :accessor cador-open-complex-handle
                              :documentation "The hex handle of the
 complex entity (a POLYLINE or an INSERT) whose subentity run is
 currently open, or NIL. When an entmake/entmakex creates a POLYLINE
@@ -153,7 +153,7 @@ unless the caller supplied one, matching the AutoCAD/BricsCAD
 create-sequence contract. A SEQEND closes the run (clears the
 slot). This is session state, not drawing state.")
    (ename-cache              :initform (make-hash-table :test #'equal)
-                             :accessor mock-host-ename-cache
+                             :accessor cador-ename-cache
                              :documentation "Interns AutoLISP ENAMEs by
 hex-handle string so that every producer (entget, entlast, entnext,
 handent, ssname, entmakex ...) yields the SAME (EQ) ename object for a
@@ -162,13 +162,13 @@ given handle within a drawing. Vendor AutoLISP has this identity —
 list), (eq ename (car sel)) work. Keyed and drained per drawing via
 ENAME-CACHE-DRAWING. See HANDLE->ENAME. (ename-eq-identity.issue)")
    (ename-cache-drawing      :initform nil
-                             :accessor mock-host-ename-cache-drawing
+                             :accessor cador-ename-cache-drawing
                              :documentation "The DRAWING object the
 ENAME-CACHE is currently valid for. When the active drawing is replaced
  (a future multi-drawing session), HANDLE->ENAME notices the identity
 change and clears the cache so handles from a closed drawing can never
 alias a fresh drawing's entities."))
-  (:default-initargs :name "mock-host")
+  (:default-initargs :name "cador")
   (:documentation "In-memory deterministic CAD-database substitute
 backend for clautolisp. Holds an active CLAUTOLISP.DRAWING:DRAWING
 (the drawing database) plus the session-level state — picksets,
@@ -182,35 +182,35 @@ that is not part of a drawing."))
 ;;; table-api, sysvar-api, api, and the test suite) keeps working
 ;;; unchanged. The names are deliberately preserved.
 
-(defun mock-host-entities (host)
+(defun cador-entities (host)
   "The active drawing's entity table (hex-handle string -> ENTITY-HANDLE)."
-  (drawing-entities (mock-host-active-drawing host)))
+  (drawing-entities (cador-active-drawing host)))
 
-(defun mock-host-tables (host)
+(defun cador-tables (host)
   "The active drawing's symbol tables (kind keyword -> name -> record)."
-  (drawing-tables (mock-host-active-drawing host)))
+  (drawing-tables (cador-active-drawing host)))
 
-(defun mock-host-sysvars (host)
+(defun cador-sysvars (host)
   "The active drawing's header variables (name string -> SYSVAR-CELL)."
-  (drawing-header-variables (mock-host-active-drawing host)))
+  (drawing-header-variables (cador-active-drawing host)))
 
-(defun mock-host-creation-order (host)
+(defun cador-creation-order (host)
   "The active drawing's reverse-order handle list."
-  (drawing-creation-order (mock-host-active-drawing host)))
+  (drawing-creation-order (cador-active-drawing host)))
 
-(defun (setf mock-host-creation-order) (new host)
-  (setf (drawing-creation-order (mock-host-active-drawing host)) new))
+(defun (setf cador-creation-order) (new host)
+  (setf (drawing-creation-order (cador-active-drawing host)) new))
 
-(defun mock-host-next-handle-counter (host)
+(defun cador-next-handle-counter (host)
   "The active drawing's handle allocator state (HANDSEED)."
-  (drawing-handle-seed (mock-host-active-drawing host)))
+  (drawing-handle-seed (cador-active-drawing host)))
 
-(defun (setf mock-host-next-handle-counter) (new host)
-  (setf (drawing-handle-seed (mock-host-active-drawing host)) new))
+(defun (setf cador-next-handle-counter) (new host)
+  (setf (drawing-handle-seed (cador-active-drawing host)) new))
 
-(defun mock-host-named-object-dictionary (host)
+(defun cador-named-object-dictionary (host)
   "The active drawing's root named-object dictionary."
-  (drawing-named-object-dictionary (mock-host-active-drawing host)))
+  (drawing-named-object-dictionary (cador-active-drawing host)))
 
-(defun (setf mock-host-named-object-dictionary) (new host)
-  (setf (drawing-named-object-dictionary (mock-host-active-drawing host)) new))
+(defun (setf cador-named-object-dictionary) (new host)
+  (setf (drawing-named-object-dictionary (cador-active-drawing host)) new))

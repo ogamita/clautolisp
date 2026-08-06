@@ -1,4 +1,4 @@
-(defpackage #:clautolisp.autolisp-mock-host.tests
+(defpackage #:clautolisp.cador.tests
   (:use #:cl)
   (:import-from #:fiveam
                 #:def-suite
@@ -62,9 +62,9 @@
                 #:host-vlax-property-available-p
                 #:host-vlax-method-applicable-p
                 #:host-vlax-get-acad-object)
-  (:import-from #:clautolisp.autolisp-mock-host
-                #:mock-host
-                #:make-mock-host
+  (:import-from #:clautolisp.cador
+                #:cador
+                #:make-cador
                 #:entity-handle
                 #:make-entity-handle
                 #:pickset
@@ -84,32 +84,32 @@
                 #:sysvar-cell-read-only-p
                 #:sysvar-cell-host-derived-p
                 #:*full-sysvar-catalogue*
-                #:mock-host-entities
-                #:mock-host-picksets
-                #:mock-host-tables
-                #:mock-host-named-object-dictionary
-                #:mock-host-sysvars
-                #:mock-host-prompt-output
-                #:mock-host-prompt-stream
-                #:mock-host-pending-initget
-                #:mock-host-com-objects
-                #:mock-host-find-com-object
+                #:cador-entities
+                #:cador-picksets
+                #:cador-tables
+                #:cador-named-object-dictionary
+                #:cador-sysvars
+                #:cador-prompt-output
+                #:cador-prompt-stream
+                #:cador-pending-initget
+                #:cador-com-objects
+                #:cador-find-com-object
                 #:mock-com-object
                 #:mock-com-object-id
                 #:mock-com-object-progid
                 #:mock-com-object-properties
                 #:mock-com-object-released-p
                 #:register-com-progid
-                #:mock-host-display-log
-                #:mock-host-pickfirst
+                #:cador-display-log
+                #:cador-pickfirst
                 #:populate-default-tables
                 #:populate-default-sysvars
-                #:mock-host-snapshot
-                #:mock-host-restore
-                #:mock-host-table
-                #:mock-host-find-table-record
-                #:mock-host-add-table-record
-                #:mock-host-sysvar
-                #:mock-host-set-sysvar)
-  (:export #:autolisp-mock-host-suite
+                #:cador-snapshot
+                #:cador-restore
+                #:cador-table
+                #:cador-find-table-record
+                #:cador-add-table-record
+                #:cador-sysvar
+                #:cador-set-sysvar)
+  (:export #:cador-suite
            #:run-all-tests))

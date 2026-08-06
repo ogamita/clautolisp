@@ -1,4 +1,4 @@
-(defpackage #:clautolisp.autolisp-mock-host
+(defpackage #:clautolisp.cador
   (:use #:cl)
   (:import-from #:clautolisp.drawing
                 ;; Phase 17a: the drawing value object and its data
@@ -132,8 +132,8 @@
                 #:host-vlax-collection-items)
   (:export
    ;; Class hierarchy
-   #:mock-host
-   #:make-mock-host
+   #:cador
+   #:make-cador
    #:*mock-registry-path*
    ;; Drawing value object (re-exported from clautolisp.drawing) +
    ;; the host's active-drawing accessor.
@@ -152,7 +152,7 @@
    #:drawing-named-object-dictionary
    #:drawing-header-variables
    #:drawing-classes
-   #:mock-host-active-drawing
+   #:cador-active-drawing
    ;; Data structures
    #:entity-handle
    #:make-entity-handle
@@ -187,42 +187,42 @@
    ;; autolisp-spec/documentation/system-variables-inventory.sexp).
    #:*full-sysvar-catalogue*
    ;; MockHost accessors
-   #:mock-host-entities
-   #:mock-host-picksets
-   #:mock-host-vla-objects
-   #:mock-host-tables
-   #:mock-host-named-object-dictionary
-   #:mock-host-sysvars
-   #:mock-host-prompt-stream
-   #:mock-host-prompt-output
-   #:mock-host-command-log
-   #:mock-host-display-log
-   #:mock-host-pickfirst
+   #:cador-entities
+   #:cador-picksets
+   #:cador-vla-objects
+   #:cador-tables
+   #:cador-named-object-dictionary
+   #:cador-sysvars
+   #:cador-prompt-stream
+   #:cador-prompt-output
+   #:cador-command-log
+   #:cador-display-log
+   #:cador-pickfirst
    ;; Pre-population helpers
    #:populate-default-tables
    #:populate-default-sysvars
    ;; Snapshot / restore
-   #:mock-host-snapshot
-   #:mock-host-restore
+   #:cador-snapshot
+   #:cador-restore
    ;; Per-table accessors
-   #:mock-host-table
-   #:mock-host-find-table-record
-   #:mock-host-add-table-record
+   #:cador-table
+   #:cador-find-table-record
+   #:cador-add-table-record
    ;; Sysvar API
-   #:mock-host-sysvar
-   #:mock-host-set-sysvar
-   #:mock-host-remove-sysvar
+   #:cador-sysvar
+   #:cador-set-sysvar
+   #:cador-remove-sysvar
    ;; BricsCAD-dialect sysvar overlay
    #:*bricscad-absent-sysvars*
    #:apply-bricscad-dialect-sysvars
    ;; Entity-allocation helpers (Phase 10)
-   #:mock-host-creation-order
-   #:mock-host-next-handle-counter
-   #:mock-host-allocate-handle
-   #:mock-host-find-entity-by-handle
+   #:cador-creation-order
+   #:cador-next-handle-counter
+   #:cador-allocate-handle
+   #:cador-find-entity-by-handle
    ;; Prompt / interaction helpers (Phase 12)
-   #:mock-host-pending-initget
-   #:mock-host-tblnext-iterators
+   #:cador-pending-initget
+   #:cador-tblnext-iterators
    #:initget-state
    #:initget-bits
    #:initget-keywords
@@ -234,10 +234,10 @@
    #:mock-com-object-properties
    #:mock-com-object-methods
    #:mock-com-object-released-p
-   #:mock-host-com-objects
-   #:mock-host-next-com-counter
-   #:mock-host-allocate-com-id
-   #:mock-host-find-com-object
+   #:cador-com-objects
+   #:cador-next-com-counter
+   #:cador-allocate-com-id
+   #:cador-find-com-object
    #:*com-progids*
    #:register-com-progid
    #:populate-default-com-progids))

@@ -7,7 +7,7 @@
                "clautolisp/autolisp-runtime"
                "clautolisp/drawing"
                "clautolisp/autolisp-host"
-               "clautolisp/autolisp-mock-host"
+               "clautolisp/cador"
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
@@ -149,7 +149,7 @@
                          (uiop:symbol-call :clautolisp.drawing.dwg.tests
                                            :run-all-tests)))
 
-(asdf:defsystem "clautolisp/autolisp-mock-host"
+(asdf:defsystem "clautolisp/cador"
   :description "In-memory deterministic CAD-database backend (MockHost) for clautolisp."
   :author "Codex"
   :license "AGPL-3.0"
@@ -157,24 +157,24 @@
                "clautolisp/drawing")
   :serial t
   :components
-  ((:file "autolisp-mock-host/source/package")
-   (:file "autolisp-mock-host/source/model")
-   (:file "autolisp-mock-host/source/sysvar-catalogue")
-   (:file "autolisp-mock-host/source/sysvars")
-   (:file "autolisp-mock-host/source/api")
-   (:file "autolisp-mock-host/source/entity-api")
-   (:file "autolisp-mock-host/source/selection-api")
-   (:file "autolisp-mock-host/source/dictionary-api")
-   (:file "autolisp-mock-host/source/table-api")
-   (:file "autolisp-mock-host/source/sysvar-api")
-   (:file "autolisp-mock-host/source/registry-api")
-   (:file "autolisp-mock-host/source/bricscad-sysvar-overrides")
-   (:file "autolisp-mock-host/source/prompt-api")
-   (:file "autolisp-mock-host/source/command-api")
-   (:file "autolisp-mock-host/source/com-progids")
-   (:file "autolisp-mock-host/source/vlax-api"))
+  ((:file "cador/source/package")
+   (:file "cador/source/model")
+   (:file "cador/source/sysvar-catalogue")
+   (:file "cador/source/sysvars")
+   (:file "cador/source/api")
+   (:file "cador/source/entity-api")
+   (:file "cador/source/selection-api")
+   (:file "cador/source/dictionary-api")
+   (:file "cador/source/table-api")
+   (:file "cador/source/sysvar-api")
+   (:file "cador/source/registry-api")
+   (:file "cador/source/bricscad-sysvar-overrides")
+   (:file "cador/source/prompt-api")
+   (:file "cador/source/command-api")
+   (:file "cador/source/com-progids")
+   (:file "cador/source/vlax-api"))
   :in-order-to ((asdf:test-op
-                 (asdf:test-op "clautolisp/autolisp-mock-host/tests")))
+                 (asdf:test-op "clautolisp/cador/tests")))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
                          :success))
@@ -260,7 +260,7 @@
                ;; for APPLY-BRICSCAD-DIALECT-SYSVARS, the launch-time
                ;; bricscad-dialect sysvar overlay (drops the AutoCAD-only
                ;; catalogue entries BricsCAD does not define).
-               "clautolisp/autolisp-mock-host")
+               "clautolisp/cador")
   :serial t
   :components
   ((:file "autolisp-cli/source/package")
@@ -282,7 +282,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :author "Pascal J. Bourguignon"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-cli"
-               "clautolisp/autolisp-mock-host"
+               "clautolisp/cador"
                "fiveam")
   :serial t
   :components
@@ -302,7 +302,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :depends-on ("clautolisp/autolisp-reader"
                "clautolisp/autolisp-runtime"
                "clautolisp/autolisp-host"
-               "clautolisp/autolisp-mock-host"
+               "clautolisp/cador"
                "clautolisp/autolisp-builtins-core"
                "clautolisp/autolisp-cli"
                "clautolisp/autolisp-dcl"
@@ -407,28 +407,28 @@ identity / TEMPPREFIX stamping, option value parsers)."
                          (uiop:symbol-call :clautolisp.drawing.tests
                                            :run-all-tests)))
 
-(asdf:defsystem "clautolisp/autolisp-mock-host/tests"
+(asdf:defsystem "clautolisp/cador/tests"
   :description "Tests for the clautolisp MockHost data carriers."
   :author "Codex"
   :license "AGPL-3.0"
-  :depends-on ("clautolisp/autolisp-mock-host" "fiveam")
+  :depends-on ("clautolisp/cador" "fiveam")
   :serial t
   :components
-  ((:file "autolisp-mock-host/tests/package")
-   (:file "autolisp-mock-host/tests/test-harness")
-   (:file "autolisp-mock-host/tests/model-tests")
-   (:file "autolisp-mock-host/tests/entity-api-tests")
-   (:file "autolisp-mock-host/tests/selection-tests")
-   (:file "autolisp-mock-host/tests/dictionary-api-tests")
-   (:file "autolisp-mock-host/tests/prompt-tests")
-   (:file "autolisp-mock-host/tests/command-tests")
-   (:file "autolisp-mock-host/tests/vlax-tests")
-   (:file "autolisp-mock-host/tests/reactor-tests")
-   (:file "autolisp-mock-host/tests/sysvar-catalogue-tests")
-   (:file "autolisp-mock-host/tests/run"))
+  ((:file "cador/tests/package")
+   (:file "cador/tests/test-harness")
+   (:file "cador/tests/model-tests")
+   (:file "cador/tests/entity-api-tests")
+   (:file "cador/tests/selection-tests")
+   (:file "cador/tests/dictionary-api-tests")
+   (:file "cador/tests/prompt-tests")
+   (:file "cador/tests/command-tests")
+   (:file "cador/tests/vlax-tests")
+   (:file "cador/tests/reactor-tests")
+   (:file "cador/tests/sysvar-catalogue-tests")
+   (:file "cador/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))
-                         (uiop:symbol-call :clautolisp.autolisp-mock-host.tests
+                         (uiop:symbol-call :clautolisp.cador.tests
                                            :run-all-tests)))
 
 (asdf:defsystem "clautolisp/autolisp-dcl/tests"
@@ -473,7 +473,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
   :author "Codex"
   :license "AGPL-3.0"
   :depends-on ("clautolisp/autolisp-builtins-core"
-               "clautolisp/autolisp-mock-host"
+               "clautolisp/cador"
                "fiveam")
   :serial t
   :components
@@ -866,7 +866,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                "clautolisp/autolisp-runtime/tests"
                "clautolisp/drawing/tests"
                "clautolisp/autolisp-host/tests"
-               "clautolisp/autolisp-mock-host/tests"
+               "clautolisp/cador/tests"
                "clautolisp/autolisp-dcl/tests"
                "clautolisp/autolisp-builtins-core/tests"
                "clautolisp/autolisp-cli/tests"
@@ -890,7 +890,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-host.tests
                                              :run-all-tests)
-                           (uiop:symbol-call :clautolisp.autolisp-mock-host.tests
+                           (uiop:symbol-call :clautolisp.cador.tests
                                              :run-all-tests)
                            (uiop:symbol-call :clautolisp.autolisp-dcl.tests
                                              :run-all-tests)

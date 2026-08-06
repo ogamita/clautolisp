@@ -18,11 +18,11 @@
                                 (uiop:ensure-directory-pathname
                                  (or (uiop:getenv "CI_PROJECT_DIR")
                                      (uiop:getcwd))))))
-      (asdf:load-system "clautolisp/autolisp-mock-host"))
+      (asdf:load-system "clautolisp/cador"))
   (error (e) (format t "~&LOAD FAILED: ~A~%" e) (uiop:quit 2)))
 (let* ((root "HKCU\\Software\\clautolisp-vlreg-test")
        (key  (concatenate 'string root "\\Sub"))
-       (host (clautolisp.autolisp-mock-host:make-mock-host))
+       (host (clautolisp.cador:make-cador))
        (fails 0))
   (flet ((chk (label ok)
            (format t "~&~:[FAIL~;ok  ~]  ~A~%" ok label)

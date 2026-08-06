@@ -564,14 +564,16 @@ controls the *language*; the host backend controls the *target*.
 Both axes are independent.
 
 - ~--host NAME~          :: Select the backend. Currently accepted:
-                            ~mock~ (default since 0.0.14): an
-                            in-memory deterministic CAD-database
-                            substitute capable of entget / ssget /
-                            getvar / getstring etc. ~null~: every
+                            ~cador~ (default): the headless in-process
+                            CAD core — an in-memory deterministic
+                            CAD-database capable of entget / ssget /
+                            getvar / getstring etc. (~mock~ is a
+                            deprecated alias of ~cador~). ~null~: every
                             CAD-host operation signals
                             ~:host-not-supported~ — useful for
                             programs that should not touch a host
-                            at all. ~live~ is reserved for Phase 16.
+                            at all. A remote wire host is reserved for
+                            a later phase.
 - ~--mock-input PATH~    :: Attach the file at PATH as the
                             MockHost's prompt-stream. Lines are
                             consumed in order by ~getstring~,

@@ -1,4 +1,4 @@
-(in-package #:clautolisp.autolisp-mock-host)
+(in-package #:clautolisp.cador)
 
 ;;;; Command-dispatch HAL methods on MockHost
 ;;;; (deferred-command-special-form issue).
@@ -25,9 +25,9 @@ the PAUSE token \"\\\\\" as <PAUSE>, anything else verbatim."
     ((string= token "\\") "<PAUSE>")
     (t token)))
 
-(defmethod host-command ((host mock-host) arguments)
-  (push arguments (mock-host-command-log host))
-  (let ((sink (mock-host-prompt-output host)))
+(defmethod host-command ((host cador) arguments)
+  (push arguments (cador-command-log host))
+  (let ((sink (cador-prompt-output host)))
     (when sink
       (if arguments
           (format sink "~&Command:~{ ~A~}~%"
@@ -38,5 +38,5 @@ the PAUSE token \"\\\\\" as <PAUSE>, anything else verbatim."
       (finish-output sink)))
   nil)
 
-(defmethod host-command-log ((host mock-host))
-  (reverse (mock-host-command-log host)))
+(defmethod host-command-log ((host cador))
+  (reverse (cador-command-log host)))
