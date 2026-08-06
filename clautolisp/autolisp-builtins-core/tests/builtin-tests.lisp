@@ -5674,6 +5674,36 @@ token sequence."
     (is (equal '(("._ZOOM" "\\"))
                (clautolisp.autolisp-host:host-command-log mock)))))
 
+(test pi-variable-is-predefined
+  "PI is predefined as the real 3.141592653589793 (AutoLISP predefines
+it), so arithmetic works out of the box; it stays user-settable."
+  (reset-autolisp-symbol-table)
+  (let ((pi-val (run-autolisp-string "pi" :setup-fn #'install-core-into)))
+    (is (numberp pi-val))
+    (is (< (abs (- pi-val 3.141592653589793d0)) 1d-12)))
+  (reset-autolisp-symbol-table)
+  (is (< (abs (- (* 2 3.141592653589793d0)
+                 (run-autolisp-string "(* 2 pi)" :setup-fn #'install-core-into)))
+         1d-9))
+  ;; still an ordinary, settable variable
+  (reset-autolisp-symbol-table)
+  (is (eql 5 (run-autolisp-string "(setq pi 5) pi" :setup-fn #'install-core-into))))
+
+(test t-variable-is-predefined-and-bound
+  "T is a predefined variable whose value is itself: it self-evaluates
+AND (boundp 'T) / (vl-symbol-value 'T) report it bound (autolisp-spec
+Variable Entry: T), matching AutoCAD."
+  (reset-autolisp-symbol-table)
+  (let ((v (run-autolisp-string "T" :setup-fn #'install-core-into)))
+    (is (typep v 'clautolisp.autolisp-runtime:autolisp-symbol))
+    (is (string= "T" (clautolisp.autolisp-runtime:autolisp-symbol-name v))))
+  (reset-autolisp-symbol-table)
+  (is (run-autolisp-string "(boundp 'T)" :setup-fn #'install-core-into))
+  (reset-autolisp-symbol-table)
+  (let ((v (run-autolisp-string "(vl-symbol-value 'T)" :setup-fn #'install-core-into)))
+    (is (and (typep v 'clautolisp.autolisp-runtime:autolisp-symbol)
+             (string= "T" (clautolisp.autolisp-runtime:autolisp-symbol-name v))))))
+
 (test vl-cmdf-returns-t-on-mock-host-and-shares-the-log
   (reset-autolisp-symbol-table)
   (multiple-value-bind (result mock)
