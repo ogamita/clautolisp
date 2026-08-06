@@ -128,7 +128,7 @@ MAN_FILES := $(wildcard documentation/man/*.1) \
              $(wildcard tools/*/documentation/man/*.1)
 
 .PHONY: all test test-sbcl test-ccl build build-sbcl build-ccl probe-check \
-        build-libredwg test-libredwg-compiler-path \
+        submodules build-libredwg test-libredwg-compiler-path \
         build-read-autolisp-sbcl build-read-autolisp-ccl \
         build-clautolisp-sbcl build-clautolisp-ccl \
         run-file-compat run-file-compat-sbcl run-file-compat-ccl \
@@ -195,7 +195,20 @@ build-ccl:  ## Strictly build the CCL clautolisp + read-autolisp images (errors 
 	$(MAKE) build-read-autolisp-ccl
 	$(MAKE) build-clautolisp-ccl
 
-build-libredwg:  ## Build the vendored libredwg submodule + the CFFI shim for the optional DWG codec (Phase 17e). Requires cmake + a C compiler.
+submodules:  ## Check out the git submodules (the vendored libredwg) if they are not already present. Run automatically by build-libredwg so `make build-libraries` works straight after a clone. No-op when already checked out or when building from a source tarball (no .git).
+	@if [ -z "$$(ls -A third-party/libredwg 2>/dev/null)" ]; then \
+	  top=$$(git rev-parse --show-toplevel 2>/dev/null) || true; \
+	  if [ -n "$$top" ]; then \
+	    echo "==> git submodule update --init --recursive (vendored libredwg)"; \
+	    ( cd "$$top" && git submodule update --init --recursive ); \
+	  else \
+	    echo "error: third-party/libredwg is empty and this is not a git checkout;" >&2; \
+	    echo "       cannot fetch the libredwg submodule for the DWG codec." >&2; \
+	    exit 1; \
+	  fi; \
+	fi
+
+build-libredwg: submodules  ## Build the vendored libredwg submodule + the CFFI shim for the optional DWG codec (Phase 17e). Requires cmake + a C compiler. Checks out the submodule first if needed.
 	drawing-dwg/build-libredwg.sh
 
 test-libredwg-compiler-path:
