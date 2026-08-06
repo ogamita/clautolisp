@@ -2000,6 +2000,238 @@ NIL when GETSTRING returns nil)."
   (is (string= ".5" (%rtos-with-cador
                      "(progn (setvar \"DIMZIN\" 12) (rtos 0.5 2 4))"))))
 
+;;;; ----- RTOS modes 3-5 (engineering / architectural / fractional) --
+;;;;
+;;;; system-variables.issue 'Coupling', item 1: rtos now formats the
+;;;; feet-and-inches modes and honours LUPREC (decimal places for
+;;;; engineering, power-of-two fraction denominator for architectural /
+;;;; fractional) and UNITMODE (display form 0 vs. re-readable input form
+;;;; 1). The canonical values below are the examples from Autodesk's own
+;;;; rtos reference: (rtos 17.5 3 2) "1'-5.50\"", (rtos 17.5 4 2)
+;;;; "1'-5 1/2\"", (rtos 17.5 5 2) "17 1/2".
+
+(defmacro %rtos-is (expected number mode precision)
+  "Assert (rtos NUMBER MODE PRECISION) prints EXPECTED, host-less."
+  `(is (string= ,expected
+                (autolisp-string-value
+                 (call-autolisp-function rtos-fn ,number ,mode ,precision)))))
+
+(test rtos-engineering-mode-feet-and-decimal-inches
+  ;; Mode 3: feet, an apostrophe-hyphen, then decimal inches (P places).
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((rtos-fn (autolisp-symbol-function (find-autolisp-symbol "RTOS"))))
+    (%rtos-is "1'-5.50\"" 17.5d0 3 2)     ; canonical AutoCAD example
+    (%rtos-is "1'-0.00\"" 12.0d0 3 2)     ; exact foot -> 0 inches
+    (%rtos-is "0'-6.5\"" 6.5d0 3 1)       ; under a foot keeps 0'
+    (%rtos-is "-1'-5.50\"" -17.5d0 3 2)   ; sign leads the whole result
+    (%rtos-is "2'-1\"" 25.0d0 3 0)))      ; P 0 drops the decimal point
+
+(test rtos-architectural-mode-feet-and-fractional-inches
+  ;; Mode 4: feet + whole inches + a reduced 2^P fraction.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((rtos-fn (autolisp-symbol-function (find-autolisp-symbol "RTOS"))))
+    (%rtos-is "1'-5 1/2\"" 17.5d0 4 2)    ; canonical AutoCAD example
+    (%rtos-is "1'-5 1/2\"" 17.5d0 4 4)    ; 8/16 reduces to 1/2
+    (%rtos-is "1'-0\"" 12.0d0 4 4)        ; exact foot, no fraction
+    (%rtos-is "0'-3 3/8\"" 3.375d0 4 4)   ; 6/16 reduces to 3/8
+    (%rtos-is "-1'-5 1/2\"" -17.5d0 4 2)  ; negative
+    (%rtos-is "1'-0\"" 11.99d0 4 0)))     ; rounds up 12" -> carries a foot
+
+(test rtos-fractional-mode-whole-and-fraction
+  ;; Mode 5: whole units + a reduced 2^P fraction, no feet.
+  (reset-autolisp-symbol-table)
+  (install-core-builtins)
+  (let ((rtos-fn (autolisp-symbol-function (find-autolisp-symbol "RTOS"))))
+    (%rtos-is "17 1/2" 17.5d0 5 2)        ; canonical AutoCAD example
+    (%rtos-is "15 1/2" 15.5d0 5 4)        ; 8/16 reduces to 1/2
+    (%rtos-is "3 3/8" 3.375d0 5 4)        ; 6/16 reduces to 3/8
+    (%rtos-is "6" 6.0d0 5 4)              ; integral -> no fraction
+    (%rtos-is "1/2" 0.5d0 5 4)            ; zero whole -> bare fraction
+    (%rtos-is "-15 1/2" -15.5d0 5 4)))    ; negative
+
+(test rtos-unitmode-selects-display-vs-input-form
+  ;; UNITMODE 0 (default) joins whole inches and the fraction with a
+  ;; space; UNITMODE 1 uses a hyphen (the re-readable input form). Needs
+  ;; a host for setvar, so it goes through the mock cador.
+  (reset-autolisp-symbol-table)
+  (is (string= "1'-5 1/2\""
+               (%rtos-with-cador
+                "(progn (setvar \"UNITMODE\" 0) (rtos 17.5 4 2))")))
+  (reset-autolisp-symbol-table)
+  (is (string= "1'-5-1/2\""
+               (%rtos-with-cador
+                "(progn (setvar \"UNITMODE\" 1) (rtos 17.5 4 2))")))
+  (reset-autolisp-symbol-table)
+  (is (string= "17 1/2"
+               (%rtos-with-cador
+                "(progn (setvar \"UNITMODE\" 0) (rtos 17.5 5 2))")))
+  (reset-autolisp-symbol-table)
+  (is (string= "17-1/2"
+               (%rtos-with-cador
+                "(progn (setvar \"UNITMODE\" 1) (rtos 17.5 5 2))"))))
+
+(test rtos-modes-3-5-default-precision-from-luprec
+  ;; With PRECISION omitted the fraction/decimal precision comes from
+  ;; LUPREC; LUNITS selects the mode. LUPREC 4 => 1/16 resolution.
+  (reset-autolisp-symbol-table)
+  (is (string= "1'-5 1/2\""
+               (%rtos-with-cador
+                "(progn (setvar \"LUNITS\" 4) (setvar \"LUPREC\" 4)
+                        (rtos 17.5))")))
+  (reset-autolisp-symbol-table)
+  (is (string= "17 1/2"
+               (%rtos-with-cador
+                "(progn (setvar \"LUNITS\" 5) (setvar \"LUPREC\" 4)
+                        (rtos 17.5))"))))
+
+;;;; ===== Function <-> sysvar coupling behavioural tests =============
+;;;;
+;;;; system-variables.issue 'Coupling', item 3: behavioural tests for
+;;;; the couplings the audit listed as implemented-but-untested. Each
+;;;; drives a coupled builtin through a cador host and asserts the
+;;;; sysvar changed its observable behaviour.
+
+(defun %al (form-source)
+  "Evaluate FORM-SOURCE under a fresh cador host and return the raw
+AutoLISP result (uncoerced: nil / number / list / autolisp-string)."
+  (run-autolisp-string form-source :setup-fn #'%install-cador-and-core))
+
+(defun %al/host (form-source)
+  "Like %AL but returns (values RESULT HOST) so the caller can inspect
+the host's prompt-output / command log after the run."
+  (let ((mock (clautolisp.cador:make-cador)))
+    (values
+     (run-autolisp-string
+      form-source
+      :setup-fn
+      (lambda (context)
+        (install-core-into context)
+        (setf (clautolisp.autolisp-runtime.internal::runtime-session-host
+               (clautolisp.autolisp-runtime:evaluation-context-session context))
+              mock)))
+     mock)))
+
+;;; --- CMDECHO -> (command ...) echo policy --------------------------
+
+(test coupling-cmdecho-gates-command-echo
+  ;; CMDECHO=1 echoes the command line to the prompt; CMDECHO=0 silences
+  ;; the echo but still runs (and logs) the command.
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result host)
+      (%al/host "(progn (setvar \"CMDECHO\" 1) (command \"_LINE\"))")
+    (declare (ignore result))
+    (is (search "_LINE"
+                (get-output-stream-string
+                 (clautolisp.cador:cador-prompt-output host)))))
+  (reset-autolisp-symbol-table)
+  (multiple-value-bind (result host)
+      (%al/host "(progn (setvar \"CMDECHO\" 0) (command \"_CIRCLE\"))")
+    (declare (ignore result))
+    (is (string= ""
+                 (get-output-stream-string
+                  (clautolisp.cador:cador-prompt-output host))))
+    ;; The command still ran: it is recorded in the log regardless.
+    (is (= 1 (length (clautolisp.cador:cador-command-log host))))))
+
+;;; --- MAXSORT -> acad_strlsort length gate --------------------------
+
+(test coupling-maxsort-caps-acad-strlsort
+  ;; acad_strlsort returns nil when the list is longer than MAXSORT.
+  (reset-autolisp-symbol-table)
+  (is (null (%al "(progn (setvar \"MAXSORT\" 2)
+                         (acad_strlsort (list \"c\" \"b\" \"a\")))")))
+  (reset-autolisp-symbol-table)
+  (is (equal '("a" "b" "c")
+             (mapcar #'autolisp-string-value
+                     (%al "(progn (setvar \"MAXSORT\" 1000)
+                                  (acad_strlsort (list \"c\" \"a\" \"b\")))")))))
+
+;;; --- TILEMODE / CVPORT -> vports / setview -------------------------
+
+(test coupling-tilemode-cvport-viewport-access
+  ;; TILEMODE / CVPORT round-trip, and vports reports the documented
+  ;; single-viewport sentinel headlessly (viewport 1); setview is a
+  ;; documented headless no-op returning nil.
+  (reset-autolisp-symbol-table)
+  (is (eql 0 (%al "(progn (setvar \"TILEMODE\" 0) (getvar \"TILEMODE\"))")))
+  (reset-autolisp-symbol-table)
+  (is (eql 3 (%al "(progn (setvar \"CVPORT\" 3) (getvar \"CVPORT\"))")))
+  (reset-autolisp-symbol-table)
+  (is (eql 1 (%al "(car (car (vports)))")))
+  (reset-autolisp-symbol-table)
+  (is (null (%al "(setview (list 0.0 0.0 0.0) 1)"))))
+
+;;; --- SNAPANG / ANGBASE -> setvar takes radians, not display --------
+
+(test coupling-snapang-angbase-setvar-radians
+  ;; setvar stores angular sysvars in radians and getvar returns radians,
+  ;; independent of AUNITS (the display unit). (spec SETVAR radians note.)
+  (reset-autolisp-symbol-table)
+  (let ((v (%al "(progn (setvar \"AUNITS\" 0)
+                        (setvar \"SNAPANG\" 1.5707963267948966)
+                        (getvar \"SNAPANG\"))")))
+    (is (< (abs (- v 1.5707963267948966d0)) 1d-9)))
+  (reset-autolisp-symbol-table)
+  (let ((v (%al "(progn (setvar \"ANGBASE\" 3.141592653589793)
+                        (getvar \"ANGBASE\"))")))
+    (is (< (abs (- v pi)) 1d-9))))
+
+;;; --- DWGNAME / DWGPREFIX -> file path resolution defaults ----------
+
+(test coupling-dwgname-dwgprefix-are-path-strings
+  ;; DWGNAME / DWGPREFIX are the drawing-name / directory strings that
+  ;; seed default path resolution for the file builtins. Headlessly they
+  ;; are read-only session defaults; assert their shape (a .dwg name and
+  ;; a string prefix), not a vendor-exact value.
+  (reset-autolisp-symbol-table)
+  (let ((name (autolisp-string-value (%al "(getvar \"DWGNAME\")"))))
+    (is (plusp (length name)))
+    (is (search ".dwg" (string-downcase name))))
+  (reset-autolisp-symbol-table)
+  (is (stringp (autolisp-string-value (%al "(getvar \"DWGPREFIX\")")))))
+
+;;; --- DATE / CDATE / TDCREATE / TDUPDATE ----------------------------
+
+(test coupling-date-family-are-readable-reals
+  ;; DATE / CDATE are live-clock reals; TDCREATE / TDUPDATE are stored
+  ;; drawing-time reals. All read as numbers. (The DIESEL edtime
+  ;; formatter that consumes them is not implemented headlessly -- see
+  ;; the issue Progress note.)
+  (reset-autolisp-symbol-table)
+  (is (< 2400000.0d0 (%al "(getvar \"DATE\")")))     ; a modern Julian day
+  (reset-autolisp-symbol-table)
+  (is (numberp (%al "(getvar \"TDCREATE\")")))
+  (reset-autolisp-symbol-table)
+  (is (numberp (%al "(getvar \"TDUPDATE\")"))))
+
+;;; --- SRCHPATH -> findfile / load support search --------------------
+
+(test coupling-srchpath-round-trips
+  ;; SRCHPATH (the BricsCAD support-path setting read by findfile / load)
+  ;; is a settable string that round-trips through getvar/setvar. The
+  ;; support-path search itself is exercised by
+  ;; OPEN-RESOLUTION-USES-SUPPORT-SEARCH-PATH and the findfile tests.
+  (reset-autolisp-symbol-table)
+  (is (string= "/tmp/support-a;/tmp/support-b"
+               (autolisp-string-value
+                (%al "(progn (setvar \"SRCHPATH\" \"/tmp/support-a;/tmp/support-b\")
+                             (getvar \"SRCHPATH\"))")))))
+
+;;; --- TRUSTEDPATHS / SECURELOAD -> trust gating ---------------------
+
+(test coupling-trustedpaths-secureload-round-trip
+  ;; The trust sysvars round-trip under a dialect that leaves them
+  ;; settable (clautolisp). The gating behaviour they drive is exercised
+  ;; by the SECURELOAD-GATE-* / SECURELOAD-FINDTRUSTEDFILE-* tests below.
+  (let ((host (%trust-host :clautolisp)))
+    (clautolisp.autolisp-host:host-setvar host "SECURELOAD" 2)
+    (is (eql 2 (%getvar-int host "SECURELOAD")))
+    (clautolisp.autolisp-host:host-setvar
+     host "TRUSTEDPATHS" (make-autolisp-string "/opt/trusted"))
+    (is (string= "/opt/trusted" (%getvar-str host "TRUSTEDPATHS")))))
+
 ;;;; ----- SECURELOAD / TRUSTEDPATHS trust-model primitives -----------
 ;;;;
 ;;;; Phase 1 (pure functions; no behavioural change). spec
