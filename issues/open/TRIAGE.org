@@ -57,7 +57,7 @@ retrofitted as they are touched.
 
 | Issue                                         | Type            | Status   | Note |
 |-----------------------------------------------+-----------------+----------+------|
-| vendor-probe-autocad-bricscad-divergences     | divergence-cat  | TODO     | canonical AutoCAD⇄BricsCAD divergence register; anchor for the rest |
+| vendor-probe-autocad-bricscad-divergences     | divergence-cat  | TODO     | canonical AutoCAD⇄BricsCAD divergence register; anchor for the rest. NOTE: not access-blocked — D1 DONE (1.6.16), D2 closed; probes already ran on real runners. Remaining D3 (entmod on XRECORD: AutoCAD no-op / BricsCAD updates) = pure code (per-dialect policy+spec) + regen a clean empty.dwg on the Windows runner and re-run vendor:probes:* |
 | bricscad-dialect-sysvar-parity                | dialect-bug     | TODO     | bricscad dialect reports AutoCAD's sysvars, not BricsCAD factory defaults (phase-2 harvest) |
 | system-variables                              | dialect-epic    | TODO     | AutoCAD/BricsCAD sysvars: collect/specify/implement; coupling backlog, partly gated on drawing-database-api (17f) |
 | autocad-no-rest-output-capture                | cad-runtime     | TODO     | no-&rest path loses probe output on AutoCAD |
@@ -67,7 +67,7 @@ retrofitted as they are touched.
 | alfe-bricscad-automation-macos                | alfe-backend    | TODO     | exercise --mode automation on macOS (no true headless on mac — see rules repo) |
 | dialect-platform-version-axis                 | dialect-design  | TODO     | autocad vs autocad-mac + version suffixes; drives "/…"-warns-on-windows |
 | clautolisp-dialect-portability-warnings       | dialect         | TODO     | verify the portability-warning mechanism; ch.25 DoD |
-| cad-path-dotdot-resolution                    | divergence      | BLOCKED  | investigation complete; final verify needs bricscad-access |
+| cad-path-dotdot-resolution                    | divergence      | DONE     | RESOLVED 1.7.5 (warn on any ".." outside --lax, UP everywhere); probe already ran on granted BricsCAD runners (stale "needs bricscad-access" label); pjb decision shipped; deferred BACK-on-Windows alternative rehomed to dialect-platform-version-axis; issues/closed/ |
 | bricscad-undocumented-clisms                  | dialect-invent  | BLOCKED  | inventory; needs bricscad-access (phase-2 harvest) |
 | clautolisp-windows-pathname-mapping           | portability     | BLOCKED  | needs windows-access; design spec written |
 | deferred-clautolisp-out-of-dialect-warnings   | dialect         | DEFERRED | availability bitmap |

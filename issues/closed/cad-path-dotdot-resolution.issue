@@ -218,3 +218,34 @@ This closes the ticket's two open directives (document the behaviour;
 warn on `..' outside --lax). STATUS: the warning has shipped; this issue
 stays OPEN only as the record of the platform-dependent alternative
 above, to be closed or actioned at pjb's discretion.
+
+===========================================================================
+CLOSED (2026-08-06) — both directives shipped; deferred alternative rehomed.
+===========================================================================
+
+Closing. The investigation is complete and both original directives are
+implemented and verified on master:
+
+  - Behaviour characterised on all three real targets (probe matrix of
+    2026-07-30, above): existing-intermediate ".." resolves everywhere;
+    the only divergence is missing-intermediate ".." and it is OS-level
+    (POSIX-UP: clautolisp everywhere + BricsCAD-macOS; syntactic-BACK:
+    BricsCAD-Windows + AutoCAD-Windows). Documented with the matrix.
+  - pjb decision (2026-07-30) shipped in clautolisp 1.7.5: open / findfile
+    / load emit a `[path-dotdot]' portability warning for ANY ".."
+    component in every dialect except --lax, and clautolisp keeps POSIX-UP
+    on every platform. Verified present on master:
+    emit-dotdot-path-portability-warning (autolisp-runtime + builtins-core)
+    and clautolisp/autolisp-builtins-core/tests/path-dotdot-tests.lisp.
+
+The BLOCKED · bricscad-access label was stale: the probe had already run
+on the granted BricsCAD runners (both OSes); the true remaining item was
+the pjb close-out, now done.
+
+Deferred alternative (NOT lost): "clautolisp follows the platform — BACK
+on Windows, UP on Unix — to match whichever native CAD runs beside it."
+This is a platform-dependent path-semantics choice and belongs with the
+platform axis, so it is rehomed to dialect-platform-version-axis.issue
+(the same axis already governs whether "/..." warns on autocad-windows vs
+autocad-mac). Revisit there if the Windows divergence proves a problem in
+practice; not scheduled now.

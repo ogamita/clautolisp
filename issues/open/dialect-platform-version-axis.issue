@@ -78,3 +78,17 @@ Relation to other work
 Status: OPEN, design needed. Surfaced 2026-06-25 from the spec revision.
 Not blocking the secureload phases, which proceed on the current
 keywords.
+
+Rehomed here (2026-08-06): deferred ".." path-semantics alternative
+---------------------------------------------------------------------
+From cad-path-dotdot-resolution.issue (now CLOSED): clautolisp currently
+does POSIX-UP for ".." on every platform and warns on any ".." outside
+--lax (shipped 1.7.5). The probe matrix showed the native Windows CADs
+(AutoCAD-Windows, BricsCAD-Windows) instead do syntactic-BACK, while
+macOS BricsCAD and clautolisp everywhere do UP. A deferred alternative
+was recorded but not scheduled: make clautolisp FOLLOW THE PLATFORM —
+BACK on Windows, UP on Unix — so it matches whichever native CAD runs
+beside it, at the cost of cross-OS clautolisp consistency. This is a
+platform-dependent path-semantics choice on the same platform axis as the
+"/..."-warns-on-autocad-windows case above, hence tracked here. Revisit if
+the Windows divergence proves a problem in practice; not scheduled now.
