@@ -176,3 +176,4 @@ clautolisp/drawing-dwg/source/clal_dwg.so
 # from ever being committed again — every PDF in the tree is generated from a
 # tracked .org. install-documentation / release-documentation collect from build/.
 *.pdf
+
