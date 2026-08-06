@@ -1,0 +1,122 @@
+-*- coding:utf-8 -*-
+
+ssget-implied-selection-not-graphical — "_I" is classified with the graphical modes, but needs no graphics
+===========================================================================================================
+
+Reported from: SCHMS+ CAD test suite (sncf-reseau/src/schms,
+tests/test-cad.lsp) run headless under `clautolisp --host mock`.
+clautolisp master (post `pi` fix), 2026-08-06.
+
+Summary
+-------
+
+`selection-and-snapshot-parity.issue` lists `"_I"` among the modes that
+are out of scope for a headless engine:
+
+    - Interactive ssget: no-mode (interactive pick), point/window forms, and
+      the graphical modes "_C" "_I" "_W" "_CP" "_WP" "_F" "L" "P" "A" —
+      signal a catchable AutoLISP error …
+
+That grouping is wrong for `"_I"`, and only for `"_I"`. Every other mode
+in that list needs a pointing device or a geometric hit test: `_C` and
+`_W` need a window, `_F` a fence, `L`/`P`/`A` a picking history. `"_I"`
+needs none of that. It means **"give me the selection that already
+exists"** — the implied, or pickfirst, set. No pointer, no geometry, no
+interaction.
+
+And the machinery it needs is *already there*, two lines below in the
+same list:
+
+    - sssetfirst/ssgetfirst grip highlighting: modelled as plain pickfirst
+      storage, no graphics.
+
+So MockHost already stores a pickfirst set. `(ssget "_I")` is the read
+side of that same storage, and is currently the only way to observe it.
+
+Symptom
+-------
+
+    ERROR [sigfic-cad] fixture-cote-bas-puis-haut-discrimine --
+      MockHost does not yet support ssget mode "_I";
+      accepted modes are "X" and "_X".
+
+This is what now stops the whole SCHMS+ CAD suite from running headless.
+It is the last blocker: `pi` was fixed, `vla-get-activedocument` resolved,
+and the suite now loads the full SCHMS+ source set and gets as far as
+creating entities before hitting this.
+
+Evidence that `_I` is passive
+-----------------------------
+
+The SCHMS+ sources contrast the two cases in the same file, which is as
+close to a specification as application code gets
+(src-vlx/voies-identification.lsp):
+
+    (defun schms_voie_graphique_graines_selection (/ ss …)
+      (if (setq ss (ssget "_I" *schms_filtre_voies*))      ; no prompt
+        …))
+
+    (defun schms_voie_graphique_graines_selection_manuelle (/ ss …)
+      (prompt "\nSelectionnez une ou plusieurs courbes de voie …>")
+      (if (setq ss (ssget *schms_filtre_voies*))            ; this one prompts
+        …))
+
+The `_I` variant is the one used when the caller wants whatever the user
+had already selected; the *manuelle* variant is the interactive one. Only
+the second belongs in the out-of-scope list.
+
+Requested semantics
+-------------------
+
+1. `(ssget "_I")` returns the current pickfirst set as a PICKSET, or nil
+   when it is empty. It never prompts and never signals.
+
+2. `(ssget "_I" filtre)` applies the existing filter grammar to that set,
+   exactly as `"_X"` already does over the whole database. The filter
+   machinery is shared; only the source of candidates differs.
+
+3. `(sssetfirst nil js)` populates it — already modelled. `(sssetfirst
+   nil nil)` clears it.
+
+4. `PICKFIRST` is honoured: when the system variable is 0, `(ssget "_I")`
+   returns nil regardless of what was stored. This is the vendor
+   behaviour and applications test it.
+
+Point 5 needs a decision I cannot make from the application side: on the
+vendors, the implied selection is **consumed** by the command that reads
+it — after a command completes, the pickfirst set is cleared. Whether
+MockHost should reproduce that, and at what boundary (there is no
+"command" in a headless eval), is a design question. Reproducing it would
+match the CADs; not reproducing it is simpler and is unlikely to bother
+any test. Worth deciding explicitly rather than by accident, and worth a
+vendor probe.
+
+Why it matters
+--------------
+
+It unblocks running an entire real-world CAD test corpus headless, on
+Linux CI, with no CAD licence. That is the point of the mock host, and
+SCHMS+ is the corpus it was sized against.
+
+It also opens a path the application layer wants: a TUI that lists the
+document's objects, lets the user choose, calls `sssetfirst`, and then
+lets the *existing* code find them through `"_I"` without knowing that no
+click ever happened. That is a genuine feature for headless and terminal
+use, not merely a test accommodation.
+
+Suggested tests
+---------------
+
+- `(ssget "_I")` with nothing selected returns nil.
+- `(sssetfirst nil js)` then `(ssget "_I")` returns the same membership.
+- `(ssget "_I" filtre)` filters that set, sharing the `"_X"` grammar tests.
+- `(setvar "PICKFIRST" 0)` then `(ssget "_I")` returns nil.
+- A vendor probe comparing the consume-on-read behaviour of point 5.
+
+Related
+-------
+
+`selection-and-snapshot-parity.issue` — this issue asks to move `"_I"`
+out of its "Out of scope" list. The other modes in that list stay there;
+this is a reclassification of one entry, not a challenge to the headless
+boundary.
