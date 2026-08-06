@@ -1290,7 +1290,11 @@ when no debug session is active (the hook declines)."
         (position #\/ normalized))))
 
 (defun resolve-open-pathname (string)
-  (let ((normalized (normalize-path-string string)))
+  ;; MAP-IN the user/run-frame string to the physical string the host CL
+  ;; can open (clautolisp-windows-pathname-mapping spec §4.3).  On
+  ;; macOS/Linux this is the identity mapping, so NORMALIZED is unchanged.
+  (let ((normalized (clautolisp.pathname-mapping:map-in-namestring
+                     (normalize-path-string string))))
     (if (absolute-path-string-p normalized)
         (pathname normalized)
         (merge-pathnames normalized
@@ -2243,7 +2247,8 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
   ;; and relative paths. Absolute paths are looked up directly via
   ;; probe-file; relative paths walk the configured support / trusted
   ;; path list.
-  (let ((normalized (normalize-path-string filename)))
+  (let ((normalized (clautolisp.pathname-mapping:map-in-namestring
+                     (normalize-path-string filename))))
     (cond
       ((directory-prefix-p normalized)
        (let* ((path (if (absolute-path-string-p normalized)
@@ -2267,7 +2272,11 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
     (emit-dotdot-path-portability-warning value "FINDFILE")
     (emit-forward-slash-ellipsis-portability-warning value "FINDFILE")
     (if located
-        (errno-and-return 0 (make-autolisp-string located))
+        ;; MAP-OUT the physical (build-frame) path back to the user/run
+        ;; frame before returning it (spec §4.3).  Identity on Unix.
+        (errno-and-return 0 (make-autolisp-string
+                             (clautolisp.pathname-mapping:map-out-namestring
+                              located)))
         (errno-and-return 22 nil))))
 
 (defun builtin-findtrustedfile (filename)
@@ -2277,7 +2286,9 @@ location (SECURELOAD=2). Add its folder to TRUSTEDPATHS to trust it."
   (let* ((value (autolisp-string-value (require-string filename "FINDTRUSTEDFILE")))
          (located (resolve-existing-file value (%secureload-trusted-dirs))))
     (if located
-        (errno-and-return 0 (make-autolisp-string located))
+        (errno-and-return 0 (make-autolisp-string
+                             (clautolisp.pathname-mapping:map-out-namestring
+                              located)))
         (errno-and-return 22 nil))))
 
 (defun builtin-vl-directory-files (&optional directory pattern directories)

@@ -597,6 +597,33 @@ test:alfe:windows:
   script:
     - make -C autolisp-front-end test-sbcl
 
+# --- W4 conformance: cross-environment pathname mapping (real frames) -------
+# Runs scripts/verify-pathname-mapping.lisp (clautolisp-windows-pathname-mapping
+# issue, spec §8) on the native runners. The synthetic (build x run) matrix
+# runs everywhere; on Windows it ALSO exercises the real detected run frame
+# (native / msys2 / cygwin / wsl -- CLAUTOLISP_DEBUG_PATHMAP=1 logs which) plus
+# a real-file round trip. Pass/fail is the sbcl exit code (0 ok / 1 failed
+# check / 2 load failure), so no output parsing. Only loads
+# clautolisp/autolisp-runtime -> no submodules. macOS is :posix identity and
+# should pass cleanly, proving the harness's portable core on the other runner.
+conformance:pathname-mapping:windows:
+  extends: .platform-test-common
+  tags: [windows, amd64, shell]        # windows PC (intermittent)
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    CLAUTOLISP_DEBUG_PATHMAP: "1"
+  script:
+    - sbcl --noinform --no-userinit --non-interactive --load "$env:CI_PROJECT_DIR/scripts/verify-pathname-mapping.lisp"
+
+conformance:pathname-mapping:macos:
+  extends: .platform-test-common
+  tags: [macos, arm64, shell]          # thalassa (intermittent)
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    CLAUTOLISP_DEBUG_PATHMAP: "1"
+  script:
+    - sbcl --noinform --no-userinit --non-interactive --load "$CI_PROJECT_DIR/scripts/verify-pathname-mapping.lisp"
+
 .verify-registry-common:
   stage: test
   rules:

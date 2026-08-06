@@ -70,6 +70,7 @@
   :serial t
   :components
   ((:file "autolisp-runtime/source/package")
+   (:file "autolisp-runtime/source/pathname-mapping")
    (:file "autolisp-runtime/source/model")
    (:file "autolisp-runtime/source/terminal-color")
    (:file "autolisp-runtime/source/api")
@@ -462,6 +463,7 @@ identity / TEMPPREFIX stamping, option value parsers)."
    (:file "autolisp-runtime/tests/model-tests")
    (:file "autolisp-runtime/tests/evaluator-tests")
    (:file "autolisp-runtime/tests/ontology-tests")
+   (:file "autolisp-runtime/tests/pathname-mapping-tests")
    (:file "autolisp-runtime/tests/run"))
   :perform (asdf:test-op (op system)
                          (declare (ignore op system))

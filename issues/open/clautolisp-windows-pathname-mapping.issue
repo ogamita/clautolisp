@@ -139,3 +139,60 @@ W0..W5 implementation plan) is now written up in
 clautolisp/documentation/clautolisp-windows-pathname-mapping-spec.org
 (PDF beside it). This issue stays open as the tracking issue for that
 spec.
+
+Progress (2026-08-06)
+---------------------
+
+Branch feature-windows-pathname-mapping. The mapping layer is now
+implemented; the whole thing short-circuits to the identity mapping on
+macOS/Linux, so existing behaviour there is unchanged (runtime +
+builtins-core + file-compat + tool suites all still green).
+
+New code:
+- clautolisp/autolisp-runtime/source/pathname-mapping.lisp — the
+  package clautolisp.pathname-mapping (nickname clal-pathmap): the
+  MAPPING-ENVIRONMENT / MOUNT-ENTRY model, *BUILD-ENVIRONMENT* /
+  *RUN-ENVIRONMENT*, TO-CANONICAL / FROM-CANONICAL, MAP-IN / MAP-OUT
+  (+ the string workhorses MAP-IN-NAMESTRING / MAP-OUT-NAMESTRING),
+  CLASSIFY-ENVIRONMENT-KIND, the standard mount tables, build/run
+  detection, and the UNMAPPABLE-PATH condition.
+- clautolisp/autolisp-runtime/tests/pathname-mapping-tests.lisp —
+  FiveAM tests (identity no-ops, WSL-trap classification, the synthetic
+  cross-frame translation matrix, edge cases, round-trip stability).
+- scripts/verify-pathname-mapping.lisp — the standalone §8 conformance
+  harness (sbcl/ccl --load), runnable on any host; exercises the full
+  synthetic (build x run) matrix plus a real-file round trip through the
+  live frames. Meant for the [windows, amd64, shell] runner.
+
+W-phase status:
+- W0 (model + identity) .......... DONE. map-in/map-out + the two live
+  environments; identity on :posix; §4.3 insertion points wired
+  (resolve-open-pathname, resolve-existing-file -> map-in;
+  builtin-findfile / builtin-findtrustedfile -> map-out; the boot cwd
+  sync in tools/clautolisp main.lisp now also classifies the run frame).
+- W1 (build-frame recording) ..... DONE. *BUILD-ENVIRONMENT* is captured
+  at file-load time (so it is frozen into the dumped image) with a probe
+  plist incl. (truename "/") per §5.1; BUILD-ENVIRONMENT accessor +
+  DESCRIBE-MAPPING-ENVIRONMENTS; CLAUTOLISP_DEBUG_PATHMAP env var dumps
+  both frames from the running binary (verified on the SBCL image).
+- W2 (run-frame detection) ....... DONE. CLASSIFY-ENVIRONMENT-KIND
+  (native / cygwin / msys2 / wsl / posix) is independent of
+  uiop:os-windows-p so it does not fall into the WSL-reports-Linux trap
+  (§1.1); INITIALIZE-RUN-ENVIRONMENT runs at tool startup.
+- W3 (translation) ............... DONE (logic; needs Windows CI to
+  confirm against real files). Non-identity map-in/map-out pivot through
+  the canonical C:/ form; edge cases covered: mount-point translation,
+  install-root remap (msys2 / -> C:/msys64/), ~ per run-frame home, UNC
+  preservation, mixed separators, already-canonical input under a
+  posix-rooted run frame, and the unmappable-path error.
+- W4 (conformance matrix) ........ HARNESS DELIVERED
+  (scripts/verify-pathname-mapping.lisp); GREEN on Linux. Needs the
+  [windows, amd64, shell] CI job wired (job spec handed to the
+  integrator) to run against real native/cygwin/msys2/wsl frames.
+- W5 (optional logical pathnames)  TODO (out of scope; §7).
+
+Still TODO after Windows CI confirms W3/W4: seed run-frame mount tables
+from the live /etc/fstab (cygwin/msys2) and `mount` 9p/drvfs output
+(WSL2) rather than the built-in defaults; today the standard tables use
+the conventional /cygdrive, /<letter>, /mnt/<letter> prefixes and a
+supplied install-root.
