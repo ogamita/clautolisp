@@ -1250,7 +1250,20 @@ See issues/open/clautolisp-boot-cwd-pwd-pathname-defaults.issue."
       (setf *default-pathname-defaults* cwd)
       (clautolisp.autolisp-runtime:set-autolisp-current-directory cwd)
       (clautolisp.autolisp-runtime:set-autolisp-support-paths
-       (list (namestring cwd))))))
+       (list (namestring cwd)))))
+  ;; Classify the RUN frame (native / cygwin / msys2 / wsl / posix) and
+  ;; install the run-frame mount table (clautolisp-windows-pathname-mapping
+  ;; spec §4.3, §5.2).  On macOS/Linux this yields the identity
+  ;; environment, so the whole mapping layer short-circuits and the boot
+  ;; cwd sync above is the only path handling that takes effect.
+  (ignore-errors (clautolisp.pathname-mapping:initialize-run-environment))
+  ;; W1/W2 inspection hook: CLAUTOLISP_DEBUG_PATHMAP dumps the (frozen)
+  ;; build frame recorded in the image and the freshly-detected run frame.
+  ;; Handy on the Windows conformance runner to see how a real host is
+  ;; classified.
+  (when (uiop:getenv "CLAUTOLISP_DEBUG_PATHMAP")
+    (ignore-errors
+     (clautolisp.pathname-mapping:describe-mapping-environments *error-output*))))
 
 (defun main (&rest argv)
   (setf *boot-time* (get-universal-time))       ; ,uptime measures from here
