@@ -124,7 +124,8 @@ the shared blocker.
 ** CI / build / test infra
 | Issue                         | Status | Note |
 |-------------------------------+--------+------|
-| ci-github-ccl-lane            | TODO   | add a CCL job to the GitHub Actions workflow || build-tool-paths-unquoted        | build-portabilite | TODO    | recettes et scripts interpolent $(SBCL)/$(CCL) sans guillemets ; casse dès qu'un outil vit sous « C:\Program Files » — bloque build:clautolisp:windows et tout le lane Windows de SCHMS+ |
+| ci-github-ccl-lane            | TODO   | add a CCL job to the GitHub Actions workflow |
+| build-tool-paths-unquoted     | TODO   | recettes et scripts interpolent $(SBCL)/$(CCL) sans guillemets ; casse dès qu'un outil vit sous « C:\Program Files » — bloque build:clautolisp:windows et tout le lane Windows SCHMS+ |
 
 | cloud-platform-runners        | TODO   | pjb: survey on-demand macOS/Windows cloud runners |
 | nice-make-output              | TODO   | concise per-target make output |
