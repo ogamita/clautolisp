@@ -110,6 +110,26 @@ written content plus a trailing newline (default policy)."
                        (alfe.protocol.file:read-file-as-string target))))
       (delete-workdir workdir))))
 
+(test protocol-read-file-as-string-missing-is-empty
+  "A never-written channel reads as the empty string (the protocol's
+'not published yet' signal), not an error."
+  (let ((workdir (make-test-workdir "read-missing")))
+    (unwind-protect
+        (is (string= "" (alfe.protocol.file:read-file-as-string
+                         (merge-pathnames "never.txt" workdir))))
+      (delete-workdir workdir))))
+
+(test protocol-read-file-as-string-degrades-on-open-error
+  "A transient open failure — on Windows the ACCESS-DENIED / sharing
+violation that the delete-target+rename window can raise — must degrade
+gracefully, never escape as an unhandled error to abort the caller. We
+provoke a FILE-ERROR portably by reading a *directory* path; the result
+must simply be a string (empty), with no error propagating."
+  (let ((workdir (make-test-workdir "read-open-error")))
+    (unwind-protect
+        (is (stringp (alfe.protocol.file:read-file-as-string workdir)))
+      (delete-workdir workdir))))
+
 (test protocol-write-atomic-file-overwrites
   "Repeated writes through WRITE-ATOMIC-FILE leave only the latest
 content visible; the temp file is renamed atomically each time."

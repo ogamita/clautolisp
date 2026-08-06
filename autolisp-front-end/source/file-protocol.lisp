@@ -377,16 +377,42 @@ delete-gap and signal FILE-DOES-NOT-EXIST (the reader-side twin of the
 write contention we relaxed); collapsing the check into the open makes a
 transient absence read as empty — identical to a never-written file — so
 the pollers simply try again on the next tick. On POSIX rename(2) is
-atomic and this path never triggers."
-  (with-open-file (in path :direction :input
-                           :external-format external-format
-                           :if-does-not-exist nil)
-    (if (null in)
-        ""
-        (with-output-to-string (out)
-          (loop for ch = (read-char in nil :eof)
-                until (eq ch :eof)
-                do (write-char ch out))))))
+atomic and this path never triggers.
+
+The Windows delete-target+rename window has a second manifestation
+:IF-DOES-NOT-EXIST NIL does NOT cover — the open can land while the
+target handle is held for the replace and fail with ACCESS-DENIED /
+sharing-violation (a FILE-ERROR, not a does-not-exist), which used to
+escape as an unhandled SIMPLE-FILE-ERROR and abort the caller
+(intermittent `test:alfe:windows` on the CAD sentinel test). We treat
+that transient the same way as the delete-gap: retry a few times with a
+short back-off and, failing that, read as empty so the poller tries
+again on its next tick. The retry loop is dormant on POSIX (rename(2)
+is atomic, so the branch never fires) and is bounded, so a genuinely
+unreadable file degrades to empty rather than looping."
+  (labels ((slurp ()
+             (with-open-file (in path :direction :input
+                                      :external-format external-format
+                                      :if-does-not-exist nil)
+               (if (null in)
+                   ""
+                   (with-output-to-string (out)
+                     (loop for ch = (read-char in nil :eof)
+                           until (eq ch :eof)
+                           do (write-char ch out))))))
+           (attempt (n)
+             ;; A FILE-ERROR is the open-time ACCESS-DENIED the Windows
+             ;; replace window raises; a STREAM-ERROR is the same window
+             ;; caught mid-read (the handle invalidated as the target is
+             ;; swapped). Both are transient for this hot-poll channel, so
+             ;; retry briefly, then read as empty.
+             (handler-case (slurp)
+               ((or file-error stream-error) (condition)
+                 (declare (ignore condition))
+                 (if (plusp n)
+                     (progn (sleep 0.01) (attempt (1- n)))
+                     "")))))
+    (attempt 5)))
 
 (defun last-non-empty-line (text)
   "Return the last non-blank line of TEXT, or NIL if TEXT has none.

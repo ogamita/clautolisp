@@ -655,6 +655,18 @@ file or COM), and forwards the workload.
   ~*AUTOLISP-KEEP-WORKDIR*~. See the alfe manual's
   § /The *AUTOLISP-…* globals/ table.
 
+** File-protocol reliability (Windows)
+
+- Reading a status/protocol channel no longer aborts on the transient
+  Windows failure that the non-atomic delete-target+rename replace
+  window can raise: an open landing mid-replace could fail with
+  ACCESS-DENIED (a FILE-ERROR), or a read be interrupted (a
+  STREAM-ERROR), and that escaped as an unhandled error (intermittent
+  ~test:alfe:windows~ on the CAD control-sentinel test). Such transients
+  are now retried briefly and, failing that, read as empty — the same
+  "not published yet, try again next tick" contract already used for the
+  delete-gap. Dormant on POSIX (atomic rename never triggers it).
+
 ---
 
 * autolisp-spec — language reference (=autolisp-spec/documentation/autolisp-spec-user-manual.org=)
