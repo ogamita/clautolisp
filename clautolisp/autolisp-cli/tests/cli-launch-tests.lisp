@@ -111,10 +111,26 @@ sexp file (UNIX backend), so registry reads/writes stay hermetic."
 
 (test parse-dialect-accepts-known-and-keywordises
   (is (eql :strict (parse-dialect "strict" "--dialect")))
-  (is (eql :clautolisp (parse-dialect "clautolisp" "--dialect"))))
+  (is (eql :clautolisp (parse-dialect "clautolisp" "--dialect")))
+  ;; legacy enumerated vendor keywords still parse
+  (is (eql :autocad-2026 (parse-dialect "autocad-2026" "--dialect")))
+  (is (eql :bricscad-v26 (parse-dialect "bricscad-v26" "--dialect")))
+  (is (eql :autocad (parse-dialect "autocad" "--dialect"))))
+
+(test parse-dialect-accepts-platform-version-spellings
+  ;; dialect-platform-version-axis: platform + version facets keywordise
+  ;; verbatim (resolved to a descriptor downstream by find-autolisp-dialect).
+  (is (eql :autocad-mac      (parse-dialect "autocad-mac" "--dialect")))
+  (is (eql :autocad-2022     (parse-dialect "autocad-2022" "--dialect")))
+  (is (eql :autocad-mac-2027 (parse-dialect "autocad-mac-2027" "--dialect")))
+  (is (eql :bricscad-mac     (parse-dialect "bricscad-mac" "--dialect")))
+  (is (eql :bricscad-linux   (parse-dialect "bricscad-linux" "--dialect")))
+  (is (eql :autocad-2027     (parse-dialect "autocad-2027" "--dialect"))))
 
 (test parse-dialect-rejects-unknown
-  (signals cli-usage-error (parse-dialect "klingon" "--dialect")))
+  (signals cli-usage-error (parse-dialect "klingon" "--dialect"))
+  ;; a product with an unparseable suffix is still rejected
+  (signals cli-usage-error (parse-dialect "autocad-nonsense" "--dialect")))
 
 (test parse-timeout-positive-integer-only
   (is (= 30 (parse-timeout "30" "--timeout")))

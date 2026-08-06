@@ -56,6 +56,96 @@ the three pre-built dialects are distinguishable."
     (is (eq t (reader-options-extended-string-escapes-p bricscad-options)))
     (is (eq t (reader-options-warn-on-integer-overflow-p bricscad-options)))))
 
+;;; Platform + version axis (dialect-platform-version-axis.issue).
+
+(test dialect-enumerated-carry-platform-and-version
+  "The enumerated vendor dialects carry product/platform/version facets;
+the vendor-neutral profiles carry none."
+  (let ((autocad  (find-autolisp-dialect :autocad-2026))
+        (autocad22 (find-autolisp-dialect :autocad-2022))
+        (bricscad (find-autolisp-dialect :bricscad-v26))
+        (strict   (find-autolisp-dialect :strict)))
+    (is (eq :autocad  (autolisp-dialect-product autocad)))
+    (is (eq :windows  (autolisp-dialect-platform autocad)))
+    (is (eql 2026     (autolisp-dialect-version autocad)))
+    (is (eql 2022     (autolisp-dialect-version autocad22)))
+    (is (eq :bricscad (autolisp-dialect-product bricscad)))
+    (is (eq :windows  (autolisp-dialect-platform bricscad)))
+    (is (eql 26       (autolisp-dialect-version bricscad)))
+    ;; strict is platform/version/product neutral
+    (is (null (autolisp-dialect-product strict)))
+    (is (null (autolisp-dialect-platform strict)))
+    (is (null (autolisp-dialect-version strict)))))
+
+(test dialect-bare-product-is-latest-known-windows
+  "A bare product name resolves to the latest-known version on windows,
+via the existing alias."
+  (let ((autocad  (find-autolisp-dialect "autocad"))
+        (bricscad (find-autolisp-dialect "bricscad")))
+    (is (eq :windows (autolisp-dialect-platform autocad)))
+    (is (eql 2026    (autolisp-dialect-version autocad)))
+    (is (eq :windows (autolisp-dialect-platform bricscad)))
+    (is (eql 26      (autolisp-dialect-version bricscad)))))
+
+(test dialect-mac-suffix-selects-macos-latest
+  "`autocad-mac' selects macOS at the latest-known version; the derived
+descriptor is EQ-stable across lookups."
+  (let ((mac (find-autolisp-dialect "autocad-mac")))
+    (is (typep mac 'autolisp-dialect))
+    (is (eq :autocad (autolisp-dialect-product mac)))
+    (is (eq :macos   (autolisp-dialect-platform mac)))
+    (is (eql 2026    (autolisp-dialect-version mac)))
+    (is (eq :autocad-mac (autolisp-dialect-name mac)))
+    ;; cached: same object on the second lookup
+    (is (eq mac (find-autolisp-dialect "autocad-mac")))
+    (is (eq mac (find-autolisp-dialect :autocad-mac)))))
+
+(test dialect-explicit-version-spellings
+  "Version and platform+version spellings resolve to the right facets."
+  (let ((a2027    (find-autolisp-dialect "autocad-2027"))
+        (amac2027 (find-autolisp-dialect "autocad-mac-2027"))
+        (blinux   (find-autolisp-dialect "bricscad-linux"))
+        (bmacv26  (find-autolisp-dialect "bricscad-mac-v26")))
+    (is (eq :windows (autolisp-dialect-platform a2027)))
+    (is (eql 2027    (autolisp-dialect-version a2027)))
+    (is (eq :macos   (autolisp-dialect-platform amac2027)))
+    (is (eql 2027    (autolisp-dialect-version amac2027)))
+    (is (eq :autocad-mac-2027 (autolisp-dialect-name amac2027)))
+    (is (eq :linux   (autolisp-dialect-platform blinux)))
+    (is (eql 26      (autolisp-dialect-version blinux)))    ; latest known
+    (is (eq :macos   (autolisp-dialect-platform bmacv26)))
+    (is (eql 26      (autolisp-dialect-version bmacv26)))))
+
+(test dialect-pre-2025-autocad-keeps-legacy-encoding
+  "A derived AutoCAD year before 2025 keeps the legacy single-byte
+encoding default; 2025+ is UTF-8."
+  (let ((a2024 (find-autolisp-dialect "autocad-2024"))
+        (a2026 (find-autolisp-dialect "autocad-2026")))
+    (is (eq :iso-8859-1 (autolisp-dialect-default-source-encoding a2024)))
+    (is (eq :utf-8      (autolisp-dialect-default-source-encoding a2026)))))
+
+(test dialect-unknown-spelling-still-nil
+  "A non-product spelling is still unresolved (nil), not synthesized."
+  (is (null (find-autolisp-dialect "klingon")))
+  (is (null (find-autolisp-dialect "autocad-nonsense")))
+  (is (null (find-autolisp-dialect "solidworks-2020"))))
+
+(test dialect-feature-matrix-lookup
+  "The seed feature matrix resolves the most-specific row and reports
+FOUNDP; an uncharacterised feature reports (nil nil)."
+  ;; forward-slash `...' ok on autocad-mac, not on autocad-windows
+  (is (eq t   (dialect-feature-for (find-autolisp-dialect "autocad-mac") :forward-slash-ellipsis-ok)))
+  (is (eq nil (dialect-feature-for (find-autolisp-dialect "autocad")     :forward-slash-ellipsis-ok)))
+  ;; utf-8 default: autocad 2026 yes, autocad 2022 no, bricscad yes
+  (is (eq t   (dialect-feature-for (find-autolisp-dialect "autocad-2026") :default-utf8-encoding)))
+  (is (eq nil (dialect-feature-for (find-autolisp-dialect "autocad-2022") :default-utf8-encoding)))
+  (is (eq t   (dialect-feature-for (find-autolisp-dialect "bricscad")     :default-utf8-encoding)))
+  ;; unknown feature -> not found
+  (multiple-value-bind (value foundp)
+      (dialect-feature :no-such-feature :autocad :windows 2026)
+    (is (null value))
+    (is (null foundp))))
+
 ;;; Reader behaviour driven by the dialect descriptor.
 
 (defun read-with-dialect (text dialect)

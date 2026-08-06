@@ -131,12 +131,17 @@
                   (format nil "Unknown --host ~S (expected cador/nihil; mock=alias of cador, null/none=aliases of nihil)" value)))))
 
 (defun parse-dialect (value option)
-  "Validate a --dialect VALUE against the reader's dialect registry
-(strict / autocad-2022 / autocad-2026 / autocad / bricscad-v25 /
-bricscad-v26 / bricscad / clautolisp / lax; an unversioned vendor name
-maps to the last known version) and return it as a keyword. The keyword
-is resolved to a descriptor downstream by FIND-AUTOLISP-DIALECT, so
-aliases stay aliases here."
+  "Validate a --dialect VALUE against the reader's dialect registry and
+return it as a keyword. Accepted: the enumerated names (strict /
+autocad-2022 / autocad-2026 / autocad / autocad-mac / bricscad-v25 /
+bricscad-v26 / bricscad / bricscad-mac / bricscad-linux / clautolisp /
+lax) AND derived platform+version spellings — a product optionally
+suffixed with a platform (`-mac' / `-linux', windows being the default)
+and/or a version (autocad-2027, autocad-mac-2027, bricscad-mac-v26).
+An unversioned vendor name maps to the last known version; an
+unqualified platform means windows. The keyword is resolved to a
+descriptor downstream by FIND-AUTOLISP-DIALECT, so aliases stay aliases
+here (dialect-platform-version-axis.issue)."
   (if (clautolisp.autolisp-reader:find-autolisp-dialect value)
       (intern (string-upcase value) :keyword)
       (error 'cli-usage-error

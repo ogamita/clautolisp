@@ -1933,6 +1933,93 @@ Windows CADs rewrite textually (BACK), and the two differ on symbolic ~
 links. --dialect lax silences this; prefer a path without `..'.~%"
                   who path))))))
 
+(defun autolisp-path-has-forward-slash-ellipsis-p (path)
+  "T iff PATH contains a `...' subfolder-recursion component (AutoCAD's
+support/trusted-path `...' wildcard — a directory and all of its
+subfolders) introduced by a FORWARD slash: a `/...' where the `...' is a
+whole component (immediately followed by `/', `\\' or the string end).
+
+The `...' wildcard is spelled with a BACK slash (`\\...') on
+AutoCAD-Windows; the forward-slash spelling `/...' is accepted by
+clautolisp and by AutoCAD on macOS but is NOT accepted on
+AutoCAD-Windows — hence the platform-gated warning
+ (dialect-platform-version-axis.issue). `.../' at the very start
+ (`/...') and embedded (`a/.../b') both count; a backslash-introduced
+`\\...' does not."
+  (and (stringp path)
+       (loop with len = (length path)
+             for pos = (search "/..." path) then (search "/..." path :start2 (1+ pos))
+             while pos
+             for after = (+ pos 4)
+             when (or (= after len)
+                      (let ((c (char path after)))
+                        (or (char= c #\/) (char= c #\\))))
+               return t
+             finally (return nil))))
+
+(defun %forward-slash-ellipsis-warning-seen-p (path)
+  "Dedup for the `/...' portability warning, keyed by the path STRING in
+the session's DOTDOT-PATH-WARNINGS-SEEN table under a distinct `fse:'
+namespace (so it never collides with the `..'-path dedup that shares the
+table). Once-per-distinct-path per run; skipped (always emit) when no
+session is reachable."
+  (let* ((context (ignore-errors (current-evaluation-context)))
+         (session (and context
+                       (clautolisp.autolisp-runtime.internal::evaluation-context-session
+                        context)))
+         (table   (and session
+                       (clautolisp.autolisp-runtime.internal::runtime-session-dotdot-path-warnings-seen
+                        session)))
+         (key     (concatenate 'string "fse:" path)))
+    (cond
+      ((null table) nil)
+      ((gethash key table) t)
+      (t (setf (gethash key table) t) nil))))
+
+(defun emit-forward-slash-ellipsis-portability-warning (path who)
+  "When PATH carries a `/...' subfolder-recursion component, emit a
+`[path-slash-ellipsis]' portability warning — but ONLY when the active
+dialect targets a WINDOWS platform. AutoCAD-Windows (and BricsCAD on
+Windows) accept the `...' subfolder wildcard only with a back slash
+ (`\\...'); the forward-slash spelling `/...' silently fails to expand
+there, though it works under clautolisp and AutoCAD-mac.
+
+Gated on the dialect's PLATFORM facet
+ (dialect-platform-version-axis.issue): warns when PLATFORM is
+:windows (the vendor dialects `--autocad' / `--bricscad'), silent on
+:macos / :linux (`--dialect autocad-mac') and on the platform-neutral
+profiles (`--strict', `--clautolisp', `--lax', whose PLATFORM is NIL).
+This is the first concrete consumer of the platform axis. WHO is the
+builtin name for the diagnostic prefix (e.g. \"FINDFILE\").
+
+Deduped once per distinct PATH per run. Honours the active dialect's
+PORTABILITY-WARNING-MODE: `:error' escalates a fired warning to a runtime
+error (the same warning->error knob as the `..'-path warning). Advisory
+otherwise; warnings go to *ERROR-OUTPUT*."
+  (when (autolisp-path-has-forward-slash-ellipsis-p path)
+    (let* ((dialect (ignore-errors (current-evaluation-dialect)))
+           (platform (and dialect
+                          (ignore-errors
+                           (clautolisp.autolisp-reader:autolisp-dialect-platform dialect))))
+           (mode (or (and dialect
+                          (ignore-errors
+                           (clautolisp.autolisp-reader:autolisp-dialect-portability-warning-mode
+                            dialect)))
+                     :warn)))
+      (when (eq platform :windows)
+        (when (eq mode :error)
+          (signal-autolisp-runtime-error
+           :non-portable-construct
+           "~A: path ~S uses a forward-slash `/...' subfolder-recursion wildcard, which AutoCAD-Windows does not accept (it requires the back-slash spelling `\\...'); --portability-warning-mode error escalates it to an error. Use `\\...' or --dialect autocad-mac."
+           who path))
+        (unless (%forward-slash-ellipsis-warning-seen-p path)
+          (format *error-output*
+                  "~&[path-slash-ellipsis] ~A: path ~S uses a forward-slash ~
+`/...' subfolder-recursion wildcard; AutoCAD-Windows accepts only the ~
+back-slash spelling `\\...' here. Use `\\...', or --dialect autocad-mac ~
+where `/...' is accepted.~%"
+                  who path))))))
+
 (defun split-usubr-lambda-list (lambda-list)
   "Walk LAMBDA-LIST and split it into the three positional groups
 clautolisp's `defun' / `lambda' recognises:

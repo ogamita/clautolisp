@@ -260,6 +260,11 @@
    ;; path builtins call the emitter, which is silent only in --lax.
    #:emit-dotdot-path-portability-warning
    #:autolisp-path-has-dotdot-component-p
+   ;; `/...' subfolder-recursion warning, platform-gated to Windows
+   ;; (dialect-platform-version-axis): AutoCAD-Windows accepts only the
+   ;; back-slash `\...' spelling of the `...' wildcard.
+   #:emit-forward-slash-ellipsis-portability-warning
+   #:autolisp-path-has-forward-slash-ellipsis-p
    #:derive-reader-options-for-dialect
    #:read-current-source
    #:make-default-runtime-context

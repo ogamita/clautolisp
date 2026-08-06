@@ -82,3 +82,69 @@
     (clautolisp.autolisp-builtins-core::builtin-findfile
      (clautolisp.autolisp-runtime:make-autolisp-string "no/such/../file.txt"))
     (is (search "path-dotdot" (get-output-stream-string *error-output*)))))
+
+;;;; The `/...' subfolder-recursion warning, platform-gated to Windows
+;;;; (dialect-platform-version-axis.issue). AutoCAD-Windows accepts the
+;;;; `...' support/trusted-path wildcard only with a BACK slash (`\...');
+;;;; the forward-slash `/...' spelling works under clautolisp and
+;;;; AutoCAD-mac but not AutoCAD-Windows — so it warns only when the
+;;;; active dialect targets a windows platform.
+
+;;; --- the pure component predicate -------------------------------------
+
+(test slash-ellipsis-predicate-detects-forward-slash-wildcard
+  (flet ((hit (p) (clautolisp.autolisp-runtime:autolisp-path-has-forward-slash-ellipsis-p p)))
+    ;; positives — `...' component introduced by a forward slash
+    (is (hit "/..."))
+    (is (hit "support/..."))
+    (is (hit "a/.../b"))
+    (is (hit "C:/Data/..."))
+    ;; negatives — back-slash spelling (the AutoCAD-Windows one), no
+    ;; wildcard, or `...' not a whole component
+    (is (not (hit "support\\...")))
+    (is (not (hit "a\\...\\b")))
+    (is (not (hit "a/b/c.txt")))
+    (is (not (hit "a/....")))       ; four dots, not the `...' wildcard
+    (is (not (hit "")))
+    (is (not (hit "...")))))        ; no leading forward slash
+
+;;; --- the platform-gated warning ---------------------------------------
+
+(defun %slash-ellipsis-warning-for (dialect path who)
+  "Run the `/...' emitter for PATH under DIALECT and return what reached
+*ERROR-OUTPUT* (fresh session per call, so dedup never masks the result)."
+  (setup-mock-evaluation-context)
+  (%set-test-dialect dialect)
+  (let ((*error-output* (make-string-output-stream)))
+    (clautolisp.autolisp-runtime:emit-forward-slash-ellipsis-portability-warning path who)
+    (get-output-stream-string *error-output*)))
+
+(test slash-ellipsis-warns-on-autocad-windows
+  (is (search "path-slash-ellipsis"
+              (%slash-ellipsis-warning-for "autocad" "support/..." "FINDFILE"))
+      "the windows AutoCAD dialect should flag a forward-slash `/...'")
+  ;; explicit windows version too
+  (is (search "path-slash-ellipsis"
+              (%slash-ellipsis-warning-for "autocad-2026" "support/..." "FINDFILE"))))
+
+(test slash-ellipsis-silent-on-autocad-mac
+  (is (zerop (length (%slash-ellipsis-warning-for "autocad-mac" "support/..." "FINDFILE")))))
+
+(test slash-ellipsis-silent-in-neutral-profiles
+  ;; strict / clautolisp / lax carry no platform -> silent
+  (dolist (dialect '("strict" "clautolisp" "lax"))
+    (is (zerop (length (%slash-ellipsis-warning-for dialect "support/..." "OPEN")))
+        "neutral dialect ~A must not flag `/...'" dialect)))
+
+(test slash-ellipsis-silent-on-clean-and-backslash-path
+  (is (zerop (length (%slash-ellipsis-warning-for "autocad" "support/sub" "FINDFILE"))))
+  ;; back-slash spelling is the correct AutoCAD-Windows one -> no warning
+  (is (zerop (length (%slash-ellipsis-warning-for "autocad" "support\\..." "FINDFILE")))))
+
+(test slash-ellipsis-fires-through-builtin-findfile
+  (setup-mock-evaluation-context)
+  (%set-test-dialect "autocad")
+  (let ((*error-output* (make-string-output-stream)))
+    (clautolisp.autolisp-builtins-core::builtin-findfile
+     (clautolisp.autolisp-runtime:make-autolisp-string "no/such/.../file.txt"))
+    (is (search "path-slash-ellipsis" (get-output-stream-string *error-output*)))))

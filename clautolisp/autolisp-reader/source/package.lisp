@@ -83,6 +83,9 @@
    #:autolisp-dialect
    #:make-autolisp-dialect
    #:autolisp-dialect-name
+   #:autolisp-dialect-product
+   #:autolisp-dialect-platform
+   #:autolisp-dialect-version
    #:autolisp-dialect-token-mode
    #:autolisp-dialect-extended-string-escapes-p
    #:autolisp-dialect-warn-on-integer-overflow-p
@@ -95,6 +98,8 @@
    #:autolisp-dialect-default-file-encoding
    #:find-autolisp-dialect
    #:autolisp-dialect-names
+   #:dialect-feature
+   #:dialect-feature-for
    #:reader-options-from-dialect
    #:autolisp-dialect-strict
    #:autolisp-dialect-autocad-2026
@@ -136,6 +141,9 @@
    #:autolisp-dialect
    #:make-autolisp-dialect
    #:autolisp-dialect-name
+   #:autolisp-dialect-product
+   #:autolisp-dialect-platform
+   #:autolisp-dialect-version
    #:autolisp-dialect-token-mode
    #:autolisp-dialect-extended-string-escapes-p
    #:autolisp-dialect-warn-on-integer-overflow-p

@@ -46,6 +46,13 @@
                 #:tokenize-string
                 #:autolisp-dialect
                 #:autolisp-dialect-name
+                #:autolisp-dialect-product
+                #:autolisp-dialect-platform
+                #:autolisp-dialect-version
+                #:dialect-feature
+                #:dialect-feature-for
+                #:autolisp-dialect-default-source-encoding
+                #:autolisp-dialect-default-file-encoding
                 #:autolisp-dialect-token-mode
                 #:autolisp-dialect-extended-string-escapes-p
                 #:autolisp-dialect-warn-on-integer-overflow-p
