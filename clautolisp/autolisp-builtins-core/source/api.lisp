@@ -3477,30 +3477,111 @@ system-variables.issue 'Coupling'."
          (setf result (concatenate 'string "-" (subseq result 2))))))
     result))
 
+(defun %inches->whole-fraction (inches p)
+  "Split the non-negative real INCHES into whole units and a reduced
+fraction NUMER/DENOM whose denominator is 2^max(0,P) — the AutoCAD
+LUPREC-as-power-of-two convention for architectural (mode 4) and
+fractional (mode 5) RTOS output (LUPREC 4 => 1/16, LUPREC 8 => 1/256).
+Rounding that lands on a full unit carries into WHOLE. Returns (values
+WHOLE NUMER DENOM); NUMER is 0 when there is no fractional part.
+system-variables.issue 'Coupling'."
+  (let* ((pp (max 0 p))
+         (denom (expt 2 pp))
+         (whole (floor inches))
+         (frac (- inches whole))
+         (numer (round (* frac denom))))
+    (when (= numer denom)               ; rounded up to the next unit
+      (incf whole)
+      (setf numer 0))
+    (if (zerop numer)
+        (values whole 0 denom)
+        (let ((g (gcd numer denom)))
+          (values whole (/ numer g) (/ denom g))))))
+
+(defun %format-engineering-real (n p unitmode)
+  "RTOS mode 3 (engineering): feet and decimal inches. N is a length in
+inches; P (LUPREC) is the number of decimal places on the inches part.
+Output is `F'-I.DDDD\"' (feet, an apostrophe, a hyphen, decimal inches,
+a double quote). UNITMODE has no visible effect on engineering output
+(there is no whole/fraction space to collapse). Canonical AutoCAD
+example: (rtos 17.5 3 2) => \"1'-5.50\\\"\".  system-variables.issue
+'Coupling'."
+  (declare (ignore unitmode))
+  (let* ((neg (minusp n))
+         (a (abs n)))
+    (multiple-value-bind (feet rem) (floor a 12.0d0)
+      (with-output-to-string (s)
+        (when neg (write-char #\- s))
+        (format s "~D'-~A\"" feet (%format-decimal-real rem p))))))
+
+(defun %format-architectural-real (n p unitmode)
+  "RTOS mode 4 (architectural): feet and fractional inches, the fraction
+denominator being 2^P (LUPREC). Output is `F'-W N/D\"' when there is a
+fraction, else `F'-W\"'. UNITMODE 0 separates the whole inches from the
+fraction with a space (display form); UNITMODE 1 uses a hyphen (the
+re-readable input form). Canonical AutoCAD example: (rtos 17.5 4 2) =>
+\"1'-5 1/2\\\"\".  system-variables.issue 'Coupling'."
+  (let* ((neg (minusp n))
+         (a (abs n)))
+    (multiple-value-bind (feet rem) (floor a 12.0d0)
+      (multiple-value-bind (whole numer denom) (%inches->whole-fraction rem p)
+        (when (= whole 12)              ; fraction rounding carried a full foot
+          (incf feet)
+          (setf whole 0))
+        (let ((sep (if (and unitmode (plusp unitmode)) "-" " ")))
+          (with-output-to-string (s)
+            (when neg (write-char #\- s))
+            (if (zerop numer)
+                (format s "~D'-~D\"" feet whole)
+                (format s "~D'-~D~A~D/~D\"" feet whole sep numer denom))))))))
+
+(defun %format-fractional-real (n p unitmode)
+  "RTOS mode 5 (fractional): whole units and a reduced fraction with
+denominator 2^P (LUPREC); no feet. UNITMODE 0 uses a space between the
+whole part and the fraction; UNITMODE 1 uses a hyphen (input form). A
+zero whole part with a fraction prints as just the fraction. Canonical
+AutoCAD example: (rtos 17.5 5 2) => \"17 1/2\".  system-variables.issue
+'Coupling'."
+  (let* ((neg (minusp n))
+         (a (abs n)))
+    (multiple-value-bind (whole numer denom) (%inches->whole-fraction a p)
+      (let ((sep (if (and unitmode (plusp unitmode)) "-" " ")))
+        (with-output-to-string (s)
+          (when neg (write-char #\- s))
+          (cond
+            ((zerop numer) (format s "~D" whole))
+            ((zerop whole) (format s "~D/~D" numer denom))
+            (t (format s "~D~A~D/~D" whole sep numer denom))))))))
+
 (defun builtin-rtos (number &optional mode precision)
-  ;; (rtos NUMBER [MODE [PRECISION]]) -> string. We honour MODE 1
-  ;; (scientific) and 2 (decimal) and the PRECISION argument; modes
-  ;; 3 (engineering), 4 (architectural), 5 (fractional) are not
-  ;; useful headlessly and fall back to mode 2.
+  ;; (rtos NUMBER [MODE [PRECISION]]) -> string. We honour every
+  ;; documented MODE: 1 (scientific), 2 (decimal), 3 (engineering),
+  ;; 4 (architectural), 5 (fractional). The PRECISION argument is
+  ;; decimal places for modes 1-3 and the power-of-two fraction
+  ;; denominator (2^PRECISION) for modes 4-5, per AutoCAD's LUPREC.
   ;;
   ;; When MODE / PRECISION are omitted, RTOS reads the LUNITS /
   ;; LUPREC system variables (autolisp-spec rtos Notes; AutoCAD
   ;; defaults LUNITS 2, LUPREC 4 match the historic hard-coded
   ;; values, so a host that never sets them is unchanged). The
-  ;; decimal result is then zero-suppressed per DIMZIN. UNITMODE
-  ;; affects only the engineering/architectural/fractional modes,
-  ;; which fall back to decimal here, so it is currently a no-op.
-  ;; system-variables.issue 'Coupling'.
+  ;; decimal result (mode 2) is zero-suppressed per DIMZIN. UNITMODE
+  ;; selects the display form (0) vs. the re-readable input form (1,
+  ;; whole/fraction joined by a hyphen) for the architectural and
+  ;; fractional modes. system-variables.issue 'Coupling'.
   (require-number number "RTOS")
   (when mode (require-int32 mode "RTOS"))
   (when precision (require-int32 precision "RTOS"))
   (let* ((m (or mode (%rtos-units-sysvar "LUNITS" 2)))
          (p (or precision (%rtos-units-sysvar "LUPREC" 4)))
          (dimzin (%rtos-units-sysvar "DIMZIN" 0))
+         (unitmode (%rtos-units-sysvar "UNITMODE" 0))
          (n (coerce number 'double-float)))
     (make-autolisp-string
      (case m
        (1 (%format-scientific-real n p))
+       (3 (%format-engineering-real n p unitmode))
+       (4 (%format-architectural-real n p unitmode))
+       (5 (%format-fractional-real n p unitmode))
        (otherwise (%apply-dimzin-decimal (%format-decimal-real n p) dimzin))))))
 
 (defun builtin-angtos (angle &optional mode precision)
