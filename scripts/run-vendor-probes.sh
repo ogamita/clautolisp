@@ -99,8 +99,8 @@ watch_workdir() {
   done
 }
 
-declare -a probe_names=("entity-lifecycle" "drawing-data" "selection")
-declare -a probe_files=("entity-lifecycle-probe.lsp" "drawing-data-probe.lsp" "selection-probe.lsp")
+declare -a probe_names=("entity-lifecycle" "drawing-data" "selection" "bricscad-extensions")
+declare -a probe_files=("entity-lifecycle-probe.lsp" "drawing-data-probe.lsp" "selection-probe.lsp" "bricscad-extensions-probe.lsp")
 
 failed=0
 summary="vendor probes: $backend"$'\n'"alfe: $alfe"$'\n'"dwg: ${dwg:-<none>}"$'\n'
@@ -171,6 +171,19 @@ for i in "${!probe_names[@]}"; do
     sexp="$probe_dir/$name.sexp"
   else
     sexp="$probe_dir/$name-$backend.sexp"
+  fi
+  # HARVEST probes have no per-vendor expectation file: their point is to
+  # RECORD what the target does (e.g. bricscad-extensions decoding what
+  # BricsCAD's undocumented setf/let/let* actually return), so there is
+  # nothing to conform to yet. Save the transcript as the artifact and
+  # report HARVEST (green, never gates the pipeline). Once a target's
+  # behaviour is pinned, drop in a <name>[-<backend>].sexp and it becomes a
+  # normal conformance probe automatically.
+  if [ ! -f "$sexp" ]; then
+    summary+="HARVEST  $name -- transcript saved ($name.log); no expectation file, not gated"$'\n'
+    echo "HARVEST  $name (no $sexp; transcript in $log)"
+    unset args
+    continue
   fi
   cmp_out="$(python3 "$root/scripts/compare-observations.py" "$sexp" "$log" 2>&1)"; cmp_rc=$?
   echo "$cmp_out"
